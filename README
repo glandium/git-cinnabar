@@ -1,0 +1,37 @@
+Yet another git-remote-hg
+=========================
+
+[The way git remote helpers work forces how to call them]
+
+BEWARE /!\ This is a prototype. Implementation details may change,
+which would affect commit SHA1s.
+
+When you update, please read this file again, it likely will contain
+important notes.
+
+Setup:
+------
+
+Add this directory to your PATH.
+
+Usage:
+------
+
+$ git clone hg::<mercurial repo>
+
+where <mercurial repo> can be a path to a local directory containing a
+mercurial repository, or a http, https or ssh url.
+
+Essentially, use git like you would for a git repository, but use a
+hg:: url where you would use a git:// url.
+
+Limitations:
+------------
+
+At the moment, push is not supported.
+
+There is no support for the following mercurial features:
+- obsolescence markers
+- bookmarks
+- branches
+- phases

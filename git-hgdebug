@@ -1,0 +1,61 @@
+#!/usr/bin/env python2.7
+
+from githg import (
+    ChangesetData,
+    GitHgStore,
+    git_for_each_ref,
+    git,
+    split_ls_tree,
+    one,
+)
+from githg.dag import gitdag
+import sys
+import subprocess
+
+import logging
+logging.getLogger('').setLevel(logging.INFO)
+def main(args):
+    cmd = args.pop(0)
+    if cmd == 'data':
+        store = GitHgStore()
+        if args[0] == '-c':
+            sys.stdout.write(store.changeset(args[1]).data)
+        elif args[0] == '-m':
+            sys.stdout.write(store.manifest(args[1]).data)
+    elif cmd == 'restore':
+        num = int(args[0])
+
+        for ref in ('tip', 'manifest', 'hg2git'):
+            git('update-ref', 'refs/remote-hg/%s' % ref,
+                'refs/remote-hg/%s@{%d}' % (ref, num))
+        git('update-ref', 'refs/notes/remote-hg/git2hg',
+            'refs/notes/remote-hg/git2hg@{%d}' % num)
+
+        data = ''
+        for line in git('ls-tree', '-r', 'refs/notes/remote-hg/git2hg'):
+            mode, typ, filesha1, path = split_ls_tree(line)
+            data += path.replace('/', '')
+            data += '\n'
+        data += '^refs/remote-hg/manifest'
+
+        proc = subprocess.Popen(['git', 'rev-list', '--stdin', '--parents',
+            '--full-history'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        stdout, stderr = proc.communicate(data)
+        proc.wait()
+        dag = gitdag(stdout.splitlines())
+        heads = {}
+        for head in dag.heads:
+            ref = 'refs/remote-hg/head-%s' % ChangesetData.parse(
+                git('notes', '--ref', 'remote-hg/git2hg', 'show', head)
+                )['changeset']
+            heads[ref] = head
+
+        for ref in git_for_each_ref('head-*', format='%(refname)'):
+            if ref not in heads:
+                git('update-ref', '-d', ref)
+
+        for head in heads:
+            git('update-ref', head, heads[head])
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

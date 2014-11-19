@@ -1,0 +1,246 @@
+#!/usr/bin/env python2.7
+
+from __future__ import division
+from githg import (
+    FastImport,
+    GitHgStore,
+    IOLogger,
+    LazyString,
+    git,
+    RevChunk,
+    ChangesetInfo,
+    ManifestInfo,
+)
+from binascii import hexlify, unhexlify
+from mercurial import (
+    changegroup,
+    hg,
+    ui,
+)
+from collections import (
+    OrderedDict,
+    defaultdict,
+    deque,
+)
+from itertools import izip
+from urlparse import (
+    urlparse,
+    urlunparse,
+)
+import logging
+import sys
+import os
+import random
+from distutils.dir_util import mkpath
+from githg.dag import gitdag
+
+#logging.getLogger('').setLevel(logging.INFO)
+
+def chunks_in_changegroup(bundle):
+    while True:
+        chunk = changegroup.getchunk(bundle)
+        if not chunk:
+            return
+        yield chunk
+
+def iter_chunks(chunks, cls):
+    previous_node = None
+    for chunk in chunks:
+        instance = cls(chunk)
+        instance.previous_node = previous_node or instance.parent1
+        yield instance
+        previous_node = instance.node
+
+def iterate_files(bundle):
+    while True:
+        name_chunk = changegroup.getchunk(bundle)
+        if not name_chunk:
+            return
+        for instance in iter_chunks(chunks_in_changegroup(bundle), RevChunk):
+            yield instance
+
+def _sample(l, size):
+    if len(l) <= size:
+        return l
+    return random.sample(l, size)
+
+# TODO: this algorithm is not very smart and might as well be completely wrong
+def findcommon(repo, store, heads):
+    logging.info(heads)
+    logging.info(store._hgheads)
+    if not store._hgheads:
+        return set()
+
+    sample_size = 100
+
+    sample = _sample(store._hgheads, sample_size)
+    known = repo.known(unhexlify(h) for h in sample)
+    known = set(h for h, k in izip(sample, known) if k)
+
+    logging.info('heads: %d' % len(store._hgheads))
+    logging.info('initial sample size: %d' % len(sample))
+    logging.info('known (sub)set: %d' % len(known))
+
+    if len(known) == len(store._hgheads):
+        return store._hgheads
+
+    git_heads = set(store.changeset_ref(h) for h in store._hgheads)
+    git_known = set(store.changeset_ref(h) for h in known)
+
+    args = ['rev-list', '--topo-order', '--full-history', '--parents']
+    args += ['^%s' % h for h in git_known]
+    args += ['%s' % h for h in git_heads]
+
+    dag = gitdag(git(*args))
+    known_dag = gitdag()
+    for node in git_known:
+        known_dag.insert(node)
+    known_dag._update()
+
+    while True:
+        unknown = dag.heads | dag.roots
+        if not unknown:
+            break
+
+        sample = set(_sample(unknown, sample_size))
+        if len(sample) < sample_size:
+            sample |= set(_sample(dag, sample_size - len(sample)))
+
+        sample = list(sample)
+        hg_sample = [store.hg_changeset(h) for h in sample]
+        known = repo.known(unhexlify(h) for h in hg_sample)
+        unknown = set(h for h, k in izip(sample, known) if not k)
+        known = set(h for h, k in izip(sample, known) if k)
+        logging.info('second sample size: %d' % len(sample))
+        logging.info('known (sub)set: %d' % len(known))
+
+        for node, parents in dag.remove_nodes_and_parents(known):
+            known_dag.insert(node, parents)
+        known_dag._update()
+        all(dag.remove_nodes_and_children(unknown))
+
+    return [store.hg_changeset(h) for h in known_dag.heads]
+
+def getbundle(repo, store, heads):
+    common = findcommon(repo, store, heads)
+    logging.info('common: %s' % common)
+    bundle = repo.getbundle('bundle', heads=[unhexlify(h) for h in heads],
+        common=[unhexlify(h) for h in common])
+
+    changeset_chunks = list(chunks_in_changegroup(bundle))
+    logging.info(len(changeset_chunks))
+    manifest_chunks = list(chunks_in_changegroup(bundle))
+    logging.info(len(manifest_chunks))
+
+    for rev_chunk in store._fast_import.progress_iter('files',
+            iterate_files(bundle)):
+        store.store(rev_chunk)
+
+    del bundle
+
+#    logging.getLogger('').setLevel(logging.DEBUG)
+
+    for mn in store._fast_import.progress_iter('manifests',
+            iter_chunks(manifest_chunks, ManifestInfo)):
+        store.store(mn)
+
+    del manifest_chunks
+
+    for cs in store._fast_import.progress_iter('changesets',
+            iter_chunks(changeset_chunks, ChangesetInfo)):
+        store.store(cs)
+
+    del changeset_chunks
+
+
+def read_cmd(fileobj):
+    line = fileobj.readline().strip()
+    if not line:
+        return None, None
+    line = line.split(' ')
+    return line[0], line[1:]
+
+def main(args):
+    logger = logging.getLogger('-')
+    logger.info(args)
+    assert len(args) == 2
+    remote, url = args
+    parsed_url = urlparse(url)
+    logger.info(parsed_url)
+    if not parsed_url.scheme:
+        url = urlunparse(('file', '', parsed_url.path, '', '', ''))
+    ui_ = ui.ui()
+    ui_.fout = ui_.ferr
+    repo = hg.peer(ui_, {}, url)
+    assert repo.capable('getbundle')
+    store = GitHgStore()
+    options = {}
+    logger.info(store._hgheads)
+    helper = IOLogger(logging.getLogger('remote-helper'),
+        sys.stdin, sys.stdout)
+
+    while True:
+        cmd, args = read_cmd(helper)
+        if not cmd:
+            return 0
+
+        if cmd == 'capabilities':
+            assert not args
+            helper.write(
+                'option\n'
+                'import\n'
+                'bidi-import\n'
+#                'push\n'
+                'refspec refs/heads/*:refs/remote-hg/*\n'
+                'refspec HEAD:refs/remote-hg/tip\n'
+                '\n'
+            )
+            helper.flush()
+        elif cmd == 'list':
+            # TODO: use repo.batch()
+            assert not args or args == ['for-push']
+            heads = repo.heads()
+            for head in repo.heads():
+                head = hexlify(head)
+                sha1 = store.changeset_ref(head)
+                if not sha1:
+                    sha1 = '?'
+                helper.write('%s refs/heads/head-%s\n' % (sha1, head))
+            tip = store.changeset_ref(hexlify(repo.lookup('tip')))
+            helper.write(
+                '%s refs/heads/tip\n'
+                '@refs/heads/tip HEAD\n'
+                '\n' % (
+                    tip if tip else '?'
+            ))
+            helper.flush()
+        elif cmd == 'option':
+            assert len(args) == 2
+            options[args[0]] = args[1]
+            helper.write('ok\n')
+            helper.flush()
+        elif cmd == 'import':
+            reflog = os.path.join(os.environ['GIT_DIR'], 'logs', 'refs',
+                'remote-hg')
+            mkpath(reflog)
+            open(os.path.join(reflog, 'hg2git'), 'a').close()
+            open(os.path.join(reflog, 'manifest'), 'a').close()
+            open(os.path.join(reflog, 'tip'), 'a').close()
+            assert len(args) == 1
+            heads = args
+            while cmd:
+                assert cmd == 'import'
+                cmd, args = read_cmd(helper)
+                assert args is None or len(args) == 1
+                if args:
+                    heads.extend(args)
+            heads = [h[16:] for h in heads if h.startswith('refs/heads/head-')]
+            if not heads:
+                heads = [hexlify(h) for h in repo.heads()]
+            store.init_fast_import(FastImport(sys.stdin, sys.stdout))
+            getbundle(repo, store, heads)
+            store.close()
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))
