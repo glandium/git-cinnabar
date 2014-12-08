@@ -542,11 +542,12 @@ class GitHgStore(object):
         }
 
         # TODO: only do one git_for_each_ref
-        heads = git_for_each_ref('head-*')
         self._hgheads_orig = set()
-        for sha1 in heads:
-            #TODO: not actually necessary since the head name contains the sha1.
-            hghead = ChangesetData.parse(self.read_note(sha1))['changeset']
+        for line in git_for_each_ref('head-*',
+                format='%(objectname) %(refname)'):
+            sha1, head = line.split()
+            logging.info('%s %s' % (sha1, head))
+            hghead = head[-40:]
             self._hgheads_orig.add(hghead)
             self._changesets[hghead] = sha1
         self._hgheads = set(self._hgheads_orig)
