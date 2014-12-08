@@ -512,8 +512,10 @@ class ChangesetData(object):
             if k in data)
 
 
-def sha1path(sha1):
-    return '%s/%s/%s' % (sha1[0:2], sha1[2:4], sha1[4:])
+def sha1path(sha1, depth=2):
+    i = 0
+    return '/'.join(
+        [sha1[i*2:i*2+2] for i in xrange(0, depth)] + [sha1[i*2+2:]])
 
 
 class Mark(int):
@@ -534,6 +536,8 @@ class GitHgStore(object):
         self._git_files = {}
 
         self._note_cache = {}
+        self._note_tree = None
+        self._note_depth = -1
 
         self.STORE = {
             ChangesetInfo: (self._store_changeset, self.changeset, self._changesets, 'commit'),
@@ -583,6 +587,23 @@ class GitHgStore(object):
     def read_note(self, obj):
         if obj in self._note_cache:
             return self._note_cache[obj]
+        if self.__fast_import:
+            if not self._note_tree:
+                self._note_tree = one(git('log', '-1', '--format=%T',
+                    'refs/notes/remote-hg/git2hg'))
+            if self._note_depth == -1:
+                depths = xrange(0, 20)
+            else:
+                depths = [self._note_depth]
+            for depth in depths:
+                mode, typ, gitsha1, path = self._fast_import.ls(
+                    self._note_tree, sha1path(obj, depth))
+                if gitsha1:
+                    break
+            assert gitsha1
+            self._note_depth = depth
+            ret = self._note_cache[obj] = self._fast_import.cat_blob(gitsha1)
+            return ret
         ret = self._note_cache[obj] = git('notes', '--ref', 'remote-hg/git2hg', 'show', obj)
         return ret
 
