@@ -140,14 +140,6 @@ def get_hg_author(author):
         return email
     return author
 
-class FakeHgData(object):
-    def __init__(self, node, data):
-        self.node = node
-        self.data =data
-
-    def __repr__(self):
-        return '<%s %s>' % (self.__class__.__name__, self.node)
-
 revchunk_log = logging.getLogger('revchunks')
 #revchunk_log.setLevel(logging.DEBUG)
 
@@ -183,6 +175,24 @@ class RevChunk(object):
         new += data[end:]
         return new
 
+    @property
+    def sha1(self):
+        p1 = unhexlify(self.parent1)
+        p2 = unhexlify(self.parent2)
+        return sha1(
+            min(p1, p2) +
+            max(p1, p2) +
+            self.data
+        ).hexdigest()
+
+class GeneratedRevChunk(RevChunk):
+    def __init__(self, node, data):
+        self.node = node
+        self.data = data
+
+    def set_parents(self, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
+        self.parent1 = parent1
+        self.parent2 = parent2
 
 class RevDiff(object):
     def __init__(self, rev_patch):
@@ -665,18 +675,21 @@ class GitHgStore(object):
             return mark
         return None
 
-    def changeset(self, sha1):
+    def changeset(self, sha1, include_parents=False):
         assert not isinstance(sha1, Mark)
         gitsha1 = self._hg2git('commit', sha1)
         assert gitsha1
         commit =  git('cat-file', 'commit', gitsha1, keepends=True)
         count = -1
         commitdata = {}
+        parents = []
         for count, line in enumerate(commit):
             if line == '\n':
                 break
             typ, data = line.split(' ', 1)
-            if typ != 'parent':
+            if typ == 'parent':
+                parents.append(data.strip())
+            else:
                 commitdata[typ] = data
         metadata = self.read_changeset_data(gitsha1)
         author, date, utcoffset = commitdata['author'].rsplit(' ', 2)
@@ -691,7 +704,13 @@ class GitHgStore(object):
         [' ', metadata['extra']] if 'extra' in metadata else [],
         ['\n', metadata['files'].replace('\0', '\n')] if 'files' in metadata else [],
         ['\n\n'], commit[count + 1:]))
-        return FakeHgData(sha1, changeset)
+
+        hgdata = GeneratedRevChunk(sha1, changeset)
+        if include_parents:
+            assert len(parents) <= 2
+            hgdata.set_parents(*[
+                self.read_changeset_data(p)['changeset'] for p in parents])
+        return hgdata
 
     ATTR = {
         '100644': '',
@@ -720,7 +739,7 @@ class GitHgStore(object):
                     attr=attrs.get(path, ''),
                 )
                 manifest += str(line)
-        return FakeHgData(sha1, manifest)
+        return GeneratedRevChunk(sha1, manifest)
 
     def manifest_ref(self, sha1, hg2git=True, create=False):
         return self._git_object(self._manifests, 'commit', sha1, hg2git=hg2git,
@@ -736,7 +755,7 @@ class GitHgStore(object):
 
     def file(self, sha1):
         ref = self._git_object(self._files, 'blob', sha1)
-        return FakeHgData(sha1, self._fast_import.cat_blob(ref))
+        return GeneratedRevChunk(sha1, self._fast_import.cat_blob(ref))
 
     def git_file_ref(self, sha1):
         if sha1 in self._git_files:
@@ -748,7 +767,7 @@ class GitHgStore(object):
         # ref, so check its content first.
         data = self._fast_import.cat_blob(result)
         if data.startswith('\1\n'):
-            return self._prepare_git_file(FakeHgData(sha1, data))
+            return self._prepare_git_file(GeneratedRevChunk(sha1, data))
         return result
 
     def store(self, instance):
@@ -773,20 +792,13 @@ class GitHgStore(object):
             instance.init(previous)
         else:
             instance.init(())
-        if check:
-            p1 = unhexlify(instance.parent1)
-            p2 = unhexlify(instance.parent2)
-            if instance.node != sha1(
-                min(p1, p2) +
-                max(p1, p2) +
-                instance.data
-            ).hexdigest():
-                raise Exception(
-                    'sha1 mismatch for node %s with parents %s %s and '
-                    'previous %s' %
-                    (instance.node, instance.parent1, instance.parent2,
-                    instance.previous_node)
-                )
+        if check and instance.node != instance.sha1:
+            raise Exception(
+                'sha1 mismatch for node %s with parents %s %s and '
+                'previous %s' %
+                (instance.node, instance.parent1, instance.parent2,
+                instance.previous_node)
+            )
         if isinstance(result, EmptyMark):
             result = Mark(result)
             store_func(instance, result)
