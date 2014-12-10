@@ -36,3 +36,14 @@ There is no support for the following mercurial features:
 - bookmarks
 - branches
 - phases
+
+Update notes:
+-------------
+
+Up to commit dd6cc7a0940598161c3a1403adf05658ebdf6560, git-remote-hg
+would happily corrupt the repository in some cases involving file
+renames or addition with the same name but a different case (e.g. FOO
+=> Foo), when the git repository is on a case-insensitive file system
+(most notably on OSX or Windows).
+It now requires core.ignorecase to be false. If you cloned with an
+earlier version, you should reclone from scratch.
