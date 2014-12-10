@@ -535,7 +535,7 @@ class GitHgStore(object):
         self._files = {}
         self._git_files = {}
 
-        self._note_cache = {}
+        self._changeset_data_cache = {}
         self._note_tree = None
         self._note_depth = -1
 
@@ -565,7 +565,7 @@ class GitHgStore(object):
         # TODO: handle the situation with multiple remote repos
         hgtip = one(git_for_each_ref('tip'))
         if hgtip:
-            hgtip = ChangesetData.parse(self.read_note(hgtip))['changeset']
+            hgtip = self.hg_changeset(hgtip)
         self._hgtip = hgtip
         assert not self._hgtip or self._hgtip in self._hgheads
 
@@ -584,9 +584,9 @@ class GitHgStore(object):
         assert fi
         self.__fast_import = fi
 
-    def read_note(self, obj):
-        if obj in self._note_cache:
-            return self._note_cache[obj]
+    def read_changeset_data(self, obj):
+        if obj in self._changeset_data_cache:
+            return self._changeset_data_cache[obj]
         if self.__fast_import:
             if not self._note_tree:
                 self._note_tree = one(git('log', '-1', '--format=%T',
@@ -602,13 +602,14 @@ class GitHgStore(object):
                     break
             assert gitsha1
             self._note_depth = depth
-            ret = self._note_cache[obj] = self._fast_import.cat_blob(gitsha1)
-            return ret
-        ret = self._note_cache[obj] = git('notes', '--ref', 'remote-hg/git2hg', 'show', obj)
+            data = self._fast_import.cat_blob(gitsha1)
+        else:
+            data = git('notes', '--ref', 'remote-hg/git2hg', 'show', obj)
+        ret = self._changeset_data_cache[obj] = ChangesetData.parse(data)
         return ret
 
     def hg_changeset(self, sha1):
-        return ChangesetData.parse(self.read_note(sha1))['changeset']
+        return self.read_changeset_data(sha1)['changeset']
 
     def _hg2git_fill_cache(self):
         cache = {}
@@ -677,7 +678,7 @@ class GitHgStore(object):
             typ, data = line.split(' ', 1)
             if typ != 'parent':
                 commitdata[typ] = data
-        metadata = ChangesetData.parse(self.read_note(gitsha1))
+        metadata = self.read_changeset_data(gitsha1)
         author, date, utcoffset = commitdata['author'].rsplit(' ', 2)
         utcoffset = int(utcoffset)
         utcoffset = (utcoffset // 100) * 60 + (utcoffset % 100)
