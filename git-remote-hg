@@ -6,6 +6,7 @@ from githg import (
     GitHgStore,
     IOLogger,
     LazyString,
+    one,
     git,
     RevChunk,
     ChangesetInfo,
@@ -31,6 +32,7 @@ import logging
 import sys
 import os
 import random
+import subprocess
 from distutils.dir_util import mkpath
 from githg.dag import gitdag
 
@@ -161,6 +163,35 @@ def read_cmd(fileobj):
     return line[0], line[1:]
 
 def main(args):
+    try:
+        ignorecase = one(git('config', '--bool', 'core.ignorecase'))
+    except subprocess.CalledProcessError as e:
+        if e.returncode != 1:
+            raise
+        ignorecase = 'false'
+    if ignorecase == 'true':
+        sys.stderr.write(
+            'Your git configuration has core.ignorecase set to "true".\n'
+            'Usually, this means git detected the file system is case '
+            'insensitive.\n'
+            'Git-remote-hg does not support this setup.\n'
+            'Either use a case sensitive file system or run the following '
+            'command:\n'
+            '  git config --global core.ignorecase false\n'
+            'If you do not want this configuration to be global, you cannot '
+            'clone,\n'
+            'but you use the following setup:\n'
+            '  mkdir directory\n'
+            '  cd directory\n'
+            '  git init\n'
+            '  git config core.ignorecase false\n'
+            '  git remote add origin hg::hg_repo_url\n'
+            '  git remote update origin\n'
+            'If you already cloned, you should reclone from scratch with this '
+            'version\n'
+            'of git-remote-hg.\n'
+        )
+        return 1
     logger = logging.getLogger('-')
     logger.info(args)
     assert len(args) == 2
