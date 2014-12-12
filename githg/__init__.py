@@ -15,11 +15,7 @@ from git.util import (
     LazyString,
     one,
 )
-from git import (
-    git_for_each_ref,
-    git_cat_file,
-    git,
-)
+from git import Git
 
 import time
 import logging
@@ -522,7 +518,7 @@ class GitHgStore(object):
 
         # TODO: only do one git_for_each_ref
         self._hgheads_orig = set()
-        for line in git_for_each_ref('head-*',
+        for line in Git.for_each_ref('head-*',
                 format='%(objectname) %(refname)'):
             sha1, head = line.split()
             logging.info('%s %s' % (sha1, head))
@@ -532,13 +528,13 @@ class GitHgStore(object):
         self._hgheads = set(self._hgheads_orig)
 
         self._hg2git_tree = None
-        sha1 = one(git_for_each_ref('hg2git'))
+        sha1 = one(Git.for_each_ref('hg2git'))
         if sha1:
             #TODO: cat-file commit?
-            self._hg2git_tree = one(git('log', '-1', '--format=%T',
+            self._hg2git_tree = one(Git.iter('log', '-1', '--format=%T',
                 'refs/remote-hg/hg2git'))
         # TODO: handle the situation with multiple remote repos
-        hgtip = one(git_for_each_ref('tip'))
+        hgtip = one(Git.for_each_ref('tip'))
         if hgtip:
             hgtip = self.hg_changeset(hgtip)
         self._hgtip = hgtip
@@ -564,7 +560,7 @@ class GitHgStore(object):
             return self._changeset_data_cache[obj]
         if self.__fast_import:
             if not self._note_tree:
-                self._note_tree = one(git('log', '-1', '--format=%T',
+                self._note_tree = one(Git.iter('log', '-1', '--format=%T',
                     'refs/notes/remote-hg/git2hg'))
             if self._note_depth == -1:
                 depths = xrange(0, 20)
@@ -579,7 +575,7 @@ class GitHgStore(object):
             self._note_depth = depth
             data = self._fast_import.cat_blob(gitsha1)
         else:
-            data = git('notes', '--ref', 'remote-hg/git2hg', 'show', obj)
+            data = Git.iter('notes', '--ref', 'remote-hg/git2hg', 'show', obj)
         ret = self._changeset_data_cache[obj] = ChangesetData.parse(data)
         return ret
 
@@ -589,7 +585,7 @@ class GitHgStore(object):
     def _hg2git_fill_cache(self):
         cache = {}
         logging.info('start cache')
-        for line in git('ls-tree', '-r', self._hg2git_tree):
+        for line in Git.iter('ls-tree', '-r', self._hg2git_tree):
             mode, typ, filesha1, path = split_ls_tree(line)
             cache[path.replace('/','')] = (filesha1, intern(typ))
         logging.info('end cache')
@@ -616,7 +612,7 @@ class GitHgStore(object):
                 mode, typ, gitsha1, path = self._fast_import.ls(
                     self._hg2git_tree, sha1path(sha1))
             else:
-                ls = one(git('ls-tree', self._hg2git_tree, sha1path(sha1)))
+                ls = one(Git.iter('ls-tree', self._hg2git_tree, sha1path(sha1)))
                 if ls:
                     mode, typ, gitsha1, path = split_ls_tree(ls)
                 else:
@@ -644,7 +640,7 @@ class GitHgStore(object):
         assert not isinstance(sha1, Mark)
         gitsha1 = self._hg2git('commit', sha1)
         assert gitsha1
-        commit = git_cat_file('commit', gitsha1)
+        commit = Git.cat_file('commit', gitsha1)
         header, message = commit.split('\n\n', 1)
         commitdata = {}
         parents = []
@@ -689,7 +685,7 @@ class GitHgStore(object):
         assert gitsha1
         attrs = {}
         manifest = ''
-        for line in git('ls-tree', '-r', gitsha1):
+        for line in Git.iter('ls-tree', '-r', gitsha1):
             mode, typ, filesha1, path = split_ls_tree(line)
             if path.startswith('git/'):
                 attr = self.ATTR[mode]
@@ -914,7 +910,7 @@ class GitHgStore(object):
                         raise TypeError(node)
                     commit.filemodify(sha1path(node), mark, typ=typ)
 
-        sha1 = one(git_for_each_ref('refs/notes/remote-hg/git2hg'))
+        sha1 = one(Git.for_each_ref('refs/notes/remote-hg/git2hg'))
         git2hg_mark = self._fast_import.new_mark()
         with self._fast_import.commit(
             ref='refs/notes/remote-hg/git2hg',

@@ -7,7 +7,6 @@ from githg import (
     IOLogger,
     LazyString,
     one,
-    git,
     RevChunk,
     ChangesetInfo,
     ManifestInfo,
@@ -35,6 +34,7 @@ import random
 import subprocess
 from distutils.dir_util import mkpath
 from githg.dag import gitdag
+from git import Git
 
 #logging.getLogger('').setLevel(logging.INFO)
 
@@ -93,7 +93,7 @@ def findcommon(repo, store, heads):
     args += ['^%s' % h for h in git_known]
     args += ['%s' % h for h in git_heads]
 
-    dag = gitdag(git(*args))
+    dag = gitdag(Git.iter(*args))
     known_dag = gitdag()
     for node in git_known:
         known_dag.insert(node)
@@ -164,7 +164,7 @@ def read_cmd(fileobj):
 
 def main(args):
     try:
-        ignorecase = one(git('config', '--bool', 'core.ignorecase'))
+        ignorecase = one(Git.iter('config', '--bool', 'core.ignorecase'))
     except subprocess.CalledProcessError as e:
         if e.returncode != 1:
             raise
