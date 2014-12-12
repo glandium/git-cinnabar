@@ -475,22 +475,54 @@ class FastImportCommitHelper(object):
 git_logger = logging.getLogger('git')
 #git_logger.setLevel(logging.INFO)
 
+class GitProcess(object):
+    def __init__(self, args, stdin=None):
+        self._proc = subprocess.Popen(['git'] + list(args), stdin=stdin,
+            stdout=subprocess.PIPE)
 
-# TODO: enumerator
+    def readline(self):
+        return self._proc.stdout.readline()
+
+    def read(self, length=0):
+        return self._proc.stdout.read(length)
+
+    def __iter__(self):
+        return iter(self._proc.stdout)
+
+    def wait(self):
+        return self._proc.wait()
+
+    @property
+    def pid(self):
+        return self._proc.pid
+
+
 def git(*args, **kwargs):
-    assert not kwargs or kwargs.keys() == ['keepends']
+    assert not kwargs or not set(kwargs.keys()) - set(['keepends', 'stdin'])
     keepends = kwargs.get('keepends', False)
-    import time
+    stdin = kwargs.get('stdin', None)
+    assert stdin != subprocess.PIPE
     start = time.time()
-    out = subprocess.check_output(['git'] + list(args)).splitlines(keepends)
-    git_logger.info(LazyString(lambda: 'spent %.3fs on command: %s' % (
-        time.time() - start,
-        ' '.join(['git'] + list(args)),
+
+    proc = GitProcess(args, stdin)
+    git_logger.info(LazyString(lambda: '[%d] git %s' % (
+        proc.pid,
+        ' '.join(args),
     )))
-    if git_logger.isEnabledFor(logging.DEBUG):
-        for line in out:
-            git_logger.debug('=> %s' % repr(line))
-    return out
+    for line in proc:
+        git_logger.debug(LazyString(lambda: '[%d] => %s' % (
+            proc.pid,
+            repr(line),
+        )))
+        if not keepends:
+            line = line.rstrip('\n')
+        yield line
+
+    proc.wait()
+    git_logger.info(LazyString(lambda: '[%d] wall time: %.3fs' % (
+        proc.pid,
+        time.time() - start,
+    )))
 
 
 def git_for_each_ref(pattern, format='%(objectname)'):
@@ -502,6 +534,7 @@ def git_for_each_ref(pattern, format='%(objectname)'):
 
 
 def one(l):
+    l = list(l)
     if l:
         assert len(l) == 1
         return l[0]
@@ -679,7 +712,7 @@ class GitHgStore(object):
         assert not isinstance(sha1, Mark)
         gitsha1 = self._hg2git('commit', sha1)
         assert gitsha1
-        commit =  git('cat-file', 'commit', gitsha1, keepends=True)
+        commit = list(git('cat-file', 'commit', gitsha1, keepends=True))
         count = -1
         commitdata = {}
         parents = []
