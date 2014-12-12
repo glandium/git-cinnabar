@@ -512,7 +512,7 @@ class GitHgStore(object):
 
         # TODO: only do one git_for_each_ref
         self._hgheads_orig = set()
-        for line in Git.for_each_ref('head-*',
+        for line in Git.for_each_ref('refs/remote-hg/head-*',
                 format='%(objectname) %(refname)'):
             sha1, head = line.split()
             logging.info('%s %s' % (sha1, head))
@@ -522,13 +522,13 @@ class GitHgStore(object):
         self._hgheads = set(self._hgheads_orig)
 
         self._hg2git_tree = None
-        sha1 = one(Git.for_each_ref('hg2git'))
+        sha1 = one(Git.for_each_ref('refs/remote-hg/hg2git'))
         if sha1:
             #TODO: cat-file commit?
             self._hg2git_tree = one(Git.iter('log', '-1', '--format=%T',
                 'refs/remote-hg/hg2git'))
         # TODO: handle the situation with multiple remote repos
-        hgtip = one(Git.for_each_ref('tip'))
+        hgtip = one(Git.for_each_ref('refs/remote-hg/tip'))
         if hgtip:
             hgtip = self.hg_changeset(hgtip)
         self._hgtip = hgtip

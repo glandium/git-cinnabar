@@ -94,8 +94,6 @@ class Git(object):
 
     @classmethod
     def for_each_ref(self, pattern, format='%(objectname)'):
-        if not pattern.startswith('refs/'):
-            pattern = 'refs/remote-hg/%s' % pattern
         if format:
             return self.iter('for-each-ref', '--format', format, pattern)
         return self.iter('for-each-ref', pattern)

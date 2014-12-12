@@ -46,7 +46,8 @@ def main(args):
                 )['changeset']
             heads[ref] = head
 
-        for ref in Git.for_each_ref('head-*', format='%(refname)'):
+        for ref in Git.for_each_ref('refs/remote-hg/head-*',
+                format='%(refname)'):
             if ref not in heads:
                 Git.run('update-ref', '-d', ref)
 
