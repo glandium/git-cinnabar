@@ -23,11 +23,17 @@ class GitProcess(object):
         return iter(self._proc.stdout)
 
     def wait(self):
+        if self.stdin:
+            self.stdin.close()
         return self._proc.wait()
 
     @property
     def pid(self):
         return self._proc.pid
+
+    @property
+    def stdin(self):
+        return self._proc.stdin
 
 
 def git(*args, **kwargs):
@@ -70,10 +76,9 @@ def git_for_each_ref(pattern, format='%(objectname)'):
 class git_cat_file(object):
     def __init__(self):
         self.__proc = None
-        self.__pipe = None
 
     def __call__(self, typ, sha1):
-        self._pipe.write(sha1 + '\n')
+        self._proc.stdin.write(sha1 + '\n')
         header = self._proc.readline().split()
         if header[1] == 'missing':
             return None
@@ -84,20 +89,12 @@ class git_cat_file(object):
         return ret
 
     @property
-    def _pipe(self):
-        if not self.__pipe:
-            self._init()
-        return self.__pipe
-
-    @property
     def _proc(self):
         if not self.__proc:
             self._init()
         return self.__proc
 
     def _init(self):
-        reader, writer = os.pipe()
-        self.__pipe = os.fdopen(writer, 'w', 0)
-        self.__proc = GitProcess(['cat-file', '--batch'], stdin=reader)
+        self.__proc = GitProcess(['cat-file', '--batch'], stdin=subprocess.PIPE)
 
 git_cat_file = git_cat_file()
