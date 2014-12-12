@@ -848,8 +848,15 @@ class GitHgStore(object):
     }
 
     def _store_manifest(self, instance, mark):
+        if instance.previous_node != NULL_NODE_ID:
+            previous = self.manifest_ref(instance.previous_node)
+        else:
+            previous = None
         if self._last_manifest:
-            parents = (self.manifest_ref(instance.previous_node),)
+            if previous and previous != self._last_manifest:
+                parents = (NULL_NODE_ID, self._last_manifest)
+            else:
+                parents = ()
         elif self._hgtip:
             parents = (NULL_NODE_ID, 'refs/remote-hg/manifest^0',)
         else:
@@ -859,9 +866,8 @@ class GitHgStore(object):
             parents=parents,
             mark=mark,
         ) as commit:
-            if not self._last_manifest and \
-                    instance.previous_node != NULL_NODE_ID:
-                mode, typ, tree, path = self._fast_import.ls(self.manifest_ref(instance.previous_node))
+            if previous and self._last_manifest != previous:
+                mode, typ, tree, path = self._fast_import.ls(previous)
                 commit.filemodify('', tree, typ='tree')
             self._last_manifest = mark
             for name in instance.removed:
