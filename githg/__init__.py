@@ -533,6 +533,42 @@ def git_for_each_ref(pattern, format='%(objectname)'):
     return git('for-each-ref', pattern)
 
 
+# TODO: properly wait() for the process somehow
+class git_cat_file(object):
+    def __init__(self):
+        self.__proc = None
+        self.__pipe = None
+
+    def __call__(self, typ, sha1):
+        self._pipe.write(sha1 + '\n')
+        header = self._proc.readline().split()
+        if header[1] == 'missing':
+            return None
+        assert header[1] == typ
+        size = int(header[2])
+        ret = self._proc.read(size)
+        self._proc.read(1) # LF
+        return ret
+
+    @property
+    def _pipe(self):
+        if not self.__pipe:
+            self._init()
+        return self.__pipe
+
+    @property
+    def _proc(self):
+        if not self.__proc:
+            self._init()
+        return self.__proc
+
+    def _init(self):
+        reader, writer = os.pipe()
+        self.__pipe = os.fdopen(writer, 'w', 0)
+        self.__proc = GitProcess(['cat-file', '--batch'], stdin=reader)
+
+git_cat_file = git_cat_file()
+
 def one(l):
     l = list(l)
     if l:
@@ -712,11 +748,11 @@ class GitHgStore(object):
         assert not isinstance(sha1, Mark)
         gitsha1 = self._hg2git('commit', sha1)
         assert gitsha1
-        commit = list(git('cat-file', 'commit', gitsha1, keepends=True))
-        count = -1
+        commit = git_cat_file('commit', gitsha1)
+        header, message = commit.split('\n\n', 1)
         commitdata = {}
         parents = []
-        for count, line in enumerate(commit):
+        for line in header.splitlines():
             if line == '\n':
                 break
             typ, data = line.split(' ', 1)
@@ -736,7 +772,7 @@ class GitHgStore(object):
         ],
         [' ', metadata['extra']] if 'extra' in metadata else [],
         ['\n', metadata['files'].replace('\0', '\n')] if 'files' in metadata else [],
-        ['\n\n'], commit[count + 1:]))
+        ['\n\n'], message))
 
         hgdata = GeneratedRevChunk(sha1, changeset)
         if include_parents:
