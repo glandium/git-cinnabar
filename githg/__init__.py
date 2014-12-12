@@ -279,7 +279,7 @@ class ManifestInfo(RevChunk):
             diff_start += len(diff)
 
             start = data.rfind('\n', 0, diff.start) + 1
-            if diff.end > diff.start and data[diff.end - 1] == '\n':
+            if diff.end == 0 or data[diff.end - 1] == '\n':
                 finish = diff.end
             else:
                 finish = data.find('\n', diff.end)
