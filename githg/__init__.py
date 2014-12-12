@@ -15,7 +15,7 @@ from git.util import (
     LazyString,
     one,
 )
-from git import Git
+from git import Git, split_ls_tree
 
 import time
 import logging
@@ -291,12 +291,6 @@ class ManifestInfo(RevChunk):
         self.removed = set(before_list.keys()) - set(after_list.keys())
         self.modified = after_list
         return new
-
-
-def split_ls_tree(line):
-    mode, typ, remainder = line.split(' ', 2)
-    sha1, path = remainder.split('\t', 1)
-    return mode, typ, sha1, path
 
 
 class IOLogger(object):
@@ -585,8 +579,8 @@ class GitHgStore(object):
     def _hg2git_fill_cache(self):
         cache = {}
         logging.info('start cache')
-        for line in Git.iter('ls-tree', '-r', self._hg2git_tree):
-            mode, typ, filesha1, path = split_ls_tree(line)
+        for mode, typ, filesha1, path in Git.ls_tree(self._hg2git_tree,
+                                                     recursive=True):
             cache[path.replace('/','')] = (filesha1, intern(typ))
         logging.info('end cache')
         self._hg2git_cache = cache
@@ -612,9 +606,9 @@ class GitHgStore(object):
                 mode, typ, gitsha1, path = self._fast_import.ls(
                     self._hg2git_tree, sha1path(sha1))
             else:
-                ls = one(Git.iter('ls-tree', self._hg2git_tree, sha1path(sha1)))
+                ls = one(Git.ls_tree(self._hg2git_tree, sha1path(sha1)))
                 if ls:
-                    mode, typ, gitsha1, path = split_ls_tree(ls)
+                    mode, typ, gitsha1, path = ls
                 else:
                     return None
         assert not gitsha1 or typ == expected_type
@@ -685,8 +679,7 @@ class GitHgStore(object):
         assert gitsha1
         attrs = {}
         manifest = ''
-        for line in Git.iter('ls-tree', '-r', gitsha1):
-            mode, typ, filesha1, path = split_ls_tree(line)
+        for mode, typ, filesha1, path in Git.ls_tree(gitsha1, recursive=True):
             if path.startswith('git/'):
                 attr = self.ATTR[mode]
                 if attr:

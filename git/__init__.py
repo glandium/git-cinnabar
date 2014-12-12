@@ -10,6 +10,12 @@ git_logger = logging.getLogger('git')
 # git_logger.setLevel(logging.INFO)
 
 
+def split_ls_tree(line):
+    mode, typ, remainder = line.split(' ', 2)
+    sha1, path = remainder.split('\t', 1)
+    return mode, typ, sha1, path
+
+
 class GitProcess(object):
     def __init__(self, *args, **kwargs):
         assert not kwargs or kwargs.keys() == ['stdin']
@@ -109,5 +115,16 @@ class Git(object):
         ret = self._cat_file.stdout.read(size)
         self._cat_file.stdout.read(1)  # LF
         return ret
+
+    @classmethod
+    def ls_tree(self, treeish, path='', recursive=False):
+        if recursive:
+            iterator = self.iter('ls-tree', '-r', treeish, '--', path)
+        else:
+            iterator = self.iter('ls-tree', treeish, '--', path)
+
+        for line in iterator:
+            yield split_ls_tree(line)
+
 
 atexit.register(Git.close)

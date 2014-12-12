@@ -31,8 +31,8 @@ def main(args):
             'refs/notes/remote-hg/git2hg@{%d}' % num)
 
         def rev_list_input():
-            for line in Git.iter('ls-tree', '-r', 'refs/notes/remote-hg/git2hg'):
-                mode, typ, filesha1, path = split_ls_tree(line)
+            for mode, typ, filesha1, path in Git.ls_tree(
+                    'refs/notes/remote-hg/git2hg', recursive=True):
                 yield path.replace('/', '') + '\n'
             yield '^refs/remote-hg/manifest\n'
 
