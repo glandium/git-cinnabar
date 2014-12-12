@@ -36,14 +36,10 @@ class GitProcess(object):
         return self._proc.stdin
 
 
-def git(*args, **kwargs):
-    assert not kwargs or not set(kwargs.keys()) - set(['keepends', 'stdin'])
-    keepends = kwargs.get('keepends', False)
-    stdin = kwargs.get('stdin', None)
-    assert stdin != subprocess.PIPE
+def git(*args):
     start = time.time()
 
-    proc = GitProcess(args, stdin)
+    proc = GitProcess(args)
     git_logger.info(LazyString(lambda: '[%d] git %s' % (
         proc.pid,
         ' '.join(args),
@@ -53,8 +49,7 @@ def git(*args, **kwargs):
             proc.pid,
             repr(line),
         )))
-        if not keepends:
-            line = line.rstrip('\n')
+        line = line.rstrip('\n')
         yield line
 
     proc.wait()
