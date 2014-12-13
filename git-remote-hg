@@ -38,6 +38,19 @@ from git import Git
 
 #logging.getLogger('').setLevel(logging.INFO)
 
+
+def readbundle(fh):
+    header = changegroup.readexactly(fh, 4)
+    magic, version = header[0:2], header[2:4]
+    if magic != 'HG':
+        raise Exception('%s: not a Mercurial bundle' % fh.name)
+    if version != '10':
+        raise Exception('%s: unsupported bundle version %s' % (fh.name,
+                        version))
+    alg = changegroup.readexactly(fh, 2)
+    return changegroup.cg1unpacker(fh, alg)
+
+
 def chunks_in_changegroup(bundle):
     while True:
         chunk = changegroup.getchunk(bundle)
@@ -123,16 +136,46 @@ def findcommon(repo, store, heads):
 
     return [store.hg_changeset(h) for h in known_dag.heads]
 
-def getbundle(repo, store, heads):
-    common = findcommon(repo, store, heads)
-    logging.info('common: %s' % common)
-    bundle = repo.getbundle('bundle', heads=[unhexlify(h) for h in heads],
-        common=[unhexlify(h) for h in common])
 
-    changeset_chunks = list(chunks_in_changegroup(bundle))
-    logging.info(len(changeset_chunks))
-    manifest_chunks = list(chunks_in_changegroup(bundle))
-    logging.info(len(manifest_chunks))
+# Mercurial's bundlerepo completely unwraps bundles in $TMPDIR but we can be
+# smarter than that.
+class bundlerepo(object):
+    def __init__(self, path):
+        self._bundle = readbundle(open(path, 'r'))
+        self._changeset_chunks = list(chunks_in_changegroup(self._bundle))
+        self._manifest_chunks = list(chunks_in_changegroup(self._bundle))
+
+        heads = set()
+        for chunk in iter_chunks(self._changeset_chunks, RevChunk):
+            if chunk.parent1 in heads:
+                heads.remove(chunk.parent1)
+            if chunk.parent2 in heads:
+                heads.remove(chunk.parent2)
+            heads.add(chunk.node)
+        self._heads = set(unhexlify(h) for h in heads)
+        self._tip = unhexlify(chunk.node)
+
+    def heads(self):
+        return self._heads
+
+    def lookup(self, name):
+        assert name == 'tip'
+        return self._tip
+
+
+def getbundle(repo, store, heads):
+    if isinstance(repo, bundlerepo):
+        changeset_chunks = repo._changeset_chunks
+        manifest_chunks = repo._manifest_chunks
+        bundle = repo._bundle
+    else:
+        common = findcommon(repo, store, heads)
+        logging.info('common: %s' % common)
+        bundle = repo.getbundle('bundle', heads=[unhexlify(h) for h in heads],
+            common=[unhexlify(h) for h in common])
+
+        changeset_chunks = list(chunks_in_changegroup(bundle))
+        manifest_chunks = list(chunks_in_changegroup(bundle))
 
     for rev_chunk in store._fast_import.progress_iter('files',
             iterate_files(bundle)):
@@ -202,8 +245,12 @@ def main(args):
         url = urlunparse(('file', '', parsed_url.path, '', '', ''))
     ui_ = ui.ui()
     ui_.fout = ui_.ferr
-    repo = hg.peer(ui_, {}, url)
-    assert repo.capable('getbundle')
+    if (not parsed_url.scheme or parsed_url.scheme == 'file') and \
+            not os.path.isdir(parsed_url.path):
+        repo = bundlerepo(parsed_url.path)
+    else:
+        repo = hg.peer(ui_, {}, url)
+        assert repo.capable('getbundle')
     store = GitHgStore()
     options = {}
     logger.info(store._hgheads)
@@ -230,7 +277,6 @@ def main(args):
         elif cmd == 'list':
             # TODO: use repo.batch()
             assert not args or args == ['for-push']
-            heads = repo.heads()
             for head in repo.heads():
                 head = hexlify(head)
                 sha1 = store.changeset_ref(head)
