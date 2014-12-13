@@ -47,3 +47,9 @@ renames or addition with the same name but a different case (e.g. FOO
 (most notably on OSX or Windows).
 It now requires core.ignorecase to be false. If you cloned with an
 earlier version, you should reclone from scratch.
+
+Various other corruptions have been identified and you can detect them
+with the following command:
+  git hgdebug fsck
+
+That command will advise what to do about those corruptions.

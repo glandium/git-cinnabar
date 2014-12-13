@@ -101,6 +101,14 @@ def fsck(args):
     for commit in all_notes - seen_notes:
         report('Dangling note for commit ' + commit)
 
+    if status['broken']:
+        print 'Your git-remote-hg repository appears to be corrupted. There'
+        print 'are known issues in older revisions that have been fixed.'
+        print 'Please try running the following command to reset:'
+        print '  git hgdebug reclone'
+        print '\nPlease note this command may change the commit sha1s. Your'
+        print 'local branches will however stay untouched.'
+
     return 1 if status['broken'] else 0
 
 
@@ -149,6 +157,17 @@ def main(args):
             Git.update_ref(head, heads[head])
     elif cmd == 'fsck':
         return fsck(args)
+    elif cmd == 'reclone':
+        for ref in Git.for_each_ref('refs/remote-hg', format='%(refname)'):
+            Git.delete_ref(ref)
+        Git.delete_ref('refs/notes/remote-hg/git2hg')
+        Git.close()
+
+        for line in Git.iter('config', '--get-regexp', 'remote\..*\.url'):
+            config, url = line.split()
+            name = config[len('remote.'):-len('.url')]
+            if url.startswith('hg::'):
+                Git.run('remote', 'update', '--prune', name)
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
