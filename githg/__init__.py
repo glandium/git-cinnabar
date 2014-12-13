@@ -532,6 +532,7 @@ class GitHgStore(object):
 
         self._last_manifest = None
         self._hg2git_cache = {}
+        self._hg2git_cache_complete = False
         self._hg2git_calls = 0
         self._previously_stored = None
         self._thread = None
@@ -563,13 +564,14 @@ class GitHgStore(object):
             cache[path.replace('/','')] = (filesha1, intern(typ))
         logging.info('end cache')
         self._hg2git_cache = cache
+        self._hg2git_cache_complete = True
 
     def _hg2git(self, expected_type, sha1):
         if not self._hg2git_tree:
             return None
 
         self._hg2git_calls += 1
-        if self._hg2git_calls > 100 and not self._hg2git_cache:
+        if self._hg2git_calls > 100 and not self._hg2git_cache_complete:
             if not self._thread:
                 self._thread = threading.Thread(target=self._hg2git_fill_cache)
                 self._thread.start()
@@ -580,7 +582,7 @@ class GitHgStore(object):
             self._thread = None
 
         gitsha1, typ = self._hg2git_cache.get(sha1, (None, None))
-        if not gitsha1 and not typ:
+        if not gitsha1 and not typ and not self._hg2git_cache_complete:
             if self.__fast_import:
                 mode, typ, gitsha1, path = self._fast_import.ls(
                     self._hg2git_tree, sha1path(sha1))
@@ -589,7 +591,8 @@ class GitHgStore(object):
                 if ls:
                     mode, typ, gitsha1, path = ls
                 else:
-                    return None
+                    typ, gitsha1 = 'missing', None
+            self._hg2git_cache[sha1] = gitsha1, typ
         assert not gitsha1 or typ == expected_type
         return gitsha1
 
