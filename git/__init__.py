@@ -1,10 +1,15 @@
+from __future__ import division
 import atexit
+import contextlib
 import logging
 import os
 import subprocess
 import time
 import types
-from util import LazyString
+from util import (
+    IOLogger,
+    LazyString,
+)
 
 git_logger = logging.getLogger('git')
 # git_logger.setLevel(logging.INFO)
@@ -193,5 +198,159 @@ class Git(object):
         self.update_ref(ref, '0' * 40, oldvalue)
 
 
-
 atexit.register(Git.close)
+
+
+class Mark(int):
+    def __str__(self):
+        return ':%d' % self
+
+
+class EmptyMark(Mark):
+    pass
+
+
+class FastImport(IOLogger):
+    def __init__(self, reader, writer):
+        super(FastImport, self).__init__(logging.getLogger('fast-import'),
+                                         reader, writer)
+        self._last_mark = 0
+#        reader, writer = os.pipe()
+#        self._reader = os.fdopen(reader)
+#        self._proc = subprocess.Popen(['git', 'fast-import',
+#            '--cat-blob-fd=%d' % writer], stdin=subprocess.PIPE)
+#        self._writer = self._proc.stdin
+
+        self.write(
+            "feature force\n"
+            "feature ls\n"
+            "feature done\n"
+            "feature notes\n"
+        )
+
+    def progress_iter(self, what, iter, step=1000):
+        count = 0
+        for count, item in enumerate(iter, start=1):
+            if count % step == 0:
+                self.write('progress %d %s\n' % (count, what))
+#                print hp.heap()
+            yield item
+        if count % step:
+            self.write('progress %d %s\n' % (count, what))
+
+    def read(self, length=0, level=logging.INFO):
+        self.flush()
+        return super(FastImport, self).read(length, level)
+
+    def readline(self, level=logging.INFO):
+        self.flush()
+        return super(FastImport, self).readline(level)
+
+    def close(self):
+        self.write('done\n')
+        self.flush()
+#        self._proc.wait()
+
+    def ls(self, dataref, path=''):
+        assert not path.endswith('/')
+        assert dataref and not isinstance(dataref, EmptyMark)
+        self.write('ls %s %s\n' % (dataref, path))
+        line = self.readline()
+        if line.startswith('missing '):
+            return None, None, None, None
+        return split_ls_tree(line[:-1])
+
+    def cat_blob(self, dataref):
+        assert dataref and not isinstance(dataref, EmptyMark)
+        self.write('cat-blob %s\n' % dataref)
+        sha1, blob, size = self.readline().split()
+        assert blob == 'blob'
+        size = int(size)
+        content = self.read(size, level=logging.DEBUG)
+        lf = self.read(1)
+        assert lf == '\n'
+        return content
+
+    def new_mark(self):
+        self._last_mark += 1
+        return EmptyMark(self._last_mark)
+
+    def cmd_mark(self, mark):
+        if mark:
+            self.write('mark :%d\n' % mark)
+
+    def cmd_data(self, data):
+        self.write('data %d\n' % len(data))
+        self.write(data, level=logging.DEBUG)
+        self.write('\n')
+
+    def put_blob(self, data='', mark=0):
+        self.write('blob\n')
+        self.cmd_mark(mark)
+        self.cmd_data(data)
+
+    @contextlib.contextmanager
+    def commit(self, ref, committer='<remote-hg@git>', date=(0, 0), message='',
+               parents=(), mark=0):
+        helper = FastImportCommitHelper(self)
+        yield helper
+
+        self.write('commit %s\n' % ref)
+        self.cmd_mark(mark)
+        epoch, utcoffset = date
+        # TODO: properly handle errors, like from the committer being badly
+        # formatted.
+        self.write('committer %s %d %s%02d%02d\n' % (
+            committer,
+            epoch,
+            '+' if utcoffset >= 0 else '-',
+            abs(utcoffset) // 60,
+            abs(utcoffset) % 60,
+        ))
+        self.cmd_data(message)
+        for count, parent in enumerate(parents):
+            self.write('%s %s\n' % (
+                'from' if count == 0 else 'merge',
+                parent,
+            ))
+        helper.apply()
+        self.write('\n')
+
+
+class FastImportCommitHelper(object):
+    def __init__(self, fast_import):
+        self._fast_import = fast_import
+        self._command_queue = []
+
+    def write(self, data):
+        self._command_queue.append((self._fast_import.write, data))
+
+    def cmd_data(self, data):
+        self._command_queue.append((self._fast_import.cmd_data, data))
+
+    def filedelete(self, path):
+        self.write('D %s\n' % path)
+
+    MODE = {
+        'regular': '644',
+        'exec': '755',
+        'tree': '040000',
+        'symlink': '120000',
+        'commit': '160000',
+    }
+
+    def filemodify(self, path, sha1, typ='regular'):
+        assert sha1 and not isinstance(sha1, EmptyMark)
+        self.write('M %s %s %s\n' % (
+            self.MODE[typ],
+            sha1,
+            path,
+        ))
+
+    def notemodify(self, commitish, note):
+        self.write('N inline %s\n' % commitish)
+        self.cmd_data(note)
+
+    def apply(self):
+        for fn, arg in self._command_queue:
+            fn(arg)

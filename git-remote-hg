@@ -2,7 +2,6 @@
 
 from __future__ import division
 from githg import (
-    FastImport,
     GitHgStore,
     IOLogger,
     LazyString,
@@ -34,7 +33,10 @@ import random
 import subprocess
 from distutils.dir_util import mkpath
 from githg.dag import gitdag
-from git import Git
+from git import (
+    FastImport,
+    Git,
+)
 
 #logging.getLogger('').setLevel(logging.INFO)
 
