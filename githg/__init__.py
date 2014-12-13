@@ -12,6 +12,7 @@ import urllib
 import threading
 from collections import OrderedDict
 from git.util import (
+    IOLogger,
     LazyString,
     one,
 )
@@ -295,30 +296,6 @@ class ManifestInfo(RevChunk):
         self.removed = set(before_list.keys()) - set(after_list.keys())
         self.modified = after_list
         return new
-
-
-class IOLogger(object):
-    def __init__(self, logger, reader, writer=None):
-        self._reader = reader
-        self._writer = writer or reader
-        self._logger = logger
-
-    def read(self, length=0, level=logging.INFO):
-        ret = self._reader.read(length)
-        self._logger.log(level, LazyString(lambda: '<= %s' % repr(ret)))
-        return ret
-
-    def readline(self, level=logging.INFO):
-        ret = self._reader.readline()
-        self._logger.log(level, LazyString(lambda: '<= %s' % repr(ret)))
-        return ret
-
-    def write(self, data, level=logging.INFO):
-        self._logger.log(level, LazyString(lambda: '=> %s' % repr(data)))
-        return self._writer.write(data)
-
-    def flush(self):
-        self._writer.flush()
 
 
 class FastImport(IOLogger):
