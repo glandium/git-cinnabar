@@ -209,7 +209,8 @@ class RevDiff(object):
 class ChangesetInfo(RevChunk):
     def init(self, previous_chunk):
         super(ChangesetInfo, self).init(previous_chunk)
-        lines = self.data.splitlines()
+        metadata, self.message = self.data.split('\n\n', 1)
+        lines = metadata.splitlines()
         self.manifest, self.committer, date = lines[:3]
         date = date.split(' ', 2)
         self.date = int(date[0])
@@ -218,11 +219,7 @@ class ChangesetInfo(RevChunk):
             self.extra = date[2]
         else:
             self.extra = ''
-        for idx in xrange(3, len(lines) + 1):
-            if not lines[idx]:
-                break
-        self.files = lines[3:idx]
-        self.message = '\n'.join(lines[idx + 1:])
+        self.files = lines[3:]
 
 
 class ManifestLine(object):
