@@ -409,15 +409,11 @@ class GitHgStore(object):
 
         gitsha1, typ = self._hg2git_cache.get(sha1, (None, None))
         if not gitsha1 and not typ and not self._hg2git_cache_complete:
-            if self.__fast_import:
-                mode, typ, gitsha1, path = self._fast_import.ls(
-                    self._hg2git_tree, sha1path(sha1))
+            ls = one(Git.ls_tree(self._hg2git_tree, sha1path(sha1)))
+            if ls:
+                mode, typ, gitsha1, path = ls
             else:
-                ls = one(Git.ls_tree(self._hg2git_tree, sha1path(sha1)))
-                if ls:
-                    mode, typ, gitsha1, path = ls
-                else:
-                    typ, gitsha1 = 'missing', None
+                typ, gitsha1 = 'missing', None
             self._hg2git_cache[sha1] = gitsha1, typ
         assert not gitsha1 or typ == expected_type
         return gitsha1

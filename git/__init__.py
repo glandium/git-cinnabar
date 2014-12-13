@@ -74,8 +74,13 @@ class GitProcess(object):
 class Git(object):
     _cat_file = None
     _update_ref = None
+    _fast_import = None
     _diff_tree = {}
     _notes_depth = {}
+
+    @classmethod
+    def register_fast_import(self, fast_import):
+        self._fast_import = fast_import
 
     @classmethod
     def close(self):
@@ -88,6 +93,9 @@ class Git(object):
         for diff_tree in self._diff_tree.itervalues():
             diff_tree.wait()
         self._diff_tree = {}
+        if self._fast_import:
+            self._fast_import.close()
+            self._fast_import = None
 
     @classmethod
     def iter(self, *args, **kwargs):
@@ -131,7 +139,8 @@ class Git(object):
         assert header[1] == typ
         size = int(header[2])
         ret = self._cat_file.stdout.read(size)
-        self._cat_file.stdout.read(1)  # LF
+        lf = self._cat_file.stdout.read(1)
+        assert lf == '\n'
         return ret
 
     @classmethod
@@ -139,6 +148,11 @@ class Git(object):
         if recursive:
             iterator = self.iter('ls-tree', '-r', treeish, '--', path)
         else:
+            if not path.endswith('/') and self._fast_import:
+                ls = self._fast_import.ls(treeish, path)
+                if any(l is not None for l in ls):
+                    yield ls
+                return
             iterator = self.iter('ls-tree', treeish, '--', path)
 
         for line in iterator:
@@ -211,15 +225,21 @@ class EmptyMark(Mark):
 
 
 class FastImport(IOLogger):
-    def __init__(self, reader, writer):
+    def __init__(self, reader=None, writer=None):
+        assert bool(reader) == bool(writer)
+
+        if not reader and not writer:
+            reader, writer = os.pipe()
+            reader = os.fdopen(reader, 'r', 0)
+            self._proc = GitProcess('fast-import', '--cat-blob-fd=%d' % writer,
+                                    '--quiet', stdin=subprocess.PIPE)
+            writer = self._proc.stdin
+        else:
+            self._proc = None
+
         super(FastImport, self).__init__(logging.getLogger('fast-import'),
                                          reader, writer)
         self._last_mark = 0
-#        reader, writer = os.pipe()
-#        self._reader = os.fdopen(reader)
-#        self._proc = subprocess.Popen(['git', 'fast-import',
-#            '--cat-blob-fd=%d' % writer], stdin=subprocess.PIPE)
-#        self._writer = self._proc.stdin
 
         self.write(
             "feature force\n"
@@ -249,7 +269,10 @@ class FastImport(IOLogger):
     def close(self):
         self.write('done\n')
         self.flush()
-#        self._proc.wait()
+        if self._proc:
+            self._proc.wait()
+        if Git._fast_import == self:
+            Git._fast_import = None
 
     def ls(self, dataref, path=''):
         assert not path.endswith('/')
