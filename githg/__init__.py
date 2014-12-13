@@ -478,7 +478,7 @@ class ChangesetData(object):
 
 
 def sha1path(sha1, depth=2):
-    i = 0
+    i = -1
     return '/'.join(
         [sha1[i*2:i*2+2] for i in xrange(0, depth)] + [sha1[i*2+2:]])
 
