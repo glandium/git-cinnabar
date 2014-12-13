@@ -15,7 +15,11 @@ from git.util import (
     LazyString,
     one,
 )
-from git import Git, split_ls_tree
+from git import (
+    Git,
+    split_ls_tree,
+    sha1path,
+)
 
 import time
 import logging
@@ -477,12 +481,6 @@ class ChangesetData(object):
             if k in data)
 
 
-def sha1path(sha1, depth=2):
-    i = -1
-    return '/'.join(
-        [sha1[i*2:i*2+2] for i in xrange(0, depth)] + [sha1[i*2+2:]])
-
-
 class Mark(int):
     def __str__(self):
         return ':%d' % self
@@ -501,8 +499,6 @@ class GitHgStore(object):
         self._git_files = {}
 
         self._changeset_data_cache = {}
-        self._note_tree = None
-        self._note_depth = -1
 
         self.STORE = {
             ChangesetInfo: (self._store_changeset, self.changeset, self._changesets, 'commit'),
@@ -552,24 +548,7 @@ class GitHgStore(object):
     def read_changeset_data(self, obj):
         if obj in self._changeset_data_cache:
             return self._changeset_data_cache[obj]
-        if self.__fast_import:
-            if not self._note_tree:
-                self._note_tree = one(Git.iter('log', '-1', '--format=%T',
-                    'refs/notes/remote-hg/git2hg'))
-            if self._note_depth == -1:
-                depths = xrange(0, 20)
-            else:
-                depths = [self._note_depth]
-            for depth in depths:
-                mode, typ, gitsha1, path = self._fast_import.ls(
-                    self._note_tree, sha1path(obj, depth))
-                if gitsha1:
-                    break
-            assert gitsha1
-            self._note_depth = depth
-            data = self._fast_import.cat_blob(gitsha1)
-        else:
-            data = Git.iter('notes', '--ref', 'remote-hg/git2hg', 'show', obj)
+        data = Git.read_note('refs/notes/remote-hg/git2hg', obj)
         ret = self._changeset_data_cache[obj] = ChangesetData.parse(data)
         return ret
 

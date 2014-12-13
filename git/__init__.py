@@ -10,6 +10,12 @@ git_logger = logging.getLogger('git')
 # git_logger.setLevel(logging.INFO)
 
 
+def sha1path(sha1, depth=2):
+    i = -1
+    return '/'.join(
+        [sha1[i*2:i*2+2] for i in xrange(0, depth)] + [sha1[i*2+2:]])
+
+
 def split_ls_tree(line):
     mode, typ, remainder = line.split(' ', 2)
     sha1, path = remainder.split('\t', 1)
@@ -62,6 +68,7 @@ class GitProcess(object):
 
 class Git(object):
     _cat_file = None
+    _notes_depth = {}
 
     @classmethod
     def close(self):
@@ -123,6 +130,22 @@ class Git(object):
 
         for line in iterator:
             yield split_ls_tree(line)
+
+    @classmethod
+    def read_note(self, notes_ref, sha1):
+        if not notes_ref.startswith('refs/'):
+            notes_ref = 'refs/notes/' + notes_ref
+        if notes_ref in self._notes_depth:
+            depths = (self._notes_depth[notes_ref],)
+        else:
+            depths = xrange(0, 20)
+        for depth in depths:
+            blob = self.cat_file('blob', '%s:%s' % (notes_ref,
+                                                    sha1path(sha1, depth)))
+            if blob:
+                self._notes_depth[notes_ref] = depth
+                return blob
+        return None
 
 
 atexit.register(Git.close)

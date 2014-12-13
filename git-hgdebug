@@ -42,7 +42,7 @@ def main(args):
         heads = {}
         for head in dag.heads:
             ref = 'refs/remote-hg/head-%s' % ChangesetData.parse(
-                Git.iter('notes', '--ref', 'remote-hg/git2hg', 'show', head)
+                Git.read_note('remote-hg/git2hg', head)
                 )['changeset']
             heads[ref] = head
 
