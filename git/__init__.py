@@ -69,6 +69,7 @@ class GitProcess(object):
 class Git(object):
     _cat_file = None
     _update_ref = None
+    _diff_tree = {}
     _notes_depth = {}
 
     @classmethod
@@ -79,6 +80,9 @@ class Git(object):
         if self._update_ref:
             self._update_ref.wait()
             self._update_ref = None
+        for diff_tree in self._diff_tree.itervalues():
+            diff_tree.wait()
+        self._diff_tree = {}
 
     @classmethod
     def iter(self, *args, **kwargs):
@@ -134,6 +138,27 @@ class Git(object):
 
         for line in iterator:
             yield split_ls_tree(line)
+
+    @classmethod
+    def diff_tree(self, treeish1, treeish2, path='', recursive=False):
+        key = (path, recursive)
+        if not key in self._diff_tree:
+            args = ['--stdin', '--', path]
+            if recursive:
+                args.insert(0, '-r')
+            self._diff_tree[key] = GitProcess('diff-tree', *args,
+                                              stdin=subprocess.PIPE)
+        diff_tree = self._diff_tree[key]
+        diff_tree.stdin.write('%s %s\n\n' % (treeish2, treeish1))
+        line = diff_tree.stdout.readline().rstrip('\n')  # First line is a header
+        while line:
+            line = diff_tree.stdout.readline().rstrip('\n')
+            if not line:
+                break
+            mode_before, mode_after, sha1_before, sha1_after, remainder = line.split(' ', 4)
+            status, path = remainder.split('\t', 1)
+            yield (mode_before[1:], mode_after, sha1_before, sha1_after,
+                status, path)
 
     @classmethod
     def read_note(self, notes_ref, sha1):
