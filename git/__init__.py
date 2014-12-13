@@ -68,6 +68,7 @@ class GitProcess(object):
 
 class Git(object):
     _cat_file = None
+    _update_ref = None
     _notes_depth = {}
 
     @classmethod
@@ -75,6 +76,9 @@ class Git(object):
         if self._cat_file:
             self._cat_file.wait()
             self._cat_file = None
+        if self._update_ref:
+            self._update_ref.wait()
+            self._update_ref = None
 
     @classmethod
     def iter(self, *args, **kwargs):
@@ -146,6 +150,23 @@ class Git(object):
                 self._notes_depth[notes_ref] = depth
                 return blob
         return None
+
+    @classmethod
+    def update_ref(self, ref, newvalue, oldvalue=None):
+        if not self._update_ref:
+            self._update_ref = GitProcess('update-ref', '--stdin',
+                                          stdin=subprocess.PIPE)
+
+        if oldvalue is None:
+            update = 'update %s %s\n' % (ref, newvalue)
+        else:
+            update = 'update %s %s %s\n' % (ref, newvalue, oldvalue)
+        self._update_ref.stdin.write(update)
+
+    @classmethod
+    def delete_ref(self, ref, oldvalue=None):
+        self.update_ref(ref, '0' * 40, oldvalue)
+
 
 
 atexit.register(Git.close)

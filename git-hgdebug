@@ -25,10 +25,13 @@ def main(args):
         num = int(args[0])
 
         for ref in ('tip', 'manifest', 'hg2git'):
-            Git.run('update-ref', 'refs/remote-hg/%s' % ref,
+            Git.update_ref('refs/remote-hg/%s' % ref,
                 'refs/remote-hg/%s@{%d}' % (ref, num))
-        Git.run('update-ref', 'refs/notes/remote-hg/git2hg',
+        Git.update_ref('refs/notes/remote-hg/git2hg',
             'refs/notes/remote-hg/git2hg@{%d}' % num)
+
+        # Ensure all the above has been applied before doing ls-tree below.
+        Git.close()
 
         def rev_list_input():
             for mode, typ, filesha1, path in Git.ls_tree(
@@ -49,10 +52,10 @@ def main(args):
         for ref in Git.for_each_ref('refs/remote-hg/head-*',
                 format='%(refname)'):
             if ref not in heads:
-                Git.run('update-ref', '-d', ref)
+                Git.delete_ref(ref)
 
         for head in heads:
-            Git.run('update-ref', head, heads[head])
+            Git.update_ref(head, heads[head])
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
