@@ -69,7 +69,17 @@ def fsck(args):
 
         hg_changeset = store.changeset(changeset, include_parents=True)
         if hg_changeset.node != hg_changeset.sha1:
-            report('Sha1 mismatch for changeset %s' % changeset)
+            if changeset in (
+                '8c557b7c03a4a753e5c163038f04862e9f65fce1',
+                'ffdee4a4eb7fc7cae80dfc4cb2fe0c3178773dcf',
+                'fca5ddbaa12af32fec357270b3da336c7817054b',
+                '725e3d3145d82d1a9b23160cec3d58d22f398899',
+                'a73a785ea8e1624a57c2e9479345b5cd2a953127',
+            ):
+                print 'Ignoring known sha1 mismatch for changeset %s' % (
+                    changeset)
+            else:
+                report('Sha1 mismatch for changeset %s' % changeset)
 
         manifest = changeset_data['manifest']
         if manifest in seen_manifests:
@@ -108,6 +118,8 @@ def fsck(args):
         print '  git hgdebug reclone'
         print '\nPlease note this command may change the commit sha1s. Your'
         print 'local branches will however stay untouched.'
+        print 'Please report any corruption that fsck would detect after a'
+        print 'reclone.'
 
     return 1 if status['broken'] else 0
 
