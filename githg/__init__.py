@@ -52,95 +52,31 @@ NULL_NODE_ID = '0' * 40
 CHECK_ALL_NODE_IDS = False
 CHECK_MANIFESTS = False
 
-RE_GIT_AUTHOR = re.compile('^(.*?) ?\<(.*?)(?:\>(.*))?$')
-
-RE_GIT_SANITIZE_AUTHOR = re.compile('[<>\n]')
-
-RE_GIT_AUTHOR_EXTRA = re.compile('^(.*?)\ ext:\((.*)\) <(.*)\>$')
-
-def get_valid_git_username_email(name):
-    r"""Sanitize usernames and emails to fit git's restrictions.
-
-    The following is taken from the man page of git's fast-import
-    command:
-
-        [...] Likewise LF means one (and only one) linefeed [...]
-
-        committer
-            The committer command indicates who made this commit,
-            and when they made it.
-
-            Here <name> is the person's display name (for example
-            "Com M Itter") and <email> is the person's email address
-            ("cm@example.com[1]"). LT and GT are the literal
-            less-than (\x3c) and greater-than (\x3e) symbols. These
-            are required to delimit the email address from the other
-            fields in the line. Note that <name> and <email> are
-            free-form and may contain any sequence of bytes, except
-            LT, GT and LF. <name> is typically UTF-8 encoded.
-
-    Accordingly, this function makes sure that there are none of the
-    characters <, >, or \n in any string which will be used for
-    a git username or email. Before this, it first removes left
-    angle brackets and spaces from the beginning, and right angle
-    brackets and spaces from the end, of this string, to convert
-    such things as " <john@doe.com> " to "john@doe.com" for
-    convenience.
-
-    TESTS:
-
-    >>> from mercurial.ui import ui
-    >>> g = GitHandler('', ui()).get_valid_git_username_email
-    >>> g('John Doe')
-    'John Doe'
-    >>> g('john@doe.com')
-    'john@doe.com'
-    >>> g(' <john@doe.com> ')
-    'john@doe.com'
-    >>> g('    <random<\n<garbage\n>  > > ')
-    'random???garbage?'
-    >>> g('Typo in hgrc >but.hg-git@handles.it.gracefully>')
-    'Typo in hgrc ?but.hg-git@handles.it.gracefully'
-    """
-    return RE_GIT_SANITIZE_AUTHOR.sub('?', name.lstrip('< ').rstrip('> '))
+RE_GIT_AUTHOR = re.compile('^(?P<name>.*?) ?(?:\<(?P<email>.*?)\>)')
 
 def get_git_author(author):
     # check for git author pattern compliance
     a = RE_GIT_AUTHOR.match(author)
-
+    cleanup = lambda x: x.replace('<', '').replace('>', '')
     if a:
-        name = get_valid_git_username_email(a.group(1))
-        email = get_valid_git_username_email(a.group(2))
-        if a.group(3) != None and len(a.group(3)) != 0:
-            name += ' ext:(' + urllib.quote(a.group(3)) + ')'
-        author = get_valid_git_username_email(name) + ' <' + get_valid_git_username_email(email) + '>'
-    elif '@' in author:
-        author = get_valid_git_username_email(author) + ' <' + get_valid_git_username_email(author) + '>'
-    else:
-        author = get_valid_git_username_email(author) + ' <none@none>'
+        name = cleanup(a.group('name'))
+        email = a.group('email')
+        return '%s <%s>' % (cleanup(a.group('name')),
+                            cleanup(a.group('email')))
+    if '@' in author:
+        return ' <%s>' % cleanup(author)
+    return '%s <>' % cleanup(author)
 
-#    if 'author' in ctx.extra():
-#        author = "".join(apply_delta(author, ctx.extra()['author']))
-    return author
 
 def get_hg_author(author):
-    if ' ext:' in author:
-        m = RE_GIT_AUTHOR_EXTRA.match(author)
-        if m:
-            name = m.group(1)
-            ex = urllib.unquote(m.group(2))
-            email = m.group(3)
-            return name + ' <' + email + '>' + ex
-
-    if ' <none@none>' in author:
-        return author[:-12]
-
     a = RE_GIT_AUTHOR.match(author)
-    name = a.group(1)
-    email = a.group(2)
-    if name == email:
-        return email
-    return author
+    assert a
+    name = a.group('name')
+    email = a.group('email')
+    if name and email:
+        return author
+    return name or email
+
 
 revchunk_log = logging.getLogger('revchunks')
 #revchunk_log.setLevel(logging.DEBUG)
@@ -297,7 +233,7 @@ class ManifestInfo(RevChunk):
 
 
 class ChangesetData(object):
-    FIELDS = ('changeset', 'manifest', 'extra', 'files')
+    FIELDS = ('changeset', 'manifest', 'author', 'extra', 'files')
 
     @staticmethod
     def parse(s):
@@ -449,12 +385,16 @@ class GitHgStore(object):
                 commitdata[typ] = data
         metadata = self.read_changeset_data(gitsha1)
         author, date, utcoffset = commitdata['author'].rsplit(' ', 2)
+        if 'author' in metadata:
+            author = metadata['author']
+        else:
+            author = get_hg_author(author)
         utcoffset = int(utcoffset)
         utcoffset = (utcoffset // 100) * 60 + (utcoffset % 100)
 
         changeset = ''.join(chain([
             metadata['manifest'], '\n',
-            get_hg_author(author), '\n',
+            author, '\n',
             date, ' ', str(-utcoffset * 60)
         ],
         [' ', metadata['extra']] if 'extra' in metadata else [],
@@ -563,9 +503,6 @@ class GitHgStore(object):
     def _git_date(self, changeset):
         return changeset.date, -changeset.utcoffset // 60
 
-    def _git_committer(self, committer):
-        return get_git_author(committer)
-
     def _store_changeset(self, instance, mark):
         parents = [NULL_NODE_ID]
         parents += [
@@ -573,11 +510,12 @@ class GitHgStore(object):
             for p in (instance.parent1, instance.parent2)
             if p != NULL_NODE_ID
         ]
+        author = get_git_author(instance.committer)
         with self._fast_import.commit(
             ref='refs/remote-hg/tip',
             date=self._git_date(instance),
             message=instance.message,
-            committer=self._git_committer(instance.committer),
+            committer=author,
             parents=parents,
             mark=mark,
         ) as commit:
@@ -594,6 +532,8 @@ class GitHgStore(object):
         self._changeset_metadata[instance.node] = (
             instance.extra,
             [intern(f) for f in instance.files],
+            instance.committer if get_hg_author(author) != instance.committer
+                else None,
         )
 
     TYPE = {
@@ -718,11 +658,13 @@ class GitHgStore(object):
                     'changeset': node,
                     'manifest': self._manifests_by_changeset[node],
                 }
-                extra, files = self._changeset_metadata[node]
+                extra, files, author = self._changeset_metadata[node]
                 if extra:
                     data['extra'] = extra
                 if files:
                     data['files'] = '\0'.join(files)
+                if author:
+                    data['author'] = author
                 commit.notemodify(mark, ChangesetData.dump(data))
         if sha1:
             with self._fast_import.commit(ref='refs/notes/remote-hg/git2hg') as commit:
