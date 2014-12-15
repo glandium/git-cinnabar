@@ -390,12 +390,14 @@ class GitHgStore(object):
         else:
             author = get_hg_author(author)
         utcoffset = int(utcoffset)
+        sign = -cmp(utcoffset, 0)
+        utcoffset = abs(utcoffset)
         utcoffset = (utcoffset // 100) * 60 + (utcoffset % 100)
 
         changeset = ''.join(chain([
             metadata['manifest'], '\n',
             author, '\n',
-            date, ' ', str(-utcoffset * 60)
+            date, ' ', str(sign * utcoffset * 60)
         ],
         [' ', metadata['extra']] if 'extra' in metadata else [],
         ['\n', metadata['files'].replace('\0', '\n')] if 'files' in metadata else [],
@@ -501,7 +503,8 @@ class GitHgStore(object):
         return result
 
     def _git_date(self, changeset):
-        return changeset.date, -changeset.utcoffset // 60
+        sign = -cmp(changeset.utcoffset, 0)
+        return changeset.date, sign * (abs(changeset.utcoffset) // 60)
 
     def _store_changeset(self, instance, mark):
         parents = [NULL_NODE_ID]
