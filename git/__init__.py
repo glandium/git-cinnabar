@@ -315,24 +315,30 @@ class FastImport(IOLogger):
         self.cmd_mark(mark)
         self.cmd_data(data)
 
+    @staticmethod
+    def _format_committer(author):
+        author, epoch, utcoffset = author
+        return '%s %d %s%02d%02d' % (
+            author,
+            epoch,
+            '+' if utcoffset >= 0 else '-',
+            abs(utcoffset) // 60,
+            abs(utcoffset) % 60,
+        )
+
     @contextlib.contextmanager
-    def commit(self, ref, committer='<remote-hg@git>', date=(0, 0), message='',
-               parents=(), mark=0):
+    def commit(self, ref, committer=('<remote-hg@git>', 0, 0), author=None,
+               message='', parents=(), mark=0):
         helper = FastImportCommitHelper(self)
         yield helper
 
         self.write('commit %s\n' % ref)
         self.cmd_mark(mark)
-        epoch, utcoffset = date
         # TODO: properly handle errors, like from the committer being badly
         # formatted.
-        self.write('committer %s %d %s%02d%02d\n' % (
-            committer,
-            epoch,
-            '+' if utcoffset >= 0 else '-',
-            abs(utcoffset) // 60,
-            abs(utcoffset) % 60,
-        ))
+        if author:
+            self.write('author %s\n' % self._format_committer(author))
+        self.write('committer %s\n' % self._format_committer(committer))
         self.cmd_data(message)
         for count, parent in enumerate(parents):
             self.write('%s %s\n' % (

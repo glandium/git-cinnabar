@@ -152,9 +152,9 @@ class ChangesetInfo(RevChunk):
         self.date = int(date[0])
         self.utcoffset = int(date[1])
         if len(date) == 3:
-            self.extra = date[2]
+            self.extra = ChangesetData.parse_extra(date[2])
         else:
-            self.extra = ''
+            self.extra = {}
         self.files = lines[3:]
 
 
@@ -236,15 +236,39 @@ class ChangesetData(object):
     FIELDS = ('changeset', 'manifest', 'author', 'extra', 'files')
 
     @staticmethod
+    def parse_extra(s):
+        return dict(i.split(':', 1) if ':' in i else (i, None)
+                    for i in s.split('\0'))
+
+    @staticmethod
     def parse(s):
         if isinstance(s, types.StringType):
             s = s.splitlines()
-        return { k: v for k, v in (l.split(' ', 1) for l in s) }
+        data = { k: v for k, v in (l.split(' ', 1) for l in s) }
+        if 'extra' in data:
+            data['extra'] = ChangesetData.parse_extra(data['extra'])
+        if 'files' in data:
+            data['files'] = data['files'].split('\0')
+        return data
+
+    @staticmethod
+    def dump_extra(data):
+        return '\0'.join(':'.join(i) if i[1] is not None else ''
+                         for i in sorted(data.items()))
 
     @staticmethod
     def dump(data):
-        return '\n'.join('%s %s' % (k, data[k]) for k in ChangesetData.FIELDS
-            if k in data)
+        def serialize(data):
+            for k in ChangesetData.FIELDS:
+                if k not in data or not data[k]:
+                    continue
+                if k == 'extra':
+                    yield k, ChangesetData.dump_extra(data[k])
+                elif k == 'files':
+                    yield k, '\0'.join(data[k])
+                else:
+                    yield k, data[k]
+        return '\n'.join('%s %s' % s for s in serialize(data))
 
 
 class GitHgStore(object):
@@ -398,13 +422,19 @@ class GitHgStore(object):
         else:
             author = get_hg_author(author)
 
+        extra = metadata.get('extra', {})
+        if 'committer' not in extra and commitdata['committer'] != commitdata['author']:
+            committer = self.hg_author_info(commitdata['committer'])
+            extra['committer'] = '%s %s %d' % committer
+        if extra:
+            extra = ' ' + ChangesetData.dump_extra(extra)
         changeset = ''.join(chain([
             metadata['manifest'], '\n',
             author, '\n',
             date, ' ', str(utcoffset)
         ],
-        [' ', metadata['extra']] if 'extra' in metadata else [],
-        ['\n', metadata['files'].replace('\0', '\n')] if 'files' in metadata else [],
+        [extra] if extra else [],
+        ['\n', '\n'.join(metadata['files'])] if 'files' in metadata else [],
         ['\n\n'], message))
 
         hgdata = GeneratedRevChunk(sha1, changeset)
@@ -506,9 +536,11 @@ class GitHgStore(object):
         self._previously_stored = instance
         return result
 
-    def _git_date(self, changeset):
-        sign = -cmp(changeset.utcoffset, 0)
-        return changeset.date, sign * (abs(changeset.utcoffset) // 60)
+    def _git_committer(self, committer, date, utcoffset):
+        utcoffset = int(utcoffset)
+        sign = -cmp(utcoffset, 0)
+        return (get_git_author(committer), int(date),
+                sign * (abs(utcoffset) // 60))
 
     def _store_changeset(self, instance, mark):
         parents = [NULL_NODE_ID]
@@ -517,12 +549,25 @@ class GitHgStore(object):
             for p in (instance.parent1, instance.parent2)
             if p != NULL_NODE_ID
         ]
-        author = get_git_author(instance.committer)
+        author = self._git_committer(instance.committer, instance.date,
+                                     instance.utcoffset)
+        extra = instance.extra
+        if extra.get('committer'):
+            committer = extra['committer']
+            if committer[-1] == '>':
+                committer = committer, author[1], author[2]
+            else:
+                committer = committer.rsplit(' ', 2)
+                committer = self._git_committer(*committer)
+                extra = dict(instance.extra)
+                del extra['committer']
+        else:
+            committer = author
         with self._fast_import.commit(
             ref='refs/remote-hg/tip',
-            date=self._git_date(instance),
             message=instance.message,
-            committer=author,
+            committer=committer,
+            author=author,
             parents=parents,
             mark=mark,
         ) as commit:
@@ -536,12 +581,16 @@ class GitHgStore(object):
         if instance.parent2 in self._hgheads:
             self._hgheads.remove(instance.parent2)
         self._hgheads.add(instance.node)
-        self._changeset_metadata[instance.node] = (
-            instance.extra,
-            [intern(f) for f in instance.files],
-            instance.committer if get_hg_author(author) != instance.committer
-                else None,
-        )
+        data = self._changeset_metadata[instance.node] = {
+            'changeset': instance.node,
+            'manifest': instance.manifest,
+        }
+        if extra:
+            data['extra'] = extra
+        if instance.files:
+            data['files'] = instance.files
+        if author[0] != instance.committer:
+            data['author'] = instance.committer
 
     TYPE = {
         '': 'regular',
@@ -661,17 +710,7 @@ class GitHgStore(object):
             for node, mark in self._changesets.iteritems():
                 if isinstance(mark, types.StringType):
                     continue
-                data = {
-                    'changeset': node,
-                    'manifest': self._manifests_by_changeset[node],
-                }
-                extra, files, author = self._changeset_metadata[node]
-                if extra:
-                    data['extra'] = extra
-                if files:
-                    data['files'] = '\0'.join(files)
-                if author:
-                    data['author'] = author
+                data = self._changeset_metadata[node]
                 commit.notemodify(mark, ChangesetData.dump(data))
         if sha1:
             with self._fast_import.commit(ref='refs/notes/remote-hg/git2hg') as commit:
