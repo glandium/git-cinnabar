@@ -57,6 +57,18 @@ def fsck(args):
         seen_notes.add(node)
 
         changeset_data = store.read_changeset_data(node)
+        if 'extra' in changeset_data:
+            extra = dict(i.split(':', 1)
+                         for i in changeset_data['extra'].split('\0'))
+            if 'committer' in extra:
+                header, message = Git.cat_file('commit', node).split('\n\n', 1)
+                header = dict(l.split(' ', 1) for l in header.splitlines())
+                committer = '%s %s %d' % store.hg_author_info(
+                    header['committer'])
+                if committer != extra['committer']:
+                    report('Committer mismatch between commit and metadata for'
+                           ' changeset %s' % changeset_data['changeset'])
+
         changeset = changeset_data['changeset']
         seen_changesets.add(changeset)
         changeset_ref = store.changeset_ref(changeset)

@@ -367,6 +367,14 @@ class GitHgStore(object):
             return mark
         return None
 
+    def hg_author_info(self, author_line):
+        author, date, utcoffset = author_line.rsplit(' ', 2)
+        utcoffset = int(utcoffset)
+        sign = -cmp(utcoffset, 0)
+        utcoffset = abs(utcoffset)
+        utcoffset = (utcoffset // 100) * 60 + (utcoffset % 100)
+        return author, date, sign * utcoffset * 60
+
     def changeset(self, sha1, include_parents=False):
         assert not isinstance(sha1, Mark)
         gitsha1 = self._hg2git('commit', sha1)
@@ -384,20 +392,16 @@ class GitHgStore(object):
             else:
                 commitdata[typ] = data
         metadata = self.read_changeset_data(gitsha1)
-        author, date, utcoffset = commitdata['author'].rsplit(' ', 2)
+        author, date, utcoffset = self.hg_author_info(commitdata['author'])
         if 'author' in metadata:
             author = metadata['author']
         else:
             author = get_hg_author(author)
-        utcoffset = int(utcoffset)
-        sign = -cmp(utcoffset, 0)
-        utcoffset = abs(utcoffset)
-        utcoffset = (utcoffset // 100) * 60 + (utcoffset % 100)
 
         changeset = ''.join(chain([
             metadata['manifest'], '\n',
             author, '\n',
-            date, ' ', str(sign * utcoffset * 60)
+            date, ' ', str(utcoffset)
         ],
         [' ', metadata['extra']] if 'extra' in metadata else [],
         ['\n', metadata['files'].replace('\0', '\n')] if 'files' in metadata else [],
