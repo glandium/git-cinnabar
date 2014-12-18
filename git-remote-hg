@@ -258,6 +258,7 @@ def main(args):
     logger.info(store._hgheads)
     helper = IOLogger(logging.getLogger('remote-helper'),
         sys.stdin, sys.stdout)
+    repo_heads = []
 
     while True:
         cmd, args = read_cmd(helper)
@@ -279,8 +280,8 @@ def main(args):
         elif cmd == 'list':
             # TODO: use repo.batch()
             assert not args or args == ['for-push']
-            for head in repo.heads():
-                head = hexlify(head)
+            repo_heads = [hexlify(head) for head in repo.heads()]
+            for head in repo_heads:
                 sha1 = store.changeset_ref(head)
                 if not sha1:
                     sha1 = '?'
@@ -315,7 +316,7 @@ def main(args):
                     heads.extend(args)
             heads = [h[16:] for h in heads if h.startswith('refs/heads/head-')]
             if not heads:
-                heads = [hexlify(h) for h in repo.heads()]
+                heads = repo_heads
             store.init_fast_import(FastImport(sys.stdin, sys.stdout))
             getbundle(repo, store, heads)
             store.close()
