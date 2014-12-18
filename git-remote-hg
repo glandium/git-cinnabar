@@ -104,11 +104,16 @@ def findcommon(repo, store, heads):
     git_heads = set(store.changeset_ref(h) for h in store._hgheads)
     git_known = set(store.changeset_ref(h) for h in known)
 
-    args = ['rev-list', '--topo-order', '--full-history', '--parents']
-    args += ['^%s' % h for h in git_known]
-    args += ['%s' % h for h in git_heads]
+    args = ['rev-list', '--topo-order', '--full-history', '--parents',
+            '--stdin']
 
-    dag = gitdag(Git.iter(*args))
+    def revs():
+        for h in git_known:
+            yield '^%s\n' % h
+        for h in git_heads:
+            yield '%s\n' % h
+
+    dag = gitdag(Git.iter(*args, stdin=revs))
     known_dag = gitdag()
     for node in git_known:
         known_dag.insert(node)
