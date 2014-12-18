@@ -10,11 +10,13 @@ from githg import (
     ChangesetInfo,
     ManifestInfo,
 )
+from githg.bundle import create_bundle
 from binascii import hexlify, unhexlify
 from mercurial import (
     changegroup,
     hg,
     ui,
+    util,
 )
 from collections import (
     OrderedDict,
@@ -205,6 +207,33 @@ def getbundle(repo, store, heads):
     del changeset_chunks
 
 
+def push(repo, store, what, repo_heads):
+    fast_import = FastImport()
+    Git.register_fast_import(fast_import)
+    store.init_fast_import(fast_import)
+
+    common = findcommon(repo, store, repo_heads)
+    logging.info('common: %s' % common)
+
+    def revs():
+        for sha1 in common:
+            yield '^%s\n' % store.changeset_ref(sha1)
+
+    push_commits = list(Git.iter('rev-list', '--stdin', '--topo-order',
+                                 '--full-history', '--parents', '--reverse',
+                                 *what, stdin=revs))
+
+    if push_commits:
+        chunks = util.chunkbuffer(create_bundle(store, push_commits))
+        cg = changegroup.cg1unpacker(chunks, 'UN')
+        if all(v[1] for v in what.values()):
+            repo_heads = ['force']
+        else:
+            repo_heads = [unhexlify(h) for h in repo_heads]
+        repo.unbundle(cg, repo_heads, '')
+    store.close()
+
+
 def read_cmd(fileobj):
     line = fileobj.readline().strip()
     if not line:
@@ -276,7 +305,7 @@ def main(args):
                 'option\n'
                 'import\n'
                 'bidi-import\n'
-#                'push\n'
+                'push\n'
                 'refspec refs/heads/*:refs/remote-hg/*\n'
                 'refspec HEAD:refs/remote-hg/tip\n'
                 '\n'
@@ -325,6 +354,32 @@ def main(args):
             store.init_fast_import(FastImport(sys.stdin, sys.stdout))
             getbundle(repo, store, heads)
             store.close()
+        elif cmd == 'push':
+            refspecs = []
+            refspecs.extend(args)
+            while True:
+                cmd, args = read_cmd(helper)
+                if not cmd:
+                    break
+                assert cmd == 'push'
+                refspecs.extend(args)
+            pushes = {s.lstrip('+'): (d, s.startswith('+'))
+                      for s, d in (r.split(':', 1) for r in refspecs)}
+            if isinstance(repo, bundlerepo) or not repo.local():
+                if isinstance(repo, bundlerepo):
+                    error = 'Cannot push to a bundle file'
+                else:
+                    error = 'Push to remote server is not enabled yet'
+                for source, (dest, force) in pushes.iteritems():
+                    helper.write('error %s %s\n' % (dest, error))
+                helper.write('\n')
+                helper.flush()
+            else:
+                push(repo, store, pushes, repo_heads)
+                for source, (dest, force) in pushes.iteritems():
+                    helper.write('ok %s\n' % dest)
+                helper.write('\n')
+                helper.flush()
 
 
 if __name__ == '__main__':

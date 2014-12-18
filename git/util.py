@@ -1,6 +1,13 @@
 import logging
 
 
+def next(iter):
+    try:
+        return iter.next()
+    except StopIteration:
+        return None
+
+
 class IOLogger(object):
     def __init__(self, logger, reader, writer=None, prefix=''):
         self._reader = reader

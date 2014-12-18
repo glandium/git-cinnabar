@@ -14,6 +14,7 @@ from git.util import (
     IOLogger,
     LazyString,
     one,
+    next,
 )
 from git import (
     EmptyMark,
@@ -22,6 +23,7 @@ from git import (
     split_ls_tree,
     sha1path,
 )
+from mercurial import mdiff
 
 import time
 import logging
@@ -123,6 +125,20 @@ class RevChunk(object):
             self.data
         ).hexdigest()
 
+    def diff(self, other):
+        return mdiff.textdiff(other.data if other else '', self.data)
+
+    def serialize(self, other):
+        header = struct.pack(
+            '20s20s20s20s',
+            unhexlify(self.node),
+            unhexlify(self.parent1),
+            unhexlify(self.parent2),
+            unhexlify(self.changeset),
+        )
+        return header + self.diff(other)
+
+
 class GeneratedRevChunk(RevChunk):
     def __init__(self, node, data):
         self.node = node
@@ -131,6 +147,36 @@ class GeneratedRevChunk(RevChunk):
     def set_parents(self, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
         self.parent1 = parent1
         self.parent2 = parent2
+
+
+class GeneratedFileRev(GeneratedRevChunk):
+    def set_parents(self, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
+        has_one_parent = parent1 != NULL_NODE_ID and parent2 != NULL_NODE_ID
+        # Some mercurial versions stored a parent in some cases for copied
+        # files.
+        if self.data.startswith('\1\n') and has_one_parent:
+            if self._try_parents():
+                return
+        if self._try_parents(parent1, parent2):
+            return
+        # In some cases, only one parent is stored in a merge, because the
+        # other parent is actually an ancestor of the first one, but checking
+        # that is likely more expensive than to check if the sha1 matches with
+        # either parent.
+        if self._try_parents(parent1):
+            return
+        if self._try_parents(parent2):
+            return
+        # Some mercurial versions stores the first parent twice in merges.
+        if self._try_parents(parent1, parent1):
+            return
+        # If none of the above worked, just use the given parents.
+        super(GeneratedFileRev, self).set_parents(parent1, parent2)
+
+    def _try_parents(self, *parents):
+        super(GeneratedFileRev, self).set_parents(*parents)
+        return self.node == self.sha1
+
 
 class RevDiff(object):
     def __init__(self, rev_patch):
@@ -164,12 +210,14 @@ class ManifestLine(object):
         self.node = node
         self.attr = attr
         assert len(self.node) == 40
+        self._str = '%s\0%s%s\n' % (self.name, self.node, self.attr)
+        self._len = len(self.name) + len(self.attr) + 41
 
     def __str__(self):
-        return '%s\0%s%s\n' % (self.name, self.node, self.attr)
+        return self._str
 
     def __len__(self):
-        return len(self.name) + len(self.attr) + 41
+        return self._len
 
 
 def isplitmanifest(data):
@@ -270,6 +318,28 @@ class ChangesetData(object):
                     yield k, data[k]
         return '\n'.join('%s %s' % s for s in serialize(data))
 
+class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
+    def __init__(self, node):
+        super(GeneratedManifestInfo, self).__init__(node, '')
+        self._lines = []
+
+    def init(self, previous_chunk):
+        pass
+
+    def append(self, line):
+        self._lines.append(line)
+
+    @property
+    def data(self):
+        # Normally, it'd be better to use str(l), but it turns out to make
+        # things significantly slower. Sigh python.
+        return ''.join(l._str for l in self._lines)
+
+    @data.setter
+    def data(self, value):
+        # GeneratedManifestInfo sets data and we want to ignore that.
+        pass
+
 
 class GitHgStore(object):
     def __init__(self):
@@ -285,6 +355,7 @@ class GitHgStore(object):
         self.STORE = {
             ChangesetInfo: (self._store_changeset, self.changeset, self._changesets, 'commit'),
             ManifestInfo: (self._store_manifest, self.manifest, self._manifests, 'commit'),
+            GeneratedManifestInfo: (self._store_manifest, lambda x: None, self._manifests, 'commit'),
             RevChunk: (self._store_file, self.file, self._files, 'blob'),
         }
 
@@ -334,6 +405,8 @@ class GitHgStore(object):
         if obj in self._changeset_data_cache:
             return self._changeset_data_cache[obj]
         data = Git.read_note('refs/notes/remote-hg/git2hg', obj)
+        if data is None:
+            return None
         ret = self._changeset_data_cache[obj] = ChangesetData.parse(data)
         return ret
 
@@ -404,6 +477,9 @@ class GitHgStore(object):
         assert not isinstance(sha1, Mark)
         gitsha1 = self._hg2git('commit', sha1)
         assert gitsha1
+        return self._changeset(gitsha1, sha1, include_parents)
+
+    def _changeset(self, gitsha1, sha1=NULL_NODE_ID, include_parents=False):
         commit = Git.cat_file('commit', gitsha1)
         header, message = commit.split('\n\n', 1)
         commitdata = {}
@@ -443,6 +519,7 @@ class GitHgStore(object):
             assert len(parents) <= 2
             hgdata.set_parents(*[
                 self.read_changeset_data(p)['changeset'] for p in parents])
+            hgdata.changeset = sha1
         return hgdata
 
     ATTR = {
@@ -451,27 +528,80 @@ class GitHgStore(object):
         '120000': 'l',
     }
 
-    def manifest(self, sha1):
+    def manifest(self, sha1, reference=None):
         assert not isinstance(sha1, Mark)
         gitsha1 = self._hg2git('commit', sha1)
         assert gitsha1
         attrs = {}
-        manifest = ''
-        for mode, typ, filesha1, path in Git.ls_tree(gitsha1, recursive=True):
-            if path.startswith('git/'):
-                attr = self.ATTR[mode]
-                if attr:
-                    attrs[path[4:]] = attr
-            else:
-                assert path.startswith('hg/')
-                path = path[3:]
-                line = ManifestLine(
-                    name=path,
-                    node=filesha1,
-                    attr=attrs.get(path, ''),
-                )
-                manifest += str(line)
-        return GeneratedRevChunk(sha1, manifest)
+        manifest = GeneratedManifestInfo(sha1)
+        # TODO: Improve this horrible mess
+        if reference:
+            removed = set()
+            modified = {}
+            created = OrderedDict()
+            assert isinstance(reference, GeneratedManifestInfo)
+            gitreference = self.manifest_ref(reference.node)
+            for line in Git.diff_tree(gitreference, gitsha1, recursive=True):
+                mode_before, mode_after, sha1_before, sha1_after, status, \
+                    path = line
+                if path.startswith('git/'):
+                    if status != 'D':
+                        attr = self.ATTR[mode_after]
+                        attrs[path[4:]] = attr
+                else:
+                    assert path.startswith('hg/')
+                    path = path[3:]
+                    if status == 'D':
+                        removed.add(path)
+                    elif status == 'M':
+                        modified[path] = (sha1_after, attrs.get(path))
+                    else:
+                        assert status == 'A'
+                        created[path] = (sha1_after, attrs.get(path))
+            for path, attr in attrs.iteritems():
+                if not path in modified:
+                    modified[path] = (None, attr)
+            iter_created = created.iteritems()
+            next_created = next(iter_created)
+            for line in reference._lines:
+                if line.name in removed:
+                    continue
+                mod = modified.get(line.name)
+                if mod:
+                    node, attr = mod
+                    if attr is None:
+                        attr = line.attr
+                    if node is None:
+                        node = line.node
+                    line = ManifestLine(line.name, node, attr)
+                while next_created and next_created[0] < line.name:
+                    node, attr = next_created[1]
+                    created_line = ManifestLine(next_created[0], node, attr)
+                    manifest._lines.append(created_line)
+                    next_created = next(iter_created)
+                manifest._lines.append(line)
+            while next_created:
+                node, attr = next_created[1]
+                created_line = ManifestLine(next_created[0], node, attr)
+                manifest._lines.append(created_line)
+                next_created = next(iter_created)
+        else:
+            for mode, typ, filesha1, path in Git.ls_tree(gitsha1,
+                                                         recursive=True):
+                if path.startswith('git/'):
+                    attr = self.ATTR[mode]
+                    if attr:
+                        attrs[path[4:]] = attr
+                else:
+                    assert path.startswith('hg/')
+                    path = path[3:]
+                    line = ManifestLine(
+                        name=path,
+                        node=filesha1,
+                        attr=attrs.get(path, ''),
+                    )
+                    manifest._lines.append(line)
+        return manifest
 
     def manifest_ref(self, sha1, hg2git=True, create=False):
         return self._git_object(self._manifests, 'commit', sha1, hg2git=hg2git,
@@ -487,7 +617,7 @@ class GitHgStore(object):
 
     def file(self, sha1):
         ref = self._git_object(self._files, 'blob', sha1)
-        return GeneratedRevChunk(sha1, self._fast_import.cat_blob(ref))
+        return GeneratedFileRev(sha1, self._fast_import.cat_blob(ref))
 
     def git_file_ref(self, sha1):
         if sha1 in self._git_files:
@@ -499,7 +629,7 @@ class GitHgStore(object):
         # ref, so check its content first.
         data = self._fast_import.cat_blob(result)
         if data.startswith('\1\n'):
-            return self._prepare_git_file(GeneratedRevChunk(sha1, data))
+            return self._prepare_git_file(GeneratedFileRev(sha1, data))
         return result
 
     def store(self, instance):
