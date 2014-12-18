@@ -82,9 +82,11 @@ class PushStore(GitHgStore):
             raise Exception('Pushing merges is not supported yet')
         if len(parents) == 0:
             raise Exception('Pushing a root changeset is not supported yet')
-        #TODO: reject pushes on a mercurial branch
 
         parent_changeset_data = self.read_changeset_data(parents[0])
+        if parent_changeset_data.get('extra', {}).get('branch'):
+            raise Exception('Pushing on top of a mercurial branch is not '
+                            'supported yet')
         parent_manifest = self.manifest(parent_changeset_data['manifest'])
         manifest = GeneratedManifestInfo(NULL_NODE_ID)
 
