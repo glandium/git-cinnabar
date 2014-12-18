@@ -328,6 +328,8 @@ class GitHgStore(object):
     def init_fast_import(self, fi):
         assert fi
         self.__fast_import = fi
+        fi.write('feature done\n')
+        fi.flush()
 
     def read_changeset_data(self, obj):
         if obj in self._changeset_data_cache:
@@ -731,6 +733,7 @@ class GitHgStore(object):
                 'from %s\n'
                 % (head, NULL_NODE_ID)
             )
+        self._fast_import.write('done\n')
         self._fast_import.close()
         if self._thread:
             # TODO: kill the thread

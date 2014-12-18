@@ -247,7 +247,6 @@ class FastImport(IOLogger):
         self.write(
             "feature force\n"
             "feature ls\n"
-            "feature done\n"
             "feature notes\n"
         )
 
@@ -270,7 +269,6 @@ class FastImport(IOLogger):
         return super(FastImport, self).readline(level)
 
     def close(self):
-        self.write('done\n')
         self.flush()
         if self._proc:
             self._proc.wait()
