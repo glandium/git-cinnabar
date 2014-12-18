@@ -277,7 +277,6 @@ class GitHgStore(object):
         self._changesets = {}
         self._changeset_metadata = {}
         self._manifests = {}
-        self._manifests_by_changeset = {}
         self._files = {}
         self._git_files = {}
 
@@ -577,7 +576,6 @@ class GitHgStore(object):
             commit.filemodify('', tree, typ='tree')
 
         self._changesets[instance.node] = Mark(mark)
-        self._manifests_by_changeset[instance.node] = instance.manifest
         if instance.parent1 in self._hgheads:
             self._hgheads.remove(instance.parent1)
         if instance.parent2 in self._hgheads:
