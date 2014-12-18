@@ -296,7 +296,7 @@ def main(args):
         elif cmd == 'option':
             assert len(args) == 2
             options[args[0]] = args[1]
-            helper.write('ok\n')
+            helper.write('unsupported\n')
             helper.flush()
         elif cmd == 'import':
             reflog = os.path.join(os.environ['GIT_DIR'], 'logs', 'refs',
