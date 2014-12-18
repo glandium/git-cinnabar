@@ -309,7 +309,7 @@ class GitHgStore(object):
         hgtip = one(Git.for_each_ref('refs/remote-hg/tip'))
         if hgtip:
             hgtip = self.hg_changeset(hgtip)
-        self._hgtip = hgtip
+        self._hgtip = self._hgtip_orig = hgtip
         assert not self._hgtip or self._hgtip in self._hgheads
 
         self._last_manifest = None
@@ -581,6 +581,7 @@ class GitHgStore(object):
         if instance.parent2 in self._hgheads:
             self._hgheads.remove(instance.parent2)
         self._hgheads.add(instance.node)
+        self._hgtip = instance.node
         data = self._changeset_metadata[instance.node] = {
             'changeset': instance.node,
             'manifest': instance.manifest,
@@ -730,6 +731,13 @@ class GitHgStore(object):
                 'reset refs/remote-hg/head-%s\n'
                 'from %s\n'
                 % (head, NULL_NODE_ID)
+            )
+        assert self._hgtip in self._hgheads
+        if self._hgtip != self._hgtip_orig:
+            self._fast_import.write(
+                'reset refs/remote-hg/tip\n'
+                'from %s\n'
+                % self._changesets[self._hgtip]
             )
         self._fast_import.write('done\n')
         self._fast_import.close()
