@@ -124,10 +124,10 @@ def fsck(args):
         Git.ls_tree('refs/remote-hg/hg2git', recursive=True) if typ=='commit')
 
     for obj in all_hg2git - seen_changesets - seen_manifests - seen_files:
-        report('Dangling metadata for ' + obj)
+        print 'Dangling metadata for ' + obj
 
     for commit in all_notes - seen_notes:
-        report('Dangling note for commit ' + commit)
+        print 'Dangling note for commit ' + commit
 
     if status['broken']:
         print 'Your git-remote-hg repository appears to be corrupted. There'
