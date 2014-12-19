@@ -40,6 +40,11 @@ from git import (
     Git,
 )
 
+try:
+    from mercurial.changegroup import cg1unpacker
+except ImportError:
+    from mercurial.changegroup import unbundle10 as cg1unpacker
+
 #logging.getLogger('').setLevel(logging.INFO)
 
 
@@ -52,7 +57,7 @@ def readbundle(fh):
         raise Exception('%s: unsupported bundle version %s' % (fh.name,
                         version))
     alg = changegroup.readexactly(fh, 2)
-    return changegroup.cg1unpacker(fh, alg)
+    return cg1unpacker(fh, alg)
 
 
 def chunks_in_changegroup(bundle):
@@ -225,7 +230,7 @@ def push(repo, store, what, repo_heads):
 
     if push_commits:
         chunks = util.chunkbuffer(create_bundle(store, push_commits))
-        cg = changegroup.cg1unpacker(chunks, 'UN')
+        cg = cg1unpacker(chunks, 'UN')
         if all(v[1] for v in what.values()):
             repo_heads = ['force']
         else:
