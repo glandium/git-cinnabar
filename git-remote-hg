@@ -228,6 +228,7 @@ def push(repo, store, what, repo_heads):
                                  '--full-history', '--parents', '--reverse',
                                  *what, stdin=revs))
 
+    ret = False
     if push_commits:
         chunks = util.chunkbuffer(create_bundle(store, push_commits))
         cg = cg1unpacker(chunks, 'UN')
@@ -237,8 +238,9 @@ def push(repo, store, what, repo_heads):
             repo_heads = [unhexlify(h) for h in repo_heads]
         if repo.local():
             repo.local().ui.setconfig('server', 'validate', True)
-        repo.unbundle(cg, repo_heads, '')
+        ret = repo.unbundle(cg, repo_heads, '') != 0
     store.close()
+    return ret
 
 
 def read_cmd(fileobj):
@@ -392,9 +394,12 @@ def main(args):
                 helper.write('\n')
                 helper.flush()
             else:
-                push(repo, store, pushes, repo_heads)
+                pushed = push(repo, store, pushes, repo_heads)
                 for source, (dest, force) in pushes.iteritems():
-                    helper.write('ok %s\n' % dest)
+                    if pushed:
+                        helper.write('ok %s\n' % dest)
+                    else:
+                        helper.write('error %s nothing changed on remote\n' % dest)
                 helper.write('\n')
                 helper.flush()
 
