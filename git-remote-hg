@@ -235,6 +235,8 @@ def push(repo, store, what, repo_heads):
             repo_heads = ['force']
         else:
             repo_heads = [unhexlify(h) for h in repo_heads]
+        if repo.local():
+            repo.local().ui.setconfig('server', 'validate', True)
         repo.unbundle(cg, repo_heads, '')
     store.close()
 
