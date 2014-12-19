@@ -247,6 +247,10 @@ def read_cmd(fileobj):
     return line[0], line[1:]
 
 def main(args):
+    logger = logging.getLogger('-')
+    logger.info(args)
+    assert len(args) == 2
+    remote, url = args
     try:
         ignorecase = one(Git.iter('config', '--bool', 'core.ignorecase'))
     except subprocess.CalledProcessError as e:
@@ -259,27 +263,30 @@ def main(args):
             'Usually, this means git detected the file system is case '
             'insensitive.\n'
             'Git-remote-hg does not support this setup.\n'
-            'Either use a case sensitive file system or run the following '
-            'command:\n'
-            '  git config --global core.ignorecase false\n'
-            'If you do not want this configuration to be global, you cannot '
-            'clone,\n'
-            'but you use the following setup:\n'
-            '  mkdir directory\n'
-            '  cd directory\n'
-            '  git init\n'
-            '  git config core.ignorecase false\n'
-            '  git remote add origin hg::hg_repo_url\n'
-            '  git remote update origin\n'
-            'If you already cloned, you should reclone from scratch with this '
-            'version\n'
-            'of git-remote-hg.\n'
+            'Either use a case sensitive file system or set '
+            'core.ignorecase to "false".\n'
         )
+        git_dir = os.environ['GIT_DIR']
+        git_work_tree = os.path.dirname(os.environ['GIT_DIR'])
+        if os.path.abspath(os.getcwd() + os.sep).startswith(
+                os.path.abspath(git_work_tree) + os.sep) or \
+                remote == 'hg::' + url or tuple(
+                Git.for_each_ref('refs/remotes/%s' % remote)):
+            sys.stderr.write(
+                'Use the following command to reclone:\n'
+                '  git hgdebug reclone\n'
+            )
+        else:
+            sys.stderr.write(
+                'Use the following command to clone:\n'
+                '  git -c core.ignorecase=false clone%(args)s hg::%(url)s %(dir)s\n'
+                % {
+                    'dir': git_work_tree,
+                    'url': url,
+                    'args': ' -o ' + remote if remote != 'origin' else ''
+                }
+            )
         return 1
-    logger = logging.getLogger('-')
-    logger.info(args)
-    assert len(args) == 2
-    remote, url = args
     parsed_url = urlparse(url)
     logger.info(parsed_url)
     if not parsed_url.scheme:
