@@ -251,13 +251,7 @@ def main(args):
     logger.info(args)
     assert len(args) == 2
     remote, url = args
-    try:
-        ignorecase = one(Git.iter('config', '--bool', 'core.ignorecase'))
-    except subprocess.CalledProcessError as e:
-        if e.returncode != 1:
-            raise
-        ignorecase = 'false'
-    if ignorecase == 'true':
+    if Git.config('core.ignorecase', 'bool') == 'true':
         sys.stderr.write(
             'Your git configuration has core.ignorecase set to "true".\n'
             'Usually, this means git detected the file system is case '
@@ -366,6 +360,15 @@ def main(args):
             store.init_fast_import(FastImport(sys.stdin, sys.stdout))
             getbundle(repo, store, heads)
             store.close()
+
+            if remote != 'hg::' + url:
+                prune = 'remote.%s.prune' % remote
+                if Git.config(prune) != 'true':
+                    sys.stderr.write(
+                        'It is recommended that you set "%(conf)s" to "true".\n'
+                        '  git config %(conf)s true\n'
+                        % { 'conf': prune }
+                    )
         elif cmd == 'push':
             refspecs = []
             refspecs.extend(args)

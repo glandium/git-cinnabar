@@ -9,6 +9,7 @@ import types
 from util import (
     IOLogger,
     LazyString,
+    one,
 )
 
 git_logger = logging.getLogger('git')
@@ -214,6 +215,18 @@ class Git(object):
     def delete_ref(self, ref, oldvalue=None):
         self.update_ref(ref, '0' * 40, oldvalue)
 
+    @classmethod
+    def config(self, name, typ=None):
+        if typ:
+            args = ['--%s' % typ, name]
+        else:
+            args = [name]
+        try:
+            return one(self.iter('config', *args))
+        except subprocess.CalledProcessError as e:
+            if e.returncode != 1:
+                raise
+            return None
 
 atexit.register(Git.close)
 
