@@ -231,7 +231,6 @@ def create_bundle(store, commits):
             manifests[manifest] = (changeset,
                 tuple(store.read_changeset_data(p)['manifest']
                       for p in parents))
-            continue
             if isinstance(store.manifest_ref(manifest), Mark):
                 manifest = store.manifest(manifest)
                 for path, (sha1, attr) in manifest.modified.iteritems():
