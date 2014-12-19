@@ -816,6 +816,8 @@ class GitHgStore(object):
     def close(self):
         with self._fast_import.commit(
             ref='refs/remote-hg/hg2git',
+            parents=(s for s in ('refs/remote-hg/hg2git^0',)
+                     if self._hg2git_tree)
         ) as commit:
             if self._hg2git_tree:
                 commit.filemodify('', self._hg2git_tree, typ='tree')
