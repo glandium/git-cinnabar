@@ -172,12 +172,7 @@ class PushStore(GitHgStore):
         self._push_changesets[changeset.node] = changeset
         self._changesets[changeset.node] = LazyString(lambda: commit)
         self._changeset_metadata[changeset.node] = changeset_data
-        if changeset.parent1 in self._hgheads:
-            self._hgheads.remove(changeset.parent1)
-        if changeset.parent2 in self._hgheads:
-            self._hgheads.remove(changeset.parent2)
-        self._hgheads.add(changeset.node)
-        self._hgtip = changeset.node
+        self.add_head(changeset.node, changeset.parent1, changeset.parent2)
 
     def create_file(self, sha1, *parents):
         hg_file = GeneratedFileRev(NULL_NODE_ID, Git.cat_file('blob', sha1))

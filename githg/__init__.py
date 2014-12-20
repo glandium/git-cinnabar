@@ -393,6 +393,16 @@ class GitHgStore(object):
     def heads(self):
         return self._hgheads
 
+    def add_head(self, head, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
+        for p in (parent1, parent2):
+            if p == NULL_NODE_ID:
+                continue
+            if p in self._hgheads:
+                self._hgheads.remove(p)
+
+        self._hgheads.add(head)
+        self._hgtip = head
+
     @property
     def _fast_import(self):
         assert self.__fast_import
@@ -709,12 +719,7 @@ class GitHgStore(object):
             commit.filemodify('', tree, typ='tree')
 
         self._changesets[instance.node] = Mark(mark)
-        if instance.parent1 in self._hgheads:
-            self._hgheads.remove(instance.parent1)
-        if instance.parent2 in self._hgheads:
-            self._hgheads.remove(instance.parent2)
-        self._hgheads.add(instance.node)
-        self._hgtip = instance.node
+        self.add_head(instance.node, instance.parent1, instance.parent2)
         data = self._changeset_metadata[instance.node] = {
             'changeset': instance.node,
             'manifest': instance.manifest,
