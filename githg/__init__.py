@@ -868,24 +868,14 @@ class GitHgStore(object):
         refs_set = set(r for r in refs)
 
         for ref in refs_set - self._refs_orig:
-            self._fast_import.write(
-                'reset %s\n'
-                'from %s\n'
-                % (ref, refs[ref])
-            )
+            Git.update_ref(ref, refs[ref])
         for ref in self._refs_orig - refs_set:
-            self._fast_import.write(
-                'reset %s\n'
-                'from %s\n'
-                % (ref, NULL_NODE_ID)
-            )
+            Git.delete_ref(ref)
+
         assert self._hgtip in self._hgheads
         if self._hgtip != self._hgtip_orig:
-            self._fast_import.write(
-                'reset refs/remote-hg/tip\n'
-                'from %s\n'
-                % self._changesets[self._hgtip]
-            )
+            Git.update_ref('refs/remote-hg/tip', self._changesets[self._hgtip])
+
         self._close_fast_import()
         if self._thread:
             # TODO: kill the thread
