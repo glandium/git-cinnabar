@@ -406,6 +406,7 @@ class GitHgStore(object):
     def init_fast_import(self, fi):
         assert fi
         self.__fast_import = fi
+        Git.register_fast_import(fi)
         fi.send_done()
 
     def _close_fast_import(self):
