@@ -415,6 +415,11 @@ class GitHgStore(object):
         self.__fast_import = fi
         fi.send_done()
 
+    def _close_fast_import(self):
+        if not self.__fast_import or callable(self.__fast_import):
+            return
+        self._fast_import.close()
+
     def read_changeset_data(self, obj):
         obj = str(obj)
         if obj in self._changeset_data_cache:
@@ -886,7 +891,7 @@ class GitHgStore(object):
                 'from %s\n'
                 % self._changesets[self._hgtip]
             )
-        self._fast_import.close()
+        self._close_fast_import()
         if self._thread:
             # TODO: kill the thread
             self._thread.join()
