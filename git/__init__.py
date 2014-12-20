@@ -81,6 +81,7 @@ class Git(object):
     _fast_import = None
     _diff_tree = {}
     _notes_depth = {}
+    _refs = {}
 
     @classmethod
     def register_fast_import(self, fast_import):
@@ -129,6 +130,13 @@ class Git(object):
         if format:
             return self.iter('for-each-ref', '--format', format, pattern)
         return self.iter('for-each-ref', pattern)
+
+    @classmethod
+    def resolve_ref(self, ref):
+        # TODO: self._refs should be updated by update_ref
+        if ref not in self._refs:
+            self._refs[ref] = one(self.for_each_ref(ref))
+        return self._refs[ref]
 
     @classmethod
     def cat_file(self, typ, sha1):
