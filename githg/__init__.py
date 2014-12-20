@@ -285,8 +285,7 @@ class ChangesetData(object):
 
     @staticmethod
     def parse_extra(s):
-        return dict(i.split(':', 1) if ':' in i else (i, None)
-                    for i in s.split('\0'))
+        return dict(i.split(':', 1) for i in s.split('\0') if i)
 
     @staticmethod
     def parse(s):
@@ -301,14 +300,13 @@ class ChangesetData(object):
 
     @staticmethod
     def dump_extra(data):
-        return '\0'.join(':'.join(i) if i[1] is not None else ''
-                         for i in sorted(data.items()))
+        return '\0'.join(':'.join(i) for i in sorted(data.items()))
 
     @staticmethod
     def dump(data):
         def serialize(data):
             for k in ChangesetData.FIELDS:
-                if k not in data or not data[k]:
+                if k not in data:
                     continue
                 if k == 'extra':
                     yield k, ChangesetData.dump_extra(data[k])
@@ -533,11 +531,13 @@ class GitHgStore(object):
         else:
             author = get_hg_author(author)
 
-        extra = metadata.get('extra', {})
-        if 'committer' not in extra and commitdata['committer'] != commitdata['author']:
-            committer = self.hg_author_info(commitdata['committer'])
-            extra['committer'] = '%s %s %d' % committer
-        if extra:
+        extra = metadata.get('extra')
+        if commitdata['committer'] != commitdata['author']:
+            if not extra or 'committer' not in extra:
+                extra = dict(extra) if extra else {}
+                committer = self.hg_author_info(commitdata['committer'])
+                extra['committer'] = '%s %s %d' % committer
+        if extra is not None:
             extra = ' ' + ChangesetData.dump_extra(extra)
         changeset = ''.join(chain([
             metadata['manifest'], '\n',
