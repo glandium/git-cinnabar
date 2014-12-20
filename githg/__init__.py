@@ -365,13 +365,6 @@ class GitHgStore(object):
             RevChunk: (self._store_file, self.file, self._files, 'blob'),
         }
 
-        self._hg2git_tree = None
-        sha1 = Git.resolve_ref('refs/remote-hg/hg2git')
-        if sha1:
-            #TODO: cat-file commit?
-            self._hg2git_tree = one(Git.iter('log', '-1', '--format=%T',
-                'refs/remote-hg/hg2git'))
-
         # TODO: only do one git_for_each_ref
         self._hgheads = set()
         self._refs_orig = set()
@@ -436,7 +429,7 @@ class GitHgStore(object):
     def _hg2git_fill_cache(self):
         cache = {}
         logging.info('start cache')
-        for mode, typ, filesha1, path in Git.ls_tree(self._hg2git_tree,
+        for mode, typ, filesha1, path in Git.ls_tree('refs/remote-hg/hg2git',
                                                      recursive=True):
             cache[path.replace('/','')] = (filesha1, intern(typ))
         logging.info('end cache')
@@ -444,7 +437,7 @@ class GitHgStore(object):
         self._hg2git_cache_complete = True
 
     def _hg2git(self, expected_type, sha1):
-        if not self._hg2git_tree:
+        if not self._hgtip_orig:
             return None
 
         self._hg2git_calls += 1
@@ -460,7 +453,7 @@ class GitHgStore(object):
 
         gitsha1, typ = self._hg2git_cache.get(sha1, (None, None))
         if not gitsha1 and not typ and not self._hg2git_cache_complete:
-            ls = one(Git.ls_tree(self._hg2git_tree, sha1path(sha1)))
+            ls = one(Git.ls_tree('refs/remote-hg/hg2git', sha1path(sha1)))
             if ls:
                 mode, typ, gitsha1, path = ls
             else:
@@ -832,10 +825,8 @@ class GitHgStore(object):
         with self._fast_import.commit(
             ref='refs/remote-hg/hg2git',
             parents=(s for s in ('refs/remote-hg/hg2git^0',)
-                     if self._hg2git_tree)
+                     if self._hgtip_orig)
         ) as commit:
-            if self._hg2git_tree:
-                commit.filemodify('', self._hg2git_tree, typ='tree')
             for dic, typ in (
                     (self._files, 'regular'),
                     (self._manifests, 'commit'),
