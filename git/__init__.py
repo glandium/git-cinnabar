@@ -263,6 +263,12 @@ class FastImport(IOLogger):
             "feature notes\n"
         )
 
+        self._done = False
+
+    def send_done(self):
+        self.write('feature done\n')
+        self._done = True
+
     def progress_iter(self, what, iter, step=1000):
         count = 0
         for count, item in enumerate(iter, start=1):
@@ -282,6 +288,8 @@ class FastImport(IOLogger):
         return super(FastImport, self).readline(level)
 
     def close(self):
+        if self._done:
+            self.write('done\n')
         self.flush()
         if self._proc:
             self._proc.wait()
