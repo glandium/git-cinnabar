@@ -394,8 +394,10 @@ class GitHgStore(object):
         assert (not self._hgtip or
             self._head_branch(self._hgtip) in self._hgheads)
 
-    def heads(self):
-        return set(h[1] for h in self._hgheads)
+    def heads(self, branches={}):
+        if not isinstance(branches, (dict, set)):
+            branches = set(branches)
+        return set(h for b, h in self._hgheads if not branches or b in branches)
 
     def _head_branch(self, head):
         branch = self.read_changeset_data(self.changeset_ref(head)) \

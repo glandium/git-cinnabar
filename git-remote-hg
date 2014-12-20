@@ -92,9 +92,9 @@ def _sample(l, size):
     return random.sample(l, size)
 
 # TODO: this algorithm is not very smart and might as well be completely wrong
-def findcommon(repo, store, heads):
+def findcommon(repo, store, heads, branches={}):
     logging.info(heads)
-    hgheads = store.heads()
+    hgheads = store.heads(branches)
     logging.info(hgheads)
     if not hgheads:
         return set()
@@ -181,13 +181,13 @@ class bundlerepo(object):
         return self._tip
 
 
-def getbundle(repo, store, heads):
+def getbundle(repo, store, heads, branches):
     if isinstance(repo, bundlerepo):
         changeset_chunks = repo._changeset_chunks
         manifest_chunks = repo._manifest_chunks
         bundle = repo._bundle
     else:
-        common = findcommon(repo, store, heads)
+        common = findcommon(repo, store, heads, branches)
         logging.info('common: %s' % common)
         bundle = repo.getbundle('bundle', heads=[unhexlify(h) for h in heads],
             common=[unhexlify(h) for h in common])
@@ -216,11 +216,11 @@ def getbundle(repo, store, heads):
     del changeset_chunks
 
 
-def push(repo, store, what, repo_heads):
+def push(repo, store, what, repo_heads, repo_branches):
     fast_import = FastImport()
     store.init_fast_import(fast_import)
 
-    common = findcommon(repo, store, repo_heads)
+    common = findcommon(repo, store, repo_heads, repo_branches)
     logging.info('common: %s' % common)
 
     def revs():
@@ -382,7 +382,7 @@ def main(args):
             if not heads:
                 heads = list(chain(*branchmap.values()))
             store.init_fast_import(FastImport(sys.stdin, sys.stdout))
-            getbundle(repo, store, heads)
+            getbundle(repo, store, heads, branchmap.keys())
             store.close()
 
             if remote != 'hg::' + url:
@@ -415,7 +415,7 @@ def main(args):
                 helper.flush()
             else:
                 repo_heads = list(chain(*branchmap.values()))
-                pushed = push(repo, store, pushes, repo_heads)
+                pushed = push(repo, store, pushes, repo_heads, branchmap.keys())
                 for source, (dest, force) in pushes.iteritems():
                     if pushed:
                         helper.write('ok %s\n' % dest)
