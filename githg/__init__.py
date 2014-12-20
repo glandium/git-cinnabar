@@ -390,6 +390,9 @@ class GitHgStore(object):
         self._previously_stored = None
         self._thread = None
 
+    def heads(self):
+        return self._hgheads
+
     @property
     def _fast_import(self):
         assert self.__fast_import

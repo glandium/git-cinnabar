@@ -91,24 +91,25 @@ def _sample(l, size):
 # TODO: this algorithm is not very smart and might as well be completely wrong
 def findcommon(repo, store, heads):
     logging.info(heads)
-    logging.info(store._hgheads)
-    if not store._hgheads:
+    hgheads = store.heads()
+    logging.info(hgheads)
+    if not hgheads:
         return set()
 
     sample_size = 100
 
-    sample = _sample(store._hgheads, sample_size)
+    sample = _sample(hgheads, sample_size)
     known = repo.known(unhexlify(h) for h in sample)
     known = set(h for h, k in izip(sample, known) if k)
 
-    logging.info('heads: %d' % len(store._hgheads))
+    logging.info('heads: %d' % len(hgheads))
     logging.info('initial sample size: %d' % len(sample))
     logging.info('known (sub)set: %d' % len(known))
 
-    if len(known) == len(store._hgheads):
-        return store._hgheads
+    if len(known) == len(hgheads):
+        return hgheads
 
-    git_heads = set(store.changeset_ref(h) for h in store._hgheads)
+    git_heads = set(store.changeset_ref(h) for h in hgheads)
     git_known = set(store.changeset_ref(h) for h in known)
 
     args = ['rev-list', '--topo-order', '--full-history', '--parents',
@@ -299,7 +300,7 @@ def main(args):
         assert repo.capable('getbundle')
     store = GitHgStore()
     options = {}
-    logger.info(store._hgheads)
+    logger.info(LazyString(lambda: '%s' % store.heads()))
     helper = IOLogger(logging.getLogger('remote-helper'),
         sys.stdin, sys.stdout)
     repo_heads = []
