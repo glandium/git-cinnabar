@@ -308,7 +308,7 @@ def main(args):
     while True:
         cmd, args = read_cmd(helper)
         if not cmd:
-            return 0
+            break
 
         if cmd == 'capabilities':
             assert not args
@@ -403,6 +403,8 @@ def main(args):
                         helper.write('error %s nothing changed on remote\n' % dest)
                 helper.write('\n')
                 helper.flush()
+
+    store.close()
 
 
 if __name__ == '__main__':

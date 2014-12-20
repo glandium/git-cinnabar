@@ -139,6 +139,8 @@ def fsck(args):
         print 'Please report any corruption that fsck would detect after a'
         print 'reclone.'
 
+    store.close()
+
     return 1 if status['broken'] else 0
 
 
@@ -150,6 +152,7 @@ def main(args):
             sys.stdout.write(store.changeset(args[1]).data)
         elif args[0] == '-m':
             sys.stdout.write(store.manifest(args[1]).data)
+        store.close()
     elif cmd == 'fsck':
         return fsck(args)
     elif cmd == 'reclone':
