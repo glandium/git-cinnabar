@@ -349,6 +349,13 @@ class GitHgStore(object):
         self._files = {}
         self._git_files = {}
 
+        self._last_manifest = None
+        self._hg2git_cache = {}
+        self._hg2git_cache_complete = False
+        self._hg2git_calls = 0
+        self._previously_stored = None
+        self._thread = None
+
         self._changeset_data_cache = {}
 
         self.STORE = {
@@ -357,6 +364,13 @@ class GitHgStore(object):
             GeneratedManifestInfo: (self._store_manifest, lambda x: None, self._manifests, 'commit'),
             RevChunk: (self._store_file, self.file, self._files, 'blob'),
         }
+
+        self._hg2git_tree = None
+        sha1 = one(Git.for_each_ref('refs/remote-hg/hg2git'))
+        if sha1:
+            #TODO: cat-file commit?
+            self._hg2git_tree = one(Git.iter('log', '-1', '--format=%T',
+                'refs/remote-hg/hg2git'))
 
         # TODO: only do one git_for_each_ref
         self._hgheads_orig = set()
@@ -369,25 +383,12 @@ class GitHgStore(object):
             self._changesets[hghead] = sha1
         self._hgheads = set(self._hgheads_orig)
 
-        self._hg2git_tree = None
-        sha1 = one(Git.for_each_ref('refs/remote-hg/hg2git'))
-        if sha1:
-            #TODO: cat-file commit?
-            self._hg2git_tree = one(Git.iter('log', '-1', '--format=%T',
-                'refs/remote-hg/hg2git'))
         # TODO: handle the situation with multiple remote repos
         hgtip = one(Git.for_each_ref('refs/remote-hg/tip'))
         if hgtip:
             hgtip = self.hg_changeset(hgtip)
         self._hgtip = self._hgtip_orig = hgtip
         assert not self._hgtip or self._hgtip in self._hgheads
-
-        self._last_manifest = None
-        self._hg2git_cache = {}
-        self._hg2git_cache_complete = False
-        self._hg2git_calls = 0
-        self._previously_stored = None
-        self._thread = None
 
     def heads(self):
         return self._hgheads
