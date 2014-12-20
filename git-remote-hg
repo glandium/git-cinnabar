@@ -23,7 +23,10 @@ from collections import (
     defaultdict,
     deque,
 )
-from itertools import izip
+from itertools import (
+    chain,
+    izip,
+)
 from urlparse import (
     urlparse,
     urlunparse,
@@ -302,7 +305,7 @@ def main(args):
     logger.info(LazyString(lambda: '%s' % store.heads()))
     helper = IOLogger(logging.getLogger('remote-helper'),
         sys.stdin, sys.stdout)
-    repo_heads = []
+    branchmap = {}
 
     while True:
         cmd, args = read_cmd(helper)
@@ -324,12 +327,28 @@ def main(args):
         elif cmd == 'list':
             # TODO: use repo.batch()
             assert not args or args == ['for-push']
-            repo_heads = [hexlify(head) for head in repo.heads()]
-            for head in repo_heads:
-                sha1 = store.changeset_ref(head)
-                if not sha1:
-                    sha1 = '?'
-                helper.write('%s refs/heads/head-%s\n' % (sha1, head))
+            branchmap = {
+                b: tuple(hexlify(h) for h in heads)
+                for b, heads in repo.branchmap().iteritems()
+            }
+            local_heads = store.heads()
+            for branch, heads in branchmap.iteritems():
+                for head in heads:
+                    sha1 = store.changeset_ref(head)
+                    if not sha1:
+                        sha1 = '?'
+                    elif head not in local_heads:
+                        # When the local store still has old heads, it can
+                        # have some branch heads missing because they don't
+                        # appear in repo.heads() as they are not topological
+                        # heads. In that case, add the remote head "manually"
+                        # if we have it locally.
+                        store.add_head(head)
+                    helper.write('%s refs/heads/branches/%s/head-%s\n' % (
+                        sha1,
+                        branch,
+                        head,
+                    ))
             tip = store.changeset_ref(hexlify(repo.lookup('tip')))
             helper.write(
                 '%s refs/heads/tip\n'
@@ -358,9 +377,10 @@ def main(args):
                 assert args is None or len(args) == 1
                 if args:
                     heads.extend(args)
-            heads = [h[16:] for h in heads if h.startswith('refs/heads/head-')]
+            heads = [h[-40:] for h in heads
+                     if h.startswith('refs/heads/branches/')]
             if not heads:
-                heads = repo_heads
+                heads = list(chain(*branchmap.values()))
             store.init_fast_import(FastImport(sys.stdin, sys.stdout))
             getbundle(repo, store, heads)
             store.close()
@@ -394,6 +414,7 @@ def main(args):
                 helper.write('\n')
                 helper.flush()
             else:
+                repo_heads = list(chain(*branchmap.values()))
                 pushed = push(repo, store, pushes, repo_heads)
                 for source, (dest, force) in pushes.iteritems():
                     if pushed:

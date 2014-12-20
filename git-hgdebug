@@ -37,6 +37,7 @@ def fsck(args):
 
     def all_git_heads():
         for ref in Git.for_each_ref('refs/remote-hg/head-*',
+                                    'refs/remote-hg/branches',
                                     format='%(refname)'):
             yield ref + '\n'
 

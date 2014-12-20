@@ -126,10 +126,12 @@ class Git(object):
         return tuple(self.iter(*args, stdout=None))
 
     @classmethod
-    def for_each_ref(self, pattern, format='%(objectname)'):
+    def for_each_ref(self, *patterns, **kwargs):
+        assert not kwargs or kwargs.keys() == ['format']
+        format = kwargs.get('format', '%(objectname)')
         if format:
-            return self.iter('for-each-ref', '--format', format, pattern)
-        return self.iter('for-each-ref', pattern)
+            return self.iter('for-each-ref', '--format', format, *patterns)
+        return self.iter('for-each-ref', *patterns)
 
     @classmethod
     def resolve_ref(self, ref):

@@ -366,37 +366,54 @@ class GitHgStore(object):
             RevChunk: (self._store_file, self.file, self._files, 'blob'),
         }
 
-        # TODO: only do one git_for_each_ref
+        # TODO: handle the situation with multiple remote repos
+        hgtip = Git.resolve_ref('refs/remote-hg/tip')
+        self._hgtip_orig = None
+        if hgtip:
+            self._hgtip_orig = hgtip = self.hg_changeset(hgtip)
+
         self._hgheads = set()
         self._refs_orig = set()
 
+        # refs/remote-hg/head-* are the old heads for upgrade
+        # refs/remote-hg/branches/* are the new heads
         for line in Git.for_each_ref('refs/remote-hg/head-*',
-                format='%(objectname) %(refname)'):
+                'refs/remote-hg/branches', format='%(objectname) %(refname)'):
             sha1, head = line.split()
             logging.info('%s %s' % (sha1, head))
             hghead = head[-40:]
-            self.add_head(hghead)
+            if head.startswith('refs/remote-hg/branches/'):
+                branch = head.split('/')[3]
+                self._hgheads.add((branch, hghead))
+                self._changesets[hghead] = sha1
+            else:
+                self.add_head(hghead)
             self._refs_orig.add(head)
-            self._changesets[hghead] = sha1
 
-        # TODO: handle the situation with multiple remote repos
-        hgtip = Git.resolve_ref('refs/remote-hg/tip')
-        if hgtip:
-            hgtip = self.hg_changeset(hgtip)
-        self._hgtip = self._hgtip_orig = hgtip
-        assert not self._hgtip or self._hgtip in self._hgheads
+        self._hgtip = self._hgtip_orig
+        assert (not self._hgtip or
+            self._head_branch(self._hgtip) in self._hgheads)
 
     def heads(self):
-        return self._hgheads
+        return set(h[1] for h in self._hgheads)
+
+    def _head_branch(self, head):
+        branch = self.read_changeset_data(self.changeset_ref(head)) \
+            .get('extra', {}) \
+            .get('branch', 'default')
+        return branch, head
 
     def add_head(self, head, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
+        head_branch = self._head_branch(head)
         for p in (parent1, parent2):
             if p == NULL_NODE_ID:
                 continue
-            if p in self._hgheads:
-                self._hgheads.remove(p)
+            parent_head_branch = self._head_branch(p)
+            if (parent_head_branch[0] == head_branch[0] and
+                    parent_head_branch in self._hgheads):
+                self._hgheads.remove(parent_head_branch)
 
-        self._hgheads.add(head)
+        self._hgheads.add(head_branch)
         self._hgtip = head
 
     @property
@@ -862,8 +879,8 @@ class GitHgStore(object):
                     commit.notemodify(mark, ChangesetData.dump(data))
 
         refs = {}
-        for head in self._hgheads:
-            ref = 'refs/remote-hg/head-%s' % head
+        for branch, head in self._hgheads:
+            ref = 'refs/remote-hg/branches/%s/head-%s' % (branch, head)
             refs[ref] = self._changesets[head]
         refs_set = set(r for r in refs)
 
@@ -872,7 +889,7 @@ class GitHgStore(object):
         for ref in self._refs_orig - refs_set:
             Git.delete_ref(ref)
 
-        assert self._hgtip in self._hgheads
+        assert self._head_branch(self._hgtip) in self._hgheads
         if self._hgtip != self._hgtip_orig:
             Git.update_ref('refs/remote-hg/tip', self._changesets[self._hgtip])
 
