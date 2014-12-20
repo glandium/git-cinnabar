@@ -211,6 +211,14 @@ class Git(object):
 
     @classmethod
     def update_ref(self, ref, newvalue, oldvalue=None):
+        if self._fast_import:
+            self._fast_import.write(
+                'reset %s\n'
+                'from %s\n'
+                % (ref, newvalue)
+            )
+            self._fast_import.flush()
+            return
         if not self._update_ref:
             self._update_ref = GitProcess('update-ref', '--stdin',
                                           stdin=subprocess.PIPE)
