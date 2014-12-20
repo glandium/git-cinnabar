@@ -37,11 +37,13 @@ class IOLogger(object):
 
 
 class LazyString(object):
-    def __init__(self, fn):
-        self._fn = fn
+    def __init__(self, obj):
+        self._obj = obj
 
     def __str__(self):
-        return self._fn()
+        if callable(self._obj):
+            return self._obj()
+        return self._obj
 
 
 def one(l):
