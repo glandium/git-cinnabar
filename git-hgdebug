@@ -150,41 +150,6 @@ def main(args):
             sys.stdout.write(store.changeset(args[1]).data)
         elif args[0] == '-m':
             sys.stdout.write(store.manifest(args[1]).data)
-    elif cmd == 'restore':
-        num = int(args[0])
-
-        for ref in ('tip', 'manifest', 'hg2git'):
-            Git.update_ref('refs/remote-hg/%s' % ref,
-                'refs/remote-hg/%s@{%d}' % (ref, num))
-        Git.update_ref('refs/notes/remote-hg/git2hg',
-            'refs/notes/remote-hg/git2hg@{%d}' % num)
-
-        # Ensure all the above has been applied before doing ls-tree below.
-        Git.close()
-
-        def rev_list_input():
-            for mode, typ, filesha1, path in Git.ls_tree(
-                    'refs/notes/remote-hg/git2hg', recursive=True):
-                yield path.replace('/', '') + '\n'
-            yield '^refs/remote-hg/manifest\n'
-
-        dag = gitdag(Git.iter('rev-list', '--stdin', '--parents',
-            '--full-history', stdin=rev_list_input))
-
-        heads = {}
-        for head in dag.heads:
-            ref = 'refs/remote-hg/head-%s' % ChangesetData.parse(
-                Git.read_note('remote-hg/git2hg', head)
-                )['changeset']
-            heads[ref] = head
-
-        for ref in Git.for_each_ref('refs/remote-hg/head-*',
-                format='%(refname)'):
-            if ref not in heads:
-                Git.delete_ref(ref)
-
-        for head in heads:
-            Git.update_ref(head, heads[head])
     elif cmd == 'fsck':
         return fsck(args)
     elif cmd == 'reclone':
