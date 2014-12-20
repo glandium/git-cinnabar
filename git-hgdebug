@@ -175,6 +175,9 @@ def main(args):
             name = config[len('remote.'):-len('.url')]
             if url.startswith('hg::'):
                 Git.run('remote', 'update', '--prune', name)
+    else:
+        print >>sys.stderr, 'Unknown command:', cmd
+        return 1
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
