@@ -84,9 +84,6 @@ class PushStore(GitHgStore):
             raise Exception('Pushing a root changeset is not supported yet')
 
         parent_changeset_data = self.read_changeset_data(parents[0])
-        if parent_changeset_data.get('extra', {}).get('branch'):
-            raise Exception('Pushing on top of a mercurial branch is not '
-                            'supported yet')
         parent_manifest = self.manifest(parent_changeset_data['manifest'])
         manifest = GeneratedManifestInfo(NULL_NODE_ID)
 
@@ -160,6 +157,10 @@ class PushStore(GitHgStore):
         if header_data['author'] != header_data['committer']:
             committer = self.hg_author_info(header_data['committer'])
             extra['committer'] = '%s %s %d' % committer
+
+        branch = parent_changeset_data.get('extra', {}).get('branch')
+        if branch:
+            extra['branch'] = branch
 
         changeset_data = self._changeset_data_cache[commit] = {
             'files': sorted(chain(removed, manifest.modified)),
