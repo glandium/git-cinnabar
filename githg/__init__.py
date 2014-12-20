@@ -848,23 +848,16 @@ class GitHgStore(object):
                         raise TypeError(node)
                     commit.filemodify(sha1path(node), mark, typ=typ)
 
-        sha1 = one(Git.for_each_ref('refs/notes/remote-hg/git2hg'))
-        git2hg_mark = self._fast_import.new_mark()
         with self._fast_import.commit(
             ref='refs/notes/remote-hg/git2hg',
-            parents=(s for s in (sha1,) if s),
-            mark=git2hg_mark,
+            parents=(s for s in ('refs/notes/remote-hg/git2hg^0',)
+                     if self._hgtip_orig),
         ) as commit:
             for mark in self._changesets.itervalues():
                 if isinstance(mark, types.StringType):
                     continue
                 data = self._changeset_data_cache[str(mark)]
                 commit.notemodify(mark, ChangesetData.dump(data))
-        if sha1:
-            with self._fast_import.commit(ref='refs/notes/remote-hg/git2hg') as commit:
-                commit.filemodify('',
-                    self._fast_import.ls(Mark(git2hg_mark))[2],
-                        typ='tree')
 
         refs = {}
         for head in self._hgheads:
