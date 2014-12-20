@@ -348,6 +348,7 @@ class GitHgStore(object):
         self._manifests = {}
         self._files = {}
         self._git_files = {}
+        self._closed = False
 
         self._last_manifest = None
         self._hg2git_cache = {}
@@ -823,6 +824,9 @@ class GitHgStore(object):
         return mark
 
     def close(self):
+        if self._closed:
+            return
+        self._closed = True
         hg2git_files = []
         for dic, typ in (
                 (self._files, 'regular'),
