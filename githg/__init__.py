@@ -822,33 +822,39 @@ class GitHgStore(object):
         return mark
 
     def close(self):
-        with self._fast_import.commit(
-            ref='refs/remote-hg/hg2git',
-            parents=(s for s in ('refs/remote-hg/hg2git^0',)
-                     if self._hgtip_orig)
-        ) as commit:
-            for dic, typ in (
-                    (self._files, 'regular'),
-                    (self._manifests, 'commit'),
-                    (self._changesets, 'commit'),
-                ):
+        hg2git_files = []
+        for dic, typ in (
+                (self._files, 'regular'),
+                (self._manifests, 'commit'),
+                (self._changesets, 'commit'),
+            ):
                 for node, mark in dic.iteritems():
                     if isinstance(mark, types.StringType):
                         continue
                     if isinstance(mark, EmptyMark):
                         raise TypeError(node)
-                    commit.filemodify(sha1path(node), mark, typ=typ)
+                    hg2git_files.append((sha1path(node), mark, typ))
+        if hg2git_files:
+            with self._fast_import.commit(
+                ref='refs/remote-hg/hg2git',
+                parents=(s for s in ('refs/remote-hg/hg2git^0',)
+                         if self._hgtip_orig)
+            ) as commit:
+                for file in sorted(hg2git_files, key=lambda f: f[0]):
+                    commit.filemodify(*file)
+        del hg2git_files
 
-        with self._fast_import.commit(
-            ref='refs/notes/remote-hg/git2hg',
-            parents=(s for s in ('refs/notes/remote-hg/git2hg^0',)
-                     if self._hgtip_orig),
-        ) as commit:
-            for mark in self._changesets.itervalues():
-                if isinstance(mark, types.StringType):
-                    continue
-                data = self._changeset_data_cache[str(mark)]
-                commit.notemodify(mark, ChangesetData.dump(data))
+        git2hg_marks = [mark for mark in self._changesets.itervalues()
+                        if not isinstance(mark, types.StringType)]
+        if git2hg_marks:
+            with self._fast_import.commit(
+                ref='refs/notes/remote-hg/git2hg',
+                parents=(s for s in ('refs/notes/remote-hg/git2hg^0',)
+                         if self._hgtip_orig),
+            ) as commit:
+                for mark in git2hg_marks:
+                    data = self._changeset_data_cache[str(mark)]
+                    commit.notemodify(mark, ChangesetData.dump(data))
 
         refs = {}
         for head in self._hgheads:
