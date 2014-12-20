@@ -9,6 +9,15 @@ which would affect commit SHA1s.
 When you update, please read this file again, it likely will contain
 important notes.
 
+git-remote-hg is a git remote helper to interact with mercurial
+repositories. Contrary to other such helpers, it doesn't require a
+local mercurial clone, although it does require mercurial to be
+installed for some of its libraries.
+
+The main focus at the moment is to make it work with mozilla-central
+and related mercurial repositories and support Mozilla workflows (try
+server, etc.).
+
 Setup:
 ------
 
