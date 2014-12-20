@@ -10,6 +10,7 @@ from git import (
     FastImport,
     Git,
 )
+from git.util import LazyString
 from githg.dag import gitdag
 import sys
 import subprocess
@@ -26,8 +27,8 @@ def fsck(args):
         status['broken'] = True
         print message
 
-    Git.register_fast_import(FastImport())
     store = GitHgStore()
+    store.init_fast_import(FastImport())
 
     all_notes = set(path.replace('/', '') for mode, typ, filesha1, path in
         Git.ls_tree('refs/notes/remote-hg/git2hg', recursive=True))
@@ -83,17 +84,24 @@ def fsck(args):
         hg_changeset = store.changeset(changeset, include_parents=True)
         sha1 = hg_changeset.sha1
         if hg_changeset.node != sha1:
+            # Some know cases of corruptions involve a whitespace after the
+            # timezone. Adding an empty extra metadata works around those.
+            if 'extra' not in changeset_data:
+                changeset_data['extra'] = {}
+                hg_changeset = store.changeset(changeset, include_parents=True)
+                try_sha1 = hg_changeset.sha1
+                if hg_changeset.node == try_sha1:
+                    print 'Fixing known sha1 mismatch for changeset %s' % (
+                        changeset)
+                    sha1 = try_sha1
+                    store._changesets[changeset] = LazyString(node)
+
+        if hg_changeset.node != sha1:
             if (changeset, sha1) in (
                 ('8c557b7c03a4a753e5c163038f04862e9f65fce1',
                  '249b59139de8e08abeb6c4e261a137c756e7af0e'),
                 ('ffdee4a4eb7fc7cae80dfc4cb2fe0c3178773dcf',
                  '415e9d2eac83d508bf58a4df585c5f6b2b0f44ed'),
-                ('fca5ddbaa12af32fec357270b3da336c7817054b',
-                 'b5f8c47ab63ea4eed195d9f3e5d4b66296f25a6e'),
-                ('725e3d3145d82d1a9b23160cec3d58d22f398899',
-                 '7f5ec96b83b41872f29b2eb99dfca06c6f8e8b4b'),
-                ('a73a785ea8e1624a57c2e9479345b5cd2a953127',
-                 '5f09cdb66b0ee6d61708d31ea25e42703bd2339d'),
             ):
                 print 'Ignoring known sha1 mismatch for changeset %s' % (
                     changeset)
