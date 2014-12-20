@@ -38,7 +38,6 @@ this feature).
 There is no support for the following mercurial features:
 - obsolescence markers
 - bookmarks
-- branches
 - phases
 
 Update notes:
