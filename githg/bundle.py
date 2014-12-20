@@ -171,7 +171,6 @@ class PushStore(GitHgStore):
             changeset.sha1
         self._push_changesets[changeset.node] = changeset
         self._changesets[changeset.node] = LazyString(lambda: commit)
-        self._changeset_metadata[changeset.node] = changeset_data
         self.add_head(changeset.node, changeset.parent1, changeset.parent2)
 
     def create_file(self, sha1, *parents):

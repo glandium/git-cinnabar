@@ -345,7 +345,6 @@ class GitHgStore(object):
     def __init__(self):
         self.__fast_import = None
         self._changesets = {}
-        self._changeset_metadata = {}
         self._manifests = {}
         self._files = {}
         self._git_files = {}
@@ -415,6 +414,7 @@ class GitHgStore(object):
         fi.flush()
 
     def read_changeset_data(self, obj):
+        obj = str(obj)
         if obj in self._changeset_data_cache:
             return self._changeset_data_cache[obj]
         data = Git.read_note('refs/notes/remote-hg/git2hg', obj)
@@ -718,9 +718,8 @@ class GitHgStore(object):
             mode, typ, tree, path = self._fast_import.ls(self.manifest_ref(instance.manifest), 'git')
             commit.filemodify('', tree, typ='tree')
 
-        self._changesets[instance.node] = Mark(mark)
-        self.add_head(instance.node, instance.parent1, instance.parent2)
-        data = self._changeset_metadata[instance.node] = {
+        mark = self._changesets[instance.node] = Mark(mark)
+        data = self._changeset_data_cache[str(mark)] = {
             'changeset': instance.node,
             'manifest': instance.manifest,
         }
@@ -730,6 +729,7 @@ class GitHgStore(object):
             data['files'] = instance.files
         if author[0] != instance.committer:
             data['author'] = instance.committer
+        self.add_head(instance.node, instance.parent1, instance.parent2)
 
     TYPE = {
         '': 'regular',
@@ -848,10 +848,10 @@ class GitHgStore(object):
             parents=(s for s in (sha1,) if s),
             mark=git2hg_mark,
         ) as commit:
-            for node, mark in self._changesets.iteritems():
+            for mark in self._changesets.itervalues():
                 if isinstance(mark, types.StringType):
                     continue
-                data = self._changeset_metadata[node]
+                data = self._changeset_data_cache[str(mark)]
                 commit.notemodify(mark, ChangesetData.dump(data))
         if sha1:
             with self._fast_import.commit(ref='refs/notes/remote-hg/git2hg') as commit:
