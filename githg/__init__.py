@@ -373,15 +373,17 @@ class GitHgStore(object):
                 'refs/remote-hg/hg2git'))
 
         # TODO: only do one git_for_each_ref
-        self._hgheads_orig = set()
+        self._hgheads = set()
+        self._refs_orig = set()
+
         for line in Git.for_each_ref('refs/remote-hg/head-*',
                 format='%(objectname) %(refname)'):
             sha1, head = line.split()
             logging.info('%s %s' % (sha1, head))
             hghead = head[-40:]
-            self._hgheads_orig.add(hghead)
+            self.add_head(hghead)
+            self._refs_orig.add(head)
             self._changesets[hghead] = sha1
-        self._hgheads = set(self._hgheads_orig)
 
         # TODO: handle the situation with multiple remote repos
         hgtip = one(Git.for_each_ref('refs/remote-hg/tip'))
@@ -860,18 +862,23 @@ class GitHgStore(object):
                     self._fast_import.ls(Mark(git2hg_mark))[2],
                         typ='tree')
 
-        # TODO: avoid rewriting existing heads
+        refs = {}
         for head in self._hgheads:
+            ref = 'refs/remote-hg/head-%s' % head
+            refs[ref] = self._changesets[head]
+        refs_set = set(r for r in refs)
+
+        for ref in refs_set - self._refs_orig:
             self._fast_import.write(
-                'reset refs/remote-hg/head-%s\n'
+                'reset %s\n'
                 'from %s\n'
-                % (head, self._changesets[head])
+                % (ref, refs[ref])
             )
-        for head in self._hgheads_orig - self._hgheads:
+        for ref in self._refs_orig - refs_set:
             self._fast_import.write(
-                'reset refs/remote-hg/head-%s\n'
+                'reset %s\n'
                 'from %s\n'
-                % (head, NULL_NODE_ID)
+                % (ref, NULL_NODE_ID)
             )
         assert self._hgtip in self._hgheads
         if self._hgtip != self._hgtip_orig:
