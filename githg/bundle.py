@@ -80,35 +80,47 @@ class PushStore(GitHgStore):
     def create_hg_metadata(self, commit, parents):
         if len(parents) > 1:
             raise Exception('Pushing merges is not supported yet')
-        if len(parents) == 0:
-            raise Exception('Pushing a root changeset is not supported yet')
 
-        parent_changeset_data = self.read_changeset_data(parents[0])
-        parent_manifest = self.manifest(parent_changeset_data['manifest'])
         manifest = GeneratedManifestInfo(NULL_NODE_ID)
 
         # TODO: share code with GitHgStore.manifest
         removed = set()
         modified = {}
         created = OrderedDict()
-        for line in Git.diff_tree(parents[0], commit, recursive=True):
-            mode_before, mode_after, sha1_before, sha1_after, status, \
-                path = line
-            if status == 'D':
-                removed.add(path)
-            elif status == 'M':
-                if sha1_before == sha1_after:
-                    modified[path] = (None, self.ATTR[mode_after])
+
+        if parents:
+            parent_changeset_data = self.read_changeset_data(parents[0])
+            parent_manifest = self.manifest(parent_changeset_data['manifest'])
+            parent_node = parent_manifest.node
+            parent_lines = parent_manifest._lines
+            branch = parent_changeset_data.get('extra', {}).get('branch')
+
+            for line in Git.diff_tree(parents[0], commit, recursive=True):
+                mode_before, mode_after, sha1_before, sha1_after, status, \
+                    path = line
+                if status == 'D':
+                    removed.add(path)
+                elif status == 'M':
+                    if sha1_before == sha1_after:
+                        modified[path] = (None, self.ATTR[mode_after])
+                    else:
+                        modified[path] = (sha1_after, self.ATTR[mode_after])
                 else:
-                    modified[path] = (sha1_after, self.ATTR[mode_after])
-            else:
-                assert status == 'A'
-                created[path] = (sha1_after, self.ATTR[mode_after])
+                    assert status == 'A'
+                    created[path] = (sha1_after, self.ATTR[mode_after])
+        else:
+            parent_node = NULL_NODE_ID
+            parent_lines = []
+            branch = None
+
+            for line in Git.ls_tree(commit, recursive=True):
+                mode, typ, sha1, path = line
+                created[path] = (sha1, self.ATTR[mode])
 
         iter_created = created.iteritems()
         next_created = next(iter_created)
         modified_lines = []
-        for line in parent_manifest._lines:
+        for line in parent_lines:
             if line.name in removed:
                 continue
             mod = modified.get(line.name)
@@ -130,7 +142,7 @@ class PushStore(GitHgStore):
                 manifest._lines.append(created_line)
                 next_created = next(iter_created)
             manifest._lines.append(line)
-        while next_created and next_created[0] < line.name:
+        while next_created:
             node, attr = next_created[1]
             node = self.create_file(node)
             created_line = ManifestLine(next_created[0], node, attr)
@@ -138,11 +150,11 @@ class PushStore(GitHgStore):
             manifest._lines.append(created_line)
             next_created = next(iter_created)
 
-        manifest.set_parents(parent_manifest.node)
+        manifest.set_parents(parent_node)
         manifest.node = manifest.sha1
         manifest.removed = removed
         manifest.modified = {l.name: (l.node, l.attr) for l in modified_lines}
-        manifest.previous_node = parent_manifest.node
+        manifest.previous_node = parent_node
         self._push_manifests[manifest.node] = manifest
         self.store(manifest)
 
@@ -158,7 +170,6 @@ class PushStore(GitHgStore):
             committer = self.hg_author_info(header_data['committer'])
             extra['committer'] = '%s %s %d' % committer
 
-        branch = parent_changeset_data.get('extra', {}).get('branch')
         if branch:
             extra['branch'] = branch
 
