@@ -9,6 +9,7 @@ from githg import (
     RevChunk,
     ChangesetInfo,
     ManifestInfo,
+    NULL_NODE_ID,
 )
 from githg.bundle import create_bundle
 from binascii import hexlify, unhexlify
@@ -349,13 +350,16 @@ def main(args):
                         branch,
                         head,
                     ))
-            tip = store.changeset_ref(hexlify(repo.lookup('tip')))
-            helper.write(
-                '%s refs/heads/tip\n'
-                '@refs/heads/tip HEAD\n'
-                '\n' % (
-                    tip if tip else '?'
-            ))
+            tip = hexlify(repo.lookup('tip'))
+            if tip != NULL_NODE_ID:
+                tip = store.changeset_ref(hexlify(repo.lookup('tip')))
+                helper.write(
+                    '%s refs/heads/tip\n'
+                    '@refs/heads/tip HEAD\n'
+                    % (
+                        tip if tip else '?'
+                ))
+            helper.write('\n')
             helper.flush()
         elif cmd == 'option':
             assert len(args) == 2
