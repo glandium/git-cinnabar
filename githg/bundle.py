@@ -95,6 +95,7 @@ class PushStore(GitHgStore):
             parent_lines = parent_manifest._lines
             branch = parent_changeset_data.get('extra', {}).get('branch')
 
+            line = None
             for line in Git.diff_tree(parents[0], commit, recursive=True):
                 mode_before, mode_after, sha1_before, sha1_after, status, \
                     path = line
@@ -108,6 +109,9 @@ class PushStore(GitHgStore):
                 else:
                     assert status == 'A'
                     created[path] = (sha1_after, self.ATTR[mode_after])
+            if line is None:
+                manifest = parent_manifest
+                parent_lines = []
         else:
             parent_node = NULL_NODE_ID
             parent_lines = []
@@ -150,13 +154,14 @@ class PushStore(GitHgStore):
             manifest._lines.append(created_line)
             next_created = next(iter_created)
 
-        manifest.set_parents(parent_node)
-        manifest.node = manifest.sha1
-        manifest.removed = removed
-        manifest.modified = {l.name: (l.node, l.attr) for l in modified_lines}
-        manifest.previous_node = parent_node
-        self._push_manifests[manifest.node] = manifest
-        self.store(manifest)
+        if manifest.node == NULL_NODE_ID:
+            manifest.set_parents(parent_node)
+            manifest.node = manifest.sha1
+            manifest.removed = removed
+            manifest.modified = {l.name: (l.node, l.attr) for l in modified_lines}
+            manifest.previous_node = parent_node
+            self._push_manifests[manifest.node] = manifest
+            self.store(manifest)
 
         header, message = Git.cat_file('commit', commit).split('\n\n', 1)
         header_data = {}
