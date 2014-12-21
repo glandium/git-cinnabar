@@ -242,12 +242,6 @@ def create_bundle(store, commits):
             manifests[manifest] = (changeset,
                 tuple(store.read_changeset_data(p)['manifest']
                       for p in parents))
-            if isinstance(store.manifest_ref(manifest), Mark):
-                manifest = store.manifest(manifest)
-                for path, (sha1, attr) in manifest.modified.iteritems():
-                    file = store.file(sha1)
-                    files[path].append((sha1, (file.parent1, file.parent2),
-                                        changeset))
 
     yield '\0' * 4
 
@@ -262,11 +256,16 @@ def create_bundle(store, commits):
         previous = hg_manifest
         yield struct.pack(">l", len(data) + 4)
         yield data
-        manifest = store.manifest_ref(manifest)
-        if isinstance(manifest, Mark):
+        manifest_ref = store.manifest_ref(manifest)
+        if isinstance(manifest_ref, Mark):
+            manifest = store.manifest(manifest)
+            for path, (sha1, attr) in manifest.modified.iteritems():
+                file = store.file(sha1)
+                files[path].append((sha1, (file.parent1, file.parent2),
+                                    changeset))
             continue
         parents = tuple(store.manifest_ref(p) for p in parents)
-        changes = get_changes(manifest, parents, 'hg')
+        changes = get_changes(manifest_ref, parents, 'hg')
         for path, hg_file, hg_fileparents in changes:
             if hg_file != NULL_NODE_ID:
                 files[path].append((hg_file, hg_fileparents, changeset))
