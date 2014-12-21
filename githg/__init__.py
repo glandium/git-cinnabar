@@ -882,7 +882,7 @@ class GitHgStore(object):
 
         refs = {}
         for branch, head in self._hgheads:
-            ref = 'refs/remote-hg/branches/%s/head-%s' % (branch, head)
+            ref = 'refs/remote-hg/branches/%s/%s' % (branch, head)
             refs[ref] = self._changesets[head]
         refs_set = set(r for r in refs)
 

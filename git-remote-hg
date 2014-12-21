@@ -344,7 +344,7 @@ def main(args):
                         # heads. In that case, add the remote head "manually"
                         # if we have it locally.
                         store.add_head(head)
-                    helper.write('%s refs/heads/branches/%s/head-%s\n' % (
+                    helper.write('%s refs/heads/branches/%s/%s\n' % (
                         sha1,
                         branch,
                         head,
