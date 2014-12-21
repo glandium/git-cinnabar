@@ -175,6 +175,9 @@ def main(args):
             name = config[len('remote.'):-len('.url')]
             if url.startswith('hg::'):
                 Git.run('remote', 'update', '--prune', name)
+
+        print 'Please note that reclone left your local branches untouched.'
+        print 'They may be based on entirely different commits.'
     else:
         print >>sys.stderr, 'Unknown command:', cmd
         return 1
