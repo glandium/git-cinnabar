@@ -893,7 +893,7 @@ class GitHgStore(object):
         for ref in self._refs_orig - refs_set:
             Git.delete_ref(ref)
 
-        assert self._head_branch(self._hgtip) in self._hgheads
+        assert not self._hgtip or self._head_branch(self._hgtip) in self._hgheads
         if self._hgtip != self._hgtip_orig:
             Git.update_ref('refs/remote-hg/tip', self._changesets[self._hgtip])
 
