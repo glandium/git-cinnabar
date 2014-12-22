@@ -180,7 +180,7 @@ class PushStore(GitHgStore):
             extra['branch'] = branch
 
         changeset_data = self._changeset_data_cache[commit] = {
-            'files': sorted(chain(removed, manifest.modified)),
+            'files': sorted(chain(removed, modified, created)),
             'manifest': manifest.node,
             'extra': extra,
         }
