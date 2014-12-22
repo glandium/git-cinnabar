@@ -400,10 +400,14 @@ def main(args):
 
             if remote != 'hg::' + url:
                 prune = 'remote.%s.prune' % remote
-                if Git.config(prune) != 'true':
+                if (Git.config(prune) != 'true' and
+                        Git.config('fetch.prune') != 'true'):
                     sys.stderr.write(
-                        'It is recommended that you set "%(conf)s" to "true".\n'
+                        'It is recommended that you set "%(conf)s" or '
+                        '"fetch.prune" to "true".\n'
                         '  git config %(conf)s true\n'
+                        'or\n'
+                        '  git config fetch.prune true\n'
                         % { 'conf': prune }
                     )
         elif cmd == 'push':
