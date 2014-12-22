@@ -328,7 +328,8 @@ def main(args):
                 'import\n'
                 'bidi-import\n'
                 'push\n'
-                'refspec refs/heads/*:refs/remote-hg/*\n'
+                'refspec refs/heads/branches/*:refs/remote-hg/branches/*\n'
+                'refspec refs/heads/tip:refs/remote-hg/tip\n'
                 'refspec HEAD:refs/remote-hg/tip\n'
                 '\n'
             )
