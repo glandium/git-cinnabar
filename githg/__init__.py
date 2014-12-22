@@ -200,7 +200,7 @@ class ChangesetInfo(RevChunk):
         if len(date) == 3:
             self.extra = ChangesetData.parse_extra(date[2])
         else:
-            self.extra = {}
+            self.extra = None
         self.files = lines[3:]
 
 
@@ -717,7 +717,7 @@ class GitHgStore(object):
         author = self._git_committer(instance.committer, instance.date,
                                      instance.utcoffset)
         extra = instance.extra
-        if extra.get('committer'):
+        if extra and extra.get('committer'):
             committer = extra['committer']
             if committer[-1] == '>':
                 committer = committer, author[1], author[2]
@@ -744,7 +744,7 @@ class GitHgStore(object):
             'changeset': instance.node,
             'manifest': instance.manifest,
         }
-        if extra:
+        if extra is not None:
             data['extra'] = extra
         if instance.files:
             data['files'] = instance.files

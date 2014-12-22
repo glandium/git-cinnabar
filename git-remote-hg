@@ -168,7 +168,8 @@ class bundlerepo(object):
         for chunk in iter_chunks(self._changeset_chunks, ChangesetInfo):
             chunk.init(previous)
             previous = chunk
-            branch = chunk.extra.get('branch', 'default')
+            extra = chunk.extra or {}
+            branch = extra.get('branch', 'default')
             for p in (chunk.parent1, chunk.parent2):
                 if p in heads and heads[p] == branch:
                     del heads[p]

@@ -182,8 +182,9 @@ class PushStore(GitHgStore):
         changeset_data = self._changeset_data_cache[commit] = {
             'files': sorted(chain(removed, modified, created)),
             'manifest': manifest.node,
-            'extra': extra,
         }
+        if extra:
+            changeset_data['extra'] = extra
         changeset = self._changeset(commit, include_parents=True)
         changeset_data['changeset'] = changeset.changeset = changeset.node = \
             changeset.sha1
