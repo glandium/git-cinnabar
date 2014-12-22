@@ -162,7 +162,6 @@ class bundlerepo(object):
     def __init__(self, path):
         self._bundle = readbundle(open(path, 'r'))
         self._changeset_chunks = list(chunks_in_changegroup(self._bundle))
-        self._manifest_chunks = list(chunks_in_changegroup(self._bundle))
 
         heads = set()
         for chunk in iter_chunks(self._changeset_chunks, RevChunk):
@@ -185,7 +184,6 @@ class bundlerepo(object):
 def getbundle(repo, store, heads, branches):
     if isinstance(repo, bundlerepo):
         changeset_chunks = repo._changeset_chunks
-        manifest_chunks = repo._manifest_chunks
         bundle = repo._bundle
     else:
         common = findcommon(repo, store, heads, branches)
@@ -194,7 +192,7 @@ def getbundle(repo, store, heads, branches):
             common=[unhexlify(h) for h in common])
 
         changeset_chunks = list(chunks_in_changegroup(bundle))
-        manifest_chunks = list(chunks_in_changegroup(bundle))
+    manifest_chunks = list(chunks_in_changegroup(bundle))
 
     for rev_chunk in store._fast_import.progress_iter('files',
             iterate_files(bundle)):
