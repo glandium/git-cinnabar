@@ -163,18 +163,27 @@ class bundlerepo(object):
         self._bundle = readbundle(open(path, 'r'))
         self._changeset_chunks = list(chunks_in_changegroup(self._bundle))
 
-        heads = set()
-        for chunk in iter_chunks(self._changeset_chunks, RevChunk):
-            if chunk.parent1 in heads:
-                heads.remove(chunk.parent1)
-            if chunk.parent2 in heads:
-                heads.remove(chunk.parent2)
-            heads.add(chunk.node)
+        heads = {}
+        previous = None
+        for chunk in iter_chunks(self._changeset_chunks, ChangesetInfo):
+            chunk.init(previous)
+            previous = chunk
+            branch = chunk.extra.get('branch', 'default')
+            for p in (chunk.parent1, chunk.parent2):
+                if p in heads and heads[p] == branch:
+                    del heads[p]
+            heads[chunk.node] = branch
         self._heads = set(unhexlify(h) for h in heads)
+        self._branchmap = {}
+        for k, v in heads.iteritems():
+            self._branchmap.setdefault(v, []).append(unhexlify(k))
         self._tip = unhexlify(chunk.node)
 
     def heads(self):
         return self._heads
+
+    def branchmap(self):
+        return self._branchmap
 
     def lookup(self, name):
         assert name == 'tip'
