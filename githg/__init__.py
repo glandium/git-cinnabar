@@ -311,7 +311,8 @@ class ChangesetData(object):
                 if k == 'extra':
                     yield k, ChangesetData.dump_extra(data[k])
                 elif k == 'files':
-                    yield k, '\0'.join(data[k])
+                    if data[k]:
+                        yield k, '\0'.join(data[k])
                 else:
                     yield k, data[k]
         return '\n'.join('%s %s' % s for s in serialize(data))
@@ -545,7 +546,7 @@ class GitHgStore(object):
             date, ' ', str(utcoffset)
         ],
         [extra] if extra else [],
-        ['\n', '\n'.join(metadata['files'])] if 'files' in metadata else [],
+        ['\n', '\n'.join(metadata['files'])] if metadata.get('files') else [],
         ['\n\n'], message))
 
         hgdata = GeneratedRevChunk(sha1, changeset)
