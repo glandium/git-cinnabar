@@ -59,6 +59,7 @@ def fsck(args):
         seen_notes.add(node)
 
         changeset_data = store.read_changeset_data(node)
+        changeset = changeset_data['changeset']
         if 'extra' in changeset_data:
             extra = changeset_data['extra']
             if 'committer' in extra:
@@ -69,14 +70,18 @@ def fsck(args):
                 if committer != extra['committer'] and \
                         committer_info[0] != extra['committer']:
                     report('Committer mismatch between commit and metadata for'
-                           ' changeset %s' % changeset_data['changeset'])
+                           ' changeset %s' % changeset)
+                if committer == extra['committer']:
+                    print 'Fixing useless committer metadata for changeset %s' \
+                           % changeset
+                    del changeset_data['extra']['committer']
+                    store._changesets[changeset] = LazyString(node)
 
-        changeset = changeset_data['changeset']
         seen_changesets.add(changeset)
         changeset_ref = store.changeset_ref(changeset)
         if not changeset_ref:
             report('Missing changeset in hg2git branch: %s' % changeset)
-        if changeset_ref != node:
+        if str(changeset_ref) != node:
             report('Commit mismatch for changeset %s\n'
                    '  hg2git: %s\n  commit: %s'
                    % (changeset, changeset_ref, node))
