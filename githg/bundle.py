@@ -196,7 +196,6 @@ class PushStore(GitHgStore):
             if not extra:
                 del changeset_data['extra']
         self._changesets[changeset.node] = LazyString(commit)
-        self.add_head(changeset.node, changeset.parent1, changeset.parent2)
 
     def create_file(self, sha1, *parents):
         hg_file = GeneratedFileRev(NULL_NODE_ID, Git.cat_file('blob', sha1))
@@ -239,6 +238,7 @@ def create_bundle(store, commits):
             changeset_data = store.read_changeset_data(node)
         changeset = changeset_data['changeset']
         hg_changeset = store.changeset(changeset, include_parents=True)
+        store.add_head(hg_changeset.node, hg_changeset.parent1, hg_changeset.parent2)
         if previous is None and hg_changeset.parent1 != NULL_NODE_ID:
             previous = store.changeset(hg_changeset.parent1)
         data = hg_changeset.serialize(previous)
