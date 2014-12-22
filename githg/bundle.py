@@ -102,7 +102,7 @@ class PushStore(GitHgStore):
                     path = line
                 if status == 'D':
                     removed.add(path)
-                elif status == 'M':
+                elif status in 'MT':
                     if sha1_before == sha1_after:
                         modified[path] = (None, self.ATTR[mode_after])
                     else:
