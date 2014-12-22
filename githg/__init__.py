@@ -785,6 +785,7 @@ class GitHgStore(object):
                 commit.filedelete('hg/%s' % name)
                 commit.filedelete('git/%s' % name)
             for name, (node, attr) in instance.modified.items():
+                node = str(node)
                 commit.filemodify('hg/%s' % name, node, typ='commit')
                 commit.filemodify('git/%s' % name,
                     self.git_file_ref(node), typ=self.TYPE[attr])

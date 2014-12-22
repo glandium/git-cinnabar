@@ -45,6 +45,9 @@ class LazyString(object):
             return self._obj()
         return self._obj
 
+    def __len__(self):
+        return len(str(self))
+
 
 def one(l):
     l = list(l)

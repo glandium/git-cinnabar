@@ -18,6 +18,7 @@ from collections import (
     defaultdict,
 )
 import struct
+import types
 from itertools import chain
 
 #import logging
@@ -133,9 +134,9 @@ class PushStore(GitHgStore):
                 if attr is None:
                     attr = line.attr
                 if node is None:
-                    node = line.node
+                    node = LazyString(line.node)
                 else:
-                    node = self.create_file(node, line.node)
+                    node = self.create_file(node, str(line.node))
                 line = ManifestLine(line.name, node, attr)
                 modified_lines.append(line)
             while next_created and next_created[0] < line.name:
@@ -260,6 +261,8 @@ def create_bundle(store, commits):
         if isinstance(manifest_ref, Mark):
             manifest = store.manifest(manifest)
             for path, (sha1, attr) in manifest.modified.iteritems():
+                if not isinstance(sha1, types.StringType):
+                    continue
                 file = store.file(sha1)
                 files[path].append((sha1, (file.parent1, file.parent2),
                                     changeset))
