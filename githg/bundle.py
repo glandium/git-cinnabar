@@ -189,6 +189,12 @@ class PushStore(GitHgStore):
         changeset_data['changeset'] = changeset.changeset = changeset.node = \
             changeset.sha1
         self._push_changesets[changeset.node] = changeset
+        # This is a horrible way to do this, but this method is not doing much
+        # better overall anyways.
+        if extra:
+            del extra['committer']
+            if not extra:
+                del changeset_data['extra']
         self._changesets[changeset.node] = LazyString(commit)
         self.add_head(changeset.node, changeset.parent1, changeset.parent2)
 
