@@ -315,6 +315,7 @@ def main(args):
     helper = IOLogger(logging.getLogger('remote-helper'),
         sys.stdin, sys.stdout)
     branchmap = {}
+    tip = NULL_NODE_ID
 
     while True:
         cmd, args = read_cmd(helper)
@@ -361,12 +362,12 @@ def main(args):
                     ))
             tip = hexlify(repo.lookup('tip'))
             if tip != NULL_NODE_ID:
-                tip = store.changeset_ref(hexlify(repo.lookup('tip')))
+                tip_ref = store.changeset_ref(hexlify(repo.lookup('tip')))
                 helper.write(
                     '%s refs/heads/tip\n'
                     '@refs/heads/tip HEAD\n'
                     % (
-                        tip if tip else '?'
+                        tip_ref if tip_ref else '?'
                 ))
             helper.write('\n')
             helper.flush()
@@ -390,8 +391,15 @@ def main(args):
                 assert args is None or len(args) == 1
                 if args:
                     heads.extend(args)
-            heads = [h[-40:] for h in heads
-                     if h.startswith('refs/heads/branches/')]
+
+            def resolve_head(head):
+                if head.startswith('refs/heads/branches/'):
+                    return head[-40:]
+                if head == 'refs/heads/tip':
+                    return tip
+                return None
+
+            heads = [h for h in (resolve_head(h) for h in heads) if h]
             if not heads:
                 heads = list(chain(*branchmap.values()))
             store.init_fast_import(FastImport(sys.stdin, sys.stdout))
