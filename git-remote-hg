@@ -429,13 +429,10 @@ def main(args):
                 refspecs.extend(args)
             pushes = {s.lstrip('+'): (d, s.startswith('+'))
                       for s, d in (r.split(':', 1) for r in refspecs)}
-            if isinstance(repo, bundlerepo) or not repo.local():
-                if isinstance(repo, bundlerepo):
-                    error = 'Cannot push to a bundle file'
-                else:
-                    error = 'Push to remote server is not enabled yet'
+            if isinstance(repo, bundlerepo):
                 for source, (dest, force) in pushes.iteritems():
-                    helper.write('error %s %s\n' % (dest, error))
+                    helper.write('error %s Cannot push to a bundle file\n'
+                                 % (dest, error))
                 helper.write('\n')
                 helper.flush()
             else:
