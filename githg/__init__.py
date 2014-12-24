@@ -737,7 +737,7 @@ class GitHgStore(object):
             parents=parents,
             mark=mark,
         ) as commit:
-            mode, typ, tree, path = self._fast_import.ls(self.manifest_ref(instance.manifest), 'git')
+            mode, typ, tree, path = one(Git.ls_tree(self.manifest_ref(instance.manifest), 'git'))
             commit.filemodify('', tree, typ='tree')
 
         mark = self._changesets[instance.node] = Mark(mark)
