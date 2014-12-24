@@ -347,6 +347,7 @@ class GitHgStore(object):
         self._manifests = {}
         self._files = {}
         self._git_files = {}
+        self._git_trees = {}
         self._closed = False
 
         self._last_manifest = None
@@ -708,6 +709,15 @@ class GitHgStore(object):
         return (get_git_author(committer), int(date),
                 sign * (abs(utcoffset) // 60))
 
+    def git_tree(self, manifest_sha1):
+        if manifest_sha1 in self._git_trees:
+            return self._git_trees[manifest_sha1]
+        manifest_commit = self.manifest_ref(manifest_sha1)
+        mode, typ, tree, path = one(Git.ls_tree(manifest_commit, 'git'))
+        assert typ == 'tree' and path == 'git'
+        self._git_trees[manifest_sha1] = tree
+        return tree
+
     def _store_changeset(self, instance, mark):
         parents = [NULL_NODE_ID]
         parents += [
@@ -737,7 +747,7 @@ class GitHgStore(object):
             parents=parents,
             mark=mark,
         ) as commit:
-            mode, typ, tree, path = one(Git.ls_tree(self.manifest_ref(instance.manifest), 'git'))
+            tree = self.git_tree(instance.manifest)
             commit.filemodify('', tree, typ='tree')
 
         mark = self._changesets[instance.node] = Mark(mark)
