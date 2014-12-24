@@ -163,7 +163,8 @@ class Git(object):
             iterator = self.iter('ls-tree', '-r', treeish, '--', path)
         else:
             if not path.endswith('/') and self._fast_import:
-                if treeish.startswith('refs/'):
+                if (not isinstance(treeish, Mark) and
+                        treeish.startswith('refs/')):
                     treeish = self.resolve_ref(treeish)
                 ls = self._fast_import.ls(treeish, path)
                 if any(l is not None for l in ls):
