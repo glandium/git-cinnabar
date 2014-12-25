@@ -352,10 +352,7 @@ class GitHgStore(object):
 
         self._last_manifest = None
         self._hg2git_cache = {}
-        self._hg2git_cache_complete = False
-        self._hg2git_calls = 0
         self._previously_stored = None
-        self._thread = None
 
         self._changeset_data_cache = {}
 
@@ -447,33 +444,12 @@ class GitHgStore(object):
     def hg_changeset(self, sha1):
         return self.read_changeset_data(sha1)['changeset']
 
-    def _hg2git_fill_cache(self):
-        cache = {}
-        logging.info('start cache')
-        for mode, typ, filesha1, path in Git.ls_tree('refs/remote-hg/hg2git',
-                                                     recursive=True):
-            cache[path.replace('/','')] = (filesha1, intern(typ))
-        logging.info('end cache')
-        self._hg2git_cache = cache
-        self._hg2git_cache_complete = True
-
     def _hg2git(self, expected_type, sha1):
         if not self._hgtip_orig:
             return None
 
-        self._hg2git_calls += 1
-        if self._hg2git_calls > 100 and not self._hg2git_cache_complete:
-            if not self._thread:
-                self._thread = threading.Thread(target=self._hg2git_fill_cache)
-                self._thread.start()
-        elif self._thread:
-            logging.info(len(self._hg2git_cache))
-            if self._thread.isAlive():
-                self._thread.join()
-            self._thread = None
-
         gitsha1, typ = self._hg2git_cache.get(sha1, (None, None))
-        if not gitsha1 and not typ and not self._hg2git_cache_complete:
+        if not gitsha1 and not typ:
             ls = one(Git.ls_tree('refs/remote-hg/hg2git', sha1path(sha1)))
             if ls:
                 mode, typ, gitsha1, path = ls
@@ -908,6 +884,3 @@ class GitHgStore(object):
             Git.update_ref('refs/remote-hg/tip', self._changesets[self._hgtip])
 
         self._close_fast_import()
-        if self._thread:
-            # TODO: kill the thread
-            self._thread.join()
