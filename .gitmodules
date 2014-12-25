@@ -1,0 +1,3 @@
+[submodule "git-core"]
+	path = git-core
+	url = git://git.kernel.org/pub/scm/git/git.git
