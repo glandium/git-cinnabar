@@ -6,6 +6,7 @@ PYTHON_LIBS := \
 	githg/__init__.py \
 	githg/bundle.py \
 	githg/dag.py \
+	githg/helper.py \
 	git/__init__.py \
 	git/util.py
 
@@ -46,4 +47,12 @@ install-pythonlib:
 
 clean-pythonlib:
 	$(RM) -r pythonlib
+
+ALL_PROGRAMS += git-cinnabar-helper$X
+
+all:: git-cinnabar-helper$X
+
+%.o: %.c GIT-CFLAGS $(missing_dep_dirs)
+	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
+
 endif
