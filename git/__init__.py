@@ -107,11 +107,17 @@ class Git(object):
         start = time.time()
 
         proc = GitProcess(*args, **kwargs)
+        # git_logger.debug does that check under the hood, but it turns out
+        # that simply calling this check in the tight loop below makes a
+        # big difference. For a `hgdebug data -m` on a mozilla-central tree
+        # (> 100k items), it makes a 20% (!) overall wall time difference.
+        log = git_logger.isEnabledFor(logging.DEBUG)
         for line in proc.stdout or ():
-            git_logger.debug(LazyString(lambda: '[%d] => %s' % (
-                proc.pid,
-                repr(line),
-            )))
+            if log:
+                git_logger.debug(LazyString(lambda: '[%d] => %s' % (
+                    proc.pid,
+                    repr(line),
+                )))
             line = line.rstrip('\n')
             yield line
 
