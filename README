@@ -36,9 +36,16 @@ $remote`, must be run with each intermediate version.
 Setup:
 ------
 
-Install mercurial.
-Add this directory to your PATH. If you have another git-remote-hg project
-in your PATH already, make sure the git-cinnabar path comes before.
+- Install mercurial.
+- Add this directory to your PATH. If you have another git-remote-hg project
+  in your PATH already, make sure the git-cinnabar path comes before.
+
+Alternatively to the latter, you can do the following to build a native
+helper for faster operation:
+  $ git submodule update --init
+  Then see git-core/INSTALL for build/install instructions, but run the
+  commands in this directory. This will build/install git as well as
+  the tools from this directory.
 
 Usage:
 ------

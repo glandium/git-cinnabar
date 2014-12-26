@@ -1,6 +1,10 @@
 #!/usr/bin/env python2.7
 
 from __future__ import division
+import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
+
 from githg import (
     GitHgStore,
     IOLogger,
@@ -33,8 +37,6 @@ from urlparse import (
     urlunparse,
 )
 import logging
-import sys
-import os
 import random
 import subprocess
 from distutils.dir_util import mkpath
