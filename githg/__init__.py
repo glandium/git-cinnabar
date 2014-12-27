@@ -27,6 +27,7 @@ from git import (
     split_ls_tree,
     sha1path,
 )
+from .helper import GitHgHelper
 from mercurial import mdiff
 
 import time
@@ -573,7 +574,7 @@ class GitHgStore(object):
         obj = str(obj)
         if obj in self._changeset_data_cache:
             return self._changeset_data_cache[obj]
-        data = Git.read_note('refs/notes/cinnabar', obj)
+        data = GitHgHelper.git2hg(obj)
         if data is None:
             return None
         ret = self._changeset_data_cache[obj] = ChangesetData.parse(data)
@@ -589,15 +590,12 @@ class GitHgStore(object):
         if not self._refs_orig and not self._closed:
             return None
 
-        gitsha1, typ = self._hg2git_cache.get(sha1, (None, None))
-        if not gitsha1 and not typ:
-            ls = one(Git.ls_tree('refs/cinnabar/hg2git', sha1path(sha1)))
-            if ls:
-                mode, typ, gitsha1, path = ls
-            else:
-                typ, gitsha1 = 'missing', None
-            self._hg2git_cache[sha1] = gitsha1, typ
-        assert not gitsha1 or typ == expected_type
+        gitsha1 = self._hg2git_cache.get(sha1)
+        if not gitsha1:
+            gitsha1 = GitHgHelper.hg2git(sha1)
+            if gitsha1 == NULL_NODE_ID:
+                gitsha1 = None
+            self._hg2git_cache[sha1] = gitsha1
         return gitsha1
 
     def _git_object(self, dic, expected_type, sha1, hg2git=True, create=True):
@@ -998,6 +996,7 @@ class GitHgStore(object):
     def close(self):
         if self._closed:
             return
+        GitHgHelper.close()
         self._closed = True
         hg2git_files = []
         changeset_by_mark = {}

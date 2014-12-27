@@ -18,6 +18,7 @@ from git import (
 )
 from git.util import LazyString
 from githg.dag import gitdag
+from githg.helper import GitHgHelper
 import subprocess
 
 import logging
@@ -43,7 +44,7 @@ def fsck(args):
         Git.ls_tree('refs/cinnabar/hg2git', recursive=True)
     }
 
-    store._hg2git_cache = all_hg2git
+    store._hg2git_cache = { p: s for p, (s, t) in all_hg2git.iteritems() }
 
     all_notes = set(path.replace('/', '') for mode, typ, filesha1, path in
         Git.ls_tree('refs/notes/cinnabar', recursive=True))
