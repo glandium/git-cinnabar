@@ -74,5 +74,37 @@ class GitHgHelper(object):
             mode, typ, gitsha1, path = ls
             return gitsha1
 
+    @classmethod
+    def manifest(self, hg_sha1, git_sha1=None):
+        try:
+            with self.query('manifest', hg_sha1) as stdout:
+                size = int(stdout.readline().strip())
+                ret = stdout.read(size)
+                lf = stdout.read(1)
+                assert lf == '\n'
+                from . import isplitmanifest
+                for l in isplitmanifest(ret):
+                    yield l
+        except NoHelperException:
+            from . import ManifestLine, GitHgStore
+            attrs = {}
+            if not git_sha1:
+                git_sha1 = self.hg2git(hg_sha1)
+            for mode, typ, filesha1, path in Git.ls_tree(git_sha1,
+                                                         recursive=True):
+                if path.startswith('git/'):
+                    attr = GitHgStore.ATTR[mode]
+                    if attr:
+                        attrs[path[4:]] = attr
+                else:
+                    assert path.startswith('hg/')
+                    path = path[3:]
+                    line = ManifestLine(
+                        name=path,
+                        node=filesha1,
+                        attr=attrs.get(path, ''),
+                    )
+                    yield line
+
 
 atexit.register(GitHgHelper.close)

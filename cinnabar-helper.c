@@ -8,6 +8,10 @@
  * - hg2git <hg_sha1>
  *     Returns the sha1 of the git object corresponding to the given
  *     mercurial sha1.
+ * - manifest <hg_sha1>
+ *     Returns the contents of the mercurial manifest with the given
+ *     mercurial sha1, preceded by its length in text form, and followed
+ *     by a carriage return.
  */
 
 #include <stdio.h>
@@ -19,6 +23,8 @@
 #include "notes.h"
 #include "streaming.h"
 #include "object.h"
+#include "tree.h"
+#include "tree-walk.h"
 
 #define REFS_PREFIX "refs/cinnabar/"
 #define NOTES_REF "refs/notes/cinnabar"
@@ -92,6 +98,14 @@ not_found:
 	write_or_die(1, "\n", 1);
 }
 
+static const unsigned char *resolve_hg2git(const unsigned char *sha1) {
+	if (!hg2git.initialized)
+		init_notes(&hg2git, REFS_PREFIX "hg2git",
+		           combine_notes_overwrite, 0);
+
+	return get_note(&hg2git, sha1);
+}
+
 static void do_hg2git(struct string_list *command) {
 	unsigned char sha1[20];
 	const unsigned char *note;
@@ -99,14 +113,10 @@ static void do_hg2git(struct string_list *command) {
 	if (command->nr != 2)
 		goto not_found;
 
-	if (!hg2git.initialized)
-		init_notes(&hg2git, REFS_PREFIX "hg2git",
-			combine_notes_overwrite, 0);
-
 	if (get_sha1_hex(command->items[1].string, sha1))
 		goto not_found;
 
-	note = get_note(&hg2git, sha1);
+	note = resolve_hg2git(sha1);
 	if (note) {
 		write_or_die(1, sha1_to_hex(note), 40);
 		write_or_die(1, "\n", 1);
@@ -116,6 +126,140 @@ static void do_hg2git(struct string_list *command) {
 not_found:
 	write_or_die(1, NULL_NODE, 40);
 	write_or_die(1, "\n", 1);
+}
+
+/* Return the mercurial manifest character corresponding to the given
+ * git file mode. */
+static const char *hgattr(unsigned int mode) {
+	if (S_ISLNK(mode))
+		return "l";
+	if (S_ISREG(mode)) {
+		if ((mode & 0755) == 0755)
+			return "x";
+		else if ((mode & 0644) == 0644)
+			return "";
+	}
+	die("Unsupported mode %06o", mode);
+}
+
+/* The git storage for a mercurial manifest is a commit with two directories
+ * at its root:
+ * - a git directory, matching the git tree in git commit * corresponding to
+ *   the mercurial changeset using the manifest.
+ * - a hg directory, containing the same file paths, but where all pointed
+ *   objects are commits (mode 160000 in the git tree) whose sha1 is actually
+ *   the mercurial sha1 for the corresponding mercurial file.
+ * Reconstructing the mercurial manifest requires file paths, mercurial sha1
+ * for each file, and the corresponding attribute ("l" for symlinks, "x" for
+ * executables"). The hg directory alone is not enough for that, because it
+ * lacks the attribute information. So, both directories are recursed in
+ * parallel to generate the original manifest data.
+ */
+static void recurse_manifest(const unsigned char *sha1_git,
+                             const unsigned char *sha1_hg,
+                             struct strbuf *manifest, char *base) {
+	struct tree *tree_git = NULL, *tree_hg = NULL;
+	struct tree_desc desc_git, desc_hg;
+	struct name_entry entry_git, entry_hg;
+
+	tree_git = parse_tree_indirect(sha1_git);
+	if (!tree_git)
+		goto corrupted;
+	tree_hg = parse_tree_indirect(sha1_hg);
+	if (!tree_hg)
+		goto corrupted;
+	init_tree_desc(&desc_git, tree_git->buffer, tree_git->size);
+	init_tree_desc(&desc_hg, tree_hg->buffer, tree_hg->size);
+
+	while (tree_entry(&desc_git, &entry_git)) {
+		if (!tree_entry(&desc_hg, &entry_hg))
+			goto corrupted;
+
+		if (S_ISDIR(entry_git.mode)) {
+			struct strbuf dir = STRBUF_INIT;
+			if (!S_ISDIR(entry_hg.mode))
+				goto corrupted;
+			strbuf_addstr(&dir, base);
+			strbuf_addstr(&dir, entry_git.path);
+			strbuf_addch(&dir, '/');
+			recurse_manifest(entry_git.sha1, entry_hg.sha1,
+			                 manifest, dir.buf);
+			strbuf_release(&dir);
+			continue;
+		}
+		strbuf_addf(manifest, "%s%s%c%s%s\n", base, entry_git.path,
+		            '\0', sha1_to_hex(entry_hg.sha1),
+		            hgattr(entry_git.mode));
+	}
+	if (tree_entry(&desc_hg, &entry_hg))
+		goto corrupted;
+
+	free_tree_buffer(tree_hg);
+	free_tree_buffer(tree_git);
+	return;
+corrupted:
+	die("Corrupted metadata");
+}
+
+static void do_manifest(struct string_list *command) {
+	unsigned char sha1[20];
+	const unsigned char *tree_sha1;
+	unsigned char sha1_git[20], sha1_hg[20];
+	struct tree_desc desc;
+	struct name_entry entry;
+	struct tree *manifest_tree = NULL;
+	struct strbuf manifest = STRBUF_INIT;
+	struct strbuf header = STRBUF_INIT;
+
+	if (command->nr != 2)
+		goto not_found;
+
+	if (get_sha1_hex(command->items[1].string, sha1))
+		goto not_found;
+
+	tree_sha1 = resolve_hg2git(sha1);
+	if (!tree_sha1)
+		goto not_found;
+
+	manifest_tree = parse_tree_indirect(tree_sha1);
+	if (!manifest_tree)
+		goto not_found;
+
+	init_tree_desc(&desc, manifest_tree->buffer, manifest_tree->size);
+	/* The first entry in the manifest tree is the git subtree. */
+	if (!tree_entry(&desc, &entry))
+		goto not_found;
+	if (strcmp(entry.path, "git"))
+		goto not_found;
+	memcpy(sha1_git, entry.sha1, 20);
+
+	/* The second entry in the manifest tree is the hg subtree. */
+	if (!tree_entry(&desc, &entry))
+		goto not_found;
+	if (strcmp(entry.path, "hg"))
+		goto not_found;
+	memcpy(sha1_hg, entry.sha1, 20);
+
+	/* There shouldn't be any other entry. */
+	if (tree_entry(&desc, &entry))
+		goto not_found;
+
+	recurse_manifest(sha1_git, sha1_hg, &manifest, "");
+
+not_found:
+	if (manifest_tree)
+		free_tree_buffer(manifest_tree);
+
+	strbuf_addf(&header, "%lu\n", manifest.len);
+
+	write_or_die(1, header.buf, header.len);
+
+	strbuf_release(&header);
+
+	write_or_die(1, manifest.buf, manifest.len);
+	write_or_die(1, "\n", 1);
+
+	strbuf_release(&manifest);
 }
 
 int main(int argc, const char *argv[]) {
@@ -128,6 +272,8 @@ int main(int argc, const char *argv[]) {
 			do_git2hg(&command);
 		else if (!strcmp("hg2git", command.items[0].string))
 			do_hg2git(&command);
+		else if (!strcmp("manifest", command.items[0].string))
+			do_manifest(&command);
 		else
 			die("Unknown command: \"%s\"", command.items[0].string);
 
