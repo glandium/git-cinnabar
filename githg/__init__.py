@@ -746,21 +746,8 @@ class GitHgStore(object):
                 manifest._lines.append(created_line)
                 next_created = next(iter_created)
         else:
-            for mode, typ, filesha1, path in Git.ls_tree(gitsha1,
-                                                         recursive=True):
-                if path.startswith('git/'):
-                    attr = self.ATTR[mode]
-                    if attr:
-                        attrs[path[4:]] = attr
-                else:
-                    assert path.startswith('hg/')
-                    path = path[3:]
-                    line = ManifestLine(
-                        name=path,
-                        node=filesha1,
-                        attr=attrs.get(path, ''),
-                    )
-                    manifest._lines.append(line)
+            manifest._lines = list(GitHgHelper.manifest(sha1, gitsha1))
+
         return manifest
 
     def manifest_ref(self, sha1, hg2git=True, create=False):
