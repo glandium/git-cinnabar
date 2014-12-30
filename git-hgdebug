@@ -30,6 +30,14 @@ def fsck(args):
     store = GitHgStore()
     store.init_fast_import(FastImport())
 
+    all_hg2git = {
+        path.replace('/', ''): (filesha1, intern(typ))
+        for mode, typ, filesha1, path in
+        Git.ls_tree('refs/remote-hg/hg2git', recursive=True)
+    }
+
+    store._hg2git_cache = all_hg2git
+
     all_notes = set(path.replace('/', '') for mode, typ, filesha1, path in
         Git.ls_tree('refs/notes/remote-hg/git2hg', recursive=True))
 
@@ -134,8 +142,8 @@ def fsck(args):
                        % (manifest_ref, node))
 
     # TODO: Check files
-    all_hg2git = set(path.replace('/', '') for mode, typ, filesha1, path in
-        Git.ls_tree('refs/remote-hg/hg2git', recursive=True) if typ=='commit')
+    all_hg2git = set(k for k, (s, t) in all_hg2git.iteritems()
+                     if t == 'commit')
 
     for obj in all_hg2git - seen_changesets - seen_manifests - seen_files:
         print 'Dangling metadata for ' + obj
