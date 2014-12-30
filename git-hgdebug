@@ -3,6 +3,7 @@
 from githg import (
     ChangesetData,
     GitHgStore,
+    NULL_NODE_ID,
     split_ls_tree,
     one,
 )
@@ -21,6 +22,8 @@ import logging
 
 def fsck(args):
     # TODO: Add arguments to enable more sha1 checks
+    do_manifests = '--manifests' in args
+
     status = { 'broken': False }
 
     def report(message):
@@ -58,6 +61,8 @@ def fsck(args):
     seen_manifests = set()
     seen_files = set()
     seen_notes = set()
+
+    hg_manifest = None
 
     for line in all_git_commits:
         tree, node = line.split(' ')
@@ -131,6 +136,17 @@ def fsck(args):
         elif manifest_ref not in manifest_commits:
             report('Missing manifest commit in manifest branch: %s' %
                    manifest_ref)
+
+        if do_manifests:
+            hg_manifest = store.manifest(manifest, hg_manifest)
+            parents = tuple(
+                store.read_changeset_data(store.changeset_ref(p))['manifest']
+                for p in (hg_changeset.parent1, hg_changeset.parent2)
+                if p != NULL_NODE_ID
+            )
+            hg_manifest.set_parents(*parents)
+            if hg_manifest.node != hg_manifest.sha1:
+                report('Sha1 mismatch for manifest %s' % manifest)
 
         git_ls = one(Git.ls_tree(manifest_ref, 'git'))
         if not git_ls:
