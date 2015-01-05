@@ -51,6 +51,9 @@ logger.addHandler(handler)
 
 NULL_NODE_ID = '0' * 40
 
+# An empty git tree has a fixed sha1 which is that of "tree 0\0"
+EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+
 CHECK_ALL_NODE_IDS = False
 CHECK_MANIFESTS = False
 
@@ -689,8 +692,17 @@ class GitHgStore(object):
         if manifest_sha1 in self._git_trees:
             return self._git_trees[manifest_sha1]
         manifest_commit = self.manifest_ref(manifest_sha1)
-        mode, typ, tree, path = one(Git.ls_tree(manifest_commit, 'git'))
-        assert typ == 'tree' and path == 'git'
+        line = one(Git.ls_tree(manifest_commit, 'git'))
+        if line:
+            mode, typ, tree, path = line
+            assert typ == 'tree' and path == 'git'
+        else:
+            # If there is no git directory in the manifest tree, it means the
+            # manifest tree is empty, so the corresponding git tree needs to
+            # be empty too, although there is no entry for it. No need to
+            # actually get the sha1 for the empty directory, since it's a fixed
+            # value.
+            tree = EMPTY_TREE
         self._git_trees[manifest_sha1] = tree
         return tree
 

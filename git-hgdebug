@@ -3,6 +3,7 @@
 from githg import (
     ChangesetData,
     GitHgStore,
+    EMPTY_TREE,
     NULL_NODE_ID,
     split_ls_tree,
     one,
@@ -149,6 +150,12 @@ def fsck(args):
                 report('Sha1 mismatch for manifest %s' % manifest)
 
         git_ls = one(Git.ls_tree(manifest_ref, 'git'))
+        if not git_ls:
+            git_ls = one(Git.ls_tree(manifest_ref))
+            if git_ls:
+                mode, typ, sha1, path = git_ls
+                if sha1 != EMPTY_TREE:
+                    git_ls = None
         if not git_ls:
             report('Missing git tree in manifest commit %s' % manifest_ref)
         else:
