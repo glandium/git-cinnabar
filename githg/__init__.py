@@ -372,8 +372,9 @@ class GitHgStore(object):
         if hgtip:
             self._hgtip_orig = hgtip = self.hg_changeset(hgtip)
 
+        self._hgtips = {}
         self._hgheads = set()
-        self._refs_orig = set()
+        self._refs_orig = {}
 
         # refs/remote-hg/head-* are the old heads for upgrade
         # refs/remote-hg/branches/* are the new heads
@@ -381,14 +382,16 @@ class GitHgStore(object):
                 'refs/remote-hg/branches', format='%(objectname) %(refname)'):
             sha1, head = line.split()
             logging.info('%s %s' % (sha1, head))
-            hghead = head[-40:]
             if head.startswith('refs/remote-hg/branches/'):
-                branch = head.split('/')[3]
-                self._hgheads.add((branch, hghead))
-                self._changesets[hghead] = sha1
+                branch, hghead = head[24:].split('/', 1)
+                if hghead == 'tip':
+                    self._hgtips[branch] = sha1
+                else:
+                    self._hgheads.add((branch, hghead))
+                    self._changesets[hghead] = sha1
             else:
-                self.add_head(hghead)
-            self._refs_orig.add(head)
+                self._hgheads.add(self._head_branch(head[-40:]))
+            self._refs_orig[head] = sha1
 
         self._hgtip = self._hgtip_orig
         assert (not self._hgtip or
@@ -417,6 +420,7 @@ class GitHgStore(object):
 
         self._hgheads.add(head_branch)
         self._hgtip = head
+        self._hgtips[head_branch[0]] = self.changeset_ref(head)
 
     @property
     def _fast_import(self):
@@ -881,14 +885,28 @@ class GitHgStore(object):
                     commit.notemodify(mark, ChangesetData.dump(data))
 
         refs = {}
+        modified = set()
+        created = set()
+        def register_ref(ref):
+            if ref in self._refs_orig:
+                if self._refs_orig[ref] != refs[ref]:
+                    modified.add(ref)
+            else:
+                created.add(ref)
+
         for branch, head in self._hgheads:
             ref = 'refs/remote-hg/branches/%s/%s' % (branch, head)
             refs[ref] = self._changesets[head]
+            register_ref(ref)
+        for branch, tip in self._hgtips.iteritems():
+            ref = 'refs/remote-hg/branches/%s/tip' % (branch)
+            refs[ref] = tip
+            register_ref(ref)
         refs_set = set(r for r in refs)
 
-        for ref in refs_set - self._refs_orig:
+        for ref in modified | created:
             Git.update_ref(ref, refs[ref])
-        for ref in self._refs_orig - refs_set:
+        for ref in set(self._refs_orig) - refs_set:
             Git.delete_ref(ref)
 
         assert not self._hgtip or self._head_branch(self._hgtip) in self._hgheads

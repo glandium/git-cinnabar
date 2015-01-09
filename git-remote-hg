@@ -278,6 +278,53 @@ def read_cmd(fileobj):
     line = line.split(' ')
     return line[0], line[1:]
 
+
+class BranchMap(object):
+    def __init__(self, store, remote_branchmap):
+        self._heads = {}
+        self._tips = {}
+        self._git_sha1s = {}
+        local_heads = store.heads()
+        for branch, heads in remote_branchmap.iteritems():
+            branch_heads = []
+            for head in heads:
+                head = hexlify(head)
+                branch_heads.append(head)
+                sha1 = store.changeset_ref(head)
+                if not sha1:
+                    continue
+                extra = store.read_changeset_data(sha1).get('extra')
+                if extra and not extra.get('close'):
+                    self._tips[branch] = head
+                assert head not in self._git_sha1s
+                self._git_sha1s[head] = sha1
+                if head not in local_heads:
+                    # When the local store still has old heads, it can
+                    # have some branch heads missing because they don't
+                    # appear in repo.heads() as they are not topological
+                    # heads. In that case, add the remote head "manually"
+                    # if we have it locally.
+                    store.add_head(head)
+            # Use last head as tip if we didn't set one.
+            if heads and branch not in self._tips:
+                self._tips[branch] = head
+            self._heads[branch] = tuple(branch_heads)
+
+    def names(self):
+        return self._heads.keys()
+
+    def heads(self, branch=None):
+        if branch:
+            return self._heads.get(branch, ())
+        return self._git_sha1s.keys()
+
+    def git_sha1(self, head):
+        return self._git_sha1s.get(head, '?')
+
+    def tip(self, branch):
+        return self._tips.get(branch, None)
+
+
 def main(args):
     logger = logging.getLogger('-')
     logger.info(args)
@@ -330,7 +377,7 @@ def main(args):
     logger.info(LazyString(lambda: '%s' % store.heads()))
     helper = IOLogger(logging.getLogger('remote-helper'),
         sys.stdin, sys.stdout)
-    branchmap = {}
+    branchmap = None
     tip = NULL_NODE_ID
 
     while True:
@@ -354,27 +401,21 @@ def main(args):
         elif cmd == 'list':
             # TODO: use repo.batch()
             assert not args or args == ['for-push']
-            branchmap = {
-                b: tuple(hexlify(h) for h in heads)
-                for b, heads in repo.branchmap().iteritems()
-            }
-            local_heads = store.heads()
-            for branch, heads in branchmap.iteritems():
-                for head in heads:
-                    sha1 = store.changeset_ref(head)
-                    if not sha1:
-                        sha1 = '?'
-                    elif head not in local_heads:
-                        # When the local store still has old heads, it can
-                        # have some branch heads missing because they don't
-                        # appear in repo.heads() as they are not topological
-                        # heads. In that case, add the remote head "manually"
-                        # if we have it locally.
-                        store.add_head(head)
+            branchmap = BranchMap(store, repo.branchmap())
+            for branch in branchmap.names():
+                branch_tip = branchmap.tip(branch)
+                for head in branchmap.heads(branch):
+                    if head == branch_tip:
+                        continue
                     helper.write('%s refs/heads/branches/%s/%s\n' % (
-                        sha1,
+                        branchmap.git_sha1(head),
                         branch,
                         head,
+                    ))
+                if branch_tip:
+                    helper.write('%s refs/heads/branches/%s/tip\n' % (
+                        branchmap.git_sha1(branch_tip),
+                        branch,
                     ))
             tip = hexlify(repo.lookup('tip'))
             if tip != NULL_NODE_ID:
@@ -410,6 +451,9 @@ def main(args):
 
             def resolve_head(head):
                 if head.startswith('refs/heads/branches/'):
+                    head = head[20:]
+                    if head[-4:] == '/tip':
+                        return branchmap.tip(head[:-4])
                     return head[-40:]
                 if head == 'refs/heads/tip':
                     return tip
@@ -417,9 +461,9 @@ def main(args):
 
             heads = [h for h in (resolve_head(h) for h in heads) if h]
             if not heads:
-                heads = list(chain(*branchmap.values()))
+                heads = branchmap.heads()
             store.init_fast_import(FastImport(sys.stdin, sys.stdout))
-            getbundle(repo, store, heads, branchmap.keys())
+            getbundle(repo, store, heads, branchmap.names())
             store.close()
 
             if remote != 'hg::' + url:
@@ -452,8 +496,8 @@ def main(args):
                 helper.write('\n')
                 helper.flush()
             else:
-                repo_heads = list(chain(*branchmap.values()))
-                pushed = push(repo, store, pushes, repo_heads, branchmap.keys())
+                repo_heads = branchmap.heads()
+                pushed = push(repo, store, pushes, repo_heads, branchmap.names())
                 for source, (dest, force) in pushes.iteritems():
                     if pushed:
                         helper.write('ok %s\n' % dest)
