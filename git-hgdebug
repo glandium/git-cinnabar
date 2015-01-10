@@ -60,6 +60,7 @@ def fsck(args):
 
     seen_changesets = set()
     seen_manifests = set()
+    seen_manifest_refs = set()
     seen_files = set()
     seen_notes = set()
 
@@ -132,6 +133,8 @@ def fsck(args):
             continue
         seen_manifests.add(manifest)
         manifest_ref = store.manifest_ref(manifest)
+        if manifest_ref:
+            seen_manifest_refs.add(manifest_ref)
         if not manifest_ref:
             report('Missing manifest in hg2git branch: %s' % manifest)
         elif manifest_ref not in manifest_commits:
@@ -170,6 +173,9 @@ def fsck(args):
 
     for obj in all_hg2git - seen_changesets - seen_manifests - seen_files:
         print 'Dangling metadata for ' + obj
+
+    for obj in manifest_commits - seen_manifest_refs:
+        print 'Metadata commit %s with no hg2git entry' % obj
 
     for commit in all_notes - seen_notes:
         print 'Dangling note for commit ' + commit
