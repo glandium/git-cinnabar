@@ -88,7 +88,7 @@ class Git(object):
         self._fast_import = fast_import
 
     @classmethod
-    def close(self):
+    def close(self, rollback=False):
         if self._cat_file:
             self._cat_file.wait()
             self._cat_file = None
@@ -99,7 +99,7 @@ class Git(object):
             diff_tree.wait()
         self._diff_tree = {}
         if self._fast_import:
-            self._fast_import.close()
+            self._fast_import.close(rollback)
             self._fast_import = None
 
     @classmethod
@@ -255,7 +255,7 @@ class Git(object):
                 raise
             return None
 
-atexit.register(Git.close)
+atexit.register(Git.close, rollback=True)
 
 
 class Mark(int):
@@ -290,7 +290,7 @@ class FastImport(IOLogger):
             "feature notes\n"
         )
 
-        self._done = False
+        self._done = None
 
     def send_done(self):
         self.write('feature done\n')
@@ -314,9 +314,10 @@ class FastImport(IOLogger):
         self.flush()
         return super(FastImport, self).readline(level)
 
-    def close(self):
-        if self._done:
+    def close(self, rollback=False):
+        if not rollback or self._done is not False:
             self.write('done\n')
+            self._done = None
         self.flush()
         if self._proc:
             self._proc.wait()
@@ -360,6 +361,7 @@ class FastImport(IOLogger):
         self.write('blob\n')
         self.cmd_mark(mark)
         self.cmd_data(data)
+        self._done = False
 
     @staticmethod
     def _format_committer(author):
@@ -393,6 +395,7 @@ class FastImport(IOLogger):
             ))
         helper.apply()
         self.write('\n')
+        self._done = False
 
 
 class FastImportCommitHelper(object):
