@@ -393,9 +393,23 @@ class GitHgStore(object):
                 self._hgheads.add(self._head_branch(head[-40:]))
             self._refs_orig[head] = sha1
 
+        self._bookmarks = {}
+        for line in Git.for_each_ref('refs/remote-hg/bookmarks',
+                format='%(objectname) %(refname)'):
+            sha1, head = line.split()
+            self._bookmarks[head[25:]] = sha1
+        self._bookmarks_orig = dict(self._bookmarks)
+
         self._hgtip = self._hgtip_orig
         assert (not self._hgtip or
             self._head_branch(self._hgtip) in self._hgheads)
+
+    def add_bookmark(self, name, sha1):
+        self._bookmarks[name] = self.changeset_ref(sha1)
+
+    def del_bookmark(self, name):
+        if name in self._bookmarks:
+            del self._bookmarks[name]
 
     def heads(self, branches={}):
         if not isinstance(branches, (dict, set)):
@@ -449,7 +463,10 @@ class GitHgStore(object):
         return ret
 
     def hg_changeset(self, sha1):
-        return self.read_changeset_data(sha1)['changeset']
+        data = self.read_changeset_data(sha1)
+        if data:
+            return data['changeset']
+        return None
 
     def _hg2git(self, expected_type, sha1):
         if not self._hgtip_orig:
@@ -912,5 +929,16 @@ class GitHgStore(object):
         assert not self._hgtip or self._head_branch(self._hgtip) in self._hgheads
         if self._hgtip != self._hgtip_orig:
             Git.update_ref('refs/remote-hg/tip', self._changesets[self._hgtip])
+
+        for name in set(self._bookmarks) | set(self._bookmarks_orig):
+            if name in self._bookmarks:
+                ref = 'refs/remote-hg/bookmarks/%s' % name
+                if name in self._bookmarks_orig:
+                    if self._bookmarks_orig[name] != self._bookmarks[name]:
+                        Git.update_ref(ref, self._bookmarks[name])
+                else:
+                    Git.update_ref(ref, self._bookmarks[name])
+            else:
+                Git_delete_ref(ref)
 
         self._close_fast_import()

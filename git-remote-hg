@@ -254,7 +254,7 @@ def push(repo, store, what, repo_heads, repo_branches):
 
     push_commits = list(Git.iter('rev-list', '--stdin', '--topo-order',
                                  '--full-history', '--parents', '--reverse',
-                                 *what, stdin=revs))
+                                 *(w for w in what if w), stdin=revs))
 
     ret = False
     if push_commits:
@@ -378,6 +378,7 @@ def main(args):
     helper = IOLogger(logging.getLogger('remote-helper'),
         sys.stdin, sys.stdout)
     branchmap = None
+    bookmarks = {}
     tip = NULL_NODE_ID
 
     while True:
@@ -393,6 +394,7 @@ def main(args):
                 'bidi-import\n'
                 'push\n'
                 'refspec refs/heads/branches/*:refs/remote-hg/branches/*\n'
+                'refspec refs/heads/bookmarks/*:refs/remote-hg/bookmarks/*\n'
                 'refspec refs/heads/tip:refs/remote-hg/tip\n'
                 'refspec HEAD:refs/remote-hg/tip\n'
                 '\n'
@@ -426,6 +428,13 @@ def main(args):
                     % (
                         tip_ref if tip_ref else '?'
                 ))
+            bookmarks = repo.listkeys('bookmarks')
+            for name, sha1 in bookmarks.iteritems():
+                ref = store.changeset_ref(sha1)
+                helper.write(
+                    '%s refs/heads/bookmarks/%s\n'
+                    % (ref if ref else '?', name)
+                )
             helper.write('\n')
             helper.flush()
         elif cmd == 'option':
@@ -455,15 +464,22 @@ def main(args):
                     if head[-4:] == '/tip':
                         return branchmap.tip(head[:-4])
                     return head[-40:]
+                if head.startswith('refs/heads/bookmarks/'):
+                    head = head[21:]
+                    return bookmarks[head]
                 if head == 'refs/heads/tip':
                     return tip
                 return None
 
+            wanted_bookmarks = set(h[21:] for h in heads
+                                   if h.startswith('refs/heads/bookmarks/'))
             heads = [h for h in (resolve_head(h) for h in heads) if h]
             if not heads:
                 heads = branchmap.heads()
             store.init_fast_import(FastImport(sys.stdin, sys.stdout))
             getbundle(repo, store, heads, branchmap.names())
+            for name in wanted_bookmarks:
+                store.add_bookmark(name, bookmarks[name])
             store.close()
 
             if remote != 'hg::' + url:
@@ -498,9 +514,29 @@ def main(args):
             else:
                 repo_heads = branchmap.heads()
                 pushed = push(repo, store, pushes, repo_heads, branchmap.names())
+
+                status = {}
+                for source, (dest, _) in pushes.iteritems():
+                    if not dest.startswith('refs/heads/bookmarks/'):
+                        if source:
+                            status[dest] = pushed
+                        else:
+                            status[dest] = 'Cannot delete remote branches'
+                        continue
+                    name = dest[21:]
+                    if source:
+                        source = store.hg_changeset(Git.resolve_ref(source)) \
+                            or ''
+                    status[dest] = repo.pushkey(
+                        'bookmarks', name, bookmarks.get(name, ''), source)
+                    if not source and status[dest]:
+                        store.del_bookmark(name)
+
                 for source, (dest, force) in pushes.iteritems():
-                    if pushed:
+                    if status[dest] is True:
                         helper.write('ok %s\n' % dest)
+                    elif status[dest]:
+                        helper.write('error %s %s\n' % (dest, status[dest]))
                     else:
                         helper.write('error %s nothing changed on remote\n' % dest)
                 helper.write('\n')
