@@ -45,11 +45,7 @@ hg:: url where you would use a git:// url.
 Limitations:
 ------------
 
-At the moment, push is not supported for remote repositories. It will
-remain as such until the support is thoroughly tested, because it is
-sadly possible to break mercurial repositories with bundles missing
-some content (and, surely, it happened during the development of
-this feature).
+At the moment, push is limited to non-merge commits.
 
 There is no support for the following mercurial features:
 - obsolescence markers
