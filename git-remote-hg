@@ -190,6 +190,9 @@ class bundlerepo(object):
         assert name == 'tip'
         return self._tip
 
+    def capable(self, capability):
+        return False
+
 
 def getbundle(repo, store, heads, branches):
     if isinstance(repo, bundlerepo):
@@ -401,9 +404,23 @@ def main(args):
             )
             helper.flush()
         elif cmd == 'list':
-            # TODO: use repo.batch()
             assert not args or args == ['for-push']
-            branchmap = BranchMap(store, repo.branchmap())
+
+            if repo.capable('batch'):
+                batch = repo.batch()
+                branchmap = batch.branchmap()
+                tip = batch.lookup('tip')
+                bookmarks = batch.listkeys('bookmarks')
+                batch.submit()
+                branchmap = branchmap.value
+                tip = tip.value
+                bookmarks = bookmarks.value
+            else:
+                branchmap = repo.branchmap()
+                tip = repo.lookup('tip')
+                bookmarks = repo.listkeys('bookmarks')
+
+            branchmap = BranchMap(store, branchmap)
             for branch in branchmap.names():
                 branch_tip = branchmap.tip(branch)
                 for head in branchmap.heads(branch):
@@ -419,16 +436,15 @@ def main(args):
                         branchmap.git_sha1(branch_tip),
                         branch,
                     ))
-            tip = hexlify(repo.lookup('tip'))
+            tip = hexlify(tip)
             if tip != NULL_NODE_ID:
-                tip_ref = store.changeset_ref(hexlify(repo.lookup('tip')))
+                tip_ref = store.changeset_ref(tip)
                 helper.write(
                     '%s refs/heads/tip\n'
                     '@refs/heads/tip HEAD\n'
                     % (
                         tip_ref if tip_ref else '?'
                 ))
-            bookmarks = repo.listkeys('bookmarks')
             for name, sha1 in bookmarks.iteritems():
                 ref = store.changeset_ref(sha1)
                 helper.write(
