@@ -148,6 +148,9 @@ class Git(object):
 
     @classmethod
     def cat_file(self, typ, sha1):
+        if self._fast_import and typ == 'blob' and ':' not in sha1:
+            return self._fast_import.cat_blob(sha1)
+
         if not self._cat_file:
             self._cat_file = GitProcess('cat-file', '--batch',
                                         stdin=subprocess.PIPE)
@@ -386,6 +389,11 @@ class FastImport(IOLogger):
         helper.apply()
         self.write('\n')
         self._done = False
+        if mark:
+            Git._refs[ref] = Mark(mark)
+            assert Git._refs.values().count(mark) == 1
+        else:
+            Git._refs[ref] = None
 
 
 class FastImportCommitHelper(object):

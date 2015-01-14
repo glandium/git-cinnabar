@@ -18,6 +18,7 @@ from git.util import (
 )
 from git import (
     EmptyMark,
+    FastImport,
     Git,
     Mark,
     split_ls_tree,
@@ -404,6 +405,62 @@ class GitHgStore(object):
         assert (not self._hgtip or
             self._head_branch(self._hgtip) in self._hgheads)
 
+        self._tagcache = {}
+        self._tagfiles = {}
+        self._tags = { NULL_NODE_ID: {} }
+        self._tagcache_ref = Git.resolve_ref('refs/remote-hg/tagcache')
+        self._tagcache_items = set()
+        if self._tagcache_ref:
+            for line in Git.ls_tree(self._tagcache_ref):
+                mode, typ, sha1, path = line
+                if typ == 'tree':
+                    self._tagfiles[path] = sha1
+                elif typ == 'blob':
+                    self._tagcache[path] = sha1
+                elif typ == 'commit':
+                    assert sha1 == NULL_NODE_ID
+                    self._tagcache[path] = sha1
+                self._tagcache_items.add(path)
+
+        self.tag_changes = False
+
+    def tags(self, heads):
+        # The given heads are assumed to be ordered by mercurial
+        # revision number, such that the last is the one where
+        # tags are the most relevant.
+        tags = {}
+        for h in heads:
+            h = self.changeset_ref(h)
+            tags.update(self._get_hgtags(h))
+        for tag, node in tags.iteritems():
+            if node != NULL_NODE_ID:
+                yield tag, node
+
+    def _get_hgtags(self, head):
+        if not self._tagcache.get(head):
+            ls = one(Git.ls_tree(head, '.hgtags'))
+            if not ls:
+                self._tagcache[head] = NULL_NODE_ID
+                return {}
+            mode, typ, self._tagcache[head], path = ls
+        tagfile = self._tagcache[head]
+        tags = {}
+        if tagfile not in self._tags:
+            if tagfile in self._tagfiles:
+                for ls in Git.ls_tree(self._tagfiles[tagfile]):
+                    mode, typ, node, tag = ls
+                    tags[tag] = node
+            else:
+                data = Git.cat_file('blob', tagfile) or ''
+                for line in data.splitlines():
+                    node, tag = line.split(' ', 1)
+                    if node != NULL_NODE_ID:
+                        node = self.changeset_ref(node)
+                    if node:
+                        tags[tag] = node
+        self._tags[tagfile] = tags
+        return tags
+
     def add_bookmark(self, name, sha1):
         self._bookmarks[name] = self.changeset_ref(sha1)
 
@@ -428,13 +485,22 @@ class GitHgStore(object):
             if p == NULL_NODE_ID:
                 continue
             parent_head_branch = self._head_branch(p)
-            if (parent_head_branch[0] == head_branch[0] and
-                    parent_head_branch in self._hgheads):
-                self._hgheads.remove(parent_head_branch)
+            if parent_head_branch[0] == head_branch[0]:
+                if parent_head_branch in self._hgheads:
+                    self._hgheads.remove(parent_head_branch)
+                ref = self.changeset_ref(parent_head_branch[1])
+                if isinstance(ref, LazyString):
+                    ref = str(ref)
+                if ref in self._tagcache:
+                    self._tagcache[ref] = False
 
         self._hgheads.add(head_branch)
         self._hgtip = head
-        self._hgtips[head_branch[0]] = self.changeset_ref(head)
+        ref = self.changeset_ref(head)
+        self._hgtips[head_branch[0]] = ref
+        if isinstance(ref, LazyString):
+            ref = str(ref)
+        self._tagcache[ref] = None
 
     @property
     def _fast_import(self):
@@ -469,7 +535,7 @@ class GitHgStore(object):
         return None
 
     def _hg2git(self, expected_type, sha1):
-        if not self._hgtip_orig:
+        if not self._hgtip_orig and not self._closed:
             return None
 
         gitsha1, typ = self._hg2git_cache.get(sha1, (None, None))
@@ -868,6 +934,7 @@ class GitHgStore(object):
             return
         self._closed = True
         hg2git_files = []
+        changeset_by_mark = {}
         for dic, typ in (
                 (self._files, 'regular'),
                 (self._manifests, 'commit'),
@@ -878,12 +945,15 @@ class GitHgStore(object):
                         continue
                     if isinstance(mark, EmptyMark):
                         raise TypeError(node)
+                    if mark in self._tagcache:
+                        changeset_by_mark[mark] = node
                     hg2git_files.append((sha1path(node), mark, typ))
         if hg2git_files:
             with self._fast_import.commit(
                 ref='refs/remote-hg/hg2git',
                 parents=(s for s in ('refs/remote-hg/hg2git^0',)
-                         if self._hgtip_orig)
+                         if self._hgtip_orig),
+                mark=self._fast_import.new_mark(),
             ) as commit:
                 for file in sorted(hg2git_files, key=lambda f: f[0]):
                     commit.filemodify(*file)
@@ -940,5 +1010,55 @@ class GitHgStore(object):
                     Git.update_ref(ref, self._bookmarks[name])
             else:
                 Git_delete_ref(ref)
+
+        for c, f in self._tagcache.items():
+            if isinstance(c, Mark) and f is not False:
+                c = changeset_by_mark[c]
+                if c in self._hg2git_cache:
+                    del self._hg2git_cache[c]
+                c = self._hg2git('commit', c)
+            if f is None:
+                tags = self._get_hgtags(c)
+
+        files = set(self._tagcache.itervalues())
+        deleted = set()
+        created = {}
+        for f in self._tagfiles:
+            if f not in files and f in self._tagcache_items:
+                deleted.add(f)
+
+        for f, tags in self._tags.iteritems():
+            if f not in self._tagcache_items and f != NULL_NODE_ID:
+                for tag, value in tags.iteritems():
+                    created['%s/%s' % (f, tag)] = (value, 'commit')
+
+        if created or deleted:
+            self.tag_changes = True
+
+        for c, f in self._tagcache.iteritems():
+            if (f and not isinstance(c, Mark) and
+                    c not in self._tagcache_items):
+                if f == NULL_NODE_ID:
+                    created[c] = (f, 'commit')
+                else:
+                    created[c] = (f, 'regular')
+            elif f is False and c in self._tagcache_items:
+                deleted.add(c)
+
+        if created or deleted:
+            if not self.__fast_import:
+                self.init_fast_import(FastImport())
+            with self._fast_import.commit(
+                ref='refs/remote-hg/tagcache',
+            ) as commit:
+                if self._tagcache_ref:
+                    mode, typ, tree, path = \
+                        self._fast_import.ls(self._tagcache_ref)
+                    commit.filemodify('', tree, typ='tree')
+                for f in deleted:
+                    commit.filedelete(f)
+
+                for f, (sha1, typ) in created.iteritems():
+                    commit.filemodify(f, sha1, typ)
 
         self._close_fast_import()

@@ -207,12 +207,12 @@ def progress_iter(fmt, iter):
     sys.stderr.write(('\r' + fmt + '\n') % count)
 
 
-def getbundle(repo, store, heads, branches):
+def getbundle(repo, store, heads, branchmap):
     if isinstance(repo, bundlerepo):
         changeset_chunks = repo._changeset_chunks
         bundle = repo._bundle
     else:
-        common = findcommon(repo, store, heads, branches)
+        common = findcommon(repo, store, heads, branchmap.names())
         logging.info('common: %s' % common)
         bundle = repo.getbundle('bundle', heads=[unhexlify(h) for h in heads],
             common=[unhexlify(h) for h in common])
@@ -253,8 +253,27 @@ def getbundle(repo, store, heads, branches):
     for sha1 in manifest_sha1s:
         store.git_tree(sha1)
 
+    heads = { h: n for n, h in enumerate(branchmap.heads()) }
+    num = -1
+    reported = False
     for cs in progress_iter('Importing %d changesets',
             iter_chunks(changeset_chunks, ChangesetInfo)):
+        if not reported:
+            prev = num
+            num = heads.get(cs.node, prev)
+            if prev > num:
+                sys.stderr.write(
+                    'The mercurial repository reported heads in a different '
+                    'order than they\n'
+                    'appear in the bundle it created. This breaks assumptions '
+                    'in git-remote-hg\'s\n'
+                    'support for tags. Please report the issue on\n'
+                    '  https://github.com/glandium/git-remote-hg/issues\n'
+                )
+                # Mercurial itself somehow relies on the orders to match, so if
+                # a future version of mercurial actually changes the heads
+                # order, tag inconsistencies will happen with mercurial too.
+                reported = True
         store.store(cs)
 
     del changeset_chunks
@@ -443,13 +462,17 @@ def main(args):
                 bookmarks = repo.listkeys('bookmarks')
 
             branchmap = BranchMap(store, branchmap, heads)
+            unknowns = False
             for branch in branchmap.names():
                 branch_tip = branchmap.tip(branch)
                 for head in branchmap.heads(branch):
+                    sha1 = branchmap.git_sha1(head)
+                    if sha1 == '?':
+                        unknowns = True
                     if head == branch_tip:
                         continue
                     helper.write('%s refs/heads/branches/%s/%s\n' % (
-                        branchmap.git_sha1(head),
+                        sha1,
                         branch,
                         head,
                     ))
@@ -464,6 +487,10 @@ def main(args):
                     '%s refs/heads/bookmarks/%s\n'
                     % (ref if ref else '?', name)
                 )
+            if not unknowns:
+                for tag, ref in store.tags(branchmap.heads()):
+                    helper.write('%s refs/tags/%s\n' % (ref, tag))
+
             if '@' in bookmarks:
                 HEAD = 'bookmarks/@'
             helper.write(
@@ -513,7 +540,7 @@ def main(args):
             if not heads:
                 heads = branchmap.heads()
             store.init_fast_import(FastImport(sys.stdin, sys.stdout))
-            getbundle(repo, store, heads, branchmap.names())
+            getbundle(repo, store, heads, branchmap)
             for name in wanted_bookmarks:
                 store.add_bookmark(name, bookmarks[name])
 
@@ -522,7 +549,7 @@ def main(args):
 
             store.close()
 
-            if remote != 'hg::' + url:
+            if not remote.startswith('hg::'):
                 prune = 'remote.%s.prune' % remote
                 if (Git.config(prune) != 'true' and
                         Git.config('fetch.prune') != 'true'):
@@ -534,6 +561,14 @@ def main(args):
                         '  git config fetch.prune true\n'
                         % { 'conf': prune }
                     )
+
+            if store.tag_changes:
+                sys.stderr.write('\nRun the following command to update remote tags:\n')
+                if not remote.startswith('hg::'):
+                    sys.stderr.write('  git remote update %s\n' % remote)
+                else:
+                    sys.stderr.write('  git fetch --tags %s\n' % remote)
+
         elif cmd == 'push':
             refspecs = []
             refspecs.extend(args)
@@ -557,11 +592,19 @@ def main(args):
 
                 status = {}
                 for source, (dest, _) in pushes.iteritems():
+                    if dest.startswith('refs/tags/'):
+                        if source:
+                            status[dest] = 'Pushing tags is unsupported'
+                        else:
+                            status[dest] = \
+                                'Deleting remote tags is unsupported'
+                        continue
                     if not dest.startswith('refs/heads/bookmarks/'):
                         if source:
                             status[dest] = pushed
                         else:
-                            status[dest] = 'Cannot delete remote branches'
+                            status[dest] = \
+                                'Deleting remote branches is unsupported'
                         continue
                     name = dest[21:]
                     if source:
