@@ -283,8 +283,9 @@ def read_cmd(fileobj):
 
 
 class BranchMap(object):
-    def __init__(self, store, remote_branchmap):
+    def __init__(self, store, remote_branchmap, remote_heads):
         self._heads = {}
+        self._all_heads = tuple(hexlify(h) for h in reversed(remote_heads))
         self._tips = {}
         self._git_sha1s = {}
         local_heads = store.heads()
@@ -319,7 +320,7 @@ class BranchMap(object):
     def heads(self, branch=None):
         if branch:
             return self._heads.get(branch, ())
-        return self._git_sha1s.keys()
+        return self._all_heads
 
     def git_sha1(self, head):
         return self._git_sha1s.get(head, '?')
@@ -409,18 +410,27 @@ def main(args):
             if repo.capable('batch'):
                 batch = repo.batch()
                 branchmap = batch.branchmap()
+                heads = batch.heads()
                 tip = batch.lookup('tip')
                 bookmarks = batch.listkeys('bookmarks')
                 batch.submit()
                 branchmap = branchmap.value
+                heads = heads.value
                 tip = tip.value
                 bookmarks = bookmarks.value
             else:
-                branchmap = repo.branchmap()
+                while True:
+                    branchmap = repo.branchmap()
+                    heads = repo.heads()
+                    # Some branch heads can be non-heads topologically, but if
+                    # some heads don't appear in the branchmap, then something
+                    # was pushed to the repo between branchmap() and heads()
+                    if set(heads).issubset(set(chain(*branchmap.values()))):
+                        break
                 tip = repo.lookup('tip')
                 bookmarks = repo.listkeys('bookmarks')
 
-            branchmap = BranchMap(store, branchmap)
+            branchmap = BranchMap(store, branchmap, heads)
             for branch in branchmap.names():
                 branch_tip = branchmap.tip(branch)
                 for head in branchmap.heads(branch):
