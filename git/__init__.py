@@ -11,6 +11,8 @@ from util import (
     LazyString,
     one,
 )
+from itertools import izip
+from binascii import hexlify
 
 git_logger = logging.getLogger('git')
 # git_logger.setLevel(logging.INFO)
@@ -158,27 +160,61 @@ class Git(object):
         self._cat_file.stdin.write(sha1 + '\n')
         header = self._cat_file.stdout.readline().split()
         if header[1] == 'missing':
+            if typ == 'auto':
+                return 'missing', None
             return None
-        assert header[1] == typ
+        assert typ == 'auto' or header[1] == typ
         size = int(header[2])
         ret = self._cat_file.stdout.read(size)
         lf = self._cat_file.stdout.read(1)
         assert lf == '\n'
+        if typ == 'auto':
+            return header[1], ret
         return ret
 
     @classmethod
     def ls_tree(self, treeish, path='', recursive=False):
+        if (not isinstance(treeish, Mark) and
+                treeish.startswith('refs/')):
+            treeish = self.resolve_ref(treeish)
         if recursive:
+            assert not isinstance(treeish, Mark)
             iterator = self.iter('ls-tree', '-r', treeish, '--', path)
+        elif not path.endswith('/') and self._fast_import:
+            ls = self._fast_import.ls(treeish, path)
+            if any(l is not None for l in ls):
+                yield ls
+            return
+        elif not isinstance(treeish, Mark):
+            if path == '' or path.endswith('/'):
+                treeish = treeish + ':' + path
+                typ, data = self.cat_file('auto', treeish)
+                assert typ in ('tree', 'missing')
+                while data:
+                    null = data.index('\0')
+                    mode, path = data[:null].split(' ', 1)
+                    if mode == '160000':
+                        typ = 'commit'
+                    elif mode == '40000':
+                        typ = 'tree'
+                        mode = '040000'
+                    else:
+                        typ = 'blob'
+                    sha1 = hexlify(data[null + 1:null + 21])
+                    yield mode, typ, sha1, path
+                    data = data[null + 21:]
+            else:
+                base = path.rsplit('/', 1)
+                if len(base) == 1:
+                    base = ''
+                else:
+                    base, path = base
+                    base += '/'
+                for mode, typ, sha1, p in self.ls_tree(treeish, base):
+                    if p == path:
+                        yield mode, typ, sha1, path
+            return
         else:
-            if not path.endswith('/') and self._fast_import:
-                if (not isinstance(treeish, Mark) and
-                        treeish.startswith('refs/')):
-                    treeish = self.resolve_ref(treeish)
-                ls = self._fast_import.ls(treeish, path)
-                if any(l is not None for l in ls):
-                    yield ls
-                return
             iterator = self.iter('ls-tree', treeish, '--', path)
 
         for line in iterator:
