@@ -43,6 +43,7 @@ from git import (
     FastImport,
     Git,
 )
+import time
 
 try:
     from mercurial.changegroup import cg1unpacker
@@ -190,6 +191,18 @@ class bundlerepo(object):
         return False
 
 
+def progress_iter(fmt, iter):
+    count = 0
+    t0 = 0
+    for count, item in enumerate(iter, start=1):
+        t1 = time.time()
+        if t1 - t0 > 1:
+            sys.stderr.write(('\r' + fmt) % count)
+            t0 = t1
+        yield item
+    sys.stderr.write(('\r' + fmt + '\n') % count)
+
+
 def getbundle(repo, store, heads, branches):
     if isinstance(repo, bundlerepo):
         changeset_chunks = repo._changeset_chunks
@@ -200,10 +213,13 @@ def getbundle(repo, store, heads, branches):
         bundle = repo.getbundle('bundle', heads=[unhexlify(h) for h in heads],
             common=[unhexlify(h) for h in common])
 
-        changeset_chunks = list(chunks_in_changegroup(bundle))
-    manifest_chunks = list(chunks_in_changegroup(bundle))
+        changeset_chunks = list(progress_iter('Reading %d changegroups',
+            chunks_in_changegroup(bundle)))
 
-    for rev_chunk in store._fast_import.progress_iter('files',
+    manifest_chunks = list(progress_iter('Reading %d manifests',
+        chunks_in_changegroup(bundle)))
+
+    for rev_chunk in progress_iter('Reading and importing %d files',
             iterate_files(bundle)):
         store.store(rev_chunk)
 
@@ -212,7 +228,7 @@ def getbundle(repo, store, heads, branches):
 #    logging.getLogger('').setLevel(logging.DEBUG)
 
     manifest_sha1s = []
-    for mn in store._fast_import.progress_iter('manifests',
+    for mn in progress_iter('Importing %d manifests',
             iter_chunks(manifest_chunks, ManifestInfo)):
         manifest_sha1s.append(mn.node)
         store.store(mn)
@@ -233,7 +249,7 @@ def getbundle(repo, store, heads, branches):
     for sha1 in manifest_sha1s:
         store.git_tree(sha1)
 
-    for cs in store._fast_import.progress_iter('changesets',
+    for cs in progress_iter('Importing %d changesets',
             iter_chunks(changeset_chunks, ChangesetInfo)):
         store.store(cs)
 

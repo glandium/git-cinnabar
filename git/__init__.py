@@ -296,16 +296,6 @@ class FastImport(IOLogger):
         self.write('feature done\n')
         self._done = True
 
-    def progress_iter(self, what, iter, step=1000):
-        count = 0
-        for count, item in enumerate(iter, start=1):
-            if count % step == 0:
-                self.write('progress %d %s\n' % (count, what))
-#                print hp.heap()
-            yield item
-        if count % step:
-            self.write('progress %d %s\n' % (count, what))
-
     def read(self, length=0, level=logging.INFO):
         self.flush()
         return super(FastImport, self).read(length, level)
