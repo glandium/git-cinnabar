@@ -192,7 +192,8 @@ class PushStore(GitHgStore):
         # This is a horrible way to do this, but this method is not doing much
         # better overall anyways.
         if extra:
-            del extra['committer']
+            if 'committer' in extra:
+                del extra['committer']
             if not extra:
                 del changeset_data['extra']
         self._changesets[changeset.node] = LazyString(commit)
