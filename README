@@ -67,3 +67,19 @@ with the following command:
   git hgdebug fsck
 
 That command will advise what to do about those corruptions.
+
+Starting with commit 0d5b3a2c69c820e657ef204dae17e2696e1ebd53, the tip
+branch is not exposed anymore, and previously cloned repositories can
+be confused by the situation. Moreover, the way the remote HEAD ref is
+handled changed in a way that can confuse git.
+To get in a better state, you can do the following:
+- Save .git/config
+- Run the following command:
+    git remote show | xargs -L1 git remote rm
+- Restore .git/config
+- Edit .git/config and replace occurrences of `refs/heads/tip` with
+  `refs/heads/branches/default/tip` or `refs/heads/bookmarks/@`,
+  depending whether the corresponding remote exposes that bookmark
+  (you can check with `git ls-remote`).
+- Run the following command:
+    git remote update
