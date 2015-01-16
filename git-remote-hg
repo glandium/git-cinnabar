@@ -186,10 +186,6 @@ class bundlerepo(object):
     def branchmap(self):
         return self._branchmap
 
-    def lookup(self, name):
-        assert name == 'tip'
-        return self._tip
-
     def capable(self, capability):
         return False
 
@@ -383,7 +379,6 @@ def main(args):
         sys.stdin, sys.stdout)
     branchmap = None
     bookmarks = {}
-    tip = NULL_NODE_ID
 
     while True:
         cmd, args = read_cmd(helper)
@@ -399,8 +394,7 @@ def main(args):
                 'push\n'
                 'refspec refs/heads/branches/*:refs/remote-hg/branches/*\n'
                 'refspec refs/heads/bookmarks/*:refs/remote-hg/bookmarks/*\n'
-                'refspec refs/heads/tip:refs/remote-hg/tip\n'
-                'refspec HEAD:refs/remote-hg/tip\n'
+                'refspec HEAD:HEAD\n'
                 '\n'
             )
             helper.flush()
@@ -411,12 +405,10 @@ def main(args):
                 batch = repo.batch()
                 branchmap = batch.branchmap()
                 heads = batch.heads()
-                tip = batch.lookup('tip')
                 bookmarks = batch.listkeys('bookmarks')
                 batch.submit()
                 branchmap = branchmap.value
                 heads = heads.value
-                tip = tip.value
                 bookmarks = bookmarks.value
             else:
                 while True:
@@ -427,7 +419,6 @@ def main(args):
                     # was pushed to the repo between branchmap() and heads()
                     if set(heads).issubset(set(chain(*branchmap.values()))):
                         break
-                tip = repo.lookup('tip')
                 bookmarks = repo.listkeys('bookmarks')
 
             branchmap = BranchMap(store, branchmap, heads)
@@ -446,22 +437,18 @@ def main(args):
                         branchmap.git_sha1(branch_tip),
                         branch,
                     ))
-            tip = hexlify(tip)
-            if tip != NULL_NODE_ID:
-                tip_ref = store.changeset_ref(tip)
-                helper.write(
-                    '%s refs/heads/tip\n'
-                    '@refs/heads/tip HEAD\n'
-                    % (
-                        tip_ref if tip_ref else '?'
-                ))
             for name, sha1 in bookmarks.iteritems():
                 ref = store.changeset_ref(sha1)
                 helper.write(
                     '%s refs/heads/bookmarks/%s\n'
                     % (ref if ref else '?', name)
                 )
-            helper.write('\n')
+            helper.write(
+                '@refs/heads/%s HEAD\n'
+                '\n'
+                % ('bookmarks/@' if '@' in bookmarks
+                   else 'branches/default/tip')
+            )
             helper.flush()
         elif cmd == 'option':
             assert len(args) == 2
@@ -474,7 +461,6 @@ def main(args):
             mkpath(reflog)
             open(os.path.join(reflog, 'hg2git'), 'a').close()
             open(os.path.join(reflog, 'manifest'), 'a').close()
-            open(os.path.join(reflog, 'tip'), 'a').close()
             assert len(args) == 1
             heads = args
             while cmd:
@@ -493,8 +479,6 @@ def main(args):
                 if head.startswith('refs/heads/bookmarks/'):
                     head = head[21:]
                     return bookmarks[head]
-                if head == 'refs/heads/tip':
-                    return tip
                 return None
 
             wanted_bookmarks = set(h[21:] for h in heads
