@@ -162,9 +162,10 @@ def findcommon(repo, store, heads, branches={}):
 class bundlerepo(object):
     def __init__(self, path):
         self._bundle = readbundle(open(path, 'r'))
-        self._changeset_chunks = list(chunks_in_changegroup(self._bundle))
+        self._changeset_chunks = list(progress_iter('Reading %d changegroups',
+            chunks_in_changegroup(self._bundle)))
 
-        heads = {}
+        heads = OrderedDict()
         previous = None
         for chunk in iter_chunks(self._changeset_chunks, ChangesetInfo):
             chunk.init(previous)
@@ -175,7 +176,7 @@ class bundlerepo(object):
                 if p in heads and heads[p] == branch:
                     del heads[p]
             heads[chunk.node] = branch
-        self._heads = set(unhexlify(h) for h in heads)
+        self._heads = tuple(unhexlify(h) for h in heads)
         self._branchmap = {}
         for k, v in heads.iteritems():
             self._branchmap.setdefault(v, []).append(unhexlify(k))
@@ -189,6 +190,9 @@ class bundlerepo(object):
 
     def capable(self, capability):
         return False
+
+    def listkeys(self, namespace):
+        return {}
 
 
 def progress_iter(fmt, iter):
