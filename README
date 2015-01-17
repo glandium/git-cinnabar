@@ -20,6 +20,7 @@ require mercurial to be installed for some of its libraries.
   - https://github.com/cosmin/git-hg
   - https://github.com/todesschaf/git-hg
   - https://github.com/msysgit/msysgit/wiki/Guide-to-git-remote-hg
+  - https://github.com/buchuki/gitifyhg/
 
 The main focus at the moment is to make it work with mozilla-central
 and related mercurial repositories and support Mozilla workflows (try
