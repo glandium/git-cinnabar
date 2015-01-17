@@ -399,6 +399,7 @@ def main(args):
         sys.stdin, sys.stdout)
     branchmap = None
     bookmarks = {}
+    HEAD = 'branches/default/tip'
 
     while True:
         cmd, args = read_cmd(helper)
@@ -414,7 +415,7 @@ def main(args):
                 'push\n'
                 'refspec refs/heads/branches/*:refs/remote-hg/branches/*\n'
                 'refspec refs/heads/bookmarks/*:refs/remote-hg/bookmarks/*\n'
-                'refspec HEAD:HEAD\n'
+                'refspec HEAD:refs/remote-hg/HEAD\n'
                 '\n'
             )
             helper.flush()
@@ -463,11 +464,12 @@ def main(args):
                     '%s refs/heads/bookmarks/%s\n'
                     % (ref if ref else '?', name)
                 )
+            if '@' in bookmarks:
+                HEAD = 'bookmarks/@'
             helper.write(
                 '@refs/heads/%s HEAD\n'
                 '\n'
-                % ('bookmarks/@' if '@' in bookmarks
-                   else 'branches/default/tip')
+                % HEAD
             )
             helper.flush()
         elif cmd == 'option':
@@ -482,13 +484,13 @@ def main(args):
             open(os.path.join(reflog, 'hg2git'), 'a').close()
             open(os.path.join(reflog, 'manifest'), 'a').close()
             assert len(args) == 1
-            heads = args
+            refs = args
             while cmd:
                 assert cmd == 'import'
                 cmd, args = read_cmd(helper)
                 assert args is None or len(args) == 1
                 if args:
-                    heads.extend(args)
+                    refs.extend(args)
 
             def resolve_head(head):
                 if head.startswith('refs/heads/branches/'):
@@ -499,17 +501,25 @@ def main(args):
                 if head.startswith('refs/heads/bookmarks/'):
                     head = head[21:]
                     return bookmarks[head]
+                if head == 'HEAD':
+                    return bookmarks.get('@') or branchmap.tip('default')
                 return None
 
-            wanted_bookmarks = set(h[21:] for h in heads
+            wanted_bookmarks = set(h[21:] for h in refs
                                    if h.startswith('refs/heads/bookmarks/'))
-            heads = [h for h in (resolve_head(h) for h in heads) if h]
+            if HEAD == 'bookmarks/@':
+                wanted_bookmarks.add('@')
+            heads = [h for h in (resolve_head(h) for h in refs) if h]
             if not heads:
                 heads = branchmap.heads()
             store.init_fast_import(FastImport(sys.stdin, sys.stdout))
             getbundle(repo, store, heads, branchmap.names())
             for name in wanted_bookmarks:
                 store.add_bookmark(name, bookmarks[name])
+
+            Git.run('symbolic-ref', 'refs/remote-hg/HEAD',
+                    'refs/remote-hg/%s' % HEAD)
+
             store.close()
 
             if remote != 'hg::' + url:
