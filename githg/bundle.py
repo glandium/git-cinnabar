@@ -4,6 +4,8 @@ from . import (
     GeneratedManifestInfo,
     ManifestLine,
     NULL_NODE_ID,
+    EMPTY_BLOB,
+    EMPTY_TREE,
 )
 from git import (
     Git,
@@ -11,6 +13,7 @@ from git import (
 )
 from git.util import (
     next,
+    one,
     LazyString,
 )
 from collections import (
@@ -87,6 +90,7 @@ class PushStore(GitHgStore):
         # TODO: share code with GitHgStore.manifest
         removed = set()
         modified = {}
+        copies = {}
         created = OrderedDict()
 
         if parents:
@@ -97,9 +101,11 @@ class PushStore(GitHgStore):
             branch = parent_changeset_data.get('extra', {}).get('branch')
 
             line = None
-            for line in Git.diff_tree(parents[0], commit, recursive=True):
+            for line in Git.diff_tree(parents[0], commit, detect_copy=True,
+                                      recursive=True):
                 mode_before, mode_after, sha1_before, sha1_after, status, \
                     path = line
+                status = status[0]
                 if status == 'D':
                     removed.add(path)
                 elif status in 'MT':
@@ -107,6 +113,15 @@ class PushStore(GitHgStore):
                         modified[path] = (None, self.ATTR[mode_after])
                     else:
                         modified[path] = (sha1_after, self.ATTR[mode_after])
+                elif status in 'RC':
+                    path1, path2 = path.split('\t', 1)
+                    if status == 'R':
+                        removed.add(path1)
+                    if sha1_after == EMPTY_BLOB:
+                        modified[path2] = (sha1_after, self.ATTR[mode_after])
+                    else:
+                        copies[path2] = path1
+                        created[path2] = (sha1_after, self.ATTR[mode_after])
                 else:
                     assert status == 'A'
                     created[path] = (sha1_after, self.ATTR[mode_after])
@@ -122,11 +137,18 @@ class PushStore(GitHgStore):
                 mode, typ, sha1, path = line
                 created[path] = (sha1, self.ATTR[mode])
 
+        if copies:
+            copied = { k: () for k in copies.values() }
+            for line in parent_lines:
+                name = str(line.name)
+                if name in copied:
+                    copied[name] = line.node
+
         iter_created = created.iteritems()
         next_created = next(iter_created)
         modified_lines = []
         for line in parent_lines:
-            if line.name in removed:
+            if line.name in removed and line.name not in created:
                 continue
             mod = modified.get(line.name)
             if mod:
@@ -141,7 +163,11 @@ class PushStore(GitHgStore):
                 modified_lines.append(line)
             while next_created and next_created[0] < line.name:
                 node, attr = next_created[1]
-                node = self.create_file(node)
+                if next_created[0] in copies:
+                    copied_name = copies[next_created[0]]
+                    node = self.create_copy((copied_name, copied[copied_name]), node)
+                else:
+                    node = self.create_file(node)
                 created_line = ManifestLine(next_created[0], node, attr)
                 modified_lines.append(created_line)
                 manifest._lines.append(created_line)
@@ -149,7 +175,11 @@ class PushStore(GitHgStore):
             manifest._lines.append(line)
         while next_created:
             node, attr = next_created[1]
-            node = self.create_file(node)
+            if next_created[0] in copies:
+                copied_name = copies[next_created[0]]
+                node = self.create_copy((copied_name, copied[copied_name]), node)
+            else:
+                node = self.create_file(node)
             created_line = ManifestLine(next_created[0], node, attr)
             modified_lines.append(created_line)
             manifest._lines.append(created_line)
@@ -168,8 +198,15 @@ class PushStore(GitHgStore):
         header_data = {}
         for line in header.splitlines():
             typ, data = line.split(' ', 1)
-            if typ in ('author', 'committer'):
+            if typ in ('author', 'committer', 'tree'):
                 header_data[typ] = data
+
+        ls = one(Git.ls_tree(self.manifest_ref(manifest.node), 'git'))
+        if header_data['tree'] == EMPTY_TREE and not ls:
+            pass
+        else:
+            mode, typ, sha1, path = ls
+            assert sha1 == header_data['tree']
 
         extra = {}
         if header_data['author'] != header_data['committer']:
@@ -204,6 +241,20 @@ class PushStore(GitHgStore):
         node = hg_file.node = hg_file.sha1
         self._push_files[node] = hg_file
         self._files[node] = LazyString(sha1)
+        self._git_files[node] = LazyString(sha1)
+        return node
+
+    def create_copy(self, hg_source, sha1):
+        data = '\1\ncopy: %s\ncopyrev: %s\n\1\n' % hg_source
+        data += Git.cat_file('blob', sha1)
+        mark = self._fast_import.new_mark()
+        self._fast_import.put_blob(data=data, mark=mark)
+        hg_file = GeneratedFileRev(NULL_NODE_ID, data)
+        hg_file.set_parents()
+        node = hg_file.node = hg_file.sha1
+        self._push_files[node] = hg_file
+        self._files[node] = Mark(mark)
+        self._git_files[node] = LazyString(sha1)
         return node
 
     def file(self, sha1):

@@ -226,12 +226,15 @@ class Git(object):
             yield split_ls_tree(line)
 
     @classmethod
-    def diff_tree(self, treeish1, treeish2, path='', recursive=False):
-        key = (path, recursive)
+    def diff_tree(self, treeish1, treeish2, path='', detect_copy=False,
+                  recursive=False):
+        key = (path, recursive, detect_copy)
         if not key in self._diff_tree:
             args = ['--stdin', '--', path]
             if recursive:
                 args.insert(0, '-r')
+            if detect_copy:
+                args[:0] = ['-C100']
             self._diff_tree[key] = GitProcess('diff-tree', *args,
                                               stdin=subprocess.PIPE)
         diff_tree = self._diff_tree[key]
