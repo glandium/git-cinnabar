@@ -465,9 +465,9 @@ def main(args):
 
             branchmap = BranchMap(store, branchmap, heads)
             unknowns = False
-            for branch in branchmap.names():
+            for branch in sorted(branchmap.names()):
                 branch_tip = branchmap.tip(branch)
-                for head in branchmap.heads(branch):
+                for head in sorted(branchmap.heads(branch)):
                     sha1 = branchmap.git_sha1(head)
                     if sha1 == '?':
                         unknowns = True
@@ -483,14 +483,14 @@ def main(args):
                         branchmap.git_sha1(branch_tip),
                         branch,
                     ))
-            for name, sha1 in bookmarks.iteritems():
+            for name, sha1 in sorted(bookmarks.iteritems()):
                 ref = store.changeset_ref(sha1)
                 helper.write(
                     '%s refs/heads/bookmarks/%s\n'
                     % (ref if ref else '?', name)
                 )
             if not unknowns:
-                for tag, ref in store.tags(branchmap.heads()):
+                for tag, ref in sorted(store.tags(branchmap.heads())):
                     helper.write('%s refs/tags/%s\n' % (ref, tag))
 
             if '@' in bookmarks:
