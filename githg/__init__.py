@@ -9,7 +9,10 @@ from hashlib import sha1
 import re
 import urllib
 import threading
-from collections import OrderedDict
+from collections import (
+    OrderedDict,
+    defaultdict,
+)
 from git.util import (
     IOLogger,
     LazyString,
@@ -344,6 +347,45 @@ class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
         pass
 
 
+class TagSet(object):
+    def __init__(self):
+        self._tags = {}
+        self._taghist = defaultdict(set)
+
+    def __setitem__(self, key, value):
+        old = self._tags.get(key)
+        if old:
+            self._taghist[key].add(old)
+        self._tags[key] = value
+
+    def __getitem__(self, key):
+        return self._tags[key]
+
+    def update(self, other):
+        assert isinstance(other, TagSet)
+        for key, anode in other._tags.iteritems():
+            # derived from mercurial's _updatetags
+            ahist = other._taghist[key]
+            if key not in self._tags:
+                self._tags[key] = anode
+                self._taghist[key] = set(ahist)
+                continue
+            bnode = self._tags[key]
+            bhist = self._taghist[key]
+            if (bnode != anode and anode in bhist and
+                    (bnode not in ahist or len(bhist) > len(ahist))):
+                anode = bnode
+            self._tags[key] = anode
+            self._taghist[key] = ahist | set(
+                n for n in bhist if n not in ahist)
+
+    def __iter__(self):
+        return self._tags.iteritems()
+
+    def hist(self, key):
+        return set(self._taghist[key])
+
+
 class GitHgStore(object):
     def __init__(self):
         self.__fast_import = None
@@ -413,10 +455,11 @@ class GitHgStore(object):
         if self._tagcache_ref:
             for line in Git.ls_tree(self._tagcache_ref):
                 mode, typ, sha1, path = line
-                if typ == 'tree':
-                    self._tagfiles[path] = sha1
-                elif typ == 'blob':
-                    self._tagcache[path] = sha1
+                if typ == 'blob':
+                    if self.ATTR[mode] == 'x':
+                        self._tagfiles[path] = sha1
+                    else:
+                        self._tagcache[path] = sha1
                 elif typ == 'commit':
                     assert sha1 == NULL_NODE_ID
                     self._tagcache[path] = sha1
@@ -428,28 +471,31 @@ class GitHgStore(object):
         # The given heads are assumed to be ordered by mercurial
         # revision number, such that the last is the one where
         # tags are the most relevant.
-        tags = {}
+        tags = TagSet()
         for h in heads:
             h = self.changeset_ref(h)
             tags.update(self._get_hgtags(h))
-        for tag, node in tags.iteritems():
+        for tag, node in tags:
             if node != NULL_NODE_ID:
                 yield tag, node
 
     def _get_hgtags(self, head):
+        tags = TagSet()
         if not self._tagcache.get(head):
             ls = one(Git.ls_tree(head, '.hgtags'))
             if not ls:
                 self._tagcache[head] = NULL_NODE_ID
-                return {}
+                return tags
             mode, typ, self._tagcache[head], path = ls
         tagfile = self._tagcache[head]
-        tags = {}
         if tagfile not in self._tags:
             if tagfile in self._tagfiles:
-                for ls in Git.ls_tree(self._tagfiles[tagfile]):
-                    mode, typ, node, tag = ls
-                    tags[tag] = node
+                data = Git.cat_file('blob', self._tagfiles[tagfile])
+                for line in data.splitlines():
+                    tag, nodes = line.split('\0', 1)
+                    nodes = nodes.split(' ')
+                    for node in reversed(nodes):
+                        tags[tag] = node
             else:
                 data = Git.cat_file('blob', tagfile) or ''
                 for line in data.splitlines():
@@ -1011,26 +1057,41 @@ class GitHgStore(object):
             else:
                 Git_delete_ref(ref)
 
+        self._hg2git_cache.clear()
+
+        def resolve_commit(c):
+            if isinstance(c, Mark):
+                c = self._hg2git('commit', changeset_by_mark[c])
+            return c
+
         for c, f in self._tagcache.items():
-            if isinstance(c, Mark) and f is not False:
-                c = changeset_by_mark[c]
-                if c in self._hg2git_cache:
-                    del self._hg2git_cache[c]
-                c = self._hg2git('commit', c)
+            if f is not False:
+                c = resolve_commit(c)
             if f is None:
                 tags = self._get_hgtags(c)
 
         files = set(self._tagcache.itervalues())
         deleted = set()
         created = {}
-        for f in self._tagfiles:
-            if f not in files and f in self._tagcache_items:
+        for f in self._tagcache_items:
+            if (f not in self._tagcache and f not in self._tagfiles
+                or f not in files and f in self._tagfiles):
                 deleted.add(f)
 
+        def tagset_lines(tags):
+            for tag, value in tags:
+                nodes = (resolve_commit(n) for n in tags.hist(tag))
+                yield '%s\0%s %s\n' % (tag, resolve_commit(value),
+                                      ' '.join(sorted(nodes)))
+
         for f, tags in self._tags.iteritems():
-            if f not in self._tagcache_items and f != NULL_NODE_ID:
-                for tag, value in tags.iteritems():
-                    created['%s/%s' % (f, tag)] = (value, 'commit')
+            if f not in self._tagfiles and f != NULL_NODE_ID:
+                if not self.__fast_import:
+                    self.init_fast_import(FastImport())
+                data = ''.join(tagset_lines(tags))
+                mark = self._fast_import.new_mark()
+                self._fast_import.put_blob(data=data, mark=mark)
+                created[f] = (Mark(mark), 'exec')
 
         if created or deleted:
             self.tag_changes = True
