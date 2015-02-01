@@ -872,6 +872,12 @@ class GitHgStore(object):
             data['files'] = instance.files
         if author[0] != instance.committer:
             data['author'] = instance.committer
+        if instance.utcoffset % 60:
+            offset = str(abs(instance.utcoffset) % 60)
+            start = (42 - len(offset) + len(instance.committer)
+                     + len('%d %d' % (instance.date, instance.utcoffset)))
+            data['patch'] = ((start, start + len(offset), offset),)
+
         self.add_head(instance.node, instance.parent1, instance.parent2)
 
     TYPE = {
