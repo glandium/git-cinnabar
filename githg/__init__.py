@@ -290,7 +290,7 @@ class ManifestInfo(RevChunk):
 
 
 class ChangesetData(object):
-    FIELDS = ('changeset', 'manifest', 'author', 'extra', 'files')
+    FIELDS = ('changeset', 'manifest', 'author', 'extra', 'files', 'patch')
 
     @staticmethod
     def parse_extra(s):
@@ -305,6 +305,10 @@ class ChangesetData(object):
             data['extra'] = ChangesetData.parse_extra(data['extra'])
         if 'files' in data:
             data['files'] = data['files'].split('\0')
+        if 'patch' in data:
+            data['patch'] = tuple((int(start), int(end), urllib.unquote(text))
+                                  for line in data['patch'].split('\0')
+                                  for start, end, text in (line.split(','),))
         return data
 
     @staticmethod
@@ -322,6 +326,10 @@ class ChangesetData(object):
                 elif k == 'files':
                     if data[k]:
                         yield k, '\0'.join(data[k])
+                elif k == 'patch':
+                    yield k, '\0'.join(
+                        ','.join((str(start), str(end), urllib.quote(text)))
+                        for start, end, text in data[k])
                 else:
                     yield k, data[k]
         return '\n'.join('%s %s' % s for s in serialize(data))
@@ -634,6 +642,15 @@ class GitHgStore(object):
         [extra] if extra else [],
         ['\n', '\n'.join(metadata['files'])] if metadata.get('files') else [],
         ['\n\n'], message))
+
+        if 'patch' in metadata:
+            new = ''
+            last_end = 0
+            for start, end, text in metadata['patch']:
+                new += changeset[last_end:start]
+                new += text
+                last_end = end
+            changeset = new + changeset[last_end:]
 
         hgdata = GeneratedRevChunk(sha1, changeset)
         if include_parents:
