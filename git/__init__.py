@@ -31,19 +31,20 @@ def split_ls_tree(line):
 
 
 class GitProcess(object):
-    KWARGS = set(['stdin', 'stdout'])
+    KWARGS = set(['stdin', 'stdout', 'stderr'])
 
     def __init__(self, *args, **kwargs):
         assert not kwargs or not set(kwargs.keys()) - self.KWARGS
         stdin = kwargs.get('stdin', None)
         stdout = kwargs.get('stdout', subprocess.PIPE)
+        stderr = kwargs.get('stderr', None)
         if isinstance(stdin, types.StringType) or callable(stdin):
             proc_stdin = subprocess.PIPE
         else:
             proc_stdin = stdin
 
         self._proc = subprocess.Popen(['git'] + list(args), stdin=proc_stdin,
-                                      stdout=stdout)
+                                      stdout=stdout, stderr=stderr)
 
         git_logger.info(LazyString(lambda: '[%d] git %s' % (
             self._proc.pid,
@@ -75,6 +76,10 @@ class GitProcess(object):
     @property
     def stdout(self):
         return self._proc.stdout
+
+    @property
+    def stderr(self):
+        return self._proc.stderr
 
 
 class Git(object):

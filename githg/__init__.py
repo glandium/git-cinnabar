@@ -409,13 +409,6 @@ class GitHgStore(object):
             RevChunk: (self._store_file, self.file, self._files, 'blob'),
         }
 
-        # TODO: handle the situation with multiple remote repos
-        hgtip = Git.resolve_ref('refs/remote-hg/tip')
-        self._hgtip_orig = None
-        if hgtip:
-            self._hgtip_orig = hgtip = self.hg_changeset(hgtip)
-
-        self._hgtips = {}
         self._hgheads = set()
         self._refs_orig = {}
 
@@ -427,25 +420,12 @@ class GitHgStore(object):
             logging.info('%s %s' % (sha1, head))
             if head.startswith('refs/remote-hg/branches/'):
                 branch, hghead = head[24:].split('/', 1)
-                if hghead == 'tip':
-                    self._hgtips[branch] = sha1
-                else:
+                if hghead != 'tip':
                     self._hgheads.add((branch, hghead))
                     self._changesets[hghead] = sha1
             else:
                 self._hgheads.add(self._head_branch(head[-40:]))
             self._refs_orig[head] = sha1
-
-        self._bookmarks = {}
-        for line in Git.for_each_ref('refs/remote-hg/bookmarks',
-                format='%(objectname) %(refname)'):
-            sha1, head = line.split()
-            self._bookmarks[head[25:]] = sha1
-        self._bookmarks_orig = dict(self._bookmarks)
-
-        self._hgtip = self._hgtip_orig
-        assert (not self._hgtip or
-            self._head_branch(self._hgtip) in self._hgheads)
 
         self._tagcache = {}
         self._tagfiles = {}
@@ -507,13 +487,6 @@ class GitHgStore(object):
         self._tags[tagfile] = tags
         return tags
 
-    def add_bookmark(self, name, sha1):
-        self._bookmarks[name] = self.changeset_ref(sha1)
-
-    def del_bookmark(self, name):
-        if name in self._bookmarks:
-            del self._bookmarks[name]
-
     def heads(self, branches={}):
         if not isinstance(branches, (dict, set)):
             branches = set(branches)
@@ -541,9 +514,7 @@ class GitHgStore(object):
                     self._tagcache[ref] = False
 
         self._hgheads.add(head_branch)
-        self._hgtip = head
         ref = self.changeset_ref(head)
-        self._hgtips[head_branch[0]] = ref
         if isinstance(ref, LazyString):
             ref = str(ref)
         self._tagcache[ref] = None
@@ -581,7 +552,7 @@ class GitHgStore(object):
         return None
 
     def _hg2git(self, expected_type, sha1):
-        if not self._hgtip_orig and not self._closed:
+        if not self._refs_orig and not self._closed:
             return None
 
         gitsha1, typ = self._hg2git_cache.get(sha1, (None, None))
@@ -900,7 +871,7 @@ class GitHgStore(object):
                 parents = (NULL_NODE_ID, self._last_manifest)
             else:
                 parents = ()
-        elif self._hgtip:
+        elif self._refs_orig:
             parents = (NULL_NODE_ID, 'refs/remote-hg/manifest^0',)
         else:
             parents = (NULL_NODE_ID,)
@@ -998,7 +969,7 @@ class GitHgStore(object):
             with self._fast_import.commit(
                 ref='refs/remote-hg/hg2git',
                 parents=(s for s in ('refs/remote-hg/hg2git^0',)
-                         if self._hgtip_orig),
+                         if self._refs_orig),
                 mark=self._fast_import.new_mark(),
             ) as commit:
                 for file in sorted(hg2git_files, key=lambda f: f[0]):
@@ -1011,7 +982,7 @@ class GitHgStore(object):
             with self._fast_import.commit(
                 ref='refs/notes/remote-hg/git2hg',
                 parents=(s for s in ('refs/notes/remote-hg/git2hg^0',)
-                         if self._hgtip_orig),
+                         if self._refs_orig),
             ) as commit:
                 for mark in git2hg_marks:
                     data = self._changeset_data_cache[str(mark)]
@@ -1020,42 +991,21 @@ class GitHgStore(object):
         refs = {}
         modified = set()
         created = set()
-        def register_ref(ref):
+
+        for branch, head in self._hgheads:
+            ref = 'refs/remote-hg/branches/%s/%s' % (branch, head)
+            refs[ref] = self._changesets[head]
             if ref in self._refs_orig:
                 if self._refs_orig[ref] != refs[ref]:
                     modified.add(ref)
             else:
                 created.add(ref)
-
-        for branch, head in self._hgheads:
-            ref = 'refs/remote-hg/branches/%s/%s' % (branch, head)
-            refs[ref] = self._changesets[head]
-            register_ref(ref)
-        for branch, tip in self._hgtips.iteritems():
-            ref = 'refs/remote-hg/branches/%s/tip' % (branch)
-            refs[ref] = tip
-            register_ref(ref)
         refs_set = set(r for r in refs)
 
         for ref in modified | created:
             Git.update_ref(ref, refs[ref])
         for ref in set(self._refs_orig) - refs_set:
             Git.delete_ref(ref)
-
-        assert not self._hgtip or self._head_branch(self._hgtip) in self._hgheads
-        if self._hgtip != self._hgtip_orig:
-            Git.update_ref('refs/remote-hg/tip', self._changesets[self._hgtip])
-
-        for name in set(self._bookmarks) | set(self._bookmarks_orig):
-            if name in self._bookmarks:
-                ref = 'refs/remote-hg/bookmarks/%s' % name
-                if name in self._bookmarks_orig:
-                    if self._bookmarks_orig[name] != self._bookmarks[name]:
-                        Git.update_ref(ref, self._bookmarks[name])
-                else:
-                    Git.update_ref(ref, self._bookmarks[name])
-            else:
-                Git_delete_ref(ref)
 
         self._hg2git_cache.clear()
 

@@ -432,8 +432,8 @@ def main(args):
                 'import\n'
                 'bidi-import\n'
                 'push\n'
-                'refspec refs/heads/branches/*:refs/remote-hg/branches/*\n'
-                'refspec refs/heads/bookmarks/*:refs/remote-hg/bookmarks/*\n'
+                'refspec refs/heads/branches/*:refs/remote-hg/refs/heads/branches/*\n'
+                'refspec refs/heads/bookmarks/*:refs/remote-hg/refs/heads/bookmarks/*\n'
                 'refspec HEAD:refs/remote-hg/HEAD\n'
                 '\n'
             )
@@ -534,20 +534,38 @@ def main(args):
                     return bookmarks.get('@') or branchmap.tip('default')
                 return None
 
-            wanted_bookmarks = set(h[21:] for h in refs
-                                   if h.startswith('refs/heads/bookmarks/'))
-            if HEAD == 'bookmarks/@':
-                wanted_bookmarks.add('@')
-            heads = [h for h in (resolve_head(h) for h in refs) if h]
+            wanted_refs = {k: v for k, v in (
+                           (h, resolve_head(h)) for h in refs) if v}
+            heads = wanted_refs.values()
             if not heads:
                 heads = branchmap.heads()
+
+            # Older versions would create a symbolic ref for
+            # refs/remote-hg/HEAD. Newer versions don't, and Git.update_ref
+            # doesn't remove the symbolic ref, so it needs to be removed first.
+            # Since git symbolic-ref only throws an error when the ref is not
+            # symbolic, just try to remove the symbolic ref every time and
+            # ignore errors.
+            tuple(Git.iter('symbolic-ref', '-d', 'refs/remote-hg/HEAD',
+                           stderr=open(os.devnull, 'wb')))
+
+            refs_orig = {}
+            for line in Git.for_each_ref('refs/remote-hg/refs/heads',
+                                         'refs/remote-hg/HEAD',
+                                         format='%(objectname) %(refname)'):
+                sha1, ref = line.split(' ', 1)
+                refs_orig[ref] = sha1
+
             store.init_fast_import(FastImport(sys.stdin, sys.stdout))
             getbundle(repo, store, heads, branchmap)
-            for name in wanted_bookmarks:
-                store.add_bookmark(name, bookmarks[name])
 
-            Git.run('symbolic-ref', 'refs/remote-hg/HEAD',
-                    'refs/remote-hg/%s' % HEAD)
+            for ref, value in wanted_refs.iteritems():
+                ref = 'refs/remote-hg/' + ref
+                if ref not in refs_orig or refs_orig[ref] != value:
+                    Git.update_ref(ref, store.changeset_ref(value))
+            for ref in refs_orig:
+                if ref[15:] not in wanted_refs:
+                    Git.delete_ref(ref)
 
             store.close()
 
@@ -614,8 +632,6 @@ def main(args):
                             or ''
                     status[dest] = repo.pushkey(
                         'bookmarks', name, bookmarks.get(name, ''), source)
-                    if not source and status[dest]:
-                        store.del_bookmark(name)
 
                 for source, (dest, force) in pushes.iteritems():
                     if status[dest] is True:
