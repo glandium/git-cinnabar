@@ -104,29 +104,34 @@ def fsck(args):
         hg_changeset = store.changeset(changeset, include_parents=True)
         sha1 = hg_changeset.sha1
         if hg_changeset.node != sha1:
-            # Some know cases of corruptions involve a whitespace after the
-            # timezone. Adding an empty extra metadata works around those.
-            if 'extra' not in changeset_data:
-                changeset_data['extra'] = {}
-                hg_changeset = store.changeset(changeset, include_parents=True)
-                try_sha1 = hg_changeset.sha1
-                if hg_changeset.node == try_sha1:
-                    print 'Fixing known sha1 mismatch for changeset %s' % (
-                        changeset)
-                    sha1 = try_sha1
-                    store._changesets[changeset] = LazyString(node)
-
-        if hg_changeset.node != sha1:
+            try_fixup = False
             if (changeset, sha1) in (
                 ('8c557b7c03a4a753e5c163038f04862e9f65fce1',
                  '249b59139de8e08abeb6c4e261a137c756e7af0e'),
                 ('ffdee4a4eb7fc7cae80dfc4cb2fe0c3178773dcf',
                  '415e9d2eac83d508bf58a4df585c5f6b2b0f44ed'),
             ):
-                print 'Ignoring known sha1 mismatch for changeset %s' % (
-                    changeset)
-            else:
-                report('Sha1 mismatch for changeset %s' % changeset)
+                header = hg_changeset.data.split('\n', 4)
+                start = sum(len(h) for h in header[:3]) + 1
+                changeset_data['patch'] = ((start, start + 1, '1'),)
+                try_fixup = True
+
+            # Some know cases of corruptions involve a whitespace after the
+            # timezone. Adding an empty extra metadata works around those.
+            elif 'extra' not in changeset_data:
+                changeset_data['extra'] = {}
+                try_fixup = True
+
+            if try_fixup:
+                hg_changeset = store.changeset(changeset, include_parents=True)
+                sha1 = hg_changeset.sha1
+                if hg_changeset.node == sha1:
+                    print 'Fixing known sha1 mismatch for changeset %s' % (
+                        changeset)
+                    store._changesets[changeset] = LazyString(node)
+
+        if hg_changeset.node != sha1:
+            report('Sha1 mismatch for changeset %s' % changeset)
 
         manifest = changeset_data['manifest']
         if manifest in seen_manifests:
