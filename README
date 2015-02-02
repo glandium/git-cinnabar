@@ -3,9 +3,6 @@ Yet another git-remote-hg
 
 [The way git remote helpers work forces how to call them]
 
-BEWARE /!\ This is a prototype. Implementation details may change,
-which would affect commit SHA1s.
-
 When you update, please read this file again, it likely will contain
 important notes.
 
@@ -42,6 +39,9 @@ mercurial repository, or a http, https or ssh url.
 
 Essentially, use git like you would for a git repository, but use a
 hg:: url where you would use a git:// url.
+
+See http://glandium.org/blog/?page_id=3438 for an example workflow for
+Mozilla repositories.
 
 Limitations:
 ------------
