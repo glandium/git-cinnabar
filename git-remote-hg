@@ -162,7 +162,7 @@ def findcommon(repo, store, heads, branches={}):
 class bundlerepo(object):
     def __init__(self, path):
         self._bundle = readbundle(open(path, 'r'))
-        self._changeset_chunks = list(progress_iter('Reading %d changegroups',
+        self._changeset_chunks = list(progress_iter('Reading %d changesets',
             chunks_in_changegroup(self._bundle)))
 
         heads = OrderedDict()
@@ -217,7 +217,7 @@ def getbundle(repo, store, heads, branchmap):
         bundle = repo.getbundle('bundle', heads=[unhexlify(h) for h in heads],
             common=[unhexlify(h) for h in common])
 
-        changeset_chunks = list(progress_iter('Reading %d changegroups',
+        changeset_chunks = list(progress_iter('Reading %d changesets',
             chunks_in_changegroup(bundle)))
 
     manifest_chunks = list(progress_iter('Reading %d manifests',
