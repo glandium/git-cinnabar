@@ -150,7 +150,7 @@ class Git(object):
     def resolve_ref(self, ref):
         # TODO: self._refs should be updated by update_ref
         if ref not in self._refs:
-            self._refs[ref] = one(self.for_each_ref(ref))
+            self._refs[ref] = one(Git.iter('rev-parse', '--revs-only', ref))
         return self._refs[ref]
 
     @classmethod
