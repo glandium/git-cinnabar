@@ -1,7 +1,7 @@
-git-cinnabar
-============
+git-cinnabar 0.1
+================
 
-When you update, please read this file again, it likely will contain
+When you update, please read this file again, it may contain
 important notes.
 
 [ cinnabar is the common natural form in which mercury can be found on
@@ -50,6 +50,19 @@ mercurial repository, or a http, https or ssh url.
 
 Essentially, use git like you would for a git repository, but use a
 hg:: url where you would use a git:// url.
+
+Mercurial bookmarks are exposed as `refs/heads/bookmarks/$bookmark` remote
+refs. If you want to interact exclusively with mercurial with bookmarks,
+you can use a refspec like `refs/heads/bookmarks/*:refs/remotes/$remote/*`.
+
+Mercurial branches are exposed as namespaces under `refs/heads/branches/`.
+As mercurial branches can have multiple heads, each head is exposed
+as `refs/heads/branches/$branch/$head`, where `$head` is the mercurial sha1
+of the head changeset. There is however an exception to that pattern,
+for the tip changeset of the branch, which is exposed as
+`refs/heads/branches/$branch/tip`. If you only care about the tip changeset
+of each branch, you can use a refspec like
+`refs/heads/branches/*/tip:refs/remotes/$remote/*`.
 
 See http://glandium.org/blog/?page_id=3438 for an example workflow for
 Mozilla repositories.
