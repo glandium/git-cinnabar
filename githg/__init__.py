@@ -422,14 +422,38 @@ class GitHgStore(object):
         self._hgheads = set()
         self._refs_orig = {}
 
-        # refs/remote-hg/head-* are the old heads for upgrade
-        # refs/remote-hg/branches/* are the new heads
-        for line in Git.for_each_ref('refs/remote-hg/head-*',
-                'refs/remote-hg/branches', format='%(objectname) %(refname)'):
+        # Migrate refs from the old namespace.
+        # refs/remote-hg/head-* are the old-old heads for upgrade
+        migrated = False
+        for line in Git.for_each_ref('refs/notes/remote-hg/git2hg',
+                'refs/remote-hg', format='%(objectname) %(refname)'):
+            migrated = True
             sha1, head = line.split()
             logging.info('%s %s' % (sha1, head))
+            Git.delete_ref(head)
             if head.startswith('refs/remote-hg/branches/'):
                 branch, hghead = head[24:].split('/', 1)
+                if hghead != 'tip':
+                    Git.update_ref('refs/cinnabar/branches/%s/%s'
+                                   % (branch, hghead), sha1)
+            elif head.startswith('refs/remote-hg/head-'):
+                branch, hghead = self._head_branch(head[-40:])
+                Git.update_ref('refs/cinnabar/branches/%s/%s'
+                               % (branch, hghead), sha1)
+            elif head == 'refs/notes/remote-hg/git2hg':
+                Git.update_ref('refs/notes/cinnabar', sha1)
+            else:
+                Git.update_ref('refs/cinnabar/' + head[15:], sha1)
+        # Ensure the ref updates above are available after this point.
+        if migrated:
+            Git.close()
+
+        for line in Git.for_each_ref('refs/cinnabar/branches',
+                                     format='%(objectname) %(refname)'):
+            sha1, head = line.split()
+            logging.info('%s %s' % (sha1, head))
+            if head.startswith('refs/cinnabar/branches/'):
+                branch, hghead = head[23:].split('/', 1)
                 if hghead != 'tip':
                     self._hgheads.add((branch, hghead))
                     self._changesets[hghead] = sha1
@@ -440,7 +464,7 @@ class GitHgStore(object):
         self._tagcache = {}
         self._tagfiles = {}
         self._tags = { NULL_NODE_ID: {} }
-        self._tagcache_ref = Git.resolve_ref('refs/remote-hg/tagcache')
+        self._tagcache_ref = Git.resolve_ref('refs/cinnabar/tagcache')
         self._tagcache_items = set()
         if self._tagcache_ref:
             for line in Git.ls_tree(self._tagcache_ref):
@@ -549,7 +573,7 @@ class GitHgStore(object):
         obj = str(obj)
         if obj in self._changeset_data_cache:
             return self._changeset_data_cache[obj]
-        data = Git.read_note('refs/notes/remote-hg/git2hg', obj)
+        data = Git.read_note('refs/notes/cinnabar', obj)
         if data is None:
             return None
         ret = self._changeset_data_cache[obj] = ChangesetData.parse(data)
@@ -567,7 +591,7 @@ class GitHgStore(object):
 
         gitsha1, typ = self._hg2git_cache.get(sha1, (None, None))
         if not gitsha1 and not typ:
-            ls = one(Git.ls_tree('refs/remote-hg/hg2git', sha1path(sha1)))
+            ls = one(Git.ls_tree('refs/cinnabar/hg2git', sha1path(sha1)))
             if ls:
                 mode, typ, gitsha1, path = ls
             else:
@@ -851,7 +875,7 @@ class GitHgStore(object):
         else:
             committer = author
         with self._fast_import.commit(
-            ref='refs/remote-hg/tip',
+            ref='refs/cinnabar/tip',
             message=instance.message,
             committer=committer,
             author=author,
@@ -897,11 +921,11 @@ class GitHgStore(object):
             else:
                 parents = ()
         elif self._refs_orig:
-            parents = (NULL_NODE_ID, 'refs/remote-hg/manifest^0',)
+            parents = (NULL_NODE_ID, 'refs/cinnabar/manifest^0',)
         else:
             parents = (NULL_NODE_ID,)
         with self._fast_import.commit(
-            ref='refs/remote-hg/manifest',
+            ref='refs/cinnabar/manifest',
             parents=parents,
             mark=mark,
         ) as commit:
@@ -992,8 +1016,8 @@ class GitHgStore(object):
                     hg2git_files.append((sha1path(node), mark, typ))
         if hg2git_files:
             with self._fast_import.commit(
-                ref='refs/remote-hg/hg2git',
-                parents=(s for s in ('refs/remote-hg/hg2git^0',)
+                ref='refs/cinnabar/hg2git',
+                parents=(s for s in ('refs/cinnabar/hg2git^0',)
                          if self._refs_orig),
                 mark=self._fast_import.new_mark(),
             ) as commit:
@@ -1005,8 +1029,8 @@ class GitHgStore(object):
                         if not isinstance(mark, types.StringType)]
         if git2hg_marks:
             with self._fast_import.commit(
-                ref='refs/notes/remote-hg/git2hg',
-                parents=(s for s in ('refs/notes/remote-hg/git2hg^0',)
+                ref='refs/notes/cinnabar',
+                parents=(s for s in ('refs/notes/cinnabar^0',)
                          if self._refs_orig),
             ) as commit:
                 for mark in git2hg_marks:
@@ -1018,7 +1042,7 @@ class GitHgStore(object):
         created = set()
 
         for branch, head in self._hgheads:
-            ref = 'refs/remote-hg/branches/%s/%s' % (branch, head)
+            ref = 'refs/cinnabar/branches/%s/%s' % (branch, head)
             refs[ref] = self._changesets[head]
             if ref in self._refs_orig:
                 if self._refs_orig[ref] != refs[ref]:
@@ -1085,7 +1109,7 @@ class GitHgStore(object):
             if not self.__fast_import:
                 self.init_fast_import(FastImport())
             with self._fast_import.commit(
-                ref='refs/remote-hg/tagcache',
+                ref='refs/cinnabar/tagcache',
             ) as commit:
                 if self._tagcache_ref:
                     mode, typ, tree, path = \

@@ -412,7 +412,7 @@ class FastImport(IOLogger):
         )
 
     @contextlib.contextmanager
-    def commit(self, ref, committer=('<remote-hg@git>', 0, 0), author=None,
+    def commit(self, ref, committer=('<cinnabar@git>', 0, 0), author=None,
                message='', parents=(), mark=0):
         helper = FastImportCommitHelper(self)
         yield helper

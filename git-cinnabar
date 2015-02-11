@@ -43,14 +43,13 @@ def fsck(args):
     store._hg2git_cache = all_hg2git
 
     all_notes = set(path.replace('/', '') for mode, typ, filesha1, path in
-        Git.ls_tree('refs/notes/cinnabar/git2hg', recursive=True))
+        Git.ls_tree('refs/notes/cinnabar', recursive=True))
 
     manifest_commits = set(Git.iter('rev-list', '--full-history',
                                     'refs/cinnabar/manifest'))
 
     def all_git_heads():
-        for ref in Git.for_each_ref('refs/cinnabar/head-*',
-                                    'refs/cinnabar/branches',
+        for ref in Git.for_each_ref('refs/cinnabar/branches',
                                     format='%(refname)'):
             yield ref + '\n'
 
@@ -212,9 +211,11 @@ def main(args):
     elif cmd == 'fsck':
         return fsck(args)
     elif cmd == 'reclone':
-        for ref in Git.for_each_ref('refs/cinnabar', format='%(refname)'):
+        for ref in Git.for_each_ref('refs/cinnabar', 'refs/remote-hg',
+                                    'refs/notes/cinnabar',
+                                    'refs/notes/remote-hg/git2hg',
+                                    format='%(refname)'):
             Git.delete_ref(ref)
-        Git.delete_ref('refs/notes/cinnabar/git2hg')
         Git.close()
 
         for line in Git.iter('config', '--get-regexp', 'remote\..*\.url'):

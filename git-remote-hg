@@ -432,9 +432,9 @@ def main(args):
                 'import\n'
                 'bidi-import\n'
                 'push\n'
-                'refspec refs/heads/branches/*:refs/remote-hg/refs/heads/branches/*\n'
-                'refspec refs/heads/bookmarks/*:refs/remote-hg/refs/heads/bookmarks/*\n'
-                'refspec HEAD:refs/remote-hg/HEAD\n'
+                'refspec refs/heads/branches/*:refs/cinnabar/refs/heads/branches/*\n'
+                'refspec refs/heads/bookmarks/*:refs/cinnabar/refs/heads/bookmarks/*\n'
+                'refspec HEAD:refs/cinnabar/HEAD\n'
                 '\n'
             )
             helper.flush()
@@ -508,7 +508,7 @@ def main(args):
             helper.flush()
         elif cmd == 'import':
             reflog = os.path.join(os.environ['GIT_DIR'], 'logs', 'refs',
-                'remote-hg')
+                'cinnabar')
             mkpath(reflog)
             open(os.path.join(reflog, 'hg2git'), 'a').close()
             open(os.path.join(reflog, 'manifest'), 'a').close()
@@ -550,8 +550,8 @@ def main(args):
                            stderr=open(os.devnull, 'wb')))
 
             refs_orig = {}
-            for line in Git.for_each_ref('refs/remote-hg/refs/heads',
-                                         'refs/remote-hg/HEAD',
+            for line in Git.for_each_ref('refs/cinnabar/refs/heads',
+                                         'refs/cinnabar/HEAD',
                                          format='%(objectname) %(refname)'):
                 sha1, ref = line.split(' ', 1)
                 refs_orig[ref] = sha1
@@ -560,11 +560,11 @@ def main(args):
             getbundle(repo, store, heads, branchmap)
 
             for ref, value in wanted_refs.iteritems():
-                ref = 'refs/remote-hg/' + ref
+                ref = 'refs/cinnabar/' + ref
                 if ref not in refs_orig or refs_orig[ref] != value:
                     Git.update_ref(ref, store.changeset_ref(value))
             for ref in refs_orig:
-                if ref[15:] not in wanted_refs:
+                if ref[14:] not in wanted_refs:
                     Git.delete_ref(ref)
 
             store.close()
