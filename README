@@ -1,12 +1,14 @@
-Yet another git-remote-hg
-=========================
-
-[The way git remote helpers work forces how to call them]
+git-cinnabar
+============
 
 When you update, please read this file again, it likely will contain
 important notes.
 
-git-remote-hg is a git remote helper to interact with mercurial
+[ cinnabar is the common natural form in which mercury can be found on
+  Earth. It contains mercury sulfide and its powder is used to make
+  the vermillion pigment. ]
+
+git-cinnabar is a git remote helper to interact with mercurial
 repositories. Contrary to other such helpers[*], it doesn't use a
 local mercurial clone under the hood, although it currently does
 require mercurial to be installed for some of its libraries.
@@ -23,11 +25,20 @@ The main focus at the moment is to make it work with mozilla-central
 and related mercurial repositories and support Mozilla workflows (try
 server, etc.).
 
+Please note that no guarantee is made about using git-cinnabar version
+x.y on a repository that was last used with version x.(y-2). So, for
+example, there is no guarantee that upgrading from version 0.1 to version
+0.3 will work. Upgrading from version 0.1 to version 0.2 and then to
+version 0.3, however, is guaranteed to work. A command invoking
+git-cinnabar, such as `git ls-remote $remote` or `git remote update
+$remote`, must be run with each intermediate version.
+
 Setup:
 ------
 
 Install mercurial.
-Add this directory to your PATH.
+Add this directory to your PATH. If you have another git-remote-hg project
+in your PATH already, make sure the git-cinnabar path comes before.
 
 Usage:
 ------
@@ -55,7 +66,7 @@ There is no support for the following mercurial features:
 Update notes:
 -------------
 
-Up to commit dd6cc7a0940598161c3a1403adf05658ebdf6560, git-remote-hg
+Up to commit dd6cc7a0940598161c3a1403adf05658ebdf6560, git-cinnabar
 would happily corrupt the repository in some cases involving file
 renames or addition with the same name but a different case (e.g. FOO
 => Foo), when the git repository is on a case-insensitive file system
@@ -65,7 +76,7 @@ earlier version, you should reclone from scratch.
 
 Various other corruptions have been identified and you can detect them
 with the following command:
-  git hgdebug fsck
+  git cinnabar fsck
 
 That command will advise what to do about those corruptions.
 

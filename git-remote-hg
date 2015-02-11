@@ -266,9 +266,9 @@ def getbundle(repo, store, heads, branchmap):
                     'The mercurial repository reported heads in a different '
                     'order than they\n'
                     'appear in the bundle it created. This breaks assumptions '
-                    'in git-remote-hg\'s\n'
+                    'in git-cinnabar\'s\n'
                     'support for tags. Please report the issue on\n'
-                    '  https://github.com/glandium/git-remote-hg/issues\n'
+                    '  https://github.com/glandium/git-cinnabar/issues\n'
                 )
                 # Mercurial itself somehow relies on the orders to match, so if
                 # a future version of mercurial actually changes the heads
@@ -374,7 +374,7 @@ def main(args):
             'Your git configuration has core.ignorecase set to "true".\n'
             'Usually, this means git detected the file system is case '
             'insensitive.\n'
-            'Git-remote-hg does not support this setup.\n'
+            'Git-cinnabar does not support this setup.\n'
             'Either use a case sensitive file system or set '
             'core.ignorecase to "false".\n'
         )
@@ -386,7 +386,7 @@ def main(args):
                 Git.for_each_ref('refs/remotes/%s' % remote)):
             sys.stderr.write(
                 'Use the following command to reclone:\n'
-                '  git hgdebug reclone\n'
+                '  git cinnabar reclone\n'
             )
         else:
             sys.stderr.write(

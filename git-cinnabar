@@ -37,20 +37,20 @@ def fsck(args):
     all_hg2git = {
         path.replace('/', ''): (filesha1, intern(typ))
         for mode, typ, filesha1, path in
-        Git.ls_tree('refs/remote-hg/hg2git', recursive=True)
+        Git.ls_tree('refs/cinnabar/hg2git', recursive=True)
     }
 
     store._hg2git_cache = all_hg2git
 
     all_notes = set(path.replace('/', '') for mode, typ, filesha1, path in
-        Git.ls_tree('refs/notes/remote-hg/git2hg', recursive=True))
+        Git.ls_tree('refs/notes/cinnabar/git2hg', recursive=True))
 
     manifest_commits = set(Git.iter('rev-list', '--full-history',
-                                    'refs/remote-hg/manifest'))
+                                    'refs/cinnabar/manifest'))
 
     def all_git_heads():
-        for ref in Git.for_each_ref('refs/remote-hg/head-*',
-                                    'refs/remote-hg/branches',
+        for ref in Git.for_each_ref('refs/cinnabar/head-*',
+                                    'refs/cinnabar/branches',
                                     format='%(refname)'):
             yield ref + '\n'
 
@@ -186,10 +186,10 @@ def fsck(args):
         print 'Dangling note for commit ' + commit
 
     if status['broken']:
-        print 'Your git-remote-hg repository appears to be corrupted. There'
+        print 'Your git-cinnabar repository appears to be corrupted. There'
         print 'are known issues in older revisions that have been fixed.'
         print 'Please try running the following command to reset:'
-        print '  git hgdebug reclone'
+        print '  git cinnabar reclone'
         print '\nPlease note this command may change the commit sha1s. Your'
         print 'local branches will however stay untouched.'
         print 'Please report any corruption that fsck would detect after a'
@@ -212,9 +212,9 @@ def main(args):
     elif cmd == 'fsck':
         return fsck(args)
     elif cmd == 'reclone':
-        for ref in Git.for_each_ref('refs/remote-hg', format='%(refname)'):
+        for ref in Git.for_each_ref('refs/cinnabar', format='%(refname)'):
             Git.delete_ref(ref)
-        Git.delete_ref('refs/notes/remote-hg/git2hg')
+        Git.delete_ref('refs/notes/cinnabar/git2hg')
         Git.close()
 
         for line in Git.iter('config', '--get-regexp', 'remote\..*\.url'):

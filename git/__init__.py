@@ -116,7 +116,7 @@ class Git(object):
         proc = GitProcess(*args, **kwargs)
         # git_logger.debug does that check under the hood, but it turns out
         # that simply calling this check in the tight loop below makes a
-        # big difference. For a `hgdebug data -m` on a mozilla-central tree
+        # big difference. For a `cinnabar data -m` on a mozilla-central tree
         # (> 100k items), it makes a 20% (!) overall wall time difference.
         log = git_logger.isEnabledFor(logging.DEBUG)
         for line in proc.stdout or ():
