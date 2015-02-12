@@ -81,7 +81,8 @@ def fsck(args):
         if 'extra' in changeset_data:
             extra = changeset_data['extra']
             if 'committer' in extra:
-                header, message = Git.cat_file('commit', node).split('\n\n', 1)
+                header, message = GitHgHelper.cat_file(
+                    'commit', node).split('\n\n', 1)
                 header = dict(l.split(' ', 1) for l in header.splitlines())
                 committer_info = store.hg_author_info(header['committer'])
                 committer = '%s %s %d' % committer_info

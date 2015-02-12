@@ -194,7 +194,7 @@ class PushStore(GitHgStore):
             self._push_manifests[manifest.node] = manifest
             self.store(manifest)
 
-        header, message = Git.cat_file('commit', commit).split('\n\n', 1)
+        header, message = GitHgHelper.cat_file('commit', commit).split('\n\n', 1)
         header_data = {}
         for line in header.splitlines():
             typ, data = line.split(' ', 1)
@@ -236,7 +236,8 @@ class PushStore(GitHgStore):
         self._changesets[changeset.node] = LazyString(commit)
 
     def create_file(self, sha1, *parents):
-        hg_file = GeneratedFileRev(NULL_NODE_ID, Git.cat_file('blob', sha1))
+        hg_file = GeneratedFileRev(NULL_NODE_ID,
+                                   GitHgHelper.cat_file('blob', sha1))
         hg_file.set_parents(*parents)
         node = hg_file.node = hg_file.sha1
         self._push_files[node] = hg_file
@@ -246,7 +247,7 @@ class PushStore(GitHgStore):
 
     def create_copy(self, hg_source, sha1):
         data = '\1\ncopy: %s\ncopyrev: %s\n\1\n' % hg_source
-        data += Git.cat_file('blob', sha1)
+        data += GitHgHelper.cat_file('blob', sha1)
         mark = self._fast_import.new_mark()
         self._fast_import.put_blob(data=data, mark=mark)
         hg_file = GeneratedFileRev(NULL_NODE_ID, data)

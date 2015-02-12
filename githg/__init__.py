@@ -505,14 +505,14 @@ class GitHgStore(object):
         tagfile = self._tagcache[head]
         if tagfile not in self._tags:
             if tagfile in self._tagfiles:
-                data = Git.cat_file('blob', self._tagfiles[tagfile])
+                data = GitHgHelper.cat_file('blob', self._tagfiles[tagfile])
                 for line in data.splitlines():
                     tag, nodes = line.split('\0', 1)
                     nodes = nodes.split(' ')
                     for node in reversed(nodes):
                         tags[tag] = node
             else:
-                data = Git.cat_file('blob', tagfile) or ''
+                data = GitHgHelper.cat_file('blob', tagfile) or ''
                 for line in data.splitlines():
                     node, tag = line.split(' ', 1)
                     if node != NULL_NODE_ID:
@@ -629,7 +629,7 @@ class GitHgStore(object):
         return self._changeset(gitsha1, sha1, include_parents)
 
     def _changeset(self, gitsha1, sha1=NULL_NODE_ID, include_parents=False):
-        commit = Git.cat_file('commit', gitsha1)
+        commit = GitHgHelper.cat_file('commit', gitsha1)
         header, message = commit.split('\n\n', 1)
         commitdata = {}
         parents = []

@@ -192,8 +192,9 @@ class Git(object):
             return
         elif not isinstance(treeish, Mark):
             if path == '' or path.endswith('/'):
+                from githg import GitHgHelper
                 treeish = treeish + ':' + path
-                typ, data = self.cat_file('auto', treeish)
+                typ, data = GitHgHelper.cat_file('auto', treeish)
                 assert typ in ('tree', 'missing')
                 while data:
                     null = data.index('\0')
