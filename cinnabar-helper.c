@@ -12,6 +12,9 @@
  *     Returns the contents of the mercurial manifest with the given
  *     mercurial sha1, preceded by its length in text form, and followed
  *     by a carriage return.
+ * - cat-file <object>
+ *     Returns the contents of the given git object, in a `cat-file
+ *     --batch`-like format.
  */
 
 #include <stdio.h>
@@ -71,6 +74,23 @@ static void send_object(unsigned const char *sha1) {
 	write_or_die(1, "\n", 1);
 
 	close_istream(st);
+}
+
+static void do_cat_file(struct string_list *command) {
+	unsigned char sha1[20];
+
+	if (command->nr != 2)
+		goto not_found;
+
+	if (get_sha1(command->items[1].string, sha1))
+		goto not_found;
+
+	send_object(sha1);
+	return;
+
+not_found:
+	write_or_die(1, NULL_NODE, 40);
+	write_or_die(1, "\n", 1);
 }
 
 static void do_git2hg(struct string_list *command) {
@@ -274,6 +294,8 @@ int main(int argc, const char *argv[]) {
 			do_hg2git(&command);
 		else if (!strcmp("manifest", command.items[0].string))
 			do_manifest(&command);
+		else if (!strcmp("cat-file", command.items[0].string))
+			do_cat_file(&command);
 		else
 			die("Unknown command: \"%s\"", command.items[0].string);
 

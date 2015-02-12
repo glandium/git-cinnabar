@@ -41,21 +41,35 @@ class GitHgHelper(object):
         yield helper.stdout
 
     @classmethod
+    def _read_file(self, expected_typ, stdout):
+        hg_sha1 = stdout.read(41)
+        if hg_sha1[-1] == '\n':
+            from . import NULL_NODE_ID
+            assert hg_sha1[:40] == NULL_NODE_ID
+            return None
+        typ, size = stdout.readline().split()
+        size = int(size)
+        assert expected_typ == 'auto' or typ == expected_typ
+        ret = stdout.read(size)
+        lf = stdout.read(1)
+        assert lf == '\n'
+        if expected_typ == 'auto':
+            return typ, ret
+        return ret
+
+    @classmethod
+    def cat_file(self, typ, sha1):
+        try:
+            with self.query('cat-file', sha1) as stdout:
+                return self._read_file(typ, stdout)
+        except NoHelperException:
+            return Git.cat_file(typ, sha1)
+
+    @classmethod
     def git2hg(self, sha1):
         try:
             with self.query('git2hg', sha1) as stdout:
-                hg_sha1 = stdout.read(41)
-                if hg_sha1[-1] == '\n':
-                    from . import NULL_NODE_ID
-                    assert hg_sha1[:40] == NULL_NODE_ID
-                    return None
-                typ, size = stdout.readline().split()
-                size = int(size)
-                assert typ == 'blob'
-                ret = stdout.read(size)
-                lf = stdout.read(1)
-                assert lf == '\n'
-                return ret
+                return self._read_file('blob', stdout)
         except NoHelperException:
             return Git.read_note('refs/notes/cinnabar', sha1)
 
