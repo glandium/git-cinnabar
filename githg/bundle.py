@@ -7,6 +7,7 @@ from . import (
     EMPTY_BLOB,
     EMPTY_TREE,
 )
+from .helper import GitHgHelper
 from git import (
     Git,
     Mark,
