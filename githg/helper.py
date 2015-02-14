@@ -6,8 +6,12 @@ from git import (
     GitProcess,
     sha1path,
 )
-from git.util import one
+from git.util import (
+    one,
+    next,
+)
 from contextlib import contextmanager
+from collections import OrderedDict
 
 
 class NoHelperException(Exception):
@@ -16,6 +20,7 @@ class NoHelperException(Exception):
 
 class GitHgHelper(object):
     _helper = False
+    _last_manifest = None
 
     @classmethod
     def close(self):
@@ -89,7 +94,7 @@ class GitHgHelper(object):
             return gitsha1
 
     @classmethod
-    def manifest(self, hg_sha1, git_sha1=None):
+    def _manifest(self, hg_sha1, git_sha1=None):
         try:
             with self.query('manifest', hg_sha1) as stdout:
                 size = int(stdout.readline().strip())
@@ -119,6 +124,69 @@ class GitHgHelper(object):
                         attr=attrs.get(path, ''),
                     )
                     yield line
+
+    @classmethod
+    def manifest(self, hg_sha1):
+        git_sha1 = self.hg2git(hg_sha1)
+        # TODO: Improve this horrible mess
+        if self._last_manifest:
+            from . import ManifestLine, GitHgStore
+            gitreference, reference_lines = self._last_manifest
+            lines = []
+            attrs = {}
+            removed = set()
+            modified = {}
+            created = OrderedDict()
+            for line in Git.diff_tree(gitreference, git_sha1, recursive=True):
+                mode_before, mode_after, sha1_before, sha1_after, status, \
+                    path = line
+                if path.startswith('git/'):
+                    if status != 'D':
+                        attr = GitHgStore.ATTR[mode_after]
+                        attrs[path[4:]] = attr
+                else:
+                    assert path.startswith('hg/')
+                    path = path[3:]
+                    if status == 'D':
+                        removed.add(path)
+                    elif status == 'M':
+                        modified[path] = (sha1_after, attrs.get(path))
+                    else:
+                        assert status == 'A'
+                        created[path] = (sha1_after, attrs.get(path))
+            for path, attr in attrs.iteritems():
+                if not path in modified:
+                    modified[path] = (None, attr)
+            iter_created = created.iteritems()
+            next_created = next(iter_created)
+            for line in reference_lines:
+                if line.name in removed:
+                    continue
+                mod = modified.get(line.name)
+                if mod:
+                    node, attr = mod
+                    if attr is None:
+                        attr = line.attr
+                    if node is None:
+                        node = line.node
+                    line = ManifestLine(line.name, node, attr)
+                while next_created and next_created[0] < line.name:
+                    node, attr = next_created[1]
+                    created_line = ManifestLine(next_created[0], node, attr)
+                    lines.append(created_line)
+                    next_created = next(iter_created)
+                lines.append(line)
+            while next_created:
+                node, attr = next_created[1]
+                created_line = ManifestLine(next_created[0], node, attr)
+                lines.append(created_line)
+                next_created = next(iter_created)
+
+        else:
+            lines = list(self._manifest(hg_sha1, git_sha1))
+
+        self._last_manifest = (git_sha1, lines)
+        return lines
 
 
 atexit.register(GitHgHelper.close)

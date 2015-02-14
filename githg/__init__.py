@@ -408,7 +408,6 @@ class GitHgStore(object):
         self._closed = False
 
         self._last_manifest = None
-        self._last_read_manifest = None
         self._hg2git_cache = {}
         self._previously_stored = None
 
@@ -690,66 +689,8 @@ class GitHgStore(object):
     }
 
     def manifest(self, sha1):
-        assert not isinstance(sha1, Mark)
-        gitsha1 = self._hg2git('commit', sha1)
-        assert gitsha1
-        attrs = {}
         manifest = GeneratedManifestInfo(sha1)
-        # TODO: Improve this horrible mess
-        if self._last_read_manifest:
-            removed = set()
-            modified = {}
-            created = OrderedDict()
-            gitreference = self.manifest_ref(self._last_read_manifest.node)
-            for line in Git.diff_tree(gitreference, gitsha1, recursive=True):
-                mode_before, mode_after, sha1_before, sha1_after, status, \
-                    path = line
-                if path.startswith('git/'):
-                    if status != 'D':
-                        attr = self.ATTR[mode_after]
-                        attrs[path[4:]] = attr
-                else:
-                    assert path.startswith('hg/')
-                    path = path[3:]
-                    if status == 'D':
-                        removed.add(path)
-                    elif status == 'M':
-                        modified[path] = (sha1_after, attrs.get(path))
-                    else:
-                        assert status == 'A'
-                        created[path] = (sha1_after, attrs.get(path))
-            for path, attr in attrs.iteritems():
-                if not path in modified:
-                    modified[path] = (None, attr)
-            iter_created = created.iteritems()
-            next_created = next(iter_created)
-            for line in self._last_read_manifest._lines:
-                if line.name in removed:
-                    continue
-                mod = modified.get(line.name)
-                if mod:
-                    node, attr = mod
-                    if attr is None:
-                        attr = line.attr
-                    if node is None:
-                        node = line.node
-                    line = ManifestLine(line.name, node, attr)
-                while next_created and next_created[0] < line.name:
-                    node, attr = next_created[1]
-                    created_line = ManifestLine(next_created[0], node, attr)
-                    manifest._lines.append(created_line)
-                    next_created = next(iter_created)
-                manifest._lines.append(line)
-            while next_created:
-                node, attr = next_created[1]
-                created_line = ManifestLine(next_created[0], node, attr)
-                manifest._lines.append(created_line)
-                next_created = next(iter_created)
-        else:
-            manifest._lines = list(GitHgHelper.manifest(sha1, gitsha1))
-
-        self._last_read_manifest = manifest
-
+        manifest._lines = GitHgHelper.manifest(sha1)
         return manifest
 
     def manifest_ref(self, sha1, hg2git=True, create=False):
