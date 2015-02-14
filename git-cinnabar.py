@@ -151,7 +151,7 @@ def fsck(args):
                    manifest_ref)
 
         if do_manifests:
-            hg_manifest = store.manifest(manifest, hg_manifest)
+            hg_manifest = store.manifest(manifest)
             parents = tuple(
                 store.read_changeset_data(store.changeset_ref(p))['manifest']
                 for p in (hg_changeset.parent1, hg_changeset.parent2)

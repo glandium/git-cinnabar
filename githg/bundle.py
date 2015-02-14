@@ -264,10 +264,10 @@ class PushStore(GitHgStore):
             return self._push_files[sha1]
         return super(PushStore, self).file(sha1)
 
-    def manifest(self, sha1, previous=None):
+    def manifest(self, sha1):
         if sha1 in self._push_manifests:
             return self._push_manifests[sha1]
-        return super(PushStore, self).manifest(sha1, previous)
+        return super(PushStore, self).manifest(sha1)
 
     def changeset(self, sha1, include_parents=False):
         if sha1 in self._push_changesets:
@@ -311,7 +311,7 @@ def create_bundle(store, commits):
     for manifest, (changeset, parents) in manifests.iteritems():
         if previous is None and parents and parents[0] != NULL_NODE_ID:
             previous = store.manifest(parents[0])
-        hg_manifest = store.manifest(manifest, previous)
+        hg_manifest = store.manifest(manifest)
         hg_manifest.set_parents(*parents)
         hg_manifest.changeset = changeset
         data = hg_manifest.serialize(previous)
@@ -320,8 +320,7 @@ def create_bundle(store, commits):
         yield data
         manifest_ref = store.manifest_ref(manifest)
         if isinstance(manifest_ref, Mark):
-            manifest = store.manifest(manifest)
-            for path, (sha1, attr) in manifest.modified.iteritems():
+            for path, (sha1, attr) in hg_manifest.modified.iteritems():
                 if not isinstance(sha1, types.StringType):
                     continue
                 file = store.file(sha1)

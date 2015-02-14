@@ -408,6 +408,7 @@ class GitHgStore(object):
         self._closed = False
 
         self._last_manifest = None
+        self._last_read_manifest = None
         self._hg2git_cache = {}
         self._previously_stored = None
 
@@ -688,19 +689,18 @@ class GitHgStore(object):
         '120000': 'l',
     }
 
-    def manifest(self, sha1, reference=None):
+    def manifest(self, sha1):
         assert not isinstance(sha1, Mark)
         gitsha1 = self._hg2git('commit', sha1)
         assert gitsha1
         attrs = {}
         manifest = GeneratedManifestInfo(sha1)
         # TODO: Improve this horrible mess
-        if reference:
+        if self._last_read_manifest:
             removed = set()
             modified = {}
             created = OrderedDict()
-            assert isinstance(reference, GeneratedManifestInfo)
-            gitreference = self.manifest_ref(reference.node)
+            gitreference = self.manifest_ref(self._last_read_manifest.node)
             for line in Git.diff_tree(gitreference, gitsha1, recursive=True):
                 mode_before, mode_after, sha1_before, sha1_after, status, \
                     path = line
@@ -723,7 +723,7 @@ class GitHgStore(object):
                     modified[path] = (None, attr)
             iter_created = created.iteritems()
             next_created = next(iter_created)
-            for line in reference._lines:
+            for line in self._last_read_manifest._lines:
                 if line.name in removed:
                     continue
                 mod = modified.get(line.name)
@@ -747,6 +747,8 @@ class GitHgStore(object):
                 next_created = next(iter_created)
         else:
             manifest._lines = list(GitHgHelper.manifest(sha1, gitsha1))
+
+        self._last_read_manifest = manifest
 
         return manifest
 
