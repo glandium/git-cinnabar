@@ -198,14 +198,14 @@ static int get_manifest_tree(const unsigned char *git_sha1,
 		goto not_found;
 	if (strcmp(entry.path, "git"))
 		goto not_found;
-	memcpy(result->git, entry.sha1, 20);
+	hashcpy(result->git, entry.sha1);
 
 	/* The second entry in the manifest tree is the hg subtree. */
 	if (!tree_entry(&desc, &entry))
 		goto not_found;
 	if (strcmp(entry.path, "hg"))
 		goto not_found;
-	memcpy(result->hg, entry.sha1, 20);
+	hashcpy(result->hg, entry.sha1);
 
 	/* There shouldn't be any other entry. */
 	if (tree_entry(&desc, &entry))
@@ -245,8 +245,8 @@ static void recurse_manifest(const struct manifest_tree *tree,
 			strbuf_addstr(&dir, base);
 			strbuf_addstr(&dir, entry_git.path);
 			strbuf_addch(&dir, '/');
-			memcpy(subtree.git, entry_git.sha1, 20);
-			memcpy(subtree.hg, entry_hg.sha1, 20);
+			hashcpy(subtree.git, entry_git.sha1);
+			hashcpy(subtree.hg, entry_hg.sha1);
 			recurse_manifest(&subtree, manifest, dir.buf);
 			strbuf_release(&dir);
 			continue;
