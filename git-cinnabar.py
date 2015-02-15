@@ -16,7 +16,10 @@ from git import (
     FastImport,
     Git,
 )
-from git.util import LazyString
+from git.util import (
+    LazyString,
+    progress_iter,
+)
 from githg.dag import gitdag
 from githg.helper import GitHgHelper
 import subprocess
@@ -31,9 +34,13 @@ def fsck(args):
 
     status = { 'broken': False }
 
+    def info(message):
+        sys.stderr.write('\r')
+        print message
+
     def report(message):
         status['broken'] = True
-        print message
+        info(message)
 
     store = GitHgStore()
     store.init_fast_import(FastImport())
@@ -41,16 +48,19 @@ def fsck(args):
     all_hg2git = {
         path.replace('/', ''): (filesha1, intern(typ))
         for mode, typ, filesha1, path in
-        Git.ls_tree('refs/cinnabar/hg2git', recursive=True)
+        progress_iter('Reading %d mercurial to git mappings',
+        Git.ls_tree('refs/cinnabar/hg2git', recursive=True))
     }
 
     store._hg2git_cache = { p: s for p, (s, t) in all_hg2git.iteritems() }
 
     all_notes = set(path.replace('/', '') for mode, typ, filesha1, path in
-        Git.ls_tree('refs/notes/cinnabar', recursive=True))
+        progress_iter('Reading %d commit to changeset mappings',
+        Git.ls_tree('refs/notes/cinnabar', recursive=True)))
 
-    manifest_commits = set(Git.iter('rev-list', '--full-history',
-                                    'refs/cinnabar/manifest'))
+    manifest_commits = set(progress_iter('Reading %d manifest trees',
+                           Git.iter('rev-list', '--full-history',
+                                    'refs/cinnabar/manifest')))
 
     def all_git_heads():
         for ref in Git.for_each_ref('refs/cinnabar/branches',
@@ -69,7 +79,7 @@ def fsck(args):
 
     hg_manifest = None
 
-    for line in all_git_commits:
+    for line in progress_iter('Checking %d changesets', all_git_commits):
         tree, node = line.split(' ')
         if node not in all_notes:
             report('Missing note for git commit: ' + node)
@@ -91,8 +101,8 @@ def fsck(args):
                     report('Committer mismatch between commit and metadata for'
                            ' changeset %s' % changeset)
                 if committer == extra['committer']:
-                    print 'Fixing useless committer metadata for changeset %s' \
-                           % changeset
+                    info('Fixing useless committer metadata for changeset %s' \
+                         % changeset)
                     del changeset_data['extra']['committer']
                     store._changesets[changeset] = LazyString(node)
 
@@ -130,8 +140,8 @@ def fsck(args):
                 hg_changeset = store.changeset(changeset, include_parents=True)
                 sha1 = hg_changeset.sha1
                 if hg_changeset.node == sha1:
-                    print 'Fixing known sha1 mismatch for changeset %s' % (
-                        changeset)
+                    info('Fixing known sha1 mismatch for changeset %s' %
+                         changeset)
                     store._changesets[changeset] = LazyString(node)
 
         if hg_changeset.node != sha1:
@@ -181,23 +191,23 @@ def fsck(args):
                      if t == 'commit')
 
     for obj in all_hg2git - seen_changesets - seen_manifests - seen_files:
-        print 'Dangling metadata for ' + obj
+        info('Dangling metadata for ' + obj)
 
     for obj in manifest_commits - seen_manifest_refs:
-        print 'Metadata commit %s with no hg2git entry' % obj
+        info('Metadata commit %s with no hg2git entry' % obj)
 
     for commit in all_notes - seen_notes:
-        print 'Dangling note for commit ' + commit
+        info('Dangling note for commit ' + commit)
 
     if status['broken']:
-        print 'Your git-cinnabar repository appears to be corrupted. There'
-        print 'are known issues in older revisions that have been fixed.'
-        print 'Please try running the following command to reset:'
-        print '  git cinnabar reclone'
-        print '\nPlease note this command may change the commit sha1s. Your'
-        print 'local branches will however stay untouched.'
-        print 'Please report any corruption that fsck would detect after a'
-        print 'reclone.'
+        info('Your git-cinnabar repository appears to be corrupted. There\n'
+             'are known issues in older revisions that have been fixed.\n'
+             'Please try running the following command to reset:\n'
+             '  git cinnabar reclone\n\n'
+             'Please note this command may change the commit sha1s. Your\n'
+             'local branches will however stay untouched.\n'
+             'Please report any corruption that fsck would detect after a\n'
+             'reclone.')
 
     store.close()
 

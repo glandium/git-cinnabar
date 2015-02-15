@@ -1,4 +1,6 @@
 import logging
+import sys
+import time
 
 
 def next(iter):
@@ -6,6 +8,22 @@ def next(iter):
         return iter.next()
     except StopIteration:
         return None
+
+
+progress = True
+
+def progress_iter(fmt, iter):
+    count = 0
+    t0 = 0
+    for count, item in enumerate(iter, start=1):
+        if progress:
+            t1 = time.time()
+            if t1 - t0 > 1:
+                sys.stderr.write(('\r' + fmt) % count)
+                t0 = t1
+        yield item
+    if progress:
+        sys.stderr.write(('\r' + fmt + '\n') % count)
 
 
 class IOLogger(object):

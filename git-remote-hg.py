@@ -45,6 +45,7 @@ from git import (
     FastImport,
     Git,
 )
+from git.util import progress_iter
 import time
 
 try:
@@ -195,18 +196,6 @@ class bundlerepo(object):
 
     def listkeys(self, namespace):
         return {}
-
-
-def progress_iter(fmt, iter):
-    count = 0
-    t0 = 0
-    for count, item in enumerate(iter, start=1):
-        t1 = time.time()
-        if t1 - t0 > 1:
-            sys.stderr.write(('\r' + fmt) % count)
-            t0 = t1
-        yield item
-    sys.stderr.write(('\r' + fmt + '\n') % count)
 
 
 def getbundle(repo, store, heads, branchmap):
