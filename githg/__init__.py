@@ -338,21 +338,37 @@ class ChangesetData(object):
 class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
     def __init__(self, node):
         super(GeneratedManifestInfo, self).__init__(node, '')
-        self._lines = []
+        self.__lines = None
+        self._data = ''
 
     def init(self, previous_chunk):
         pass
 
     @property
     def data(self):
-        # Normally, it'd be better to use str(l), but it turns out to make
-        # things significantly slower. Sigh python.
-        return ''.join(l._str for l in self._lines)
+        if self._data is None:
+            # Normally, it'd be better to use str(l), but it turns out to make
+            # things significantly slower. Sigh python.
+            self._data = ''.join(l._str for l in self._lines)
+            self.__lines = None
+        return self._data
 
     @data.setter
     def data(self, value):
-        # GeneratedManifestInfo sets data and we want to ignore that.
-        pass
+        self._data = value
+        self.__lines = None
+
+    @property
+    def _lines(self):
+        if self.__lines is None:
+            self.__lines = list(isplitmanifest(self.data))
+            self._data = None
+        return self.__lines
+
+    @_lines.setter
+    def _lines(self, value):
+        self.__lines = value
+        self._data = None
 
 
 class TagSet(object):
@@ -687,7 +703,11 @@ class GitHgStore(object):
 
     def manifest(self, sha1):
         manifest = GeneratedManifestInfo(sha1)
-        manifest._lines = GitHgHelper.manifest(sha1)
+        data = GitHgHelper.manifest(sha1)
+        if isinstance(data, types.StringType):
+            manifest.data = data
+        else:
+            manifest._lines = data
         return manifest
 
     def manifest_ref(self, sha1, hg2git=True, create=False):
