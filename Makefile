@@ -52,7 +52,7 @@ ALL_PROGRAMS += git-cinnabar-helper$X
 
 all:: git-cinnabar-helper$X
 
-%.o: %.c GIT-CFLAGS $(missing_dep_dirs)
+cinnabar-helper.o: %.o: %.c GIT-CFLAGS $(missing_dep_dirs)
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
 
 endif
