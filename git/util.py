@@ -53,6 +53,13 @@ class IOLogger(object):
     def flush(self):
         self._writer.flush()
 
+    def __iter__(self):
+        while True:
+            l = self.readline()
+            if not l:
+                break
+            yield l
+
 
 class LazyString(object):
     def __init__(self, obj):

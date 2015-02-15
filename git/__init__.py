@@ -14,9 +14,6 @@ from util import (
 from itertools import izip
 from binascii import hexlify
 
-git_logger = logging.getLogger('git')
-# git_logger.setLevel(logging.INFO)
-
 
 def sha1path(sha1, depth=2):
     i = -1
@@ -46,7 +43,19 @@ class GitProcess(object):
         self._proc = subprocess.Popen(['git'] + list(args), stdin=proc_stdin,
                                       stdout=stdout, stderr=stderr)
 
-        git_logger.info(LazyString(lambda: '[%d] git %s' % (
+        logger = logging.getLogger(args[0])
+        if logger.isEnabledFor(logging.INFO):
+            self._stdin = IOLogger(logger, self._proc.stdout, self._proc.stdin,
+                                   prefix='[%d]' % self._proc.pid)
+        else:
+            self._stdin = self._proc.stdin
+
+        if logger.isEnabledFor(logging.DEBUG):
+            self._stdout = self._stdin
+        else:
+            self._stdout = self._proc.stdout
+
+        logger.info(LazyString(lambda: '[%d] git %s' % (
             self._proc.pid,
             ' '.join(args),
         )))
@@ -61,8 +70,8 @@ class GitProcess(object):
                 self._proc.stdin.close()
 
     def wait(self):
-        if self.stdin:
-            self.stdin.close()
+        if self._proc.stdin:
+            self._proc.stdin.close()
         return self._proc.wait()
 
     @property
@@ -71,11 +80,11 @@ class GitProcess(object):
 
     @property
     def stdin(self):
-        return self._proc.stdin
+        return self._stdin
 
     @property
     def stdout(self):
-        return self._proc.stdout
+        return self._stdout
 
     @property
     def stderr(self):
@@ -114,25 +123,16 @@ class Git(object):
         start = time.time()
 
         proc = GitProcess(*args, **kwargs)
-        # git_logger.debug does that check under the hood, but it turns out
-        # that simply calling this check in the tight loop below makes a
-        # big difference. For a `cinnabar data -m` on a mozilla-central tree
-        # (> 100k items), it makes a 20% (!) overall wall time difference.
-        log = git_logger.isEnabledFor(logging.DEBUG)
         for line in proc.stdout or ():
-            if log:
-                git_logger.debug(LazyString(lambda: '[%d] => %s' % (
-                    proc.pid,
-                    repr(line),
-                )))
             line = line.rstrip('\n')
             yield line
 
         proc.wait()
-        git_logger.info(LazyString(lambda: '[%d] wall time: %.3fs' % (
-            proc.pid,
-            time.time() - start,
-        )))
+        logging.getLogger(args[0]).info(
+            LazyString(lambda: '[%d] wall time: %.3fs' % (
+                proc.pid,
+                time.time() - start,
+            )))
 
     @classmethod
     def run(self, *args):
