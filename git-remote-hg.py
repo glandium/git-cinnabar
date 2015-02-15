@@ -46,6 +46,7 @@ from git import (
     Git,
 )
 from git.util import progress_iter
+import git.util
 import time
 
 try:
@@ -403,7 +404,6 @@ def main(args):
         repo = hg.peer(ui_, {}, url)
         assert repo.capable('getbundle')
     store = GitHgStore()
-    options = {}
     logger.info(LazyString(lambda: '%s' % store.heads()))
     helper = IOLogger(logging.getLogger('remote-helper'),
         sys.stdin, sys.stdout)
@@ -494,8 +494,18 @@ def main(args):
             helper.flush()
         elif cmd == 'option':
             assert len(args) == 2
-            options[args[0]] = args[1]
-            helper.write('unsupported\n')
+            name, value = args
+            if name == 'progress':
+                if value == 'true':
+                    git.util.progress = True
+                    helper.write('ok\n')
+                elif value == 'false':
+                    git.util.progress = False
+                    helper.write('ok\n')
+                else:
+                    helper.write('unsupported\n')
+            else:
+                helper.write('unsupported\n')
             helper.flush()
         elif cmd == 'import':
             reflog = os.path.join(os.environ['GIT_DIR'], 'logs', 'refs',
