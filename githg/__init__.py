@@ -343,9 +343,6 @@ class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
     def init(self, previous_chunk):
         pass
 
-    def append(self, line):
-        self._lines.append(line)
-
     @property
     def data(self):
         # Normally, it'd be better to use str(l), but it turns out to make
