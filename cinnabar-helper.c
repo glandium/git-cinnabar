@@ -218,48 +218,97 @@ not_found:
 	return -1;
 }
 
+struct manifest_tree_state {
+	struct tree *tree_git, *tree_hg;
+	struct tree_desc desc_git, desc_hg;
+};
+
+static int manifest_tree_state_init(const struct manifest_tree *tree,
+                                    struct manifest_tree_state *result) {
+	result->tree_git = parse_tree_indirect(tree->git);
+	if (!result->tree_git)
+		return -1;
+	result->tree_hg = parse_tree_indirect(tree->hg);
+	if (!result->tree_hg) {
+		free_tree_buffer(result->tree_git);
+		return -1;
+	}
+	init_tree_desc(&result->desc_git, result->tree_git->buffer,
+	               result->tree_git->size);
+	init_tree_desc(&result->desc_hg, result->tree_hg->buffer,
+	               result->tree_hg->size);
+	return 0;
+}
+
+static void free_manifest_tree_state(struct manifest_tree_state *state) {
+	free_tree_buffer(state->tree_git);
+	free_tree_buffer(state->tree_hg);
+}
+
+struct manifest_entry {
+	const unsigned char *sha1;
+	/* Used for trees only. */
+	const unsigned char *other_sha1;
+	const char *path;
+	unsigned int mode;
+};
+
+/* Like tree_entry, returns true for success. */
+static int manifest_tree_entry(struct manifest_tree_state *state,
+                               struct manifest_entry *result) {
+	struct name_entry entry_git, entry_hg;
+	int has_git_entry = tree_entry(&state->desc_git, &entry_git);
+	int has_hg_entry = tree_entry(&state->desc_hg, &entry_hg);
+	if (has_git_entry != has_hg_entry)
+		goto corrupted;
+	if (!has_git_entry) {
+		result->path = NULL;
+		return 0;
+	}
+
+	result->sha1 = entry_hg.sha1;
+	result->path = entry_hg.path;
+	result->mode = entry_git.mode;
+	if (strcmp(entry_hg.path, entry_git.path))
+		goto corrupted;
+	if (S_ISDIR(entry_git.mode)) {
+		if (entry_git.mode != entry_hg.mode)
+			goto corrupted;
+		result->other_sha1 = entry_git.sha1;
+	}
+	return 1;
+corrupted:
+	die("Corrupted metadata");
+}
+
 static void recurse_manifest(const struct manifest_tree *tree,
                              struct strbuf *manifest, char *base) {
-	struct tree *tree_git = NULL, *tree_hg = NULL;
-	struct tree_desc desc_git, desc_hg;
-	struct name_entry entry_git, entry_hg;
+	struct manifest_tree_state state;
+	struct manifest_entry entry;
+	size_t base_len = strlen(base);
 
-	tree_git = parse_tree_indirect(tree->git);
-	if (!tree_git)
+	if (manifest_tree_state_init(tree, &state))
 		goto corrupted;
-	tree_hg = parse_tree_indirect(tree->hg);
-	if (!tree_hg)
-		goto corrupted;
-	init_tree_desc(&desc_git, tree_git->buffer, tree_git->size);
-	init_tree_desc(&desc_hg, tree_hg->buffer, tree_hg->size);
 
-	while (tree_entry(&desc_git, &entry_git)) {
-		if (!tree_entry(&desc_hg, &entry_hg))
-			goto corrupted;
-
-		if (S_ISDIR(entry_git.mode)) {
+	while (manifest_tree_entry(&state, &entry)) {
+		if (S_ISDIR(entry.mode)) {
 			struct strbuf dir = STRBUF_INIT;
 			struct manifest_tree subtree;
-			if (!S_ISDIR(entry_hg.mode))
-				goto corrupted;
-			strbuf_addstr(&dir, base);
-			strbuf_addstr(&dir, entry_git.path);
+			if (base_len)
+				strbuf_add(&dir, base, base_len);
+			strbuf_addstr(&dir, entry.path);
 			strbuf_addch(&dir, '/');
-			hashcpy(subtree.git, entry_git.sha1);
-			hashcpy(subtree.hg, entry_hg.sha1);
+			hashcpy(subtree.git, entry.other_sha1);
+			hashcpy(subtree.hg, entry.sha1);
 			recurse_manifest(&subtree, manifest, dir.buf);
 			strbuf_release(&dir);
 			continue;
 		}
-		strbuf_addf(manifest, "%s%s%c%s%s\n", base, entry_git.path,
-		            '\0', sha1_to_hex(entry_hg.sha1),
-		            hgattr(entry_git.mode));
+		strbuf_addf(manifest, "%s%s%c%s%s\n", base, entry.path,
+		            '\0', sha1_to_hex(entry.sha1), hgattr(entry.mode));
 	}
-	if (tree_entry(&desc_hg, &entry_hg))
-		goto corrupted;
 
-	free_tree_buffer(tree_hg);
-	free_tree_buffer(tree_git);
+	free_manifest_tree_state(&state);
 	return;
 corrupted:
 	die("Corrupted metadata");
