@@ -312,13 +312,181 @@ static void recurse_manifest(const struct manifest_tree *tree,
 	return;
 corrupted:
 	die("Corrupted metadata");
+
+}
+
+struct strslice {
+	size_t len;
+	const char *buf;
+};
+
+/* Return whether two entries have matching sha1s and modes */
+static int manifest_entry_equal(const struct manifest_entry *e1,
+                                const struct manifest_entry *e2) {
+	if (e1->mode != e2->mode)
+		return 0;
+	if (hashcmp(e1->sha1, e2->sha1))
+		return 0;
+	if (!S_ISDIR(e1->mode))
+		return 1;
+	/* For trees, both sha1 need to match */
+	return hashcmp(e1->other_sha1, e2->other_sha1) == 0;
+}
+
+/* Return whether base + name matches path */
+static int path_match(const char *base, size_t base_len,
+                      const char *name, size_t name_len, const char *path) {
+	return memcmp(base, path, base_len) == 0 &&
+	       memcmp(name, path + base_len, name_len) == 0 &&
+	       (path[base_len + name_len] == '\0' ||
+	        path[base_len + name_len] == '/');
+}
+
+static void recurse_manifest2(const struct manifest_tree *ref_tree,
+                              struct strslice *ref_manifest,
+                              const struct manifest_tree *tree,
+                              struct strbuf *manifest, char *base) {
+	struct manifest_tree_state ref, cur;
+	struct manifest_entry ref_entry, cur_entry;
+	struct manifest_tree ref_subtree, cur_subtree;
+	const char *next = ref_manifest->buf;
+	struct strbuf dir = STRBUF_INIT;
+	size_t base_len = strlen(base);
+	size_t ref_entry_len = 0;
+	int cmp = 0;
+
+	if (manifest_tree_state_init(ref_tree, &ref))
+		goto corrupted;
+
+	if (manifest_tree_state_init(tree, &cur))
+		goto corrupted;
+
+	for (;;) {
+		if (cmp >= 0)
+			manifest_tree_entry(&cur, &cur_entry);
+		if (cmp <= 0) {
+			manifest_tree_entry(&ref, &ref_entry);
+			assert(ref_manifest->buf + ref_manifest->len >= next);
+			ref_manifest->len -= next - ref_manifest->buf;
+			ref_manifest->buf = next;
+			ref_entry_len = ref_entry.path ?
+				strlen(ref_entry.path) : 0;
+			assert(!ref_entry.path ||
+			       path_match(base, base_len, ref_entry.path,
+			                  ref_entry_len, next));
+		}
+		if (!ref_entry.path) {
+			if (!cur_entry.path)
+				break;
+			cmp = 1;
+		} else if (!cur_entry.path) {
+			cmp = -1;
+		} else {
+			cmp = name_compare(
+				ref_entry.path, ref_entry_len,
+				cur_entry.path, strlen(cur_entry.path));
+		}
+		if (cmp <= 0) {
+			const char *tail = next + ref_manifest->len;
+			do {
+				next = memchr(next + base_len + ref_entry_len +
+					      41, '\n', tail - next) + 1;
+			} while (S_ISDIR(ref_entry.mode) &&
+			         path_match(base, base_len, ref_entry.path,
+			                    ref_entry_len, next));
+		}
+		/* File/directory was removed, nothing to do */
+		if (cmp < 0)
+			continue;
+		/* File/directory didn't change, copy from the reference
+		 * manifest. */
+		if (cmp == 0 && manifest_entry_equal(&ref_entry, &cur_entry)) {
+			strbuf_add(manifest, ref_manifest->buf,
+			           next - ref_manifest->buf);
+			continue;
+		}
+		if (!S_ISDIR(cur_entry.mode)) {
+			strbuf_addf(manifest, "%s%s%c%s%s\n", base,
+			            cur_entry.path, '\0',
+			            sha1_to_hex(cur_entry.sha1),
+			            hgattr(cur_entry.mode));
+			continue;
+		}
+
+		if (base_len)
+			strbuf_add(&dir, base, base_len);
+		strbuf_addstr(&dir, cur_entry.path);
+		strbuf_addch(&dir, '/');
+		hashcpy(cur_subtree.git, cur_entry.other_sha1);
+		hashcpy(cur_subtree.hg, cur_entry.sha1);
+		if (cmp == 0 && S_ISDIR(ref_entry.mode)) {
+			hashcpy(ref_subtree.git, ref_entry.other_sha1);
+			hashcpy(ref_subtree.hg, ref_entry.sha1);
+			recurse_manifest2(&ref_subtree, ref_manifest,
+				          &cur_subtree, manifest, dir.buf);
+		} else
+			recurse_manifest(&cur_subtree, manifest, dir.buf);
+		strbuf_release(&dir);
+	}
+
+	free_manifest_tree_state(&cur);
+	free_manifest_tree_state(&ref);
+	return;
+corrupted:
+	die("Corrupted metadata");
+}
+
+struct manifest {
+	struct manifest_tree tree;
+	struct strbuf content;
+};
+
+#define MANIFEST_INIT { { { 0, }, { 0, } }, STRBUF_INIT }
+
+/* For repositories with a lot of files, generating a manifest is a slow
+ * operation.
+ * In most cases, there are way less changes between changesets than there
+ * are files in the repository, so it is much faster to generate a manifest
+ * from a previously generated manifest, by applying the differences between
+ * the corresponding trees.
+ * Therefore, we always keep the last generated manifest.
+ */
+static struct manifest generated_manifest = MANIFEST_INIT;
+
+/* The returned strbuf must not be released and/or freed. */
+static struct strbuf *generate_manifest(const unsigned char *git_sha1) {
+	struct manifest_tree manifest_tree;
+	struct strbuf content = STRBUF_INIT;
+
+	if (get_manifest_tree(git_sha1, &manifest_tree))
+		goto not_found;
+
+	if (generated_manifest.content.len) {
+		struct strslice gm = {
+			generated_manifest.content.len,
+			generated_manifest.content.buf
+		};
+		strbuf_grow(&content, generated_manifest.content.len);
+		recurse_manifest2(&generated_manifest.tree, &gm,
+		                  &manifest_tree, &content, "");
+	} else {
+		recurse_manifest(&manifest_tree, &content, "");
+	}
+
+	hashcpy(generated_manifest.tree.git, manifest_tree.git);
+	hashcpy(generated_manifest.tree.hg, manifest_tree.hg);
+	strbuf_swap(&content, &generated_manifest.content);
+	strbuf_release(&content);
+	return &generated_manifest.content;
+
+not_found:
+	return NULL;
 }
 
 static void do_manifest(struct string_list *command) {
 	unsigned char sha1[20];
 	const unsigned char *tree_sha1;
-	struct manifest_tree manifest_tree;
-	struct strbuf manifest = STRBUF_INIT;
+	struct strbuf *manifest = NULL;
 	struct strbuf header = STRBUF_INIT;
 
 	if (command->nr != 2)
@@ -331,22 +499,22 @@ static void do_manifest(struct string_list *command) {
 	if (!tree_sha1)
 		goto not_found;
 
-	if (get_manifest_tree(tree_sha1, &manifest_tree))
+	manifest = generate_manifest(tree_sha1);
+	if (!manifest)
 		goto not_found;
 
-	recurse_manifest(&manifest_tree, &manifest, "");
-
-not_found:
-	strbuf_addf(&header, "%lu\n", manifest.len);
+	strbuf_addf(&header, "%lu\n", manifest->len);
 
 	write_or_die(1, header.buf, header.len);
 
 	strbuf_release(&header);
 
-	write_or_die(1, manifest.buf, manifest.len);
+	write_or_die(1, manifest->buf, manifest->len);
 	write_or_die(1, "\n", 1);
+	return;
 
-	strbuf_release(&manifest);
+not_found:
+	write_or_die(1, "0\n\n", 3);
 }
 
 int main(int argc, const char *argv[]) {
