@@ -12,6 +12,10 @@
  *     Returns the contents of the mercurial manifest with the given
  *     mercurial sha1, preceded by its length in text form, and followed
  *     by a carriage return.
+ * - check-manifest <hg_sha1> <parent1>? <parent2>?
+ *     Returns 'ok' when the sha1 of the contents of the mercurial manifest
+ *     along with the given parent nodes matches the manifest sha1, otherwise
+ *     returns 'error'.
  * - cat-file <object>
  *     Returns the contents of the given git object, in a `cat-file
  *     --batch`-like format.
@@ -517,6 +521,61 @@ not_found:
 	write_or_die(1, "0\n\n", 3);
 }
 
+static void do_check_manifest(struct string_list *command) {
+	unsigned char sha1[20], parent1[20], parent2[20], result[20];
+	const unsigned char *tree_sha1;
+	struct strbuf *manifest = NULL;
+	git_SHA_CTX ctx;
+
+	if (command->nr < 2 || command->nr > 4)
+		goto error;
+
+	if (get_sha1_hex(command->items[1].string, sha1))
+		goto error;
+
+	if (command->nr > 2) {
+		if (get_sha1_hex(command->items[2].string, parent1))
+			goto error;
+	} else
+		memset(parent1, 0, sizeof(parent1));
+
+	if (command->nr > 3) {
+		if (get_sha1_hex(command->items[3].string, parent2))
+			goto error;
+	} else
+		memset(parent2, 0, sizeof(parent2));
+
+	tree_sha1 = resolve_hg2git(sha1);
+	if (!tree_sha1)
+		goto error;
+
+	manifest = generate_manifest(tree_sha1);
+	if (!manifest)
+		goto error;
+
+	git_SHA1_Init(&ctx);
+
+	if (hashcmp(parent1, parent2) < 0) {
+		git_SHA1_Update(&ctx, parent1, sizeof(parent1));
+		git_SHA1_Update(&ctx, parent2, sizeof(parent2));
+	} else {
+		git_SHA1_Update(&ctx, parent2, sizeof(parent2));
+		git_SHA1_Update(&ctx, parent1, sizeof(parent1));
+	}
+
+	git_SHA1_Update(&ctx, manifest->buf, manifest->len);
+
+	git_SHA1_Final(result, &ctx);
+
+	if (hashcmp(result, sha1) == 0) {
+		write(1, "ok\n", 3);
+		return;
+	}
+
+error:
+	write_or_die(1, "error\n", 6);
+}
+
 int main(int argc, const char *argv[]) {
 	struct strbuf buf = STRBUF_INIT;
 
@@ -529,6 +588,8 @@ int main(int argc, const char *argv[]) {
 			do_hg2git(&command);
 		else if (!strcmp("manifest", command.items[0].string))
 			do_manifest(&command);
+		else if (!strcmp("check-manifest", command.items[0].string))
+			do_check_manifest(&command);
 		else if (!strcmp("cat-file", command.items[0].string))
 			do_cat_file(&command);
 		else

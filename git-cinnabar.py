@@ -21,7 +21,10 @@ from git.util import (
     progress_iter,
 )
 from githg.dag import gitdag
-from githg.helper import GitHgHelper
+from githg.helper import (
+    GitHgHelper,
+    NoHelperException,
+)
 import subprocess
 
 
@@ -158,15 +161,21 @@ def fsck(args):
                    manifest_ref)
 
         if do_manifests:
-            hg_manifest = store.manifest(manifest)
             parents = tuple(
                 store.read_changeset_data(store.changeset_ref(p))['manifest']
                 for p in (hg_changeset.parent1, hg_changeset.parent2)
                 if p != NULL_NODE_ID
             )
-            hg_manifest.set_parents(*parents)
-            if hg_manifest.node != hg_manifest.sha1:
-                report('Sha1 mismatch for manifest %s' % manifest)
+            try:
+                with GitHgHelper.query('check-manifest', manifest,
+                                       *parents) as stdout:
+                    if stdout.readline().strip() != 'ok':
+                        report('Sha1 mismatch for manifest %s' % manifest)
+            except NoHelperException:
+                hg_manifest = store.manifest(manifest)
+                hg_manifest.set_parents(*parents)
+                if hg_manifest.node != hg_manifest.sha1:
+                    report('Sha1 mismatch for manifest %s' % manifest)
 
         git_ls = one(Git.ls_tree(manifest_ref, 'git'))
         if not git_ls:
