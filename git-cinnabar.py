@@ -24,9 +24,6 @@ from githg.dag import gitdag
 from githg.helper import GitHgHelper
 import subprocess
 
-import logging
-#logging.getLogger('').setLevel(logging.INFO)
-
 
 def fsck(args):
     # TODO: Add arguments to enable more sha1 checks

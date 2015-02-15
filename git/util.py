@@ -1,6 +1,22 @@
 import logging
+import os
 import sys
 import time
+
+
+# Initialize logging from the GIT_CINNABAR_LOG environment variable
+log_env = os.environ.get('GIT_CINNABAR_LOG')
+if log_env:
+    for assignment in log_env.split(','):
+        try:
+            name, value = assignment.split(':', 1)
+            value = int(value)
+            if name == '*':
+                name = ''
+            logging.getLogger(name).setLevel(
+                max(logging.DEBUG, logging.FATAL - value * 10))
+        except:
+            pass
 
 
 def next(iter):

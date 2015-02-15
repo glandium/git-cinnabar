@@ -54,8 +54,6 @@ try:
 except ImportError:
     from mercurial.changegroup import unbundle10 as cg1unpacker
 
-#logging.getLogger('').setLevel(logging.INFO)
-
 
 def readbundle(fh):
     header = changegroup.readexactly(fh, 4)
