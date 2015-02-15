@@ -94,46 +94,12 @@ class GitHgHelper(object):
             return gitsha1
 
     @classmethod
-    def _manifest(self, hg_sha1, git_sha1=None):
-        try:
-            with self.query('manifest', hg_sha1) as stdout:
-                size = int(stdout.readline().strip())
-                ret = stdout.read(size)
-                lf = stdout.read(1)
-                assert lf == '\n'
-                from . import isplitmanifest
-                for l in isplitmanifest(ret):
-                    yield l
-        except NoHelperException:
-            from . import ManifestLine, GitHgStore
-            attrs = {}
-            if not git_sha1:
-                git_sha1 = self.hg2git(hg_sha1)
-            for mode, typ, filesha1, path in Git.ls_tree(git_sha1,
-                                                         recursive=True):
-                if path.startswith('git/'):
-                    attr = GitHgStore.ATTR[mode]
-                    if attr:
-                        attrs[path[4:]] = attr
-                else:
-                    assert path.startswith('hg/')
-                    path = path[3:]
-                    line = ManifestLine(
-                        name=path,
-                        node=filesha1,
-                        attr=attrs.get(path, ''),
-                    )
-                    yield line
-
-    @classmethod
-    def manifest(self, hg_sha1):
-        git_sha1 = self.hg2git(hg_sha1)
+    def _manifest(self, hg_sha1, git_sha1):
+        from . import ManifestLine, GitHgStore
         # TODO: Improve this horrible mess
+        attrs = {}
         if self._last_manifest:
-            from . import ManifestLine, GitHgStore
             gitreference, reference_lines = self._last_manifest
-            lines = []
-            attrs = {}
             removed = set()
             modified = {}
             created = OrderedDict()
@@ -172,21 +138,44 @@ class GitHgHelper(object):
                     line = ManifestLine(line.name, node, attr)
                 while next_created and next_created[0] < line.name:
                     node, attr = next_created[1]
-                    created_line = ManifestLine(next_created[0], node, attr)
-                    lines.append(created_line)
+                    yield ManifestLine(next_created[0], node, attr)
                     next_created = next(iter_created)
-                lines.append(line)
+                yield line
             while next_created:
                 node, attr = next_created[1]
-                created_line = ManifestLine(next_created[0], node, attr)
-                lines.append(created_line)
+                yield ManifestLine(next_created[0], node, attr)
                 next_created = next(iter_created)
-
         else:
-            lines = list(self._manifest(hg_sha1, git_sha1))
+            for mode, typ, filesha1, path in Git.ls_tree(git_sha1,
+                                                         recursive=True):
+                if path.startswith('git/'):
+                    attr = GitHgStore.ATTR[mode]
+                    if attr:
+                        attrs[path[4:]] = attr
+                else:
+                    assert path.startswith('hg/')
+                    path = path[3:]
+                    line = ManifestLine(
+                        name=path,
+                        node=filesha1,
+                        attr=attrs.get(path, ''),
+                    )
+                    yield line
 
-        self._last_manifest = (git_sha1, lines)
-        return lines
+    @classmethod
+    def manifest(self, hg_sha1):
+        try:
+            with self.query('manifest', hg_sha1) as stdout:
+                size = int(stdout.readline().strip())
+                ret = stdout.read(size)
+                lf = stdout.read(1)
+                assert lf == '\n'
+                return ret
+        except NoHelperException:
+            git_sha1 = self.hg2git(hg_sha1)
+            lines = list(self._manifest(hg_sha1, git_sha1))
+            self._last_manifest = (git_sha1, lines)
+            return lines
 
 
 atexit.register(GitHgHelper.close)
