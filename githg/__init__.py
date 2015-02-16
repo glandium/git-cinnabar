@@ -46,7 +46,7 @@ class StreamHandler(logging.StreamHandler):
 
 logger = logging.getLogger()
 handler = StreamHandler()
-handler.setFormatter(logging.Formatter('%(timestamp).3f %(name)s %(message)s'))
+handler.setFormatter(logging.Formatter('\r%(timestamp).3f %(name)s %(message)s'))
 logger.addHandler(handler)
 #logger.setLevel(logging.INFO)
 #logger.setLevel(logging.DEBUG)
