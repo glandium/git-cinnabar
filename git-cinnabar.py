@@ -43,7 +43,7 @@ def fsck(args):
         info(message)
 
     store = GitHgStore()
-    store.init_fast_import(FastImport())
+    store.init_fast_import(lambda: FastImport())
 
     all_hg2git = {
         path.replace('/', ''): (filesha1, intern(typ))

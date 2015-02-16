@@ -570,13 +570,22 @@ class GitHgStore(object):
     @property
     def _fast_import(self):
         assert self.__fast_import
+        if callable(self.__fast_import):
+            self._fast_import = self.__fast_import()
         return self.__fast_import
 
-    def init_fast_import(self, fi):
+    @_fast_import.setter
+    def _fast_import(self, fi):
         assert fi
         self.__fast_import = fi
         Git.register_fast_import(fi)
         fi.send_done()
+
+    def init_fast_import(self, fi):
+        if callable(fi):
+            self.__fast_import = fi
+        else:
+            self._fast_import = fi
 
     def _close_fast_import(self):
         if not self.__fast_import or callable(self.__fast_import):
@@ -1029,10 +1038,11 @@ class GitHgStore(object):
                 yield '%s\0%s %s\n' % (tag, resolve_commit(value),
                                       ' '.join(sorted(nodes)))
 
+        if not self.__fast_import:
+            self.init_fast_import(lambda: FastImport())
+
         for f, tags in self._tags.iteritems():
             if f not in self._tagfiles and f != NULL_NODE_ID:
-                if not self.__fast_import:
-                    self.init_fast_import(FastImport())
                 data = ''.join(tagset_lines(tags))
                 mark = self._fast_import.new_mark()
                 self._fast_import.put_blob(data=data, mark=mark)
@@ -1052,8 +1062,6 @@ class GitHgStore(object):
                 deleted.add(c)
 
         if created or deleted:
-            if not self.__fast_import:
-                self.init_fast_import(FastImport())
             with self._fast_import.commit(
                 ref='refs/cinnabar/tagcache',
             ) as commit:
