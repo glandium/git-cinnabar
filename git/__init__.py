@@ -155,7 +155,7 @@ class Git(object):
 
     @classmethod
     def cat_file(self, typ, sha1):
-        if self._fast_import and typ == 'blob' and ':' not in sha1:
+        if self._fast_import and typ == 'blob' and isinstance(typ, Mark):
             return self._fast_import.cat_blob(sha1)
 
         if not self._cat_file:
@@ -185,7 +185,8 @@ class Git(object):
         if recursive:
             assert not isinstance(treeish, Mark)
             iterator = self.iter('ls-tree', '-r', treeish, '--', path)
-        elif not path.endswith('/') and self._fast_import:
+        elif isinstance(treeish, Mark) and self._fast_import:
+            assert not path.endswith('/')
             ls = self._fast_import.ls(treeish, path)
             if any(l is not None for l in ls):
                 yield ls
