@@ -332,7 +332,7 @@ class BranchMap(object):
                 sha1 = store.changeset_ref(head)
                 if not sha1:
                     continue
-                extra = store.read_changeset_data(sha1).get('extra')
+                extra = store.read_changeset_data(sha1)
                 if extra and not extra.get('close'):
                     self._tips[branch] = head
                 assert head not in self._git_sha1s
