@@ -184,7 +184,8 @@ class Git(object):
             treeish = self.resolve_ref(treeish)
         if recursive:
             assert not isinstance(treeish, Mark)
-            iterator = self.iter('ls-tree', '-r', treeish, '--', path)
+            iterator = self.iter('ls-tree', '--full-tree', '-r', treeish,
+                                 '--', path)
         elif not path.endswith('/') and self._fast_import:
             ls = self._fast_import.ls(treeish, path)
             if any(l is not None for l in ls):
@@ -220,7 +221,7 @@ class Git(object):
                         yield mode, typ, sha1, path
             return
         else:
-            iterator = self.iter('ls-tree', treeish, '--', path)
+            iterator = self.iter('ls-tree', '--full-tree', treeish, '--', path)
 
         for line in iterator:
             yield split_ls_tree(line)
