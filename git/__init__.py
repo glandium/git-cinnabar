@@ -62,7 +62,7 @@ class GitProcess(object):
 
         if proc_stdin == subprocess.PIPE:
             if isinstance(stdin, types.StringType):
-                self._proc.stdin.write(stdin_data)
+                self._proc.stdin.write(stdin)
             elif callable(stdin):
                 for line in stdin():
                     self._proc.stdin.write(line)

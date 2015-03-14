@@ -4,6 +4,7 @@ import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
+import argparse
 from githg import (
     ChangesetData,
     GitHgStore,
@@ -30,7 +31,12 @@ import subprocess
 
 def fsck(args):
     # TODO: Add arguments to enable more sha1 checks
-    do_manifests = '--manifests' in args
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--manifests', help='Validate manifests hashes')
+    parser.add_argument('commit', nargs='*',
+        help='Specific commit or changeset to check')
+    args = parser.parse_args(args)
+    do_manifests = args.manifests
 
     status = { 'broken': False }
 
@@ -45,31 +51,59 @@ def fsck(args):
     store = GitHgStore()
     store.init_fast_import(lambda: FastImport())
 
-    all_hg2git = {
-        path.replace('/', ''): (filesha1, intern(typ))
-        for mode, typ, filesha1, path in
-        progress_iter('Reading %d mercurial to git mappings',
-        Git.ls_tree('refs/cinnabar/hg2git', recursive=True))
-    }
+    if args.commit:
+        all_hg2git = {}
+        all_notes = set()
+        commits = set()
+        all_git_commits = {}
+
+        for c in args.commit:
+            data = store.read_changeset_data(c)
+            if data:
+                all_notes.add(c)
+                commits.add(c)
+                c = data['changeset']
+            commit = GitHgHelper.hg2git(c)
+            if commit == NULL_NODE_ID and not data:
+                info('Unknown commit or changeset: %s' % c)
+                return 1
+            if commit != NULL_NODE_ID:
+                all_hg2git[c] = commit, 'commit'
+            if not data:
+                data = store.read_changeset_data(commit)
+                commits.add(commit)
+                if data:
+                    all_notes.add(commit)
+
+        all_git_commits = Git.iter(
+            'log', '--stdin', '--format=%T %H',
+            stdin=''.join('%s^!\n' % c for c in commits))
+    else:
+        all_hg2git = {
+            path.replace('/', ''): (filesha1, intern(typ))
+            for mode, typ, filesha1, path in
+            progress_iter('Reading %d mercurial to git mappings',
+            Git.ls_tree('refs/cinnabar/hg2git', recursive=True))
+        }
+
+        all_notes = set(path.replace('/', '') for mode, typ, filesha1, path in
+            progress_iter('Reading %d commit to changeset mappings',
+            Git.ls_tree('refs/notes/cinnabar', recursive=True)))
+
+        manifest_commits = set(progress_iter('Reading %d manifest trees',
+                               Git.iter('rev-list', '--full-history',
+                                        'refs/cinnabar/manifest')))
+
+        def all_git_heads():
+            for ref in Git.for_each_ref('refs/cinnabar/branches',
+                                        format='%(refname)'):
+                yield ref + '\n'
+
+        all_git_commits = Git.iter('log', '--topo-order', '--full-history',
+                                   '--reverse', '--stdin', '--format=%T %H',
+                                   stdin=all_git_heads)
 
     store._hg2git_cache = { p: s for p, (s, t) in all_hg2git.iteritems() }
-
-    all_notes = set(path.replace('/', '') for mode, typ, filesha1, path in
-        progress_iter('Reading %d commit to changeset mappings',
-        Git.ls_tree('refs/notes/cinnabar', recursive=True)))
-
-    manifest_commits = set(progress_iter('Reading %d manifest trees',
-                           Git.iter('rev-list', '--full-history',
-                                    'refs/cinnabar/manifest')))
-
-    def all_git_heads():
-        for ref in Git.for_each_ref('refs/cinnabar/branches',
-                                    format='%(refname)'):
-            yield ref + '\n'
-
-    all_git_commits = Git.iter('log', '--topo-order', '--full-history',
-                               '--reverse', '--stdin', '--format=%T %H',
-                               stdin=all_git_heads)
 
     seen_changesets = set()
     seen_manifests = set()
@@ -156,7 +190,7 @@ def fsck(args):
             seen_manifest_refs.add(manifest_ref)
         if not manifest_ref:
             report('Missing manifest in hg2git branch: %s' % manifest)
-        elif manifest_ref not in manifest_commits:
+        elif not args.commit and manifest_ref not in manifest_commits:
             report('Missing manifest commit in manifest branch: %s' %
                    manifest_ref)
 
@@ -199,8 +233,9 @@ def fsck(args):
     for obj in all_hg2git - seen_changesets - seen_manifests - seen_files:
         info('Dangling metadata for ' + obj)
 
-    for obj in manifest_commits - seen_manifest_refs:
-        info('Metadata commit %s with no hg2git entry' % obj)
+    if not args.commit:
+        for obj in manifest_commits - seen_manifest_refs:
+            info('Metadata commit %s with no hg2git entry' % obj)
 
     for commit in all_notes - seen_notes:
         info('Dangling note for commit ' + commit)
