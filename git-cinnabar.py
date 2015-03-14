@@ -76,8 +76,8 @@ def fsck(args):
                     all_notes.add(commit)
 
         all_git_commits = Git.iter(
-            'log', '--stdin', '--format=%T %H',
-            stdin=''.join('%s^!\n' % c for c in commits))
+            'log', '--no-walk=unsorted', '--stdin', '--format=%T %H',
+            stdin=''.join('%s\n' % c for c in commits))
     else:
         all_hg2git = {
             path.replace('/', ''): (filesha1, intern(typ))
