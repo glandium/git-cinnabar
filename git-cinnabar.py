@@ -217,19 +217,20 @@ def fsck(args):
                     report('Sha1 mismatch for manifest %s' % manifest)
 
         git_ls = one(Git.ls_tree(manifest_ref, 'git'))
-        if not git_ls:
-            git_ls = one(Git.ls_tree(manifest_ref))
-            if git_ls:
-                mode, typ, sha1, path = git_ls
-                if sha1 != EMPTY_TREE:
-                    git_ls = None
-        if not git_ls:
-            report('Missing git tree in manifest commit %s' % manifest_ref)
-        else:
+        if git_ls:
             mode, typ, sha1, path = git_ls
-            if sha1 != tree:
-                report('Tree mismatch between manifest commit %s and commit %s'
-                       % (manifest_ref, node))
+        else:
+            header, message = GitHgHelper.cat_file(
+                'commit', manifest_ref).split('\n\n', 1)
+            header = dict(l.split(' ', 1) for l in header.splitlines())
+            if header['tree'] == EMPTY_TREE:
+                sha1 = EMPTY_TREE
+            else:
+                report('Missing git tree in manifest commit %s' % manifest_ref)
+                sha1 = None
+        if sha1 and sha1 != tree:
+            report('Tree mismatch between manifest commit %s and commit %s'
+                   % (manifest_ref, node))
 
     # TODO: Check files
     all_hg2git = set(k for k, (s, t) in all_hg2git.iteritems()
