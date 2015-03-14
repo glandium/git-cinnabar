@@ -124,10 +124,10 @@ def fsck(args):
         changeset = changeset_data['changeset']
         if 'extra' in changeset_data:
             extra = changeset_data['extra']
+            header, message = GitHgHelper.cat_file(
+                'commit', node).split('\n\n', 1)
+            header = dict(l.split(' ', 1) for l in header.splitlines())
             if 'committer' in extra:
-                header, message = GitHgHelper.cat_file(
-                    'commit', node).split('\n\n', 1)
-                header = dict(l.split(' ', 1) for l in header.splitlines())
                 committer_info = store.hg_author_info(header['committer'])
                 committer = '%s %s %d' % committer_info
                 if committer != extra['committer'] and \
@@ -139,6 +139,11 @@ def fsck(args):
                          % changeset)
                     del changeset_data['extra']['committer']
                     store._changesets[changeset] = LazyString(node)
+            if header['committer'] != header['author'] and not extra:
+                info('Fixing useless empty extra metadata for changeset %s'
+                     % changeset)
+                del changeset_data['extra']
+                store._changesets[changeset] = LazyString(node)
 
         seen_changesets.add(changeset)
         changeset_ref = store.changeset_ref(changeset)

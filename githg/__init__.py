@@ -826,6 +826,8 @@ class GitHgStore(object):
                 committer = self._git_committer(*committer)
                 extra = dict(instance.extra)
                 del extra['committer']
+                if not extra:
+                    extra = None
         else:
             committer = author
         with self._fast_import.commit(
