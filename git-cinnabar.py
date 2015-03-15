@@ -32,7 +32,8 @@ import subprocess
 def fsck(args):
     # TODO: Add arguments to enable more sha1 checks
     parser = argparse.ArgumentParser()
-    parser.add_argument('--manifests', help='Validate manifests hashes')
+    parser.add_argument('--manifests', action='store_true',
+        help='Validate manifests hashes')
     parser.add_argument('commit', nargs='*',
         help='Specific commit or changeset to check')
     args = parser.parse_args(args)
