@@ -86,7 +86,19 @@ class GitHgHelper(object):
                 assert sha1[-1] == '\n'
                 return sha1[:40]
         except NoHelperException:
-            ls = one(Git.ls_tree('refs/cinnabar/hg2git', sha1path(hg_sha1)))
+            if len(hg_sha1) < 40:
+                path = sha1path(hg_sha1)
+                dir, partial = path.rsplit('/', 1)
+                matches = []
+                for ls in Git.ls_tree('refs/cinnabar/hg2git', dir + '/'):
+                    mode, typ, gitsha1, path = ls
+                    if path.startswith(partial):
+                        matches.append(gitsha1)
+                if len(matches) == 1:
+                    return matches[0]
+                ls = None
+            else:
+                ls = one(Git.ls_tree('refs/cinnabar/hg2git', sha1path(hg_sha1)))
             if not ls:
                 from . import NULL_NODE_ID
                 return NULL_NODE_ID

@@ -122,25 +122,124 @@ not_found:
 	write_or_die(1, "\n", 1);
 }
 
-static const unsigned char *resolve_hg2git(const unsigned char *sha1) {
+static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1) {
+	int i;
+	size_t len;
+	for (i = 0; i < 20; i++) {
+		unsigned int val;
+		if (!hex[0])
+			val = 0xff;
+		else if (!hex[1])
+			val = (hexval(hex[0]) << 4) | 0xf;
+		else
+			val = (hexval(hex[0]) << 4) | hexval(hex[1]);
+		if (val & ~0xff)
+			return 0;
+		*sha1++ = val;
+		if (!hex[0] || !hex[1])
+			break;
+		hex += 2;
+	}
+	len = i * 2 + !!hex[0];
+	for (; i < 20; i++) {
+		*sha1++ = 0xff;
+	}
+	return len;
+}
+
+/* Definitions from git's notes.c. See there for more details */
+struct int_node {
+	void *a[16];
+};
+
+struct leaf_node {
+	unsigned char key_sha1[20];
+	unsigned char val_sha1[20];
+};
+
+#define PTR_TYPE_NULL     0
+#define PTR_TYPE_INTERNAL 1
+#define PTR_TYPE_NOTE     2
+#define PTR_TYPE_SUBTREE  3
+
+#define GET_PTR_TYPE(ptr)       ((uintptr_t) (ptr) & 3)
+#define CLR_PTR_TYPE(ptr)       ((void *) ((uintptr_t) (ptr) & ~3))
+
+#define GET_NIBBLE(n, sha1) (((sha1[(n) >> 1]) >> ((~(n) & 0x01) << 2)) & 0x0f)
+
+/* This function assumes the note tree has been populated for the given key,
+ * which means get_note must have been called before */
+static struct leaf_node *note_tree_abbrev_find(struct notes_tree *t,
+		struct int_node *tree, unsigned char n,
+		const unsigned char *key_sha1, size_t len) {
+	unsigned char i, j;
+	void *p;
+
+	if (n > len) {
+		for (i = 17, j = 0; j < 16; j++) {
+			if (tree->a[j])
+				i = (i < 17) ? 16 : j;
+		}
+		if (i >= 16)
+			return NULL;
+	} else {
+		i = GET_NIBBLE(n, key_sha1);
+	}
+
+	p = tree->a[i];
+
+	switch (GET_PTR_TYPE(p)) {
+	case PTR_TYPE_INTERNAL:
+		tree = CLR_PTR_TYPE(p);
+		return note_tree_abbrev_find(t, tree, ++n, key_sha1, len);
+	case PTR_TYPE_SUBTREE:
+		return NULL;
+	default:
+		return (struct leaf_node *) CLR_PTR_TYPE(p);
+	}
+}
+
+const unsigned char *get_abbrev_note(struct notes_tree *t,
+		const unsigned char *object_sha1, size_t len)
+{
+	struct leaf_node *found;
+
+	if (!t)
+		t = &default_notes_tree;
+	assert(t->initialized);
+	found = note_tree_abbrev_find(t, t->root, 0, object_sha1, len);
+	return found ? found->val_sha1 : NULL;
+}
+
+
+static const unsigned char *resolve_hg2git(const unsigned char *sha1,
+                                           size_t len) {
+	const unsigned char *note;
+
 	if (!hg2git.initialized)
 		init_notes(&hg2git, REFS_PREFIX "hg2git",
 		           combine_notes_overwrite, 0);
 
-	return get_note(&hg2git, sha1);
+	note = get_note(&hg2git, sha1);
+	if (len == 40)
+		return note;
+
+	return get_abbrev_note(&hg2git, sha1, len);
 }
 
 static void do_hg2git(struct string_list *command) {
 	unsigned char sha1[20];
 	const unsigned char *note;
+	size_t sha1_len;
 
 	if (command->nr != 2)
 		goto not_found;
 
-	if (get_sha1_hex(command->items[1].string, sha1))
+	sha1_len =  get_abbrev_sha1_hex(command->items[1].string, sha1);
+	if (!sha1_len)
 		goto not_found;
 
-	note = resolve_hg2git(sha1);
+	note = resolve_hg2git(sha1, sha1_len);
 	if (note) {
 		write_or_die(1, sha1_to_hex(note), 40);
 		write_or_die(1, "\n", 1);
@@ -492,14 +591,16 @@ static void do_manifest(struct string_list *command) {
 	const unsigned char *tree_sha1;
 	struct strbuf *manifest = NULL;
 	struct strbuf header = STRBUF_INIT;
+	size_t sha1_len;
 
 	if (command->nr != 2)
 		goto not_found;
 
-	if (get_sha1_hex(command->items[1].string, sha1))
+	sha1_len = get_abbrev_sha1_hex(command->items[1].string, sha1);
+	if (!sha1_len)
 		goto not_found;
 
-	tree_sha1 = resolve_hg2git(sha1);
+	tree_sha1 = resolve_hg2git(sha1, sha1_len);
 	if (!tree_sha1)
 		goto not_found;
 
@@ -545,7 +646,7 @@ static void do_check_manifest(struct string_list *command) {
 	} else
 		memset(parent2, 0, sizeof(parent2));
 
-	tree_sha1 = resolve_hg2git(sha1);
+	tree_sha1 = resolve_hg2git(sha1, 40);
 	if (!tree_sha1)
 		goto error;
 
