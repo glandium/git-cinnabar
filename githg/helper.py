@@ -1,5 +1,6 @@
 import atexit
 import os
+import re
 import subprocess
 from git import (
     Git,
@@ -12,6 +13,9 @@ from git.util import (
 )
 from contextlib import contextmanager
 from collections import OrderedDict
+
+
+SHA1_RE = re.compile('^[0-9a-fA-F]{40}$')
 
 
 class NoHelperException(Exception):
@@ -76,6 +80,8 @@ class GitHgHelper(object):
             with self.query('git2hg', sha1) as stdout:
                 return self._read_file('blob', stdout)
         except NoHelperException:
+            if not SHA1_RE.match(sha1):
+                sha1 = one(Git.iter('rev-parse', '--revs-only', sha1))
             return Git.read_note('refs/notes/cinnabar', sha1)
 
     @classmethod

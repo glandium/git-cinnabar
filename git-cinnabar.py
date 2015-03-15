@@ -288,6 +288,17 @@ def main(args):
 
         print 'Please note that reclone left your local branches untouched.'
         print 'They may be based on entirely different commits.'
+    elif cmd == 'hg2git':
+        for arg in args:
+            print GitHgHelper.hg2git(arg)
+    elif cmd == 'git2hg':
+        for arg in args:
+            data = GitHgHelper.git2hg(arg)
+            if data:
+                data = ChangesetData.parse(data)
+                print data.get('changeset', NULL_NODE_ID)
+            else:
+                print NULL_NODE_ID
     else:
         print >>sys.stderr, 'Unknown command:', cmd
         return 1
