@@ -26,6 +26,7 @@ from githg.helper import (
     GitHgHelper,
     NoHelperException,
 )
+from githg.bundle import get_changes
 import subprocess
 
 
@@ -34,10 +35,11 @@ def fsck(args):
     parser = argparse.ArgumentParser()
     parser.add_argument('--manifests', action='store_true',
         help='Validate manifests hashes')
+    parser.add_argument('--files', action='store_true',
+        help='Validate files hashes')
     parser.add_argument('commit', nargs='*',
         help='Specific commit or changeset to check')
     args = parser.parse_args(args)
-    do_manifests = args.manifests
 
     status = { 'broken': False }
 
@@ -200,12 +202,14 @@ def fsck(args):
             report('Missing manifest commit in manifest branch: %s' %
                    manifest_ref)
 
-        if do_manifests:
+        if args.manifests or args.files:
             parents = tuple(
                 store.read_changeset_data(store.changeset_ref(p))['manifest']
                 for p in (hg_changeset.parent1, hg_changeset.parent2)
                 if p != NULL_NODE_ID
             )
+
+        if args.manifests:
             try:
                 with GitHgHelper.query('check-manifest', manifest,
                                        *parents) as stdout:
@@ -233,9 +237,24 @@ def fsck(args):
             report('Tree mismatch between manifest commit %s and commit %s'
                    % (manifest_ref, node))
 
-    # TODO: Check files
-    all_hg2git = set(k for k, (s, t) in all_hg2git.iteritems()
-                     if t == 'commit')
+        if args.files:
+            changes = get_changes(
+                manifest_ref, tuple(store.manifest_ref(p) for p in parents),
+                'hg')
+            for path, hg_file, hg_fileparents in changes:
+                if hg_file != NULL_NODE_ID and hg_file not in seen_files:
+                    file = store.file(hg_file)
+                    file.set_parents(*hg_fileparents)
+                    if file.node != file.sha1:
+                        report('Sha1 mismatch for file %s in manifest %s'
+                               % (hg_file, manifest_ref))
+                    seen_files.add(hg_file)
+
+    if args.files:
+        all_hg2git = set(all_hg2git.iterkeys())
+    else:
+        all_hg2git = set(k for k, (s, t) in all_hg2git.iteritems()
+                         if t == 'commit')
 
     for obj in all_hg2git - seen_changesets - seen_manifests - seen_files:
         info('Dangling metadata for ' + obj)
