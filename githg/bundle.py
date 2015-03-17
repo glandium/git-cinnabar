@@ -79,8 +79,9 @@ class PushStore(GitHgStore):
         assert isinstance(store, GitHgStore)
         store.__class__ = cls
         store._push_files = {}
-        store._push_manifests = {}
+        store._push_manifests = OrderedDict()
         store._push_changesets = {}
+        store._manifest_git_tree = {}
 
     def create_hg_metadata(self, commit, parents):
         if len(parents) > 1:
@@ -186,15 +187,6 @@ class PushStore(GitHgStore):
             manifest._lines.append(created_line)
             next_created = next(iter_created)
 
-        if manifest.node == NULL_NODE_ID:
-            manifest.set_parents(parent_node)
-            manifest.node = manifest.sha1
-            manifest.removed = removed
-            manifest.modified = {l.name: (l.node, l.attr) for l in modified_lines}
-            manifest.previous_node = parent_node
-            self._push_manifests[manifest.node] = manifest
-            self.store(manifest)
-
         header, message = GitHgHelper.cat_file('commit', commit).split('\n\n', 1)
         header_data = {}
         for line in header.splitlines():
@@ -202,12 +194,15 @@ class PushStore(GitHgStore):
             if typ in ('author', 'committer', 'tree'):
                 header_data[typ] = data
 
-        ls = one(Git.ls_tree(self.manifest_ref(manifest.node), 'git'))
-        if header_data['tree'] == EMPTY_TREE and not ls:
-            pass
-        else:
-            mode, typ, sha1, path = ls
-            assert sha1 == header_data['tree']
+        if manifest.node == NULL_NODE_ID:
+            manifest.set_parents(parent_node)
+            manifest.node = manifest.sha1
+            manifest.removed = removed
+            manifest.modified = {l.name: (l.node, l.attr) for l in modified_lines}
+            manifest.previous_node = parent_node
+            self._push_manifests[manifest.node] = manifest
+            self.manifest_ref(manifest.node, hg2git=False, create=True)
+            self._manifest_git_tree[manifest.node] = header_data['tree']
 
         extra = {}
         if header_data['author'] != header_data['committer']:
@@ -249,13 +244,12 @@ class PushStore(GitHgStore):
     def create_copy(self, hg_source, sha1):
         data = '\1\ncopy: %s\ncopyrev: %s\n\1\n' % hg_source
         data += GitHgHelper.cat_file('blob', sha1)
-        mark = self._fast_import.new_mark()
-        self._fast_import.put_blob(data=data, mark=mark)
         hg_file = GeneratedFileRev(NULL_NODE_ID, data)
         hg_file.set_parents()
         node = hg_file.node = hg_file.sha1
+        mark = self.file_ref(node, hg2git=False, create=True)
         self._push_files[node] = hg_file
-        self._files[node] = Mark(mark)
+        self._files[node] = mark
         self._git_files[node] = LazyString(sha1)
         return node
 
@@ -274,6 +268,25 @@ class PushStore(GitHgStore):
             return self._push_changesets[sha1]
         return super(PushStore, self).changeset(sha1, include_parents)
 
+    def close(self):
+        if self._closed:
+            return
+        for manifest in self._push_manifests.itervalues():
+            self.store(manifest)
+            ls = one(Git.ls_tree(self.manifest_ref(manifest.node), 'git'))
+            if self._manifest_git_tree[manifest.node] == EMPTY_TREE and not ls:
+                pass
+            else:
+                mode, typ, sha1, path = ls
+                assert sha1 == self._manifest_git_tree[manifest.node]
+
+        for file in self._push_files.itervalues():
+            if isinstance(self._files[file.node], Mark):
+                mark = self._fast_import.new_mark()
+                self._fast_import.put_blob(data=data, mark=mark)
+                self._files[node] = Mark(mark)
+
+        super(PushStore, self).close()
 
 def create_bundle(store, commits):
     manifests = OrderedDict()
