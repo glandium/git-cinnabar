@@ -155,7 +155,7 @@ class Git(object):
 
     @classmethod
     def cat_file(self, typ, sha1):
-        if self._fast_import and typ == 'blob' and isinstance(typ, Mark):
+        if self._fast_import and typ == 'blob' and isinstance(sha1, Mark):
             return self._fast_import.cat_blob(sha1)
 
         if not self._cat_file:

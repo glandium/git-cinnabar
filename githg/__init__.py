@@ -733,7 +733,7 @@ class GitHgStore(object):
 
     def file(self, sha1):
         ref = self._git_object(self._files, 'blob', sha1)
-        return GeneratedFileRev(sha1, self._fast_import.cat_blob(ref))
+        return GeneratedFileRev(sha1, GitHgHelper.cat_file('blob', ref))
 
     def git_file_ref(self, sha1):
         if sha1 in self._git_files:
@@ -743,7 +743,7 @@ class GitHgStore(object):
             return result
         # If the ref is not from the current import, it can be a raw hg file
         # ref, so check its content first.
-        data = self._fast_import.cat_blob(result)
+        data = GitHgHelper.cat_file('blob', result)
         if data.startswith('\1\n'):
             return self._prepare_git_file(GeneratedFileRev(sha1, data))
         return result

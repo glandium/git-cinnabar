@@ -5,6 +5,7 @@ import subprocess
 from git import (
     Git,
     GitProcess,
+    Mark,
     sha1path,
 )
 from git.util import (
@@ -69,6 +70,8 @@ class GitHgHelper(object):
     @classmethod
     def cat_file(self, typ, sha1):
         try:
+            if isinstance(sha1, Mark):
+                raise NoHelperException
             with self.query('cat-file', sha1) as stdout:
                 return self._read_file(typ, stdout)
         except NoHelperException:
