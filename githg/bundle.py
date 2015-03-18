@@ -268,7 +268,9 @@ class PushStore(GitHgStore):
             return self._push_changesets[sha1]
         return super(PushStore, self).changeset(sha1, include_parents)
 
-    def close(self):
+    def close(self, rollback=False):
+        if rollback:
+            self._closed = True
         if self._closed:
             return
         for manifest in self._push_manifests.itervalues():
@@ -291,8 +293,6 @@ class PushStore(GitHgStore):
 def create_bundle(store, commits):
     manifests = OrderedDict()
     files = defaultdict(list)
-
-    PushStore.adopt(store)
 
     previous = None
     for nodes in commits:

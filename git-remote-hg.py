@@ -15,7 +15,10 @@ from githg import (
     ManifestInfo,
     NULL_NODE_ID,
 )
-from githg.bundle import create_bundle
+from githg.bundle import (
+    create_bundle,
+    PushStore,
+)
 from binascii import hexlify, unhexlify
 from mercurial import (
     changegroup,
@@ -589,6 +592,17 @@ def main(args):
                     sys.stderr.write('  git fetch --tags %s\n' % remote)
 
         elif cmd == 'push':
+            if not remote.startswith('hg::'):
+                data_pref = 'remote.%s.cinnabar-data' % remote
+                data = Git.config(data_pref) or 'always'
+            else:
+                data = 'never'
+
+            if data not in ('never', 'always'):
+                sys.stderr.write('Invalid value for %s: %s\n'
+                                 % (data_pref, data))
+                return 1
+
             refspecs = []
             refspecs.extend(args)
             while True:
@@ -607,6 +621,7 @@ def main(args):
                 helper.flush()
             else:
                 repo_heads = branchmap.heads()
+                PushStore.adopt(store)
                 pushed = push(repo, store, pushes, repo_heads, branchmap.names())
 
                 status = {}
@@ -641,6 +656,15 @@ def main(args):
                         helper.write('error %s nothing changed on remote\n' % dest)
                 helper.write('\n')
                 helper.flush()
+
+                if not pushed:
+                    data = False
+                elif data == 'always':
+                    data = True
+                elif data == 'never':
+                    data = False
+
+                store.close(rollback=not data)
 
     store.close()
 
