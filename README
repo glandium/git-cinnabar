@@ -74,6 +74,46 @@ of each branch, you can use a refspec like
 See http://glandium.org/blog/?page_id=3438 for an example workflow for
 Mozilla repositories.
 
+Translating git commits to mercurial changesets and vice-versa:
+---------------------------------------------------------------
+
+When dealing with a remote repository that doesn't use the same
+identifiers, things can easily get complicated. Git-cinnabar comes
+with commands to know the mercurial changeset a git commit represents
+and the other way around.
+
+The following command will give you the git commit corresponding to
+the given mercurial changeset sha1:
+
+$ git cinnabar hg2git <changeset>
+
+The following command will give you the mercurial changeset
+corresponding to the given git commit sha1:
+
+$ git cinnabar git2hg <commit>
+
+Both commands allow abbreviated forms, as long as they are unambiguous
+(no need for all the 40 hex digits of the sha1).
+
+Avoiding metadata:
+------------------
+
+In some cases, it is not desirable to have git-cinnabar create metadata
+for all pushed commits. Notably, for volatile commits such as those
+used on the Mozilla try repository.
+
+By default, git-cinnabar doesn't store metadata when pushing to
+non-publishing repositories. It does otherwise.
+
+This behavior can be changed per-remote with a remote.$remote.cinnabar-data
+preference with one of the following values:
+- `always`
+- `never`
+- `phase`
+
+`phase` is the default described above. `always` and `never` are
+self-explanatory.
+
 Limitations:
 ------------
 
@@ -82,36 +122,23 @@ At the moment, push is limited to non-merge commits.
 There is no support for the following mercurial features:
 - obsolescence markers
 - phases
+- namespaces
 
-Update notes:
--------------
+Checking corruptions:
+---------------------
 
-Up to commit dd6cc7a0940598161c3a1403adf05658ebdf6560, git-cinnabar
-would happily corrupt the repository in some cases involving file
-renames or addition with the same name but a different case (e.g. FOO
-=> Foo), when the git repository is on a case-insensitive file system
-(most notably on OSX or Windows).
-It now requires core.ignorecase to be false. If you cloned with an
-earlier version, you should reclone from scratch.
+Git-cinnabar is still in early infancy, and its metadata might get
+corrupted for some reason.
 
-Various other corruptions have been identified and you can detect them
-with the following command:
+The following command allows to detect various types of metadata
+corruption:
   git cinnabar fsck
 
-That command will advise what to do about those corruptions.
+This command will fix the corruptions it can, as well as adjust some
+of the metadata that contains items that became unnecessary in newer
+versions.
 
-Starting with commit 0d5b3a2c69c820e657ef204dae17e2696e1ebd53, the tip
-branch is not exposed anymore, and previously cloned repositories can
-be confused by the situation. Moreover, the way the remote HEAD ref is
-handled changed in a way that can confuse git.
-To get in a better state, you can do the following:
-- Save .git/config
-- Run the following command:
-    git remote show | xargs -L1 git remote rm
-- Restore .git/config
-- Edit .git/config and replace occurrences of `refs/heads/tip` with
-  `refs/heads/branches/default/tip` or `refs/heads/bookmarks/@`,
-  depending whether the corresponding remote exposes that bookmark
-  (you can check with `git ls-remote`).
-- Run the following command:
-    git remote update
+The `--manifests` and `--files` options may be added for additional
+validation on manifests and files. Using either or both adds a
+significant amount of work, and the command can take more than half
+an hour on repositories the size of mozilla-central.
