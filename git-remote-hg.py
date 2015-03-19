@@ -99,9 +99,7 @@ def _sample(l, size):
     return random.sample(l, size)
 
 # TODO: this algorithm is not very smart and might as well be completely wrong
-def findcommon(repo, store, heads, branches={}):
-    logging.info(heads)
-    hgheads = store.heads(branches)
+def findcommon(repo, store, hgheads):
     logging.info(hgheads)
     if not hgheads:
         return set()
@@ -205,7 +203,7 @@ def getbundle(repo, store, heads, branchmap):
         changeset_chunks = repo._changeset_chunks
         bundle = repo._bundle
     else:
-        common = findcommon(repo, store, heads, branchmap.names())
+        common = findcommon(repo, store, store.heads(branchmap.names()))
         logging.info('common: %s' % common)
         bundle = repo.getbundle('bundle', heads=[unhexlify(h) for h in heads],
             common=[unhexlify(h) for h in common])
@@ -276,7 +274,7 @@ def push(repo, store, what, repo_heads, repo_branches):
     fast_import = FastImport()
     store.init_fast_import(fast_import)
 
-    common = findcommon(repo, store, repo_heads, repo_branches)
+    common = findcommon(repo, store, store.heads(repo_branches))
     logging.info('common: %s' % common)
 
     def revs():
