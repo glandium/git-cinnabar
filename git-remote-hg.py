@@ -287,7 +287,7 @@ def push(repo, store, what, repo_heads, repo_branches):
                                  '--full-history', '--parents', '--reverse',
                                  *(w for w in what if w), stdin=revs))
 
-    ret = False
+    pushed = False
     if push_commits:
         chunks = util.chunkbuffer(create_bundle(store, push_commits))
         cg = cg1unpacker(chunks, 'UN')
@@ -297,9 +297,8 @@ def push(repo, store, what, repo_heads, repo_branches):
             repo_heads = [unhexlify(h) for h in repo_heads]
         if repo.local():
             repo.local().ui.setconfig('server', 'validate', True)
-        ret = repo.unbundle(cg, repo_heads, '') != 0
-    store.close()
-    return ret
+        pushed = repo.unbundle(cg, repo_heads, '') != 0
+    return gitdag(push_commits) if pushed else ()
 
 
 def read_cmd(fileobj):
@@ -594,11 +593,11 @@ def main(args):
         elif cmd == 'push':
             if not remote.startswith('hg::'):
                 data_pref = 'remote.%s.cinnabar-data' % remote
-                data = Git.config(data_pref) or 'always'
+                data = Git.config(data_pref) or 'phase'
             else:
-                data = 'never'
+                data = 'phase'
 
-            if data not in ('never', 'always'):
+            if data not in ('never', 'phase', 'always'):
                 sys.stderr.write('Invalid value for %s: %s\n'
                                  % (data_pref, data))
                 return 1
@@ -635,7 +634,7 @@ def main(args):
                         continue
                     if not dest.startswith('refs/heads/bookmarks/'):
                         if source:
-                            status[dest] = pushed
+                            status[dest] = bool(len(pushed))
                         else:
                             status[dest] = \
                                 'Deleting remote branches is unsupported'
@@ -661,6 +660,35 @@ def main(args):
                     data = False
                 elif data == 'always':
                     data = True
+                elif data == 'phase':
+                    phases = repo.listkeys('phases')
+                    drafts = {}
+                    if not phases.get('publishing', False):
+                        drafts = set(p for p, is_draft in phases.iteritems()
+                                     if int(is_draft))
+                    if not drafts:
+                        data = True
+                    else:
+                        def draft_commits():
+                            for d in drafts:
+                                c = store.changeset_ref(d)
+                                if c:
+                                    yield '^%s^@\n' % c
+                            for h in pushed.heads:
+                                yield '%s\n' % h
+
+                        args = ['rev-list', '--ancestry-path', '--topo-order',
+                                '--stdin']
+
+                        pushed_drafts = tuple(
+                            Git.iter(*args, stdin=draft_commits))
+
+                        # Theoretically, we could have commits with no
+                        # metadata that the remote declares are public, while
+                        # the rest of our push is in a draft state. That is
+                        # however so unlikely that it's not worth the effort
+                        # to support partial metadata storage.
+                        data = not bool(pushed_drafts)
                 elif data == 'never':
                     data = False
 
