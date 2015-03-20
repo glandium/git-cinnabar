@@ -48,8 +48,6 @@ logger = logging.getLogger()
 handler = StreamHandler()
 handler.setFormatter(logging.Formatter('\r%(timestamp).3f %(name)s %(message)s'))
 logger.addHandler(handler)
-#logger.setLevel(logging.INFO)
-#logger.setLevel(logging.DEBUG)
 
 #from guppy import hpy
 #hp = hpy()
@@ -91,7 +89,6 @@ def get_hg_author(author):
 
 
 revchunk_log = logging.getLogger('revchunks')
-#revchunk_log.setLevel(logging.DEBUG)
 
 class RevChunk(object):
     def __init__(self, chunk_data):

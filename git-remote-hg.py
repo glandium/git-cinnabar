@@ -220,8 +220,6 @@ def getbundle(repo, store, heads, branchmap):
 
     del bundle
 
-#    logging.getLogger('').setLevel(logging.DEBUG)
-
     manifest_sha1s = []
     for mn in progress_iter('Importing %d manifests',
             iter_chunks(manifest_chunks, ManifestInfo)):

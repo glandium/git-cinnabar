@@ -25,9 +25,6 @@ import struct
 import types
 from itertools import chain
 
-#import logging
-#logging.getLogger('').setLevel(logging.INFO)
-
 # TODO: Avoid a diff-tree when we already have done it to generate the
 # manifest in the first place.
 def manifest_diff(a, b, base_path=''):
