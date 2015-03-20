@@ -3,20 +3,13 @@
 from __future__ import division
 from collections import (
     deque,
+    defaultdict
 )
-import logging
-import sys
+import unittest
+
 
 # TODO: this class sucks and is probably wrong
 class gitdag(object):
-    class node(object):
-        def __init__(self):
-            self.parents = None
-            self.children = set()
-
-        def __repr__(self):
-            return '<p:%s c:%s>' % (self.parents, self.children)
-
     def __init__(self, revlist=[]):
         def iter_revlist(revlist):
             for line in revlist:
@@ -26,92 +19,138 @@ class gitdag(object):
                 else:
                     yield line[0], line[1].split(' ')
 
-        self._nodes = {}
+        self._parents = defaultdict(set)
+        self._children = defaultdict(set)
         for node, parents in iter_revlist(revlist):
-            self.insert(node, parents)
-        self._update()
+            self._parents[node] |= set(parents)
+            for p in parents:
+                self._children[p].add(node)
+        self._tags = {}
 
-    def _update(self):
-        self.roots = set()
-        self.heads = set()
-        for id, node in self._nodes.iteritems():
-            if node.parents is not None and \
-                    all(self._nodes[p].parents is None for p in node.parents):
-                self.roots.add(id)
-            if not node.children:
-                self.heads.add(id)
+    def roots(self, tag=None):
+        for node, parents in self._parents.iteritems():
+            if self._tags.get(node) == tag:
+                if all(p not in self._parents or self._tags.get(p) != tag
+                       for p in parents):
+                    yield node
 
-        logging.info('dag size: %d' % len(self))
-        logging.info('heads: %d' % len(self.heads))
-        logging.info('roots: %d' % len(self.roots))
+    def heads(self, tag=None):
+        for node in self._parents:
+            if self._tags.get(node) == tag:
+                if (node not in self._children
+                        or all(self._tags.get(c) != tag
+                               for c in self._children[node])):
+                    yield node
 
-    def insert(self, node, parents=()):
-        if node not in self._nodes:
-            self._nodes[node] = self.node()
-        if parents is None:
-            self._nodes[node].parents = None
-            return
-        self._nodes[node].parents = set(parents)
-        for p in parents:
-            if p not in self._nodes:
-                self._nodes[p] = self.node()
-            self._nodes[p].children.add(node)
+    def tag_nodes_and_parents(self, nodes, tag):
+        self._tag_nodes_and_other(self._parents, nodes, tag)
 
-    def __iter__(self):
-        return iter(self._nodes)
+    def tag_nodes_and_children(self, nodes, tag):
+        self._tag_nodes_and_other(self._children, nodes, tag)
+
+    def _tag_nodes_and_other(self, other, nodes, tag):
+        assert tag
+        queue = deque(nodes)
+        while queue:
+            node = queue.popleft()
+            if node in self._tags:
+                continue
+            self._tags[node] = tag
+            for o in other.get(node, ()):
+                queue.append(o)
+
+    def iternodes(self, tag=None):
+        if tag is None:
+            for n in self._parents:
+                if n not in self._tags:
+                    yield n
+        else:
+            for n, t in self._tags.iteritems():
+                if t == tag:
+                    yield n
 
     def __len__(self):
-        return len(self._nodes)
+        return len(self._parents)
 
-    def remove_nodes_and_parents(self, nodes):
-        visited = set()
-        queue = deque(nodes)
-        while queue:
-            node = queue.popleft()
-            if node in visited:
-                continue
-            visited.add(node)
-            if not self._nodes[node].parents:
-                continue
-            for p in self._nodes[node].parents:
-                queue.append(p)
 
-        for id in visited:
-            node = self._nodes[id]
-            yield id, node.parents and list(node.parents)
-        self.remove(visited)
+class TestDag(unittest.TestCase):
+    def setUp(self):
+        self.dag = gitdag([
+            'B A',
+            'C A',
+            'D B',
+            'E B',
+            'F B C',
+            'G D',
+            'H D',
+            'I F',
+            'J F',
+        ])
 
-    def remove_nodes_and_children(self, nodes):
-        visited = set()
-        queue = deque(nodes)
-        while queue:
-            node = queue.popleft()
-            if node in visited:
-                continue
-            visited.add(node)
-            if not self._nodes[node].children:
-                continue
-            for c in self._nodes[node].children:
-                queue.append(c)
+    def test_dag(self):
+        self.assertEqual(set(self.dag.roots()), set('BC'))
+        self.assertEqual(set(self.dag.heads()), set('EGHIJ'))
 
-        for id in visited:
-            node = self._nodes[id]
-            yield id, node.parents and list(node.parents)
-        self.remove(visited)
+    def test_tag_nodes_and_parents(self):
+        self.dag.tag_nodes_and_parents('CD', 'foo')
+        self.assertEqual(set(self.dag.roots('foo')), set('BC'))
+        self.assertEqual(set(self.dag.heads('foo')), set('CD'))
+        self.assertEqual(set(self.dag.roots()), set('EFGH'))
+        self.assertEqual(set(self.dag.heads()), set('EGHIJ'))
 
-    def remove(self, nodes):
-        cleanup = []
-        for id in nodes:
-            node = self._nodes[id]
-            if node.parents:
-                for p in node.parents:
-                    cleanup.append((p, self._nodes[p].children, id))
-            for c in node.children:
-                cleanup.append((c, self._nodes[c].parents, id))
-        for n, l, id in cleanup:
-            if id not in l:
-                print >>sys.stderr, n, id, l
-            l.remove(id)
-        for id in nodes:
-            del self._nodes[id]
-        self._update()
+        # Using a different tag for already tagged nodes doesn't change
+        # anything
+        self.dag.tag_nodes_and_parents('CD', 'bar')
+        self.assertEqual(set(self.dag.roots('bar')), set())
+        self.assertEqual(set(self.dag.heads('bar')), set())
+        self.assertEqual(set(self.dag.roots()), set('EFGH'))
+        self.assertEqual(set(self.dag.heads()), set('EGHIJ'))
+
+    def test_tag_nodes_and_parents_2(self):
+        self.dag.tag_nodes_and_parents('F', 'foo')
+        self.assertEqual(set(self.dag.roots('foo')), set('BC'))
+        self.assertEqual(set(self.dag.heads('foo')), set('F'))
+        self.assertEqual(set(self.dag.roots()), set('DEIJ'))
+        self.assertEqual(set(self.dag.heads()), set('EGHIJ'))
+
+        self.dag.tag_nodes_and_parents('GHIJ', 'bar')
+        self.assertEqual(set(self.dag.roots('foo')), set('BC'))
+        self.assertEqual(set(self.dag.heads('foo')), set('F'))
+        self.assertEqual(set(self.dag.roots('bar')), set('DIJ'))
+        self.assertEqual(set(self.dag.heads('bar')), set('GHIJ'))
+        self.assertEqual(set(self.dag.roots()), set('E'))
+        self.assertEqual(set(self.dag.heads()), set('E'))
+
+        self.dag.tag_nodes_and_parents('E', 'baz')
+        self.assertEqual(set(self.dag.roots()), set())
+        self.assertEqual(set(self.dag.heads()), set())
+
+    def test_tag_nodes_and_children(self):
+        self.dag.tag_nodes_and_children('CD', 'foo')
+        self.assertEqual(set(self.dag.roots('foo')), set('CD'))
+        self.assertEqual(set(self.dag.heads('foo')), set('GHIJ'))
+        self.assertEqual(set(self.dag.roots()), set('B'))
+        self.assertEqual(set(self.dag.heads()), set('E'))
+
+        # Using a different tag for already tagged nodes doesn't change
+        # anything
+        self.dag.tag_nodes_and_children('CD', 'bar')
+        self.assertEqual(set(self.dag.roots('bar')), set())
+        self.assertEqual(set(self.dag.heads('bar')), set())
+        self.assertEqual(set(self.dag.roots()), set('B'))
+        self.assertEqual(set(self.dag.heads()), set('E'))
+
+    def test_tag_nodes_and_children_2(self):
+        self.dag.tag_nodes_and_children('C', 'foo')
+        self.assertEqual(set(self.dag.roots('foo')), set('C'))
+        self.assertEqual(set(self.dag.heads('foo')), set('IJ'))
+        self.assertEqual(set(self.dag.roots()), set('B'))
+        self.assertEqual(set(self.dag.heads()), set('EGH'))
+
+        self.dag.tag_nodes_and_children('B', 'bar')
+        self.assertEqual(set(self.dag.roots('foo')), set('C'))
+        self.assertEqual(set(self.dag.heads('foo')), set('IJ'))
+        self.assertEqual(set(self.dag.roots('bar')), set('B'))
+        self.assertEqual(set(self.dag.heads('bar')), set('EGH'))
+        self.assertEqual(set(self.dag.roots()), set())
+        self.assertEqual(set(self.dag.heads()), set())

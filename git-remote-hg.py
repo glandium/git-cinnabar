@@ -100,7 +100,8 @@ def _sample(l, size):
 
 # TODO: this algorithm is not very smart and might as well be completely wrong
 def findcommon(repo, store, hgheads):
-    logging.info(hgheads)
+    logger = logging.getLogger('findcommon')
+    logger.info(hgheads)
     if not hgheads:
         return set()
 
@@ -110,15 +111,17 @@ def findcommon(repo, store, hgheads):
     known = repo.known(unhexlify(h) for h in sample)
     known = set(h for h, k in izip(sample, known) if k)
 
-    logging.info('heads: %d' % len(hgheads))
-    logging.info('initial sample size: %d' % len(sample))
-    logging.info('known (sub)set: %d' % len(known))
+    logger.debug('initial sample size: %d' % len(sample))
 
     if len(known) == len(hgheads):
+        logger.info('all heads known')
         return hgheads
 
     git_heads = set(store.changeset_ref(h) for h in hgheads)
     git_known = set(store.changeset_ref(h) for h in known)
+
+    logger.debug(LazyString('known (sub)set: (%d) %s'
+                            % (len(known), sorted(git_known))))
 
     args = ['rev-list', '--topo-order', '--full-history', '--parents',
             '--stdin']
@@ -127,37 +130,51 @@ def findcommon(repo, store, hgheads):
         for h in git_known:
             yield '^%s\n' % h
         for h in git_heads:
-            yield '%s\n' % h
+            if h not in git_known:
+                yield '%s\n' % h
 
-    dag = gitdag(Git.iter(*args, stdin=revs))
-    known_dag = gitdag()
-    for node in git_known:
-        known_dag.insert(node)
-    known_dag._update()
+    dag = gitdag(chain(Git.iter(*args, stdin=revs), git_known))
+    dag.tag_nodes_and_parents(git_known, 'known')
+
+    def log_dag(tag):
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+        logger.debug('%s dag size: %d' % (
+            tag, sum(1 for n in dag.iternodes(tag))))
+        heads = sorted(dag.heads(tag))
+        logger.debug('%s dag heads: (%d) %s' % (tag, len(heads), heads))
+        roots = sorted(dag.roots(tag))
+        logger.debug('%s dag roots: (%d) %s' % (tag, len(roots), roots))
+
+    log_dag('unknown')
+    log_dag('known')
 
     while True:
-        unknown = dag.heads | dag.roots
+        unknown = set(chain(dag.heads(), dag.roots()))
         if not unknown:
             break
 
         sample = set(_sample(unknown, sample_size))
         if len(sample) < sample_size:
-            sample |= set(_sample(dag, sample_size - len(sample)))
+            sample |= set(_sample(set(dag.iternodes()), sample_size - len(sample)))
 
         sample = list(sample)
         hg_sample = [store.hg_changeset(h) for h in sample]
         known = repo.known(unhexlify(h) for h in hg_sample)
         unknown = set(h for h, k in izip(sample, known) if not k)
         known = set(h for h, k in izip(sample, known) if k)
-        logging.info('second sample size: %d' % len(sample))
-        logging.info('known (sub)set: %d' % len(known))
+        logger.debug('next sample size: %d' % len(sample))
+        logger.debug(LazyString('known (sub)set: (%d) %s'
+                                % (len(known), sorted(known))))
+        logger.debug(LazyString('unknown (sub)set: (%d) %s'
+                                % (len(unknown), sorted(unknown))))
 
-        for node, parents in dag.remove_nodes_and_parents(known):
-            known_dag.insert(node, parents)
-        known_dag._update()
-        all(dag.remove_nodes_and_children(unknown))
+        dag.tag_nodes_and_parents(known, 'known')
+        dag.tag_nodes_and_children(unknown, 'unknown')
+        log_dag('unknown')
+        log_dag('known')
 
-    return [store.hg_changeset(h) for h in known_dag.heads]
+    return [store.hg_changeset(h) for h in dag.heads('known')]
 
 
 # Mercurial's bundlerepo completely unwraps bundles in $TMPDIR but we can be
@@ -670,7 +687,7 @@ def main(args):
                                 c = store.changeset_ref(d)
                                 if c:
                                     yield '^%s^@\n' % c
-                            for h in pushed.heads:
+                            for h in pushed.heads():
                                 yield '%s\n' % h
 
                         args = ['rev-list', '--ancestry-path', '--topo-order',

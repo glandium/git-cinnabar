@@ -21,7 +21,6 @@ from git.util import (
     LazyString,
     progress_iter,
 )
-from githg.dag import gitdag
 from githg.helper import (
     GitHgHelper,
     NoHelperException,
