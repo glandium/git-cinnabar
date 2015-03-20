@@ -101,7 +101,7 @@ def _sample(l, size):
 # TODO: this algorithm is not very smart and might as well be completely wrong
 def findcommon(repo, store, hgheads):
     logger = logging.getLogger('findcommon')
-    logger.info(hgheads)
+    logger.debug(hgheads)
     if not hgheads:
         return set()
 
@@ -111,7 +111,7 @@ def findcommon(repo, store, hgheads):
     known = repo.known(unhexlify(h) for h in sample)
     known = set(h for h, k in izip(sample, known) if k)
 
-    logger.debug('initial sample size: %d' % len(sample))
+    logger.info('initial sample size: %d' % len(sample))
 
     if len(known) == len(hgheads):
         logger.info('all heads known')
@@ -163,7 +163,7 @@ def findcommon(repo, store, hgheads):
         known = repo.known(unhexlify(h) for h in hg_sample)
         unknown = set(h for h, k in izip(sample, known) if not k)
         known = set(h for h, k in izip(sample, known) if k)
-        logger.debug('next sample size: %d' % len(sample))
+        logger.info('next sample size: %d' % len(sample))
         logger.debug(LazyString('known (sub)set: (%d) %s'
                                 % (len(known), sorted(known))))
         logger.debug(LazyString('unknown (sub)set: (%d) %s'
@@ -289,7 +289,24 @@ def push(repo, store, what, repo_heads, repo_branches):
     fast_import = FastImport()
     store.init_fast_import(fast_import)
 
-    common = findcommon(repo, store, store.heads(repo_branches))
+    def heads():
+        for sha1 in store.heads(repo_branches):
+            yield '^%s\n' % store.changeset_ref(sha1)
+
+    def local_bases():
+        for c in Git.iter('rev-list', '--stdin', '--topo-order',
+                          '--full-history', '--boundary',
+                          *(w for w in what if w), stdin=heads):
+            if c[0] != '-':
+                continue
+            yield store.hg_changeset(c[1:])
+
+        for w in what:
+            rev = store.hg_changeset(w)
+            if rev:
+                yield rev
+
+    common = findcommon(repo, store, set(local_bases()))
     logging.info('common: %s' % common)
 
     def revs():
