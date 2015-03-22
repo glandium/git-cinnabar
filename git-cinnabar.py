@@ -16,6 +16,7 @@ from githg import (
 from git import (
     FastImport,
     Git,
+    sha1path,
 )
 from git.util import (
     LazyString,
@@ -262,8 +263,16 @@ def fsck(args):
         for obj in manifest_commits - seen_manifest_refs:
             info('Metadata commit %s with no hg2git entry' % obj)
 
-    for commit in all_notes - seen_notes:
-        info('Dangling note for commit ' + commit)
+    dangling = all_notes - seen_notes
+    if dangling:
+        with store._fast_import.commit(
+                ref='refs/notes/cinnabar',
+                parents=('refs/notes/cinnabar^0',)) as commit:
+            for c in dangling:
+                info('Removing dangling note for commit ' + c)
+                # That's brute force, but meh.
+                for l in range(0, 10):
+                    commit.filedelete(sha1path(c, l))
 
     if status['broken']:
         info('Your git-cinnabar repository appears to be corrupted. There\n'
