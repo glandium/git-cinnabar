@@ -538,65 +538,89 @@ def main(args):
                 helper.write('unsupported\n')
             helper.flush()
         elif cmd == 'import':
-            reflog = os.path.join(os.environ['GIT_DIR'], 'logs', 'refs',
-                'cinnabar')
-            mkpath(reflog)
-            open(os.path.join(reflog, 'hg2git'), 'a').close()
-            open(os.path.join(reflog, 'manifest'), 'a').close()
-            assert len(args) == 1
-            refs = args
-            while cmd:
-                assert cmd == 'import'
-                cmd, args = read_cmd(helper)
-                assert args is None or len(args) == 1
-                if args:
-                    refs.extend(args)
-
-            def resolve_head(head):
-                if head.startswith('refs/heads/branches/'):
-                    head = head[20:]
-                    if head[-4:] == '/tip':
-                        return branchmap.tip(head[:-4])
-                    return head[-40:]
-                if head.startswith('refs/heads/bookmarks/'):
-                    head = head[21:]
-                    return bookmarks[head]
-                if head == 'HEAD':
-                    return bookmarks.get('@') or branchmap.tip('default')
-                return None
-
-            wanted_refs = {k: v for k, v in (
-                           (h, resolve_head(h)) for h in refs) if v}
-            heads = wanted_refs.values()
-            if not heads:
-                heads = branchmap.heads()
-
-            # Older versions would create a symbolic ref for
-            # refs/remote-hg/HEAD. Newer versions don't, and Git.update_ref
-            # doesn't remove the symbolic ref, so it needs to be removed first.
-            # Since git symbolic-ref only throws an error when the ref is not
-            # symbolic, just try to remove the symbolic ref every time and
-            # ignore errors.
-            tuple(Git.iter('symbolic-ref', '-d', 'refs/remote-hg/HEAD',
-                           stderr=open(os.devnull, 'wb')))
-
-            refs_orig = {}
-            for line in Git.for_each_ref('refs/cinnabar/refs/heads',
-                                         'refs/cinnabar/HEAD',
-                                         format='%(objectname) %(refname)'):
-                sha1, ref = line.split(' ', 1)
-                refs_orig[ref] = sha1
-
-            store.init_fast_import(FastImport(sys.stdin, sys.stdout))
-            getbundle(repo, store, heads, branchmap)
-
-            for ref, value in wanted_refs.iteritems():
-                ref = 'refs/cinnabar/' + ref
-                if ref not in refs_orig or refs_orig[ref] != value:
-                    Git.update_ref(ref, store.changeset_ref(value))
-            for ref in refs_orig:
-                if ref[14:] not in wanted_refs:
+            try:
+                reflog = os.path.join(os.environ['GIT_DIR'], 'logs', 'refs',
+                    'cinnabar')
+                mkpath(reflog)
+                open(os.path.join(reflog, 'hg2git'), 'a').close()
+                open(os.path.join(reflog, 'manifest'), 'a').close()
+                assert len(args) == 1
+                refs = args
+                while cmd:
+                    assert cmd == 'import'
+                    cmd, args = read_cmd(helper)
+                    assert args is None or len(args) == 1
+                    if args:
+                        refs.extend(args)
+            except:
+                # If anything wrong happens before we got all the import
+                # commands, we risk git picking the existing refs/cinnabar
+                # refs. Remove them.
+                for line in Git.for_each_ref('refs/cinnabar/refs/heads',
+                                             'refs/cinnabar/HEAD',
+                                             format='%(refname)'):
                     Git.delete_ref(ref)
+                raise
+
+            try:
+                def resolve_head(head):
+                    if head.startswith('refs/heads/branches/'):
+                        head = head[20:]
+                        if head[-4:] == '/tip':
+                            return branchmap.tip(head[:-4])
+                        return head[-40:]
+                    if head.startswith('refs/heads/bookmarks/'):
+                        head = head[21:]
+                        return bookmarks[head]
+                    if head == 'HEAD':
+                        return bookmarks.get('@') or branchmap.tip('default')
+                    return None
+
+                wanted_refs = {k: v for k, v in (
+                               (h, resolve_head(h)) for h in refs) if v}
+                heads = wanted_refs.values()
+                if not heads:
+                    heads = branchmap.heads()
+
+                # Older versions would create a symbolic ref for
+                # refs/remote-hg/HEAD. Newer versions don't, and
+                # Git.update_ref doesn't remove the symbolic ref, so it needs
+                # to be removed first.
+                # Since git symbolic-ref only throws an error when the ref is
+                # not symbolic, just try to remove the symbolic ref every time
+                # and ignore errors.
+                tuple(Git.iter('symbolic-ref', '-d', 'refs/remote-hg/HEAD',
+                               stderr=open(os.devnull, 'wb')))
+
+                refs_orig = {}
+                for line in Git.for_each_ref('refs/cinnabar/refs/heads',
+                                             'refs/cinnabar/HEAD',
+                                             format='%(objectname) %(refname)'):
+                    sha1, ref = line.split(' ', 1)
+                    refs_orig[ref] = sha1
+            except:
+                # If anything wrong happens before we actually pull, we risk
+                # git pucking the existing refs/cinnabar refs. Remove them.
+                # Unlike in the case above, we now have the list of refs git
+                # is expected, so we can just remove those.
+                for ref in refs:
+                    Git.delete_ref('refs/cinnabar/' + ref)
+                raise
+
+            try:
+                store.init_fast_import(FastImport(sys.stdin, sys.stdout))
+                getbundle(repo, store, heads, branchmap)
+            except:
+                wanted_refs = {}
+                raise
+            finally:
+                for ref, value in wanted_refs.iteritems():
+                    ref = 'refs/cinnabar/' + ref
+                    if ref not in refs_orig or refs_orig[ref] != value:
+                        Git.update_ref(ref, store.changeset_ref(value))
+                for ref in refs_orig:
+                    if ref[14:] not in wanted_refs:
+                        Git.delete_ref(ref)
 
             store.close()
 
