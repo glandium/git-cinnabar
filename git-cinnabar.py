@@ -16,6 +16,7 @@ from githg import (
 from git import (
     FastImport,
     Git,
+    Mark,
     sha1path,
 )
 from git.util import (
@@ -27,6 +28,7 @@ from githg.helper import (
     NoHelperException,
 )
 from githg.bundle import get_changes
+from collections import OrderedDict
 import subprocess
 
 
@@ -93,9 +95,11 @@ def fsck(args):
             progress_iter('Reading %d commit to changeset mappings',
             Git.ls_tree('refs/notes/cinnabar', recursive=True)))
 
-        manifest_commits = set(progress_iter('Reading %d manifest trees',
-                               Git.iter('rev-list', '--full-history',
-                                        'refs/cinnabar/manifest')))
+        manifest_commits = OrderedDict((m, None) for m in progress_iter(
+            'Reading %d manifest trees',
+            Git.iter('rev-list', '--full-history',
+                     '--topo-order', 'refs/cinnabar/manifest'))
+        )
 
         def all_git_heads():
             for ref in Git.for_each_ref('refs/cinnabar/branches',
@@ -110,7 +114,7 @@ def fsck(args):
 
     seen_changesets = set()
     seen_manifests = set()
-    seen_manifest_refs = set()
+    seen_manifest_refs = {}
     seen_files = set()
     seen_notes = set()
 
@@ -195,7 +199,7 @@ def fsck(args):
         seen_manifests.add(manifest)
         manifest_ref = store.manifest_ref(manifest)
         if manifest_ref:
-            seen_manifest_refs.add(manifest_ref)
+            seen_manifest_refs[manifest_ref] = manifest
         if not manifest_ref:
             report('Missing manifest in hg2git branch: %s' % manifest)
         elif not args.commit and manifest_ref not in manifest_commits:
@@ -256,18 +260,55 @@ def fsck(args):
         all_hg2git = set(k for k, (s, t) in all_hg2git.iteritems()
                          if t == 'commit')
 
+    adjusted = {}
+    if not args.commit:
+        dangling = set(manifest_commits) - set(seen_manifest_refs)
+        if dangling:
+            def iter_manifests():
+                removed_one = False
+                yielded = False
+                previous = None
+                for obj in reversed(manifest_commits):
+                    if obj in dangling:
+                        info('Removing metadata commit %s with no hg2git entry'
+                             % obj)
+                        removed_one = True
+                    else:
+                        if removed_one:
+                            yield obj, previous
+                            yielded = True
+                        previous = obj
+
+                if removed_one and not yielded:
+                    yield obj, False
+
+            for obj, parent in progress_iter('Adjusting %d metadata commits',
+                                             iter_manifests()):
+                mark = store._fast_import.new_mark()
+                if parent is False:
+                    Git.update_ref('refs/cinnabar/manifest', obj)
+                    continue
+                elif parent:
+                    parents = (adjusted.get(parent, parent),)
+                with store._fast_import.commit(ref='refs/cinnabar/manifest',
+                        parents=parents, mark=mark) as commit:
+                    mode, typ, tree, path = store._fast_import.ls(obj)
+                    commit.filemodify('', tree, typ='tree')
+                adjusted[obj] = Mark(mark)
+
     dangling = all_hg2git - seen_changesets - seen_manifests - seen_files
-    if dangling:
+    if dangling or adjusted:
         with store._fast_import.commit(
                 ref='refs/cinnabar/hg2git',
                 parents=('refs/cinnabar/hg2git^0',)) as commit:
             for obj in dangling:
                 info('Removing dangling metadata for ' + obj)
                 commit.filedelete(sha1path(obj))
-
-    if not args.commit:
-        for obj in manifest_commits - seen_manifest_refs:
-            info('Metadata commit %s with no hg2git entry' % obj)
+            for obj, mark in progress_iter(
+                    'Updating hg2git for %d metadata commits',
+                    adjusted.iteritems()):
+                commit.filemodify(sha1path(seen_manifest_refs[obj]), mark,
+                                  typ='commit')
 
     dangling = all_notes - seen_notes
     if dangling:
