@@ -256,8 +256,14 @@ def fsck(args):
         all_hg2git = set(k for k, (s, t) in all_hg2git.iteritems()
                          if t == 'commit')
 
-    for obj in all_hg2git - seen_changesets - seen_manifests - seen_files:
-        info('Dangling metadata for ' + obj)
+    dangling = all_hg2git - seen_changesets - seen_manifests - seen_files
+    if dangling:
+        with store._fast_import.commit(
+                ref='refs/cinnabar/hg2git',
+                parents=('refs/cinnabar/hg2git^0',)) as commit:
+            for obj in dangling:
+                info('Removing dangling metadata for ' + obj)
+                commit.filedelete(sha1path(obj))
 
     if not args.commit:
         for obj in manifest_commits - seen_manifest_refs:
