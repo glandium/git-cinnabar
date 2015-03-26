@@ -522,7 +522,10 @@ class GitHgStore(object):
                     for node in reversed(nodes):
                         tags[tag] = node
             else:
-                data = GitHgHelper.cat_file('blob', tagfile) or ''
+                if isinstance(head, Mark):
+                    data = self._fast_import.cat_blob(tagfile) or ''
+                else:
+                    data = Git.cat_file('blob', tagfile) or ''
                 for line in data.splitlines():
                     node, tag = line.split(' ', 1)
                     if node != NULL_NODE_ID:
@@ -1018,8 +1021,6 @@ class GitHgStore(object):
             return c
 
         for c, f in self._tagcache.items():
-            if f is not False:
-                c = resolve_commit(c)
             if f is None:
                 tags = self._get_hgtags(c)
 
@@ -1051,8 +1052,9 @@ class GitHgStore(object):
             self.tag_changes = True
 
         for c, f in self._tagcache.iteritems():
-            if (f and not isinstance(c, Mark) and
-                    c not in self._tagcache_items):
+            if isinstance(c, Mark):
+                c = resolve_commit(c)
+            if (f and c not in self._tagcache_items):
                 if f == NULL_NODE_ID:
                     created[c] = (f, 'commit')
                 else:
