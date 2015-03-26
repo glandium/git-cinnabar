@@ -475,7 +475,10 @@ class GitHgStore(object):
         self._tagcache = {}
         self._tagfiles = {}
         self._tags = { NULL_NODE_ID: {} }
-        self._tagcache_ref = Git.resolve_ref('refs/cinnabar/tagcache')
+        # Delete old tagcache, which may contain wrong info if using any
+        # version after 671823c.
+        Git.delete_ref('refs/cinnabar/tagcache')
+        self._tagcache_ref = Git.resolve_ref('refs/cinnabar/tag-cache')
         self._tagcache_items = set()
         if self._tagcache_ref:
             for line in Git.ls_tree(self._tagcache_ref):
@@ -1064,7 +1067,7 @@ class GitHgStore(object):
 
         if created or deleted:
             with self._fast_import.commit(
-                ref='refs/cinnabar/tagcache',
+                ref='refs/cinnabar/tag-cache',
             ) as commit:
                 if self._tagcache_ref:
                     mode, typ, tree, path = \
