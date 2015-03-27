@@ -13,6 +13,7 @@ from githg import (
     split_ls_tree,
     one,
 )
+from githg.dag import gitdag
 from git import (
     FastImport,
     Git,
@@ -28,7 +29,10 @@ from githg.helper import (
     NoHelperException,
 )
 from githg.bundle import get_changes
-from collections import OrderedDict
+from collections import (
+    defaultdict,
+    OrderedDict,
+)
 import subprocess
 
 
@@ -120,6 +124,8 @@ def fsck(args):
 
     hg_manifest = None
 
+    dag = gitdag()
+
     for line in progress_iter('Checking %d changesets', all_git_commits):
         tree, node = line.split(' ')
         if node not in all_notes:
@@ -192,6 +198,10 @@ def fsck(args):
 
         if hg_changeset.node != sha1:
             report('Sha1 mismatch for changeset %s' % changeset)
+
+        dag.add(hg_changeset.node,
+                (hg_changeset.parent1, hg_changeset.parent2),
+                changeset_data.get('extra', {}).get('branch', 'default'))
 
         manifest = changeset_data['manifest']
         if manifest in seen_manifests:
@@ -330,6 +340,22 @@ def fsck(args):
              'local branches will however stay untouched.\n'
              'Please report any corruption that fsck would detect after a\n'
              'reclone.')
+
+    info('Checking head references...')
+    computed_heads = defaultdict(set)
+    for branch, head in dag.all_heads():
+        computed_heads[branch].add(head)
+
+    for branch in sorted(dag.tags()):
+        stored_heads = store.heads({branch})
+        for head in computed_heads[branch] - stored_heads:
+            info('Adding missing head %s in branch %s' %
+                 (head, branch))
+            store.add_head(head)
+        for head in stored_heads - computed_heads[branch]:
+            info('Removing non-head reference to %s in branch %s' %
+                 (head, branch))
+            store._hgheads.remove((branch, head))
 
     store.close()
 

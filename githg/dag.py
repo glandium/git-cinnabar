@@ -27,6 +27,13 @@ class gitdag(object):
                 self._children[p].add(node)
         self._tags = {}
 
+    def add(self, node, parents, tag=None):
+        self._parents[node] |= set(parents)
+        for p in parents:
+            self._children[p].add(node)
+        if tag:
+            self._tags[node] = tag
+
     def roots(self, tag=None):
         for node, parents in self._parents.iteritems():
             if self._tags.get(node) == tag:
@@ -41,6 +48,14 @@ class gitdag(object):
                         or all(self._tags.get(c) != tag
                                for c in self._children[node])):
                     yield node
+
+    def all_heads(self):
+        for node in self._parents:
+            tag = self._tags.get(node)
+            if (node not in self._children
+                    or all(self._tags.get(c) != tag
+                           for c in self._children[node])):
+                yield tag, node
 
     def tag_nodes_and_parents(self, nodes, tag):
         self._tag_nodes_and_other(self._parents, nodes, tag)
@@ -71,6 +86,9 @@ class gitdag(object):
 
     def __len__(self):
         return len(self._parents)
+
+    def tags(self):
+        return set(self._tags.itervalues())
 
 
 class TestDag(unittest.TestCase):
