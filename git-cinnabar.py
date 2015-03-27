@@ -46,11 +46,18 @@ def fsck(args):
         help='Specific commit or changeset to check')
     args = parser.parse_args(args)
 
-    status = { 'broken': False }
+    status = {
+        'broken': False,
+        'fixed': False,
+    }
 
     def info(message):
         sys.stderr.write('\r')
         print message
+
+    def fix(message):
+        status['fixed'] = True
+        info(message)
 
     def report(message):
         status['broken'] = True
@@ -147,13 +154,13 @@ def fsck(args):
                     report('Committer mismatch between commit and metadata for'
                            ' changeset %s' % changeset)
                 if committer == extra['committer']:
-                    info('Fixing useless committer metadata for changeset %s' \
-                         % changeset)
+                    fix('Fixing useless committer metadata for changeset %s' \
+                        % changeset)
                     del changeset_data['extra']['committer']
                     store._changesets[changeset] = LazyString(node)
             if header['committer'] != header['author'] and not extra:
-                info('Fixing useless empty extra metadata for changeset %s'
-                     % changeset)
+                fix('Fixing useless empty extra metadata for changeset %s'
+                    % changeset)
                 del changeset_data['extra']
                 store._changesets[changeset] = LazyString(node)
 
@@ -191,8 +198,8 @@ def fsck(args):
                 hg_changeset = store.changeset(changeset, include_parents=True)
                 sha1 = hg_changeset.sha1
                 if hg_changeset.node == sha1:
-                    info('Fixing known sha1 mismatch for changeset %s' %
-                         changeset)
+                    fix('Fixing known sha1 mismatch for changeset %s' %
+                        changeset)
                     store._changesets[changeset] = LazyString(node)
 
         if hg_changeset.node != sha1:
@@ -279,8 +286,8 @@ def fsck(args):
                 previous = None
                 for obj in reversed(manifest_commits):
                     if obj in dangling:
-                        info('Removing metadata commit %s with no hg2git entry'
-                             % obj)
+                        fix('Removing metadata commit %s with no hg2git entry'
+                            % obj)
                         removed_one = True
                     else:
                         if removed_one:
@@ -311,7 +318,7 @@ def fsck(args):
                 ref='refs/cinnabar/hg2git',
                 parents=('refs/cinnabar/hg2git^0',)) as commit:
             for obj in dangling:
-                info('Removing dangling metadata for ' + obj)
+                fix('Removing dangling metadata for ' + obj)
                 commit.filedelete(sha1path(obj))
             for obj, mark in progress_iter(
                     'Updating hg2git for %d metadata commits',
@@ -325,7 +332,7 @@ def fsck(args):
                 ref='refs/notes/cinnabar',
                 parents=('refs/notes/cinnabar^0',)) as commit:
             for c in dangling:
-                info('Removing dangling note for commit ' + c)
+                fix('Removing dangling note for commit ' + c)
                 # That's brute force, but meh.
                 for l in range(0, 10):
                     commit.filedelete(sha1path(c, l))
@@ -348,17 +355,21 @@ def fsck(args):
     for branch in sorted(dag.tags()):
         stored_heads = store.heads({branch})
         for head in computed_heads[branch] - stored_heads:
-            info('Adding missing head %s in branch %s' %
-                 (head, branch))
+            fix('Adding missing head %s in branch %s' %
+                (head, branch))
             store.add_head(head)
         for head in stored_heads - computed_heads[branch]:
-            info('Removing non-head reference to %s in branch %s' %
-                 (head, branch))
+            fix('Removing non-head reference to %s in branch %s' %
+                (head, branch))
             store._hgheads.remove((branch, head))
 
     store.close()
 
-    return 1 if status['broken'] else 0
+    if status['broken']:
+        return 1
+    if status['fixed']:
+        return 2
+    return 0
 
 
 def main(args):
