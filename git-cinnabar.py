@@ -37,7 +37,6 @@ import subprocess
 
 
 def fsck(args):
-    # TODO: Add arguments to enable more sha1 checks
     parser = argparse.ArgumentParser()
     parser.add_argument('--manifests', action='store_true',
         help='Validate manifests hashes')
