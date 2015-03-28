@@ -168,7 +168,7 @@ def fsck(args):
         changeset_ref = store.changeset_ref(changeset)
         if not changeset_ref:
             report('Missing changeset in hg2git branch: %s' % changeset)
-        if str(changeset_ref) != node:
+        elif str(changeset_ref) != node:
             report('Commit mismatch for changeset %s\n'
                    '  hg2git: %s\n  commit: %s'
                    % (changeset, changeset_ref, node))
