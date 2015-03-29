@@ -10,7 +10,6 @@ from cinnabar.githg import (
     GitHgStore,
     EMPTY_TREE,
     NULL_NODE_ID,
-    split_ls_tree,
     one,
 )
 from cinnabar.dag import gitdag
@@ -33,16 +32,18 @@ from collections import (
     defaultdict,
     OrderedDict,
 )
-import subprocess
 
 
 def fsck(args):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--manifests', action='store_true',
+    parser.add_argument(
+        '--manifests', action='store_true',
         help='Validate manifests hashes')
-    parser.add_argument('--files', action='store_true',
+    parser.add_argument(
+        '--files', action='store_true',
         help='Validate files hashes')
-    parser.add_argument('commit', nargs='*',
+    parser.add_argument(
+        'commit', nargs='*',
         help='Specific commit or changeset to check')
     args = parser.parse_args(args)
 
@@ -98,12 +99,14 @@ def fsck(args):
             path.replace('/', ''): (filesha1, intern(typ))
             for mode, typ, filesha1, path in
             progress_iter('Reading %d mercurial to git mappings',
-            Git.ls_tree('refs/cinnabar/hg2git', recursive=True))
+                          Git.ls_tree('refs/cinnabar/hg2git', recursive=True))
         }
 
         all_notes = set(path.replace('/', '') for mode, typ, filesha1, path in
-            progress_iter('Reading %d commit to changeset mappings',
-            Git.ls_tree('refs/notes/cinnabar', recursive=True)))
+                        progress_iter(
+                            'Reading %d commit to changeset mappings',
+                            Git.ls_tree('refs/notes/cinnabar',
+                                        recursive=True)))
 
         manifest_commits = OrderedDict((m, None) for m in progress_iter(
             'Reading %d manifest trees',
@@ -120,7 +123,7 @@ def fsck(args):
                                    '--reverse', '--stdin', '--format=%T %H',
                                    stdin=all_git_heads)
 
-    store._hg2git_cache = { p: s for p, (s, t) in all_hg2git.iteritems() }
+    store._hg2git_cache = {p: s for p, (s, t) in all_hg2git.iteritems()}
 
     seen_changesets = set()
     seen_manifests = set()
@@ -154,7 +157,7 @@ def fsck(args):
                     report('Committer mismatch between commit and metadata for'
                            ' changeset %s' % changeset)
                 if committer == extra['committer']:
-                    fix('Fixing useless committer metadata for changeset %s' \
+                    fix('Fixing useless committer metadata for changeset %s'
                         % changeset)
                     del changeset_data['extra']['committer']
                     store._changesets[changeset] = LazyString(node)
@@ -306,7 +309,8 @@ def fsck(args):
                     continue
                 elif parent:
                     parents = (adjusted.get(parent, parent),)
-                with store._fast_import.commit(ref='refs/cinnabar/manifest',
+                with store._fast_import.commit(
+                        ref='refs/cinnabar/manifest',
                         parents=parents, mark=mark) as commit:
                     mode, typ, tree, path = store._fast_import.ls(obj)
                     commit.filemodify('', tree, typ='tree')
