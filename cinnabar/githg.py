@@ -1061,7 +1061,7 @@ class GitHgStore(object):
             self.tag_changes = True
 
         for c, f in self._tagcache.iteritems():
-            if isinstance(c, Mark):
+            if f and isinstance(c, Mark):
                 c = resolve_commit(c)
             if (f and c not in self._tagcache_items):
                 if f == NULL_NODE_ID:
