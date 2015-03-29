@@ -97,6 +97,7 @@ def main(args):
     logger.info(args)
     assert len(args) == 2
     remote, url = args
+    git_dir = os.environ.get('GIT_DIR')
     if Git.config('core.ignorecase', 'bool') == 'true':
         sys.stderr.write(
             'Your git configuration has core.ignorecase set to "true".\n'
@@ -106,8 +107,7 @@ def main(args):
             'Either use a case sensitive file system or set '
             'core.ignorecase to "false".\n'
         )
-        git_dir = os.environ['GIT_DIR']
-        git_work_tree = os.path.dirname(os.environ['GIT_DIR'])
+        git_work_tree = os.path.dirname(git_dir)
         if os.path.abspath(os.getcwd() + os.sep).startswith(
                 os.path.abspath(git_work_tree) + os.sep) or \
                 remote == 'hg::' + url or tuple(
@@ -245,7 +245,7 @@ def main(args):
             helper.flush()
         elif cmd == 'import':
             try:
-                reflog = os.path.join(os.environ['GIT_DIR'], 'logs', 'refs',
+                reflog = os.path.join(git_dir, 'logs', 'refs',
                     'cinnabar')
                 mkpath(reflog)
                 open(os.path.join(reflog, 'hg2git'), 'a').close()
