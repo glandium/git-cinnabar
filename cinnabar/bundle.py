@@ -25,6 +25,7 @@ import struct
 import types
 from itertools import chain
 
+
 # TODO: Avoid a diff-tree when we already have done it to generate the
 # manifest in the first place.
 def manifest_diff(a, b, base_path=''):
@@ -34,6 +35,7 @@ def manifest_diff(a, b, base_path=''):
         mode_before, mode_after, sha1_before, sha1_after, status, path = line
         if sha1_before != sha1_after:
             yield path[start:], sha1_after, sha1_before
+
 
 def manifest_diff2(a, b, c, base_path=''):
     iter1 = iter(list(manifest_diff(a, c, base_path)))
@@ -137,7 +139,7 @@ class PushStore(GitHgStore):
                 created[path] = (sha1, self.ATTR[mode])
 
         if copies:
-            copied = { k: () for k in copies.values() }
+            copied = {k: () for k in copies.values()}
             for line in parent_lines:
                 name = str(line.name)
                 if name in copied:
@@ -164,7 +166,8 @@ class PushStore(GitHgStore):
                 node, attr = next_created[1]
                 if next_created[0] in copies:
                     copied_name = copies[next_created[0]]
-                    node = self.create_copy((copied_name, copied[copied_name]), node)
+                    node = self.create_copy((copied_name, copied[copied_name]),
+                                            node)
                 else:
                     node = self.create_file(node)
                 created_line = ManifestLine(next_created[0], node, attr)
@@ -176,7 +179,8 @@ class PushStore(GitHgStore):
             node, attr = next_created[1]
             if next_created[0] in copies:
                 copied_name = copies[next_created[0]]
-                node = self.create_copy((copied_name, copied[copied_name]), node)
+                node = self.create_copy((copied_name, copied[copied_name]),
+                                        node)
             else:
                 node = self.create_file(node)
             created_line = ManifestLine(next_created[0], node, attr)
@@ -184,7 +188,8 @@ class PushStore(GitHgStore):
             manifest._lines.append(created_line)
             next_created = next(iter_created)
 
-        header, message = GitHgHelper.cat_file('commit', commit).split('\n\n', 1)
+        header, message = GitHgHelper.cat_file('commit', commit).split(
+            '\n\n', 1)
         header_data = {}
         for line in header.splitlines():
             typ, data = line.split(' ', 1)
@@ -195,7 +200,8 @@ class PushStore(GitHgStore):
             manifest.set_parents(parent_node)
             manifest.node = manifest.sha1
             manifest.removed = removed
-            manifest.modified = {l.name: (l.node, l.attr) for l in modified_lines}
+            manifest.modified = {l.name: (l.node, l.attr)
+                                 for l in modified_lines}
             manifest.previous_node = parent_node
             self._push_manifests[manifest.node] = manifest
             self.manifest_ref(manifest.node, hg2git=False, create=True)
@@ -287,6 +293,7 @@ class PushStore(GitHgStore):
 
         super(PushStore, self).close()
 
+
 def create_bundle(store, commits):
     manifests = OrderedDict()
     files = defaultdict(list)
@@ -302,7 +309,8 @@ def create_bundle(store, commits):
             changeset_data = store.read_changeset_data(node)
         changeset = changeset_data['changeset']
         hg_changeset = store.changeset(changeset, include_parents=True)
-        store.add_head(hg_changeset.node, hg_changeset.parent1, hg_changeset.parent2)
+        store.add_head(hg_changeset.node, hg_changeset.parent1,
+                       hg_changeset.parent2)
         if previous is None and hg_changeset.parent1 != NULL_NODE_ID:
             previous = store.changeset(hg_changeset.parent1)
         data = hg_changeset.serialize(previous)
@@ -311,9 +319,9 @@ def create_bundle(store, commits):
         yield data
         manifest = changeset_data['manifest']
         if manifest not in manifests:
-            manifests[manifest] = (changeset,
-                tuple(store.read_changeset_data(p)['manifest']
-                      for p in parents))
+            manifests[manifest] = (
+                changeset, tuple(store.read_changeset_data(p)['manifest']
+                                 for p in parents))
 
     yield '\0' * 4
 
