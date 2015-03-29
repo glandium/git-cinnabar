@@ -9,6 +9,7 @@ PYTHON_LIBS := \
 	cinnabar/dag.py \
 	cinnabar/helper.py \
 	cinnabar/git.py \
+	cinnabar/hg.py \
 	cinnabar/util.py
 
 ifneq (,$(wildcard $(CURDIR)/git-core/Makefile))
