@@ -28,6 +28,7 @@ def next(iter):
 
 progress = True
 
+
 def progress_iter(fmt, iter):
     count = 0
     t0 = 0
