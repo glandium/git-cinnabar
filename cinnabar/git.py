@@ -11,14 +11,16 @@ from .util import (
     LazyString,
     one,
 )
-from itertools import izip
 from binascii import hexlify
 
 
 def sha1path(sha1, depth=2):
-    i = -1
-    return '/'.join(
-        [sha1[i*2:i*2+2] for i in xrange(0, depth)] + [sha1[i*2+2:]])
+    def parts():
+        i = -1
+        for i in xrange(0, depth):
+            yield sha1[i*2:i*2+2]
+        yield sha1[i*2+2:]
+    return '/'.join(parts())
 
 
 def split_ls_tree(line):
@@ -232,7 +234,7 @@ class Git(object):
     def diff_tree(self, treeish1, treeish2, path='', detect_copy=False,
                   recursive=False):
         key = (path, recursive, detect_copy)
-        if not key in self._diff_tree:
+        if key not in self._diff_tree:
             args = ['--stdin', '--', path]
             if recursive:
                 args.insert(0, '-r')
@@ -242,15 +244,17 @@ class Git(object):
                                               stdin=subprocess.PIPE)
         diff_tree = self._diff_tree[key]
         diff_tree.stdin.write('%s %s\n\n' % (treeish2, treeish1))
-        line = diff_tree.stdout.readline().rstrip('\n')  # First line is a header
+        line = diff_tree.stdout.readline(
+            ).rstrip('\n')  # First line is a header
         while line:
             line = diff_tree.stdout.readline().rstrip('\n')
             if not line:
                 break
-            mode_before, mode_after, sha1_before, sha1_after, remainder = line.split(' ', 4)
+            (mode_before, mode_after, sha1_before, sha1_after,
+             remainder) = line.split(' ', 4)
             status, path = remainder.split('\t', 1)
             yield (mode_before[1:], mode_after, sha1_before, sha1_after,
-                status, path)
+                   status, path)
 
     @classmethod
     def read_note(self, notes_ref, sha1):
