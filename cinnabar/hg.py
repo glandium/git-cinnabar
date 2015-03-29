@@ -12,21 +12,15 @@ from .githg import (
     ManifestInfo,
 )
 from .bundle import create_bundle
-from binascii import hexlify, unhexlify
+from binascii import unhexlify
 from mercurial import (
     changegroup,
-    hg,
-    ui,
     util,
 )
 from collections import OrderedDict
 from itertools import (
     chain,
     izip,
-)
-from urlparse import (
-    urlparse,
-    urlunparse,
 )
 import logging
 import random
@@ -172,8 +166,8 @@ def findcommon(repo, store, hgheads):
 class bundlerepo(object):
     def __init__(self, path):
         self._bundle = readbundle(open(path, 'r'))
-        self._changeset_chunks = list(progress_iter('Reading %d changesets',
-            chunks_in_changegroup(self._bundle)))
+        self._changeset_chunks = list(progress_iter(
+            'Reading %d changesets', chunks_in_changegroup(self._bundle)))
 
         heads = OrderedDict()
         previous = None
@@ -213,23 +207,23 @@ def getbundle(repo, store, heads, branchmap):
         common = findcommon(repo, store, store.heads(branchmap.names()))
         logging.info('common: %s' % common)
         bundle = repo.getbundle('bundle', heads=[unhexlify(h) for h in heads],
-            common=[unhexlify(h) for h in common])
+                                common=[unhexlify(h) for h in common])
 
-        changeset_chunks = list(progress_iter('Reading %d changesets',
-            chunks_in_changegroup(bundle)))
+        changeset_chunks = list(progress_iter(
+            'Reading %d changesets', chunks_in_changegroup(bundle)))
 
-    manifest_chunks = list(progress_iter('Reading %d manifests',
-        chunks_in_changegroup(bundle)))
+    manifest_chunks = list(progress_iter(
+        'Reading %d manifests', chunks_in_changegroup(bundle)))
 
-    for rev_chunk in progress_iter('Reading and importing %d files',
-            iterate_files(bundle)):
+    for rev_chunk in progress_iter(
+            'Reading and importing %d files', iterate_files(bundle)):
         store.store(rev_chunk)
 
     del bundle
 
     manifest_sha1s = []
     for mn in progress_iter('Importing %d manifests',
-            iter_chunks(manifest_chunks, ManifestInfo)):
+                            iter_chunks(manifest_chunks, ManifestInfo)):
         manifest_sha1s.append(mn.node)
         store.store(mn)
 
@@ -253,7 +247,7 @@ def getbundle(repo, store, heads, branchmap):
     num = -1
     reported = False
     for cs in progress_iter('Importing %d changesets',
-            iter_chunks(changeset_chunks, ChangesetInfo)):
+                            iter_chunks(changeset_chunks, ChangesetInfo)):
         if not reported:
             prev = num
             num = heads.get(cs.node, prev)
