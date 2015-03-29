@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import time
+from collections import OrderedDict
 
 
 # Initialize logging from the GIT_CINNABAR_LOG environment variable
@@ -100,3 +101,13 @@ def one(l):
         assert len(l) == 1
         return l[0]
     return None
+
+
+class OrderedDefaultDict(OrderedDict):
+    def __init__(self, default_factory, *args, **kwargs):
+        OrderedDict.__init__(self, *args, **kwargs)
+        self._default_factory = default_factory
+
+    def __missing__(self, key):
+        value = self[key] = self._default_factory()
+        return value

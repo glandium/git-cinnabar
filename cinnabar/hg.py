@@ -10,6 +10,7 @@ from .githg import (
     RevChunk,
     ChangesetInfo,
     ManifestInfo,
+    NULL_NODE_ID,
 )
 from .bundle import create_bundle
 from binascii import unhexlify
@@ -19,7 +20,6 @@ from mercurial import (
     ui,
     util,
 )
-from collections import OrderedDict
 from itertools import (
     chain,
     izip,
@@ -36,6 +36,7 @@ from .git import (
     Git,
 )
 from .util import progress_iter
+from collections import defaultdict
 
 try:
     from mercurial.changegroup import cg1unpacker
@@ -181,21 +182,22 @@ class bundlerepo(object):
                 yield chunk
                 self._changeset_chunks.append(chunk)
 
-        heads = OrderedDict()
+        dag = gitdag()
+        branches = set()
         previous = None
         for chunk in iter_chunks(_iter_chunks(), ChangesetInfo):
             chunk.init(previous)
             previous = chunk
             extra = chunk.extra or {}
             branch = extra.get('branch', 'default')
-            for p in (chunk.parent1, chunk.parent2):
-                if p in heads and heads[p] == branch:
-                    del heads[p]
-            heads[chunk.node] = branch
-        self._heads = tuple(unhexlify(h) for h in heads)
-        self._branchmap = {}
-        for k, v in heads.iteritems():
-            self._branchmap.setdefault(v, []).append(unhexlify(k))
+            branches.add(branch)
+            dag.add(chunk.node, tuple(p for p in (chunk.parent1, chunk.parent2)
+                                      if p != NULL_NODE_ID), branch)
+        self._heads = tuple(reversed(
+            [unhexlify(h) for h in dag.all_heads(with_tags=False)]))
+        self._branchmap = defaultdict(list)
+        for tag, node in dag.all_heads():
+            self._branchmap[tag].append(unhexlify(node))
         self._tip = unhexlify(chunk.node)
 
     def heads(self):

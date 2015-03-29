@@ -6,6 +6,7 @@ from collections import (
     defaultdict
 )
 import unittest
+from .util import OrderedDefaultDict
 
 
 # TODO: this class sucks and is probably wrong
@@ -19,7 +20,7 @@ class gitdag(object):
                 else:
                     yield line[0], line[1].split(' ')
 
-        self._parents = defaultdict(set)
+        self._parents = OrderedDefaultDict(set)
         self._children = defaultdict(set)
         for node, parents in iter_revlist(revlist):
             self._parents[node] |= set(parents)
@@ -49,13 +50,18 @@ class gitdag(object):
                                for c in self._children[node])):
                     yield node
 
-    def all_heads(self):
-        for node in self._parents:
-            tag = self._tags.get(node)
-            if (node not in self._children
-                    or all(self._tags.get(c) != tag
-                           for c in self._children[node])):
-                yield tag, node
+    def all_heads(self, with_tags=True):
+        if with_tags:
+            for node in self._parents:
+                tag = self._tags.get(node)
+                if (node not in self._children
+                        or all(self._tags.get(c) != tag
+                               for c in self._children[node])):
+                    yield tag, node
+        else:
+            for node in self._parents:
+                if node not in self._children:
+                    yield node
 
     def tag_nodes_and_parents(self, nodes, tag):
         self._tag_nodes_and_other(self._parents, nodes, tag)
