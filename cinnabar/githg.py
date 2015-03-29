@@ -8,23 +8,19 @@ from itertools import chain
 from hashlib import sha1
 import re
 import urllib
-import threading
 from collections import (
     OrderedDict,
     defaultdict,
 )
 from .util import (
-    IOLogger,
     LazyString,
     one,
-    next,
 )
 from .git import (
     EmptyMark,
     FastImport,
     Git,
     Mark,
-    split_ls_tree,
     sha1path,
 )
 from .helper import GitHgHelper
@@ -46,11 +42,9 @@ class StreamHandler(logging.StreamHandler):
 
 logger = logging.getLogger()
 handler = StreamHandler()
-handler.setFormatter(logging.Formatter('\r%(timestamp).3f %(name)s %(message)s'))
+handler.setFormatter(logging.Formatter(
+    '\r%(timestamp).3f %(name)s %(message)s'))
 logger.addHandler(handler)
-
-#from guppy import hpy
-#hp = hpy()
 
 NULL_NODE_ID = '0' * 40
 
@@ -64,13 +58,12 @@ CHECK_MANIFESTS = False
 
 RE_GIT_AUTHOR = re.compile('^(?P<name>.*?) ?(?:\<(?P<email>.*?)\>)')
 
+
 def get_git_author(author):
     # check for git author pattern compliance
     a = RE_GIT_AUTHOR.match(author)
     cleanup = lambda x: x.replace('<', '').replace('>', '')
     if a:
-        name = cleanup(a.group('name'))
-        email = a.group('email')
         return '%s <%s>' % (cleanup(a.group('name')),
                             cleanup(a.group('email')))
     if '@' in author:
@@ -90,13 +83,14 @@ def get_hg_author(author):
 
 revchunk_log = logging.getLogger('revchunks')
 
+
 class RevChunk(object):
     def __init__(self, chunk_data):
-        self.node, self.parent1, self.parent2, self.changeset = (hexlify(h)
-            for h in struct.unpack('20s20s20s20s', chunk_data[:80]))
+        self.node, self.parent1, self.parent2, self.changeset = (
+            hexlify(h) for h in struct.unpack('20s20s20s20s', chunk_data[:80]))
         self._rev_data = chunk_data[80:]
-        revchunk_log.debug(LazyString(lambda: '%s %s %s %s' % (self.node,
-            self.parent1, self.parent2, self.changeset)))
+        revchunk_log.debug(LazyString(lambda: '%s %s %s %s' % (
+            self.node, self.parent1, self.parent2, self.changeset)))
         revchunk_log.debug(LazyString(lambda: repr(self._rev_data)))
 
     def __repr__(self):
@@ -105,7 +99,7 @@ class RevChunk(object):
     def init(self, previous_chunk):
         assert self.parent1 == NULL_NODE_ID or previous_chunk
         self.data = self.patch_data(previous_chunk.data if previous_chunk
-            else '', self._rev_data)
+                                    else '', self._rev_data)
 
     def patch_data(self, data, rev_patch):
         if not rev_patch:
@@ -228,12 +222,12 @@ class ManifestLine(object):
 
 
 def isplitmanifest(data):
-    start = 0
     for l in data.splitlines():
         null = l.find('\0')
         if null == -1:
             return
         yield ManifestLine(l[:null], l[null+1:null+41], l[null+41:])
+
 
 def findline(data, offset, first=0, last=-1):
     if last == -1:
@@ -247,7 +241,8 @@ def findline(data, offset, first=0, last=-1):
 
     ratio = (offset - first_start) / (last_start - first_start)
     maybe_line = int(ratio * (last - first) + first)
-    if offset >= data[maybe_line].offset and offset < data[maybe_line+1].offset:
+    if (offset >= data[maybe_line].offset and
+            offset < data[maybe_line+1].offset):
         return maybe_line
     if offset < data[maybe_line].offset:
         return findline(data, offset, first, maybe_line)
@@ -279,8 +274,10 @@ class ManifestInfo(RevChunk):
                 before = data[start:]
             after = before[:diff.start - start] + diff.text_data + \
                 before[diff.end - start:]
-            before_list.update({f.name: (f.node, f.attr) for f in isplitmanifest(before)})
-            after_list.update({f.name: (f.node, f.attr) for f in isplitmanifest(after)})
+            before_list.update({f.name: (f.node, f.attr)
+                                for f in isplitmanifest(before)})
+            after_list.update({f.name: (f.node, f.attr)
+                               for f in isplitmanifest(after)})
         new += data[end:]
         self.removed = set(before_list.keys()) - set(after_list.keys())
         self.modified = after_list
@@ -298,7 +295,7 @@ class ChangesetData(object):
     def parse(s):
         if isinstance(s, types.StringType):
             s = s.splitlines()
-        data = { k: v for k, v in (l.split(' ', 1) for l in s) }
+        data = {k: v for k, v in (l.split(' ', 1) for l in s)}
         if 'extra' in data:
             data['extra'] = ChangesetData.parse_extra(data['extra'])
         if 'files' in data:
@@ -331,6 +328,7 @@ class ChangesetData(object):
                 else:
                     yield k, data[k]
         return '\n'.join('%s %s' % s for s in serialize(data))
+
 
 class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
     def __init__(self, node):
@@ -424,9 +422,12 @@ class GitHgStore(object):
         self._changeset_data_cache = {}
 
         self.STORE = {
-            ChangesetInfo: (self._store_changeset, self.changeset, self._changesets, 'commit'),
-            ManifestInfo: (self._store_manifest, self.manifest, self._manifests, 'commit'),
-            GeneratedManifestInfo: (self._store_manifest, lambda x: None, self._manifests, 'commit'),
+            ChangesetInfo: (self._store_changeset, self.changeset,
+                            self._changesets, 'commit'),
+            ManifestInfo: (self._store_manifest, self.manifest,
+                           self._manifests, 'commit'),
+            GeneratedManifestInfo: (self._store_manifest, lambda x: None,
+                                    self._manifests, 'commit'),
             RevChunk: (self._store_file, self.file, self._files, 'blob'),
         }
 
@@ -437,7 +438,8 @@ class GitHgStore(object):
         # refs/remote-hg/head-* are the old-old heads for upgrade
         migrated = False
         for line in Git.for_each_ref('refs/notes/remote-hg/git2hg',
-                'refs/remote-hg', format='%(objectname) %(refname)'):
+                                     'refs/remote-hg',
+                                     format='%(objectname) %(refname)'):
             migrated = True
             sha1, head = line.split()
             logging.info('%s %s' % (sha1, head))
@@ -474,7 +476,7 @@ class GitHgStore(object):
 
         self._tagcache = {}
         self._tagfiles = {}
-        self._tags = { NULL_NODE_ID: {} }
+        self._tags = {NULL_NODE_ID: {}}
         # Delete old tagcache, which may contain wrong info if using any
         # version after 671823c.
         Git.delete_ref('refs/cinnabar/tagcache')
@@ -541,7 +543,8 @@ class GitHgStore(object):
     def heads(self, branches={}):
         if not isinstance(branches, (dict, set)):
             branches = set(branches)
-        return set(h for b, h in self._hgheads if not branches or b in branches)
+        return set(h for b, h in self._hgheads
+                   if not branches or b in branches)
 
     def _head_branch(self, head):
         branch = self.read_changeset_data(self.changeset_ref(head)) \
@@ -685,10 +688,11 @@ class GitHgStore(object):
             metadata['manifest'], '\n',
             author, '\n',
             date, ' ', str(utcoffset)
-        ],
-        [extra] if extra else [],
-        ['\n', '\n'.join(metadata['files'])] if metadata.get('files') else [],
-        ['\n\n'], message))
+            ],
+            [extra] if extra else [],
+            ['\n', '\n'.join(metadata['files'])]
+            if metadata.get('files') else [],
+            ['\n\n'], message))
 
         if 'patch' in metadata:
             new = ''
@@ -724,15 +728,15 @@ class GitHgStore(object):
 
     def manifest_ref(self, sha1, hg2git=True, create=False):
         return self._git_object(self._manifests, 'commit', sha1, hg2git=hg2git,
-            create=create)
+                                create=create)
 
     def changeset_ref(self, sha1, hg2git=True, create=False):
-        return self._git_object(self._changesets, 'commit', sha1, hg2git=hg2git,
-            create=create)
+        return self._git_object(self._changesets, 'commit', sha1,
+                                hg2git=hg2git, create=create)
 
     def file_ref(self, sha1, hg2git=True, create=False):
         return self._git_object(self._files, 'blob', sha1, hg2git=hg2git,
-            create=create)
+                                create=create)
 
     def file(self, sha1):
         ref = self._git_object(self._files, 'blob', sha1)
@@ -754,18 +758,20 @@ class GitHgStore(object):
     def store(self, instance):
         store_func, get_func, dic, typ = self.STORE[type(instance)]
         hg2git = False
-        if instance.parent1 == NULL_NODE_ID or isinstance(self._git_object(dic, typ,
-                instance.parent1, create=False), types.StringType):
-            if instance.parent2 == NULL_NODE_ID or isinstance(self._git_object(dic, typ,
-                    instance.parent2, create=False), types.StringType):
+        if instance.parent1 == NULL_NODE_ID or isinstance(self._git_object(
+                dic, typ, instance.parent1, create=False), types.StringType):
+            if instance.parent2 == NULL_NODE_ID or isinstance(self._git_object(
+                    dic, typ, instance.parent2, create=False),
+                    types.StringType):
                 hg2git = True
 
         result = self._git_object(dic, typ, instance.node, hg2git=hg2git)
-        logging.info(LazyString(lambda: "store %s %s %s" % (instance.node, instance.previous_node,
-            result)))
+        logging.info(LazyString(lambda: "store %s %s %s" % (instance.node,
+                                instance.previous_node, result)))
         check = CHECK_ALL_NODE_IDS
         if instance.previous_node != NULL_NODE_ID:
-            if self._previously_stored and instance.previous_node == self._previously_stored.node:
+            if (self._previously_stored and
+                    instance.previous_node == self._previously_stored.node):
                 previous = self._previously_stored
             else:
                 previous = get_func(instance.previous_node)
@@ -778,7 +784,7 @@ class GitHgStore(object):
                 'sha1 mismatch for node %s with parents %s %s and '
                 'previous %s' %
                 (instance.node, instance.parent1, instance.parent2,
-                instance.previous_node)
+                 instance.previous_node)
             )
         if isinstance(result, EmptyMark):
             result = Mark(result)
@@ -899,7 +905,7 @@ class GitHgStore(object):
                 node = str(node)
                 commit.filemodify('hg/%s' % name, node, typ='commit')
                 commit.filemodify('git/%s' % name,
-                    self.git_file_ref(node), typ=self.TYPE[attr])
+                                  self.git_file_ref(node), typ=self.TYPE[attr])
 
         self._manifests[instance.node] = Mark(mark)
         if CHECK_MANIFESTS:
@@ -929,13 +935,13 @@ class GitHgStore(object):
                 h.update(s)
                 return h.hexdigest()
 
-            #TODO: also check git/ tree
+            # TODO: also check git/ tree
             if tree_sha1(tree) != expected_tree:
                 raise Exception(
                     'sha1 mismatch for node %s with parents %s %s and '
                     'previous %s' %
                     (instance.node, instance.parent1, instance.parent2,
-                    instance.previous_node)
+                     instance.previous_node)
                 )
 
     def _store_file(self, instance, mark):
@@ -965,15 +971,15 @@ class GitHgStore(object):
                 (self._files, 'regular'),
                 (self._manifests, 'commit'),
                 (self._changesets, 'commit'),
-            ):
-                for node, mark in dic.iteritems():
-                    if isinstance(mark, types.StringType):
-                        continue
-                    if isinstance(mark, EmptyMark):
-                        raise TypeError(node)
-                    if mark in self._tagcache:
-                        changeset_by_mark[mark] = node
-                    hg2git_files.append((sha1path(node), mark, typ))
+                ):
+            for node, mark in dic.iteritems():
+                if isinstance(mark, types.StringType):
+                    continue
+                if isinstance(mark, EmptyMark):
+                    raise TypeError(node)
+                if mark in self._tagcache:
+                    changeset_by_mark[mark] = node
+                hg2git_files.append((sha1path(node), mark, typ))
         if hg2git_files:
             with self._fast_import.commit(
                 ref='refs/cinnabar/hg2git',
@@ -1032,14 +1038,14 @@ class GitHgStore(object):
         created = {}
         for f in self._tagcache_items:
             if (f not in self._tagcache and f not in self._tagfiles
-                or f not in files and f in self._tagfiles):
+                    or f not in files and f in self._tagfiles):
                 deleted.add(f)
 
         def tagset_lines(tags):
             for tag, value in tags:
                 nodes = (resolve_commit(n) for n in tags.hist(tag))
                 yield '%s\0%s %s\n' % (tag, resolve_commit(value),
-                                      ' '.join(sorted(nodes)))
+                                       ' '.join(sorted(nodes)))
 
         if not self.__fast_import:
             self.init_fast_import(lambda: FastImport())
@@ -1076,7 +1082,7 @@ class GitHgStore(object):
                 for f in deleted:
                     commit.filedelete(f)
 
-                for f, (sha1, typ) in created.iteritems():
-                    commit.filemodify(f, sha1, typ)
+                for f, (filesha1, typ) in created.iteritems():
+                    commit.filemodify(f, filesha1, typ)
 
         self._close_fast_import()

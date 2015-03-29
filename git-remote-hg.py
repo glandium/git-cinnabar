@@ -7,7 +7,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
 from cinnabar.githg import (
     GitHgStore,
-    IOLogger,
     LazyString,
 )
 from cinnabar.hg import (
@@ -34,6 +33,7 @@ from cinnabar.git import (
     FastImport,
     Git,
 )
+from cinnabar.util import IOLogger
 import cinnabar.util
 
 
