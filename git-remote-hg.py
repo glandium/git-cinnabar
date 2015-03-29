@@ -119,7 +119,8 @@ def main(args):
         else:
             sys.stderr.write(
                 'Use the following command to clone:\n'
-                '  git -c core.ignorecase=false clone%(args)s hg::%(url)s %(dir)s\n'
+                '  git -c core.ignorecase=false clone%(args)s hg::%(url)s '
+                '%(dir)s\n'
                 % {
                     'dir': git_work_tree,
                     'url': url,
@@ -142,7 +143,7 @@ def main(args):
     store = GitHgStore()
     logger.info(LazyString(lambda: '%s' % store.heads()))
     helper = IOLogger(logging.getLogger('remote-helper'),
-        sys.stdin, sys.stdout)
+                      sys.stdin, sys.stdout)
     branchmap = None
     bookmarks = {}
     HEAD = 'branches/default/tip'
@@ -159,8 +160,10 @@ def main(args):
                 'import\n'
                 'bidi-import\n'
                 'push\n'
-                'refspec refs/heads/branches/*:refs/cinnabar/refs/heads/branches/*\n'
-                'refspec refs/heads/bookmarks/*:refs/cinnabar/refs/heads/bookmarks/*\n'
+                'refspec refs/heads/branches/*:'
+                'refs/cinnabar/refs/heads/branches/*\n'
+                'refspec refs/heads/bookmarks/*:'
+                'refs/cinnabar/refs/heads/bookmarks/*\n'
                 'refspec HEAD:refs/cinnabar/HEAD\n'
                 '\n'
             )
@@ -245,8 +248,7 @@ def main(args):
             helper.flush()
         elif cmd == 'import':
             try:
-                reflog = os.path.join(git_dir, 'logs', 'refs',
-                    'cinnabar')
+                reflog = os.path.join(git_dir, 'logs', 'refs', 'cinnabar')
                 mkpath(reflog)
                 open(os.path.join(reflog, 'hg2git'), 'a').close()
                 open(os.path.join(reflog, 'manifest'), 'a').close()
@@ -299,9 +301,9 @@ def main(args):
                                stderr=open(os.devnull, 'wb')))
 
                 refs_orig = {}
-                for line in Git.for_each_ref('refs/cinnabar/refs/heads',
-                                             'refs/cinnabar/HEAD',
-                                             format='%(objectname) %(refname)'):
+                for line in Git.for_each_ref(
+                        'refs/cinnabar/refs/heads', 'refs/cinnabar/HEAD',
+                        format='%(objectname) %(refname)'):
                     sha1, ref = line.split(' ', 1)
                     refs_orig[ref] = sha1
             except:
@@ -340,11 +342,12 @@ def main(args):
                         '  git config %(conf)s true\n'
                         'or\n'
                         '  git config fetch.prune true\n'
-                        % { 'conf': prune }
+                        % {'conf': prune}
                     )
 
             if store.tag_changes:
-                sys.stderr.write('\nRun the following command to update remote tags:\n')
+                sys.stderr.write(
+                    '\nRun the following command to update remote tags:\n')
                 if not remote.startswith('hg::'):
                     sys.stderr.write('  git remote update %s\n' % remote)
                 else:
@@ -375,13 +378,14 @@ def main(args):
             if isinstance(repo, bundlerepo):
                 for source, (dest, force) in pushes.iteritems():
                     helper.write('error %s Cannot push to a bundle file\n'
-                                 % (dest, error))
+                                 % dest)
                 helper.write('\n')
                 helper.flush()
             else:
                 repo_heads = branchmap.heads()
                 PushStore.adopt(store)
-                pushed = push(repo, store, pushes, repo_heads, branchmap.names())
+                pushed = push(repo, store, pushes, repo_heads,
+                              branchmap.names())
 
                 status = {}
                 for source, (dest, _) in pushes.iteritems():
@@ -412,7 +416,8 @@ def main(args):
                     elif status[dest]:
                         helper.write('error %s %s\n' % (dest, status[dest]))
                     else:
-                        helper.write('error %s nothing changed on remote\n' % dest)
+                        helper.write('error %s nothing changed on remote\n'
+                                     % dest)
                 helper.write('\n')
                 helper.flush()
 
