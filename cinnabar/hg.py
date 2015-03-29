@@ -182,7 +182,7 @@ class bundlerepo(object):
                 yield chunk
                 self._changeset_chunks.append(chunk)
 
-        dag = gitdag()
+        self._dag = gitdag()
         branches = set()
         previous = None
         for chunk in iter_chunks(_iter_chunks(), ChangesetInfo):
@@ -191,12 +191,13 @@ class bundlerepo(object):
             extra = chunk.extra or {}
             branch = extra.get('branch', 'default')
             branches.add(branch)
-            dag.add(chunk.node, tuple(p for p in (chunk.parent1, chunk.parent2)
-                                      if p != NULL_NODE_ID), branch)
+            self._dag.add(chunk.node,
+                          tuple(p for p in (chunk.parent1, chunk.parent2)
+                                if p != NULL_NODE_ID), branch)
         self._heads = tuple(reversed(
-            [unhexlify(h) for h in dag.all_heads(with_tags=False)]))
+            [unhexlify(h) for h in self._dag.all_heads(with_tags=False)]))
         self._branchmap = defaultdict(list)
-        for tag, node in dag.all_heads():
+        for tag, node in self._dag.all_heads():
             self._branchmap[tag].append(unhexlify(node))
         self._tip = unhexlify(chunk.node)
 
@@ -211,6 +212,9 @@ class bundlerepo(object):
 
     def listkeys(self, namespace):
         return {}
+
+    def known(self, heads):
+        return [h in self._dag for h in heads]
 
 
 def getbundle(repo, store, heads, branchmap):

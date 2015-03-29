@@ -93,6 +93,9 @@ class gitdag(object):
     def __len__(self):
         return len(self._parents)
 
+    def __contains__(self, node):
+        return node in self._parents
+
     def tags(self):
         return set(self._tags.itervalues())
 
