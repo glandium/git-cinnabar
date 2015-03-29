@@ -288,8 +288,8 @@ class PushStore(GitHgStore):
         for file in self._push_files.itervalues():
             if isinstance(self._files[file.node], Mark):
                 mark = self._fast_import.new_mark()
-                self._fast_import.put_blob(data=data, mark=mark)
-                self._files[node] = Mark(mark)
+                self._fast_import.put_blob(data=file.data, mark=mark)
+                self._files[file.node] = Mark(mark)
 
         super(PushStore, self).close()
 
