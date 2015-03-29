@@ -5,7 +5,7 @@ import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
-from githg import (
+from cinnabar.githg import (
     GitHgStore,
     IOLogger,
     LazyString,
@@ -15,7 +15,7 @@ from githg import (
     ManifestInfo,
     NULL_NODE_ID,
 )
-from githg.bundle import (
+from cinnabar.bundle import (
     create_bundle,
     PushStore,
 )
@@ -43,13 +43,13 @@ import logging
 import random
 import subprocess
 from distutils.dir_util import mkpath
-from githg.dag import gitdag
-from git import (
+from cinnabar.dag import gitdag
+from cinnabar.git import (
     FastImport,
     Git,
 )
-from git.util import progress_iter
-import git.util
+from cinnabar.util import progress_iter
+import cinnabar.util
 import time
 
 try:
@@ -527,10 +527,10 @@ def main(args):
             name, value = args
             if name == 'progress':
                 if value == 'true':
-                    git.util.progress = True
+                    cinnabar.util.progress = True
                     helper.write('ok\n')
                 elif value == 'false':
-                    git.util.progress = False
+                    cinnabar.util.progress = False
                     helper.write('ok\n')
                 else:
                     helper.write('unsupported\n')

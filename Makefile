@@ -3,12 +3,13 @@ PYTHON_SCRIPTS := \
 	git-cinnabar.py \
 
 PYTHON_LIBS := \
-	githg/__init__.py \
-	githg/bundle.py \
-	githg/dag.py \
-	githg/helper.py \
-	git/__init__.py \
-	git/util.py
+	cinnabar/__init__.py \
+	cinnabar/githg.py \
+	cinnabar/bundle.py \
+	cinnabar/dag.py \
+	cinnabar/helper.py \
+	cinnabar/git.py \
+	cinnabar/util.py
 
 ifneq (,$(wildcard $(CURDIR)/git-core/Makefile))
 all:

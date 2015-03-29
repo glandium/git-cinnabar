@@ -2,13 +2,13 @@ import atexit
 import os
 import re
 import subprocess
-from git import (
+from .git import (
     Git,
     GitProcess,
     Mark,
     sha1path,
 )
-from git.util import (
+from .util import (
     one,
     next,
 )
@@ -54,7 +54,7 @@ class GitHgHelper(object):
     def _read_file(self, expected_typ, stdout):
         hg_sha1 = stdout.read(41)
         if hg_sha1[-1] == '\n':
-            from . import NULL_NODE_ID
+            from githg import NULL_NODE_ID
             assert hg_sha1[:40] == NULL_NODE_ID
             return None
         typ, size = stdout.readline().split()
@@ -109,14 +109,14 @@ class GitHgHelper(object):
             else:
                 ls = one(Git.ls_tree('refs/cinnabar/hg2git', sha1path(hg_sha1)))
             if not ls:
-                from . import NULL_NODE_ID
+                from githg import NULL_NODE_ID
                 return NULL_NODE_ID
             mode, typ, gitsha1, path = ls
             return gitsha1
 
     @classmethod
     def _manifest(self, hg_sha1, git_sha1):
-        from . import ManifestLine, GitHgStore
+        from githg import ManifestLine, GitHgStore
         # TODO: Improve this horrible mess
         attrs = {}
         if self._last_manifest:

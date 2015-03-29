@@ -1,4 +1,4 @@
-from . import (
+from githg import (
     GitHgStore,
     GeneratedFileRev,
     GeneratedManifestInfo,
@@ -8,11 +8,11 @@ from . import (
     EMPTY_TREE,
 )
 from .helper import GitHgHelper
-from git import (
+from .git import (
     Git,
     Mark,
 )
-from git.util import (
+from .util import (
     next,
     one,
     LazyString,

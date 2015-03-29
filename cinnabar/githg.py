@@ -13,13 +13,13 @@ from collections import (
     OrderedDict,
     defaultdict,
 )
-from git.util import (
+from .util import (
     IOLogger,
     LazyString,
     one,
     next,
 )
-from git import (
+from .git import (
     EmptyMark,
     FastImport,
     Git,

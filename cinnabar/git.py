@@ -6,7 +6,7 @@ import os
 import subprocess
 import time
 import types
-from util import (
+from .util import (
     IOLogger,
     LazyString,
     one,

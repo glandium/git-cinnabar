@@ -5,7 +5,7 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
 import argparse
-from githg import (
+from cinnabar.githg import (
     ChangesetData,
     GitHgStore,
     EMPTY_TREE,
@@ -13,22 +13,22 @@ from githg import (
     split_ls_tree,
     one,
 )
-from githg.dag import gitdag
-from git import (
+from cinnabar.dag import gitdag
+from cinnabar.git import (
     FastImport,
     Git,
     Mark,
     sha1path,
 )
-from git.util import (
+from cinnabar.util import (
     LazyString,
     progress_iter,
 )
-from githg.helper import (
+from cinnabar.helper import (
     GitHgHelper,
     NoHelperException,
 )
-from githg.bundle import get_changes
+from cinnabar.bundle import get_changes
 from collections import (
     defaultdict,
     OrderedDict,
