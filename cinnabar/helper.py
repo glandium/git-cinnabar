@@ -107,7 +107,8 @@ class GitHgHelper(object):
                     return matches[0]
                 ls = None
             else:
-                ls = one(Git.ls_tree('refs/cinnabar/hg2git', sha1path(hg_sha1)))
+                ls = one(Git.ls_tree('refs/cinnabar/hg2git',
+                                     sha1path(hg_sha1)))
             if not ls:
                 from githg import NULL_NODE_ID
                 return NULL_NODE_ID
@@ -142,7 +143,7 @@ class GitHgHelper(object):
                         assert status == 'A'
                         created[path] = (sha1_after, attrs.get(path))
             for path, attr in attrs.iteritems():
-                if not path in modified:
+                if path not in modified:
                     modified[path] = (None, attr)
             iter_created = created.iteritems()
             next_created = next(iter_created)
