@@ -12,21 +12,14 @@ from cinnabar.githg import (
 from cinnabar.hg import (
     bundlerepo,
     getbundle,
+    get_repo,
     push,
 )
 from cinnabar.bundle import (
     PushStore,
 )
 from binascii import hexlify
-from mercurial import (
-    hg,
-    ui,
-)
 from itertools import chain
-from urlparse import (
-    urlparse,
-    urlunparse,
-)
 import logging
 from distutils.dir_util import mkpath
 from cinnabar.git import (
@@ -128,18 +121,7 @@ def main(args):
                 }
             )
         return 1
-    parsed_url = urlparse(url)
-    logger.info(parsed_url)
-    if not parsed_url.scheme:
-        url = urlunparse(('file', '', parsed_url.path, '', '', ''))
-    ui_ = ui.ui()
-    ui_.fout = ui_.ferr
-    if (not parsed_url.scheme or parsed_url.scheme == 'file') and \
-            not os.path.isdir(parsed_url.path):
-        repo = bundlerepo(parsed_url.path)
-    else:
-        repo = hg.peer(ui_, {}, url)
-        assert repo.capable('getbundle')
+    repo = get_repo(url)
     store = GitHgStore()
     logger.info(LazyString(lambda: '%s' % store.heads()))
     helper = IOLogger(logging.getLogger('remote-helper'),

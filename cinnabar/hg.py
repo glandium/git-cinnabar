@@ -15,12 +15,18 @@ from .bundle import create_bundle
 from binascii import unhexlify
 from mercurial import (
     changegroup,
+    hg,
+    ui,
     util,
 )
 from collections import OrderedDict
 from itertools import (
     chain,
     izip,
+)
+from urlparse import (
+    urlparse,
+    urlunparse,
 )
 import logging
 import random
@@ -313,3 +319,18 @@ def push(repo, store, what, repo_heads, repo_branches):
             repo.local().ui.setconfig('server', 'validate', True)
         pushed = repo.unbundle(cg, repo_heads, '') != 0
     return gitdag(push_commits) if pushed else ()
+
+
+def get_repo(url):
+    parsed_url = urlparse(url)
+    if not parsed_url.scheme:
+        url = urlunparse(('file', '', parsed_url.path, '', '', ''))
+    ui_ = ui.ui()
+    ui_.fout = ui_.ferr
+    if (not parsed_url.scheme or parsed_url.scheme == 'file') and \
+            not os.path.isdir(parsed_url.path):
+        return bundlerepo(parsed_url.path)
+    else:
+        repo = hg.peer(ui_, {}, url)
+        assert repo.capable('getbundle')
+        return repo
