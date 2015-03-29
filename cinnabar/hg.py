@@ -172,12 +172,18 @@ def findcommon(repo, store, hgheads):
 class bundlerepo(object):
     def __init__(self, path):
         self._bundle = readbundle(open(path, 'r'))
-        self._changeset_chunks = list(progress_iter(
-            'Reading %d changesets', chunks_in_changegroup(self._bundle)))
+        self._changeset_chunks = []
+
+        def _iter_chunks():
+            for chunk in progress_iter(
+                    'Reading %d changesets',
+                    chunks_in_changegroup(self._bundle)):
+                yield chunk
+                self._changeset_chunks.append(chunk)
 
         heads = OrderedDict()
         previous = None
-        for chunk in iter_chunks(self._changeset_chunks, ChangesetInfo):
+        for chunk in iter_chunks(_iter_chunks(), ChangesetInfo):
             chunk.init(previous)
             previous = chunk
             extra = chunk.extra or {}
