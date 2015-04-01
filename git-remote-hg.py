@@ -420,15 +420,15 @@ def main(args):
                             for d in drafts:
                                 c = store.changeset_ref(d)
                                 if c:
-                                    yield '^%s^@\n' % c
+                                    yield '^%s^@' % c
                             for h in pushed.heads():
-                                yield '%s\n' % h
+                                yield h
 
                         args = ['rev-list', '--ancestry-path', '--topo-order',
                                 '--stdin']
 
                         pushed_drafts = tuple(
-                            Git.iter(*args, stdin=draft_commits))
+                            Git.iter(*args, stdin=draft_commits()))
 
                         # Theoretically, we could have commits with no
                         # metadata that the remote declares are public, while

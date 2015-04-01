@@ -118,12 +118,12 @@ def findcommon(repo, store, hgheads):
 
     def revs():
         for h in git_known:
-            yield '^%s\n' % h
+            yield '^%s' % h
         for h in git_heads:
             if h not in git_known:
-                yield '%s\n' % h
+                yield h
 
-    dag = gitdag(chain(Git.iter(*args, stdin=revs), git_known))
+    dag = gitdag(chain(Git.iter(*args, stdin=revs()), git_known))
     dag.tag_nodes_and_parents(git_known, 'known')
 
     def log_dag(tag):
@@ -293,12 +293,12 @@ def push(repo, store, what, repo_heads, repo_branches):
 
     def heads():
         for sha1 in store.heads(repo_branches):
-            yield '^%s\n' % store.changeset_ref(sha1)
+            yield '^%s' % store.changeset_ref(sha1)
 
     def local_bases():
         for c in Git.iter('rev-list', '--stdin', '--topo-order',
                           '--full-history', '--boundary',
-                          *(w for w in what if w), stdin=heads):
+                          *(w for w in what if w), stdin=heads()):
             if c[0] != '-':
                 continue
             yield store.hg_changeset(c[1:])
@@ -313,11 +313,11 @@ def push(repo, store, what, repo_heads, repo_branches):
 
     def revs():
         for sha1 in common:
-            yield '^%s\n' % store.changeset_ref(sha1)
+            yield '^%s' % store.changeset_ref(sha1)
 
     push_commits = list(Git.iter('rev-list', '--stdin', '--topo-order',
                                  '--full-history', '--parents', '--reverse',
-                                 *(w for w in what if w), stdin=revs))
+                                 *(w for w in what if w), stdin=revs()))
 
     pushed = False
     if push_commits:

@@ -93,7 +93,7 @@ def fsck(args):
 
         all_git_commits = Git.iter(
             'log', '--no-walk=unsorted', '--stdin', '--format=%T %H',
-            stdin=''.join('%s\n' % c for c in commits))
+            stdin=commits)
     else:
         all_hg2git = {
             path.replace('/', ''): (filesha1, intern(typ))
@@ -114,10 +114,8 @@ def fsck(args):
                      '--topo-order', 'refs/cinnabar/manifest'))
         )
 
-        def all_git_heads():
-            for ref in Git.for_each_ref('refs/cinnabar/branches',
-                                        format='%(refname)'):
-                yield ref + '\n'
+        all_git_heads = Git.for_each_ref('refs/cinnabar/branches',
+                                         format='%(refname)')
 
         all_git_commits = Git.iter('log', '--topo-order', '--full-history',
                                    '--reverse', '--stdin', '--format=%T %H',

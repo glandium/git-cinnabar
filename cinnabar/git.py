@@ -5,7 +5,8 @@ import logging
 import os
 import subprocess
 import time
-import types
+from types import StringType
+from collections import Iterable
 from .util import (
     IOLogger,
     LazyString,
@@ -37,7 +38,7 @@ class GitProcess(object):
         stdin = kwargs.get('stdin', None)
         stdout = kwargs.get('stdout', subprocess.PIPE)
         stderr = kwargs.get('stderr', None)
-        if isinstance(stdin, types.StringType) or callable(stdin):
+        if isinstance(stdin, (StringType, Iterable)):
             proc_stdin = subprocess.PIPE
         else:
             proc_stdin = stdin
@@ -63,11 +64,11 @@ class GitProcess(object):
         )))
 
         if proc_stdin == subprocess.PIPE:
-            if isinstance(stdin, types.StringType):
+            if isinstance(stdin, StringType):
                 self._stdin.write(stdin)
-            elif callable(stdin):
-                for line in stdin():
-                    self._stdin.write(line)
+            elif isinstance(stdin, Iterable):
+                for line in stdin:
+                    self._stdin.write('%s\n' % line)
             if proc_stdin != stdin:
                 self._proc.stdin.close()
 
