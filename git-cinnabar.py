@@ -350,21 +350,22 @@ def fsck(args):
              'Please report any corruption that fsck would detect after a\n'
              'reclone.')
 
-    info('Checking head references...')
-    computed_heads = defaultdict(set)
-    for branch, head in dag.all_heads():
-        computed_heads[branch].add(head)
+    if not args.commit:
+        info('Checking head references...')
+        computed_heads = defaultdict(set)
+        for branch, head in dag.all_heads():
+            computed_heads[branch].add(head)
 
-    for branch in sorted(dag.tags()):
-        stored_heads = store.heads({branch})
-        for head in computed_heads[branch] - stored_heads:
-            fix('Adding missing head %s in branch %s' %
-                (head, branch))
-            store.add_head(head)
-        for head in stored_heads - computed_heads[branch]:
-            fix('Removing non-head reference to %s in branch %s' %
-                (head, branch))
-            store._hgheads.remove((branch, head))
+        for branch in sorted(dag.tags()):
+            stored_heads = store.heads({branch})
+            for head in computed_heads[branch] - stored_heads:
+                fix('Adding missing head %s in branch %s' %
+                    (head, branch))
+                store.add_head(head)
+            for head in stored_heads - computed_heads[branch]:
+                fix('Removing non-head reference to %s in branch %s' %
+                    (head, branch))
+                store._hgheads.remove((branch, head))
 
     store.close()
 
