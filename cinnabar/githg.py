@@ -832,12 +832,19 @@ class GitHgStore(object):
             if committer[-1] == '>':
                 committer = committer, author[1], author[2]
             else:
-                committer = committer.rsplit(' ', 2)
-                committer = self._git_committer(*committer)
-                extra = dict(instance.extra)
-                del extra['committer']
-                if not extra:
-                    extra = None
+                committer_info = committer.rsplit(' ', 2)
+                # If the committer tz is in the form +xxxx or -0yyy, it is
+                # obviously in git format, not in mercurial format.
+                # TODO: handle -1yyy timezones.
+                if committer_info[2].startswith(('+', '-0')):
+                    committer = self.hg_author_info(committer)
+                    committer = self._git_committer(*committer)
+                else:
+                    committer = self._git_committer(*committer_info)
+                    extra = dict(instance.extra)
+                    del extra['committer']
+                    if not extra:
+                        extra = None
         else:
             committer = author
         with self._fast_import.commit(

@@ -150,8 +150,9 @@ def fsck(args):
             if 'committer' in extra:
                 committer_info = store.hg_author_info(header['committer'])
                 committer = '%s %d %d' % committer_info
-                if committer != extra['committer'] and \
-                        committer_info[0] != extra['committer']:
+                if (committer != extra['committer'] and
+                        header['committer'] != extra['committer'] and
+                        committer_info[0] != extra['committer']):
                     report('Committer mismatch between commit and metadata for'
                            ' changeset %s' % changeset)
                 if committer == extra['committer']:
