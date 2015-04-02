@@ -644,6 +644,7 @@ class GitHgStore(object):
 
     def hg_author_info(self, author_line):
         author, date, utcoffset = author_line.rsplit(' ', 2)
+        date = int(date)
         utcoffset = int(utcoffset)
         sign = -cmp(utcoffset, 0)
         utcoffset = abs(utcoffset)
@@ -681,13 +682,13 @@ class GitHgStore(object):
             if not extra or 'committer' not in extra:
                 extra = dict(extra) if extra else {}
                 committer = self.hg_author_info(commitdata['committer'])
-                extra['committer'] = '%s %s %d' % committer
+                extra['committer'] = '%s %d %d' % committer
         if extra is not None:
             extra = ' ' + ChangesetData.dump_extra(extra)
         changeset = ''.join(chain([
             metadata['manifest'], '\n',
             author, '\n',
-            date, ' ', str(utcoffset)
+            str(date), ' ', str(utcoffset)
             ],
             [extra] if extra else [],
             ['\n', '\n'.join(metadata['files'])]

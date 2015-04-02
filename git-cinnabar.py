@@ -149,7 +149,7 @@ def fsck(args):
             header = dict(l.split(' ', 1) for l in header.splitlines())
             if 'committer' in extra:
                 committer_info = store.hg_author_info(header['committer'])
-                committer = '%s %s %d' % committer_info
+                committer = '%s %d %d' % committer_info
                 if committer != extra['committer'] and \
                         committer_info[0] != extra['committer']:
                     report('Committer mismatch between commit and metadata for'

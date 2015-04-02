@@ -210,7 +210,7 @@ class PushStore(GitHgStore):
         extra = {}
         if header_data['author'] != header_data['committer']:
             committer = self.hg_author_info(header_data['committer'])
-            extra['committer'] = '%s %s %d' % committer
+            extra['committer'] = '%s %d %d' % committer
 
         if branch:
             extra['branch'] = branch
