@@ -240,13 +240,14 @@ class Git(object):
             if recursive:
                 args.insert(0, '-r')
             if detect_copy:
-                args[:0] = ['-C100']
+                args[:0] = ['-C100%']
             self._diff_tree[key] = GitProcess('diff-tree', *args,
                                               stdin=subprocess.PIPE)
         diff_tree = self._diff_tree[key]
         diff_tree.stdin.write('%s %s\n\n' % (treeish2, treeish1))
         line = diff_tree.stdout.readline(
             ).rstrip('\n')  # First line is a header
+
         while line:
             line = diff_tree.stdout.readline().rstrip('\n')
             if not line:
