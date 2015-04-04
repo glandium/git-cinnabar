@@ -118,11 +118,9 @@ class PushStore(GitHgStore):
                     path1, path2 = path.split('\t', 1)
                     if status == 'R':
                         removed.add(path1)
-                    if sha1_after == EMPTY_BLOB:
-                        modified[path2] = (sha1_after, self.ATTR[mode_after])
-                    else:
+                    if sha1_after != EMPTY_BLOB:
                         copies[path2] = path1
-                        created[path2] = (sha1_after, self.ATTR[mode_after])
+                    created[path2] = (sha1_after, self.ATTR[mode_after])
                 else:
                     assert status == 'A'
                     created[path] = (sha1_after, self.ATTR[mode_after])
