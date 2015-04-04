@@ -37,8 +37,10 @@ class GitHgHelper(object):
     @contextmanager
     def query(self, name, *args):
         if self._helper is False:
-            if os.path.exists(os.path.join(os.environ.get('GIT_EXEC_PATH', ''),
-                                           'git-cinnabar-helper')):
+            git_exec_path = os.environ.get('GIT_EXEC_PATH')
+            if (git_exec_path and not os.environ.get('GIT_CINNABAR_NO_HELPER')
+                    and os.path.exists(os.path.join(git_exec_path,
+                                                    'git-cinnabar-helper'))):
                 self._helper = GitProcess('cinnabar-helper',
                                           stdin=subprocess.PIPE)
             else:
