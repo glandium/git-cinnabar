@@ -15,6 +15,12 @@ from .util import (
 from binascii import hexlify
 
 
+def normalize_path(path):
+    if path[0] == '"' and path[-1] == '"':
+        path = path[1:-1].decode('string_escape')
+    return path
+
+
 def sha1path(sha1, depth=2):
     def parts():
         i = -1
@@ -185,10 +191,12 @@ class Git(object):
         if (not isinstance(treeish, Mark) and
                 treeish.startswith('refs/')):
             treeish = self.resolve_ref(treeish)
+        normalize = False
         if recursive:
             assert not isinstance(treeish, Mark)
             iterator = self.iter('ls-tree', '--full-tree', '-r', treeish,
                                  '--', path)
+            normalize = True
         elif isinstance(treeish, Mark) and self._fast_import:
             assert not path.endswith('/')
             ls = self._fast_import.ls(treeish, path)
@@ -227,9 +235,14 @@ class Git(object):
             return
         else:
             iterator = self.iter('ls-tree', '--full-tree', treeish, '--', path)
+            normalize = True
 
         for line in iterator:
-            yield split_ls_tree(line)
+            if normalize:
+                mode, typ, sha1, path = split_ls_tree(line)
+                yield mode, typ, sha1, normalize_path(path)
+            else:
+                yield split_ls_tree(line)
 
     @classmethod
     def diff_tree(self, treeish1, treeish2, path='', detect_copy=False,
@@ -255,6 +268,7 @@ class Git(object):
             (mode_before, mode_after, sha1_before, sha1_after,
              remainder) = line.split(' ', 4)
             status, path = remainder.split('\t', 1)
+            path = '\t'.join(normalize_path(p) for p in path.split('\t'))
             yield (mode_before[1:], mode_after, sha1_before, sha1_after,
                    status, path)
 
