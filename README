@@ -119,6 +119,9 @@ Limitations:
 
 At the moment, push is limited to non-merge commits.
 
+Pushing to a local mercurial repository (hg::/path) only works with
+mercurial 3.0 or later.
+
 There is no support for the following mercurial features:
 - obsolescence markers
 - phases
