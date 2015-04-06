@@ -78,7 +78,7 @@ def get_hg_author(author):
     email = a.group('email')
     if name and email:
         return author
-    return name or email
+    return name or '<%s>' % email
 
 
 revchunk_log = logging.getLogger('revchunks')
