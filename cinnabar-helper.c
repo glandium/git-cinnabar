@@ -295,6 +295,14 @@ static int get_manifest_tree(const unsigned char *git_sha1,
 	if (!tree)
 		return -1;
 
+	/* If the tree is empty, return an empty tree for both git
+	 * and hg. */
+	if (!tree->size) {
+		hashcpy(result->git, tree->object.sha1);
+		hashcpy(result->hg, tree->object.sha1);
+		return 0;
+	}
+
 	init_tree_desc(&desc, tree->buffer, tree->size);
 	/* The first entry in the manifest tree is the git subtree. */
 	if (!tree_entry(&desc, &entry))
