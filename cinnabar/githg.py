@@ -434,44 +434,13 @@ class GitHgStore(object):
         self._hgheads = set()
         self._refs_orig = {}
 
-        # Migrate refs from the old namespace.
-        # refs/remote-hg/head-* are the old-old heads for upgrade
-        migrated = False
-        for line in Git.for_each_ref('refs/notes/remote-hg/git2hg',
-                                     'refs/remote-hg',
-                                     format='%(objectname) %(refname)'):
-            migrated = True
-            sha1, head = line.split()
-            logging.info('%s %s' % (sha1, head))
-            Git.delete_ref(head)
-            if head.startswith('refs/remote-hg/branches/'):
-                branch, hghead = head[24:].split('/', 1)
-                if hghead != 'tip':
-                    Git.update_ref('refs/cinnabar/branches/%s/%s'
-                                   % (branch, hghead), sha1)
-            elif head.startswith('refs/remote-hg/head-'):
-                branch, hghead = self._head_branch(head[-40:])
-                Git.update_ref('refs/cinnabar/branches/%s/%s'
-                               % (branch, hghead), sha1)
-            elif head == 'refs/notes/remote-hg/git2hg':
-                Git.update_ref('refs/notes/cinnabar', sha1)
-            else:
-                Git.update_ref('refs/cinnabar/' + head[15:], sha1)
-        # Ensure the ref updates above are available after this point.
-        if migrated:
-            Git.close()
-
         for line in Git.for_each_ref('refs/cinnabar/branches',
                                      format='%(objectname) %(refname)'):
             sha1, head = line.split()
             logging.info('%s %s' % (sha1, head))
-            if head.startswith('refs/cinnabar/branches/'):
-                branch, hghead = head[23:].split('/', 1)
-                if hghead != 'tip':
-                    self._hgheads.add((branch, hghead))
-                    self._changesets[hghead] = sha1
-            else:
-                self._hgheads.add(self._head_branch(head[-40:]))
+            branch, hghead = head[23:].split('/', 1)
+            self._hgheads.add((branch, hghead))
+            self._changesets[hghead] = sha1
             self._refs_orig[head] = sha1
 
         self._tagcache = {}

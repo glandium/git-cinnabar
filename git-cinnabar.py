@@ -388,9 +388,7 @@ def main(args):
     elif cmd == 'fsck':
         return fsck(args)
     elif cmd == 'reclone':
-        for ref in Git.for_each_ref('refs/cinnabar', 'refs/remote-hg',
-                                    'refs/notes/cinnabar',
-                                    'refs/notes/remote-hg/git2hg',
+        for ref in Git.for_each_ref('refs/cinnabar', 'refs/notes/cinnabar',
                                     format='%(refname)'):
             Git.delete_ref(ref)
         Git.close()

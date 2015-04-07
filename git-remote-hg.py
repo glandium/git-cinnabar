@@ -44,7 +44,6 @@ class BranchMap(object):
         self._all_heads = tuple(hexlify(h) for h in reversed(remote_heads))
         self._tips = {}
         self._git_sha1s = {}
-        local_heads = store.heads()
         for branch, heads in remote_branchmap.iteritems():
             branch_heads = []
             for head in heads:
@@ -58,13 +57,6 @@ class BranchMap(object):
                     self._tips[branch] = head
                 assert head not in self._git_sha1s
                 self._git_sha1s[head] = sha1
-                if head not in local_heads:
-                    # When the local store still has old heads, it can
-                    # have some branch heads missing because they don't
-                    # appear in repo.heads() as they are not topological
-                    # heads. In that case, add the remote head "manually"
-                    # if we have it locally.
-                    store.add_head(head)
             # Use last head as tip if we didn't set one.
             if heads and branch not in self._tips:
                 self._tips[branch] = head
@@ -271,16 +263,6 @@ def main(args):
                 heads = wanted_refs.values()
                 if not heads:
                     heads = branchmap.heads()
-
-                # Older versions would create a symbolic ref for
-                # refs/remote-hg/HEAD. Newer versions don't, and
-                # Git.update_ref doesn't remove the symbolic ref, so it needs
-                # to be removed first.
-                # Since git symbolic-ref only throws an error when the ref is
-                # not symbolic, just try to remove the symbolic ref every time
-                # and ignore errors.
-                tuple(Git.iter('symbolic-ref', '-d', 'refs/remote-hg/HEAD',
-                               stderr=open(os.devnull, 'wb')))
 
                 refs_orig = {}
                 for line in Git.for_each_ref(
