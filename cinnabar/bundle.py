@@ -302,13 +302,15 @@ def create_bundle(store, commits):
         node = parents.pop(0)
         assert len(parents) <= 2
         changeset_data = store.read_changeset_data(node)
-        if changeset_data is None:
+        is_new = changeset_data is None
+        if is_new:
             store.create_hg_metadata(node, parents)
             changeset_data = store.read_changeset_data(node)
         changeset = changeset_data['changeset']
         hg_changeset = store.changeset(changeset, include_parents=True)
-        store.add_head(hg_changeset.node, hg_changeset.parent1,
-                       hg_changeset.parent2)
+        if is_new:
+            store.add_head(hg_changeset.node, hg_changeset.parent1,
+                           hg_changeset.parent2)
         if previous is None and hg_changeset.parent1 != NULL_NODE_ID:
             previous = store.changeset(hg_changeset.parent1)
         data = hg_changeset.serialize(previous)
