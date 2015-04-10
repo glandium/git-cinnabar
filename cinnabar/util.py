@@ -40,7 +40,7 @@ def progress_iter(fmt, iter):
                 sys.stderr.write(('\r' + fmt) % count)
                 t0 = t1
         yield item
-    if progress:
+    if progress and count:
         sys.stderr.write(('\r' + fmt + '\n') % count)
 
 
