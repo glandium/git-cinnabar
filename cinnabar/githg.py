@@ -965,12 +965,19 @@ class GitHgStore(object):
                 mark=self._fast_import.new_mark(),
             ) as commit:
                 for file in sorted(hg2git_files, key=lambda f: f[0]):
-                    commit.filemodify(*file)
+                    if file[1] is None:
+                        commit.filedelete(file[0])
+                    else:
+                        commit.filemodify(*file)
         del hg2git_files
 
         git2hg_marks = [mark for mark in self._changesets.itervalues()
-                        if not isinstance(mark, types.StringType)]
-        if git2hg_marks:
+                        if mark and not isinstance(mark, types.StringType)]
+        removed_git2hg = [
+            commit for commit, data in self._changeset_data_cache.iteritems()
+            if data is None
+        ]
+        if git2hg_marks or removed_git2hg:
             with self._fast_import.commit(
                 ref='refs/notes/cinnabar',
                 parents=(s for s in ('refs/notes/cinnabar^0',)
@@ -979,6 +986,10 @@ class GitHgStore(object):
                 for mark in git2hg_marks:
                     data = self._changeset_data_cache[str(mark)]
                     commit.notemodify(mark, ChangesetData.dump(data))
+                for c in removed_git2hg:
+                    # That's brute force, but meh.
+                    for l in range(0, 10):
+                        commit.filedelete(sha1path(c, l))
 
         refs = {}
         modified = set()

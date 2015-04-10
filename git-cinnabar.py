@@ -316,29 +316,23 @@ def fsck(args):
                 adjusted[obj] = Mark(mark)
 
     dangling = all_hg2git - seen_changesets - seen_manifests - seen_files
-    if dangling or adjusted:
-        with store._fast_import.commit(
-                ref='refs/cinnabar/hg2git',
-                parents=('refs/cinnabar/hg2git^0',)) as commit:
-            for obj in dangling:
-                fix('Removing dangling metadata for ' + obj)
-                commit.filedelete(sha1path(obj))
-            for obj, mark in progress_iter(
-                    'Updating hg2git for %d metadata commits',
-                    adjusted.iteritems()):
-                commit.filemodify(sha1path(seen_manifest_refs[obj]), mark,
-                                  typ='commit')
+    for obj in dangling:
+        fix('Removing dangling metadata for ' + obj)
+        # Theoretically, we should figure out if they are files, manifests
+        # or changesets and set the right variable accordingly, but in
+        # practice, it makes no difference. Reevaluate when GitHgStore.close
+        # is modified, though.
+        store._files[obj] = None
+
+    for obj, mark in progress_iter(
+            'Updating hg2git for %d metadata commits',
+            adjusted.iteritems()):
+        store._manifests[obj] = mark
 
     dangling = all_notes - seen_notes
-    if dangling:
-        with store._fast_import.commit(
-                ref='refs/notes/cinnabar',
-                parents=('refs/notes/cinnabar^0',)) as commit:
-            for c in dangling:
-                fix('Removing dangling note for commit ' + c)
-                # That's brute force, but meh.
-                for l in range(0, 10):
-                    commit.filedelete(sha1path(c, l))
+    for c in dangling:
+        fix('Removing dangling note for commit ' + c)
+        store._changeset_data_cache[c] = None
 
     if status['broken']:
         info('Your git-cinnabar repository appears to be corrupted. There\n'
