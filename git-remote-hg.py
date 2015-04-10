@@ -162,6 +162,8 @@ def main(args):
                 branchmap = branchmap.value
                 heads = heads.value
                 bookmarks = bookmarks.value
+                if heads == ['\0' * 20]:
+                    heads = []
             else:
                 while True:
                     branchmap = repo.branchmap()
