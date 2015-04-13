@@ -128,6 +128,7 @@ def main(args):
                       sys.stdin, sys.stdout)
     branchmap = None
     bookmarks = {}
+    unknown_heads = set()
     HEAD = 'branches/default/tip'
 
     while True:
@@ -178,13 +179,12 @@ def main(args):
                 bookmarks = repo.listkeys('bookmarks')
 
             branchmap = BranchMap(store, branchmap, heads)
-            unknowns = False
             for branch in sorted(branchmap.names()):
                 branch_tip = branchmap.tip(branch)
                 for head in sorted(branchmap.heads(branch)):
                     sha1 = branchmap.git_sha1(head)
                     if sha1 == '?':
-                        unknowns = True
+                        unknown_heads.add(head)
                     if head == branch_tip:
                         continue
                     helper.write('%s refs/heads/branches/%s/%s\n' % (
@@ -203,7 +203,7 @@ def main(args):
                     '%s refs/heads/bookmarks/%s\n'
                     % (ref if ref else '?', name)
                 )
-            if not unknowns:
+            if not unknown_heads:
                 for tag, ref in sorted(store.tags(branchmap.heads())):
                     helper.write('%s refs/tags/%s\n' % (ref, tag))
 
@@ -301,6 +301,17 @@ def main(args):
 
             try:
                 store.init_fast_import(FastImport(sys.stdin, sys.stdout))
+                # Mercurial can be an order of magnitude slower when creating
+                # a bundle when not giving topological heads, which some of
+                # the branch heads might not be.
+                # http://bz.selenic.com/show_bug.cgi?id=4595
+                # So, when we're pulling all branch heads, just ask for the
+                # topological heads instead.
+                # `heads` might contain known heads, if e.g. the remote has
+                # never been pulled from, but we happen to have some of its
+                # heads locally already.
+                if set(heads).issuperset(unknown_heads):
+                    heads = set(branchmap.heads()) & unknown_heads
                 getbundle(repo, store, heads, branchmap)
             except:
                 wanted_refs = {}
