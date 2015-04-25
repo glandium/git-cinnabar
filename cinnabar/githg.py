@@ -498,12 +498,19 @@ class GitHgStore(object):
 
         self.tag_changes = False
 
-    def prepare_graft(self, graft_only=False):
+    def prepare_graft(self, refs=[], graft_only=False):
         self._early_history = set()
         self._graft_only = graft_only
+        if refs:
+            refs = list(Git.for_each_ref(*(r.replace('*', '**') for r in refs),
+                                         format='%(refname)'))
+        else:
+            refs = ['--all']
+        if not refs:
+            return
         exclude = ('^%s' % h for h in self._changesets.itervalues())
-        for line in Git.iter('log', '--all', '--stdin', '--full-history',
-                             '--format=%T %H', stdin=exclude):
+        for line in Git.iter('log', '--stdin', '--full-history',
+                             '--format=%T %H', *refs, stdin=exclude):
             tree, node = line.split()
             self._graft_trees[tree].append(node)
 

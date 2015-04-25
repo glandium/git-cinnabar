@@ -270,7 +270,10 @@ def main(args):
 
             try:
                 if graft:
-                    store.prepare_graft(graft == 'only')
+                    graft_refs = Git.config('cinnabar.graft-refs') or []
+                    if graft_refs:
+                        graft_refs = graft_refs.split(',')
+                    store.prepare_graft(graft_refs, graft == 'only')
                 store.init_fast_import()
                 # Mercurial can be an order of magnitude slower when creating
                 # a bundle when not giving topological heads, which some of
