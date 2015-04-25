@@ -2,7 +2,16 @@ import logging
 import os
 import sys
 import time
+import unittest
 from collections import OrderedDict
+from difflib import (
+    Match,
+    SequenceMatcher,
+)
+from itertools import (
+    chain,
+    izip,
+)
 
 
 # Initialize logging from the GIT_CINNABAR_LOG environment variable
@@ -111,3 +120,100 @@ class OrderedDefaultDict(OrderedDict):
     def __missing__(self, key):
         value = self[key] = self._default_factory()
         return value
+
+
+def _iter_diff_blocks(a, b):
+    m = SequenceMatcher(a=a, b=b, autojunk=False).get_matching_blocks()
+    for start, end in izip(chain((Match(0, 0, 0),), m), m):
+        if start.a + start.size != end.a or start.b + start.size != end.b:
+            yield start.a + start.size, end.a, start.b + start.size, end.b
+
+
+def byte_diff(a, b):
+    '''Given two strings, returns the diff between them, at the byte level.
+
+    Yields start offset in a, end offset in a and replacement string for
+    each difference. Far from optimal results, but works well enough.'''
+    a = tuple(a.splitlines(True))
+    b = tuple(b.splitlines(True))
+    offset = 0
+    last = 0
+    for start_a, end_a, start_b, end_b in _iter_diff_blocks(a, b):
+        a2 = ''.join(a[start_a:end_a])
+        b2 = ''.join(b[start_b:end_b])
+        offset += sum(len(i) for i in a[last:start_a])
+        last = start_a
+        for start2_a, end2_a, start2_b, end2_b in _iter_diff_blocks(a2, b2):
+            yield offset + start2_a, offset + end2_a, b2[start2_b:end2_b]
+
+
+class TestByteDiff(unittest.TestCase):
+    TEST_STRING = (
+        'first line\n'
+        'second line\n'
+        'third line\n'
+        'fourth line\n'
+    )
+
+    def assertDiffEqual(self, a, b, diff):
+        result = tuple(byte_diff(a, b))
+        self.assertEqual(result, diff)
+
+    def test_equal(self):
+        self.assertDiffEqual(self.TEST_STRING, self.TEST_STRING, ())
+
+    def test_a(self):
+        for extra in ('fifth line\n', 'line with no ending',
+                      'more\nthan\none\nline'):
+            self.assertDiffEqual(
+                self.TEST_STRING,
+                self.TEST_STRING + extra,
+                ((len(self.TEST_STRING), len(self.TEST_STRING), extra),)
+            )
+
+            self.assertDiffEqual(
+                self.TEST_STRING + extra,
+                self.TEST_STRING,
+                ((len(self.TEST_STRING), len(self.TEST_STRING + extra), ''),)
+            )
+
+    def test_b(self):
+        for extra in ('zeroth line\n', 'more\nthan\none\nline\n'):
+            self.assertDiffEqual(
+                self.TEST_STRING,
+                extra + self.TEST_STRING,
+                ((0, 0, extra),)
+            )
+
+            self.assertDiffEqual(
+                extra + self.TEST_STRING,
+                self.TEST_STRING,
+                ((0, len(extra), ''),)
+            )
+
+    def test_c(self):
+        extra = 'extra\nstuff'
+        extra2 = '\nother\nextra\n'
+        self.assertDiffEqual(
+            self.TEST_STRING,
+            self.TEST_STRING[:15] + extra + self.TEST_STRING[15:18]
+            + extra2 + self.TEST_STRING[18:],
+            ((15, 15, extra),
+             (18, 18, extra2))
+        )
+
+        self.assertDiffEqual(
+            self.TEST_STRING[:15] + extra + self.TEST_STRING[15:18]
+            + extra2 + self.TEST_STRING[18:],
+            self.TEST_STRING,
+            ((15, 15 + len(extra), ''),
+             (18 + len(extra), 18 + len(extra + extra2), ''))
+        )
+
+        self.assertDiffEqual(
+            self.TEST_STRING,
+            self.TEST_STRING[:15] + extra + self.TEST_STRING[17:19]
+            + extra2 + self.TEST_STRING[21:],
+            ((15, 17, extra),
+             (19, 21, extra2))
+        )

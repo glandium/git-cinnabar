@@ -15,6 +15,7 @@ from collections import (
 from .util import (
     LazyString,
     one,
+    byte_diff,
 )
 from .git import (
     EmptyMark,
@@ -405,6 +406,28 @@ class TagSet(object):
         return set(self._taghist[key])
 
 
+class GitCommit(object):
+    def __init__(self, sha1):
+        self.sha1 = sha1
+        commit = GitHgHelper.cat_file('commit', sha1)
+        header, self.body = commit.split('\n\n', 1)
+        self.parents = []
+        for line in header.splitlines():
+            if line == '\n':
+                break
+            typ, data = line.split(' ', 1)
+            if typ == 'parent':
+                self.parents.append(data.strip())
+            else:
+                assert not hasattr(self, typ)
+                setattr(self, typ, data)
+
+
+class GeneratedGitCommit(GitCommit):
+    def __init__(self, sha1):
+        self.sha1 = sha1
+
+
 class GitHgStore(object):
     def __init__(self):
         self.__fast_import = None
@@ -628,31 +651,22 @@ class GitHgStore(object):
         assert gitsha1
         return self._changeset(gitsha1, sha1, include_parents)
 
-    def _changeset(self, gitsha1, sha1=NULL_NODE_ID, include_parents=False):
-        commit = GitHgHelper.cat_file('commit', gitsha1)
-        header, message = commit.split('\n\n', 1)
-        commitdata = {}
-        parents = []
-        for line in header.splitlines():
-            if line == '\n':
-                break
-            typ, data = line.split(' ', 1)
-            if typ == 'parent':
-                parents.append(data.strip())
-            else:
-                commitdata[typ] = data
-        metadata = self.read_changeset_data(gitsha1)
-        author, date, utcoffset = self.hg_author_info(commitdata['author'])
+    def _changeset(self, git_commit, sha1=NULL_NODE_ID, include_parents=False):
+        if not isinstance(git_commit, GitCommit):
+            git_commit = GitCommit(git_commit)
+
+        metadata = self.read_changeset_data(git_commit.sha1)
+        author, date, utcoffset = self.hg_author_info(git_commit.author)
         if 'author' in metadata:
             author = metadata['author']
         else:
             author = get_hg_author(author)
 
         extra = metadata.get('extra')
-        if commitdata['committer'] != commitdata['author']:
+        if git_commit.committer != git_commit.author:
             if not extra or 'committer' not in extra:
                 extra = dict(extra) if extra else {}
-                committer = self.hg_author_info(commitdata['committer'])
+                committer = self.hg_author_info(git_commit.committer)
                 extra['committer'] = '%s %d %d' % committer
         if extra is not None:
             extra = ' ' + ChangesetData.dump_extra(extra)
@@ -664,7 +678,7 @@ class GitHgStore(object):
             [extra] if extra else [],
             ['\n', '\n'.join(metadata['files'])]
             if metadata.get('files') else [],
-            ['\n\n'], message))
+            ['\n\n'], git_commit.body))
 
         if 'patch' in metadata:
             new = ''
@@ -677,9 +691,10 @@ class GitHgStore(object):
 
         hgdata = GeneratedRevChunk(sha1, changeset)
         if include_parents:
-            assert len(parents) <= 2
+            assert len(git_commit.parents) <= 2
             hgdata.set_parents(*[
-                self.read_changeset_data(p)['changeset'] for p in parents])
+                self.read_changeset_data(p)['changeset']
+                for p in git_commit.parents])
             hgdata.changeset = sha1
         return hgdata
 
@@ -840,11 +855,19 @@ class GitHgStore(object):
             data['files'] = instance.files
         if author[0] != instance.committer:
             data['author'] = instance.committer
-        if instance.utcoffset % 60:
-            offset = str(abs(instance.utcoffset) % 60)
-            start = (42 - len(offset) + len(instance.committer)
-                     + len('%d %d' % (instance.date, instance.utcoffset)))
-            data['patch'] = ((start, start + len(offset), offset),)
+
+        commit = GeneratedGitCommit(mark)
+        commit.committer = self._fast_import._format_committer(committer)
+        commit.author = self._fast_import._format_committer(author)
+        commit.body = instance.message
+
+        generated_instance = self._changeset(commit, instance.node)
+        if generated_instance.data != instance.data:
+            patch = tuple(byte_diff(generated_instance.data, instance.data))
+            if patch:
+                data['patch'] = patch
+                generated_instance = self._changeset(commit, instance.node)
+                assert generated_instance.data == instance.data
 
         self.add_head(instance.node, instance.parent1, instance.parent2)
 
