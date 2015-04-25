@@ -170,6 +170,8 @@ def findcommon(repo, store, hgheads):
 class bundlerepo(object):
     def __init__(self, path):
         self._bundle = readbundle(open(path, 'r'))
+
+    def init(self, store):
         self._changeset_chunks = []
 
         def _iter_chunks():
@@ -183,6 +185,8 @@ class bundlerepo(object):
         branches = set()
         previous = None
         for chunk in iter_chunks(_iter_chunks(), ChangesetInfo):
+            if chunk.parent1 != NULL_NODE_ID and not previous:
+                previous = store.changeset(chunk.parent1)
             chunk.init(previous)
             previous = chunk
             extra = chunk.extra or {}

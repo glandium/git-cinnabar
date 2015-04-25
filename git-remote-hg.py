@@ -82,6 +82,8 @@ def main(args):
     git_dir = os.environ.get('GIT_DIR')
     repo = get_repo(url)
     store = GitHgStore()
+    if isinstance(repo, bundlerepo):
+        repo.init(store)
     logger.info(LazyString(lambda: '%s' % store.heads()))
     helper = IOLogger(logging.getLogger('remote-helper'),
                       sys.stdin, sys.stdout)
