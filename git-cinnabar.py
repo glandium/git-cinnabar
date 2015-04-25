@@ -398,7 +398,9 @@ def main(args):
         for line in Git.iter('config', '--get-regexp', 'remote\..*\.url'):
             config, url = line.split()
             name = config[len('remote.'):-len('.url')]
-            if url.startswith('hg::'):
+            skip_pref = 'remote.%s.skipDefaultUpdate' % name
+            if (url.startswith('hg::') and
+                    Git.config(skip_pref, 'bool') != 'true'):
                 Git.run('remote', 'update', '--prune', name)
 
         print 'Please note that reclone left your local branches untouched.'
