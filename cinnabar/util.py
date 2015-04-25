@@ -97,11 +97,20 @@ class LazyString(object):
 
     def __str__(self):
         if callable(self._obj):
-            return self._obj()
+            self._obj = self._obj()
         return self._obj
 
     def __len__(self):
         return len(str(self))
+
+    def __eq__(self, other):
+        return str(self) == str(other)
+
+    def __ne__(self, other):
+        return str(self) != str(other)
+
+    def __repr__(self):
+        return '<LazyString %s>' % repr(str(self))
 
 
 def one(l):
