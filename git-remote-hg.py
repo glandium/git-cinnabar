@@ -92,6 +92,25 @@ def main(args):
     unknown_heads = set()
     HEAD = 'branches/default/tip'
 
+    graft = None
+    if not remote.startswith('hg::'):
+        graft_pref = 'remote.%s.cinnabar-graft' % remote
+        graft = Git.config(graft_pref)
+    if not graft:
+        graft_pref = 'cinnabar.graft'
+        graft = Git.config(graft_pref)
+    GRAFT = {
+        None: False,
+        'false': False,
+        'true': True,
+        'only': 'only',
+    }
+    if graft not in GRAFT:
+        sys.stderr.write(
+            'Invalid value for %s: %s\n' % (graft_pref, graft))
+        return 1
+    graft = GRAFT[graft]
+
     while True:
         cmd, args = read_cmd(helper)
         if not cmd:
@@ -249,25 +268,6 @@ def main(args):
                     Git.delete_ref('refs/cinnabar/' + ref)
                 raise
 
-            graft = None
-            if not remote.startswith('hg::'):
-                graft_pref = 'remote.%s.cinnabar-graft' % remote
-                graft = Git.config(graft_pref)
-            if not graft:
-                graft_pref = 'cinnabar.graft'
-                graft = Git.config(graft_pref)
-            GRAFT = {
-                None: False,
-                'false': False,
-                'true': True,
-                'only': 'only',
-            }
-            if graft not in GRAFT:
-                sys.stderr.write(
-                    'Invalid value for %s: %s\n' % (graft_pref, graft))
-                return 1
-            graft = GRAFT[graft]
-
             try:
                 if graft:
                     graft_refs = Git.config('cinnabar.graft-refs') or []
@@ -359,7 +359,7 @@ def main(args):
                 helper.flush()
             else:
                 repo_heads = branchmap.heads()
-                PushStore.adopt(store)
+                PushStore.adopt(store, graft)
                 pushed = push(repo, store, pushes, repo_heads,
                               branchmap.names())
 

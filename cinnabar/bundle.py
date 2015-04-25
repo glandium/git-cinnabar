@@ -75,13 +75,14 @@ def get_changes(tree, parents, base_path=''):
 
 class PushStore(GitHgStore):
     @classmethod
-    def adopt(cls, store):
+    def adopt(cls, store, graft):
         assert isinstance(store, GitHgStore)
         store.__class__ = cls
         store._push_files = {}
         store._push_manifests = OrderedDict()
         store._push_changesets = {}
         store._manifest_git_tree = {}
+        store._graft = bool(graft)
 
     def create_hg_metadata(self, commit, parents):
         if len(parents) > 1:
@@ -215,6 +216,22 @@ class PushStore(GitHgStore):
         if extra:
             changeset_data['extra'] = extra
         changeset = self._changeset(commit, include_parents=True)
+        if self._graft is True and parents and changeset.data[-1] == '\n':
+            parent_cs = self._changeset(parents[0], skip_patch=True)
+            if 'patch' not in self._changeset_data_cache[parents[0]]:
+                self._graft = False
+            else:
+                patch = self._changeset_data_cache[parents[0]]['patch'][-1]
+                self._graft = (patch[1] == len(parent_cs.data)
+                               and parent_cs.data[-1] == '\n')
+            if self._graft:
+                self._graft = 'true'
+
+        if self._graft == 'true' and changeset.data[-1] == '\n':
+            changeset.data = changeset.data[:-1]
+            changeset_data['patch'] = (
+                (len(changeset.data), len(changeset.data) + 1, ''),
+            )
         changeset_data['changeset'] = changeset.changeset = changeset.node = \
             changeset.sha1
         self._push_changesets[changeset.node] = changeset

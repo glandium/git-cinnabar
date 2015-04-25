@@ -676,7 +676,8 @@ class GitHgStore(object):
         assert gitsha1
         return self._changeset(gitsha1, sha1, include_parents)
 
-    def _changeset(self, git_commit, sha1=NULL_NODE_ID, include_parents=False):
+    def _changeset(self, git_commit, sha1=NULL_NODE_ID, include_parents=False,
+                   skip_patch=False):
         if not isinstance(git_commit, GitCommit):
             git_commit = GitCommit(git_commit)
 
@@ -705,7 +706,7 @@ class GitHgStore(object):
             if metadata.get('files') else [],
             ['\n\n'], git_commit.body))
 
-        if 'patch' in metadata:
+        if 'patch' in metadata and not skip_patch:
             new = ''
             last_end = 0
             for start, end, text in metadata['patch']:
