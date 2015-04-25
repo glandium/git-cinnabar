@@ -323,10 +323,14 @@ def main(args):
                     sys.stderr.write('  git fetch --tags %s\n' % remote)
 
         elif cmd == 'push':
+            data = None
             if not remote.startswith('hg::'):
                 data_pref = 'remote.%s.cinnabar-data' % remote
-                data = Git.config(data_pref) or 'phase'
-            else:
+                data = Git.config(data_pref)
+            if not data:
+                data_pref = 'cinnabar.data'
+                data = Git.config(data_pref)
+            if not data:
                 data = 'phase'
 
             if data not in ('never', 'phase', 'always'):
