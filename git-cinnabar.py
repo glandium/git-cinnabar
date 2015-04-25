@@ -16,7 +16,6 @@ from cinnabar.dag import gitdag
 from cinnabar.git import (
     Git,
     Mark,
-    sha1path,
 )
 from cinnabar.util import (
     LazyString,

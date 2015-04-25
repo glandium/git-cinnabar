@@ -1087,7 +1087,7 @@ class GitHgStore(object):
         git2hg_marks = [mark for mark in self._changesets.itervalues()
                         if mark and not isinstance(mark, types.StringType)]
         removed_git2hg = [
-            commit for commit, data in self._changeset_data_cache.iteritems()
+            c for c, data in self._changeset_data_cache.iteritems()
             if data is None
         ]
         if git2hg_marks or removed_git2hg:
