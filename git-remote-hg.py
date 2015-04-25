@@ -249,7 +249,28 @@ def main(args):
                     Git.delete_ref('refs/cinnabar/' + ref)
                 raise
 
+            graft = None
+            if not remote.startswith('hg::'):
+                graft_pref = 'remote.%s.cinnabar-graft' % remote
+                graft = Git.config(graft_pref)
+            if not graft:
+                graft_pref = 'cinnabar.graft'
+                graft = Git.config(graft_pref)
+            GRAFT = {
+                None: False,
+                'false': False,
+                'true': True,
+                'only': 'only',
+            }
+            if graft not in GRAFT:
+                sys.stderr.write(
+                    'Invalid value for %s: %s\n' % (graft_pref, graft))
+                return 1
+            graft = GRAFT[graft]
+
             try:
+                if graft:
+                    store.prepare_graft(graft == 'only')
                 store.init_fast_import()
                 # Mercurial can be an order of magnitude slower when creating
                 # a bundle when not giving topological heads, which some of

@@ -31,6 +31,7 @@ from collections import (
     defaultdict,
     OrderedDict,
 )
+from itertools import chain
 
 
 def fsck(args):
@@ -65,6 +66,10 @@ def fsck(args):
 
     store = GitHgStore()
     store.init_fast_import(lazy=True)
+
+    replace_commits = ['^%s^@' % r[22:]
+                       for r in Git.for_each_ref('refs/cinnabar/replace',
+                                                 format='%(refname)')]
 
     if args.commit:
         all_hg2git = {}
@@ -113,8 +118,10 @@ def fsck(args):
                      '--topo-order', 'refs/cinnabar/manifest'))
         )
 
-        all_git_heads = Git.for_each_ref('refs/cinnabar/branches',
-                                         format='%(refname)')
+        all_git_heads = chain(
+            Git.for_each_ref('refs/cinnabar/branches', format='%(refname)'),
+            replace_commits,
+        )
 
         all_git_commits = Git.iter('log', '--topo-order', '--full-history',
                                    '--reverse', '--stdin', '--format=%T %H',
@@ -132,8 +139,21 @@ def fsck(args):
 
     dag = gitdag()
 
-    for line in progress_iter('Checking %d changesets', all_git_commits):
-        tree, node = line.split(' ')
+    def iterate_all_commits(git_commits):
+        for line in git_commits:
+            tree, node = line.split(' ')
+            if node in store._replace:
+                git_heads = [store._replace[node]] + replace_commits
+                git_commits = Git.iter('log', '--topo-order', '--full-history',
+                                       '--reverse', '--stdin',
+                                       '--format=%T %H', stdin=git_heads)
+                for tree, node in iterate_all_commits(git_commits):
+                    yield tree, node
+            else:
+                yield tree, node
+
+    for tree, node in progress_iter('Checking %d changesets',
+                                    iterate_all_commits(all_git_commits)):
         if node not in all_notes:
             report('Missing note for git commit: ' + node)
             continue
