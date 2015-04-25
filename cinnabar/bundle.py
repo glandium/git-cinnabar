@@ -1,4 +1,5 @@
 from githg import (
+    GitCommit,
     GitHgStore,
     GeneratedFileRev,
     GeneratedManifestInfo,
@@ -186,13 +187,7 @@ class PushStore(GitHgStore):
             manifest._lines.append(created_line)
             next_created = next(iter_created)
 
-        header, message = GitHgHelper.cat_file('commit', commit).split(
-            '\n\n', 1)
-        header_data = {}
-        for line in header.splitlines():
-            typ, data = line.split(' ', 1)
-            if typ in ('author', 'committer', 'tree'):
-                header_data[typ] = data
+        commit_data = GitCommit(commit)
 
         if manifest.node == NULL_NODE_ID:
             manifest.set_parents(parent_node)
@@ -203,11 +198,11 @@ class PushStore(GitHgStore):
             manifest.previous_node = parent_node
             self._push_manifests[manifest.node] = manifest
             self.manifest_ref(manifest.node, hg2git=False, create=True)
-            self._manifest_git_tree[manifest.node] = header_data['tree']
+            self._manifest_git_tree[manifest.node] = commit_data.tree
 
         extra = {}
-        if header_data['author'] != header_data['committer']:
-            committer = self.hg_author_info(header_data['committer'])
+        if commit_data.author != commit_data.committer:
+            committer = self.hg_author_info(commit_data.committer)
             extra['committer'] = '%s %d %d' % committer
 
         if branch:
