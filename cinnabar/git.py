@@ -350,7 +350,8 @@ class FastImport(IOLogger):
             reader, writer = os.pipe()
             reader = os.fdopen(reader, 'r', 0)
             self._proc = GitProcess('fast-import', '--cat-blob-fd=%d' % writer,
-                                    '--quiet', stdin=subprocess.PIPE)
+                                    '--quiet', stdin=subprocess.PIPE,
+                                    config={'core.ignorecase': 'false'})
             writer = self._proc.stdin
             prefix = '[%d]' % self._proc.pid
         else:

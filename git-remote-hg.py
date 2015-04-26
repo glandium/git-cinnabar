@@ -83,36 +83,6 @@ def main(args):
     assert len(args) == 2
     remote, url = args
     git_dir = os.environ.get('GIT_DIR')
-    if Git.config('core.ignorecase', 'bool') == 'true':
-        sys.stderr.write(
-            'Your git configuration has core.ignorecase set to "true".\n'
-            'Usually, this means git detected the file system is case '
-            'insensitive.\n'
-            'Git-cinnabar does not support this setup.\n'
-            'Either use a case sensitive file system or set '
-            'core.ignorecase to "false".\n'
-        )
-        git_work_tree = os.path.dirname(git_dir)
-        if os.path.abspath(os.getcwd() + os.sep).startswith(
-                os.path.abspath(git_work_tree) + os.sep) or \
-                remote == 'hg::' + url or tuple(
-                Git.for_each_ref('refs/remotes/%s' % remote)):
-            sys.stderr.write(
-                'Use the following command to reclone:\n'
-                '  git cinnabar reclone\n'
-            )
-        else:
-            sys.stderr.write(
-                'Use the following command to clone:\n'
-                '  git -c core.ignorecase=false clone%(args)s hg::%(url)s '
-                '%(dir)s\n'
-                % {
-                    'dir': git_work_tree,
-                    'url': url,
-                    'args': ' -o ' + remote if remote != 'origin' else ''
-                }
-            )
-        return 1
     repo = get_repo(url)
     store = GitHgStore()
     logger.info(LazyString(lambda: '%s' % store.heads()))
