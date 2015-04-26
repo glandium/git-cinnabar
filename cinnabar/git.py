@@ -13,6 +13,7 @@ from .util import (
     one,
 )
 from binascii import hexlify
+from itertools import chain
 
 
 def normalize_path(path):
@@ -37,19 +38,23 @@ def split_ls_tree(line):
 
 
 class GitProcess(object):
-    KWARGS = set(['stdin', 'stdout', 'stderr'])
+    KWARGS = set(['stdin', 'stdout', 'stderr', 'config'])
 
     def __init__(self, *args, **kwargs):
         assert not kwargs or not set(kwargs.keys()) - self.KWARGS
         stdin = kwargs.get('stdin', None)
         stdout = kwargs.get('stdout', subprocess.PIPE)
         stderr = kwargs.get('stderr', None)
+        config = kwargs.get('config', {})
         if isinstance(stdin, (StringType, Iterable)):
             proc_stdin = subprocess.PIPE
         else:
             proc_stdin = stdin
 
-        self._proc = subprocess.Popen(['git'] + list(args), stdin=proc_stdin,
+        git = ['git'] + list(chain(*(['-c', '%s=%s' % (n, v)]
+                                     for n, v in config.iteritems())))
+
+        self._proc = subprocess.Popen(git + list(args), stdin=proc_stdin,
                                       stdout=stdout, stderr=stderr)
 
         logger = logging.getLogger(args[0])
