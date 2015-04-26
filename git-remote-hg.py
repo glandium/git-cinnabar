@@ -141,7 +141,6 @@ def main(args):
             helper.write(
                 'option\n'
                 'import\n'
-                'bidi-import\n'
                 'push\n'
                 'refspec refs/heads/branches/*:'
                 'refs/cinnabar/refs/heads/branches/*\n'
@@ -300,7 +299,7 @@ def main(args):
                 raise
 
             try:
-                store.init_fast_import(FastImport(sys.stdin, sys.stdout))
+                store.init_fast_import(FastImport())
                 # Mercurial can be an order of magnitude slower when creating
                 # a bundle when not giving topological heads, which some of
                 # the branch heads might not be.
@@ -326,6 +325,9 @@ def main(args):
                         Git.delete_ref(ref)
 
             store.close()
+
+            helper.write('done\n')
+            helper.flush()
 
             if not remote.startswith('hg::'):
                 prune = 'remote.%s.prune' % remote
