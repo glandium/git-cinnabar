@@ -544,9 +544,9 @@ class GitHgStore(object):
 
     @property
     def _fast_import(self):
-        assert self.__fast_import
-        if callable(self.__fast_import):
-            self._fast_import = self.__fast_import()
+        assert self.__fast_import is not None
+        if self.__fast_import is False:
+            self._fast_import = FastImport()
         return self.__fast_import
 
     @_fast_import.setter
@@ -556,14 +556,16 @@ class GitHgStore(object):
         Git.register_fast_import(fi)
         fi.send_done()
 
-    def init_fast_import(self, fi):
-        if callable(fi):
-            self.__fast_import = fi
+    def init_fast_import(self, lazy=False):
+        if self.__fast_import:
+            return
+        if lazy:
+            self.__fast_import = False
         else:
-            self._fast_import = fi
+            self._fast_import = FastImport()
 
     def _close_fast_import(self):
-        if not self.__fast_import or callable(self.__fast_import):
+        if not self.__fast_import:
             return
         self._fast_import.close()
 
@@ -1035,8 +1037,7 @@ class GitHgStore(object):
                 yield '%s\0%s %s\n' % (tag, resolve_commit(value),
                                        ' '.join(sorted(nodes)))
 
-        if not self.__fast_import:
-            self.init_fast_import(lambda: FastImport())
+        self.init_fast_import(lazy=True)
 
         for f, tags in self._tags.iteritems():
             if f not in self._tagfiles and f != NULL_NODE_ID:

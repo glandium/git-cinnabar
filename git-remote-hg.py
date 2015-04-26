@@ -22,10 +22,7 @@ from binascii import hexlify
 from itertools import chain
 import logging
 from distutils.dir_util import mkpath
-from cinnabar.git import (
-    FastImport,
-    Git,
-)
+from cinnabar.git import Git
 from cinnabar.util import IOLogger
 import cinnabar.util
 
@@ -251,7 +248,7 @@ def main(args):
                 raise
 
             try:
-                store.init_fast_import(FastImport())
+                store.init_fast_import()
                 # Mercurial can be an order of magnitude slower when creating
                 # a bundle when not giving topological heads, which some of
                 # the branch heads might not be.

@@ -31,10 +31,7 @@ from urlparse import (
 import logging
 import random
 from .dag import gitdag
-from .git import (
-    FastImport,
-    Git,
-)
+from .git import Git
 from .util import progress_iter
 from collections import defaultdict
 
@@ -288,8 +285,7 @@ def getbundle(repo, store, heads, branchmap):
 
 
 def push(repo, store, what, repo_heads, repo_branches):
-    fast_import = FastImport()
-    store.init_fast_import(fast_import)
+    store.init_fast_import()
 
     def heads():
         for sha1 in store.heads(repo_branches):

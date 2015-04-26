@@ -14,7 +14,6 @@ from cinnabar.githg import (
 )
 from cinnabar.dag import gitdag
 from cinnabar.git import (
-    FastImport,
     Git,
     Mark,
     sha1path,
@@ -65,7 +64,7 @@ def fsck(args):
         info(message)
 
     store = GitHgStore()
-    store.init_fast_import(lambda: FastImport())
+    store.init_fast_import(lazy=True)
 
     if args.commit:
         all_hg2git = {}
