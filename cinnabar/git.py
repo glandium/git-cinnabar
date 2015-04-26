@@ -343,20 +343,14 @@ class EmptyMark(Mark):
 
 
 class FastImport(IOLogger):
-    def __init__(self, reader=None, writer=None):
-        assert bool(reader) == bool(writer)
-
-        if not reader and not writer:
-            reader, writer = os.pipe()
-            reader = os.fdopen(reader, 'r', 0)
-            self._proc = GitProcess('fast-import', '--cat-blob-fd=%d' % writer,
-                                    '--quiet', stdin=subprocess.PIPE,
-                                    config={'core.ignorecase': 'false'})
-            writer = self._proc.stdin
-            prefix = '[%d]' % self._proc.pid
-        else:
-            self._proc = None
-            prefix = ''
+    def __init__(self):
+        reader, writer = os.pipe()
+        reader = os.fdopen(reader, 'r', 0)
+        self._proc = GitProcess('fast-import', '--cat-blob-fd=%d' % writer,
+                                '--quiet', stdin=subprocess.PIPE,
+                                config={'core.ignorecase': 'false'})
+        writer = self._proc.stdin
+        prefix = '[%d]' % self._proc.pid
 
         super(FastImport, self).__init__(logging.getLogger('fast-import'),
                                          reader, writer, prefix=prefix)
@@ -387,8 +381,7 @@ class FastImport(IOLogger):
             self.write('done\n')
             self._done = None
         self.flush()
-        if self._proc:
-            self._proc.wait()
+        self._proc.wait()
         if Git._fast_import == self:
             Git._fast_import = None
 
