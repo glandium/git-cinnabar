@@ -407,6 +407,9 @@ def main(args):
                 print data.get('changeset', NULL_NODE_ID)
             else:
                 print NULL_NODE_ID
+    elif cmd == 'python':
+        import code
+        code.interact()
     else:
         print >>sys.stderr, 'Unknown command:', cmd
         return 1
