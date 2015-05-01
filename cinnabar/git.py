@@ -123,8 +123,10 @@ class Git(object):
             self._cat_file.wait()
             self._cat_file = None
         if self._update_ref:
-            self._update_ref.wait()
+            retcode = self._update_ref.wait()
             self._update_ref = None
+            if retcode:
+                raise Exception('git-update-ref failed')
         for diff_tree in self._diff_tree.itervalues():
             diff_tree.wait()
         self._diff_tree = {}
@@ -381,9 +383,11 @@ class FastImport(IOLogger):
             self.write('done\n')
             self._done = None
         self.flush()
-        self._proc.wait()
+        retcode = self._proc.wait()
         if Git._fast_import == self:
             Git._fast_import = None
+        if retcode:
+            raise Exception('git-fast-import failed')
 
     def ls(self, dataref, path=''):
         assert not path.endswith('/')
