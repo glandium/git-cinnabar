@@ -21,7 +21,6 @@ from cinnabar.bundle import (
 from binascii import hexlify
 from itertools import chain
 import logging
-from distutils.dir_util import mkpath
 from cinnabar.git import Git
 from cinnabar.util import IOLogger
 import cinnabar.util
@@ -79,7 +78,6 @@ def main(args):
     logger.info(args)
     assert len(args) == 2
     remote, url = args
-    git_dir = os.environ.get('GIT_DIR')
     repo = get_repo(url)
     store = GitHgStore()
     if isinstance(repo, bundlerepo):
@@ -211,10 +209,6 @@ def main(args):
             helper.flush()
         elif cmd == 'import':
             try:
-                reflog = os.path.join(git_dir, 'logs', 'refs', 'cinnabar')
-                mkpath(reflog)
-                open(os.path.join(reflog, 'hg2git'), 'a').close()
-                open(os.path.join(reflog, 'manifest'), 'a').close()
                 assert len(args) == 1
                 refs = args
                 while cmd:

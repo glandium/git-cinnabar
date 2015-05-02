@@ -6,6 +6,7 @@ import types
 from binascii import hexlify, unhexlify
 from itertools import chain
 from hashlib import sha1
+import os
 import re
 import urllib
 from collections import (
@@ -26,6 +27,7 @@ from .git import (
 )
 from .helper import GitHgHelper
 from mercurial import mdiff
+from distutils.dir_util import mkpath
 
 import time
 import logging
@@ -1065,6 +1067,13 @@ class GitHgStore(object):
         self._closed = True
         hg2git_files = []
         changeset_by_mark = {}
+        git_dir = os.environ.get('GIT_DIR')
+        if not git_dir:
+            git_dir = one(Git.iter('rev-parse', '--git-dir'))
+        reflog = os.path.join(git_dir, 'logs', 'refs', 'cinnabar')
+        mkpath(reflog)
+        open(os.path.join(reflog, 'hg2git'), 'a').close()
+        open(os.path.join(reflog, 'manifest'), 'a').close()
         for dic, typ in (
                 (self._files, 'regular'),
                 (self._manifests, 'commit'),
