@@ -188,6 +188,7 @@ def fsck(args):
         changeset_ref = store.changeset_ref(changeset)
         if not changeset_ref:
             report('Missing changeset in hg2git branch: %s' % changeset)
+            continue
         elif str(changeset_ref) != node:
             report('Commit mismatch for changeset %s\n'
                    '  hg2git: %s\n  commit: %s'
@@ -297,7 +298,7 @@ def fsck(args):
                          if t == 'commit')
 
     adjusted = {}
-    if not args.commit:
+    if not args.commit and not status['broken']:
         dangling = set(manifest_commits) - set(seen_manifest_refs)
         if dangling:
             def iter_manifests():
@@ -333,7 +334,9 @@ def fsck(args):
                     commit.filemodify('', tree, typ='tree')
                 adjusted[obj] = Mark(mark)
 
-    dangling = all_hg2git - seen_changesets - seen_manifests - seen_files
+    dangling = ()
+    if not status['broken']:
+        dangling = all_hg2git - seen_changesets - seen_manifests - seen_files
     for obj in dangling:
         fix('Removing dangling metadata for ' + obj)
         # Theoretically, we should figure out if they are files, manifests
@@ -347,7 +350,8 @@ def fsck(args):
             adjusted.iteritems()):
         store._manifests[obj] = mark
 
-    dangling = all_notes - seen_notes
+    if not status['broken']:
+        dangling = all_notes - seen_notes
     for c in dangling:
         fix('Removing dangling note for commit ' + c)
         store._changeset_data_cache[c] = None
