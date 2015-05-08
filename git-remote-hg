@@ -1,1 +1,1 @@
-git-remote-hg.py
+git-remote-hg.py $*
