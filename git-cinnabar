@@ -9,13 +9,13 @@ from cinnabar.githg import (
     ChangesetData,
     GitHgStore,
     EMPTY_TREE,
-    NULL_NODE_ID,
     one,
 )
 from cinnabar.dag import gitdag
 from cinnabar.git import (
     Git,
     Mark,
+    NULL_NODE_ID,
 )
 from cinnabar.util import (
     LazyString,

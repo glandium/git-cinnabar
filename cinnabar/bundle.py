@@ -4,7 +4,6 @@ from githg import (
     GeneratedFileRev,
     GeneratedManifestInfo,
     ManifestLine,
-    NULL_NODE_ID,
     EMPTY_BLOB,
     EMPTY_TREE,
 )
@@ -12,6 +11,7 @@ from .helper import GitHgHelper
 from .git import (
     Git,
     Mark,
+    NULL_NODE_ID,
 )
 from .util import (
     next,

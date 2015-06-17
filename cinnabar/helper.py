@@ -6,6 +6,7 @@ from .git import (
     Git,
     GitProcess,
     Mark,
+    NULL_NODE_ID,
     sha1path,
 )
 from .util import (
@@ -56,7 +57,6 @@ class GitHgHelper(object):
     def _read_file(self, expected_typ, stdout):
         hg_sha1 = stdout.read(41)
         if hg_sha1[-1] == '\n':
-            from githg import NULL_NODE_ID
             assert hg_sha1[:40] == NULL_NODE_ID
             return None
         typ, size = stdout.readline().split()
@@ -112,7 +112,6 @@ class GitHgHelper(object):
                 ls = one(Git.ls_tree('refs/cinnabar/hg2git',
                                      sha1path(hg_sha1)))
             if not ls:
-                from githg import NULL_NODE_ID
                 return NULL_NODE_ID
             mode, typ, gitsha1, path = ls
             return gitsha1

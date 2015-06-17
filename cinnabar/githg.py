@@ -23,6 +23,7 @@ from .git import (
     FastImport,
     Git,
     Mark,
+    NULL_NODE_ID,
     sha1path,
 )
 from .helper import GitHgHelper
@@ -48,8 +49,6 @@ handler = StreamHandler()
 handler.setFormatter(logging.Formatter(
     '\r%(timestamp).3f %(name)s %(message)s'))
 logger.addHandler(handler)
-
-NULL_NODE_ID = '0' * 40
 
 # An empty git tree has a fixed sha1 which is that of "tree 0\0"
 EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'

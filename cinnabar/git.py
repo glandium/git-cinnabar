@@ -15,6 +15,8 @@ from .util import (
 from binascii import hexlify
 from itertools import chain
 
+NULL_NODE_ID = '0' * 40
+
 
 def normalize_path(path):
     if path[0] == '"' and path[-1] == '"':

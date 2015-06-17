@@ -10,7 +10,6 @@ from .githg import (
     RevChunk,
     ChangesetInfo,
     ManifestInfo,
-    NULL_NODE_ID,
 )
 from .bundle import create_bundle
 from binascii import unhexlify
@@ -31,7 +30,10 @@ from urlparse import (
 import logging
 import random
 from .dag import gitdag
-from .git import Git
+from .git import (
+    Git,
+    NULL_NODE_ID,
+)
 from .util import progress_iter
 from collections import defaultdict
 
