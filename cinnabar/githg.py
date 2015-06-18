@@ -934,7 +934,7 @@ class GitHgStore(object):
                 message=instance.message,
                 committer=committer,
                 author=author,
-                parents=[NULL_NODE_ID] + list(parents),
+                parents=parents,
                 mark=mark,
             ) as commit:
                 commit.filemodify('', tree, typ='tree')
@@ -980,22 +980,17 @@ class GitHgStore(object):
         else:
             previous = None
         if self._last_manifest:
-            if previous and previous != self._last_manifest:
-                parents = (NULL_NODE_ID, self._last_manifest)
-            else:
-                parents = ()
+            parents = (self._last_manifest,)
         elif self._refs_orig:
-            parents = (NULL_NODE_ID, 'refs/cinnabar/manifest^0',)
+            parents = ('refs/cinnabar/manifest^0',)
         else:
-            parents = (NULL_NODE_ID,)
+            parents = ()
         with self._fast_import.commit(
             ref='refs/cinnabar/manifest',
+            from_commit=previous,
             parents=parents,
             mark=mark,
         ) as commit:
-            if previous and self._last_manifest != previous:
-                mode, typ, tree, path = self._fast_import.ls(previous)
-                commit.filemodify('', tree, typ='tree')
             self._last_manifest = mark
             for name in instance.removed:
                 commit.filedelete('hg/%s' % name)
@@ -1089,6 +1084,8 @@ class GitHgStore(object):
         if hg2git_files:
             with self._fast_import.commit(
                 ref='refs/cinnabar/hg2git',
+                from_commit='refs/cinnabar/hg2git^0'
+                if self._refs_orig else None,
                 parents=(s for s in ('refs/cinnabar/hg2git^0',)
                          if self._refs_orig),
                 mark=self._fast_import.new_mark(),
@@ -1109,6 +1106,8 @@ class GitHgStore(object):
         if git2hg_marks or removed_git2hg:
             with self._fast_import.commit(
                 ref='refs/notes/cinnabar',
+                from_commit='refs/notes/cinnabar^0'
+                if self._refs_orig else None,
                 parents=(s for s in ('refs/notes/cinnabar^0',)
                          if self._refs_orig),
             ) as commit:
@@ -1203,11 +1202,8 @@ class GitHgStore(object):
         if created or deleted:
             with self._fast_import.commit(
                 ref='refs/cinnabar/tag-cache',
+                from_commit=self._tagcache_ref,
             ) as commit:
-                if self._tagcache_ref:
-                    mode, typ, tree, path = \
-                        self._fast_import.ls(self._tagcache_ref)
-                    commit.filemodify('', tree, typ='tree')
                 for f in deleted:
                     commit.filedelete(f)
 

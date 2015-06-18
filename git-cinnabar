@@ -328,10 +328,9 @@ def fsck(args):
                 elif parent:
                     parents = (adjusted.get(parent, parent),)
                 with store._fast_import.commit(
-                        ref='refs/cinnabar/manifest',
+                        ref='refs/cinnabar/manifest', from_commit=obj,
                         parents=parents, mark=mark) as commit:
-                    mode, typ, tree, path = store._fast_import.ls(obj)
-                    commit.filemodify('', tree, typ='tree')
+                    pass
                 adjusted[obj] = Mark(mark)
 
     dangling = ()

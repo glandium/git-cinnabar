@@ -5,7 +5,10 @@ import logging
 import os
 import subprocess
 import time
-from types import StringType
+from types import (
+    GeneratorType,
+    StringType,
+)
 from collections import Iterable
 from .util import (
     IOLogger,
@@ -443,7 +446,7 @@ class FastImport(IOLogger):
 
     @contextlib.contextmanager
     def commit(self, ref, committer=('<cinnabar@git>', 0, 0), author=None,
-               message='', parents=(), mark=0):
+               message='', from_commit=None, parents=(), mark=0):
         helper = FastImportCommitHelper(self)
         yield helper
 
@@ -455,11 +458,21 @@ class FastImport(IOLogger):
             self.write('author %s\n' % self._format_committer(author))
         self.write('committer %s\n' % self._format_committer(committer))
         self.cmd_data(message)
+        if isinstance(parents, GeneratorType):
+            parents = tuple(parents)
         for count, parent in enumerate(parents):
-            self.write('%s %s\n' % (
-                'from' if count == 0 else 'merge',
-                parent,
-            ))
+            if count == 0 and parent == from_commit:
+                from_commit = None
+                self.write('from %s\n' % parent)
+            else:
+                if count == 0:
+                    self.write('from %s\n' % NULL_NODE_ID)
+                self.write('merge %s\n' % parent)
+        if not parents:
+            self.write('from %s\n' % NULL_NODE_ID)
+        if from_commit:
+            mode, typ, tree, path = self.ls(from_commit)
+            self.write('M 040000 %s \n' % tree)
         helper.apply()
         self.write('\n')
         self._done = False
