@@ -6,6 +6,7 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
 from cinnabar.githg import (
+    UpgradeException,
     GitHgStore,
     LazyString,
 )
@@ -79,7 +80,13 @@ def main(args):
     assert len(args) == 2
     remote, url = args
     repo = get_repo(url)
-    store = GitHgStore()
+
+    try:
+        store = GitHgStore()
+    except UpgradeException as e:
+        sys.stderr.write('%s\n' % e.message)
+        return 1
+
     if isinstance(repo, bundlerepo):
         repo.init(store)
     logger.info(LazyString(lambda: '%s' % store.heads()))

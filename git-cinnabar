@@ -7,9 +7,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 import argparse
 from cinnabar.githg import (
     ChangesetData,
+    GitCommit,
     GitHgStore,
     EMPTY_TREE,
     one,
+    UpgradeException,
 )
 from cinnabar.dag import gitdag
 from cinnabar.git import (
@@ -31,6 +33,34 @@ from collections import (
     OrderedDict,
 )
 from itertools import chain
+
+
+class UpgradeGitHgStore(GitHgStore):
+    def _open(self):
+        self._manifest_heads_orig = set()
+        self._manifest_dag = gitdag()
+        self._hgheads_orig = set()
+        for line in Git.for_each_ref('refs/cinnabar/branches',
+                                     format='%(objectname) %(refname)'):
+            sha1, head = line.split()
+            branch, hghead = head[23:].split('/', 1)
+            self._hgheads.add((branch, hghead))
+            self._changesets[hghead] = sha1
+
+        self._has_metadata = True
+
+    def _close_fast_import(self):
+        pass
+
+    def close(self):
+        super(UpgradeGitHgStore, self).close()
+        for ref in Git.for_each_ref(
+                'refs/cinnabar/manifest',
+                'refs/cinnabar/tagcache',
+                'refs/cinnabar/branches',
+                format='%(refname)'):
+            Git.delete_ref(ref)
+        super(UpgradeGitHgStore, self)._close_fast_import()
 
 
 def fsck(args):
@@ -63,7 +93,27 @@ def fsck(args):
         status['broken'] = True
         info(message)
 
-    store = GitHgStore()
+    try:
+        store = GitHgStore()
+        upgrade = False
+    except UpgradeException:
+        store = UpgradeGitHgStore()
+        upgrade = True
+
+    if upgrade:
+        if args.commit:
+            info('Git-cinnabar metadata needs upgrade. '
+                 'Please re-run without specifying commit(s).')
+            return 1
+        elif args.manifests:
+            info('Git-cinnabar metadata needs upgrade. '
+                 'Please re-run without --manifests.')
+            return 1
+        elif args.files:
+            info('Git-cinnabar metadata needs upgrade. '
+                 'Please re-run without --files.')
+            return 1
+
     store.init_fast_import(lazy=True)
 
     replace_commits = ['^%s^@' % r[22:]
@@ -98,29 +148,42 @@ def fsck(args):
             'log', '--no-walk=unsorted', '--stdin', '--format=%T %H',
             stdin=commits)
     else:
+        all_refs = set(Git.for_each_ref('refs/cinnabar', format='%(refname)'))
+
+        if 'refs/cinnabar/manifest' in all_refs:
+            all_git_heads = chain(
+                Git.for_each_ref('refs/cinnabar/branches',
+                                 format='%(refname)'),
+                replace_commits,
+            )
+            manifests_rev = 'refs/cinnabar/manifest'
+            hg2git_rev = 'refs/cinnabar/hg2git'
+            notes_rev = 'refs/notes/cinnabar'
+        elif 'refs/cinnabar/metadata' in all_refs:
+            all_git_heads = ['refs/cinnabar/metadata^1^@'] + replace_commits
+            manifests_rev = 'refs/cinnabar/metadata^2^@'
+            hg2git_rev = 'refs/cinnabar/metadata^3'
+            notes_rev = 'refs/cinnabar/metadata^4'
+        else:
+            assert False
+
         all_hg2git = {
             path.replace('/', ''): (filesha1, intern(typ))
             for mode, typ, filesha1, path in
             progress_iter('Reading %d mercurial to git mappings',
-                          Git.ls_tree('refs/cinnabar/hg2git', recursive=True))
+                          Git.ls_tree(hg2git_rev, recursive=True))
         }
 
         all_notes = set(path.replace('/', '') for mode, typ, filesha1, path in
                         progress_iter(
                             'Reading %d commit to changeset mappings',
-                            Git.ls_tree('refs/notes/cinnabar',
-                                        recursive=True)))
+                            Git.ls_tree(notes_rev, recursive=True)))
 
         manifest_commits = OrderedDict((m, None) for m in progress_iter(
             'Reading %d manifest trees',
             Git.iter('rev-list', '--full-history',
-                     '--topo-order', 'refs/cinnabar/manifest'))
-        )
-
-        all_git_heads = chain(
-            Git.for_each_ref('refs/cinnabar/branches', format='%(refname)'),
-            replace_commits,
-        )
+                     '--topo-order', manifests_rev)
+        ))
 
         all_git_commits = Git.iter('log', '--topo-order', '--full-history',
                                    '--reverse', '--stdin', '--format=%T %H',
@@ -130,13 +193,13 @@ def fsck(args):
 
     seen_changesets = set()
     seen_manifests = set()
-    seen_manifest_refs = {}
     seen_files = set()
     seen_notes = set()
 
     hg_manifest = None
 
     dag = gitdag()
+    manifest_dag = gitdag()
 
     def iterate_all_commits(git_commits):
         for line in git_commits:
@@ -235,20 +298,34 @@ def fsck(args):
             continue
         seen_manifests.add(manifest)
         manifest_ref = store.manifest_ref(manifest)
-        if manifest_ref:
-            seen_manifest_refs[manifest_ref] = manifest
         if not manifest_ref:
             report('Missing manifest in hg2git branch: %s' % manifest)
-        elif not args.commit and manifest_ref not in manifest_commits:
+        elif (not args.commit and not upgrade and
+                manifest_ref not in manifest_commits):
             report('Missing manifest commit in manifest branch: %s' %
                    manifest_ref)
 
-        if args.manifests or args.files:
-            parents = tuple(
-                store.read_changeset_data(store.changeset_ref(p))['manifest']
-                for p in (hg_changeset.parent1, hg_changeset.parent2)
-                if p != NULL_NODE_ID
-            )
+        parents = tuple(
+            store.read_changeset_data(store.changeset_ref(p))['manifest']
+            for p in (hg_changeset.parent1, hg_changeset.parent2)
+            if p != NULL_NODE_ID
+        )
+        git_parents = tuple(store.manifest_ref(p) for p in parents)
+
+        if upgrade:
+            mark = store._fast_import.new_mark()
+            with store._fast_import.commit(
+                ref='refs/cinnabar/manifests',
+                parents=git_parents,
+                mark=mark,
+                message=manifest,
+            ) as commit:
+                mode, typ, mn_tree, path = store._fast_import.ls(manifest_ref)
+                commit.filemodify('', mn_tree, typ='tree')
+            store._manifests[manifest] = Mark(mark)
+            store._manifest_dag.add(store._manifests[manifest], git_parents)
+
+        manifest_dag.add(store.manifest_ref(manifest), git_parents)
 
         if args.manifests:
             try:
@@ -261,6 +338,14 @@ def fsck(args):
                 hg_manifest.set_parents(*parents)
                 if hg_manifest.node != hg_manifest.sha1:
                     report('Sha1 mismatch for manifest %s' % manifest)
+
+        if not upgrade:
+            manifest_commit = GitCommit(manifest_ref)
+            if sorted(manifest_commit.parents) != sorted(git_parents):
+                # TODO: better error
+                report('%s(%s) %s != %s' % (manifest, manifest_ref,
+                                            manifest_commit.parents,
+                                            git_parents))
 
         git_ls = one(Git.ls_tree(manifest_ref, 'git'))
         if git_ls:
@@ -297,42 +382,27 @@ def fsck(args):
         all_hg2git = set(k for k, (s, t) in all_hg2git.iteritems()
                          if t == 'commit')
 
-    adjusted = {}
     if not args.commit and not status['broken']:
-        dangling = set(manifest_commits) - set(seen_manifest_refs)
-        if dangling:
+        store_manifest_heads = set(store._manifest_dag.heads())
+        manifest_heads = set(manifest_dag.heads())
+        if store_manifest_heads != manifest_heads:
+            store._manifest_dag = manifest_dag
+
             def iter_manifests():
-                removed_one = False
-                yielded = False
-                previous = None
-                for obj in reversed(manifest_commits):
-                    if obj in dangling:
-                        fix('Removing metadata commit %s with no hg2git entry'
-                            % obj)
-                        removed_one = True
-                    else:
-                        if removed_one:
-                            yield obj, previous
-                            yielded = True
-                        previous = obj
+                for h in store_manifest_heads - manifest_heads:
+                    yield h
+                for h in manifest_heads:
+                    yield '^%s' % h
 
-                if removed_one and not yielded:
-                    yield obj, False
+            for m in Git.iter('rev-list', '--topo-order', '--full-history',
+                              '--reverse', '--stdin', stdin=iter_manifests()):
+                fix('Removing metadata commit %s with no corresponding '
+                    'changeset' % (m))
 
-            for obj, parent in progress_iter('Adjusting %d metadata commits',
-                                             iter_manifests()):
-                mark = store._fast_import.new_mark()
-                if parent is False:
-                    Git.update_ref('refs/cinnabar/manifest', obj)
-                    continue
-                elif parent:
-                    parents = (adjusted.get(parent, parent),)
-                with store._fast_import.commit(
-                        ref='refs/cinnabar/manifest', from_commit=obj,
-                        parents=parents, mark=mark) as commit:
-                    pass
-                adjusted[obj] = Mark(mark)
-
+            for h in store_manifest_heads - manifest_heads:
+                if h in manifest_dag:
+                    fix('Removing non-head reference to %s in manifests '
+                        'metadata.' % h)
     dangling = ()
     if not status['broken']:
         dangling = all_hg2git - seen_changesets - seen_manifests - seen_files
@@ -343,11 +413,6 @@ def fsck(args):
         # practice, it makes no difference. Reevaluate when GitHgStore.close
         # is modified, though.
         store._files[obj] = None
-
-    for obj, mark in progress_iter(
-            'Updating hg2git for %d metadata commits',
-            adjusted.iteritems()):
-        store._manifests[obj] = mark
 
     if not status['broken']:
         dangling = all_notes - seen_notes
@@ -394,7 +459,11 @@ def fsck(args):
 def main(args):
     cmd = args.pop(0)
     if cmd == 'data':
-        store = GitHgStore()
+        try:
+            store = GitHgStore()
+        except UpgradeException as e:
+            print >>sys.stderr, e.message
+            return 1
         if args[0] == '-c':
             sys.stdout.write(store.changeset(args[1]).data)
         elif args[0] == '-m':
