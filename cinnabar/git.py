@@ -169,7 +169,6 @@ class Git(object):
 
     @classmethod
     def resolve_ref(self, ref):
-        # TODO: self._refs should be updated by update_ref
         if ref not in self._refs:
             self._refs[ref] = one(Git.iter('rev-parse', '--revs-only', ref))
         return self._refs[ref]
@@ -302,6 +301,12 @@ class Git(object):
 
     @classmethod
     def update_ref(self, ref, newvalue, oldvalue=None):
+        if not isinstance(newvalue, Mark) and newvalue.startswith('refs/'):
+            newvalue = self.resolve_ref(newvalue)
+        if newvalue and newvalue != NULL_NODE_ID:
+            self._refs[ref] = newvalue
+        else:
+            self._refs[ref] = None
         if self._fast_import:
             self._fast_import.write(
                 'reset %s\n'
@@ -451,6 +456,8 @@ class FastImport(IOLogger):
         yield helper
 
         self.write('commit %s\n' % ref)
+        if mark == 0:
+            mark = self.new_mark()
         self.cmd_mark(mark)
         # TODO: properly handle errors, like from the committer being badly
         # formatted.
