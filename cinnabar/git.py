@@ -300,13 +300,15 @@ class Git(object):
         return None
 
     @classmethod
-    def update_ref(self, ref, newvalue, oldvalue=None):
+    def update_ref(self, ref, newvalue, oldvalue=None, store=True):
         if not isinstance(newvalue, Mark) and newvalue.startswith('refs/'):
             newvalue = self.resolve_ref(newvalue)
         if newvalue and newvalue != NULL_NODE_ID:
             self._refs[ref] = newvalue
         else:
             self._refs[ref] = None
+        if not store:
+            return
         if self._fast_import:
             self._fast_import.write(
                 'reset %s\n'
