@@ -112,6 +112,9 @@ class LazyString(object):
     def __repr__(self):
         return '<LazyString %s>' % repr(str(self))
 
+    def startswith(self, other):
+        return str(self).startswith(other)
+
 
 def one(l):
     l = list(l)
