@@ -33,9 +33,15 @@ $(addprefix pythonlib/,$(PYTHON_LIBS)): pythonlib/%: %
 	$(INSTALL) -m 644 $^ $@
 
 install: install-pythonlib
-clean: clean-pythonlib
+clean: clean-pythonlib clean-pythonscripts
+
+clean-pythonscripts:
+	$(RM) $(PYTHON_SCRIPTS)
 
 PYTHON_LIBS_DIRS := $(sort $(dir $(PYTHON_LIBS)))
+
+$(PYTHON_SCRIPTS): %.py: ../%
+	ln -s $^ $@
 
 define _
 $1
