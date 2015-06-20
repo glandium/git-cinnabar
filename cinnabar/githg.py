@@ -56,7 +56,7 @@ class StreamHandler(logging.StreamHandler):
 logger = logging.getLogger()
 handler = StreamHandler()
 handler.setFormatter(logging.Formatter(
-    '\r%(timestamp).3f %(name)s %(message)s'))
+    '\r%(timestamp).3f [%(name)s] %(message)s'))
 logger.addHandler(handler)
 
 # An empty git tree has a fixed sha1 which is that of "tree 0\0"
