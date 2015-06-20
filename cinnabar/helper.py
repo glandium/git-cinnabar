@@ -1,4 +1,5 @@
 import atexit
+import logging
 import os
 import re
 import subprocess
@@ -25,6 +26,7 @@ class NoHelperException(Exception):
 
 
 class GitHgHelper(object):
+    VERSION = 1
     _helper = False
     _last_manifest = None
 
@@ -44,6 +46,15 @@ class GitHgHelper(object):
                                                     'git-cinnabar-helper'))):
                 self._helper = GitProcess('cinnabar-helper',
                                           stdin=subprocess.PIPE)
+                if self._helper:
+                    self._helper.stdin.write('version %d\n' % self.VERSION)
+                    if not self._helper.stdout.readline():
+                        self._helper.wait()
+                        self._helper = None
+                        logging.getLogger('helper').warn(
+                            'Cinnabar helper executable is outdated. '
+                            'Please rebuild it.')
+                        raise NoHelperException
             else:
                 self._helper = None
 

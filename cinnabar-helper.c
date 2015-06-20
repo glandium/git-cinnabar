@@ -22,6 +22,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "cache.h"
@@ -32,6 +33,8 @@
 #include "object.h"
 #include "tree.h"
 #include "tree-walk.h"
+
+#define CMD_VERSION 1
 
 #define REFS_PREFIX "refs/cinnabar/"
 #define NOTES_REF "refs/notes/cinnabar"
@@ -685,6 +688,20 @@ error:
 	write_or_die(1, "error\n", 6);
 }
 
+static void do_version(struct string_list *command) {
+	long int version;
+
+	if (command->nr != 2)
+		exit(1);
+
+	version = strtol(command->items[1].string, NULL, 10);
+
+	if (!version || version != CMD_VERSION)
+		exit(1);
+
+	write_or_die(1, "ok\n", 3);
+}
+
 int main(int argc, const char *argv[]) {
 	struct strbuf buf = STRBUF_INIT;
 
@@ -701,6 +718,8 @@ int main(int argc, const char *argv[]) {
 			do_check_manifest(&command);
 		else if (!strcmp("cat-file", command.items[0].string))
 			do_cat_file(&command);
+		else if (!strcmp("version", command.items[0].string))
+			do_version(&command);
 		else
 			die("Unknown command: \"%s\"", command.items[0].string);
 
