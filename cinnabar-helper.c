@@ -599,7 +599,7 @@ not_found:
 
 static void do_manifest(struct string_list *command) {
 	unsigned char sha1[20];
-	const unsigned char *tree_sha1;
+	const unsigned char *manifest_sha1;
 	struct strbuf *manifest = NULL;
 	struct strbuf header = STRBUF_INIT;
 	size_t sha1_len;
@@ -611,11 +611,11 @@ static void do_manifest(struct string_list *command) {
 	if (!sha1_len)
 		goto not_found;
 
-	tree_sha1 = resolve_hg2git(sha1, sha1_len);
-	if (!tree_sha1)
+	manifest_sha1 = resolve_hg2git(sha1, sha1_len);
+	if (!manifest_sha1)
 		goto not_found;
 
-	manifest = generate_manifest(tree_sha1);
+	manifest = generate_manifest(manifest_sha1);
 	if (!manifest)
 		goto not_found;
 
@@ -635,7 +635,7 @@ not_found:
 
 static void do_check_manifest(struct string_list *command) {
 	unsigned char sha1[20], parent1[20], parent2[20], result[20];
-	const unsigned char *tree_sha1;
+	const unsigned char *manifest_sha1;
 	struct strbuf *manifest = NULL;
 	git_SHA_CTX ctx;
 
@@ -657,11 +657,11 @@ static void do_check_manifest(struct string_list *command) {
 	} else
 		memset(parent2, 0, sizeof(parent2));
 
-	tree_sha1 = resolve_hg2git(sha1, 40);
-	if (!tree_sha1)
+	manifest_sha1 = resolve_hg2git(sha1, 40);
+	if (!manifest_sha1)
 		goto error;
 
-	manifest = generate_manifest(tree_sha1);
+	manifest = generate_manifest(manifest_sha1);
 	if (!manifest)
 		goto error;
 
