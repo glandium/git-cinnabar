@@ -333,8 +333,7 @@ def fsck(args):
                     if stdout.readline().strip() != 'ok':
                         report('Sha1 mismatch for manifest %s' % manifest)
             except NoHelperException:
-                hg_manifest = store.manifest(manifest)
-                hg_manifest.set_parents(*parents)
+                hg_manifest = store.manifest(manifest, include_parents=True)
                 if hg_manifest.node != hg_manifest.sha1:
                     report('Sha1 mismatch for manifest %s' % manifest)
 
