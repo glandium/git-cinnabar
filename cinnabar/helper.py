@@ -26,7 +26,7 @@ class NoHelperException(Exception):
 
 
 class GitHgHelper(object):
-    VERSION = 1
+    VERSION = 2
     _helper = False
     _last_manifest = None
 

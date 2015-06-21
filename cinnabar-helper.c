@@ -12,10 +12,9 @@
  *     Returns the contents of the mercurial manifest with the given
  *     mercurial sha1, preceded by its length in text form, and followed
  *     by a carriage return.
- * - check-manifest <hg_sha1> <parent1>? <parent2>?
+ * - check-manifest <hg_sha1>
  *     Returns 'ok' when the sha1 of the contents of the mercurial manifest
- *     along with the given parent nodes matches the manifest sha1, otherwise
- *     returns 'error'.
+ *     matches the manifest sha1, otherwise returns 'error'.
  * - cat-file <object>
  *     Returns the contents of the given git object, in a `cat-file
  *     --batch`-like format.
@@ -26,6 +25,7 @@
 #include <string.h>
 
 #include "cache.h"
+#include "commit.h"
 #include "strbuf.h"
 #include "string-list.h"
 #include "notes.h"
@@ -34,7 +34,7 @@
 #include "tree.h"
 #include "tree-walk.h"
 
-#define CMD_VERSION 1
+#define CMD_VERSION 2
 
 #define REFS_PREFIX "refs/cinnabar/"
 #define NOTES_REF "refs/notes/cinnabar"
@@ -633,29 +633,32 @@ not_found:
 	write_or_die(1, "0\n\n", 3);
 }
 
+static void get_manifest_sha1(const struct commit *commit, unsigned char *sha1) {
+	const char *msg;
+	const char *hex_sha1;
+
+	msg = get_commit_buffer(commit, NULL);
+
+	hex_sha1 = strstr(msg, "\n\n") + 2;
+
+	if (get_sha1_hex(hex_sha1, sha1))
+		hashclr(sha1);
+
+	unuse_commit_buffer(commit, msg);
+}
+
 static void do_check_manifest(struct string_list *command) {
 	unsigned char sha1[20], parent1[20], parent2[20], result[20];
 	const unsigned char *manifest_sha1;
+	const struct commit *manifest_commit;
 	struct strbuf *manifest = NULL;
 	git_SHA_CTX ctx;
 
-	if (command->nr < 2 || command->nr > 4)
+	if (command->nr != 2)
 		goto error;
 
 	if (get_sha1_hex(command->items[1].string, sha1))
 		goto error;
-
-	if (command->nr > 2) {
-		if (get_sha1_hex(command->items[2].string, parent1))
-			goto error;
-	} else
-		memset(parent1, 0, sizeof(parent1));
-
-	if (command->nr > 3) {
-		if (get_sha1_hex(command->items[3].string, parent2))
-			goto error;
-	} else
-		memset(parent2, 0, sizeof(parent2));
 
 	manifest_sha1 = resolve_hg2git(sha1, 40);
 	if (!manifest_sha1)
@@ -664,6 +667,22 @@ static void do_check_manifest(struct string_list *command) {
 	manifest = generate_manifest(manifest_sha1);
 	if (!manifest)
 		goto error;
+
+	manifest_commit = lookup_commit(manifest_sha1);
+	if (!manifest_commit)
+		goto error;
+
+	if (manifest_commit->parents) {
+		get_manifest_sha1(manifest_commit->parents->item, parent1);
+		if (manifest_commit->parents->next) {
+			get_manifest_sha1(manifest_commit->parents->next->item,
+			                  parent2);
+		} else
+			hashclr(parent2);
+	} else {
+		hashclr(parent1);
+		hashclr(parent2);
+	}
 
 	git_SHA1_Init(&ctx);
 
