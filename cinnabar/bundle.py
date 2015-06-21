@@ -271,10 +271,10 @@ class PushStore(GitHgStore):
             return self._push_files[sha1]
         return super(PushStore, self).file(sha1)
 
-    def manifest(self, sha1):
+    def manifest(self, sha1, include_parents=False):
         if sha1 in self._push_manifests:
             return self._push_manifests[sha1]
-        return super(PushStore, self).manifest(sha1)
+        return super(PushStore, self).manifest(sha1, include_parents)
 
     def changeset(self, sha1, include_parents=False):
         if sha1 in self._push_changesets:
@@ -331,18 +331,15 @@ def create_bundle(store, commits):
         yield data
         manifest = changeset_data['manifest']
         if manifest not in manifests:
-            manifests[manifest] = (
-                changeset, tuple(store.read_changeset_data(p)['manifest']
-                                 for p in parents))
+            manifests[manifest] = changeset
 
     yield '\0' * 4
 
     previous = None
-    for manifest, (changeset, parents) in manifests.iteritems():
-        if previous is None and parents and parents[0] != NULL_NODE_ID:
-            previous = store.manifest(parents[0])
-        hg_manifest = store.manifest(manifest)
-        hg_manifest.set_parents(*parents)
+    for manifest, changeset in manifests.iteritems():
+        hg_manifest = store.manifest(manifest, include_parents=True)
+        if previous is None and hg_manifest.parent1 != NULL_NODE_ID:
+            previous = store.manifest(hg_manifest.parent1)
         hg_manifest.changeset = changeset
         data = hg_manifest.serialize(previous)
         previous = hg_manifest
@@ -357,7 +354,11 @@ def create_bundle(store, commits):
                 files[path].append((sha1, (file.parent1, file.parent2),
                                     changeset))
             continue
-        parents = tuple(store.manifest_ref(p) for p in parents)
+        parents = tuple(
+            store.manifest_ref(p)
+            for p in (hg_manifest.parent1, hg_manifest.parent2)
+            if p != NULL_NODE_ID
+        )
         changes = get_changes(manifest_ref, parents, 'hg')
         for path, hg_file, hg_fileparents in changes:
             if hg_file != NULL_NODE_ID:
