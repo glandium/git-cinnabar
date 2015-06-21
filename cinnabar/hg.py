@@ -341,6 +341,7 @@ def get_repo(url):
         url = urlunparse(('file', '', parsed_url.path, '', '', ''))
     ui_ = ui.ui()
     ui_.fout = ui_.ferr
+    ui_.setconfig('ui', 'quiet', True)
     if (not parsed_url.scheme or parsed_url.scheme == 'file') and \
             not os.path.isdir(parsed_url.path):
         return bundlerepo(parsed_url.path)
