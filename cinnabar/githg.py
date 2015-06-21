@@ -673,6 +673,11 @@ class GitHgStore(object):
             return data['changeset']
         return None
 
+    def hg_manifest(self, sha1):
+        git_commit = GitCommit(sha1)
+        assert len(git_commit.body) == 40
+        return git_commit.body
+
     def _hg2git(self, expected_type, sha1):
         if not self._has_metadata and not self._closed:
             return None
@@ -770,13 +775,18 @@ class GitHgStore(object):
         '120000': 'l',
     }
 
-    def manifest(self, sha1):
+    def manifest(self, sha1, include_parents=False):
         manifest = GeneratedManifestInfo(sha1)
         data = GitHgHelper.manifest(sha1)
         if isinstance(data, types.StringType):
             manifest.data = data
         else:
             manifest._lines = data
+        if include_parents:
+            git_sha1 = self.manifest_ref(sha1)
+            commit = GitCommit(git_sha1)
+            parents = (self.hg_manifest(p) for p in commit.parents)
+            manifest.set_parents(*parents)
         return manifest
 
     def manifest_ref(self, sha1, hg2git=True, create=False):
