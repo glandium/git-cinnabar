@@ -160,12 +160,17 @@ class Git(object):
         return tuple(self.iter(*args, stdout=None))
 
     @classmethod
-    def for_each_ref(self, *patterns, **kwargs):
-        assert not kwargs or kwargs.keys() == ['format']
-        format = kwargs.get('format', '%(objectname)')
-        if format:
-            return self.iter('for-each-ref', '--format', format, *patterns)
-        return self.iter('for-each-ref', *patterns)
+    def for_each_ref(self, *patterns):
+        # Ideally, this would not actually call for-each-ref if all refs
+        # matching the given patterns are already known.
+        for line in self.iter('for-each-ref', '--format',
+                              '%(objectname) %(refname)', *patterns):
+            sha1, ref = line.split(' ', 1)
+            if isinstance(self._refs.get(ref), Mark):
+                yield self._refs[ref], ref
+            elif ref not in self._refs or self._refs[ref] is not None:
+                self._refs[ref] = sha1
+                yield sha1, ref
 
     @classmethod
     def resolve_ref(self, ref):

@@ -485,9 +485,7 @@ class GitHgStore(object):
         self._hgheads = set()
 
         self._replace = {}
-        for line in Git.for_each_ref('refs/cinnabar/replace',
-                                     format='%(objectname) %(refname)'):
-            sha1, head = line.split()
+        for sha1, head in Git.for_each_ref('refs/cinnabar/replace'):
             self._replace[head[22:]] = sha1
         self._replace_orig = dict(self._replace)
 
@@ -523,7 +521,8 @@ class GitHgStore(object):
 
     def _open(self):
         metadata_ref = Git.resolve_ref('refs/cinnabar/metadata')
-        old_branches = list(Git.for_each_ref('refs/cinnabar/branches'))
+        old_branches = list(
+            sha1 for sha1, ref in Git.for_each_ref('refs/cinnabar/branches'))
         if not metadata_ref and old_branches:
             raise UpgradeException(
                 'Git-cinnabar metadata needs upgrade. '
@@ -560,8 +559,8 @@ class GitHgStore(object):
         self._early_history = set()
         self._graft_only = graft_only
         if refs:
-            refs = list(Git.for_each_ref(*(r.replace('*', '**') for r in refs),
-                                         format='%(refname)'))
+            refs = list(ref for sha1, ref in Git.for_each_ref(
+                *(r.replace('*', '**') for r in refs)))
         else:
             refs = ['--all']
         if not refs:

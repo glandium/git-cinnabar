@@ -228,9 +228,8 @@ def main(args):
                 # If anything wrong happens before we got all the import
                 # commands, we risk git picking the existing refs/cinnabar
                 # refs. Remove them.
-                for line in Git.for_each_ref('refs/cinnabar/refs/heads',
-                                             'refs/cinnabar/HEAD',
-                                             format='%(refname)'):
+                for sha1, ref in Git.for_each_ref('refs/cinnabar/refs/heads',
+                                                  'refs/cinnabar/HEAD'):
                     Git.delete_ref(ref)
                 raise
 
@@ -255,10 +254,8 @@ def main(args):
                     heads = branchmap.heads()
 
                 refs_orig = {}
-                for line in Git.for_each_ref(
-                        'refs/cinnabar/refs/heads', 'refs/cinnabar/HEAD',
-                        format='%(objectname) %(refname)'):
-                    sha1, ref = line.split(' ', 1)
+                for sha1, ref in Git.for_each_ref(
+                        'refs/cinnabar/refs/heads', 'refs/cinnabar/HEAD'):
                     refs_orig[ref] = sha1
             except:
                 # If anything wrong happens before we actually pull, we risk

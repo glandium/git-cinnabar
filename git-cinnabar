@@ -40,9 +40,7 @@ class UpgradeGitHgStore(GitHgStore):
         self._manifest_heads_orig = set()
         self._manifest_dag = gitdag()
         self._hgheads_orig = set()
-        for line in Git.for_each_ref('refs/cinnabar/branches',
-                                     format='%(objectname) %(refname)'):
-            sha1, head = line.split()
+        for sha1, head in Git.for_each_ref('refs/cinnabar/branches'):
             branch, hghead = head[23:].split('/', 1)
             self._hgheads.add((branch, hghead))
             self._changesets[hghead] = sha1
@@ -54,11 +52,10 @@ class UpgradeGitHgStore(GitHgStore):
 
     def close(self):
         super(UpgradeGitHgStore, self).close()
-        for ref in Git.for_each_ref(
+        for sha1, ref in Git.for_each_ref(
                 'refs/cinnabar/manifest',
                 'refs/cinnabar/tagcache',
-                'refs/cinnabar/branches',
-                format='%(refname)'):
+                'refs/cinnabar/branches'):
             Git.delete_ref(ref)
         super(UpgradeGitHgStore, self)._close_fast_import()
 
@@ -116,9 +113,10 @@ def fsck(args):
 
     store.init_fast_import(lazy=True)
 
-    replace_commits = ['^%s^@' % r[22:]
-                       for r in Git.for_each_ref('refs/cinnabar/replace',
-                                                 format='%(refname)')]
+    replace_commits = [
+        '^%s^@' % r[22:]
+        for sha1, r in Git.for_each_ref('refs/cinnabar/replace')
+    ]
 
     if args.commit:
         all_hg2git = {}
@@ -148,12 +146,12 @@ def fsck(args):
             'log', '--no-walk=unsorted', '--stdin', '--format=%T %H',
             stdin=commits)
     else:
-        all_refs = set(Git.for_each_ref('refs/cinnabar', format='%(refname)'))
+        all_refs = set(ref for sha1, ref in Git.for_each_ref('refs/cinnabar'))
 
         if 'refs/cinnabar/manifest' in all_refs:
             all_git_heads = chain(
-                Git.for_each_ref('refs/cinnabar/branches',
-                                 format='%(refname)'),
+                (ref for sha1, ref in
+                 Git.for_each_ref('refs/cinnabar/branches')),
                 replace_commits,
             )
             manifests_rev = 'refs/cinnabar/manifest'
@@ -467,8 +465,8 @@ def main(args):
     elif cmd == 'fsck':
         return fsck(args)
     elif cmd == 'reclone':
-        for ref in Git.for_each_ref('refs/cinnabar', 'refs/notes/cinnabar',
-                                    format='%(refname)'):
+        for sha1, ref in Git.for_each_ref('refs/cinnabar',
+                                          'refs/notes/cinnabar'):
             Git.delete_ref(ref)
         Git.close()
 
