@@ -43,7 +43,7 @@ def split_ls_tree(line):
 
 
 class GitProcess(object):
-    KWARGS = set(['stdin', 'stdout', 'stderr', 'config'])
+    KWARGS = set(['stdin', 'stdout', 'stderr', 'config', 'env'])
 
     def __init__(self, *args, **kwargs):
         assert not kwargs or not set(kwargs.keys()) - self.KWARGS
@@ -51,6 +51,7 @@ class GitProcess(object):
         stdout = kwargs.get('stdout', subprocess.PIPE)
         stderr = kwargs.get('stderr', None)
         config = kwargs.get('config', {})
+        env = kwargs.get('env', {})
         if isinstance(stdin, (StringType, Iterable)):
             proc_stdin = subprocess.PIPE
         else:
@@ -59,8 +60,14 @@ class GitProcess(object):
         git = ['git'] + list(chain(*(['-c', '%s=%s' % (n, v)]
                                      for n, v in config.iteritems())))
 
+        full_env = None
+        if env:
+            full_env = os.environ.copy()
+            full_env.update(env)
+
         self._proc = subprocess.Popen(git + list(args), stdin=proc_stdin,
-                                      stdout=stdout, stderr=stderr)
+                                      stdout=stdout, stderr=stderr,
+                                      env=full_env)
 
         logger = logging.getLogger(args[0])
         if logger.isEnabledFor(logging.INFO):
