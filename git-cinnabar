@@ -40,7 +40,7 @@ class UpgradeGitHgStore(GitHgStore):
         self._manifest_heads_orig = set()
         self._manifest_dag = gitdag()
         self._hgheads_orig = set()
-        for sha1, head in Git.for_each_ref('refs/cinnabar/branches'):
+        for sha1, head in self._old_branches:
             branch, hghead = head[23:].split('/', 1)
             self._hgheads.add((branch, hghead))
             self._changesets[hghead] = sha1

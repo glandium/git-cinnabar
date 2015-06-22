@@ -485,8 +485,12 @@ class GitHgStore(object):
         self._hgheads = set()
 
         self._replace = {}
-        for sha1, head in Git.for_each_ref('refs/cinnabar/replace'):
-            self._replace[head[22:]] = sha1
+        self._old_branches = []
+        for sha1, ref in Git.for_each_ref('refs/cinnabar'):
+            if ref.startswith('refs/cinnabar/replace/'):
+                self._replace[ref[22:]] = sha1
+            elif ref.startswith('refs/cinnabar/branches/'):
+                self._old_branches.append((sha1, ref))
         self._replace_orig = dict(self._replace)
 
         self._graft_trees = defaultdict(list)
@@ -521,9 +525,7 @@ class GitHgStore(object):
 
     def _open(self):
         metadata_ref = Git.resolve_ref('refs/cinnabar/metadata')
-        old_branches = list(
-            sha1 for sha1, ref in Git.for_each_ref('refs/cinnabar/branches'))
-        if not metadata_ref and old_branches:
+        if not metadata_ref and self._old_branches:
             raise UpgradeException(
                 'Git-cinnabar metadata needs upgrade. '
                 'Please run `git cinnabar fsck`.'
