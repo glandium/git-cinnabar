@@ -351,14 +351,9 @@ def create_bundle(store, commits):
                 if not isinstance(sha1, types.StringType):
                     continue
                 file = store.file(sha1)
-                files[path].append((sha1, (file.parent1, file.parent2),
-                                    changeset))
+                files[path].append((sha1, file.parents, changeset))
             continue
-        parents = tuple(
-            store.manifest_ref(p)
-            for p in (hg_manifest.parent1, hg_manifest.parent2)
-            if p != NULL_NODE_ID
-        )
+        parents = tuple(store.manifest_ref(p) for p in hg_manifest.parents)
         changes = get_changes(manifest_ref, parents, 'hg')
         for path, hg_file, hg_fileparents in changes:
             if hg_file != NULL_NODE_ID:

@@ -150,6 +150,14 @@ class RevChunk(object):
         )
         return header + self.diff(other)
 
+    @property
+    def parents(self):
+        if self.parent1 != NULL_NODE_ID:
+            if self.parent2 != NULL_NODE_ID:
+                return (self.parent1, self.parent2)
+            return (self.parent1,)
+        return ()
+
 
 class GeneratedRevChunk(RevChunk):
     def __init__(self, node, data):
@@ -909,11 +917,7 @@ class GitHgStore(object):
         else:
             committer = author
 
-        parents = tuple(
-            self.changeset_ref(p)
-            for p in (instance.parent1, instance.parent2)
-            if p != NULL_NODE_ID
-        )
+        parents = tuple(self.changeset_ref(p) for p in instance.parents)
 
         tree = self.git_tree(instance.manifest)
         do_graft = tree in self._graft_trees
@@ -1033,9 +1037,7 @@ class GitHgStore(object):
             previous = self.manifest_ref(instance.previous_node)
         else:
             previous = None
-        parents = tuple(self.manifest_ref(p)
-                        for p in (instance.parent1, instance.parent2)
-                        if p != NULL_NODE_ID)
+        parents = tuple(self.manifest_ref(p) for p in instance.parents)
         with self._fast_import.commit(
             ref='refs/cinnabar/manifests',
             from_commit=previous,

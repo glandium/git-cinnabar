@@ -307,8 +307,7 @@ def fsck(args):
 
         parents = tuple(
             store.read_changeset_data(store.changeset_ref(p))['manifest']
-            for p in (hg_changeset.parent1, hg_changeset.parent2)
-            if p != NULL_NODE_ID
+            for p in hg_changeset.parents
         )
         git_parents = tuple(store.manifest_ref(p) for p in parents)
 
