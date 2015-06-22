@@ -362,9 +362,7 @@ def fsck(args):
                    % (manifest_ref, node))
 
         if args.files:
-            changes = get_changes(
-                manifest_ref, tuple(store.manifest_ref(p) for p in parents),
-                'hg')
+            changes = get_changes(manifest_ref, git_parents, 'hg')
             for path, hg_file, hg_fileparents in changes:
                 if hg_file != NULL_NODE_ID and hg_file not in seen_files:
                     file = store.file(hg_file)

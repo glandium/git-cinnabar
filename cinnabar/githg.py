@@ -344,14 +344,24 @@ class ChangesetData(object):
 class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
     def __init__(self, node):
         super(GeneratedManifestInfo, self).__init__(node, '')
-        self.__lines = None
-        self._data = ''
+        if node == NULL_NODE_ID:
+            self.__lines = []
+        else:
+            self.__lines = None
+        self._data = None
 
     def init(self, previous_chunk):
         pass
 
     @property
     def data(self):
+        if self._data is None and self.__lines is None:
+            data = GitHgHelper.manifest(self.node)
+            if isinstance(data, types.StringType):
+                self._data = data
+            else:
+                self.__lines = data
+
         if self._data is None:
             # Normally, it'd be better to use str(l), but it turns out to make
             # things significantly slower. Sigh python.
@@ -367,7 +377,7 @@ class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
     @property
     def _lines(self):
         if self.__lines is None:
-            self.__lines = list(isplitmanifest(self.data))
+            self.__lines = list(isplitmanifest(self.data or ''))
             self._data = None
         return self.__lines
 
@@ -777,11 +787,6 @@ class GitHgStore(object):
 
     def manifest(self, sha1, include_parents=False):
         manifest = GeneratedManifestInfo(sha1)
-        data = GitHgHelper.manifest(sha1)
-        if isinstance(data, types.StringType):
-            manifest.data = data
-        else:
-            manifest._lines = data
         if include_parents:
             git_sha1 = self.manifest_ref(sha1)
             commit = GitCommit(git_sha1)
