@@ -472,7 +472,9 @@ class FastImport(IOLogger):
         for count, parent in enumerate(parents):
             if count == 0 and parent == from_commit:
                 from_commit = None
-                self.write('from %s\n' % parent)
+                resolved_ref = Git._refs.get(ref)
+                if not isinstance(resolved_ref, Mark) or parent != resolved_ref:
+                    self.write('from %s\n' % parent)
             else:
                 if count == 0:
                     self.write('from %s\n' % NULL_NODE_ID)
