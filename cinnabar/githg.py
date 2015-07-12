@@ -39,7 +39,10 @@ from .git import (
 from .helper import GitHgHelper
 from .util import progress_iter
 from .dag import gitdag
-from mercurial import mdiff
+try:
+    from mercurial.mdiff import textdiff
+except ImportError:
+    from .bdiff import bdiff as textdiff
 from distutils.dir_util import mkpath
 
 import time
@@ -135,7 +138,7 @@ class RevChunk(object):
         ).hexdigest()
 
     def diff(self, other):
-        return mdiff.textdiff(other.data if other else '', self.data)
+        return textdiff(other.data if other else '', self.data)
 
     def serialize(self, other):
         header = struct.pack(

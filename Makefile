@@ -5,6 +5,7 @@ PYTHON_SCRIPTS := \
 PYTHON_LIBS := \
 	cinnabar/__init__.py \
 	cinnabar/githg.py \
+	cinnabar/bdiff.py \
 	cinnabar/bundle.py \
 	cinnabar/dag.py \
 	cinnabar/helper.py \
