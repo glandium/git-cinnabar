@@ -45,7 +45,11 @@ helper for faster operation:
   $ git submodule update --init
   Then see git-core/INSTALL for build/install instructions, but run the
   commands in this directory. This will build/install git as well as
-  the tools from this directory.
+  the tools from this directory. Note that if you have a non-standard Python
+  installation location (for example if you are on OSX and have installed
+  it using homebrew) you need to pass --with-python=/path/to/python to the
+  configure script or set the PYTHON_PATH environment variable to your Python
+  installation path when using make to build this tool.
 
 Usage:
 ------
