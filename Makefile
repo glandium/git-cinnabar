@@ -40,8 +40,8 @@ clean-pythonscripts:
 
 PYTHON_LIBS_DIRS := $(sort $(dir $(PYTHON_LIBS)))
 
-$(PYTHON_SCRIPTS): %.py: ../%
-	ln -s $^ $@
+$(PYTHON_SCRIPTS): %.py:
+	ln -s ../$* $@
 
 define _
 $1
