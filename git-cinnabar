@@ -66,18 +66,6 @@ class UpgradeGitHgStore(GitHgStore):
 
 
 def fsck(args):
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '--manifests', action='store_true',
-        help='Validate manifests hashes')
-    parser.add_argument(
-        '--files', action='store_true',
-        help='Validate files hashes')
-    parser.add_argument(
-        'commit', nargs='*',
-        help='Specific commit or changeset to check')
-    args = parser.parse_args(args)
-
     status = {
         'broken': False,
         'fixed': False,
@@ -474,17 +462,67 @@ def do_bundle(fname, *revs):
 
 
 def main(args):
-    cmd = args.pop(0)
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(title='subcommands', dest='command')
+
+    subparser = subparsers.add_parser(
+        'data', help='dump the contents of a mercurial revision')
+    subparser.add_argument('-c', '--changeset', action='store_true',
+                           help='open changelog')
+    subparser.add_argument('-m', '--manifest', action='store_true',
+                           help='open manifest')
+    subparser.add_argument('rev', help='revision')
+
+    subparser = subparsers.add_parser(
+        'fsck', help='check cinnabar metadata consistency')
+    subparser.add_argument('--manifests', action='store_true',
+                           help='Validate manifests hashes')
+    subparser.add_argument('--files', action='store_true',
+                           help='Validate files hashes')
+    subparser.add_argument('commit', nargs='*',
+                           help='Specific commit or changeset to check')
+
+    subparser = subparsers.add_parser(
+        'reclone', help='reclone all mercurial remotes')
+
+    subparser = subparsers.add_parser(
+        'hg2git', help='convert mercurial sha1 to corresponding git sha1')
+    subparser.add_argument('sha1', nargs='+', help='mercurial sha1')
+
+    subparser = subparsers.add_parser(
+        'git2hg', help='convert git sha1 to corresponding mercurial sha1')
+    subparser.add_argument('sha1', nargs='+', help='git sha1')
+
+    subparser = subparsers.add_parser(
+        'bundle', help='create a mercurial bundle')
+    subparser.add_argument('path', help='path of the bundle')
+    subparser.add_argument('rev', nargs='+',
+                           help='git revision range (see the Specifying Ranges'
+                                ' section of gitrevisions(7))')
+
+    subparser = subparsers.add_parser(
+        'python', help='open a python shell with the cinnabar module in'
+                       ' sys.path')
+
+    args = parser.parse_args(args)
+
+    cmd = args.command
     if cmd == 'data':
         try:
             store = GitHgStore()
         except UpgradeException as e:
             print >>sys.stderr, e.message
             return 1
-        if args[0] == '-c':
-            sys.stdout.write(store.changeset(args[1]).data)
-        elif args[0] == '-m':
-            sys.stdout.write(store.manifest(args[1]).data)
+        if args.changeset and args.manifest:
+            print >>sys.stderr, 'Cannot use both -c and -m.'
+            return 1
+        if not args.changeset and not args.manifest:
+            print >>sys.stderr, 'One of -c or -m required.'
+            return 1
+        if args.changeset:
+            sys.stdout.write(store.changeset(args.rev).data)
+        elif args.manifest:
+            sys.stdout.write(store.manifest(args.rev).data)
         store.close()
     elif cmd == 'fsck':
         return fsck(args)
@@ -505,10 +543,10 @@ def main(args):
         print 'Please note that reclone left your local branches untouched.'
         print 'They may be based on entirely different commits.'
     elif cmd == 'hg2git':
-        for arg in args:
+        for arg in args.sha1:
             print GitHgHelper.hg2git(arg)
     elif cmd == 'git2hg':
-        for arg in args:
+        for arg in args.sha1:
             data = GitHgHelper.git2hg(arg)
             if data:
                 data = ChangesetData.parse(data)
@@ -516,13 +554,10 @@ def main(args):
             else:
                 print NULL_NODE_ID
     elif cmd == 'bundle':
-        return do_bundle(*args)
+        return do_bundle(args.path, *args.rev)
     elif cmd == 'python':
         import code
         code.interact()
-    else:
-        print >>sys.stderr, 'Unknown command:', cmd
-        return 1
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
