@@ -225,6 +225,8 @@ class ChangesetInfo(RevChunk):
 
 
 class ManifestLine(object):
+    __slots__ = ('name', 'node', 'attr', '_str', '_len')
+
     def __init__(self, name, node, attr):
         self.name = name
         self.node = node
