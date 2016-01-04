@@ -376,7 +376,6 @@ class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
             # Normally, it'd be better to use str(l), but it turns out to make
             # things significantly slower. Sigh python.
             self._data = ''.join(l._str for l in self._lines)
-            self.__lines = None
         return self._data
 
     @data.setter
@@ -388,12 +387,15 @@ class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
     def _lines(self):
         if self.__lines is None:
             self.__lines = list(isplitmanifest(self.data or ''))
-            self._data = None
-        return self.__lines
+        return iter(self.__lines)
 
     @_lines.setter
     def _lines(self, value):
         self.__lines = value
+        self._data = None
+
+    def append_line(self, line):
+        self.__lines.append(line)
         self._data = None
 
 

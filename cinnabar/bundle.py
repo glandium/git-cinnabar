@@ -108,7 +108,7 @@ class PushStore(GitHgStore):
             parent_changeset_data = self.read_changeset_data(parents[0])
             parent_manifest = self.manifest(parent_changeset_data['manifest'])
             parent_node = parent_manifest.node
-            parent_lines = parent_manifest._lines
+            parent_lines = list(parent_manifest._lines)
             branch = parent_changeset_data.get('extra', {}).get('branch')
 
             line = None
@@ -180,9 +180,9 @@ class PushStore(GitHgStore):
                     node = self.create_file(node)
                 created_line = ManifestLine(next_created[0], node, attr)
                 modified_lines.append(created_line)
-                manifest._lines.append(created_line)
+                manifest.append_line(created_line)
                 next_created = next(iter_created)
-            manifest._lines.append(line)
+            manifest.append_line(line)
         while next_created:
             node, attr = next_created[1]
             if next_created[0] in copies:
@@ -193,7 +193,7 @@ class PushStore(GitHgStore):
                 node = self.create_file(node)
             created_line = ManifestLine(next_created[0], node, attr)
             modified_lines.append(created_line)
-            manifest._lines.append(created_line)
+            manifest.append_line(created_line)
             next_created = next(iter_created)
 
         commit_data = GitCommit(commit)
