@@ -323,9 +323,16 @@ def push(repo, store, what, repo_heads, repo_branches):
 
     pushed = False
     if push_commits:
+        has_root = any(len(p) == 40 for p in push_commits)
+        force = all(v[1] for v in what.values())
+        if has_root and repo_heads:
+            if not force:
+                raise Exception('Cannot push a new root')
+            else:
+                logging.warn('Pushing a new root')
         chunks = util.chunkbuffer(create_bundle(store, push_commits))
         cg = cg1unpacker(chunks, 'UN')
-        if all(v[1] for v in what.values()):
+        if force:
             repo_heads = ['force']
         else:
             if not repo_heads:
