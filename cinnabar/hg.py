@@ -328,6 +328,8 @@ def push(repo, store, what, repo_heads, repo_branches):
         if all(v[1] for v in what.values()):
             repo_heads = ['force']
         else:
+            if not repo_heads:
+                repo_heads = [NULL_NODE_ID]
             repo_heads = [unhexlify(h) for h in repo_heads]
         if repo.local():
             repo.local().ui.setconfig('server', 'validate', True)
