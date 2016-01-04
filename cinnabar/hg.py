@@ -335,17 +335,21 @@ def push(repo, store, what, repo_heads, repo_branches):
     return gitdag(push_commits) if pushed else ()
 
 
+def get_ui():
+    ui_ = ui.ui()
+    ui_.fout = ui_.ferr
+    ui_.setconfig('progress', 'disable', True)
+    return ui_
+
+
 def get_repo(url):
     parsed_url = urlparse(url)
     if not parsed_url.scheme:
         url = urlunparse(('file', '', parsed_url.path, '', '', ''))
-    ui_ = ui.ui()
-    ui_.fout = ui_.ferr
-    ui_.setconfig('progress', 'disable', True)
     if (not parsed_url.scheme or parsed_url.scheme == 'file') and \
             not os.path.isdir(parsed_url.path):
         return bundlerepo(parsed_url.path)
     else:
-        repo = hg.peer(ui_, {}, url)
+        repo = hg.peer(get_ui(), {}, url)
         assert repo.capable('getbundle')
         return repo

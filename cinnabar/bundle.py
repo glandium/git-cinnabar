@@ -78,11 +78,19 @@ class PushStore(GitHgStore):
     def adopt(cls, store, graft):
         assert isinstance(store, GitHgStore)
         store.__class__ = cls
-        store._push_files = {}
-        store._push_manifests = OrderedDict()
-        store._push_changesets = {}
-        store._manifest_git_tree = {}
-        store._graft = bool(graft)
+        store._init(graft)
+
+    def __init__(self, *args, **kwargs):
+        super(PushStore, self).__init__(*args, **kwargs)
+        graft = kwargs.get('graft', False)
+        self._init(graft)
+
+    def _init(self, graft=False):
+        self._push_files = {}
+        self._push_manifests = OrderedDict()
+        self._push_changesets = {}
+        self._manifest_git_tree = {}
+        self._graft = bool(graft)
 
     def create_hg_metadata(self, commit, parents):
         if len(parents) > 1:
