@@ -370,11 +370,10 @@ class EmptyMark(Mark):
 
 class FastImport(IOLogger):
     def __init__(self):
-        reader, writer = os.pipe()
-        reader = os.fdopen(reader, 'r', 0)
-        self._proc = GitProcess('fast-import', '--cat-blob-fd=%d' % writer,
-                                '--quiet', stdin=subprocess.PIPE,
+        self._proc = GitProcess('fast-import', '--quiet',
+                                stdin=subprocess.PIPE,
                                 config={'core.ignorecase': 'false'})
+        reader = self._proc.stdout
         writer = self._proc.stdin
         prefix = '[%d]' % self._proc.pid
 
