@@ -75,6 +75,11 @@ class BranchMap(object):
 
 
 def main(args):
+    if sys.platform == 'win32':
+        # By default, sys.stdout on Windows will transform \n into \r\n, which
+        # the calling git process won't recognize in our answers.
+        import msvcrt
+        msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
     logger = logging.getLogger('-')
     logger.info(args)
     assert len(args) == 2
