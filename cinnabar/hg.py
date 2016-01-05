@@ -24,6 +24,7 @@ from itertools import (
     izip,
 )
 from urlparse import (
+    ParseResult,
     urlparse,
     urlunparse,
 )
@@ -351,14 +352,34 @@ def get_ui():
     return ui_
 
 
-def get_repo(url):
+def munge_url(url):
     parsed_url = urlparse(url)
     if not parsed_url.scheme:
-        url = urlunparse(('file', '', parsed_url.path, '', '', ''))
-    if (not parsed_url.scheme or parsed_url.scheme == 'file') and \
-            not os.path.isdir(parsed_url.path):
+        return ParseResult('file', '', parsed_url.path, '', '', '')
+
+    if parsed_url.scheme != 'hg':
+        return parsed_url
+
+    proto = 'https'
+    host = parsed_url.netloc
+    if ':' in host:
+        host, port = host.rsplit(':', 1)
+        if '.' in port:
+            port, proto = port.split('.', 1)
+        if not port.isdigit():
+            proto = port
+            port = None
+        if port:
+            host = host + ':' + port
+    return ParseResult(proto, host, parsed_url.path, parsed_url.params,
+                       parsed_url.query, parsed_url.fragment)
+
+
+def get_repo(url):
+    parsed_url = munge_url(url)
+    if (parsed_url.scheme == 'file' and not os.path.isdir(parsed_url.path)):
         return bundlerepo(parsed_url.path)
-    else:
-        repo = hg.peer(get_ui(), {}, url)
-        assert repo.capable('getbundle')
-        return repo
+    url = urlunparse(parsed_url)
+    repo = hg.peer(get_ui(), {}, url)
+    assert repo.capable('getbundle')
+    return repo
