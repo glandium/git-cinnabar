@@ -349,6 +349,11 @@ def get_ui():
     ui_ = ui.ui()
     ui_.fout = ui_.ferr
     ui_.setconfig('progress', 'disable', True)
+    ssh = os.environ.get('GIT_SSH_COMMAND')
+    if not ssh:
+        ssh = util.shellquote(os.environ.get('GIT_SSH'))
+    if ssh:
+        ui_.setconfig('ui', 'ssh', ssh)
     return ui_
 
 
