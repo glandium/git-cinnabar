@@ -377,8 +377,13 @@ def munge_url(url):
 
 def get_repo(url):
     parsed_url = munge_url(url)
-    if (parsed_url.scheme == 'file' and not os.path.isdir(parsed_url.path)):
-        return bundlerepo(parsed_url.path)
+    if parsed_url.scheme == 'file':
+        path = parsed_url.path
+        if sys.platform == 'win32':
+            # TODO: This probably needs more thought.
+            path = path.lstrip('/')
+        if not os.path.isdir(path):
+            return bundlerepo(path)
     url = urlunparse(parsed_url)
     repo = hg.peer(get_ui(), {}, url)
     assert repo.capable('getbundle')
