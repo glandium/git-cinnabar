@@ -301,8 +301,8 @@ static int get_manifest_tree(const unsigned char *git_sha1,
 	/* If the tree is empty, return an empty tree for both git
 	 * and hg. */
 	if (!tree->size) {
-		hashcpy(result->git, tree->object.sha1);
-		hashcpy(result->hg, tree->object.sha1);
+		hashcpy(result->git, tree->object.oid.hash);
+		hashcpy(result->hg, tree->object.oid.hash);
 		return 0;
 	}
 
