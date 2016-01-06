@@ -25,107 +25,39 @@ class NoHelperException(Exception):
     pass
 
 
-class GitHgHelper(object):
-    VERSION = 2
-    _helper = False
+class GitHgNoHelper(object):
     _last_manifest = None
 
     @classmethod
-    def close(self):
-        if self._helper:
-            self._helper.wait()
-        self._helper = None
-
-    @classmethod
-    @contextmanager
-    def query(self, name, *args):
-        if self._helper is False:
-            git_exec_path = os.environ.get('GIT_EXEC_PATH')
-            if (git_exec_path and not os.environ.get('GIT_CINNABAR_NO_HELPER')
-                    and os.path.exists(os.path.join(git_exec_path,
-                                                    'git-cinnabar-helper'))):
-                self._helper = GitProcess('cinnabar-helper',
-                                          stdin=subprocess.PIPE)
-                if self._helper:
-                    self._helper.stdin.write('version %d\n' % self.VERSION)
-                    if not self._helper.stdout.readline():
-                        self._helper.wait()
-                        self._helper = None
-                        logging.getLogger('helper').warn(
-                            'Cinnabar helper executable is outdated. '
-                            'Please rebuild it.')
-                        raise NoHelperException
-            else:
-                self._helper = None
-
-        if not self._helper:
-            raise NoHelperException
-        helper = self._helper
-        helper.stdin.write('%s %s\n' % (name, ' '.join(args)))
-        yield helper.stdout
-
-    @classmethod
-    def _read_file(self, expected_typ, stdout):
-        hg_sha1 = stdout.read(41)
-        if hg_sha1[-1] == '\n':
-            assert hg_sha1[:40] == NULL_NODE_ID
-            return None
-        typ, size = stdout.readline().split()
-        size = int(size)
-        assert expected_typ == 'auto' or typ == expected_typ
-        ret = stdout.read(size)
-        lf = stdout.read(1)
-        assert lf == '\n'
-        if expected_typ == 'auto':
-            return typ, ret
-        return ret
-
-    @classmethod
     def cat_file(self, typ, sha1):
-        try:
-            if isinstance(sha1, Mark):
-                raise NoHelperException
-            with self.query('cat-file', sha1) as stdout:
-                return self._read_file(typ, stdout)
-        except NoHelperException:
-            return Git.cat_file(typ, sha1)
+        return Git.cat_file(typ, sha1)
 
     @classmethod
     def git2hg(self, sha1):
-        try:
-            with self.query('git2hg', sha1) as stdout:
-                return self._read_file('blob', stdout)
-        except NoHelperException:
-            if not SHA1_RE.match(sha1):
-                sha1 = one(Git.iter('rev-parse', '--revs-only', sha1))
-            return Git.read_note('refs/notes/cinnabar', sha1)
+        if not SHA1_RE.match(sha1):
+            sha1 = one(Git.iter('rev-parse', '--revs-only', sha1))
+        return Git.read_note('refs/notes/cinnabar', sha1)
 
     @classmethod
     def hg2git(self, hg_sha1):
-        try:
-            with self.query('hg2git', hg_sha1) as stdout:
-                sha1 = stdout.read(41)
-                assert sha1[-1] == '\n'
-                return sha1[:40]
-        except NoHelperException:
-            if len(hg_sha1) < 40:
-                path = sha1path(hg_sha1)
-                dir, partial = path.rsplit('/', 1)
-                matches = []
-                for ls in Git.ls_tree('refs/cinnabar/hg2git', dir + '/'):
-                    mode, typ, gitsha1, path = ls
-                    if path.startswith(partial):
-                        matches.append(gitsha1)
-                if len(matches) == 1:
-                    return matches[0]
-                ls = None
-            else:
-                ls = one(Git.ls_tree('refs/cinnabar/hg2git',
-                                     sha1path(hg_sha1)))
-            if not ls:
-                return NULL_NODE_ID
-            mode, typ, gitsha1, path = ls
-            return gitsha1
+        if len(hg_sha1) < 40:
+            path = sha1path(hg_sha1)
+            dir, partial = path.rsplit('/', 1)
+            matches = []
+            for ls in Git.ls_tree('refs/cinnabar/hg2git', dir + '/'):
+                mode, typ, gitsha1, path = ls
+                if path.startswith(partial):
+                    matches.append(gitsha1)
+            if len(matches) == 1:
+                return matches[0]
+            ls = None
+        else:
+            ls = one(Git.ls_tree('refs/cinnabar/hg2git',
+                                 sha1path(hg_sha1)))
+        if not ls:
+            return NULL_NODE_ID
+        mode, typ, gitsha1, path = ls
+        return gitsha1
 
     @classmethod
     def _manifest(self, hg_sha1, git_sha1):
@@ -198,6 +130,96 @@ class GitHgHelper(object):
 
     @classmethod
     def manifest(self, hg_sha1):
+        git_sha1 = self.hg2git(hg_sha1)
+        lines = list(self._manifest(hg_sha1, git_sha1))
+        self._last_manifest = (git_sha1, lines)
+        return lines
+
+
+class GitHgHelper(object):
+    VERSION = 2
+    _helper = False
+
+    @classmethod
+    def close(self):
+        if self._helper:
+            self._helper.wait()
+        self._helper = None
+
+    @classmethod
+    @contextmanager
+    def query(self, name, *args):
+        if self._helper is False:
+            git_exec_path = os.environ.get('GIT_EXEC_PATH')
+            if (git_exec_path and not os.environ.get('GIT_CINNABAR_NO_HELPER')
+                    and os.path.exists(os.path.join(git_exec_path,
+                                                    'git-cinnabar-helper'))):
+                self._helper = GitProcess('cinnabar-helper',
+                                          stdin=subprocess.PIPE)
+                if self._helper:
+                    self._helper.stdin.write('version %d\n' % self.VERSION)
+                    if not self._helper.stdout.readline():
+                        self._helper.wait()
+                        self._helper = None
+                        logging.getLogger('helper').warn(
+                            'Cinnabar helper executable is outdated. '
+                            'Please rebuild it.')
+                        raise NoHelperException
+            else:
+                self._helper = None
+
+        if not self._helper:
+            raise NoHelperException
+        helper = self._helper
+        helper.stdin.write('%s %s\n' % (name, ' '.join(args)))
+        yield helper.stdout
+
+    @classmethod
+    def _read_file(self, expected_typ, stdout):
+        hg_sha1 = stdout.read(41)
+        if hg_sha1[-1] == '\n':
+            assert hg_sha1[:40] == NULL_NODE_ID
+            return None
+        typ, size = stdout.readline().split()
+        size = int(size)
+        assert expected_typ == 'auto' or typ == expected_typ
+        ret = stdout.read(size)
+        lf = stdout.read(1)
+        assert lf == '\n'
+        if expected_typ == 'auto':
+            return typ, ret
+        return ret
+
+    @classmethod
+    def cat_file(self, typ, sha1):
+        try:
+            if isinstance(sha1, Mark):
+                raise NoHelperException
+            with self.query('cat-file', sha1) as stdout:
+                return self._read_file(typ, stdout)
+        except NoHelperException:
+            return GitHgNoHelper.cat_file(typ, sha1)
+
+    @classmethod
+    def git2hg(self, sha1):
+        try:
+            with self.query('git2hg', sha1) as stdout:
+                return self._read_file('blob', stdout)
+        except NoHelperException:
+            return GitHgNoHelper.git2hg(sha1)
+
+    @classmethod
+    def hg2git(self, hg_sha1):
+        try:
+            with self.query('hg2git', hg_sha1) as stdout:
+                sha1 = stdout.read(41)
+                assert sha1[-1] == '\n'
+                return sha1[:40]
+        except NoHelperException:
+            return GitHgNoHelper.hg2git(hg_sha1)
+
+    @classmethod
+    def manifest(self, hg_sha1):
         try:
             with self.query('manifest', hg_sha1) as stdout:
                 size = int(stdout.readline().strip())
@@ -206,10 +228,7 @@ class GitHgHelper(object):
                 assert lf == '\n'
                 return ret
         except NoHelperException:
-            git_sha1 = self.hg2git(hg_sha1)
-            lines = list(self._manifest(hg_sha1, git_sha1))
-            self._last_manifest = (git_sha1, lines)
-            return lines
+            return GitHgNoHelper.manifest(hg_sha1)
 
 
 atexit.register(GitHgHelper.close)
