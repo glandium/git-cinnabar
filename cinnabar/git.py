@@ -124,6 +124,7 @@ class Git(object):
     _diff_tree = {}
     _notes_depth = {}
     _refs = {}
+    _config = None
 
     @classmethod
     def register_fast_import(self, fast_import):
@@ -345,12 +346,14 @@ class Git(object):
 
     @classmethod
     def config(self, name):
-        try:
-            return one(self.iter('config', name))
-        except subprocess.CalledProcessError as e:
-            if e.returncode != 1:
-                raise
-            return None
+        if self._config is None:
+            self._config = {
+                k: v
+                for k, v in (l.split('=', 1)
+                             for l in self.iter('config', '-l'))
+            }
+        return self._config.get(name)
+
 
 atexit.register(Git.close, rollback=True)
 
