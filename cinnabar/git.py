@@ -344,13 +344,9 @@ class Git(object):
         self.update_ref(ref, '0' * 40, oldvalue)
 
     @classmethod
-    def config(self, name, typ=None):
-        if typ:
-            args = ['--%s' % typ, name]
-        else:
-            args = [name]
+    def config(self, name):
         try:
-            return one(self.iter('config', *args))
+            return one(self.iter('config', name))
         except subprocess.CalledProcessError as e:
             if e.returncode != 1:
                 raise
