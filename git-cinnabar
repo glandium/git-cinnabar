@@ -452,9 +452,7 @@ def do_bundle(fname, *revs):
         # the parent commit doesn't have mercurial metadata.
         store = PushStore()
         store.init_fast_import()
-        chunks = hg.util.chunkbuffer(
-            progress_iter("Creating %d bundle chunks",
-                          create_bundle(store, bundle_commits)))
+        chunks = hg.util.chunkbuffer(create_bundle(store, bundle_commits))
         cg = hg.cg1unpacker(chunks, 'UN')
         hg.changegroup.writebundle(hg.get_ui(), cg, fname, 'HG10UN',
                                    compression=None)

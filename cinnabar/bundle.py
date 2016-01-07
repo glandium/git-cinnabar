@@ -16,6 +16,7 @@ from .git import (
 from .util import (
     next,
     one,
+    progress_iter,
     LazyString,
 )
 from collections import (
@@ -312,12 +313,12 @@ class PushStore(GitHgStore):
         super(PushStore, self).close()
 
 
-def create_bundle(store, commits):
+def create_bundle_chunks(store, commits):
     manifests = OrderedDict()
     files = defaultdict(list)
 
     previous = None
-    for nodes in commits:
+    for nodes in progress_iter('Bundling %d changesets', commits):
         parents = nodes.split()
         node = parents.pop(0)
         assert len(parents) <= 2
@@ -335,23 +336,22 @@ def create_bundle(store, commits):
             previous = store.changeset(hg_changeset.parent1)
         data = hg_changeset.serialize(previous)
         previous = hg_changeset
-        yield struct.pack(">l", len(data) + 4)
         yield data
         manifest = changeset_data['manifest']
         if manifest not in manifests:
             manifests[manifest] = changeset
 
-    yield '\0' * 4
+    yield None
 
     previous = None
-    for manifest, changeset in manifests.iteritems():
+    for manifest, changeset in progress_iter('Bundling %d manifests',
+                                             manifests.iteritems()):
         hg_manifest = store.manifest(manifest, include_parents=True)
         if previous is None and hg_manifest.parent1 != NULL_NODE_ID:
             previous = store.manifest(hg_manifest.parent1)
         hg_manifest.changeset = changeset
         data = hg_manifest.serialize(previous)
         previous = hg_manifest
-        yield struct.pack(">l", len(data) + 4)
         yield data
         manifest_ref = store.manifest_ref(manifest)
         if isinstance(manifest_ref, Mark):
@@ -367,24 +367,43 @@ def create_bundle(store, commits):
             if hg_file != NULL_NODE_ID:
                 files[path].append((hg_file, hg_fileparents, changeset))
 
-    yield '\0' * 4
+    yield None
 
-    for path in sorted(files):
-        yield struct.pack(">l", len(path) + 4)
-        yield path
-        previous = None
-        for node, parents, changeset in files[path]:
-            file = store.file(node)
-            file.set_parents(*parents)
-            file.changeset = changeset
-            assert file.node == file.sha1
-            if previous is None and file.parent1 != NULL_NODE_ID:
-                previous = store.file(file.parent1)
-            data = file.serialize(previous)
-            previous = file
-            yield struct.pack(">l", len(data) + 4)
-            yield data
+    def iter_files(files):
+        for path in sorted(files):
+            yield path
+            previous = None
+            for node, parents, changeset in files[path]:
+                file = store.file(node)
+                file.set_parents(*parents)
+                file.changeset = changeset
+                assert file.node == file.sha1
+                if previous is None and file.parent1 != NULL_NODE_ID:
+                    previous = store.file(file.parent1)
+                data = file.serialize(previous)
+                previous = file
+                yield data
 
-        yield '\0' * 4
+            yield None
 
-    yield '\0' * 4
+    class Filt(object):
+        def __init__(self):
+            self._previous = None
+
+        def __call__(self, chunk):
+            ret = self._previous and chunk is not None
+            self._previous = chunk
+            return ret
+
+    for chunk in progress_iter('Bundling %d files', iter_files(files), Filt()):
+        yield chunk
+
+    yield None
+
+
+def create_bundle(store, commits):
+    for chunk in create_bundle_chunks(store, commits):
+        size = 0 if chunk is None else len(chunk) + 4
+        yield struct.pack(">l", size)
+        if chunk:
+            yield chunk

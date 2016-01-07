@@ -39,11 +39,13 @@ def next(iter):
 progress = True
 
 
-def progress_iter(fmt, iter):
+def progress_iter(fmt, iter, filter_func=None):
     count = 0
     t0 = 0
-    for count, item in enumerate(iter, start=1):
+    for item in iter:
         if progress:
+            if not filter_func or filter_func(item):
+                count += 1
             t1 = time.time()
             if t1 - t0 > 1:
                 sys.stderr.write(('\r' + fmt) % count)
