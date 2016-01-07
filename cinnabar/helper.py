@@ -12,6 +12,7 @@ from .git import (
     sha1path,
 )
 from .util import (
+    check_enabled,
     one,
     next,
 )
@@ -21,7 +22,6 @@ from itertools import chain
 
 
 SHA1_RE = re.compile('^[0-9a-fA-F]{40}$')
-CHECK_HELPER = False
 
 
 class NoHelperException(Exception):
@@ -142,14 +142,15 @@ class GitHgNoHelper(object):
 def helpermethod(func):
     @functools.wraps(func)
     def wrapper(cls, *args, **kwargs):
+        check = check_enabled('helper')
         try:
             result = func(cls, *args, **kwargs)
-            if not CHECK_HELPER:
+            if not check:
                 return result
         except NoHelperException:
-            pass
+            check = False
         result2 = getattr(GitHgNoHelper, func.__name__)(*args, **kwargs)
-        if CHECK_HELPER:
+        if check:
             if func.__name__ == 'manifest':
                 # GitHgNoHelper.manifest returns a list, while
                 # GitHgHelper.manifest returns a str. Normalize.

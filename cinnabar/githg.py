@@ -17,6 +17,7 @@ from collections import (
     defaultdict,
 )
 from .util import (
+    check_enabled,
     LazyString,
     one,
     byte_diff,
@@ -63,9 +64,6 @@ logger.addHandler(handler)
 EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 # An empty git blob has a fixed sha1 which is that of "blob 0\0"
 EMPTY_BLOB = 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
-
-CHECK_ALL_NODE_IDS = False
-CHECK_MANIFESTS = False
 
 RE_GIT_AUTHOR = re.compile('^(?P<name>.*?) ?(?:\<(?P<email>.*?)\>)')
 
@@ -849,7 +847,7 @@ class GitHgStore(object):
         result = self._git_object(dic, typ, instance.node, hg2git=hg2git)
         logging.info(LazyString(lambda: "store %s %s %s" % (instance.node,
                                 instance.previous_node, result)))
-        check = CHECK_ALL_NODE_IDS
+        check = check_enabled('nodeid')
         if instance.previous_node != NULL_NODE_ID:
             if (self._previously_stored and
                     instance.previous_node == self._previously_stored.node):
@@ -1061,7 +1059,7 @@ class GitHgStore(object):
 
         self._manifests[instance.node] = Mark(mark)
         self._manifest_dag.add(self._manifests[instance.node], parents)
-        if CHECK_MANIFESTS:
+        if check_enabled('manifests'):
             expected_tree = self._fast_import.ls(mark, 'hg')[2]
             tree = OrderedDict()
             for line in isplitmanifest(instance.data):

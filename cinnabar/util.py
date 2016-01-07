@@ -39,6 +39,23 @@ def init_logging():
             pass
 
 
+class CheckEnabledFunc(object):
+    def __init__(self):
+        self._check = None
+
+    def __call__(self, name):
+        if self._check is None:
+            from .git import Git
+            self._check = (Git.config('cinnabar.check') or '').split(',')
+            for c in self._check:
+                if c not in ('nodeid', 'manifests', 'helper'):
+                    logging.getLogger('check').warn(
+                        'Unknown value in cinnabar.check: %s' % c)
+        return name in self._check
+
+check_enabled = CheckEnabledFunc()
+
+
 def next(iter):
     try:
         return iter.next()
