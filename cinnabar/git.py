@@ -81,7 +81,7 @@ class GitProcess(object):
         else:
             self._stdout = self._proc.stdout
 
-        logger.info(LazyString(lambda: '[%d] git %s' % (
+        logging.getLogger('git').info(LazyString(lambda: '[%d] git %s' % (
             self._proc.pid,
             ' '.join(args),
         )))
