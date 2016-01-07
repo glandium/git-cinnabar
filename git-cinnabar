@@ -21,6 +21,7 @@ from cinnabar.git import (
 )
 from cinnabar import hg
 from cinnabar.util import (
+    init_logging,
     LazyString,
     progress_iter,
 )
@@ -503,6 +504,8 @@ def main(args):
                        ' sys.path')
 
     args = parser.parse_args(args)
+
+    init_logging()
 
     cmd = args.command
     if cmd == 'data':

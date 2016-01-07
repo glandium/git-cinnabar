@@ -14,9 +14,19 @@ from itertools import (
 )
 
 
-# Initialize logging from the GIT_CINNABAR_LOG environment variable
-log_env = os.environ.get('GIT_CINNABAR_LOG')
-if log_env:
+def init_logging():
+    # Initialize logging from the GIT_CINNABAR_LOG environment variable
+    # or the cinnabar.log configuration, the former taking precedence.
+    # Still read the configuration to force the git config cache being
+    # filled before logging is setup, so that the output of
+    # `git config -l` is never logged.
+    from .git import Git
+    log_conf = Git.config('cinnabar.log')
+    log_env = os.environ.get('GIT_CINNABAR_LOG')
+    if not log_env and not log_conf:
+        return
+    if log_env is None:
+        log_env = log_conf
     for assignment in log_env.split(','):
         try:
             name, value = assignment.split(':', 1)

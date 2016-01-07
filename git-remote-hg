@@ -23,7 +23,10 @@ from binascii import hexlify
 from itertools import chain
 import logging
 from cinnabar.git import Git
-from cinnabar.util import IOLogger
+from cinnabar.util import (
+    init_logging,
+    IOLogger,
+)
 import cinnabar.util
 
 
@@ -80,6 +83,7 @@ def main(args):
         # the calling git process won't recognize in our answers.
         import msvcrt
         msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
+    init_logging()
     logger = logging.getLogger('-')
     logger.info(args)
     assert len(args) == 2

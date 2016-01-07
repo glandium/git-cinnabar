@@ -352,6 +352,9 @@ class Git(object):
                 for k, v in (l.split('=', 1)
                              for l in self.iter('config', '-l'))
             }
+        value = self._config.get(name)
+        logging.getLogger('config').info(LazyString(
+            lambda: '%s = %s' % (name, value or '')))
         return self._config.get(name)
 
 
