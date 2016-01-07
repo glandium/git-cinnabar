@@ -17,9 +17,11 @@ from .util import (
 )
 from contextlib import contextmanager
 from collections import OrderedDict
+from itertools import chain
 
 
 SHA1_RE = re.compile('^[0-9a-fA-F]{40}$')
+CHECK_HELPER = False
 
 
 class NoHelperException(Exception):
@@ -141,9 +143,25 @@ def helpermethod(func):
     @functools.wraps(func)
     def wrapper(cls, *args, **kwargs):
         try:
-            return func(cls, *args, **kwargs)
+            result = func(cls, *args, **kwargs)
+            if not CHECK_HELPER:
+                return result
         except NoHelperException:
-            return getattr(GitHgNoHelper, func.__name__)(*args, **kwargs)
+            pass
+        result2 = getattr(GitHgNoHelper, func.__name__)(*args, **kwargs)
+        if CHECK_HELPER:
+            if func.__name__ == 'manifest':
+                # GitHgNoHelper.manifest returns a list, while
+                # GitHgHelper.manifest returns a str. Normalize.
+                result2 = ''.join(l._str for l in result2)
+            if result != result2:
+                raise Exception(
+                    'Result difference between native and python for %s(%s)'
+                    % (func.__name__,
+                       ', '.join(chain((repr(a) for a in args),
+                                       ('%s=%s' % (k, repr(v)) for k, v in
+                                        sorted(kwargs.iteritems()))))))
+        return result2
     return classmethod(wrapper)
 
 
