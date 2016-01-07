@@ -1,4 +1,5 @@
 import atexit
+import functools
 import logging
 import os
 import re
@@ -136,6 +137,16 @@ class GitHgNoHelper(object):
         return lines
 
 
+def helpermethod(func):
+    @functools.wraps(func)
+    def wrapper(cls, *args, **kwargs):
+        try:
+            return func(cls, *args, **kwargs)
+        except NoHelperException:
+            return getattr(GitHgNoHelper, func.__name__)(*args, **kwargs)
+    return classmethod(wrapper)
+
+
 class GitHgHelper(object):
     VERSION = 2
     _helper = False
@@ -190,45 +201,33 @@ class GitHgHelper(object):
             return typ, ret
         return ret
 
-    @classmethod
+    @helpermethod
     def cat_file(self, typ, sha1):
-        try:
-            if isinstance(sha1, Mark):
-                raise NoHelperException
-            with self.query('cat-file', sha1) as stdout:
-                return self._read_file(typ, stdout)
-        except NoHelperException:
+        if isinstance(sha1, Mark):
             return GitHgNoHelper.cat_file(typ, sha1)
+        with self.query('cat-file', sha1) as stdout:
+            return self._read_file(typ, stdout)
 
-    @classmethod
+    @helpermethod
     def git2hg(self, sha1):
-        try:
-            with self.query('git2hg', sha1) as stdout:
-                return self._read_file('blob', stdout)
-        except NoHelperException:
-            return GitHgNoHelper.git2hg(sha1)
+        with self.query('git2hg', sha1) as stdout:
+            return self._read_file('blob', stdout)
 
-    @classmethod
+    @helpermethod
     def hg2git(self, hg_sha1):
-        try:
-            with self.query('hg2git', hg_sha1) as stdout:
-                sha1 = stdout.read(41)
-                assert sha1[-1] == '\n'
-                return sha1[:40]
-        except NoHelperException:
-            return GitHgNoHelper.hg2git(hg_sha1)
+        with self.query('hg2git', hg_sha1) as stdout:
+            sha1 = stdout.read(41)
+            assert sha1[-1] == '\n'
+            return sha1[:40]
 
-    @classmethod
+    @helpermethod
     def manifest(self, hg_sha1):
-        try:
-            with self.query('manifest', hg_sha1) as stdout:
-                size = int(stdout.readline().strip())
-                ret = stdout.read(size)
-                lf = stdout.read(1)
-                assert lf == '\n'
-                return ret
-        except NoHelperException:
-            return GitHgNoHelper.manifest(hg_sha1)
+        with self.query('manifest', hg_sha1) as stdout:
+            size = int(stdout.readline().strip())
+            ret = stdout.read(size)
+            lf = stdout.read(1)
+            assert lf == '\n'
+            return ret
 
 
 atexit.register(GitHgHelper.close)
