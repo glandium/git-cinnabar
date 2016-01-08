@@ -183,25 +183,19 @@ class GitHgHelper(object):
             helper_path = os.environ.get('GIT_CINNABAR_HELPER')
             if helper_path is None:
                 helper_path = Git.config('cinnabar.helper')
-            if helper_path is None:
-                git_exec_path = os.environ.get('GIT_EXEC_PATH')
-                if git_exec_path:
-                    helper_path = os.path.join(git_exec_path,
-                                               'git-cinnabar-helper')
+            config = {}
             if helper_path and os.path.exists(helper_path):
-                config = {
-                    'alias.cinnabar-helper': '!' + helper_path
-                }
-                self._helper = GitProcess('cinnabar-helper',
-                                          stdin=subprocess.PIPE, config=config)
-                if self._helper:
-                    self._helper.stdin.write('version %d\n' % self.VERSION)
-                    if not self._helper.stdout.readline():
-                        self._helper.wait()
-                        self._helper = None
+                config['alias.cinnabar-helper'] = '!' + helper_path
+            self._helper = GitProcess('cinnabar-helper', stdin=subprocess.PIPE,
+                                      stderr=open(os.devnull), config=config)
+            if self._helper:
+                self._helper.stdin.write('version %d\n' % self.VERSION)
+                if not self._helper.stdout.readline():
+                    if self._helper.wait() == 128:
                         logging.getLogger('helper').warn(
                             'Cinnabar helper executable is outdated. '
                             'Please rebuild it.')
+                    self._helper = None
             else:
                 self._helper = None
 
