@@ -934,7 +934,8 @@ class GitHgStore(object):
                 if not self.hg_author_info(commit.author)[1] == instance.date:
                     return False
 
-                if commit.parents == parents:
+                if all(self._replace.get(p1, p1) == self._replace.get(p2, p2)
+                       for p1, p2 in zip(commit.parents, parents)):
                     return True
 
                 # Allow to graft if one of the parents is from early history
@@ -970,26 +971,25 @@ class GitHgStore(object):
                                 % (instance.node, ', '.join(nodes)))
 
             if nodes:
-                mark = nodes[0]
-                self._graft_trees[tree].remove(mark)
-                commit = commits[mark]
-                mark = LazyString(mark)
+                node = nodes[0]
+                self._graft_trees[tree].remove(node)
+                replace = commits[node]
             else:
                 do_graft = False
 
-        if do_graft:
-            for p1, p2 in zip(parents, commit.parents):
-                if p1 != p2:
-                    self._replace[p2] = p1
+        if self._graft_trees:
+            if parents:
+                is_early_history = all(
+                    p in self._early_history for p in parents)
+            else:
+                is_early_history = not do_graft
+            if self._graft_only and not (is_early_history or do_graft):
+                raise Exception('Not allowing non-graft import of %s'
+                                % instance.node)
         else:
-            if self._graft_trees:
-                if (all(p in self._early_history for p in parents)
-                        or not parents):
-                    self._early_history.add(mark)
-                elif self._graft_only:
-                    raise Exception('Not allowing non-graft import of %s'
-                                    % instance.node)
+            is_early_history = False
 
+        if not do_graft or is_early_history:
             with self._fast_import.commit(
                 ref='refs/cinnabar/tip',
                 message=instance.message,
@@ -1006,6 +1006,15 @@ class GitHgStore(object):
             commit.committer = self._fast_import._format_committer(committer)
             commit.author = self._fast_import._format_committer(author)
             commit.body = instance.message
+
+            if do_graft:
+                self._replace[replace.sha1] = mark
+            elif is_early_history:
+                self._early_history.add(mark)
+
+        elif do_graft:
+            mark = LazyString(replace.sha1)
+            commit = replace
 
         self._changesets[instance.node] = mark
         data = self._changeset_data_cache[str(mark)] = {
