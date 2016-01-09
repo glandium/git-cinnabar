@@ -210,6 +210,8 @@ class GitHgHelper(object):
         hg_sha1 = stdout.read(41)
         if hg_sha1[-1] == '\n':
             assert hg_sha1[:40] == NULL_NODE_ID
+            if expected_typ == 'auto':
+                return 'missing', None
             return None
         typ, size = stdout.readline().split()
         size = int(size)
