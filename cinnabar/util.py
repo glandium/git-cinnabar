@@ -46,7 +46,9 @@ class CheckEnabledFunc(object):
     def __call__(self, name):
         if self._check is None:
             from .git import Git
-            self._check = (Git.config('cinnabar.check') or '').split(',')
+            self._check = Git.config('cinnabar.check') or ''
+            if self._check:
+                self._check = self._check.split(',')
             for c in self._check:
                 if c not in ('nodeid', 'manifests', 'helper'):
                     logging.getLogger('check').warn(
