@@ -96,8 +96,9 @@ class GitProcess(object):
                 self._proc.stdin.close()
 
     def wait(self):
-        if self._proc.stdin:
-            self._proc.stdin.close()
+        for fh in (self._proc.stdin, self._proc.stdout, self._proc.stderr):
+            if fh:
+                fh.close()
         return self._proc.wait()
 
     @property
@@ -152,16 +153,18 @@ class Git(object):
         start = time.time()
 
         proc = GitProcess(*args, **kwargs)
-        for line in proc.stdout or ():
-            line = line.rstrip('\n')
-            yield line
+        try:
+            for line in proc.stdout or ():
+                line = line.rstrip('\n')
+                yield line
 
-        proc.wait()
-        logging.getLogger(args[0]).info(
-            LazyString(lambda: '[%d] wall time: %.3fs' % (
-                proc.pid,
-                time.time() - start,
-            )))
+        finally:
+            proc.wait()
+            logging.getLogger(args[0]).info(
+                LazyString(lambda: '[%d] wall time: %.3fs' % (
+                    proc.pid,
+                    time.time() - start,
+                )))
 
     @classmethod
     def run(self, *args):
