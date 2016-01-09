@@ -566,7 +566,7 @@ class GitHgStore(object):
             refs = list(ref for sha1, ref in Git.for_each_ref(
                 *(r.replace('*', '**') for r in refs)))
         else:
-            refs = ['--all']
+            refs = ['--exclude=refs/cinnabar/*', '--all']
         if not refs:
             return
         exclude = ('^%s' % h for h in self._changesets.itervalues())
