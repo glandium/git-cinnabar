@@ -41,7 +41,11 @@ import logging
 
 
 class UpgradeException(Exception):
-    pass
+    def __init__(self):
+        super(UpgradeException, self).__init__(
+            'Git-cinnabar metadata needs upgrade. '
+            'Please run `git cinnabar fsck`.'
+        )
 
 
 class StreamHandler(logging.StreamHandler):
@@ -162,6 +166,9 @@ class GeneratedRevChunk(RevChunk):
         self.node = node
         self.data = data
 
+    def init(self, previous_chunk):
+        pass
+
     def set_parents(self, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
         self.parent1 = parent1
         self.parent2 = parent2
@@ -220,6 +227,9 @@ class ChangesetInfo(RevChunk):
         else:
             self.extra = None
         self.files = lines[3:]
+
+
+class GeneratedChangesetInfo(ChangesetInfo, GeneratedRevChunk): pass
 
 
 class ManifestLine(object):
@@ -528,10 +538,7 @@ class GitHgStore(object):
     def _open(self):
         metadata_ref = Git.resolve_ref('refs/cinnabar/metadata')
         if not metadata_ref and self._old_branches:
-            raise UpgradeException(
-                'Git-cinnabar metadata needs upgrade. '
-                'Please run `git cinnabar fsck`.'
-            )
+            raise UpgradeException()
 
         self._has_metadata = bool(metadata_ref)
         if metadata_ref:
@@ -558,6 +565,15 @@ class GitHgStore(object):
         self._manifest_heads_orig = set(self._manifest_dag.heads())
 
         self._hgheads_orig = set(self._hgheads)
+
+        if metadata_ref:
+            replace = {}
+            for line in Git.ls_tree(metadata_ref):
+                mode, typ, sha1, path = line
+                replace[path] = sha1
+
+            if self._replace and not replace:
+                raise UpgradeException()
 
     def prepare_graft(self, refs=[], graft_only=False):
         self._early_history = set()
@@ -781,7 +797,7 @@ class GitHgStore(object):
                 last_end = end
             changeset = new + changeset[last_end:]
 
-        hgdata = GeneratedRevChunk(sha1, changeset)
+        hgdata = GeneratedChangesetInfo(sha1, changeset)
         if include_parents:
             assert len(git_commit.parents) <= 2
             hgdata.set_parents(*[
@@ -895,7 +911,7 @@ class GitHgStore(object):
         self._git_trees[manifest_sha1] = tree
         return tree
 
-    def _store_changeset(self, instance, mark):
+    def _store_changeset(self, instance, mark, track_heads=True):
         author = self._git_committer(instance.committer, instance.date,
                                      instance.utcoffset)
         extra = instance.extra
@@ -1036,7 +1052,8 @@ class GitHgStore(object):
                 generated_instance = self._changeset(commit, instance.node)
                 assert generated_instance.data == instance.data
 
-        self.add_head(instance.node, instance.parent1, instance.parent2)
+        if track_heads:
+            self.add_head(instance.node, instance.parent1, instance.parent2)
 
     TYPE = {
         '': 'regular',
@@ -1215,7 +1232,22 @@ class GitHgStore(object):
             ) as commit:
                 update_metadata.append('refs/cinnabar/changesets')
 
-        if update_metadata:
+        replace_changed = False
+        for ref in set(self._replace.keys()) | set(self._replace_orig.keys()):
+            if ref in self._replace and ref in self._replace_orig:
+                if self._replace[ref] != self._replace_orig[ref]:
+                    Git.update_ref('refs/cinnabar/replace/%s' % ref,
+                                   self._replace[ref])
+                    replace_changed = True
+            elif ref in self._replace:
+                Git.update_ref('refs/cinnabar/replace/%s' % ref,
+                               self._replace[ref])
+                replace_changed = True
+            else:
+                Git.delete_ref('refs/cinnabar/replace/%s' % ref)
+                replace_changed = True
+
+        if update_metadata or replace_changed:
             parents = list(Git.resolve_ref(r) for r in self.METADATA_REFS)
             metadata_ref = Git.resolve_ref('refs/cinnabar/metadata')
             if metadata_ref:
@@ -1224,18 +1256,8 @@ class GitHgStore(object):
                 ref='refs/cinnabar/metadata',
                 parents=parents,
             ) as commit:
-                pass
-
-        for ref in set(self._replace.keys()) | set(self._replace_orig.keys()):
-            if ref in self._replace and ref in self._replace_orig:
-                if self._replace[ref] != self._replace_orig[ref]:
-                    Git.update_ref('refs/cinnabar/replace/%s' % ref,
-                                   self._replace[ref])
-            elif ref in self._replace:
-                Git.update_ref('refs/cinnabar/replace/%s' % ref,
-                               self._replace[ref])
-            else:
-                Git.delete_ref('refs/cinnabar/replace/%s' % ref)
+                for sha1, target in self._replace.iteritems():
+                    commit.filemodify(sha1, target, 'commit')
 
         self._hg2git_cache.clear()
 

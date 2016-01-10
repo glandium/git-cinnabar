@@ -23,6 +23,7 @@ from cinnabar import hg
 from cinnabar.util import (
     init_logging,
     LazyString,
+    next,
     progress_iter,
 )
 from cinnabar.helper import (
@@ -43,6 +44,11 @@ from itertools import chain
 
 class UpgradeGitHgStore(GitHgStore):
     def _open(self):
+        try:
+            super(UpgradeGitHgStore, self)._open()
+        except UpgradeException:
+            if hasattr(self, '_manifest_dag'):
+                return
         self._manifest_heads_orig = set()
         self._manifest_dag = gitdag()
         self._hgheads_orig = set()
@@ -86,10 +92,11 @@ def fsck(args):
 
     try:
         store = GitHgStore()
-        upgrade = False
+        upgrade = upgrade_manifest = False
     except UpgradeException:
         store = UpgradeGitHgStore()
         upgrade = True
+        upgrade_manifest = not len(store._manifest_dag)
 
     if upgrade:
         if args.commit:
@@ -292,7 +299,7 @@ def fsck(args):
         manifest_ref = store.manifest_ref(manifest)
         if not manifest_ref:
             report('Missing manifest in hg2git branch: %s' % manifest)
-        elif (not args.commit and not upgrade and
+        elif (not args.commit and not upgrade_manifest and
                 manifest_ref not in manifest_commits):
             report('Missing manifest commit in manifest branch: %s' %
                    manifest_ref)
@@ -303,7 +310,7 @@ def fsck(args):
         )
         git_parents = tuple(store.manifest_ref(p) for p in parents)
 
-        if upgrade:
+        if upgrade_manifest:
             mark = store._fast_import.new_mark()
             with store._fast_import.commit(
                 ref='refs/cinnabar/manifests',
@@ -328,7 +335,7 @@ def fsck(args):
                 if hg_manifest.node != hg_manifest.sha1:
                     report('Sha1 mismatch for manifest %s' % manifest)
 
-        if not upgrade:
+        if not upgrade_manifest:
             manifest_commit = GitCommit(manifest_ref)
             if sorted(manifest_commit.parents) != sorted(git_parents):
                 # TODO: better error
@@ -406,6 +413,32 @@ def fsck(args):
     for c in dangling:
         fix('Removing dangling note for commit ' + c)
         store._changeset_data_cache[c] = None
+
+    if upgrade:
+        replaces = progress_iter('Readjusting %d graft commits',
+                                 Git.for_each_ref('refs/cinnabar/replace'))
+        for target, ref in replaces:
+            replaced = ref[22:]
+            children = next(Git.iter('rev-list', '--exclude=refs/cinnabar/*',
+                                     '--all', '^%s^@' % replaced, '--children',
+                                     '--reverse', '--topo-order',
+                                     '--ancestry-path'))
+            if children:
+                children = children.split()
+                parent = children.pop(0)
+                assert parent == replaced
+                for child in children:
+                    hg_sha1 = store.hg_changeset(child)
+                    if not hg_sha1:
+                        continue
+                    changeset = store.changeset(hg_sha1, include_parents=True)
+                    changeset.init(())
+                    mark = Mark(store._fast_import.new_mark())
+                    store._store_changeset(changeset, mark, track_heads=False)
+                    store._changeset_data_cache[child] = None
+                    store._replace[child] = mark
+
+            del store._replace[replaced]
 
     if status['broken']:
         info('Your git-cinnabar repository appears to be corrupted. There\n'
