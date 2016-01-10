@@ -124,7 +124,7 @@ class IOLogger(object):
 
 class LazyString(object):
     def __init__(self, obj):
-        self._obj = obj
+        self._obj = obj._obj if isinstance(obj, LazyString) else obj
 
     def __str__(self):
         if callable(self._obj):
