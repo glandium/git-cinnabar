@@ -14,6 +14,7 @@ from .util import (
     IOLogger,
     LazyString,
     one,
+    VersionedDict,
 )
 from binascii import hexlify
 from itertools import chain
@@ -124,7 +125,7 @@ class Git(object):
     _fast_import = None
     _diff_tree = {}
     _notes_depth = {}
-    _refs = {}
+    _refs = VersionedDict()
     _config = None
 
     @classmethod
@@ -177,16 +178,16 @@ class Git(object):
         for line in self.iter('for-each-ref', '--format',
                               '%(objectname) %(refname)', *patterns):
             sha1, ref = line.split(' ', 1)
-            if isinstance(self._refs.get(ref), Mark):
+            self._refs._previous[ref] = sha1
+            # The ref might have been removed in self._refs
+            if ref in self._refs:
                 yield self._refs[ref], ref
-            elif ref not in self._refs or self._refs[ref] is not None:
-                self._refs[ref] = sha1
-                yield sha1, ref
 
     @classmethod
     def resolve_ref(self, ref):
         if ref not in self._refs:
-            self._refs[ref] = one(Git.iter('rev-parse', '--revs-only', ref))
+            self._refs._previous[ref] = one(
+                Git.iter('rev-parse', '--revs-only', ref))
         return self._refs[ref]
 
     @classmethod
@@ -322,7 +323,7 @@ class Git(object):
         if newvalue and newvalue != NULL_NODE_ID:
             self._refs[ref] = newvalue
         else:
-            self._refs[ref] = None
+            del self._refs[ref]
         if not store:
             return
         if self._fast_import:
@@ -507,7 +508,7 @@ class FastImport(IOLogger):
             Git._refs[ref] = Mark(mark)
             assert Git._refs.values().count(mark) == 1
         else:
-            Git._refs[ref] = None
+            del Git._refs[ref]
 
 
 class FastImportCommitHelper(object):
