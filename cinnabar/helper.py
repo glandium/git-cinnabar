@@ -183,6 +183,9 @@ class GitHgHelper(object):
             helper_path = os.environ.get('GIT_CINNABAR_HELPER')
             if helper_path is None:
                 helper_path = Git.config('cinnabar.helper')
+            if helper_path == '':
+                self._helper = None
+        if self._helper is False:
             config = {}
             if helper_path and os.path.exists(helper_path):
                 config['alias.cinnabar-helper'] = '!' + helper_path
