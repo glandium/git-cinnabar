@@ -76,7 +76,7 @@ class GitProcess(object):
         git = ['git'] + list(chain(*(['-c', '%s=%s' % (n, v)]
                                      for n, v in config.iteritems())))
 
-        full_env = os.environ.copy()
+        full_env = VersionedDict(os.environ)
         if env:
             full_env.update(env)
 
@@ -113,9 +113,8 @@ class GitProcess(object):
             if 'GIT_CONFIG' not in full_env:
                 full_env['GIT_CONFIG'] = os.path.join(git_dir, 'config')
 
-        self._proc = subprocess.Popen(git + list(args), stdin=proc_stdin,
-                                      stdout=stdout, stderr=stderr,
-                                      env=full_env)
+        self._proc = self._popen(git + list(args), stdin=proc_stdin,
+                                 stdout=stdout, stderr=stderr, env=full_env)
 
         logger = logging.getLogger(args[0])
         if logger.isEnabledFor(logging.INFO):
@@ -129,11 +128,6 @@ class GitProcess(object):
         else:
             self._stdout = self._proc.stdout
 
-        logging.getLogger('git').info(LazyString(lambda: '[%d] git %s' % (
-            self._proc.pid,
-            ' '.join(args),
-        )))
-
         if proc_stdin == subprocess.PIPE:
             if isinstance(stdin, StringType):
                 self._stdin.write(stdin)
@@ -142,6 +136,19 @@ class GitProcess(object):
                     self._stdin.write('%s\n' % line)
             if proc_stdin != stdin:
                 self._proc.stdin.close()
+
+    def _popen(self, cmd, env, **kwargs):
+        assert isinstance(env, VersionedDict)
+        proc = subprocess.Popen(cmd, env=env, **kwargs)
+        logging.getLogger('git').info(LazyString(lambda: '[%d] %s' % (
+            proc.pid,
+            ' '.join(chain(
+                ('%s=%s' % (k, v)
+                 for k, v in sorted((k, v) for s, k, v
+                                    in env.iterchanges() if s != env.REMOVED)),
+                cmd)),
+        )))
+        return proc
 
     def wait(self):
         for fh in (self._proc.stdin, self._proc.stdout, self._proc.stderr):
