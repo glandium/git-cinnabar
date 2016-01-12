@@ -173,6 +173,8 @@ class Git(object):
 
     @classmethod
     def for_each_ref(self, *patterns):
+        if not patterns:
+            return
         # Ideally, this would not actually call for-each-ref if all refs
         # matching the given patterns are already known.
         for line in self.iter('for-each-ref', '--format',
