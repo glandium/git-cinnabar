@@ -59,17 +59,13 @@ class UpgradeGitHgStore(GitHgStore):
 
         self._has_metadata = True
 
-    def _close_fast_import(self):
-        pass
-
     def close(self):
-        super(UpgradeGitHgStore, self).close()
         for sha1, ref in Git.for_each_ref(
                 'refs/cinnabar/manifest',
                 'refs/cinnabar/tagcache',
                 'refs/cinnabar/branches'):
             Git.delete_ref(ref)
-        super(UpgradeGitHgStore, self)._close_fast_import()
+        super(UpgradeGitHgStore, self).close()
 
 
 def fsck(args):

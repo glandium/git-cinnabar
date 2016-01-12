@@ -691,11 +691,6 @@ class GitHgStore(object):
         else:
             self._fast_import = FastImport()
 
-    def _close_fast_import(self):
-        if not self.__fast_import:
-            return
-        self._fast_import.close()
-
     def read_changeset_data(self, obj):
         obj = str(obj)
         if obj in self._changeset_data_cache:
@@ -1319,4 +1314,4 @@ class GitHgStore(object):
             if ref not in ('refs/notes/cinnabar', 'refs/cinnabar/hg2git'):
                 Git.delete_ref(ref)
 
-        self._close_fast_import()
+        Git.close()
