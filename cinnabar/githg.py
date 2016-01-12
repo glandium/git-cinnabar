@@ -498,9 +498,12 @@ class GitHgStore(object):
 
         self._hgheads = set()
 
-        self._replace = {}
+        self._replace = Git._replace
         self._old_branches = []
-        for sha1, ref in Git.for_each_ref('refs/cinnabar'):
+        # While doing a for_each_ref, ensure refs/notes/cinnabar is in the
+        # cache.
+        for sha1, ref in Git.for_each_ref('refs/cinnabar',
+                                          'refs/notes/cinnabar'):
             if ref.startswith('refs/cinnabar/replace/'):
                 self._replace[ref[22:]] = sha1
             elif ref.startswith('refs/cinnabar/branches/'):

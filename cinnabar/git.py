@@ -11,6 +11,7 @@ from types import (
 )
 from collections import Iterable
 from .util import (
+    check_enabled,
     IOLogger,
     LazyString,
     one,
@@ -18,6 +19,7 @@ from .util import (
 )
 from binascii import hexlify
 from itertools import chain
+from distutils.version import LooseVersion
 
 NULL_NODE_ID = '0' * 40
 
@@ -48,9 +50,16 @@ if not git_dir:
     git_dir = subprocess.check_output(
         ['git', 'rev-parse', '--git-dir']).rstrip('\n')
 
+git_version = subprocess.check_output(['git', 'version'])
+assert git_version.startswith('git version ')
+git_version = LooseVersion(git_version[12:].strip())
+
+HAS_REPLACE_REF_BASE = git_version > LooseVersion('2.6')
+
 
 class GitProcess(object):
     KWARGS = set(['stdin', 'stdout', 'stderr', 'config', 'env'])
+    _git_replace_path = None
 
     def __init__(self, *args, **kwargs):
         assert not kwargs or not set(kwargs.keys()) - self.KWARGS
@@ -67,10 +76,42 @@ class GitProcess(object):
         git = ['git'] + list(chain(*(['-c', '%s=%s' % (n, v)]
                                      for n, v in config.iteritems())))
 
-        full_env = None
+        full_env = os.environ.copy()
         if env:
-            full_env = os.environ.copy()
             full_env.update(env)
+
+        if args[0] == 'config':
+            # We don't need the replace ref setup for config.
+            pass
+        elif not check_enabled('replace') and HAS_REPLACE_REF_BASE:
+            full_env['GIT_REPLACE_REF_BASE'] = 'refs/cinnabar/replace/'
+        elif Git._replace:
+            if not GitProcess._git_replace_path:
+                from tempfile import mkdtemp
+                # There are commands run before Git._replace is filled, but we
+                # expect them all not to require the replace refs.
+                path = mkdtemp(prefix='.cinnabar.', dir=git_dir)
+                GitProcess._git_replace_path = path
+                os.mkdir(os.path.join(path, 'refs'))
+                with open(os.path.join(path, 'HEAD'), 'w') as fh:
+                    subprocess.check_call(['git', 'rev-parse', 'HEAD'],
+                                          stdout=fh)
+                with open(os.path.join(path, 'packed-refs'), 'w') as fh:
+                    subprocess.check_call(
+                        ['git', 'for-each-ref',
+                         '--format=%(objectname) %(refname)'], stdout=fh)
+                    for sha1, target in Git._replace.iteritems():
+                        fh.write('%s refs/replace/%s\n' % (target, sha1))
+
+                logging.getLogger('replace').debug(LazyString(
+                    lambda: 'Initializing in %s' % path))
+
+            if 'GIT_OBJECT_DIRECTORY' not in full_env:
+                full_env['GIT_OBJECT_DIRECTORY'] = os.path.join(
+                    git_dir, 'objects')
+            full_env['GIT_DIR'] = GitProcess._git_replace_path
+            if 'GIT_CONFIG' not in full_env:
+                full_env['GIT_CONFIG'] = os.path.join(git_dir, 'config')
 
         self._proc = subprocess.Popen(git + list(args), stdin=proc_stdin,
                                       stdout=stdout, stderr=stderr,
@@ -133,6 +174,7 @@ class Git(object):
     _notes_depth = {}
     _refs = VersionedDict()
     _config = None
+    _replace = {}
 
     @classmethod
     def register_fast_import(self, fast_import):
@@ -151,9 +193,62 @@ class Git(object):
         for diff_tree in self._diff_tree.itervalues():
             diff_tree.wait()
         self._diff_tree = {}
-        if self._fast_import:
-            self._fast_import.close(rollback)
-            self._fast_import = None
+        try:
+            if self._fast_import:
+                self._fast_import.close(rollback)
+                self._fast_import = None
+        finally:
+            if GitProcess._git_replace_path:
+                # Copy the (updated) refs from _git_replace_path to the normal
+                # git repository.
+                # _refs may contain marks that we don't know anything about
+                # anymore now that fast-import is closed (not that it would
+                # tell us anyways, except with a checkpoint, but meh).
+                # So we're going to ask for-each-ref with a list of all the
+                # refs we have a mark for.
+                # But we want for-each-ref to be launched in the
+                # _git_replace_path, where the refs are fresh, now, and
+                # update-ref in the normal git repo, so we need to accumulate
+                # first.
+                update = []
+                unknown_refs = []
+                for status, ref, sha1 in self._refs.iterchanges():
+                    if isinstance(sha1, Mark):
+                        unknown_refs.append(ref)
+                    update.append((status, ref, sha1))
+                # Resolve the marks, ensuring that for_each_ref doesn't use
+                # anything cached.
+                refs_bak = self._refs
+                self._refs = VersionedDict()
+                refs = {ref: sha1 for sha1, ref
+                        in self.for_each_ref(*unknown_refs)}
+                self._refs = refs_bak
+                # Ensure update_ref runs in the normal git repo.
+                replace = self._replace
+                self._replace = {}
+                for status, ref, sha1 in update:
+                    if status == VersionedDict.REMOVED:
+                        self.delete_ref(ref)
+                    else:
+                        if isinstance(sha1, Mark):
+                            # We may still have unresolved marks, but in this
+                            # case, they are from an aborted fast-import, in
+                            # which case dropping them is the right thing to do
+                            sha1 = refs.get(ref)
+                        if sha1:
+                            self.update_ref(ref, sha1)
+                if self._update_ref:
+                    retcode = self._update_ref.wait()
+                    self._update_ref = None
+                    if retcode:
+                        raise Exception('git-update-ref failed')
+                import shutil
+                logging.getLogger('replace').debug(LazyString(
+                    lambda: 'Cleaning up in %s' % GitProcess._git_replace_path)
+                )
+                shutil.rmtree(GitProcess._git_replace_path)
+                GitProcess._git_replace_path = None
+                self._replace = replace
 
     @classmethod
     def iter(self, *args, **kwargs):
@@ -310,6 +405,7 @@ class Git(object):
 
     @classmethod
     def read_note(self, notes_ref, sha1):
+        sha1 = self._replace.get(sha1, sha1)
         if not notes_ref.startswith('refs/'):
             notes_ref = 'refs/notes/' + notes_ref
         if notes_ref in self._notes_depth:

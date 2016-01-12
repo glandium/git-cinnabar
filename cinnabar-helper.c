@@ -113,7 +113,7 @@ static void do_git2hg(struct string_list *command) {
 	if (get_sha1_committish(command->items[1].string, sha1))
 		goto not_found;
 
-	note = get_note(&git2hg, sha1);
+	note = get_note(&git2hg, lookup_replace_object(sha1));
 	if (!note)
 		goto not_found;
 

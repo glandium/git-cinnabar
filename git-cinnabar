@@ -110,11 +110,6 @@ def fsck(args):
 
     store.init_fast_import(lazy=True)
 
-    replace_commits = [
-        '^%s^@' % r[22:]
-        for sha1, r in Git.for_each_ref('refs/cinnabar/replace')
-    ]
-
     if args.commit:
         all_hg2git = {}
         all_notes = set()
@@ -146,16 +141,15 @@ def fsck(args):
         all_refs = set(ref for sha1, ref in Git.for_each_ref('refs/cinnabar'))
 
         if 'refs/cinnabar/manifest' in all_refs:
-            all_git_heads = chain(
-                (ref for sha1, ref in
-                 Git.for_each_ref('refs/cinnabar/branches')),
-                replace_commits,
+            all_git_heads = (
+                ref for sha1, ref in
+                Git.for_each_ref('refs/cinnabar/branches')
             )
             manifests_rev = 'refs/cinnabar/manifest'
             hg2git_rev = 'refs/cinnabar/hg2git'
             notes_rev = 'refs/notes/cinnabar'
         elif 'refs/cinnabar/metadata' in all_refs:
-            all_git_heads = ['refs/cinnabar/metadata^1^@'] + replace_commits
+            all_git_heads = ['refs/cinnabar/metadata^1^@']
             manifests_rev = 'refs/cinnabar/metadata^2^@'
             hg2git_rev = 'refs/cinnabar/metadata^3'
             notes_rev = 'refs/cinnabar/metadata^4'
@@ -196,21 +190,9 @@ def fsck(args):
     dag = gitdag()
     manifest_dag = gitdag()
 
-    def iterate_all_commits(git_commits):
-        for line in git_commits:
-            tree, node = line.split(' ')
-            if node in store._replace:
-                git_heads = [store._replace[node]] + replace_commits
-                git_commits = Git.iter('log', '--topo-order', '--full-history',
-                                       '--reverse', '--stdin',
-                                       '--format=%T %H', stdin=git_heads)
-                for tree, node in iterate_all_commits(git_commits):
-                    yield tree, node
-            else:
-                yield tree, node
-
-    for tree, node in progress_iter('Checking %d changesets',
-                                    iterate_all_commits(all_git_commits)):
+    for line in progress_iter('Checking %d changesets', all_git_commits):
+        tree, node = line.split(' ')
+        node = store._replace.get(node, node)
         if node not in all_notes:
             report('Missing note for git commit: ' + node)
             continue
@@ -576,6 +558,8 @@ def main(args):
         for arg in args.sha1:
             print GitHgHelper.hg2git(arg)
     elif cmd == 'git2hg':
+        for sha1, ref in Git.for_each_ref('refs/cinnabar/replace'):
+            Git._replace[ref[22:]] = sha1
         for arg in args.sha1:
             data = GitHgHelper.git2hg(arg)
             if data:
