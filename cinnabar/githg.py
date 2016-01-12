@@ -17,10 +17,11 @@ from collections import (
     defaultdict,
 )
 from .util import (
+    byte_diff,
     check_enabled,
     LazyString,
     one,
-    byte_diff,
+    VersionedDict,
 )
 from .git import (
     EmptyMark,
@@ -503,7 +504,7 @@ class GitHgStore(object):
                 self._replace[ref[22:]] = sha1
             elif ref.startswith('refs/cinnabar/branches/'):
                 self._old_branches.append((sha1, ref))
-        self._replace_orig = dict(self._replace)
+        self._replace = VersionedDict(self._replace)
 
         self._graft_trees = defaultdict(list)
         self._tagcache = {}
@@ -1233,19 +1234,12 @@ class GitHgStore(object):
                 update_metadata.append('refs/cinnabar/changesets')
 
         replace_changed = False
-        for ref in set(self._replace.keys()) | set(self._replace_orig.keys()):
-            if ref in self._replace and ref in self._replace_orig:
-                if self._replace[ref] != self._replace_orig[ref]:
-                    Git.update_ref('refs/cinnabar/replace/%s' % ref,
-                                   self._replace[ref])
-                    replace_changed = True
-            elif ref in self._replace:
-                Git.update_ref('refs/cinnabar/replace/%s' % ref,
-                               self._replace[ref])
-                replace_changed = True
-            else:
+        for status, ref, sha1 in self._replace.iterchanges():
+            if status == VersionedDict.REMOVED:
                 Git.delete_ref('refs/cinnabar/replace/%s' % ref)
-                replace_changed = True
+            else:
+                Git.update_ref('refs/cinnabar/replace/%s' % ref, sha1)
+            replace_changed = True
 
         if update_metadata or replace_changed:
             parents = list(Git.resolve_ref(r) for r in self.METADATA_REFS)
