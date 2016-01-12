@@ -43,6 +43,12 @@ def split_ls_tree(line):
     return mode, typ, sha1, path
 
 
+git_dir = os.environ.get('GIT_DIR')
+if not git_dir:
+    git_dir = subprocess.check_output(
+        ['git', 'rev-parse', '--git-dir']).rstrip('\n')
+
+
 class GitProcess(object):
     KWARGS = set(['stdin', 'stdout', 'stderr', 'config', 'env'])
 

@@ -27,6 +27,7 @@ from .git import (
     EmptyMark,
     FastImport,
     Git,
+    git_dir,
     Mark,
     NULL_NODE_ID,
     sha1path,
@@ -1145,9 +1146,6 @@ class GitHgStore(object):
         self._closed = True
         hg2git_files = []
         changeset_by_mark = {}
-        git_dir = os.environ.get('GIT_DIR')
-        if not git_dir:
-            git_dir = one(Git.iter('rev-parse', '--git-dir'))
         reflog = os.path.join(git_dir, 'logs', 'refs', 'cinnabar')
         mkpath(reflog)
         open(os.path.join(reflog, 'metadata'), 'a').close()
