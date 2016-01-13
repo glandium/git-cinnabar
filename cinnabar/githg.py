@@ -590,11 +590,11 @@ class GitHgStore(object):
             refs = ['--exclude=refs/cinnabar/*', '--all']
         if not refs:
             return
-        exclude = ('^%s' % h for h in self._changesets.itervalues())
+        if self._has_metadata:
+            refs += ['--not', 'refs/cinnabar/metadata^']
         for line in progress_iter('Reading %d graft candidates',
-                                  Git.iter('log', '--stdin', '--full-history',
-                                           '--format=%T %H', *refs,
-                                           stdin=exclude)):
+                                  Git.iter('log', '--full-history',
+                                           '--format=%T %H', *refs)):
             tree, node = line.split()
             self._graft_trees[tree].append(node)
 
