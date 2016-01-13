@@ -35,7 +35,10 @@ from .git import (
     Git,
     NULL_NODE_ID,
 )
-from .util import progress_iter
+from .util import (
+    check_enabled,
+    progress_iter,
+)
 from collections import defaultdict
 
 try:
@@ -80,6 +83,30 @@ def iterate_files(bundle):
             return
         for instance in iter_chunks(chunks_in_changegroup(bundle), RevChunk):
             yield instance
+
+
+def iter_initialized(get_missing, iterable):
+    previous = None
+    always_check = check_enabled('nodeid')
+    for instance in iterable:
+        check = always_check
+        if instance.previous_node != NULL_NODE_ID:
+            if previous and instance.previous_node == previous.node:
+                instance.init(previous)
+            else:
+                instance.init(get_missing(instance.previous_node))
+                check = True
+        else:
+            instance.init(())
+        if check and instance.node != instance.sha1:
+            raise Exception(
+                'sha1 mismatch for node %s with parents %s %s and '
+                'previous %s' %
+                (instance.node, instance.parent1, instance.parent2,
+                 instance.previous_node)
+            )
+        yield instance
+        previous = instance
 
 
 def _sample(l, size):
@@ -186,12 +213,9 @@ class bundlerepo(object):
 
         self._dag = gitdag()
         branches = set()
-        previous = None
-        for chunk in iter_chunks(_iter_chunks(), ChangesetInfo):
-            if chunk.parent1 != NULL_NODE_ID and not previous:
-                previous = store.changeset(chunk.parent1)
-            chunk.init(previous)
-            previous = chunk
+        for chunk in iter_initialized(store.changeset,
+                                      iter_chunks(_iter_chunks(),
+                                                  ChangesetInfo)):
             extra = chunk.extra or {}
             branch = extra.get('branch', 'default')
             branches.add(branch)
@@ -238,14 +262,17 @@ def getbundle(repo, store, heads, branchmap):
         'Reading %d manifests', chunks_in_changegroup(bundle)))
 
     for rev_chunk in progress_iter(
-            'Reading and importing %d files', iterate_files(bundle)):
+            'Reading and importing %d files', iter_initialized(
+                store.file, iterate_files(bundle))):
         store.store(rev_chunk)
 
     del bundle
 
     manifest_sha1s = []
     for mn in progress_iter('Importing %d manifests',
-                            iter_chunks(manifest_chunks, ManifestInfo)):
+                            iter_initialized(store.manifest,
+                                             iter_chunks(manifest_chunks,
+                                                         ManifestInfo))):
         manifest_sha1s.append(mn.node)
         store.store(mn)
 
@@ -266,7 +293,9 @@ def getbundle(repo, store, heads, branchmap):
         store.git_tree(sha1)
 
     for cs in progress_iter('Importing %d changesets',
-                            iter_chunks(changeset_chunks, ChangesetInfo)):
+                            iter_initialized(store.changeset,
+                                             iter_chunks(changeset_chunks,
+                                                         ChangesetInfo))):
         store.store(cs)
 
     del changeset_chunks

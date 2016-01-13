@@ -482,18 +482,14 @@ class GitHgStore(object):
         self._closed = False
 
         self._hg2git_cache = {}
-        self._previously_stored = None
 
         self._changeset_data_cache = {}
 
         self.STORE = {
-            ChangesetInfo: (self._store_changeset, self.changeset,
-                            self.changeset_ref),
-            ManifestInfo: (self._store_manifest, self.manifest,
-                           self.manifest_ref),
-            GeneratedManifestInfo: (self._store_manifest, lambda x: None,
-                                    self.manifest_ref),
-            RevChunk: (self._store_file, self.file, self.file_ref),
+            ChangesetInfo: (self._store_changeset, self.changeset_ref),
+            ManifestInfo: (self._store_manifest, self.manifest_ref),
+            GeneratedManifestInfo: (self._store_manifest, self.manifest_ref),
+            RevChunk: (self._store_file, self.file_ref),
         }
 
         self._hgheads = set()
@@ -853,7 +849,7 @@ class GitHgStore(object):
         return result
 
     def store(self, instance):
-        store_func, get_func, get_ref_func = self.STORE[type(instance)]
+        store_func, get_ref_func = self.STORE[type(instance)]
         hg2git = False
         if instance.parent1 == NULL_NODE_ID or isinstance(get_ref_func(
                 instance.parent1), types.StringType):
@@ -864,28 +860,9 @@ class GitHgStore(object):
         result = get_ref_func(instance.node, hg2git=hg2git, create=True)
         logging.info(LazyString(lambda: "store %s %s %s" % (instance.node,
                                 instance.previous_node, result)))
-        check = check_enabled('nodeid')
-        if instance.previous_node != NULL_NODE_ID:
-            if (self._previously_stored and
-                    instance.previous_node == self._previously_stored.node):
-                previous = self._previously_stored
-            else:
-                previous = get_func(instance.previous_node)
-                check = True
-            instance.init(previous)
-        else:
-            instance.init(())
-        if check and instance.node != instance.sha1:
-            raise Exception(
-                'sha1 mismatch for node %s with parents %s %s and '
-                'previous %s' %
-                (instance.node, instance.parent1, instance.parent2,
-                 instance.previous_node)
-            )
         if isinstance(result, EmptyMark):
             result = Mark(result)
             store_func(instance, result)
-        self._previously_stored = instance
         return result
 
     def _git_committer(self, committer, date, utcoffset):
