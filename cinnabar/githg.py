@@ -471,6 +471,109 @@ class GeneratedGitCommit(GitCommit):
         self.sha1 = sha1
 
 
+class Grafter(object):
+    def __init__(self, store, graft_refs, graft_only):
+        self._store = store
+        self._early_history = set()
+        self._graft_only = graft_only
+        self._graft_trees = defaultdict(list)
+        if graft_refs:
+            graft_refs = list(ref for sha1, ref in Git.for_each_ref(
+                *(r.replace('*', '**') for r in graft_refs)))
+        else:
+            graft_refs = ['--exclude=refs/cinnabar/*', '--all']
+        if not graft_refs:
+            return
+        if store._has_metadata:
+            graft_refs += ['--not', 'refs/cinnabar/metadata^']
+        for line in progress_iter('Reading %d graft candidates',
+                                  Git.iter('log', '--full-history',
+                                           '--format=%T %H', *graft_refs)):
+            tree, node = line.split()
+            self._graft_trees[tree].append(node)
+
+    def _graft(self, changeset, parents):
+        store = self._store
+        tree = store.git_tree(changeset.manifest)
+        do_graft = tree in self._graft_trees
+        if not do_graft:
+            return None
+
+        commits = {}
+
+        def graftable(c):
+            commit = commits.get(c)
+            if not commit:
+                commit = commits[c] = GitCommit(c)
+            if not store.hg_author_info(commit.author)[1] == changeset.date:
+                return False
+
+            if all(store._replace.get(p1, p1) == store._replace.get(p2, p2)
+                   for p1, p2 in zip(commit.parents, parents)):
+                return True
+
+            # Allow to graft if one of the parents is from early history
+            return any(p in self._early_history for p in parents)
+
+        nodes = tuple(c for c in self._graft_trees[tree] if graftable(c))
+
+        if len(nodes) > 1:
+            # Ideally, this should all be tried with fuzziness, and
+            # independently of the number of nodes we got, but the
+            # following is enough to graft github.com/mozilla/gecko-dev
+            # to mozilla-central and related repositories.
+            # Try with commits with the same subject line
+            subject = changeset.message.split('\n', 1)[0]
+            possible_nodes = tuple(
+                n for n in nodes
+                if commits[n].body.split('\n', 1)[0] == subject
+            )
+            if len(possible_nodes) > 1:
+                # Try with commits with the same author ; this is attempted
+                # separately from checking timestamps because author may
+                # have been munged.
+                possible_nodes = tuple(
+                    n for n in possible_nodes
+                    if (store.hg_author_info(commits[n].author)[0] ==
+                        changeset.committer)
+                )
+            if len(possible_nodes) == 1:
+                nodes = possible_nodes
+
+        if len(nodes) > 1:
+            raise Exception('Cannot graft changeset %s. Candidates: %s'
+                            % (changeset.node, ', '.join(nodes)))
+
+        if nodes:
+            node = nodes[0]
+            self._graft_trees[tree].remove(node)
+            return commits[node]
+        return None
+
+    def graft(self, changeset, track_heads=True):
+        store = self._store
+        parents = tuple(store.changeset_ref(p) for p in changeset.parents)
+        result = self._graft(changeset, parents)
+        if parents:
+            is_early_history = all(p in self._early_history for p in parents)
+        else:
+            is_early_history = not result
+        if self._graft_only and not (is_early_history or result):
+            raise Exception('Not allowing non-graft import of %s'
+                            % changeset.node)
+        if is_early_history or not result:
+            commit = store.changeset_ref(changeset.node, hg2git=False,
+                                         create=True)
+        else:
+            commit = result
+        store.store_changeset(changeset, commit, track_heads)
+        if is_early_history:
+            if result:
+                store._replace[result.sha1] = Mark(commit)
+            else:
+                self._early_history.add(commit)
+
+
 class GitHgStore(object):
     def __init__(self):
         self.__fast_import = None
@@ -480,6 +583,7 @@ class GitHgStore(object):
         self._git_files = {}
         self._git_trees = {}
         self._closed = False
+        self._graft = None
 
         self._hg2git_cache = {}
 
@@ -499,7 +603,6 @@ class GitHgStore(object):
                 self._old_branches.append((sha1, ref))
         self._replace = VersionedDict(self._replace)
 
-        self._graft_trees = defaultdict(list)
         self._tagcache = {}
         self._tagfiles = {}
         self._tags = {NULL_NODE_ID: {}}
@@ -570,22 +673,7 @@ class GitHgStore(object):
                 raise UpgradeException()
 
     def prepare_graft(self, refs=[], graft_only=False):
-        self._early_history = set()
-        self._graft_only = graft_only
-        if refs:
-            refs = list(ref for sha1, ref in Git.for_each_ref(
-                *(r.replace('*', '**') for r in refs)))
-        else:
-            refs = ['--exclude=refs/cinnabar/*', '--all']
-        if not refs:
-            return
-        if self._has_metadata:
-            refs += ['--not', 'refs/cinnabar/metadata^']
-        for line in progress_iter('Reading %d graft candidates',
-                                  Git.iter('log', '--full-history',
-                                           '--format=%T %H', *refs)):
-            tree, node = line.split()
-            self._graft_trees[tree].append(node)
+        self._graft = Grafter(self, refs, graft_only)
 
     def tags(self, heads):
         # The given heads are assumed to be ordered by mercurial
@@ -841,13 +929,14 @@ class GitHgStore(object):
             return self._prepare_git_file(GeneratedFileRev(sha1, data))
         return result
 
-    def _store_find_or_create(self, instance, get_ref_func=lambda x: None):
+    def _store_find_or_create(self, instance, get_ref_func=lambda x: None,
+                              create=True):
         hg2git = all(
             p == NULL_NODE_ID or isinstance(get_ref_func(p), types.StringType)
             for p in (instance.parent1, instance.parent2)
         )
 
-        result = get_ref_func(instance.node, hg2git=hg2git, create=True)
+        result = get_ref_func(instance.node, hg2git=hg2git, create=create)
         logging.info(LazyString(lambda: "store %s %s %s" % (instance.node,
                                 instance.previous_node, result)))
         return result
@@ -876,10 +965,20 @@ class GitHgStore(object):
         self._git_trees[manifest_sha1] = tree
         return tree
 
-    def store_changeset(self, instance, track_heads=True):
-        mark = self._store_find_or_create(instance, self.changeset_ref)
-        if not isinstance(mark, EmptyMark):
+    def store_changeset(self, instance, commit=None, track_heads=True):
+        if not commit:
+            mark = self._store_find_or_create(instance, self.changeset_ref,
+                                              create=not self._graft)
+        elif isinstance(commit, EmptyMark):
+            mark = commit
+        else:
+            assert isinstance(commit, GitCommit)
+            mark = LazyString(commit.sha1)
+        if not mark and self._graft:
+            return self._graft.graft(instance, track_heads)
+        elif not commit and not isinstance(mark, EmptyMark):
             return
+
         author = self._git_committer(instance.committer, instance.date,
                                      instance.utcoffset)
         extra = instance.extra
@@ -906,74 +1005,7 @@ class GitHgStore(object):
 
         parents = tuple(self.changeset_ref(p) for p in instance.parents)
 
-        tree = self.git_tree(instance.manifest)
-        do_graft = tree in self._graft_trees
-        if do_graft:
-            commits = {}
-
-            def graftable(c):
-                commit = commits.get(c)
-                if not commit:
-                    commit = commits[c] = GitCommit(c)
-                if not self.hg_author_info(commit.author)[1] == instance.date:
-                    return False
-
-                if all(self._replace.get(p1, p1) == self._replace.get(p2, p2)
-                       for p1, p2 in zip(commit.parents, parents)):
-                    return True
-
-                # Allow to graft if one of the parents is from early history
-                return any(p in self._early_history for p in parents)
-
-            nodes = tuple(c for c in self._graft_trees[tree] if graftable(c))
-
-            if len(nodes) > 1:
-                # Ideally, this should all be tried with fuzziness, and
-                # independently of the number of nodes we got, but the
-                # following is enough to graft github.com/mozilla/gecko-dev
-                # to mozilla-central and related repositories.
-                # Try with commits with the same subject line
-                subject = instance.message.split('\n', 1)[0]
-                possible_nodes = tuple(
-                    n for n in nodes
-                    if commits[n].body.split('\n', 1)[0] == subject
-                )
-                if len(possible_nodes) > 1:
-                    # Try with commits with the same author ; this is attempted
-                    # separately from checking timestamps because author may
-                    # have been munged.
-                    possible_nodes = tuple(
-                        n for n in possible_nodes
-                        if (self.hg_author_info(commits[n].author)[0] ==
-                            instance.committer)
-                    )
-                if len(possible_nodes) == 1:
-                    nodes = possible_nodes
-
-            if len(nodes) > 1:
-                raise Exception('Cannot graft changeset %s. Candidates: %s'
-                                % (instance.node, ', '.join(nodes)))
-
-            if nodes:
-                node = nodes[0]
-                self._graft_trees[tree].remove(node)
-                replace = commits[node]
-            else:
-                do_graft = False
-
-        if self._graft_trees:
-            if parents:
-                is_early_history = all(
-                    p in self._early_history for p in parents)
-            else:
-                is_early_history = not do_graft
-            if self._graft_only and not (is_early_history or do_graft):
-                raise Exception('Not allowing non-graft import of %s'
-                                % instance.node)
-        else:
-            is_early_history = False
-
-        if not do_graft or is_early_history:
+        if isinstance(mark, EmptyMark):
             with self._fast_import.commit(
                 ref='refs/cinnabar/tip',
                 message=instance.message,
@@ -982,6 +1014,7 @@ class GitHgStore(object):
                 parents=parents,
                 mark=mark,
             ) as commit:
+                tree = self.git_tree(instance.manifest)
                 commit.filemodify('', tree, typ='tree')
 
             mark = Mark(mark)
@@ -990,15 +1023,6 @@ class GitHgStore(object):
             commit.committer = self._fast_import._format_committer(committer)
             commit.author = self._fast_import._format_committer(author)
             commit.body = instance.message
-
-            if do_graft:
-                self._replace[replace.sha1] = mark
-            elif is_early_history:
-                self._early_history.add(mark)
-
-        elif do_graft:
-            mark = LazyString(replace.sha1)
-            commit = replace
 
         self._changesets[instance.node] = mark
         data = self._changeset_data_cache[str(mark)] = {
