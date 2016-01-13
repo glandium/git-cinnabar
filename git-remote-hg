@@ -279,7 +279,7 @@ def main(args):
                 # heads locally already.
                 if set(heads).issuperset(unknown_heads):
                     heads = set(branchmap.heads()) & unknown_heads
-                getbundle(repo, store, heads, branchmap)
+                getbundle(repo, store, heads, branchmap.names())
             except:
                 wanted_refs = {}
                 raise

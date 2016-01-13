@@ -245,12 +245,12 @@ class bundlerepo(object):
         return [h in self._dag for h in heads]
 
 
-def getbundle(repo, store, heads, branchmap):
+def getbundle(repo, store, heads, branch_names):
     if isinstance(repo, bundlerepo):
         changeset_chunks = repo._changeset_chunks
         bundle = repo._bundle
     else:
-        common = findcommon(repo, store, store.heads(branchmap.names()))
+        common = findcommon(repo, store, store.heads(branch_names))
         logging.info('common: %s' % common)
         bundle = repo.getbundle('bundle', heads=[unhexlify(h) for h in heads],
                                 common=[unhexlify(h) for h in common])
