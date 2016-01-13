@@ -492,6 +492,10 @@ class Grafter(object):
             tree, node = line.split()
             self._graft_trees[tree].append(node)
 
+    def _is_cinnabar_commit(self, commit):
+        data = self._store.read_changeset_data(commit)
+        return 'patch' not in data if data else False
+
     def _graft(self, changeset, parents):
         store = self._store
         tree = store.git_tree(changeset.manifest)
@@ -540,6 +544,22 @@ class Grafter(object):
             if len(possible_nodes) == 1:
                 nodes = possible_nodes
 
+        # If we still have multiple nodes, check if one of them is one that
+        # cinnabar would have created. If it is, we prefer other commits on
+        # the premise that it means we've been asked to reclone with a graft.
+        # on a repo that was already handled by cinnabar.
+        if len(nodes) > 1:
+            possible_nodes = []
+            for node in nodes:
+                commit = commits[node]
+                store.store_changeset(changeset, commit, track_heads=False)
+                sha1 = commit.sha1
+                if store.read_changeset_data(sha1).get('patch'):
+                    possible_nodes.append(node)
+                del store._changeset_data_cache[sha1]
+                del store._changesets[changeset.node]
+            nodes = possible_nodes
+
         if len(nodes) > 1:
             raise Exception('Cannot graft changeset %s. Candidates: %s'
                             % (changeset.node, ', '.join(nodes)))
@@ -551,6 +571,7 @@ class Grafter(object):
         return None
 
     def graft(self, changeset, track_heads=True):
+        # TODO: clarify this function because it's hard to follow.
         store = self._store
         parents = tuple(store.changeset_ref(p) for p in changeset.parents)
         result = self._graft(changeset, parents)
@@ -571,6 +592,11 @@ class Grafter(object):
             if result:
                 store._replace[result.sha1] = Mark(commit)
             else:
+                self._early_history.add(commit)
+        elif not parents:
+            if result:
+                commit = result.sha1
+            if self._is_cinnabar_commit(commit):
                 self._early_history.add(commit)
 
 

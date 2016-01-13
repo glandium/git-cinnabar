@@ -146,6 +146,9 @@ class LazyString(object):
     def startswith(self, other):
         return str(self).startswith(other)
 
+    def __hash__(self):
+        return hash(str(self))
+
 
 def one(l):
     l = list(l)
