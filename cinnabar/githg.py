@@ -472,23 +472,17 @@ class GeneratedGitCommit(GitCommit):
 
 
 class Grafter(object):
-    def __init__(self, store, graft_refs, graft_only):
+    def __init__(self, store, graft_only):
         self._store = store
         self._early_history = set()
         self._graft_only = graft_only
         self._graft_trees = defaultdict(list)
-        if graft_refs:
-            graft_refs = list(ref for sha1, ref in Git.for_each_ref(
-                *(r.replace('*', '**') for r in graft_refs)))
-        else:
-            graft_refs = ['--exclude=refs/cinnabar/*', '--all']
-        if not graft_refs:
-            return
+        refs = ['--exclude=refs/cinnabar/*', '--all']
         if store._has_metadata:
-            graft_refs += ['--not', 'refs/cinnabar/metadata^']
+            refs += ['--not', 'refs/cinnabar/metadata^']
         for line in progress_iter('Reading %d graft candidates',
                                   Git.iter('log', '--full-history',
-                                           '--format=%T %H', *graft_refs)):
+                                           '--format=%T %H', *refs)):
             tree, node = line.split()
             self._graft_trees[tree].append(node)
 
@@ -698,8 +692,8 @@ class GitHgStore(object):
             if self._replace and not replace:
                 raise UpgradeException()
 
-    def prepare_graft(self, refs=[], graft_only=False):
-        self._graft = Grafter(self, refs, graft_only)
+    def prepare_graft(self, graft_only=False):
+        self._graft = Grafter(self, graft_only)
 
     def tags(self, heads):
         # The given heads are assumed to be ordered by mercurial
