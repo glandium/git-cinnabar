@@ -591,8 +591,10 @@ class GitHgStore(object):
         if not refs:
             return
         exclude = ('^%s' % h for h in self._changesets.itervalues())
-        for line in Git.iter('log', '--stdin', '--full-history',
-                             '--format=%T %H', *refs, stdin=exclude):
+        for line in progress_iter('Reading %d graft candidates',
+                                  Git.iter('log', '--stdin', '--full-history',
+                                           '--format=%T %H', *refs,
+                                           stdin=exclude)):
             tree, node = line.split()
             self._graft_trees[tree].append(node)
 
