@@ -431,10 +431,11 @@ class Git(object):
     def update_ref(self, ref, newvalue, oldvalue=None, store=True):
         if not isinstance(newvalue, Mark) and newvalue.startswith('refs/'):
             newvalue = self.resolve_ref(newvalue)
+        refs = self._refs if store else self._refs._previous
         if newvalue and newvalue != NULL_NODE_ID:
-            self._refs[ref] = newvalue
+            refs[ref] = newvalue
         else:
-            del self._refs[ref]
+            del refs[ref]
         if not store:
             return
         if self._fast_import:
