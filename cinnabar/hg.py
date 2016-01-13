@@ -265,27 +265,8 @@ def getbundle(repo, store, heads, branchmap):
     for sha1 in manifest_sha1s:
         store.git_tree(sha1)
 
-    heads = {h: n for n, h in enumerate(branchmap.heads())}
-    num = -1
-    reported = False
     for cs in progress_iter('Importing %d changesets',
                             iter_chunks(changeset_chunks, ChangesetInfo)):
-        if not reported:
-            prev = num
-            num = heads.get(cs.node, prev)
-            if prev > num:
-                sys.stderr.write(
-                    'The mercurial repository reported heads in a different '
-                    'order than they\n'
-                    'appear in the bundle it created. This breaks assumptions '
-                    'in git-cinnabar\'s\n'
-                    'support for tags. Please report the issue on\n'
-                    '  https://github.com/glandium/git-cinnabar/issues\n'
-                )
-                # Mercurial itself somehow relies on the orders to match, so if
-                # a future version of mercurial actually changes the heads
-                # order, tag inconsistencies will happen with mercurial too.
-                reported = True
         store.store(cs)
 
     del changeset_chunks
