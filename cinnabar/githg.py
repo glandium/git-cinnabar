@@ -488,12 +488,12 @@ class GitHgStore(object):
 
         self.STORE = {
             ChangesetInfo: (self._store_changeset, self.changeset,
-                            self._changesets, 'commit'),
+                            self.changeset_ref),
             ManifestInfo: (self._store_manifest, self.manifest,
-                           self._manifests, 'commit'),
+                           self.manifest_ref),
             GeneratedManifestInfo: (self._store_manifest, lambda x: None,
-                                    self._manifests, 'commit'),
-            RevChunk: (self._store_file, self.file, self._files, 'blob'),
+                                    self.manifest_ref),
+            RevChunk: (self._store_file, self.file, self.file_ref),
         }
 
         self._hgheads = set()
@@ -853,16 +853,15 @@ class GitHgStore(object):
         return result
 
     def store(self, instance):
-        store_func, get_func, dic, typ = self.STORE[type(instance)]
+        store_func, get_func, get_ref_func = self.STORE[type(instance)]
         hg2git = False
-        if instance.parent1 == NULL_NODE_ID or isinstance(self._git_object(
-                dic, typ, instance.parent1, create=False), types.StringType):
-            if instance.parent2 == NULL_NODE_ID or isinstance(self._git_object(
-                    dic, typ, instance.parent2, create=False),
-                    types.StringType):
+        if instance.parent1 == NULL_NODE_ID or isinstance(get_ref_func(
+                instance.parent1), types.StringType):
+            if instance.parent2 == NULL_NODE_ID or isinstance(get_ref_func(
+                    instance.parent2), types.StringType):
                 hg2git = True
 
-        result = self._git_object(dic, typ, instance.node, hg2git=hg2git)
+        result = get_ref_func(instance.node, hg2git=hg2git, create=True)
         logging.info(LazyString(lambda: "store %s %s %s" % (instance.node,
                                 instance.previous_node, result)))
         check = check_enabled('nodeid')
