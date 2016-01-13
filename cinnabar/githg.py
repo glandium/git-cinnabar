@@ -486,10 +486,10 @@ class GitHgStore(object):
         self._changeset_data_cache = {}
 
         self.STORE = {
-            ChangesetInfo: (self._store_changeset, self.changeset_ref),
-            ManifestInfo: (self._store_manifest, self.manifest_ref),
-            GeneratedManifestInfo: (self._store_manifest, self.manifest_ref),
-            RevChunk: (self._store_file, self.file_ref),
+            ChangesetInfo: (self.store_changeset, self.changeset_ref),
+            ManifestInfo: (self.store_manifest, self.manifest_ref),
+            GeneratedManifestInfo: (self.store_manifest, self.manifest_ref),
+            RevChunk: (self.store_file, self.file_ref),
         }
 
         self._hgheads = set()
@@ -889,7 +889,7 @@ class GitHgStore(object):
         self._git_trees[manifest_sha1] = tree
         return tree
 
-    def _store_changeset(self, instance, mark, track_heads=True):
+    def store_changeset(self, instance, mark, track_heads=True):
         author = self._git_committer(instance.committer, instance.date,
                                      instance.utcoffset)
         extra = instance.extra
@@ -1039,7 +1039,7 @@ class GitHgStore(object):
         'x': 'exec',
     }
 
-    def _store_manifest(self, instance, mark):
+    def store_manifest(self, instance, mark):
         if instance.previous_node != NULL_NODE_ID:
             previous = self.manifest_ref(instance.previous_node)
         else:
@@ -1099,7 +1099,7 @@ class GitHgStore(object):
                      instance.previous_node)
                 )
 
-    def _store_file(self, instance, mark):
+    def store_file(self, instance, mark):
         data = instance.data
         self._fast_import.put_blob(data=data, mark=mark)
         self._files[instance.node] = Mark(mark)
