@@ -526,7 +526,7 @@ class FastImport(IOLogger):
         retcode = self._proc.wait()
         if Git._fast_import == self:
             Git._fast_import = None
-        if retcode:
+        if retcode and not rollback:
             raise Exception('git-fast-import failed')
 
     def ls(self, dataref, path=''):
