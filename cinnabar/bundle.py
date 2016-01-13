@@ -296,7 +296,7 @@ class PushStore(GitHgStore):
         if self._closed:
             return
         for manifest in self._push_manifests.itervalues():
-            self.store(manifest)
+            self.store_manifest(manifest)
             ls = one(Git.ls_tree(self.manifest_ref(manifest.node), 'git'))
             if self._manifest_git_tree[manifest.node] == EMPTY_TREE and not ls:
                 pass

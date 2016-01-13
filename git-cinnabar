@@ -411,7 +411,7 @@ def fsck(args):
                         continue
                     changeset = store.changeset(hg_sha1, include_parents=True)
                     changeset.init(())
-                    mark = Mark(store._fast_import.new_mark())
+                    mark = store._fast_import.new_mark()
                     store.store_changeset(changeset, mark, track_heads=False)
                     store._changeset_data_cache[child] = None
                     store._replace[child] = mark

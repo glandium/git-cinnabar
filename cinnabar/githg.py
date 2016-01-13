@@ -485,13 +485,6 @@ class GitHgStore(object):
 
         self._changeset_data_cache = {}
 
-        self.STORE = {
-            ChangesetInfo: (self.store_changeset, self.changeset_ref),
-            ManifestInfo: (self.store_manifest, self.manifest_ref),
-            GeneratedManifestInfo: (self.store_manifest, self.manifest_ref),
-            RevChunk: (self.store_file, self.file_ref),
-        }
-
         self._hgheads = set()
 
         self._replace = Git._replace
@@ -848,21 +841,15 @@ class GitHgStore(object):
             return self._prepare_git_file(GeneratedFileRev(sha1, data))
         return result
 
-    def store(self, instance):
-        store_func, get_ref_func = self.STORE[type(instance)]
-        hg2git = False
-        if instance.parent1 == NULL_NODE_ID or isinstance(get_ref_func(
-                instance.parent1), types.StringType):
-            if instance.parent2 == NULL_NODE_ID or isinstance(get_ref_func(
-                    instance.parent2), types.StringType):
-                hg2git = True
+    def _store_find_or_create(self, instance, get_ref_func=lambda x: None):
+        hg2git = all(
+            p == NULL_NODE_ID or isinstance(get_ref_func(p), types.StringType)
+            for p in (instance.parent1, instance.parent2)
+        )
 
         result = get_ref_func(instance.node, hg2git=hg2git, create=True)
         logging.info(LazyString(lambda: "store %s %s %s" % (instance.node,
                                 instance.previous_node, result)))
-        if isinstance(result, EmptyMark):
-            result = Mark(result)
-            store_func(instance, result)
         return result
 
     def _git_committer(self, committer, date, utcoffset):
@@ -889,7 +876,10 @@ class GitHgStore(object):
         self._git_trees[manifest_sha1] = tree
         return tree
 
-    def store_changeset(self, instance, mark, track_heads=True):
+    def store_changeset(self, instance, track_heads=True):
+        mark = self._store_find_or_create(instance, self.changeset_ref)
+        if not isinstance(mark, EmptyMark):
+            return
         author = self._git_committer(instance.committer, instance.date,
                                      instance.utcoffset)
         extra = instance.extra
@@ -1039,7 +1029,10 @@ class GitHgStore(object):
         'x': 'exec',
     }
 
-    def store_manifest(self, instance, mark):
+    def store_manifest(self, instance):
+        mark = self._store_find_or_create(instance, self.manifest_ref)
+        if not isinstance(mark, EmptyMark):
+            return
         if instance.previous_node != NULL_NODE_ID:
             previous = self.manifest_ref(instance.previous_node)
         else:
@@ -1061,7 +1054,7 @@ class GitHgStore(object):
                 commit.filemodify('git/%s' % name,
                                   self.git_file_ref(node), typ=self.TYPE[attr])
 
-        self._manifests[instance.node] = Mark(mark)
+        self._manifests[instance.node] = mark = Mark(mark)
         self._manifest_dag.add(self._manifests[instance.node], parents)
         if check_enabled('manifests'):
             expected_tree = self._fast_import.ls(mark, 'hg')[2]
@@ -1099,7 +1092,10 @@ class GitHgStore(object):
                      instance.previous_node)
                 )
 
-    def store_file(self, instance, mark):
+    def store_file(self, instance):
+        mark = self._store_find_or_create(instance, self.file_ref)
+        if not isinstance(mark, EmptyMark):
+            return
         data = instance.data
         self._fast_import.put_blob(data=data, mark=mark)
         self._files[instance.node] = Mark(mark)

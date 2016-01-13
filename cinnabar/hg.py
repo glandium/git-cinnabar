@@ -264,7 +264,7 @@ def getbundle(repo, store, heads, branchmap):
     for rev_chunk in progress_iter(
             'Reading and importing %d files', iter_initialized(
                 store.file, iterate_files(bundle))):
-        store.store(rev_chunk)
+        store.store_file(rev_chunk)
 
     del bundle
 
@@ -274,7 +274,7 @@ def getbundle(repo, store, heads, branchmap):
                                              iter_chunks(manifest_chunks,
                                                          ManifestInfo))):
         manifest_sha1s.append(mn.node)
-        store.store(mn)
+        store.store_manifest(mn)
 
     del manifest_chunks
 
@@ -288,7 +288,7 @@ def getbundle(repo, store, heads, branchmap):
     # takes hours instead of seconds.
     # So read all the git manifest trees now. This will at most trigger
     # one munmap/mmap cycle. store.git_tree caches the results so that it
-    # reuses that when it needs them during store.store.
+    # reuses that when it needs them during store.store_changeset.
     for sha1 in manifest_sha1s:
         store.git_tree(sha1)
 
@@ -296,7 +296,7 @@ def getbundle(repo, store, heads, branchmap):
                             iter_initialized(store.changeset,
                                              iter_chunks(changeset_chunks,
                                                          ChangesetInfo))):
-        store.store(cs)
+        store.store_changeset(cs)
 
     del changeset_chunks
 
