@@ -609,7 +609,7 @@ class GitHgStore(object):
 
         self._changeset_data_cache = {}
 
-        self._hgheads = set()
+        self._hgheads = VersionedDict()
 
         self._replace = Git._replace
         self._old_branches = []
@@ -672,7 +672,7 @@ class GitHgStore(object):
                 for sha1, head in izip(commit.parents,
                                        commit.body.splitlines()):
                     hghead, branch = head.split(' ', 1)
-                    self._hgheads.add((branch, hghead))
+                    self._hgheads._previous[hghead] = branch
                     self._changesets[hghead] = sha1
 
         else:
@@ -680,8 +680,6 @@ class GitHgStore(object):
 
         self._manifest_dag = gitdag(manifests)
         self._manifest_heads_orig = set(self._manifest_dag.heads())
-
-        self._hgheads_orig = set(self._hgheads)
 
         if metadata_ref:
             replace = {}
@@ -741,7 +739,7 @@ class GitHgStore(object):
     def heads(self, branches={}):
         if not isinstance(branches, (dict, set)):
             branches = set(branches)
-        return set(h for b, h in self._hgheads
+        return set(h for h, b in self._hgheads.iteritems()
                    if not branches or b in branches)
 
     def _head_branch(self, head):
@@ -751,21 +749,22 @@ class GitHgStore(object):
         return branch, head
 
     def add_head(self, head, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
-        head_branch = self._head_branch(head)
+        branch, head = self._head_branch(head)
         for p in (parent1, parent2):
             if p == NULL_NODE_ID:
                 continue
-            parent_head_branch = self._head_branch(p)
-            if parent_head_branch[0] == head_branch[0]:
-                if parent_head_branch in self._hgheads:
-                    self._hgheads.remove(parent_head_branch)
-                ref = self.changeset_ref(parent_head_branch[1])
+            parent_branch, parent_head = self._head_branch(p)
+            if parent_branch == branch:
+                if parent_head in self._hgheads:
+                    assert parent_branch == self._hgheads[parent_head]
+                    del self._hgheads[parent_head]
+                ref = self.changeset_ref(parent_head)
                 if isinstance(ref, LazyString):
                     ref = str(ref)
                 if ref in self._tagcache:
                     self._tagcache[ref] = False
 
-        self._hgheads.add(head_branch)
+        self._hgheads[head] = branch
         ref = self.changeset_ref(head)
         if isinstance(ref, LazyString):
             ref = str(ref)
@@ -1239,11 +1238,12 @@ class GitHgStore(object):
             ) as commit:
                 update_metadata.append('refs/cinnabar/manifests')
 
-        if self._hgheads != self._hgheads_orig:
+        if any(self._hgheads.iterchanges()):
             with self._fast_import.commit(
                 ref='refs/cinnabar/changesets',
-                parents=(self.changeset_ref(h) for b, h in self._hgheads),
-                message='\n'.join('%s %s' % (h, b) for b, h in self._hgheads),
+                parents=(self.changeset_ref(h) for h in self._hgheads),
+                message='\n'.join('%s %s' % (h, b)
+                                  for h, b in self._hgheads.iteritems()),
             ) as commit:
                 update_metadata.append('refs/cinnabar/changesets')
 
