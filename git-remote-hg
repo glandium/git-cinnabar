@@ -238,47 +238,31 @@ def main(args):
                     assert args is None or len(args) == 1
                     if args:
                         refs.extend(args)
-            except:
-                # If anything wrong happens before we got all the import
-                # commands, we risk git picking the existing refs/cinnabar
-                # refs. Remove them.
+            finally:
+                # If anything wrong happens at any time, we risk git picking
+                # the existing refs/cinnabar refs, so remove them preventively.
                 for sha1, ref in Git.for_each_ref('refs/cinnabar/refs/heads',
                                                   'refs/cinnabar/HEAD'):
                     Git.delete_ref(ref)
-                raise
 
-            try:
-                def resolve_head(head):
-                    if head.startswith('refs/heads/branches/'):
-                        head = head[20:]
-                        if head[-4:] == '/tip':
-                            return branchmap.tip(head[:-4])
-                        return head[-40:]
-                    if head.startswith('refs/heads/bookmarks/'):
-                        head = head[21:]
-                        return bookmarks[head]
-                    if head == 'HEAD':
-                        return bookmarks.get('@') or branchmap.tip('default')
-                    return None
+            def resolve_head(head):
+                if head.startswith('refs/heads/branches/'):
+                    head = head[20:]
+                    if head[-4:] == '/tip':
+                        return branchmap.tip(head[:-4])
+                    return head[-40:]
+                if head.startswith('refs/heads/bookmarks/'):
+                    head = head[21:]
+                    return bookmarks[head]
+                if head == 'HEAD':
+                    return bookmarks.get('@') or branchmap.tip('default')
+                return None
 
-                wanted_refs = {k: v for k, v in (
-                               (h, resolve_head(h)) for h in refs) if v}
-                heads = wanted_refs.values()
-                if not heads:
-                    heads = branchmap.heads()
-
-                refs_orig = {}
-                for sha1, ref in Git.for_each_ref(
-                        'refs/cinnabar/refs/heads', 'refs/cinnabar/HEAD'):
-                    refs_orig[ref] = sha1
-            except:
-                # If anything wrong happens before we actually pull, we risk
-                # git pucking the existing refs/cinnabar refs. Remove them.
-                # Unlike in the case above, we now have the list of refs git
-                # is expected, so we can just remove those.
-                for ref in refs:
-                    Git.delete_ref('refs/cinnabar/' + ref)
-                raise
+            wanted_refs = {k: v for k, v in (
+                           (h, resolve_head(h)) for h in refs) if v}
+            heads = wanted_refs.values()
+            if not heads:
+                heads = branchmap.heads()
 
             try:
                 if graft:
@@ -302,11 +286,7 @@ def main(args):
             finally:
                 for ref, value in wanted_refs.iteritems():
                     ref = 'refs/cinnabar/' + ref
-                    if ref not in refs_orig or refs_orig[ref] != value:
-                        Git.update_ref(ref, store.changeset_ref(value))
-                for ref in refs_orig:
-                    if ref[14:] not in wanted_refs:
-                        Git.delete_ref(ref)
+                    Git.update_ref(ref, store.changeset_ref(value))
 
             store.close()
 
