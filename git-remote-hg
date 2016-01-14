@@ -26,8 +26,10 @@ from cinnabar.git import Git
 from cinnabar.util import (
     init_logging,
     IOLogger,
+    VersionedDict,
 )
 import cinnabar.util
+from collections import Sequence
 
 
 def read_cmd(fileobj):
@@ -38,29 +40,39 @@ def read_cmd(fileobj):
     return line[0], line[1:]
 
 
+def autohexlify(h):
+    if len(h) == 40:
+        return h
+    elif len(h) == 20:
+        return hexlify(h)
+    assert False
+
+
 class BranchMap(object):
     def __init__(self, store, remote_branchmap, remote_heads):
         self._heads = {}
-        self._all_heads = tuple(hexlify(h) for h in reversed(remote_heads))
+        self._all_heads = tuple(autohexlify(h) for h in reversed(remote_heads))
         self._tips = {}
         self._git_sha1s = {}
         self._unknown_heads = set()
         for branch, heads in remote_branchmap.iteritems():
+            # We can't keep track of tips if the list of heads is not sequenced
+            sequenced = isinstance(heads, Sequence) or len(heads) == 1
             branch_heads = []
             for head in heads:
-                head = hexlify(head)
+                head = autohexlify(head)
                 branch_heads.append(head)
                 sha1 = store.changeset_ref(head)
                 if not sha1:
                     self._unknown_heads.add(head)
                     continue
                 extra = store.read_changeset_data(sha1).get('extra')
-                if extra and not extra.get('close'):
+                if sequenced and extra and not extra.get('close'):
                     self._tips[branch] = head
                 assert head not in self._git_sha1s
                 self._git_sha1s[head] = sha1
             # Use last head as tip if we didn't set one.
-            if heads and branch not in self._tips:
+            if heads and sequenced and branch not in self._tips:
                 self._tips[branch] = head
             self._heads[branch] = tuple(branch_heads)
 
@@ -109,6 +121,7 @@ def main(args):
     branchmap = None
     bookmarks = {}
     HEAD = 'branches/default/tip'
+    has_unknown_heads = False
 
     graft = None
     if not remote.startswith('hg::'):
@@ -121,7 +134,6 @@ def main(args):
         None: False,
         'false': False,
         'true': True,
-        'only': 'only',
     }
     if graft not in GRAFT:
         sys.stderr.write(
@@ -181,6 +193,52 @@ def main(args):
                 bookmarks = repo.listkeys('bookmarks')
 
             branchmap = BranchMap(store, branchmap, heads)
+            has_unknown_heads = bool(branchmap.unknown_heads())
+            if graft and has_unknown_heads and 'for-push' not in args:
+                store.prepare_graft()
+                store.init_fast_import()
+                get_heads = set(branchmap.heads()) & branchmap.unknown_heads()
+                getbundle(repo, store, get_heads, branchmap.names())
+                # We may have failed to graft all changesets, in which case we
+                # skipped them. If that's what happened, we want to create a
+                # new branchmap containing all we do know about, so that we can
+                # avoid telling git about things we don't know, because if we
+                # didn't, it would ask for them, and subsequently fail because
+                # they are missing.
+                # Since we can't know for sure what the right tips might be for
+                # each branch, we won't expose the tips. This means we don't
+                # need to care about the order of the heads for the new
+                # branchmap.
+                has_unknown_heads = any(not(store.changeset_ref(h))
+                                        for h in get_heads)
+                if has_unknown_heads:
+                    new_branchmap = {
+                        branch: set(h for h in branchmap.heads(branch))
+                        for branch in branchmap.names()
+                    }
+                    new_branchmap = {
+                        branch: set(h for h in branchmap.heads(branch)
+                                    if h not in branchmap.unknown_heads())
+                        for branch in branchmap.names()
+                    }
+                    new_heads = set(h for h in branchmap.heads()
+                                    if h not in branchmap.unknown_heads())
+                    for status, head, branch in store._hgheads.iterchanges():
+                        branch_heads = new_branchmap.get(branch)
+                        if status == VersionedDict.REMOVED:
+                            if branch_heads and head in branch_heads:
+                                branch_heads.remove(head)
+                            if head in new_heads:
+                                new_heads.remove(head)
+                        else:
+                            if not branch_heads:
+                                branch_heads = new_branchmap[branch] = set()
+                            branch_heads.add(head)
+                            new_heads.add(head)
+
+                    branchmap = BranchMap(store, new_branchmap,
+                                          list(new_heads))
+
             for branch in sorted(branchmap.names()):
                 branch_tip = branchmap.tip(branch)
                 for head in sorted(branchmap.heads(branch)):
@@ -199,21 +257,28 @@ def main(args):
                     ))
             for name, sha1 in sorted(bookmarks.iteritems()):
                 ref = store.changeset_ref(sha1)
+                if graft and not ref:
+                    continue
                 helper.write(
                     '%s refs/heads/bookmarks/%s\n'
                     % (ref if ref else '?', name)
                 )
-            if not branchmap.unknown_heads():
+            if not has_unknown_heads:
                 for tag, ref in sorted(store.tags(branchmap.heads())):
                     helper.write('%s refs/tags/%s\n' % (ref, tag))
 
             if '@' in bookmarks:
                 HEAD = 'bookmarks/@'
-            helper.write(
-                '@refs/heads/%s HEAD\n'
-                '\n'
-                % HEAD
-            )
+            if graft:
+                head = bookmarks.get('@', branchmap.tip('default'))
+                if head:
+                    head = store.changeset_ref(head)
+            else:
+                head = True
+            if not graft or head:
+                helper.write('@refs/heads/%s HEAD\n' % HEAD)
+
+            helper.write('\n')
             helper.flush()
         elif cmd == 'option':
             assert len(args) == 2
@@ -267,9 +332,6 @@ def main(args):
                 heads = branchmap.heads()
 
             try:
-                if graft:
-                    store.prepare_graft(graft == 'only')
-                store.init_fast_import()
                 # Mercurial can be an order of magnitude slower when creating
                 # a bundle when not giving topological heads, which some of
                 # the branch heads might not be.
@@ -279,10 +341,12 @@ def main(args):
                 # `heads` might contain known heads, if e.g. the remote has
                 # never been pulled from, but we happen to have some of its
                 # heads locally already.
-                unknown_heads = branchmap.unknown_heads()
-                if set(heads).issuperset(unknown_heads):
-                    heads = set(branchmap.heads()) & unknown_heads
-                getbundle(repo, store, heads, branchmap.names())
+                if has_unknown_heads:
+                    unknown_heads = branchmap.unknown_heads()
+                    if set(heads).issuperset(unknown_heads):
+                        heads = set(branchmap.heads()) & unknown_heads
+                    store.init_fast_import()
+                    getbundle(repo, store, heads, branchmap.names())
             except:
                 wanted_refs = {}
                 raise

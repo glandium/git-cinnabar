@@ -471,12 +471,16 @@ class GeneratedGitCommit(GitCommit):
         self.sha1 = sha1
 
 
+class NothingToGraftException(Exception): pass
+class AmbiguousGraftException(Exception): pass
+
+
 class Grafter(object):
-    def __init__(self, store, graft_only):
+    def __init__(self, store):
         self._store = store
         self._early_history = set()
-        self._graft_only = graft_only
         self._graft_trees = defaultdict(list)
+        self._grafted = False
         refs = ['--exclude=refs/cinnabar/*', '--all']
         if store._has_metadata:
             refs += ['--not', 'refs/cinnabar/metadata^']
@@ -555,8 +559,9 @@ class Grafter(object):
             nodes = possible_nodes
 
         if len(nodes) > 1:
-            raise Exception('Cannot graft changeset %s. Candidates: %s'
-                            % (changeset.node, ', '.join(nodes)))
+            raise AmbiguousGraftException(
+                'Cannot graft changeset %s. Candidates: %s'
+                % (changeset.node, ', '.join(nodes)))
 
         if nodes:
             node = nodes[0]
@@ -573,9 +578,8 @@ class Grafter(object):
             is_early_history = all(p in self._early_history for p in parents)
         else:
             is_early_history = not result
-        if self._graft_only and not (is_early_history or result):
-            raise Exception('Not allowing non-graft import of %s'
-                            % changeset.node)
+        if not (is_early_history or result):
+            raise NothingToGraftException()
         if is_early_history or not result:
             commit = store.changeset_ref(changeset.node, hg2git=False,
                                          create=True)
@@ -592,6 +596,13 @@ class Grafter(object):
                 commit = result.sha1
             if self._is_cinnabar_commit(commit):
                 self._early_history.add(commit)
+
+        if result:
+            self._grafted = True
+
+    def close(self):
+        if not self._grafted and self._early_history:
+            raise NothingToGraftException()
 
 
 class GitHgStore(object):
@@ -690,8 +701,8 @@ class GitHgStore(object):
             if self._replace and not replace:
                 raise UpgradeException()
 
-    def prepare_graft(self, graft_only=False):
-        self._graft = Grafter(self, graft_only)
+    def prepare_graft(self):
+        self._graft = Grafter(self)
 
     def tags(self, heads):
         # The given heads are assumed to be ordered by mercurial
@@ -1157,6 +1168,8 @@ class GitHgStore(object):
     def close(self):
         if self._closed:
             return
+        if self._graft:
+            self._graft.close()
         GitHgHelper.close()
         self._closed = True
         hg2git_files = []

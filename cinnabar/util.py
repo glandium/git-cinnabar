@@ -149,6 +149,9 @@ class LazyString(object):
     def __hash__(self):
         return hash(str(self))
 
+    def __add__(self, other):
+        return str(self) + other
+
 
 def one(l):
     l = list(l)

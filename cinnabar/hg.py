@@ -7,6 +7,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
 from .githg import (
     LazyString,
+    NothingToGraftException,
     RevChunk,
     ChangesetInfo,
     ManifestInfo,
@@ -296,7 +297,11 @@ def getbundle(repo, store, heads, branch_names):
                             iter_initialized(store.changeset,
                                              iter_chunks(changeset_chunks,
                                                          ChangesetInfo))):
-        store.store_changeset(cs)
+        try:
+            store.store_changeset(cs)
+        except NothingToGraftException:
+            logging.warn('Cannot graft %s, not importing.' % cs.node)
+            pass
 
     del changeset_chunks
 
