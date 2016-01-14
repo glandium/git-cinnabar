@@ -471,7 +471,7 @@ def do_bundle(fname, *revs):
         store.close(rollback=True)
 
 
-def main(args):
+def main(argv):
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(title='subcommands', dest='command')
 
@@ -514,7 +514,12 @@ def main(args):
         'python', help='open a python shell with the cinnabar module in'
                        ' sys.path')
 
-    args = parser.parse_args(args)
+    # Because argparse.REMAINDER can't be used as first argument without
+    # making flags emit a "unrecognized argument" error, get the remainder
+    # for the python command with parse_known_args.
+    args, leftovers = parser.parse_known_args(argv)
+    if args.command != 'python':
+        args = parser.parse_args(argv)
 
     init_logging()
 
@@ -570,8 +575,10 @@ def main(args):
     elif cmd == 'bundle':
         return do_bundle(args.path, *args.rev)
     elif cmd == 'python':
-        import code
-        code.interact()
+        env = os.environ.copy()
+        env['PYTHONPATH'] = os.pathsep.join(sys.path)
+        leftovers.append(env)
+        os.execle(sys.executable, sys.executable, *leftovers)
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
