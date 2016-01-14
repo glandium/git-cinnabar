@@ -50,22 +50,6 @@ class UpgradeException(Exception):
         )
 
 
-class StreamHandler(logging.StreamHandler):
-    def __init__(self):
-        super(StreamHandler, self).__init__()
-        self._start_time = time.time()
-
-    def emit(self, record):
-        record.timestamp = record.created - self._start_time
-        super(StreamHandler, self).emit(record)
-
-
-logger = logging.getLogger()
-handler = StreamHandler()
-handler.setFormatter(logging.Formatter(
-    '\r%(timestamp).3f [%(name)s] %(message)s'))
-logger.addHandler(handler)
-
 # An empty git tree has a fixed sha1 which is that of "tree 0\0"
 EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 # An empty git blob has a fixed sha1 which is that of "blob 0\0"

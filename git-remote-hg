@@ -115,7 +115,7 @@ def main(args):
     try:
         store = GitHgStore()
     except UpgradeException as e:
-        sys.stderr.write('%s\n' % e.message)
+        logging.error(e.message)
         return 1
 
     if isinstance(repo, bundlerepo):
@@ -136,12 +136,12 @@ def main(args):
     try:
         graft = Git.config('cinnabar.graft', remote=remote, values=GRAFT)
     except InvalidConfig as e:
-        sys.stderr.write('%s\n' % e.message)
+        logging.error(e.message)
         return 1
     if Git.config('cinnabar.graft-refs') is not None:
-        sys.stderr.write(
+        logging.warn(
             'The cinnabar.graft-refs configuration is deprecated.\n'
-            'Please unset it.\n'
+            'Please unset it.'
         )
 
     while True:
@@ -392,7 +392,7 @@ def main(args):
                 }
                 data = Git.config('cinnabar.data', values=values)
             except InvalidConfig as e:
-                sys.stderr.write('%s\n' % e.message)
+                logging.error(e.message)
                 return 1
 
             refspecs = []

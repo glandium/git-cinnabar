@@ -14,6 +14,34 @@ from itertools import (
 )
 
 
+class StreamHandler(logging.StreamHandler):
+    def __init__(self):
+        super(StreamHandler, self).__init__()
+        self._start_time = time.time()
+
+    def emit(self, record):
+        record.timestamp = record.created - self._start_time
+        super(StreamHandler, self).emit(record)
+
+
+class Formatter(logging.Formatter):
+    def __init__(self):
+        super(Formatter, self).__init__(
+            '\r%(timestamp).3f %(levelname)s [%(name)s] %(message)s')
+        self._root_formatter = logging.Formatter('\r%(levelname)s %(message)s')
+
+    def format(self, record):
+        if record.name == 'root':
+            return self._root_formatter.format(record)
+        return super(Formatter, self).format(record)
+
+
+logger = logging.getLogger()
+handler = StreamHandler()
+handler.setFormatter(Formatter())
+logger.addHandler(handler)
+
+
 def init_logging():
     # Initialize logging from the GIT_CINNABAR_LOG environment variable
     # or the cinnabar.log configuration, the former taking precedence.
