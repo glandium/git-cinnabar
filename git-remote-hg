@@ -124,7 +124,7 @@ def main(args):
     has_unknown_heads = False
 
     graft = None
-    if not remote.startswith('hg::'):
+    if not remote.startswith(('hg::', 'hg://')):
         graft_pref = 'remote.%s.cinnabar-graft' % remote
         graft = Git.config(graft_pref)
     if not graft:
@@ -360,7 +360,7 @@ def main(args):
             helper.write('done\n')
             helper.flush()
 
-            if not remote.startswith('hg::'):
+            if not remote.startswith(('hg::', 'hg://')):
                 prune = 'remote.%s.prune' % remote
                 if (Git.config(prune) != 'true' and
                         Git.config('fetch.prune') != 'true'):
@@ -376,14 +376,14 @@ def main(args):
             if store.tag_changes:
                 sys.stderr.write(
                     '\nRun the following command to update remote tags:\n')
-                if not remote.startswith('hg::'):
+                if not remote.startswith(('hg::', 'hg://')):
                     sys.stderr.write('  git remote update %s\n' % remote)
                 else:
                     sys.stderr.write('  git fetch --tags %s\n' % remote)
 
         elif cmd == 'push':
             data = None
-            if not remote.startswith('hg::'):
+            if not remote.startswith(('hg::', 'hg://')):
                 data_pref = 'remote.%s.cinnabar-data' % remote
                 data = Git.config(data_pref)
             if not data:

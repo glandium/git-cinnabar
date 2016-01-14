@@ -548,7 +548,7 @@ def main(args):
             config, url = line.split()
             name = config[len('remote.'):-len('.url')]
             skip_pref = 'remote.%s.skipDefaultUpdate' % name
-            if (url.startswith('hg::') and
+            if (url.startswith(('hg::', 'hg://')) and
                     Git.config(skip_pref) != 'true'):
                 Git.run('remote', 'update', '--prune', name)
 
