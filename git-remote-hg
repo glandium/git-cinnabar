@@ -382,13 +382,18 @@ def main(args):
 
         elif cmd == 'push':
             try:
-                values = (None, '', 'never', 'phase', 'always')
+                default = 'never' if graft else 'phase'
+                values = {
+                    None: default,
+                    '': default,
+                    'never': 'never',
+                    'phase': 'phase',
+                    'always': 'always',
+                }
                 data = Git.config('cinnabar.data', values=values)
             except InvalidConfig as e:
                 sys.stderr.write('%s\n' % e.message)
                 return 1
-            if not data:
-                data = 'phase'
 
             refspecs = []
             refspecs.extend(args)
