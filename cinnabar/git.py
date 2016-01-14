@@ -24,6 +24,9 @@ from distutils.version import LooseVersion
 NULL_NODE_ID = '0' * 40
 
 
+class InvalidConfig(Exception): pass
+
+
 def normalize_path(path):
     if path[0] == '"' and path[-1] == '"':
         path = path[1:-1].decode('string_escape')
@@ -461,17 +464,44 @@ class Git(object):
         self.update_ref(ref, '0' * 40, oldvalue)
 
     @classmethod
-    def config(self, name):
+    def config(self, name, remote=None, values={}):
         if self._config is None:
             self._config = {
                 k: v
                 for k, v in (l.split('=', 1)
                              for l in self.iter('config', '-l'))
             }
-        value = self._config.get(name)
+        var = name
+        value = None
+        if name.startswith('cinnabar.'):
+            var = 'GIT_%s' % name.replace('.', '_').upper()
+            value = os.environ.get(var)
+            if value is None and remote:
+                var = 'remote.%s.%s' % (remote, name.replace('.', '-'))
+                value = self._config.get(var)
+        elif name == 'fetch.prune' and remote:
+            var = 'remote.%s.prune' % remote
+            value = self._config.get(var)
+        if value is None:
+            var = name
+            value = self._config.get(name)
         logging.getLogger('config').info(LazyString(
-            lambda: '%s = %s' % (name, value or '')))
-        return self._config.get(name)
+            lambda: '%s = %s' % (var, repr(value))))
+        if values:
+            if value in values:
+                if isinstance(values, dict):
+                    value = values[value]
+            else:
+                values = ', '.join(repr(v) for v in sorted(values)
+                                   if v is not None)
+                if value is None:
+                    raise InvalidConfig(
+                        '%s must be set to one of %s' % (var, values))
+                else:
+                    raise InvalidConfig(
+                        'Invalid value for %s: %s. Valid values: %s' % (
+                            var, repr(value), values))
+        return value
 
 
 atexit.register(Git.close, rollback=True)

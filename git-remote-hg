@@ -22,7 +22,10 @@ from cinnabar.bundle import (
 from binascii import hexlify
 from itertools import chain
 import logging
-from cinnabar.git import Git
+from cinnabar.git import (
+    Git,
+    InvalidConfig,
+)
 from cinnabar.util import (
     init_logging,
     IOLogger,
@@ -105,6 +108,8 @@ def main(args):
     logger.info(args)
     assert len(args) == 2
     remote, url = args
+    if remote.startswith(('hg::', 'hg://')):
+        remote = None
     repo = get_repo(url)
 
     try:
@@ -123,23 +128,16 @@ def main(args):
     HEAD = 'branches/default/tip'
     has_unknown_heads = False
 
-    graft = None
-    if not remote.startswith(('hg::', 'hg://')):
-        graft_pref = 'remote.%s.cinnabar-graft' % remote
-        graft = Git.config(graft_pref)
-    if not graft:
-        graft_pref = 'cinnabar.graft'
-        graft = Git.config(graft_pref)
     GRAFT = {
         None: False,
         'false': False,
         'true': True,
     }
-    if graft not in GRAFT:
-        sys.stderr.write(
-            'Invalid value for %s: %s\n' % (graft_pref, graft))
+    try:
+        graft = Git.config('cinnabar.graft', remote=remote, values=GRAFT)
+    except InvalidConfig as e:
+        sys.stderr.write('%s\n' % e.message)
         return 1
-    graft = GRAFT[graft]
     if Git.config('cinnabar.graft-refs') is not None:
         sys.stderr.write(
             'The cinnabar.graft-refs configuration is deprecated.\n'
@@ -360,10 +358,9 @@ def main(args):
             helper.write('done\n')
             helper.flush()
 
-            if not remote.startswith(('hg::', 'hg://')):
-                prune = 'remote.%s.prune' % remote
-                if (Git.config(prune) != 'true' and
-                        Git.config('fetch.prune') != 'true'):
+            if remote:
+                if Git.config('fetch.prune', remote) != 'true':
+                    prune = 'remote.%s.prune' % remote
                     sys.stderr.write(
                         'It is recommended that you set "%(conf)s" or '
                         '"fetch.prune" to "true".\n'
@@ -376,26 +373,22 @@ def main(args):
             if store.tag_changes:
                 sys.stderr.write(
                     '\nRun the following command to update remote tags:\n')
-                if not remote.startswith(('hg::', 'hg://')):
+                if remote:
                     sys.stderr.write('  git remote update %s\n' % remote)
                 else:
-                    sys.stderr.write('  git fetch --tags %s\n' % remote)
+                    fetch_url = (url if url.startswith('hg://')
+                                 else 'hg::' + url)
+                    sys.stderr.write('  git fetch --tags %s\n' % fetch_url)
 
         elif cmd == 'push':
-            data = None
-            if not remote.startswith(('hg::', 'hg://')):
-                data_pref = 'remote.%s.cinnabar-data' % remote
-                data = Git.config(data_pref)
-            if not data:
-                data_pref = 'cinnabar.data'
-                data = Git.config(data_pref)
+            try:
+                values = (None, '', 'never', 'phase', 'always')
+                data = Git.config('cinnabar.data', values=values)
+            except InvalidConfig as e:
+                sys.stderr.write('%s\n' % e.message)
+                return 1
             if not data:
                 data = 'phase'
-
-            if data not in ('never', 'phase', 'always'):
-                sys.stderr.write('Invalid value for %s: %s\n'
-                                 % (data_pref, data))
-                return 1
 
             refspecs = []
             refspecs.extend(args)

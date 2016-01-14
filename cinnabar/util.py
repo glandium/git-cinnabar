@@ -22,12 +22,9 @@ def init_logging():
     # `git config -l` is never logged.
     from .git import Git
     log_conf = Git.config('cinnabar.log')
-    log_env = os.environ.get('GIT_CINNABAR_LOG')
-    if not log_env and not log_conf:
+    if not log_conf:
         return
-    if log_env is None:
-        log_env = log_conf
-    for assignment in log_env.split(','):
+    for assignment in log_conf.split(','):
         try:
             name, value = assignment.split(':', 1)
             value = int(value)
