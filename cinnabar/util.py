@@ -122,21 +122,18 @@ class IOLogger(object):
     def read(self, length=0, level=logging.INFO):
         ret = self._reader.read(length)
         if not isinstance(self._reader, IOLogger):
-            self._logger.log(level, LazyString(lambda: '%s<= %s'
-                                               % (self._prefix, repr(ret))))
+            self._logger.log(level, '%s<= %r', self._prefix, ret)
         return ret
 
     def readline(self, level=logging.INFO):
         ret = self._reader.readline()
         if not isinstance(self._reader, IOLogger):
-            self._logger.log(level, LazyString(lambda: '%s<= %s'
-                                               % (self._prefix, repr(ret))))
+            self._logger.log(level, '%s<= %r', self._prefix, ret)
         return ret
 
     def write(self, data, level=logging.INFO):
         if not isinstance(self._writer, IOLogger):
-            self._logger.log(level, LazyString(lambda: '%s=> %s'
-                                               % (self._prefix, repr(data))))
+            self._logger.log(level, '%s=> %r', self._prefix, data)
         return self._writer.write(data)
 
     def flush(self):

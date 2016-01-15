@@ -144,8 +144,7 @@ class GitProcess(object):
                     for sha1, target in Git._replace.iteritems():
                         fh.write('%s refs/replace/%s\n' % (target, sha1))
 
-                logging.getLogger('replace').debug(LazyString(
-                    lambda: 'Initializing in %s' % path))
+                logging.getLogger('replace').debug('Initializing in %s', path)
 
             if 'GIT_OBJECT_DIRECTORY' not in full_env:
                 full_env['GIT_OBJECT_DIRECTORY'] = os.path.join(
@@ -301,9 +300,8 @@ class Git(object):
                             self.update_ref(ref, sha1)
                 self._close_update_ref()
                 import shutil
-                logging.getLogger('replace').debug(LazyString(
-                    lambda: 'Cleaning up in %s' % GitProcess._git_replace_path)
-                )
+                logging.getLogger('replace').debug(
+                    'Cleaning up in %s', GitProcess._git_replace_path)
                 shutil.rmtree(GitProcess._git_replace_path)
                 GitProcess._git_replace_path = None
                 self._replace = replace
@@ -320,11 +318,8 @@ class Git(object):
 
         finally:
             proc.wait()
-            logging.getLogger(args[0]).info(
-                LazyString(lambda: '[%d] wall time: %.3fs' % (
-                    proc.pid,
-                    time.time() - start,
-                )))
+            logging.getLogger(args[0]).info('[%d] wall time: %.3fs',
+                                            proc.pid, time.time() - start)
 
     @classmethod
     def run(self, *args):
@@ -539,8 +534,7 @@ class Git(object):
         if value is None:
             var = name
             value = self._config.get(name)
-        logging.getLogger('config').info(LazyString(
-            lambda: '%s = %s' % (var, repr(value))))
+        logging.getLogger('config').info('%s = %r', var, value)
         if values:
             if value in values:
                 if isinstance(values, dict):

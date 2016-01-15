@@ -95,9 +95,9 @@ class RevChunk(object):
         self.node, self.parent1, self.parent2, self.changeset = (
             hexlify(h) for h in struct.unpack('20s20s20s20s', chunk_data[:80]))
         self._rev_data = chunk_data[80:]
-        revchunk_log.debug(LazyString(lambda: '%s %s %s %s' % (
-            self.node, self.parent1, self.parent2, self.changeset)))
-        revchunk_log.debug(LazyString(lambda: repr(self._rev_data)))
+        revchunk_log.debug('%s %s %s %s', self.node, self.parent1,
+                           self.parent2, self.changeset)
+        revchunk_log.debug('%r', self._rev_data)
 
     def __repr__(self):
         return '<%s %s>' % (self.__class__.__name__, self.node)
@@ -1073,8 +1073,8 @@ class GitHgStore(object):
         )
 
         result = get_ref_func(instance.node, hg2git=hg2git, create=create)
-        logging.info(LazyString(lambda: "store %s %s %s" % (instance.node,
-                                instance.previous_node, result)))
+        logging.info('store %s %s %s', instance.node, instance.previous_node,
+                     result)
         return result
 
     def _git_committer(self, committer, date, utcoffset):
