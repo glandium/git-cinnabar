@@ -1,5 +1,6 @@
 #!/usr/bin/env python2.7
 
+import logging
 import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
@@ -25,6 +26,7 @@ from cinnabar.util import (
     LazyString,
     next,
     progress_iter,
+    VersionedDict,
 )
 from cinnabar.helper import (
     GitHgHelper,
@@ -471,6 +473,50 @@ def do_bundle(fname, *revs):
         store.close(rollback=True)
 
 
+def do_rollback(ref):
+    sha1 = Git.resolve_ref(ref)
+    if not sha1:
+        logging.error('Invalid ref: %s', ref)
+        return 1
+    if sha1 != NULL_NODE_ID:
+        # Validate that the sha1 is in the history of the current metadata
+        metadata = Git.resolve_ref('refs/cinnabar/metadata')
+        while metadata:
+            if sha1 == metadata:
+                break
+            metadata = Git.resolve_ref('%s^5' % metadata)
+        if not metadata:
+            logging.error('Cannot rollback to %s, it is not in the history of '
+                          'the current metadata.', ref)
+            return 1
+
+    refs = VersionedDict(
+        (ref, commit)
+        for commit, ref in Git.for_each_ref('refs/cinnabar',
+                                            'refs/notes/cinnabar')
+    )
+    for ref in refs:
+        del refs[ref]
+    if sha1 != NULL_NODE_ID:
+        refs.update({
+            'refs/cinnabar/metadata': sha1,
+            'refs/cinnabar/hg2git': Git.resolve_ref('%s^3' % sha1),
+            'refs/notes/cinnabar': Git.resolve_ref('%s^4' % sha1),
+        })
+        for line in Git.ls_tree(sha1):
+            mode, typ, commit, path = line
+            refs['refs/cinnabar/replace/%s' % path] = commit
+
+    for status, ref, commit in refs.iterchanges():
+        if status == VersionedDict.REMOVED:
+            Git.delete_ref(ref)
+        else:
+            Git.update_ref(ref, commit)
+    Git.close()
+
+    return 0
+
+
 def main(argv):
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(title='subcommands', dest='command')
@@ -511,6 +557,11 @@ def main(argv):
                                 ' section of gitrevisions(7))')
 
     subparser = subparsers.add_parser(
+        'rollback', help='rollback cinnabar metadata state')
+    subparser.add_argument('committish',
+                           help='committish of the state to rollback to')
+
+    subparser = subparsers.add_parser(
         'python', help='open a python shell with the cinnabar module in'
                        ' sys.path')
 
@@ -544,11 +595,7 @@ def main(argv):
     elif cmd == 'fsck':
         return fsck(args)
     elif cmd == 'reclone':
-        for sha1, ref in Git.for_each_ref('refs/cinnabar',
-                                          'refs/notes/cinnabar'):
-            Git.delete_ref(ref)
-        Git.close()
-
+        do_rollback(NULL_NODE_ID)
         for line in Git.iter('config', '--get-regexp', 'remote\..*\.url'):
             config, url = line.split()
             name = config[len('remote.'):-len('.url')]
@@ -574,6 +621,8 @@ def main(argv):
                 print NULL_NODE_ID
     elif cmd == 'bundle':
         return do_bundle(args.path, *args.rev)
+    elif cmd == 'rollback':
+        return do_rollback(args.committish)
     elif cmd == 'python':
         env = os.environ.copy()
         env['PYTHONPATH'] = os.pathsep.join(sys.path)
