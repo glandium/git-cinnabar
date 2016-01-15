@@ -34,6 +34,7 @@ import random
 from .dag import gitdag
 from .git import (
     Git,
+    git_dir,
     NULL_NODE_ID,
 )
 from .util import (
@@ -364,6 +365,7 @@ def get_ui():
     ui_ = ui.ui()
     ui_.fout = ui_.ferr
     ui_.setconfig('progress', 'disable', True)
+    ui_.readconfig(os.path.join(git_dir, 'hgrc'))
     ssh = os.environ.get('GIT_SSH_COMMAND')
     if not ssh:
         ssh = os.environ.get('GIT_SSH')
