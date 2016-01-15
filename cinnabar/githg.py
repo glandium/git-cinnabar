@@ -84,6 +84,9 @@ revchunk_log = logging.getLogger('revchunks')
 
 
 class RevChunk(object):
+    __slots__ = ('node', 'parent1', 'parent2', 'changeset', 'data',
+                 'previous_node', '_rev_data')
+
     def __init__(self, chunk_data):
         self.node, self.parent1, self.parent2, self.changeset = (
             hexlify(h) for h in struct.unpack('20s20s20s20s', chunk_data[:80]))
@@ -190,6 +193,8 @@ class GeneratedFileRev(GeneratedRevChunk):
 
 
 class RevDiff(object):
+    __slots__ = ('start', 'end', 'block_len', 'text_data')
+
     def __init__(self, rev_patch):
         self.start, self.end, self.block_len = \
             struct.unpack('>lll', rev_patch[:12])
@@ -200,6 +205,9 @@ class RevDiff(object):
 
 
 class ChangesetInfo(RevChunk):
+    __slots__ = ('message', 'manifest', 'committer', 'date', 'utcoffset',
+                 'extra', 'files')
+
     def init(self, previous_chunk):
         super(ChangesetInfo, self).init(previous_chunk)
         metadata, self.message = self.data.split('\n\n', 1)
@@ -265,6 +273,8 @@ def findline(data, offset, first=0, last=-1):
 
 
 class ManifestInfo(RevChunk):
+    __slots__ = ('removed', 'modified')
+
     def patch_data(self, data, rev_patch):
         new = ''
         end = 0
@@ -346,6 +356,8 @@ class ChangesetData(object):
 
 
 class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
+    __slots__ = ('__lines', '_data')
+
     def __init__(self, node):
         super(GeneratedManifestInfo, self).__init__(node, '')
         if node == NULL_NODE_ID:
@@ -433,6 +445,8 @@ class TagSet(object):
 
 
 class GitCommit(object):
+    __slots__ = ('sha1', 'body', 'parents', 'tree', 'author', 'committer')
+
     def __init__(self, sha1):
         self.sha1 = sha1
         commit = GitHgHelper.cat_file('commit', sha1)
@@ -444,7 +458,7 @@ class GitCommit(object):
             typ, data = line.split(' ', 1)
             if typ == 'parent':
                 parents.append(data.strip())
-            else:
+            elif typ in self.__slots__:
                 assert not hasattr(self, typ)
                 setattr(self, typ, data)
         self.parents = tuple(parents)
