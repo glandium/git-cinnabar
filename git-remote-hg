@@ -267,13 +267,10 @@ def main(args):
 
             if '@' in bookmarks:
                 HEAD = 'bookmarks/@'
-            if graft:
-                head = bookmarks.get('@', branchmap.tip('default'))
-                if head:
-                    head = store.changeset_ref(head)
-            else:
-                head = True
-            if not graft or head:
+            head = bookmarks.get('@', branchmap.tip('default'))
+            if graft and head:
+                head = store.changeset_ref(head)
+            if head:
                 helper.write('@refs/heads/%s HEAD\n' % HEAD)
 
             helper.write('\n')
