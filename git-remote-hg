@@ -390,7 +390,7 @@ def main(args):
                     'phase': 'phase',
                     'always': 'always',
                 }
-                data = Git.config('cinnabar.data', values=values)
+                data = Git.config('cinnabar.data', remote, values=values)
             except InvalidConfig as e:
                 logging.error(e.message)
                 return 1
