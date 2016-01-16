@@ -53,10 +53,9 @@ class UpgradeGitHgStore(GitHgStore):
                 return
         self._manifest_heads_orig = set()
         self._manifest_dag = gitdag()
-        self._hgheads_orig = set()
         for sha1, head in self._old_branches:
             branch, hghead = head[23:].split('/', 1)
-            self._hgheads.add((branch, hghead))
+            self._hgheads[hghead] = branch
             self._changesets[hghead] = sha1
 
         self._has_metadata = True
@@ -445,7 +444,7 @@ def fsck(args):
             for head in stored_heads - computed_heads[branch]:
                 fix('Removing non-head reference to %s in branch %s' %
                     (head, branch))
-                store._hgheads.remove((branch, head))
+                del store._hgheads[head]
 
     store.close()
 
