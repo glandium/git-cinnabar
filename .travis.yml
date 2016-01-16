@@ -1,0 +1,107 @@
+language: c
+
+os: linux
+compiler: gcc
+
+env:
+  global:
+    - GIT_CINNABAR_CHECK=commit,helper,manifests,nodeid,replace
+    - REPO=https://bitbucket.org/cleonello/jqplot
+  matrix:
+    - UPGRADE_FROM=0.3.0
+    - UPGRADE_FROM=0.2.2
+    - UPGRADE_FROM=0.2.0
+    - UPGRADE_FROM=0.1.0
+    - MERCURIAL_VERSION=3.0
+    - MERCURIAL_VERSION=3.6
+
+matrix:
+  include:
+    - os: osx
+      compiler: clang
+      # Without an env, it ends up with all the env variables from the matrix
+      # (so, in practice, the last value of each)
+      env: VARIANT=
+    - os: osx
+      compiler: clang
+      osx_image: xcode7
+      env: VARIANT=asan
+    - os: linux
+      compiler: gcc
+      env: VARIANT=
+    - os: linux
+      compiler: gcc-4.8
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - gcc-4.8
+            - python-virtualenv
+      env: VARIANT=asan
+
+addons:
+  apt:
+    packages:
+      - python-virtualenv
+  artifacts:
+    paths:
+    - artifacts
+    target_paths: /
+
+before_install:
+  - if [ "$TRAVIS_OS_NAME" = "osx" -a "$VARIANT" = asan ]; then
+      curl -O -s https://bootstrap.pypa.io/get-pip.py;
+      python get-pip.py --user;
+      export PATH=$PATH:~/Library/Python/2.7/bin;
+      pip install --user virtualenv;
+    fi
+  # We could install mercurial via apt, but it'd be mercurial 2.0.2,
+  # which cinnabar doesn't support pushing to local repositories with.
+  - virtualenv venv
+  - venv/bin/pip install mercurial${MERCURIAL_VERSION:+==${MERCURIAL_VERSION}}
+
+before_script:
+  - HELPER_PATH=$(git ls-tree -r HEAD | grep '\(\.[ch]\|\sgit-core\)$' | shasum | awk '{print $1}')/$TRAVIS_OS_NAME${VARIANT:+-${VARIANT}}
+  - HELPER=git-cinnabar-helper
+  - mkdir artifacts
+  # Note: we don't want the dependency on brew's libgettext on OSX.
+  - curl -s -f -O --retry 5 https://s3.amazonaws.com/$ARTIFACTS_BUCKET/$HELPER_PATH/$HELPER;
+    if [ "$?" -eq 22 ]; then
+      BUILD_HELPER="make --jobs=2 $HELPER CC=$CC";
+      if [ "$TRAVIS_OS_NAME" = "osx" ]; then
+        BUILD_HELPER="$BUILD_HELPER NO_GETTEXT=1";
+      fi;
+      case "$VARIANT" in
+      asan)
+        $BUILD_HELPER CFLAGS="-O2 -g -fsanitize=address";;
+      "")
+        $BUILD_HELPER;;
+      esac;
+      ln -s git-core/$HELPER;
+      mkdir -p artifacts/$HELPER_PATH;
+      cp $HELPER artifacts/$HELPER_PATH/$HELPER;
+    fi
+  - chmod +x git-cinnabar-helper
+  - export PATH=$PATH:$PWD
+  - export PYTHONHOME=$PWD/venv
+  - if [ -n "$UPGRADE_FROM" ]; then
+      git fetch --unshallow;
+      git checkout $UPGRADE_FROM;
+    fi
+  - git -c fetch.prune=true clone hg::$REPO hg.old.git
+  - if [ -n "$UPGRADE_FROM" ]; then
+      git checkout $TRAVIS_COMMIT;
+    fi
+
+script:
+  - (set -e -x;
+     git -C hg.old.git cinnabar fsck || [ "$?" = 2 ];
+     hg init hg.hg;
+     git -c fetch.prune=true clone hg::$PWD/hg.hg hg.empty.git;
+     git -C hg.empty.git push --all hg::$PWD/hg.hg;
+     git -C hg.old.git push --all hg::$PWD/hg.hg;
+     hg -R hg.hg verify;
+     git -c fetch.prune=true clone hg::$PWD/hg.hg hg.git;
+     diff -u <(git -C hg.old.git log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches) <(git -C hg.git log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches);
+   )
