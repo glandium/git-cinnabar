@@ -28,6 +28,10 @@ class NoHelperException(Exception):
     pass
 
 
+class HelperClosedException(Exception):
+    pass
+
+
 class GitHgNoHelper(object):
     _last_manifest = None
 
@@ -148,6 +152,9 @@ def helpermethod(func):
             if not check:
                 return result
         except NoHelperException:
+            if check:
+                raise Exception('Helper check enabled but helper not found.')
+        except HelperClosedException:
             check = False
         result2 = getattr(GitHgNoHelper, func.__name__)(*args, **kwargs)
         if check:
@@ -172,9 +179,9 @@ class GitHgHelper(object):
 
     @classmethod
     def close(self):
-        if self._helper:
+        if self._helper and self._helper is not self:
             self._helper.wait()
-        self._helper = None
+        self._helper = self
 
     @classmethod
     @contextmanager
@@ -202,6 +209,8 @@ class GitHgHelper(object):
 
         if not self._helper:
             raise NoHelperException
+        if self._helper is self:
+            raise HelperClosedException
         helper = self._helper
         helper.stdin.write('%s %s\n' % (name, ' '.join(args)))
         yield helper.stdout
