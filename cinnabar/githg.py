@@ -1183,7 +1183,7 @@ class GitHgStore(object):
         self._manifests[instance.node] = mark = Mark(mark)
         self._manifest_dag.add(self._manifests[instance.node], parents)
         if check_enabled('manifests'):
-            expected_tree = self._fast_import.ls(mark, 'hg')[2]
+            expected_tree = self._fast_import.ls(mark, 'hg')[2] or EMPTY_TREE
             tree = OrderedDict()
             for line in isplitmanifest(instance.data):
                 path = line.name.split('/')
