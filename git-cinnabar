@@ -10,12 +10,12 @@ from cinnabar.githg import (
     ChangesetData,
     GitCommit,
     GitHgStore,
-    EMPTY_TREE,
     one,
     UpgradeException,
 )
 from cinnabar.dag import gitdag
 from cinnabar.git import (
+    EMPTY_TREE,
     Git,
     Mark,
     NULL_NODE_ID,

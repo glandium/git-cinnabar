@@ -4,11 +4,11 @@ from githg import (
     GeneratedFileRev,
     GeneratedManifestInfo,
     ManifestLine,
-    EMPTY_BLOB,
-    EMPTY_TREE,
 )
 from .helper import GitHgHelper
 from .git import (
+    EMPTY_BLOB,
+    EMPTY_TREE,
     Git,
     Mark,
     NULL_NODE_ID,
