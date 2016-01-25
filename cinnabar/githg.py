@@ -755,7 +755,17 @@ class GitHgStore(object):
                 else:
                     data = Git.cat_file('blob', tagfile) or ''
                 for line in data.splitlines():
-                    node, tag = line.split(' ', 1)
+                    if not line:
+                        continue
+                    try:
+                        node, tag = line.split(' ', 1)
+                    except ValueError:
+                        continue
+                    tag = tag.strip()
+                    try:
+                        unhexlify(node)
+                    except TypeError:
+                        continue
                     if node != NULL_NODE_ID:
                         node = self.changeset_ref(node)
                     if node:
