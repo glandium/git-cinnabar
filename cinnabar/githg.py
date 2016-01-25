@@ -149,6 +149,8 @@ class RevChunk(object):
             if self.parent2 != NULL_NODE_ID:
                 return (self.parent1, self.parent2)
             return (self.parent1,)
+        if self.parent2 != NULL_NODE_ID:
+            return (self.parent2,)
         return ()
 
 
