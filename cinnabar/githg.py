@@ -52,6 +52,11 @@ class UpgradeException(Exception):
         )
 
 
+# An empty mercurial file with no parent has a fixed sha1 which is that of
+# "\0" * 40 (incidentally, this is the same as for an empty manifest with
+# no parent.
+HG_EMPTY_FILE = 'b80de5d138758541c5f05265ad144ab9fa86d1db'
+
 RE_GIT_AUTHOR = re.compile('^(?P<name>.*?) ?(?:\<(?P<email>.*?)\>)')
 
 
@@ -605,8 +610,22 @@ class GitHgStore(object):
         self.__fast_import = None
         self._changesets = {}
         self._manifests = {}
-        self._files = {}
-        self._git_files = {}
+        # Because an empty file and an empty manifest, both with no parents,
+        # have the same sha1, we can't store both in the hg2git tree. So, we
+        # choose to never store the file version, and make it forcibly resolve
+        # to the empty blob. Which means we won't be storing an empty blob and
+        # getting a mark for it, and will attempt to use it directly even if
+        # it doesn't exist. The FastImport code works around this.
+        # Theoretically, it is possible to have a non-modified child of the
+        # empty file, and a non-modified child of the empty manifest, which
+        # both would also have the same sha1, but, TTBOMK, it is only possible
+        # to achieve with commands like hg debugparents.
+        self._files = {
+            HG_EMPTY_FILE: EMPTY_BLOB,
+        }
+        self._git_files = {
+            HG_EMPTY_FILE: EMPTY_BLOB,
+        }
         self._git_trees = {}
         self._closed = False
         self._graft = None
@@ -945,7 +964,7 @@ class GitHgStore(object):
         if sha1 in self._git_files:
             return self._git_files[sha1]
         result = self.file_ref(sha1)
-        if isinstance(result, Mark):
+        if isinstance(result, Mark) or result == EMPTY_BLOB:
             return result
         # If the ref is not from the current import, it can be a raw hg file
         # ref, so check its content first.
