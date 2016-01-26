@@ -502,10 +502,12 @@ static void recurse_manifest2(const struct manifest_tree *ref_tree,
 		}
 		if (cmp <= 0) {
 			const char *tail = next + ref_manifest->len;
+			size_t len = base_len + ref_entry_len + 41;
 			do {
-				next = memchr(next + base_len + ref_entry_len +
-					      41, '\n', tail - next) + 1;
+				next = memchr(next + len, '\n', tail - next)
+				       + 1;
 			} while (S_ISDIR(ref_entry.mode) &&
+			         (tail - next > len) &&
 			         path_match(base, base_len, ref_entry.path,
 			                    ref_entry_len, next));
 		}
