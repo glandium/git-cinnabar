@@ -466,10 +466,13 @@ class Git(object):
     @classmethod
     def config(self, name, remote=None, values={}):
         if self._config is None:
+            proc = GitProcess('config', '-l', '-z')
+            data = proc.stdout.read()
+            proc.wait()
             self._config = {
                 k: v
-                for k, v in (l.split('=', 1)
-                             for l in self.iter('config', '-l'))
+                for k, v in (l.split('\n', 1)
+                             for l in data.split('\0') if l)
             }
         var = name
         value = None
