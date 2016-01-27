@@ -194,8 +194,9 @@ class GitHgHelper(object):
             config = {}
             if helper_path and os.path.exists(helper_path):
                 config['alias.cinnabar-helper'] = '!' + helper_path
+            stderr = None if check_enabled('helper') else open(os.devnull)
             self._helper = GitProcess('cinnabar-helper', stdin=subprocess.PIPE,
-                                      stderr=open(os.devnull), config=config)
+                                      stderr=stderr, config=config)
             if self._helper:
                 self._helper.stdin.write('version %d\n' % self.VERSION)
                 if not self._helper.stdout.readline():
