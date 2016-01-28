@@ -24,6 +24,8 @@ from .util import (
     VersionedDict,
 )
 from .git import (
+    EMPTY_BLOB,
+    EMPTY_TREE,
     EmptyMark,
     FastImport,
     Git,
@@ -50,10 +52,10 @@ class UpgradeException(Exception):
         )
 
 
-# An empty git tree has a fixed sha1 which is that of "tree 0\0"
-EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
-# An empty git blob has a fixed sha1 which is that of "blob 0\0"
-EMPTY_BLOB = 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
+# An empty mercurial file with no parent has a fixed sha1 which is that of
+# "\0" * 40 (incidentally, this is the same as for an empty manifest with
+# no parent.
+HG_EMPTY_FILE = 'b80de5d138758541c5f05265ad144ab9fa86d1db'
 
 RE_GIT_AUTHOR = re.compile('^(?P<name>.*?) ?(?:\<(?P<email>.*?)\>)')
 
@@ -147,6 +149,8 @@ class RevChunk(object):
             if self.parent2 != NULL_NODE_ID:
                 return (self.parent1, self.parent2)
             return (self.parent1,)
+        if self.parent2 != NULL_NODE_ID:
+            return (self.parent2,)
         return ()
 
 
@@ -468,6 +472,21 @@ class GeneratedGitCommit(GitCommit):
     def __init__(self, sha1):
         self.sha1 = sha1
 
+    @property
+    def generated_sha1(self):
+        data = '\n'.join(chain(
+            ('tree %s' % self.tree,),
+            ('parent %s' % p for p in self.parents),
+            ('author %s' % self.author,
+             'committer %s' % self.committer,
+             '',
+             self.body,
+            )
+        ))
+        h = sha1('commit %d\0' % len(data))
+        h.update(data)
+        return h.hexdigest()
+
 
 class NothingToGraftException(Exception): pass
 class AmbiguousGraftException(Exception): pass
@@ -608,9 +627,29 @@ class GitHgStore(object):
         self.__fast_import = None
         self._changesets = {}
         self._manifests = {}
-        self._files = {}
-        self._git_files = {}
-        self._git_trees = {}
+        # Because an empty file and an empty manifest, both with no parents,
+        # have the same sha1, we can't store both in the hg2git tree. So, we
+        # choose to never store the file version, and make it forcibly resolve
+        # to the empty blob. Which means we won't be storing an empty blob and
+        # getting a mark for it, and will attempt to use it directly even if
+        # it doesn't exist. The FastImport code works around this.
+        # Theoretically, it is possible to have a non-modified child of the
+        # empty file, and a non-modified child of the empty manifest, which
+        # both would also have the same sha1, but, TTBOMK, it is only possible
+        # to achieve with commands like hg debugparents.
+        self._files = {
+            HG_EMPTY_FILE: EMPTY_BLOB,
+        }
+        self._git_files = {
+            HG_EMPTY_FILE: EMPTY_BLOB,
+        }
+        # Mercurial repositories may contain a null manifest attached to
+        # changesets, but we're not going to store a commit corresponding
+        # to it, so hardcode that the corresponding git tree is the empty
+        # tree.
+        self._git_trees = {
+            NULL_NODE_ID: EMPTY_TREE,
+        }
         self._closed = False
         self._graft = None
 
@@ -619,6 +658,9 @@ class GitHgStore(object):
         self._changeset_data_cache = {}
 
         self._hgheads = VersionedDict()
+
+        self._resolved_marks = {}
+        self._pending_commits = set()
 
         self._replace = Git._replace
         self._old_branches = []
@@ -737,7 +779,17 @@ class GitHgStore(object):
                 else:
                     data = Git.cat_file('blob', tagfile) or ''
                 for line in data.splitlines():
-                    node, tag = line.split(' ', 1)
+                    if not line:
+                        continue
+                    try:
+                        node, tag = line.split(' ', 1)
+                    except ValueError:
+                        continue
+                    tag = tag.strip()
+                    try:
+                        unhexlify(node)
+                    except TypeError:
+                        continue
                     if node != NULL_NODE_ID:
                         node = self.changeset_ref(node)
                     if node:
@@ -948,7 +1000,7 @@ class GitHgStore(object):
         if sha1 in self._git_files:
             return self._git_files[sha1]
         result = self.file_ref(sha1)
-        if isinstance(result, Mark):
+        if isinstance(result, Mark) or result == EMPTY_BLOB:
             return result
         # If the ref is not from the current import, it can be a raw hg file
         # ref, so check its content first.
@@ -1034,23 +1086,45 @@ class GitHgStore(object):
         parents = tuple(self.changeset_ref(p) for p in instance.parents)
 
         if isinstance(mark, EmptyMark):
+            commit = GeneratedGitCommit(mark)
+            commit.committer = self._fast_import._format_committer(committer)
+            commit.author = self._fast_import._format_committer(author)
+            commit.body = instance.message
+            commit.tree = self.git_tree(instance.manifest)
+            commit.parents = tuple(
+                self._resolved_marks[p] if isinstance(p, Mark) else p
+                for p in parents)
+
+            # There are cases where two changesets would map to the same
+            # git commit because their differences are not in information
+            # stored in the git commit (different manifest node, but
+            # identical tree ; different branches ; etc.)
+            # In that case, add invisible characters to the commit
+            # message until we find a commit that doesn't map to another
+            # changeset.
+            while True:
+                generated_sha1 = commit.generated_sha1
+                if (generated_sha1 in self._pending_commits or
+                        self.hg_changeset(generated_sha1)):
+                    commit.body += '\0'
+                    continue
+                break
+
             with self._fast_import.commit(
                 ref='refs/cinnabar/tip',
-                message=instance.message,
+                message=commit.body,
                 committer=committer,
                 author=author,
                 parents=parents,
                 mark=mark,
-            ) as commit:
-                tree = self.git_tree(instance.manifest)
-                commit.filemodify('', tree, typ='tree')
+            ) as c:
+                if commit.tree != EMPTY_TREE:
+                    c.filemodify('', commit.tree, typ='tree')
 
             mark = Mark(mark)
-            commit = GeneratedGitCommit(mark)
             commit.sha1 = mark
-            commit.committer = self._fast_import._format_committer(committer)
-            commit.author = self._fast_import._format_committer(author)
-            commit.body = instance.message
+            self._resolved_marks[mark] = generated_sha1
+            self._pending_commits.add(generated_sha1)
 
         self._changesets[instance.node] = mark
         data = self._changeset_data_cache[str(mark)] = {
@@ -1206,6 +1280,19 @@ class GitHgStore(object):
                     else:
                         commit.filemodify(*file)
                 update_metadata.append('refs/cinnabar/hg2git')
+
+            if check_enabled('commit'):
+                for path, mark, typ in hg2git_files:
+                    if mark not in self._resolved_marks:
+                        continue
+                    line = one(Git.ls_tree('refs/cinnabar/hg2git', path))
+                    assert line
+                    mode, typ, sha1, path = line
+                    assert typ == 'commit'
+                    if sha1 != self._resolved_marks[mark]:
+                        raise Exception(
+                            '%s != %s' % (sha1, self._resolved_marks[mark]))
+
         del hg2git_files
 
         git2hg_marks = [mark for mark in self._changesets.itervalues()
@@ -1241,14 +1328,6 @@ class GitHgStore(object):
                 ) as commit:
                     pass
 
-        manifest_heads = tuple(self._manifest_dag.heads())
-        if set(manifest_heads) != self._manifest_heads_orig:
-            with self._fast_import.commit(
-                ref='refs/cinnabar/manifests',
-                parents=manifest_heads,
-            ) as commit:
-                update_metadata.append('refs/cinnabar/manifests')
-
         if any(self._hgheads.iterchanges()):
             with self._fast_import.commit(
                 ref='refs/cinnabar/changesets',
@@ -1257,6 +1336,16 @@ class GitHgStore(object):
                                   for h, b in self._hgheads.iteritems()),
             ) as commit:
                 update_metadata.append('refs/cinnabar/changesets')
+
+        manifest_heads = tuple(self._manifest_dag.heads())
+        if (set(manifest_heads) != self._manifest_heads_orig or
+                ('refs/cinnabar/changesets' in update_metadata and
+                 not manifest_heads)):
+            with self._fast_import.commit(
+                ref='refs/cinnabar/manifests',
+                parents=manifest_heads,
+            ) as commit:
+                update_metadata.append('refs/cinnabar/manifests')
 
         replace_changed = False
         for status, ref, sha1 in self._replace.iterchanges():

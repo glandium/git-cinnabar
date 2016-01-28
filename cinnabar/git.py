@@ -22,6 +22,10 @@ from itertools import chain
 from distutils.version import LooseVersion
 
 NULL_NODE_ID = '0' * 40
+# An empty git tree has a fixed sha1 which is that of "tree 0\0"
+EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+# An empty git blob has a fixed sha1 which is that of "blob 0\0"
+EMPTY_BLOB = 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
 
 
 class InvalidConfig(Exception): pass
@@ -466,10 +470,13 @@ class Git(object):
     @classmethod
     def config(self, name, remote=None, values={}):
         if self._config is None:
+            proc = GitProcess('config', '-l', '-z')
+            data = proc.stdout.read()
+            proc.wait()
             self._config = {
                 k: v
-                for k, v in (l.split('=', 1)
-                             for l in self.iter('config', '-l'))
+                for k, v in (l.split('\n', 1)
+                             for l in data.split('\0') if l)
             }
         var = name
         value = None
@@ -677,11 +684,17 @@ class FastImportCommitHelper(object):
 
     def filemodify(self, path, sha1, typ='regular'):
         assert sha1 and not isinstance(sha1, EmptyMark)
+        # We may receive the sha1 for an empty blob, even though there is no
+        # empty blob stored in the repository. So for empty blobs, use an
+        # inline filemodify.
+        dataref = 'inline' if sha1 == EMPTY_BLOB else sha1
         self.write('M %s %s %s\n' % (
             self.MODE[typ],
-            sha1,
+            dataref,
             path,
         ))
+        if sha1 == EMPTY_BLOB:
+            self.cmd_data('')
 
     def notemodify(self, commitish, note):
         self.write('N inline %s\n' % commitish)

@@ -4,11 +4,11 @@ from githg import (
     GeneratedFileRev,
     GeneratedManifestInfo,
     ManifestLine,
-    EMPTY_BLOB,
-    EMPTY_TREE,
 )
 from .helper import GitHgHelper
 from .git import (
+    EMPTY_BLOB,
+    EMPTY_TREE,
     Git,
     Mark,
     NULL_NODE_ID,
@@ -259,8 +259,8 @@ class PushStore(GitHgStore):
         hg_file.set_parents(*parents)
         node = hg_file.node = hg_file.sha1
         self._push_files[node] = hg_file
-        self._files[node] = LazyString(sha1)
-        self._git_files[node] = LazyString(sha1)
+        self._files.setdefault(node, LazyString(sha1))
+        self._git_files.setdefault(node, LazyString(sha1))
         return node
 
     def create_copy(self, hg_source, sha1):
@@ -271,8 +271,8 @@ class PushStore(GitHgStore):
         node = hg_file.node = hg_file.sha1
         mark = self.file_ref(node, hg2git=False, create=True)
         self._push_files[node] = hg_file
-        self._files[node] = mark
-        self._git_files[node] = LazyString(sha1)
+        self._files.setdefault(node, mark)
+        self._git_files.setdefault(node, LazyString(sha1))
         return node
 
     def file(self, sha1):
@@ -338,7 +338,7 @@ def create_bundle_chunks(store, commits):
         previous = hg_changeset
         yield data
         manifest = changeset_data['manifest']
-        if manifest not in manifests:
+        if manifest not in manifests and manifest != NULL_NODE_ID:
             manifests[manifest] = changeset
 
     yield None

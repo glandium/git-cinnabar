@@ -31,6 +31,7 @@
 #include "notes.h"
 #include "streaming.h"
 #include "object.h"
+#include "revision.h"
 #include "tree.h"
 #include "tree-walk.h"
 
@@ -286,10 +287,16 @@ struct manifest_tree {
 	unsigned char hg[20];
 };
 
+static void track_tree(struct tree *tree, struct object_list **tree_list) {
+	object_list_insert(&tree->object, tree_list);
+	tree->object.flags |= SEEN;
+}
+
 /* Fills a manifest_tree with the tree sha1s for the git/ and hg/
  * subdirectories of the given (git) manifest tree. */
 static int get_manifest_tree(const unsigned char *git_sha1,
-                             struct manifest_tree *result) {
+                             struct manifest_tree *result,
+                             struct object_list **tree_list) {
 	struct tree *tree = NULL;
 	struct tree_desc desc;
 	struct name_entry entry;
@@ -297,6 +304,8 @@ static int get_manifest_tree(const unsigned char *git_sha1,
 	tree = parse_tree_indirect(git_sha1);
 	if (!tree)
 		return -1;
+
+	track_tree(tree, tree_list);
 
 	/* If the tree is empty, return an empty tree for both git
 	 * and hg. */
@@ -328,7 +337,6 @@ static int get_manifest_tree(const unsigned char *git_sha1,
 	return 0;
 
 not_found:
-	free_tree_buffer(tree);
 	return -1;
 }
 
@@ -338,25 +346,23 @@ struct manifest_tree_state {
 };
 
 static int manifest_tree_state_init(const struct manifest_tree *tree,
-                                    struct manifest_tree_state *result) {
+                                    struct manifest_tree_state *result,
+                                    struct object_list **tree_list) {
 	result->tree_git = parse_tree_indirect(tree->git);
 	if (!result->tree_git)
 		return -1;
+	track_tree(result->tree_git, tree_list);
+
 	result->tree_hg = parse_tree_indirect(tree->hg);
-	if (!result->tree_hg) {
-		free_tree_buffer(result->tree_git);
+	if (!result->tree_hg)
 		return -1;
-	}
+	track_tree(result->tree_hg, tree_list);
+
 	init_tree_desc(&result->desc_git, result->tree_git->buffer,
 	               result->tree_git->size);
 	init_tree_desc(&result->desc_hg, result->tree_hg->buffer,
 	               result->tree_hg->size);
 	return 0;
-}
-
-static void free_manifest_tree_state(struct manifest_tree_state *state) {
-	free_tree_buffer(state->tree_git);
-	free_tree_buffer(state->tree_hg);
 }
 
 struct manifest_entry {
@@ -396,12 +402,13 @@ corrupted:
 }
 
 static void recurse_manifest(const struct manifest_tree *tree,
-                             struct strbuf *manifest, char *base) {
+                             struct strbuf *manifest, char *base,
+                             struct object_list **tree_list) {
 	struct manifest_tree_state state;
 	struct manifest_entry entry;
 	size_t base_len = strlen(base);
 
-	if (manifest_tree_state_init(tree, &state))
+	if (manifest_tree_state_init(tree, &state, tree_list))
 		goto corrupted;
 
 	while (manifest_tree_entry(&state, &entry)) {
@@ -414,7 +421,7 @@ static void recurse_manifest(const struct manifest_tree *tree,
 			strbuf_addch(&dir, '/');
 			hashcpy(subtree.git, entry.other_sha1);
 			hashcpy(subtree.hg, entry.sha1);
-			recurse_manifest(&subtree, manifest, dir.buf);
+			recurse_manifest(&subtree, manifest, dir.buf, tree_list);
 			strbuf_release(&dir);
 			continue;
 		}
@@ -422,7 +429,6 @@ static void recurse_manifest(const struct manifest_tree *tree,
 		            '\0', sha1_to_hex(entry.sha1), hgattr(entry.mode));
 	}
 
-	free_manifest_tree_state(&state);
 	return;
 corrupted:
 	die("Corrupted metadata");
@@ -459,7 +465,8 @@ static int path_match(const char *base, size_t base_len,
 static void recurse_manifest2(const struct manifest_tree *ref_tree,
                               struct strslice *ref_manifest,
                               const struct manifest_tree *tree,
-                              struct strbuf *manifest, char *base) {
+                              struct strbuf *manifest, char *base,
+                              struct object_list **tree_list) {
 	struct manifest_tree_state ref, cur;
 	struct manifest_entry ref_entry, cur_entry;
 	struct manifest_tree ref_subtree, cur_subtree;
@@ -469,10 +476,10 @@ static void recurse_manifest2(const struct manifest_tree *ref_tree,
 	size_t ref_entry_len = 0;
 	int cmp = 0;
 
-	if (manifest_tree_state_init(ref_tree, &ref))
+	if (manifest_tree_state_init(ref_tree, &ref, tree_list))
 		goto corrupted;
 
-	if (manifest_tree_state_init(tree, &cur))
+	if (manifest_tree_state_init(tree, &cur, tree_list))
 		goto corrupted;
 
 	for (;;) {
@@ -502,10 +509,12 @@ static void recurse_manifest2(const struct manifest_tree *ref_tree,
 		}
 		if (cmp <= 0) {
 			const char *tail = next + ref_manifest->len;
+			size_t len = base_len + ref_entry_len + 41;
 			do {
-				next = memchr(next + base_len + ref_entry_len +
-					      41, '\n', tail - next) + 1;
+				next = memchr(next + len, '\n', tail - next)
+				       + 1;
 			} while (S_ISDIR(ref_entry.mode) &&
+			         (tail - next > len) &&
 			         path_match(base, base_len, ref_entry.path,
 			                    ref_entry_len, next));
 		}
@@ -537,14 +546,14 @@ static void recurse_manifest2(const struct manifest_tree *ref_tree,
 			hashcpy(ref_subtree.git, ref_entry.other_sha1);
 			hashcpy(ref_subtree.hg, ref_entry.sha1);
 			recurse_manifest2(&ref_subtree, ref_manifest,
-				          &cur_subtree, manifest, dir.buf);
+				          &cur_subtree, manifest, dir.buf,
+			                  tree_list);
 		} else
-			recurse_manifest(&cur_subtree, manifest, dir.buf);
+			recurse_manifest(&cur_subtree, manifest, dir.buf,
+			                 tree_list);
 		strbuf_release(&dir);
 	}
 
-	free_manifest_tree_state(&cur);
-	free_manifest_tree_state(&ref);
 	return;
 corrupted:
 	die("Corrupted metadata");
@@ -553,9 +562,10 @@ corrupted:
 struct manifest {
 	struct manifest_tree tree;
 	struct strbuf content;
+	struct object_list *tree_list;
 };
 
-#define MANIFEST_INIT { { { 0, }, { 0, } }, STRBUF_INIT }
+#define MANIFEST_INIT { { { 0, }, { 0, } }, STRBUF_INIT, NULL }
 
 /* For repositories with a lot of files, generating a manifest is a slow
  * operation.
@@ -571,8 +581,21 @@ static struct manifest generated_manifest = MANIFEST_INIT;
 static struct strbuf *generate_manifest(const unsigned char *git_sha1) {
 	struct manifest_tree manifest_tree;
 	struct strbuf content = STRBUF_INIT;
+	struct object_list *tree_list = NULL;
 
-	if (get_manifest_tree(git_sha1, &manifest_tree))
+	/* We keep a list of all the trees we've seen while generating the
+	 * previous manifest. Each tree is marked as SEEN at that time.
+	 * Then, on the next manifest generation, we unmark them as SEEN,
+	 * and the generation that follows will re-mark them if they are
+	 * re-used. Trees that are not marked SEEN are subsequently freed.
+	 */
+	struct object_list *previous_list = generated_manifest.tree_list;
+	while (previous_list) {
+		previous_list->item->flags &= ~SEEN;
+		previous_list = previous_list->next;
+	}
+
+	if (get_manifest_tree(git_sha1, &manifest_tree, &tree_list))
 		goto not_found;
 
 	if (generated_manifest.content.len) {
@@ -582,15 +605,27 @@ static struct strbuf *generate_manifest(const unsigned char *git_sha1) {
 		};
 		strbuf_grow(&content, generated_manifest.content.len);
 		recurse_manifest2(&generated_manifest.tree, &gm,
-		                  &manifest_tree, &content, "");
+		                  &manifest_tree, &content, "", &tree_list);
 	} else {
-		recurse_manifest(&manifest_tree, &content, "");
+		recurse_manifest(&manifest_tree, &content, "", &tree_list);
 	}
 
 	hashcpy(generated_manifest.tree.git, manifest_tree.git);
 	hashcpy(generated_manifest.tree.hg, manifest_tree.hg);
 	strbuf_swap(&content, &generated_manifest.content);
 	strbuf_release(&content);
+
+	previous_list = generated_manifest.tree_list;
+	generated_manifest.tree_list = tree_list;
+
+	while (previous_list) {
+		struct object *obj = previous_list->item;
+		struct object_list *elem = previous_list;
+		previous_list = elem->next;
+		free(elem);
+		if (!obj->flags & SEEN)
+			free_tree_buffer((struct tree *)obj);
+	}
 	return &generated_manifest.content;
 
 not_found:

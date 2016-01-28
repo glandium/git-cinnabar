@@ -10,12 +10,14 @@ from cinnabar.githg import (
     ChangesetData,
     GitCommit,
     GitHgStore,
-    EMPTY_TREE,
+    HG_EMPTY_FILE,
     one,
     UpgradeException,
 )
 from cinnabar.dag import gitdag
 from cinnabar.git import (
+    EMPTY_BLOB,
+    EMPTY_TREE,
     Git,
     Mark,
     NULL_NODE_ID,
@@ -272,7 +274,7 @@ def fsck(args):
                 changeset_data.get('extra', {}).get('branch', 'default'))
 
         manifest = changeset_data['manifest']
-        if manifest in seen_manifests:
+        if manifest in seen_manifests or manifest == NULL_NODE_ID:
             continue
         seen_manifests.add(manifest)
         manifest_ref = store.manifest_ref(manifest)
@@ -287,7 +289,8 @@ def fsck(args):
             store.read_changeset_data(store.changeset_ref(p))['manifest']
             for p in hg_changeset.parents
         )
-        git_parents = tuple(store.manifest_ref(p) for p in parents)
+        git_parents = tuple(store.manifest_ref(p) for p in parents
+                            if p != NULL_NODE_ID)
 
         if upgrade_manifest:
             mark = store._fast_import.new_mark()
@@ -379,6 +382,8 @@ def fsck(args):
     dangling = ()
     if not status['broken']:
         dangling = all_hg2git - seen_changesets - seen_manifests - seen_files
+        if store._hg2git_cache.get(HG_EMPTY_FILE) == EMPTY_BLOB:
+            dangling.add(HG_EMPTY_FILE)
     for obj in dangling:
         fix('Removing dangling metadata for ' + obj)
         # Theoretically, we should figure out if they are files, manifests

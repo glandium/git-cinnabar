@@ -25,6 +25,7 @@ import logging
 from cinnabar.git import (
     Git,
     InvalidConfig,
+    NULL_NODE_ID,
 )
 from cinnabar.util import (
     init_logging,
@@ -33,6 +34,7 @@ from cinnabar.util import (
 )
 import cinnabar.util
 from collections import Sequence
+from urllib import unquote
 
 
 def read_cmd(fileobj):
@@ -95,6 +97,16 @@ class BranchMap(object):
 
     def tip(self, branch):
         return self._tips.get(branch, None)
+
+
+def sanitize_branch_name(name):
+    '''Valid characters in mercurial branch names are not necessarily valid
+    in git ref names. This function replaces unsupported characters with a
+    urlquote escape such that the name can be reversed straightforwardly with
+    urllib.unquote.'''
+    # TODO: Actually sanitize all the conflicting cases, see
+    # git-check-ref-format(1).
+    return name.replace('%', '%25').replace(' ', '%20')
 
 
 def main(args):
@@ -245,25 +257,28 @@ def main(args):
                         continue
                     helper.write('%s refs/heads/branches/%s/%s\n' % (
                         sha1,
-                        branch,
+                        sanitize_branch_name(branch),
                         head,
                     ))
                 if branch_tip:
                     helper.write('%s refs/heads/branches/%s/tip\n' % (
                         branchmap.git_sha1(branch_tip),
-                        branch,
+                        sanitize_branch_name(branch),
                     ))
             for name, sha1 in sorted(bookmarks.iteritems()):
+                if sha1 == NULL_NODE_ID:
+                    continue
                 ref = store.changeset_ref(sha1)
                 if graft and not ref:
                     continue
                 helper.write(
                     '%s refs/heads/bookmarks/%s\n'
-                    % (ref if ref else '?', name)
+                    % (ref if ref else '?', sanitize_branch_name(name))
                 )
             if not has_unknown_heads:
                 for tag, ref in sorted(store.tags(branchmap.heads())):
-                    helper.write('%s refs/tags/%s\n' % (ref, tag))
+                    helper.write('%s refs/tags/%s\n' %
+                                 (ref, sanitize_branch_name(tag)))
 
             if '@' in bookmarks:
                 HEAD = 'bookmarks/@'
@@ -311,11 +326,11 @@ def main(args):
                 if head.startswith('refs/heads/branches/'):
                     head = head[20:]
                     if head[-4:] == '/tip':
-                        return branchmap.tip(head[:-4])
+                        return branchmap.tip(unquote(head[:-4]))
                     return head[-40:]
                 if head.startswith('refs/heads/bookmarks/'):
                     head = head[21:]
-                    return bookmarks[head]
+                    return bookmarks[unquote(head)]
                 if head == 'HEAD':
                     return bookmarks.get('@') or branchmap.tip('default')
                 return None
@@ -430,7 +445,7 @@ def main(args):
                             status[dest] = \
                                 'Deleting remote branches is unsupported'
                         continue
-                    name = dest[21:]
+                    name = unquote(dest[21:])
                     if source:
                         source = store.hg_changeset(Git.resolve_ref(source)) \
                             or ''
