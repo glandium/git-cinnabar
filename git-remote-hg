@@ -25,6 +25,7 @@ import logging
 from cinnabar.git import (
     Git,
     InvalidConfig,
+    NULL_NODE_ID,
 )
 from cinnabar.util import (
     init_logging,
@@ -265,6 +266,8 @@ def main(args):
                         sanitize_branch_name(branch),
                     ))
             for name, sha1 in sorted(bookmarks.iteritems()):
+                if sha1 == NULL_NODE_ID:
+                    continue
                 ref = store.changeset_ref(sha1)
                 if graft and not ref:
                     continue
