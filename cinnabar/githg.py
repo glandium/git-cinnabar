@@ -643,7 +643,13 @@ class GitHgStore(object):
         self._git_files = {
             HG_EMPTY_FILE: EMPTY_BLOB,
         }
-        self._git_trees = {}
+        # Mercurial repositories may contain a null manifest attached to
+        # changesets, but we're not going to store a commit corresponding
+        # to it, so hardcode that the corresponding git tree is the empty
+        # tree.
+        self._git_trees = {
+            NULL_NODE_ID: EMPTY_TREE,
+        }
         self._closed = False
         self._graft = None
 
@@ -1112,7 +1118,8 @@ class GitHgStore(object):
                 parents=parents,
                 mark=mark,
             ) as c:
-                c.filemodify('', commit.tree, typ='tree')
+                if commit.tree != EMPTY_TREE:
+                    c.filemodify('', commit.tree, typ='tree')
 
             mark = Mark(mark)
             commit.sha1 = mark
@@ -1321,14 +1328,6 @@ class GitHgStore(object):
                 ) as commit:
                     pass
 
-        manifest_heads = tuple(self._manifest_dag.heads())
-        if set(manifest_heads) != self._manifest_heads_orig:
-            with self._fast_import.commit(
-                ref='refs/cinnabar/manifests',
-                parents=manifest_heads,
-            ) as commit:
-                update_metadata.append('refs/cinnabar/manifests')
-
         if any(self._hgheads.iterchanges()):
             with self._fast_import.commit(
                 ref='refs/cinnabar/changesets',
@@ -1337,6 +1336,16 @@ class GitHgStore(object):
                                   for h, b in self._hgheads.iteritems()),
             ) as commit:
                 update_metadata.append('refs/cinnabar/changesets')
+
+        manifest_heads = tuple(self._manifest_dag.heads())
+        if (set(manifest_heads) != self._manifest_heads_orig or
+                ('refs/cinnabar/changesets' in update_metadata and
+                 not manifest_heads)):
+            with self._fast_import.commit(
+                ref='refs/cinnabar/manifests',
+                parents=manifest_heads,
+            ) as commit:
+                update_metadata.append('refs/cinnabar/manifests')
 
         replace_changed = False
         for status, ref, sha1 in self._replace.iterchanges():

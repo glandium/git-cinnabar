@@ -274,7 +274,7 @@ def fsck(args):
                 changeset_data.get('extra', {}).get('branch', 'default'))
 
         manifest = changeset_data['manifest']
-        if manifest in seen_manifests:
+        if manifest in seen_manifests or manifest == NULL_NODE_ID:
             continue
         seen_manifests.add(manifest)
         manifest_ref = store.manifest_ref(manifest)
@@ -289,7 +289,8 @@ def fsck(args):
             store.read_changeset_data(store.changeset_ref(p))['manifest']
             for p in hg_changeset.parents
         )
-        git_parents = tuple(store.manifest_ref(p) for p in parents)
+        git_parents = tuple(store.manifest_ref(p) for p in parents
+                            if p != NULL_NODE_ID)
 
         if upgrade_manifest:
             mark = store._fast_import.new_mark()

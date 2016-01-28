@@ -338,7 +338,7 @@ def create_bundle_chunks(store, commits):
         previous = hg_changeset
         yield data
         manifest = changeset_data['manifest']
-        if manifest not in manifests:
+        if manifest not in manifests and manifest != NULL_NODE_ID:
             manifests[manifest] = changeset
 
     yield None
