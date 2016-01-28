@@ -75,7 +75,8 @@ class CheckEnabledFunc(object):
             if self._check:
                 self._check = self._check.split(',')
             for c in self._check:
-                if c not in ('nodeid', 'manifests', 'helper', 'replace'):
+                if c not in ('nodeid', 'manifests', 'helper', 'replace',
+                             'commit'):
                     logging.getLogger('check').warn(
                         'Unknown value in cinnabar.check: %s' % c)
         return name in self._check

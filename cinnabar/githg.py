@@ -472,6 +472,21 @@ class GeneratedGitCommit(GitCommit):
     def __init__(self, sha1):
         self.sha1 = sha1
 
+    @property
+    def generated_sha1(self):
+        data = '\n'.join(chain(
+            ('tree %s' % self.tree,),
+            ('parent %s' % p for p in self.parents),
+            ('author %s' % self.author,
+             'committer %s' % self.committer,
+             '',
+             self.body,
+            )
+        ))
+        h = sha1('commit %d\0' % len(data))
+        h.update(data)
+        return h.hexdigest()
+
 
 class NothingToGraftException(Exception): pass
 class AmbiguousGraftException(Exception): pass
@@ -637,6 +652,9 @@ class GitHgStore(object):
         self._changeset_data_cache = {}
 
         self._hgheads = VersionedDict()
+
+        self._resolved_marks = {}
+        self._pending_commits = set()
 
         self._replace = Git._replace
         self._old_branches = []
@@ -1062,23 +1080,44 @@ class GitHgStore(object):
         parents = tuple(self.changeset_ref(p) for p in instance.parents)
 
         if isinstance(mark, EmptyMark):
+            commit = GeneratedGitCommit(mark)
+            commit.committer = self._fast_import._format_committer(committer)
+            commit.author = self._fast_import._format_committer(author)
+            commit.body = instance.message
+            commit.tree = self.git_tree(instance.manifest)
+            commit.parents = tuple(
+                self._resolved_marks[p] if isinstance(p, Mark) else p
+                for p in parents)
+
+            # There are cases where two changesets would map to the same
+            # git commit because their differences are not in information
+            # stored in the git commit (different manifest node, but
+            # identical tree ; different branches ; etc.)
+            # In that case, add invisible characters to the commit
+            # message until we find a commit that doesn't map to another
+            # changeset.
+            while True:
+                generated_sha1 = commit.generated_sha1
+                if (generated_sha1 in self._pending_commits or
+                        self.hg_changeset(generated_sha1)):
+                    commit.body += '\0'
+                    continue
+                break
+
             with self._fast_import.commit(
                 ref='refs/cinnabar/tip',
-                message=instance.message,
+                message=commit.body,
                 committer=committer,
                 author=author,
                 parents=parents,
                 mark=mark,
-            ) as commit:
-                tree = self.git_tree(instance.manifest)
-                commit.filemodify('', tree, typ='tree')
+            ) as c:
+                c.filemodify('', commit.tree, typ='tree')
 
             mark = Mark(mark)
-            commit = GeneratedGitCommit(mark)
             commit.sha1 = mark
-            commit.committer = self._fast_import._format_committer(committer)
-            commit.author = self._fast_import._format_committer(author)
-            commit.body = instance.message
+            self._resolved_marks[mark] = generated_sha1
+            self._pending_commits.add(generated_sha1)
 
         self._changesets[instance.node] = mark
         data = self._changeset_data_cache[str(mark)] = {
@@ -1234,6 +1273,19 @@ class GitHgStore(object):
                     else:
                         commit.filemodify(*file)
                 update_metadata.append('refs/cinnabar/hg2git')
+
+            if check_enabled('commit'):
+                for path, mark, typ in hg2git_files:
+                    if mark not in self._resolved_marks:
+                        continue
+                    line = one(Git.ls_tree('refs/cinnabar/hg2git', path))
+                    assert line
+                    mode, typ, sha1, path = line
+                    assert typ == 'commit'
+                    if sha1 != self._resolved_marks[mark]:
+                        raise Exception(
+                            '%s != %s' % (sha1, self._resolved_marks[mark]))
+
         del hg2git_files
 
         git2hg_marks = [mark for mark in self._changesets.itervalues()
