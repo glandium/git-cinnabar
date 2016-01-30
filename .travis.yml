@@ -10,6 +10,7 @@ env:
   global:
     - GIT_CINNABAR_CHECK=commit,helper,manifests,nodeid,replace
     - REPO=https://bitbucket.org/cleonello/jqplot
+    - PYTHONDONTWRITEBYTECODE=1
   matrix:
     - UPGRADE_FROM=0.3.0
     - UPGRADE_FROM=0.2.2
@@ -114,8 +115,22 @@ before_script:
 
 script:
   - (set -e -x;
+     case "$UPGRADE_FROM" in
+     0.1.*|0.2.*)
+       if git -C hg.old.git cinnabar fsck; then
+         echo "fsck should have failed";
+         exit 1;
+       else
+         git checkout 0.3.2;
+       fi
+       ;;
+     esac;
      $GIT -C hg.old.git cinnabar fsck || [ "$?" = 2 ];
-     $GIT -C hg.old.git cinnabar fsck;
+     case "$UPGRADE_FROM" in
+     0.1.*|0.2.*)
+       git checkout $TRAVIS_COMMIT;
+       ;;
+     esac;
      hg init hg.hg;
      $GIT -c fetch.prune=true clone hg::$PWD/hg.hg hg.empty.git;
      $GIT -C hg.empty.git push --all hg::$PWD/hg.hg;

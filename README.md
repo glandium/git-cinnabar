@@ -24,12 +24,8 @@ The main focus at the moment is to make it work with mozilla-central and
 related mercurial repositories and support Mozilla workflows (try server,
 etc.).
 
-This version of git-cinnabar changed the metadata structure substantially, such
-that using a repository that was last used with versions 0.1.0 to 0.2.2
-requires a full checkup with `git cinnabar fsck`. git-cinnabar will ask you to
-do so. Repositories last used with versions lower than 0.1.0 are not supported.
-Please run a command such as `git ls-remote $remote` with version 0.1.x or
-0.2.x first.
+Repositories last used with versions lower than 0.3.0 are not supported.
+Please run `git cinnabar fsck` with version 0.3.0 first.
 
 Setup:
 ------

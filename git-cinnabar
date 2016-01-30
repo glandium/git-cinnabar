@@ -46,31 +46,6 @@ from collections import (
 from itertools import chain
 
 
-class UpgradeGitHgStore(GitHgStore):
-    def _open(self):
-        try:
-            super(UpgradeGitHgStore, self)._open()
-        except UpgradeException:
-            if hasattr(self, '_manifest_dag'):
-                return
-        self._manifest_heads_orig = set()
-        self._manifest_dag = gitdag()
-        for sha1, head in self._old_branches:
-            branch, hghead = head[23:].split('/', 1)
-            self._hgheads[hghead] = branch
-            self._changesets[hghead] = sha1
-
-        self._has_metadata = True
-
-    def close(self):
-        for sha1, ref in Git.for_each_ref(
-                'refs/cinnabar/manifest',
-                'refs/cinnabar/tagcache',
-                'refs/cinnabar/branches'):
-            Git.delete_ref(ref)
-        super(UpgradeGitHgStore, self).close()
-
-
 def fsck(args):
     status = {
         'broken': False,
@@ -91,25 +66,9 @@ def fsck(args):
 
     try:
         store = GitHgStore()
-        upgrade = upgrade_manifest = False
-    except UpgradeException:
-        store = UpgradeGitHgStore()
-        upgrade = True
-        upgrade_manifest = not len(store._manifest_dag)
-
-    if upgrade:
-        if args.commit:
-            info('Git-cinnabar metadata needs upgrade. '
-                 'Please re-run without specifying commit(s).')
-            return 1
-        elif args.manifests:
-            info('Git-cinnabar metadata needs upgrade. '
-                 'Please re-run without --manifests.')
-            return 1
-        elif args.files:
-            info('Git-cinnabar metadata needs upgrade. '
-                 'Please re-run without --files.')
-            return 1
+    except UpgradeException as e:
+        print >>sys.stderr, e.message
+        return 1
 
     store.init_fast_import(lazy=True)
 
@@ -217,15 +176,11 @@ def fsck(args):
                     report('Committer mismatch between commit and metadata for'
                            ' changeset %s' % changeset)
                 if committer == extra['committer']:
-                    fix('Fixing useless committer metadata for changeset %s'
-                        % changeset)
-                    del changeset_data['extra']['committer']
-                    store._changesets[changeset] = PseudoString(node)
+                    report('Useless committer metadata for changeset %s'
+                           % changeset)
             if header['committer'] != header['author'] and not extra:
-                fix('Fixing useless empty extra metadata for changeset %s'
-                    % changeset)
-                del changeset_data['extra']
-                store._changesets[changeset] = PseudoString(node)
+                report('Useless empty extra metadata for changeset %s'
+                       % changeset)
 
         seen_changesets.add(changeset)
         changeset_ref = store.changeset_ref(changeset)
@@ -238,35 +193,7 @@ def fsck(args):
                    % (changeset, changeset_ref, node))
 
         hg_changeset = store.changeset(changeset, include_parents=True)
-        sha1 = hg_changeset.sha1
-        if hg_changeset.node != sha1:
-            try_fixup = False
-            if (changeset, sha1) in (
-                ('8c557b7c03a4a753e5c163038f04862e9f65fce1',
-                 '249b59139de8e08abeb6c4e261a137c756e7af0e'),
-                ('ffdee4a4eb7fc7cae80dfc4cb2fe0c3178773dcf',
-                 '415e9d2eac83d508bf58a4df585c5f6b2b0f44ed'),
-            ):
-                header = hg_changeset.data.split('\n', 4)
-                start = sum(len(h) for h in header[:3]) + 1
-                changeset_data['patch'] = ((start, start + 1, '1'),)
-                try_fixup = True
-
-            # Some know cases of corruptions involve a whitespace after the
-            # timezone. Adding an empty extra metadata works around those.
-            elif 'extra' not in changeset_data:
-                changeset_data['extra'] = {}
-                try_fixup = True
-
-            if try_fixup:
-                hg_changeset = store.changeset(changeset, include_parents=True)
-                sha1 = hg_changeset.sha1
-                if hg_changeset.node == sha1:
-                    fix('Fixing known sha1 mismatch for changeset %s' %
-                        changeset)
-                    store._changesets[changeset] = PseudoString(node)
-
-        if hg_changeset.node != sha1:
+        if hg_changeset.node != hg_changeset.sha1:
             report('Sha1 mismatch for changeset %s' % changeset)
 
         dag.add(hg_changeset.node,
@@ -280,8 +207,7 @@ def fsck(args):
         manifest_ref = store.manifest_ref(manifest)
         if not manifest_ref:
             report('Missing manifest in hg2git branch: %s' % manifest)
-        elif (not args.commit and not upgrade_manifest and
-                manifest_ref not in manifest_commits):
+        elif (not args.commit and manifest_ref not in manifest_commits):
             report('Missing manifest commit in manifest branch: %s' %
                    manifest_ref)
 
@@ -291,19 +217,6 @@ def fsck(args):
         )
         git_parents = tuple(store.manifest_ref(p) for p in parents
                             if p != NULL_NODE_ID)
-
-        if upgrade_manifest:
-            mark = store._fast_import.new_mark()
-            with store._fast_import.commit(
-                ref='refs/cinnabar/manifests',
-                parents=git_parents,
-                mark=mark,
-                message=manifest,
-            ) as commit:
-                mode, typ, mn_tree, path = store._fast_import.ls(manifest_ref)
-                commit.filemodify('', mn_tree, typ='tree')
-            store._manifests[manifest] = Mark(mark)
-            store._manifest_dag.add(store._manifests[manifest], git_parents)
 
         manifest_dag.add(store.manifest_ref(manifest), git_parents)
 
@@ -317,13 +230,12 @@ def fsck(args):
                 if hg_manifest.node != hg_manifest.sha1:
                     report('Sha1 mismatch for manifest %s' % manifest)
 
-        if not upgrade_manifest:
-            manifest_commit = GitCommit(manifest_ref)
-            if sorted(manifest_commit.parents) != sorted(git_parents):
-                # TODO: better error
-                report('%s(%s) %s != %s' % (manifest, manifest_ref,
-                                            manifest_commit.parents,
-                                            git_parents))
+        manifest_commit = GitCommit(manifest_ref)
+        if sorted(manifest_commit.parents) != sorted(git_parents):
+            # TODO: better error
+            report('%s(%s) %s != %s' % (manifest, manifest_ref,
+                                        manifest_commit.parents,
+                                        git_parents))
 
         git_ls = one(Git.ls_tree(manifest_ref, 'git'))
         if git_ls:
@@ -397,34 +309,6 @@ def fsck(args):
     for c in dangling:
         fix('Removing dangling note for commit ' + c)
         store._changeset_data_cache[c] = None
-
-    if upgrade:
-        replaces = progress_iter('Readjusting %d graft commits',
-                                 Git.for_each_ref('refs/cinnabar/replace'))
-        for target, ref in replaces:
-            replaced = ref[22:]
-            Git._replace = {}
-            children = next(Git.iter('rev-list', '--exclude=refs/cinnabar/*',
-                                     '--all', '^%s^@' % replaced, '--children',
-                                     '--reverse', '--topo-order',
-                                     '--ancestry-path'))
-            Git._replace = store._replace._previous
-            if children:
-                children = children.split()
-                parent = children.pop(0)
-                assert parent == replaced
-                for child in children:
-                    hg_sha1 = store.hg_changeset(child)
-                    if not hg_sha1:
-                        continue
-                    changeset = store.changeset(hg_sha1, include_parents=True)
-                    changeset.init(())
-                    mark = store._fast_import.new_mark()
-                    store.store_changeset(changeset, mark, track_heads=False)
-                    store._changeset_data_cache[child] = None
-                    store._replace[child] = Mark(mark)
-
-            del store._replace[replaced]
 
     if status['broken']:
         info('Your git-cinnabar repository appears to be corrupted. There\n'

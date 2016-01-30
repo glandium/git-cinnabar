@@ -49,8 +49,9 @@ import logging
 class UpgradeException(Exception):
     def __init__(self):
         super(UpgradeException, self).__init__(
-            'Git-cinnabar metadata needs upgrade. '
-            'Please run `git cinnabar fsck`.'
+            'Metadata from git-cinnabar versions older than 0.3.0 is not '
+            'supported.\n'
+            'Please run `git cinnabar fsck` with version 0.3.x first.'
         )
 
 
@@ -684,6 +685,13 @@ class Grafter(object):
 
 
 class GitHgStore(object):
+    METADATA_REFS = (
+        'refs/cinnabar/changesets',
+        'refs/cinnabar/manifests',
+        'refs/cinnabar/hg2git',
+        'refs/notes/cinnabar',
+    )
+
     def __init__(self):
         self.__fast_import = None
         self._changesets = {}
@@ -724,7 +732,6 @@ class GitHgStore(object):
         self._pending_commits = set()
 
         self._replace = Git._replace
-        self._old_branches = []
         # While doing a for_each_ref, ensure refs/notes/cinnabar is in the
         # cache.
         for sha1, ref in Git.for_each_ref('refs/cinnabar',
@@ -732,7 +739,7 @@ class GitHgStore(object):
             if ref.startswith('refs/cinnabar/replace/'):
                 self._replace[ref[22:]] = sha1
             elif ref.startswith('refs/cinnabar/branches/'):
-                self._old_branches.append((sha1, ref))
+                raise UpgradeException()
         self._replace = VersionedDict(self._replace)
 
         self._tagcache = {}
@@ -755,20 +762,7 @@ class GitHgStore(object):
 
         self.tag_changes = False
 
-        self._open()
-
-    METADATA_REFS = (
-        'refs/cinnabar/changesets',
-        'refs/cinnabar/manifests',
-        'refs/cinnabar/hg2git',
-        'refs/notes/cinnabar',
-    )
-
-    def _open(self):
         metadata_ref = Git.resolve_ref('refs/cinnabar/metadata')
-        if not metadata_ref and self._old_branches:
-            raise UpgradeException()
-
         self._has_metadata = bool(metadata_ref)
         if metadata_ref:
             metadata = GitCommit(metadata_ref)
