@@ -4,9 +4,9 @@ git-cinnabar 0.4
 When you update, please read this file again, it may contain
 important notes.
 
-[ cinnabar is the common natural form in which mercury can be found on
+> cinnabar is the common natural form in which mercury can be found on
   Earth. It contains mercury sulfide and its powder is used to make
-  the vermillion pigment. ]
+  the vermillion pigment.
 
 git-cinnabar is a git remote helper to interact with mercurial
 repositories. Contrary to other such helpers[*], it doesn't use a
@@ -41,38 +41,30 @@ Setup:
 
 Alternatively to the latter, you can do the following to build a native
 helper for faster operation:
-  $ git submodule update --init
-  Then see git-core/INSTALL for build/install instructions, but run the
-  commands in this directory. This will build/install git as well as
-  the tools from this directory. Note that if you have a non-standard Python
-  installation location (for example if you are on OSX and have installed
-  it using homebrew) you need to pass --with-python=/path/to/python to the
-  configure script or set the PYTHON_PATH environment variable to your Python
-  installation path when using make to build this tool.
+
+  ```$ git submodule update --init```
+
+Then see ```git-core/INSTALL``` for build/install instructions, but run the commands in this directory. This will build/install git as well as the tools from this directory. Note that if you have a non-standard Python installation location (for example if you are on OSX and have installed it using homebrew) you need to pass ```--with-python=/path/to/python``` to the configure script or set the ```PYTHON_PATH``` environment variable to your Python installation path when using make to build this tool.
 
 Usage:
 ------
 
-$ git clone hg::<mercurial repo>
+```$ git clone hg::<mercurial repo>```
 
-where <mercurial repo> can be a path to a local directory containing a
+where ```<mercurial repo>``` can be a path to a local directory containing a
 mercurial repository, or a http, https or ssh url.
 
 Essentially, use git like you would for a git repository, but use a
-hg:: url where you would use a git:// url.
+```hg::``` url where you would use a ```git://``` url.
 
-Mercurial bookmarks are exposed as `refs/heads/bookmarks/$bookmark` remote
+Mercurial bookmarks are exposed as ```refs/heads/bookmarks/$bookmark``` remote
 refs. If you want to interact exclusively with mercurial with bookmarks,
-you can use a refspec like `refs/heads/bookmarks/*:refs/remotes/$remote/*`.
+you can use a refspec like ```refs/heads/bookmarks/*:refs/remotes/$remote/*```.
 
-Mercurial branches are exposed as namespaces under `refs/heads/branches/`.
+Mercurial branches are exposed as namespaces under ```refs/heads/branches/```.
 As mercurial branches can have multiple heads, each head is exposed
-as `refs/heads/branches/$branch/$head`, where `$head` is the mercurial sha1
-of the head changeset. There is however an exception to that pattern,
-for the tip changeset of the branch, which is exposed as
-`refs/heads/branches/$branch/tip`. If you only care about the tip changeset
-of each branch, you can use a refspec like
-`refs/heads/branches/*/tip:refs/remotes/$remote/*`.
+as ```refs/heads/branches/$branch/$head```, where ```$head``` is the mercurial sha1 of the head changeset. There is however an exception to that pattern, for the tip changeset of the branch, which is exposed as
+```refs/heads/branches/$branch/tip```. If you only care about the tip changeset of each branch, you can use a refspec like `refs/heads/branches/*/tip:refs/remotes/$remote/*`.
 
 See http://glandium.org/blog/?page_id=3438 for an example workflow for
 Mozilla repositories.
@@ -88,12 +80,12 @@ and the other way around.
 The following command will give you the git commit corresponding to
 the given mercurial changeset sha1:
 
-$ git cinnabar hg2git <changeset>
+```$ git cinnabar hg2git <changeset>```
 
 The following command will give you the mercurial changeset
 corresponding to the given git commit sha1:
 
-$ git cinnabar git2hg <commit>
+```$ git cinnabar git2hg <commit>```
 
 Both commands allow abbreviated forms, as long as they are unambiguous
 (no need for all the 40 hex digits of the sha1).
@@ -110,11 +102,11 @@ non-publishing repositories. It does otherwise.
 
 This behavior can be changed per-remote with a remote.$remote.cinnabar-data
 preference with one of the following values:
-- `always`
-- `never`
-- `phase`
+- ```always```
+- ```never```
+- ```phase```
 
-`phase` is the default described above. `always` and `never` are
+```phase``` is the default described above. ```always``` and ```never``` are
 self-explanatory.
 
 Limitations:
@@ -122,7 +114,7 @@ Limitations:
 
 At the moment, push is limited to non-merge commits.
 
-Pushing to a local mercurial repository (hg::/path) only works with
+Pushing to a local mercurial repository (```hg::/path```) only works with
 mercurial 3.0 or later.
 
 There is no support for the following mercurial features:
@@ -138,51 +130,62 @@ corrupted for some reason.
 
 The following command allows to detect various types of metadata
 corruption:
-  git cinnabar fsck
+
+```git cinnabar fsck```
 
 This command will fix the corruptions it can, as well as adjust some
 of the metadata that contains items that became unnecessary in newer
 versions.
 
-The `--manifests` and `--files` options may be added for additional
+The ```--manifests``` and ```--files``` options may be added for additional
 validation on manifests and files. Using either or both adds a
 significant amount of work, and the command can take more than half
 an hour on repositories the size of mozilla-central.
 
-hg:// urls:
+```hg://``` urls:
 -----------
 
 The msys shell (not msys2) doesn't keep hg::url intact when crossing the
 msys/native boundary, so when running cinnabar in a msys shell with a
-native git, the url is munged as hg;;proto;\host\path\, which git
+native git, the url is munged as ```hg;;proto;\host\path\```, which git
 doesn't understand and doesn't even start redirecting to git-remote-hg.
 
-To allow such setups to still work, hg:// urls are supported. But since
+To allow such setups to still work, ```hg://``` urls are supported. But since
 mercurial can be either on many different protocols, we abuse the port
 in the given url to pass the protocol.
 
-A hg:// url thus looks like:
+A ```hg://``` url thus looks like:
 
-  hg://<host>[:[<port>.]<protocol>]/<path>
+`hg://<host>[:[<port>.]<protocol>]/<path>`
 
 The default protocol is https, and the port can be omitted.
 
-  hg::https://hg.mozilla.org/mozilla-central
-    becomes
-  hg://hg.mozilla.org/mozilla-central
+- `hg::https://hg.mozilla.org/mozilla-central`
 
-  hg::http://hg.mozilla.org/mozilla-central
-    becomes
-  hg://hg.mozilla.org:http/mozilla-central
+  becomes
 
-  hg::ssh://hg.mozilla.org/mozilla-central
-    becomes
-  hg://hg.mozilla.org:ssh/mozilla-central
+  `hg://hg.mozilla.org/mozilla-central`
 
-  hg::file:///some/path
-    becomes (awkward)
-  hg://:file/some/path
+- `hg::http://hg.mozilla.org/mozilla-central`
 
-  hg::http://localhost:8080/foo
-    becomes
-  hg://localhost:8080.http/foo
+  becomes
+
+  `hg://hg.mozilla.org:http/mozilla-central`
+
+- `hg::ssh://hg.mozilla.org/mozilla-central`
+
+  becomes
+
+  `hg://hg.mozilla.org:ssh/mozilla-central`
+
+- `hg::file:///some/path`
+
+  becomes (awkward)
+
+  `hg://:file/some/path`
+
+- `hg::http://localhost:8080/foo`
+
+  becomes
+
+  `hg://localhost:8080.http/foo`
