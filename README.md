@@ -1,17 +1,11 @@
 git-cinnabar 0.4
 ================
 
-When you update, please read this file again, it may contain
-important notes.
+When you update, please read this file again, it may contain important notes.
 
-> cinnabar is the common natural form in which mercury can be found on
-  Earth. It contains mercury sulfide and its powder is used to make
-  the vermillion pigment.
+[ cinnabar is the common natural form in which mercury can be found on Earth. It contains mercury sulfide and its powder is used to make the vermillion pigment. ]
 
-git-cinnabar is a git remote helper to interact with mercurial
-repositories. Contrary to other such helpers[*], it doesn't use a
-local mercurial clone under the hood, although it currently does
-require mercurial to be installed for some of its libraries.
+git-cinnabar is a git remote helper to interact with mercurial repositories. Contrary to other such helpers[*], it doesn't use a local mercurial clone under the hood, although it currently does require mercurial to be installed for some of its libraries.
 
 * This applies to the following tools:
   - https://github.com/felipec/git-remote-hg
@@ -21,50 +15,34 @@ require mercurial to be installed for some of its libraries.
   - https://github.com/msysgit/msysgit/wiki/Guide-to-git-remote-hg
   - https://github.com/buchuki/gitifyhg/
 
-The main focus at the moment is to make it work with mozilla-central
-and related mercurial repositories and support Mozilla workflows (try
-server, etc.).
+The main focus at the moment is to make it work with mozilla-central and related mercurial repositories and support Mozilla workflows (try server, etc.).
 
-This version of git-cinnabar changed the metadata structure
-substantially, such that using a repository that was last used with
-versions 0.1.0 to 0.2.2 requires a full checkup with `git cinnabar
-fsck`. git-cinnabar will ask you to do so. Repositories last used with
-versions lower than 0.1.0 are not supported. Please run a command such
-as `git ls-remote $remote` with version 0.1.x or 0.2.x first.
+This version of git-cinnabar changed the metadata structure substantially, such that using a repository that was last used with versions 0.1.0 to 0.2.2 requires a full checkup with `git cinnabar fsck`. git-cinnabar will ask you to do so. Repositories last used with versions lower than 0.1.0 are not supported. Please run a command such as `git ls-remote $remote` with version 0.1.x or 0.2.x first.
 
 Setup:
 ------
 
 - Install mercurial.
-- Add this directory to your PATH. If you have another git-remote-hg project
-  in your PATH already, make sure the git-cinnabar path comes before.
+- Add this directory to your PATH. If you have another git-remote-hg project in your PATH already, make sure the git-cinnabar path comes before.
 
-Alternatively to the latter, you can do the following to build a native
-helper for faster operation:
+Alternatively to the latter, you can do the following to build a native helper for faster operation:
 
-  ```$ git submodule update --init```
+  `$ git submodule update --init`
 
-Then see ```git-core/INSTALL``` for build/install instructions, but run the commands in this directory. This will build/install git as well as the tools from this directory. Note that if you have a non-standard Python installation location (for example if you are on OSX and have installed it using homebrew) you need to pass ```--with-python=/path/to/python``` to the configure script or set the ```PYTHON_PATH``` environment variable to your Python installation path when using make to build this tool.
+Then see `git-core/INSTALL` for build/install instructions, but run the commands in this directory. This will build/install git as well as the tools from this directory. Note that if you have a non-standard Python installation location (for example if you are on OSX and have installed it using homebrew) you need to pass `--with-python=/path/to/python` to the configure script or set the `PYTHON_PATH` environment variable to your Python installation path when using make to build this tool.
 
 Usage:
 ------
 
-```$ git clone hg::<mercurial repo>```
+`$ git clone hg::<mercurial repo>`
 
-where ```<mercurial repo>``` can be a path to a local directory containing a
-mercurial repository, or a http, https or ssh url.
+where `<mercurial repo>` can be a path to a local directory containing a mercurial repository, or a http, https or ssh url.
 
-Essentially, use git like you would for a git repository, but use a
-```hg::``` url where you would use a ```git://``` url.
+Essentially, use git like you would for a git repository, but use a `hg::` url where you would use a `git://` url.
 
-Mercurial bookmarks are exposed as ```refs/heads/bookmarks/$bookmark``` remote
-refs. If you want to interact exclusively with mercurial with bookmarks,
-you can use a refspec like ```refs/heads/bookmarks/*:refs/remotes/$remote/*```.
+Mercurial bookmarks are exposed as `refs/heads/bookmarks/$bookmark` remote refs. If you want to interact exclusively with mercurial with bookmarks, you can use a refspec like `refs/heads/bookmarks/*:refs/remotes/$remote/*`.
 
-Mercurial branches are exposed as namespaces under ```refs/heads/branches/```.
-As mercurial branches can have multiple heads, each head is exposed
-as ```refs/heads/branches/$branch/$head```, where ```$head``` is the mercurial sha1 of the head changeset. There is however an exception to that pattern, for the tip changeset of the branch, which is exposed as
-```refs/heads/branches/$branch/tip```. If you only care about the tip changeset of each branch, you can use a refspec like `refs/heads/branches/*/tip:refs/remotes/$remote/*`.
+Mercurial branches are exposed as namespaces under `refs/heads/branches/`. As mercurial branches can have multiple heads, each head is exposed as `refs/heads/branches/$branch/$head`, where `$head` is the mercurial sha1 of the head changeset. There is however an exception to that pattern, for the tip changeset of the branch, which is exposed as `refs/heads/branches/$branch/tip`. If you only care about the tip changeset of each branch, you can use a refspec like `refs/heads/branches/*/tip:ref/remotes/$remote/*`.
 
 See http://glandium.org/blog/?page_id=3438 for an example workflow for
 Mozilla repositories.
@@ -72,20 +50,15 @@ Mozilla repositories.
 Translating git commits to mercurial changesets and vice-versa:
 ---------------------------------------------------------------
 
-When dealing with a remote repository that doesn't use the same
-identifiers, things can easily get complicated. Git-cinnabar comes
-with commands to know the mercurial changeset a git commit represents
-and the other way around.
+When dealing with a remote repository that doesn't use the same identifiers, things can easily get complicated. Git-cinnabar comes with commands to know the mercurial changeset a git commit represents and the other way around.
 
-The following command will give you the git commit corresponding to
-the given mercurial changeset sha1:
+The following command will give you the git commit corresponding to the given mercurial changeset sha1:
 
-```$ git cinnabar hg2git <changeset>```
+`$ git cinnabar hg2git <changeset>`
 
-The following command will give you the mercurial changeset
-corresponding to the given git commit sha1:
+The following command will give you the mercurial changeset corresponding to the given git commit sha1:
 
-```$ git cinnabar git2hg <commit>```
+`$ git cinnabar git2hg <commit>`
 
 Both commands allow abbreviated forms, as long as they are unambiguous
 (no need for all the 40 hex digits of the sha1).
@@ -100,13 +73,12 @@ used on the Mozilla try repository.
 By default, git-cinnabar doesn't store metadata when pushing to
 non-publishing repositories. It does otherwise.
 
-This behavior can be changed per-remote with a remote.$remote.cinnabar-data
-preference with one of the following values:
-- ```always```
-- ```never```
-- ```phase```
+This behavior can be changed per-remote with a remote. `$remote.cinnabar-data` preference with one of the following values:
+- `always`
+- `never`
+- `phase`
 
-```phase``` is the default described above. ```always``` and ```never``` are
+`phase` is the default described above. `always` and `never` are
 self-explanatory.
 
 Limitations:
@@ -114,7 +86,7 @@ Limitations:
 
 At the moment, push is limited to non-merge commits.
 
-Pushing to a local mercurial repository (```hg::/path```) only works with
+Pushing to a local mercurial repository (`hg::/path`) only works with
 mercurial 3.0 or later.
 
 There is no support for the following mercurial features:
@@ -125,36 +97,24 @@ There is no support for the following mercurial features:
 Checking corruptions:
 ---------------------
 
-Git-cinnabar is still in early infancy, and its metadata might get
-corrupted for some reason.
+Git-cinnabar is still in early infancy, and its metadata might get corrupted for some reason.
 
-The following command allows to detect various types of metadata
-corruption:
+The following command allows to detect various types of metadata corruption:
 
-```git cinnabar fsck```
+`git cinnabar fsck`
 
-This command will fix the corruptions it can, as well as adjust some
-of the metadata that contains items that became unnecessary in newer
-versions.
+This command will fix the corruptions it can, as well as adjust some of the metadata that contains items that became unnecessary in newer versions.
 
-The ```--manifests``` and ```--files``` options may be added for additional
-validation on manifests and files. Using either or both adds a
-significant amount of work, and the command can take more than half
-an hour on repositories the size of mozilla-central.
+The `--manifests` and `--files` options may be added for additional validation on manifests and files. Using either or both adds a significant amount of work, and the command can take more than half an hour on repositories the size of mozilla-central.
 
-```hg://``` urls:
+`hg://` urls:
 -----------
 
-The msys shell (not msys2) doesn't keep hg::url intact when crossing the
-msys/native boundary, so when running cinnabar in a msys shell with a
-native git, the url is munged as ```hg;;proto;\host\path\```, which git
-doesn't understand and doesn't even start redirecting to git-remote-hg.
+The msys shell (not msys2) doesn't keep hg::url intact when crossing the msys/native boundary, so when running cinnabar in a msys shell with a native git, the url is munged as `hg;;proto;\host\path\`, which git doesn't understand and doesn't even start redirecting to git-remote-hg.
 
-To allow such setups to still work, ```hg://``` urls are supported. But since
-mercurial can be either on many different protocols, we abuse the port
-in the given url to pass the protocol.
+To allow such setups to still work, `hg://` urls are supported. But since mercurial can be either on many different protocols, we abuse the port in the given url to pass the protocol.
 
-A ```hg://``` url thus looks like:
+A `hg://` url thus looks like:
 
 `hg://<host>[:[<port>.]<protocol>]/<path>`
 
