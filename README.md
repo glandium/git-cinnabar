@@ -74,8 +74,8 @@ changeset of the branch, which is exposed as `refs/heads/branches/$branch/tip`.
 If you only care about the tip changeset of each branch, you can use a refspec
 like `refs/heads/branches/*/tip:ref/remotes/$remote/*`.
 
-See http://glandium.org/blog/?page_id=3438 for an example workflow for
-Mozilla repositories.
+See https://github.com/glandium/git-cinnabar/wiki/Mozilla:-A-git-workflow-for-Gecko-development
+for an example workflow for Mozilla repositories.
 
 Translating git commits to mercurial changesets and vice-versa:
 ---------------------------------------------------------------
