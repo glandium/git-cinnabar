@@ -85,10 +85,10 @@ def get_git_dir():
     if git_common_dir and not (cdup and git_common_dir == '.git'):
         git_dir = git_common_dir
 
-    return git_dir
+    return git_dir, cdup
 
 
-git_dir = get_git_dir()
+git_dir, cdup = get_git_dir()
 
 
 git_version = subprocess.check_output(['git', 'version'])
@@ -428,7 +428,7 @@ class Git(object):
                   recursive=False):
         key = (path, recursive, detect_copy)
         if key not in self._diff_tree:
-            args = ['--stdin', '--', path]
+            args = ['--stdin', '--', cdup + path]
             if recursive:
                 args.insert(0, '-r')
             if detect_copy:
