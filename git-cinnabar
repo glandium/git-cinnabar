@@ -403,10 +403,12 @@ def fsck(args):
                                  Git.for_each_ref('refs/cinnabar/replace'))
         for target, ref in replaces:
             replaced = ref[22:]
+            Git._replace = {}
             children = next(Git.iter('rev-list', '--exclude=refs/cinnabar/*',
                                      '--all', '^%s^@' % replaced, '--children',
                                      '--reverse', '--topo-order',
                                      '--ancestry-path'))
+            Git._replace = store._replace._previous
             if children:
                 children = children.split()
                 parent = children.pop(0)
@@ -420,7 +422,7 @@ def fsck(args):
                     mark = store._fast_import.new_mark()
                     store.store_changeset(changeset, mark, track_heads=False)
                     store._changeset_data_cache[child] = None
-                    store._replace[child] = mark
+                    store._replace[child] = Mark(mark)
 
             del store._replace[replaced]
 
