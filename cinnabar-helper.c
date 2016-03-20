@@ -760,6 +760,9 @@ static void do_version(struct string_list *command) {
 int main(int argc, const char *argv[]) {
 	struct strbuf buf = STRBUF_INIT;
 
+	setup_git_directory();
+	git_config(git_default_config, NULL);
+
 	while (strbuf_getline(&buf, stdin, '\n') != EOF) {
 		struct string_list command = STRING_LIST_INIT_NODUP;
 		string_list_split_in_place(&command, buf.buf, ' ', -1);

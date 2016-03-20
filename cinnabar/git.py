@@ -52,10 +52,44 @@ def split_ls_tree(line):
     return mode, typ, sha1, path
 
 
-git_dir = os.environ.get('GIT_DIR')
-if not git_dir:
-    git_dir = subprocess.check_output(
-        ['git', 'rev-parse', '--git-dir']).rstrip('\n')
+def get_git_dir():
+    # --git-common-dir is not supported before v2.5, and up to version 2.8,
+    # it would wrongfully return '.git' when running from a subdirectory of
+    # a non worktree. Whether we are running from such a directory can be
+    # determined with --show-cdup, which is supported since git v1.1.
+    # Try to get all the necessary information from one subprocess.
+    # Sadly, rev-parse doesn't have an option to output null-terminated
+    # strings, so if the git dir or the git common dir contain '\n', we
+    # can't really tell them apart when doing this in one pass. So we try
+    # to be smart about it.
+    output = subprocess.check_output(
+        ['git', 'rev-parse', '--show-cdup', '--no-flags',
+         '--git-dir', '--git-common-dir', '--git-dir']).splitlines()
+    # The first line can be:
+    # - empty when in the toplevel directory
+    # - a series of '../'
+    # - literally '--show-cdup' on git < v1.1
+    # In the latter case, let's just say git is too old.
+    cdup = output.pop(0)
+    if cdup == '--show-cdup':
+        raise Exception('git version is too old.')
+    # Now, depending on whether --git-common-dir is supported, we either
+    # have 2 or 3 set of lines.
+    for cutoff in range(1, 1 + len(output) // 2):
+        git_dir = '\n'.join(output[:cutoff])
+        git_common_dir = '\n'.join(output[cutoff:-cutoff])
+        if git_dir == '\n'.join(output[-cutoff:]):
+            break
+    # --git-common-dir is what we really want but can be empty or wrong.
+    # Fortunately, in both cases, --git-dir is valid to use.
+    if git_common_dir and not (cdup and git_common_dir == '.git'):
+        git_dir = git_common_dir
+
+    return git_dir, cdup
+
+
+git_dir, cdup = get_git_dir()
+
 
 git_version = subprocess.check_output(['git', 'version'])
 assert git_version.startswith('git version ')
@@ -87,12 +121,12 @@ class GitProcess(object):
         if env:
             full_env.update(env)
 
-        if args[0] == 'config':
+        if args[0] == 'config' or not Git._replace:
             # We don't need the replace ref setup for config.
             pass
         elif not check_enabled('replace') and HAS_REPLACE_REF_BASE:
             full_env['GIT_REPLACE_REF_BASE'] = 'refs/cinnabar/replace/'
-        elif Git._replace:
+        else:
             if not GitProcess._git_replace_path:
                 from tempfile import mkdtemp
                 # There are commands run before Git._replace is filled, but we
@@ -394,7 +428,7 @@ class Git(object):
                   recursive=False):
         key = (path, recursive, detect_copy)
         if key not in self._diff_tree:
-            args = ['--stdin', '--', path]
+            args = ['--stdin', '--', cdup + path]
             if recursive:
                 args.insert(0, '-r')
             if detect_copy:
