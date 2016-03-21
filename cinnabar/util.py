@@ -302,6 +302,25 @@ class VersionedDict(object):
             if k in self._previous:
                 yield self.REMOVED, k, self._previous[k]
 
+    def flattened(self):
+        previous = self
+        changes = []
+        while isinstance(previous, VersionedDict):
+            changes.append(previous.iterchanges())
+            previous = previous._previous
+
+        ret = VersionedDict(previous)
+
+        # This can probably be optimized, but it shouldn't matter much that
+        # it's not.
+        for c in reversed(changes):
+            for status, k, v in c:
+                if status == self.REMOVED:
+                    del ret[k]
+                else:
+                    ret[k] = v
+        return ret
+
 
 class TestVersionedDict(unittest.TestCase):
     def check_state(self, v, d):
@@ -505,6 +524,37 @@ class TestVersionedDict(unittest.TestCase):
             (d1.MODIFIED, 'foo', 'foo'),
             (d1.REMOVED, 'hoge', 'fuga'),
         ])
+
+    def test_nested(self):
+        d = {'foo': 'foo', 'bar': 'qux'}
+        d1 = VersionedDict(d)
+        d1['hoge'] = 'hoge'
+        d1['foo'] = 'foo2'
+        del d1['bar']
+
+        d2 = VersionedDict(d1)
+        del d2['hoge']
+        d2['fuga'] = 'fuga'
+
+        self.assertTrue('hoge' in d1)
+        self.assertTrue('hoge' not in d2)
+
+        self.assertEquals(sorted(d2.iterchanges()), [
+            (d2.CREATED, 'fuga', 'fuga'),
+            (d2.REMOVED, 'hoge', 'hoge'),
+        ])
+
+        d3 = d2.flattened()
+
+        self.assertTrue('hoge' not in d3)
+        self.assertTrue('fuga' in d3)
+
+        self.assertEquals(sorted(d3.iterchanges()), [
+            (d2.CREATED, 'fuga', 'fuga'),
+            (d2.MODIFIED, 'foo', 'foo2'),
+            (d2.REMOVED, 'bar', 'qux'),
+        ])
+
 
 
 def _iter_diff_blocks(a, b):
