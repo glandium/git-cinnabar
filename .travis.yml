@@ -97,6 +97,7 @@ before_script:
 script:
   - (set -e -x;
      git -C hg.old.git cinnabar fsck || [ "$?" = 2 ];
+     git -C hg.old.git cinnabar fsck;
      hg init hg.hg;
      git -c fetch.prune=true clone hg::$PWD/hg.hg hg.empty.git;
      git -C hg.empty.git push --all hg::$PWD/hg.hg;
