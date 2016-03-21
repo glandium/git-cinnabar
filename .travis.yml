@@ -12,6 +12,7 @@ env:
     - UPGRADE_FROM=0.2.2
     - UPGRADE_FROM=0.2.0
     - UPGRADE_FROM=0.1.0
+    - GIT_VERSION=2.7.4 UPGRADE_FROM=0.2.2
     - MERCURIAL_VERSION=3.0
     - MERCURIAL_VERSION=3.6
 
@@ -62,6 +63,15 @@ before_install:
   - venv/bin/pip install mercurial${MERCURIAL_VERSION:+==${MERCURIAL_VERSION}}
 
 before_script:
+  # TODO: cache as artifacts.
+  - if [ -n "$GIT_VERSION" ]; then
+      GIT=$(pwd)/git.git/bin-wrappers/git;
+      git clone -n git-core git.git;
+      git -C git.git checkout v"$GIT_VERSION";
+      make -C git.git --jobs=2 NO_GETTEXT=1 NO_CURL=1 NO_OPENSSL=1;
+    else
+      GIT=git;
+    fi
   - HELPER_PATH=$(git ls-tree -r HEAD | grep '\(\.[ch]\|\sgit-core\)$' | shasum | awk '{print $1}')/$TRAVIS_OS_NAME${VARIANT:+-${VARIANT}}
   - HELPER=git-cinnabar-helper
   - mkdir artifacts
@@ -89,19 +99,20 @@ before_script:
       git fetch --unshallow;
       git checkout $UPGRADE_FROM;
     fi
-  - git -c fetch.prune=true clone hg::$REPO hg.old.git
+  - $GIT -c fetch.prune=true clone hg::$REPO hg.old.git
   - if [ -n "$UPGRADE_FROM" ]; then
       git checkout $TRAVIS_COMMIT;
     fi
 
 script:
   - (set -e -x;
-     git -C hg.old.git cinnabar fsck || [ "$?" = 2 ];
+     $GIT -C hg.old.git cinnabar fsck || [ "$?" = 2 ];
+     $GIT -C hg.old.git cinnabar fsck;
      hg init hg.hg;
-     git -c fetch.prune=true clone hg::$PWD/hg.hg hg.empty.git;
-     git -C hg.empty.git push --all hg::$PWD/hg.hg;
-     git -C hg.old.git push --all hg::$PWD/hg.hg;
+     $GIT -c fetch.prune=true clone hg::$PWD/hg.hg hg.empty.git;
+     $GIT -C hg.empty.git push --all hg::$PWD/hg.hg;
+     $GIT -C hg.old.git push --all hg::$PWD/hg.hg;
      hg -R hg.hg verify;
-     git -c fetch.prune=true clone hg::$PWD/hg.hg hg.git;
+     $GIT -c fetch.prune=true clone hg::$PWD/hg.hg hg.git;
      diff -u <(git -C hg.old.git log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches) <(git -C hg.git log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches);
    )

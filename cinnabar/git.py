@@ -221,23 +221,29 @@ class Git(object):
     _diff_tree = {}
     _notes_depth = {}
     _refs = VersionedDict()
+    _initial_refs = _refs._previous
     _config = None
     _replace = {}
 
     @classmethod
     def register_fast_import(self, fast_import):
         self._fast_import = fast_import
+        self._refs = VersionedDict(self._refs)
+
+    @classmethod
+    def _close_update_ref(self):
+        if self._update_ref:
+            retcode = self._update_ref.wait()
+            self._update_ref = None
+            if retcode:
+                raise Exception('git-update-ref failed')
 
     @classmethod
     def close(self, rollback=False):
         if self._cat_file:
             self._cat_file.wait()
             self._cat_file = None
-        if self._update_ref:
-            retcode = self._update_ref.wait()
-            self._update_ref = None
-            if retcode:
-                raise Exception('git-update-ref failed')
+        self._close_update_ref()
         for diff_tree in self._diff_tree.itervalues():
             diff_tree.wait()
         self._diff_tree = {}
@@ -245,6 +251,14 @@ class Git(object):
             if self._fast_import:
                 self._fast_import.close(rollback)
                 self._fast_import = None
+
+                # Git before version 2.1 didn't remove refs when resetting
+                # from NULL_NODE_ID. So remove again with update-ref.
+                for status, ref, value in self._refs.iterchanges():
+                    if status == self._refs.REMOVED:
+                        self.delete_ref(ref)
+                self._close_update_ref()
+                self._refs = self._refs.flattened()
         finally:
             if GitProcess._git_replace_path:
                 # Copy the (updated) refs from _git_replace_path to the normal
@@ -285,11 +299,7 @@ class Git(object):
                             sha1 = refs.get(ref)
                         if sha1:
                             self.update_ref(ref, sha1)
-                if self._update_ref:
-                    retcode = self._update_ref.wait()
-                    self._update_ref = None
-                    if retcode:
-                        raise Exception('git-update-ref failed')
+                self._close_update_ref()
                 import shutil
                 logging.getLogger('replace').debug(LazyString(
                     lambda: 'Cleaning up in %s' % GitProcess._git_replace_path)
@@ -329,7 +339,7 @@ class Git(object):
         for line in self.iter('for-each-ref', '--format',
                               '%(objectname) %(refname)', *patterns):
             sha1, ref = line.split(' ', 1)
-            self._refs._previous[ref] = sha1
+            self._initial_refs[ref] = sha1
             # The ref might have been removed in self._refs
             if ref in self._refs:
                 yield self._refs[ref], ref
@@ -337,7 +347,7 @@ class Git(object):
     @classmethod
     def resolve_ref(self, ref):
         if ref not in self._refs:
-            self._refs._previous[ref] = one(
+            self._initial_refs[ref] = one(
                 Git.iter('rev-parse', '--revs-only', ref))
         return self._refs[ref]
 
@@ -472,7 +482,7 @@ class Git(object):
     def update_ref(self, ref, newvalue, oldvalue=None, store=True):
         if not isinstance(newvalue, Mark) and newvalue.startswith('refs/'):
             newvalue = self.resolve_ref(newvalue)
-        refs = self._refs if store else self._refs._previous
+        refs = self._refs if store else self._initial_refs
         if newvalue and newvalue != NULL_NODE_ID:
             refs[ref] = newvalue
         else:
