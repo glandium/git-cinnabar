@@ -763,7 +763,7 @@ int main(int argc, const char *argv[]) {
 	setup_git_directory();
 	git_config(git_default_config, NULL);
 
-	while (strbuf_getline(&buf, stdin, '\n') != EOF) {
+	while (strbuf_getline(&buf, stdin) != EOF) {
 		struct string_list command = STRING_LIST_INIT_NODUP;
 		string_list_split_in_place(&command, buf.buf, ' ', -1);
 		if (!strcmp("git2hg", command.items[0].string))
