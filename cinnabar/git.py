@@ -466,6 +466,9 @@ class Git(object):
         sha1 = self._replace.get(sha1, sha1)
         if not notes_ref.startswith('refs/'):
             notes_ref = 'refs/notes/' + notes_ref
+        notes_ref = self.resolve_ref(notes_ref)
+        if not notes_ref:
+            return None
         if notes_ref in self._notes_depth:
             depths = (self._notes_depth[notes_ref],)
         else:
