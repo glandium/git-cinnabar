@@ -721,6 +721,9 @@ class FastImportCommitHelper(object):
     def filedelete(self, path):
         self.write('D %s\n' % path)
 
+    def deleteall(self):
+        self.write('deleteall\n')
+
     MODE = {
         'regular': '644',
         'exec': '755',
