@@ -668,8 +668,6 @@ class FastImport(IOLogger):
     def commit(self, ref, committer=('<cinnabar@git>', 0, 0), author=None,
                message='', from_commit=None, parents=(), mark=0):
         helper = FastImportCommitHelper(self)
-        yield helper
-
         self.write('commit %s\n' % ref)
         if mark == 0:
             mark = self.new_mark()
@@ -697,7 +695,9 @@ class FastImport(IOLogger):
         if from_commit:
             mode, typ, tree, path = self.ls(from_commit)
             self.write('M 040000 %s \n' % tree)
-        helper.apply()
+
+        yield helper
+
         self.write('\n')
         self._done = False
         if mark:
@@ -710,13 +710,12 @@ class FastImport(IOLogger):
 class FastImportCommitHelper(object):
     def __init__(self, fast_import):
         self._fast_import = fast_import
-        self._command_queue = []
 
     def write(self, data):
-        self._command_queue.append((self._fast_import.write, data))
+        self._fast_import.write(data)
 
     def cmd_data(self, data):
-        self._command_queue.append((self._fast_import.cmd_data, data))
+        self._fast_import.cmd_data(data)
 
     def filedelete(self, path):
         self.write('D %s\n' % path)
@@ -746,7 +745,3 @@ class FastImportCommitHelper(object):
     def notemodify(self, commitish, note):
         self.write('N inline %s\n' % commitish)
         self.cmd_data(note)
-
-    def apply(self):
-        for fn, arg in self._command_queue:
-            fn(arg)
