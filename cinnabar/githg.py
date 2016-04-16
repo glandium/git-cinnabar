@@ -1179,11 +1179,12 @@ class GitHgStore(object):
                 commit.filemodify('hg/%s' % name, node, typ='commit')
                 commit.filemodify('git/%s' % name,
                                   self.git_file_ref(node), typ=self.TYPE[attr])
+            if check_enabled('manifests'):
+                expected_tree = commit.ls('hg')[2]
 
         self._manifests[instance.node] = mark = Mark(mark)
         self._manifest_dag.add(self._manifests[instance.node], parents)
         if check_enabled('manifests'):
-            expected_tree = self._fast_import.ls(mark, 'hg')[2]
             tree = OrderedDict()
             for line in isplitmanifest(instance.data):
                 path = line.name.split('/')

@@ -745,3 +745,10 @@ class FastImportCommitHelper(object):
     def notemodify(self, commitish, note):
         self.write('N inline %s\n' % commitish)
         self.cmd_data(note)
+
+    def ls(self, path=''):
+        self.write('ls "%s"\n' % path)
+        line = self._fast_import.readline()
+        if line.startswith('missing '):
+            return None, None, None, None
+        return split_ls_tree(line[:-1])
