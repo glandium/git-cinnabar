@@ -11,7 +11,6 @@ from itertools import (
 from hashlib import sha1
 import os
 import re
-import sys
 import urllib
 from collections import (
     OrderedDict,
@@ -1165,35 +1164,17 @@ class GitHgStore(object):
         else:
             previous = None
         parents = tuple(self.manifest_ref(p) for p in instance.parents)
-        # On OSX, mmap can be very slow, and when not providing a from_commit,
-        # we trigger a munmap/mmap cycle in fast-import. Avoid doing this in
-        # the common case where the previous manifest is the first parent.
-        # But make that an OS-X only work around, because it actually makes
-        # things slower on Linux.
-        if len(parents) and parents[0] == previous or sys.platform != 'darwin':
-            from_commit = previous
-        else:
-            from_commit = None
         with self._fast_import.commit(
             ref='refs/cinnabar/manifests',
-            from_commit=from_commit,
+            from_commit=previous,
             parents=parents,
             mark=mark,
             message=instance.node,
         ) as commit:
-            if from_commit != previous:
-                commit.deleteall()
-                modified_files = ((line.name, line.node, line.attr)
-                                  for line in isplitmanifest(instance.data))
-            else:
-                for name in instance.removed:
-                    commit.filedelete('hg/%s' % name)
-                    commit.filedelete('git/%s' % name)
-                modified_files = (
-                    (name, node, attr)
-                    for name, (node, attr) in instance.modified.items())
-
-            for name, node, attr in modified_files:
+            for name in instance.removed:
+                commit.filedelete('hg/%s' % name)
+                commit.filedelete('git/%s' % name)
+            for name, (node, attr) in instance.modified.items():
                 node = str(node)
                 commit.filemodify('hg/%s' % name, node, typ='commit')
                 commit.filemodify('git/%s' % name,
