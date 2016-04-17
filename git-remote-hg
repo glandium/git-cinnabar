@@ -7,52 +7,15 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
 from cinnabar.githg import (
     UpgradeException,
-    BranchMap,
     GitHgStore,
     LazyString,
 )
-from cinnabar.hg import (
-    bundlerepo,
-    getbundle,
-    get_repo,
-    push,
-    Remote,
-)
-from cinnabar.bundle import (
-    PushStore,
-)
-from itertools import chain
+from cinnabar.hg import Remote
 import logging
-from cinnabar.git import (
-    Git,
-    InvalidConfig,
-    NULL_NODE_ID,
-)
+from cinnabar.remote_helper import GitRemoteHelper
 from cinnabar.util import (
     init_logging,
-    IOLogger,
-    VersionedDict,
 )
-import cinnabar.util
-from urllib import unquote
-
-
-def read_cmd(fileobj):
-    line = fileobj.readline().strip()
-    if not line:
-        return None, None
-    line = line.split(' ')
-    return line[0], line[1:]
-
-
-def sanitize_branch_name(name):
-    '''Valid characters in mercurial branch names are not necessarily valid
-    in git ref names. This function replaces unsupported characters with a
-    urlquote escape such that the name can be reversed straightforwardly with
-    urllib.unquote.'''
-    # TODO: Actually sanitize all the conflicting cases, see
-    # git-check-ref-format(1).
-    return name.replace('%', '%25').replace(' ', '%20')
 
 
 def main(args):
@@ -66,7 +29,6 @@ def main(args):
     logger.info(args)
     assert len(args) == 2
     remote = Remote(*args)
-    repo = get_repo(remote)
 
     try:
         store = GitHgStore()
@@ -74,374 +36,24 @@ def main(args):
         logging.error(e.message)
         return 1
 
-    if isinstance(repo, bundlerepo):
-        repo.init(store)
     logger.info(LazyString(lambda: '%s' % store.heads()))
-    helper = IOLogger(logging.getLogger('remote-helper'),
-                      sys.stdin, sys.stdout)
-    branchmap = None
-    bookmarks = {}
-    HEAD = 'branches/default/tip'
-    has_unknown_heads = False
 
-    GRAFT = {
-        None: False,
-        'false': False,
-        'true': True,
-    }
-    try:
-        graft = Git.config('cinnabar.graft', remote=remote.name, values=GRAFT)
-    except InvalidConfig as e:
-        logging.error(e.message)
-        return 1
-    if Git.config('cinnabar.graft-refs') is not None:
-        logging.warn(
-            'The cinnabar.graft-refs configuration is deprecated.\n'
-            'Please unset it.'
-        )
-
+    helper = GitRemoteHelper(store, remote)
     while True:
-        cmd, args = read_cmd(helper)
+        cmd, args = helper.read_cmd()
         if not cmd:
             break
 
         if cmd == 'capabilities':
-            assert not args
-            helper.write(
-                'option\n'
-                'import\n'
-                'push\n'
-                'refspec refs/heads/branches/*:'
-                'refs/cinnabar/refs/heads/branches/*\n'
-                'refspec refs/heads/bookmarks/*:'
-                'refs/cinnabar/refs/heads/bookmarks/*\n'
-                'refspec HEAD:refs/cinnabar/HEAD\n'
-                '\n'
-            )
-            helper.flush()
+            helper.capabilities(*args)
         elif cmd == 'list':
-            assert not args or args == ['for-push']
-
-            if repo.capable('batch'):
-                batch = repo.batch()
-                branchmap = batch.branchmap()
-                heads = batch.heads()
-                bookmarks = batch.listkeys('bookmarks')
-                batch.submit()
-                branchmap = branchmap.value
-                heads = heads.value
-                bookmarks = bookmarks.value
-                if heads == ['\0' * 20]:
-                    heads = []
-            else:
-                while True:
-                    branchmap = repo.branchmap()
-                    heads = repo.heads()
-                    if heads == ['\0' * 20]:
-                        heads = []
-                    # Some branch heads can be non-heads topologically, but if
-                    # some heads don't appear in the branchmap, then something
-                    # was pushed to the repo between branchmap() and heads()
-                    if set(heads).issubset(set(chain(*branchmap.values()))):
-                        break
-                bookmarks = repo.listkeys('bookmarks')
-
-            branchmap = BranchMap(store, branchmap, heads)
-            has_unknown_heads = bool(branchmap.unknown_heads())
-            if graft and has_unknown_heads and 'for-push' not in args:
-                store.prepare_graft()
-                store.init_fast_import()
-                get_heads = set(branchmap.heads()) & branchmap.unknown_heads()
-                getbundle(repo, store, get_heads, branchmap.names())
-                # We may have failed to graft all changesets, in which case we
-                # skipped them. If that's what happened, we want to create a
-                # new branchmap containing all we do know about, so that we can
-                # avoid telling git about things we don't know, because if we
-                # didn't, it would ask for them, and subsequently fail because
-                # they are missing.
-                # Since we can't know for sure what the right tips might be for
-                # each branch, we won't expose the tips. This means we don't
-                # need to care about the order of the heads for the new
-                # branchmap.
-                has_unknown_heads = any(not(store.changeset_ref(h))
-                                        for h in get_heads)
-                if has_unknown_heads:
-                    new_branchmap = {
-                        branch: set(h for h in branchmap.heads(branch))
-                        for branch in branchmap.names()
-                    }
-                    new_branchmap = {
-                        branch: set(h for h in branchmap.heads(branch)
-                                    if h not in branchmap.unknown_heads())
-                        for branch in branchmap.names()
-                    }
-                    new_heads = set(h for h in branchmap.heads()
-                                    if h not in branchmap.unknown_heads())
-                    for status, head, branch in store._hgheads.iterchanges():
-                        branch_heads = new_branchmap.get(branch)
-                        if status == VersionedDict.REMOVED:
-                            if branch_heads and head in branch_heads:
-                                branch_heads.remove(head)
-                            if head in new_heads:
-                                new_heads.remove(head)
-                        else:
-                            if not branch_heads:
-                                branch_heads = new_branchmap[branch] = set()
-                            branch_heads.add(head)
-                            new_heads.add(head)
-
-                    branchmap = BranchMap(store, new_branchmap,
-                                          list(new_heads))
-
-            for branch in sorted(branchmap.names()):
-                branch_tip = branchmap.tip(branch)
-                for head in sorted(branchmap.heads(branch)):
-                    sha1 = branchmap.git_sha1(head)
-                    if head == branch_tip:
-                        continue
-                    helper.write('%s refs/heads/branches/%s/%s\n' % (
-                        sha1,
-                        sanitize_branch_name(branch),
-                        head,
-                    ))
-                if branch_tip:
-                    helper.write('%s refs/heads/branches/%s/tip\n' % (
-                        branchmap.git_sha1(branch_tip),
-                        sanitize_branch_name(branch),
-                    ))
-            for name, sha1 in sorted(bookmarks.iteritems()):
-                if sha1 == NULL_NODE_ID:
-                    continue
-                ref = store.changeset_ref(sha1)
-                if graft and not ref:
-                    continue
-                helper.write(
-                    '%s refs/heads/bookmarks/%s\n'
-                    % (ref if ref else '?', sanitize_branch_name(name))
-                )
-            if not has_unknown_heads:
-                for tag, ref in sorted(store.tags(branchmap.heads())):
-                    helper.write('%s refs/tags/%s\n' %
-                                 (ref, sanitize_branch_name(tag)))
-
-            if '@' in bookmarks:
-                HEAD = 'bookmarks/@'
-            head = bookmarks.get('@', branchmap.tip('default'))
-            if graft and head:
-                head = store.changeset_ref(head)
-            if head:
-                helper.write('@refs/heads/%s HEAD\n' % HEAD)
-
-            helper.write('\n')
-            helper.flush()
+            helper.list(*args)
         elif cmd == 'option':
-            assert len(args) == 2
-            name, value = args
-            if name == 'progress':
-                if value == 'true':
-                    cinnabar.util.progress = True
-                    helper.write('ok\n')
-                elif value == 'false':
-                    cinnabar.util.progress = False
-                    helper.write('ok\n')
-                else:
-                    helper.write('unsupported\n')
-            else:
-                helper.write('unsupported\n')
-            helper.flush()
+            helper.option(*args)
         elif cmd == 'import':
-            try:
-                assert len(args) == 1
-                refs = args
-                while cmd:
-                    assert cmd == 'import'
-                    cmd, args = read_cmd(helper)
-                    assert args is None or len(args) == 1
-                    if args:
-                        refs.extend(args)
-            finally:
-                # If anything wrong happens at any time, we risk git picking
-                # the existing refs/cinnabar refs, so remove them preventively.
-                for sha1, ref in Git.for_each_ref('refs/cinnabar/refs/heads',
-                                                  'refs/cinnabar/HEAD'):
-                    Git.delete_ref(ref)
-
-            def resolve_head(head):
-                if head.startswith('refs/heads/branches/'):
-                    head = head[20:]
-                    if head[-4:] == '/tip':
-                        return branchmap.tip(unquote(head[:-4]))
-                    return head[-40:]
-                if head.startswith('refs/heads/bookmarks/'):
-                    head = head[21:]
-                    return bookmarks[unquote(head)]
-                if head == 'HEAD':
-                    return bookmarks.get('@') or branchmap.tip('default')
-                return None
-
-            wanted_refs = {k: v for k, v in (
-                           (h, resolve_head(h)) for h in refs) if v}
-            heads = wanted_refs.values()
-            if not heads:
-                heads = branchmap.heads()
-
-            try:
-                # Mercurial can be an order of magnitude slower when creating
-                # a bundle when not giving topological heads, which some of
-                # the branch heads might not be.
-                # http://bz.selenic.com/show_bug.cgi?id=4595
-                # So, when we're pulling all branch heads, just ask for the
-                # topological heads instead.
-                # `heads` might contain known heads, if e.g. the remote has
-                # never been pulled from, but we happen to have some of its
-                # heads locally already.
-                if has_unknown_heads:
-                    unknown_heads = branchmap.unknown_heads()
-                    if set(heads).issuperset(unknown_heads):
-                        heads = set(branchmap.heads()) & unknown_heads
-                    store.init_fast_import()
-                    getbundle(repo, store, heads, branchmap.names())
-            except:
-                wanted_refs = {}
-                raise
-            finally:
-                for ref, value in wanted_refs.iteritems():
-                    ref = 'refs/cinnabar/' + ref
-                    Git.update_ref(ref, store.changeset_ref(value))
-
-            store.close()
-
-            helper.write('done\n')
-            helper.flush()
-
-            if remote.name:
-                if Git.config('fetch.prune', remote.name) != 'true':
-                    prune = 'remote.%s.prune' % remote.name
-                    sys.stderr.write(
-                        'It is recommended that you set "%(conf)s" or '
-                        '"fetch.prune" to "true".\n'
-                        '  git config %(conf)s true\n'
-                        'or\n'
-                        '  git config fetch.prune true\n'
-                        % {'conf': prune}
-                    )
-
-            if store.tag_changes:
-                sys.stderr.write(
-                    '\nRun the following command to update remote tags:\n')
-                if remote.name:
-                    sys.stderr.write('  git remote update %s\n' % remote.name)
-                else:
-                    sys.stderr.write('  git fetch --tags %s\n' % remote.git_url)
-
+            helper.import_(*args)
         elif cmd == 'push':
-            try:
-                default = 'never' if graft else 'phase'
-                values = {
-                    None: default,
-                    '': default,
-                    'never': 'never',
-                    'phase': 'phase',
-                    'always': 'always',
-                }
-                data = Git.config('cinnabar.data', remote.name, values=values)
-            except InvalidConfig as e:
-                logging.error(e.message)
-                return 1
-
-            refspecs = []
-            refspecs.extend(args)
-            while True:
-                cmd, args = read_cmd(helper)
-                if not cmd:
-                    break
-                assert cmd == 'push'
-                refspecs.extend(args)
-            pushes = {s.lstrip('+'): (d, s.startswith('+'))
-                      for s, d in (r.split(':', 1) for r in refspecs)}
-            if isinstance(repo, bundlerepo):
-                for source, (dest, force) in pushes.iteritems():
-                    helper.write('error %s Cannot push to a bundle file\n'
-                                 % dest)
-                helper.write('\n')
-                helper.flush()
-            else:
-                repo_heads = branchmap.heads()
-                PushStore.adopt(store, graft)
-                pushed = push(repo, store, pushes, repo_heads,
-                              branchmap.names())
-
-                status = {}
-                for source, (dest, _) in pushes.iteritems():
-                    if dest.startswith('refs/tags/'):
-                        if source:
-                            status[dest] = 'Pushing tags is unsupported'
-                        else:
-                            status[dest] = \
-                                'Deleting remote tags is unsupported'
-                        continue
-                    if not dest.startswith('refs/heads/bookmarks/'):
-                        if source:
-                            status[dest] = bool(len(pushed))
-                        else:
-                            status[dest] = \
-                                'Deleting remote branches is unsupported'
-                        continue
-                    name = unquote(dest[21:])
-                    if source:
-                        source = store.hg_changeset(Git.resolve_ref(source)) \
-                            or ''
-                    status[dest] = repo.pushkey(
-                        'bookmarks', name, bookmarks.get(name, ''), source)
-
-                for source, (dest, force) in pushes.iteritems():
-                    if status[dest] is True:
-                        helper.write('ok %s\n' % dest)
-                    elif status[dest]:
-                        helper.write('error %s %s\n' % (dest, status[dest]))
-                    else:
-                        helper.write('error %s nothing changed on remote\n'
-                                     % dest)
-                helper.write('\n')
-                helper.flush()
-
-                if not pushed:
-                    data = False
-                elif data == 'always':
-                    data = True
-                elif data == 'phase':
-                    phases = repo.listkeys('phases')
-                    drafts = {}
-                    if not phases.get('publishing', False):
-                        drafts = set(p for p, is_draft in phases.iteritems()
-                                     if int(is_draft))
-                    if not drafts:
-                        data = True
-                    else:
-                        def draft_commits():
-                            for d in drafts:
-                                c = store.changeset_ref(d)
-                                if c:
-                                    yield '^%s^@' % c
-                            for h in pushed.heads():
-                                yield h
-
-                        args = ['rev-list', '--ancestry-path', '--topo-order',
-                                '--stdin']
-
-                        pushed_drafts = tuple(
-                            Git.iter(*args, stdin=draft_commits()))
-
-                        # Theoretically, we could have commits with no
-                        # metadata that the remote declares are public, while
-                        # the rest of our push is in a draft state. That is
-                        # however so unlikely that it's not worth the effort
-                        # to support partial metadata storage.
-                        data = not bool(pushed_drafts)
-                elif data == 'never':
-                    data = False
-
-                store.close(rollback=not data)
+            helper.push(*args)
 
     store.close()
 

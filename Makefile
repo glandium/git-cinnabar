@@ -8,6 +8,7 @@ PYTHON_LIBS := \
 	cinnabar/bundle.py \
 	cinnabar/dag.py \
 	cinnabar/helper.py \
+	cinnabar/remote_helper.py \
 	cinnabar/git.py \
 	cinnabar/hg.py \
 	cinnabar/util.py
