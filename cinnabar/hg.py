@@ -399,16 +399,25 @@ def munge_url(url):
                        parsed_url.query, parsed_url.fragment)
 
 
-def get_repo(url):
-    parsed_url = munge_url(url)
-    if parsed_url.scheme == 'file':
-        path = parsed_url.path
+class Remote(object):
+    def __init__(self, remote, url):
+        if remote.startswith(('hg::', 'hg://')):
+            self.name = None
+        else:
+            self.name = remote
+        self.parsed_url = munge_url(url)
+        self.url = urlunparse(self.parsed_url)
+        self.git_url = url if url.startswith('hg://') else 'hg::%s' % url
+
+
+def get_repo(remote):
+    if remote.parsed_url.scheme == 'file':
+        path = remote.parsed_url.path
         if sys.platform == 'win32':
             # TODO: This probably needs more thought.
             path = path.lstrip('/')
         if not os.path.isdir(path):
             return bundlerepo(path)
-    url = urlunparse(parsed_url)
-    repo = hg.peer(get_ui(), {}, url)
+    repo = hg.peer(get_ui(), {}, remote.url)
     assert repo.capable('getbundle')
     return repo

@@ -16,6 +16,7 @@ from cinnabar.hg import (
     getbundle,
     get_repo,
     push,
+    Remote,
 )
 from cinnabar.bundle import (
     PushStore,
@@ -64,10 +65,8 @@ def main(args):
     logger = logging.getLogger('-')
     logger.info(args)
     assert len(args) == 2
-    remote, url = args
-    if remote.startswith(('hg::', 'hg://')):
-        remote = None
-    repo = get_repo(url)
+    remote = Remote(*args)
+    repo = get_repo(remote)
 
     try:
         store = GitHgStore()
@@ -91,7 +90,7 @@ def main(args):
         'true': True,
     }
     try:
-        graft = Git.config('cinnabar.graft', remote=remote, values=GRAFT)
+        graft = Git.config('cinnabar.graft', remote=remote.name, values=GRAFT)
     except InvalidConfig as e:
         logging.error(e.message)
         return 1
@@ -315,9 +314,9 @@ def main(args):
             helper.write('done\n')
             helper.flush()
 
-            if remote:
-                if Git.config('fetch.prune', remote) != 'true':
-                    prune = 'remote.%s.prune' % remote
+            if remote.name:
+                if Git.config('fetch.prune', remote.name) != 'true':
+                    prune = 'remote.%s.prune' % remote.name
                     sys.stderr.write(
                         'It is recommended that you set "%(conf)s" or '
                         '"fetch.prune" to "true".\n'
@@ -330,12 +329,10 @@ def main(args):
             if store.tag_changes:
                 sys.stderr.write(
                     '\nRun the following command to update remote tags:\n')
-                if remote:
-                    sys.stderr.write('  git remote update %s\n' % remote)
+                if remote.name:
+                    sys.stderr.write('  git remote update %s\n' % remote.name)
                 else:
-                    fetch_url = (url if url.startswith('hg://')
-                                 else 'hg::' + url)
-                    sys.stderr.write('  git fetch --tags %s\n' % fetch_url)
+                    sys.stderr.write('  git fetch --tags %s\n' % remote.git_url)
 
         elif cmd == 'push':
             try:
@@ -347,7 +344,7 @@ def main(args):
                     'phase': 'phase',
                     'always': 'always',
                 }
-                data = Git.config('cinnabar.data', remote, values=values)
+                data = Git.config('cinnabar.data', remote.name, values=values)
             except InvalidConfig as e:
                 logging.error(e.message)
                 return 1
