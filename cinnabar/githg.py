@@ -15,6 +15,7 @@ import sys
 import urllib
 from collections import (
     OrderedDict,
+    Sequence,
     defaultdict,
 )
 from .util import (
@@ -487,6 +488,60 @@ class GeneratedGitCommit(GitCommit):
         h = sha1('commit %d\0' % len(data))
         h.update(data)
         return h.hexdigest()
+
+
+def autohexlify(h):
+    if len(h) == 40:
+        return h
+    elif len(h) == 20:
+        return hexlify(h)
+    assert False
+
+
+class BranchMap(object):
+    def __init__(self, store, remote_branchmap, remote_heads):
+        self._heads = {}
+        self._all_heads = tuple(autohexlify(h) for h in reversed(remote_heads))
+        self._tips = {}
+        self._git_sha1s = {}
+        self._unknown_heads = set()
+        for branch, heads in remote_branchmap.iteritems():
+            # We can't keep track of tips if the list of heads is not sequenced
+            sequenced = isinstance(heads, Sequence) or len(heads) == 1
+            branch_heads = []
+            for head in heads:
+                head = autohexlify(head)
+                branch_heads.append(head)
+                sha1 = store.changeset_ref(head)
+                if not sha1:
+                    self._unknown_heads.add(head)
+                    continue
+                extra = store.read_changeset_data(sha1).get('extra')
+                if sequenced and extra and not extra.get('close'):
+                    self._tips[branch] = head
+                assert head not in self._git_sha1s
+                self._git_sha1s[head] = sha1
+            # Use last head as tip if we didn't set one.
+            if heads and sequenced and branch not in self._tips:
+                self._tips[branch] = head
+            self._heads[branch] = tuple(branch_heads)
+
+    def names(self):
+        return self._heads.keys()
+
+    def heads(self, branch=None):
+        if branch:
+            return self._heads.get(branch, ())
+        return self._all_heads
+
+    def unknown_heads(self):
+        return self._unknown_heads
+
+    def git_sha1(self, head):
+        return self._git_sha1s.get(head, '?')
+
+    def tip(self, branch):
+        return self._tips.get(branch, None)
 
 
 class NothingToGraftException(Exception): pass
