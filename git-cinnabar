@@ -25,7 +25,7 @@ from cinnabar.git import (
 from cinnabar import hg
 from cinnabar.util import (
     init_logging,
-    LazyString,
+    PseudoString,
     next,
     progress_iter,
     VersionedDict,
@@ -220,12 +220,12 @@ def fsck(args):
                     fix('Fixing useless committer metadata for changeset %s'
                         % changeset)
                     del changeset_data['extra']['committer']
-                    store._changesets[changeset] = LazyString(node)
+                    store._changesets[changeset] = PseudoString(node)
             if header['committer'] != header['author'] and not extra:
                 fix('Fixing useless empty extra metadata for changeset %s'
                     % changeset)
                 del changeset_data['extra']
-                store._changesets[changeset] = LazyString(node)
+                store._changesets[changeset] = PseudoString(node)
 
         seen_changesets.add(changeset)
         changeset_ref = store.changeset_ref(changeset)
@@ -264,7 +264,7 @@ def fsck(args):
                 if hg_changeset.node == sha1:
                     fix('Fixing known sha1 mismatch for changeset %s' %
                         changeset)
-                    store._changesets[changeset] = LazyString(node)
+                    store._changesets[changeset] = PseudoString(node)
 
         if hg_changeset.node != sha1:
             report('Sha1 mismatch for changeset %s' % changeset)

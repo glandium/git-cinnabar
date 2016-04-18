@@ -147,13 +147,11 @@ class IOLogger(object):
             yield l
 
 
-class LazyString(object):
+class PseudoString(object):
     def __init__(self, obj):
-        self._obj = obj._obj if isinstance(obj, LazyString) else obj
+        self._obj = obj._obj if isinstance(obj, PseudoString) else obj
 
     def __str__(self):
-        if callable(self._obj):
-            self._obj = self._obj()
         return self._obj
 
     def __len__(self):
@@ -166,7 +164,7 @@ class LazyString(object):
         return str(self) != str(other)
 
     def __repr__(self):
-        return '<LazyString %s>' % repr(str(self))
+        return '<PseudoString %s>' % repr(str(self))
 
     def startswith(self, other):
         return str(self).startswith(other)

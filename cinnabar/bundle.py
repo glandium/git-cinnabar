@@ -17,7 +17,7 @@ from .util import (
     next,
     one,
     progress_iter,
-    LazyString,
+    PseudoString,
 )
 from collections import (
     OrderedDict,
@@ -166,7 +166,7 @@ class PushStore(GitHgStore):
                 if attr is None:
                     attr = line.attr
                 if node is None:
-                    node = LazyString(line.node)
+                    node = PseudoString(line.node)
                 else:
                     node = self.create_file(node, str(line.node))
                 line = ManifestLine(line.name, node, attr)
@@ -251,7 +251,7 @@ class PushStore(GitHgStore):
                 del extra['committer']
             if not extra:
                 del changeset_data['extra']
-        self._changesets[changeset.node] = LazyString(commit)
+        self._changesets[changeset.node] = PseudoString(commit)
 
     def create_file(self, sha1, *parents):
         hg_file = GeneratedFileRev(NULL_NODE_ID,
@@ -259,8 +259,8 @@ class PushStore(GitHgStore):
         hg_file.set_parents(*parents)
         node = hg_file.node = hg_file.sha1
         self._push_files[node] = hg_file
-        self._files.setdefault(node, LazyString(sha1))
-        self._git_files.setdefault(node, LazyString(sha1))
+        self._files.setdefault(node, PseudoString(sha1))
+        self._git_files.setdefault(node, PseudoString(sha1))
         return node
 
     def create_copy(self, hg_source, sha1):
@@ -272,7 +272,7 @@ class PushStore(GitHgStore):
         mark = self.file_ref(node, hg2git=False, create=True)
         self._push_files[node] = hg_file
         self._files.setdefault(node, mark)
-        self._git_files.setdefault(node, LazyString(sha1))
+        self._git_files.setdefault(node, PseudoString(sha1))
         return node
 
     def file(self, sha1):

@@ -21,7 +21,7 @@ from collections import (
 from .util import (
     byte_diff,
     check_enabled,
-    LazyString,
+    PseudoString,
     one,
     VersionedDict,
 )
@@ -876,14 +876,14 @@ class GitHgStore(object):
                     assert parent_branch == self._hgheads[parent_head]
                     del self._hgheads[parent_head]
                 ref = self.changeset_ref(parent_head)
-                if isinstance(ref, LazyString):
+                if isinstance(ref, PseudoString):
                     ref = str(ref)
                 if ref in self._tagcache:
                     self._tagcache[ref] = False
 
         self._hgheads[head] = branch
         ref = self.changeset_ref(head)
-        if isinstance(ref, LazyString):
+        if isinstance(ref, PseudoString):
             ref = str(ref)
         self._tagcache[ref] = None
 
@@ -1109,7 +1109,7 @@ class GitHgStore(object):
             mark = commit
         else:
             assert isinstance(commit, GitCommit)
-            mark = LazyString(commit.sha1)
+            mark = PseudoString(commit.sha1)
         if not mark and self._graft:
             return self._graft.graft(instance, track_heads)
         elif not commit and not isinstance(mark, EmptyMark):
@@ -1446,7 +1446,7 @@ class GitHgStore(object):
         def resolve_commit(c):
             if isinstance(c, Mark):
                 c = self._hg2git('commit', changeset_by_mark[c])
-            elif isinstance(c, LazyString):
+            elif isinstance(c, PseudoString):
                 c = str(c)
             return c
 
