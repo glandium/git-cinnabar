@@ -13,7 +13,7 @@ from collections import Iterable
 from .util import (
     check_enabled,
     IOLogger,
-    LazyString,
+    LazyCall,
     one,
     VersionedDict,
 )
@@ -177,17 +177,16 @@ class GitProcess(object):
             if proc_stdin != stdin:
                 self._proc.stdin.close()
 
+    def _env_strings(self, env):
+        for k, v in sorted((k, v) for s, k, v in env.iterchanges()
+                           if s != env.REMOVED):
+            yield '%s=%s' % (k, v)
+
     def _popen(self, cmd, env, **kwargs):
         assert isinstance(env, VersionedDict)
         proc = subprocess.Popen(cmd, env=env, **kwargs)
-        logging.getLogger('git').info(LazyString(lambda: '[%d] %s' % (
-            proc.pid,
-            ' '.join(chain(
-                ('%s=%s' % (k, v)
-                 for k, v in sorted((k, v) for s, k, v
-                                    in env.iterchanges() if s != env.REMOVED)),
-                cmd)),
-        )))
+        logging.getLogger('git').info('[%d] %s', proc.pid, LazyCall(
+            ' '.join, chain(self._env_strings(env), cmd)))
         return proc
 
     def wait(self):

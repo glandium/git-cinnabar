@@ -6,7 +6,6 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
 from .githg import (
-    LazyString,
     NothingToGraftException,
     RevChunk,
     ChangesetInfo,
@@ -39,6 +38,7 @@ from .git import (
 )
 from .util import (
     check_enabled,
+    LazyCall,
     progress_iter,
 )
 from collections import defaultdict
@@ -139,8 +139,8 @@ def findcommon(repo, store, hgheads):
     git_heads = set(store.changeset_ref(h) for h in hgheads)
     git_known = set(store.changeset_ref(h) for h in known)
 
-    logger.debug(LazyString('known (sub)set: (%d) %s'
-                            % (len(known), sorted(git_known))))
+    logger.debug('known (sub)set: (%d) %s', len(known),
+                 LazyCall(sorted, git_known))
 
     args = ['rev-list', '--topo-order', '--full-history', '--parents',
             '--stdin']
@@ -184,10 +184,10 @@ def findcommon(repo, store, hgheads):
         unknown = set(h for h, k in izip(sample, known) if not k)
         known = set(h for h, k in izip(sample, known) if k)
         logger.info('next sample size: %d' % len(sample))
-        logger.debug(LazyString('known (sub)set: (%d) %s'
-                                % (len(known), sorted(known))))
-        logger.debug(LazyString('unknown (sub)set: (%d) %s'
-                                % (len(unknown), sorted(unknown))))
+        logger.debug('known (sub)set: (%d) %s', len(known),
+                     LazyCall(sorted, known))
+        logger.debug('unknown (sub)set: (%d) %s', len(unknown),
+                     LazyCall(sorted, unknown))
 
         dag.tag_nodes_and_parents(known, 'known')
         dag.tag_nodes_and_children(unknown, 'unknown')

@@ -8,13 +8,13 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 from cinnabar.githg import (
     UpgradeException,
     GitHgStore,
-    LazyString,
 )
 from cinnabar.hg import Remote
 import logging
 from cinnabar.remote_helper import GitRemoteHelper
 from cinnabar.util import (
     init_logging,
+    LazyCall,
 )
 
 
@@ -36,7 +36,7 @@ def main(args):
         logging.error(e.message)
         return 1
 
-    logger.info(LazyString(lambda: '%s' % store.heads()))
+    logger.info('%s', LazyCall(store.heads))
 
     helper = GitRemoteHelper(store, remote)
     helper.run()
