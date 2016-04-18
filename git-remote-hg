@@ -39,21 +39,7 @@ def main(args):
     logger.info(LazyString(lambda: '%s' % store.heads()))
 
     helper = GitRemoteHelper(store, remote)
-    while True:
-        cmd, args = helper.read_cmd()
-        if not cmd:
-            break
-
-        if cmd == 'capabilities':
-            helper.capabilities(*args)
-        elif cmd == 'list':
-            helper.list(*args)
-        elif cmd == 'option':
-            helper.option(*args)
-        elif cmd == 'import':
-            helper.import_(*args)
-        elif cmd == 'push':
-            helper.push(*args)
+    helper.run()
 
     store.close()
 

@@ -72,6 +72,23 @@ class GitRemoteHelper(object):
                 'Please unset it.'
             )
 
+    def run(self):
+        while True:
+            cmd, args = self.read_cmd()
+            if not cmd:
+                break
+
+            if cmd == 'capabilities':
+                self.capabilities(*args)
+            elif cmd == 'list':
+                self.list(*args)
+            elif cmd == 'option':
+                self.option(*args)
+            elif cmd == 'import':
+                self.import_(*args)
+            elif cmd == 'push':
+                self.push(*args)
+
     def read_cmd(self):
         line = self._helper.readline().strip()
         if not line:
