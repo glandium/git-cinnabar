@@ -74,27 +74,38 @@ class GitRemoteHelper(object):
 
     def run(self):
         while True:
-            cmd, args = self.read_cmd()
-            if not cmd:
+            line = self._helper.readline().strip()
+            if not line:
                 break
 
-            if cmd == 'capabilities':
-                self.capabilities(*args)
-            elif cmd == 'list':
-                self.list(*args)
-            elif cmd == 'option':
-                self.option(*args)
-            elif cmd == 'import':
-                self.import_(*args)
-            elif cmd == 'push':
-                self.push(*args)
+            if ' ' in line:
+                cmd, arg = line.split(' ', 1)
+                args = [arg]
+            else:
+                cmd = line
+                args = []
 
-    def read_cmd(self):
-        line = self._helper.readline().strip()
-        if not line:
-            return None, None
-        line = line.split(' ')
-        return line[0], line[1:]
+            if cmd in ('import', 'push'):
+                while True:
+                    line = self._helper.readline().strip()
+                    if not line:
+                        break
+                    _, arg = line.split(' ', 1)
+                    args.append(arg)
+
+            elif cmd == 'option':
+                assert args
+                args = args[0].split(' ', 1)
+
+            func = {
+                'capabilities': self.capabilities,
+                'list': self.list,
+                'option': self.option,
+                'import': self.import_,
+                'push': self.push,
+            }.get(cmd)
+            assert func
+            func(*args)
 
     def capabilities(self):
         self._helper.write(
@@ -242,23 +253,12 @@ class GitRemoteHelper(object):
             self._helper.write('unsupported\n')
         self._helper.flush()
 
-    def import_(self, ref):
-        try:
-            refs = [ref]
-            while True:
-                cmd, args = self.read_cmd()
-                if cmd is None:
-                    break
-                assert cmd == 'import'
-                assert args is None or len(args) == 1
-                if args:
-                    refs.extend(args)
-        finally:
-            # If anything wrong happens at any time, we risk git picking
-            # the existing refs/cinnabar refs, so remove them preventively.
-            for sha1, ref in Git.for_each_ref('refs/cinnabar/refs/heads',
-                                              'refs/cinnabar/HEAD'):
-                Git.delete_ref(ref)
+    def import_(self, *refs):
+        # If anything wrong happens at any time, we risk git picking
+        # the existing refs/cinnabar refs, so remove them preventively.
+        for sha1, ref in Git.for_each_ref('refs/cinnabar/refs/heads',
+                                          'refs/cinnabar/HEAD'):
+            Git.delete_ref(ref)
 
         def resolve_head(head):
             if head.startswith('refs/heads/branches/'):
@@ -332,7 +332,7 @@ class GitRemoteHelper(object):
                 sys.stderr.write(
                     '  git fetch --tags %s\n' % self._remote.git_url)
 
-    def push(self, refspec):
+    def push(self, *refspecs):
         try:
             default = 'never' if self._graft else 'phase'
             values = {
@@ -348,13 +348,6 @@ class GitRemoteHelper(object):
             logging.error(e.message)
             return 1
 
-        refspecs = [refspec]
-        while True:
-            cmd, args = self.read_cmd()
-            if not cmd:
-                break
-            assert cmd == 'push'
-            refspecs.extend(args)
         pushes = {s.lstrip('+'): (d, s.startswith('+'))
                   for s, d in (r.split(':', 1) for r in refspecs)}
         if isinstance(self._repo, bundlerepo):
