@@ -12,7 +12,10 @@ from .githg import (
     ManifestInfo,
 )
 from .bundle import create_bundle
-from binascii import unhexlify
+from binascii import (
+    hexlify,
+    unhexlify,
+)
 from mercurial import (
     changegroup,
     hg,
@@ -61,12 +64,31 @@ def readbundle(fh):
     return cg1unpacker(fh, alg)
 
 
+class RawRevChunk(str):
+    __slots__ = ()
+
+    def _field(offset, size=None, filter=None):
+        if filter is None:
+            if size is None:
+                return property(lambda self: self[offset:])
+            return property(lambda self: self[offset:offset + size])
+        if size is None:
+            return property(lambda self: filter(self[offset:]))
+        return property(lambda self: filter(self[offset:offset + size]))
+
+    node = _field(0, 20, hexlify)
+    parent1 = _field(20, 20, hexlify)
+    parent2 = _field(40, 20, hexlify)
+    changeset = _field(60, 20, hexlify)
+    data = _field(80)
+
+
 def chunks_in_changegroup(bundle):
     while True:
         chunk = changegroup.getchunk(bundle)
         if not chunk:
             return
-        yield chunk
+        yield RawRevChunk(chunk)
 
 
 def iter_chunks(chunks, cls):

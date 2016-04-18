@@ -91,10 +91,10 @@ class RevChunk(object):
     __slots__ = ('node', 'parent1', 'parent2', 'changeset', 'data',
                  'previous_node', '_rev_data')
 
-    def __init__(self, chunk_data):
+    def __init__(self, chunk):
         self.node, self.parent1, self.parent2, self.changeset = (
-            hexlify(h) for h in struct.unpack('20s20s20s20s', chunk_data[:80]))
-        self._rev_data = chunk_data[80:]
+            chunk.node, chunk.parent1, chunk.parent2, chunk.changeset)
+        self._rev_data = chunk.data
         revchunk_log.debug('%s %s %s %s', self.node, self.parent1,
                            self.parent2, self.changeset)
         revchunk_log.debug('%r', self._rev_data)
