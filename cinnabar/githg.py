@@ -89,11 +89,12 @@ revchunk_log = logging.getLogger('revchunks')
 
 class RevChunk(object):
     __slots__ = ('node', 'parent1', 'parent2', 'changeset', 'data',
-                 'previous_node', '_rev_data')
+                 'delta_node', '_rev_data')
 
     def __init__(self, chunk):
         self.node, self.parent1, self.parent2, self.changeset = (
             chunk.node, chunk.parent1, chunk.parent2, chunk.changeset)
+        self.delta_node = chunk.delta_node
         self._rev_data = chunk.data
         revchunk_log.debug('%s %s %s %s', self.node, self.parent1,
                            self.parent2, self.changeset)
@@ -1073,7 +1074,7 @@ class GitHgStore(object):
         )
 
         result = get_ref_func(instance.node, hg2git=hg2git, create=create)
-        logging.info('store %s %s %s', instance.node, instance.previous_node,
+        logging.info('store %s %s %s', instance.node, instance.delta_node,
                      result)
         return result
 
@@ -1215,8 +1216,8 @@ class GitHgStore(object):
         mark = self._store_find_or_create(instance, self.manifest_ref)
         if not isinstance(mark, EmptyMark):
             return
-        if instance.previous_node != NULL_NODE_ID:
-            previous = self.manifest_ref(instance.previous_node)
+        if instance.delta_node != NULL_NODE_ID:
+            previous = self.manifest_ref(instance.delta_node)
         else:
             previous = None
         parents = tuple(self.manifest_ref(p) for p in instance.parents)
@@ -1289,7 +1290,7 @@ class GitHgStore(object):
                     'sha1 mismatch for node %s with parents %s %s and '
                     'previous %s' %
                     (instance.node, instance.parent1, instance.parent2,
-                     instance.previous_node)
+                     instance.delta_node)
                 )
 
     def store_file(self, instance):

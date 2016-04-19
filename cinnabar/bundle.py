@@ -205,7 +205,7 @@ class PushStore(GitHgStore):
             manifest.removed = removed
             manifest.modified = {l.name: (l.node, l.attr)
                                  for l in modified_lines}
-            manifest.previous_node = parent_node
+            manifest.delta_node = parent_node
             self._push_manifests[manifest.node] = manifest
             self.manifest_ref(manifest.node, hg2git=False, create=True)
             self._manifest_git_tree[manifest.node] = commit_data.tree

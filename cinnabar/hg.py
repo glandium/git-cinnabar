@@ -82,22 +82,36 @@ class RawRevChunk(str):
     changeset = _field(60, 20, hexlify)
     data = _field(80)
 
+    # Because we keep so many instances of this class on hold, the overhead
+    # of having a __dict__ per instance is a deal breaker.
+    _delta_nodes = {}
+    @property
+    def delta_node(self):
+        return self._delta_nodes[self.node]
+
+    @delta_node.setter
+    def delta_node(self, value):
+        self._delta_nodes[self.node] = value
+
+    def __del__(self):
+        del self._delta_nodes[self.node]
+
 
 def chunks_in_changegroup(bundle):
+    previous_node = None
     while True:
         chunk = changegroup.getchunk(bundle)
         if not chunk:
             return
-        yield RawRevChunk(chunk)
+        chunk = RawRevChunk(chunk)
+        chunk.delta_node = previous_node or chunk.parent1
+        yield chunk
+        previous_node = chunk.node
 
 
 def iter_chunks(chunks, cls):
-    previous_node = None
     for chunk in chunks:
-        instance = cls(chunk)
-        instance.previous_node = previous_node or instance.parent1
-        yield instance
-        previous_node = instance.node
+        yield cls(chunk)
 
 
 def iterate_files(bundle):
@@ -114,11 +128,11 @@ def iter_initialized(get_missing, iterable):
     always_check = check_enabled('nodeid')
     for instance in iterable:
         check = always_check
-        if instance.previous_node != NULL_NODE_ID:
-            if previous and instance.previous_node == previous.node:
+        if instance.delta_node != NULL_NODE_ID:
+            if previous and instance.delta_node == previous.node:
                 instance.init(previous)
             else:
-                instance.init(get_missing(instance.previous_node))
+                instance.init(get_missing(instance.delta_node))
                 check = True
         else:
             instance.init(())
@@ -127,7 +141,7 @@ def iter_initialized(get_missing, iterable):
                 'sha1 mismatch for node %s with parents %s %s and '
                 'previous %s' %
                 (instance.node, instance.parent1, instance.parent2,
-                 instance.previous_node)
+                 instance.delta_node)
             )
         yield instance
         previous = instance
