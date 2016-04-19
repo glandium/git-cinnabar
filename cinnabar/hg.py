@@ -224,7 +224,14 @@ class ChunksCollection(object):
                 last_use = self._keep.get(delta_node)
                 if node == last_use:
                     del self._keep[delta_node]
-                    del self._kept[delta_node]
+                    # We don't try to distinguish between the chunks with
+                    # a delta_node from the bundle and those with a
+                    # delta_node from the local repo, so we can end up
+                    # not having delta_node in self._kept.
+                    try:
+                        del self._kept[delta_node]
+                    except KeyError:
+                        pass
 
         def wrap_get_missing(node):
             if node not in self._kept:
