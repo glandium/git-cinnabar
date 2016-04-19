@@ -3,6 +3,7 @@
 from __future__ import division
 import os
 import sys
+import urllib
 sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
 from .githg import (
@@ -54,6 +55,12 @@ try:
 except ImportError:
     from mercurial.changegroup import unbundle10 as cg1unpacker
 
+try:
+    from mercurial.bundle2 import encodecaps, unbundle20
+    from mercurial.changegroup import cg2unpacker
+except ImportError:
+    unbundle20 = False
+
 
 def readbundle(fh):
     header = changegroup.readexactly(fh, 4)
@@ -70,6 +77,7 @@ def readbundle(fh):
 class RawRevChunk(str):
     __slots__ = ()
 
+    @staticmethod
     def _field(offset, size=None, filter=None):
         if filter is None:
             if size is None:
@@ -79,11 +87,15 @@ class RawRevChunk(str):
             return property(lambda self: filter(self[offset:]))
         return property(lambda self: filter(self[offset:offset + size]))
 
-    node = _field(0, 20, hexlify)
-    parent1 = _field(20, 20, hexlify)
-    parent2 = _field(40, 20, hexlify)
-    changeset = _field(60, 20, hexlify)
-    data = _field(80)
+
+class RawRevChunk01(RawRevChunk):
+    __slots__ = ()
+
+    node = RawRevChunk._field(0, 20, hexlify)
+    parent1 = RawRevChunk._field(20, 20, hexlify)
+    parent2 = RawRevChunk._field(40, 20, hexlify)
+    changeset = RawRevChunk._field(60, 20, hexlify)
+    data = RawRevChunk._field(80)
 
     # Because we keep so many instances of this class on hold, the overhead
     # of having a __dict__ per instance is a deal breaker.
@@ -100,14 +112,35 @@ class RawRevChunk(str):
         del self._delta_nodes[self.node]
 
 
+class RawRevChunk02(RawRevChunk):
+    __slots__ = ()
+
+    node = RawRevChunk._field(0, 20, hexlify)
+    parent1 = RawRevChunk._field(20, 20, hexlify)
+    parent2 = RawRevChunk._field(40, 20, hexlify)
+    delta_node = RawRevChunk._field(60, 20, hexlify)
+    changeset = RawRevChunk._field(80, 20, hexlify)
+    data = RawRevChunk._field(100)
+
+
+def RawRevChunkType(bundle):
+    if unbundle20 and isinstance(bundle, cg2unpacker):
+        return RawRevChunk02
+    if isinstance(bundle, cg1unpacker):
+        return RawRevChunk01
+    raise Exception('Unknown changegroup type %s' % type(bundle).__name__)
+
+
 def chunks_in_changegroup(bundle):
     previous_node = None
+    chunk_type = RawRevChunkType(bundle)
     while True:
         chunk = changegroup.getchunk(bundle)
         if not chunk:
             return
-        chunk = RawRevChunk(chunk)
-        chunk.delta_node = previous_node or chunk.parent1
+        chunk = chunk_type(chunk)
+        if isinstance(chunk, RawRevChunk01):
+            chunk.delta_node = previous_node or chunk.parent1
         yield chunk
         previous_node = chunk.node
 
@@ -152,7 +185,23 @@ def iter_initialized(get_missing, iterable):
 
 class ChunksCollection(object):
     def __init__(self, iterator):
-        self._chunks = deque(iterator)
+        self._chunks = deque()
+
+        # Indicate which chunks to keep around (key: chunk node, value:
+        # last chunk node requiring it)
+        self._keep = {}
+
+        # key: chunk node, value: instance of class given to iter_initialized
+        self._kept = {}
+
+        previous_node = None
+        for chunk in iterator:
+            node = chunk.node
+            if not isinstance(chunk, RawRevChunk01) and previous_node:
+                if chunk.delta_node != previous_node:
+                    self._keep[chunk.delta_node] = node
+            self._chunks.append(chunk)
+            previous_node = node
 
     def __iter__(self):
         while True:
@@ -162,7 +211,28 @@ class ChunksCollection(object):
                 return
 
     def iter_initialized(self, cls, get_missing):
-        return iter_initialized(get_missing, iter_chunks(self, cls))
+        if not self._keep:
+            return iter_initialized(get_missing, iter_chunks(self, cls))
+
+        def wrap_iter_chunks(self, cls):
+            for chunk in iter_chunks(self, cls):
+                node = chunk.node
+                if node in self._keep:
+                    self._kept[node] = chunk
+                yield chunk
+                delta_node = chunk.delta_node
+                last_use = self._keep.get(delta_node)
+                if node == last_use:
+                    del self._keep[delta_node]
+                    del self._kept[delta_node]
+
+        def wrap_get_missing(node):
+            if node not in self._kept:
+                return get_missing(node)
+            chunk = self._kept[node]
+            return chunk
+
+        return iter_initialized(wrap_get_missing, wrap_iter_chunks(self, cls))
 
 
 def _sample(l, size):
@@ -308,8 +378,38 @@ def getbundle(repo, store, heads, branch_names):
     else:
         common = findcommon(repo, store, store.heads(branch_names))
         logging.info('common: %s' % common)
+        kwargs = {}
+        if unbundle20 and repo.capable('bundle2'):
+            bundle2caps = {
+                'HG20': (),
+                'changegroup': ('01', '02'),
+            }
+            kwargs['bundlecaps'] = set((
+                'HG20', 'bundle2=%s' % urllib.quote(encodecaps(bundle2caps))))
+
         bundle = repo.getbundle('bundle', heads=[unhexlify(h) for h in heads],
-                                common=[unhexlify(h) for h in common])
+                                common=[unhexlify(h) for h in common],
+                                **kwargs)
+
+        if unbundle20 and isinstance(bundle, unbundle20):
+            parts = iter(bundle.iterparts())
+            for part in parts:
+                if part.type != 'changegroup':
+                    logging.getLogger('bundle2').warning(
+                        'ignoring bundle2 part: %s', part.type)
+                    continue
+                logging.getLogger('bundle2').debug('params: %r', part.params)
+                version = part.params.get('version', '01')
+                if version == '01':
+                    bundle = cg1unpacker(part, 'UN')
+                elif version == '02':
+                    bundle = cg2unpacker(part, 'UN')
+                else:
+                    raise Exception('Unknown changegroup version %s' % version)
+                break
+            else:
+                raise Exception('No changegroups in the bundle')
+
 
         changeset_chunks = ChunksCollection(progress_iter(
             'Reading %d changesets', chunks_in_changegroup(bundle)))
@@ -321,6 +421,11 @@ def getbundle(repo, store, heads, branch_names):
             'Reading and importing %d files', iter_initialized(
                 store.file, iterate_files(bundle))):
         store.store_file(rev_chunk)
+
+    if unbundle20 and isinstance(bundle, unbundle20):
+        for part in parts:
+            logging.getLogger('bundle2').warning(
+                'ignoring bundle2 part: %s', part.type)
 
     del bundle
 
