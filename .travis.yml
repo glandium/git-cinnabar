@@ -3,6 +3,9 @@ language: c
 os: linux
 compiler: gcc
 
+git:
+  submodules: false
+
 env:
   global:
     - GIT_CINNABAR_CHECK=commit,helper,manifests,nodeid,replace
@@ -78,6 +81,7 @@ before_script:
   # Note: we don't want the dependency on brew's libgettext on OSX.
   - curl -s -f -O --retry 5 https://s3.amazonaws.com/$ARTIFACTS_BUCKET/$HELPER_PATH/$HELPER;
     if [ "$?" -eq 22 ]; then
+      git submodule update --init;
       BUILD_HELPER="make --jobs=2 $HELPER CC=$CC";
       if [ "$TRAVIS_OS_NAME" = "osx" ]; then
         BUILD_HELPER="$BUILD_HELPER NO_GETTEXT=1";
