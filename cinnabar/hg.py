@@ -44,7 +44,10 @@ from .util import (
     LazyCall,
     progress_iter,
 )
-from collections import defaultdict
+from collections import (
+    defaultdict,
+    deque,
+)
 
 try:
     from mercurial.changegroup import cg1unpacker
@@ -145,6 +148,18 @@ def iter_initialized(get_missing, iterable):
             )
         yield instance
         previous = instance
+
+
+class ChunksCollection(object):
+    def __init__(self, iterator):
+        self._chunks = deque(iterator)
+
+    def __iter__(self):
+        while True:
+            try:
+                yield self._chunks.popleft()
+            except IndexError:
+                return
 
 
 def _sample(l, size):
@@ -293,10 +308,10 @@ def getbundle(repo, store, heads, branch_names):
         bundle = repo.getbundle('bundle', heads=[unhexlify(h) for h in heads],
                                 common=[unhexlify(h) for h in common])
 
-        changeset_chunks = list(progress_iter(
+        changeset_chunks = ChunksCollection(progress_iter(
             'Reading %d changesets', chunks_in_changegroup(bundle)))
 
-    manifest_chunks = list(progress_iter(
+    manifest_chunks = ChunksCollection(progress_iter(
         'Reading %d manifests', chunks_in_changegroup(bundle)))
 
     for rev_chunk in progress_iter(
@@ -313,8 +328,6 @@ def getbundle(repo, store, heads, branch_names):
                                                          ManifestInfo))):
         manifest_sha1s.append(mn.node)
         store.store_manifest(mn)
-
-    del manifest_chunks
 
     # Storing changesets involves reading the manifest git tree from
     # fast-import, but fast-import's ls command, used to get the tree's
@@ -339,8 +352,6 @@ def getbundle(repo, store, heads, branch_names):
         except NothingToGraftException:
             logging.warn('Cannot graft %s, not importing.' % cs.node)
             pass
-
-    del changeset_chunks
 
 
 def push(repo, store, what, repo_heads, repo_branches):
