@@ -69,6 +69,7 @@ before_script:
   # TODO: cache as artifacts.
   - if [ -n "$GIT_VERSION" ]; then
       GIT=$(pwd)/git.git/bin-wrappers/git;
+      git submodule update --init;
       git clone -n git-core git.git;
       git -C git.git checkout v"$GIT_VERSION";
       make -C git.git --jobs=2 NO_GETTEXT=1 NO_CURL=1 NO_OPENSSL=1;
