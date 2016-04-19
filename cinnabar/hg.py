@@ -161,6 +161,9 @@ class ChunksCollection(object):
             except IndexError:
                 return
 
+    def iter_initialized(self, cls, get_missing):
+        return iter_initialized(get_missing, iter_chunks(self, cls))
+
 
 def _sample(l, size):
     if len(l) <= size:
@@ -322,10 +325,9 @@ def getbundle(repo, store, heads, branch_names):
     del bundle
 
     manifest_sha1s = []
-    for mn in progress_iter('Importing %d manifests',
-                            iter_initialized(store.manifest,
-                                             iter_chunks(manifest_chunks,
-                                                         ManifestInfo))):
+    for mn in progress_iter(
+            'Importing %d manifests',
+            manifest_chunks.iter_initialized(ManifestInfo, store.manifest)):
         manifest_sha1s.append(mn.node)
         store.store_manifest(mn)
 
@@ -343,10 +345,9 @@ def getbundle(repo, store, heads, branch_names):
     for sha1 in manifest_sha1s:
         store.git_tree(sha1)
 
-    for cs in progress_iter('Importing %d changesets',
-                            iter_initialized(store.changeset,
-                                             iter_chunks(changeset_chunks,
-                                                         ChangesetInfo))):
+    for cs in progress_iter(
+            'Importing %d changesets',
+            changeset_chunks.iter_initialized(ChangesetInfo, store.changeset)):
         try:
             store.store_changeset(cs)
         except NothingToGraftException:
