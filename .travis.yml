@@ -42,6 +42,9 @@ matrix:
           packages:
             - gcc-4.8
             - python-virtualenv
+        artifacts:
+          paths: artifacts
+          target_paths: /
       env: VARIANT=asan
 
 addons:
