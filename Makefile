@@ -1,6 +1,6 @@
 PYTHON_SCRIPTS := \
 	git-remote-hg.py \
-	git-cinnabar.py \
+	git-cinnabar
 
 PYTHON_LIBS := \
 	cinnabar/__init__.py \
@@ -42,7 +42,7 @@ clean-pythonscripts:
 PYTHON_LIBS_DIRS := $(sort $(dir $(PYTHON_LIBS)))
 
 $(PYTHON_SCRIPTS): %.py:
-	ln -s ../$* $@
+	ln -sf ../$* $@
 
 define _
 $1
