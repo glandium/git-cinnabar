@@ -488,7 +488,7 @@ class Git(object):
         refs = self._refs if store else self._initial_refs
         if newvalue and newvalue != NULL_NODE_ID:
             refs[ref] = newvalue
-        else:
+        elif ref in refs:
             del refs[ref]
         if not store:
             return
