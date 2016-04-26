@@ -716,8 +716,14 @@ class GitHgStore(object):
                 Git.update_ref(ref, value, store=False)
 
             manifests_ref = Git.resolve_ref('refs/cinnabar/manifests')
-            manifests = tuple(Git.iter('rev-parse', '--revs-only',
-                                       '%s^@' % manifests_ref))
+            if manifests_ref:
+                commit = GitCommit(manifests_ref)
+                manifests = commit.parents
+                if commit.body == "has-flat-manifest-tree":
+                    manifests = commit.parents[1:]
+            else:
+                manifests = ()
+
             changesets_ref = Git.resolve_ref('refs/cinnabar/changesets')
             if changesets_ref:
                 commit = GitCommit(changesets_ref)
@@ -1164,19 +1170,65 @@ class GitHgStore(object):
         pending_manifests = self._pending_manifests
         del self._pending_manifests
 
-        # Storing changesets involves reading the manifest git tree from
-        # fast-import, but fast-import's ls command, used to get the tree's
-        # sha1, triggers a munmap/mmap cycle on the fast-import pack if it's
-        # used after something was written in the pack, which storing
-        # changesets does. On OSX, this has a dramatic performance impact,
-        # where every cycle can take tens of milliseconds (!). Multiply that
-        # by the number of changeset in mozilla-central and storing changesets
-        # takes hours instead of seconds.
+        # We have a guard in FastImport.commit that prevents us from
+        # committing the last manifest with the same mark used for the
+        # flat manifest tree. Remove it as a workaround.
+        if pending_manifests:
+            del Git._refs['refs/cinnabar/manifest_']
+
+        # Storing changesets and manifests with a parent that is not the
+        # previous one involves reading the manifest git tree from fast-import,
+        # but fast-import's ls command, used to get the tree's sha1, triggers a
+        # munmap/mmap cycle on the fast-import pack if it's used after
+        # something was written in the pack, which storing changesets does. On
+        # OSX, this has a dramatic performance impact, where every cycle can
+        # take tens of milliseconds (!). Multiply that by the number of
+        # changeset in mozilla-central and storing changesets takes hours
+        # instead of seconds.
         # So read all the git manifest trees now. This will at most trigger
         # one munmap/mmap cycle. self.git_tree caches the results so that it
         # reuses that when it needs them during store.store_changeset.
-        for node in pending_manifests:
-            self.git_tree(node)
+        for node, mark in self._manifests.iteritems():
+            if isinstance(mark, Mark) and not isinstance(mark, EmptyMark):
+                self._git_trees[node] = (
+                    self._fast_import.ls(mark, 'git')[2] or EMPTY_TREE)
+
+        trees = {}
+        for args in pending_manifests:
+            ref, from_commit, parents, mark, message = args
+            trees[args] = self._fast_import.ls(Mark(mark))[2]
+            self._git_trees[message] = (
+                self._fast_import.ls(Mark(mark), 'git')[2] or EMPTY_TREE)
+
+        for args in progress_iter('Finalizing %d manifests',
+                                  pending_manifests):
+            with self.batched_manifest_commit(*args) as commit:
+                commit.filemodify('', trees[args], typ='tree')
+
+        if pending_manifests:
+            self._store_flat_manifest_tree = True
+
+    @contextmanager
+    def batched_manifest_commit(self, ref, from_commit, parents, mark,
+                               message):
+        if hasattr(self, '_pending_manifests') and (
+                self._pending_manifests or
+                parents and from_commit != parents[0]):
+            if self._pending_manifests:
+                from_commit = self._pending_manifests[-1][3]
+            _parents = (from_commit,) if from_commit else ()
+            with self._fast_import.commit(
+                    ref='refs/cinnabar/manifest_', from_commit=from_commit,
+                    parents=_parents, mark=mark) as commit:
+                yield commit
+            self._pending_manifests.append((ref, None, parents, mark, message))
+        else:
+            with self._fast_import.commit(ref=ref, from_commit=from_commit,
+                                          parents=parents, mark=mark,
+                                          message=message) as commit:
+                yield commit
+            self._manifests[message] = Mark(mark)
+            self._manifest_dag.add(self._manifests[message], parents)
 
     def store_manifest(self, instance):
         mark = self._store_find_or_create(instance, self.manifest_ref)
@@ -1187,7 +1239,7 @@ class GitHgStore(object):
         else:
             previous = None
         parents = tuple(self.manifest_ref(p) for p in instance.parents)
-        with self._fast_import.commit(
+        with self.batched_manifest_commit(
             ref='refs/cinnabar/manifests',
             from_commit=previous,
             parents=parents,
@@ -1205,10 +1257,6 @@ class GitHgStore(object):
             if check_enabled('manifests'):
                 expected_tree = commit.ls('hg')[2]
 
-        if hasattr(self, '_pending_manifests'):
-            self._pending_manifests.append(instance.node)
-        self._manifests[instance.node] = mark = Mark(mark)
-        self._manifest_dag.add(self._manifests[instance.node], parents)
         if check_enabled('manifests'):
             tree = OrderedDict()
             for line in isplitmanifest(instance.data):
@@ -1367,11 +1415,20 @@ class GitHgStore(object):
         if (set(manifest_heads) != self._manifest_heads_orig or
                 ('refs/cinnabar/changesets' in update_metadata and
                  not manifest_heads)):
+            if hasattr(self, '_store_flat_manifest_tree'):
+                parents = ['refs/cinnabar/manifest_']
+                message = 'has-flat-manifest-tree'
+            else:
+                parents = []
+                message = ''
             with self._fast_import.commit(
                 ref='refs/cinnabar/manifests',
-                parents=manifest_heads,
+                parents=parents + sorted(manifest_heads),
+                message=message,
             ) as commit:
                 update_metadata.append('refs/cinnabar/manifests')
+            if hasattr(self, '_store_flat_manifest_tree'):
+                Git.delete_ref('refs/cinnabar/manifest_')
 
         replace_changed = False
         for status, ref, sha1 in self._replace.iterchanges():
