@@ -4,6 +4,7 @@ from __future__ import division
 import struct
 import types
 from binascii import hexlify, unhexlify
+from contextlib import contextmanager
 from itertools import (
     chain,
     izip,
@@ -1155,6 +1156,28 @@ class GitHgStore(object):
         'x': 'exec',
     }
 
+    @contextmanager
+    def batch_store_manifest(self):
+        assert not hasattr(self, '_pending_manifests')
+        self._pending_manifests = []
+        yield
+        pending_manifests = self._pending_manifests
+        del self._pending_manifests
+
+        # Storing changesets involves reading the manifest git tree from
+        # fast-import, but fast-import's ls command, used to get the tree's
+        # sha1, triggers a munmap/mmap cycle on the fast-import pack if it's
+        # used after something was written in the pack, which storing
+        # changesets does. On OSX, this has a dramatic performance impact,
+        # where every cycle can take tens of milliseconds (!). Multiply that
+        # by the number of changeset in mozilla-central and storing changesets
+        # takes hours instead of seconds.
+        # So read all the git manifest trees now. This will at most trigger
+        # one munmap/mmap cycle. self.git_tree caches the results so that it
+        # reuses that when it needs them during store.store_changeset.
+        for node in pending_manifests:
+            self.git_tree(node)
+
     def store_manifest(self, instance):
         mark = self._store_find_or_create(instance, self.manifest_ref)
         if not isinstance(mark, EmptyMark):
@@ -1182,6 +1205,8 @@ class GitHgStore(object):
             if check_enabled('manifests'):
                 expected_tree = commit.ls('hg')[2]
 
+        if hasattr(self, '_pending_manifests'):
+            self._pending_manifests.append(instance.node)
         self._manifests[instance.node] = mark = Mark(mark)
         self._manifest_dag.add(self._manifests[instance.node], parents)
         if check_enabled('manifests'):

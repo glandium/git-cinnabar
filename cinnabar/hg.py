@@ -270,29 +270,14 @@ def getbundle(repo, store, heads, branch_names):
 
     del bundle
 
-    manifest_sha1s = []
-    for mn in progress_iter('Importing %d manifests',
-                            iter_initialized(store.manifest,
-                                             iter_chunks(manifest_chunks,
-                                                         ManifestInfo))):
-        manifest_sha1s.append(mn.node)
-        store.store_manifest(mn)
+    with store.batch_store_manifest():
+        for mn in progress_iter('Importing %d manifests',
+                                iter_initialized(store.manifest,
+                                                 iter_chunks(manifest_chunks,
+                                                             ManifestInfo))):
+            store.store_manifest(mn)
 
     del manifest_chunks
-
-    # Storing changesets involves reading the manifest git tree from
-    # fast-import, but fast-import's ls command, used to get the tree's
-    # sha1, triggers a munmap/mmap cycle on the fast-import pack if it's
-    # used after something was written in the pack, which storing
-    # changesets does. On OSX, this has a dramatic performance impact,
-    # where every cycle can take tens of milliseconds (!). Multiply that
-    # by the number of changeset in mozilla-central and storing changesets
-    # takes hours instead of seconds.
-    # So read all the git manifest trees now. This will at most trigger
-    # one munmap/mmap cycle. store.git_tree caches the results so that it
-    # reuses that when it needs them during store.store_changeset.
-    for sha1 in manifest_sha1s:
-        store.git_tree(sha1)
 
     for cs in progress_iter('Importing %d changesets',
                             iter_initialized(store.changeset,
