@@ -3,6 +3,9 @@ language: c
 os: linux
 compiler: gcc
 
+git:
+  submodules: false
+
 env:
   global:
     - GIT_CINNABAR_CHECK=commit,helper,manifests,nodeid,replace
@@ -39,6 +42,9 @@ matrix:
           packages:
             - gcc-4.8
             - python-virtualenv
+        artifacts:
+          paths: artifacts
+          target_paths: /
       env: VARIANT=asan
 
 addons:
@@ -66,6 +72,7 @@ before_script:
   # TODO: cache as artifacts.
   - if [ -n "$GIT_VERSION" ]; then
       GIT=$(pwd)/git.git/bin-wrappers/git;
+      git submodule update --init;
       git clone -n git-core git.git;
       git -C git.git checkout v"$GIT_VERSION";
       make -C git.git --jobs=2 NO_GETTEXT=1 NO_CURL=1 NO_OPENSSL=1;
@@ -76,8 +83,9 @@ before_script:
   - HELPER=git-cinnabar-helper
   - mkdir artifacts
   # Note: we don't want the dependency on brew's libgettext on OSX.
-  - curl -s -f -O --retry 5 https://s3.amazonaws.com/$ARTIFACTS_BUCKET/$HELPER_PATH/$HELPER;
+  - curl -f -O --retry 5 https://s3.amazonaws.com/$ARTIFACTS_BUCKET/$HELPER_PATH/$HELPER;
     if [ "$?" -eq 22 ]; then
+      git submodule update --init;
       BUILD_HELPER="make --jobs=2 $HELPER CC=$CC";
       if [ "$TRAVIS_OS_NAME" = "osx" ]; then
         BUILD_HELPER="$BUILD_HELPER NO_GETTEXT=1";
