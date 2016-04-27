@@ -469,6 +469,12 @@ class GitCommit(object):
         self.parents = tuple(parents)
 
 
+def git_hash(type, data):
+    h = sha1('%s %d\0' % (type, len(data)))
+    h.update(data)
+    return h.hexdigest()
+
+
 class GeneratedGitCommit(GitCommit):
     def __init__(self, sha1):
         self.sha1 = sha1
@@ -484,9 +490,7 @@ class GeneratedGitCommit(GitCommit):
              self.body,
             )
         ))
-        h = sha1('commit %d\0' % len(data))
-        h.update(data)
-        return h.hexdigest()
+        return git_hash('commit', data)
 
 
 class NothingToGraftException(Exception): pass
@@ -1279,9 +1283,7 @@ class GitHgStore(object):
                         attr = '160000'
                     s += '%s %s\0%s' % (attr, file, unhexlify(node))
 
-                h = sha1('tree %d\0' % len(s))
-                h.update(s)
-                return h.hexdigest()
+                return git_hash('tree', s)
 
             # TODO: also check git/ tree
             if tree_sha1(tree) != expected_tree:
