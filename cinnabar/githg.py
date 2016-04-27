@@ -1017,7 +1017,8 @@ class GitHgStore(object):
         # ref, so check its content first.
         data = GitHgHelper.cat_file('blob', result)
         if data.startswith('\1\n'):
-            return self._prepare_git_file(GeneratedFileRev(sha1, data))
+            data = self._prepare_git_file(data)
+            result = git_hash('blob', data)
         return result
 
     def _store_find_or_create(self, instance, get_ref_func=lambda x: None,
@@ -1302,16 +1303,14 @@ class GitHgStore(object):
         self._fast_import.put_blob(data=data, mark=mark)
         self._files[instance.node] = Mark(mark)
         if data.startswith('\1\n'):
-            self._prepare_git_file(instance)
+            data = self._prepare_git_file(instance.data)
+            mark = self._fast_import.new_mark()
+            self._fast_import.put_blob(data=data, mark=mark)
+            self._git_files[instance.node] = Mark(mark)
 
-    def _prepare_git_file(self, instance):
-        data = instance.data
+    def _prepare_git_file(self, data):
         assert data.startswith('\1\n')
-        data = data[data.index('\1\n', 2) + 2:]
-        mark = self._fast_import.new_mark()
-        self._fast_import.put_blob(data=data, mark=mark)
-        mark = self._git_files[instance.node] = Mark(mark)
-        return mark
+        return data[data.index('\1\n', 2) + 2:]
 
     def close(self):
         if self._closed:
