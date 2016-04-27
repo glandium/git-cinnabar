@@ -1219,8 +1219,6 @@ class GitHgStore(object):
         if hasattr(self, '_pending_manifests') and (
                 self._pending_manifests or
                 parents and from_commit != parents[0]):
-            if self._pending_manifests:
-                from_commit = self._pending_manifests[-1][3]
             _parents = (from_commit,) if from_commit else ()
             with self._fast_import.commit(
                     ref='refs/cinnabar/manifest_', from_commit=from_commit,
