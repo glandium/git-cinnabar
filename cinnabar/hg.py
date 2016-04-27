@@ -19,8 +19,10 @@ from binascii import (
 )
 from mercurial import (
     changegroup,
+    error,
     hg,
     ui,
+    url,
     util,
 )
 from itertools import (
@@ -60,6 +62,34 @@ try:
     from mercurial.changegroup import cg2unpacker
 except ImportError:
     unbundle20 = False
+
+
+url_passwordmgr = url.passwordmgr
+
+
+class passwordmgr(url_passwordmgr):
+    def find_user_password(self, realm, authuri):
+        try:
+            return url_passwordmgr.find_user_password(self, realm,
+                                                      authuri)
+        except error.Abort:
+            # Assume error.Abort is only thrown from the base class's
+            # find_user_password itself, which reflects that authentication
+            # information is missing and mercurial would want to get it from
+            # user input, but can't because the ui isn't interactive.
+            credentials = dict(
+                line.split('=', 1)
+                for line in Git.iter('credential', 'fill',
+                                     stdin='url=%s' % authuri)
+            )
+            username = credentials.get('username')
+            password = credentials.get('password')
+            if not username or not password:
+                raise
+            return username, password
+
+
+url.passwordmgr = passwordmgr
 
 
 def readbundle(fh):
@@ -512,6 +542,7 @@ def push(repo, store, what, repo_heads, repo_branches):
 def get_ui():
     ui_ = ui.ui()
     ui_.fout = ui_.ferr
+    ui_.setconfig('ui', 'interactive', False)
     ui_.setconfig('progress', 'disable', True)
     ui_.readconfig(os.path.join(git_dir, 'hgrc'))
     ssh = os.environ.get('GIT_SSH_COMMAND')
