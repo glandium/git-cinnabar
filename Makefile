@@ -61,7 +61,19 @@ ALL_PROGRAMS += git-cinnabar-helper$X
 
 all:: git-cinnabar-helper$X
 
-cinnabar-helper.o: %.o: %.c GIT-CFLAGS $(missing_dep_dirs)
+CINNABAR_OBJECTS += cinnabar-helper.o
+
+ifdef USE_COMPUTED_HEADER_DEPENDENCIES
+dep_files := $(foreach f,$(CINNABAR_OBJECTS),$(dir $f).depend/$(notdir $f).d)
+dep_files_present := $(wildcard $(dep_files))
+ifneq ($(dep_files_present),)
+include $(dep_files_present)
+endif
+else
+$(CINNABAR_OBJECTS): $(LIB_H)
+endif
+
+$(CINNABAR_OBJECTS): %.o: %.c GIT-CFLAGS $(missing_dep_dirs)
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
 
 endif
