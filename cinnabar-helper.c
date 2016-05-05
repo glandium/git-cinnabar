@@ -46,7 +46,8 @@ static const unsigned char NULL_NODE_SHA1[20] = { 0, };
 static struct notes_tree git2hg, hg2git;
 
 /* Send git object info and content to stdout, like cat-file --batch does. */
-static void send_object(unsigned const char *sha1) {
+static void send_object(unsigned const char *sha1)
+{
 	struct strbuf header = STRBUF_INIT;
 	enum object_type type;
 	unsigned long sz;
@@ -84,7 +85,8 @@ static void send_object(unsigned const char *sha1) {
 	close_istream(st);
 }
 
-static void do_cat_file(struct string_list *command) {
+static void do_cat_file(struct string_list *command)
+{
 	unsigned char sha1[20];
 
 	if (command->nr != 2)
@@ -101,7 +103,8 @@ not_found:
 	write_or_die(1, "\n", 1);
 }
 
-static void do_git2hg(struct string_list *command) {
+static void do_git2hg(struct string_list *command)
+{
 	unsigned char sha1[20];
 	const unsigned char *note;
 
@@ -126,7 +129,8 @@ not_found:
 	write_or_die(1, "\n", 1);
 }
 
-static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1) {
+static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1)
+{
 	unsigned char *start = sha1;
 	unsigned char *end = sha1 + 20;
 	size_t len;
@@ -176,7 +180,8 @@ struct leaf_node {
  * which means get_note must have been called before */
 static struct leaf_node *note_tree_abbrev_find(struct notes_tree *t,
 		struct int_node *tree, unsigned char n,
-		const unsigned char *key_sha1, size_t len) {
+		const unsigned char *key_sha1, size_t len)
+{
 	unsigned char i, j;
 	void *p;
 
@@ -218,7 +223,8 @@ const unsigned char *get_abbrev_note(struct notes_tree *t,
 
 
 static const unsigned char *resolve_hg2git(const unsigned char *sha1,
-                                           size_t len) {
+                                           size_t len)
+{
 	const unsigned char *note;
 
 	if (!hg2git.initialized)
@@ -232,7 +238,8 @@ static const unsigned char *resolve_hg2git(const unsigned char *sha1,
 	return get_abbrev_note(&hg2git, sha1, len);
 }
 
-static void do_hg2git(struct string_list *command) {
+static void do_hg2git(struct string_list *command)
+{
 	unsigned char sha1[20];
 	const unsigned char *note;
 	size_t sha1_len;
@@ -258,7 +265,8 @@ not_found:
 
 /* Return the mercurial manifest character corresponding to the given
  * git file mode. */
-static const char *hgattr(unsigned int mode) {
+static const char *hgattr(unsigned int mode)
+{
 	if (S_ISLNK(mode))
 		return "l";
 	if (S_ISREG(mode)) {
@@ -288,7 +296,8 @@ struct manifest_tree {
 	unsigned char hg[20];
 };
 
-static void track_tree(struct tree *tree, struct object_list **tree_list) {
+static void track_tree(struct tree *tree, struct object_list **tree_list)
+{
 	object_list_insert(&tree->object, tree_list);
 	tree->object.flags |= SEEN;
 }
@@ -297,7 +306,8 @@ static void track_tree(struct tree *tree, struct object_list **tree_list) {
  * subdirectories of the given (git) manifest tree. */
 static int get_manifest_tree(const unsigned char *git_sha1,
                              struct manifest_tree *result,
-                             struct object_list **tree_list) {
+                             struct object_list **tree_list)
+{
 	struct tree *tree = NULL;
 	struct tree_desc desc;
 	struct name_entry entry;
@@ -348,7 +358,8 @@ struct manifest_tree_state {
 
 static int manifest_tree_state_init(const struct manifest_tree *tree,
                                     struct manifest_tree_state *result,
-                                    struct object_list **tree_list) {
+                                    struct object_list **tree_list)
+{
 	result->tree_git = parse_tree_indirect(tree->git);
 	if (!result->tree_git)
 		return -1;
@@ -376,7 +387,8 @@ struct manifest_entry {
 
 /* Like tree_entry, returns true for success. */
 static int manifest_tree_entry(struct manifest_tree_state *state,
-                               struct manifest_entry *result) {
+                               struct manifest_entry *result)
+{
 	struct name_entry entry_git, entry_hg;
 	int has_git_entry = tree_entry(&state->desc_git, &entry_git);
 	int has_hg_entry = tree_entry(&state->desc_hg, &entry_hg);
@@ -404,7 +416,8 @@ corrupted:
 
 static void recurse_manifest(const struct manifest_tree *tree,
                              struct strbuf *manifest, char *base,
-                             struct object_list **tree_list) {
+                             struct object_list **tree_list)
+{
 	struct manifest_tree_state state;
 	struct manifest_entry entry;
 	size_t base_len = strlen(base);
@@ -443,7 +456,8 @@ struct strslice {
 
 /* Return whether two entries have matching sha1s and modes */
 static int manifest_entry_equal(const struct manifest_entry *e1,
-                                const struct manifest_entry *e2) {
+                                const struct manifest_entry *e2)
+{
 	if (e1->mode != e2->mode)
 		return 0;
 	if (hashcmp(e1->sha1, e2->sha1))
@@ -456,7 +470,8 @@ static int manifest_entry_equal(const struct manifest_entry *e1,
 
 /* Return whether base + name matches path */
 static int path_match(const char *base, size_t base_len,
-                      const char *name, size_t name_len, const char *path) {
+                      const char *name, size_t name_len, const char *path)
+{
 	return memcmp(base, path, base_len) == 0 &&
 	       memcmp(name, path + base_len, name_len) == 0 &&
 	       (path[base_len + name_len] == '\0' ||
@@ -467,7 +482,8 @@ static void recurse_manifest2(const struct manifest_tree *ref_tree,
                               struct strslice *ref_manifest,
                               const struct manifest_tree *tree,
                               struct strbuf *manifest, char *base,
-                              struct object_list **tree_list) {
+                              struct object_list **tree_list)
+{
 	struct manifest_tree_state ref, cur;
 	struct manifest_entry ref_entry, cur_entry;
 	struct manifest_tree ref_subtree, cur_subtree;
@@ -579,7 +595,8 @@ struct manifest {
 static struct manifest generated_manifest = MANIFEST_INIT;
 
 /* The returned strbuf must not be released and/or freed. */
-static struct strbuf *generate_manifest(const unsigned char *git_sha1) {
+static struct strbuf *generate_manifest(const unsigned char *git_sha1)
+{
 	struct manifest_tree manifest_tree;
 	struct strbuf content = STRBUF_INIT;
 	struct object_list *tree_list = NULL;
@@ -633,7 +650,8 @@ not_found:
 	return NULL;
 }
 
-static void do_manifest(struct string_list *command) {
+static void do_manifest(struct string_list *command)
+{
 	unsigned char sha1[20];
 	const unsigned char *manifest_sha1;
 	struct strbuf *manifest = NULL;
@@ -669,7 +687,8 @@ not_found:
 	write_or_die(1, "0\n\n", 3);
 }
 
-static void get_manifest_sha1(const struct commit *commit, unsigned char *sha1) {
+static void get_manifest_sha1(const struct commit *commit, unsigned char *sha1)
+{
 	const char *msg;
 	const char *hex_sha1;
 
@@ -683,7 +702,8 @@ static void get_manifest_sha1(const struct commit *commit, unsigned char *sha1) 
 	unuse_commit_buffer(commit, msg);
 }
 
-static void do_check_manifest(struct string_list *command) {
+static void do_check_manifest(struct string_list *command)
+{
 	unsigned char sha1[20], parent1[20], parent2[20], result[20];
 	const unsigned char *manifest_sha1;
 	const struct commit *manifest_commit;
@@ -743,7 +763,8 @@ error:
 	write_or_die(1, "error\n", 6);
 }
 
-static void do_version(struct string_list *command) {
+static void do_version(struct string_list *command)
+{
 	long int version;
 
 	if (command->nr != 2)
@@ -757,7 +778,8 @@ static void do_version(struct string_list *command) {
 	write_or_die(1, "ok\n", 3);
 }
 
-int main(int argc, const char *argv[]) {
+int main(int argc, const char *argv[])
+{
 	struct strbuf buf = STRBUF_INIT;
 
 	setup_git_directory();
