@@ -56,6 +56,19 @@ static void split_command(char *line, const char **command,
 			args, split_line.items[1].string, ' ', -1);
 }
 
+static void send_buffer(struct strbuf *buf)
+{
+	struct strbuf header = STRBUF_INIT;
+
+	strbuf_addf(&header, "%lu\n", buf->len);
+	write_or_die(1, header.buf, header.len);
+	strbuf_release(&header);
+
+	write_or_die(1, buf->buf, buf->len);
+	write_or_die(1, "\n", 1);
+	return;
+}
+
 /* Send git object info and content to stdout, like cat-file --batch does. */
 static void send_object(unsigned const char *sha1)
 {
@@ -666,7 +679,6 @@ static void do_manifest(struct string_list *args)
 	unsigned char sha1[20];
 	const unsigned char *manifest_sha1;
 	struct strbuf *manifest = NULL;
-	struct strbuf header = STRBUF_INIT;
 	size_t sha1_len;
 
 	if (args->nr != 1)
@@ -684,14 +696,7 @@ static void do_manifest(struct string_list *args)
 	if (!manifest)
 		goto not_found;
 
-	strbuf_addf(&header, "%lu\n", manifest->len);
-
-	write_or_die(1, header.buf, header.len);
-
-	strbuf_release(&header);
-
-	write_or_die(1, manifest->buf, manifest->len);
-	write_or_die(1, "\n", 1);
+	send_buffer(manifest);
 	return;
 
 not_found:
