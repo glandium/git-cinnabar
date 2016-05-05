@@ -8,7 +8,7 @@ git:
 
 env:
   global:
-    - GIT_CINNABAR_CHECK=commit,helper,manifests,nodeid,replace
+    - GIT_CINNABAR_CHECK=all
     - REPO=https://bitbucket.org/cleonello/jqplot
     - PYTHONDONTWRITEBYTECODE=1
   matrix:

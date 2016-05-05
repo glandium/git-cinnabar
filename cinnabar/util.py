@@ -74,11 +74,14 @@ class CheckEnabledFunc(object):
             self._check = Git.config('cinnabar.check') or ''
             if self._check:
                 self._check = self._check.split(',')
-            for c in self._check:
-                if c not in ('nodeid', 'manifests', 'helper', 'replace',
-                             'commit'):
-                    logging.getLogger('check').warn(
-                        'Unknown value in cinnabar.check: %s' % c)
+            all_checks = ('nodeid', 'manifests', 'helper', 'replace', 'commit')
+            if 'all' in self._check:
+                self._check = all_checks
+            else:
+                for c in self._check:
+                    if c not in all_checks:
+                        logging.getLogger('check').warn(
+                            'Unknown value in cinnabar.check: %s' % c)
         return name in self._check
 
 check_enabled = CheckEnabledFunc()
