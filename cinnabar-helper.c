@@ -45,6 +45,17 @@ static const unsigned char NULL_NODE_SHA1[20] = { 0, };
 
 static struct notes_tree git2hg, hg2git;
 
+static void split_command(char *line, const char **command,
+			  struct string_list *args)
+{
+	struct string_list split_line = STRING_LIST_INIT_NODUP;
+	string_list_split_in_place(&split_line, line, ' ', 1);
+	*command = split_line.items[0].string;
+	if (split_line.nr > 1)
+		string_list_split_in_place(
+			args, split_line.items[1].string, ' ', -1);
+}
+
 /* Send git object info and content to stdout, like cat-file --batch does. */
 static void send_object(unsigned const char *sha1)
 {
@@ -85,14 +96,14 @@ static void send_object(unsigned const char *sha1)
 	close_istream(st);
 }
 
-static void do_cat_file(struct string_list *command)
+static void do_cat_file(struct string_list *args)
 {
 	unsigned char sha1[20];
 
-	if (command->nr != 2)
+	if (args->nr != 1)
 		goto not_found;
 
-	if (get_sha1(command->items[1].string, sha1))
+	if (get_sha1(args->items[0].string, sha1))
 		goto not_found;
 
 	send_object(sha1);
@@ -103,18 +114,18 @@ not_found:
 	write_or_die(1, "\n", 1);
 }
 
-static void do_git2hg(struct string_list *command)
+static void do_git2hg(struct string_list *args)
 {
 	unsigned char sha1[20];
 	const unsigned char *note;
 
-	if (command->nr != 2)
+	if (args->nr != 1)
 		goto not_found;
 
 	if (!git2hg.initialized)
 		init_notes(&git2hg, NOTES_REF, combine_notes_overwrite, 0);
 
-	if (get_sha1_committish(command->items[1].string, sha1))
+	if (get_sha1_committish(args->items[0].string, sha1))
 		goto not_found;
 
 	note = get_note(&git2hg, lookup_replace_object(sha1));
@@ -238,16 +249,16 @@ static const unsigned char *resolve_hg2git(const unsigned char *sha1,
 	return get_abbrev_note(&hg2git, sha1, len);
 }
 
-static void do_hg2git(struct string_list *command)
+static void do_hg2git(struct string_list *args)
 {
 	unsigned char sha1[20];
 	const unsigned char *note;
 	size_t sha1_len;
 
-	if (command->nr != 2)
+	if (args->nr != 1)
 		goto not_found;
 
-	sha1_len =  get_abbrev_sha1_hex(command->items[1].string, sha1);
+	sha1_len =  get_abbrev_sha1_hex(args->items[0].string, sha1);
 	if (!sha1_len)
 		goto not_found;
 
@@ -650,7 +661,7 @@ not_found:
 	return NULL;
 }
 
-static void do_manifest(struct string_list *command)
+static void do_manifest(struct string_list *args)
 {
 	unsigned char sha1[20];
 	const unsigned char *manifest_sha1;
@@ -658,10 +669,10 @@ static void do_manifest(struct string_list *command)
 	struct strbuf header = STRBUF_INIT;
 	size_t sha1_len;
 
-	if (command->nr != 2)
+	if (args->nr != 1)
 		goto not_found;
 
-	sha1_len = get_abbrev_sha1_hex(command->items[1].string, sha1);
+	sha1_len = get_abbrev_sha1_hex(args->items[0].string, sha1);
 	if (!sha1_len)
 		goto not_found;
 
@@ -702,7 +713,7 @@ static void get_manifest_sha1(const struct commit *commit, unsigned char *sha1)
 	unuse_commit_buffer(commit, msg);
 }
 
-static void do_check_manifest(struct string_list *command)
+static void do_check_manifest(struct string_list *args)
 {
 	unsigned char sha1[20], parent1[20], parent2[20], result[20];
 	const unsigned char *manifest_sha1;
@@ -710,10 +721,10 @@ static void do_check_manifest(struct string_list *command)
 	struct strbuf *manifest = NULL;
 	git_SHA_CTX ctx;
 
-	if (command->nr != 2)
+	if (args->nr != 1)
 		goto error;
 
-	if (get_sha1_hex(command->items[1].string, sha1))
+	if (get_sha1_hex(args->items[0].string, sha1))
 		goto error;
 
 	manifest_sha1 = resolve_hg2git(sha1, 40);
@@ -763,14 +774,14 @@ error:
 	write_or_die(1, "error\n", 6);
 }
 
-static void do_version(struct string_list *command)
+static void do_version(struct string_list *args)
 {
 	long int version;
 
-	if (command->nr != 2)
+	if (args->nr != 1)
 		exit(1);
 
-	version = strtol(command->items[1].string, NULL, 10);
+	version = strtol(args->items[0].string, NULL, 10);
 
 	if (!version || version != CMD_VERSION)
 		exit(1);
@@ -786,24 +797,25 @@ int main(int argc, const char *argv[])
 	git_config(git_default_config, NULL);
 
 	while (strbuf_getline(&buf, stdin) != EOF) {
-		struct string_list command = STRING_LIST_INIT_NODUP;
-		string_list_split_in_place(&command, buf.buf, ' ', -1);
-		if (!strcmp("git2hg", command.items[0].string))
-			do_git2hg(&command);
-		else if (!strcmp("hg2git", command.items[0].string))
-			do_hg2git(&command);
-		else if (!strcmp("manifest", command.items[0].string))
-			do_manifest(&command);
-		else if (!strcmp("check-manifest", command.items[0].string))
-			do_check_manifest(&command);
-		else if (!strcmp("cat-file", command.items[0].string))
-			do_cat_file(&command);
-		else if (!strcmp("version", command.items[0].string))
-			do_version(&command);
+		struct string_list args = STRING_LIST_INIT_NODUP;
+		const char *command;
+		split_command(buf.buf, &command, &args);
+		if (!strcmp("git2hg", command))
+			do_git2hg(&args);
+		else if (!strcmp("hg2git", command))
+			do_hg2git(&args);
+		else if (!strcmp("manifest", command))
+			do_manifest(&args);
+		else if (!strcmp("check-manifest", command))
+			do_check_manifest(&args);
+		else if (!strcmp("cat-file", command))
+			do_cat_file(&args);
+		else if (!strcmp("version", command))
+			do_version(&args);
 		else
-			die("Unknown command: \"%s\"", command.items[0].string);
+			die("Unknown command: \"%s\"", command);
 
-		string_list_clear(&command, 0);
+		string_list_clear(&args, 0);
 	}
 
 	strbuf_release(&buf);
