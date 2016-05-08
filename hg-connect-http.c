@@ -4,7 +4,10 @@
 #include "http.h"
 #include "strbuf.h"
 
-static int http_request(const char *url, struct strbuf *response)
+typedef void (*prepare_request_cb_t)(CURL *curl, void *data);
+
+static int http_request(const char *url,
+			prepare_request_cb_t prepare_request_cb, void *data)
 {
 	struct active_request_slot *slot;
 	struct slot_results results;
@@ -14,8 +17,7 @@ static int http_request(const char *url, struct strbuf *response)
 	slot = get_active_slot();
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPGET, 1);
 	curl_easy_setopt(slot->curl, CURLOPT_NOBODY, 0);
-	curl_easy_setopt(slot->curl, CURLOPT_FILE, response);
-	curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite_buffer);
+	prepare_request_cb(slot->curl, data);
 
 	headers = curl_slist_append(headers,
 				    "Accept: application/mercurial-0.1");
@@ -34,16 +36,18 @@ static int http_request(const char *url, struct strbuf *response)
 	return ret;
 }
 
-static int http_request_reauth(const char *url, struct strbuf *response)
+static int http_request_reauth(const char *url,
+			       prepare_request_cb_t prepare_request_cb,
+			       void *data)
 {
-	int ret = http_request(url, response);
+	int ret = http_request(url, prepare_request_cb, data);
 
 	if (ret != HTTP_REAUTH)
 		return ret;
 
 	credential_fill(&http_auth);
 
-	return http_request(url, response);
+	return http_request(url, prepare_request_cb, data);
 }
 
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.
@@ -87,6 +91,12 @@ static void http_query_add_param(void *data, const char *name,
 	free(encoded);
 }
 
+static void prepare_simple_request(CURL *curl, void *data)
+{
+	curl_easy_setopt(curl, CURLOPT_FILE, data);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite_buffer);
+}
+
 static void http_simple_command(struct hg_connection *conn,
 				struct strbuf *response,
 				const char *command, ...)
@@ -101,7 +111,7 @@ static void http_simple_command(struct hg_connection *conn,
 	va_end(ap);
 
 	// TODO: handle errors
-	http_request_reauth(command_url.buf, response);
+	http_request_reauth(command_url.buf, prepare_simple_request, response);
 	strbuf_release(&command_url);
 }
 
