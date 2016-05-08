@@ -18,6 +18,18 @@
  * - cat-file <object>
  *     Returns the contents of the given git object, in a `cat-file
  *     --batch`-like format.
+ *  - connect <url>
+ *     Connects to the mercurial repository at the given url. This prints out
+ *     three blocks of data, being the result of the following commands on
+ *     the repository: branchmap, heads, bookmarks.
+ *     After those results are printed out, the helper expects one of the
+ *     following commands:
+ *     - known <node>+
+ *       Calls the "known" command on the repository and returns the
+ *       corresponding result.
+ *     - listkeys <namespace>
+ *     	 Calls the "listkeys" command on the repository and returns the
+ *     	 corresponding result.
  */
 
 #include <stdio.h>
@@ -34,8 +46,9 @@
 #include "revision.h"
 #include "tree.h"
 #include "tree-walk.h"
+#include "hg-connect.h"
 
-#define CMD_VERSION 2
+#define CMD_VERSION 3
 
 #define REFS_PREFIX "refs/cinnabar/"
 #define NOTES_REF "refs/notes/cinnabar"
@@ -788,10 +801,88 @@ static void do_version(struct string_list *args)
 
 	version = strtol(args->items[0].string, NULL, 10);
 
-	if (!version || version != CMD_VERSION)
+	if (!version || version < 2 || version > CMD_VERSION)
 		exit(1);
 
 	write_or_die(1, "ok\n", 3);
+}
+
+static void do_known(struct hg_connection *conn, struct string_list *args)
+{
+	struct strbuf result = STRBUF_INIT;
+	struct string_list_item *arg;
+	struct sha1_array nodes = SHA1_ARRAY_INIT;
+	for_each_string_list_item(arg, args) {
+		unsigned char sha1[20];
+		if (!get_sha1_hex(arg->string, sha1))
+			sha1_array_append(&nodes, sha1);
+	}
+	hg_known(conn, &result, &nodes);
+	send_buffer(&result);
+	strbuf_release(&result);
+}
+
+static void do_listkeys(struct hg_connection *conn, struct string_list *args)
+{
+	struct strbuf result = STRBUF_INIT;
+	if (args->nr != 1)
+		exit(1);
+
+	hg_listkeys(conn, &result, args->items[0].string);
+	send_buffer(&result);
+	strbuf_release(&result);
+}
+
+static void connected_loop(struct hg_connection *conn)
+{
+	struct strbuf buf = STRBUF_INIT;
+
+	while (strbuf_getline(&buf, stdin) != EOF) {
+		struct string_list args = STRING_LIST_INIT_NODUP;
+		const char *command;
+		split_command(buf.buf, &command, &args);
+
+		if (!*command)
+			break;
+		if (!strcmp("known", command))
+			do_known(conn, &args);
+		else if (!strcmp("listkeys", command))
+			do_listkeys(conn, &args);
+		else
+			die("Unknown command: \"%s\"", command);
+
+		string_list_clear(&args, 0);
+	}
+
+	strbuf_release(&buf);
+}
+
+static void do_connect(struct string_list *args)
+{
+	const char *url;
+	struct hg_connection *conn;
+	struct strbuf branchmap = STRBUF_INIT;
+	struct strbuf heads = STRBUF_INIT;
+	struct strbuf bookmarks = STRBUF_INIT;
+
+	if (args->nr != 1)
+		return;
+
+	url = args->items[0].string;
+
+	conn = hg_connect(url, 0);
+
+	hg_get_repo_state(conn, &branchmap, &heads, &bookmarks);
+	send_buffer(&branchmap);
+	send_buffer(&heads);
+	send_buffer(&bookmarks);
+	strbuf_release(&branchmap);
+	strbuf_release(&heads);
+	strbuf_release(&bookmarks);
+
+	connected_loop(conn);
+
+	hg_finish_connect(conn);
 }
 
 int main(int argc, const char *argv[])
@@ -817,7 +908,10 @@ int main(int argc, const char *argv[])
 			do_cat_file(&args);
 		else if (!strcmp("version", command))
 			do_version(&args);
-		else
+		else if (!strcmp("connect", command)) {
+			do_connect(&args);
+			break;
+		} else
 			die("Unknown command: \"%s\"", command);
 
 		string_list_clear(&args, 0);

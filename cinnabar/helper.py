@@ -173,10 +173,7 @@ def helpermethod(func):
     return classmethod(wrapper)
 
 
-class GitHgHelper(object):
-    VERSION = 2
-    _helper = False
-
+class BaseHelper(object):
     @classmethod
     def close(self):
         if self._helper and self._helper is not self:
@@ -234,6 +231,19 @@ class GitHgHelper(object):
             return typ, ret
         return ret
 
+    @classmethod
+    def _read_data(self, stdout):
+        size = int(stdout.readline().strip())
+        ret = stdout.read(size)
+        lf = stdout.read(1)
+        assert lf == '\n'
+        return ret
+
+
+class GitHgHelper(BaseHelper):
+    VERSION = 2
+    _helper = False
+
     @helpermethod
     def cat_file(self, typ, sha1):
         if isinstance(sha1, Mark):
@@ -256,11 +266,34 @@ class GitHgHelper(object):
     @helpermethod
     def manifest(self, hg_sha1):
         with self.query('manifest', hg_sha1) as stdout:
-            size = int(stdout.readline().strip())
-            ret = stdout.read(size)
-            lf = stdout.read(1)
-            assert lf == '\n'
-            return ret
+            return self._read_data(stdout)
 
 
 atexit.register(GitHgHelper.close)
+
+
+class HgRepoHelper(BaseHelper):
+    VERSION = 3
+    _helper = False
+
+    @classmethod
+    def connect(self, url):
+        with self.query('connect', url) as stdout:
+            return {
+                'branchmap': self._read_data(stdout),
+                'heads': self._read_data(stdout),
+                'bookmarks': self._read_data(stdout),
+            }
+
+    @classmethod
+    def known(self, nodes):
+        with self.query('known', *nodes) as stdout:
+            return self._read_data(stdout)
+
+    @classmethod
+    def listkeys(self, namespace):
+        with self.query('listkeys', namespace) as stdout:
+            return self._read_data(stdout)
+
+
+atexit.register(HgRepoHelper.close)

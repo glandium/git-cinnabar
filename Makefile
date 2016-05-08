@@ -62,6 +62,9 @@ ALL_PROGRAMS += git-cinnabar-helper$X
 all:: git-cinnabar-helper$X
 
 CINNABAR_OBJECTS += cinnabar-helper.o
+CINNABAR_OBJECTS += hg-connect.o
+CINNABAR_OBJECTS += hg-connect-http.o
+CINNABAR_OBJECTS += hg-connect-stdio.o
 
 ifdef USE_COMPUTED_HEADER_DEPENDENCIES
 dep_files := $(foreach f,$(CINNABAR_OBJECTS),$(dir $f).depend/$(notdir $f).d)
@@ -72,6 +75,10 @@ endif
 else
 $(CINNABAR_OBJECTS): $(LIB_H)
 endif
+
+git-cinnabar-helper$X: $(CINNABAR_OBJECTS) http.o GIT-LDFLAGS $(GITLIBS)
+	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
+		$(CURL_LIBCURL) $(LIBS)
 
 $(CINNABAR_OBJECTS): %.o: %.c GIT-CFLAGS $(missing_dep_dirs)
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<

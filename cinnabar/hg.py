@@ -12,6 +12,10 @@ from .githg import (
     ChangesetInfo,
     ManifestInfo,
 )
+from .helper import (
+    HgRepoHelper,
+    NoHelperException,
+)
 from .bundle import create_bundle
 from binascii import (
     hexlify,
@@ -358,6 +362,60 @@ def findcommon(repo, store, hgheads):
     return [store.hg_changeset(h) for h in dag.heads('known')]
 
 
+class HelperRepo(object):
+    def __init__(self, repo, connect_result):
+        self._repo = repo
+
+        self._branchmap = {
+            urllib.unquote(branch): [unhexlify(h)
+                                     for h in heads.split(' ')]
+            for line in connect_result['branchmap'].splitlines()
+            for branch, heads in (line.split(' ', 1),)
+        }
+        self._heads = [unhexlify(h)
+                       for h in connect_result['heads'][:-1].split(' ')]
+        self._bookmarks = self._decode_keys(connect_result['bookmarks'])
+
+    def _decode_keys(self, data):
+        return dict(
+            line.split('\t', 1)
+            for line in data.splitlines()
+        )
+
+    def capable(self, capability):
+        return False
+
+    def batch(self):
+        raise NotImplementedError()
+
+    def heads(self):
+        return self._heads
+
+    def branchmap(self):
+        return self._branchmap
+
+    def listkeys(self, namespace):
+        if namespace == 'bookmarks':
+            return self._bookmarks
+        return self._decode_keys(HgRepoHelper.listkeys(namespace))
+
+    def known(self, nodes):
+        result = HgRepoHelper.known(hexlify(n) for n in nodes)
+        return [bool(int(b)) for b in result]
+
+    def getbundle(self, *args, **kwargs):
+        return self._repo.getbundle(*args, **kwargs)
+
+    def pushkey(self, *args, **kwargs):
+        return self._repo.pushkey(*args, **kwargs)
+
+    def unbundle(self, *args, **kwargs):
+        return self._repo.unbundle(*args, **kwargs)
+
+    def local(self):
+        return None
+
+
 # Mercurial's bundlerepo completely unwraps bundles in $TMPDIR but we can be
 # smarter than that.
 class bundlerepo(object):
@@ -599,4 +657,10 @@ def get_repo(remote):
             return bundlerepo(path)
     repo = hg.peer(get_ui(), {}, remote.url)
     assert repo.capable('getbundle')
+
+    if Git.config('cinnabar.experiments') == 'true':
+        try:
+            repo = HelperRepo(repo, HgRepoHelper.connect(remote.url))
+        except NoHelperException:
+            pass
     return repo
