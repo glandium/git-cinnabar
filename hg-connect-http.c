@@ -1,7 +1,50 @@
 #include "git-compat-util.h"
 #include "hg-connect-internal.h"
+#include "credential.h"
 #include "http.h"
 #include "strbuf.h"
+
+static int http_request(const char *url, struct strbuf *response)
+{
+	struct active_request_slot *slot;
+	struct slot_results results;
+	struct curl_slist *headers = NULL;
+	int ret;
+
+	slot = get_active_slot();
+	curl_easy_setopt(slot->curl, CURLOPT_HTTPGET, 1);
+	curl_easy_setopt(slot->curl, CURLOPT_NOBODY, 0);
+	curl_easy_setopt(slot->curl, CURLOPT_FILE, response);
+	curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite_buffer);
+
+	headers = curl_slist_append(headers,
+				    "Accept: application/mercurial-0.1");
+
+	curl_easy_setopt(slot->curl, CURLOPT_URL, url);
+	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, headers);
+	/* Strictly speaking, this is not necessary, but bitbucket does
+         * user-agent sniffing, and git's user-agent gets 404 on mercurial
+         * urls. */
+	curl_easy_setopt(slot->curl, CURLOPT_USERAGENT,
+			 "mercurial/proto-1.0");
+
+	ret = run_one_slot(slot, &results);
+	curl_slist_free_all(headers);
+
+	return ret;
+}
+
+static int http_request_reauth(const char *url, struct strbuf *response)
+{
+	int ret = http_request(url, response);
+
+	if (ret != HTTP_REAUTH)
+		return ret;
+
+	credential_fill(&http_auth);
+
+	return http_request(url, response);
+}
 
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.
  * The command name is passed as "cmd" query parameter.
@@ -58,7 +101,7 @@ static void http_simple_command(struct hg_connection *conn,
 	va_end(ap);
 
 	// TODO: handle errors
-	http_get_strbuf(command_url.buf, response, NULL);
+	http_request_reauth(command_url.buf, response);
 	strbuf_release(&command_url);
 }
 
