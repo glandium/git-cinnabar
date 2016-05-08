@@ -26,14 +26,20 @@ matrix:
       compiler: clang
       # Without an env, it ends up with all the env variables from the matrix
       # (so, in practice, the last value of each)
-      env: VARIANT=
+      env:
+      - VARIANT=
+      - GIT_CINNABAR_EXPERIMENTS=true
     - os: osx
       compiler: clang
       osx_image: xcode7
-      env: VARIANT=asan
+      env:
+      - VARIANT=asan
+      - GIT_CINNABAR_EXPERIMENTS=true
     - os: linux
       compiler: gcc
-      env: VARIANT=
+      env:
+      - VARIANT=
+      - GIT_CINNABAR_EXPERIMENTS=true
     - os: linux
       compiler: gcc-4.8
       addons:
@@ -46,7 +52,9 @@ matrix:
         artifacts:
           paths: artifacts
           target_paths: /
-      env: VARIANT=asan
+      env:
+      - VARIANT=asan
+      - GIT_CINNABAR_EXPERIMENTS=true
 
 addons:
   apt:
