@@ -67,6 +67,7 @@ static void split_command(char *line, const char **command,
 	if (split_line.nr > 1)
 		string_list_split_in_place(
 			args, split_line.items[1].string, ' ', -1);
+	string_list_clear(&split_line, 0);
 }
 
 static void send_buffer(struct strbuf *buf)
@@ -819,6 +820,7 @@ static void do_known(struct hg_connection *conn, struct string_list *args)
 	}
 	hg_known(conn, &result, &nodes);
 	send_buffer(&result);
+	sha1_array_clear(&nodes);
 	strbuf_release(&result);
 }
 
@@ -842,8 +844,10 @@ static void connected_loop(struct hg_connection *conn)
 		const char *command;
 		split_command(buf.buf, &command, &args);
 
-		if (!*command)
+		if (!*command) {
+			string_list_clear(&args, 0);
 			break;
+		}
 		if (!strcmp("known", command))
 			do_known(conn, &args);
 		else if (!strcmp("listkeys", command))
@@ -910,6 +914,7 @@ int main(int argc, const char *argv[])
 			do_version(&args);
 		else if (!strcmp("connect", command)) {
 			do_connect(&args);
+			string_list_clear(&args, 0);
 			break;
 		} else
 			die("Unknown command: \"%s\"", command);
