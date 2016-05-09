@@ -295,5 +295,11 @@ class HgRepoHelper(BaseHelper):
         with self.query('listkeys', namespace) as stdout:
             return self._read_data(stdout)
 
+    @classmethod
+    def getbundle(self, heads, common):
+        with self.query('getbundle', ','.join(heads),
+                        ','.join(common)) as stdout:
+            return stdout
+
 
 atexit.register(HgRepoHelper.close)

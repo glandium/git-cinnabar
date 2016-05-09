@@ -100,6 +100,52 @@ static void stdio_simple_command(struct hg_connection *conn,
 	va_end(ap);
 }
 
+static size_t copy_chunk(FILE *in, FILE *out)
+{
+	unsigned char buf[4096];
+	const unsigned char *p = buf;
+	uint32_t len;
+	size_t ret = 0;
+	//TODO: Check for errors, etc.
+	fread(buf, 1, 4, in);
+	fwrite(buf, 1, 4, out);
+	len = get_be32(p);
+	if (len <= 4)
+		//TODO: len != 0 is actually invalid
+		return 0;
+	ret = len -= 4;
+	while (len) {
+		uint32_t sz = len > sizeof(buf) ? sizeof(buf) : len;
+		fread(buf, 1, sz, in);
+		fwrite(buf, 1, sz, out);
+		len -= sz;
+	}
+	return ret;
+}
+
+static void stdio_changegroup_command(struct hg_connection *conn, FILE *out,
+				      const char *command, ...)
+{
+	va_list ap;
+	va_start(ap, command);
+	stdio_send_command_v(conn, command, ap);
+
+	/* We're going to receive a stream, but we don't know how big it is
+	 * going to be in advance, so we have to read it according to its
+	 * format: the changegroup format. For now, only support changegroupv1
+	 */
+	/* changesets */
+	while (copy_chunk(conn->stdio.out, out)) {}
+	/* manifests */
+	while (copy_chunk(conn->stdio.out, out)) {}
+	/* files */
+	while (copy_chunk(conn->stdio.out, out)) {
+		while (copy_chunk(conn->stdio.out, out)) {}
+	}
+
+	va_end(ap);
+}
+
 static int stdio_finish(struct hg_connection *conn)
 {
 	stdio_send_command(conn, "", NULL);
@@ -175,6 +221,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	strbuf_release(&buf);
 
 	conn->simple_command = stdio_simple_command;
+	conn->changegroup_command = stdio_changegroup_command;
 	conn->finish = stdio_finish;
 	return conn;
 }

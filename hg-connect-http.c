@@ -97,22 +97,76 @@ static void prepare_simple_request(CURL *curl, void *data)
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite_buffer);
 }
 
+static void http_command(struct hg_connection *conn,
+			 prepare_request_cb_t prepare_request_cb, void *data,
+			 const char *command, va_list ap)
+{
+	struct strbuf command_url = STRBUF_INIT;
+	strbuf_addf(&command_url, "%s?cmd=%s", conn->http.url, command);
+	// TODO: use HTTP headers for parameters when httpheader capability is
+	// reported by the server.
+	prepare_command(&command_url, http_query_add_param, ap);
+	// TODO: handle errors
+	http_request_reauth(command_url.buf, prepare_request_cb, data);
+	strbuf_release(&command_url);
+}
+
 static void http_simple_command(struct hg_connection *conn,
 				struct strbuf *response,
 				const char *command, ...)
 {
 	va_list ap;
-	struct strbuf command_url = STRBUF_INIT;
-	strbuf_addf(&command_url, "%s?cmd=%s", conn->http.url, command);
 	va_start(ap, command);
-	// TODO: use HTTP headers for parameters when httpheader capability is
-	// reported by the server.
-	prepare_command(&command_url, http_query_add_param, ap);
+	http_command(conn, prepare_simple_request, response, command, ap);
 	va_end(ap);
+}
 
-	// TODO: handle errors
-	http_request_reauth(command_url.buf, prepare_simple_request, response);
-	strbuf_release(&command_url);
+struct deflater {
+	FILE *out;
+	git_zstream strm;
+};
+
+static size_t deflate_response(char *ptr, size_t size, size_t nmemb, void *data)
+{
+	char buf[4096];
+	struct deflater *deflater = (struct deflater *)data;
+	int ret;
+
+	deflater->strm.next_in = (void *)ptr;
+	deflater->strm.avail_in = size * nmemb;
+
+	do {
+		deflater->strm.next_out = (void *)buf;
+		deflater->strm.avail_out = sizeof(buf);
+		ret = git_inflate(&deflater->strm, Z_SYNC_FLUSH);
+		fwrite(buf, 1, sizeof(buf) - deflater->strm.avail_out,
+		       deflater->out);
+	} while (deflater->strm.avail_in && ret == Z_OK);
+
+	return size * nmemb;
+}
+
+static void prepare_compressed_request(CURL *curl, void *data)
+{
+	curl_easy_setopt(curl, CURLOPT_FILE, data);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, deflate_response);
+}
+
+/* The changegroup, changegroupsubset and getbundle commands return a raw
+ * zlib stream when called over HTTP. */
+static void http_changegroup_command(struct hg_connection *conn, FILE *out,
+				      const char *command, ...)
+{
+	va_list ap;
+	struct deflater deflater;
+
+	memset(&deflater, 0, sizeof(deflater));
+	deflater.out = out;
+	va_start(ap, command);
+	git_inflate_init(&deflater.strm);
+	http_command(conn, prepare_compressed_request, &deflater, command, ap);
+	git_inflate_end(&deflater.strm);
+	va_end(ap);
 }
 
 static int http_finish(struct hg_connection *conn)
@@ -137,6 +191,7 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 	strbuf_release(&caps);
 
 	conn->simple_command = http_simple_command;
+	conn->changegroup_command = http_changegroup_command;
 	conn->finish = http_finish;
 	return conn;
 }

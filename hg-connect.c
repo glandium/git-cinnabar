@@ -140,6 +140,26 @@ void hg_listkeys(struct hg_connection *conn, struct strbuf *result,
 			     "namespace", namespace, NULL);
 }
 
+void hg_getbundle(struct hg_connection *conn, FILE *out,
+		  struct sha1_array *heads, struct sha1_array *common)
+{
+	struct string_list args = STRING_LIST_INIT_NODUP;
+	struct string_list_item *item;
+
+	if (heads && heads->nr) {
+		item = string_list_append(&args, "heads");
+		item->util = join_sha1_array_hex(heads, ' ');
+	}
+	if (common && common->nr) {
+		item = string_list_append(&args, "common");
+		item->util = join_sha1_array_hex(common, ' ');
+	}
+	conn->changegroup_command(conn, out, "getbundle", "*", &args, NULL);
+	string_list_clear(&args, 1);
+
+	fflush(out);
+}
+
 int hg_finish_connect(struct hg_connection *conn)
 {
 	int code = conn->finish(conn);

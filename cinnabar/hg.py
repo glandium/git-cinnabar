@@ -403,8 +403,10 @@ class HelperRepo(object):
         result = HgRepoHelper.known(hexlify(n) for n in nodes)
         return [bool(int(b)) for b in result]
 
-    def getbundle(self, *args, **kwargs):
-        return self._repo.getbundle(*args, **kwargs)
+    def getbundle(self, name, heads, common, *args, **kwargs):
+        stream = HgRepoHelper.getbundle((hexlify(h) for h in heads),
+                                        (hexlify(c) for c in common))
+        return cg1unpacker(stream, 'UN')
 
     def pushkey(self, *args, **kwargs):
         return self._repo.pushkey(*args, **kwargs)
