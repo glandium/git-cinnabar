@@ -841,7 +841,7 @@ static void do_listkeys(struct hg_connection *conn, struct string_list *args)
 
 static void arg_as_sha1_array(char *nodes, struct sha1_array *array)
 {
-	struct string_list list = SHA1_ARRAY_INIT;
+	struct string_list list = STRING_LIST_INIT_NODUP;
 	struct string_list_item *item;
 	string_list_split_in_place(&list, nodes, ',', -1);
 	for_each_string_list_item(item, &list) {
@@ -849,6 +849,7 @@ static void arg_as_sha1_array(char *nodes, struct sha1_array *array)
 		if (!get_sha1_hex(item->string, sha1))
 			sha1_array_append(array, sha1);
 	}
+	string_list_clear(&list, 0);
 }
 
 static void do_getbundle(struct hg_connection *conn, struct string_list *args)
