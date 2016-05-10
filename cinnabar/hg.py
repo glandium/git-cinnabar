@@ -363,9 +363,8 @@ def findcommon(repo, store, hgheads):
 
 
 class HelperRepo(object):
-    def __init__(self, repo, connect_result):
-        self._repo = repo
-
+    def __init__(self, url):
+        connect_result = HgRepoHelper.connect(url)
         self._branchmap = {
             urllib.unquote(branch): [unhexlify(h)
                                      for h in heads.split(' ')]
@@ -658,12 +657,12 @@ def get_repo(remote):
             path = path.lstrip('/')
         if not os.path.isdir(path):
             return bundlerepo(path)
+    if Git.config('cinnabar.experiments') == 'true':
+        try:
+            return HelperRepo(remote.url)
+        except NoHelperException:
+            pass
     repo = hg.peer(get_ui(), {}, remote.url)
     assert repo.capable('getbundle')
 
-    if Git.config('cinnabar.experiments') == 'true':
-        try:
-            repo = HelperRepo(repo, HgRepoHelper.connect(remote.url))
-        except NoHelperException:
-            pass
     return repo
