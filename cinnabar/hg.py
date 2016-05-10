@@ -146,6 +146,7 @@ class RawRevChunk01(RawRevChunk):
     # Because we keep so many instances of this class on hold, the overhead
     # of having a __dict__ per instance is a deal breaker.
     _delta_nodes = {}
+
     @property
     def delta_node(self):
         return self._delta_nodes[self.node]
@@ -526,7 +527,6 @@ def getbundle(repo, store, heads, branch_names):
                 break
             else:
                 raise Exception('No changegroups in the bundle')
-
 
         changeset_chunks = ChunksCollection(progress_iter(
             'Reading %d changesets', chunks_in_changegroup(bundle)))
