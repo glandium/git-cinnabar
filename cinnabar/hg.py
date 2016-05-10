@@ -400,8 +400,7 @@ class HelperRepo(object):
         return HgRepoHelper.pushkey(namespace, key, old, new)
 
     def unbundle(self, cg, heads, *args, **kwargs):
-        return HgRepoHelper.unbundle(cg.getchunks(),
-                                     (hexlify(h) for h in heads))
+        return HgRepoHelper.unbundle(cg, (hexlify(h) for h in heads))
 
     def local(self):
         return None
@@ -583,8 +582,6 @@ def push(repo, store, what, repo_heads, repo_branches):
                 raise Exception('Cannot push a new root')
             else:
                 logging.warn('Pushing a new root')
-        chunks = util.chunkbuffer(create_bundle(store, push_commits))
-        cg = cg1unpacker(chunks, 'UN')
         if force:
             repo_heads = ['force']
         else:
@@ -593,6 +590,10 @@ def push(repo, store, what, repo_heads, repo_branches):
             repo_heads = [unhexlify(h) for h in repo_heads]
         if repo.local():
             repo.local().ui.setconfig('server', 'validate', True)
+        cg = create_bundle(store, push_commits)
+        if not isinstance(repo, HelperRepo):
+            chunks = util.chunkbuffer(cg)
+            cg = cg1unpacker(chunks, 'UN')
         pushed = repo.unbundle(cg, repo_heads, '') != 0
     return gitdag(push_commits) if pushed else ()
 
