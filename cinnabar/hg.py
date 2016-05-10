@@ -96,17 +96,6 @@ class passwordmgr(url_passwordmgr):
 url.passwordmgr = passwordmgr
 
 
-def readbundle(fh):
-    header = changegroup.readexactly(fh, 4)
-    magic, version = header[0:2], header[2:4]
-    if magic != 'HG':
-        raise Exception('%s: not a Mercurial bundle' % fh.name)
-    if version != '10':
-        raise Exception('%s: unsupported bundle version %s' % (fh.name,
-                        version))
-    alg = changegroup.readexactly(fh, 2)
-    return cg1unpacker(fh, alg)
-
 
 class RawRevChunk(str):
     __slots__ = ()
@@ -422,7 +411,16 @@ class HelperRepo(object):
 # smarter than that.
 class bundlerepo(object):
     def __init__(self, path):
-        self._bundle = readbundle(open(path, 'r'))
+        with open(path, 'r') as fh:
+            header = changegroup.readexactly(fh, 4)
+            magic, version = header[0:2], header[2:4]
+            if magic != 'HG':
+                raise Exception('%s: not a Mercurial bundle' % path)
+            if version != '10':
+                raise Exception('%s: unsupported bundle version %s' % (path,
+                                version))
+            alg = changegroup.readexactly(fh, 2)
+            self._bundle = cg1unpacker(fh, alg)
 
     def init(self, store):
         self._changeset_chunks = []
