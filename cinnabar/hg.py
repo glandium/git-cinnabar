@@ -680,6 +680,8 @@ def get_repo(remote):
         if not os.path.isdir(path):
             return bundlerepo(path)
     if Git.config('cinnabar.experiments') == 'true':
+        logging.warning(
+            'Native access to mercurial repositories is experimental!')
         try:
             return HelperRepo(remote.url)
         except NoHelperException:
