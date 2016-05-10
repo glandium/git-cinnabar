@@ -350,10 +350,11 @@ class GitRemoteHelper(object):
 
         pushes = {s.lstrip('+'): (d, s.startswith('+'))
                   for s, d in (r.split(':', 1) for r in refspecs)}
-        if isinstance(self._repo, bundlerepo):
+        if not self._repo.capable('unbundle'):
             for source, (dest, force) in pushes.iteritems():
-                self._helper.write('error %s Cannot push to a bundle file\n'
-                                   % dest)
+                self._helper.write(
+                    'error %s Remote does not support the "unbundle" '
+                    'capability\n' % dest)
             self._helper.write('\n')
             self._helper.flush()
         else:
