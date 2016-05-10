@@ -21,14 +21,6 @@ from binascii import (
     hexlify,
     unhexlify,
 )
-from mercurial import (
-    changegroup,
-    error,
-    hg,
-    ui,
-    url,
-    util,
-)
 from itertools import (
     chain,
     izip,
@@ -58,43 +50,53 @@ from collections import (
 )
 
 try:
-    from mercurial.changegroup import cg1unpacker
+    from mercurial import (
+        changegroup,
+        error,
+        hg,
+        ui,
+        url,
+        util,
+    )
 except ImportError:
-    from mercurial.changegroup import unbundle10 as cg1unpacker
+    changegroup = unbundle20 = False
 
-try:
-    from mercurial.bundle2 import encodecaps, unbundle20
-    from mercurial.changegroup import cg2unpacker
-except ImportError:
-    unbundle20 = False
+if changegroup:
+    try:
+        from mercurial.changegroup import cg1unpacker
+    except ImportError:
+        from mercurial.changegroup import unbundle10 as cg1unpacker
 
+    try:
+        from mercurial.bundle2 import encodecaps, unbundle20
+        from mercurial.changegroup import cg2unpacker
+    except ImportError:
+        unbundle20 = False
 
-url_passwordmgr = url.passwordmgr
+    url_passwordmgr = url.passwordmgr
 
+    class passwordmgr(url_passwordmgr):
+        def find_user_password(self, realm, authuri):
+            try:
+                return url_passwordmgr.find_user_password(self, realm,
+                                                          authuri)
+            except error.Abort:
+                # Assume error.Abort is only thrown from the base class's
+                # find_user_password itself, which reflects that authentication
+                # information is missing and mercurial would want to get it
+                # from user input, but can't because the ui isn't interactive.
+                credentials = dict(
+                    line.split('=', 1)
+                    for line in Git.iter('credential', 'fill',
+                                         stdin='url=%s' % authuri)
+                )
+                username = credentials.get('username')
+                password = credentials.get('password')
+                if not username or not password:
+                    raise
+                return username, password
 
-class passwordmgr(url_passwordmgr):
-    def find_user_password(self, realm, authuri):
-        try:
-            return url_passwordmgr.find_user_password(self, realm,
-                                                      authuri)
-        except error.Abort:
-            # Assume error.Abort is only thrown from the base class's
-            # find_user_password itself, which reflects that authentication
-            # information is missing and mercurial would want to get it from
-            # user input, but can't because the ui isn't interactive.
-            credentials = dict(
-                line.split('=', 1)
-                for line in Git.iter('credential', 'fill',
-                                     stdin='url=%s' % authuri)
-            )
-            username = credentials.get('username')
-            password = credentials.get('password')
-            if not username or not password:
-                raise
-            return username, password
-
-
-url.passwordmgr = passwordmgr
+    url.passwordmgr = passwordmgr
 
 
 # The following two functions (readexactly, getchunk) were copied from the
@@ -173,7 +175,7 @@ class RawRevChunk02(RawRevChunk):
 def RawRevChunkType(bundle):
     if unbundle20 and isinstance(bundle, cg2unpacker):
         return RawRevChunk02
-    if isinstance(bundle, cg1unpacker):
+    if hasattr(bundle, 'read') or isinstance(bundle, cg1unpacker):
         return RawRevChunk01
     raise Exception('Unknown changegroup type %s' % type(bundle).__name__)
 
@@ -416,9 +418,8 @@ class HelperRepo(object):
         return [bool(int(b)) for b in result]
 
     def getbundle(self, name, heads, common, *args, **kwargs):
-        stream = HgRepoHelper.getbundle((hexlify(h) for h in heads),
-                                        (hexlify(c) for c in common))
-        return cg1unpacker(stream, 'UN')
+        return HgRepoHelper.getbundle((hexlify(h) for h in heads),
+                                      (hexlify(c) for c in common))
 
     def pushkey(self, namespace, key, old, new):
         return HgRepoHelper.pushkey(namespace, key, old, new)
@@ -679,13 +680,18 @@ def get_repo(remote):
             path = path.lstrip('/')
         if not os.path.isdir(path):
             return bundlerepo(path)
-    if Git.config('cinnabar.experiments') == 'true':
+    if not changegroup or Git.config('cinnabar.experiments') == 'true':
+        if not changegroup:
+            logging.warning('Mercurial libraries not found. Falling back to '
+                            'native access.')
         logging.warning(
             'Native access to mercurial repositories is experimental!')
         try:
             return HelperRepo(remote.url)
         except NoHelperException:
-            pass
+            if not changegroup:
+                raise Exception('Native access to mercurial repositories '
+                                'requires the helper.')
     repo = hg.peer(get_ui(), {}, remote.url)
     assert repo.capable('getbundle')
 
