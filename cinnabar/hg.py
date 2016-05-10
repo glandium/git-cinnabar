@@ -39,6 +39,7 @@ from urlparse import (
     urlunparse,
 )
 import logging
+import struct
 import random
 from .dag import gitdag
 from .git import (
@@ -95,6 +96,28 @@ class passwordmgr(url_passwordmgr):
 
 url.passwordmgr = passwordmgr
 
+
+# The following two functions (readexactly, getchunk) were copied from the
+# mercurial source code.
+# Copyright 2006 Matt Mackall <mpm@selenic.com> and others
+def readexactly(stream, n):
+    '''read n bytes from stream.read and abort if less was available'''
+    s = stream.read(n)
+    if len(s) < n:
+        raise Exception("stream ended unexpectedly (got %d bytes, expected %d)"
+                        % (len(s), n))
+    return s
+
+
+def getchunk(stream):
+    """return the next chunk from stream as a string"""
+    d = readexactly(stream, 4)
+    l = struct.unpack(">l", d)[0]
+    if l <= 4:
+        if l:
+            raise Exception("invalid chunk length %d" % l)
+        return ""
+    return readexactly(stream, l - 4)
 
 
 class RawRevChunk(str):
@@ -158,7 +181,7 @@ def chunks_in_changegroup(bundle):
     previous_node = None
     chunk_type = RawRevChunkType(bundle)
     while True:
-        chunk = changegroup.getchunk(bundle)
+        chunk = getchunk(bundle)
         if not chunk:
             return
         chunk = chunk_type(chunk)
@@ -175,7 +198,7 @@ def iter_chunks(chunks, cls):
 
 def iterate_files(bundle):
     while True:
-        name_chunk = changegroup.getchunk(bundle)
+        name_chunk = getchunk(bundle)
         if not name_chunk:
             return
         for instance in iter_chunks(chunks_in_changegroup(bundle), RevChunk):
@@ -411,14 +434,14 @@ class HelperRepo(object):
 class bundlerepo(object):
     def __init__(self, path):
         with open(path, 'r') as fh:
-            header = changegroup.readexactly(fh, 4)
+            header = readexactly(fh, 4)
             magic, version = header[0:2], header[2:4]
             if magic != 'HG':
                 raise Exception('%s: not a Mercurial bundle' % path)
             if version != '10':
                 raise Exception('%s: unsupported bundle version %s' % (path,
                                 version))
-            alg = changegroup.readexactly(fh, 2)
+            alg = readexactly(fh, 2)
             self._bundle = cg1unpacker(fh, alg)
 
     def init(self, store):
