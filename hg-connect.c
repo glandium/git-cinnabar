@@ -98,6 +98,8 @@ struct hg_connection *hg_connect(const char *url, int flags)
 		"branchmap",
 		"known",
 		"pushkey",
+		//TODO: defer to when pushing.
+		"unbundle",
 	};
 	int i;
 

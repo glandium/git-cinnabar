@@ -397,7 +397,7 @@ class HelperRepo(object):
         )
 
     def capable(self, capability):
-        return False
+        return capability in ('getbundle', 'unbundle')
 
     def batch(self):
         raise NotImplementedError()
