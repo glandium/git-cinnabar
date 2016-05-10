@@ -408,8 +408,8 @@ class HelperRepo(object):
                                         (hexlify(c) for c in common))
         return cg1unpacker(stream, 'UN')
 
-    def pushkey(self, *args, **kwargs):
-        return self._repo.pushkey(*args, **kwargs)
+    def pushkey(self, namespace, key, old, new):
+        return HgRepoHelper.pushkey(namespace, key, old, new)
 
     def unbundle(self, cg, heads, *args, **kwargs):
         return HgRepoHelper.unbundle(cg.getchunks(),

@@ -99,6 +99,17 @@ static void prepare_simple_request(CURL *curl, struct curl_slist *headers,
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite_buffer);
 }
 
+static void prepare_pushkey_request(CURL *curl, struct curl_slist *headers,
+				    void *data)
+{
+	prepare_simple_request(curl, headers, data);
+	curl_easy_setopt(curl, CURLOPT_POST, 1);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 0);
+	headers = curl_slist_append(headers,
+				    "Content-Type: application/mercurial-0.1");
+	headers = curl_slist_append(headers, "Expect:");
+}
+
 static void http_command(struct hg_connection *conn,
 			 prepare_request_cb_t prepare_request_cb, void *data,
 			 const char *command, va_list ap)
@@ -119,7 +130,12 @@ static void http_simple_command(struct hg_connection *conn,
 {
 	va_list ap;
 	va_start(ap, command);
-	http_command(conn, prepare_simple_request, response, command, ap);
+	if (strcmp(command, "pushkey"))
+		http_command(conn, prepare_simple_request, response, command,
+		             ap);
+	else
+		http_command(conn, prepare_pushkey_request, response, command,
+		             ap);
 	va_end(ap);
 }
 

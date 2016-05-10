@@ -188,6 +188,19 @@ void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 	free(heads_str);
 }
 
+void hg_pushkey(struct hg_connection *conn, struct strbuf *response,
+		const char *namespace, const char *key, const char *old,
+		const char *new)
+{
+	//TODO: handle the response being a mix of return code and output
+	conn->simple_command(conn, response, "pushkey",
+			     "namespace", namespace,
+			     "key", key,
+			     "old", old,
+			     "new", new,
+			     NULL);
+}
+
 int hg_finish_connect(struct hg_connection *conn)
 {
 	int code = conn->finish(conn);

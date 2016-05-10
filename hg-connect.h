@@ -48,6 +48,10 @@ extern void hg_getbundle(struct hg_connection *conn, FILE *out,
 extern void hg_unbundle(struct hg_connection *conn, struct strbuf *response,
 			FILE *in, struct sha1_array *heads);
 
+extern void hg_pushkey(struct hg_connection *conn, struct strbuf *response,
+		       const char *namespace, const char *key, const char *old,
+		       const char *new);
+
 extern void hg_listkeys(struct hg_connection *conn, struct strbuf *result,
 			const char *namespace);
 

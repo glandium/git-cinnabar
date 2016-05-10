@@ -312,5 +312,14 @@ class HgRepoHelper(BaseHelper):
             except ValueError:
                 return ret
 
+    @classmethod
+    def pushkey(self, namespace, key, old, new):
+        with self.query("pushkey", namespace, key, old, new) as stdout:
+            ret = self._read_data(stdout).rstrip()
+            try:
+                return bool(int(ret))
+            except ValueError:
+                return ret
+
 
 atexit.register(HgRepoHelper.close)

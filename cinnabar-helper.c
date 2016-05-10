@@ -36,6 +36,9 @@
  *       lists of changesets.
  *     - unbundle <head>+
  *       Calls the "unbundle command on the repository.
+ *     - pushkey <namespace> <key> <old> <new>
+ *     	 Calls the "pushkey" command on the repository and returns the
+ *     	 corresponding result.
  */
 
 #include <stdio.h>
@@ -887,6 +890,19 @@ static void do_unbundle(struct hg_connection *conn, struct string_list *args)
 	strbuf_release(&result);
 }
 
+static void do_pushkey(struct hg_connection *conn, struct string_list *args)
+{
+	struct strbuf result = STRBUF_INIT;
+
+	if (args->nr != 4)
+		exit(1);
+
+	hg_pushkey(conn, &result, args->items[0].string, args->items[1].string,
+		   args->items[2].string, args->items[3].string);
+	send_buffer(&result);
+	strbuf_release(&result);
+}
+
 static void connected_loop(struct hg_connection *conn)
 {
 	struct strbuf buf = STRBUF_INIT;
@@ -908,6 +924,8 @@ static void connected_loop(struct hg_connection *conn)
 			do_getbundle(conn, &args);
 		else if (!strcmp("unbundle", command))
 			do_unbundle(conn, &args);
+		else if (!strcmp("pushkey", command))
+			do_pushkey(conn, &args);
 		else
 			die("Unknown command: \"%s\"", command);
 
