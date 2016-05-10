@@ -30,6 +30,10 @@
  *     - listkeys <namespace>
  *     	 Calls the "listkeys" command on the repository and returns the
  *     	 corresponding result.
+ *     - getbundle <heads> <common>
+ *       Calls the "getbundle" command on the repository and streams a
+ *       changegroup in result. `heads` and `common` are comma separated
+ *       lists of changesets.
  */
 
 #include <stdio.h>
