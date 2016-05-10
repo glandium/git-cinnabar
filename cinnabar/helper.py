@@ -301,5 +301,16 @@ class HgRepoHelper(BaseHelper):
                         ','.join(common)) as stdout:
             return stdout
 
+    @classmethod
+    def unbundle(self, input_iterator, heads):
+        with self.query('unbundle', *heads) as stdout:
+            for data in input_iterator:
+                self._helper.stdin.write(data)
+            ret = self._read_data(stdout)
+            try:
+                return int(ret)
+            except ValueError:
+                return ret
+
 
 atexit.register(HgRepoHelper.close)

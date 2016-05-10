@@ -1,5 +1,6 @@
 #include "git-compat-util.h"
 #include "hg-connect-internal.h"
+#include "hg-bundle.h"
 #include "strbuf.h"
 #include "quote.h"
 
@@ -100,29 +101,6 @@ static void stdio_simple_command(struct hg_connection *conn,
 	va_end(ap);
 }
 
-static size_t copy_chunk(FILE *in, FILE *out)
-{
-	unsigned char buf[4096];
-	const unsigned char *p = buf;
-	uint32_t len;
-	size_t ret = 0;
-	//TODO: Check for errors, etc.
-	fread(buf, 1, 4, in);
-	fwrite(buf, 1, 4, out);
-	len = get_be32(p);
-	if (len <= 4)
-		//TODO: len != 0 is actually invalid
-		return 0;
-	ret = len -= 4;
-	while (len) {
-		uint32_t sz = len > sizeof(buf) ? sizeof(buf) : len;
-		fread(buf, 1, sz, in);
-		fwrite(buf, 1, sz, out);
-		len -= sz;
-	}
-	return ret;
-}
-
 static void stdio_changegroup_command(struct hg_connection *conn, FILE *out,
 				      const char *command, ...)
 {
@@ -134,16 +112,42 @@ static void stdio_changegroup_command(struct hg_connection *conn, FILE *out,
 	 * going to be in advance, so we have to read it according to its
 	 * format: the changegroup format. For now, only support changegroupv1
 	 */
-	/* changesets */
-	while (copy_chunk(conn->stdio.out, out)) {}
-	/* manifests */
-	while (copy_chunk(conn->stdio.out, out)) {}
-	/* files */
-	while (copy_chunk(conn->stdio.out, out)) {
-		while (copy_chunk(conn->stdio.out, out)) {}
+	copy_changegroup(conn->stdio.out, out);
+	va_end(ap);
+}
+
+static void stdio_push_command(struct hg_connection *conn,
+			       struct strbuf *response, FILE *in, off_t len,
+			       const char *command, ...)
+{
+	char buf[4096];
+	struct strbuf header = STRBUF_INIT;
+	va_list ap;
+	va_start(ap, command);
+	stdio_send_command_v(conn, command, ap);
+	/* The server normally sends an empty response before reading the data
+	 * it's sent if not, it's an error. */
+	//TODO: handle that error.
+	stdio_read_response(conn, &header);
+	va_end(ap);
+
+	strbuf_addf(&header, "%"PRIuMAX"\n", len);
+	xwrite(conn->stdio.proc.in, header.buf, header.len);
+	strbuf_release(&header);
+
+	while (len) {
+		size_t read = sizeof(buf) > len ? len : sizeof(buf);
+		read = fread(buf, 1, read, in);
+		len -= read;
+		xwrite(conn->stdio.proc.in, buf, read);
 	}
 
-	va_end(ap);
+	xwrite(conn->stdio.proc.in, "0\n", 2);
+	/* There are two responses, one for output, one for actual response. */
+	//TODO: actually handle output here
+	stdio_read_response(conn, &header);
+	strbuf_release(&header);
+	stdio_read_response(conn, response);
 }
 
 static int stdio_finish(struct hg_connection *conn)
@@ -222,6 +226,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 
 	conn->simple_command = stdio_simple_command;
 	conn->changegroup_command = stdio_changegroup_command;
+	conn->push_command = stdio_push_command;
 	conn->finish = stdio_finish;
 	return conn;
 }

@@ -14,6 +14,9 @@ struct hg_connection {
 	void (*changegroup_command)(struct hg_connection *, FILE *out,
 				    const char *command, ...);
 
+	void (*push_command)(struct hg_connection *, struct strbuf *response,
+			     FILE *in, off_t len, const char *command, ...);
+
 	int (*finish)(struct hg_connection *);
 
 	union {
@@ -41,6 +44,9 @@ extern void hg_known(struct hg_connection *conn, struct strbuf *result,
 extern void hg_getbundle(struct hg_connection *conn, FILE *out,
 			 struct sha1_array *heads,
 			 struct sha1_array *common);
+
+extern void hg_unbundle(struct hg_connection *conn, struct strbuf *response,
+			FILE *in, struct sha1_array *heads);
 
 extern void hg_listkeys(struct hg_connection *conn, struct strbuf *result,
 			const char *namespace);

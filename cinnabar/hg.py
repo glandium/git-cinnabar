@@ -411,8 +411,9 @@ class HelperRepo(object):
     def pushkey(self, *args, **kwargs):
         return self._repo.pushkey(*args, **kwargs)
 
-    def unbundle(self, *args, **kwargs):
-        return self._repo.unbundle(*args, **kwargs)
+    def unbundle(self, cg, heads, *args, **kwargs):
+        return HgRepoHelper.unbundle(cg.getchunks(),
+                                     (hexlify(h) for h in heads))
 
     def local(self):
         return None

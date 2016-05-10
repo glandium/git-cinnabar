@@ -1,7 +1,9 @@
 #include "git-compat-util.h"
 #include "cache.h"
 #include "hg-connect-internal.h"
+#include "hg-bundle.h"
 #include "strbuf.h"
+#include "tempfile.h"
 #include "url.h"
 
 /* Copied from bisect.c */
@@ -158,6 +160,32 @@ void hg_getbundle(struct hg_connection *conn, FILE *out,
 	string_list_clear(&args, 1);
 
 	fflush(out);
+}
+
+void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
+		 struct sha1_array *heads)
+{
+	char *heads_str = join_sha1_array_hex(heads, ' ');
+	struct tempfile *tmpfile = xcalloc(1, sizeof(*tmpfile));
+	struct stat st;
+	FILE *file;
+
+	/* Neither the stdio nor the HTTP protocols can handle a stream for
+	 * push commands, so store the data as a temporary file. */
+	//TODO: error checking
+	mks_tempfile_ts(tmpfile, "hg-bundle-XXXXXX.hg", 3);
+	file = fdopen_tempfile(tmpfile, "w");
+	copy_changegroup(in, file);
+	close_tempfile(tmpfile);
+
+	file = fopen(tmpfile->filename.buf, "r");
+	fstat(fileno(file), &st);
+	conn->push_command(conn, response, file, st.st_size, "unbundle",
+			   "heads", heads_str, NULL);
+	fclose(file);
+
+	delete_tempfile(tmpfile);
+	free(heads_str);
 }
 
 int hg_finish_connect(struct hg_connection *conn)

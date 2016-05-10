@@ -34,6 +34,8 @@
  *       Calls the "getbundle" command on the repository and streams a
  *       changegroup in result. `heads` and `common` are comma separated
  *       lists of changesets.
+ *     - unbundle <head>+
+ *       Calls the "unbundle command on the repository.
  */
 
 #include <stdio.h>
@@ -812,16 +814,22 @@ static void do_version(struct string_list *args)
 	write_or_die(1, "ok\n", 3);
 }
 
+static void string_list_as_sha1_array(struct string_list *list,
+				      struct sha1_array *array)
+{
+	struct string_list_item *item;
+	for_each_string_list_item(item, list) {
+		unsigned char sha1[20];
+		if (!get_sha1_hex(item->string, sha1))
+			sha1_array_append(array, sha1);
+	}
+}
+
 static void do_known(struct hg_connection *conn, struct string_list *args)
 {
 	struct strbuf result = STRBUF_INIT;
-	struct string_list_item *arg;
 	struct sha1_array nodes = SHA1_ARRAY_INIT;
-	for_each_string_list_item(arg, args) {
-		unsigned char sha1[20];
-		if (!get_sha1_hex(arg->string, sha1))
-			sha1_array_append(&nodes, sha1);
-	}
+	string_list_as_sha1_array(args, &nodes);
 	hg_known(conn, &result, &nodes);
 	send_buffer(&result);
 	sha1_array_clear(&nodes);
@@ -842,13 +850,8 @@ static void do_listkeys(struct hg_connection *conn, struct string_list *args)
 static void arg_as_sha1_array(char *nodes, struct sha1_array *array)
 {
 	struct string_list list = STRING_LIST_INIT_NODUP;
-	struct string_list_item *item;
 	string_list_split_in_place(&list, nodes, ',', -1);
-	for_each_string_list_item(item, &list) {
-		unsigned char sha1[20];
-		if (!get_sha1_hex(item->string, sha1))
-			sha1_array_append(array, sha1);
-	}
+	string_list_as_sha1_array(&list, array);
 	string_list_clear(&list, 0);
 }
 
@@ -871,6 +874,19 @@ static void do_getbundle(struct hg_connection *conn, struct string_list *args)
 	sha1_array_clear(&heads);
 }
 
+static void do_unbundle(struct hg_connection *conn, struct string_list *args)
+{
+	struct strbuf result = STRBUF_INIT;
+	struct sha1_array heads = SHA1_ARRAY_INIT;
+	if (args->nr < 1)
+		exit(1);
+	string_list_as_sha1_array(args, &heads);
+	hg_unbundle(conn, &result, stdin, &heads);
+	send_buffer(&result);
+	sha1_array_clear(&heads);
+	strbuf_release(&result);
+}
+
 static void connected_loop(struct hg_connection *conn)
 {
 	struct strbuf buf = STRBUF_INIT;
@@ -890,6 +906,8 @@ static void connected_loop(struct hg_connection *conn)
 			do_listkeys(conn, &args);
 		else if (!strcmp("getbundle", command))
 			do_getbundle(conn, &args);
+		else if (!strcmp("unbundle", command))
+			do_unbundle(conn, &args);
 		else
 			die("Unknown command: \"%s\"", command);
 
