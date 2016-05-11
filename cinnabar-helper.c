@@ -63,7 +63,6 @@
 #define NOTES_REF "refs/notes/cinnabar"
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
-static const unsigned char NULL_NODE_SHA1[20] = { 0, };
 
 static struct notes_tree git2hg, hg2git;
 
