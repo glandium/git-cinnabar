@@ -47,6 +47,7 @@
 
 #include "cache.h"
 #include "commit.h"
+#include "exec_cmd.h"
 #include "strbuf.h"
 #include "string-list.h"
 #include "notes.h"
@@ -966,6 +967,7 @@ int main(int argc, const char *argv[])
 {
 	struct strbuf buf = STRBUF_INIT;
 
+	git_extract_argv0_path(argv[0]);
 	setup_git_directory();
 	git_config(git_default_config, NULL);
 
