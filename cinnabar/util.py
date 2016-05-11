@@ -108,11 +108,13 @@ def progress_iter(fmt, iter, filter_func=None):
                 t1 = time.time()
                 if t1 - t0 > 0.1:
                     sys.stderr.write(('\r' + fmt) % count)
+                    sys.stderr.flush()
                     t0 = t1
             yield item
     finally:
         if progress and count:
             sys.stderr.write(('\r' + fmt + '\n') % count)
+            sys.stderr.flush()
 
 
 class IOLogger(object):
