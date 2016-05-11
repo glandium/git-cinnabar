@@ -175,6 +175,13 @@ def helpermethod(func):
 
 class BaseHelper(object):
     @classmethod
+    @contextmanager
+    def inhibit(self):
+        self._inhibited = True
+        yield
+        self._inhibited = False
+
+    @classmethod
     def close(self):
         if self._helper and self._helper is not self:
             self._helper.wait()
@@ -183,6 +190,8 @@ class BaseHelper(object):
     @classmethod
     @contextmanager
     def query(self, name, *args):
+        assert not (self._inhibited and
+                    Git.config('cinnabar.experiments') == 'true')
         if self._helper is False:
             helper_path = Git.config('cinnabar.helper')
             if helper_path == '':
@@ -243,6 +252,7 @@ class BaseHelper(object):
 class GitHgHelper(BaseHelper):
     VERSION = 2
     _helper = False
+    _inhibited = False
 
     @helpermethod
     def cat_file(self, typ, sha1):
@@ -275,6 +285,7 @@ atexit.register(GitHgHelper.close)
 class HgRepoHelper(BaseHelper):
     VERSION = 3
     _helper = False
+    _inhibited = False
 
     @classmethod
     def connect(self, url):

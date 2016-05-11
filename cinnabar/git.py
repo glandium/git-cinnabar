@@ -689,7 +689,9 @@ class FastImport(IOLogger):
             mode, typ, tree, path = self.ls(from_commit)
             self.write('M 040000 %s \n' % tree)
 
-        yield helper
+        from githg import GitHgHelper
+        with GitHgHelper.inhibit():
+            yield helper
 
         self.write('\n')
         self._done = False
