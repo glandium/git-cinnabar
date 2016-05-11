@@ -689,9 +689,8 @@ def get_repo(remote):
         try:
             return HelperRepo(remote.url)
         except NoHelperException:
-            if not changegroup:
-                raise Exception('Native access to mercurial repositories '
-                                'requires the helper.')
+            raise Exception('Native access to mercurial repositories requires '
+                            'the helper.')
     repo = hg.peer(get_ui(), {}, remote.url)
     assert repo.capable('getbundle')
 
