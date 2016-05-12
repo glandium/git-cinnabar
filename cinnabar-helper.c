@@ -964,6 +964,8 @@ static void do_connect(struct string_list *args)
 	hg_finish_connect(conn);
 }
 
+extern int maybe_handle_command(const char *command, struct string_list *args);
+
 int main(int argc, const char *argv[])
 {
 	struct strbuf buf = STRBUF_INIT;
@@ -992,7 +994,7 @@ int main(int argc, const char *argv[])
 			do_connect(&args);
 			string_list_clear(&args, 0);
 			break;
-		} else
+		} else if (!maybe_handle_command(command, &args))
 			die("Unknown command: \"%s\"", command);
 
 		string_list_clear(&args, 0);

@@ -63,6 +63,7 @@ ALL_PROGRAMS += git-cinnabar-helper$X
 all:: git-cinnabar-helper$X
 
 CINNABAR_OBJECTS += cinnabar-helper.o
+CINNABAR_OBJECTS += cinnabar-fast-import.o
 CINNABAR_OBJECTS += hg-bundle.o
 CINNABAR_OBJECTS += hg-connect.o
 CINNABAR_OBJECTS += hg-connect-http.o

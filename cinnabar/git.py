@@ -490,6 +490,7 @@ class Git(object):
             self._fast_import.write(
                 'reset %s\n'
                 'from %s\n'
+                '\n'
                 % (ref, newvalue)
             )
             self._fast_import.flush()
@@ -565,9 +566,14 @@ class EmptyMark(Mark):
 
 class FastImport(IOLogger):
     def __init__(self):
-        self._proc = GitProcess('fast-import', '--quiet',
-                                stdin=subprocess.PIPE,
-                                config={'core.ignorecase': 'false'})
+        kwargs = {
+            'stdin': subprocess.PIPE,
+            'config': {'core.ignorecase': 'false'},
+        }
+        if Git.config('cinnabar.experiments') == 'true':
+            self._proc = GitProcess('cinnabar-helper', **kwargs)
+        else:
+            self._proc = GitProcess('fast-import', '--quiet', **kwargs)
         reader = self._proc.stdout
         writer = self._proc.stdin
         prefix = '[%d]' % self._proc.pid
