@@ -576,10 +576,9 @@ class FastImport(IOLogger):
             self._proc = GitProcess('fast-import', '--quiet', **kwargs)
         reader = self._proc.stdout
         writer = self._proc.stdin
-        prefix = '[%d]' % self._proc.pid
 
         super(FastImport, self).__init__(logging.getLogger('fast-import'),
-                                         reader, writer, prefix=prefix)
+                                         reader, writer)
         self._last_mark = 0
 
         self.write(
