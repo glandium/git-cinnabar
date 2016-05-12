@@ -1372,7 +1372,8 @@ class GitHgStore(object):
             return
         if self._graft:
             self._graft.close()
-        GitHgHelper.close()
+        # keep the helper process around for the fast-import end.
+        GitHgHelper.close(keep_process=True)
         self._closed = True
         hg2git_files = []
         changeset_by_mark = {}
@@ -1574,4 +1575,5 @@ class GitHgStore(object):
             if ref not in ('refs/notes/cinnabar', 'refs/cinnabar/hg2git'):
                 Git.delete_ref(ref)
 
+        GitHgHelper.close()
         Git.close()

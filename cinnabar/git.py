@@ -566,14 +566,16 @@ class EmptyMark(Mark):
 
 class FastImport(IOLogger):
     def __init__(self):
-        kwargs = {
-            'stdin': subprocess.PIPE,
-            'config': {'core.ignorecase': 'false'},
-        }
         if Git.config('cinnabar.experiments') == 'true':
-            self._proc = GitProcess('cinnabar-helper', **kwargs)
+            from githg import GitHgHelper
+            # Ensure the helper is there.
+            with GitHgHelper.query('feature', 'force'):
+                pass
+            self._proc = GitHgHelper._helper
         else:
-            self._proc = GitProcess('fast-import', '--quiet', **kwargs)
+            self._proc = GitProcess('fast-import', '--quiet',
+                                    stdin=subprocess.PIPE,
+                                    config={'core.ignorecase': 'false'})
         reader = self._proc.stdout
         writer = self._proc.stdin
 
@@ -606,7 +608,11 @@ class FastImport(IOLogger):
             self.write('done\n')
             self._done = None
         self.flush()
-        retcode = self._proc.wait()
+        from githg import GitHgHelper
+        if self._proc is GitHgHelper._helper:
+            retcode = self._proc.poll()
+        else:
+            retcode = self._proc.wait()
         if Git._fast_import == self:
             Git._fast_import = None
         if retcode and not rollback:

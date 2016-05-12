@@ -182,8 +182,8 @@ class BaseHelper(object):
         self._inhibited = False
 
     @classmethod
-    def close(self):
-        if self._helper and self._helper is not self:
+    def close(self, keep_process=False):
+        if not keep_process and self._helper and self._helper is not self:
             self._helper.wait()
         self._helper = self
 
@@ -197,7 +197,7 @@ class BaseHelper(object):
             if helper_path == '':
                 self._helper = None
         if self._helper is False:
-            config = {}
+            config = {'core.ignorecase': 'false'}
             if helper_path and os.path.exists(helper_path):
                 config['alias.cinnabar-helper'] = '!' + helper_path
             stderr = None if check_enabled('helper') else open(os.devnull, 'w')
@@ -250,7 +250,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 2
+    VERSION = 3 if Git.config('cinnabar.experiments') == 'true' else 2
     _helper = False
     _inhibited = False
 
