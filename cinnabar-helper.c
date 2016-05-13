@@ -883,7 +883,8 @@ static void do_unbundle(struct hg_connection *conn, struct string_list *args)
 	struct sha1_array heads = SHA1_ARRAY_INIT;
 	if (args->nr < 1)
 		exit(1);
-	string_list_as_sha1_array(args, &heads);
+	if (args->nr != 1 || strcmp(args->items[0].string, "force"))
+		string_list_as_sha1_array(args, &heads);
 	hg_unbundle(conn, &result, stdin, &heads);
 	send_buffer(&result);
 	sha1_array_clear(&heads);

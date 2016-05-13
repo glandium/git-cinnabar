@@ -167,7 +167,12 @@ void hg_getbundle(struct hg_connection *conn, FILE *out,
 void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 		 struct sha1_array *heads)
 {
-	char *heads_str = join_sha1_array_hex(heads, ' ');
+	//TODO: support unbundlehash
+	/* When the heads list is empty, we send "force", which needs to be
+	 * sent as hex. */
+	char *heads_str = heads->nr ? join_sha1_array_hex(heads, ' ')
+	                            : "666f726365";
+	fprintf(stderr, "foo - '%s' -\n", heads_str);
 	struct tempfile *tmpfile = xcalloc(1, sizeof(*tmpfile));
 	struct stat st;
 	FILE *file;
@@ -187,7 +192,8 @@ void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 	fclose(file);
 
 	delete_tempfile(tmpfile);
-	free(heads_str);
+	if (heads->nr)
+		free(heads_str);
 }
 
 void hg_pushkey(struct hg_connection *conn, struct strbuf *response,
