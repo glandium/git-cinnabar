@@ -1072,6 +1072,7 @@ class GitHgStore(object):
         if data.startswith('\1\n'):
             data = self._prepare_git_file(data)
             result = git_hash('blob', data)
+        self._git_files[sha1] = result
         return result
 
     def _store_find_or_create(self, instance, get_ref_func=lambda x: None,
@@ -1295,6 +1296,9 @@ class GitHgStore(object):
         else:
             previous = None
         parents = tuple(self.manifest_ref(p) for p in instance.parents)
+        # Force trigger any helper requests before starting the commit.
+        for node, attr in instance.modified.itervalues():
+            self.git_file_ref(node)
         with self.batched_manifest_commit(
             ref='refs/cinnabar/manifests',
             from_commit=previous,
