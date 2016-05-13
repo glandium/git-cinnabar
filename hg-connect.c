@@ -172,7 +172,6 @@ void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 	 * sent as hex. */
 	char *heads_str = heads->nr ? join_sha1_array_hex(heads, ' ')
 	                            : "666f726365";
-	fprintf(stderr, "foo - '%s' -\n", heads_str);
 	struct tempfile *tmpfile = xcalloc(1, sizeof(*tmpfile));
 	struct stat st;
 	FILE *file;
