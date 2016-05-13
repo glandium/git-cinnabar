@@ -200,7 +200,7 @@ class BaseHelper(object):
             config = {}
             if helper_path and os.path.exists(helper_path):
                 config['alias.cinnabar-helper'] = '!' + helper_path
-            stderr = None if check_enabled('helper') else open(os.devnull)
+            stderr = None if check_enabled('helper') else open(os.devnull, 'w')
             self._helper = GitProcess('cinnabar-helper', stdin=subprocess.PIPE,
                                       stderr=stderr, config=config)
             if self._helper:
