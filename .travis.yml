@@ -7,10 +7,6 @@ git:
   submodules: false
 
 env:
-  global:
-    - GIT_CINNABAR_CHECK=all
-    - REPO=https://bitbucket.org/cleonello/jqplot
-    - PYTHONDONTWRITEBYTECODE=1
   matrix:
     - UPGRADE_FROM=0.3.0
     - UPGRADE_FROM=0.2.2
@@ -66,84 +62,10 @@ addons:
     target_paths: /
 
 before_install:
-  - if [ "$TRAVIS_OS_NAME" = "osx" -a "$VARIANT" = asan ]; then
-      curl -O -s https://bootstrap.pypa.io/get-pip.py;
-      python get-pip.py --user;
-      export PATH=$PATH:~/Library/Python/2.7/bin;
-      pip install --user virtualenv;
-    fi
-  # We could install mercurial via apt, but it'd be mercurial 2.0.2,
-  # which cinnabar doesn't support pushing to local repositories with.
-  - virtualenv venv
-  - venv/bin/pip install mercurial${MERCURIAL_VERSION:+==${MERCURIAL_VERSION}}
+  - make -f CI.mk before_install
 
 before_script:
-  # TODO: cache as artifacts.
-  - if [ -n "$GIT_VERSION" ]; then
-      GIT=$(pwd)/git.git/bin-wrappers/git;
-      git submodule update --init;
-      git clone -n git-core git.git;
-      git -C git.git checkout v"$GIT_VERSION";
-      make -C git.git --jobs=2 NO_GETTEXT=1 NO_CURL=1 NO_OPENSSL=1;
-    else
-      GIT=git;
-    fi
-  - HELPER_PATH=$(git ls-tree -r HEAD | grep '\(\.[ch]\|\sgit-core\)$' | shasum | awk '{print $1}')/$TRAVIS_OS_NAME${VARIANT:+-${VARIANT}}
-  - HELPER=git-cinnabar-helper
-  - mkdir artifacts
-  # Note: we don't want the dependency on brew's libgettext on OSX.
-  - curl -f -O --retry 5 https://s3.amazonaws.com/$ARTIFACTS_BUCKET/$HELPER_PATH/$HELPER;
-    if [ "$?" -eq 22 ]; then
-      git submodule update --init;
-      BUILD_HELPER="make --jobs=2 $HELPER CC=$CC";
-      if [ "$TRAVIS_OS_NAME" = "osx" ]; then
-        BUILD_HELPER="$BUILD_HELPER NO_GETTEXT=1";
-      fi;
-      case "$VARIANT" in
-      asan)
-        $BUILD_HELPER CFLAGS="-O2 -g -fsanitize=address";;
-      "")
-        $BUILD_HELPER;;
-      esac;
-      ln -s git-core/$HELPER;
-      mkdir -p artifacts/$HELPER_PATH;
-      cp $HELPER artifacts/$HELPER_PATH/$HELPER;
-    fi
-  - chmod +x git-cinnabar-helper
-  - export PATH=$PATH:$PWD
-  - export PYTHONHOME=$PWD/venv
-  - if [ -n "$UPGRADE_FROM" ]; then
-      git fetch --unshallow;
-      git checkout $UPGRADE_FROM;
-    fi
-  - $GIT -c fetch.prune=true clone hg::$REPO hg.old.git
-  - if [ -n "$UPGRADE_FROM" ]; then
-      git checkout $TRAVIS_COMMIT;
-    fi
+  - make -f CI.mk before_script
 
 script:
-  - (set -e -x;
-     case "$UPGRADE_FROM" in
-     0.1.*|0.2.*)
-       if git -C hg.old.git cinnabar fsck; then
-         echo "fsck should have failed";
-         exit 1;
-       else
-         git checkout 0.3.2;
-       fi
-       ;;
-     esac;
-     $GIT -C hg.old.git cinnabar fsck || [ "$?" = 2 ];
-     case "$UPGRADE_FROM" in
-     0.1.*|0.2.*)
-       git checkout $TRAVIS_COMMIT;
-       ;;
-     esac;
-     hg init hg.hg;
-     $GIT -c fetch.prune=true clone hg::$PWD/hg.hg hg.empty.git;
-     $GIT -C hg.empty.git push --all hg::$PWD/hg.hg;
-     $GIT -C hg.old.git push --all hg::$PWD/hg.hg;
-     hg -R hg.hg verify;
-     $GIT -c fetch.prune=true clone hg::$PWD/hg.hg hg.git;
-     diff -u <(git -C hg.old.git log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches) <(git -C hg.git log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches);
-   )
+  - make -f CI.mk script
