@@ -25,8 +25,6 @@ LOCAL_PYTHON_PREFIX = $(HOME)/Library/Python/2.7/bin/
 before_install::
 	curl -O -s https://bootstrap.pypa.io/get-pip.py
 	python get-pip.py --user
-	-which pip
-	-echo $$PATH
 	$(LOCAL_PYTHON_PREFIX)pip install --user virtualenv
 endif
 
