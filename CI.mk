@@ -4,8 +4,14 @@ else
 PATHSEP = ;
 endif
 
-export PATH := $(CURDIR)$(PATHSEP)$(CURDIR)/venv/bin$(PATHSEP)$(CURDIR)/venv/Scripts$(PATHSEP)$(PATH)
-export PYTHONPATH := $(CURDIR)/venv/lib/python2.7/site-packages
+ifeq ($(TRAVIS_OS_NAME),osx)
+export PATH := $(HOME)/Library/Python/2.7/bin$(PATHSEP)$(PATH)
+export PYTHONPATH := $(HOME)/Library/Python/2.7/lib/python/site-packages
+else
+export PATH := $(HOME)/.local/bin$(PATHSEP)$(PATH)
+export PYTHONPATH := $(HOME)/.local/lib/python2.7/site-packages
+endif
+export PATH := $(CURDIR)$(PATHSEP)$(PATH)
 export PYTHONDONTWRITEBYTECODE := 1
 REPO ?= https://bitbucket.org/cleonello/jqplot
 
@@ -21,18 +27,15 @@ CI-data.mk: CI-data
 	@echo HELPER_HASH := $$(awk '{print $$3}' $< | shasum | awk '{print $$1}') >> $@
 
 ifeq ($(TRAVIS_OS_NAME)_$(VARIANT),osx_asan)
-LOCAL_PYTHON_PREFIX = $(HOME)/Library/Python/2.7/bin/
 before_install::
 	curl -O -s https://bootstrap.pypa.io/get-pip.py
 	python get-pip.py --user
-	$(LOCAL_PYTHON_PREFIX)pip install --user virtualenv
 endif
 
 before_install::
-	$(LOCAL_PYTHON_PREFIX)virtualenv venv
-	@# Somehow, OSX's make doesn't want to pick pip from venv/bin on its
-	@# own...
-	$$(which pip) install mercurial$(addprefix ==,$(MERCURIAL_VERSION))
+	@# Somehow, OSX's make doesn't want to pick pip from $PATH on its own
+	@# after it's installed above...
+	$$(which pip) install --user --upgrade --force-reinstall mercurial$(addprefix ==,$(MERCURIAL_VERSION))
 
 ifdef GIT_VERSION
 # TODO: cache as artifacts.

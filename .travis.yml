@@ -44,7 +44,6 @@ matrix:
             - ubuntu-toolchain-r-test
           packages:
             - gcc-4.8
-            - python-virtualenv
         artifacts:
           paths: artifacts
           target_paths: /
@@ -53,9 +52,6 @@ matrix:
       - GIT_CINNABAR_EXPERIMENTS=true
 
 addons:
-  apt:
-    packages:
-      - python-virtualenv
   artifacts:
     paths:
     - artifacts
