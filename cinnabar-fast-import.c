@@ -1,3 +1,7 @@
+#include "git-compat-util.h"
+#if defined(__MINGW32__)
+#undef main
+#endif
 #define main fast_import_main
 #include "fast-import.c"
 
