@@ -68,9 +68,13 @@ ifeq ($(VARIANT),asan)
 EXTRA_MAKE_FLAGS += CFLAGS="-O2 -g -fsanitize=address"
 endif
 
+ifneq ($(origin CC),default)
+EXTRA_MAKE_FLAGS += CC=$(CC)
+endif
+
 $(HELPER):
 	git submodule update --init
-	$(MAKE) --jobs=2 $(@F) CC=$(CC) $(EXTRA_MAKE_FLAGS)
+	$(MAKE) --jobs=2 $(@F) $(EXTRA_MAKE_FLAGS)
 	cp git-core/$(HELPER) $@
 	mkdir -p artifacts/$(HELPER_PATH)
 	cp $@ artifacts/$(HELPER_PATH)/$(HELPER)
