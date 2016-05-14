@@ -55,7 +55,9 @@ export GIT_CINNABAR_CHECK=all
 
 ifndef BUILD_HELPER
 $(HELPER):
+ifdef ARTIFACTS_BUCKET
 	-curl -f -O --retry 5 https://s3.amazonaws.com/$(ARTIFACTS_BUCKET)/$(HELPER_PATH)/$@ && chmod +x $@
+endif
 	$(MAKE) -f $(firstword $(MAKEFILE_LIST)) $@ BUILD_HELPER=1
 
 else
