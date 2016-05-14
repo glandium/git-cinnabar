@@ -4,7 +4,7 @@ else
 PATHSEP = ;
 endif
 
-export PATH := $(PATH)$(PATHSEP)$(CURDIR)$(PATHSEP)$(CURDIR)/venv/bin$(PATHSEP)$(CURDIR)/venv/Scripts
+export PATH := $(CURDIR)$(PATHSEP)$(CURDIR)/venv/bin$(PATHSEP)$(CURDIR)/venv/Scripts$(PATHSEP)$(PATH)
 export PYTHONPATH := $(CURDIR)/venv/lib/python2.7/site-packages
 export PYTHONDONTWRITEBYTECODE := 1
 REPO ?= https://bitbucket.org/cleonello/jqplot
@@ -30,7 +30,9 @@ endif
 
 before_install::
 	$(LOCAL_PYTHON_PREFIX)virtualenv venv
-	venv/bin/pip install mercurial$(addprefix ==,$(MERCURIAL_VERSION))
+	@# Somehow, OSX's make doesn't want to pick pip from venv/bin on its
+	@# own...
+	$$(which pip) install mercurial$(addprefix ==,$(MERCURIAL_VERSION))
 
 ifdef GIT_VERSION
 # TODO: cache as artifacts.
