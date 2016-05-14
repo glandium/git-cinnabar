@@ -37,6 +37,9 @@ before_install::
 	@# after it's installed above...
 	$$(which pip) install --user --upgrade --force-reinstall mercurial$(addprefix ==,$(MERCURIAL_VERSION))
 
+# Same happens for the hg binary...
+HG = $$(which hg)
+
 ifdef GIT_VERSION
 # TODO: cache as artifacts.
 GIT=$(CURDIR)/git.git/bin-wrappers/git
@@ -115,10 +118,10 @@ script::
 endif
 
 script::
-	hg init hg.hg
+	$(HG) init hg.hg
 	$(GIT) -c fetch.prune=true clone hg::$(CURDIR)/hg.hg hg.empty.git
 	$(GIT) -C hg.empty.git push --all hg::$(CURDIR)/hg.hg
 	$(GIT) -C hg.old.git push --all hg::$(CURDIR)/hg.hg
-	hg -R hg.hg verify
+	$(HG) -R hg.hg verify
 	$(GIT) -c fetch.prune=true clone hg::$(CURDIR)/hg.hg hg.git
 	bash -c "diff -u <(git -C hg.old.git log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches) <(git -C hg.git log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches)"
