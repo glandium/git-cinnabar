@@ -17,14 +17,11 @@ REPO ?= https://bitbucket.org/cleonello/jqplot
 
 -include CI-data.mk
 
-.PHONY: FORCE
-CI-data: FORCE
-	@git ls-tree -r HEAD | grep '\(\.[ch]\|\sgit-core\)$$' > $@.tmp
-	@[ -f $@ ] && diff $@ $@.tmp > /dev/null && rm -f $@.tmp || mv -f $@.tmp $@
+HELPER_HASH := $(shell git ls-tree -r HEAD | grep '\(\.[ch]\|\sgit-core\)$$' | awk '{print $$3}' | shasum | awk '{print $$1}')
+HELPER_PATH := artifacts/$(HELPER_HASH)/$(OS_NAME)$(addprefix -,$(VARIANT))
 
-CI-data.mk: CI-data
-	@echo $<: $$(awk '$$4 != "git-core" {print $$4}' $<) > $@
-	@echo HELPER_HASH := $$(awk '{print $$3}' $< | shasum | awk '{print $$1}') >> $@
+helper_path:
+	@echo $(HELPER_PATH)
 
 ifeq ($(TRAVIS_OS_NAME)_$(VARIANT),osx_asan)
 before_install::
