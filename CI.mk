@@ -117,11 +117,13 @@ script::
 	git checkout $(TRAVIS_COMMIT)
 endif
 
+PATH_URL = file://$(CURDIR)
+
 script::
 	$(HG) init hg.hg
-	$(GIT) -c fetch.prune=true clone hg::$(CURDIR)/hg.hg hg.empty.git
-	$(GIT) -C hg.empty.git push --all hg::$(CURDIR)/hg.hg
-	$(GIT) -C hg.old.git push --all hg::$(CURDIR)/hg.hg
+	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.hg hg.empty.git
+	$(GIT) -C hg.empty.git push --all hg::$(PATH_URL)/hg.hg
+	$(GIT) -C hg.old.git push --all hg::$(PATH_URL)/hg.hg
 	$(HG) -R hg.hg verify
-	$(GIT) -c fetch.prune=true clone hg::$(CURDIR)/hg.hg hg.git
+	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.hg hg.git
 	bash -c "diff -u <(git -C hg.old.git log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches) <(git -C hg.git log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches)"
