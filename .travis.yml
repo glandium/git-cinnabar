@@ -44,7 +44,7 @@ matrix:
             - python-virtualenv
         artifacts:
           paths: artifacts
-          target_paths: /
+          target_paths: /artifacts
       env: VARIANT=asan
 
 addons:
@@ -52,9 +52,8 @@ addons:
     packages:
       - python-virtualenv
   artifacts:
-    paths:
-    - artifacts
-    target_paths: /
+    paths: artifacts
+    target_paths: /artifacts
 
 before_install:
   - if [ "$TRAVIS_OS_NAME" = "osx" -a "$VARIANT" = asan ]; then
@@ -79,7 +78,7 @@ before_script:
     else
       GIT=git;
     fi
-  - HELPER_PATH=$(git ls-tree -r HEAD | grep '\(\.[ch]\|\sgit-core\)$' | shasum | awk '{print $1}')/$TRAVIS_OS_NAME${VARIANT:+-${VARIANT}}
+  - HELPER_PATH=artifacts/$(git ls-tree -r HEAD | grep '\(\.[ch]\|\sgit-core\)$' | shasum | awk '{print $1}')/$TRAVIS_OS_NAME${VARIANT:+-${VARIANT}}
   - HELPER=git-cinnabar-helper
   - mkdir artifacts
   # Note: we don't want the dependency on brew's libgettext on OSX.
@@ -97,8 +96,8 @@ before_script:
         $BUILD_HELPER;;
       esac;
       ln -s git-core/$HELPER;
-      mkdir -p artifacts/$HELPER_PATH;
-      cp $HELPER artifacts/$HELPER_PATH/$HELPER;
+      mkdir -p $HELPER_PATH;
+      cp $HELPER $HELPER_PATH/$HELPER;
     fi
   - chmod +x git-cinnabar-helper
   - export PATH=$PATH:$PWD
