@@ -46,16 +46,15 @@ matrix:
             - gcc-4.8
         artifacts:
           paths: artifacts
-          target_paths: /
+          target_paths: /artifacts
       env:
       - VARIANT=asan
       - GIT_CINNABAR_EXPERIMENTS=true
 
 addons:
   artifacts:
-    paths:
-    - artifacts
-    target_paths: /
+    paths: artifacts
+    target_paths: /artifacts
 
 before_install:
   - make -f CI.mk before_install

@@ -54,7 +54,7 @@ else
 GIT=git
 endif
 
-HELPER_PATH := $(HELPER_HASH)/$(TRAVIS_OS_NAME)$(addprefix -,$(VARIANT))
+HELPER_PATH := artifacts/$(HELPER_HASH)/$(TRAVIS_OS_NAME)$(addprefix -,$(VARIANT))
 HELPER := git-cinnabar-helper
 export GIT_CINNABAR_HELPER=$(CURDIR)/$(HELPER)
 export GIT_CINNABAR_CHECK=all
@@ -84,8 +84,8 @@ $(HELPER):
 	git submodule update --init
 	$(MAKE) --jobs=2 $(@F) $(EXTRA_MAKE_FLAGS)
 	cp git-core/$(HELPER) $@
-	mkdir -p artifacts/$(HELPER_PATH)
-	cp $@ artifacts/$(HELPER_PATH)/$(HELPER)
+	mkdir -p $(HELPER_PATH)
+	cp $@ $(HELPER_PATH)/$(HELPER)
 
 endif
 
