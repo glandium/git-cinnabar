@@ -1,10 +1,14 @@
+OS_NAME = $(TRAVIS_OS_NAME)$(MSYSTEM)
+COMMIT = $(TRAVIS_COMMIT)$(APPVEYOR_REPO_COMMIT)
+WINDOWS_GIT_VERSION = v2.8.2.windows.1
+
 ifeq (a,$(firstword a$(subst /, ,$(abspath .))))
 PATHSEP = :
 else
 PATHSEP = ;
 endif
 
-ifeq ($(TRAVIS_OS_NAME),osx)
+ifeq ($(OS_NAME),osx)
 export PATH := $(HOME)/Library/Python/2.7/bin$(PATHSEP)$(PATH)
 export PYTHONPATH := $(HOME)/Library/Python/2.7/lib/python/site-packages
 else
@@ -23,7 +27,7 @@ HELPER_PATH := artifacts/$(HELPER_HASH)/$(OS_NAME)$(addprefix -,$(VARIANT))
 helper_path:
 	@echo $(HELPER_PATH)
 
-ifeq ($(TRAVIS_OS_NAME)_$(VARIANT),osx_asan)
+ifeq ($(OS_NAME)_$(VARIANT),osx_asan)
 before_install::
 	curl -O -s https://bootstrap.pypa.io/get-pip.py
 	python get-pip.py --user
@@ -51,8 +55,11 @@ else
 GIT=git
 endif
 
-HELPER_PATH := artifacts/$(HELPER_HASH)/$(TRAVIS_OS_NAME)$(addprefix -,$(VARIANT))
+ifneq (,$(filter MINGW%,$(OS_NAME)))
+HELPER := git-cinnabar-helper.exe
+else
 HELPER := git-cinnabar-helper
+endif
 export GIT_CINNABAR_HELPER=$(CURDIR)/$(HELPER)
 export GIT_CINNABAR_CHECK=all
 
@@ -65,7 +72,7 @@ endif
 
 else
 
-ifeq ($(TRAVIS_OS_NAME),osx)
+ifeq ($(OS_NAME),osx)
 EXTRA_MAKE_FLAGS += NO_GETTEXT=1
 endif
 
@@ -79,6 +86,12 @@ endif
 
 $(HELPER):
 	git submodule update --init
+ifneq (,$(filter MINGW%,$(OS_NAME)))
+	git -C git-core remote add git4win https://github.com/git-for-windows/git
+	git -C git-core remote update git4win
+	git -C git-core merge-base --is-ancestor HEAD $(WINDOWS_GIT_VERSION)
+	git -C git-core checkout $(WINDOWS_GIT_VERSION)
+endif
 	$(MAKE) --jobs=2 $(@F) $(EXTRA_MAKE_FLAGS)
 	cp git-core/$(HELPER) $@
 	mkdir -p $(HELPER_PATH)
@@ -97,7 +110,7 @@ before_script:: $(HELPER)
 
 ifdef UPGRADE_FROM
 before_script:: $(HELPER)
-	git checkout $(TRAVIS_COMMIT)
+	git checkout $(COMMIT)
 endif
 
 ifneq (,$(filter 0.1.% 0.2.%,$(UPGRADE_FROM)))
@@ -111,10 +124,10 @@ script::
 
 ifneq (,$(filter 0.1.% 0.2.%,$(UPGRADE_FROM)))
 script::
-	git checkout $(TRAVIS_COMMIT)
+	git checkout $(COMMIT)
 endif
 
-PATH_URL = file://$(CURDIR)
+PATH_URL = file://$(if $(filter /%,$(CURDIR)),,/)$(CURDIR)
 
 script::
 	$(HG) init hg.hg
