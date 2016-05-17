@@ -60,8 +60,9 @@
 
 #define CMD_VERSION 3
 
-#define REFS_PREFIX "refs/cinnabar/"
-#define NOTES_REF "refs/notes/cinnabar"
+#define METADATA_REF "refs/cinnabar/metadata"
+#define HG2GIT_REF METADATA_REF "^3"
+#define NOTES_REF METADATA_REF "^4"
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -275,8 +276,7 @@ static const unsigned char *resolve_hg2git(const unsigned char *sha1,
 	const unsigned char *note;
 
 	if (!hg2git.initialized)
-		init_notes(&hg2git, REFS_PREFIX "hg2git",
-		           combine_notes_overwrite, 0);
+		init_notes(&hg2git, HG2GIT_REF, combine_notes_overwrite, 0);
 
 	note = get_note(&hg2git, sha1);
 	if (len == 40)
@@ -811,7 +811,7 @@ static void do_version(struct string_list *args)
 
 	version = strtol(args->items[0].string, NULL, 10);
 
-	if (!version || version < 2 || version > CMD_VERSION)
+	if (!version || version < 3 || version > CMD_VERSION)
 		exit(1);
 
 	write_or_die(1, "ok\n", 3);

@@ -241,7 +241,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 3 if Git.config('cinnabar.experiments') == 'true' else 2
+    VERSION = 3
     _helper = False
 
     @helpermethod

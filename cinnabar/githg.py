@@ -1569,10 +1569,8 @@ class GitHgStore(object):
                     commit.filemodify(f, filesha1, typ)
 
         # refs/notes/cinnabar is kept for convenience
-        # refs/cinnabar/hg2git is kept for the helper, which needs a ref
-        # pointing to that tree.
         for ref in update_metadata:
-            if ref not in ('refs/notes/cinnabar', 'refs/cinnabar/hg2git'):
+            if ref not in ('refs/notes/cinnabar',):
                 Git.delete_ref(ref)
 
         Git.close()
