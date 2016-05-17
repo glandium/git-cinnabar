@@ -97,6 +97,10 @@ git_version = LooseVersion(git_version[12:].strip())
 
 HAS_REPLACE_REF_BASE = git_version > LooseVersion('2.6')
 
+if git_version < LooseVersion('1.8.5'):
+    raise Exception('git-cinnabar does not support git version prior to '
+                    '1.8.5.')
+
 
 class GitProcess(object):
     KWARGS = set(['stdin', 'stdout', 'stderr', 'config', 'env'])
