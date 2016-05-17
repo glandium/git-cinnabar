@@ -580,6 +580,8 @@ class FastImport(IOLogger):
         if Git.config('cinnabar.experiments') == 'true':
             from githg import GitHgHelper
             # Ensure the helper is there.
+            if GitHgHelper._helper is GitHgHelper:
+                GitHgHelper._helper = False
             with GitHgHelper.query('feature', 'force'):
                 pass
             self._proc = GitHgHelper._helper
@@ -621,7 +623,7 @@ class FastImport(IOLogger):
         self.flush()
         from githg import GitHgHelper
         if self._proc is GitHgHelper._helper:
-            retcode = self._proc.poll()
+            retcode = self._proc._proc.poll()
         else:
             retcode = self._proc.wait()
         if Git._fast_import == self:

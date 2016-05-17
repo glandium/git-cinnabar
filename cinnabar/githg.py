@@ -1575,5 +1575,5 @@ class GitHgStore(object):
             if ref not in ('refs/notes/cinnabar', 'refs/cinnabar/hg2git'):
                 Git.delete_ref(ref)
 
-        GitHgHelper.close()
         Git.close()
+        GitHgHelper.close()
