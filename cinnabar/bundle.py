@@ -373,7 +373,11 @@ def create_bundle_chunks(store, commits):
         for path in sorted(files):
             yield path
             previous = None
+            nodes = set()
             for node, parents, changeset in files[path]:
+                if node in nodes:
+                    continue
+                nodes.add(node)
                 file = store.file(node)
                 file.set_parents(*parents)
                 file.changeset = changeset
