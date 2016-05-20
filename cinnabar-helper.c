@@ -197,11 +197,32 @@ static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1)
 			break;
 		hex += 2;
 	}
-	len = (sha1 - start) * 2 + !!hex[0];
+	len = (sha1 - start - 1) * 2 + !!hex[0];
 	while (sha1 < end) {
 		*sha1++ = 0xff;
 	}
 	return len;
+}
+
+int abbrev_sha1_cmp(const unsigned char *ref_sha1,
+		    const unsigned char *abbrev_sha1, size_t len)
+{
+        int i;
+
+        for (i = 0; i < len / 2; i++, ref_sha1++, abbrev_sha1++) {
+                if (*ref_sha1 != *abbrev_sha1)
+                        return *ref_sha1 - *abbrev_sha1;
+        }
+
+	if (len % 2) {
+		unsigned char ref_bits = *ref_sha1 & 0xf0;
+		unsigned char abbrev_bits = *abbrev_sha1 & 0xf0;
+		if (ref_bits != abbrev_bits)
+			return ref_bits - abbrev_bits;
+	}
+
+        return 0;
+
 }
 
 /* Definitions from git's notes.c. See there for more details */
@@ -253,7 +274,12 @@ static struct leaf_node *note_tree_abbrev_find(struct notes_tree *t,
 	case PTR_TYPE_SUBTREE:
 		return NULL;
 	default:
-		return (struct leaf_node *) CLR_PTR_TYPE(p);
+		{
+			struct leaf_node *node = CLR_PTR_TYPE(p);
+			if (!abbrev_sha1_cmp(node->key_sha1, key_sha1, len))
+				return node;
+			return NULL;
+		}
 	}
 }
 
