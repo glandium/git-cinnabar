@@ -114,6 +114,7 @@ script::
 	git -C hg.old.git cinnabar fsck && echo "fsck should have failed" && exit 1 || true
 	git clone -n . old-cinnabar
 	git -C old-cinnabar checkout 0.3.2
+	$(MAKE) -C old-cinnabar -f $(CURDIR)/CI.mk $(HELPER)
 endif
 
 script::
