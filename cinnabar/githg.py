@@ -695,6 +695,15 @@ class GitHgStore(object):
         'refs/notes/cinnabar',
     )
 
+    @staticmethod
+    def metadata():
+        metadata_ref = Git.resolve_ref('refs/cinnabar/metadata')
+        if metadata_ref:
+            metadata = GitCommit(metadata_ref)
+            for ref, value in zip(GitHgStore.METADATA_REFS, metadata.parents):
+                Git.update_ref(ref, value, store=False)
+        return metadata_ref
+
     def __init__(self):
         self.__fast_import = None
         self._changesets = {}
@@ -765,13 +774,9 @@ class GitHgStore(object):
 
         self.tag_changes = False
 
-        metadata_ref = Git.resolve_ref('refs/cinnabar/metadata')
+        metadata_ref = self.metadata()
         self._has_metadata = bool(metadata_ref)
         if metadata_ref:
-            metadata = GitCommit(metadata_ref)
-            for ref, value in zip(self.METADATA_REFS, metadata.parents):
-                Git.update_ref(ref, value, store=False)
-
             manifests_ref = Git.resolve_ref('refs/cinnabar/manifests')
             if manifests_ref:
                 commit = GitCommit(manifests_ref)
