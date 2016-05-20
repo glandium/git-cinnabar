@@ -23,8 +23,8 @@ REPO ?= https://bitbucket.org/cleonello/jqplot
 HELPER_HASH := $(shell git ls-tree -r HEAD | grep '\(\.[ch]\|\sgit-core\)$$' | awk '{print $$3}' | shasum | awk '{print $$1}')
 HELPER_PATH := artifacts/$(HELPER_HASH)/$(OS_NAME)$(addprefix -,$(VARIANT))
 
-helper_path:
-	@echo $(HELPER_PATH)
+helper_hash:
+	@echo $(HELPER_HASH) > $@
 
 ifeq ($(OS_NAME)_$(VARIANT),osx_asan)
 before_install::

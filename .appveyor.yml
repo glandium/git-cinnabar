@@ -19,11 +19,11 @@ before_build:
 
 build_script:
   - bash -c "mingw32-make -f CI.mk script"
-  - bash -c "mingw32-make -f CI.mk helper_path" > HELPER_PATH
-  - set HELPER_PATH=< HELPER_PATH
+  - bash -c "mingw32-make -f CI.mk helper_hash"
+  - set /p HELPER_HASH=< helper_hash
 
 artifacts:
-  - path: $(HELPER_PATH)/git-cinnabar-helper.exe
+  - path: artifacts/$(HELPER_HASH)/$(MSYSTEM)/git-cinnabar-helper.exe
     name: git-cinnabar-helper.exe
 
 deploy:
