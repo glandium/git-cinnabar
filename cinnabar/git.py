@@ -81,8 +81,15 @@ def get_git_dir():
         if git_dir == '\n'.join(output[-cutoff:]):
             break
     # --git-common-dir is what we really want but can be empty or wrong.
-    # Fortunately, in both cases, --git-dir is valid to use.
-    if git_common_dir and not (cdup and git_common_dir == '.git'):
+    # That fortunately happens only when we are in the main work tree,
+    # which means --git-dir is value to use. When in a non-main work tree,
+    # --git-common-dir is always an absolute path. When in the main work
+    # tree, if --git-common-dir is an absolute path, it's also correct.
+    # Moreover, when in the main work tree, --git-dir and --git-common-dir
+    # are supposed to point to the same location.
+    # So fallback to --git-dir when --git-common-dir is not an absolute
+    # path.
+    if git_common_dir and os.path.isabs(git_common_dir):
         git_dir = git_common_dir
 
     return git_dir, cdup
