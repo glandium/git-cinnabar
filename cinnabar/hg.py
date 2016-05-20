@@ -291,6 +291,22 @@ class ChunksCollection(object):
         return iter_initialized(wrap_get_missing, wrap_iter_chunks(self, cls))
 
 
+class BufferedChunksCollection(ChunksCollection):
+    def __init__(self, *args, **kwargs):
+        super(BufferedChunksCollection, self).__init__(*args, **kwargs)
+        self._initialized_chunks = []
+
+    def iter_initialized(self, cls, get_missing):
+        if not self._initialized_chunks:
+            for chunk in super(BufferedChunksCollection,
+                               self).iter_initialized(cls, get_missing):
+                yield chunk
+                self._initialized_chunks.append(chunk)
+        else:
+            for chunk in self._initialized_chunks:
+                yield chunk
+
+
 def _sample(l, size):
     if len(l) <= size:
         return l
@@ -436,32 +452,25 @@ class HelperRepo(object):
 # smarter than that.
 class bundlerepo(object):
     def __init__(self, path):
-        with open(path, 'r') as fh:
-            header = readexactly(fh, 4)
-            magic, version = header[0:2], header[2:4]
-            if magic != 'HG':
-                raise Exception('%s: not a Mercurial bundle' % path)
-            if version != '10':
-                raise Exception('%s: unsupported bundle version %s' % (path,
-                                version))
-            alg = readexactly(fh, 2)
-            self._bundle = cg1unpacker(fh, alg)
+        fh = open(path, 'r')
+        header = readexactly(fh, 4)
+        magic, version = header[0:2], header[2:4]
+        if magic != 'HG':
+            raise Exception('%s: not a Mercurial bundle' % path)
+        if version != '10':
+            raise Exception('%s: unsupported bundle version %s' % (path,
+                            version))
+        alg = readexactly(fh, 2)
+        self._bundle = cg1unpacker(fh, alg)
 
     def init(self, store):
-        self._changeset_chunks = []
-
-        def _iter_chunks():
-            for chunk in progress_iter(
-                    'Reading %d changesets',
-                    chunks_in_changegroup(self._bundle)):
-                yield chunk
-                self._changeset_chunks.append(chunk)
-
         self._dag = gitdag()
         branches = set()
-        for chunk in iter_initialized(store.changeset,
-                                      iter_chunks(_iter_chunks(),
-                                                  ChangesetInfo)):
+        self._changeset_chunks = BufferedChunksCollection(progress_iter(
+            'Reading %d changesets', chunks_in_changegroup(self._bundle)))
+
+        for chunk in self._changeset_chunks.iter_initialized(ChangesetInfo,
+                                                             store.changeset):
             extra = chunk.extra or {}
             branch = extra.get('branch', 'default')
             branches.add(branch)

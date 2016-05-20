@@ -45,7 +45,7 @@ class GitRemoteHelper(object):
         self._store = store
         self._repo = get_repo(remote)
         if isinstance(self._repo, bundlerepo):
-            repo.init(self._store)
+            self._repo.init(self._store)
         self._remote = remote
         self._helper = IOLogger(logging.getLogger('remote-helper'),
                                 stdin, stdout)
