@@ -1,5 +1,4 @@
 OS_NAME = $(TRAVIS_OS_NAME)$(MSYSTEM)
-COMMIT = $(TRAVIS_COMMIT)$(APPVEYOR_REPO_COMMIT)
 WINDOWS_GIT_VERSION = v2.8.2.windows.1
 
 ifeq (a,$(firstword a$(subst /, ,$(abspath .))))
@@ -15,7 +14,7 @@ else
 export PATH := $(HOME)/.local/bin$(PATHSEP)$(PATH)
 export PYTHONPATH := $(HOME)/.local/lib/python2.7/site-packages
 endif
-export PATH := $(CURDIR)$(PATHSEP)$(PATH)
+export PATH := $(CURDIR)/old-cinnabar$(PATHSEP)$(CURDIR)$(PATHSEP)$(PATH)
 export PYTHONDONTWRITEBYTECODE := 1
 REPO ?= https://bitbucket.org/cleonello/jqplot
 
@@ -101,30 +100,28 @@ endif
 
 ifdef UPGRADE_FROM
 before_script:: $(HELPER)
-	git fetch --unshallow
-	git checkout $(UPGRADE_FROM)
+	git fetch --unshallow || true
+	git clone -n . old-cinnabar
+	git -C old-cinnabar checkout $(UPGRADE_FROM)
 endif
 
 before_script:: $(HELPER)
 	$(GIT) -c fetch.prune=true clone hg::$(REPO) hg.old.git
 
-ifdef UPGRADE_FROM
-before_script:: $(HELPER)
-	git checkout $(COMMIT)
-endif
-
 ifneq (,$(filter 0.1.% 0.2.%,$(UPGRADE_FROM)))
 script::
+	rm -rf old-cinnabar
 	git -C hg.old.git cinnabar fsck && echo "fsck should have failed" && exit 1 || true
-	git checkout 0.3.2
+	git clone -n . old-cinnabar
+	git -C old-cinnabar checkout 0.3.2
 endif
 
 script::
-	$(GIT) -C hg.old.git cinnabar fsck || ["$$?" = 2 ]
+	$(GIT) -C hg.old.git cinnabar fsck || [ "$$?" = 2 ]
 
-ifneq (,$(filter 0.1.% 0.2.%,$(UPGRADE_FROM)))
+ifdef UPGRADE_FROM
 script::
-	git checkout $(COMMIT)
+	rm -rf old-cinnabar
 endif
 
 PATH_URL = file://$(if $(filter /%,$(CURDIR)),,/)$(CURDIR)
