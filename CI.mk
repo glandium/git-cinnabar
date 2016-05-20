@@ -129,6 +129,10 @@ endif
 
 PATH_URL = file://$(if $(filter /%,$(CURDIR)),,/)$(CURDIR)
 
+COMPARE_REFS = bash -c "diff -u <(git -C $1 log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches) <(git -C $2 log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches)"
+
+HG_BUNDLE = $(HG) -R hg.hg bundle -t $1 --all $(CURDIR)/hg.bundle
+
 script::
 	$(HG) init hg.hg
 	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.hg hg.empty.git
@@ -136,4 +140,8 @@ script::
 	$(GIT) -C hg.old.git push --all hg::$(PATH_URL)/hg.hg
 	$(HG) -R hg.hg verify
 	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.hg hg.git
-	bash -c "diff -u <(git -C hg.old.git log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches) <(git -C hg.git log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches)"
+	$(call COMPARE_REFS, hg.old.git, hg.git)
+
+	$(call HG_BUNDLE, none-v1) || $(call HG_BUNDLE, none)
+	$(GIT) -c fetch.prune=true clone hg::$(CURDIR)/hg.bundle hg.unbundle.git
+	$(call COMPARE_REFS, hg.git, hg.unbundle.git)
