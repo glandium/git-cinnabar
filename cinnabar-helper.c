@@ -276,7 +276,8 @@ static struct leaf_node *note_tree_abbrev_find(struct notes_tree *t,
 	default:
 		{
 			struct leaf_node *node = CLR_PTR_TYPE(p);
-			if (!abbrev_sha1_cmp(node->key_sha1, key_sha1, len))
+			if (node && !abbrev_sha1_cmp(node->key_sha1, key_sha1,
+			                             len))
 				return node;
 			return NULL;
 		}
