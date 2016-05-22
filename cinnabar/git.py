@@ -695,6 +695,21 @@ class FastImport(object):
     @contextlib.contextmanager
     def commit(self, ref, committer=('<cinnabar@git>', 0, 0), author=None,
                message='', from_commit=None, parents=(), mark=0):
+        if isinstance(parents, GeneratorType):
+            parents = tuple(parents)
+        _from = None
+        from_tree = None
+        if parents and parents[0] == from_commit:
+            resolved_ref = Git._refs.get(ref)
+            if not isinstance(resolved_ref, Mark) or parents[0] != resolved_ref:
+                _from = parents[0]
+            merges = parents[1:]
+        else:
+            _from = NULL_NODE_ID
+            merges = parents
+            if from_commit:
+                mode, typ, from_tree, path = self.ls(from_commit)
+
         helper = FastImportCommitHelper(self)
         self.write('commit %s\n' % ref)
         if mark == 0:
@@ -706,23 +721,13 @@ class FastImport(object):
             self.write('author %s\n' % self._format_committer(author))
         self.write('committer %s\n' % self._format_committer(committer))
         self.cmd_data(message)
-        if isinstance(parents, GeneratorType):
-            parents = tuple(parents)
-        for count, parent in enumerate(parents):
-            if count == 0 and parent == from_commit:
-                from_commit = None
-                resolved_ref = Git._refs.get(ref)
-                if not isinstance(resolved_ref, Mark) or parent != resolved_ref:
-                    self.write('from %s\n' % parent)
-            else:
-                if count == 0:
-                    self.write('from %s\n' % NULL_NODE_ID)
-                self.write('merge %s\n' % parent)
-        if not parents:
-            self.write('from %s\n' % NULL_NODE_ID)
-        if from_commit:
-            mode, typ, tree, path = self.ls(from_commit)
-            self.write('M 040000 %s \n' % tree)
+
+        if _from:
+            self.write('from %s\n' % _from)
+        for merge in merges:
+            self.write('merge %s\n' % merge)
+        if from_tree:
+            self.write('M 040000 %s \n' % from_tree)
 
         yield helper
 
