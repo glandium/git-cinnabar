@@ -1228,17 +1228,7 @@ class GitHgStore(object):
 
     @contextmanager
     def batch_store_manifest(self):
-        assert not hasattr(self, '_pending_manifests')
-        self._pending_manifests = []
         yield
-        pending_manifests = self._pending_manifests
-        del self._pending_manifests
-
-        # We have a guard in FastImport.commit that prevents us from
-        # committing the last manifest with the same mark used for the
-        # flat manifest tree. Remove it as a workaround.
-        if pending_manifests:
-            del Git._refs['refs/cinnabar/manifest_']
 
         # Storing changesets and manifests with a parent that is not the
         # previous one involves reading the manifest git tree from fast-import,
@@ -1257,41 +1247,6 @@ class GitHgStore(object):
                 self._git_trees[node] = (
                     self._fast_import.ls(mark, 'git')[2] or EMPTY_TREE)
 
-        trees = {}
-        for args in pending_manifests:
-            ref, from_commit, parents, mark, message = args
-            trees[args] = self._fast_import.ls(Mark(mark))[2]
-            self._git_trees[message] = (
-                self._fast_import.ls(Mark(mark), 'git')[2] or EMPTY_TREE)
-
-        for args in progress_iter('Finalizing %d manifests',
-                                  pending_manifests):
-            with self.batched_manifest_commit(*args) as commit:
-                commit.filemodify('', trees[args], typ='tree')
-
-        if pending_manifests:
-            self._store_flat_manifest_tree = True
-
-    @contextmanager
-    def batched_manifest_commit(self, ref, from_commit, parents, mark,
-                               message):
-        if hasattr(self, '_pending_manifests') and (
-                self._pending_manifests or
-                parents and from_commit != parents[0]):
-            _parents = (from_commit,) if from_commit else ()
-            with self._fast_import.commit(
-                    ref='refs/cinnabar/manifest_', from_commit=from_commit,
-                    parents=_parents, mark=mark) as commit:
-                yield commit
-            self._pending_manifests.append((ref, None, parents, mark, message))
-        else:
-            with self._fast_import.commit(ref=ref, from_commit=from_commit,
-                                          parents=parents, mark=mark,
-                                          message=message) as commit:
-                yield commit
-            self._manifests[message] = Mark(mark)
-            self._manifest_dag.add(self._manifests[message], parents)
-
     def store_manifest(self, instance):
         mark = self._store_find_or_create(instance, self.manifest_ref)
         if not isinstance(mark, EmptyMark):
@@ -1304,7 +1259,7 @@ class GitHgStore(object):
         # Force trigger any helper requests before starting the commit.
         for node, attr in instance.modified.itervalues():
             self.git_file_ref(str(node))
-        with self.batched_manifest_commit(
+        with self._fast_import.commit(
             ref='refs/cinnabar/manifests',
             from_commit=previous,
             parents=parents,
@@ -1321,6 +1276,10 @@ class GitHgStore(object):
                                   self.git_file_ref(node), typ=self.TYPE[attr])
             if check_enabled('manifests'):
                 expected_tree = commit.ls('hg')[2]
+
+        mark = Mark(mark)
+        self._manifests[instance.node] = mark
+        self._manifest_dag.add(mark, parents)
 
         if check_enabled('manifests'):
             tree = OrderedDict()
