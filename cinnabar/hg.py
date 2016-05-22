@@ -42,6 +42,7 @@ from .git import (
 from .util import (
     check_enabled,
     LazyCall,
+    next,
     progress_iter,
 )
 from collections import (
@@ -469,7 +470,7 @@ class bundlerepo(object):
 
         changeset_chunks = ChunksCollection(progress_iter(
             'Analyzing %d changesets from ' + self._file,
-            iter_and_store(raw_unbundler.next())))
+            iter_and_store(next(raw_unbundler))))
 
         for chunk in changeset_chunks.iter_initialized(ChangesetInfo,
                                                        store.changeset):
@@ -488,13 +489,9 @@ class bundlerepo(object):
 
         def repo_unbundler():
             yield chunks
-            yield raw_unbundler.next()
-            yield raw_unbundler.next()
-            try:
-                raw_unbundler.next()
-            except StopIteration:
-                pass
-            else:
+            yield next(raw_unbundler)
+            yield next(raw_unbundler)
+            if next(raw_unbundler) is not None:
                 assert False
 
         self._unbundler = repo_unbundler()
@@ -569,22 +566,19 @@ def getbundle(repo, store, heads, branch_names):
         bundle = unbundler(bundle)
 
     changeset_chunks = ChunksCollection(progress_iter(
-        'Reading %d changesets', bundle.next()))
+        'Reading %d changesets', next(bundle)))
 
     manifest_chunks = ChunksCollection(progress_iter(
-        'Reading %d manifests', bundle.next()))
+        'Reading %d manifests', next(bundle)))
 
     for rev_chunk in progress_iter(
             'Reading and importing %d files', iter_initialized(
-                store.file, bundle.next())):
+                store.file, next(bundle))):
         store.store_file(rev_chunk)
 
-    try:
-        bundle.next()
-    except StopIteration:
-        del bundle
-    else:
+    if next(bundle) is not None:
         assert False
+    del bundle
 
     with store.batch_store_manifest():
         for mn in progress_iter(
