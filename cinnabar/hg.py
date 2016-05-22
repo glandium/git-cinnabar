@@ -68,7 +68,11 @@ if changegroup:
         from mercurial.changegroup import unbundle10 as cg1unpacker
 
     try:
-        from mercurial.bundle2 import encodecaps, unbundle20
+        from mercurial.bundle2 import (
+            encodecaps,
+            unbundle20,
+            getunbundler,
+        )
         from mercurial.changegroup import cg2unpacker
     except ImportError:
         unbundle20 = False
@@ -291,22 +295,6 @@ class ChunksCollection(object):
         return iter_initialized(wrap_get_missing, wrap_iter_chunks(self, cls))
 
 
-class BufferedChunksCollection(ChunksCollection):
-    def __init__(self, *args, **kwargs):
-        super(BufferedChunksCollection, self).__init__(*args, **kwargs)
-        self._initialized_chunks = []
-
-    def iter_initialized(self, cls, get_missing):
-        if not self._initialized_chunks:
-            for chunk in super(BufferedChunksCollection,
-                               self).iter_initialized(cls, get_missing):
-                yield chunk
-                self._initialized_chunks.append(chunk)
-        else:
-            for chunk in self._initialized_chunks:
-                yield chunk
-
-
 def _sample(l, size):
     if len(l) <= size:
         return l
@@ -457,20 +445,34 @@ class bundlerepo(object):
         magic, version = header[0:2], header[2:4]
         if magic != 'HG':
             raise Exception('%s: not a Mercurial bundle' % path)
-        if version != '10':
+        if version == '10':
+            alg = readexactly(fh, 2)
+            self._bundle = cg1unpacker(fh, alg)
+        elif unbundle20 and version.startswith('2'):
+            self._bundle = getunbundler(get_ui(), fh, magicstring=header)
+        else:
             raise Exception('%s: unsupported bundle version %s' % (path,
                             version))
-        alg = readexactly(fh, 2)
-        self._bundle = cg1unpacker(fh, alg)
+        self._file = os.path.basename(path)
 
     def init(self, store):
+        raw_unbundler = unbundler(self._bundle)
         self._dag = gitdag()
         branches = set()
-        self._changeset_chunks = BufferedChunksCollection(progress_iter(
-            'Reading %d changesets', chunks_in_changegroup(self._bundle)))
 
-        for chunk in self._changeset_chunks.iter_initialized(ChangesetInfo,
-                                                             store.changeset):
+        chunks = []
+
+        def iter_and_store(iterator):
+            for item in iterator:
+                chunks.append(item)
+                yield item
+
+        changeset_chunks = ChunksCollection(progress_iter(
+            'Analyzing %d changesets from ' + self._file,
+            iter_and_store(raw_unbundler.next())))
+
+        for chunk in changeset_chunks.iter_initialized(ChangesetInfo,
+                                                       store.changeset):
             extra = chunk.extra or {}
             branch = extra.get('branch', 'default')
             branches.add(branch)
@@ -483,6 +485,19 @@ class bundlerepo(object):
         for tag, node in self._dag.all_heads():
             self._branchmap[tag].append(unhexlify(node))
         self._tip = unhexlify(chunk.node)
+
+        def repo_unbundler():
+            yield chunks
+            yield raw_unbundler.next()
+            yield raw_unbundler.next()
+            try:
+                raw_unbundler.next()
+            except StopIteration:
+                pass
+            else:
+                assert False
+
+        self._unbundler = repo_unbundler()
 
     def heads(self):
         return self._heads
@@ -500,10 +515,41 @@ class bundlerepo(object):
         return [h in self._dag for h in heads]
 
 
+def unbundler(bundle):
+    if unbundle20 and isinstance(bundle, unbundle20):
+        parts = iter(bundle.iterparts())
+        for part in parts:
+            if part.type != 'changegroup':
+                logging.getLogger('bundle2').warning(
+                    'ignoring bundle2 part: %s', part.type)
+                continue
+            logging.getLogger('bundle2').debug('params: %r', part.params)
+            version = part.params.get('version', '01')
+            if version == '01':
+                cg = cg1unpacker(part, 'UN')
+            elif version == '02':
+                cg = cg2unpacker(part, 'UN')
+            else:
+                raise Exception('Unknown changegroup version %s' % version)
+            break
+        else:
+            raise Exception('No changegroups in the bundle')
+    else:
+        cg = bundle
+
+    yield chunks_in_changegroup(cg)
+    yield chunks_in_changegroup(cg)
+    yield iterate_files(cg)
+
+    if unbundle20 and isinstance(bundle, unbundle20):
+        for part in parts:
+            logging.getLogger('bundle2').warning(
+                'ignoring bundle2 part: %s', part.type)
+
+
 def getbundle(repo, store, heads, branch_names):
     if isinstance(repo, bundlerepo):
-        changeset_chunks = repo._changeset_chunks
-        bundle = repo._bundle
+        bundle = repo._unbundler
     else:
         common = findcommon(repo, store, store.heads(branch_names))
         logging.info('common: %s' % common)
@@ -520,42 +566,25 @@ def getbundle(repo, store, heads, branch_names):
                                 common=[unhexlify(h) for h in common],
                                 **kwargs)
 
-        if unbundle20 and isinstance(bundle, unbundle20):
-            parts = iter(bundle.iterparts())
-            for part in parts:
-                if part.type != 'changegroup':
-                    logging.getLogger('bundle2').warning(
-                        'ignoring bundle2 part: %s', part.type)
-                    continue
-                logging.getLogger('bundle2').debug('params: %r', part.params)
-                version = part.params.get('version', '01')
-                if version == '01':
-                    bundle = cg1unpacker(part, 'UN')
-                elif version == '02':
-                    bundle = cg2unpacker(part, 'UN')
-                else:
-                    raise Exception('Unknown changegroup version %s' % version)
-                break
-            else:
-                raise Exception('No changegroups in the bundle')
+        bundle = unbundler(bundle)
 
-        changeset_chunks = ChunksCollection(progress_iter(
-            'Reading %d changesets', chunks_in_changegroup(bundle)))
+    changeset_chunks = ChunksCollection(progress_iter(
+        'Reading %d changesets', bundle.next()))
 
     manifest_chunks = ChunksCollection(progress_iter(
-        'Reading %d manifests', chunks_in_changegroup(bundle)))
+        'Reading %d manifests', bundle.next()))
 
     for rev_chunk in progress_iter(
             'Reading and importing %d files', iter_initialized(
-                store.file, iterate_files(bundle))):
+                store.file, bundle.next())):
         store.store_file(rev_chunk)
 
-    if unbundle20 and isinstance(bundle, unbundle20):
-        for part in parts:
-            logging.getLogger('bundle2').warning(
-                'ignoring bundle2 part: %s', part.type)
-
-    del bundle
+    try:
+        bundle.next()
+    except StopIteration:
+        del bundle
+    else:
+        assert False
 
     with store.batch_store_manifest():
         for mn in progress_iter(
