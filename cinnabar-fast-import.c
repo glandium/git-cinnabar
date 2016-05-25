@@ -43,12 +43,14 @@ static void init()
 
 static void cleanup()
 {
-	if (require_explicit_termination)
-		die("stream ends early");
+	if (!initialized)
+		return;
 
 	end_packfile();
 
-	dump_branches();
+	if (!require_explicit_termination)
+		dump_branches();
+
 	unkeep_all_packs();
 
 	initialized = 0;
