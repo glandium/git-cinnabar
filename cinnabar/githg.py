@@ -1579,4 +1579,3 @@ class GitHgStore(object):
                 Git.delete_ref(ref)
 
         Git.close()
-        GitHgHelper.close()
