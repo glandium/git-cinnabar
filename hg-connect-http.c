@@ -16,6 +16,7 @@ static int http_request(const char *url,
 	int ret;
 
 	slot = get_active_slot();
+	curl_easy_setopt(slot->curl, CURLOPT_FAILONERROR, 0);
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPGET, 1);
 	curl_easy_setopt(slot->curl, CURLOPT_NOBODY, 0);
 
@@ -201,6 +202,10 @@ static void prepare_push_request(CURL *curl, struct curl_slist *headers,
 	prepare_simple_request(curl, headers, info->response);
 	curl_easy_setopt(curl, CURLOPT_POST, 1);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, info->len);
+	/* Ensure we have no state from a previous attempt that failed because
+	 * of authentication (401). */
+	fseek(info->in, 0L, SEEK_SET);
+	strbuf_release(info->response);
 	curl_easy_setopt(curl, CURLOPT_INFILE, info->in);
 
 	headers = curl_slist_append(headers,
