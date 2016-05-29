@@ -143,3 +143,10 @@ script::
 	$(GIT) -C hg.git cinnabar bundle $(CURDIR)/hg.bundle -- --remotes
 	$(GIT) -c fetch.prune=true clone hg::$(CURDIR)/hg.bundle hg.unbundle.git
 	$(call COMPARE_REFS, hg.git, hg.unbundle.git)
+
+script::
+	$(HG) init hg.http.hg
+	$(HG) -R hg.http.hg serve --config extensions.x=CI-hg-auth.py --config web.push_ssl=false --config web.allow_push=foo --pid-file hg.pid -A access.log -E errors.log &
+	(echo protocol=http; echo host=localhost:8000; echo username=foo; echo password=bar) | $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' credential approve
+	$(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' -C hg.git push --all hg::http://localhost:8000/
+	kill $$(cat hg.pid)
