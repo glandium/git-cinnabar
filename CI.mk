@@ -146,7 +146,6 @@ script::
 
 script::
 	$(HG) init hg.http.hg
-	$(HG) -R hg.http.hg serve --config extensions.x=CI-hg-auth.py --config web.push_ssl=false --config web.allow_push=foo --pid-file hg.pid -A access.log -E errors.log &
 	(echo protocol=http; echo host=localhost:8000; echo username=foo; echo password=bar) | $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' credential approve
-	$(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' -C hg.git push --all hg::http://localhost:8000/
-	kill $$(cat hg.pid)
+	$(GIT) -C hg.git remote add hg-http hg::http://localhost:8000/
+	$(HG) -R hg.http.hg --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' -C hg.git push --all hg-http
