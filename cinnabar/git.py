@@ -575,7 +575,7 @@ class EmptyMark(Mark):
     pass
 
 
-class FastImport(IOLogger):
+class FastImport(object):
     def __init__(self):
         if Git.config('cinnabar.experiments') == 'true':
             from githg import GitHgHelper
@@ -589,11 +589,9 @@ class FastImport(IOLogger):
             self._proc = GitProcess('fast-import', '--quiet',
                                     stdin=subprocess.PIPE,
                                     config={'core.ignorecase': 'false'})
-        reader = self._proc.stdout
-        writer = self._proc.stdin
+        self._reader = self._proc.stdout
+        self._writer = self._proc.stdin
 
-        super(FastImport, self).__init__(logging.getLogger('fast-import'),
-                                         reader, writer)
         self._last_mark = 0
 
         self.write(
@@ -608,13 +606,19 @@ class FastImport(IOLogger):
         self.write('feature done\n')
         self._done = True
 
-    def read(self, length=0, level=logging.INFO):
+    def read(self, length=0):
         self.flush()
-        return super(FastImport, self).read(length, level)
+        return self._reader.read(length)
 
-    def readline(self, level=logging.INFO):
+    def readline(self):
         self.flush()
-        return super(FastImport, self).readline(level)
+        return self._reader.readline()
+
+    def write(self, data):
+        return self._writer.write(data)
+
+    def flush(self):
+        self._writer.flush()
 
     def close(self, rollback=False):
         if not rollback or self._done is not False:
@@ -646,7 +650,7 @@ class FastImport(IOLogger):
         sha1, blob, size = self.readline().split()
         assert blob == 'blob'
         size = int(size)
-        content = self.read(size, level=logging.DEBUG)
+        content = self.read(size)
         lf = self.read(1)
         assert lf == '\n'
         return content
@@ -661,7 +665,7 @@ class FastImport(IOLogger):
 
     def cmd_data(self, data):
         self.write('data %d\n' % len(data))
-        self.write(data, level=logging.DEBUG)
+        self.write(data)
         self.write('\n')
 
     def put_blob(self, data='', mark=0):
