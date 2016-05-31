@@ -589,9 +589,6 @@ class FastImport(object):
             self._proc = GitProcess('fast-import', '--quiet',
                                     stdin=subprocess.PIPE,
                                     config={'core.ignorecase': 'false'})
-        self._reader = self._proc.stdout
-        self._writer = self._proc.stdin
-
         self._last_mark = 0
 
         self.write(
@@ -608,17 +605,17 @@ class FastImport(object):
 
     def read(self, length=0):
         self.flush()
-        return self._reader.read(length)
+        return self._proc.stdout.read(length)
 
     def readline(self):
         self.flush()
-        return self._reader.readline()
+        return self._proc.stdout.readline()
 
     def write(self, data):
-        return self._writer.write(data)
+        return self._proc.stdin.write(data)
 
     def flush(self):
-        self._writer.flush()
+        self._proc.stdin.flush()
 
     def close(self, rollback=False):
         if not rollback or self._done is not False:
