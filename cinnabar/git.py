@@ -577,30 +577,38 @@ class EmptyMark(Mark):
 
 class FastImport(object):
     def __init__(self):
-        if Git.config('cinnabar.experiments') == 'true':
-            from githg import GitHgHelper
-            # Ensure the helper is there.
-            if GitHgHelper._helper is GitHgHelper:
-                GitHgHelper._helper = False
-            with GitHgHelper.query('feature', 'force'):
-                pass
-            self._proc = GitHgHelper._helper
-        else:
-            self._proc = GitProcess('fast-import', '--quiet',
-                                    stdin=subprocess.PIPE,
-                                    config={'core.ignorecase': 'false'})
         self._last_mark = 0
-
-        self.write(
-            "feature force\n"
-            "feature ls\n"
-            "feature notes\n"
-        )
-
         self._done = None
 
+    @property
+    def _proc(self):
+        try:
+            return self._real_proc
+        except AttributeError:
+            if Git.config('cinnabar.experiments') == 'true':
+                from githg import GitHgHelper
+                # Ensure the helper is there.
+                if GitHgHelper._helper is GitHgHelper:
+                    GitHgHelper._helper = False
+                with GitHgHelper.query('feature', 'force'):
+                    pass
+                self._real_proc = GitHgHelper._helper
+            else:
+                self._real_proc = GitProcess(
+                    'fast-import', '--quiet', stdin=subprocess.PIPE,
+                    config={'core.ignorecase': 'false'})
+            self.write(
+                "feature force\n"
+                "feature ls\n"
+                "feature notes\n"
+            )
+            if self._done:
+                self.write('feature done\n')
+
+            return self._real_proc
+
     def send_done(self):
-        self.write('feature done\n')
+        assert not hasattr(self, '_real_proc')
         self._done = True
 
     def read(self, length=0):
@@ -618,6 +626,8 @@ class FastImport(object):
         self._proc.stdin.flush()
 
     def close(self, rollback=False):
+        if not hasattr(self, '_real_proc'):
+            return
         if not rollback or self._done is not False:
             self.write('done\n')
             self._done = None
