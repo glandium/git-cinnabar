@@ -54,6 +54,8 @@ static void cleanup()
 	unkeep_all_packs();
 
 	initialized = 0;
+
+	pack_report();
 }
 
 /* Fill fast-import.c's command_buf and recent commands */
