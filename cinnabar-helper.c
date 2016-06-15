@@ -406,14 +406,14 @@ static int get_manifest_tree(const unsigned char *git_sha1,
 		goto not_found;
 	if (strcmp(entry.path, "git"))
 		goto not_found;
-	hashcpy(result->git, entry.sha1);
+	hashcpy(result->git, entry.oid->hash);
 
 	/* The second entry in the manifest tree is the hg subtree. */
 	if (!tree_entry(&desc, &entry))
 		goto not_found;
 	if (strcmp(entry.path, "hg"))
 		goto not_found;
-	hashcpy(result->hg, entry.sha1);
+	hashcpy(result->hg, entry.oid->hash);
 
 	/* There shouldn't be any other entry. */
 	if (tree_entry(&desc, &entry))
@@ -473,7 +473,7 @@ static int manifest_tree_entry(struct manifest_tree_state *state,
 		return 0;
 	}
 
-	result->sha1 = entry_hg.sha1;
+	result->sha1 = entry_hg.oid->hash;
 	result->path = entry_hg.path;
 	result->mode = entry_git.mode;
 	if (strcmp(entry_hg.path, entry_git.path))
@@ -481,7 +481,7 @@ static int manifest_tree_entry(struct manifest_tree_state *state,
 	if (S_ISDIR(entry_git.mode)) {
 		if (entry_git.mode != entry_hg.mode)
 			goto corrupted;
-		result->other_sha1 = entry_git.sha1;
+		result->other_sha1 = entry_git.oid->hash;
 	}
 	return 1;
 corrupted:
