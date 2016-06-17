@@ -127,15 +127,15 @@ def getchunk(stream):
     return readexactly(stream, l - 4)
 
 
-class RawRevChunk(str):
+class RawRevChunk(bytearray):
     __slots__ = ()
 
     @staticmethod
     def _field(offset, size=None, filter=None):
         if filter is None:
             if size is None:
-                return property(lambda self: self[offset:])
-            return property(lambda self: self[offset:offset + size])
+                return property(lambda self: str(self[offset:]))
+            return property(lambda self: str(self[offset:offset + size]))
         if size is None:
             return property(lambda self: filter(self[offset:]))
         return property(lambda self: filter(self[offset:offset + size]))
