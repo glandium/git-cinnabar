@@ -6,17 +6,17 @@ import sys
 import urllib
 sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
-from .githg import (
+from cinnabar.githg import (
     NothingToGraftException,
     RevChunk,
     ChangesetInfo,
     ManifestInfo,
 )
-from .helper import (
+from cinnabar.helper import (
     HgRepoHelper,
     NoHelperException,
 )
-from .bundle import create_bundle
+from cinnabar.bundle import create_bundle
 from binascii import (
     hexlify,
     unhexlify,
@@ -33,13 +33,13 @@ from urlparse import (
 import logging
 import struct
 import random
-from .dag import gitdag
-from .git import (
+from cinnabar.dag import gitdag
+from cinnabar.git import (
     Git,
     git_dir,
     NULL_NODE_ID,
 )
-from .util import (
+from cinnabar.util import (
     check_enabled,
     LazyCall,
     next,
