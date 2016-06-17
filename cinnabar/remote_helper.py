@@ -12,7 +12,7 @@ from cinnabar.hg import (
     get_repo,
     push,
 )
-from cinnabar.bundle import (
+from cinnabar.hg.bundle import (
     PushStore,
 )
 from itertools import chain

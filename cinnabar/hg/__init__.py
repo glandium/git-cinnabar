@@ -16,7 +16,7 @@ from cinnabar.helper import (
     HgRepoHelper,
     NoHelperException,
 )
-from cinnabar.bundle import create_bundle
+from .bundle import create_bundle
 from binascii import (
     hexlify,
     unhexlify,

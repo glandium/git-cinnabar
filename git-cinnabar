@@ -33,7 +33,7 @@ from cinnabar.helper import (
     GitHgHelper,
     NoHelperException,
 )
-from cinnabar.bundle import (
+from cinnabar.hg.bundle import (
     create_bundle,
     get_changes,
     PushStore,

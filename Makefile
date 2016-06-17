@@ -6,12 +6,12 @@ PYTHON_LIBS := \
 	cinnabar/__init__.py \
 	cinnabar/githg.py \
 	cinnabar/bdiff.py \
-	cinnabar/bundle.py \
 	cinnabar/dag.py \
 	cinnabar/helper.py \
 	cinnabar/remote_helper.py \
 	cinnabar/git.py \
 	cinnabar/hg/__init__.py \
+	cinnabar/hg/bundle.py \
 	cinnabar/util.py
 
 ifneq (,$(wildcard $(CURDIR)/git-core/Makefile))

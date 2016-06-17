@@ -1,19 +1,19 @@
-from githg import (
+from cinnabar.githg import (
     GitCommit,
     GitHgStore,
     GeneratedFileRev,
     GeneratedManifestInfo,
     ManifestLine,
 )
-from .helper import GitHgHelper
-from .git import (
+from cinnabar.helper import GitHgHelper
+from cinnabar.git import (
     EMPTY_BLOB,
     EMPTY_TREE,
     Git,
     Mark,
     NULL_NODE_ID,
 )
-from .util import (
+from cinnabar.util import (
     next,
     one,
     progress_iter,
