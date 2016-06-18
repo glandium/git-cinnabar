@@ -140,15 +140,16 @@ class RevChunk(object):
     def diff(self, other):
         return textdiff(other.data if other else '', self.data)
 
-    def serialize(self, other):
-        header = struct.pack(
-            '20s20s20s20s',
-            unhexlify(self.node),
-            unhexlify(self.parent1),
-            unhexlify(self.parent2),
-            unhexlify(self.changeset),
-        )
-        return header + self.diff(other)
+    def serialize(self, other, type):
+        result = type()
+        result.node = self.node
+        result.parent1 = self.parent1
+        result.parent2 = self.parent2
+        if other:
+            result.delta_node = other.node
+        result.changeset = self.changeset
+        result.data = self.diff(other)
+        return result
 
     @property
     def parents(self):

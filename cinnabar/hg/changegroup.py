@@ -44,14 +44,17 @@ class RawRevChunk01(RawRevChunk):
 
     @property
     def delta_node(self):
-        return self._delta_nodes[self.node]
+        return self._delta_nodes.get(self.node, NULL_NODE_ID)
 
     @delta_node.setter
     def delta_node(self, value):
         self._delta_nodes[self.node] = value
 
     def __del__(self):
-        del self._delta_nodes[self.node]
+        try:
+            del self._delta_nodes[self.node]
+        except KeyError:
+            pass
 
 
 class RawRevChunk02(RawRevChunk):

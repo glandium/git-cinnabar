@@ -19,6 +19,9 @@ from cinnabar.util import (
     progress_iter,
     PseudoString,
 )
+from .changegroup import (
+    RawRevChunk01,
+)
 from collections import (
     OrderedDict,
     defaultdict,
@@ -313,7 +316,7 @@ class PushStore(GitHgStore):
         super(PushStore, self).close()
 
 
-def create_bundle_chunks(store, commits):
+def create_bundle_chunks(store, commits, type):
     manifests = OrderedDict()
     files = defaultdict(list)
 
@@ -334,9 +337,9 @@ def create_bundle_chunks(store, commits):
                            hg_changeset.parent2)
         if previous is None and hg_changeset.parent1 != NULL_NODE_ID:
             previous = store.changeset(hg_changeset.parent1)
-        data = hg_changeset.serialize(previous)
+        data = hg_changeset.serialize(previous, type)
         previous = hg_changeset
-        yield data
+        yield str(data)
         manifest = changeset_data['manifest']
         if manifest not in manifests and manifest != NULL_NODE_ID:
             manifests[manifest] = changeset
@@ -350,9 +353,9 @@ def create_bundle_chunks(store, commits):
         if previous is None and hg_manifest.parent1 != NULL_NODE_ID:
             previous = store.manifest(hg_manifest.parent1)
         hg_manifest.changeset = changeset
-        data = hg_manifest.serialize(previous)
+        data = hg_manifest.serialize(previous, type)
         previous = hg_manifest
-        yield data
+        yield str(data)
         manifest_ref = store.manifest_ref(manifest)
         if isinstance(manifest_ref, Mark):
             for path, (sha1, attr) in hg_manifest.modified.iteritems():
@@ -384,9 +387,9 @@ def create_bundle_chunks(store, commits):
                 assert file.node == file.sha1
                 if previous is None and file.parent1 != NULL_NODE_ID:
                     previous = store.file(file.parent1)
-                data = file.serialize(previous)
+                data = file.serialize(previous, type)
                 previous = file
-                yield data
+                yield str(data)
 
             yield None
 
@@ -406,7 +409,7 @@ def create_bundle_chunks(store, commits):
 
 
 def create_bundle(store, commits):
-    for chunk in create_bundle_chunks(store, commits):
+    for chunk in create_bundle_chunks(store, commits, RawRevChunk01):
         size = 0 if chunk is None else len(chunk) + 4
         yield struct.pack(">l", size)
         if chunk:
