@@ -1,5 +1,3 @@
-#!/usr/bin/env python2.7
-
 from __future__ import division
 import os
 import sys
