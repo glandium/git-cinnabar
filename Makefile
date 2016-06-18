@@ -12,6 +12,7 @@ PYTHON_LIBS := \
 	cinnabar/git.py \
 	cinnabar/hg/__init__.py \
 	cinnabar/hg/bundle.py \
+	cinnabar/hg/changegroup.py \
 	cinnabar/util.py
 
 ifneq (,$(wildcard $(CURDIR)/git-core/Makefile))
