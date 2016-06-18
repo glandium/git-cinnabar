@@ -131,14 +131,24 @@ class RawRevChunk(bytearray):
     __slots__ = ()
 
     @staticmethod
-    def _field(offset, size=None, filter=None):
-        if filter is None:
-            if size is None:
-                return property(lambda self: str(self[offset:]))
-            return property(lambda self: str(self[offset:offset + size]))
-        if size is None:
-            return property(lambda self: filter(self[offset:]))
-        return property(lambda self: filter(self[offset:offset + size]))
+    def _field(offset, size=None, filter=str):
+        unfilter = unhexlify if filter == hexlify else None
+        end = offset + size if size else None
+        class descriptor(object):
+            def __get__(self, obj, type=None):
+                return filter(obj[offset:end])
+
+            def __set__(self, obj, value):
+                value = unfilter(value) if unfilter else value
+                assert len(value) == size or not size
+                self.ensure(obj, end or offset)
+                obj[offset:end] = value
+
+            def ensure(self, obj, length):
+                if length > len(obj):
+                    obj.extend('\0' * (length - len(obj)))
+
+        return descriptor()
 
 
 class RawRevChunk01(RawRevChunk):
