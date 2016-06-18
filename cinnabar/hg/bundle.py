@@ -1,9 +1,12 @@
 from cinnabar.githg import (
+    ChangesetInfo,
     GitCommit,
     GitHgStore,
     GeneratedFileRev,
     GeneratedManifestInfo,
+    ManifestInfo,
     ManifestLine,
+    RevChunk,
 )
 from cinnabar.helper import GitHgHelper
 from cinnabar.git import (
@@ -316,11 +319,10 @@ class PushStore(GitHgStore):
         super(PushStore, self).close()
 
 
-def create_bundle_chunks(store, commits, type):
+def get_bundle_data(store, commits):
     manifests = OrderedDict()
     files = defaultdict(list)
 
-    previous = None
     for nodes in progress_iter('Bundling %d changesets', commits):
         parents = nodes.split()
         node = parents.pop(0)
@@ -335,27 +337,18 @@ def create_bundle_chunks(store, commits, type):
         if is_new:
             store.add_head(hg_changeset.node, hg_changeset.parent1,
                            hg_changeset.parent2)
-        if previous is None and hg_changeset.parent1 != NULL_NODE_ID:
-            previous = store.changeset(hg_changeset.parent1)
-        data = hg_changeset.serialize(previous, type)
-        previous = hg_changeset
-        yield str(data)
+        yield hg_changeset
         manifest = changeset_data['manifest']
         if manifest not in manifests and manifest != NULL_NODE_ID:
             manifests[manifest] = changeset
 
     yield None
 
-    previous = None
     for manifest, changeset in progress_iter('Bundling %d manifests',
                                              manifests.iteritems()):
         hg_manifest = store.manifest(manifest, include_parents=True)
-        if previous is None and hg_manifest.parent1 != NULL_NODE_ID:
-            previous = store.manifest(hg_manifest.parent1)
         hg_manifest.changeset = changeset
-        data = hg_manifest.serialize(previous, type)
-        previous = hg_manifest
-        yield str(data)
+        yield hg_manifest
         manifest_ref = store.manifest_ref(manifest)
         if isinstance(manifest_ref, Mark):
             for path, (sha1, attr) in hg_manifest.modified.iteritems():
@@ -375,7 +368,6 @@ def create_bundle_chunks(store, commits, type):
     def iter_files(files):
         for path in sorted(files):
             yield path
-            previous = None
             nodes = set()
             for node, parents, changeset in files[path]:
                 if node in nodes:
@@ -385,11 +377,7 @@ def create_bundle_chunks(store, commits, type):
                 file.set_parents(*parents)
                 file.changeset = changeset
                 assert file.node == file.sha1
-                if previous is None and file.parent1 != NULL_NODE_ID:
-                    previous = store.file(file.parent1)
-                data = file.serialize(previous, type)
-                previous = file
-                yield str(data)
+                yield file
 
             yield None
 
@@ -409,8 +397,23 @@ def create_bundle_chunks(store, commits, type):
 
 
 def create_bundle(store, commits):
-    for chunk in create_bundle_chunks(store, commits, RawRevChunk01):
-        size = 0 if chunk is None else len(chunk) + 4
+    previous = None
+    for chunk in get_bundle_data(store, commits):
+        if isinstance(chunk, RevChunk):
+            if previous is None and chunk.parent1 != NULL_NODE_ID:
+                if isinstance(chunk, ChangesetInfo):
+                    get_previous = store.changeset
+                elif isinstance(chunk, ManifestInfo):
+                    get_previous = store.manifest
+                else:
+                    get_previous = store.file
+                previous = get_previous(chunk.parent1)
+            data = chunk.serialize(previous, RawRevChunk01)
+        else:
+            data = chunk
+        size = 0 if data is None else len(data) + 4
         yield struct.pack(">l", size)
-        if chunk:
-            yield chunk
+        if data:
+            yield str(data)
+        if isinstance(chunk, (RevChunk, types.NoneType)):
+            previous = chunk
