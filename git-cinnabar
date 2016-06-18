@@ -34,10 +34,11 @@ from cinnabar.helper import (
     NoHelperException,
 )
 from cinnabar.hg.bundle import (
-    create_bundle,
+    bundle_data,
     get_changes,
     PushStore,
 )
+from cinnabar.hg.changegroup import create_changegroup
 from collections import (
     defaultdict,
     OrderedDict,
@@ -357,7 +358,8 @@ def do_bundle(fname, *revs):
         store.init_fast_import()
         with open(fname, 'wb') as fh:
             fh.write('HG10UN')
-            for data in create_bundle(store, bundle_commits):
+            for data in create_changegroup(store,
+                                           bundle_data(store, bundle_commits)):
                 fh.write(data)
         store.close(rollback=True)
 

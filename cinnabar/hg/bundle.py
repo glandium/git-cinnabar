@@ -1,12 +1,9 @@
 from cinnabar.githg import (
-    ChangesetInfo,
     GitCommit,
     GitHgStore,
     GeneratedFileRev,
     GeneratedManifestInfo,
-    ManifestInfo,
     ManifestLine,
-    RevChunk,
 )
 from cinnabar.helper import GitHgHelper
 from cinnabar.git import (
@@ -22,14 +19,10 @@ from cinnabar.util import (
     progress_iter,
     PseudoString,
 )
-from .changegroup import (
-    RawRevChunk01,
-)
 from collections import (
     OrderedDict,
     defaultdict,
 )
-import struct
 import types
 from itertools import chain
 
@@ -319,7 +312,7 @@ class PushStore(GitHgStore):
         super(PushStore, self).close()
 
 
-def get_bundle_data(store, commits):
+def bundle_data(store, commits):
     manifests = OrderedDict()
     files = defaultdict(list)
 
@@ -394,26 +387,3 @@ def get_bundle_data(store, commits):
         yield chunk
 
     yield None
-
-
-def create_bundle(store, commits):
-    previous = None
-    for chunk in get_bundle_data(store, commits):
-        if isinstance(chunk, RevChunk):
-            if previous is None and chunk.parent1 != NULL_NODE_ID:
-                if isinstance(chunk, ChangesetInfo):
-                    get_previous = store.changeset
-                elif isinstance(chunk, ManifestInfo):
-                    get_previous = store.manifest
-                else:
-                    get_previous = store.file
-                previous = get_previous(chunk.parent1)
-            data = chunk.serialize(previous, RawRevChunk01)
-        else:
-            data = chunk
-        size = 0 if data is None else len(data) + 4
-        yield struct.pack(">l", size)
-        if data:
-            yield str(data)
-        if isinstance(chunk, (RevChunk, types.NoneType)):
-            previous = chunk

@@ -2,6 +2,14 @@ from binascii import (
     hexlify,
     unhexlify,
 )
+import struct
+import types
+from cinnabar.githg import (
+    ChangesetInfo,
+    ManifestInfo,
+    RevChunk,
+)
+from cinnabar.git import NULL_NODE_ID
 
 
 class RawRevChunk(bytearray):
@@ -66,3 +74,26 @@ class RawRevChunk02(RawRevChunk):
     delta_node = RawRevChunk._field(60, 20, hexlify)
     changeset = RawRevChunk._field(80, 20, hexlify)
     data = RawRevChunk._field(100)
+
+
+def create_changegroup(store, bundle_data):
+    previous = None
+    for chunk in bundle_data:
+        if isinstance(chunk, RevChunk):
+            if previous is None and chunk.parent1 != NULL_NODE_ID:
+                if isinstance(chunk, ChangesetInfo):
+                    get_previous = store.changeset
+                elif isinstance(chunk, ManifestInfo):
+                    get_previous = store.manifest
+                else:
+                    get_previous = store.file
+                previous = get_previous(chunk.parent1)
+            data = chunk.serialize(previous, RawRevChunk01)
+        else:
+            data = chunk
+        size = 0 if data is None else len(data) + 4
+        yield struct.pack(">l", size)
+        if data:
+            yield str(data)
+        if isinstance(chunk, (RevChunk, types.NoneType)):
+            previous = chunk

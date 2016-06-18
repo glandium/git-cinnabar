@@ -14,7 +14,6 @@ from cinnabar.helper import (
     HgRepoHelper,
     NoHelperException,
 )
-from .bundle import create_bundle
 from binascii import (
     hexlify,
     unhexlify,
@@ -47,7 +46,9 @@ from collections import (
     defaultdict,
     deque,
 )
+from .bundle import bundle_data
 from .changegroup import (
+    create_changegroup,
     RawRevChunk01,
     RawRevChunk02,
 )
@@ -599,7 +600,7 @@ def push(repo, store, what, repo_heads, repo_branches):
             repo_heads = [unhexlify(h) for h in repo_heads]
         if repo.local():
             repo.local().ui.setconfig('server', 'validate', True)
-        cg = create_bundle(store, push_commits)
+        cg = create_changegroup(store, bundle_data(store, push_commits))
         if not isinstance(repo, HelperRepo):
             chunks = util.chunkbuffer(cg)
             cg = cg1unpacker(chunks, 'UN')
