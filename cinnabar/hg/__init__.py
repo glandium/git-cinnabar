@@ -46,9 +46,8 @@ from collections import (
     defaultdict,
     deque,
 )
-from .bundle import bundle_data
+from .bundle import create_bundle
 from .changegroup import (
-    create_changegroup,
     RawRevChunk01,
     RawRevChunk02,
 )
@@ -73,6 +72,7 @@ if changegroup:
 
     try:
         from mercurial.bundle2 import (
+            bundle2caps,
             encodecaps,
             unbundle20,
             getunbundler,
@@ -600,10 +600,12 @@ def push(repo, store, what, repo_heads, repo_branches):
             repo_heads = [unhexlify(h) for h in repo_heads]
         if repo.local():
             repo.local().ui.setconfig('server', 'validate', True)
-        cg = create_changegroup(store, bundle_data(store, push_commits))
+        b2caps = bundle2caps(repo) if unbundle20 else {}
+        cg = create_bundle(store, push_commits, b2caps)
         if not isinstance(repo, HelperRepo):
-            chunks = util.chunkbuffer(cg)
-            cg = cg1unpacker(chunks, 'UN')
+            cg = util.chunkbuffer(cg)
+            if not b2caps:
+                cg = cg1unpacker(cg, 'UN')
         pushed = repo.unbundle(cg, repo_heads, '') != 0
     return gitdag(push_commits) if pushed else ()
 

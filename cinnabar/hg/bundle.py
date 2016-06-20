@@ -19,6 +19,11 @@ from cinnabar.util import (
     progress_iter,
     PseudoString,
 )
+from .changegroup import (
+    create_changegroup,
+    RawRevChunk01,
+    RawRevChunk02,
+)
 from collections import (
     OrderedDict,
     defaultdict,
@@ -387,3 +392,34 @@ def bundle_data(store, commits):
         yield chunk
 
     yield None
+
+
+class fakeui(object):
+    debugflag = False
+
+    def configbool(self, section, name, default=False, untrusted=False):
+        return default
+
+    def debug(*args, **kwargs):
+        pass
+
+
+def create_bundle(store, commits, bundle2caps={}):
+    version = '01'
+    chunk_type = RawRevChunk01
+    if bundle2caps:
+        versions = bundle2caps.get('changegroup')
+        if versions:
+            if '02' in versions:
+                chunk_type = RawRevChunk02
+                version = '02'
+    cg = create_changegroup(store, bundle_data(store, commits), chunk_type)
+    if bundle2caps:
+        from mercurial.bundle2 import bundle20, bundlepart
+        bundle = bundle20(fakeui())
+        bundle.addpart(bundlepart('replycaps'))
+        bundle.addpart(bundlepart('changegroup',
+                                  advisoryparams=(('version', version),),
+                                  data=cg))
+        return bundle.getchunks()
+    return cg

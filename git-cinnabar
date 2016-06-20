@@ -34,11 +34,10 @@ from cinnabar.helper import (
     NoHelperException,
 )
 from cinnabar.hg.bundle import (
-    bundle_data,
+    create_bundle,
     get_changes,
     PushStore,
 )
-from cinnabar.hg.changegroup import create_changegroup
 from collections import (
     defaultdict,
     OrderedDict,
@@ -356,10 +355,15 @@ def do_bundle(fname, *revs):
         # the parent commit doesn't have mercurial metadata.
         store = PushStore()
         store.init_fast_import()
+        # TODO: allow to create bundle v2 through command line arguments.
+        b2caps = {
+            # 'HG20': (),
+            # 'changegroup': ('01', '02'),
+        }
         with open(fname, 'wb') as fh:
-            fh.write('HG10UN')
-            for data in create_changegroup(store,
-                                           bundle_data(store, bundle_commits)):
+            if not b2caps:
+                fh.write('HG10UN')
+            for data in create_bundle(store, bundle_commits, b2caps):
                 fh.write(data)
         store.close(rollback=True)
 

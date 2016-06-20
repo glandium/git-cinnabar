@@ -76,19 +76,38 @@ class RawRevChunk02(RawRevChunk):
     data = RawRevChunk._field(100)
 
 
-def create_changegroup(store, bundle_data):
+def get_previous(store, sha1, type):
+    if issubclass(type, ChangesetInfo):
+        return store.changeset(sha1)
+    if issubclass(type, ManifestInfo):
+        return store.manifest(sha1)
+    return store.file(sha1)
+
+
+def prepare_chunk(store, chunk, previous, chunk_type):
+    if chunk_type == RawRevChunk01:
+        if previous is None and chunk.parent1 != NULL_NODE_ID:
+            previous = get_previous(store, chunk.parent1, type(chunk))
+        return chunk.serialize(previous, chunk_type)
+    elif chunk_type == RawRevChunk02:
+        parents = (previous if previous and p == previous.node
+                   else get_previous(store, p, type(chunk))
+                   for p in chunk.parents)
+        deltas = sorted((chunk.serialize(p, chunk_type) for p in parents),
+                        key=len)
+        if len(deltas):
+            return deltas[0]
+        else:
+            return chunk.serialize(None, chunk_type)
+    else:
+        assert False
+
+
+def create_changegroup(store, bundle_data, type=RawRevChunk01):
     previous = None
     for chunk in bundle_data:
         if isinstance(chunk, RevChunk):
-            if previous is None and chunk.parent1 != NULL_NODE_ID:
-                if isinstance(chunk, ChangesetInfo):
-                    get_previous = store.changeset
-                elif isinstance(chunk, ManifestInfo):
-                    get_previous = store.manifest
-                else:
-                    get_previous = store.file
-                previous = get_previous(chunk.parent1)
-            data = chunk.serialize(previous, RawRevChunk01)
+            data = prepare_chunk(store, chunk, previous, type)
         else:
             data = chunk
         size = 0 if data is None else len(data) + 4
