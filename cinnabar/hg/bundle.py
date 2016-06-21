@@ -28,6 +28,7 @@ from collections import (
     OrderedDict,
     defaultdict,
 )
+import struct
 import types
 from itertools import chain
 
@@ -394,14 +395,35 @@ def bundle_data(store, commits):
     yield None
 
 
-class fakeui(object):
-    debugflag = False
+_bundlepart_id = 0
 
-    def configbool(self, section, name, default=False, untrusted=False):
-        return default
 
-    def debug(*args, **kwargs):
-        pass
+def bundlepart_header(name, advisoryparams=()):
+    global _bundlepart_id
+    yield struct.pack('>B', len(name))
+    yield name
+    yield struct.pack('>I', _bundlepart_id)
+    _bundlepart_id += 1
+    yield struct.pack('>BB', 0, len(advisoryparams))
+    for key, value in advisoryparams:
+        yield struct.pack('>BB', len(key), len(value))
+    for key, value in advisoryparams:
+        yield key
+        yield value
+
+
+def bundlepart(name, advisoryparams=(), data=None):
+    header = ''.join(bundlepart_header(name, advisoryparams))
+    yield struct.pack('>i', len(header))
+    yield header
+    while data:
+        chunk = data.read(4096)
+        if chunk:
+            yield struct.pack('>i', len(chunk))
+            yield chunk
+        else:
+            break
+    yield '\0' * 4  # Empty chunk ending the part
 
 
 def create_bundle(store, commits, bundle2caps={}):
@@ -415,11 +437,16 @@ def create_bundle(store, commits, bundle2caps={}):
                 version = '02'
     cg = create_changegroup(store, bundle_data(store, commits), chunk_type)
     if bundle2caps:
-        from mercurial.bundle2 import bundle20, bundlepart
-        bundle = bundle20(fakeui())
-        bundle.addpart(bundlepart('replycaps'))
-        bundle.addpart(bundlepart('changegroup',
-                                  advisoryparams=(('version', version),),
-                                  data=cg))
-        return bundle.getchunks()
-    return cg
+        from mercurial.util import chunkbuffer
+        yield 'HG20'
+        yield '\0' * 4  # bundle parameters length: no params
+        for chunk in bundlepart('REPLYCAPS'):
+            yield chunk
+        for chunk in bundlepart('CHANGEGROUP',
+                                advisoryparams=(('version', version),),
+                                data=chunkbuffer(cg)):
+            yield chunk
+        yield '\0' * 4  # End of bundle
+    else:
+        for chunk in cg:
+            yield chunk
