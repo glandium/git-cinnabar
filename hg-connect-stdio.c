@@ -112,7 +112,7 @@ static void stdio_changegroup_command(struct hg_connection *conn, FILE *out,
 	 * going to be in advance, so we have to read it according to its
 	 * format: the changegroup format. For now, only support changegroupv1
 	 */
-	copy_changegroup(conn->stdio.out, out);
+	copy_bundle(conn->stdio.out, out);
 	va_end(ap);
 }
 

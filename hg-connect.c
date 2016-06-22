@@ -181,7 +181,7 @@ void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 	//TODO: error checking
 	mks_tempfile_ts(tmpfile, "hg-bundle-XXXXXX.hg", 3);
 	file = fdopen_tempfile(tmpfile, "w");
-	copy_changegroup(in, file);
+	copy_bundle(in, file);
 	close_tempfile(tmpfile);
 
 	file = fopen(tmpfile->filename.buf, "r");

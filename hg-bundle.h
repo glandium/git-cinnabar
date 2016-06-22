@@ -3,6 +3,6 @@
 
 #include <stdio.h>
 
-extern void copy_changegroup(FILE *in, FILE *out);
+extern void copy_bundle(FILE *in, FILE *out);
 
 #endif
