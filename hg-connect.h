@@ -42,8 +42,8 @@ extern void hg_known(struct hg_connection *conn, struct strbuf *result,
 		     struct sha1_array *nodes);
 
 extern void hg_getbundle(struct hg_connection *conn, FILE *out,
-			 struct sha1_array *heads,
-			 struct sha1_array *common);
+			 struct sha1_array *heads, struct sha1_array *common,
+			 const char *bundle2caps);
 
 extern void hg_unbundle(struct hg_connection *conn, struct strbuf *response,
 			FILE *in, struct sha1_array *heads);

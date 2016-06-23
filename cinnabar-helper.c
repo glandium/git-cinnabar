@@ -30,7 +30,7 @@
  *     - listkeys <namespace>
  *     	 Calls the "listkeys" command on the repository and returns the
  *     	 corresponding result.
- *     - getbundle <heads> <common>
+ *     - getbundle <heads> <common> <bundle2caps>
  *       Calls the "getbundle" command on the repository and streams a
  *       changegroup in result. `heads` and `common` are comma separated
  *       lists of changesets.
@@ -889,16 +889,19 @@ static void do_getbundle(struct hg_connection *conn, struct string_list *args)
 {
 	struct sha1_array heads = SHA1_ARRAY_INIT;
 	struct sha1_array common = SHA1_ARRAY_INIT;
+	const char *bundle2caps = NULL;
 
-	if (args->nr > 2)
+	if (args->nr > 3)
 		exit(1);
 
 	if (args->nr > 0)
 		arg_as_sha1_array(args->items[0].string, &heads);
 	if (args->nr > 1)
 		arg_as_sha1_array(args->items[1].string, &common);
+	if (args->nr > 2)
+		bundle2caps = args->items[2].string;
 
-	hg_getbundle(conn, stdout, &heads, &common);
+	hg_getbundle(conn, stdout, &heads, &common, bundle2caps);
 
 	sha1_array_clear(&common);
 	sha1_array_clear(&heads);

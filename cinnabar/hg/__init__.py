@@ -380,8 +380,26 @@ class HelperRepo(object):
         return [bool(int(b)) for b in result]
 
     def getbundle(self, name, heads, common, *args, **kwargs):
-        return HgRepoHelper.getbundle((hexlify(h) for h in heads),
-                                      (hexlify(c) for c in common))
+        data = HgRepoHelper.getbundle((hexlify(h) for h in heads),
+                                      (hexlify(c) for c in common),
+                                      ','.join(kwargs.get('bundlecaps', ())))
+        header = readexactly(data, 4)
+        if header == 'HG20':
+            return unbundle20(get_ui(), data)
+
+        class Reader(object):
+            def __init__(self, header, data):
+                self.header = header
+                self.data = data
+
+            def read(self, length):
+                result = self.header[:length]
+                self.header = self.header[length:]
+                if length > len(result):
+                    result += self.data.read(length - len(result))
+                return result
+
+        return Reader(header, data)
 
     def pushkey(self, namespace, key, old, new):
         return HgRepoHelper.pushkey(namespace, key, old, new)

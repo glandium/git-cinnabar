@@ -145,7 +145,8 @@ void hg_listkeys(struct hg_connection *conn, struct strbuf *result,
 }
 
 void hg_getbundle(struct hg_connection *conn, FILE *out,
-		  struct sha1_array *heads, struct sha1_array *common)
+		  struct sha1_array *heads, struct sha1_array *common,
+		  const char *bundle2caps)
 {
 	struct string_list args = STRING_LIST_INIT_NODUP;
 	struct string_list_item *item;
@@ -157,6 +158,10 @@ void hg_getbundle(struct hg_connection *conn, FILE *out,
 	if (common && common->nr) {
 		item = string_list_append(&args, "common");
 		item->util = join_sha1_array_hex(common, ' ');
+	}
+	if (bundle2caps && *bundle2caps) {
+		item = string_list_append(&args, "bundlecaps");
+		item->util = strdup(bundle2caps);
 	}
 	conn->changegroup_command(conn, out, "getbundle", "*", &args, NULL);
 	string_list_clear(&args, 1);

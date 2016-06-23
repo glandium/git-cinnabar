@@ -296,9 +296,9 @@ class HgRepoHelper(BaseHelper):
             return self._read_data(stdout)
 
     @classmethod
-    def getbundle(self, heads, common):
-        with self.query('getbundle', ','.join(heads),
-                        ','.join(common)) as stdout:
+    def getbundle(self, heads, common, bundle2caps=False):
+        with self.query('getbundle', ','.join(heads), ','.join(common),
+                        bundle2caps) as stdout:
             return stdout
 
     @classmethod
