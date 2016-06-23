@@ -934,6 +934,21 @@ static void do_pushkey(struct hg_connection *conn, struct string_list *args)
 	strbuf_release(&result);
 }
 
+static void do_capable(struct hg_connection *conn, struct string_list *args)
+{
+	struct strbuf result = STRBUF_INIT;
+	const char *result_str;
+
+	if (args->nr != 1)
+		exit(1);
+
+	result_str = hg_get_capability(conn, args->items[0].string);
+	if (result_str && *result_str)
+		strbuf_addstr(&result, result_str);
+	send_buffer(&result);
+	strbuf_release(&result);
+}
+
 static void connected_loop(struct hg_connection *conn)
 {
 	struct strbuf buf = STRBUF_INIT;
@@ -957,6 +972,8 @@ static void connected_loop(struct hg_connection *conn)
 			do_unbundle(conn, &args);
 		else if (!strcmp("pushkey", command))
 			do_pushkey(conn, &args);
+		else if (!strcmp("capable", command))
+			do_capable(conn, &args);
 		else
 			die("Unknown command: \"%s\"", command);
 

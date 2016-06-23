@@ -32,6 +32,9 @@ struct hg_connection {
 
 extern struct hg_connection *hg_connect(const char *url, int flags);
 
+extern const char *hg_get_capability(struct hg_connection *conn,
+				     const char *name);
+
 extern int hg_finish_connect(struct hg_connection *conn);
 
 extern void hg_get_repo_state(struct hg_connection *conn,

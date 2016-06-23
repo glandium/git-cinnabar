@@ -44,11 +44,11 @@ void split_capabilities(struct string_list *list, const char *buf)
 	}
 }
 
-const char *get_capability(struct string_list *list, const char *name)
+const char *hg_get_capability(struct hg_connection *conn, const char *name)
 {
 	struct string_list_item *item;
 
-	item = unsorted_string_list_lookup(list, name);
+	item = unsorted_string_list_lookup(&conn->capabilities, name);
 	if (item)
 		return item->util ? item->util : "";
 	return NULL;
@@ -110,7 +110,7 @@ struct hg_connection *hg_connect(const char *url, int flags)
 		conn = hg_connect_stdio(url, flags);
 
 	for (i = 0; i < ARRAY_SIZE(required_caps); i++)
-		if (!get_capability(&conn->capabilities, required_caps[i]))
+		if (!hg_get_capability(conn, required_caps[i]))
 			die("Mercurial repository doesn't support the required"
 			    " \"%s\" capability.", required_caps[i]);
 

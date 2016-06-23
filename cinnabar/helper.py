@@ -286,6 +286,11 @@ class HgRepoHelper(BaseHelper):
             }
 
     @classmethod
+    def capable(self, name):
+        with self.query('capable', name) as stdout:
+            return self._read_data(stdout)
+
+    @classmethod
     def known(self, nodes):
         with self.query('known', *nodes) as stdout:
             return self._read_data(stdout)
