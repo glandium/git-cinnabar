@@ -337,6 +337,7 @@ def findcommon(repo, store, hgheads):
 
 class HelperRepo(object):
     def __init__(self, url):
+        self._url = url
         connect_result = HgRepoHelper.connect(url)
         self._branchmap = {
             urllib.unquote(branch): [unhexlify(h)
@@ -347,6 +348,9 @@ class HelperRepo(object):
         self._heads = [unhexlify(h)
                        for h in connect_result['heads'][:-1].split(' ')]
         self._bookmarks = self._decode_keys(connect_result['bookmarks'])
+
+    def url(self):
+        return self._url
 
     def _decode_keys(self, data):
         return dict(
@@ -394,6 +398,7 @@ class HelperRepo(object):
 # smarter than that.
 class bundlerepo(object):
     def __init__(self, path):
+        self._url = path
         fh = open(path, 'r')
         header = readexactly(fh, 4)
         magic, version = header[0:2], header[2:4]
@@ -408,6 +413,9 @@ class bundlerepo(object):
             raise Exception('%s: unsupported bundle version %s' % (path,
                             version))
         self._file = os.path.basename(path)
+
+    def url(self):
+        return self._url
 
     def init(self, store):
         raw_unbundler = unbundler(self._bundle)
@@ -601,6 +609,8 @@ def push(repo, store, what, repo_heads, repo_branches):
         if repo.local():
             repo.local().ui.setconfig('server', 'validate', True)
         b2caps = bundle2caps(repo) if unbundle20 else {}
+        if b2caps and repo.url().startswith(('http://', 'https://')):
+            b2caps['replycaps'] = True
         cg = create_bundle(store, push_commits, b2caps)
         if not isinstance(repo, HelperRepo):
             cg = util.chunkbuffer(cg)

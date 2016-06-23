@@ -440,8 +440,9 @@ def create_bundle(store, commits, bundle2caps={}):
         from mercurial.util import chunkbuffer
         yield 'HG20'
         yield '\0' * 4  # bundle parameters length: no params
-        for chunk in bundlepart('REPLYCAPS'):
-            yield chunk
+        if bundle2caps.get('replycaps'):
+            for chunk in bundlepart('REPLYCAPS'):
+                yield chunk
         for chunk in bundlepart('CHANGEGROUP',
                                 advisoryparams=(('version', version),),
                                 data=chunkbuffer(cg)):
