@@ -229,10 +229,14 @@ static void http_push_command(struct hg_connection *conn,
 	http_command(conn, prepare_push_request, &info, command, ap);
 	va_end(ap);
 
-	string_list_split_in_place(&list, http_response.buf, '\n', 1);
-	strbuf_addstr(response, list.items[0].string);
-	fwrite(list.items[1].string, 1, strlen(list.items[1].string), stderr);
-	string_list_clear(&list, 0);
+	if (!strncmp(http_response.buf, "HG20", 4)) {
+		strbuf_addbuf(response, &http_response);
+	} else {
+		string_list_split_in_place(&list, http_response.buf, '\n', 1);
+		strbuf_addstr(response, list.items[0].string);
+		fwrite(list.items[1].string, 1, strlen(list.items[1].string), stderr);
+		string_list_clear(&list, 0);
+	}
 }
 
 static int http_finish(struct hg_connection *conn)

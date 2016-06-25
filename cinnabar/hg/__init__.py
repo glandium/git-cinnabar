@@ -51,6 +51,7 @@ from .changegroup import (
     RawRevChunk01,
     RawRevChunk02,
 )
+from cStringIO import StringIO
 
 try:
     from mercurial import (
@@ -407,8 +408,11 @@ class HelperRepo(object):
         return HgRepoHelper.pushkey(namespace, key, old, new)
 
     def unbundle(self, cg, heads, *args, **kwargs):
-        return HgRepoHelper.unbundle(cg, (hexlify(h) if h != 'force' else h
+        data = HgRepoHelper.unbundle(cg, (hexlify(h) if h != 'force' else h
                                           for h in heads))
+        if isinstance(data, str) and data.startswith('HG20'):
+            data = unbundle20(get_ui(), StringIO(data[4:]))
+        return data
 
     def local(self):
         return None
