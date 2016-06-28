@@ -131,6 +131,7 @@ static void stdio_push_command(struct hg_connection *conn,
 	stdio_read_response(conn, &header);
 	va_end(ap);
 
+	//TODO: chunk in smaller pieces.
 	strbuf_addf(&header, "%"PRIuMAX"\n", len);
 	xwrite(conn->stdio.proc.in, header.buf, header.len);
 	strbuf_release(&header);
