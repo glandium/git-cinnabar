@@ -19,6 +19,7 @@ before_build:
 
 build_script:
   - bash -c "mingw32-make -f CI.mk script"
+  - bash -c "mingw32-make -f CI.mk script NO_BUNDLE2=1"
   - bash -c "mingw32-make -f CI.mk helper_hash"
   - set /p HELPER_HASH=< helper_hash
 

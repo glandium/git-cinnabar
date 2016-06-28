@@ -64,3 +64,4 @@ before_script:
 
 script:
   - make -f CI.mk script
+  - make -f CI.mk script NO_BUNDLE2=1 UPGRADE_FROM=

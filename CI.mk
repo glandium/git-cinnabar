@@ -131,8 +131,14 @@ PATH_URL = file://$(if $(filter /%,$(CURDIR)),,/)$(CURDIR)
 
 COMPARE_REFS = bash -c "diff -u <(git -C $1 log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches) <(git -C $2 log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches)"
 
+HG_INIT = $(HG) init $1
+ifdef NO_BUNDLE2
+HG_INIT += ; (echo "[experimental]"; echo "bundle2-advertise = false") >> $1/.hg/hgrc
+endif
+
 script::
-	$(HG) init hg.hg
+	rm -rf hg.hg hg.empty.git hg.git hg.bundle hg.unbundle.git
+	$(call HG_INIT, hg.hg)
 	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.hg hg.empty.git
 	$(GIT) -C hg.empty.git push --all hg::$(PATH_URL)/hg.hg
 	$(GIT) -C hg.old.git push --all hg::$(PATH_URL)/hg.hg
@@ -145,7 +151,8 @@ script::
 	$(call COMPARE_REFS, hg.git, hg.unbundle.git)
 
 script::
-	$(HG) init hg.http.hg
+	rm -rf hg.http.hg gitcredentials
+	$(call HG_INIT, hg.http.hg)
 	(echo protocol=http; echo host=localhost:8000; echo username=foo; echo password=bar) | $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' credential approve
 	$(GIT) -C hg.git remote add hg-http hg::http://localhost:8000/
 	$(HG) -R hg.http.hg --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' -C hg.git push --all hg-http
