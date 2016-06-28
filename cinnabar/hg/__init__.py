@@ -616,7 +616,19 @@ def push(repo, store, what, repo_heads, repo_branches):
             cg = util.chunkbuffer(cg)
             if not b2caps:
                 cg = cg1unpacker(cg, 'UN')
-        pushed = repo.unbundle(cg, repo_heads, '') != 0
+        reply = repo.unbundle(cg, repo_heads, '')
+        if unbundle20 and isinstance(reply, unbundle20):
+            parts = iter(reply.iterparts())
+            for part in parts:
+                if part.type == 'output':
+                    sys.stderr.write(part.read())
+                elif part.type == 'reply:changegroup':
+                    # TODO: should check params['in-reply-to']
+                    reply = int(part.params['return'])
+                else:
+                    logging.getLogger('bundle2').warning(
+                        'ignoring bundle2 part: %s', part.type)
+        pushed = reply != 0
     return gitdag(push_commits) if pushed else ()
 
 
