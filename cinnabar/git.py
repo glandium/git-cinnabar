@@ -28,7 +28,8 @@ EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 EMPTY_BLOB = 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
 
 
-class InvalidConfig(Exception): pass
+class InvalidConfig(Exception):
+    pass
 
 
 def normalize_path(path):
@@ -41,8 +42,8 @@ def sha1path(sha1, depth=2):
     def parts():
         i = -1
         for i in xrange(0, depth):
-            yield sha1[i*2:i*2+2]
-        yield sha1[i*2+2:]
+            yield sha1[i * 2:i * 2 + 2]
+        yield sha1[i * 2 + 2:]
     return '/'.join(parts())
 
 
@@ -453,7 +454,7 @@ class Git(object):
         diff_tree = self._diff_tree[key]
         diff_tree.stdin.write('%s %s\n\n' % (treeish2, treeish1))
         line = diff_tree.stdout.readline(
-            ).rstrip('\n')  # First line is a header
+        ).rstrip('\n')  # First line is a header
 
         while line:
             line = diff_tree.stdout.readline().rstrip('\n')
@@ -701,7 +702,8 @@ class FastImport(object):
         from_tree = None
         if parents and parents[0] == from_commit:
             resolved_ref = Git._refs.get(ref)
-            if not isinstance(resolved_ref, Mark) or parents[0] != resolved_ref:
+            if (not isinstance(resolved_ref, Mark) or
+                    parents[0] != resolved_ref):
                 _from = parents[0]
             merges = parents[1:]
         else:

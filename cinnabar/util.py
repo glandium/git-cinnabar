@@ -1,5 +1,4 @@
 import logging
-import os
 import sys
 import time
 import unittest
@@ -651,7 +650,6 @@ class TestVersionedDict(unittest.TestCase):
         ])
 
 
-
 def _iter_diff_blocks(a, b):
     m = SequenceMatcher(a=a, b=b, autojunk=False).get_matching_blocks()
     for start, end in izip(chain((Match(0, 0, 0),), m), m):
@@ -726,15 +724,15 @@ class TestByteDiff(unittest.TestCase):
         extra2 = '\nother\nextra\n'
         self.assertDiffEqual(
             self.TEST_STRING,
-            self.TEST_STRING[:15] + extra + self.TEST_STRING[15:18]
-            + extra2 + self.TEST_STRING[18:],
+            self.TEST_STRING[:15] + extra + self.TEST_STRING[15:18] +
+            extra2 + self.TEST_STRING[18:],
             ((15, 15, extra),
              (18, 18, extra2))
         )
 
         self.assertDiffEqual(
-            self.TEST_STRING[:15] + extra + self.TEST_STRING[15:18]
-            + extra2 + self.TEST_STRING[18:],
+            self.TEST_STRING[:15] + extra + self.TEST_STRING[15:18] +
+            extra2 + self.TEST_STRING[18:],
             self.TEST_STRING,
             ((15, 15 + len(extra), ''),
              (18 + len(extra), 18 + len(extra + extra2), ''))
@@ -742,8 +740,8 @@ class TestByteDiff(unittest.TestCase):
 
         self.assertDiffEqual(
             self.TEST_STRING,
-            self.TEST_STRING[:15] + extra + self.TEST_STRING[17:19]
-            + extra2 + self.TEST_STRING[21:],
+            self.TEST_STRING[:15] + extra + self.TEST_STRING[17:19] +
+            extra2 + self.TEST_STRING[21:],
             ((15, 17, extra),
              (19, 21, extra2))
         )

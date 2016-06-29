@@ -236,8 +236,8 @@ class PushStore(GitHgStore):
                 self._graft = False
             else:
                 patch = self._changeset_data_cache[parents[0]]['patch'][-1]
-                self._graft = (patch[1] == len(parent_cs.data)
-                               and parent_cs.data[-1] == '\n')
+                self._graft = (patch[1] == len(parent_cs.data) and
+                               parent_cs.data[-1] == '\n')
             if self._graft:
                 self._graft = 'true'
 

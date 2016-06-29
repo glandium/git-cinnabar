@@ -19,13 +19,10 @@ from cinnabar.git import (
     EMPTY_BLOB,
     EMPTY_TREE,
     Git,
-    Mark,
     NULL_NODE_ID,
 )
 from cinnabar.util import (
     init_logging,
-    PseudoString,
-    next,
     progress_iter,
     VersionedDict,
 )
@@ -42,7 +39,6 @@ from collections import (
     defaultdict,
     OrderedDict,
 )
-from itertools import chain
 
 
 def fsck(args):

@@ -9,7 +9,7 @@ from itertools import (
     chain,
     izip,
 )
-from hashlib import sha1
+import hashlib
 import os
 import re
 import urllib
@@ -45,7 +45,6 @@ except ImportError:
     from .bdiff import bdiff as textdiff
 from distutils.dir_util import mkpath
 
-import time
 import logging
 
 
@@ -69,7 +68,10 @@ RE_GIT_AUTHOR = re.compile('^(?P<name>.*?) ?(?:\<(?P<email>.*?)\>)')
 def get_git_author(author):
     # check for git author pattern compliance
     a = RE_GIT_AUTHOR.match(author)
-    cleanup = lambda x: x.replace('<', '').replace('>', '')
+
+    def cleanup(x):
+        return x.replace('<', '').replace('>', '')
+
     if a:
         return '%s <%s>' % (cleanup(a.group('name')),
                             cleanup(a.group('email')))
@@ -131,7 +133,7 @@ class RevChunk(object):
     def sha1(self):
         p1 = unhexlify(self.parent1)
         p2 = unhexlify(self.parent2)
-        return sha1(
+        return hashlib.sha1(
             min(p1, p2) +
             max(p1, p2) +
             self.data
@@ -235,7 +237,8 @@ class ChangesetInfo(RevChunk):
         self.files = lines[3:]
 
 
-class GeneratedChangesetInfo(ChangesetInfo, GeneratedRevChunk): pass
+class GeneratedChangesetInfo(ChangesetInfo, GeneratedRevChunk):
+    pass
 
 
 class ManifestLine(object):
@@ -261,7 +264,7 @@ def isplitmanifest(data):
         null = l.find('\0')
         if null == -1:
             return
-        yield ManifestLine(l[:null], l[null+1:null+41], l[null+41:])
+        yield ManifestLine(l[:null], l[null + 1:null + 41], l[null + 41:])
 
 
 def findline(data, offset, first=0, last=-1):
@@ -277,7 +280,7 @@ def findline(data, offset, first=0, last=-1):
     ratio = (offset - first_start) / (last_start - first_start)
     maybe_line = int(ratio * (last - first) + first)
     if (offset >= data[maybe_line].offset and
-            offset < data[maybe_line+1].offset):
+            offset < data[maybe_line + 1].offset):
         return maybe_line
     if offset < data[maybe_line].offset:
         return findline(data, offset, first, maybe_line)
@@ -477,7 +480,7 @@ class GitCommit(object):
 
 
 def git_hash(type, data):
-    h = sha1('%s %d\0' % (type, len(data)))
+    h = hashlib.sha1('%s %d\0' % (type, len(data)))
     h.update(data)
     return h.hexdigest()
 
@@ -495,7 +498,7 @@ class GeneratedGitCommit(GitCommit):
              'committer %s' % self.committer,
              '',
              self.body,
-            )
+             )
         ))
         return git_hash('commit', data)
 
@@ -554,8 +557,12 @@ class BranchMap(object):
         return self._tips.get(branch, None)
 
 
-class NothingToGraftException(Exception): pass
-class AmbiguousGraftException(Exception): pass
+class NothingToGraftException(Exception):
+    pass
+
+
+class AmbiguousGraftException(Exception):
+    pass
 
 
 class Grafter(object):
@@ -1007,10 +1014,11 @@ class GitHgStore(object):
                 extra['committer'] = '%s %d %d' % committer
         if extra is not None:
             extra = ' ' + ChangesetData.dump_extra(extra)
-        changeset = ''.join(chain([
-            metadata['manifest'], '\n',
-            author, '\n',
-            str(date), ' ', str(utcoffset)
+        changeset = ''.join(chain(
+            [
+                metadata['manifest'], '\n',
+                author, '\n',
+                str(date), ' ', str(utcoffset)
             ],
             [extra] if extra else [],
             ['\n', '\n'.join(metadata['files'])]
@@ -1295,7 +1303,6 @@ class GitHgStore(object):
 
             def tree_sha1(tree):
                 s = ''
-                h = sha1()
                 for file, node in tree.iteritems():
                     if isinstance(node, OrderedDict):
                         node = tree_sha1(node)
@@ -1347,10 +1354,10 @@ class GitHgStore(object):
         open(os.path.join(reflog, 'metadata'), 'a').close()
         update_metadata = []
         for dic, typ in (
-                (self._files, 'regular'),
-                (self._manifests, 'commit'),
-                (self._changesets, 'commit'),
-                ):
+            (self._files, 'regular'),
+            (self._manifests, 'commit'),
+            (self._changesets, 'commit'),
+        ):
             for node, mark in dic.iteritems():
                 if isinstance(mark, types.StringType):
                     continue
@@ -1489,8 +1496,8 @@ class GitHgStore(object):
         deleted = set()
         created = {}
         for f in self._tagcache_items:
-            if (f not in self._tagcache and f not in self._tagfiles
-                    or f not in files and f in self._tagfiles):
+            if (f not in self._tagcache and f not in self._tagfiles or
+                    f not in files and f in self._tagfiles):
                 deleted.add(f)
 
         def tagset_lines(tags):
