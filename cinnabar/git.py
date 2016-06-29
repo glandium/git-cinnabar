@@ -299,9 +299,11 @@ class Git(object):
                 # anything cached.
                 refs_bak = self._refs
                 self._refs = VersionedDict()
+                self._initial_refs = self._refs._previous
                 refs = {ref: sha1 for sha1, ref
                         in self.for_each_ref(*unknown_refs)}
                 self._refs = refs_bak
+                self._initial_refs = self._refs._previous
                 # Ensure update_ref runs in the normal git repo.
                 replace = self._replace
                 self._replace = {}
