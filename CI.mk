@@ -54,20 +54,24 @@ else
 GIT=git
 endif
 
+ifeq (undefined,$(origin GIT_CINNABAR_HELPER))
 ifneq (,$(filter MINGW%,$(OS_NAME)))
 HELPER := git-cinnabar-helper.exe
 else
 HELPER := git-cinnabar-helper
 endif
-export GIT_CINNABAR_HELPER=$(CURDIR)/$(HELPER)
-export GIT_CINNABAR_CHECK=all
+GIT_CINNABAR_HELPER=$(CURDIR)/$(HELPER)
+endif
+export GIT_CINNABAR_HELPER
+COMMA=,
+export GIT_CINNABAR_CHECK=all$(if $(HELPER),,$(COMMA)-helper)
 
 TOPLEVEL := .
 
 ifndef BUILD_HELPER
-$(HELPER):
+$(GIT_CINNABAR_HELPER):
 ifdef ARTIFACTS_BUCKET
-	-curl -f -O --retry 5 https://s3.amazonaws.com/$(ARTIFACTS_BUCKET)/$(HELPER_PATH)/$@ && chmod +x $@
+	-curl -f -o $@ --retry 5 https://s3.amazonaws.com/$(ARTIFACTS_BUCKET)/$(HELPER_PATH)/$(@F) && chmod +x $@
 endif
 	$(MAKE) -f $(firstword $(MAKEFILE_LIST)) $@ BUILD_HELPER=1
 
@@ -85,7 +89,7 @@ ifneq ($(origin CC),default)
 EXTRA_MAKE_FLAGS += CC=$(CC)
 endif
 
-$(HELPER):
+$(GIT_CINNABAR_HELPER):
 	git submodule update --init
 ifneq (,$(filter MINGW%,$(OS_NAME)))
 	git -C git-core remote add git4win https://github.com/git-for-windows/git
@@ -94,20 +98,20 @@ ifneq (,$(filter MINGW%,$(OS_NAME)))
 	git -C git-core checkout $(WINDOWS_GIT_VERSION)
 endif
 	$(MAKE) --jobs=2 $(@F) $(EXTRA_MAKE_FLAGS)
-	cp git-core/$(HELPER) $@
+	cp git-core/$(@F) $@
 	mkdir -p $(TOPLEVEL)/$(HELPER_PATH)
-	cp $@ $(TOPLEVEL)/$(HELPER_PATH)/$(HELPER)
+	cp $@ $(TOPLEVEL)/$(HELPER_PATH)/$(@F)
 
 endif
 
 ifdef UPGRADE_FROM
-before_script:: $(HELPER)
+before_script:: $(GIT_CINNABAR_HELPER)
 	git fetch --unshallow || true
 	git clone -n . old-cinnabar
 	git -C old-cinnabar checkout $(UPGRADE_FROM)
 endif
 
-before_script:: $(HELPER)
+before_script:: $(GIT_CINNABAR_HELPER)
 	$(GIT) -c fetch.prune=true clone hg::$(REPO) hg.old.git
 
 ifneq (,$(filter 0.1.% 0.2.%,$(UPGRADE_FROM)))
@@ -116,7 +120,9 @@ script::
 	git -C hg.old.git cinnabar fsck && echo "fsck should have failed" && exit 1 || true
 	git clone -n . old-cinnabar
 	git -C old-cinnabar checkout 0.3.2
-	$(MAKE) -C old-cinnabar -f $(CURDIR)/CI.mk $(HELPER) TOPLEVEL=..
+ifdef HELPER
+	$(MAKE) -C old-cinnabar -f $(CURDIR)/CI.mk $(HELPER) TOPLEVEL=.. GIT_CINNABAR_HELPER=$(HELPER)
+endif
 endif
 
 script::

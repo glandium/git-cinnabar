@@ -15,6 +15,7 @@ env:
     - GIT_VERSION=2.7.4 UPGRADE_FROM=0.2.2
     - MERCURIAL_VERSION=3.0
     - MERCURIAL_VERSION=3.6
+    - GIT_CINNABAR_HELPER=""
 
 matrix:
   include:
