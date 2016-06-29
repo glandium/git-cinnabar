@@ -35,10 +35,25 @@ endif
 before_install::
 	@# Somehow, OSX's make doesn't want to pick pip from $PATH on its own
 	@# after it's installed above...
-	$$(which pip) install --user --upgrade --force-reinstall mercurial$(addprefix ==,$(MERCURIAL_VERSION))
+	$$(which pip) install $(if $(PYTHON_CHECKS),,--user )--upgrade --force-reinstall mercurial$(addprefix ==,$(MERCURIAL_VERSION))
 
 # Same happens for the hg binary...
 HG = $$(which hg)
+
+ifdef PYTHON_CHECKS
+
+before_install::
+	$$(which pip) install --upgrade --force-reinstall flake8
+
+before_script::
+
+script::
+ifndef NO_BUNDLE2
+	nosetests --all-modules
+	flake8 --ignore E402 $$(git ls-files \*\*.py git-cinnabar git-remote-hg)
+endif
+
+else
 
 ifdef GIT_VERSION
 # TODO: cache as artifacts.
@@ -162,3 +177,5 @@ script::
 	(echo protocol=http; echo host=localhost:8000; echo username=foo; echo password=bar) | $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' credential approve
 	$(GIT) -C hg.git remote add hg-http hg::http://localhost:8000/
 	$(HG) -R hg.http.hg --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' -C hg.git push --all hg-http
+
+endif # PYTHON_CHECKS

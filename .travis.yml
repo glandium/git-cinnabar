@@ -8,6 +8,9 @@ git:
 
 matrix:
   include:
+    - language: python
+      python: "2.7"
+      env: PYTHON_CHECKS=1
     - os: osx
       compiler: clang
       # Without an env, it ends up with all the env variables from the matrix
