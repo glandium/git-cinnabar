@@ -62,6 +62,10 @@ try:
         url,
         util,
     )
+    try:
+        from mercurial.sshpeer import sshpeer
+    except ImportError:
+        from mercurial.sshrepo import sshrepository as sshpeer
 except ImportError:
     changegroup = unbundle20 = False
 
@@ -633,7 +637,8 @@ def push(repo, store, what, repo_heads, repo_branches):
         if repo.local():
             repo.local().ui.setconfig('server', 'validate', True)
         b2caps = bundle2caps(repo) if unbundle20 else {}
-        if b2caps and repo.url().startswith(('http://', 'https://')):
+        if b2caps and (repo.url().startswith(('http://', 'https://')) or
+                       not isinstance(repo, HelperRepo)):
             b2caps['replycaps'] = True
         cg = create_bundle(store, push_commits, b2caps)
         if not isinstance(repo, HelperRepo):
@@ -706,6 +711,38 @@ class Remote(object):
         self.git_url = url if url.startswith('hg://') else 'hg::%s' % url
 
 
+if changegroup:
+    class localpeer(sshpeer):
+        def __init__(self, ui, path):
+            self._url = self.path = path
+            self.ui = ui
+            self.pipeo = self.pipei = self.pipee = None
+
+            shellquote = util.shellquote
+            util.shellquote = lambda x: x
+            quotecommand = util.quotecommand
+
+            # In very old versions of mercurial, shellquote was not used, and
+            # double quotes were hardcoded. Remove them by overriding
+            # quotecommand.
+            def override_quotecommand(cmd):
+                cmd = cmd.lstrip()
+                if cmd.startswith('"'):
+                    cmd = cmd[1:-1]
+                return quotecommand(cmd)
+            util.quotecommand = override_quotecommand
+
+            args = ('', '', 'hg')
+            try:
+                validate_repo = super(localpeer, self)._validaterepo
+            except AttributeError:
+                validate_repo = super(localpeer, self).validate_repo
+                args = (ui,) + args
+            validate_repo(*args)
+            util.shellquote = shellquote
+            util.quotecommand = quotecommand
+
+
 def get_repo(remote):
     if remote.parsed_url.scheme == 'file':
         path = remote.parsed_url.path
@@ -725,7 +762,10 @@ def get_repo(remote):
         except NoHelperException:
             raise Exception('Native access to mercurial repositories requires '
                             'the helper.')
-    repo = hg.peer(get_ui(), {}, remote.url)
+    if changegroup and remote.parsed_url.scheme == 'file':
+        repo = localpeer(get_ui(), path)
+    else:
+        repo = hg.peer(get_ui(), {}, remote.url)
     assert repo.capable('getbundle')
 
     return repo
