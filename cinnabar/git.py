@@ -585,15 +585,15 @@ class FastImport(object):
         try:
             return self._real_proc
         except AttributeError:
-            if Git.config('cinnabar.experiments') == 'true':
-                from githg import GitHgHelper
-                # Ensure the helper is there.
-                if GitHgHelper._helper is GitHgHelper:
-                    GitHgHelper._helper = False
+            from .helper import GitHgHelper, NoHelperException
+            # Ensure the helper is there.
+            if GitHgHelper._helper is GitHgHelper:
+                GitHgHelper._helper = False
+            try:
                 with GitHgHelper.query('feature', 'force'):
                     pass
                 self._real_proc = GitHgHelper._helper
-            else:
+            except NoHelperException:
                 self._real_proc = GitProcess(
                     'fast-import', '--quiet', stdin=subprocess.PIPE,
                     config={'core.ignorecase': 'false'})
