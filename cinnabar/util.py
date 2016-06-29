@@ -71,17 +71,28 @@ class CheckEnabledFunc(object):
     def __call__(self, name):
         if self._check is None:
             from .git import Git
-            self._check = Git.config('cinnabar.check') or ''
-            if self._check:
-                self._check = self._check.split(',')
+            check = Git.config('cinnabar.check') or ''
+            if check:
+                check = check.split(',')
             all_checks = ('nodeid', 'manifests', 'helper', 'replace', 'commit')
-            if 'all' in self._check:
-                self._check = all_checks
-            else:
-                for c in self._check:
-                    if c not in all_checks:
+            self._check = set()
+            for c in check:
+                if c == 'all':
+                    self._check |= set(all_checks)
+                elif c.startswith('-'):
+                    c = c[1:]
+                    try:
+                        self._check.remove(c)
+                    except KeyError:
                         logging.getLogger('check').warn(
-                            'Unknown value in cinnabar.check: %s' % c)
+                            'cinnabar.check: %s is not one of (%s)'
+                            % (c, ', '.join(self._check)))
+                elif c in all_checks:
+                    self._check.add(c)
+                else:
+                    logging.getLogger('check').warn(
+                        'cinnabar.check: %s is not one of (%s)'
+                        % (c, ', '.join(all_checks)))
         return name in self._check
 
 check_enabled = CheckEnabledFunc()
