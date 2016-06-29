@@ -3,6 +3,12 @@ language: c
 os: linux
 compiler: gcc
 
+cache:
+- ccache
+- directories:
+  - $HOME/.cache/pip
+  - $HOME/Library/Caches/pip
+
 git:
   submodules: false
 
