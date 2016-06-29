@@ -146,9 +146,16 @@ class GitProcess(object):
                 path = mkdtemp(prefix='.cinnabar.', dir=git_dir)
                 GitProcess._git_replace_path = path
                 os.mkdir(os.path.join(path, 'refs'))
+                try:
+                    head = subprocess.check_output(['git', 'symbolic-ref',
+                                                    '--quiet', 'HEAD'])
+                    head = 'ref: %s' % head
+                except subprocess.CalledProcessError:
+                    head = subprocess.check_output(['git', 'rev-parse',
+                                                    'HEAD'])
                 with open(os.path.join(path, 'HEAD'), 'w') as fh:
-                    subprocess.check_call(['git', 'rev-parse', 'HEAD'],
-                                          stdout=fh)
+                    fh.write(head)
+
                 with open(os.path.join(path, 'packed-refs'), 'w') as fh:
                     subprocess.check_call(
                         ['git', 'for-each-ref',
