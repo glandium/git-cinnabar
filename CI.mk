@@ -26,24 +26,30 @@ HELPER_PATH := artifacts/$(HELPER_HASH)/$(OS_NAME)$(addprefix -,$(VARIANT))
 helper_hash:
 	@echo $(HELPER_HASH) > $@
 
-ifeq ($(OS_NAME)_$(VARIANT),osx_asan)
+# On Travis-CI, an old pip is installed with easy_install, which means its
+# egg ends up before our $PYTHONPATH in sys.path, such that upgrading pip with
+# --user and using $PYTHONPATH for subsequent pip calls doesn't work.
+PIP = $(if $(PYTHON_CHECKS),pip,python -c 'import os, sys; sys.path[:0] = os.environ.get("PYTHONPATH", "").split(os.pathsep); from pip import main; sys.exit(main())')
+
 before_install::
+ifeq ($(OS_NAME)_$(VARIANT),osx_asan)
 	curl -O -s https://bootstrap.pypa.io/get-pip.py
 	python get-pip.py --user
+else
+	pip install $(if $(PYTHON_CHECKS),,--user )--upgrade pip
 endif
 
 before_install::
-	@# Somehow, OSX's make doesn't want to pick pip from $PATH on its own
-	@# after it's installed above...
-	$$(which pip) install $(if $(PYTHON_CHECKS),,--user )--upgrade --force-reinstall mercurial$(addprefix ==,$(MERCURIAL_VERSION))
+	$(PIP) install $(if $(PYTHON_CHECKS),,--user )--upgrade --force-reinstall mercurial$(addprefix ==,$(MERCURIAL_VERSION))
 
-# Same happens for the hg binary...
+# Somehow, OSX's make doesn't want to pick hg from $PATH on its own after it's
+# installed above...
 HG = $$(which hg)
 
 ifdef PYTHON_CHECKS
 
 before_install::
-	$$(which pip) install --upgrade --force-reinstall flake8
+	$(PIP) install --upgrade --force-reinstall flake8
 
 before_script::
 
