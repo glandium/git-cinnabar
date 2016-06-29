@@ -94,7 +94,7 @@ $(GIT_CINNABAR_HELPER):
 ifdef ARTIFACTS_BUCKET
 	-curl -f -o $@ --retry 5 https://s3.amazonaws.com/$(ARTIFACTS_BUCKET)/$(HELPER_PATH)/$(@F) && chmod +x $@
 endif
-	$(MAKE) -f $(firstword $(MAKEFILE_LIST)) $@ BUILD_HELPER=1
+	MACOSX_DEPLOYMENT_TARGET=10.6 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) $@ BUILD_HELPER=1
 
 else
 
