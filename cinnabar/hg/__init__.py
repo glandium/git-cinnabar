@@ -54,6 +54,13 @@ from .changegroup import (
 from cStringIO import StringIO
 
 try:
+    # Old versions of mercurial use an old version of socketutil that tries to
+    # assign a local PROTOCOL_SSLv2, copying it from the ssl module, without
+    # ever using it. It shouldn't hurt to set it here.
+    import ssl
+    if not hasattr(ssl, 'PROTOCOL_SSLv2'):
+        ssl.PROTOCOL_SSLv2 = -1
+
     from mercurial import (
         changegroup,
         error,
