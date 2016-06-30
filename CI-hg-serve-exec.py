@@ -8,7 +8,55 @@ from mercurial.hgweb import common
 try:
     httpservice = hgweb.httpservice
 except AttributeError:
-    from mercurial.commands import httpservice
+    try:
+        from mercurial import commands
+        httpservice = commands.httpservice
+    except AttributeError:
+        from mercurial import util
+        from mercurial.hgweb import server
+
+        # Mercurial < 2.8 doesn't have this class. Copied from mercurial
+        # revision e48c70451afcba7f2a27fae1c7d827638f1e372b
+        class httpservice(object):
+            def __init__(self, ui, app, opts):
+                self.ui = ui
+                self.app = app
+                self.opts = opts
+
+            def init(self):
+                util.setsignalhandler()
+                self.httpd = server.create_server(self.ui, self.app)
+
+                if self.opts['port'] and not self.ui.verbose:
+                    return
+
+                if self.httpd.prefix:
+                    prefix = self.httpd.prefix.strip('/') + '/'
+                else:
+                    prefix = ''
+
+                port = ':%d' % self.httpd.port
+                if port == ':80':
+                    port = ''
+
+                bindaddr = self.httpd.addr
+                if bindaddr == '0.0.0.0':
+                    bindaddr = '*'
+                elif ':' in bindaddr:  # IPv6
+                    bindaddr = '[%s]' % bindaddr
+
+                fqaddr = self.httpd.fqaddr
+                if ':' in fqaddr:
+                    fqaddr = '[%s]' % fqaddr
+                if self.opts['port']:
+                    write = self.ui.status
+                else:
+                    write = self.ui.write
+                write('listening at http://%s%s/%s (bound to %s:%d)\n' %
+                      (fqaddr, port, prefix, bindaddr, self.httpd.port))
+
+            def run(self):
+                self.httpd.serve_forever()
 
 
 cmdtable = {}
@@ -30,7 +78,7 @@ def extsetup():
     common.permhooks.insert(0, perform_authentication)
 
 
-@command('serve-and-exec')
+@command('serve-and-exec', ())
 def serve_and_exec(ui, repo, *command):
     ui.setconfig('web', 'push_ssl', False, 'hgweb')
     ui.setconfig('web', 'allow_push', 'foo', 'hgweb')
