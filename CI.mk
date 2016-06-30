@@ -40,8 +40,10 @@ else
 	$(call PIP_INSTALL,pip)
 endif
 
+ifneq ($(MERCURIAL_VERSION),installed)
 before_install::
 	$(call PIP_INSTALL,mercurial$(addprefix ==,$(MERCURIAL_VERSION)))
+endif
 
 # Somehow, OSX's make doesn't want to pick hg from $PATH on its own after it's
 # installed above...

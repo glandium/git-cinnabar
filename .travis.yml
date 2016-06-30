@@ -61,6 +61,10 @@ matrix:
     - env: GIT_VERSION=2.2.0
     - env: GIT_VERSION=2.0.0
     - env: GIT_VERSION=1.8.5
+    - env: MERCURIAL_VERSION=installed
+      addons:
+        apt:
+          packages: mercurial
     - env: MERCURIAL_VERSION=3.0
     - env: MERCURIAL_VERSION=3.6
   # Workaround for https://github.com/travis-ci/travis-ci/issues/4681
