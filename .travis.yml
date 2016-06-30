@@ -65,8 +65,29 @@ matrix:
       addons:
         apt:
           packages: mercurial
+    - env: MERCURIAL_VERSION=1.9
+#    - env: MERCURIAL_VERSION=2.0
+#    - env: MERCURIAL_VERSION=2.1
+#    - env: MERCURIAL_VERSION=2.2
+#    - env: MERCURIAL_VERSION=2.3
+#    - env: MERCURIAL_VERSION=2.4
+    - env: MERCURIAL_VERSION=2.5
+    # First version available on pip
+    - env: MERCURIAL_VERSION=2.6.2
+    # 2.7 and 2.7.1 fail to clone https with urllib2.URLError: <urlopen error [Errno 1] _ssl.c:504: error:14094410:SSL routines:SSL3_READ_BYTES:sslv3 alert handshake failure.
+    # See http://bz.mercurial-scm.org/show_bug.cgi?id=4038
+    - env: MERCURIAL_VERSION=2.7.2
+#    - env: MERCURIAL_VERSION=2.8
+#    - env: MERCURIAL_VERSION=2.9
     - env: MERCURIAL_VERSION=3.0
+#    - env: MERCURIAL_VERSION=3.1
+#    - env: MERCURIAL_VERSION=3.2
+#    - env: MERCURIAL_VERSION=3.3
+#    - env: MERCURIAL_VERSION=3.4
+#    - env: MERCURIAL_VERSION=3.5
     - env: MERCURIAL_VERSION=3.6
+#    - env: MERCURIAL_VERSION=3.7
+#    - env: MERCURIAL_VERSION=3.8
   # Workaround for https://github.com/travis-ci/travis-ci/issues/4681
   exclude:
     - os: linux

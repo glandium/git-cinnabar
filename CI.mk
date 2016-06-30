@@ -42,7 +42,7 @@ endif
 
 ifneq ($(MERCURIAL_VERSION),installed)
 before_install::
-	$(call PIP_INSTALL,mercurial$(addprefix ==,$(MERCURIAL_VERSION)))
+	$(call PIP_INSTALL,mercurial$(addprefix ==,$(MERCURIAL_VERSION)))$(if $(MERCURIAL_VERSION), || $(call PIP_INSTALL,https://www.mercurial-scm.org/release/mercurial-$(MERCURIAL_VERSION).tar.gz))
 endif
 
 # Somehow, OSX's make doesn't want to pick hg from $PATH on its own after it's
