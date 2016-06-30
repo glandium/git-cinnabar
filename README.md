@@ -27,10 +27,15 @@ etc.).
 Repositories last used with versions lower than 0.3.0 are not supported.
 Please run `git cinnabar fsck` with version 0.3.0 first.
 
+Requirements:
+-------------
+
+- Git version 1.8.5 or newer
+- Mercurial version 1.9 or newer
+
 Setup:
 ------
 
-- Install mercurial.
 - Add this directory to your PATH. If you have another git-remote-hg project in
   your PATH already, make sure the git-cinnabar path comes before.
 
