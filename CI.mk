@@ -30,17 +30,18 @@ helper_hash:
 # egg ends up before our $PYTHONPATH in sys.path, such that upgrading pip with
 # --user and using $PYTHONPATH for subsequent pip calls doesn't work.
 PIP = $(if $(PYTHON_CHECKS),pip,python -c 'import os, sys; sys.path[:0] = os.environ.get("PYTHONPATH", "").split(os.pathsep); from pip import main; sys.exit(main())')
+PIP_INSTALL = $(PIP) install $(if $(PYTHON_CHECKS),,--user )--upgrade --force-reinstall $1
 
 before_install::
 ifeq ($(OS_NAME)_$(VARIANT),osx_asan)
 	curl -O -s https://bootstrap.pypa.io/get-pip.py
 	python get-pip.py --user
 else
-	pip install $(if $(PYTHON_CHECKS),,--user )--upgrade pip
+	$(call PIP_INSTALL,pip)
 endif
 
 before_install::
-	$(PIP) install $(if $(PYTHON_CHECKS),,--user )--upgrade --force-reinstall mercurial$(addprefix ==,$(MERCURIAL_VERSION))
+	$(call PIP_INSTALL,mercurial$(addprefix ==,$(MERCURIAL_VERSION)))
 
 # Somehow, OSX's make doesn't want to pick hg from $PATH on its own after it's
 # installed above...
@@ -49,7 +50,7 @@ HG = $$(which hg)
 ifdef PYTHON_CHECKS
 
 before_install::
-	$(PIP) install --upgrade --force-reinstall flake8
+	$(call PIP_INSTALL,flake8)
 
 before_script::
 
