@@ -90,9 +90,14 @@ def prepare_chunk(store, chunk, previous, chunk_type):
             previous = get_previous(store, chunk.parent1, type(chunk))
         return chunk.serialize(previous, chunk_type)
     elif chunk_type == RawRevChunk02:
-        parents = (previous if previous and p == previous.node
-                   else get_previous(store, p, type(chunk))
-                   for p in chunk.parents)
+        if isinstance(chunk, ChangesetInfo):
+            parents = (previous if previous
+                       else get_previous(store, p, type(chunk))
+                       for p in chunk.parents[:1])
+        else:
+            parents = (previous if previous and p == previous.node
+                       else get_previous(store, p, type(chunk))
+                       for p in chunk.parents)
         deltas = sorted((chunk.serialize(p, chunk_type) for p in parents),
                         key=len)
         if len(deltas):
