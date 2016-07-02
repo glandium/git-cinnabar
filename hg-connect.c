@@ -103,10 +103,12 @@ struct hg_connection *hg_connect(const char *url, int flags)
 	};
 	int i;
 
+#ifndef NO_CURL
 	if (!strncmp(url, "http://", sizeof("http://") - 1) ||
 	    !strncmp(url, "https://", sizeof("https://") - 1)) {
 		conn = hg_connect_http(url, flags);
 	} else
+#endif
 		conn = hg_connect_stdio(url, flags);
 
 	for (i = 0; i < ARRAY_SIZE(required_caps); i++)

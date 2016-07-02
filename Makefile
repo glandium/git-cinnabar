@@ -67,7 +67,9 @@ CINNABAR_OBJECTS += cinnabar-helper.o
 CINNABAR_OBJECTS += cinnabar-fast-import.o
 CINNABAR_OBJECTS += hg-bundle.o
 CINNABAR_OBJECTS += hg-connect.o
+ifndef NO_CURL
 CINNABAR_OBJECTS += hg-connect-http.o
+endif
 CINNABAR_OBJECTS += hg-connect-stdio.o
 
 ifdef USE_COMPUTED_HEADER_DEPENDENCIES
@@ -80,7 +82,10 @@ else
 $(CINNABAR_OBJECTS): $(LIB_H)
 endif
 
-git-cinnabar-helper$X: $(CINNABAR_OBJECTS) http.o GIT-LDFLAGS $(GITLIBS)
+ifndef NO_CURL
+git-cinnabar-helper$X: http.o
+endif
+git-cinnabar-helper$X: $(CINNABAR_OBJECTS) GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
 		$(CURL_LIBCURL) $(LIBS)
 
