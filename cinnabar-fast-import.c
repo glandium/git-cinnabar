@@ -3,11 +3,67 @@
 #undef main
 #endif
 #define main fast_import_main
+#define sha1write fast_import_sha1write
 #include "fast-import.c"
+#undef sha1write
 
 static int initialized = 0;
 
 static void cleanup();
+
+/* Divert fast-import.c's calls to sha1write so as to keep a fake pack window
+ * on the last written bits, avoiding munmap/mmap cycles from
+ * gfi_unpack_entry. */
+static struct pack_window *pack_win;
+static struct pack_window *prev_win;
+
+extern void sha1write(struct sha1file *, const void *, unsigned int);
+
+void fast_import_sha1write(struct sha1file *f, const void *buf,
+			   unsigned int count)
+{
+	if (!pack_win) {
+		pack_win = xcalloc(1, sizeof(*pack_data->windows));
+		pack_win->offset = 0;
+		pack_win->len = 20;
+		pack_win->base = xmalloc(packed_git_window_size);
+		pack_win->next = NULL;
+	}
+	/* pack_data is not set the first time sha1write is called */
+	if (pack_data && !pack_data->windows) {
+		pack_data->windows = pack_win;
+		pack_data->pack_size = pack_win->len;
+	}
+
+	sha1write(f, buf, count);
+	pack_win->last_used = -1; /* always last used */
+	pack_win->inuse_cnt = -1;
+	if (pack_data)
+		pack_data->pack_size += count;
+
+	if (packed_git_window_size - pack_win->len >= count) {
+		memcpy(pack_win->base + pack_win->len - 20, buf, count);
+		pack_win->len += count;
+	} else {
+		/* We're closing the window, so we don't actually need
+		 * to copy the beginning of the data, only what will
+		 * remain in the new window. */
+		pack_win->offset += (((off_t) pack_win->len - 20 + count)
+			/ packed_git_window_size) * packed_git_window_size;
+		pack_win->len = count % packed_git_window_size -
+			(packed_git_window_size - pack_win->len);
+		memcpy(pack_win->base, buf + count - pack_win->len + 20,
+		       pack_win->len - 20);
+		/* Ensure a pack window on the data before that, otherwise,
+		 * use_pack() may try to create a window that overlaps with
+		 * this one, and that won't work because it won't be complete. */
+		sha1flush(f);
+		if (prev_win)
+			unuse_pack(&prev_win);
+		use_pack(pack_data, &prev_win,
+			 pack_win->offset - packed_git_window_size, NULL);
+	}
+}
 
 /* Mostly copied from fast-import.c's main() */
 static void init()
@@ -45,6 +101,26 @@ static void cleanup()
 {
 	if (!initialized)
 		return;
+
+	if (prev_win)
+		unuse_pack(&prev_win);
+	if (pack_data) {
+		struct pack_window *win, *prev;
+		for (prev = NULL, win = pack_data->windows;
+		     win; prev = win, win = win->next) {
+			if (win != pack_win)
+				continue;
+			if (prev)
+				prev->next = win->next;
+			else
+				pack_data->windows = win->next;
+			break;
+		}
+	}
+	if (pack_win) {
+		free(pack_win->base);
+		free(pack_win);
+	}
 
 	end_packfile();
 
