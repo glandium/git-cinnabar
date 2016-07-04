@@ -23,11 +23,21 @@ all:
 %:
 	$(MAKE) -C $(CURDIR)/git-core -f $(CURDIR)/Makefile $@ SCRIPT_PYTHON="git-p4.py $(PYTHON_SCRIPTS)"
 
+include git-core/config.mak.uname
+
+.PHONY: FORCE
+
+git-cinnabar-helper$X: FORCE
+
+helper: git-cinnabar-helper$X
+	cp git-core/$^ $^
+
 else
 
 include $(CURDIR)/Makefile
 
-VPATH += ..
+vpath cinnabar/% ..
+vpath %.c ..
 
 all:: $(addprefix pythonlib/,$(PYTHON_LIBS))
 

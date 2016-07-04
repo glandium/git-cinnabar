@@ -39,18 +39,22 @@ Setup:
 - Add this directory to your PATH. If you have another git-remote-hg project in
   your PATH already, make sure the git-cinnabar path comes before.
 
-Alternatively to the latter, you can do the following to build a native helper
-for faster operation:
+Additionally, you can do the following to build a native helper for faster
+operation (especially on macOS):
 
-  `$ git submodule update --init`
+  ```
+  $ git submodule update --init
+  $ make helper
+  ```
 
-Then see `git-core/INSTALL` for build/install instructions, but run the
-commands in this directory. This will build/install git as well as the tools
-from this directory. Note that if you have a non-standard Python installation
-location (for example if you are on OSX and have installed it using homebrew)
-you need to pass `--with-python=/path/to/python` to the configure script or set
-the `PYTHON_PATH` environment variable to your Python installation path when
-using make to build this tool.
+Or see `git-core/INSTALL` after initializing the submodule, for build/install
+instructions, but run the commands in this directory. This will build/install
+git as well as the tools from this directory. Note that if you have a
+non-standard Python installation location (for example if you are on macOS and
+have installed it using homebrew) you need to pass
+`--with-python=/path/to/python` to the configure script or set the
+`PYTHON_PATH` environment variable to your Python installation path when using
+make to build this tool.
 
 Usage:
 ------
