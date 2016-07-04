@@ -125,7 +125,7 @@ ifneq (,$(filter MINGW%,$(OS_NAME)))
 	git -C git-core merge-base --is-ancestor HEAD $(WINDOWS_GIT_VERSION)
 	git -C git-core checkout $(WINDOWS_GIT_VERSION)
 endif
-	$(MAKE) --jobs=2 helper $(EXTRA_MAKE_FLAGS)
+	$(MAKE) --jobs=2 $(@F) $(EXTRA_MAKE_FLAGS)
 	cp git-core/$(@F) $@
 	mkdir -p $(TOPLEVEL)/$(HELPER_PATH)
 	cp $@ $(TOPLEVEL)/$(HELPER_PATH)/$(@F)
