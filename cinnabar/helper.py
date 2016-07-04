@@ -28,6 +28,10 @@ class NoHelperException(Exception):
     pass
 
 
+class HelperClosedException(Exception):
+    pass
+
+
 class GitHgNoHelper(object):
     _last_manifest = None
 
@@ -148,6 +152,9 @@ def helpermethod(func):
             if not check:
                 return result
         except NoHelperException:
+            if check:
+                raise Exception('Helper check enabled but helper not found.')
+        except HelperClosedException:
             check = False
         result2 = getattr(GitHgNoHelper, func.__name__)(*args, **kwargs)
         if check:
@@ -166,15 +173,12 @@ def helpermethod(func):
     return classmethod(wrapper)
 
 
-class GitHgHelper(object):
-    VERSION = 2
-    _helper = False
-
+class BaseHelper(object):
     @classmethod
-    def close(self):
-        if self._helper:
+    def close(self, keep_process=False):
+        if not keep_process and self._helper and self._helper is not self:
             self._helper.wait()
-        self._helper = None
+        self._helper = self
 
     @classmethod
     @contextmanager
@@ -184,24 +188,32 @@ class GitHgHelper(object):
             if helper_path == '':
                 self._helper = None
         if self._helper is False:
-            config = {}
+            config = {'core.ignorecase': 'false'}
             if helper_path and os.path.exists(helper_path):
                 config['alias.cinnabar-helper'] = '!' + helper_path
+            stderr = None if check_enabled('helper') else open(os.devnull, 'w')
             self._helper = GitProcess('cinnabar-helper', stdin=subprocess.PIPE,
-                                      stderr=open(os.devnull), config=config)
-            if self._helper:
-                self._helper.stdin.write('version %d\n' % self.VERSION)
-                if not self._helper.stdout.readline():
-                    if self._helper.wait() == 128:
-                        logging.getLogger('helper').warn(
-                            'Cinnabar helper executable is outdated. '
-                            'Please rebuild it.')
-                    self._helper = None
-            else:
+                                      stderr=stderr, config=config)
+            self._helper.stdin.write('version %d\n' % self.VERSION)
+            if not self._helper.stdout.readline():
+                logger = logging.getLogger('helper')
+                if self._helper.wait() == 128:
+                    logger.warn(
+                        'Cinnabar helper executable is outdated. '
+                        'Please rebuild it.')
+                else:
+                    logger.warn(
+                        'Cannot find cinnabar helper executable. '
+                        'Please build or download it.')
+                    logger.warn(
+                        'You can disable this warning with '
+                        '`git config cinnabar.helper ""`.')
                 self._helper = None
 
         if not self._helper:
             raise NoHelperException
+        if self._helper is self:
+            raise HelperClosedException
         helper = self._helper
         helper.stdin.write('%s %s\n' % (name, ' '.join(args)))
         yield helper.stdout
@@ -223,6 +235,19 @@ class GitHgHelper(object):
         if expected_typ == 'auto':
             return typ, ret
         return ret
+
+    @classmethod
+    def _read_data(self, stdout):
+        size = int(stdout.readline().strip())
+        ret = stdout.read(size)
+        lf = stdout.read(1)
+        assert lf == '\n'
+        return ret
+
+
+class GitHgHelper(BaseHelper):
+    VERSION = 3
+    _helper = False
 
     @helpermethod
     def cat_file(self, typ, sha1):
@@ -246,11 +271,65 @@ class GitHgHelper(object):
     @helpermethod
     def manifest(self, hg_sha1):
         with self.query('manifest', hg_sha1) as stdout:
-            size = int(stdout.readline().strip())
-            ret = stdout.read(size)
-            lf = stdout.read(1)
-            assert lf == '\n'
-            return ret
+            return self._read_data(stdout)
 
 
 atexit.register(GitHgHelper.close)
+
+
+class HgRepoHelper(BaseHelper):
+    VERSION = 3
+    _helper = False
+
+    @classmethod
+    def connect(self, url):
+        with self.query('connect', url) as stdout:
+            return {
+                'branchmap': self._read_data(stdout),
+                'heads': self._read_data(stdout),
+                'bookmarks': self._read_data(stdout),
+            }
+
+    @classmethod
+    def capable(self, name):
+        with self.query('capable', name) as stdout:
+            return self._read_data(stdout)
+
+    @classmethod
+    def known(self, nodes):
+        with self.query('known', *nodes) as stdout:
+            return self._read_data(stdout)
+
+    @classmethod
+    def listkeys(self, namespace):
+        with self.query('listkeys', namespace) as stdout:
+            return self._read_data(stdout)
+
+    @classmethod
+    def getbundle(self, heads, common, bundle2caps=False):
+        with self.query('getbundle', ','.join(heads), ','.join(common),
+                        bundle2caps) as stdout:
+            return stdout
+
+    @classmethod
+    def unbundle(self, input_iterator, heads):
+        with self.query('unbundle', *heads) as stdout:
+            for data in input_iterator:
+                self._helper.stdin.write(data)
+            ret = self._read_data(stdout)
+            try:
+                return int(ret)
+            except ValueError:
+                return ret
+
+    @classmethod
+    def pushkey(self, namespace, key, old, new):
+        with self.query("pushkey", namespace, key, old, new) as stdout:
+            ret = self._read_data(stdout).rstrip()
+            try:
+                return bool(int(ret))
+            except ValueError:
+                return ret
+
+
+atexit.register(HgRepoHelper.close)

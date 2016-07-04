@@ -45,18 +45,18 @@ class gitdag(object):
     def heads(self, tag=None):
         for node in self._parents:
             if self._tags.get(node) == tag:
-                if (node not in self._children
-                        or all(self._tags.get(c) != tag
-                               for c in self._children[node])):
+                if (node not in self._children or
+                        all(self._tags.get(c) != tag
+                            for c in self._children[node])):
                     yield node
 
     def all_heads(self, with_tags=True):
         if with_tags:
             for node in self._parents:
                 tag = self._tags.get(node)
-                if (node not in self._children
-                        or all(self._tags.get(c) != tag
-                               for c in self._children[node])):
+                if (node not in self._children or
+                        all(self._tags.get(c) != tag
+                            for c in self._children[node])):
                     yield tag, node
         else:
             for node in self._parents:

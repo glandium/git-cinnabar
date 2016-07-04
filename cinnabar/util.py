@@ -1,5 +1,4 @@
 import logging
-import os
 import sys
 import time
 import unittest
@@ -71,14 +70,28 @@ class CheckEnabledFunc(object):
     def __call__(self, name):
         if self._check is None:
             from .git import Git
-            self._check = Git.config('cinnabar.check') or ''
-            if self._check:
-                self._check = self._check.split(',')
-            for c in self._check:
-                if c not in ('nodeid', 'manifests', 'helper', 'replace',
-                             'commit'):
+            check = Git.config('cinnabar.check') or ''
+            if check:
+                check = check.split(',')
+            all_checks = ('nodeid', 'manifests', 'helper', 'replace', 'commit')
+            self._check = set()
+            for c in check:
+                if c == 'all':
+                    self._check |= set(all_checks)
+                elif c.startswith('-'):
+                    c = c[1:]
+                    try:
+                        self._check.remove(c)
+                    except KeyError:
+                        logging.getLogger('check').warn(
+                            'cinnabar.check: %s is not one of (%s)'
+                            % (c, ', '.join(self._check)))
+                elif c in all_checks:
+                    self._check.add(c)
+                else:
                     logging.getLogger('check').warn(
-                        'Unknown value in cinnabar.check: %s' % c)
+                        'cinnabar.check: %s is not one of (%s)'
+                        % (c, ', '.join(all_checks)))
         return name in self._check
 
 check_enabled = CheckEnabledFunc()
@@ -97,17 +110,21 @@ progress = True
 def progress_iter(fmt, iter, filter_func=None):
     count = 0
     t0 = 0
-    for item in iter:
-        if progress:
-            if not filter_func or filter_func(item):
-                count += 1
-            t1 = time.time()
-            if t1 - t0 > 1:
-                sys.stderr.write(('\r' + fmt) % count)
-                t0 = t1
-        yield item
-    if progress and count:
-        sys.stderr.write(('\r' + fmt + '\n') % count)
+    try:
+        for item in iter:
+            if progress:
+                if not filter_func or filter_func(item):
+                    count += 1
+                t1 = time.time()
+                if t1 - t0 > 0.1:
+                    sys.stderr.write(('\r' + fmt) % count)
+                    sys.stderr.flush()
+                    t0 = t1
+            yield item
+    finally:
+        if progress and count:
+            sys.stderr.write(('\r' + fmt + '\n') % count)
+            sys.stderr.flush()
 
 
 class IOLogger(object):
@@ -120,21 +137,18 @@ class IOLogger(object):
     def read(self, length=0, level=logging.INFO):
         ret = self._reader.read(length)
         if not isinstance(self._reader, IOLogger):
-            self._logger.log(level, LazyString(lambda: '%s<= %s'
-                                               % (self._prefix, repr(ret))))
+            self._logger.log(level, '%s<= %r', self._prefix, ret)
         return ret
 
     def readline(self, level=logging.INFO):
         ret = self._reader.readline()
         if not isinstance(self._reader, IOLogger):
-            self._logger.log(level, LazyString(lambda: '%s<= %s'
-                                               % (self._prefix, repr(ret))))
+            self._logger.log(level, '%s<= %r', self._prefix, ret)
         return ret
 
     def write(self, data, level=logging.INFO):
         if not isinstance(self._writer, IOLogger):
-            self._logger.log(level, LazyString(lambda: '%s=> %s'
-                                               % (self._prefix, repr(data))))
+            self._logger.log(level, '%s=> %r', self._prefix, data)
         return self._writer.write(data)
 
     def flush(self):
@@ -148,13 +162,11 @@ class IOLogger(object):
             yield l
 
 
-class LazyString(object):
+class PseudoString(object):
     def __init__(self, obj):
-        self._obj = obj._obj if isinstance(obj, LazyString) else obj
+        self._obj = obj._obj if isinstance(obj, PseudoString) else obj
 
     def __str__(self):
-        if callable(self._obj):
-            self._obj = self._obj()
         return self._obj
 
     def __len__(self):
@@ -167,7 +179,7 @@ class LazyString(object):
         return str(self) != str(other)
 
     def __repr__(self):
-        return '<LazyString %s>' % repr(str(self))
+        return '<PseudoString %s>' % repr(str(self))
 
     def startswith(self, other):
         return str(self).startswith(other)
@@ -177,6 +189,88 @@ class LazyString(object):
 
     def __add__(self, other):
         return str(self) + other
+
+
+class LazyCall(object):
+    __slots__ = ('_func', '_args', '_kwargs', '_result')
+
+    def __init__(self, func, *args, **kwargs):
+        self._func = func
+        self._args = args
+        self._kwargs = kwargs
+
+    def __call__(self):
+        try:
+            result = self._result
+        except AttributeError:
+            try:
+                result = self._func(*self._args, **self._kwargs)
+            except Exception as e:
+                result = e
+            self._result = result
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    def __getattribute__(self, key):
+        if key in LazyCall.__slots__:
+            return super(LazyCall, self).__getattribute__(key)
+        return getattr(self(), key)
+
+    def __str__(self):
+        return getattr(self, '__str__')()
+
+
+class TestLazyCall(unittest.TestCase):
+    def setUp(self):
+        self._called = []
+
+    def _func(self, fmt, **kwargs):
+        self._called.append((fmt, kwargs))
+        return fmt % kwargs
+
+    def test_lazy_call(self):
+        ret = LazyCall(self._func, '%(foo)s', foo='bar')
+
+        result = str(ret)
+
+        self.assertEquals(len(self._called), 1)
+        self.assertEquals(result, 'bar')
+
+        # Function should be called once
+        result = str(ret)
+
+        self.assertEquals(len(self._called), 1)
+        self.assertEquals(result, 'bar')
+
+    def test_lazy_call2(self):
+        ret = LazyCall(self._func, '%(foo)s', foo='bar')
+        result = ret.upper()
+
+        self.assertEquals(len(self._called), 1)
+        self.assertEquals(result, 'BAR')
+
+        # Function should still be called once
+        result = str(ret)
+
+        self.assertEquals(len(self._called), 1)
+        self.assertEquals(result, 'bar')
+
+    def test_lazy_call_exception(self):
+        ret = LazyCall(self._func, '%(foo)s')
+
+        with self.assertRaises(KeyError) as cm:
+            str(ret)
+        self.assertEquals(cm.exception.message, 'foo')
+
+        self.assertEquals(len(self._called), 1)
+
+        # Function should still be called once
+        with self.assertRaises(KeyError) as cm:
+            str(ret)
+        self.assertEquals(cm.exception.message, 'foo')
+
+        self.assertEquals(len(self._called), 1)
 
 
 def one(l):
@@ -556,7 +650,6 @@ class TestVersionedDict(unittest.TestCase):
         ])
 
 
-
 def _iter_diff_blocks(a, b):
     m = SequenceMatcher(a=a, b=b, autojunk=False).get_matching_blocks()
     for start, end in izip(chain((Match(0, 0, 0),), m), m):
@@ -631,15 +724,15 @@ class TestByteDiff(unittest.TestCase):
         extra2 = '\nother\nextra\n'
         self.assertDiffEqual(
             self.TEST_STRING,
-            self.TEST_STRING[:15] + extra + self.TEST_STRING[15:18]
-            + extra2 + self.TEST_STRING[18:],
+            self.TEST_STRING[:15] + extra + self.TEST_STRING[15:18] +
+            extra2 + self.TEST_STRING[18:],
             ((15, 15, extra),
              (18, 18, extra2))
         )
 
         self.assertDiffEqual(
-            self.TEST_STRING[:15] + extra + self.TEST_STRING[15:18]
-            + extra2 + self.TEST_STRING[18:],
+            self.TEST_STRING[:15] + extra + self.TEST_STRING[15:18] +
+            extra2 + self.TEST_STRING[18:],
             self.TEST_STRING,
             ((15, 15 + len(extra), ''),
              (18 + len(extra), 18 + len(extra + extra2), ''))
@@ -647,8 +740,8 @@ class TestByteDiff(unittest.TestCase):
 
         self.assertDiffEqual(
             self.TEST_STRING,
-            self.TEST_STRING[:15] + extra + self.TEST_STRING[17:19]
-            + extra2 + self.TEST_STRING[21:],
+            self.TEST_STRING[:15] + extra + self.TEST_STRING[17:19] +
+            extra2 + self.TEST_STRING[21:],
             ((15, 17, extra),
              (19, 21, extra2))
         )

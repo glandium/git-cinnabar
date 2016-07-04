@@ -1,23 +1,28 @@
-from githg import (
+from cinnabar.githg import (
     GitCommit,
     GitHgStore,
     GeneratedFileRev,
     GeneratedManifestInfo,
     ManifestLine,
 )
-from .helper import GitHgHelper
-from .git import (
+from cinnabar.helper import GitHgHelper
+from cinnabar.git import (
     EMPTY_BLOB,
     EMPTY_TREE,
     Git,
     Mark,
     NULL_NODE_ID,
 )
-from .util import (
+from cinnabar.util import (
     next,
     one,
     progress_iter,
-    LazyString,
+    PseudoString,
+)
+from .changegroup import (
+    create_changegroup,
+    RawRevChunk01,
+    RawRevChunk02,
 )
 from collections import (
     OrderedDict,
@@ -166,7 +171,7 @@ class PushStore(GitHgStore):
                 if attr is None:
                     attr = line.attr
                 if node is None:
-                    node = LazyString(line.node)
+                    node = PseudoString(line.node)
                 else:
                     node = self.create_file(node, str(line.node))
                 line = ManifestLine(line.name, node, attr)
@@ -205,7 +210,7 @@ class PushStore(GitHgStore):
             manifest.removed = removed
             manifest.modified = {l.name: (l.node, l.attr)
                                  for l in modified_lines}
-            manifest.previous_node = parent_node
+            manifest.delta_node = parent_node
             self._push_manifests[manifest.node] = manifest
             self.manifest_ref(manifest.node, hg2git=False, create=True)
             self._manifest_git_tree[manifest.node] = commit_data.tree
@@ -231,8 +236,8 @@ class PushStore(GitHgStore):
                 self._graft = False
             else:
                 patch = self._changeset_data_cache[parents[0]]['patch'][-1]
-                self._graft = (patch[1] == len(parent_cs.data)
-                               and parent_cs.data[-1] == '\n')
+                self._graft = (patch[1] == len(parent_cs.data) and
+                               parent_cs.data[-1] == '\n')
             if self._graft:
                 self._graft = 'true'
 
@@ -251,7 +256,7 @@ class PushStore(GitHgStore):
                 del extra['committer']
             if not extra:
                 del changeset_data['extra']
-        self._changesets[changeset.node] = LazyString(commit)
+        self._changesets[changeset.node] = PseudoString(commit)
 
     def create_file(self, sha1, *parents):
         hg_file = GeneratedFileRev(NULL_NODE_ID,
@@ -259,8 +264,8 @@ class PushStore(GitHgStore):
         hg_file.set_parents(*parents)
         node = hg_file.node = hg_file.sha1
         self._push_files[node] = hg_file
-        self._files.setdefault(node, LazyString(sha1))
-        self._git_files.setdefault(node, LazyString(sha1))
+        self._files.setdefault(node, PseudoString(sha1))
+        self._git_files.setdefault(node, PseudoString(sha1))
         return node
 
     def create_copy(self, hg_source, sha1):
@@ -272,7 +277,7 @@ class PushStore(GitHgStore):
         mark = self.file_ref(node, hg2git=False, create=True)
         self._push_files[node] = hg_file
         self._files.setdefault(node, mark)
-        self._git_files.setdefault(node, LazyString(sha1))
+        self._git_files.setdefault(node, PseudoString(sha1))
         return node
 
     def file(self, sha1):
@@ -313,11 +318,10 @@ class PushStore(GitHgStore):
         super(PushStore, self).close()
 
 
-def create_bundle_chunks(store, commits):
+def bundle_data(store, commits):
     manifests = OrderedDict()
     files = defaultdict(list)
 
-    previous = None
     for nodes in progress_iter('Bundling %d changesets', commits):
         parents = nodes.split()
         node = parents.pop(0)
@@ -332,27 +336,18 @@ def create_bundle_chunks(store, commits):
         if is_new:
             store.add_head(hg_changeset.node, hg_changeset.parent1,
                            hg_changeset.parent2)
-        if previous is None and hg_changeset.parent1 != NULL_NODE_ID:
-            previous = store.changeset(hg_changeset.parent1)
-        data = hg_changeset.serialize(previous)
-        previous = hg_changeset
-        yield data
+        yield hg_changeset
         manifest = changeset_data['manifest']
         if manifest not in manifests and manifest != NULL_NODE_ID:
             manifests[manifest] = changeset
 
     yield None
 
-    previous = None
     for manifest, changeset in progress_iter('Bundling %d manifests',
                                              manifests.iteritems()):
         hg_manifest = store.manifest(manifest, include_parents=True)
-        if previous is None and hg_manifest.parent1 != NULL_NODE_ID:
-            previous = store.manifest(hg_manifest.parent1)
         hg_manifest.changeset = changeset
-        data = hg_manifest.serialize(previous)
-        previous = hg_manifest
-        yield data
+        yield hg_manifest
         manifest_ref = store.manifest_ref(manifest)
         if isinstance(manifest_ref, Mark):
             for path, (sha1, attr) in hg_manifest.modified.iteritems():
@@ -372,17 +367,16 @@ def create_bundle_chunks(store, commits):
     def iter_files(files):
         for path in sorted(files):
             yield path
-            previous = None
+            nodes = set()
             for node, parents, changeset in files[path]:
+                if node in nodes:
+                    continue
+                nodes.add(node)
                 file = store.file(node)
                 file.set_parents(*parents)
                 file.changeset = changeset
                 assert file.node == file.sha1
-                if previous is None and file.parent1 != NULL_NODE_ID:
-                    previous = store.file(file.parent1)
-                data = file.serialize(previous)
-                previous = file
-                yield data
+                yield file
 
             yield None
 
@@ -401,9 +395,59 @@ def create_bundle_chunks(store, commits):
     yield None
 
 
-def create_bundle(store, commits):
-    for chunk in create_bundle_chunks(store, commits):
-        size = 0 if chunk is None else len(chunk) + 4
-        yield struct.pack(">l", size)
+_bundlepart_id = 0
+
+
+def bundlepart_header(name, advisoryparams=()):
+    global _bundlepart_id
+    yield struct.pack('>B', len(name))
+    yield name
+    yield struct.pack('>I', _bundlepart_id)
+    _bundlepart_id += 1
+    yield struct.pack('>BB', 0, len(advisoryparams))
+    for key, value in advisoryparams:
+        yield struct.pack('>BB', len(key), len(value))
+    for key, value in advisoryparams:
+        yield key
+        yield value
+
+
+def bundlepart(name, advisoryparams=(), data=None):
+    header = ''.join(bundlepart_header(name, advisoryparams))
+    yield struct.pack('>i', len(header))
+    yield header
+    while data:
+        chunk = data.read(4096)
         if chunk:
+            yield struct.pack('>i', len(chunk))
+            yield chunk
+        else:
+            break
+    yield '\0' * 4  # Empty chunk ending the part
+
+
+def create_bundle(store, commits, bundle2caps={}):
+    version = '01'
+    chunk_type = RawRevChunk01
+    if bundle2caps:
+        versions = bundle2caps.get('changegroup')
+        if versions:
+            if '02' in versions:
+                chunk_type = RawRevChunk02
+                version = '02'
+    cg = create_changegroup(store, bundle_data(store, commits), chunk_type)
+    if bundle2caps:
+        from mercurial.util import chunkbuffer
+        yield 'HG20'
+        yield '\0' * 4  # bundle parameters length: no params
+        if bundle2caps.get('replycaps'):
+            for chunk in bundlepart('REPLYCAPS'):
+                yield chunk
+        for chunk in bundlepart('CHANGEGROUP',
+                                advisoryparams=(('version', version),),
+                                data=chunkbuffer(cg)):
+            yield chunk
+        yield '\0' * 4  # End of bundle
+    else:
+        for chunk in cg:
             yield chunk

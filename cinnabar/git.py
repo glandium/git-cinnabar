@@ -13,7 +13,7 @@ from collections import Iterable
 from .util import (
     check_enabled,
     IOLogger,
-    LazyString,
+    LazyCall,
     one,
     VersionedDict,
 )
@@ -28,7 +28,8 @@ EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 EMPTY_BLOB = 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
 
 
-class InvalidConfig(Exception): pass
+class InvalidConfig(Exception):
+    pass
 
 
 def normalize_path(path):
@@ -41,8 +42,8 @@ def sha1path(sha1, depth=2):
     def parts():
         i = -1
         for i in xrange(0, depth):
-            yield sha1[i*2:i*2+2]
-        yield sha1[i*2+2:]
+            yield sha1[i * 2:i * 2 + 2]
+        yield sha1[i * 2 + 2:]
     return '/'.join(parts())
 
 
@@ -81,8 +82,15 @@ def get_git_dir():
         if git_dir == '\n'.join(output[-cutoff:]):
             break
     # --git-common-dir is what we really want but can be empty or wrong.
-    # Fortunately, in both cases, --git-dir is valid to use.
-    if git_common_dir and not (cdup and git_common_dir == '.git'):
+    # That fortunately happens only when we are in the main work tree,
+    # which means --git-dir is value to use. When in a non-main work tree,
+    # --git-common-dir is always an absolute path. When in the main work
+    # tree, if --git-common-dir is an absolute path, it's also correct.
+    # Moreover, when in the main work tree, --git-dir and --git-common-dir
+    # are supposed to point to the same location.
+    # So fallback to --git-dir when --git-common-dir is not an absolute
+    # path.
+    if git_common_dir and os.path.isabs(git_common_dir):
         git_dir = git_common_dir
 
     return git_dir, cdup
@@ -96,6 +104,10 @@ assert git_version.startswith('git version ')
 git_version = LooseVersion(git_version[12:].strip())
 
 HAS_REPLACE_REF_BASE = git_version > LooseVersion('2.6')
+
+if git_version < LooseVersion('1.8.5'):
+    raise Exception('git-cinnabar does not support git version prior to '
+                    '1.8.5.')
 
 
 class GitProcess(object):
@@ -134,9 +146,16 @@ class GitProcess(object):
                 path = mkdtemp(prefix='.cinnabar.', dir=git_dir)
                 GitProcess._git_replace_path = path
                 os.mkdir(os.path.join(path, 'refs'))
+                try:
+                    head = subprocess.check_output(['git', 'symbolic-ref',
+                                                    '--quiet', 'HEAD'])
+                    head = 'ref: %s' % head
+                except subprocess.CalledProcessError:
+                    head = subprocess.check_output(['git', 'rev-parse',
+                                                    'HEAD'])
                 with open(os.path.join(path, 'HEAD'), 'w') as fh:
-                    subprocess.check_call(['git', 'rev-parse', 'HEAD'],
-                                          stdout=fh)
+                    fh.write(head)
+
                 with open(os.path.join(path, 'packed-refs'), 'w') as fh:
                     subprocess.check_call(
                         ['git', 'for-each-ref',
@@ -144,8 +163,7 @@ class GitProcess(object):
                     for sha1, target in Git._replace.iteritems():
                         fh.write('%s refs/replace/%s\n' % (target, sha1))
 
-                logging.getLogger('replace').debug(LazyString(
-                    lambda: 'Initializing in %s' % path))
+                logging.getLogger('replace').debug('Initializing in %s', path)
 
             if 'GIT_OBJECT_DIRECTORY' not in full_env:
                 full_env['GIT_OBJECT_DIRECTORY'] = os.path.join(
@@ -178,17 +196,16 @@ class GitProcess(object):
             if proc_stdin != stdin:
                 self._proc.stdin.close()
 
+    def _env_strings(self, env):
+        for k, v in sorted((k, v) for s, k, v in env.iterchanges()
+                           if s != env.REMOVED):
+            yield '%s=%s' % (k, v)
+
     def _popen(self, cmd, env, **kwargs):
         assert isinstance(env, VersionedDict)
         proc = subprocess.Popen(cmd, env=env, **kwargs)
-        logging.getLogger('git').info(LazyString(lambda: '[%d] %s' % (
-            proc.pid,
-            ' '.join(chain(
-                ('%s=%s' % (k, v)
-                 for k, v in sorted((k, v) for s, k, v
-                                    in env.iterchanges() if s != env.REMOVED)),
-                cmd)),
-        )))
+        logging.getLogger('git').info('[%d] %s', proc.pid, LazyCall(
+            ' '.join, chain(self._env_strings(env), cmd)))
         return proc
 
     def wait(self):
@@ -282,9 +299,11 @@ class Git(object):
                 # anything cached.
                 refs_bak = self._refs
                 self._refs = VersionedDict()
+                self._initial_refs = self._refs._previous
                 refs = {ref: sha1 for sha1, ref
                         in self.for_each_ref(*unknown_refs)}
                 self._refs = refs_bak
+                self._initial_refs = self._refs._previous
                 # Ensure update_ref runs in the normal git repo.
                 replace = self._replace
                 self._replace = {}
@@ -301,9 +320,8 @@ class Git(object):
                             self.update_ref(ref, sha1)
                 self._close_update_ref()
                 import shutil
-                logging.getLogger('replace').debug(LazyString(
-                    lambda: 'Cleaning up in %s' % GitProcess._git_replace_path)
-                )
+                logging.getLogger('replace').debug(
+                    'Cleaning up in %s', GitProcess._git_replace_path)
                 shutil.rmtree(GitProcess._git_replace_path)
                 GitProcess._git_replace_path = None
                 self._replace = replace
@@ -320,11 +338,8 @@ class Git(object):
 
         finally:
             proc.wait()
-            logging.getLogger(args[0]).info(
-                LazyString(lambda: '[%d] wall time: %.3fs' % (
-                    proc.pid,
-                    time.time() - start,
-                )))
+            logging.getLogger(args[0]).info('[%d] wall time: %.3fs',
+                                            proc.pid, time.time() - start)
 
     @classmethod
     def run(self, *args):
@@ -448,7 +463,7 @@ class Git(object):
         diff_tree = self._diff_tree[key]
         diff_tree.stdin.write('%s %s\n\n' % (treeish2, treeish1))
         line = diff_tree.stdout.readline(
-            ).rstrip('\n')  # First line is a header
+        ).rstrip('\n')  # First line is a header
 
         while line:
             line = diff_tree.stdout.readline().rstrip('\n')
@@ -496,6 +511,7 @@ class Git(object):
             self._fast_import.write(
                 'reset %s\n'
                 'from %s\n'
+                '\n'
                 % (ref, newvalue)
             )
             self._fast_import.flush()
@@ -539,8 +555,7 @@ class Git(object):
         if value is None:
             var = name
             value = self._config.get(name)
-        logging.getLogger('config').info(LazyString(
-            lambda: '%s = %s' % (var, repr(value))))
+        logging.getLogger('config').info('%s = %r', var, value)
         if values:
             if value in values:
                 if isinstance(values, dict):
@@ -570,45 +585,68 @@ class EmptyMark(Mark):
     pass
 
 
-class FastImport(IOLogger):
+class FastImport(object):
     def __init__(self):
-        self._proc = GitProcess('fast-import', '--quiet',
-                                stdin=subprocess.PIPE,
-                                config={'core.ignorecase': 'false'})
-        reader = self._proc.stdout
-        writer = self._proc.stdin
-        prefix = '[%d]' % self._proc.pid
-
-        super(FastImport, self).__init__(logging.getLogger('fast-import'),
-                                         reader, writer, prefix=prefix)
         self._last_mark = 0
-
-        self.write(
-            "feature force\n"
-            "feature ls\n"
-            "feature notes\n"
-        )
-
         self._done = None
 
+    @property
+    def _proc(self):
+        try:
+            return self._real_proc
+        except AttributeError:
+            from .helper import GitHgHelper, NoHelperException
+            # Ensure the helper is there.
+            if GitHgHelper._helper is GitHgHelper:
+                GitHgHelper._helper = False
+            try:
+                with GitHgHelper.query('feature', 'force'):
+                    pass
+                self._real_proc = GitHgHelper._helper
+            except NoHelperException:
+                self._real_proc = GitProcess(
+                    'fast-import', '--quiet', stdin=subprocess.PIPE,
+                    config={'core.ignorecase': 'false'})
+            self.write(
+                "feature force\n"
+                "feature ls\n"
+                "feature notes\n"
+            )
+            if self._done:
+                self.write('feature done\n')
+
+            return self._real_proc
+
     def send_done(self):
-        self.write('feature done\n')
+        assert not hasattr(self, '_real_proc')
         self._done = True
 
-    def read(self, length=0, level=logging.INFO):
+    def read(self, length=0):
         self.flush()
-        return super(FastImport, self).read(length, level)
+        return self._proc.stdout.read(length)
 
-    def readline(self, level=logging.INFO):
+    def readline(self):
         self.flush()
-        return super(FastImport, self).readline(level)
+        return self._proc.stdout.readline()
+
+    def write(self, data):
+        return self._proc.stdin.write(data)
+
+    def flush(self):
+        self._proc.stdin.flush()
 
     def close(self, rollback=False):
+        if not hasattr(self, '_real_proc'):
+            return
         if not rollback or self._done is not False:
             self.write('done\n')
             self._done = None
         self.flush()
-        retcode = self._proc.wait()
+        from githg import GitHgHelper
+        if self._proc is GitHgHelper._helper:
+            retcode = self._proc._proc.poll()
+        else:
+            retcode = self._proc.wait()
         if Git._fast_import == self:
             Git._fast_import = None
         if retcode and not rollback:
@@ -629,7 +667,7 @@ class FastImport(IOLogger):
         sha1, blob, size = self.readline().split()
         assert blob == 'blob'
         size = int(size)
-        content = self.read(size, level=logging.DEBUG)
+        content = self.read(size)
         lf = self.read(1)
         assert lf == '\n'
         return content
@@ -644,7 +682,7 @@ class FastImport(IOLogger):
 
     def cmd_data(self, data):
         self.write('data %d\n' % len(data))
-        self.write(data, level=logging.DEBUG)
+        self.write(data)
         self.write('\n')
 
     def put_blob(self, data='', mark=0):
@@ -667,6 +705,22 @@ class FastImport(IOLogger):
     @contextlib.contextmanager
     def commit(self, ref, committer=('<cinnabar@git>', 0, 0), author=None,
                message='', from_commit=None, parents=(), mark=0):
+        if isinstance(parents, GeneratorType):
+            parents = tuple(parents)
+        _from = None
+        from_tree = None
+        if parents and parents[0] == from_commit:
+            resolved_ref = Git._refs.get(ref)
+            if (not isinstance(resolved_ref, Mark) or
+                    parents[0] != resolved_ref):
+                _from = parents[0]
+            merges = parents[1:]
+        else:
+            _from = NULL_NODE_ID
+            merges = parents
+            if from_commit:
+                mode, typ, from_tree, path = self.ls(from_commit)
+
         helper = FastImportCommitHelper(self)
         self.write('commit %s\n' % ref)
         if mark == 0:
@@ -678,23 +732,13 @@ class FastImport(IOLogger):
             self.write('author %s\n' % self._format_committer(author))
         self.write('committer %s\n' % self._format_committer(committer))
         self.cmd_data(message)
-        if isinstance(parents, GeneratorType):
-            parents = tuple(parents)
-        for count, parent in enumerate(parents):
-            if count == 0 and parent == from_commit:
-                from_commit = None
-                resolved_ref = Git._refs.get(ref)
-                if not isinstance(resolved_ref, Mark) or parent != resolved_ref:
-                    self.write('from %s\n' % parent)
-            else:
-                if count == 0:
-                    self.write('from %s\n' % NULL_NODE_ID)
-                self.write('merge %s\n' % parent)
-        if not parents:
-            self.write('from %s\n' % NULL_NODE_ID)
-        if from_commit:
-            mode, typ, tree, path = self.ls(from_commit)
-            self.write('M 040000 %s \n' % tree)
+
+        if _from:
+            self.write('from %s\n' % _from)
+        for merge in merges:
+            self.write('merge %s\n' % merge)
+        if from_tree:
+            self.write('M 040000 %s \n' % from_tree)
 
         yield helper
 

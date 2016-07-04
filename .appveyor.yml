@@ -1,0 +1,35 @@
+version: '{build}'
+
+environment:
+  matrix:
+  - MSYSTEM: MINGW64
+    CPU: x86_64
+  - MSYSTEM: MINGW32
+    CPU: i686
+
+install:
+  - set PATH=c:\msys64\%MSYSTEM%\bin;c:\msys64\usr\bin;%PATH%
+  - pacman --noconfirm -Suy mingw-w64-%CPU%-make mingw-w64-%CPU%-perl mingw-w64-%CPU%-pcre mingw-w64-%CPU%-curl mingw-w64-%CPU%-python2 mingw-w64-%CPU%-python2-pip
+  # Running through bash sets $HOME to the right path under c:\msys64\home\*
+  # where pip install --user puts things.
+  - bash -c "mingw32-make -f CI.mk before_install"
+
+before_build:
+  - bash -c "mingw32-make -f CI.mk before_script"
+
+build_script:
+  - bash -c "mingw32-make -f CI.mk script"
+  - bash -c "mingw32-make -f CI.mk script NO_BUNDLE2=1"
+  - bash -c "mingw32-make -f CI.mk helper_hash"
+  - set /p HELPER_HASH=< helper_hash
+
+artifacts:
+  - path: artifacts/$(HELPER_HASH)/$(MSYSTEM)/git-cinnabar-helper.exe
+    name: git-cinnabar-helper.exe
+
+deploy:
+  - provider: S3
+    access_key_id: $(ARTIFACTS_KEY)
+    secret_access_key: $(ARTIFACTS_SECRET)
+    bucket: $(ARTIFACTS_BUCKET)
+    artifact: git-cinnabar-helper.exe

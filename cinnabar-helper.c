@@ -18,6 +18,27 @@
  * - cat-file <object>
  *     Returns the contents of the given git object, in a `cat-file
  *     --batch`-like format.
+ *  - connect <url>
+ *     Connects to the mercurial repository at the given url. This prints out
+ *     three blocks of data, being the result of the following commands on
+ *     the repository: branchmap, heads, bookmarks.
+ *     After those results are printed out, the helper expects one of the
+ *     following commands:
+ *     - known <node>+
+ *       Calls the "known" command on the repository and returns the
+ *       corresponding result.
+ *     - listkeys <namespace>
+ *     	 Calls the "listkeys" command on the repository and returns the
+ *     	 corresponding result.
+ *     - getbundle <heads> <common> <bundle2caps>
+ *       Calls the "getbundle" command on the repository and streams a
+ *       changegroup in result. `heads` and `common` are comma separated
+ *       lists of changesets.
+ *     - unbundle <head>+
+ *       Calls the "unbundle command on the repository.
+ *     - pushkey <namespace> <key> <old> <new>
+ *     	 Calls the "pushkey" command on the repository and returns the
+ *     	 corresponding result.
  */
 
 #include <stdio.h>
@@ -26,6 +47,7 @@
 
 #include "cache.h"
 #include "commit.h"
+#include "exec_cmd.h"
 #include "strbuf.h"
 #include "string-list.h"
 #include "notes.h"
@@ -34,19 +56,46 @@
 #include "revision.h"
 #include "tree.h"
 #include "tree-walk.h"
+#include "hg-connect.h"
 
-#define CMD_VERSION 2
+#define CMD_VERSION 3
 
-#define REFS_PREFIX "refs/cinnabar/"
-#define NOTES_REF "refs/notes/cinnabar"
+#define METADATA_REF "refs/cinnabar/metadata"
+#define HG2GIT_REF METADATA_REF "^3"
+#define NOTES_REF METADATA_REF "^4"
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
-static const unsigned char NULL_NODE_SHA1[20] = { 0, };
 
 static struct notes_tree git2hg, hg2git;
 
+static void split_command(char *line, const char **command,
+			  struct string_list *args)
+{
+	struct string_list split_line = STRING_LIST_INIT_NODUP;
+	string_list_split_in_place(&split_line, line, ' ', 1);
+	*command = split_line.items[0].string;
+	if (split_line.nr > 1)
+		string_list_split_in_place(
+			args, split_line.items[1].string, ' ', -1);
+	string_list_clear(&split_line, 0);
+}
+
+static void send_buffer(struct strbuf *buf)
+{
+	struct strbuf header = STRBUF_INIT;
+
+	strbuf_addf(&header, "%lu\n", buf->len);
+	write_or_die(1, header.buf, header.len);
+	strbuf_release(&header);
+
+	write_or_die(1, buf->buf, buf->len);
+	write_or_die(1, "\n", 1);
+	return;
+}
+
 /* Send git object info and content to stdout, like cat-file --batch does. */
-static void send_object(unsigned const char *sha1) {
+static void send_object(unsigned const char *sha1)
+{
 	struct strbuf header = STRBUF_INIT;
 	enum object_type type;
 	unsigned long sz;
@@ -84,13 +133,14 @@ static void send_object(unsigned const char *sha1) {
 	close_istream(st);
 }
 
-static void do_cat_file(struct string_list *command) {
+static void do_cat_file(struct string_list *args)
+{
 	unsigned char sha1[20];
 
-	if (command->nr != 2)
+	if (args->nr != 1)
 		goto not_found;
 
-	if (get_sha1(command->items[1].string, sha1))
+	if (get_sha1(args->items[0].string, sha1))
 		goto not_found;
 
 	send_object(sha1);
@@ -101,17 +151,18 @@ not_found:
 	write_or_die(1, "\n", 1);
 }
 
-static void do_git2hg(struct string_list *command) {
+static void do_git2hg(struct string_list *args)
+{
 	unsigned char sha1[20];
 	const unsigned char *note;
 
-	if (command->nr != 2)
+	if (args->nr != 1)
 		goto not_found;
 
 	if (!git2hg.initialized)
 		init_notes(&git2hg, NOTES_REF, combine_notes_overwrite, 0);
 
-	if (get_sha1_committish(command->items[1].string, sha1))
+	if (get_sha1_committish(args->items[0].string, sha1))
 		goto not_found;
 
 	note = get_note(&git2hg, lookup_replace_object(sha1));
@@ -126,7 +177,8 @@ not_found:
 	write_or_die(1, "\n", 1);
 }
 
-static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1) {
+static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1)
+{
 	unsigned char *start = sha1;
 	unsigned char *end = sha1 + 20;
 	size_t len;
@@ -145,11 +197,32 @@ static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1) {
 			break;
 		hex += 2;
 	}
-	len = (sha1 - start) * 2 + !!hex[0];
+	len = (sha1 - start - 1) * 2 + !!hex[0];
 	while (sha1 < end) {
 		*sha1++ = 0xff;
 	}
 	return len;
+}
+
+int abbrev_sha1_cmp(const unsigned char *ref_sha1,
+		    const unsigned char *abbrev_sha1, size_t len)
+{
+        int i;
+
+        for (i = 0; i < len / 2; i++, ref_sha1++, abbrev_sha1++) {
+                if (*ref_sha1 != *abbrev_sha1)
+                        return *ref_sha1 - *abbrev_sha1;
+        }
+
+	if (len % 2) {
+		unsigned char ref_bits = *ref_sha1 & 0xf0;
+		unsigned char abbrev_bits = *abbrev_sha1 & 0xf0;
+		if (ref_bits != abbrev_bits)
+			return ref_bits - abbrev_bits;
+	}
+
+        return 0;
+
 }
 
 /* Definitions from git's notes.c. See there for more details */
@@ -176,7 +249,8 @@ struct leaf_node {
  * which means get_note must have been called before */
 static struct leaf_node *note_tree_abbrev_find(struct notes_tree *t,
 		struct int_node *tree, unsigned char n,
-		const unsigned char *key_sha1, size_t len) {
+		const unsigned char *key_sha1, size_t len)
+{
 	unsigned char i, j;
 	void *p;
 
@@ -200,7 +274,13 @@ static struct leaf_node *note_tree_abbrev_find(struct notes_tree *t,
 	case PTR_TYPE_SUBTREE:
 		return NULL;
 	default:
-		return (struct leaf_node *) CLR_PTR_TYPE(p);
+		{
+			struct leaf_node *node = CLR_PTR_TYPE(p);
+			if (node && !abbrev_sha1_cmp(node->key_sha1, key_sha1,
+			                             len))
+				return node;
+			return NULL;
+		}
 	}
 }
 
@@ -218,12 +298,12 @@ const unsigned char *get_abbrev_note(struct notes_tree *t,
 
 
 static const unsigned char *resolve_hg2git(const unsigned char *sha1,
-                                           size_t len) {
+                                           size_t len)
+{
 	const unsigned char *note;
 
 	if (!hg2git.initialized)
-		init_notes(&hg2git, REFS_PREFIX "hg2git",
-		           combine_notes_overwrite, 0);
+		init_notes(&hg2git, HG2GIT_REF, combine_notes_overwrite, 0);
 
 	note = get_note(&hg2git, sha1);
 	if (len == 40)
@@ -232,15 +312,16 @@ static const unsigned char *resolve_hg2git(const unsigned char *sha1,
 	return get_abbrev_note(&hg2git, sha1, len);
 }
 
-static void do_hg2git(struct string_list *command) {
+static void do_hg2git(struct string_list *args)
+{
 	unsigned char sha1[20];
 	const unsigned char *note;
 	size_t sha1_len;
 
-	if (command->nr != 2)
+	if (args->nr != 1)
 		goto not_found;
 
-	sha1_len =  get_abbrev_sha1_hex(command->items[1].string, sha1);
+	sha1_len =  get_abbrev_sha1_hex(args->items[0].string, sha1);
 	if (!sha1_len)
 		goto not_found;
 
@@ -258,7 +339,8 @@ not_found:
 
 /* Return the mercurial manifest character corresponding to the given
  * git file mode. */
-static const char *hgattr(unsigned int mode) {
+static const char *hgattr(unsigned int mode)
+{
 	if (S_ISLNK(mode))
 		return "l";
 	if (S_ISREG(mode)) {
@@ -288,7 +370,8 @@ struct manifest_tree {
 	unsigned char hg[20];
 };
 
-static void track_tree(struct tree *tree, struct object_list **tree_list) {
+static void track_tree(struct tree *tree, struct object_list **tree_list)
+{
 	object_list_insert(&tree->object, tree_list);
 	tree->object.flags |= SEEN;
 }
@@ -297,7 +380,8 @@ static void track_tree(struct tree *tree, struct object_list **tree_list) {
  * subdirectories of the given (git) manifest tree. */
 static int get_manifest_tree(const unsigned char *git_sha1,
                              struct manifest_tree *result,
-                             struct object_list **tree_list) {
+                             struct object_list **tree_list)
+{
 	struct tree *tree = NULL;
 	struct tree_desc desc;
 	struct name_entry entry;
@@ -322,14 +406,14 @@ static int get_manifest_tree(const unsigned char *git_sha1,
 		goto not_found;
 	if (strcmp(entry.path, "git"))
 		goto not_found;
-	hashcpy(result->git, entry.sha1);
+	hashcpy(result->git, entry.oid->hash);
 
 	/* The second entry in the manifest tree is the hg subtree. */
 	if (!tree_entry(&desc, &entry))
 		goto not_found;
 	if (strcmp(entry.path, "hg"))
 		goto not_found;
-	hashcpy(result->hg, entry.sha1);
+	hashcpy(result->hg, entry.oid->hash);
 
 	/* There shouldn't be any other entry. */
 	if (tree_entry(&desc, &entry))
@@ -348,7 +432,8 @@ struct manifest_tree_state {
 
 static int manifest_tree_state_init(const struct manifest_tree *tree,
                                     struct manifest_tree_state *result,
-                                    struct object_list **tree_list) {
+                                    struct object_list **tree_list)
+{
 	result->tree_git = parse_tree_indirect(tree->git);
 	if (!result->tree_git)
 		return -1;
@@ -376,7 +461,8 @@ struct manifest_entry {
 
 /* Like tree_entry, returns true for success. */
 static int manifest_tree_entry(struct manifest_tree_state *state,
-                               struct manifest_entry *result) {
+                               struct manifest_entry *result)
+{
 	struct name_entry entry_git, entry_hg;
 	int has_git_entry = tree_entry(&state->desc_git, &entry_git);
 	int has_hg_entry = tree_entry(&state->desc_hg, &entry_hg);
@@ -387,7 +473,7 @@ static int manifest_tree_entry(struct manifest_tree_state *state,
 		return 0;
 	}
 
-	result->sha1 = entry_hg.sha1;
+	result->sha1 = entry_hg.oid->hash;
 	result->path = entry_hg.path;
 	result->mode = entry_git.mode;
 	if (strcmp(entry_hg.path, entry_git.path))
@@ -395,7 +481,7 @@ static int manifest_tree_entry(struct manifest_tree_state *state,
 	if (S_ISDIR(entry_git.mode)) {
 		if (entry_git.mode != entry_hg.mode)
 			goto corrupted;
-		result->other_sha1 = entry_git.sha1;
+		result->other_sha1 = entry_git.oid->hash;
 	}
 	return 1;
 corrupted:
@@ -404,7 +490,8 @@ corrupted:
 
 static void recurse_manifest(const struct manifest_tree *tree,
                              struct strbuf *manifest, char *base,
-                             struct object_list **tree_list) {
+                             struct object_list **tree_list)
+{
 	struct manifest_tree_state state;
 	struct manifest_entry entry;
 	size_t base_len = strlen(base);
@@ -443,7 +530,8 @@ struct strslice {
 
 /* Return whether two entries have matching sha1s and modes */
 static int manifest_entry_equal(const struct manifest_entry *e1,
-                                const struct manifest_entry *e2) {
+                                const struct manifest_entry *e2)
+{
 	if (e1->mode != e2->mode)
 		return 0;
 	if (hashcmp(e1->sha1, e2->sha1))
@@ -456,7 +544,8 @@ static int manifest_entry_equal(const struct manifest_entry *e1,
 
 /* Return whether base + name matches path */
 static int path_match(const char *base, size_t base_len,
-                      const char *name, size_t name_len, const char *path) {
+                      const char *name, size_t name_len, const char *path)
+{
 	return memcmp(base, path, base_len) == 0 &&
 	       memcmp(name, path + base_len, name_len) == 0 &&
 	       (path[base_len + name_len] == '\0' ||
@@ -467,7 +556,8 @@ static void recurse_manifest2(const struct manifest_tree *ref_tree,
                               struct strslice *ref_manifest,
                               const struct manifest_tree *tree,
                               struct strbuf *manifest, char *base,
-                              struct object_list **tree_list) {
+                              struct object_list **tree_list)
+{
 	struct manifest_tree_state ref, cur;
 	struct manifest_entry ref_entry, cur_entry;
 	struct manifest_tree ref_subtree, cur_subtree;
@@ -579,7 +669,8 @@ struct manifest {
 static struct manifest generated_manifest = MANIFEST_INIT;
 
 /* The returned strbuf must not be released and/or freed. */
-static struct strbuf *generate_manifest(const unsigned char *git_sha1) {
+static struct strbuf *generate_manifest(const unsigned char *git_sha1)
+{
 	struct manifest_tree manifest_tree;
 	struct strbuf content = STRBUF_INIT;
 	struct object_list *tree_list = NULL;
@@ -633,17 +724,17 @@ not_found:
 	return NULL;
 }
 
-static void do_manifest(struct string_list *command) {
+static void do_manifest(struct string_list *args)
+{
 	unsigned char sha1[20];
 	const unsigned char *manifest_sha1;
 	struct strbuf *manifest = NULL;
-	struct strbuf header = STRBUF_INIT;
 	size_t sha1_len;
 
-	if (command->nr != 2)
+	if (args->nr != 1)
 		goto not_found;
 
-	sha1_len = get_abbrev_sha1_hex(command->items[1].string, sha1);
+	sha1_len = get_abbrev_sha1_hex(args->items[0].string, sha1);
 	if (!sha1_len)
 		goto not_found;
 
@@ -655,21 +746,15 @@ static void do_manifest(struct string_list *command) {
 	if (!manifest)
 		goto not_found;
 
-	strbuf_addf(&header, "%lu\n", manifest->len);
-
-	write_or_die(1, header.buf, header.len);
-
-	strbuf_release(&header);
-
-	write_or_die(1, manifest->buf, manifest->len);
-	write_or_die(1, "\n", 1);
+	send_buffer(manifest);
 	return;
 
 not_found:
 	write_or_die(1, "0\n\n", 3);
 }
 
-static void get_manifest_sha1(const struct commit *commit, unsigned char *sha1) {
+static void get_manifest_sha1(const struct commit *commit, unsigned char *sha1)
+{
 	const char *msg;
 	const char *hex_sha1;
 
@@ -683,17 +768,18 @@ static void get_manifest_sha1(const struct commit *commit, unsigned char *sha1) 
 	unuse_commit_buffer(commit, msg);
 }
 
-static void do_check_manifest(struct string_list *command) {
+static void do_check_manifest(struct string_list *args)
+{
 	unsigned char sha1[20], parent1[20], parent2[20], result[20];
 	const unsigned char *manifest_sha1;
 	const struct commit *manifest_commit;
 	struct strbuf *manifest = NULL;
 	git_SHA_CTX ctx;
 
-	if (command->nr != 2)
+	if (args->nr != 1)
 		goto error;
 
-	if (get_sha1_hex(command->items[1].string, sha1))
+	if (get_sha1_hex(args->items[0].string, sha1))
 		goto error;
 
 	manifest_sha1 = resolve_hg2git(sha1, 40);
@@ -743,45 +829,222 @@ error:
 	write_or_die(1, "error\n", 6);
 }
 
-static void do_version(struct string_list *command) {
+static void do_version(struct string_list *args)
+{
 	long int version;
 
-	if (command->nr != 2)
+	if (args->nr != 1)
 		exit(1);
 
-	version = strtol(command->items[1].string, NULL, 10);
+	version = strtol(args->items[0].string, NULL, 10);
 
-	if (!version || version != CMD_VERSION)
+	if (!version || version < 3 || version > CMD_VERSION)
 		exit(1);
 
 	write_or_die(1, "ok\n", 3);
 }
 
-int main(int argc, const char *argv[]) {
+static void string_list_as_sha1_array(struct string_list *list,
+				      struct sha1_array *array)
+{
+	struct string_list_item *item;
+	for_each_string_list_item(item, list) {
+		unsigned char sha1[20];
+		if (!get_sha1_hex(item->string, sha1))
+			sha1_array_append(array, sha1);
+	}
+}
+
+static void do_known(struct hg_connection *conn, struct string_list *args)
+{
+	struct strbuf result = STRBUF_INIT;
+	struct sha1_array nodes = SHA1_ARRAY_INIT;
+	string_list_as_sha1_array(args, &nodes);
+	hg_known(conn, &result, &nodes);
+	send_buffer(&result);
+	sha1_array_clear(&nodes);
+	strbuf_release(&result);
+}
+
+static void do_listkeys(struct hg_connection *conn, struct string_list *args)
+{
+	struct strbuf result = STRBUF_INIT;
+	if (args->nr != 1)
+		exit(1);
+
+	hg_listkeys(conn, &result, args->items[0].string);
+	send_buffer(&result);
+	strbuf_release(&result);
+}
+
+static void arg_as_sha1_array(char *nodes, struct sha1_array *array)
+{
+	struct string_list list = STRING_LIST_INIT_NODUP;
+	string_list_split_in_place(&list, nodes, ',', -1);
+	string_list_as_sha1_array(&list, array);
+	string_list_clear(&list, 0);
+}
+
+static void do_getbundle(struct hg_connection *conn, struct string_list *args)
+{
+	struct sha1_array heads = SHA1_ARRAY_INIT;
+	struct sha1_array common = SHA1_ARRAY_INIT;
+	const char *bundle2caps = NULL;
+
+	if (args->nr > 3)
+		exit(1);
+
+	if (args->nr > 0)
+		arg_as_sha1_array(args->items[0].string, &heads);
+	if (args->nr > 1)
+		arg_as_sha1_array(args->items[1].string, &common);
+	if (args->nr > 2)
+		bundle2caps = args->items[2].string;
+
+	hg_getbundle(conn, stdout, &heads, &common, bundle2caps);
+
+	sha1_array_clear(&common);
+	sha1_array_clear(&heads);
+}
+
+static void do_unbundle(struct hg_connection *conn, struct string_list *args)
+{
+	struct strbuf result = STRBUF_INIT;
+	struct sha1_array heads = SHA1_ARRAY_INIT;
+	if (args->nr < 1)
+		exit(1);
+	if (args->nr != 1 || strcmp(args->items[0].string, "force"))
+		string_list_as_sha1_array(args, &heads);
+	hg_unbundle(conn, &result, stdin, &heads);
+	send_buffer(&result);
+	sha1_array_clear(&heads);
+	strbuf_release(&result);
+}
+
+static void do_pushkey(struct hg_connection *conn, struct string_list *args)
+{
+	struct strbuf result = STRBUF_INIT;
+
+	if (args->nr != 4)
+		exit(1);
+
+	hg_pushkey(conn, &result, args->items[0].string, args->items[1].string,
+		   args->items[2].string, args->items[3].string);
+	send_buffer(&result);
+	strbuf_release(&result);
+}
+
+static void do_capable(struct hg_connection *conn, struct string_list *args)
+{
+	struct strbuf result = STRBUF_INIT;
+	const char *result_str;
+
+	if (args->nr != 1)
+		exit(1);
+
+	result_str = hg_get_capability(conn, args->items[0].string);
+	if (result_str && *result_str)
+		strbuf_addstr(&result, result_str);
+	send_buffer(&result);
+	strbuf_release(&result);
+}
+
+static void connected_loop(struct hg_connection *conn)
+{
 	struct strbuf buf = STRBUF_INIT;
 
+	while (strbuf_getline(&buf, stdin) != EOF) {
+		struct string_list args = STRING_LIST_INIT_NODUP;
+		const char *command;
+		split_command(buf.buf, &command, &args);
+
+		if (!*command) {
+			string_list_clear(&args, 0);
+			break;
+		}
+		if (!strcmp("known", command))
+			do_known(conn, &args);
+		else if (!strcmp("listkeys", command))
+			do_listkeys(conn, &args);
+		else if (!strcmp("getbundle", command))
+			do_getbundle(conn, &args);
+		else if (!strcmp("unbundle", command))
+			do_unbundle(conn, &args);
+		else if (!strcmp("pushkey", command))
+			do_pushkey(conn, &args);
+		else if (!strcmp("capable", command))
+			do_capable(conn, &args);
+		else
+			die("Unknown command: \"%s\"", command);
+
+		string_list_clear(&args, 0);
+	}
+
+	strbuf_release(&buf);
+}
+
+static void do_connect(struct string_list *args)
+{
+	const char *url;
+	struct hg_connection *conn;
+	struct strbuf branchmap = STRBUF_INIT;
+	struct strbuf heads = STRBUF_INIT;
+	struct strbuf bookmarks = STRBUF_INIT;
+
+	if (args->nr != 1)
+		return;
+
+	url = args->items[0].string;
+
+	conn = hg_connect(url, 0);
+
+	hg_get_repo_state(conn, &branchmap, &heads, &bookmarks);
+	send_buffer(&branchmap);
+	send_buffer(&heads);
+	send_buffer(&bookmarks);
+	strbuf_release(&branchmap);
+	strbuf_release(&heads);
+	strbuf_release(&bookmarks);
+
+	connected_loop(conn);
+
+	hg_finish_connect(conn);
+}
+
+extern int maybe_handle_command(const char *command, struct string_list *args);
+
+int main(int argc, const char *argv[])
+{
+	struct strbuf buf = STRBUF_INIT;
+
+	git_extract_argv0_path(argv[0]);
 	setup_git_directory();
 	git_config(git_default_config, NULL);
 
-	while (strbuf_getline(&buf, stdin, '\n') != EOF) {
-		struct string_list command = STRING_LIST_INIT_NODUP;
-		string_list_split_in_place(&command, buf.buf, ' ', -1);
-		if (!strcmp("git2hg", command.items[0].string))
-			do_git2hg(&command);
-		else if (!strcmp("hg2git", command.items[0].string))
-			do_hg2git(&command);
-		else if (!strcmp("manifest", command.items[0].string))
-			do_manifest(&command);
-		else if (!strcmp("check-manifest", command.items[0].string))
-			do_check_manifest(&command);
-		else if (!strcmp("cat-file", command.items[0].string))
-			do_cat_file(&command);
-		else if (!strcmp("version", command.items[0].string))
-			do_version(&command);
-		else
-			die("Unknown command: \"%s\"", command.items[0].string);
+	while (strbuf_getline(&buf, stdin) != EOF) {
+		struct string_list args = STRING_LIST_INIT_NODUP;
+		const char *command;
+		split_command(buf.buf, &command, &args);
+		if (!strcmp("git2hg", command))
+			do_git2hg(&args);
+		else if (!strcmp("hg2git", command))
+			do_hg2git(&args);
+		else if (!strcmp("manifest", command))
+			do_manifest(&args);
+		else if (!strcmp("check-manifest", command))
+			do_check_manifest(&args);
+		else if (!strcmp("cat-file", command))
+			do_cat_file(&args);
+		else if (!strcmp("version", command))
+			do_version(&args);
+		else if (!strcmp("connect", command)) {
+			do_connect(&args);
+			string_list_clear(&args, 0);
+			break;
+		} else if (!maybe_handle_command(command, &args))
+			die("Unknown command: \"%s\"", command);
 
-		string_list_clear(&command, 0);
+		string_list_clear(&args, 0);
 	}
 
 	strbuf_release(&buf);
