@@ -194,15 +194,20 @@ class BaseHelper(object):
             stderr = None if check_enabled('helper') else open(os.devnull, 'w')
             self._helper = GitProcess('cinnabar-helper', stdin=subprocess.PIPE,
                                       stderr=stderr, config=config)
-            if self._helper:
-                self._helper.stdin.write('version %d\n' % self.VERSION)
-                if not self._helper.stdout.readline():
-                    if self._helper.wait() == 128:
-                        logging.getLogger('helper').warn(
-                            'Cinnabar helper executable is outdated. '
-                            'Please rebuild it.')
-                    self._helper = None
-            else:
+            self._helper.stdin.write('version %d\n' % self.VERSION)
+            if not self._helper.stdout.readline():
+                logger = logging.getLogger('helper')
+                if self._helper.wait() == 128:
+                    logger.warn(
+                        'Cinnabar helper executable is outdated. '
+                        'Please rebuild it.')
+                else:
+                    logger.warn(
+                        'Cannot find cinnabar helper executable. '
+                        'Please build or download it.')
+                    logger.warn(
+                        'You can disable this warning with '
+                        '`git config cinnabar.helper ""`.')
                 self._helper = None
 
         if not self._helper:
