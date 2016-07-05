@@ -126,7 +126,8 @@ static void stdio_push_command(struct hg_connection *conn,
 	va_start(ap, command);
 	stdio_send_command_v(conn, command, ap);
 	/* The server normally sends an empty response before reading the data
-	 * it's sent if not, it's an error. */
+	 * it's sent if not, it's an error (typically, the remote will
+	 * complain here if there was a lost push race). */
 	//TODO: handle that error.
 	stdio_read_response(conn, &header);
 	va_end(ap);
