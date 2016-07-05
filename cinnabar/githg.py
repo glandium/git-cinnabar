@@ -514,7 +514,7 @@ def autohexlify(h):
 class BranchMap(object):
     def __init__(self, store, remote_branchmap, remote_heads):
         self._heads = {}
-        self._all_heads = tuple(autohexlify(h) for h in reversed(remote_heads))
+        self._all_heads = tuple(autohexlify(h) for h in remote_heads)
         self._tips = {}
         self._git_sha1s = {}
         self._unknown_heads = set()
