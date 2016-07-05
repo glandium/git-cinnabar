@@ -339,7 +339,10 @@ def bundle_data(store, commits):
         yield hg_changeset
         manifest = changeset_data['manifest']
         if manifest not in manifests and manifest != NULL_NODE_ID:
-            manifests[manifest] = changeset
+            if manifest not in (store.read_changeset_data(
+                    store.changeset_ref(p))['manifest']
+                    for p in hg_changeset.parents):
+                manifests[manifest] = changeset
 
     yield None
 
