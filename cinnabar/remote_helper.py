@@ -197,36 +197,35 @@ class GitRemoteHelper(object):
                 branchmap = self._branchmap = BranchMap(
                     self._store, new_branchmap, list(new_heads))
 
+        refs = []
         for branch in sorted(branchmap.names()):
             branch_tip = branchmap.tip(branch)
             for head in sorted(branchmap.heads(branch)):
                 sha1 = branchmap.git_sha1(head)
                 if head == branch_tip:
                     continue
-                self._helper.write('%s refs/heads/branches/%s/%s\n' % (
-                    sha1,
-                    sanitize_branch_name(branch),
-                    head,
-                ))
+                refs.append(
+                    ('refs/heads/branches/%s/%s' % (
+                        sanitize_branch_name(branch), head), sha1))
             if branch_tip:
-                self._helper.write('%s refs/heads/branches/%s/tip\n' % (
-                    branchmap.git_sha1(branch_tip),
-                    sanitize_branch_name(branch),
-                ))
+                refs.append(
+                    ('refs/heads/branches/%s/tip' % (
+                        sanitize_branch_name(branch)),
+                     branchmap.git_sha1(branch_tip)))
+
         for name, sha1 in sorted(bookmarks.iteritems()):
             if sha1 == NULL_NODE_ID:
                 continue
             ref = self._store.changeset_ref(sha1)
             if self._graft and not ref:
                 continue
-            self._helper.write(
-                '%s refs/heads/bookmarks/%s\n'
-                % (ref if ref else '?', sanitize_branch_name(name))
-            )
+            refs.append(
+                ('refs/heads/bookmarks/%s' % sanitize_branch_name(name),
+                 ref if ref else '?'))
         if not self._has_unknown_heads:
             for tag, ref in sorted(self._store.tags(branchmap.heads())):
-                self._helper.write('%s refs/tags/%s\n' %
-                                   (ref, sanitize_branch_name(tag)))
+                refs.append(
+                    ('refs/tags/%s' % sanitize_branch_name(tag), ref))
 
         if '@' in bookmarks:
             self._HEAD = 'bookmarks/@'
@@ -234,7 +233,10 @@ class GitRemoteHelper(object):
         if self._graft and head:
             head = self._store.changeset_ref(head)
         if head:
-            self._helper.write('@refs/heads/%s HEAD\n' % self._HEAD)
+            refs.append(('HEAD', '@refs/heads/%s' % self._HEAD))
+
+        for k, v in sorted(refs):
+            self._helper.write('%s %s\n' % (v, k))
 
         self._helper.write('\n')
         self._helper.flush()
