@@ -2,10 +2,12 @@
 
 import logging
 import os
+import re
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
 import argparse
+from binascii import hexlify
 from cinnabar.githg import (
     ChangesetData,
     GitCommit,
@@ -19,6 +21,7 @@ from cinnabar.git import (
     EMPTY_BLOB,
     EMPTY_TREE,
     Git,
+    GitProcess,
     NULL_NODE_ID,
 )
 from cinnabar.util import (
@@ -34,6 +37,11 @@ from cinnabar.hg.bundle import (
     create_bundle,
     get_changes,
     PushStore,
+)
+from cinnabar.hg import (
+    get_repo,
+    HelperRepo,
+    Remote,
 )
 from collections import (
     defaultdict,
@@ -408,6 +416,34 @@ def do_rollback(ref):
     return 0
 
 
+def do_fetch(remote, rev):
+    if not re.match('[0-9a-f]{40}$', rev.lower()):
+        url = Git.config('remote.%s.url' % remote)
+        if not url:
+            print >>sys.stderr, "Unknown remote:", remote
+            return 1
+        if url.startswith('hg::'):
+            url = url[4:]
+        repo = get_repo(Remote(remote, url))
+        if repo.capable('lookup'):
+            rev = hexlify(repo.lookup(rev))
+        elif isinstance(repo, HelperRepo):
+            print >>sys.stderr, (
+                'Please either use a non-abbreviated mercurial revision '
+                'or disable experimental native access to mercurial '
+                'repositories.')
+            return 1
+        else:
+            print >>sys.stderr, (
+                'Remote repository does not support the "lookup" command. '
+                'Please use a non-abbreviated mercurial revision.')
+            return 1
+
+    proc = GitProcess('fetch', remote, 'hg/revs/%s' % rev, stdout=sys.stdout,
+                      config={'cinnabar.fetch': rev})
+    return proc.wait()
+
+
 def main(argv):
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(title='subcommands', dest='command')
@@ -431,6 +467,11 @@ def main(argv):
 
     subparser = subparsers.add_parser(
         'reclone', help='reclone all mercurial remotes')
+
+    subparser = subparsers.add_parser(
+        'fetch', help='fetch a changeset from a mercurial remote')
+    subparser.add_argument('remote', help='mercurial remote')
+    subparser.add_argument('rev', help='mercurial changeset to fetch')
 
     subparser = subparsers.add_parser(
         'hg2git', help='convert mercurial sha1 to corresponding git sha1')
@@ -521,6 +562,9 @@ def main(argv):
         env['PYTHONPATH'] = os.pathsep.join(sys.path)
         leftovers.append(env)
         os.execle(sys.executable, sys.executable, *leftovers)
+    elif cmd == 'fetch':
+        return do_fetch(args.remote, args.rev)
+
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))

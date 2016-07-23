@@ -530,14 +530,15 @@ class BranchMap(object):
                     self._unknown_heads.add(head)
                     continue
                 extra = store.read_changeset_data(sha1).get('extra')
-                if sequenced and extra and not extra.get('close'):
+                if branch and sequenced and extra and not extra.get('close'):
                     self._tips[branch] = head
                 assert head not in self._git_sha1s
                 self._git_sha1s[head] = sha1
             # Use last head as tip if we didn't set one.
-            if heads and sequenced and branch not in self._tips:
+            if branch and heads and sequenced and branch not in self._tips:
                 self._tips[branch] = head
-            self._heads[branch] = tuple(branch_heads)
+            if branch:
+                self._heads[branch] = tuple(branch_heads)
 
     def names(self):
         return self._heads.keys()

@@ -133,7 +133,7 @@ class GitProcess(object):
         if env:
             full_env.update(env)
 
-        if args[0] == 'config' or not Git._replace:
+        if args[0] in ('config', 'fetch') or not Git._replace:
             # We don't need the replace ref setup for config.
             pass
         elif not check_enabled('replace') and HAS_REPLACE_REF_BASE:

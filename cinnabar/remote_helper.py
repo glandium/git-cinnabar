@@ -1,6 +1,7 @@
 #!/usr/bin/env python2.7
 
 from __future__ import division
+from binascii import unhexlify
 import sys
 
 from cinnabar.githg import (
@@ -125,7 +126,13 @@ class GitRemoteHelper(object):
     def list(self, arg=None):
         assert not arg or arg == 'for-push'
 
-        if self._repo.capable('batch'):
+        fetch = Git.config('cinnabar.fetch')
+        if fetch:
+            heads = [unhexlify(fetch)]
+            branchmap = {None: heads}
+            bookmarks = {}
+
+        elif self._repo.capable('batch'):
             batch = self._repo.batch()
             branchmap = batch.branchmap()
             heads = batch.heads()
@@ -233,6 +240,9 @@ class GitRemoteHelper(object):
             refs.append(
                 ('refs/heads/bookmarks/%s' % sanitize_branch_name(name),
                  ref if ref else '?'))
+        if fetch:
+            sha1 = self._store.changeset_ref(fetch)
+            refs.append(('hg/revs/%s' % fetch, sha1 or '?'))
         if not self._has_unknown_heads:
             for tag, ref in sorted(self._store.tags(branchmap.heads())):
                 refs.append(
@@ -290,6 +300,8 @@ class GitRemoteHelper(object):
                 return self._branchmap.tip(unquote(head[8:]))
             if head.startswith('hg/bookmarks/'):
                 return self._bookmarks[unquote(heads[13:])]
+            if head.startswith('hg/revs/'):
+                return head[8:]
             if head == 'HEAD':
                 return (self._bookmarks.get('@') or
                         self._branchmap.tip('default'))
