@@ -263,15 +263,9 @@ class GitRemoteHelper(object):
         self._helper.flush()
 
     def option(self, name, value):
-        if name == 'progress':
-            if value == 'true':
-                cinnabar.util.progress = True
-                self._helper.write('ok\n')
-            elif value == 'false':
-                cinnabar.util.progress = False
-                self._helper.write('ok\n')
-            else:
-                self._helper.write('unsupported\n')
+        if name == 'progress' and value in ('true', 'false'):
+            cinnabar.util.progress = value == 'true'
+            self._helper.write('ok\n')
         else:
             self._helper.write('unsupported\n')
         self._helper.flush()
