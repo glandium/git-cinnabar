@@ -595,8 +595,9 @@ def getbundle(repo, store, heads, branch_names):
             pass
 
 
-def push(repo, store, what, repo_heads, repo_branches):
-    store.init_fast_import()
+def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
+    if not dry_run:
+        store.init_fast_import()
 
     def heads():
         for sha1 in store.heads(repo_branches):
@@ -641,6 +642,7 @@ def push(repo, store, what, repo_heads, repo_branches):
             if not repo_heads:
                 repo_heads = [NULL_NODE_ID]
             repo_heads = [unhexlify(h) for h in repo_heads]
+    if push_commits and not dry_run:
         if repo.local():
             repo.local().ui.setconfig('server', 'validate', True)
         b2caps = bundle2caps(repo) if unbundle20 else {}
@@ -665,7 +667,7 @@ def push(repo, store, what, repo_heads, repo_branches):
                     logging.getLogger('bundle2').warning(
                         'ignoring bundle2 part: %s', part.type)
         pushed = reply != 0
-    return gitdag(push_commits) if pushed else ()
+    return gitdag(push_commits) if pushed or dry_run else ()
 
 
 def get_ui():

@@ -51,6 +51,7 @@ class GitRemoteHelper(object):
         self._helper = IOLogger(logging.getLogger('remote-helper'),
                                 stdin, stdout)
 
+        self._dry_run = False
         self._branchmap = None
         self._bookmarks = {}
         self._HEAD = 'branches/default/tip'
@@ -266,6 +267,9 @@ class GitRemoteHelper(object):
         if name == 'progress' and value in ('true', 'false'):
             cinnabar.util.progress = value == 'true'
             self._helper.write('ok\n')
+        elif name == 'dry-run' and value in ('true', 'false'):
+            self._dry_run = value == 'true'
+            self._helper.write('ok\n')
         else:
             self._helper.write('unsupported\n')
         self._helper.flush()
@@ -388,7 +392,7 @@ class GitRemoteHelper(object):
             repo_heads = self._branchmap.heads()
             PushStore.adopt(self._store, self._graft)
             pushed = push(self._repo, self._store, pushes, repo_heads,
-                          self._branchmap.names())
+                          self._branchmap.names(), self._dry_run)
 
             status = {}
             for source, (dest, _) in pushes.iteritems():
@@ -425,7 +429,7 @@ class GitRemoteHelper(object):
             self._helper.write('\n')
             self._helper.flush()
 
-            if not pushed:
+            if not pushed or self._dry_run:
                 data = False
             elif data == 'always':
                 data = True
