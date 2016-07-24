@@ -7,8 +7,7 @@
 typedef void (*prepare_request_cb_t)(CURL *curl, struct curl_slist *headers,
 				     void *data);
 
-static int http_request(const char *url,
-			prepare_request_cb_t prepare_request_cb, void *data)
+static int http_request(prepare_request_cb_t prepare_request_cb, void *data)
 {
 	struct active_request_slot *slot;
 	struct slot_results results;
@@ -24,7 +23,6 @@ static int http_request(const char *url,
 				    "Accept: application/mercurial-0.1");
 	prepare_request_cb(slot->curl, headers, data);
 
-	curl_easy_setopt(slot->curl, CURLOPT_URL, url);
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, headers);
 	/* Strictly speaking, this is not necessary, but bitbucket does
          * user-agent sniffing, and git's user-agent gets 404 on mercurial
@@ -38,18 +36,17 @@ static int http_request(const char *url,
 	return ret;
 }
 
-static int http_request_reauth(const char *url,
-			       prepare_request_cb_t prepare_request_cb,
+static int http_request_reauth(prepare_request_cb_t prepare_request_cb,
 			       void *data)
 {
-	int ret = http_request(url, prepare_request_cb, data);
+	int ret = http_request(prepare_request_cb, data);
 
 	if (ret != HTTP_REAUTH)
 		return ret;
 
 	credential_fill(&http_auth);
 
-	return http_request(url, prepare_request_cb, data);
+	return http_request(prepare_request_cb, data);
 }
 
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.
@@ -111,18 +108,71 @@ static void prepare_pushkey_request(CURL *curl, struct curl_slist *headers,
 	headers = curl_slist_append(headers, "Expect:");
 }
 
+struct command_request_data {
+	struct hg_connection *conn;
+	prepare_request_cb_t prepare_request_cb;
+	void *data;
+	const char *command;
+	struct strbuf args;
+};
+
+static void prepare_command_request(CURL *curl, struct curl_slist *headers,
+				    void *data)
+{
+	char *end;
+	struct strbuf command_url = STRBUF_INIT;
+	struct command_request_data *request_data =
+		(struct command_request_data *) data;
+	const char *httpheader_str =
+		hg_get_capability(request_data->conn, "httpheader");
+	size_t httpheader =
+		httpheader_str ? strtol(httpheader_str, &end, 10) : 0;
+
+	if (httpheader && end[0] != '\0')
+		httpheader = 0;
+
+	request_data->prepare_request_cb(curl, headers, request_data->data);
+
+	strbuf_addf(&command_url, "%s?cmd=%s", request_data->conn->http.url,
+		    request_data->command);
+	if (httpheader && request_data->args.len) {
+		const char *args = request_data->args.buf + 1;
+		size_t len = request_data->args.len - 1;
+		int num;
+		for (num = 1; len; num++) {
+			size_t writable_len;
+			struct strbuf header = STRBUF_INIT;
+			strbuf_addf(&header, "X-HgArg-%d: ", num);
+			writable_len = httpheader - header.len;
+			writable_len = writable_len > len ? len : writable_len;
+			strbuf_add(&header, args, writable_len);
+			args += writable_len;
+			len -= writable_len;
+			headers = curl_slist_append(headers, header.buf);
+			strbuf_release(&header);
+		}
+	} else
+		strbuf_addbuf(&command_url, &request_data->args);
+
+	curl_easy_setopt(curl, CURLOPT_URL, command_url.buf);
+	strbuf_release(&command_url);
+}
+
 static void http_command(struct hg_connection *conn,
 			 prepare_request_cb_t prepare_request_cb, void *data,
 			 const char *command, va_list ap)
 {
-	struct strbuf command_url = STRBUF_INIT;
-	strbuf_addf(&command_url, "%s?cmd=%s", conn->http.url, command);
-	// TODO: use HTTP headers for parameters when httpheader capability is
-	// reported by the server.
-	prepare_command(&command_url, http_query_add_param, ap);
+	struct command_request_data request_data = {
+		conn,
+		prepare_request_cb,
+		data,
+		command,
+		STRBUF_INIT,
+	};
+	prepare_command(&request_data.args, http_query_add_param, ap);
 	// TODO: handle errors
-	http_request_reauth(command_url.buf, prepare_request_cb, data);
-	strbuf_release(&command_url);
+	http_request_reauth(prepare_command_request, &request_data);
+	strbuf_release(&request_data.args);
 }
 
 static void http_simple_command(struct hg_connection *conn,
