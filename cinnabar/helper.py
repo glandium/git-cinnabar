@@ -215,7 +215,10 @@ class BaseHelper(object):
         if self._helper is self:
             raise HelperClosedException
         helper = self._helper
-        helper.stdin.write('%s %s\n' % (name, ' '.join(args)))
+        if args:
+            helper.stdin.write('%s %s\n' % (name, ' '.join(args)))
+        else:
+            helper.stdin.write('%s\n' % name)
         yield helper.stdout
 
     @classmethod
