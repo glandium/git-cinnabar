@@ -19,11 +19,11 @@
  *     Returns the contents of the given git object, in a `cat-file
  *     --batch`-like format.
  *  - connect <url>
- *     Connects to the mercurial repository at the given url. This prints out
- *     three blocks of data, being the result of the following commands on
- *     the repository: branchmap, heads, bookmarks.
- *     After those results are printed out, the helper expects one of the
- *     following commands:
+ *     Connects to the mercurial repository at the given url. The helper then
+ *     expects one of the following commands:
+ *     - state
+ *       This prints out three blocks of data, being the result of the
+ *       following commands on the repository: branchmap, heads, bookmarks.
  *     - known <node>+
  *       Calls the "known" command on the repository and returns the
  *       corresponding result.
@@ -58,7 +58,7 @@
 #include "tree-walk.h"
 #include "hg-connect.h"
 
-#define CMD_VERSION 3
+#define CMD_VERSION 4
 
 #define METADATA_REF "refs/cinnabar/metadata"
 #define HG2GIT_REF METADATA_REF "^3"
@@ -838,7 +838,7 @@ static void do_version(struct string_list *args)
 
 	version = strtol(args->items[0].string, NULL, 10);
 
-	if (!version || version < 3 || version > CMD_VERSION)
+	if (!version || version < 4 || version > CMD_VERSION)
 		exit(128);
 
 	write_or_die(1, "ok\n", 3);
@@ -949,6 +949,24 @@ static void do_capable(struct hg_connection *conn, struct string_list *args)
 	strbuf_release(&result);
 }
 
+static void do_state(struct hg_connection *conn, struct string_list *args)
+{
+	struct strbuf branchmap = STRBUF_INIT;
+	struct strbuf heads = STRBUF_INIT;
+	struct strbuf bookmarks = STRBUF_INIT;
+
+	if (args->nr != 0)
+		exit(1);
+
+	hg_get_repo_state(conn, &branchmap, &heads, &bookmarks);
+	send_buffer(&branchmap);
+	send_buffer(&heads);
+	send_buffer(&bookmarks);
+	strbuf_release(&branchmap);
+	strbuf_release(&heads);
+	strbuf_release(&bookmarks);
+}
+
 static void connected_loop(struct hg_connection *conn)
 {
 	struct strbuf buf = STRBUF_INIT;
@@ -974,6 +992,8 @@ static void connected_loop(struct hg_connection *conn)
 			do_pushkey(conn, &args);
 		else if (!strcmp("capable", command))
 			do_capable(conn, &args);
+		else if (!strcmp("state", command))
+			do_state(conn, &args);
 		else
 			die("Unknown command: \"%s\"", command);
 
@@ -987,9 +1007,6 @@ static void do_connect(struct string_list *args)
 {
 	const char *url;
 	struct hg_connection *conn;
-	struct strbuf branchmap = STRBUF_INIT;
-	struct strbuf heads = STRBUF_INIT;
-	struct strbuf bookmarks = STRBUF_INIT;
 
 	if (args->nr != 1)
 		return;
@@ -998,17 +1015,13 @@ static void do_connect(struct string_list *args)
 
 	conn = hg_connect(url, 0);
 
-	hg_get_repo_state(conn, &branchmap, &heads, &bookmarks);
-	send_buffer(&branchmap);
-	send_buffer(&heads);
-	send_buffer(&bookmarks);
-	strbuf_release(&branchmap);
-	strbuf_release(&heads);
-	strbuf_release(&bookmarks);
+	if (conn) {
+		write_or_die(1, "ok\n", 3);
+		connected_loop(conn);
 
-	connected_loop(conn);
-
-	hg_finish_connect(conn);
+		hg_finish_connect(conn);
+	} else
+		write_or_die(1, "failed to connect\n", 18);
 }
 
 extern int maybe_handle_command(const char *command, struct string_list *args);

@@ -249,7 +249,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 3
+    VERSION = 4
     _helper = False
 
     @helpermethod
@@ -281,12 +281,19 @@ atexit.register(GitHgHelper.close)
 
 
 class HgRepoHelper(BaseHelper):
-    VERSION = 3
+    VERSION = 4
     _helper = False
 
     @classmethod
     def connect(self, url):
         with self.query('connect', url) as stdout:
+            resp = stdout.readline().rstrip()
+            if resp != 'ok':
+                raise Exception(resp)
+
+    @classmethod
+    def state(self):
+        with self.query('state') as stdout:
             return {
                 'branchmap': self._read_data(stdout),
                 'heads': self._read_data(stdout),

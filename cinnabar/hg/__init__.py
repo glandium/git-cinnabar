@@ -350,16 +350,17 @@ def findcommon(repo, store, hgheads):
 class HelperRepo(object):
     def __init__(self, url):
         self._url = url
-        connect_result = HgRepoHelper.connect(url)
+        HgRepoHelper.connect(url)
+        state = HgRepoHelper.state()
         self._branchmap = {
             urllib.unquote(branch): [unhexlify(h)
                                      for h in heads.split(' ')]
-            for line in connect_result['branchmap'].splitlines()
+            for line in state['branchmap'].splitlines()
             for branch, heads in (line.split(' ', 1),)
         }
         self._heads = [unhexlify(h)
-                       for h in connect_result['heads'][:-1].split(' ')]
-        self._bookmarks = self._decode_keys(connect_result['bookmarks'])
+                       for h in state['heads'][:-1].split(' ')]
+        self._bookmarks = self._decode_keys(state['bookmarks'])
 
     def url(self):
         return self._url
