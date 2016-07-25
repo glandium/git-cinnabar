@@ -839,7 +839,7 @@ static void do_version(struct string_list *args)
 	version = strtol(args->items[0].string, NULL, 10);
 
 	if (!version || version < 3 || version > CMD_VERSION)
-		exit(1);
+		exit(128);
 
 	write_or_die(1, "ok\n", 3);
 }
