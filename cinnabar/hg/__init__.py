@@ -351,6 +351,8 @@ class HelperRepo(object):
     def __init__(self, url):
         self._url = url
         HgRepoHelper.connect(url)
+
+    def init_state(self):
         state = HgRepoHelper.state()
         self._branchmap = {
             urllib.unquote(branch): [unhexlify(h)
@@ -380,13 +382,19 @@ class HelperRepo(object):
         raise NotImplementedError()
 
     def heads(self):
+        if not hasattr(self, '_heads'):
+            self.init_state()
         return self._heads
 
     def branchmap(self):
+        if not hasattr(self, '_branchmap'):
+            self.init_state()
         return self._branchmap
 
     def listkeys(self, namespace):
         if namespace == 'bookmarks':
+            if not hasattr(self, '_bookmarks'):
+                self.init_state()
             return self._bookmarks
         return self._decode_keys(HgRepoHelper.listkeys(namespace))
 
