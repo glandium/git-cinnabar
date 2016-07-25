@@ -39,6 +39,9 @@
  *     - pushkey <namespace> <key> <old> <new>
  *     	 Calls the "pushkey" command on the repository and returns the
  *     	 corresponding result.
+ *     - lookup <key>
+ *       Calls the "lookup" command on the repository and returns the
+ *     	 corresponding result.
  */
 
 #include <stdio.h>
@@ -967,6 +970,17 @@ static void do_state(struct hg_connection *conn, struct string_list *args)
 	strbuf_release(&bookmarks);
 }
 
+static void do_lookup(struct hg_connection *conn, struct string_list *args)
+{
+	struct strbuf result = STRBUF_INIT;
+	if (args->nr != 1)
+		exit(1);
+
+	hg_lookup(conn, &result, args->items[0].string);
+	send_buffer(&result);
+	strbuf_release(&result);
+}
+
 static void connected_loop(struct hg_connection *conn)
 {
 	struct strbuf buf = STRBUF_INIT;
@@ -994,6 +1008,8 @@ static void connected_loop(struct hg_connection *conn)
 			do_capable(conn, &args);
 		else if (!strcmp("state", command))
 			do_state(conn, &args);
+		else if (!strcmp("lookup", command))
+			do_lookup(conn, &args);
 		else
 			die("Unknown command: \"%s\"", command);
 

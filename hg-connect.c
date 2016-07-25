@@ -267,6 +267,12 @@ void hg_pushkey(struct hg_connection *conn, struct strbuf *response,
 			     NULL);
 }
 
+void hg_lookup(struct hg_connection *conn, struct strbuf *result,
+	       const char *key)
+{
+	conn->simple_command(conn, result, "lookup", "key", key, NULL);
+}
+
 int hg_finish_connect(struct hg_connection *conn)
 {
 	int code = conn->finish(conn);

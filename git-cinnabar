@@ -40,7 +40,6 @@ from cinnabar.hg.bundle import (
 )
 from cinnabar.hg import (
     get_repo,
-    HelperRepo,
     Remote,
 )
 from collections import (
@@ -427,12 +426,6 @@ def do_fetch(remote, rev):
         repo = get_repo(Remote(remote, url))
         if repo.capable('lookup'):
             rev = hexlify(repo.lookup(rev))
-        elif isinstance(repo, HelperRepo):
-            print >>sys.stderr, (
-                'Please either use a non-abbreviated mercurial revision '
-                'or disable experimental native access to mercurial '
-                'repositories.')
-            return 1
         else:
             print >>sys.stderr, (
                 'Remote repository does not support the "lookup" command. '

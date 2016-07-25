@@ -341,5 +341,11 @@ class HgRepoHelper(BaseHelper):
             except ValueError:
                 return ret
 
+    @classmethod
+    def lookup(self, key):
+        with self.query("lookup", key) as stdout:
+            success, data = self._read_data(stdout).rstrip().split(' ', 1)
+            return data if int(success) else None
+
 
 atexit.register(HgRepoHelper.close)

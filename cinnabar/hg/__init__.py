@@ -376,7 +376,7 @@ class HelperRepo(object):
     def capable(self, capability):
         if capability == 'bundle2':
             return urllib.quote(HgRepoHelper.capable('bundle2'))
-        return capability in ('getbundle', 'unbundle')
+        return capability in ('getbundle', 'unbundle', 'lookup')
 
     def batch(self):
         raise NotImplementedError()
@@ -436,6 +436,12 @@ class HelperRepo(object):
 
     def local(self):
         return None
+
+    def lookup(self, key):
+        data = HgRepoHelper.lookup(key)
+        if data:
+            return unhexlify(data)
+        raise Exception('Unknown revision %s' % key)
 
 
 # Mercurial's bundlerepo completely unwraps bundles in $TMPDIR but we can be

@@ -58,4 +58,7 @@ extern void hg_pushkey(struct hg_connection *conn, struct strbuf *response,
 extern void hg_listkeys(struct hg_connection *conn, struct strbuf *result,
 			const char *namespace);
 
+extern void hg_lookup(struct hg_connection *conn, struct strbuf *result,
+		      const char *key);
+
 #endif
