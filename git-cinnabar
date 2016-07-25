@@ -417,7 +417,10 @@ def do_rollback(ref):
 
 def do_fetch(remote, rev):
     if not re.match('[0-9a-f]{40}$', rev.lower()):
-        url = Git.config('remote.%s.url' % remote)
+        if remote.startswith('hg:'):
+            url = remote
+        else:
+            url = Git.config('remote.%s.url' % remote)
         if not url:
             print >>sys.stderr, "Unknown remote:", remote
             return 1
@@ -463,7 +466,7 @@ def main(argv):
 
     subparser = subparsers.add_parser(
         'fetch', help='fetch a changeset from a mercurial remote')
-    subparser.add_argument('remote', help='mercurial remote')
+    subparser.add_argument('remote', help='mercurial remote name or url')
     subparser.add_argument('rev', help='mercurial changeset to fetch')
 
     subparser = subparsers.add_parser(
