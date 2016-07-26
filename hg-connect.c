@@ -223,14 +223,38 @@ void hg_getbundle(struct hg_connection *conn, FILE *out,
 	fflush(out);
 }
 
+static void unbundlehash(const unsigned char sha1[20], void *data)
+{
+	git_SHA_CTX *ctx = (git_SHA_CTX *) data;
+
+	git_SHA1_Update(ctx, sha1, 20);
+}
+
 void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 		 struct sha1_array *heads)
 {
-	//TODO: support unbundlehash
 	/* When the heads list is empty, we send "force", which needs to be
 	 * sent as hex. */
-	char *heads_str = heads->nr ? join_sha1_array_hex(heads, ' ')
-	                            : "666f726365";
+	char *heads_str;
+	if (heads->nr) {
+		if (hg_get_capability(conn, "unbundlehash")) {
+			git_SHA_CTX ctx;
+			unsigned char sha1[20];
+
+			/* The unbundlehash format is "hashed" as hex,
+			 * followed by a whitespace, then the sha1 of all
+			 * heads, sorted */
+			heads_str = malloc(54);
+			memcpy(heads_str, "686173686564 ", 13);
+			git_SHA1_Init(&ctx);
+			/* sha1_array_for_each_unique sorts the sha1 list */
+			sha1_array_for_each_unique(heads, unbundlehash, &ctx);
+			git_SHA1_Final(sha1, &ctx);
+			sha1_to_hex_r(&heads_str[13], sha1);
+		} else
+			heads_str = join_sha1_array_hex(heads, ' ');
+	} else
+		heads_str = "666f726365";
 	struct tempfile *tmpfile = xcalloc(1, sizeof(*tmpfile));
 	struct stat st;
 	FILE *file;
