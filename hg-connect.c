@@ -233,6 +233,9 @@ static void unbundlehash(const unsigned char sha1[20], void *data)
 void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 		 struct sha1_array *heads)
 {
+	struct tempfile *tmpfile = xcalloc(1, sizeof(*tmpfile));
+	struct stat st;
+	FILE *file;
 	/* When the heads list is empty, we send "force", which needs to be
 	 * sent as hex. */
 	char *heads_str;
@@ -255,9 +258,6 @@ void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 			heads_str = join_sha1_array_hex(heads, ' ');
 	} else
 		heads_str = "666f726365";
-	struct tempfile *tmpfile = xcalloc(1, sizeof(*tmpfile));
-	struct stat st;
-	FILE *file;
 
 	/* Neither the stdio nor the HTTP protocols can handle a stream for
 	 * push commands, so store the data as a temporary file. */
