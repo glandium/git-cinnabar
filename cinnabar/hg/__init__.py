@@ -682,6 +682,9 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                 elif part.type == 'reply:changegroup':
                     # TODO: should check params['in-reply-to']
                     reply = int(part.params['return'])
+                elif part.type == 'error:abort':
+                    raise error.Abort(part.params['message'],
+                                      hint=part.params.get('hint'))
                 else:
                     logging.getLogger('bundle2').warning(
                         'ignoring bundle2 part: %s', part.type)
