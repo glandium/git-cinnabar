@@ -531,6 +531,7 @@ def unbundler(bundle):
                 logging.getLogger('bundle2').warning(
                     'ignoring bundle2 part: %s', part.type)
                 continue
+            logging.getLogger('bundle2').debug('part: %s', part.type)
             logging.getLogger('bundle2').debug('params: %r', part.params)
             version = part.params.get('version', '01')
             if version == '01':
@@ -664,6 +665,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
         if b2caps and (repo.url().startswith(('http://', 'https://')) or
                        not isinstance(repo, HelperRepo)):
             b2caps['replycaps'] = True
+        logging.getLogger('bundle2').debug('%r', b2caps)
         cg = create_bundle(store, push_commits, b2caps)
         if not isinstance(repo, HelperRepo):
             cg = util.chunkbuffer(cg)
@@ -673,6 +675,8 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
         if unbundle20 and isinstance(reply, unbundle20):
             parts = iter(reply.iterparts())
             for part in parts:
+                logging.getLogger('bundle2').debug('part: %s', part.type)
+                logging.getLogger('bundle2').debug('params: %r', part.params)
                 if part.type == 'output':
                     sys.stderr.write(part.read())
                 elif part.type == 'reply:changegroup':
