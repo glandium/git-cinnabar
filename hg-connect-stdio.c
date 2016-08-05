@@ -120,6 +120,7 @@ static void stdio_push_command(struct hg_connection *conn,
 			       struct strbuf *response, FILE *in, off_t len,
 			       const char *command, ...)
 {
+	int is_bundle2 = 0;
 	char buf[4096];
 	struct strbuf header = STRBUF_INIT;
 	va_list ap;
@@ -137,6 +138,13 @@ static void stdio_push_command(struct hg_connection *conn,
 	xwrite(conn->stdio.proc.in, header.buf, header.len);
 	strbuf_release(&header);
 
+        if (len > 4) {
+		char header[4] = { 0, };
+		fread(header, 4, 1, in);
+		fseek(in, 0L, SEEK_SET);
+		is_bundle2 = memcmp(header, "HG20", 4) == 0;
+	}
+
 	while (len) {
 		size_t read = sizeof(buf) > len ? len : sizeof(buf);
 		read = fread(buf, 1, read, in);
@@ -145,11 +153,15 @@ static void stdio_push_command(struct hg_connection *conn,
 	}
 
 	xwrite(conn->stdio.proc.in, "0\n", 2);
-	/* There are two responses, one for output, one for actual response. */
-	//TODO: actually handle output here
-	stdio_read_response(conn, &header);
-	strbuf_release(&header);
-	stdio_read_response(conn, response);
+	if (is_bundle2) {
+		copy_bundle_to_strbuf(conn->stdio.out, response);
+	} else {
+		/* There are two responses, one for output, one for actual response. */
+		//TODO: actually handle output here
+		stdio_read_response(conn, &header);
+		strbuf_release(&header);
+		stdio_read_response(conn, response);
+	}
 }
 
 static int stdio_finish(struct hg_connection *conn)

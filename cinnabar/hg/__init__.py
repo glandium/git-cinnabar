@@ -662,10 +662,9 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
         if repo.local():
             repo.local().ui.setconfig('server', 'validate', True)
         b2caps = bundle2caps(repo) if unbundle20 else {}
-        if b2caps and (repo.url().startswith(('http://', 'https://')) or
-                       not isinstance(repo, HelperRepo)):
-            b2caps['replycaps'] = True
         logging.getLogger('bundle2').debug('%r', b2caps)
+        if b2caps:
+            b2caps['replycaps'] = encodecaps({'error': ['abort']})
         cg = create_bundle(store, push_commits, b2caps)
         if not isinstance(repo, HelperRepo):
             cg = util.chunkbuffer(cg)
