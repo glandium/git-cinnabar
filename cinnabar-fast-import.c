@@ -1,8 +1,9 @@
 #include "git-compat-util.h"
 #if defined(__MINGW32__)
-#undef main
-#endif
+#define cmd_main fast_import_main
+#else
 #define main fast_import_main
+#endif
 #define sha1write fast_import_sha1write
 #include "fast-import.c"
 #undef sha1write
