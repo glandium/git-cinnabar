@@ -1042,11 +1042,7 @@ static void do_connect(struct string_list *args)
 
 extern int maybe_handle_command(const char *command, struct string_list *args);
 
-#if defined(__MINGW32__)
-#define main cmd_main
-#endif
-
-int main(int argc, const char *argv[])
+int cmd_main(int argc, const char *argv[])
 {
 	struct strbuf buf = STRBUF_INIT;
 
