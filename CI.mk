@@ -106,7 +106,7 @@ endif
 else
 
 ifeq ($(OS_NAME),osx)
-EXTRA_MAKE_FLAGS += NO_GETTEXT=1
+EXTRA_MAKE_FLAGS += NO_GETTEXT=1 NO_OPENSSL=1
 endif
 
 ifeq ($(VARIANT),asan)
