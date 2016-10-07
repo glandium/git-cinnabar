@@ -19,11 +19,13 @@ extern void sha1write(struct sha1file *, const void *, unsigned int);
 void fast_import_sha1write(struct sha1file *f, const void *buf,
 			   unsigned int count)
 {
+	size_t window_size;
+
 	if (!pack_win) {
 		pack_win = xcalloc(1, sizeof(*pack_data->windows));
 		pack_win->offset = 0;
 		pack_win->len = 20;
-		pack_win->base = xmalloc(packed_git_window_size);
+		pack_win->base = xmalloc(packed_git_window_size + 20);
 		pack_win->next = NULL;
 	}
 	/* pack_data is not set the first time sha1write is called */
@@ -38,27 +40,37 @@ void fast_import_sha1write(struct sha1file *f, const void *buf,
 	if (pack_data)
 		pack_data->pack_size += count;
 
-	if (packed_git_window_size - pack_win->len >= count) {
+	window_size = packed_git_window_size + (pack_win->offset ? 20 : 0);
+
+	if (window_size + 20 - pack_win->len > count) {
 		memcpy(pack_win->base + pack_win->len - 20, buf, count);
 		pack_win->len += count;
 	} else {
-		/* We're closing the window, so we don't actually need
-		 * to copy the beginning of the data, only what will
-		 * remain in the new window. */
-		pack_win->offset += (((off_t) pack_win->len - 20 + count)
-			/ packed_git_window_size) * packed_git_window_size;
-		pack_win->len = count % packed_git_window_size -
-			(packed_git_window_size - pack_win->len);
-		memcpy(pack_win->base, buf + count - pack_win->len + 20,
-		       pack_win->len - 20);
-		/* Ensure a pack window on the data before that, otherwise,
-		 * use_pack() may try to create a window that overlaps with
-		 * this one, and that won't work because it won't be complete. */
+		/* Slide our window so that it starts at an offset multiple of
+		 * the window size minus 20 (we want 20 bytes of overlap with the
+		 * preceding window, so that use_pack() won't create an overlapping
+		 * window on its own) */
+		off_t offset = pack_win->offset;
+		pack_win->offset = ((pack_data->pack_size - 20 + 1)
+			/ packed_git_window_size) * packed_git_window_size - 20;
+		assert(offset != pack_win->offset);
+		pack_win->len = pack_data->pack_size - pack_win->offset;
+
+		/* Ensure a pack window on the data preceding that. */
 		sha1flush(f);
 		if (prev_win)
 			unuse_pack(&prev_win);
 		use_pack(pack_data, &prev_win,
-			 pack_win->offset - packed_git_window_size, NULL);
+			 pack_win->offset + 20 - packed_git_window_size, NULL);
+		assert(prev_win->len == packed_git_window_size);
+
+		/* Copy the overlapping bytes. */
+		memcpy(pack_win->base,
+		       prev_win->base + packed_git_window_size - 20, 20);
+
+		/* Fill up the new window. */
+		memcpy(pack_win->base + 20, buf + count + 40 - pack_win->len,
+		       pack_win->len - 40);
 	}
 }
 
