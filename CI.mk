@@ -82,6 +82,8 @@ else
 GIT=git
 endif
 
+GIT += -c core.packedGitWindowSize=8k
+
 ifeq (undefined,$(origin GIT_CINNABAR_HELPER))
 ifneq (,$(filter MINGW%,$(OS_NAME)))
 HELPER := git-cinnabar-helper.exe
