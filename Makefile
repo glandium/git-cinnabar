@@ -30,7 +30,7 @@ include git-core/config.mak.uname
 git-cinnabar-helper$X: FORCE
 
 helper: git-cinnabar-helper$X
-	cp git-core/$^ $^
+	mv git-core/$^ $^
 
 else
 
