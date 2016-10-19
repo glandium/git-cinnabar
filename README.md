@@ -56,6 +56,20 @@ have installed it using homebrew) you need to pass
 `PYTHON_PATH` environment variable to your Python installation path when using
 make to build this tool.
 
+If you don't have gettext, then you'll need to disable localization support
+in git when building the helper:
+
+  ```
+  $ NO_GETTEXT=1 make helper
+  ```
+
+If you installed OpenSSL using homebrew on macOS, then you may need to specify
+the locations of its headers and libraries:
+
+  ```
+  $ make helper CFLAGS="-I/usr/local/opt/openssl/include" LDFLAGS="-L/usr/local/opt/openssl/lib"
+  ```
+
 Usage:
 ------
 
