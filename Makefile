@@ -15,6 +15,9 @@ PYTHON_LIBS := \
 	cinnabar/hg/changegroup.py \
 	cinnabar/util.py
 
+NO_GETTEXT ?= 1
+NO_OPENSSL ?= 1
+
 ifneq (,$(wildcard $(CURDIR)/git-core/Makefile))
 all:
 
