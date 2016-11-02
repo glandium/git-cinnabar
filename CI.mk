@@ -1,5 +1,5 @@
 OS_NAME = $(TRAVIS_OS_NAME)$(MSYSTEM)
-WINDOWS_GIT_VERSION = v2.10.1.windows.1
+WINDOWS_GIT_VERSION = v2.10.2.windows.1
 
 ifeq (a,$(firstword a$(subst /, ,$(abspath .))))
 PATHSEP = :
