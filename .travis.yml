@@ -19,6 +19,7 @@ matrix:
       env: PYTHON_CHECKS=1
     - os: osx
       compiler: clang
+      osx_image: xcode6.4
       # Without an env, it ends up with all the env variables from the matrix
       # (so, in practice, the last value of each)
       env:
@@ -26,7 +27,7 @@ matrix:
       - GIT_CINNABAR_EXPERIMENTS=true
     - os: osx
       compiler: clang
-      osx_image: xcode7
+      osx_image: xcode7.3
       env:
       - VARIANT=asan
       - GIT_CINNABAR_EXPERIMENTS=true

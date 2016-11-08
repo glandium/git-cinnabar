@@ -110,7 +110,7 @@ class RevChunk(object):
         return '<%s %s>' % (self.__class__.__name__, self.node)
 
     def init(self, previous_chunk):
-        assert self.parent1 == NULL_NODE_ID or previous_chunk
+        assert self.delta_node == NULL_NODE_ID or previous_chunk
         self.data = self.patch_data(previous_chunk.data if previous_chunk
                                     else '', self._rev_data)
 

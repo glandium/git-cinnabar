@@ -1,5 +1,5 @@
 OS_NAME = $(TRAVIS_OS_NAME)$(MSYSTEM)
-WINDOWS_GIT_VERSION = v2.10.1.windows.1
+WINDOWS_GIT_VERSION = v2.10.2.windows.1
 
 ifeq (a,$(firstword a$(subst /, ,$(abspath .))))
 PATHSEP = :
@@ -33,7 +33,7 @@ PIP = $(if $(PYTHON_CHECKS),pip,python -c 'import os, sys; sys.path[:0] = os.env
 PIP_INSTALL = $(PIP) install $(if $(or $(PYTHON_CHECKS),$(filter MINGW%,$(OS_NAME))),,--user )--upgrade --force-reinstall $1
 
 before_install::
-ifeq ($(OS_NAME)_$(VARIANT),osx_asan)
+ifeq ($(OS_NAME),osx)
 	curl -O -s https://bootstrap.pypa.io/get-pip.py
 	python get-pip.py --user
 else
