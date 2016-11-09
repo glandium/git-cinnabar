@@ -7,4 +7,5 @@ fi
 
 cd $(dirname $0)/git-core
 
+autoconf
 exec ./configure "$@"
