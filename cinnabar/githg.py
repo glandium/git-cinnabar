@@ -1073,7 +1073,11 @@ class GitHgStore(object):
 
     def file(self, sha1):
         ref = self._git_object(self._files, 'blob', sha1)
-        return GeneratedFileRev(sha1, GitHgHelper.cat_file('blob', ref))
+        if ref == EMPTY_BLOB:
+            content = ''
+        else:
+            content = GitHgHelper.cat_file('blob', ref)
+        return GeneratedFileRev(sha1, content)
 
     def git_file_ref(self, sha1):
         if sha1 in self._git_files:
