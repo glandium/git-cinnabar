@@ -18,13 +18,18 @@ PYTHON_LIBS := \
 NO_GETTEXT ?= 1
 NO_OPENSSL ?= 1
 
-ifneq (,$(wildcard $(CURDIR)/git-core/Makefile))
+ifndef CINNABAR_RECURSE
+
+ifeq (,$(wildcard $(CURDIR)/git-core/Makefile))
+$(error The git-core submodule is not initialized. Please run `git submodule update --init`)
+endif
+
 all:
 
 .SUFFIXES:
 
 %:
-	$(MAKE) -C $(CURDIR)/git-core -f $(CURDIR)/Makefile $@ SCRIPT_PYTHON="git-p4.py $(PYTHON_SCRIPTS)"
+	$(MAKE) -C $(CURDIR)/git-core -f $(CURDIR)/Makefile $@ SCRIPT_PYTHON="git-p4.py $(PYTHON_SCRIPTS)" CINNABAR_RECURSE=1
 
 include git-core/config.mak.uname
 
