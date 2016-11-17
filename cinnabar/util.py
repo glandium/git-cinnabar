@@ -94,6 +94,7 @@ class CheckEnabledFunc(object):
                         % (c, ', '.join(all_checks)))
         return name in self._check
 
+
 check_enabled = CheckEnabledFunc()
 
 
