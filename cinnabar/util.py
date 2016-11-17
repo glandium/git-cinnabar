@@ -745,3 +745,58 @@ class TestByteDiff(unittest.TestCase):
             ((15, 17, extra),
              (19, 21, extra2))
         )
+
+
+def sorted_merge(iter_a, iter_b, key=lambda i: i[0], non_key=lambda i: i[1:]):
+    iter_a = iter(iter_a)
+    iter_b = iter(iter_b)
+    item_a = next(iter_a)
+    item_b = next(iter_b)
+    while item_a is not None or item_b is not None:
+        while item_a and (item_b and key(item_a) < key(item_b) or
+                          item_b is None):
+            yield key(item_a), non_key(item_a), ()
+            item_a = next(iter_a)
+        while item_b and (item_a and key(item_b) < key(item_a) or
+                          item_a is None):
+            yield key(item_b), (), non_key(item_b)
+            item_b = next(iter_b)
+        if item_a is None or item_b is None:
+            continue
+        key_a = key(item_a)
+        if key_a == key(item_b):
+            yield key_a, non_key(item_a), non_key(item_b)
+            item_a = next(iter_a)
+            item_b = next(iter_b)
+
+
+class TestSortedMerge(unittest.TestCase):
+    def test_sorted_merge(self):
+        a = [
+            ('a', 1),
+            ('b', 2),
+            ('d', 4),
+        ]
+        b = [
+            ('b', 'B'),
+            ('c', 'C'),
+        ]
+
+        self.assertEquals(list(sorted_merge(a, b)), [
+            ('a', (1,), ()),
+            ('b', (2,), ('B',)),
+            ('c', (), ('C',)),
+            ('d', (4,), ()),
+        ])
+
+        self.assertEquals(list(sorted_merge(b, a)), [
+            ('a', (), (1,)),
+            ('b', ('B',), (2,)),
+            ('c', ('C',), ()),
+            ('d', (), (4,)),
+        ])
+
+        self.assertEquals(list(sorted_merge(a[:2], b[:1])), [
+            ('a', (1,), ()),
+            ('b', (2,), ('B',)),
+        ])
