@@ -14,10 +14,9 @@ from .git import (
 from .util import (
     check_enabled,
     one,
-    next,
+    sorted_merge,
 )
 from contextlib import contextmanager
-from collections import OrderedDict
 from itertools import chain
 
 
@@ -69,56 +68,41 @@ class GitHgNoHelper(object):
     @classmethod
     def _manifest(self, hg_sha1, git_sha1):
         from githg import ManifestLine, GitHgStore
-        # TODO: Improve this horrible mess
-        attrs = {}
         if self._last_manifest:
             gitreference, reference_lines = self._last_manifest
-            removed = set()
-            modified = {}
-            created = OrderedDict()
-            for line in Git.diff_tree(gitreference, git_sha1, recursive=True):
-                mode_before, mode_after, sha1_before, sha1_after, status, \
-                    path = line
-                if path.startswith('git/'):
-                    if status != 'D':
-                        attr = GitHgStore.ATTR[mode_after]
-                        attrs[path[4:]] = attr
+            changes = []
+            hg_diff = list(Git.diff_tree(gitreference, git_sha1,
+                                         'hg', recursive=True))
+            git_diff = list(Git.diff_tree(gitreference, git_sha1,
+                                          'git', recursive=True))
+            for line in sorted_merge(hg_diff, git_diff,
+                                     key=lambda i: i[-1].split('/', 1)[1],
+                                     non_key=lambda i: (i[1], i[3], i[4])):
+                path, hg_change, git_change = line
+                status = hg_change[2] if hg_change else git_change[2]
+                if status == 'D':
+                    changes.append((path, None))
                 else:
-                    assert path.startswith('hg/')
-                    path = path[3:]
-                    if status == 'D':
-                        removed.add(path)
-                    elif status == 'M':
-                        modified[path] = (sha1_after, attrs.get(path))
-                    else:
-                        assert status == 'A'
-                        created[path] = (sha1_after, attrs.get(path))
-            for path, attr in attrs.iteritems():
-                if path not in modified:
-                    modified[path] = (None, attr)
-            iter_created = created.iteritems()
-            next_created = next(iter_created)
-            for line in reference_lines:
-                if line.name in removed:
-                    continue
-                mod = modified.get(line.name)
-                if mod:
-                    node, attr = mod
-                    if attr is None:
-                        attr = line.attr
+                    assert status in 'AM'
+                    node = hg_change[1] if hg_change else None
+                    attr = GitHgStore.ATTR[git_change[0]] if git_change \
+                        else None
+                    changes.append((path, (node, attr)))
+
+            lines = ((l.name, l) for l in reference_lines)
+            for line in sorted_merge(lines, changes, non_key=lambda i: i[1]):
+                path, manifest_line, change = line
+                if change:
+                    node, attr = change
                     if node is None:
-                        node = line.node
-                    line = ManifestLine(line.name, node, attr)
-                while next_created and next_created[0] < line.name:
-                    node, attr = next_created[1]
-                    yield ManifestLine(next_created[0], node, attr)
-                    next_created = next(iter_created)
-                yield line
-            while next_created:
-                node, attr = next_created[1]
-                yield ManifestLine(next_created[0], node, attr)
-                next_created = next(iter_created)
+                        node = manifest_line.node
+                    if attr is None:
+                        attr = manifest_line.attr
+                    yield ManifestLine(path, node, attr)
+                elif change is not None:
+                    yield manifest_line
         else:
+            attrs = {}
             for mode, typ, filesha1, path in Git.ls_tree(git_sha1,
                                                          recursive=True):
                 if path.startswith('git/'):
