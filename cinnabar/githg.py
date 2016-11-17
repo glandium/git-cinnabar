@@ -380,6 +380,8 @@ class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
         else:
             self.__lines = None
         self._data = None
+        self.removed = set()
+        self.modified = {}
 
     def init(self, previous_chunk):
         pass
@@ -415,8 +417,10 @@ class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
         self.__lines = value
         self._data = None
 
-    def append_line(self, line):
+    def append_line(self, line, modified=False):
         self.__lines.append(line)
+        if modified:
+            self.modified[line.name] = (line.node, line.attr)
         self._data = None
 
 

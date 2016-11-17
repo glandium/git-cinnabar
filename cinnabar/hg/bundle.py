@@ -18,6 +18,7 @@ from cinnabar.util import (
     one,
     progress_iter,
     PseudoString,
+    sorted_merge,
 )
 from .changegroup import (
     create_changegroup,
@@ -104,112 +105,76 @@ class PushStore(GitHgStore):
 
         manifest = GeneratedManifestInfo(NULL_NODE_ID)
 
-        # TODO: share code with GitHgStore.manifest
-        removed = set()
-        modified = {}
-        copies = {}
-        created = OrderedDict()
-
         if parents:
             parent_changeset_data = self.read_changeset_data(parents[0])
             parent_manifest = self.manifest(parent_changeset_data['manifest'])
             parent_node = parent_manifest.node
-            parent_lines = list(parent_manifest._lines)
             branch = parent_changeset_data.get('extra', {}).get('branch')
 
-            line = None
-            for line in Git.diff_tree(parents[0], commit, detect_copy=True,
-                                      recursive=True):
-                mode_before, mode_after, sha1_before, sha1_after, status, \
-                    path = line
-                status = status[0]
-                if status == 'D':
-                    removed.add(path)
-                elif status in 'MT':
-                    if sha1_before == sha1_after:
-                        modified[path] = (None, self.ATTR[mode_after])
-                    else:
-                        modified[path] = (sha1_after, self.ATTR[mode_after])
-                elif status in 'RC':
-                    path1, path2 = path.split('\t', 1)
-                    if status == 'R':
-                        removed.add(path1)
-                    if sha1_after != EMPTY_BLOB:
-                        copies[path2] = path1
-                    created[path2] = (sha1_after, self.ATTR[mode_after])
-                else:
-                    assert status == 'A'
-                    created[path] = (sha1_after, self.ATTR[mode_after])
-            if line is None:
+            def process_diff(diff):
+                for (mode_before, mode_after, sha1_before, sha1_after, status,
+                     path) in diff:
+                    path2 = ''
+                    if status[0] in 'RC':
+                        path2, path = path.split('\t', 1)
+                    if status[0] == 'R':
+                        yield path2, ('000000', sha1_before, NULL_NODE_ID, 'D')
+                    yield path, (mode_after, sha1_before, sha1_after,
+                                 status[0] + path2)
+            git_diff = sorted(
+                l for l in process_diff(Git.diff_tree(
+                    parents[0], commit, detect_copy=True, recursive=True))
+            )
+            if not git_diff:
                 manifest = parent_manifest
-                parent_lines = []
+            else:
+                parent_lines = OrderedDict((l.name, l)
+                                           for l in parent_manifest._lines)
+                for line in sorted_merge(parent_lines.iteritems(), git_diff,
+                                         non_key=lambda i: i[1]):
+                    path, manifest_line, change = line
+                    if not change:
+                        manifest.append_line(manifest_line)
+                        continue
+                    mode_after, sha1_before, sha1_after, status = change
+                    path2 = status[1:]
+                    status = status[0]
+                    attr = self.ATTR.get(mode_after)
+                    if status == 'D':
+                        manifest.removed.add(path)
+                        continue
+                    if status in 'MT':
+                        if sha1_before == sha1_after:
+                            node = PseudoString(manifest_line.node)
+                        else:
+                            node = self.create_file(
+                                sha1_after, str(manifest_line.node))
+                    elif status in 'RC':
+                        if sha1_after != EMPTY_BLOB:
+                            node = self.create_copy(
+                                (path2, parent_lines[path2].node), sha1_after)
+                        else:
+                            node = self.create_file(sha1_after)
+                    else:
+                        assert status == 'A'
+                        node = self.create_file(sha1_after)
+                    manifest.append_line(ManifestLine(path, node, attr),
+                                         modified=True)
         else:
             parent_node = NULL_NODE_ID
-            parent_lines = []
             branch = None
 
             for line in Git.ls_tree(commit, recursive=True):
                 mode, typ, sha1, path = line
-                created[path] = (sha1, self.ATTR[mode])
-
-        if copies:
-            copied = {k: () for k in copies.values()}
-            for line in parent_lines:
-                name = str(line.name)
-                if name in copied:
-                    copied[name] = line.node
-
-        iter_created = created.iteritems()
-        next_created = next(iter_created)
-        modified_lines = []
-        for line in parent_lines:
-            if line.name in removed and line.name not in created:
-                continue
-            mod = modified.get(line.name)
-            if mod:
-                node, attr = mod
-                if attr is None:
-                    attr = line.attr
-                if node is None:
-                    node = PseudoString(line.node)
-                else:
-                    node = self.create_file(node, str(line.node))
-                line = ManifestLine(line.name, node, attr)
-                modified_lines.append(line)
-            while next_created and next_created[0] < line.name:
-                node, attr = next_created[1]
-                if next_created[0] in copies:
-                    copied_name = copies[next_created[0]]
-                    node = self.create_copy((copied_name, copied[copied_name]),
-                                            node)
-                else:
-                    node = self.create_file(node)
-                created_line = ManifestLine(next_created[0], node, attr)
-                modified_lines.append(created_line)
-                manifest.append_line(created_line)
-                next_created = next(iter_created)
-            manifest.append_line(line)
-        while next_created:
-            node, attr = next_created[1]
-            if next_created[0] in copies:
-                copied_name = copies[next_created[0]]
-                node = self.create_copy((copied_name, copied[copied_name]),
-                                        node)
-            else:
-                node = self.create_file(node)
-            created_line = ManifestLine(next_created[0], node, attr)
-            modified_lines.append(created_line)
-            manifest.append_line(created_line)
-            next_created = next(iter_created)
+                node = self.create_file(sha1)
+                manifest.append_line(ManifestLine(path, node, self.ATTR[mode]),
+                                     modified=True)
 
         commit_data = GitCommit(commit)
 
         if manifest.node == NULL_NODE_ID:
             manifest.set_parents(parent_node)
             manifest.node = manifest.sha1
-            manifest.removed = removed
-            manifest.modified = {l.name: (l.node, l.attr)
-                                 for l in modified_lines}
             manifest.delta_node = parent_node
             self._push_manifests[manifest.node] = manifest
             self.manifest_ref(manifest.node, hg2git=False, create=True)
@@ -224,7 +189,7 @@ class PushStore(GitHgStore):
             extra['branch'] = branch
 
         changeset_data = self._changeset_data_cache[commit] = {
-            'files': sorted(chain(removed, modified, created)),
+            'files': sorted(chain(manifest.removed, manifest.modified)),
             'manifest': manifest.node,
         }
         if extra:
