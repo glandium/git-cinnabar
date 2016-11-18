@@ -74,6 +74,7 @@ class CheckEnabledFunc(object):
             if check:
                 check = check.split(',')
             all_checks = ('nodeid', 'manifests', 'helper', 'replace', 'commit')
+            extra_checks = ('bundle',)
             self._check = set()
             for c in check:
                 if c == 'all':
@@ -86,7 +87,7 @@ class CheckEnabledFunc(object):
                         logging.getLogger('check').warn(
                             'cinnabar.check: %s is not one of (%s)'
                             % (c, ', '.join(self._check)))
-                elif c in all_checks:
+                elif c in all_checks or c in extra_checks:
                     self._check.add(c)
                 else:
                     logging.getLogger('check').warn(

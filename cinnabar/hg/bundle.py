@@ -14,6 +14,7 @@ from cinnabar.git import (
     NULL_NODE_ID,
 )
 from cinnabar.util import (
+    check_enabled,
     next,
     one,
     progress_iter,
@@ -296,7 +297,7 @@ def bundle_data(store, commits):
                 'Pushing octopus merges to mercurial is not supported')
 
         changeset_data = store.read_changeset_data(node)
-        is_new = changeset_data is None
+        is_new = changeset_data is None or check_enabled('bundle')
         if is_new:
             store.create_hg_metadata(node, parents)
             changeset_data = store.read_changeset_data(node)
