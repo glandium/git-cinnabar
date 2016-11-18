@@ -30,6 +30,7 @@ from collections import (
     OrderedDict,
     defaultdict,
 )
+import logging
 import struct
 import types
 from itertools import chain
@@ -177,6 +178,18 @@ class PushStore(GitHgStore):
             manifest.set_parents(parent_node)
             manifest.node = manifest.sha1
             manifest.delta_node = parent_node
+            if check_enabled('bundle'):
+                real_changeset_data = self.read_changeset_data(commit)
+                if real_changeset_data and (
+                        manifest.node != real_changeset_data['manifest']):
+                    for path, created, real in sorted_merge(
+                            manifest._lines,
+                            self.manifest(
+                                real_changeset_data['manifest'])._lines,
+                            key=lambda i: i.name, non_key=lambda i: i):
+                        if str(created) != str(real):
+                            logging.error('%r != %r', str(created), str(real))
+                    raise Exception('Manifest mismatch')
             self._push_manifests[manifest.node] = manifest
             self.manifest_ref(manifest.node, hg2git=False, create=True)
             self._manifest_git_tree[manifest.node] = commit_data.tree
