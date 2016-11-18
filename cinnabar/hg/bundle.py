@@ -290,7 +290,11 @@ def bundle_data(store, commits):
     for nodes in progress_iter('Bundling %d changesets', commits):
         parents = nodes.split()
         node = parents.pop(0)
-        assert len(parents) <= 2
+
+        if len(parents) > 2:
+            raise Exception(
+                'Pushing octopus merges to mercurial is not supported')
+
         changeset_data = store.read_changeset_data(node)
         is_new = changeset_data is None
         if is_new:
