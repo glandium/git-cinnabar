@@ -150,16 +150,30 @@ class PushStore(GitHgStore):
                             node = PseudoString(manifest_line.node)
                         else:
                             node = self.create_file(
-                                sha1_after, str(manifest_line.node))
+                                sha1_after, str(manifest_line.node),
+                                git_manifest_parents=(
+                                    self.manifest_ref(parent_node),),
+                                path=path)
                     elif status in 'RC':
                         if sha1_after != EMPTY_BLOB:
                             node = self.create_copy(
-                                (path2, parent_lines[path2].node), sha1_after)
+                                (path2, parent_lines[path2].node), sha1_after,
+                                git_manifest_parents=(
+                                    self.manifest_ref(parent_node),),
+                                path=path)
                         else:
-                            node = self.create_file(sha1_after)
+                            node = self.create_file(
+                                sha1_after,
+                                git_manifest_parents=(
+                                    self.manifest_ref(parent_node),),
+                                path=path)
                     else:
                         assert status == 'A'
-                        node = self.create_file(sha1_after)
+                        node = self.create_file(
+                            sha1_after,
+                            git_manifest_parents=(
+                                self.manifest_ref(parent_node),),
+                            path=path)
                     manifest.append_line(ManifestLine(path, node, attr),
                                          modified=True)
         else:
@@ -168,7 +182,8 @@ class PushStore(GitHgStore):
 
             for line in Git.ls_tree(commit, recursive=True):
                 mode, typ, sha1, path = line
-                node = self.create_file(sha1)
+                node = self.create_file(sha1, git_manifest_parents=(),
+                                        path=path)
                 manifest.append_line(ManifestLine(path, node, self.ATTR[mode]),
                                      modified=True)
 
@@ -237,21 +252,26 @@ class PushStore(GitHgStore):
                 del changeset_data['extra']
         self._changesets[changeset.node] = PseudoString(commit)
 
-    def create_file(self, sha1, *parents):
+    def create_file(self, sha1, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID,
+                    git_manifest_parents=None, path=None):
         hg_file = GeneratedFileRev(NULL_NODE_ID,
                                    GitHgHelper.cat_file('blob', sha1))
-        hg_file.set_parents(*parents)
+        hg_file.set_parents(parent1, parent2,
+                            git_manifest_parents=git_manifest_parents,
+                            path=path)
         node = hg_file.node = hg_file.sha1
         self._push_files[node] = hg_file
         self._files.setdefault(node, PseudoString(sha1))
         self._git_files.setdefault(node, PseudoString(sha1))
         return node
 
-    def create_copy(self, hg_source, sha1):
+    def create_copy(self, hg_source, sha1, git_manifest_parents=None,
+                    path=None):
         data = '\1\ncopy: %s\ncopyrev: %s\n\1\n' % hg_source
         data += GitHgHelper.cat_file('blob', sha1)
         hg_file = GeneratedFileRev(NULL_NODE_ID, data)
-        hg_file.set_parents()
+        hg_file.set_parents(git_manifest_parents=git_manifest_parents,
+                            path=path)
         node = hg_file.node = hg_file.sha1
         mark = self.file_ref(node, hg2git=False, create=True)
         self._push_files[node] = hg_file
@@ -259,10 +279,12 @@ class PushStore(GitHgStore):
         self._git_files.setdefault(node, PseudoString(sha1))
         return node
 
-    def file(self, sha1):
+    def file(self, sha1, file_parents=None, git_manifest_parents=None,
+             path=None):
         if sha1 in self._push_files:
             return self._push_files[sha1]
-        return super(PushStore, self).file(sha1)
+        return super(PushStore, self).file(sha1, file_parents,
+                                           git_manifest_parents, path)
 
     def manifest(self, sha1, include_parents=False):
         if sha1 in self._push_manifests:
@@ -339,14 +361,14 @@ def bundle_data(store, commits):
             for path, (sha1, attr) in hg_manifest.modified.iteritems():
                 if not isinstance(sha1, types.StringType):
                     continue
-                file = store.file(sha1)
-                files[path].append((sha1, file.parents, changeset))
+                files[path].append((sha1, None, changeset, None))
             continue
         parents = tuple(store.manifest_ref(p) for p in hg_manifest.parents)
         changes = get_changes(manifest_ref, parents, 'hg')
         for path, hg_file, hg_fileparents in changes:
             if hg_file != NULL_NODE_ID:
-                files[path].append((hg_file, hg_fileparents, changeset))
+                files[path].append(
+                    (hg_file, hg_fileparents, changeset, parents))
 
     yield None
 
@@ -354,12 +376,11 @@ def bundle_data(store, commits):
         for path in sorted(files):
             yield path
             nodes = set()
-            for node, parents, changeset in files[path]:
+            for node, parents, changeset, mn_parents in files[path]:
                 if node in nodes:
                     continue
                 nodes.add(node)
-                file = store.file(node)
-                file.set_parents(*parents)
+                file = store.file(node, parents, mn_parents, path)
                 file.changeset = changeset
                 assert file.node == file.sha1
                 yield file

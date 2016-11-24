@@ -259,8 +259,8 @@ def fsck(args):
             changes = get_changes(manifest_ref, git_parents, 'hg')
             for path, hg_file, hg_fileparents in changes:
                 if hg_file != NULL_NODE_ID and hg_file not in seen_files:
-                    file = store.file(hg_file)
-                    file.set_parents(*hg_fileparents)
+                    file = store.file(hg_file, hg_fileparents, git_parents,
+                                      path)
                     if file.node != file.sha1:
                         report('Sha1 mismatch for file %s in manifest %s'
                                % (hg_file, manifest_ref))

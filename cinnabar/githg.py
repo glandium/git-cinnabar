@@ -31,6 +31,7 @@ from .git import (
     EmptyMark,
     FastImport,
     Git,
+    GitProcess,
     git_dir,
     Mark,
     NULL_NODE_ID,
@@ -178,28 +179,94 @@ class GeneratedRevChunk(RevChunk):
 
 
 class GeneratedFileRev(GeneratedRevChunk):
-    def set_parents(self, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
-        has_one_parent = parent1 != NULL_NODE_ID and parent2 != NULL_NODE_ID
-        # Some mercurial versions stored a parent in some cases for copied
-        # files.
-        if self.data.startswith('\1\n') and has_one_parent:
-            if self._try_parents():
-                return
-        if self._try_parents(parent1, parent2):
-            return
-        # In some cases, only one parent is stored in a merge, because the
-        # other parent is actually an ancestor of the first one, but checking
-        # that is likely more expensive than to check if the sha1 matches with
-        # either parent.
-        if self._try_parents(parent1):
-            return
-        if self._try_parents(parent2):
-            return
-        # Some mercurial versions stores the first parent twice in merges.
-        if self._try_parents(parent1, parent1):
-            return
-        # If none of the above worked, just use the given parents.
-        super(GeneratedFileRev, self).set_parents(parent1, parent2)
+    logger = logging.getLogger('generated_file')
+
+    def _invalid_if_new(self):
+        if self.node == NULL_NODE_ID:
+            raise Exception('Trying to create an invalid file. '
+                            'Please open an issue with details.')
+
+    def set_parents(self, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID,
+                    git_manifest_parents=None, path=None):
+        assert git_manifest_parents is not None and path is not None
+
+        # Remove null nodes
+        parents = tuple(p for p in (parent1, parent2) if p != NULL_NODE_ID)
+        orig_parents = parents
+
+        # On merges, a file with copy metadata has either no parent, or only
+        # one. In that latter case, the parent is always set as second parent.
+        # On non-merges, a file with copy metadata doesn't have a parent.
+        if self.data.startswith('\1\n'):
+            if len(parents) == 2:
+                self._invalid_if_new()
+            elif len(parents) == 1:
+                if git_manifest_parents is not None:
+                    if len(git_manifest_parents) != 2:
+                        self._invalid_if_new()
+                parents = (NULL_NODE_ID, parents[0])
+            elif git_manifest_parents is not None:
+                if len(git_manifest_parents) == 0:
+                    self._invalid_if_new()
+        elif len(parents) == 2:
+            if git_manifest_parents is not None:
+                if len(git_manifest_parents) != 2:
+                    self._invalid_if_new()
+            if parents[0] == parents[1]:
+                parents = parents[:1]
+            elif (git_manifest_parents is not None and
+                  (self.node == NULL_NODE_ID or check_enabled('files'))):
+                # Checking if one parent is the ancestor of another is slow.
+                # So, unless we're actually creating this file, skip over
+                # this by default, the fallback will work just fine.
+                file_mn_parents = tuple(
+                    one(Git.iter('rev-list', '-1', p, '--',
+                                 'hg/%s' % path))
+                    for p in git_manifest_parents
+                )
+
+                def is_ancestor(a, b):
+                    p = GitProcess('merge-base', '--is-ancestor', a, b)
+                    return p.wait() == 0
+
+                if is_ancestor(*reversed(file_mn_parents)):
+                    parents = parents[:1]
+                elif is_ancestor(*file_mn_parents):
+                    parents = parents[1:]
+
+        super(GeneratedFileRev, self).set_parents(*parents)
+        if self.node != NULL_NODE_ID and self.node != self.sha1:
+            if parents != orig_parents:
+                if self._try_parents(*orig_parents):
+                    self.logger.debug(
+                        'Right parents given for %s, but they don\'t match '
+                        'what modern mercurial normally would do', self.node)
+                    return
+            self._set_parents_fallback(parent1, parent2)
+
+    def _set_parents_fallback(self, parent1=NULL_NODE_ID,
+                              parent2=NULL_NODE_ID):
+        result = (  # In some cases, only one parent is stored in a merge,
+                    # because the other parent is actually an ancestor of the
+                    # first one, but checking that is likely more expensive
+                    # than to check if the sha1 matches with either parent.
+                    self._try_parents(parent1) or
+                    self._try_parents(parent2) or
+                    # Some mercurial versions stores the first parent twice in
+                    # merges.
+                    self._try_parents(parent1, parent1) or
+                    # As last resort, try without any parents.
+                    self._try_parents())
+
+        self.logger.debug('Wrong parents given for %s', self.node)
+        self.logger.debug('  Got: %s %s', parent1, parent2)
+        if result:
+            self.logger.debug('  Expected: %s %s', self.parent1, self.parent2)
+
+        # If none of the above worked, we failed big time
+        if not result:
+            raise Exception('Failed to create file. '
+                            'Please open an issue with details.')
 
     def _try_parents(self, *parents):
         super(GeneratedFileRev, self).set_parents(*parents)
@@ -1075,13 +1142,19 @@ class GitHgStore(object):
         return self._git_object(self._files, 'blob', sha1, hg2git=hg2git,
                                 create=create)
 
-    def file(self, sha1):
+    def file(self, sha1, file_parents=None, git_manifest_parents=None,
+             path=None):
         ref = self._git_object(self._files, 'blob', sha1)
         if ref == EMPTY_BLOB:
             content = ''
         else:
             content = GitHgHelper.cat_file('blob', ref)
-        return GeneratedFileRev(sha1, content)
+        file = GeneratedFileRev(sha1, content)
+        if file_parents is not None:
+            file.set_parents(*file_parents,
+                             git_manifest_parents=git_manifest_parents,
+                             path=path)
+        return file
 
     def git_file_ref(self, sha1):
         if sha1 in self._git_files:

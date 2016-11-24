@@ -74,7 +74,7 @@ class CheckEnabledFunc(object):
             if check:
                 check = check.split(',')
             all_checks = ('nodeid', 'manifests', 'helper', 'replace', 'commit')
-            extra_checks = ('bundle',)
+            extra_checks = ('bundle', 'files')
             self._check = set()
             for c in check:
                 if c == 'all':
