@@ -185,3 +185,33 @@ script::
 	$(HG) -R hg.http.hg --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' -C hg.git push --all hg-http
 
 endif # PYTHON_CHECKS
+
+ifeq ($(MAKECMDGOALS),package)
+PACKAGE_FLAGS = $(addprefix --system ,$(SYSTEM)) $(addprefix --machine ,$(MACHINE))
+PACKAGE = $(notdir $(shell $(CURDIR)/git-cinnabar download --url $1 $(PACKAGE_FLAGS)))
+
+$(PACKAGE):
+	@mkdir -p tmp
+	@rm -rf tmp/git-cinnabar
+	git archive --format=tar --prefix=git-cinnabar/ HEAD | tar -C tmp -x
+	@$(CURDIR)/git-cinnabar download --dev -o tmp/git-cinnabar/$(call PACKAGE,--dev) $(PACKAGE_FLAGS)
+ifneq (,$(filter %.tar.xz,$(PACKAGE)))
+	tar --owner cinnabar:1000 --group cinnabar:1000 -C tmp --remove-files --sort=name -Jcvf $@ git-cinnabar
+else
+	@rm -f $@
+	cd tmp && find git-cinnabar | sort | zip --move $(CURDIR)/$@ -@
+endif
+	rm -rf tmp
+
+.PHONY: $(PACKAGE)
+
+package: $(PACKAGE)
+endif
+
+define CR
+
+
+endef
+
+packages:
+	$(foreach c,$(shell $(CURDIR)/git-cinnabar download --list),$(MAKE) -f $(firstword $(MAKEFILE_LIST)) package SYSTEM=$(firstword $(subst /, ,$(c))) MACHINE=$(word 2,$(subst /, ,$(c)))$(CR))
