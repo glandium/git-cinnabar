@@ -190,13 +190,14 @@ class PushStore(GitHgStore):
         return manifest
 
     def create_hg_metadata(self, commit, parents):
+        if check_enabled('bundle'):
+            real_changeset_data = self.read_changeset_data(commit)
         manifest = self.create_hg_manifest(commit, parents)
         commit_data = GitCommit(commit)
 
         if manifest.node == NULL_NODE_ID:
             manifest.node = manifest.sha1
             if check_enabled('bundle'):
-                real_changeset_data = self.read_changeset_data(commit)
                 if real_changeset_data and (
                         manifest.node != real_changeset_data['manifest']):
                     for path, created, real in sorted_merge(
@@ -256,6 +257,17 @@ class PushStore(GitHgStore):
             if not extra:
                 del changeset_data['extra']
         self._changesets[changeset.node] = PseudoString(commit)
+
+        if check_enabled('bundle') and real_changeset_data:
+            error = False
+            for k in ('files', 'manifest'):
+                if real_changeset_data.get(k, []) != changeset_data.get(k):
+                    logging.error('(%s) %r != %r', k,
+                                  real_changeset_data.get(k),
+                                  changeset_data.get(k))
+                    error = True
+            if error:
+                raise Exception('Changeset mismatch')
 
     def create_file(self, sha1, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID,
                     git_manifest_parents=None, path=None):
