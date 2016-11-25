@@ -21,7 +21,37 @@ NO_OPENSSL ?= 1
 ifndef CINNABAR_RECURSE
 
 ifeq (,$(wildcard $(CURDIR)/git-core/Makefile))
-$(error The git-core submodule is not initialized. Please run `git submodule update --init`)
+SYSTEM = $(shell python2.7 -c 'import platform; print platform.system()')
+include GIT-VERSION.mk
+ifeq ($(SYSTEM),Windows)
+GIT_REPO = https://github.com/git-for-windows/git
+GIT_VERSION := $(WINDOWS_GIT_VERSION)
+else
+GIT_REPO = $(shell sed -n 's/.*url = //p' .gitmodules)
+endif
+SUBMODULE_STATUS := $(shell git submodule status git-core 2> /dev/null || echo no)
+
+define exec
+$$(shell echo $1 >&2)
+ifeq (fail,$$(shell $1 >&2 || echo fail))
+$$(error failed)
+endif
+endef
+
+ifeq ($(SUBMODULE_STATUS),no)
+$(eval $(call exec,git clone -n $(GIT_REPO) git-core))
+$(eval $(call exec,git -C git-core checkout $(GIT_VERSION)))
+else
+$(eval $(call exec,git submodule update --init))
+ifeq ($(SYSTEM),Windows)
+$(eval $(call exec,git -C git-core remote add git4win $(GIT_REPO)))
+$(eval $(call exec,git -C git-core remote update git4win))
+$(eval $(call exec,git -C git-core checkout $(GIT_VERSION)))
+endif
+endif
+ifneq ($(shell git -C git-core rev-parse HEAD),$(shell git -C git-core rev-parse $(GIT_VERSION)^{commit}))
+$(error git-core is not checked out at $(GIT_VERSION))
+endif
 endif
 
 all:

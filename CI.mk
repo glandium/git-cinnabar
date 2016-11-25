@@ -118,15 +118,6 @@ EXTRA_MAKE_FLAGS += CC=$(CC)
 endif
 
 $(GIT_CINNABAR_HELPER):
-	git submodule update --init
-ifeq (,$(filter MINGW%,$(OS_NAME)))
-	test $$(git -C git-core rev-parse HEAD) = $$(git -C git-core rev-parse $(GIT_VERSION)^{commit})
-else
-	git -C git-core remote add git4win https://github.com/git-for-windows/git
-	git -C git-core remote update git4win
-	git -C git-core merge-base --is-ancestor HEAD $(WINDOWS_GIT_VERSION)
-	git -C git-core checkout $(WINDOWS_GIT_VERSION)
-endif
 	$(MAKE) --jobs=2 $(@F) $(EXTRA_MAKE_FLAGS)
 	cp git-core/$(@F) $@
 	mkdir -p $(dir $(HELPER_PATH))
