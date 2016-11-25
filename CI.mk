@@ -137,6 +137,9 @@ before_script:: $(GIT_CINNABAR_HELPER)
 	git -C old-cinnabar checkout $(UPGRADE_FROM)
 endif
 
+before_script::
+	test $$($(GIT) cinnabar --version) = $$(git describe --tags --abbrev=0 HEAD)
+
 before_script:: $(GIT_CINNABAR_HELPER)
 	$(GIT) -c fetch.prune=true clone hg::$(REPO) hg.old.git
 

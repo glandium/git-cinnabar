@@ -8,6 +8,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
 import argparse
 from binascii import hexlify
+from cinnabar import VERSION
 from cinnabar.githg import (
     ChangesetData,
     GitCommit,
@@ -443,6 +444,8 @@ def do_fetch(remote, rev):
 def main(argv):
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(title='subcommands', dest='command')
+
+    parser.add_argument('--version', action='version', version=VERSION)
 
     subparser = subparsers.add_parser(
         'data', help='dump the contents of a mercurial revision')
