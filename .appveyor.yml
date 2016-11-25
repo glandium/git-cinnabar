@@ -3,8 +3,10 @@ version: '{build}'
 environment:
   matrix:
   - MSYSTEM: MINGW64
+    MACHINE: AMD64
     CPU: x86_64
   - MSYSTEM: MINGW32
+    MACHINE: x86
     CPU: i686
 
 install:
@@ -24,7 +26,7 @@ build_script:
   - set /p HELPER_HASH=< helper_hash
 
 artifacts:
-  - path: artifacts/$(HELPER_HASH)/$(MSYSTEM)/git-cinnabar-helper.exe
+  - path: artifacts/$(HELPER_HASH)/Windows/$(MACHINE)/git-cinnabar-helper.exe
     name: git-cinnabar-helper.exe
 
 deploy:

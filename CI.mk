@@ -20,11 +20,14 @@ REPO ?= https://bitbucket.org/cleonello/jqplot
 
 -include CI-data.mk
 
-HELPER_HASH := $(shell git ls-tree -r HEAD | grep '\(\.[ch]\|\sGIT-VERSION.mk\)$$' | awk '{print $$3}' | shasum | awk '{print $$1}')
-HELPER_PATH := artifacts/$(HELPER_HASH)/$(OS_NAME)$(addprefix -,$(VARIANT))
+DOWNLOAD_FLAGS = --dev $(VARIANT) $(addprefix --machine ,$(MACHINE))
+
+HELPER_PATH = $(subst https://s3.amazonaws.com/git-cinnabar/,,$(shell $(CURDIR)/git-cinnabar download --url $(DOWNLOAD_FLAGS)))
 
 helper_hash:
-	@echo $(HELPER_HASH) > $@
+	@echo $(word 2,$(subst /, ,$(HELPER_PATH))) > $@
+
+.PHONY: helper_hash
 
 # On Travis-CI, an old pip is installed with easy_install, which means its
 # egg ends up before our $PYTHONPATH in sys.path, such that upgrading pip with
@@ -99,7 +102,8 @@ export GIT_CINNABAR_CHECK=all$(if $(HELPER),,$(COMMA)-helper)
 ifndef BUILD_HELPER
 $(GIT_CINNABAR_HELPER):
 ifdef ARTIFACTS_BUCKET
-	-curl -f -o $@ --retry 5 https://s3.amazonaws.com/$(ARTIFACTS_BUCKET)/$(HELPER_PATH)/$(@F) && chmod +x $@
+	$(call PIP_INSTALL,requests)
+	-$(GIT) cinnabar download -o $@ --no-config $(DOWNLOAD_FLAGS)
 endif
 	MACOSX_DEPLOYMENT_TARGET=10.6 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) $@ BUILD_HELPER=1
 
@@ -125,8 +129,8 @@ else
 endif
 	$(MAKE) --jobs=2 $(@F) $(EXTRA_MAKE_FLAGS)
 	cp git-core/$(@F) $@
-	mkdir -p $(HELPER_PATH)
-	cp $@ $(HELPER_PATH)/$(@F)
+	mkdir -p $(dir $(HELPER_PATH))
+	cp $@ $(HELPER_PATH)
 
 endif
 
@@ -138,7 +142,7 @@ before_script:: $(GIT_CINNABAR_HELPER)
 endif
 
 before_script::
-	test $$($(GIT) cinnabar --version) = $$(git describe --tags --abbrev=0 HEAD)
+	test "$(shell $(CURDIR)/git-cinnabar --version 2>&1)" = "$(shell git describe --tags --abbrev=0 HEAD)"
 
 before_script:: $(GIT_CINNABAR_HELPER)
 	$(GIT) -c fetch.prune=true clone hg::$(REPO) hg.old.git

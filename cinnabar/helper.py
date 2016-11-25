@@ -184,11 +184,11 @@ class BaseHelper(object):
                 if self._helper.wait() == 128:
                     logger.warn(
                         'Cinnabar helper executable is outdated. '
-                        'Please rebuild it.')
+                        'Please try `git cinnabar download` or rebuild it.')
                 else:
                     logger.warn(
                         'Cannot find cinnabar helper executable. '
-                        'Please build or download it.')
+                        'Please try `git cinnabar download` or build it.')
                     logger.warn(
                         'You can disable this warning with '
                         '`git config cinnabar.helper ""`.')

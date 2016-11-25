@@ -110,13 +110,25 @@ progress = True
 
 
 def progress_iter(fmt, iter, filter_func=None):
+    if not filter_func:
+        return progress_enum(fmt, enumerate(iter, start=1))
+
+    def _progress_iter():
+        count = 0
+        for item in iter:
+            if filter_func(item):
+                count += 1
+            yield count, item
+
+    return progress_enum(fmt, _progress_iter())
+
+
+def progress_enum(fmt, enum_iter):
     count = 0
     t0 = 0
     try:
-        for item in iter:
+        for count, item in enum_iter:
             if progress:
-                if not filter_func or filter_func(item):
-                    count += 1
                 t1 = time.time()
                 if t1 - t0 > 0.1:
                     sys.stderr.write(('\r' + fmt) % count)
