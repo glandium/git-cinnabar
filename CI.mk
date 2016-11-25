@@ -96,8 +96,6 @@ export GIT_CINNABAR_HELPER
 COMMA=,
 export GIT_CINNABAR_CHECK=all$(if $(HELPER),,$(COMMA)-helper)
 
-TOPLEVEL := .
-
 ifndef BUILD_HELPER
 $(GIT_CINNABAR_HELPER):
 ifdef ARTIFACTS_BUCKET
@@ -125,8 +123,8 @@ ifneq (,$(filter MINGW%,$(OS_NAME)))
 endif
 	$(MAKE) --jobs=2 $(@F) $(EXTRA_MAKE_FLAGS)
 	cp git-core/$(@F) $@
-	mkdir -p $(TOPLEVEL)/$(HELPER_PATH)
-	cp $@ $(TOPLEVEL)/$(HELPER_PATH)/$(@F)
+	mkdir -p $(HELPER_PATH)
+	cp $@ $(HELPER_PATH)/$(@F)
 
 endif
 
@@ -146,9 +144,6 @@ script::
 	git -C hg.old.git cinnabar fsck && echo "fsck should have failed" && exit 1 || true
 	git clone -n . old-cinnabar
 	git -C old-cinnabar checkout 0.3.2
-ifdef HELPER
-	$(MAKE) -C old-cinnabar -f $(CURDIR)/CI.mk $(HELPER) TOPLEVEL=.. GIT_CINNABAR_HELPER=$(HELPER)
-endif
 endif
 
 script::
