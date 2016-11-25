@@ -39,11 +39,16 @@ Setup:
 - Add this directory to your PATH. If you have another git-remote-hg project in
   your PATH already, make sure the git-cinnabar path comes before.
 
-Additionally, you can do the following to build a native helper for faster
-operation (especially on macOS):
+A native helper can be used for faster operations. You can download a prebuilt
+binary with the following command (assuming one is available for your system):
 
   ```
-  $ git submodule update --init
+  $ git cinnabar download
+  ```
+
+Alternatively, you can do the following to build it:
+
+  ```
   $ make helper
   ```
 
