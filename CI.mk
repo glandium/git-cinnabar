@@ -1,5 +1,5 @@
 OS_NAME = $(TRAVIS_OS_NAME)$(MSYSTEM)
-WINDOWS_GIT_VERSION = v2.10.2.windows.1
+include $(addsuffix /,$(dir $(firstword $(MAKEFILE_LIST))))GIT-VERSION.mk
 
 ifeq (a,$(firstword a$(subst /, ,$(abspath .))))
 PATHSEP = :
@@ -20,7 +20,7 @@ REPO ?= https://bitbucket.org/cleonello/jqplot
 
 -include CI-data.mk
 
-HELPER_HASH := $(shell git ls-tree -r HEAD | grep '\(\.[ch]\|\sgit-core\)$$' | awk '{print $$3}' | shasum | awk '{print $$1}')
+HELPER_HASH := $(shell git ls-tree -r HEAD | grep '\(\.[ch]\|\sGIT-VERSION.mk\)$$' | awk '{print $$3}' | shasum | awk '{print $$1}')
 HELPER_PATH := artifacts/$(HELPER_HASH)/$(OS_NAME)$(addprefix -,$(VARIANT))
 
 helper_hash:
@@ -64,7 +64,7 @@ endif
 
 else
 
-ifdef GIT_VERSION
+ifneq (file,$(origin GIT_VERSION))
 # When building and using a separate git version, disable the helper. It's
 # being tested in many different setups, and hides the interactions with git.
 GIT_CINNABAR_HELPER=
@@ -75,7 +75,7 @@ GIT=$(CURDIR)/git.git/bin-wrappers/git
 before_script::
 	git submodule update --init
 	git clone -n git-core git.git
-	git -C git.git checkout v$(GIT_VERSION)
+	git -C git.git checkout $(GIT_VERSION)
 	$(MAKE) -C git.git --jobs=2 NO_GETTEXT=1 NO_CURL=1 NO_OPENSSL=1
 
 else
@@ -115,7 +115,9 @@ endif
 
 $(GIT_CINNABAR_HELPER):
 	git submodule update --init
-ifneq (,$(filter MINGW%,$(OS_NAME)))
+ifeq (,$(filter MINGW%,$(OS_NAME)))
+	test $$(git -C git-core rev-parse HEAD) = $$(git -C git-core rev-parse $(GIT_VERSION)^{commit})
+else
 	git -C git-core remote add git4win https://github.com/git-for-windows/git
 	git -C git-core remote update git4win
 	git -C git-core merge-base --is-ancestor HEAD $(WINDOWS_GIT_VERSION)
