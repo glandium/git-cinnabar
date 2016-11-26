@@ -38,6 +38,7 @@ from cinnabar.git import (
 )
 from cinnabar.util import (
     check_enabled,
+    experiment,
     LazyCall,
     next,
     progress_iter,
@@ -781,7 +782,7 @@ def get_repo(remote):
             path = path.lstrip('/')
         if not os.path.isdir(path):
             return bundlerepo(path)
-    if not changegroup or Git.config('cinnabar.experiments') == 'true':
+    if not changegroup or experiment('wire'):
         if not changegroup:
             logging.warning('Mercurial libraries not found. Falling back to '
                             'native access.')

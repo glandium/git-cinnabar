@@ -63,40 +63,50 @@ def init_logging():
             pass
 
 
-class CheckEnabledFunc(object):
-    def __init__(self):
-        self._check = None
+class ConfigSetFunc(object):
+    def __init__(self, key, values, extra_values=()):
+        self._config = None
+        self._key = key
+        self._values = values
+        self._extra_values = extra_values
 
     def __call__(self, name):
-        if self._check is None:
+        if self._config is None:
             from .git import Git
-            check = Git.config('cinnabar.check') or ''
-            if check:
-                check = check.split(',')
-            all_checks = ('nodeid', 'manifests', 'helper', 'replace', 'commit')
-            extra_checks = ('bundle', 'files')
-            self._check = set()
-            for c in check:
-                if c == 'all':
-                    self._check |= set(all_checks)
+            config = Git.config(self._key) or ''
+            if config:
+                config = config.split(',')
+            self._config = set()
+            for c in config:
+                if c in ('true', 'all'):
+                    self._config |= set(self._values)
                 elif c.startswith('-'):
                     c = c[1:]
                     try:
-                        self._check.remove(c)
+                        self._config.remove(c)
                     except KeyError:
-                        logging.getLogger('check').warn(
-                            'cinnabar.check: %s is not one of (%s)'
-                            % (c, ', '.join(self._check)))
-                elif c in all_checks or c in extra_checks:
-                    self._check.add(c)
+                        logging.getLogger('config').warn(
+                            '%s: %s is not one of (%s)'
+                            % (self._key, c, ', '.join(self._config)))
+                elif c in self._values or c in self._extra_values:
+                    self._config.add(c)
                 else:
-                    logging.getLogger('check').warn(
-                        'cinnabar.check: %s is not one of (%s)'
-                        % (c, ', '.join(all_checks)))
-        return name in self._check
+                    logging.getLogger('config').warn(
+                        '%s: %s is not one of (%s)'
+                        % (self._key, c, ', '.join(self._values)))
+        return name in self._config
 
 
-check_enabled = CheckEnabledFunc()
+check_enabled = ConfigSetFunc(
+    'cinnabar.check',
+    ('nodeid', 'manifests', 'helper', 'replace', 'commit'),
+    ('bundle', 'files'),
+)
+
+experiment = ConfigSetFunc(
+    'cinnabar.experiments',
+    ('wire',),
+)
 
 
 def next(iter):
