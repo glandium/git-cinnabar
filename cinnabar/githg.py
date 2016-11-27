@@ -1179,8 +1179,7 @@ class GitHgStore(object):
         )
 
         result = get_ref_func(instance.node, hg2git=hg2git, create=create)
-        logging.info('store %s %s %s', instance.node, instance.delta_node,
-                     result)
+        logging.info('store %s %s', instance.node, result)
         return result
 
     def _git_committer(self, committer, date, utcoffset):

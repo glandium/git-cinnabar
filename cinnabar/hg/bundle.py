@@ -121,6 +121,7 @@ class PushStore(GitHgStore):
                                      modified=True)
 
             manifest.set_parents(NULL_NODE_ID)
+            manifest.delta_node = NULL_NODE_ID
             return manifest
 
         def process_diff(diff):
@@ -187,6 +188,7 @@ class PushStore(GitHgStore):
             manifest.append_line(ManifestLine(path, node, attr),
                                  modified=True)
         manifest.set_parents(parent_node)
+        manifest.delta_node = parent_node
         return manifest
 
     def create_hg_metadata(self, commit, parents):
