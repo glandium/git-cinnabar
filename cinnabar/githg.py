@@ -31,7 +31,6 @@ from .git import (
     EmptyMark,
     FastImport,
     Git,
-    GitProcess,
     git_dir,
     Mark,
     NULL_NODE_ID,
@@ -219,20 +218,38 @@ class GeneratedFileRev(GeneratedRevChunk):
                 # Checking if one parent is the ancestor of another is slow.
                 # So, unless we're actually creating this file, skip over
                 # this by default, the fallback will work just fine.
-                file_mn_parents = tuple(
-                    one(Git.iter('rev-list', '-1', p, '--',
-                                 'hg/%s' % path))
-                    for p in git_manifest_parents
-                )
+                file_dag = gitdag()
+                mapping = {}
+                hg_path = 'hg/%s' % path
+                for line in Git.iter('rev-list', '--parents', '--boundary',
+                                     '--topo-order', '--reverse',
+                                     '%s...%s' % git_manifest_parents, '--',
+                                     hg_path):
+                    fparents = line.split(' ')
+                    sha1 = fparents.pop(0)
+                    if sha1.startswith('-'):
+                        sha1 = sha1[1:]
+                    node = [
+                        s
+                        for mode, typ, s, p in
+                        Git.ls_tree(sha1, hg_path)
+                    ]
+                    if not node:
+                        continue
+                    node = node[0]
+                    mapping[sha1] = node
+                    file_dag.add(node, tuple(mapping[p]
+                                             for p in fparents
+                                             if p in mapping))
 
-                def is_ancestor(a, b):
-                    p = GitProcess('merge-base', '--is-ancestor', a, b)
-                    return p.wait() == 0
-
-                if is_ancestor(*reversed(file_mn_parents)):
+                file_dag.tag_nodes_and_parents((parents[0],), 'a')
+                if file_dag._tags.get(parents[1]) == 'a':
                     parents = parents[:1]
-                elif is_ancestor(*file_mn_parents):
-                    parents = parents[1:]
+                else:
+                    file_dag._tags.clear()
+                    file_dag.tag_nodes_and_parents((parents[1],), 'b')
+                    if file_dag._tags.get(parents[0]) == 'b':
+                        parents = parents[1:]
 
         super(GeneratedFileRev, self).set_parents(*parents)
         if self.node != NULL_NODE_ID and self.node != self.sha1:
