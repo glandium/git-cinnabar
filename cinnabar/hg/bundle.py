@@ -15,6 +15,7 @@ from cinnabar.git import (
 )
 from cinnabar.util import (
     check_enabled,
+    experiment,
     next,
     one,
     progress_iter,
@@ -102,15 +103,20 @@ class PushStore(GitHgStore):
         self._graft = bool(graft)
 
     def create_hg_manifest(self, commit, parents):
-        if len(parents) > 1:
-            raise Exception('Pushing merges is not supported yet')
-
         manifest = GeneratedManifestInfo(NULL_NODE_ID)
 
         if parents:
             parent_changeset_data = self.read_changeset_data(parents[0])
             parent_manifest = self.manifest(parent_changeset_data['manifest'])
             parent_node = parent_manifest.node
+
+        if len(parents) == 2:
+            parent2_changeset_data = self.read_changeset_data(parents[1])
+            parent2_manifest = self.manifest(
+                parent2_changeset_data['manifest'])
+            parent2_node = parent2_manifest.node
+            if parent_node == parent2_node:
+                parents = parents[:1]
 
         if not parents:
             for line in Git.ls_tree(commit, recursive=True):
@@ -122,6 +128,83 @@ class PushStore(GitHgStore):
 
             manifest.set_parents(NULL_NODE_ID)
             manifest.delta_node = NULL_NODE_ID
+            return manifest
+
+        elif len(parents) == 2:
+            if not experiment('merge'):
+                raise Exception('Pushing merges is not supported yet')
+            logging.warning('Pushing merges is experimental.')
+            logging.warning('This may irremediably push bad state to the '
+                            'mercurial server!')
+            warned = False
+            git_manifests = (self.manifest_ref(parent_node),
+                             self.manifest_ref(parent2_node))
+
+            # TODO: this would benefit from less git queries
+            changes = list(get_changes(commit, parents))
+
+            files = [(path, mode, sha1) for mode, _, sha1, path in
+                     Git.ls_tree(commit, recursive=True)]
+            manifests = sorted_merge(parent_manifest._lines,
+                                     parent2_manifest._lines,
+                                     key=lambda i: i.name, non_key=lambda i: i)
+            for line in sorted_merge(files, sorted_merge(changes, manifests)):
+                path, f, (change, (manifest_line_p1, manifest_line_p2)) = line
+                if not f:  # File was removed
+                    if manifest_line_p1:
+                        manifest.removed.add(path)
+                    continue
+                mode, sha1 = f
+                attr = self.ATTR[mode]
+                if manifest_line_p1 and not manifest_line_p2:
+                    file_parents = (manifest_line_p1.node,)
+                elif manifest_line_p2 and not manifest_line_p1:
+                    file_parents = (manifest_line_p2.node,)
+                elif not manifest_line_p1 and not manifest_line_p2:
+                    file_parents = ()
+                elif manifest_line_p1.node == manifest_line_p2.node:
+                    file_parents = (manifest_line_p1.node,)
+                else:
+                    if (any(isinstance(p, Mark) for p in git_manifests)):
+                        raise Exception(
+                            'Cannot push %s. Please first push %s separately'
+                            % (commit, ' and '.join(
+                                p for i, p in enumerate(parents)
+                                if isinstance(git_manifests[i], Mark)
+                            ))
+                        )
+                    if not warned:
+                        logging.warning('This may take a while...')
+                        warned = True
+                    file_parents = (manifest_line_p1.node,
+                                    manifest_line_p2.node)
+
+                assert file_parents is not None
+                f = self._create_file_internal(
+                    sha1, *file_parents,
+                    git_manifest_parents=git_manifests,
+                    path=path
+                )
+                file_parents = tuple(p for p in (f.parent1, f.parent2)
+                                     if p != NULL_NODE_ID)
+                merged = len(file_parents) == 2
+                if not merged and file_parents:
+                    if self.git_file_ref(file_parents[0]) == sha1:
+                        node = file_parents[0]
+                    else:
+                        merged = True
+                if merged:
+                    node = self._store_file_internal(f)
+                else:
+                    node = PseudoString(file_parents[0])
+
+                attr_change = (manifest_line_p1 and
+                               manifest_line_p1.attr != attr)
+                manifest.append_line(ManifestLine(path, node, attr),
+                                     modified=merged or attr_change)
+            if manifest.data == parent_manifest.data:
+                return parent_manifest
+            manifest.set_parents(parent_node, parent2_node)
             return manifest
 
         def process_diff(diff):
@@ -270,18 +353,29 @@ class PushStore(GitHgStore):
             if error:
                 raise Exception('Changeset mismatch')
 
-    def create_file(self, sha1, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID,
-                    git_manifest_parents=None, path=None):
+    def _create_file_internal(self, sha1, parent1=NULL_NODE_ID,
+                              parent2=NULL_NODE_ID,
+                              git_manifest_parents=None, path=None):
         hg_file = GeneratedFileRev(NULL_NODE_ID,
                                    GitHgHelper.cat_file('blob', sha1))
         hg_file.set_parents(parent1, parent2,
                             git_manifest_parents=git_manifest_parents,
                             path=path)
         node = hg_file.node = hg_file.sha1
-        self._push_files[node] = hg_file
-        self._files.setdefault(node, PseudoString(sha1))
         self._git_files.setdefault(node, PseudoString(sha1))
+        return hg_file
+
+    def _store_file_internal(self, hg_file):
+        node = hg_file.node
+        self._push_files[node] = hg_file
+        self._files.setdefault(node, PseudoString(self._git_files[node]))
         return node
+
+    def create_file(self, sha1, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID,
+                    git_manifest_parents=None, path=None):
+        hg_file = self._create_file_internal(sha1, parent1, parent2,
+                                             git_manifest_parents, path)
+        return self._store_file_internal(hg_file)
 
     def create_copy(self, hg_source, sha1, git_manifest_parents=None,
                     path=None):

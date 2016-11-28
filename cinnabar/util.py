@@ -105,7 +105,7 @@ check_enabled = ConfigSetFunc(
 
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
-    ('wire',),
+    ('wire', 'merge'),
 )
 
 
