@@ -209,7 +209,6 @@ class PushStore(GitHgStore):
                             key=lambda i: i.name, non_key=lambda i: i):
                         if str(created) != str(real):
                             logging.error('%r != %r', str(created), str(real))
-                    raise Exception('Manifest mismatch')
             self._push_manifests[manifest.node] = manifest
             self.manifest_ref(manifest.node, hg2git=False, create=True)
             self._manifest_git_tree[manifest.node] = commit_data.tree
