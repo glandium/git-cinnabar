@@ -141,14 +141,6 @@ before_script::
 before_script:: $(GIT_CINNABAR_HELPER)
 	$(GIT) -c fetch.prune=true clone hg::$(REPO) hg.old.git
 
-ifneq (,$(filter 0.1.% 0.2.%,$(UPGRADE_FROM)))
-script::
-	rm -rf old-cinnabar
-	git -C hg.old.git cinnabar fsck && echo "fsck should have failed" && exit 1 || true
-	git clone -n . old-cinnabar
-	git -C old-cinnabar checkout 0.3.2
-endif
-
 script::
 	$(GIT) -C hg.old.git cinnabar fsck || [ "$$?" = 2 ]
 

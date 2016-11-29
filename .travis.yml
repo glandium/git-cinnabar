@@ -51,12 +51,7 @@ matrix:
       - VARIANT=asan
       - GIT_CINNABAR_EXPERIMENTS=true
     - env: UPGRADE_FROM=0.3.0
-    - env: UPGRADE_FROM=0.2.2
-    - env: UPGRADE_FROM=0.2.0
-    - env: UPGRADE_FROM=0.1.0
-    - env:
-      - GIT_VERSION=v2.7.4
-      - UPGRADE_FROM=0.2.2
+    - env: GIT_VERSION=v2.7.4
     - env: GIT_VERSION=v2.5.0
     - env: GIT_VERSION=v2.2.0
     - env: GIT_VERSION=v2.0.0
