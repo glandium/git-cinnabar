@@ -135,9 +135,6 @@ def helpermethod(func):
             result = func(cls, *args, **kwargs)
             if not check:
                 return result
-        except NoHelperException:
-            if check:
-                raise Exception('Helper check enabled but helper not found.')
         except HelperClosedException:
             check = False
         result2 = getattr(GitHgNoHelper, func.__name__)(*args, **kwargs)
@@ -182,16 +179,13 @@ class BaseHelper(object):
             if not self._helper.stdout.readline():
                 logger = logging.getLogger('helper')
                 if self._helper.wait() == 128:
-                    logger.warn(
+                    logger.error(
                         'Cinnabar helper executable is outdated. '
                         'Please try `git cinnabar download` or rebuild it.')
                 else:
-                    logger.warn(
+                    logger.error(
                         'Cannot find cinnabar helper executable. '
                         'Please try `git cinnabar download` or build it.')
-                    logger.warn(
-                        'You can disable this warning with '
-                        '`git config cinnabar.helper ""`.')
                 self._helper = None
 
         if not self._helper:
