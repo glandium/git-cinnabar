@@ -476,6 +476,9 @@ def do_download(args):
                                                                  machine)
         return 1
 
+    if args.dev is False and VERSION.endswith('a'):
+        args.dev = ''
+
     if args.dev is not False:
         h = hashlib.sha1()
         d = os.path.dirname(__file__)

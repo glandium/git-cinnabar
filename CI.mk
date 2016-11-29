@@ -133,7 +133,10 @@ before_script:: $(GIT_CINNABAR_HELPER)
 endif
 
 before_script::
-	test "$(shell $(CURDIR)/git-cinnabar --version 2>&1)" = "$(shell git describe --tags --abbrev=0 HEAD)"
+	case "$(shell $(CURDIR)/git-cinnabar --version 2>&1)" in \
+	*a|$(shell git describe --tags --abbrev=0 HEAD)) ;; \
+	*) false ;; \
+	esac
 
 before_script:: $(GIT_CINNABAR_HELPER)
 	$(GIT) -c fetch.prune=true clone hg::$(REPO) hg.old.git

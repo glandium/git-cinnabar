@@ -1,4 +1,4 @@
-git-cinnabar 0.4
+git-cinnabar 0.5
 ================
 
 When you update, please read this file again, it may contain important notes.
