@@ -1542,20 +1542,11 @@ class GitHgStore(object):
         if (set(manifest_heads) != self._manifest_heads_orig or
                 ('refs/cinnabar/changesets' in update_metadata and
                  not manifest_heads)):
-            if hasattr(self, '_store_flat_manifest_tree'):
-                parents = ['refs/cinnabar/manifest_']
-                message = 'has-flat-manifest-tree'
-            else:
-                parents = []
-                message = ''
             with self._fast_import.commit(
                 ref='refs/cinnabar/manifests',
-                parents=parents + sorted(manifest_heads),
-                message=message,
+                parents=sorted(manifest_heads),
             ) as commit:
                 update_metadata.append('refs/cinnabar/manifests')
-            if hasattr(self, '_store_flat_manifest_tree'):
-                Git.delete_ref('refs/cinnabar/manifest_')
 
         replace_changed = False
         for status, ref, sha1 in self._replace.iterchanges():
