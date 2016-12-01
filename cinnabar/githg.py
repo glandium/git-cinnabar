@@ -1358,7 +1358,7 @@ class GitHgStore(object):
         mark = self._store_find_or_create(instance, self.manifest_ref)
         if not isinstance(mark, EmptyMark):
             return
-        if instance.delta_node != NULL_NODE_ID:
+        if getattr(instance, 'delta_node', NULL_NODE_ID) != NULL_NODE_ID:
             previous = self.manifest_ref(instance.delta_node)
         else:
             previous = None
@@ -1373,10 +1373,16 @@ class GitHgStore(object):
             mark=mark,
             message=instance.node,
         ) as commit:
-            for name in instance.removed:
-                commit.filedelete('hg/%s' % name)
-                commit.filedelete('git/%s' % name)
-            for name, (node, attr) in instance.modified.items():
+            if hasattr(instance, 'delta_node'):
+                for name in instance.removed:
+                    commit.filedelete('hg/%s' % name)
+                    commit.filedelete('git/%s' % name)
+                modified = instance.modified.items()
+            else:
+                # slow
+                modified = ((line.name, (line.node, line.attr))
+                            for line in instance._lines)
+            for name, (node, attr) in modified:
                 node = str(node)
                 commit.filemodify('hg/%s' % name, node, typ='commit')
                 commit.filemodify('git/%s' % name,
