@@ -472,7 +472,9 @@ class Git(object):
             (mode_before, mode_after, sha1_before, sha1_after,
              remainder) = line.split(' ', 4)
             status, path = remainder.split('\t', 1)
-            path = '\t'.join(normalize_path(p) for p in path.split('\t'))
+            if detect_copy and status[0] in 'RC':
+                path2, path = path.split('\t')
+                status = status[0] + path2
             yield (mode_before[1:], mode_after, sha1_before, sha1_after,
                    status, path)
 
