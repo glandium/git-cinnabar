@@ -4,6 +4,9 @@
 #include "fast-import.c"
 #undef sha1write
 #include "cinnabar-fast-import.h"
+#include "notes.h"
+
+extern struct notes_tree git2hg, hg2git;
 
 static int initialized = 0;
 
@@ -205,6 +208,30 @@ static void fill_command_buf(const char *command, struct string_list *args)
 	cmd_tail = rc;
 }
 
+void maybe_reset_notes(const char *branch)
+{
+	struct notes_tree *notes = NULL;
+
+	// The python frontend will use fast-import commands to commit the
+	// hg2git and git2hg trees as separate temporary branches, and then
+	// remove them. We want to update the notes tree on the temporary
+	// branches, and keep them there when they are removed.
+	if (!strcmp(branch, "refs/cinnabar/hg2git")) {
+		notes = &hg2git;
+	} else if (!strcmp(branch, "refs/notes/cinnabar")) {
+		notes = &git2hg;
+	}
+	if (notes) {
+		struct branch *b = lookup_branch(branch);
+		if (!is_null_sha1(b->sha1)) {
+			if (notes->initialized)
+				free_notes(notes);
+			init_notes(notes, sha1_to_hex(b->sha1),
+				   combine_notes_overwrite, 0);
+		}
+	}
+}
+
 int maybe_handle_command(const char *command, struct string_list *args)
 {
 #define COMMON_HANDLING() { \
@@ -224,11 +251,19 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		COMMON_HANDLING();
 		parse_new_blob();
 	} else if (!strcmp(command, "commit")) {
+		char *arg;
 		COMMON_HANDLING();
+		arg = strdup(command_buf.buf + sizeof("commit"));
 		parse_new_commit(command_buf.buf + sizeof("commit"));
+		maybe_reset_notes(arg);
+		free(arg);
 	} else if (!strcmp(command, "reset")) {
+		char *arg;
 		COMMON_HANDLING();
+		arg = strdup(command_buf.buf + sizeof("reset"));
 		parse_reset_branch(command_buf.buf + sizeof("reset"));
+		maybe_reset_notes(arg);
+		free(arg);
 	} else if (!strcmp(command, "get-mark")) {
 		COMMON_HANDLING();
 		parse_get_mark(command_buf.buf + sizeof("get_mark"));

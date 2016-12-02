@@ -70,7 +70,7 @@
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
-static struct notes_tree git2hg, hg2git;
+struct notes_tree git2hg, hg2git;
 
 static void split_command(char *line, const char **command,
 			  struct string_list *args)
