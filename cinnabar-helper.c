@@ -60,6 +60,7 @@
 #include "tree.h"
 #include "tree-walk.h"
 #include "hg-connect.h"
+#include "cinnabar-fast-import.h"
 
 #define CMD_VERSION 4
 
@@ -1039,8 +1040,6 @@ static void do_connect(struct string_list *args)
 	} else
 		write_or_die(1, "failed to connect\n", 18);
 }
-
-extern int maybe_handle_command(const char *command, struct string_list *args);
 
 int cmd_main(int argc, const char *argv[])
 {
