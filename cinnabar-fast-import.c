@@ -199,6 +199,9 @@ int maybe_handle_command(const char *command, struct string_list *args)
 	} else if (!strcmp(command, "reset")) {
 		COMMON_HANDLING();
 		parse_reset_branch(command_buf.buf + sizeof("reset"));
+	} else if (!strcmp(command, "get-mark")) {
+		COMMON_HANDLING();
+		parse_get_mark(command_buf.buf + sizeof("get_mark"));
 	} else if (!strcmp(command, "cat-blob")) {
 		COMMON_HANDLING();
 		parse_cat_blob(command_buf.buf + sizeof("cat-blob"));
