@@ -399,7 +399,7 @@ class Git(object):
         if recursive:
             assert not isinstance(treeish, Mark)
             iterator = self.iter('ls-tree', '--full-tree', '-r', treeish,
-                                 '--', path)
+                                 '--', path or '.')
             normalize = True
         elif isinstance(treeish, Mark) and self._fast_import:
             assert not path.endswith('/')
@@ -438,7 +438,8 @@ class Git(object):
                         yield mode, typ, sha1, path
             return
         else:
-            iterator = self.iter('ls-tree', '--full-tree', treeish, '--', path)
+            iterator = self.iter('ls-tree', '--full-tree', treeish, '--',
+                                 path or '.')
             normalize = True
 
         for line in iterator:
@@ -453,7 +454,7 @@ class Git(object):
                   recursive=False):
         key = (path, recursive, detect_copy)
         if key not in self._diff_tree:
-            args = ['--stdin', '--', cdup + path]
+            args = ['--stdin', '--', cdup + (path or '.')]
             if recursive:
                 args.insert(0, '-r')
             if detect_copy:
