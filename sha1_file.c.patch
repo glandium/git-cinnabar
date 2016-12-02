@@ -1,0 +1,13 @@
+diff --git a/sha1_file.c b/sha1_file.c
+index 9c86d1924..7a1b277c8 100644
+--- a/sha1_file.c
++++ b/sha1_file.c
+@@ -2616,7 +2616,7 @@ off_t nth_packed_object_offset(const struct packed_git *p, uint32_t n)
+ 	}
+ }
+ 
+-off_t find_pack_entry_one(const unsigned char *sha1,
++off_t real_find_pack_entry_one(const unsigned char *sha1,
+ 				  struct packed_git *p)
+ {
+ 	const uint32_t *level1_ofs = p->index_data;

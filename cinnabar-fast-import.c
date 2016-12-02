@@ -75,6 +75,20 @@ void fast_import_sha1write(struct sha1file *f, const void *buf,
 	}
 }
 
+extern off_t real_find_pack_entry_one(const unsigned char *sha1,
+				      struct packed_git *p);
+
+off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
+{
+	if (p == pack_data) {
+		struct object_entry *oe = find_object((unsigned char *)sha1);
+		if (oe && oe->idx.offset > 1)
+			return oe->idx.offset;
+		return 0;
+	}
+	return real_find_pack_entry_one(sha1, p);
+}
+
 /* Mostly copied from fast-import.c's main() */
 static void init()
 {
@@ -101,6 +115,7 @@ static void init()
 
 	prepare_packed_git();
 	start_packfile();
+	install_packed_git(pack_data);
 	set_die_routine(die_nicely);
 
 	initialized = 1;
@@ -132,7 +147,22 @@ static void cleanup()
 		free(pack_win);
 	}
 
+	/* uninstall_packed_git(pack_data) */
+	{
+		struct packed_git *pack, *prev;
+		for (prev = NULL, pack = packed_git; pack;
+		     prev = pack, pack = pack->next) {
+			if (pack != pack_data)
+				continue;
+			if (prev)
+				prev->next = pack->next;
+			else
+				packed_git = pack->next;
+			break;
+		}
+	}
 	end_packfile();
+	reprepare_packed_git();
 
 	if (!require_explicit_termination)
 		dump_branches();
