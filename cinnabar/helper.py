@@ -156,8 +156,8 @@ def helpermethod(func):
 
 class BaseHelper(object):
     @classmethod
-    def close(self, keep_process=False):
-        if not keep_process and self._helper and self._helper is not self:
+    def close(self):
+        if self._helper and self._helper is not self:
             self._helper.wait()
         self._helper = self
 
@@ -227,7 +227,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 4
+    VERSION = 5
     _helper = False
 
     @helpermethod

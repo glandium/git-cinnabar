@@ -62,7 +62,7 @@
 #include "hg-connect.h"
 #include "cinnabar-fast-import.h"
 
-#define CMD_VERSION 4
+#define CMD_VERSION 5
 
 #define METADATA_REF "refs/cinnabar/metadata"
 #define HG2GIT_REF METADATA_REF "^3"
