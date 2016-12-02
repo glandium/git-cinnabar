@@ -173,6 +173,16 @@ script::
 	$(call COMPARE_REFS, hg.git, hg.unbundle.git)
 
 script::
+	rm -rf hg.push.hg hg.pure.git
+	$(call HG_INIT, hg.push.hg)
+	$(GIT) clone hg.git hg.pure.git
+	# Push both parents of a merge
+	$(GIT) -C hg.pure.git push hg::$(PATH_URL)/hg.push.hg 0ca827ab1a83da08c604bf3dc016894dea6d8460^:refs/tips/default
+	$(GIT) -C hg.pure.git push hg::$(PATH_URL)/hg.push.hg 0ca827ab1a83da08c604bf3dc016894dea6d8460^2:refs/tips/default
+	# Push merge
+	$(GIT) -c cinnabar.experiments=merge -C hg.pure.git push hg::$(PATH_URL)/hg.push.hg 0ca827ab1a83da08c604bf3dc016894dea6d8460:refs/tips/default
+
+script::
 	rm -rf hg.http.hg gitcredentials
 	$(call HG_INIT, hg.http.hg)
 	(echo protocol=http; echo host=localhost:8000; echo username=foo; echo password=bar) | $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' credential approve

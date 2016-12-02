@@ -223,11 +223,13 @@ void hg_getbundle(struct hg_connection *conn, FILE *out,
 	fflush(out);
 }
 
-static void unbundlehash(const unsigned char sha1[20], void *data)
+static int unbundlehash(const unsigned char sha1[20], void *data)
 {
 	git_SHA_CTX *ctx = (git_SHA_CTX *) data;
 
 	git_SHA1_Update(ctx, sha1, 20);
+
+	return 0;
 }
 
 void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,

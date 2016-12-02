@@ -210,13 +210,11 @@ class PushStore(GitHgStore):
         def process_diff(diff):
             for (mode_before, mode_after, sha1_before, sha1_after, status,
                  path) in diff:
-                path2 = ''
-                if status[0] in 'RC':
-                    path2, path = path.split('\t', 1)
                 if status[0] == 'R':
-                    yield path2, ('000000', sha1_before, NULL_NODE_ID, 'D')
+                    yield status[1:], (
+                        '000000', sha1_before, NULL_NODE_ID, 'D')
                 yield path, (mode_after, sha1_before, sha1_after,
-                             status[0] + path2)
+                             status)
         git_diff = sorted(
             l for l in process_diff(Git.diff_tree(
                 parents[0], commit, detect_copy=True, recursive=True))
