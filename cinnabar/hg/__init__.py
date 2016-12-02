@@ -10,10 +10,7 @@ from cinnabar.githg import (
     ChangesetInfo,
     ManifestInfo,
 )
-from cinnabar.helper import (
-    HgRepoHelper,
-    NoHelperException,
-)
+from cinnabar.helper import HgRepoHelper
 from binascii import (
     hexlify,
     unhexlify,
@@ -788,11 +785,7 @@ def get_repo(remote):
                             'native access.')
         logging.warning(
             'Native access to mercurial repositories is experimental!')
-        try:
-            return HelperRepo(remote.url)
-        except NoHelperException:
-            raise Exception('Native access to mercurial repositories requires '
-                            'the helper.')
+        return HelperRepo(remote.url)
     if changegroup and remote.parsed_url.scheme == 'file':
         repo = localpeer(get_ui(), path)
     else:

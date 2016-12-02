@@ -39,10 +39,7 @@ from cinnabar.util import (
     progress_iter,
     VersionedDict,
 )
-from cinnabar.helper import (
-    GitHgHelper,
-    NoHelperException,
-)
+from cinnabar.helper import GitHgHelper
 from cinnabar.hg.bundle import (
     create_bundle,
     get_changes,
@@ -159,8 +156,6 @@ def fsck(args):
     seen_files = set()
     seen_notes = set()
 
-    hg_manifest = None
-
     dag = gitdag()
     manifest_dag = gitdag()
 
@@ -233,13 +228,8 @@ def fsck(args):
         manifest_dag.add(store.manifest_ref(manifest), git_parents)
 
         if args.manifests:
-            try:
-                with GitHgHelper.query('check-manifest', manifest) as stdout:
-                    if stdout.readline().strip() != 'ok':
-                        report('Sha1 mismatch for manifest %s' % manifest)
-            except NoHelperException:
-                hg_manifest = store.manifest(manifest, include_parents=True)
-                if hg_manifest.node != hg_manifest.sha1:
+            with GitHgHelper.query('check-manifest', manifest) as stdout:
+                if stdout.readline().strip() != 'ok':
                     report('Sha1 mismatch for manifest %s' % manifest)
 
         manifest_commit = GitCommit(manifest_ref)

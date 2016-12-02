@@ -597,18 +597,13 @@ class FastImport(object):
         try:
             return self._real_proc
         except AttributeError:
-            from .helper import GitHgHelper, NoHelperException
+            from .helper import GitHgHelper
             # Ensure the helper is there.
             if GitHgHelper._helper is GitHgHelper:
                 GitHgHelper._helper = False
-            try:
-                with GitHgHelper.query('feature', 'force'):
-                    pass
-                self._real_proc = GitHgHelper._helper
-            except NoHelperException:
-                self._real_proc = GitProcess(
-                    'fast-import', '--quiet', stdin=subprocess.PIPE,
-                    config={'core.ignorecase': 'false'})
+            with GitHgHelper.query('feature', 'force'):
+                pass
+            self._real_proc = GitHgHelper._helper
             self.write(
                 "feature force\n"
                 "feature ls\n"
