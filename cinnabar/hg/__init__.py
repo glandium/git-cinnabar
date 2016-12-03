@@ -590,12 +590,11 @@ def getbundle(repo, store, heads, branch_names):
         assert False
     del bundle
 
-    with store.batch_store_manifest():
-        for mn in progress_iter(
-                'Importing %d manifests',
-                manifest_chunks.iter_initialized(ManifestInfo,
-                                                 store.manifest)):
-            store.store_manifest(mn)
+    for mn in progress_iter(
+            'Importing %d manifests',
+            manifest_chunks.iter_initialized(ManifestInfo,
+                                             store.manifest)):
+        store.store_manifest(mn)
 
     del manifest_chunks
 

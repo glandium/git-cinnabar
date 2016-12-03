@@ -4,7 +4,6 @@ from __future__ import division
 import struct
 import types
 from binascii import hexlify, unhexlify
-from contextlib import contextmanager
 from itertools import (
     chain,
     izip,
@@ -821,13 +820,6 @@ class GitHgStore(object):
         self._git_files = {
             HG_EMPTY_FILE: EMPTY_BLOB,
         }
-        # Mercurial repositories may contain a null manifest attached to
-        # changesets, but we're not going to store a commit corresponding
-        # to it, so hardcode that the corresponding git tree is the empty
-        # tree.
-        self._git_trees = {
-            NULL_NODE_ID: EMPTY_TREE,
-        }
         self._closed = False
         self._graft = None
 
@@ -1203,8 +1195,8 @@ class GitHgStore(object):
                 sign * (abs(utcoffset) // 60))
 
     def git_tree(self, manifest_sha1):
-        if manifest_sha1 in self._git_trees:
-            return self._git_trees[manifest_sha1]
+        if manifest_sha1 == NULL_NODE_ID:
+            return EMPTY_TREE,
         manifest_commit = self.manifest_ref(manifest_sha1)
         line = one(Git.ls_tree(manifest_commit, 'git'))
         if line:
@@ -1217,7 +1209,6 @@ class GitHgStore(object):
             # actually get the sha1 for the empty directory, since it's a fixed
             # value.
             tree = EMPTY_TREE
-        self._git_trees[manifest_sha1] = tree
         return tree
 
     def store_changeset(self, instance, commit=None, track_heads=True):
@@ -1329,27 +1320,6 @@ class GitHgStore(object):
         'l': 'symlink',
         'x': 'exec',
     }
-
-    @contextmanager
-    def batch_store_manifest(self):
-        yield
-
-        # Storing changesets and manifests with a parent that is not the
-        # previous one involves reading the manifest git tree from fast-import,
-        # but fast-import's ls command, used to get the tree's sha1, triggers a
-        # munmap/mmap cycle on the fast-import pack if it's used after
-        # something was written in the pack, which storing changesets does. On
-        # OSX, this has a dramatic performance impact, where every cycle can
-        # take tens of milliseconds (!). Multiply that by the number of
-        # changeset in mozilla-central and storing changesets takes hours
-        # instead of seconds.
-        # So read all the git manifest trees now. This will at most trigger
-        # one munmap/mmap cycle. self.git_tree caches the results so that it
-        # reuses that when it needs them during store.store_changeset.
-        for node, mark in self._manifests.iteritems():
-            if isinstance(mark, Mark) and not isinstance(mark, EmptyMark):
-                self._git_trees[node] = (
-                    self._fast_import.ls(mark, 'git')[2] or EMPTY_TREE)
 
     def store_manifest(self, instance):
         mark = self._store_find_or_create(instance, self.manifest_ref)
