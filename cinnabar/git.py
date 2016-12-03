@@ -645,6 +645,13 @@ class FastImport(object):
         self._last_mark += 1
         return EmptyMark(self._last_mark)
 
+    def get_mark(self, mark):
+        self.write('get-mark :%d\n' % mark)
+        sha1 = self.read(40)
+        lf = self.read(1)
+        assert lf == '\n'
+        return sha1
+
     def cmd_mark(self, mark):
         if mark:
             self.write('mark :%d\n' % mark)

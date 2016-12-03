@@ -1413,7 +1413,6 @@ class GitHgStore(object):
             self._graft.close()
         self._closed = True
         hg2git_files = []
-        changeset_by_mark = {}
         reflog = os.path.join(git_dir, 'logs', 'refs', 'cinnabar')
         mkpath(reflog)
         open(os.path.join(reflog, 'metadata'), 'a').close()
@@ -1428,8 +1427,6 @@ class GitHgStore(object):
                     continue
                 if isinstance(mark, EmptyMark):
                     raise TypeError(node)
-                if mark in self._tagcache:
-                    changeset_by_mark[mark] = node
                 hg2git_files.append((sha1path(node), mark, typ))
         if hg2git_files:
             with self._fast_import.commit(
@@ -1539,7 +1536,7 @@ class GitHgStore(object):
 
         def resolve_commit(c):
             if isinstance(c, Mark):
-                c = self._hg2git('commit', changeset_by_mark[c])
+                c = self._fast_import.get_mark(c)
             elif isinstance(c, PseudoString):
                 c = str(c)
             return c
