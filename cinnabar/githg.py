@@ -472,11 +472,7 @@ class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
     @property
     def data(self):
         if self._data is None and self.__lines is None:
-            data = GitHgHelper.manifest(self.node)
-            if isinstance(data, types.StringType):
-                self._data = data
-            else:
-                self.__lines = data
+            self._data = GitHgHelper.manifest(self.node)
 
         if self._data is None:
             # Normally, it'd be better to use str(l), but it turns out to make
