@@ -232,7 +232,6 @@ class GitProcess(object):
 
 
 class Git(object):
-    _cat_file = None
     _update_ref = None
     _fast_import = None
     _diff_tree = {}
@@ -257,9 +256,6 @@ class Git(object):
 
     @classmethod
     def close(self, rollback=False):
-        if self._cat_file:
-            self._cat_file.wait()
-            self._cat_file = None
         self._close_update_ref()
         for diff_tree in self._diff_tree.itervalues():
             diff_tree.wait()
@@ -368,27 +364,8 @@ class Git(object):
 
     @classmethod
     def cat_file(self, typ, sha1):
-        if self._fast_import and typ == 'blob' and isinstance(sha1, Mark):
-            return self._fast_import.cat_blob(sha1)
-
-        if not self._cat_file:
-            self._cat_file = GitProcess('cat-file', '--batch',
-                                        stdin=subprocess.PIPE)
-
-        self._cat_file.stdin.write(sha1 + '\n')
-        header = self._cat_file.stdout.readline().split()
-        if header[1] == 'missing':
-            if typ == 'auto':
-                return 'missing', None
-            return None
-        assert typ == 'auto' or header[1] == typ
-        size = int(header[2])
-        ret = self._cat_file.stdout.read(size)
-        lf = self._cat_file.stdout.read(1)
-        assert lf == '\n'
-        if typ == 'auto':
-            return header[1], ret
-        return ret
+        from githg import GitHgHelper
+        return GitHgHelper.cat_file(typ, sha1)
 
     @classmethod
     def ls_tree(self, treeish, path='', recursive=False):

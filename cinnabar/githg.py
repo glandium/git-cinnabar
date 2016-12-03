@@ -940,10 +940,7 @@ class GitHgStore(object):
                     for node in reversed(nodes):
                         tags[tag] = node
             else:
-                if isinstance(head, Mark):
-                    data = self._fast_import.cat_blob(tagfile) or ''
-                else:
-                    data = Git.cat_file('blob', tagfile) or ''
+                data = GitHgHelper.cat_file('blob', tagfile) or ''
                 for line in data.splitlines():
                     if not line:
                         continue
