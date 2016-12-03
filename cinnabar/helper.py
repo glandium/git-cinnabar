@@ -127,6 +127,11 @@ class GitHgHelper(BaseHelper):
         with self.query('manifest', hg_sha1) as stdout:
             return self._read_data(stdout)
 
+    @classmethod
+    def check_manifest(self, hg_sha1):
+        with self.query('check-manifest', hg_sha1) as stdout:
+            return stdout.readline().strip() == 'ok'
+
 
 atexit.register(GitHgHelper.close)
 

@@ -225,9 +225,8 @@ def fsck(args):
         manifest_dag.add(store.manifest_ref(manifest), git_parents)
 
         if args.manifests:
-            with GitHgHelper.query('check-manifest', manifest) as stdout:
-                if stdout.readline().strip() != 'ok':
-                    report('Sha1 mismatch for manifest %s' % manifest)
+            if not GitHgHelper.check_manifest(manifest):
+                report('Sha1 mismatch for manifest %s' % manifest)
 
         manifest_commit = GitCommit(manifest_ref)
         if sorted(manifest_commit.parents) != sorted(git_parents):

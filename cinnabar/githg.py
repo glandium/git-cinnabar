@@ -13,7 +13,6 @@ import os
 import re
 import urllib
 from collections import (
-    OrderedDict,
     Sequence,
     defaultdict,
 )
@@ -1311,38 +1310,14 @@ class GitHgStore(object):
                 commit.filemodify('hg/%s' % name, node, typ='commit')
                 commit.filemodify('git/%s' % name,
                                   self.git_file_ref(node), typ=self.TYPE[attr])
-            if check_enabled('manifests'):
-                expected_tree = commit.ls('hg')[2]
 
         mark = Mark(mark)
         self._manifests[instance.node] = mark
         self._manifest_dag.add(mark, parents)
 
         if check_enabled('manifests'):
-            tree = OrderedDict()
-            for line in isplitmanifest(instance.data):
-                path = line.name.split('/')
-                root = tree
-                for part in path[:-1]:
-                    if part not in root:
-                        root[part] = OrderedDict()
-                    root = root[part]
-                root[path[-1]] = line.node
-
-            def tree_sha1(tree):
-                s = ''
-                for file, node in tree.iteritems():
-                    if isinstance(node, OrderedDict):
-                        node = tree_sha1(node)
-                        attr = '40000'
-                    else:
-                        attr = '160000'
-                    s += '%s %s\0%s' % (attr, file, unhexlify(node))
-
-                return git_hash('tree', s)
-
-            # TODO: also check git/ tree
-            if tree_sha1(tree) != expected_tree:
+            mn = self._fast_import.get_mark(mark)
+            if not GitHgHelper.check_manifest('git:%s' % mn):
                 raise Exception(
                     'sha1 mismatch for node %s with parents %s %s and '
                     'previous %s' %
