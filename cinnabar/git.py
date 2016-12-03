@@ -265,12 +265,6 @@ class Git(object):
                 self._fast_import.close(rollback)
                 self._fast_import = None
 
-                # Git before version 2.1 didn't remove refs when resetting
-                # from NULL_NODE_ID. So remove again with update-ref.
-                for status, ref, value in self._refs.iterchanges():
-                    if status == self._refs.REMOVED:
-                        self.delete_ref(ref)
-                self._close_update_ref()
                 self._refs = self._refs.flattened()
         finally:
             if GitProcess._git_replace_path:
