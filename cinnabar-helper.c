@@ -62,7 +62,7 @@
 #include "hg-connect.h"
 #include "cinnabar-fast-import.h"
 
-#define CMD_VERSION 5
+#define CMD_VERSION 6
 
 #define METADATA_REF "refs/cinnabar/metadata"
 #define HG2GIT_REF METADATA_REF "^3"
@@ -738,13 +738,19 @@ static void do_manifest(struct string_list *args)
 	if (args->nr != 1)
 		goto not_found;
 
-	sha1_len = get_abbrev_sha1_hex(args->items[0].string, sha1);
-	if (!sha1_len)
-		goto not_found;
+	if (!strncmp(args->items[0].string, "git:", 4)) {
+		if (get_sha1_hex(args->items[0].string + 4, sha1))
+			goto not_found;
+		manifest_sha1 = sha1;
+	} else {
+		sha1_len = get_abbrev_sha1_hex(args->items[0].string, sha1);
+		if (!sha1_len)
+			goto not_found;
 
-	manifest_sha1 = resolve_hg2git(sha1, sha1_len);
-	if (!manifest_sha1)
-		goto not_found;
+		manifest_sha1 = resolve_hg2git(sha1, sha1_len);
+		if (!manifest_sha1)
+			goto not_found;
+	}
 
 	manifest = generate_manifest(manifest_sha1);
 	if (!manifest)
@@ -783,12 +789,18 @@ static void do_check_manifest(struct string_list *args)
 	if (args->nr != 1)
 		goto error;
 
-	if (get_sha1_hex(args->items[0].string, sha1))
-		goto error;
+	if (!strncmp(args->items[0].string, "git:", 4)) {
+		if (get_sha1_hex(args->items[0].string + 4, sha1))
+			goto error;
+		manifest_sha1 = sha1;
+	} else {
+		if (get_sha1_hex(args->items[0].string, sha1))
+			goto error;
 
-	manifest_sha1 = resolve_hg2git(sha1, 40);
-	if (!manifest_sha1)
-		goto error;
+		manifest_sha1 = resolve_hg2git(sha1, 40);
+		if (!manifest_sha1)
+			goto error;
+	}
 
 	manifest = generate_manifest(manifest_sha1);
 	if (!manifest)
@@ -823,6 +835,9 @@ static void do_check_manifest(struct string_list *args)
 	git_SHA1_Update(&ctx, manifest->buf, manifest->len);
 
 	git_SHA1_Final(result, &ctx);
+
+	if (manifest_sha1 == sha1)
+		get_manifest_sha1(manifest_commit, sha1);
 
 	if (hashcmp(result, sha1) == 0) {
 		write(1, "ok\n", 3);
