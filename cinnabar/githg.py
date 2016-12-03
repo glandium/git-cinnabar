@@ -728,8 +728,6 @@ class Grafter(object):
                 sha1 = commit.sha1
                 if store.read_changeset_data(sha1).get('patch'):
                     possible_nodes.append(node)
-                del store._changeset_data_cache[sha1]
-                del store._changesets[changeset.node]
             nodes = possible_nodes
 
         if len(nodes) > 1:
@@ -1008,7 +1006,7 @@ class GitHgStore(object):
         data = GitHgHelper.git2hg(obj)
         if data is None:
             return None
-        ret = self._changeset_data_cache[obj] = ChangesetData.parse(data)
+        ret = ChangesetData.parse(data)
         return ret
 
     def hg_changeset(self, sha1):
@@ -1454,13 +1452,11 @@ class GitHgStore(object):
 
         del hg2git_files
 
-        git2hg_marks = [mark for mark in self._changesets.itervalues()
-                        if mark and not isinstance(mark, types.StringType)]
         removed_git2hg = [
             c for c, data in self._changeset_data_cache.iteritems()
             if data is None
         ]
-        if git2hg_marks or removed_git2hg:
+        if self._changesets or removed_git2hg:
             notes = Git.resolve_ref('refs/notes/cinnabar')
             parents = (notes,) if notes else ()
             # Using filemodify('', ..., typ='tree') doesn't work with
@@ -1472,9 +1468,10 @@ class GitHgStore(object):
                 from_commit=notes,
                 parents=parents,
             ) as commit:
-                for mark in git2hg_marks:
-                    data = self._changeset_data_cache[str(mark)]
-                    commit.notemodify(mark, ChangesetData.dump(data))
+                for mark in self._changesets.itervalues():
+                    if mark:
+                        data = self._changeset_data_cache[str(mark)]
+                        commit.notemodify(mark, ChangesetData.dump(data))
                 for c in removed_git2hg:
                     # That's brute force, but meh.
                     for l in range(0, 10):
