@@ -568,24 +568,6 @@ def git_hash(type, data):
     return h.hexdigest()
 
 
-class GeneratedGitCommit(GitCommit):
-    def __init__(self, sha1):
-        self.sha1 = sha1
-
-    @property
-    def generated_sha1(self):
-        data = '\n'.join(chain(
-            ('tree %s' % self.tree,),
-            ('parent %s' % p for p in self.parents),
-            ('author %s' % self.author,
-             'committer %s' % self.committer,
-             '',
-             self.body,
-             )
-        ))
-        return git_hash('commit', data)
-
-
 def autohexlify(h):
     if len(h) == 40:
         return h
@@ -820,9 +802,6 @@ class GitHgStore(object):
         self._changeset_data_cache = {}
 
         self._hgheads = VersionedDict()
-
-        self._resolved_marks = {}
-        self._pending_commits = set()
 
         self._replace = Git._replace
         # While doing a for_each_ref, ensure refs/notes/cinnabar is in the
@@ -1239,14 +1218,8 @@ class GitHgStore(object):
         parents = tuple(self.changeset_ref(p) for p in instance.parents)
 
         if isinstance(mark, EmptyMark):
-            commit = GeneratedGitCommit(mark)
-            commit.committer = self._fast_import._format_committer(committer)
-            commit.author = self._fast_import._format_committer(author)
-            commit.body = instance.message
-            commit.tree = self.git_tree(instance.manifest)
-            commit.parents = tuple(
-                self._resolved_marks[p] if isinstance(p, Mark) else p
-                for p in parents)
+            body = instance.message
+            tree = self.git_tree(instance.manifest)
 
             # There are cases where two changesets would map to the same
             # git commit because their differences are not in information
@@ -1256,31 +1229,28 @@ class GitHgStore(object):
             # message until we find a commit that doesn't map to another
             # changeset.
             while True:
-                generated_sha1 = commit.generated_sha1
-                if (generated_sha1 in self._pending_commits or
+                with self._fast_import.commit(
+                    ref='refs/cinnabar/tip',
+                    message=body,
+                    committer=committer,
+                    author=author,
+                    parents=parents,
+                    mark=mark,
+                ) as c:
+                    if tree != EMPTY_TREE:
+                        c.filemodify('', tree, typ='tree')
+
+                mark = Mark(mark)
+                generated_sha1 = self._fast_import.get_mark(mark)
+                if (generated_sha1 in self._changesets or
                         self.hg_changeset(generated_sha1)):
-                    commit.body += '\0'
+                    body += '\0'
                     continue
                 break
+            commit = GitCommit(generated_sha1)
 
-            with self._fast_import.commit(
-                ref='refs/cinnabar/tip',
-                message=commit.body,
-                committer=committer,
-                author=author,
-                parents=parents,
-                mark=mark,
-            ) as c:
-                if commit.tree != EMPTY_TREE:
-                    c.filemodify('', commit.tree, typ='tree')
-
-            mark = Mark(mark)
-            commit.sha1 = mark
-            self._resolved_marks[mark] = generated_sha1
-            self._pending_commits.add(generated_sha1)
-
-        self._changesets[instance.node] = mark
-        data = self._changeset_data_cache[str(mark)] = {
+        self._changesets[instance.node] = commit.sha1
+        data = self._changeset_data_cache[commit.sha1] = {
             'changeset': instance.node,
             'manifest': instance.manifest,
         }
@@ -1416,7 +1386,6 @@ class GitHgStore(object):
             for node, mark in dic.iteritems():
                 if dic is self._files and node == HG_EMPTY_FILE:
                     continue
-                assert not isinstance(mark, types.StringType)
                 if isinstance(mark, EmptyMark):
                     raise TypeError(node)
                 hg2git_files.append((sha1path(node), mark, typ))
@@ -1437,18 +1406,6 @@ class GitHgStore(object):
                     else:
                         commit.filemodify(*file)
                 update_metadata.append('refs/cinnabar/hg2git')
-
-            if check_enabled('commit'):
-                for path, mark, typ in hg2git_files:
-                    if mark not in self._resolved_marks:
-                        continue
-                    line = one(Git.ls_tree('refs/cinnabar/hg2git', path))
-                    assert line
-                    mode, typ, sha1, path = line
-                    assert typ == 'commit'
-                    if sha1 != self._resolved_marks[mark]:
-                        raise Exception(
-                            '%s != %s' % (sha1, self._resolved_marks[mark]))
 
         del hg2git_files
 

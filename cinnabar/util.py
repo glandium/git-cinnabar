@@ -99,7 +99,7 @@ class ConfigSetFunc(object):
 
 check_enabled = ConfigSetFunc(
     'cinnabar.check',
-    ('nodeid', 'manifests', 'helper', 'replace', 'commit'),
+    ('nodeid', 'manifests', 'helper', 'replace'),
     ('bundle', 'files'),
 )
 
