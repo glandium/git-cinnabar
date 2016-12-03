@@ -819,8 +819,6 @@ class GitHgStore(object):
         self._closed = False
         self._graft = None
 
-        self._hg2git_cache = {}
-
         self._changeset_data_cache = {}
 
         self._hgheads = VersionedDict()
@@ -1029,12 +1027,9 @@ class GitHgStore(object):
         if not self._has_metadata and not self._closed:
             return None
 
-        gitsha1 = self._hg2git_cache.get(sha1)
-        if not gitsha1:
-            gitsha1 = GitHgHelper.hg2git(sha1)
-            if gitsha1 == NULL_NODE_ID:
-                gitsha1 = None
-            self._hg2git_cache[sha1] = gitsha1
+        gitsha1 = GitHgHelper.hg2git(sha1)
+        if gitsha1 == NULL_NODE_ID:
+            gitsha1 = None
         return gitsha1
 
     def _git_object(self, dic, expected_type, sha1, hg2git=True, create=True):
@@ -1531,8 +1526,6 @@ class GitHgStore(object):
             ) as commit:
                 for sha1, target in self._replace.iteritems():
                     commit.filemodify(sha1, target, 'commit')
-
-        self._hg2git_cache.clear()
 
         def resolve_commit(c):
             if isinstance(c, Mark):

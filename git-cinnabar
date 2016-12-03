@@ -27,7 +27,6 @@ from cinnabar.githg import (
 )
 from cinnabar.dag import gitdag
 from cinnabar.git import (
-    EMPTY_BLOB,
     EMPTY_TREE,
     Git,
     GitProcess,
@@ -148,8 +147,6 @@ def fsck(args):
         all_git_commits = Git.iter('log', '--topo-order', '--full-history',
                                    '--reverse', '--stdin', '--format=%T %H',
                                    stdin=all_git_heads)
-
-    store._hg2git_cache = {p: s for p, (s, t) in all_hg2git.iteritems()}
 
     seen_changesets = set()
     seen_manifests = set()
@@ -296,7 +293,7 @@ def fsck(args):
     dangling = ()
     if not status['broken']:
         dangling = all_hg2git - seen_changesets - seen_manifests - seen_files
-        if store._hg2git_cache.get(HG_EMPTY_FILE) == EMPTY_BLOB:
+        if HG_EMPTY_FILE in all_hg2git:
             dangling.add(HG_EMPTY_FILE)
     for obj in dangling:
         fix('Removing dangling metadata for ' + obj)
