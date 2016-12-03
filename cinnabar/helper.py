@@ -1,5 +1,4 @@
 import atexit
-import functools
 import logging
 import os
 import re
@@ -9,15 +8,9 @@ from .git import (
     GitProcess,
     Mark,
     NULL_NODE_ID,
-    sha1path,
 )
-from .util import (
-    check_enabled,
-    one,
-    sorted_merge,
-)
+from .util import check_enabled
 from contextlib import contextmanager
-from itertools import chain
 
 
 SHA1_RE = re.compile('^[0-9a-fA-F]{40}$')
@@ -29,126 +22,6 @@ class NoHelperException(Exception):
 
 class HelperClosedException(Exception):
     pass
-
-
-class GitHgNoHelper(object):
-    _last_manifest = None
-
-    @classmethod
-    def cat_file(self, typ, sha1):
-        return Git.cat_file(typ, sha1)
-
-    @classmethod
-    def git2hg(self, sha1):
-        if not SHA1_RE.match(sha1):
-            sha1 = one(Git.iter('rev-parse', '--revs-only', sha1))
-        return Git.read_note('refs/notes/cinnabar', sha1)
-
-    @classmethod
-    def hg2git(self, hg_sha1):
-        if len(hg_sha1) < 40:
-            path = sha1path(hg_sha1)
-            dir, partial = path.rsplit('/', 1)
-            matches = []
-            for ls in Git.ls_tree('refs/cinnabar/hg2git', dir + '/'):
-                mode, typ, gitsha1, path = ls
-                if path.startswith(partial):
-                    matches.append(gitsha1)
-            if len(matches) == 1:
-                return matches[0]
-            ls = None
-        else:
-            ls = one(Git.ls_tree('refs/cinnabar/hg2git',
-                                 sha1path(hg_sha1)))
-        if not ls:
-            return NULL_NODE_ID
-        mode, typ, gitsha1, path = ls
-        return gitsha1
-
-    @classmethod
-    def _manifest(self, hg_sha1, git_sha1):
-        from githg import ManifestLine, GitHgStore
-        if self._last_manifest:
-            gitreference, reference_lines = self._last_manifest
-            changes = []
-            hg_diff = list(Git.diff_tree(gitreference, git_sha1,
-                                         'hg', recursive=True))
-            git_diff = list(Git.diff_tree(gitreference, git_sha1,
-                                          'git', recursive=True))
-            for line in sorted_merge(hg_diff, git_diff,
-                                     key=lambda i: i[-1].split('/', 1)[1],
-                                     non_key=lambda i: (i[1], i[3], i[4])):
-                path, hg_change, git_change = line
-                status = hg_change[2] if hg_change else git_change[2]
-                if status == 'D':
-                    changes.append((path, None))
-                else:
-                    assert status in 'AM'
-                    node = hg_change[1] if hg_change else None
-                    attr = GitHgStore.ATTR[git_change[0]] if git_change \
-                        else None
-                    changes.append((path, (node, attr)))
-
-            lines = ((l.name, l) for l in reference_lines)
-            for line in sorted_merge(lines, changes, non_key=lambda i: i[1]):
-                path, manifest_line, change = line
-                if change:
-                    node, attr = change
-                    if node is None:
-                        node = manifest_line.node
-                    if attr is None:
-                        attr = manifest_line.attr
-                    yield ManifestLine(path, node, attr)
-                elif change is not None:
-                    yield manifest_line
-        else:
-            attrs = {}
-            for mode, typ, filesha1, path in Git.ls_tree(git_sha1,
-                                                         recursive=True):
-                if path.startswith('git/'):
-                    attr = GitHgStore.ATTR[mode]
-                    if attr:
-                        attrs[path[4:]] = attr
-                else:
-                    assert path.startswith('hg/')
-                    path = path[3:]
-                    line = ManifestLine(
-                        name=path,
-                        node=filesha1,
-                        attr=attrs.get(path, ''),
-                    )
-                    yield line
-
-    @classmethod
-    def manifest(self, hg_sha1):
-        git_sha1 = self.hg2git(hg_sha1)
-        lines = list(self._manifest(hg_sha1, git_sha1))
-        self._last_manifest = (git_sha1, lines)
-        return lines
-
-
-def helpermethod(func):
-    @functools.wraps(func)
-    def wrapper(cls, *args, **kwargs):
-        check = check_enabled('helper')
-        result = func(cls, *args, **kwargs)
-        if not check:
-            return result
-        result2 = getattr(GitHgNoHelper, func.__name__)(*args, **kwargs)
-        if check:
-            if func.__name__ == 'manifest':
-                # GitHgNoHelper.manifest returns a list, while
-                # GitHgHelper.manifest returns a str. Normalize.
-                result2 = ''.join(l._str for l in result2)
-            if result != result2:
-                raise Exception(
-                    'Result difference between native and python for %s(%s)'
-                    % (func.__name__,
-                       ', '.join(chain((repr(a) for a in args),
-                                       ('%s=%s' % (k, repr(v)) for k, v in
-                                        sorted(kwargs.iteritems()))))))
-        return result2
-    return classmethod(wrapper)
 
 
 class BaseHelper(object):
@@ -227,26 +100,29 @@ class GitHgHelper(BaseHelper):
     VERSION = 5
     _helper = False
 
-    @helpermethod
+    @classmethod
     def cat_file(self, typ, sha1):
         if isinstance(sha1, Mark):
-            return GitHgNoHelper.cat_file(typ, sha1)
+            with self.query('get-mark', ':%d' % sha1) as stdout:
+                sha1 = stdout.read(41)
+                assert sha1[-1] == '\n'
+                sha1 = sha1[:40]
         with self.query('cat-file', sha1) as stdout:
             return self._read_file(typ, stdout)
 
-    @helpermethod
+    @classmethod
     def git2hg(self, sha1):
         with self.query('git2hg', sha1) as stdout:
             return self._read_file('blob', stdout)
 
-    @helpermethod
+    @classmethod
     def hg2git(self, hg_sha1):
         with self.query('hg2git', hg_sha1) as stdout:
             sha1 = stdout.read(41)
             assert sha1[-1] == '\n'
             return sha1[:40]
 
-    @helpermethod
+    @classmethod
     def manifest(self, hg_sha1):
         with self.query('manifest', hg_sha1) as stdout:
             return self._read_data(stdout)
