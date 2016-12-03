@@ -876,7 +876,6 @@ class GitHgStore(object):
                                        commit.body.splitlines()):
                     hghead, branch = head.split(' ', 1)
                     self._hgheads._previous[hghead] = branch
-                    self._changesets[hghead] = sha1
 
         else:
             manifests = ()
@@ -1040,7 +1039,6 @@ class GitHgStore(object):
         if hg2git:
             gitsha1 = self._hg2git(expected_type, sha1)
             if gitsha1:
-                dic[sha1] = gitsha1
                 return gitsha1
         if create:
             mark = self._fast_import.new_mark()
@@ -1418,8 +1416,9 @@ class GitHgStore(object):
             (self._changesets, 'commit'),
         ):
             for node, mark in dic.iteritems():
-                if isinstance(mark, types.StringType):
+                if dic is self._files and node == HG_EMPTY_FILE:
                     continue
+                assert not isinstance(mark, types.StringType)
                 if isinstance(mark, EmptyMark):
                     raise TypeError(node)
                 hg2git_files.append((sha1path(node), mark, typ))
