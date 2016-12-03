@@ -131,12 +131,9 @@ def helpermethod(func):
     @functools.wraps(func)
     def wrapper(cls, *args, **kwargs):
         check = check_enabled('helper')
-        try:
-            result = func(cls, *args, **kwargs)
-            if not check:
-                return result
-        except HelperClosedException:
-            check = False
+        result = func(cls, *args, **kwargs)
+        if not check:
+            return result
         result2 = getattr(GitHgNoHelper, func.__name__)(*args, **kwargs)
         if check:
             if func.__name__ == 'manifest':
