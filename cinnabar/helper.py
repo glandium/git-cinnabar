@@ -98,7 +98,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 7
+    VERSION = 8
     _helper = False
 
     @classmethod
@@ -140,6 +140,15 @@ class GitHgHelper(BaseHelper):
             for line in self._read_data(stdout).split('\0'):
                 if line:
                     yield split_ls_tree(line)
+
+    @classmethod
+    def rev_list(self, *args):
+        with self.query('rev-list', *args) as stdout:
+            for line in self._read_data(stdout).splitlines():
+                parents = line.split()
+                commit = parents.pop(0)
+                tree = parents.pop(0)
+                yield commit, tree, parents
 
 
 atexit.register(GitHgHelper.close)

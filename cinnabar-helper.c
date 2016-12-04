@@ -63,7 +63,7 @@
 #include "hg-connect.h"
 #include "cinnabar-fast-import.h"
 
-#define CMD_VERSION 7
+#define CMD_VERSION 8
 
 #define METADATA_REF "refs/cinnabar/metadata"
 #define HG2GIT_REF METADATA_REF "^3"
@@ -212,6 +212,53 @@ static void do_ls_tree(struct string_list *args)
 	return;
 not_found:
 	write_or_die(1, "0\n\n", 3);
+}
+
+static void do_rev_list(struct string_list *args)
+{
+	struct rev_info revs;
+	const char **argv = malloc(sizeof(char *) * (args->nr + 2));
+	int i;
+	struct commit *commit;
+	struct strbuf buf = STRBUF_INIT;
+
+	argv[0] = "";
+	for (i = 0; i < args->nr; i++) {
+		argv[i + 1] = args->items[i].string;
+	}
+	argv[args->nr + 1] = NULL;
+
+	init_revisions(&revs, NULL);
+	// Note: we do a pass through, but don't make much effort to actually
+	// support all the options properly.
+	setup_revisions(args->nr + 1, argv, &revs, NULL);
+	free(argv);
+
+	if (prepare_revision_walk(&revs))
+		die("revision walk setup failed");
+
+	while ((commit = get_revision(&revs)) != NULL) {
+		struct commit_list *parent;
+		if (commit->object.flags & BOUNDARY)
+			strbuf_addch(&buf, '-');
+		strbuf_addstr(&buf, oid_to_hex(&commit->object.oid));
+		strbuf_addch(&buf, ' ');
+		strbuf_addstr(&buf, oid_to_hex(&commit->tree->object.oid));
+		parent = commit->parents;
+		while (parent) {
+			strbuf_addch(&buf, ' ');
+			strbuf_addstr(&buf, oid_to_hex(
+				&parent->item->object.oid));
+			parent = parent->next;
+		}
+		strbuf_addch(&buf, '\n');
+	}
+
+	// More extensive than reset_revision_walk(). Otherwise --boundary
+	// and pathspecs don't work properly.
+	clear_object_flags(ALL_REV_FLAGS);
+	send_buffer(&buf);
+	strbuf_release(&buf);
 }
 
 static void do_git2hg(struct string_list *args)
@@ -1139,6 +1186,8 @@ int cmd_main(int argc, const char *argv[])
 			do_cat_file(&args);
 		else if (!strcmp("ls-tree", command))
 			do_ls_tree(&args);
+		else if (!strcmp("rev-list", command))
+			do_rev_list(&args);
 		else if (!strcmp("version", command))
 			do_version(&args);
 		else if (!strcmp("connect", command)) {
