@@ -8,6 +8,7 @@ from .git import (
     GitProcess,
     Mark,
     NULL_NODE_ID,
+    split_ls_tree,
 )
 from .util import check_enabled
 from contextlib import contextmanager
@@ -97,7 +98,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 5
+    VERSION = 7
     _helper = False
 
     @classmethod
@@ -131,6 +132,14 @@ class GitHgHelper(BaseHelper):
     def check_manifest(self, hg_sha1):
         with self.query('check-manifest', hg_sha1) as stdout:
             return stdout.readline().strip() == 'ok'
+
+    @classmethod
+    def ls_tree(self, sha1, recursive=False):
+        extra = () if not recursive else ('-r',)
+        with self.query('ls-tree', sha1, *extra) as stdout:
+            for line in self._read_data(stdout).split('\0'):
+                if line:
+                    yield split_ls_tree(line)
 
 
 atexit.register(GitHgHelper.close)

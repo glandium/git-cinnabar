@@ -3,6 +3,7 @@ import atexit
 import contextlib
 import logging
 import os
+import posixpath
 import subprocess
 import time
 from types import (
@@ -17,7 +18,6 @@ from .util import (
     one,
     VersionedDict,
 )
-from binascii import hexlify
 from itertools import chain
 from distutils.version import LooseVersion
 
@@ -363,62 +363,29 @@ class Git(object):
 
     @classmethod
     def ls_tree(self, treeish, path='', recursive=False):
+        from githg import GitHgHelper
         if (not isinstance(treeish, Mark) and
                 treeish.startswith('refs/')):
             treeish = self.resolve_ref(treeish)
-        normalize = False
-        if recursive:
-            assert not isinstance(treeish, Mark)
-            iterator = self.iter('ls-tree', '--full-tree', '-r', treeish,
-                                 '--', path or '.')
-            normalize = True
-        elif isinstance(treeish, Mark) and self._fast_import:
-            assert not path.endswith('/')
-            ls = self._fast_import.ls(treeish, path)
-            if any(l is not None for l in ls):
-                yield ls
-            return
-        elif not isinstance(treeish, Mark):
-            if path == '' or path.endswith('/'):
-                from githg import GitHgHelper
-                treeish = treeish + ':' + path
-                typ, data = GitHgHelper.cat_file('auto', treeish)
-                assert typ in ('tree', 'missing')
-                while data:
-                    null = data.index('\0')
-                    mode, path = data[:null].split(' ', 1)
-                    if mode == '160000':
-                        typ = 'commit'
-                    elif mode == '40000':
-                        typ = 'tree'
-                        mode = '040000'
-                    else:
-                        typ = 'blob'
-                    sha1 = hexlify(data[null + 1:null + 21])
-                    yield mode, typ, sha1, path
-                    data = data[null + 21:]
-            else:
-                base = path.rsplit('/', 1)
-                if len(base) == 1:
-                    base = ''
-                else:
-                    base, path = base
-                    base += '/'
-                for mode, typ, sha1, p in self.ls_tree(treeish, base):
-                    if p == path:
-                        yield mode, typ, sha1, path
-            return
-        else:
-            iterator = self.iter('ls-tree', '--full-tree', treeish, '--',
-                                 path or '.')
-            normalize = True
+        if isinstance(treeish, Mark) and self._fast_import:
+            treeish = self._fast_import.get_mark(treeish)
 
-        for line in iterator:
-            if normalize:
-                mode, typ, sha1, path = split_ls_tree(line)
-                yield mode, typ, sha1, normalize_path(path)
-            else:
-                yield split_ls_tree(line)
+        if path.endswith('/') or recursive or path == '':
+            path = path.rstrip('/')
+            for line in GitHgHelper.ls_tree('%s:%s' % (treeish, path),
+                                            recursive):
+                mode, typ, sha1, p = line
+                if path:
+                    yield mode, typ, sha1, posixpath.join(path, p)
+                else:
+                    yield mode, typ, sha1, p
+        else:
+            # self._fast_import might not be initialized, so use the ls command
+            # through the helper instead.
+            with GitHgHelper.query('ls', treeish, path) as stdout:
+                line = stdout.readline()
+                if not line.startswith('missing '):
+                    yield split_ls_tree(line[:-1])
 
     @classmethod
     def diff_tree(self, treeish1, treeish2, path='', detect_copy=False,
