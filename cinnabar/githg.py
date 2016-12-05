@@ -852,7 +852,7 @@ class GitHgStore(object):
         else:
             manifests = ()
 
-        self._manifest_dag = gitdag(manifests)
+        self._manifest_dag = gitdag((m, ()) for m in manifests)
         self._manifest_heads_orig = set(self._manifest_dag.heads())
 
         if metadata_ref:

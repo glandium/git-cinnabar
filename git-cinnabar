@@ -343,9 +343,8 @@ def fsck(args):
 
 
 def do_bundle(fname, *revs):
-    bundle_commits = list(
-        ' '.join([c] + p) for c, t, p in GitHgHelper.rev_list(
-            '--topo-order', '--full-history', '--parents', '--reverse', *revs))
+    bundle_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
+        '--topo-order', '--full-history', '--parents', '--reverse', *revs))
     if bundle_commits:
         # TODO: enable graft support
         # TODO: better UX. For instance, this will fail with an exception when

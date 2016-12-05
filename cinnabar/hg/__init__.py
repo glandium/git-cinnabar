@@ -303,8 +303,7 @@ def findcommon(repo, store, hgheads):
                 yield h
 
     args.extend(revs())
-    revs = (' '.join([c] + parents)
-            for c, t, parents in GitHgHelper.rev_list(*args))
+    revs = ((c, parents) for c, t, parents in GitHgHelper.rev_list(*args))
     dag = gitdag(chain(revs, git_known))
     dag.tag_nodes_and_parents(git_known, 'known')
 
@@ -642,7 +641,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
             yield '^%s' % store.changeset_ref(sha1)
 
     revs = chain(revs(), (w for w in what if w))
-    push_commits = list(' '.join([c] + p) for c, t, p in GitHgHelper.rev_list(
+    push_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
         '--topo-order', '--full-history', '--parents', '--reverse', *revs))
 
     pushed = False

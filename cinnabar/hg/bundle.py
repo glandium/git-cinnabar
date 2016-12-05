@@ -433,10 +433,7 @@ def bundle_data(store, commits):
     manifests = OrderedDict()
     files = defaultdict(list)
 
-    for nodes in progress_iter('Bundling %d changesets', commits):
-        parents = nodes.split()
-        node = parents.pop(0)
-
+    for node, parents in progress_iter('Bundling %d changesets', commits):
         if len(parents) > 2:
             raise Exception(
                 'Pushing octopus merges to mercurial is not supported')
