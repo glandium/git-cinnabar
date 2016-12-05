@@ -10,7 +10,10 @@ from cinnabar.githg import (
     ChangesetInfo,
     ManifestInfo,
 )
-from cinnabar.helper import HgRepoHelper
+from cinnabar.helper import (
+    GitHgHelper,
+    HgRepoHelper,
+)
 from binascii import (
     hexlify,
     unhexlify,
@@ -290,8 +293,7 @@ def findcommon(repo, store, hgheads):
     logger.debug('known (sub)set: (%d) %s', len(known),
                  LazyCall(sorted, git_known))
 
-    args = ['rev-list', '--topo-order', '--full-history', '--parents',
-            '--stdin']
+    args = ['--topo-order', '--full-history', '--parents']
 
     def revs():
         for h in git_known:
@@ -300,7 +302,10 @@ def findcommon(repo, store, hgheads):
             if h not in git_known:
                 yield h
 
-    dag = gitdag(chain(Git.iter(*args, stdin=revs()), git_known))
+    args.extend(revs())
+    revs = (' '.join([c] + parents)
+            for c, t, parents in GitHgHelper.rev_list(*args))
+    dag = gitdag(chain(revs, git_known))
     dag.tag_nodes_and_parents(git_known, 'known')
 
     def log_dag(tag):
@@ -617,9 +622,9 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
             yield '^%s' % store.changeset_ref(sha1)
 
     def local_bases():
-        for c in Git.iter('rev-list', '--stdin', '--topo-order',
-                          '--full-history', '--boundary',
-                          *(w for w in what if w), stdin=heads()):
+        h = chain(heads(), (w for w in what if w))
+        for c, t, p in GitHgHelper.rev_list('--topo-order', '--full-history',
+                                            '--boundary', *h):
             if c[0] != '-':
                 continue
             yield store.hg_changeset(c[1:])
@@ -636,9 +641,9 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
         for sha1 in common:
             yield '^%s' % store.changeset_ref(sha1)
 
-    push_commits = list(Git.iter('rev-list', '--stdin', '--topo-order',
-                                 '--full-history', '--parents', '--reverse',
-                                 *(w for w in what if w), stdin=revs()))
+    revs = chain(revs(), (w for w in what if w))
+    push_commits = list(' '.join([c] + p) for c, t, p in GitHgHelper.rev_list(
+        '--topo-order', '--full-history', '--parents', '--reverse', *revs))
 
     pushed = False
     if push_commits:

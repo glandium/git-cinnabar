@@ -219,12 +219,9 @@ class GeneratedFileRev(GeneratedRevChunk):
                 file_dag = gitdag()
                 mapping = {}
                 hg_path = 'hg/%s' % path
-                for line in Git.iter('rev-list', '--parents', '--boundary',
-                                     '--topo-order', '--reverse',
-                                     '%s...%s' % git_manifest_parents, '--',
-                                     hg_path):
-                    fparents = line.split(' ')
-                    sha1 = fparents.pop(0)
+                for sha1, tree, fparents in GitHgHelper.rev_list(
+                        '--parents', '--boundary', '--topo-order', '--reverse',
+                        '%s...%s' % git_manifest_parents, '--', hg_path):
                     if sha1.startswith('-'):
                         sha1 = sha1[1:]
                     node = [
@@ -639,10 +636,9 @@ class Grafter(object):
         refs = ['--exclude=refs/cinnabar/*', '--all']
         if store._has_metadata:
             refs += ['--not', 'refs/cinnabar/metadata^']
-        for line in progress_iter('Reading %d graft candidates',
-                                  Git.iter('log', '--full-history',
-                                           '--format=%T %H', *refs)):
-            tree, node = line.split()
+        for node, tree, parents in progress_iter(
+                'Reading %d graft candidates',
+                GitHgHelper.rev_list('--full-history', *refs)):
             self._graft_trees[tree].append(node)
 
     def _is_cinnabar_commit(self, commit):
