@@ -164,6 +164,9 @@ static void cleanup()
 			break;
 		}
 	}
+
+	if (require_explicit_termination)
+		object_count = 0;
 	end_packfile();
 	reprepare_packed_git();
 
