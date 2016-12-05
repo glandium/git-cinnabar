@@ -41,11 +41,14 @@ class BaseHelper(object):
                 self._helper = None
         if self._helper is False:
             config = {'core.ignorecase': 'false'}
+            env = {
+                'GIT_REPLACE_REF_BASE': 'refs/cinnabar/replace/',
+            }
             if helper_path and os.path.exists(helper_path):
                 config['alias.cinnabar-helper'] = '!' + helper_path
             stderr = None if check_enabled('helper') else open(os.devnull, 'w')
             self._helper = GitProcess('cinnabar-helper', stdin=subprocess.PIPE,
-                                      stderr=stderr, config=config)
+                                      stderr=stderr, config=config, env=env)
             self._helper.stdin.write('version %d\n' % self.VERSION)
             if not self._helper.stdout.readline():
                 logger = logging.getLogger('helper')
