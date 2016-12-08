@@ -304,7 +304,7 @@ def findcommon(repo, store, hgheads):
 
     args.extend(revs())
     revs = ((c, parents) for c, t, parents in GitHgHelper.rev_list(*args))
-    dag = gitdag(chain(revs, git_known))
+    dag = gitdag(chain(revs, ((k, ()) for k in git_known)))
     dag.tag_nodes_and_parents(git_known, 'known')
 
     def log_dag(tag):
