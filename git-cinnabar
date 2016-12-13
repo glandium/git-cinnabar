@@ -469,7 +469,9 @@ def do_download(args):
         for f in sorted(os.listdir(d)):
             if f == 'cinnabar-helper.c':
                 has_helper_source = True
-            if f.endswith(('.h', '.c')) or f == 'GIT-VERSION.mk':
+            if 'patched' in f:
+                continue
+            if f.endswith(('.h', '.c', '.c.patch')) or f == 'GIT-VERSION.mk':
                 sha1 = git_hash('blob', open(os.path.join(d, f)).read())
                 h.update('%s\n' % sha1)
 
