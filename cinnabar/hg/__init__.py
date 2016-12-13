@@ -11,8 +11,8 @@ from cinnabar.githg import (
     ManifestInfo,
 )
 from cinnabar.helper import (
+    GitHgHelper,
     HgRepoHelper,
-    NoHelperException,
 )
 from binascii import (
     hexlify,
@@ -293,8 +293,7 @@ def findcommon(repo, store, hgheads):
     logger.debug('known (sub)set: (%d) %s', len(known),
                  LazyCall(sorted, git_known))
 
-    args = ['rev-list', '--topo-order', '--full-history', '--parents',
-            '--stdin']
+    args = ['--topo-order', '--full-history', '--parents']
 
     def revs():
         for h in git_known:
@@ -303,7 +302,9 @@ def findcommon(repo, store, hgheads):
             if h not in git_known:
                 yield h
 
-    dag = gitdag(chain(Git.iter(*args, stdin=revs()), git_known))
+    args.extend(revs())
+    revs = ((c, parents) for c, t, parents in GitHgHelper.rev_list(*args))
+    dag = gitdag(chain(revs, ((k, ()) for k in git_known)))
     dag.tag_nodes_and_parents(git_known, 'known')
 
     def log_dag(tag):
@@ -593,12 +594,11 @@ def getbundle(repo, store, heads, branch_names):
         assert False
     del bundle
 
-    with store.batch_store_manifest():
-        for mn in progress_iter(
-                'Importing %d manifests',
-                manifest_chunks.iter_initialized(ManifestInfo,
-                                                 store.manifest)):
-            store.store_manifest(mn)
+    for mn in progress_iter(
+            'Importing %d manifests',
+            manifest_chunks.iter_initialized(ManifestInfo,
+                                             store.manifest)):
+        store.store_manifest(mn)
 
     del manifest_chunks
 
@@ -621,9 +621,9 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
             yield '^%s' % store.changeset_ref(sha1)
 
     def local_bases():
-        for c in Git.iter('rev-list', '--stdin', '--topo-order',
-                          '--full-history', '--boundary',
-                          *(w for w in what if w), stdin=heads()):
+        h = chain(heads(), (w for w in what if w))
+        for c, t, p in GitHgHelper.rev_list('--topo-order', '--full-history',
+                                            '--boundary', *h):
             if c[0] != '-':
                 continue
             yield store.hg_changeset(c[1:])
@@ -640,9 +640,9 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
         for sha1 in common:
             yield '^%s' % store.changeset_ref(sha1)
 
-    push_commits = list(Git.iter('rev-list', '--stdin', '--topo-order',
-                                 '--full-history', '--parents', '--reverse',
-                                 *(w for w in what if w), stdin=revs()))
+    revs = chain(revs(), (w for w in what if w))
+    push_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
+        '--topo-order', '--full-history', '--parents', '--reverse', *revs))
 
     pushed = False
     if push_commits:
@@ -788,11 +788,7 @@ def get_repo(remote):
                             'native access.')
         logging.warning(
             'Native access to mercurial repositories is experimental!')
-        try:
-            return HelperRepo(remote.url)
-        except NoHelperException:
-            raise Exception('Native access to mercurial repositories requires '
-                            'the helper.')
+        return HelperRepo(remote.url)
     if changegroup and remote.parsed_url.scheme == 'file':
         repo = localpeer(get_ui(), path)
     else:

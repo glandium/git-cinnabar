@@ -12,17 +12,9 @@ from .util import OrderedDefaultDict
 # TODO: this class sucks and is probably wrong
 class gitdag(object):
     def __init__(self, revlist=[]):
-        def iter_revlist(revlist):
-            for line in revlist:
-                line = line.split(' ', 1)
-                if len(line) == 1:
-                    yield line[0], ()
-                else:
-                    yield line[0], line[1].split(' ')
-
         self._parents = OrderedDefaultDict(set)
         self._children = defaultdict(set)
-        for node, parents in iter_revlist(revlist):
+        for node, parents in revlist:
             self._parents[node] |= set(parents)
             for p in parents:
                 self._children[p].add(node)
@@ -103,15 +95,15 @@ class gitdag(object):
 class TestDag(unittest.TestCase):
     def setUp(self):
         self.dag = gitdag([
-            'B A',
-            'C A',
-            'D B',
-            'E B',
-            'F B C',
-            'G D',
-            'H D',
-            'I F',
-            'J F',
+            ('B', ('A',)),
+            ('C', ('A',)),
+            ('D', ('B',)),
+            ('E', ('B',)),
+            ('F', ('B', 'C')),
+            ('G', ('D',)),
+            ('H', ('D',)),
+            ('I', ('F',)),
+            ('J', ('F',)),
         ])
 
     def test_dag(self):

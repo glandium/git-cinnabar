@@ -3,6 +3,7 @@ import atexit
 import contextlib
 import logging
 import os
+import posixpath
 import subprocess
 import time
 from types import (
@@ -11,13 +12,11 @@ from types import (
 )
 from collections import Iterable
 from .util import (
-    check_enabled,
     IOLogger,
     LazyCall,
     one,
     VersionedDict,
 )
-from binascii import hexlify
 from itertools import chain
 from distutils.version import LooseVersion
 
@@ -103,8 +102,6 @@ git_version = subprocess.check_output(['git', 'version'])
 assert git_version.startswith('git version ')
 git_version = LooseVersion(git_version[12:].strip())
 
-HAS_REPLACE_REF_BASE = git_version > LooseVersion('2.6')
-
 if git_version < LooseVersion('1.8.5'):
     raise Exception('git-cinnabar does not support git version prior to '
                     '1.8.5.')
@@ -112,7 +109,6 @@ if git_version < LooseVersion('1.8.5'):
 
 class GitProcess(object):
     KWARGS = set(['stdin', 'stdout', 'stderr', 'config', 'env'])
-    _git_replace_path = None
 
     def __init__(self, *args, **kwargs):
         assert not kwargs or not set(kwargs.keys()) - self.KWARGS
@@ -132,45 +128,6 @@ class GitProcess(object):
         full_env = VersionedDict(os.environ)
         if env:
             full_env.update(env)
-
-        if args[0] in ('config', 'fetch') or not Git._replace:
-            # We don't need the replace ref setup for config.
-            pass
-        elif not check_enabled('replace') and HAS_REPLACE_REF_BASE:
-            full_env['GIT_REPLACE_REF_BASE'] = 'refs/cinnabar/replace/'
-        else:
-            if not GitProcess._git_replace_path:
-                from tempfile import mkdtemp
-                # There are commands run before Git._replace is filled, but we
-                # expect them all not to require the replace refs.
-                path = mkdtemp(prefix='.cinnabar.', dir=git_dir)
-                GitProcess._git_replace_path = path
-                os.mkdir(os.path.join(path, 'refs'))
-                try:
-                    head = subprocess.check_output(['git', 'symbolic-ref',
-                                                    '--quiet', 'HEAD'])
-                    head = 'ref: %s' % head
-                except subprocess.CalledProcessError:
-                    head = subprocess.check_output(['git', 'rev-parse',
-                                                    'HEAD'])
-                with open(os.path.join(path, 'HEAD'), 'w') as fh:
-                    fh.write(head)
-
-                with open(os.path.join(path, 'packed-refs'), 'w') as fh:
-                    subprocess.check_call(
-                        ['git', 'for-each-ref',
-                         '--format=%(objectname) %(refname)'], stdout=fh)
-                    for sha1, target in Git._replace.iteritems():
-                        fh.write('%s refs/replace/%s\n' % (target, sha1))
-
-                logging.getLogger('replace').debug('Initializing in %s', path)
-
-            if 'GIT_OBJECT_DIRECTORY' not in full_env:
-                full_env['GIT_OBJECT_DIRECTORY'] = os.path.join(
-                    git_dir, 'objects')
-            full_env['GIT_DIR'] = GitProcess._git_replace_path
-            if 'GIT_CONFIG' not in full_env:
-                full_env['GIT_CONFIG'] = os.path.join(git_dir, 'config')
 
         self._proc = self._popen(git + list(args), stdin=proc_stdin,
                                  stdout=stdout, stderr=stderr, env=full_env)
@@ -232,7 +189,6 @@ class GitProcess(object):
 
 
 class Git(object):
-    _cat_file = None
     _update_ref = None
     _fast_import = None
     _diff_tree = {}
@@ -257,74 +213,15 @@ class Git(object):
 
     @classmethod
     def close(self, rollback=False):
-        if self._cat_file:
-            self._cat_file.wait()
-            self._cat_file = None
         self._close_update_ref()
         for diff_tree in self._diff_tree.itervalues():
             diff_tree.wait()
         self._diff_tree = {}
-        try:
-            if self._fast_import:
-                self._fast_import.close(rollback)
-                self._fast_import = None
+        if self._fast_import:
+            self._fast_import.close(rollback)
+            self._fast_import = None
 
-                # Git before version 2.1 didn't remove refs when resetting
-                # from NULL_NODE_ID. So remove again with update-ref.
-                for status, ref, value in self._refs.iterchanges():
-                    if status == self._refs.REMOVED:
-                        self.delete_ref(ref)
-                self._close_update_ref()
-                self._refs = self._refs.flattened()
-        finally:
-            if GitProcess._git_replace_path:
-                # Copy the (updated) refs from _git_replace_path to the normal
-                # git repository.
-                # _refs may contain marks that we don't know anything about
-                # anymore now that fast-import is closed (not that it would
-                # tell us anyways, except with a checkpoint, but meh).
-                # So we're going to ask for-each-ref with a list of all the
-                # refs we have a mark for.
-                # But we want for-each-ref to be launched in the
-                # _git_replace_path, where the refs are fresh, now, and
-                # update-ref in the normal git repo, so we need to accumulate
-                # first.
-                update = []
-                unknown_refs = []
-                for status, ref, sha1 in self._refs.iterchanges():
-                    if isinstance(sha1, Mark):
-                        unknown_refs.append(ref)
-                    update.append((status, ref, sha1))
-                # Resolve the marks, ensuring that for_each_ref doesn't use
-                # anything cached.
-                refs_bak = self._refs
-                self._refs = VersionedDict()
-                self._initial_refs = self._refs._previous
-                refs = {ref: sha1 for sha1, ref
-                        in self.for_each_ref(*unknown_refs)}
-                self._refs = refs_bak
-                self._initial_refs = self._refs._previous
-                # Ensure update_ref runs in the normal git repo.
-                replace = self._replace
-                self._replace = {}
-                for status, ref, sha1 in update:
-                    if status == VersionedDict.REMOVED:
-                        self.delete_ref(ref)
-                    else:
-                        if isinstance(sha1, Mark):
-                            # We may still have unresolved marks, but in this
-                            # case, they are from an aborted fast-import, in
-                            # which case dropping them is the right thing to do
-                            sha1 = refs.get(ref)
-                        if sha1:
-                            self.update_ref(ref, sha1)
-                self._close_update_ref()
-                import shutil
-                logging.getLogger('replace').debug(
-                    'Cleaning up in %s', GitProcess._git_replace_path)
-                shutil.rmtree(GitProcess._git_replace_path)
-                GitProcess._git_replace_path = None
-                self._replace = replace
+            self._refs = self._refs.flattened()
 
     @classmethod
     def iter(self, *args, **kwargs):
@@ -368,95 +265,40 @@ class Git(object):
 
     @classmethod
     def cat_file(self, typ, sha1):
-        if self._fast_import and typ == 'blob' and isinstance(sha1, Mark):
-            return self._fast_import.cat_blob(sha1)
-
-        if not self._cat_file:
-            self._cat_file = GitProcess('cat-file', '--batch',
-                                        stdin=subprocess.PIPE)
-
-        self._cat_file.stdin.write(sha1 + '\n')
-        header = self._cat_file.stdout.readline().split()
-        if header[1] == 'missing':
-            if typ == 'auto':
-                return 'missing', None
-            return None
-        assert typ == 'auto' or header[1] == typ
-        size = int(header[2])
-        ret = self._cat_file.stdout.read(size)
-        lf = self._cat_file.stdout.read(1)
-        assert lf == '\n'
-        if typ == 'auto':
-            return header[1], ret
-        return ret
+        from githg import GitHgHelper
+        return GitHgHelper.cat_file(typ, sha1)
 
     @classmethod
     def ls_tree(self, treeish, path='', recursive=False):
+        from githg import GitHgHelper
         if (not isinstance(treeish, Mark) and
                 treeish.startswith('refs/')):
             treeish = self.resolve_ref(treeish)
-        normalize = False
-        if recursive:
-            assert not isinstance(treeish, Mark)
-            iterator = self.iter('ls-tree', '--full-tree', '-r', treeish,
-                                 '--', path or '.')
-            normalize = True
-        elif isinstance(treeish, Mark) and self._fast_import:
-            assert not path.endswith('/')
-            ls = self._fast_import.ls(treeish, path)
-            if any(l is not None for l in ls):
-                yield ls
-            return
-        elif not isinstance(treeish, Mark):
-            if path == '' or path.endswith('/'):
-                from githg import GitHgHelper
-                treeish = treeish + ':' + path
-                typ, data = GitHgHelper.cat_file('auto', treeish)
-                assert typ in ('tree', 'missing')
-                while data:
-                    null = data.index('\0')
-                    mode, path = data[:null].split(' ', 1)
-                    if mode == '160000':
-                        typ = 'commit'
-                    elif mode == '40000':
-                        typ = 'tree'
-                        mode = '040000'
-                    else:
-                        typ = 'blob'
-                    sha1 = hexlify(data[null + 1:null + 21])
-                    yield mode, typ, sha1, path
-                    data = data[null + 21:]
-            else:
-                base = path.rsplit('/', 1)
-                if len(base) == 1:
-                    base = ''
-                else:
-                    base, path = base
-                    base += '/'
-                for mode, typ, sha1, p in self.ls_tree(treeish, base):
-                    if p == path:
-                        yield mode, typ, sha1, path
-            return
-        else:
-            iterator = self.iter('ls-tree', '--full-tree', treeish, '--',
-                                 path or '.')
-            normalize = True
+        if isinstance(treeish, Mark) and self._fast_import:
+            treeish = self._fast_import.get_mark(treeish)
 
-        for line in iterator:
-            if normalize:
-                mode, typ, sha1, path = split_ls_tree(line)
-                yield mode, typ, sha1, normalize_path(path)
-            else:
-                yield split_ls_tree(line)
+        if path.endswith('/') or recursive or path == '':
+            path = path.rstrip('/')
+            for line in GitHgHelper.ls_tree('%s:%s' % (treeish, path),
+                                            recursive):
+                mode, typ, sha1, p = line
+                if path:
+                    yield mode, typ, sha1, posixpath.join(path, p)
+                else:
+                    yield mode, typ, sha1, p
+        else:
+            # self._fast_import might not be initialized, so use the ls command
+            # through the helper instead.
+            with GitHgHelper.query('ls', treeish, path) as stdout:
+                line = stdout.readline()
+                if not line.startswith('missing '):
+                    yield split_ls_tree(line[:-1])
 
     @classmethod
-    def diff_tree(self, treeish1, treeish2, path='', detect_copy=False,
-                  recursive=False):
-        key = (path, recursive, detect_copy)
+    def diff_tree(self, treeish1, treeish2, path='', detect_copy=False):
+        key = (path, detect_copy)
         if key not in self._diff_tree:
-            args = ['--stdin', '--', cdup + (path or '.')]
-            if recursive:
-                args.insert(0, '-r')
+            args = ['-r', '--stdin', '--', cdup + (path or '.')]
             if detect_copy:
                 args[:0] = ['-C100%']
             self._diff_tree[key] = GitProcess('diff-tree', *args,
@@ -598,18 +440,13 @@ class FastImport(object):
         try:
             return self._real_proc
         except AttributeError:
-            from .helper import GitHgHelper, NoHelperException
+            from .helper import GitHgHelper
             # Ensure the helper is there.
             if GitHgHelper._helper is GitHgHelper:
                 GitHgHelper._helper = False
-            try:
-                with GitHgHelper.query('feature', 'force'):
-                    pass
-                self._real_proc = GitHgHelper._helper
-            except NoHelperException:
-                self._real_proc = GitProcess(
-                    'fast-import', '--quiet', stdin=subprocess.PIPE,
-                    config={'core.ignorecase': 'false'})
+            with GitHgHelper.query('feature', 'force'):
+                pass
+            self._real_proc = GitHgHelper._helper
             self.write(
                 "feature force\n"
                 "feature ls\n"
@@ -678,6 +515,13 @@ class FastImport(object):
     def new_mark(self):
         self._last_mark += 1
         return EmptyMark(self._last_mark)
+
+    def get_mark(self, mark):
+        self.write('get-mark :%d\n' % mark)
+        sha1 = self.read(40)
+        lf = self.read(1)
+        assert lf == '\n'
+        return sha1
 
     def cmd_mark(self, mark):
         if mark:

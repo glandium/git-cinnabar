@@ -28,7 +28,6 @@ from cinnabar.githg import (
 )
 from cinnabar.dag import gitdag
 from cinnabar.git import (
-    EMPTY_BLOB,
     EMPTY_TREE,
     Git,
     GitProcess,
@@ -40,10 +39,7 @@ from cinnabar.util import (
     progress_iter,
     VersionedDict,
 )
-from cinnabar.helper import (
-    GitHgHelper,
-    NoHelperException,
-)
+from cinnabar.helper import GitHgHelper
 from cinnabar.hg.bundle import (
     create_bundle,
     get_changes,
@@ -109,9 +105,7 @@ def fsck(args):
                 if data:
                     all_notes.add(commit)
 
-        all_git_commits = Git.iter(
-            'log', '--no-walk=unsorted', '--stdin', '--format=%T %H',
-            stdin=commits)
+        all_git_commits = GitHgHelper.rev_list('--no-walk=unsorted', *commits)
     else:
         all_refs = set(ref for sha1, ref in Git.for_each_ref('refs/cinnabar'))
 
@@ -143,30 +137,25 @@ def fsck(args):
                             'Reading %d commit to changeset mappings',
                             Git.ls_tree(notes_rev, recursive=True)))
 
-        manifest_commits = OrderedDict((m, None) for m in progress_iter(
+        manifest_commits = OrderedDict((m, None) for m, t, p in progress_iter(
             'Reading %d manifest trees',
-            Git.iter('rev-list', '--full-history',
-                     '--topo-order', manifests_rev)
+            GitHgHelper.rev_list('--full-history', '--topo-order',
+                                 manifests_rev)
         ))
 
-        all_git_commits = Git.iter('log', '--topo-order', '--full-history',
-                                   '--reverse', '--stdin', '--format=%T %H',
-                                   stdin=all_git_heads)
-
-    store._hg2git_cache = {p: s for p, (s, t) in all_hg2git.iteritems()}
+        all_git_commits = GitHgHelper.rev_list(
+            '--topo-order', '--full-history', '--reverse', *all_git_heads)
 
     seen_changesets = set()
     seen_manifests = set()
     seen_files = set()
     seen_notes = set()
 
-    hg_manifest = None
-
     dag = gitdag()
     manifest_dag = gitdag()
 
-    for line in progress_iter('Checking %d changesets', all_git_commits):
-        tree, node = line.split(' ')
+    for node, tree, parents in progress_iter('Checking %d changesets',
+                                             all_git_commits):
         node = store._replace.get(node, node)
         if node not in all_notes:
             report('Missing note for git commit: ' + node)
@@ -234,14 +223,8 @@ def fsck(args):
         manifest_dag.add(store.manifest_ref(manifest), git_parents)
 
         if args.manifests:
-            try:
-                with GitHgHelper.query('check-manifest', manifest) as stdout:
-                    if stdout.readline().strip() != 'ok':
-                        report('Sha1 mismatch for manifest %s' % manifest)
-            except NoHelperException:
-                hg_manifest = store.manifest(manifest, include_parents=True)
-                if hg_manifest.node != hg_manifest.sha1:
-                    report('Sha1 mismatch for manifest %s' % manifest)
+            if not GitHgHelper.check_manifest(manifest):
+                report('Sha1 mismatch for manifest %s' % manifest)
 
         manifest_commit = GitCommit(manifest_ref)
         if sorted(manifest_commit.parents) != sorted(git_parents):
@@ -295,8 +278,9 @@ def fsck(args):
                 for h in manifest_heads:
                     yield '^%s' % h
 
-            for m in Git.iter('rev-list', '--topo-order', '--full-history',
-                              '--reverse', '--stdin', stdin=iter_manifests()):
+            for m, t, p in GitHgHelper.rev_list(
+                    '--topo-order', '--full-history', '--reverse',
+                    *iter_manifests()):
                 fix('Removing metadata commit %s with no corresponding '
                     'changeset' % (m))
 
@@ -307,7 +291,7 @@ def fsck(args):
     dangling = ()
     if not status['broken']:
         dangling = all_hg2git - seen_changesets - seen_manifests - seen_files
-        if store._hg2git_cache.get(HG_EMPTY_FILE) == EMPTY_BLOB:
+        if HG_EMPTY_FILE in all_hg2git:
             dangling.add(HG_EMPTY_FILE)
     for obj in dangling:
         fix('Removing dangling metadata for ' + obj)
@@ -360,9 +344,8 @@ def fsck(args):
 
 
 def do_bundle(fname, *revs):
-    bundle_commits = list(Git.iter('rev-list', '--topo-order',
-                                   '--full-history', '--parents', '--reverse',
-                                   *revs))
+    bundle_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
+        '--topo-order', '--full-history', '--parents', '--reverse', *revs))
     if bundle_commits:
         # TODO: enable graft support
         # TODO: better UX. For instance, this will fail with an exception when
@@ -477,6 +460,9 @@ def do_download(args):
                                                                  machine)
         return 1
 
+    if args.dev is False and VERSION.endswith('a'):
+        args.dev = ''
+
     if args.dev is not False:
         h = hashlib.sha1()
         d = os.path.dirname(__file__)
@@ -484,7 +470,9 @@ def do_download(args):
         for f in sorted(os.listdir(d)):
             if f == 'cinnabar-helper.c':
                 has_helper_source = True
-            if f.endswith(('.h', '.c')) or f == 'GIT-VERSION.mk':
+            if 'patched' in f:
+                continue
+            if f.endswith(('.h', '.c', '.c.patch')) or f == 'GIT-VERSION.mk':
                 sha1 = git_hash('blob', open(os.path.join(d, f)).read())
                 h.update('%s\n' % sha1)
 

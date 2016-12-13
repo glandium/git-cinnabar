@@ -84,7 +84,7 @@ $(addprefix pythonlib/,$(PYTHON_LIBS)): pythonlib/%: %
 	$(INSTALL) -m 644 $^ $@
 
 install: install-pythonlib
-clean: clean-pythonlib clean-pythonscripts
+clean: clean-pythonlib clean-pythonscripts clean-patched
 
 clean-pythonscripts:
 	$(RM) $(PYTHON_SCRIPTS)
@@ -119,6 +119,18 @@ ifndef NO_CURL
 CINNABAR_OBJECTS += hg-connect-http.o
 endif
 CINNABAR_OBJECTS += hg-connect-stdio.o
+
+PATCHES = $(notdir $(wildcard ../*.patch))
+
+$(addprefix ../,$(PATCHES:%.c.patch=%.patched.c)): ../%.patched.c: ../%.c.patch %.c
+# Funny thing... GNU patch doesn't like -o ../file, and BSD patch doesn't like sending
+# the output to stdout.
+	cd .. && patch -p1 -F0 -o $(notdir $@) $(CURDIR)/$(notdir $(lastword $^)) < $(notdir $<)
+
+clean-patched:
+	$(RM) $(addprefix ../,$(PATCHES:%.c.patch=%.patched.c))
+
+CINNABAR_OBJECTS += $(PATCHES:%.c.patch=%.patched.o)
 
 ifdef USE_COMPUTED_HEADER_DEPENDENCIES
 dep_files := $(foreach f,$(CINNABAR_OBJECTS),$(dir $f).depend/$(notdir $f).d)

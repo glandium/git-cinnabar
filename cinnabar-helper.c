@@ -49,6 +49,7 @@
 #include <string.h>
 
 #include "cache.h"
+#include "blob.h"
 #include "commit.h"
 #include "exec_cmd.h"
 #include "strbuf.h"
@@ -60,8 +61,9 @@
 #include "tree.h"
 #include "tree-walk.h"
 #include "hg-connect.h"
+#include "cinnabar-fast-import.h"
 
-#define CMD_VERSION 4
+#define CMD_VERSION 8
 
 #define METADATA_REF "refs/cinnabar/metadata"
 #define HG2GIT_REF METADATA_REF "^3"
@@ -69,7 +71,7 @@
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
-static struct notes_tree git2hg, hg2git;
+struct notes_tree git2hg, hg2git;
 
 static void split_command(char *line, const char **command,
 			  struct string_list *args)
@@ -152,6 +154,111 @@ static void do_cat_file(struct string_list *args)
 not_found:
 	write_or_die(1, NULL_NODE, 40);
 	write_or_die(1, "\n", 1);
+}
+
+struct ls_tree_context {
+	struct strbuf buf;
+	int recursive;
+};
+
+static int fill_ls_tree(const unsigned char *sha1, struct strbuf *base,
+			const char *pathname, unsigned mode, int stage,
+			void *context)
+{
+	struct ls_tree_context *ctx = (struct ls_tree_context *) context;
+	struct strbuf *buf = &ctx->buf;
+	const char *type = blob_type;
+
+	if (S_ISGITLINK(mode)) {
+		type = commit_type;
+	} else if (S_ISDIR(mode)) {
+		if (ctx->recursive)
+			return READ_TREE_RECURSIVE;
+		type = tree_type;
+	}
+
+	strbuf_addf(buf, "%06o %s %s\t", mode, type, sha1_to_hex(sha1));
+	strbuf_addbuf(buf, base);
+	strbuf_addstr(buf, pathname);
+	strbuf_addch(buf, '\0');
+	return 0;
+}
+
+static void do_ls_tree(struct string_list *args)
+{
+	unsigned char sha1[20];
+	struct tree *tree = NULL;
+	struct ls_tree_context ctx = { STRBUF_INIT, 0 };
+	struct pathspec match_all;
+
+	if (args->nr == 2) {
+		if (strcmp(args->items[1].string, "-r"))
+			goto not_found;
+		ctx.recursive = 1;
+	} else if (args->nr != 1)
+		goto not_found;
+
+	if (get_sha1(args->items[0].string, sha1))
+		goto not_found;
+
+	tree = parse_tree_indirect(sha1);
+	if (!tree)
+		goto not_found;
+
+	memset(&match_all, 0, sizeof(match_all));
+	read_tree_recursive(tree, "", 0, 0, &match_all, fill_ls_tree, &ctx);
+	send_buffer(&ctx.buf);
+	strbuf_release(&ctx.buf);
+	return;
+not_found:
+	write_or_die(1, "0\n\n", 3);
+}
+
+static void do_rev_list(struct string_list *args)
+{
+	struct rev_info revs;
+	const char **argv = malloc(sizeof(char *) * (args->nr + 2));
+	int i;
+	struct commit *commit;
+	struct strbuf buf = STRBUF_INIT;
+
+	argv[0] = "";
+	for (i = 0; i < args->nr; i++) {
+		argv[i + 1] = args->items[i].string;
+	}
+	argv[args->nr + 1] = NULL;
+
+	init_revisions(&revs, NULL);
+	// Note: we do a pass through, but don't make much effort to actually
+	// support all the options properly.
+	setup_revisions(args->nr + 1, argv, &revs, NULL);
+	free(argv);
+
+	if (prepare_revision_walk(&revs))
+		die("revision walk setup failed");
+
+	while ((commit = get_revision(&revs)) != NULL) {
+		struct commit_list *parent;
+		if (commit->object.flags & BOUNDARY)
+			strbuf_addch(&buf, '-');
+		strbuf_addstr(&buf, oid_to_hex(&commit->object.oid));
+		strbuf_addch(&buf, ' ');
+		strbuf_addstr(&buf, oid_to_hex(&commit->tree->object.oid));
+		parent = commit->parents;
+		while (parent) {
+			strbuf_addch(&buf, ' ');
+			strbuf_addstr(&buf, oid_to_hex(
+				&parent->item->object.oid));
+			parent = parent->next;
+		}
+		strbuf_addch(&buf, '\n');
+	}
+
+	// More extensive than reset_revision_walk(). Otherwise --boundary
+	// and pathspecs don't work properly.
+	clear_object_flags(ALL_REV_FLAGS);
+	send_buffer(&buf);
+	strbuf_release(&buf);
 }
 
 static void do_git2hg(struct string_list *args)
@@ -737,13 +844,19 @@ static void do_manifest(struct string_list *args)
 	if (args->nr != 1)
 		goto not_found;
 
-	sha1_len = get_abbrev_sha1_hex(args->items[0].string, sha1);
-	if (!sha1_len)
-		goto not_found;
+	if (!strncmp(args->items[0].string, "git:", 4)) {
+		if (get_sha1_hex(args->items[0].string + 4, sha1))
+			goto not_found;
+		manifest_sha1 = sha1;
+	} else {
+		sha1_len = get_abbrev_sha1_hex(args->items[0].string, sha1);
+		if (!sha1_len)
+			goto not_found;
 
-	manifest_sha1 = resolve_hg2git(sha1, sha1_len);
-	if (!manifest_sha1)
-		goto not_found;
+		manifest_sha1 = resolve_hg2git(sha1, sha1_len);
+		if (!manifest_sha1)
+			goto not_found;
+	}
 
 	manifest = generate_manifest(manifest_sha1);
 	if (!manifest)
@@ -782,12 +895,18 @@ static void do_check_manifest(struct string_list *args)
 	if (args->nr != 1)
 		goto error;
 
-	if (get_sha1_hex(args->items[0].string, sha1))
-		goto error;
+	if (!strncmp(args->items[0].string, "git:", 4)) {
+		if (get_sha1_hex(args->items[0].string + 4, sha1))
+			goto error;
+		manifest_sha1 = sha1;
+	} else {
+		if (get_sha1_hex(args->items[0].string, sha1))
+			goto error;
 
-	manifest_sha1 = resolve_hg2git(sha1, 40);
-	if (!manifest_sha1)
-		goto error;
+		manifest_sha1 = resolve_hg2git(sha1, 40);
+		if (!manifest_sha1)
+			goto error;
+	}
 
 	manifest = generate_manifest(manifest_sha1);
 	if (!manifest)
@@ -822,6 +941,9 @@ static void do_check_manifest(struct string_list *args)
 	git_SHA1_Update(&ctx, manifest->buf, manifest->len);
 
 	git_SHA1_Final(result, &ctx);
+
+	if (manifest_sha1 == sha1)
+		get_manifest_sha1(manifest_commit, sha1);
 
 	if (hashcmp(result, sha1) == 0) {
 		write(1, "ok\n", 3);
@@ -1040,8 +1162,6 @@ static void do_connect(struct string_list *args)
 		write_or_die(1, "failed to connect\n", 18);
 }
 
-extern int maybe_handle_command(const char *command, struct string_list *args);
-
 int cmd_main(int argc, const char *argv[])
 {
 	struct strbuf buf = STRBUF_INIT;
@@ -1064,6 +1184,10 @@ int cmd_main(int argc, const char *argv[])
 			do_check_manifest(&args);
 		else if (!strcmp("cat-file", command))
 			do_cat_file(&args);
+		else if (!strcmp("ls-tree", command))
+			do_ls_tree(&args);
+		else if (!strcmp("rev-list", command))
+			do_rev_list(&args);
 		else if (!strcmp("version", command))
 			do_version(&args);
 		else if (!strcmp("connect", command)) {

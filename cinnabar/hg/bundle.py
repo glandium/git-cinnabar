@@ -42,7 +42,7 @@ from itertools import chain
 def manifest_diff(a, b, base_path=''):
     base_path = base_path.rstrip('/')
     start = len(base_path) + bool(base_path)
-    for line in Git.diff_tree(a, b, base_path, recursive=True):
+    for line in Git.diff_tree(a, b, base_path):
         mode_before, mode_after, sha1_before, sha1_after, status, path = line
         if sha1_before != sha1_after:
             yield path[start:], sha1_after, sha1_before
@@ -217,7 +217,7 @@ class PushStore(GitHgStore):
                              status)
         git_diff = sorted(
             l for l in process_diff(Git.diff_tree(
-                parents[0], commit, detect_copy=True, recursive=True))
+                parents[0], commit, detect_copy=True))
         )
         if not git_diff:
             return parent_manifest
@@ -433,10 +433,7 @@ def bundle_data(store, commits):
     manifests = OrderedDict()
     files = defaultdict(list)
 
-    for nodes in progress_iter('Bundling %d changesets', commits):
-        parents = nodes.split()
-        node = parents.pop(0)
-
+    for node, parents in progress_iter('Bundling %d changesets', commits):
         if len(parents) > 2:
             raise Exception(
                 'Pushing octopus merges to mercurial is not supported')

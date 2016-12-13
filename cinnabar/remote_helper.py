@@ -7,6 +7,7 @@ import sys
 from cinnabar.githg import (
     BranchMap,
 )
+from cinnabar.helper import GitHgHelper
 from cinnabar.hg import (
     bundlerepo,
     getbundle,
@@ -450,11 +451,11 @@ class GitRemoteHelper(object):
                         for h in pushed.heads():
                             yield h
 
-                    args = ['rev-list', '--ancestry-path', '--topo-order',
-                            '--stdin']
+                    args = ['--ancestry-path', '--topo-order']
+                    args.extend(draft_commits())
 
                     pushed_drafts = tuple(
-                        Git.iter(*args, stdin=draft_commits()))
+                        c for c, t, p in GitHgHelper.rev_list(*args))
 
                     # Theoretically, we could have commits with no
                     # metadata that the remote declares are public, while

@@ -3,6 +3,10 @@
 #define sha1write fast_import_sha1write
 #include "fast-import.c"
 #undef sha1write
+#include "cinnabar-fast-import.h"
+#include "notes.h"
+
+extern struct notes_tree git2hg, hg2git;
 
 static int initialized = 0;
 
@@ -74,6 +78,20 @@ void fast_import_sha1write(struct sha1file *f, const void *buf,
 	}
 }
 
+extern off_t real_find_pack_entry_one(const unsigned char *sha1,
+				      struct packed_git *p);
+
+off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
+{
+	if (p == pack_data) {
+		struct object_entry *oe = find_object((unsigned char *)sha1);
+		if (oe && oe->idx.offset > 1)
+			return oe->idx.offset;
+		return 0;
+	}
+	return real_find_pack_entry_one(sha1, p);
+}
+
 /* Mostly copied from fast-import.c's main() */
 static void init()
 {
@@ -100,6 +118,7 @@ static void init()
 
 	prepare_packed_git();
 	start_packfile();
+	install_packed_git(pack_data);
 	set_die_routine(die_nicely);
 
 	initialized = 1;
@@ -131,7 +150,25 @@ static void cleanup()
 		free(pack_win);
 	}
 
+	/* uninstall_packed_git(pack_data) */
+	{
+		struct packed_git *pack, *prev;
+		for (prev = NULL, pack = packed_git; pack;
+		     prev = pack, pack = pack->next) {
+			if (pack != pack_data)
+				continue;
+			if (prev)
+				prev->next = pack->next;
+			else
+				packed_git = pack->next;
+			break;
+		}
+	}
+
+	if (require_explicit_termination)
+		object_count = 0;
 	end_packfile();
+	reprepare_packed_git();
 
 	if (!require_explicit_termination)
 		dump_branches();
@@ -174,6 +211,30 @@ static void fill_command_buf(const char *command, struct string_list *args)
 	cmd_tail = rc;
 }
 
+void maybe_reset_notes(const char *branch)
+{
+	struct notes_tree *notes = NULL;
+
+	// The python frontend will use fast-import commands to commit the
+	// hg2git and git2hg trees as separate temporary branches, and then
+	// remove them. We want to update the notes tree on the temporary
+	// branches, and keep them there when they are removed.
+	if (!strcmp(branch, "refs/cinnabar/hg2git")) {
+		notes = &hg2git;
+	} else if (!strcmp(branch, "refs/notes/cinnabar")) {
+		notes = &git2hg;
+	}
+	if (notes) {
+		struct branch *b = lookup_branch(branch);
+		if (!is_null_sha1(b->sha1)) {
+			if (notes->initialized)
+				free_notes(notes);
+			init_notes(notes, sha1_to_hex(b->sha1),
+				   combine_notes_overwrite, 0);
+		}
+	}
+}
+
 int maybe_handle_command(const char *command, struct string_list *args)
 {
 #define COMMON_HANDLING() { \
@@ -193,11 +254,22 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		COMMON_HANDLING();
 		parse_new_blob();
 	} else if (!strcmp(command, "commit")) {
+		char *arg;
 		COMMON_HANDLING();
+		arg = strdup(command_buf.buf + sizeof("commit"));
 		parse_new_commit(command_buf.buf + sizeof("commit"));
+		maybe_reset_notes(arg);
+		free(arg);
 	} else if (!strcmp(command, "reset")) {
+		char *arg;
 		COMMON_HANDLING();
+		arg = strdup(command_buf.buf + sizeof("reset"));
 		parse_reset_branch(command_buf.buf + sizeof("reset"));
+		maybe_reset_notes(arg);
+		free(arg);
+	} else if (!strcmp(command, "get-mark")) {
+		COMMON_HANDLING();
+		parse_get_mark(command_buf.buf + sizeof("get_mark"));
 	} else if (!strcmp(command, "cat-blob")) {
 		COMMON_HANDLING();
 		parse_cat_blob(command_buf.buf + sizeof("cat-blob"));
