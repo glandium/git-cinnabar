@@ -300,7 +300,7 @@ class Git(object):
         if key not in self._diff_tree:
             args = ['-r', '--stdin', '--', cdup + (path or '.')]
             if detect_copy:
-                args[:0] = ['-C100%']
+                args[:0] = ['-C', '-C']
             self._diff_tree[key] = GitProcess('diff-tree', *args,
                                               stdin=subprocess.PIPE)
         diff_tree = self._diff_tree[key]
