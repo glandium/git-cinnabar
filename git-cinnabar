@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import threading
 import zipfile
+import errno
 from StringIO import StringIO
 from binascii import hexlify
 from cinnabar import VERSION
@@ -615,6 +616,13 @@ def do_download(args):
                 helper_path = args.output
             else:
                 helper_path = os.path.join(d, helper)
+            try:
+                # on Windows it's necessary to remove the file first.
+                os.remove(helper_path)
+            except OSError as exc:
+                if exc.errno != errno.ENOENT:
+                    raise
+                pass
             os.rename(path, helper_path)
             # Add executable bits wherever read bits are set
             mode = mode | ((mode & 0444) >> 2)
