@@ -13,6 +13,7 @@ from .git import (
 )
 from .util import (
     check_enabled,
+    IOLogger,
     one,
     sorted_merge,
 )
@@ -199,11 +200,21 @@ class BaseHelper(object):
         if self._helper is self:
             raise HelperClosedException
         helper = self._helper
-        if args:
-            helper.stdin.write('%s %s\n' % (name, ' '.join(args)))
+        logger = logging.getLogger(name)
+        if logger.isEnabledFor(logging.INFO):
+            wrapper = IOLogger(logger, helper.stdout, helper.stdin,
+                               prefix='[%d]' % helper.pid)
         else:
-            helper.stdin.write('%s\n' % name)
-        yield helper.stdout
+            wrapper = helper.stdin
+
+        if args:
+            wrapper.write('%s %s\n' % (name, ' '.join(args)))
+        else:
+            wrapper.write('%s\n' % name)
+        if logger.isEnabledFor(logging.DEBUG):
+            yield wrapper
+        else:
+            yield helper.stdout
 
     @classmethod
     def _read_file(self, expected_typ, stdout):
