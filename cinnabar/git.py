@@ -178,7 +178,7 @@ class GitProcess(object):
         logger = logging.getLogger(args[0])
         if logger.isEnabledFor(logging.INFO):
             self._stdin = IOLogger(logger, self._proc.stdout, self._proc.stdin,
-                                   prefix='[%d]' % self._proc.pid)
+                                   prefix='[%d]' % self.pid)
         else:
             self._stdin = self._proc.stdin
 
