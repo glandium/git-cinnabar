@@ -5,16 +5,11 @@ import logging
 import os
 import subprocess
 import time
-from types import (
-    GeneratorType,
-    StringType,
-)
-from collections import Iterable
+from types import GeneratorType
 from .util import (
     check_enabled,
-    IOLogger,
-    LazyCall,
     one,
+    Process,
     VersionedDict,
 )
 from binascii import hexlify
@@ -110,34 +105,23 @@ if git_version < LooseVersion('1.8.5'):
                     '1.8.5.')
 
 
-class GitProcess(object):
-    KWARGS = set(['stdin', 'stdout', 'stderr', 'config', 'env'])
+class GitProcess(Process):
+    KWARGS = Process.KWARGS | set(['config'])
     _git_replace_path = None
 
     def __init__(self, *args, **kwargs):
-        assert not kwargs or not set(kwargs.keys()) - self.KWARGS
-        stdin = kwargs.get('stdin', None)
-        stdout = kwargs.get('stdout', subprocess.PIPE)
-        stderr = kwargs.get('stderr', None)
         config = kwargs.get('config', {})
         env = kwargs.get('env', {})
-        if isinstance(stdin, (StringType, Iterable)):
-            proc_stdin = subprocess.PIPE
-        else:
-            proc_stdin = stdin
 
-        git = ['git'] + list(chain(*(['-c', '%s=%s' % (n, v)]
-                                     for n, v in config.iteritems())))
-
-        full_env = VersionedDict(os.environ)
-        if env:
-            full_env.update(env)
+        command = ['git'] + list(chain(*(['-c', '%s=%s' % (n, v)]
+                                         for n, v in config.iteritems())))
+        command += list(args)
 
         if args[0] in ('config', 'fetch') or not Git._replace:
             # We don't need the replace ref setup for config.
             pass
         elif not check_enabled('replace') and HAS_REPLACE_REF_BASE:
-            full_env['GIT_REPLACE_REF_BASE'] = 'refs/cinnabar/replace/'
+            env['GIT_REPLACE_REF_BASE'] = 'refs/cinnabar/replace/'
         else:
             if not GitProcess._git_replace_path:
                 from tempfile import mkdtemp
@@ -165,70 +149,16 @@ class GitProcess(object):
 
                 logging.getLogger('replace').debug('Initializing in %s', path)
 
-            if 'GIT_OBJECT_DIRECTORY' not in full_env:
-                full_env['GIT_OBJECT_DIRECTORY'] = os.path.join(
+            if all('GIT_OBJECT_DIRECTORY' not in e for e in (env, os.environ)):
+                env['GIT_OBJECT_DIRECTORY'] = os.path.join(
                     git_dir, 'objects')
-            full_env['GIT_DIR'] = GitProcess._git_replace_path
-            if 'GIT_CONFIG' not in full_env:
-                full_env['GIT_CONFIG'] = os.path.join(git_dir, 'config')
+            env['GIT_DIR'] = GitProcess._git_replace_path
+            if all('GIT_CONFIG' not in e for e in (env, os.environ)):
+                env['GIT_CONFIG'] = os.path.join(git_dir, 'config')
 
-        self._proc = self._popen(git + list(args), stdin=proc_stdin,
-                                 stdout=stdout, stderr=stderr, env=full_env)
-
-        logger = logging.getLogger(args[0])
-        if logger.isEnabledFor(logging.INFO):
-            self._stdin = IOLogger(logger, self._proc.stdout, self._proc.stdin,
-                                   prefix='[%d]' % self.pid)
-        else:
-            self._stdin = self._proc.stdin
-
-        if logger.isEnabledFor(logging.DEBUG):
-            self._stdout = self._stdin
-        else:
-            self._stdout = self._proc.stdout
-
-        if proc_stdin == subprocess.PIPE:
-            if isinstance(stdin, StringType):
-                self._stdin.write(stdin)
-            elif isinstance(stdin, Iterable):
-                for line in stdin:
-                    self._stdin.write('%s\n' % line)
-            if proc_stdin != stdin:
-                self._proc.stdin.close()
-
-    def _env_strings(self, env):
-        for k, v in sorted((k, v) for s, k, v in env.iterchanges()
-                           if s != env.REMOVED):
-            yield '%s=%s' % (k, v)
-
-    def _popen(self, cmd, env, **kwargs):
-        assert isinstance(env, VersionedDict)
-        proc = subprocess.Popen(cmd, env=env, **kwargs)
-        logging.getLogger('git').info('[%d] %s', proc.pid, LazyCall(
-            ' '.join, chain(self._env_strings(env), cmd)))
-        return proc
-
-    def wait(self):
-        for fh in (self._proc.stdin, self._proc.stdout, self._proc.stderr):
-            if fh:
-                fh.close()
-        return self._proc.wait()
-
-    @property
-    def pid(self):
-        return self._proc.pid
-
-    @property
-    def stdin(self):
-        return self._stdin
-
-    @property
-    def stdout(self):
-        return self._stdout
-
-    @property
-    def stderr(self):
-        return self._proc.stderr
+        kwargs['env'] = env
+        kwargs.setdefault('logger', args[0])
+        super(GitProcess, self).__init__(*command, **kwargs)
 
 
 class Git(object):
