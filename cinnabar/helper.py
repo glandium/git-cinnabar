@@ -173,7 +173,7 @@ class BaseHelper(object):
             if helper_path == '':
                 self._helper = None
         if self._helper is False:
-            config = {'core.ignorecase': 'false'}
+            config = {}
             if helper_path and os.path.exists(helper_path):
                 config['alias.cinnabar-helper'] = '!' + helper_path
             stderr = None if check_enabled('helper') else open(os.devnull, 'w')
