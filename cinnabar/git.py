@@ -26,12 +26,6 @@ class InvalidConfig(Exception):
     pass
 
 
-def normalize_path(path):
-    if path[0] == '"' and path[-1] == '"':
-        path = path[1:-1].decode('string_escape')
-    return path
-
-
 def sha1path(sha1, depth=2):
     def parts():
         i = -1
