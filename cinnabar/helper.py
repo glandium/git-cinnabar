@@ -5,7 +5,6 @@ import re
 import subprocess
 from .git import (
     Git,
-    GitProcess,
     Mark,
     NULL_NODE_ID,
     split_ls_tree,
@@ -13,6 +12,7 @@ from .git import (
 from .util import (
     check_enabled,
     IOLogger,
+    Process,
 )
 from contextlib import contextmanager
 
@@ -43,15 +43,17 @@ class BaseHelper(object):
             if helper_path == '':
                 self._helper = None
         if self._helper is False:
-            config = {'core.ignorecase': 'false'}
+            stderr = None if check_enabled('helper') else open(os.devnull, 'w')
             env = {
                 'GIT_REPLACE_REF_BASE': 'refs/cinnabar/replace/',
             }
             if helper_path and os.path.exists(helper_path):
-                config['alias.cinnabar-helper'] = '!' + helper_path
-            stderr = None if check_enabled('helper') else open(os.devnull, 'w')
-            self._helper = GitProcess('cinnabar-helper', stdin=subprocess.PIPE,
-                                      stderr=stderr, config=config, env=env)
+                command = (helper_path,)
+            else:
+                command = ('git', 'cinnabar-helper')
+            self._helper = Process(*command, stdin=subprocess.PIPE,
+                                   stderr=stderr, logger='cinnabar-helper',
+                                   env=env)
             self._helper.stdin.write('version %d\n' % self.VERSION)
             if not self._helper.stdout.readline():
                 logger = logging.getLogger('helper')
@@ -73,7 +75,7 @@ class BaseHelper(object):
         logger = logging.getLogger(name)
         if logger.isEnabledFor(logging.INFO):
             wrapper = IOLogger(logger, helper.stdout, helper.stdin,
-                               prefix='[%d]' % helper._proc.pid)
+                               prefix='[%d]' % helper.pid)
         else:
             wrapper = helper.stdin
 

@@ -1,8 +1,13 @@
 import logging
+import os
+import subprocess
 import sys
 import time
 import unittest
-from collections import OrderedDict
+from collections import (
+    Iterable,
+    OrderedDict,
+)
 from difflib import (
     Match,
     SequenceMatcher,
@@ -11,6 +16,7 @@ from itertools import (
     chain,
     izip,
 )
+from types import StringType
 
 
 class StreamHandler(logging.StreamHandler):
@@ -824,3 +830,81 @@ class TestSortedMerge(unittest.TestCase):
             ('a', (1,), ()),
             ('b', (2,), ('B',)),
         ])
+
+
+class Process(object):
+    KWARGS = set(['stdin', 'stdout', 'stderr', 'env', 'logger'])
+
+    def __init__(self, *args, **kwargs):
+        assert not kwargs or not set(kwargs.keys()) - self.KWARGS
+        stdin = kwargs.get('stdin', None)
+        stdout = kwargs.get('stdout', subprocess.PIPE)
+        stderr = kwargs.get('stderr', None)
+        logger = kwargs.get('logger', args[0])
+        env = kwargs.get('env', {})
+        if isinstance(stdin, (StringType, Iterable)):
+            proc_stdin = subprocess.PIPE
+        else:
+            proc_stdin = stdin
+
+        full_env = VersionedDict(os.environ)
+        if env:
+            full_env.update(env)
+
+        self._proc = self._popen(args, stdin=proc_stdin, stdout=stdout,
+                                 stderr=stderr, env=full_env)
+
+        logger = logging.getLogger(logger)
+        if logger.isEnabledFor(logging.INFO):
+            self._stdin = IOLogger(logger, self._proc.stdout, self._proc.stdin,
+                                   prefix='[%d]' % self.pid)
+        else:
+            self._stdin = self._proc.stdin
+
+        if logger.isEnabledFor(logging.DEBUG):
+            self._stdout = self._stdin
+        else:
+            self._stdout = self._proc.stdout
+
+        if proc_stdin == subprocess.PIPE:
+            if isinstance(stdin, StringType):
+                self._stdin.write(stdin)
+            elif isinstance(stdin, Iterable):
+                for line in stdin:
+                    self._stdin.write('%s\n' % line)
+            if proc_stdin != stdin:
+                self._proc.stdin.close()
+
+    def _env_strings(self, env):
+        for k, v in sorted((k, v) for s, k, v in env.iterchanges()
+                           if s != env.REMOVED):
+            yield '%s=%s' % (k, v)
+
+    def _popen(self, cmd, env, **kwargs):
+        assert isinstance(env, VersionedDict)
+        proc = subprocess.Popen(cmd, env=env, **kwargs)
+        logging.getLogger('process').info('[%d] %s', proc.pid, LazyCall(
+            ' '.join, chain(self._env_strings(env), cmd)))
+        return proc
+
+    def wait(self):
+        for fh in (self._proc.stdin, self._proc.stdout, self._proc.stderr):
+            if fh:
+                fh.close()
+        return self._proc.wait()
+
+    @property
+    def pid(self):
+        return self._proc.pid
+
+    @property
+    def stdin(self):
+        return self._stdin
+
+    @property
+    def stdout(self):
+        return self._stdout
+
+    @property
+    def stderr(self):
+        return self._proc.stderr

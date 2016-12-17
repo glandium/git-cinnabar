@@ -1169,6 +1169,7 @@ int cmd_main(int argc, const char *argv[])
 	git_extract_argv0_path(argv[0]);
 	setup_git_directory();
 	git_config(git_default_config, NULL);
+	ignore_case = 0;
 
 	while (strbuf_getline(&buf, stdin) != EOF) {
 		struct string_list args = STRING_LIST_INIT_NODUP;
