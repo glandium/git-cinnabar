@@ -119,7 +119,6 @@ class GitProcess(Process):
 class Git(object):
     _update_ref = None
     _fast_import = None
-    _diff_tree = {}
     _notes_depth = {}
     _refs = VersionedDict()
     _initial_refs = _refs._previous
@@ -142,9 +141,6 @@ class Git(object):
     @classmethod
     def close(self, rollback=False):
         self._close_update_ref()
-        for diff_tree in self._diff_tree.itervalues():
-            diff_tree.wait()
-        self._diff_tree = {}
         if self._fast_import:
             self._fast_import.close(rollback)
             self._fast_import = None
@@ -224,33 +220,11 @@ class Git(object):
 
     @classmethod
     def diff_tree(self, treeish1, treeish2, path='', detect_copy=False):
-        path = path.rstrip('/')
-        start = len(path) + bool(path)
-        key = (path, detect_copy)
-        if key not in self._diff_tree:
-            args = ['-r', '--stdin', '--', cdup + (path or '.')]
-            if detect_copy:
-                args[:0] = ['-C100%']
-            self._diff_tree[key] = GitProcess('diff-tree', *args,
-                                              stdin=subprocess.PIPE)
-        diff_tree = self._diff_tree[key]
-        diff_tree.stdin.write('%s %s\n\n' % (treeish2, treeish1))
-        line = diff_tree.stdout.readline(
-        ).rstrip('\n')  # First line is a header
-
-        while line:
-            line = diff_tree.stdout.readline().rstrip('\n')
-            if not line:
-                break
-            (mode_before, mode_after, sha1_before, sha1_after,
-             remainder) = line.split(' ', 4)
-            status, path = remainder.split('\t', 1)
-            path = path[start:]
-            if detect_copy and status[0] in 'RC':
-                path2, path = path.split('\t')
-                status = status[0] + path2[start:]
-            yield (mode_before[1:], mode_after, sha1_before, sha1_after,
-                   status, path)
+        from githg import GitHgHelper
+        if path:
+            treeish1 = '%s:%s' % (treeish1, path)
+            treeish2 = '%s:%s' % (treeish2, path)
+        return GitHgHelper.diff_tree(treeish1, treeish2, detect_copy)
 
     @classmethod
     def update_ref(self, ref, newvalue, oldvalue=None, store=True):
