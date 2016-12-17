@@ -98,7 +98,7 @@ endif
 export GIT_CINNABAR_HELPER
 COMMA=,
 export GIT_CINNABAR_CHECK=all$(if $(HELPER),,$(COMMA)-helper)
-export GIT_CINNABAR_LOG=git:3
+export GIT_CINNABAR_LOG=process:3
 
 ifndef BUILD_HELPER
 $(GIT_CINNABAR_HELPER):
