@@ -6,7 +6,6 @@ import re
 import subprocess
 from .git import (
     Git,
-    GitProcess,
     Mark,
     NULL_NODE_ID,
     sha1path,
@@ -15,6 +14,7 @@ from .util import (
     check_enabled,
     IOLogger,
     one,
+    Process,
     sorted_merge,
 )
 from contextlib import contextmanager
@@ -173,12 +173,13 @@ class BaseHelper(object):
             if helper_path == '':
                 self._helper = None
         if self._helper is False:
-            config = {}
-            if helper_path and os.path.exists(helper_path):
-                config['alias.cinnabar-helper'] = '!' + helper_path
             stderr = None if check_enabled('helper') else open(os.devnull, 'w')
-            self._helper = GitProcess('cinnabar-helper', stdin=subprocess.PIPE,
-                                      stderr=stderr, config=config)
+            if helper_path and os.path.exists(helper_path):
+                command = (helper_path,)
+            else:
+                command = ('git', 'cinnabar-helper')
+            self._helper = Process(*command, stdin=subprocess.PIPE,
+                                   stderr=stderr, logger='cinnabar-helper')
             self._helper.stdin.write('version %d\n' % self.VERSION)
             if not self._helper.stdout.readline():
                 logger = logging.getLogger('helper')
