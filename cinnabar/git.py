@@ -224,6 +224,8 @@ class Git(object):
 
     @classmethod
     def diff_tree(self, treeish1, treeish2, path='', detect_copy=False):
+        path = path.rstrip('/')
+        start = len(path) + bool(path)
         key = (path, detect_copy)
         if key not in self._diff_tree:
             args = ['-r', '--stdin', '--', cdup + (path or '.')]
@@ -243,9 +245,10 @@ class Git(object):
             (mode_before, mode_after, sha1_before, sha1_after,
              remainder) = line.split(' ', 4)
             status, path = remainder.split('\t', 1)
+            path = path[start:]
             if detect_copy and status[0] in 'RC':
                 path2, path = path.split('\t')
-                status = status[0] + path2
+                status = status[0] + path2[start:]
             yield (mode_before[1:], mode_after, sha1_before, sha1_after,
                    status, path)
 

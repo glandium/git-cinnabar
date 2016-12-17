@@ -40,12 +40,10 @@ from itertools import chain
 # TODO: Avoid a diff-tree when we already have done it to generate the
 # manifest in the first place.
 def manifest_diff(a, b, base_path=''):
-    base_path = base_path.rstrip('/')
-    start = len(base_path) + bool(base_path)
     for line in Git.diff_tree(a, b, base_path):
         mode_before, mode_after, sha1_before, sha1_after, status, path = line
         if sha1_before != sha1_after:
-            yield path[start:], sha1_after, sha1_before
+            yield path, sha1_after, sha1_before
 
 
 def manifest_diff2(a, b, c, base_path=''):
