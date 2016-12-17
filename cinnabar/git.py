@@ -250,26 +250,6 @@ class Git(object):
                    status, path)
 
     @classmethod
-    def read_note(self, notes_ref, sha1):
-        sha1 = self._replace.get(sha1, sha1)
-        if not notes_ref.startswith('refs/'):
-            notes_ref = 'refs/notes/' + notes_ref
-        notes_ref = self.resolve_ref(notes_ref)
-        if not notes_ref:
-            return None
-        if notes_ref in self._notes_depth:
-            depths = (self._notes_depth[notes_ref],)
-        else:
-            depths = xrange(0, 20)
-        for depth in depths:
-            blob = self.cat_file('blob', '%s:%s' % (notes_ref,
-                                                    sha1path(sha1, depth)))
-            if blob:
-                self._notes_depth[notes_ref] = depth
-                return blob
-        return None
-
-    @classmethod
     def update_ref(self, ref, newvalue, oldvalue=None, store=True):
         if not isinstance(newvalue, Mark) and newvalue.startswith('refs/'):
             newvalue = self.resolve_ref(newvalue)
