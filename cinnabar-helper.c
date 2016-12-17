@@ -51,19 +51,23 @@
 #include "cache.h"
 #include "blob.h"
 #include "commit.h"
+#include "diff.h"
+#include "diffcore.h"
 #include "exec_cmd.h"
+#include "log-tree.h"
 #include "strbuf.h"
 #include "string-list.h"
 #include "notes.h"
 #include "streaming.h"
 #include "object.h"
+#include "quote.h"
 #include "revision.h"
 #include "tree.h"
 #include "tree-walk.h"
 #include "hg-connect.h"
 #include "cinnabar-fast-import.h"
 
-#define CMD_VERSION 8
+#define CMD_VERSION 9
 
 #define METADATA_REF "refs/cinnabar/metadata"
 #define HG2GIT_REF METADATA_REF "^3"
@@ -214,19 +218,26 @@ not_found:
 	write_or_die(1, "0\n\n", 3);
 }
 
-static void do_rev_list(struct string_list *args)
+static const char **string_list_to_argv(struct string_list *args)
 {
-	struct rev_info revs;
 	const char **argv = malloc(sizeof(char *) * (args->nr + 2));
 	int i;
-	struct commit *commit;
-	struct strbuf buf = STRBUF_INIT;
 
 	argv[0] = "";
 	for (i = 0; i < args->nr; i++) {
 		argv[i + 1] = args->items[i].string;
 	}
 	argv[args->nr + 1] = NULL;
+
+	return argv;
+}
+
+static void do_rev_list(struct string_list *args)
+{
+	struct rev_info revs;
+	struct commit *commit;
+	struct strbuf buf = STRBUF_INIT;
+	const char **argv = string_list_to_argv(args);
 
 	init_revisions(&revs, NULL);
 	// Note: we do a pass through, but don't make much effort to actually
@@ -257,6 +268,69 @@ static void do_rev_list(struct string_list *args)
 	// More extensive than reset_revision_walk(). Otherwise --boundary
 	// and pathspecs don't work properly.
 	clear_object_flags(ALL_REV_FLAGS);
+	send_buffer(&buf);
+	strbuf_release(&buf);
+}
+
+static void strbuf_diff_tree(struct diff_queue_struct *q,
+                             struct diff_options *opt, void *data)
+{
+	struct strbuf *buf = (struct strbuf *) data;
+	int i;
+
+	for (i = 0; i < q->nr; i++) {
+		struct diff_filepair *p = q->queue[i];
+		if (p->status == 0)
+			die("internal diff status error");
+		if (p->status == DIFF_STATUS_UNKNOWN)
+			continue;
+		strbuf_addf(buf, "%06o %06o %s %s %c",
+		            p->one->mode,
+		            p->two->mode,
+		            oid_to_hex(&p->one->oid),
+		            oid_to_hex(&p->two->oid),
+		            p->status);
+		if (p->score)
+			strbuf_addf(buf, "%03d",
+			            (int)(p->score * 100 / MAX_SCORE));
+		strbuf_addch(buf, '\t');
+		if (p->status == DIFF_STATUS_COPIED ||
+		    p->status == DIFF_STATUS_RENAMED) {
+			strbuf_addstr(buf, p->one->path);
+			strbuf_addch(buf, '\0');
+			strbuf_addstr(buf, p->two->path);
+		} else {
+			strbuf_addstr(buf, p->one->mode ? p->one->path
+			                                : p->two->path);
+		}
+		strbuf_addch(buf, '\0');
+	}
+}
+
+static void do_diff_tree(struct string_list *args)
+{
+	struct rev_info revs;
+	struct strbuf buf = STRBUF_INIT;
+	const char **argv = string_list_to_argv(args);
+
+	init_revisions(&revs, NULL);
+	revs.diff = 1;
+	// Note: we do a pass through, but don't make much effort to actually
+	// support all the options properly.
+	setup_revisions(args->nr + 1, argv, &revs, NULL);
+	revs.diffopt.output_format = DIFF_FORMAT_CALLBACK;
+	revs.diffopt.format_callback = strbuf_diff_tree;
+	revs.diffopt.format_callback_data = &buf;
+	DIFF_OPT_SET(&revs.diffopt, RECURSIVE);
+	free(argv);
+
+	if (revs.pending.nr != 2)
+		die("diff-tree needs two revs");
+
+	diff_tree_sha1(revs.pending.objects[0].item->oid.hash,
+	               revs.pending.objects[1].item->oid.hash,
+	               "", &revs.diffopt);
+	log_tree_diff_flush(&revs);
 	send_buffer(&buf);
 	strbuf_release(&buf);
 }
@@ -1168,7 +1242,7 @@ int cmd_main(int argc, const char *argv[])
 
 	git_extract_argv0_path(argv[0]);
 	setup_git_directory();
-	git_config(git_default_config, NULL);
+	git_config(git_diff_basic_config, NULL);
 	ignore_case = 0;
 
 	while (strbuf_getline(&buf, stdin) != EOF) {
@@ -1189,6 +1263,8 @@ int cmd_main(int argc, const char *argv[])
 			do_ls_tree(&args);
 		else if (!strcmp("rev-list", command))
 			do_rev_list(&args);
+		else if (!strcmp("diff-tree", command))
+			do_diff_tree(&args);
 		else if (!strcmp("version", command))
 			do_version(&args);
 		else if (!strcmp("connect", command)) {

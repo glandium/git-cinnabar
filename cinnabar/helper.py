@@ -116,7 +116,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 8
+    VERSION = 9
     _helper = False
 
     @classmethod
@@ -167,6 +167,27 @@ class GitHgHelper(BaseHelper):
                 commit = parents.pop(0)
                 tree = parents.pop(0)
                 yield commit, tree, parents
+
+    @classmethod
+    def diff_tree(self, rev1, rev2, detect_copy=False):
+        extra = () if not detect_copy else ('-C100%',)
+        with self.query('diff-tree', rev1, rev2, *extra) as stdout:
+            data = self._read_data(stdout)
+            off = 0
+            while off < len(data):
+                tab = data.find('\t', off)
+                assert tab != -1
+                (mode_before, mode_after, sha1_before, sha1_after,
+                 status) = data[off:tab].split(' ')
+                if detect_copy and status[0] in 'RC':
+                    orig = data.find('\0', tab + 1)
+                    status = status[0] + data[tab + 1:orig]
+                    tab = orig
+                end = data.find('\0', tab + 1)
+                path = data[tab + 1:end]
+                off = end + 1
+                yield (mode_before, mode_after, sha1_before, sha1_after,
+                       status, path)
 
 
 atexit.register(GitHgHelper.close)
