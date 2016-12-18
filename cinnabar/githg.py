@@ -984,7 +984,7 @@ class GitHgStore(object):
         assert len(git_commit.body) == 40
         return git_commit.body
 
-    def _hg2git(self, expected_type, sha1):
+    def _hg2git(self, sha1):
         if not self._has_metadata and not self._closed:
             return None
 
@@ -993,13 +993,13 @@ class GitHgStore(object):
             gitsha1 = None
         return gitsha1
 
-    def _git_object(self, dic, expected_type, sha1, hg2git=True):
+    def _git_object(self, dic, sha1, hg2git=True):
         assert sha1 != NULL_NODE_ID
         if sha1 in dic:
             return dic[sha1]
         sha1 = sha1
         if hg2git:
-            gitsha1 = self._hg2git(expected_type, sha1)
+            gitsha1 = self._hg2git(sha1)
             if gitsha1:
                 return gitsha1
         return None
@@ -1015,7 +1015,7 @@ class GitHgStore(object):
 
     def changeset(self, sha1, include_parents=False):
         assert not isinstance(sha1, Mark)
-        gitsha1 = self._hg2git('commit', sha1)
+        gitsha1 = self._hg2git(sha1)
         assert gitsha1
         return self._changeset(gitsha1, sha1, include_parents)
 
@@ -1076,7 +1076,7 @@ class GitHgStore(object):
 
     def manifest(self, sha1, include_parents=False):
         manifest = GeneratedManifestInfo(sha1)
-        gitsha1 = self._hg2git('commit', sha1)
+        gitsha1 = self._hg2git(sha1)
         assert gitsha1
         manifest.data = GitHgHelper.manifest('git:%s' % gitsha1)
         if include_parents:
@@ -1087,18 +1087,17 @@ class GitHgStore(object):
         return manifest
 
     def manifest_ref(self, sha1, hg2git=True):
-        return self._git_object(self._manifests, 'commit', sha1, hg2git=hg2git)
+        return self._git_object(self._manifests, sha1, hg2git=hg2git)
 
     def changeset_ref(self, sha1, hg2git=True):
-        return self._git_object(self._changesets, 'commit', sha1,
-                                hg2git=hg2git)
+        return self._git_object(self._changesets, sha1, hg2git=hg2git)
 
     def file_ref(self, sha1, hg2git=True):
-        return self._git_object(self._files, 'blob', sha1, hg2git=hg2git)
+        return self._git_object(self._files, sha1, hg2git=hg2git)
 
     def file(self, sha1, file_parents=None, git_manifest_parents=None,
              path=None):
-        ref = self._git_object(self._files, 'blob', sha1)
+        ref = self._git_object(self._files, sha1)
         if ref == EMPTY_BLOB:
             content = ''
         else:

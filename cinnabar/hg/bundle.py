@@ -373,14 +373,14 @@ class PushStore(GitHgStore):
         self._git_files.setdefault(node, sha1)
         return node
 
-    def _hg2git(self, expected_type, sha1):
+    def _hg2git(self, sha1):
         if sha1 in self._pushed:
-            if expected_type == 'commit':
-                if sha1 in self._manifests:
-                    return self._manifests[sha1]
-                return self._changesets.get(sha1)
+            if sha1 in self._manifests:
+                return self._manifests[sha1]
+            if sha1 in self._changesets:
+                return self._changesets[sha1]
             return self._files.get(sha1)
-        return super(PushStore, self)._hg2git(expected_type, sha1)
+        return super(PushStore, self)._hg2git(sha1)
 
     def close(self, rollback=False):
         if rollback:
