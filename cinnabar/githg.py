@@ -1318,12 +1318,12 @@ class GitHgStore(object):
             return
         data = instance.data
         self._fast_import.put_blob(data=data, mark=mark)
-        self._files[instance.node] = Mark(mark)
+        self._files[instance.node] = self._fast_import.get_mark(mark)
         if data.startswith('\1\n'):
             data = self._prepare_git_file(instance.data)
             mark = self._fast_import.new_mark()
             self._fast_import.put_blob(data=data, mark=mark)
-            self._git_files[instance.node] = Mark(mark)
+            self._git_files[instance.node] = self._fast_import.get_mark(mark)
 
     def _prepare_git_file(self, data):
         assert data.startswith('\1\n')
@@ -1348,7 +1348,7 @@ class GitHgStore(object):
             for node, mark in dic.iteritems():
                 if dic is self._files and node == HG_EMPTY_FILE:
                     continue
-                if isinstance(mark, EmptyMark):
+                if isinstance(mark, Mark):
                     raise TypeError(node)
                 hg2git_files.append((sha1path(node), mark, typ))
         if hg2git_files:
