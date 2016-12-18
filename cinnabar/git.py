@@ -81,10 +81,10 @@ def get_git_dir():
     if git_common_dir and os.path.isabs(git_common_dir):
         git_dir = git_common_dir
 
-    return git_dir, cdup
+    return git_dir
 
 
-git_dir, cdup = get_git_dir()
+git_dir = get_git_dir()
 
 
 git_version = subprocess.check_output(['git', 'version'])
