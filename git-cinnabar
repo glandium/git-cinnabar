@@ -745,11 +745,9 @@ def main(argv):
         print 'Please note that reclone left your local branches untouched.'
         print 'They may be based on entirely different commits.'
     elif cmd == 'hg2git':
-        GitHgStore.metadata()
         for arg in args.sha1:
             print GitHgHelper.hg2git(arg)
     elif cmd == 'git2hg':
-        GitHgStore.metadata()
         for sha1, ref in Git.for_each_ref('refs/cinnabar/replace'):
             Git._replace[ref[22:]] = sha1
         for arg in args.sha1:

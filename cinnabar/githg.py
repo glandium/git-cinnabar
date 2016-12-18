@@ -757,8 +757,7 @@ class GitHgStore(object):
         'refs/notes/cinnabar',
     )
 
-    @staticmethod
-    def metadata():
+    def metadata(self):
         metadata_ref = Git.resolve_ref('refs/cinnabar/metadata')
         if metadata_ref:
             metadata = GitCommit(metadata_ref)
