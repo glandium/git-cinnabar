@@ -33,7 +33,6 @@ import random
 from cinnabar.dag import gitdag
 from cinnabar.git import (
     Git,
-    git_dir,
     NULL_NODE_ID,
 )
 from cinnabar.util import (
@@ -697,7 +696,6 @@ def get_ui():
     ui_.fout = ui_.ferr
     ui_.setconfig('ui', 'interactive', False)
     ui_.setconfig('progress', 'disable', True)
-    ui_.readconfig(os.path.join(git_dir, 'hgrc'))
     ssh = os.environ.get('GIT_SSH_COMMAND')
     if not ssh:
         ssh = os.environ.get('GIT_SSH')
