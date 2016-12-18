@@ -469,10 +469,10 @@ class FastImport(object):
         yield helper
 
         self.write('\n')
+        helper.sha1 = self.get_mark(mark)
         self._done = False
         if mark:
-            Git._refs[ref] = Mark(mark)
-            assert Git._refs.values().count(mark) == 1
+            Git._refs[ref] = helper.sha1
         else:
             del Git._refs[ref]
 

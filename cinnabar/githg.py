@@ -1230,14 +1230,12 @@ class GitHgStore(object):
                     if tree != EMPTY_TREE:
                         c.filemodify('', tree, typ='tree')
 
-                mark = Mark(mark)
-                generated_sha1 = self._fast_import.get_mark(mark)
-                if (generated_sha1 in self._changesets or
-                        self.hg_changeset(generated_sha1)):
+                if (c.sha1 in self._changesets or
+                        self.hg_changeset(c.sha1)):
                     body += '\0'
                     continue
                 break
-            commit = GitCommit(generated_sha1)
+            commit = GitCommit(c.sha1)
 
         self._changesets[instance.node] = commit.sha1
         data = self._changeset_data_cache[commit.sha1] = {
@@ -1302,13 +1300,11 @@ class GitHgStore(object):
                 commit.filemodify('git/%s' % name,
                                   self.git_file_ref(node), typ=self.TYPE[attr])
 
-        mark = Mark(mark)
-        self._manifests[instance.node] = mark
-        self._manifest_dag.add(mark, parents)
+        self._manifests[instance.node] = commit.sha1
+        self._manifest_dag.add(commit.sha1, parents)
 
         if check_enabled('manifests'):
-            mn = self._fast_import.get_mark(mark)
-            if not GitHgHelper.check_manifest('git:%s' % mn):
+            if not GitHgHelper.check_manifest('git:%s' % commit.sha1):
                 raise Exception(
                     'sha1 mismatch for node %s with parents %s %s and '
                     'previous %s' %

@@ -279,9 +279,8 @@ class PushStore(GitHgStore):
                         if str(created) != str(real):
                             logging.error('%r != %r', str(created), str(real))
             self._push_manifests[manifest.node] = manifest
-            mark = self.manifest_ref(manifest.node, hg2git=False, create=True)
+            self.manifest_ref(manifest.node, hg2git=False, create=True)
             self.store_manifest(manifest)
-            self._manifests[manifest.node] = Mark(mark)
             self._manifest_git_tree[manifest.node] = commit_data.tree
 
         extra = {}
