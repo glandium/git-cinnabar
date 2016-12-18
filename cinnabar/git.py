@@ -311,7 +311,10 @@ class EmptyMark(Mark):
 
 class FastImport(object):
     def __init__(self):
-        self._last_mark = 0
+        # We reserve mark 1 for commands without an explicit mark.
+        # We get the sha1 from the mark anyways, and the caller, in that case,
+        # is expected to be getting that sha1.
+        self._last_mark = 1
         self._done = None
 
     @property
@@ -414,7 +417,7 @@ class FastImport(object):
     def put_blob(self, data='', mark=0):
         self.write('blob\n')
         if mark == 0:
-            mark = self.new_mark()
+            mark = EmptyMark(1)
         self.cmd_mark(mark)
         self.cmd_data(data)
         self._done = False
@@ -453,7 +456,7 @@ class FastImport(object):
         helper = FastImportCommitHelper(self)
         self.write('commit %s\n' % ref)
         if mark == 0:
-            mark = self.new_mark()
+            mark = EmptyMark(1)
         self.cmd_mark(mark)
         # TODO: properly handle errors, like from the committer being badly
         # formatted.
