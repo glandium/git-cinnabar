@@ -1332,7 +1332,6 @@ class GitHgStore(object):
             with self._fast_import.commit(
                 ref='refs/cinnabar/hg2git',
                 from_commit=Git.resolve_ref('refs/cinnabar/hg2git'),
-                mark=self._fast_import.new_mark(),
             ) as commit:
                 sha1 = Git.resolve_ref('refs/cinnabar/hg2git')
                 if sha1:
