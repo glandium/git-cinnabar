@@ -763,7 +763,7 @@ class GitHgStore(object):
             metadata = GitCommit(metadata_ref)
             for ref, value in zip(GitHgStore.METADATA_REFS, metadata.parents):
                 Git.update_ref(ref, value, store=False)
-        return metadata_ref
+            return metadata
 
     def __init__(self):
         self.__fast_import = None
@@ -823,9 +823,9 @@ class GitHgStore(object):
 
         self.tag_changes = False
 
-        metadata_ref = self.metadata()
-        self._has_metadata = bool(metadata_ref)
-        if metadata_ref:
+        metadata = self.metadata()
+        self._has_metadata = bool(metadata)
+        if metadata:
             manifests_ref = Git.resolve_ref('refs/cinnabar/manifests')
             if manifests_ref:
                 commit = GitCommit(manifests_ref)
@@ -849,9 +849,9 @@ class GitHgStore(object):
         self._manifest_dag = gitdag((m, ()) for m in manifests)
         self._manifest_heads_orig = set(self._manifest_dag.heads())
 
-        if metadata_ref:
+        if metadata:
             replace = {}
-            for line in Git.ls_tree(metadata_ref):
+            for line in Git.ls_tree(metadata.tree):
                 mode, typ, sha1, path = line
                 replace[path] = sha1
 
