@@ -9,7 +9,6 @@ from itertools import (
     izip,
 )
 import hashlib
-import os
 import re
 import urllib
 from collections import (
@@ -27,7 +26,6 @@ from .git import (
     EMPTY_TREE,
     FastImport,
     Git,
-    git_dir,
     Mark,
     NULL_NODE_ID,
     sha1path,
@@ -39,7 +37,6 @@ try:
     from mercurial.mdiff import textdiff
 except ImportError:
     from .bdiff import bdiff as textdiff
-from distutils.dir_util import mkpath
 
 import logging
 
@@ -1313,9 +1310,6 @@ class GitHgStore(object):
             self._graft.close()
         self._closed = True
         hg2git_files = []
-        reflog = os.path.join(git_dir, 'logs', 'refs', 'cinnabar')
-        mkpath(reflog)
-        open(os.path.join(reflog, 'metadata'), 'a').close()
         update_metadata = []
         for dic, typ in (
             (self._files, 'regular'),
