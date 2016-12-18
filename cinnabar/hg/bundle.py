@@ -8,7 +8,6 @@ from cinnabar.githg import (
 from cinnabar.helper import GitHgHelper
 from cinnabar.git import (
     EMPTY_BLOB,
-    EMPTY_TREE,
     Git,
     Mark,
     NULL_NODE_ID,
@@ -17,7 +16,6 @@ from cinnabar.util import (
     check_enabled,
     experiment,
     next,
-    one,
     progress_iter,
     PseudoString,
     sorted_merge,
@@ -289,7 +287,9 @@ class PushStore(GitHgStore):
                         if str(created) != str(real):
                             logging.error('%r != %r', str(created), str(real))
             self._push_manifests[manifest.node] = manifest
-            self.manifest_ref(manifest.node, hg2git=False, create=True)
+            mark = self.manifest_ref(manifest.node, hg2git=False, create=True)
+            self.store_manifest(manifest)
+            self._manifests[manifest.node] = Mark(mark)
             self._manifest_git_tree[manifest.node] = commit_data.tree
 
         extra = {}
@@ -383,7 +383,8 @@ class PushStore(GitHgStore):
         node = hg_file.node = hg_file.sha1
         mark = self.file_ref(node, hg2git=False, create=True)
         self._push_files[node] = hg_file
-        self._files.setdefault(node, mark)
+        self._fast_import.put_blob(data=hg_file.data, mark=mark)
+        self._files[node] = Mark(mark)
         self._git_files.setdefault(node, PseudoString(sha1))
         return node
 
@@ -404,26 +405,18 @@ class PushStore(GitHgStore):
             return self._push_changesets[sha1]
         return super(PushStore, self).changeset(sha1, include_parents)
 
+    def _hg2git(self, expected_type, sha1):
+        if (sha1 in self._push_files or sha1 in self._push_manifests or
+                sha1 in self._push_changesets):
+            return
+        return super(PushStore, self)._hg2git(expected_type, sha1)
+
     def close(self, rollback=False):
         if rollback:
+            self._fast_import.close(rollback)
             self._closed = True
         if self._closed:
             return
-        for manifest in self._push_manifests.itervalues():
-            self.store_manifest(manifest)
-            ls = one(Git.ls_tree(self.manifest_ref(manifest.node), 'git'))
-            if self._manifest_git_tree[manifest.node] == EMPTY_TREE and not ls:
-                pass
-            else:
-                mode, typ, sha1, path = ls
-                assert sha1 == self._manifest_git_tree[manifest.node]
-
-        for file in self._push_files.itervalues():
-            if isinstance(self._files[file.node], Mark):
-                mark = self._fast_import.new_mark()
-                self._fast_import.put_blob(data=file.data, mark=mark)
-                self._files[file.node] = Mark(mark)
-
         super(PushStore, self).close()
 
 
