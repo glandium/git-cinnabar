@@ -48,6 +48,7 @@ from cinnabar.hg.bundle import (
 from cinnabar.hg import (
     get_repo,
     Remote,
+    unbundle20,
 )
 from collections import (
     defaultdict,
@@ -343,7 +344,7 @@ def fsck(args):
     return 0
 
 
-def do_bundle(fname, *revs):
+def do_bundle(fname, version, *revs):
     bundle_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
         '--topo-order', '--full-history', '--parents', '--reverse', *revs))
     if bundle_commits:
@@ -352,11 +353,13 @@ def do_bundle(fname, *revs):
         # the parent commit doesn't have mercurial metadata.
         store = PushStore()
         store.init_fast_import()
-        # TODO: allow to create bundle v2 through command line arguments.
-        b2caps = {
-            # 'HG20': (),
-            # 'changegroup': ('01', '02'),
-        }
+        if version == 1:
+            b2caps = {}
+        elif version == 2:
+            b2caps = {
+                'HG20': (),
+                'changegroup': ('01', '02'),
+            }
         with open(fname, 'wb') as fh:
             if not b2caps:
                 fh.write('HG10UN')
@@ -666,6 +669,9 @@ def main(argv):
 
     subparser = subparsers.add_parser(
         'bundle', help='create a mercurial bundle')
+    subparser.add_argument('--version', choices=(1, 2), type=int,
+                           default=2 if unbundle20 else 1,
+                           help='bundle version')
     subparser.add_argument('path', help='path of the bundle')
     subparser.add_argument('rev', nargs='+',
                            help='git revision range (see the Specifying Ranges'
@@ -754,7 +760,7 @@ def main(argv):
             else:
                 print NULL_NODE_ID
     elif cmd == 'bundle':
-        return do_bundle(args.path, *args.rev)
+        return do_bundle(args.path, args.version, *args.rev)
     elif cmd == 'rollback':
         return do_rollback(args.committish)
     elif cmd == 'python':
