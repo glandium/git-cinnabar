@@ -1133,17 +1133,6 @@ class GitHgStore(object):
         self._git_files[sha1] = result
         return result
 
-    def _store_find_or_create(self, instance, get_ref_func=lambda x: None,
-                              create=True):
-        hg2git = all(
-            p == NULL_NODE_ID or isinstance(get_ref_func(p), types.StringType)
-            for p in (instance.parent1, instance.parent2)
-        )
-
-        result = get_ref_func(instance.node, hg2git=hg2git, create=create)
-        logging.info('store %s %s', instance.node, result)
-        return result
-
     def _git_committer(self, committer, date, utcoffset):
         utcoffset = int(utcoffset)
         sign = -cmp(utcoffset, 0)
@@ -1169,8 +1158,7 @@ class GitHgStore(object):
 
     def store_changeset(self, instance, commit=None, track_heads=True):
         if not commit:
-            mark = self._store_find_or_create(instance, self.changeset_ref,
-                                              create=not self._graft)
+            mark = self.changeset_ref(instance.node, create=not self._graft)
         elif isinstance(commit, EmptyMark):
             mark = commit
         else:
@@ -1267,7 +1255,7 @@ class GitHgStore(object):
     }
 
     def store_manifest(self, instance):
-        mark = self._store_find_or_create(instance, self.manifest_ref)
+        mark = self.manifest_ref(instance.node, create=True)
         if not isinstance(mark, EmptyMark):
             return
         if getattr(instance, 'delta_node', NULL_NODE_ID) != NULL_NODE_ID:
@@ -1313,7 +1301,7 @@ class GitHgStore(object):
                 )
 
     def store_file(self, instance):
-        mark = self._store_find_or_create(instance, self.file_ref)
+        mark = self.file_ref(instance.node, create=True)
         if not isinstance(mark, EmptyMark):
             return
         data = instance.data
