@@ -31,7 +31,6 @@ from collections import (
 )
 import logging
 import struct
-import types
 from itertools import chain
 
 
@@ -449,19 +448,19 @@ def bundle_data(store, commits):
 
     yield None
 
+    def resolved_manifest_ref(sha1):
+        manifest_ref = store.manifest_ref(sha1)
+        if isinstance(manifest_ref, Mark):
+            return store._fast_import.get_mark(manifest_ref)
+        return manifest_ref
+
     for manifest, changeset in progress_iter('Bundling %d manifests',
                                              manifests.iteritems()):
         hg_manifest = store.manifest(manifest, include_parents=True)
         hg_manifest.changeset = changeset
         yield hg_manifest
-        manifest_ref = store.manifest_ref(manifest)
-        if isinstance(manifest_ref, Mark):
-            for path, (sha1, attr) in hg_manifest.modified.iteritems():
-                if not isinstance(sha1, types.StringType):
-                    continue
-                files[path].append((sha1, None, changeset, None))
-            continue
-        parents = tuple(store.manifest_ref(p) for p in hg_manifest.parents)
+        manifest_ref = resolved_manifest_ref(manifest)
+        parents = tuple(resolved_manifest_ref(p) for p in hg_manifest.parents)
         changes = get_changes(manifest_ref, parents, 'hg')
         for path, hg_file, hg_fileparents in changes:
             if hg_file != NULL_NODE_ID:
