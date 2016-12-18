@@ -30,7 +30,7 @@ Please run `git cinnabar fsck` with version 0.3.0 first.
 Requirements:
 -------------
 
-- Git version 1.8.5 or newer
+- Git (any version should work)
 - Mercurial version 1.9 or newer
 
 Setup:

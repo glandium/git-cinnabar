@@ -13,7 +13,6 @@ from .util import (
     VersionedDict,
 )
 from itertools import chain
-from distutils.version import LooseVersion
 
 NULL_NODE_ID = '0' * 40
 # An empty git tree has a fixed sha1 which is that of "tree 0\0"
@@ -39,15 +38,6 @@ def split_ls_tree(line):
     mode, typ, remainder = line.split(' ', 2)
     sha1, path = remainder.split('\t', 1)
     return mode, typ, sha1, path
-
-
-git_version = subprocess.check_output(['git', 'version'])
-assert git_version.startswith('git version ')
-git_version = LooseVersion(git_version[12:].strip())
-
-if git_version < LooseVersion('1.8.5'):
-    raise Exception('git-cinnabar does not support git version prior to '
-                    '1.8.5.')
 
 
 class GitProcess(Process):
