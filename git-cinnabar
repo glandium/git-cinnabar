@@ -115,15 +115,7 @@ def fsck(args):
     else:
         all_refs = set(ref for sha1, ref in Git.for_each_ref('refs/cinnabar'))
 
-        if 'refs/cinnabar/manifest' in all_refs:
-            all_git_heads = (
-                ref for sha1, ref in
-                Git.for_each_ref('refs/cinnabar/branches')
-            )
-            manifests_rev = 'refs/cinnabar/manifest'
-            hg2git_rev = 'refs/cinnabar/hg2git'
-            notes_rev = 'refs/notes/cinnabar'
-        elif 'refs/cinnabar/metadata' in all_refs:
+        if 'refs/cinnabar/metadata' in all_refs:
             all_git_heads = ['refs/cinnabar/metadata^1^@']
             manifests_rev = 'refs/cinnabar/metadata^2^@'
             hg2git_rev = 'refs/cinnabar/metadata^3'
