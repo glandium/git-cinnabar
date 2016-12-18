@@ -25,7 +25,6 @@ from .util import (
 from .git import (
     EMPTY_BLOB,
     EMPTY_TREE,
-    EmptyMark,
     FastImport,
     Git,
     git_dir,
@@ -729,8 +728,7 @@ class Grafter(object):
         if not (is_early_history or result):
             raise NothingToGraftException()
         if is_early_history or not result:
-            commit = store.changeset_ref(changeset.node, hg2git=False,
-                                         create=True)
+            commit = store.changeset_ref(changeset.node, hg2git=False)
         else:
             commit = result
         store.store_changeset(changeset, commit, track_heads)
@@ -998,7 +996,7 @@ class GitHgStore(object):
             gitsha1 = None
         return gitsha1
 
-    def _git_object(self, dic, expected_type, sha1, hg2git=True, create=True):
+    def _git_object(self, dic, expected_type, sha1, hg2git=True):
         assert sha1 != NULL_NODE_ID
         if sha1 in dic:
             return dic[sha1]
@@ -1007,10 +1005,6 @@ class GitHgStore(object):
             gitsha1 = self._hg2git(expected_type, sha1)
             if gitsha1:
                 return gitsha1
-        if create:
-            mark = self._fast_import.new_mark()
-            dic[sha1] = mark
-            return mark
         return None
 
     def hg_author_info(self, author_line):
@@ -1092,17 +1086,15 @@ class GitHgStore(object):
             manifest.set_parents(*parents)
         return manifest
 
-    def manifest_ref(self, sha1, hg2git=True, create=False):
-        return self._git_object(self._manifests, 'commit', sha1, hg2git=hg2git,
-                                create=create)
+    def manifest_ref(self, sha1, hg2git=True):
+        return self._git_object(self._manifests, 'commit', sha1, hg2git=hg2git)
 
-    def changeset_ref(self, sha1, hg2git=True, create=False):
+    def changeset_ref(self, sha1, hg2git=True):
         return self._git_object(self._changesets, 'commit', sha1,
-                                hg2git=hg2git, create=create)
+                                hg2git=hg2git)
 
-    def file_ref(self, sha1, hg2git=True, create=False):
-        return self._git_object(self._files, 'blob', sha1, hg2git=hg2git,
-                                create=create)
+    def file_ref(self, sha1, hg2git=True):
+        return self._git_object(self._files, 'blob', sha1, hg2git=hg2git)
 
     def file(self, sha1, file_parents=None, git_manifest_parents=None,
              path=None):
@@ -1158,15 +1150,13 @@ class GitHgStore(object):
 
     def store_changeset(self, instance, commit=None, track_heads=True):
         if not commit:
-            mark = self.changeset_ref(instance.node, create=not self._graft)
-        elif isinstance(commit, EmptyMark):
-            mark = commit
+            mark = self.changeset_ref(instance.node)
         else:
             assert isinstance(commit, GitCommit)
             mark = commit.sha1
         if not mark and self._graft:
             return self._graft.graft(instance, track_heads)
-        elif not commit and not isinstance(mark, EmptyMark):
+        elif not commit and mark:
             return
 
         author = self._git_committer(instance.committer, instance.date,
@@ -1195,7 +1185,7 @@ class GitHgStore(object):
 
         parents = tuple(self.changeset_ref(p) for p in instance.parents)
 
-        if isinstance(mark, EmptyMark):
+        if not mark:
             body = instance.message
             tree = self.git_tree(instance.manifest)
 
@@ -1213,7 +1203,6 @@ class GitHgStore(object):
                     committer=committer,
                     author=author,
                     parents=parents,
-                    mark=mark,
                 ) as c:
                     if tree != EMPTY_TREE:
                         c.filemodify('', tree, typ='tree')
@@ -1255,8 +1244,8 @@ class GitHgStore(object):
     }
 
     def store_manifest(self, instance):
-        mark = self.manifest_ref(instance.node, create=True)
-        if not isinstance(mark, EmptyMark):
+        mark = self.manifest_ref(instance.node)
+        if mark:
             return
         if getattr(instance, 'delta_node', NULL_NODE_ID) != NULL_NODE_ID:
             previous = self.manifest_ref(instance.delta_node)
@@ -1270,7 +1259,6 @@ class GitHgStore(object):
             ref='refs/cinnabar/manifests',
             from_commit=previous,
             parents=parents,
-            mark=mark,
             message=instance.node,
         ) as commit:
             if hasattr(instance, 'delta_node'):
@@ -1301,10 +1289,11 @@ class GitHgStore(object):
                 )
 
     def store_file(self, instance):
-        mark = self.file_ref(instance.node, create=True)
-        if not isinstance(mark, EmptyMark):
+        mark = self.file_ref(instance.node)
+        if mark:
             return
         data = instance.data
+        mark = self._fast_import.new_mark()
         self._fast_import.put_blob(data=data, mark=mark)
         self._files[instance.node] = self._fast_import.get_mark(mark)
         if data.startswith('\1\n'):
