@@ -413,9 +413,12 @@ class FastImport(object):
 
     def put_blob(self, data='', mark=0):
         self.write('blob\n')
+        if mark == 0:
+            mark = self.new_mark()
         self.cmd_mark(mark)
         self.cmd_data(data)
         self._done = False
+        return self.get_mark(mark)
 
     @staticmethod
     def _format_committer(author):

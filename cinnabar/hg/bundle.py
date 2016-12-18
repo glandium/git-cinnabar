@@ -371,9 +371,7 @@ class PushStore(GitHgStore):
                             path=path)
         node = hg_file.node = hg_file.sha1
         self._push_files[node] = hg_file
-        mark = self._fast_import.new_mark()
-        self._fast_import.put_blob(data=hg_file.data, mark=mark)
-        self._files[node] = self._fast_import.get_mark(mark)
+        self._files[node] = self._fast_import.put_blob(data=hg_file.data)
         self._git_files.setdefault(node, sha1)
         return node
 

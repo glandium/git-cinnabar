@@ -1293,14 +1293,11 @@ class GitHgStore(object):
         if mark:
             return
         data = instance.data
-        mark = self._fast_import.new_mark()
-        self._fast_import.put_blob(data=data, mark=mark)
-        self._files[instance.node] = self._fast_import.get_mark(mark)
+        self._files[instance.node] = self._fast_import.put_blob(data=data)
         if data.startswith('\1\n'):
             data = self._prepare_git_file(instance.data)
-            mark = self._fast_import.new_mark()
-            self._fast_import.put_blob(data=data, mark=mark)
-            self._git_files[instance.node] = self._fast_import.get_mark(mark)
+            self._git_files[instance.node] = self._fast_import.put_blob(
+                data=data)
 
     def _prepare_git_file(self, data):
         assert data.startswith('\1\n')
@@ -1446,9 +1443,8 @@ class GitHgStore(object):
         for f, tags in self._tags.iteritems():
             if f not in self._tagfiles and f != NULL_NODE_ID:
                 data = ''.join(tagset_lines(tags))
-                mark = self._fast_import.new_mark()
-                self._fast_import.put_blob(data=data, mark=mark)
-                created[f] = (Mark(mark), 'exec')
+                mark = self._fast_import.put_blob(data=data)
+                created[f] = (mark, 'exec')
 
         if created or deleted:
             self.tag_changes = True
