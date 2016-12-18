@@ -17,7 +17,6 @@ from cinnabar.util import (
     experiment,
     next,
     progress_iter,
-    PseudoString,
     sorted_merge,
 )
 from .changegroup import (
@@ -191,7 +190,7 @@ class PushStore(GitHgStore):
                 if merged:
                     node = self._store_file_internal(f)
                 else:
-                    node = PseudoString(file_parents[0])
+                    node = file_parents[0]
 
                 attr_change = (manifest_line_p1 and
                                manifest_line_p1.attr != attr)
@@ -234,7 +233,7 @@ class PushStore(GitHgStore):
                 continue
             if status in 'MT':
                 if sha1_before == sha1_after:
-                    node = PseudoString(manifest_line.node)
+                    node = manifest_line.node
                 else:
                     node = self.create_file(
                         sha1_after, str(manifest_line.node),
@@ -335,7 +334,7 @@ class PushStore(GitHgStore):
                 del extra['committer']
             if not extra:
                 del changeset_data['extra']
-        self._changesets[changeset.node] = PseudoString(commit)
+        self._changesets[changeset.node] = commit
 
         if check_enabled('bundle') and real_changeset_data:
             error = False
@@ -357,13 +356,13 @@ class PushStore(GitHgStore):
                             git_manifest_parents=git_manifest_parents,
                             path=path)
         node = hg_file.node = hg_file.sha1
-        self._git_files.setdefault(node, PseudoString(sha1))
+        self._git_files.setdefault(node, sha1)
         return hg_file
 
     def _store_file_internal(self, hg_file):
         node = hg_file.node
         self._push_files[node] = hg_file
-        self._files.setdefault(node, PseudoString(self._git_files[node]))
+        self._files.setdefault(node, self._git_files[node])
         return node
 
     def create_file(self, sha1, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID,
@@ -384,7 +383,7 @@ class PushStore(GitHgStore):
         self._push_files[node] = hg_file
         self._fast_import.put_blob(data=hg_file.data, mark=mark)
         self._files[node] = Mark(mark)
-        self._git_files.setdefault(node, PseudoString(sha1))
+        self._git_files.setdefault(node, sha1)
         return node
 
     def file(self, sha1, file_parents=None, git_manifest_parents=None,

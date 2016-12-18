@@ -192,35 +192,6 @@ class IOLogger(object):
             yield l
 
 
-class PseudoString(object):
-    def __init__(self, obj):
-        self._obj = obj._obj if isinstance(obj, PseudoString) else obj
-
-    def __str__(self):
-        return self._obj
-
-    def __len__(self):
-        return len(str(self))
-
-    def __eq__(self, other):
-        return str(self) == str(other)
-
-    def __ne__(self, other):
-        return str(self) != str(other)
-
-    def __repr__(self):
-        return '<PseudoString %s>' % repr(str(self))
-
-    def startswith(self, other):
-        return str(self).startswith(other)
-
-    def __hash__(self):
-        return hash(str(self))
-
-    def __add__(self, other):
-        return str(self) + other
-
-
 class LazyCall(object):
     __slots__ = ('_func', '_args', '_kwargs', '_result')
 
