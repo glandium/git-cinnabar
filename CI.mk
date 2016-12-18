@@ -177,11 +177,8 @@ script::
 	rm -rf hg.push.hg hg.pure.git
 	$(call HG_INIT, hg.push.hg)
 	$(GIT) clone hg.git hg.pure.git
-	# Push both parents of a merge
-	$(GIT) -C hg.pure.git push hg::$(PATH_URL)/hg.push.hg 0ca827ab1a83da08c604bf3dc016894dea6d8460^:refs/tips/default
-	$(GIT) -C hg.pure.git push hg::$(PATH_URL)/hg.push.hg 0ca827ab1a83da08c604bf3dc016894dea6d8460^2:refs/tips/default
-	# Push merge
-	$(GIT) -c cinnabar.experiments=merge -C hg.pure.git push hg::$(PATH_URL)/hg.push.hg 0ca827ab1a83da08c604bf3dc016894dea6d8460:refs/tips/default
+	# Push everything, including merges
+	$(GIT) -c cinnabar.experiments=merge -C hg.pure.git push hg::$(PATH_URL)/hg.push.hg --all
 
 script::
 	rm -rf hg.http.hg gitcredentials

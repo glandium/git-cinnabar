@@ -95,6 +95,7 @@ class PushStore(GitHgStore):
         self._push_changesets = {}
         self._manifest_git_tree = {}
         self._graft = bool(graft)
+        self._merge_warn = 0
 
     def create_hg_manifest(self, commit, parents):
         manifest = GeneratedManifestInfo(NULL_NODE_ID)
@@ -127,10 +128,11 @@ class PushStore(GitHgStore):
         elif len(parents) == 2:
             if not experiment('merge'):
                 raise Exception('Pushing merges is not supported yet')
-            logging.warning('Pushing merges is experimental.')
-            logging.warning('This may irremediably push bad state to the '
-                            'mercurial server!')
-            warned = False
+            if not self._merge_warn:
+                logging.warning('Pushing merges is experimental.')
+                logging.warning('This may irremediably push bad state to the '
+                                'mercurial server!')
+                self._merge_warn = 1
             git_manifests = (self.manifest_ref(parent_node),
                              self.manifest_ref(parent2_node))
 
@@ -159,17 +161,9 @@ class PushStore(GitHgStore):
                 elif manifest_line_p1.node == manifest_line_p2.node:
                     file_parents = (manifest_line_p1.node,)
                 else:
-                    if (any(isinstance(p, Mark) for p in git_manifests)):
-                        raise Exception(
-                            'Cannot push %s. Please first push %s separately'
-                            % (commit, ' and '.join(
-                                p for i, p in enumerate(parents)
-                                if isinstance(git_manifests[i], Mark)
-                            ))
-                        )
-                    if not warned:
+                    if self._merge_warn == 1:
                         logging.warning('This may take a while...')
-                        warned = True
+                        self._merge_warn = 2
                     file_parents = (manifest_line_p1.node,
                                     manifest_line_p2.node)
 
@@ -398,6 +392,13 @@ class PushStore(GitHgStore):
             return self._push_manifests[sha1]
         return super(PushStore, self).manifest(sha1, include_parents)
 
+    def manifest_ref(self, sha1, hg2git=True, create=False):
+        manifest_ref = super(PushStore, self).manifest_ref(sha1, hg2git=hg2git,
+                                                           create=create)
+        if not create and isinstance(manifest_ref, Mark):
+            return self._fast_import.get_mark(manifest_ref)
+        return manifest_ref
+
     def changeset(self, sha1, include_parents=False):
         if sha1 in self._push_changesets:
             return self._push_changesets[sha1]
@@ -447,19 +448,13 @@ def bundle_data(store, commits):
 
     yield None
 
-    def resolved_manifest_ref(sha1):
-        manifest_ref = store.manifest_ref(sha1)
-        if isinstance(manifest_ref, Mark):
-            return store._fast_import.get_mark(manifest_ref)
-        return manifest_ref
-
     for manifest, changeset in progress_iter('Bundling %d manifests',
                                              manifests.iteritems()):
         hg_manifest = store.manifest(manifest, include_parents=True)
         hg_manifest.changeset = changeset
         yield hg_manifest
-        manifest_ref = resolved_manifest_ref(manifest)
-        parents = tuple(resolved_manifest_ref(p) for p in hg_manifest.parents)
+        manifest_ref = store.manifest_ref(manifest)
+        parents = tuple(store.manifest_ref(p) for p in hg_manifest.parents)
         changes = get_changes(manifest_ref, parents, 'hg')
         for path, hg_file, hg_fileparents in changes:
             if hg_file != NULL_NODE_ID:
