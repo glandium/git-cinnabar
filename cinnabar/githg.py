@@ -1086,14 +1086,14 @@ class GitHgStore(object):
             manifest.set_parents(*parents)
         return manifest
 
-    def manifest_ref(self, sha1, hg2git=True):
-        return self._git_object(self._manifests, sha1, hg2git=hg2git)
+    def manifest_ref(self, sha1):
+        return self._git_object(self._manifests, sha1)
 
     def changeset_ref(self, sha1, hg2git=True):
         return self._git_object(self._changesets, sha1, hg2git=hg2git)
 
-    def file_ref(self, sha1, hg2git=True):
-        return self._git_object(self._files, sha1, hg2git=hg2git)
+    def file_ref(self, sha1):
+        return self._git_object(self._files, sha1)
 
     def file(self, sha1, file_parents=None, git_manifest_parents=None,
              path=None):
