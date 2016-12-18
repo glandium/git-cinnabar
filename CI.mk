@@ -68,10 +68,6 @@ endif
 else
 
 ifneq (file,$(origin GIT_VERSION))
-# When building and using a separate git version, disable the helper. It's
-# being tested in many different setups, and hides the interactions with git.
-GIT_CINNABAR_HELPER=
-
 # TODO: cache as artifacts.
 GIT=$(CURDIR)/git.git/bin-wrappers/git
 
