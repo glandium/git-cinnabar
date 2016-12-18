@@ -9,7 +9,6 @@ from cinnabar.helper import GitHgHelper
 from cinnabar.git import (
     EMPTY_BLOB,
     Git,
-    Mark,
     NULL_NODE_ID,
 )
 from cinnabar.util import (
@@ -279,7 +278,6 @@ class PushStore(GitHgStore):
                         if str(created) != str(real):
                             logging.error('%r != %r', str(created), str(real))
             self._push_manifests[manifest.node] = manifest
-            self.manifest_ref(manifest.node, hg2git=False, create=True)
             self.store_manifest(manifest)
             self._manifest_git_tree[manifest.node] = commit_data.tree
 
@@ -390,13 +388,6 @@ class PushStore(GitHgStore):
         if sha1 in self._push_manifests:
             return self._push_manifests[sha1]
         return super(PushStore, self).manifest(sha1, include_parents)
-
-    def manifest_ref(self, sha1, hg2git=True, create=False):
-        manifest_ref = super(PushStore, self).manifest_ref(sha1, hg2git=hg2git,
-                                                           create=create)
-        if not create and isinstance(manifest_ref, Mark):
-            return self._fast_import.get_mark(manifest_ref)
-        return manifest_ref
 
     def changeset(self, sha1, include_parents=False):
         if sha1 in self._push_changesets:
