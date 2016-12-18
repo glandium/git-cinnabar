@@ -1079,6 +1079,9 @@ class GitHgStore(object):
 
     def manifest(self, sha1, include_parents=False):
         manifest = GeneratedManifestInfo(sha1)
+        gitsha1 = self._hg2git('commit', sha1)
+        assert gitsha1
+        manifest.data = GitHgHelper.manifest('git:%s' % gitsha1)
         if include_parents:
             git_sha1 = self.manifest_ref(sha1)
             commit = GitCommit(git_sha1)

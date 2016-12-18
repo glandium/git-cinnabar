@@ -89,9 +89,7 @@ class PushStore(GitHgStore):
         self._init(graft)
 
     def _init(self, graft=False):
-        self._push_files = {}
-        self._push_manifests = OrderedDict()
-        self._push_changesets = {}
+        self._pushed = set()
         self._manifest_git_tree = {}
         self._graft = bool(graft)
         self._merge_warn = 0
@@ -277,7 +275,7 @@ class PushStore(GitHgStore):
                             key=lambda i: i.name, non_key=lambda i: i):
                         if str(created) != str(real):
                             logging.error('%r != %r', str(created), str(real))
-            self._push_manifests[manifest.node] = manifest
+            self._pushed.add(manifest.node)
             self.store_manifest(manifest)
             self._manifest_git_tree[manifest.node] = commit_data.tree
 
@@ -317,7 +315,7 @@ class PushStore(GitHgStore):
             )
         changeset_data['changeset'] = changeset.changeset = changeset.node = \
             changeset.sha1
-        self._push_changesets[changeset.node] = changeset
+        self._pushed.add(changeset.node)
         # This is a horrible way to do this, but this method is not doing much
         # better overall anyways.
         if extra:
@@ -352,7 +350,7 @@ class PushStore(GitHgStore):
 
     def _store_file_internal(self, hg_file):
         node = hg_file.node
-        self._push_files[node] = hg_file
+        self._pushed.add(node)
         self._files.setdefault(node, self._git_files[node])
         return node
 
@@ -370,32 +368,18 @@ class PushStore(GitHgStore):
         hg_file.set_parents(git_manifest_parents=git_manifest_parents,
                             path=path)
         node = hg_file.node = hg_file.sha1
-        self._push_files[node] = hg_file
+        self._pushed.add(node)
         self._files[node] = self._fast_import.put_blob(data=hg_file.data)
         self._git_files.setdefault(node, sha1)
         return node
 
-    def file(self, sha1, file_parents=None, git_manifest_parents=None,
-             path=None):
-        if sha1 in self._push_files:
-            return self._push_files[sha1]
-        return super(PushStore, self).file(sha1, file_parents,
-                                           git_manifest_parents, path)
-
-    def manifest(self, sha1, include_parents=False):
-        if sha1 in self._push_manifests:
-            return self._push_manifests[sha1]
-        return super(PushStore, self).manifest(sha1, include_parents)
-
-    def changeset(self, sha1, include_parents=False):
-        if sha1 in self._push_changesets:
-            return self._push_changesets[sha1]
-        return super(PushStore, self).changeset(sha1, include_parents)
-
     def _hg2git(self, expected_type, sha1):
-        if (sha1 in self._push_files or sha1 in self._push_manifests or
-                sha1 in self._push_changesets):
-            return
+        if sha1 in self._pushed:
+            if expected_type == 'commit':
+                if sha1 in self._manifests:
+                    return self._manifests[sha1]
+                return self._changesets.get(sha1)
+            return self._files.get(sha1)
         return super(PushStore, self)._hg2git(expected_type, sha1)
 
     def close(self, rollback=False):
