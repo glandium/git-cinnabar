@@ -728,10 +728,11 @@ class Grafter(object):
             commit = store.changeset_ref(changeset.node, hg2git=False)
         else:
             commit = result
-        store.store_changeset(changeset, commit, track_heads)
+        store.store_changeset(changeset, commit or False, track_heads)
+        commit = store.changeset_ref(changeset.node)
         if is_early_history:
             if result:
-                store._replace[result.sha1] = Mark(commit)
+                store._replace[result.sha1] = commit
             else:
                 self._early_history.add(commit)
         elif not parents:
@@ -1154,7 +1155,7 @@ class GitHgStore(object):
         else:
             assert isinstance(commit, GitCommit)
             mark = commit.sha1
-        if not mark and self._graft:
+        if not mark and self._graft and commit is not False:
             return self._graft.graft(instance, track_heads)
         elif not commit and mark:
             return
