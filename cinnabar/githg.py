@@ -1326,11 +1326,6 @@ class GitHgStore(object):
                 ref='refs/cinnabar/hg2git',
                 from_commit=Git.resolve_ref('refs/cinnabar/hg2git'),
             ) as commit:
-                sha1 = Git.resolve_ref('refs/cinnabar/hg2git')
-                if sha1:
-                    mode, typ, tree, path = \
-                        self._fast_import.ls(sha1)
-                    commit.filemodify('', tree, typ='tree')
                 for file in sorted(hg2git_files, key=lambda f: f[0]):
                     if file[1] is None:
                         commit.filedelete(file[0])
