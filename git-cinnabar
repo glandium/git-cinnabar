@@ -23,6 +23,7 @@ from cinnabar.githg import (
     GitCommit,
     GitHgStore,
     HG_EMPTY_FILE,
+    OldUpgradeException,
     one,
     UpgradeException,
 )
@@ -56,6 +57,11 @@ from collections import (
 )
 
 
+class UpgradeGitHgStore(GitHgStore):
+    def metadata(self):
+        return self._metadata()
+
+
 def fsck(args):
     status = {
         'broken': False,
@@ -76,8 +82,23 @@ def fsck(args):
 
     try:
         store = GitHgStore()
-    except UpgradeException as e:
+    except OldUpgradeException as e:
         print >>sys.stderr, e.message
+        return 1
+    except UpgradeException:
+        store = UpgradeGitHgStore()
+
+    upgrade = isinstance(store, UpgradeGitHgStore)
+
+    if upgrade and (args.commit or args.manifests or args.files):
+        if args.commit:
+            what = 'specifying commit(s)'
+        elif args.manifests:
+            what = '--manifests'
+        elif args.files:
+            what = '--files'
+        info('Git-cinnabar metadata needs upgrade. '
+             'Please re-run without %s.' % what)
         return 1
 
     store.init_fast_import(lazy=True)
@@ -111,10 +132,12 @@ def fsck(args):
         all_refs = set(ref for sha1, ref in Git.for_each_ref('refs/cinnabar'))
 
         if 'refs/cinnabar/metadata' in all_refs:
-            all_git_heads = ['refs/cinnabar/metadata^1^@']
-            manifests_rev = 'refs/cinnabar/metadata^2^@'
-            hg2git_rev = 'refs/cinnabar/metadata^3'
-            notes_rev = 'refs/cinnabar/metadata^4'
+            # We rely on the store having created these refs (temporarily or
+            # not).
+            git_heads = '%s^@' % Git.resolve_ref('refs/cinnabar/changesets')
+            manifests_rev = '%s^@' % Git.resolve_ref('refs/cinnabar/manifests')
+            hg2git_rev = Git.resolve_ref('refs/cinnabar/hg2git')
+            notes_rev = Git.resolve_ref('refs/notes/cinnabar')
         else:
             assert False
 
@@ -137,7 +160,31 @@ def fsck(args):
         ))
 
         all_git_commits = GitHgHelper.rev_list(
-            '--topo-order', '--full-history', '--reverse', *all_git_heads)
+            '--topo-order', '--full-history', '--reverse', git_heads)
+
+    if upgrade:
+        iter = ((h, g) for h, (g, t) in all_hg2git.iteritems() if t == 'blob')
+        for hg_sha1, git_sha1 in progress_iter('Upgrading %d files metadata',
+                                               iter):
+            content = GitHgHelper.cat_file('blob', git_sha1)
+            if content.startswith('\1\n'):
+                _, metadata, content = content.split('\1\n', 2)
+                store._files_meta[hg_sha1] = metadata
+                store._git_files[hg_sha1] = git_hash('blob', content)
+            else:
+                store._git_files[hg_sha1] = git_sha1
+
+        # Technically, all_hg2git should be updated here, but we don't use the
+        # git sha1 in there further below, so skip that.
+
+        # "Reboot" the store, and run a normal fsck from the upgraded store.
+        store.close()
+        # Force the helper to be restarted.
+        GitHgHelper._helper = False
+        store = GitHgStore()
+
+        # Force a files fsck, since we modified files metadata.
+        args.files = True
 
     seen_changesets = set()
     seen_manifests = set()
@@ -371,7 +418,12 @@ def do_rollback(ref):
         while metadata:
             if sha1 == metadata:
                 break
-            metadata = Git.resolve_ref('%s^5' % metadata)
+            commit = GitCommit(metadata)
+            flags = commit.body.split(' ')
+            if len(commit.parents) == 5 + ('files-meta' in flags):
+                metadata = commit.parents[-1]
+            else:
+                metadata = None
         if not metadata:
             logging.error('Cannot rollback to %s, it is not in the history of '
                           'the current metadata.', ref)

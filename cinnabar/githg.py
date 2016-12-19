@@ -45,6 +45,14 @@ class UpgradeException(Exception):
     def __init__(self, message=None):
         super(UpgradeException, self).__init__(
             message or
+            'Git-cinnabar metadata needs upgrade. '
+            'Please run `git cinnabar fsck`.'
+        )
+
+
+class OldUpgradeException(UpgradeException):
+    def __init__(self):
+        super(OldUpgradeException, self).__init__(
             'Metadata from git-cinnabar versions older than 0.3.0 is not '
             'supported.\n'
             'Please run `git cinnabar fsck` with version 0.3.x first.'
@@ -751,27 +759,45 @@ class Grafter(object):
 
 
 class GitHgStore(object):
+    FLAGS = [
+        'files-meta',
+    ]
+
     METADATA_REFS = (
         'refs/cinnabar/changesets',
         'refs/cinnabar/manifests',
         'refs/cinnabar/hg2git',
         'refs/notes/cinnabar',
+        'refs/cinnabar/files-meta',
     )
 
-    def metadata(self):
+    def _metadata(self):
         metadata_ref = Git.resolve_ref('refs/cinnabar/metadata')
         if metadata_ref:
             metadata = GitCommit(metadata_ref)
-            if metadata.body:
-                raise UpgradeException(
-                    'It looks like this repository was used with a newer '
-                    'version of git-cinnabar. Cannot use this version.')
-            for ref, value in zip(GitHgStore.METADATA_REFS, metadata.parents):
+            self._flags = set(metadata.body.split())
+            refs = self.METADATA_REFS
+            if 'files-meta' not in self._flags:
+                refs = list(refs)
+                refs.remove('refs/cinnabar/files-meta')
+            for ref, value in zip(refs, metadata.parents):
                 Git.update_ref(ref, value, store=False)
             return metadata
 
+    def metadata(self):
+        metadata = self._metadata()
+        if metadata:
+            if len(self._flags) > len(self.FLAGS):
+                raise UpgradeException(
+                    'It looks like this repository was used with a newer '
+                    'version of git-cinnabar. Cannot use this version.')
+            if set(self._flags) != set(self.FLAGS):
+                raise UpgradeException()
+        return metadata
+
     def __init__(self):
         self.__fast_import = None
+        self._flags = set()
         self._changesets = {}
         self._manifests = {}
         # Because an empty file and an empty manifest, both with no parents,
@@ -784,12 +810,10 @@ class GitHgStore(object):
         # empty file, and a non-modified child of the empty manifest, which
         # both would also have the same sha1, but, TTBOMK, it is only possible
         # to achieve with commands like hg debugparents.
-        self._files = {
-            HG_EMPTY_FILE: EMPTY_BLOB,
-        }
         self._git_files = {
             HG_EMPTY_FILE: EMPTY_BLOB,
         }
+        self._files_meta = {}
         self._closed = False
         self._graft = None
 
@@ -805,7 +829,7 @@ class GitHgStore(object):
             if ref.startswith('refs/cinnabar/replace/'):
                 self._replace[ref[22:]] = sha1
             elif ref.startswith('refs/cinnabar/branches/'):
-                raise UpgradeException()
+                raise OldUpgradeException()
         self._replace = VersionedDict(self._replace)
 
         self._tagcache = {}
@@ -861,7 +885,7 @@ class GitHgStore(object):
                 replace[path] = sha1
 
             if self._replace and not replace:
-                raise UpgradeException()
+                raise OldUpgradeException()
 
     def prepare_graft(self):
         self._graft = Grafter(self)
@@ -1097,16 +1121,26 @@ class GitHgStore(object):
     def changeset_ref(self, sha1, hg2git=True):
         return self._git_object(self._changesets, sha1, hg2git=hg2git)
 
-    def file_ref(self, sha1):
-        return self._git_object(self._files, sha1)
+    def file_meta(self, sha1):
+        if sha1 in self._files_meta:
+            return self._files_meta[sha1]
+        meta_ref = Git.resolve_ref('refs/cinnabar/files-meta')
+        if meta_ref:
+            for mode, typ, blob, path in Git.ls_tree(meta_ref, sha1path(sha1)):
+                return GitHgHelper.cat_file('blob', blob)
 
     def file(self, sha1, file_parents=None, git_manifest_parents=None,
              path=None):
-        ref = self._git_object(self._files, sha1)
+        ref = self.git_file_ref(sha1)
         if ref == EMPTY_BLOB:
             content = ''
         else:
             content = GitHgHelper.cat_file('blob', ref)
+
+        meta = self.file_meta(sha1)
+        if meta:
+            content = '\1\n'.join(['', meta, content])
+
         file = GeneratedFileRev(sha1, content)
         if file_parents is not None:
             file.set_parents(*file_parents,
@@ -1115,19 +1149,7 @@ class GitHgStore(object):
         return file
 
     def git_file_ref(self, sha1):
-        if sha1 in self._git_files:
-            return self._git_files[sha1]
-        result = self.file_ref(sha1)
-        if isinstance(result, Mark) or result == EMPTY_BLOB:
-            return result
-        # If the ref is not from the current import, it can be a raw hg file
-        # ref, so check its content first.
-        data = GitHgHelper.cat_file('blob', result)
-        if data.startswith('\1\n'):
-            data = self._prepare_git_file(data)
-            result = git_hash('blob', data)
-        self._git_files[sha1] = result
-        return result
+        return self._git_object(self._git_files, sha1)
 
     def _git_committer(self, committer, date, utcoffset):
         utcoffset = int(utcoffset)
@@ -1293,19 +1315,15 @@ class GitHgStore(object):
                 )
 
     def store_file(self, instance):
-        mark = self.file_ref(instance.node)
+        mark = self.git_file_ref(instance.node)
         if mark:
             return
         data = instance.data
-        self._files[instance.node] = self._fast_import.put_blob(data=data)
         if data.startswith('\1\n'):
-            data = self._prepare_git_file(instance.data)
-            self._git_files[instance.node] = self._fast_import.put_blob(
-                data=data)
-
-    def _prepare_git_file(self, data):
-        assert data.startswith('\1\n')
-        return data[data.index('\1\n', 2) + 2:]
+            _, metadata, data = data.split('\1\n', 2)
+            assert not _
+            self._files_meta[instance.node] = metadata
+        self._git_files[instance.node] = self._fast_import.put_blob(data)
 
     def close(self):
         if self._closed:
@@ -1316,12 +1334,12 @@ class GitHgStore(object):
         hg2git_files = []
         update_metadata = []
         for dic, typ in (
-            (self._files, 'regular'),
+            (self._git_files, 'regular'),
             (self._manifests, 'commit'),
             (self._changesets, 'commit'),
         ):
             for node, mark in dic.iteritems():
-                if dic is self._files and node == HG_EMPTY_FILE:
+                if dic is self._git_files and node == HG_EMPTY_FILE:
                     continue
                 if isinstance(mark, Mark):
                     raise TypeError(node)
@@ -1336,7 +1354,6 @@ class GitHgStore(object):
                         commit.filedelete(file[0])
                     else:
                         commit.filemodify(*file)
-                update_metadata.append('refs/cinnabar/hg2git')
 
         del hg2git_files
 
@@ -1377,6 +1394,16 @@ class GitHgStore(object):
             ) as commit:
                 update_metadata.append('refs/cinnabar/manifests')
 
+        files_meta_ref = Git.resolve_ref('refs/cinnabar/files-meta')
+        if self._files_meta or (files_meta_ref is None and update_metadata):
+            with self._fast_import.commit(
+                ref='refs/cinnabar/files-meta',
+                from_commit=files_meta_ref,
+            ) as commit:
+                for sha1, content in self._files_meta.iteritems():
+                    commit.filemodify(sha1path(sha1), content=content)
+                update_metadata.append('refs/cinnabar/files-meta')
+
         replace_changed = False
         for status, ref, sha1 in self._replace.iterchanges():
             if status == VersionedDict.REMOVED:
@@ -1393,6 +1420,7 @@ class GitHgStore(object):
             with self._fast_import.commit(
                 ref='refs/cinnabar/metadata',
                 parents=parents,
+                message=' '.join(sorted(self.FLAGS)),
             ) as commit:
                 for sha1, target in self._replace.iteritems():
                     commit.filemodify(sha1, target, 'commit')

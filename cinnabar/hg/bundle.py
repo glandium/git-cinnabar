@@ -351,7 +351,6 @@ class PushStore(GitHgStore):
     def _store_file_internal(self, hg_file):
         node = hg_file.node
         self._pushed.add(node)
-        self._files.setdefault(node, self._git_files[node])
         return node
 
     def create_file(self, sha1, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID,
@@ -362,14 +361,15 @@ class PushStore(GitHgStore):
 
     def create_copy(self, hg_source, sha1, git_manifest_parents=None,
                     path=None):
-        data = '\1\ncopy: %s\ncopyrev: %s\n\1\n' % hg_source
+        metadata = 'copy: %s\ncopyrev: %s\n' % hg_source
+        data = '\1\n%s\1\n' % metadata
         data += GitHgHelper.cat_file('blob', sha1)
         hg_file = GeneratedFileRev(NULL_NODE_ID, data)
         hg_file.set_parents(git_manifest_parents=git_manifest_parents,
                             path=path)
         node = hg_file.node = hg_file.sha1
         self._pushed.add(node)
-        self._files[node] = self._fast_import.put_blob(data=hg_file.data)
+        self._files_meta[node] = metadata
         self._git_files.setdefault(node, sha1)
         return node
 
@@ -379,7 +379,7 @@ class PushStore(GitHgStore):
                 return self._manifests[sha1]
             if sha1 in self._changesets:
                 return self._changesets[sha1]
-            return self._files.get(sha1)
+            return self._git_files.get(sha1)
         return super(PushStore, self)._hg2git(sha1)
 
     def close(self, rollback=False):

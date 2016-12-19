@@ -450,12 +450,13 @@ class FastImportCommitHelper(object):
         'commit': '160000',
     }
 
-    def filemodify(self, path, sha1, typ='regular'):
-        assert sha1 and not isinstance(sha1, EmptyMark)
+    def filemodify(self, path, sha1=None, typ='regular', content=None):
+        assert sha1 and not isinstance(sha1, EmptyMark) or (content and
+                                                            typ == 'regular')
         # We may receive the sha1 for an empty blob, even though there is no
         # empty blob stored in the repository. So for empty blobs, use an
         # inline filemodify.
-        dataref = 'inline' if sha1 == EMPTY_BLOB else sha1
+        dataref = 'inline' if sha1 in (EMPTY_BLOB, None) else sha1
         self.write('M %s %s %s\n' % (
             self.MODE[typ],
             dataref,
@@ -463,6 +464,8 @@ class FastImportCommitHelper(object):
         ))
         if sha1 == EMPTY_BLOB:
             self.cmd_data('')
+        elif sha1 is None:
+            self.cmd_data(content)
 
     def notemodify(self, commitish, note):
         self.write('N inline %s\n' % commitish)
