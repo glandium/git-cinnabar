@@ -138,13 +138,13 @@ before_script::
 before_script:: $(GIT_CINNABAR_HELPER)
 	$(GIT) -c fetch.prune=true clone hg::$(REPO) hg.old.git
 
-script::
-	$(GIT) -C hg.old.git cinnabar fsck || [ "$$?" = 2 ]
-
 ifdef UPGRADE_FROM
 script::
 	rm -rf old-cinnabar
 endif
+
+script::
+	$(GIT) -C hg.old.git cinnabar fsck || [ "$$?" = 2 ]
 
 PATH_URL = file://$(if $(filter /%,$(CURDIR)),,/)$(CURDIR)
 
