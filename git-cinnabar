@@ -714,13 +714,12 @@ def main(argv):
         if args.changeset and args.manifest:
             print >>sys.stderr, 'Cannot use both -c and -m.'
             return 1
-        if not args.changeset and not args.manifest:
-            print >>sys.stderr, 'One of -c or -m required.'
-            return 1
         if args.changeset:
             sys.stdout.write(store.changeset(args.rev).data)
         elif args.manifest:
             sys.stdout.write(store.manifest(args.rev).data)
+        else:
+            sys.stdout.write(store.file(args.rev).data)
         store.close()
     elif cmd == 'fsck':
         return fsck(args)
