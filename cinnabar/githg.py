@@ -1346,15 +1346,9 @@ class GitHgStore(object):
         ]
         if self._changesets or removed_git2hg:
             notes = Git.resolve_ref('refs/notes/cinnabar')
-            parents = (notes,) if notes else ()
-            # Using filemodify('', ..., typ='tree') doesn't work with
-            # notemodify. See
-            # <CALKQrgftttSpuw8kc+jC6E5RBet39wHKy3670Z5iG=KQSmrCAw@mail.gmail.com>
-            # So first use traditional parenting, and rewrite.
             with self._fast_import.commit(
                 ref='refs/notes/cinnabar',
                 from_commit=notes,
-                parents=parents,
             ) as commit:
                 for mark in self._changesets.itervalues():
                     if mark:
@@ -1365,12 +1359,6 @@ class GitHgStore(object):
                     for l in range(0, 10):
                         commit.filedelete(sha1path(c, l))
                 update_metadata.append('refs/notes/cinnabar')
-            if parents:
-                with self._fast_import.commit(
-                    ref='refs/notes/cinnabar',
-                    from_commit=Git.resolve_ref('refs/notes/cinnabar'),
-                ) as commit:
-                    pass
 
         if any(self._hgheads.iterchanges()):
             with self._fast_import.commit(
