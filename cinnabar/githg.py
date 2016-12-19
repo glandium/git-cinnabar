@@ -1355,9 +1355,7 @@ class GitHgStore(object):
                         data = self._changeset_data_cache[str(mark)]
                         commit.notemodify(mark, ChangesetData.dump(data))
                 for c in removed_git2hg:
-                    # That's brute force, but meh.
-                    for l in range(0, 10):
-                        commit.filedelete(sha1path(c, l))
+                    commit.write('N %s %s\n' % (NULL_NODE_ID, c))
                 update_metadata.append('refs/notes/cinnabar')
 
         if any(self._hgheads.iterchanges()):
