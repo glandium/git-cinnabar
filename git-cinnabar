@@ -385,11 +385,7 @@ def do_rollback(ref):
     for ref in refs:
         del refs[ref]
     if sha1 != NULL_NODE_ID:
-        refs.update({
-            'refs/cinnabar/metadata': sha1,
-            'refs/cinnabar/hg2git': Git.resolve_ref('%s^3' % sha1),
-            'refs/notes/cinnabar': Git.resolve_ref('%s^4' % sha1),
-        })
+        refs['refs/cinnabar/metadata'] = sha1
         for line in Git.ls_tree(sha1):
             mode, typ, commit, path = line
             refs['refs/cinnabar/replace/%s' % path] = commit
