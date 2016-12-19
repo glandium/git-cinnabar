@@ -1,7 +1,3 @@
-#include "git-compat-util.h"
-#define cmd_main fast_import_main
-#define sha1write fast_import_sha1write
-#include "fast-import.c"
 #undef sha1write
 #include "cinnabar-fast-import.h"
 #include "notes.h"
