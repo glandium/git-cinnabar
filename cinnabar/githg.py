@@ -49,8 +49,9 @@ import logging
 
 
 class UpgradeException(Exception):
-    def __init__(self):
+    def __init__(self, message=None):
         super(UpgradeException, self).__init__(
+            message or
             'Metadata from git-cinnabar versions older than 0.3.0 is not '
             'supported.\n'
             'Please run `git cinnabar fsck` with version 0.3.x first.'
@@ -797,6 +798,10 @@ class GitHgStore(object):
         metadata_ref = Git.resolve_ref('refs/cinnabar/metadata')
         if metadata_ref:
             metadata = GitCommit(metadata_ref)
+            if metadata.body:
+                raise UpgradeException(
+                    'It looks like this repository was used with a newer '
+                    'version of git-cinnabar. Cannot use this version.')
             for ref, value in zip(GitHgStore.METADATA_REFS, metadata.parents):
                 Git.update_ref(ref, value, store=False)
         return metadata_ref
