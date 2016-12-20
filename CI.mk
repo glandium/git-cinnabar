@@ -86,7 +86,9 @@ else
 GIT=git
 endif
 
+ifndef GIT_CINNABAR_OLD_HELPER
 GIT += -c core.packedGitWindowSize=8k
+endif
 
 ifeq (undefined,$(origin GIT_CINNABAR_HELPER))
 ifneq (,$(filter MINGW%,$(OS_NAME)))
@@ -102,11 +104,21 @@ export GIT_CINNABAR_CHECK=all$(if $(HELPER),,$(COMMA)-helper)
 
 ifndef BUILD_HELPER
 $(GIT_CINNABAR_HELPER):
+ifdef GIT_CINNABAR_OLD_HELPER
+	rm -rf old-cinnabar
+	git fetch --unshallow || true
+	git clone -n . old-cinnabar
+	git -C old-cinnabar checkout $$(git log --format=%H -S '#define CMD_VERSION $(shell python -c 'from cinnabar.helper import *; print GitHgHelper.VERSION')$$' --pickaxe-regex HEAD | tail -1)
+	$(MAKE) -C old-cinnabar -f CI.mk $(HELPER) GIT_CINNABAR_HELPER=$(HELPER) GIT_CINNABAR_OLD_HELPER=
+	mv old-cinnabar/$(HELPER) $@
+	rm -rf old-cinnabar
+else
 ifdef ARTIFACTS_BUCKET
 	$(call PIP_INSTALL,requests)
 	-$(GIT) cinnabar download -o $@ --no-config $(DOWNLOAD_FLAGS)
 endif
 	MACOSX_DEPLOYMENT_TARGET=10.6 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) $@ BUILD_HELPER=1
+endif
 
 else
 
