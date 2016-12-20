@@ -382,6 +382,24 @@ class PushStore(GitHgStore):
             return self._git_files.get(sha1)
         return super(PushStore, self)._hg2git(sha1)
 
+    def manifest(self, sha1, include_parents=False):
+        if sha1 not in self._pushed:
+            include_parents = True
+        result = super(PushStore, self).manifest(sha1, include_parents)
+        # Validate manifests we derive from when bundling are not corrupted.
+        if sha1 not in self._pushed and result.sha1 != sha1:
+            raise Exception('Sha1 mismatch for manifest %s' % sha1)
+        return result
+
+    def changeset(self, sha1, include_parents=True):
+        if sha1 not in self._pushed:
+            include_parents = True
+        result = super(PushStore, self).changeset(sha1, include_parents)
+        # Validate changesets we derive from when bundling are not corrupted.
+        if sha1 not in self._pushed and result.sha1 != sha1:
+            raise Exception('Sha1 mismatch for changeset %s' % sha1)
+        return result
+
     def close(self, rollback=False):
         if rollback:
             self._fast_import.close(rollback)

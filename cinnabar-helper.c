@@ -67,7 +67,7 @@
 #include "hg-connect.h"
 #include "cinnabar-fast-import.h"
 
-#define CMD_VERSION 9
+#define CMD_VERSION 900
 
 #define METADATA_REF "refs/cinnabar/metadata"
 #define HG2GIT_REF METADATA_REF "^3"
@@ -1037,7 +1037,9 @@ static void do_version(struct string_list *args)
 
 	version = strtol(args->items[0].string, NULL, 10);
 
-	if (!version || version < 4 || version > CMD_VERSION)
+	if (!version || version < 4 ||
+	    (version > CMD_VERSION / 100 && version < 400) ||
+	    version > CMD_VERSION)
 		exit(128);
 
 	write_or_die(1, "ok\n", 3);

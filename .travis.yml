@@ -31,6 +31,11 @@ matrix:
       env:
       - VARIANT=asan
       - GIT_CINNABAR_EXPERIMENTS=true
+    - os: osx
+      osx_image: xcode6.4
+      env:
+      - VARIANT=
+      - GIT_CINNABAR_OLD_HELPER=1
     - os: linux
       compiler: gcc
       env:
@@ -50,6 +55,7 @@ matrix:
       env:
       - VARIANT=asan
       - GIT_CINNABAR_EXPERIMENTS=true
+    - env: GIT_CINNABAR_OLD_HELPER=1
     - env: UPGRADE_FROM=0.3.2
     - env: UPGRADE_FROM=0.3.0
     - env: GIT_VERSION=v2.7.4
