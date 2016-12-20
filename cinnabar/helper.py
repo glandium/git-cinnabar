@@ -178,8 +178,12 @@ class BaseHelper(object):
                 command = (helper_path,)
             else:
                 command = ('git', 'cinnabar-helper')
+            config = os.environ.get('GIT_CONFIG_PARAMETERS')
+            config = (config,) if config else ()
+            config = ' '.join(config + ("'core.ignorecase=false'",))
             self._helper = Process(*command, stdin=subprocess.PIPE,
-                                   stderr=stderr, logger='cinnabar-helper')
+                                   stderr=stderr, logger='cinnabar-helper',
+                                   env={'GIT_CONFIG_PARAMETERS': config})
             self._helper.stdin.write('version %d\n' % self.VERSION)
             if not self._helper.stdout.readline():
                 logger = logging.getLogger('helper')
