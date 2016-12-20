@@ -72,6 +72,7 @@ ifneq (file,$(origin GIT_VERSION))
 GIT=$(CURDIR)/git.git/bin-wrappers/git
 
 before_script::
+	rm -rf git.git
 	git submodule update --init
 	git clone -n git-core git.git
 	git -C git.git checkout $(GIT_VERSION)
@@ -124,6 +125,7 @@ endif
 
 ifdef UPGRADE_FROM
 before_script:: $(GIT_CINNABAR_HELPER)
+	rm -rf old-cinnabar
 	git fetch --unshallow || true
 	git clone -n . old-cinnabar
 	git -C old-cinnabar checkout $(UPGRADE_FROM)
@@ -136,6 +138,7 @@ before_script::
 	esac
 
 before_script:: $(GIT_CINNABAR_HELPER)
+	rm -rf hg.old.git
 	$(GIT) -c fetch.prune=true clone hg::$(REPO) hg.old.git
 
 ifdef UPGRADE_FROM
