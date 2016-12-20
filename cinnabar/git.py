@@ -78,7 +78,6 @@ class Git(object):
 
     @classmethod
     def close(self, rollback=False):
-        self._close_update_ref()
         if self._fast_import:
             self._fast_import.close(rollback)
             self._fast_import = None
@@ -189,6 +188,7 @@ class Git(object):
         if not self._update_ref:
             self._update_ref = GitProcess('update-ref', '--stdin',
                                           stdin=subprocess.PIPE)
+            atexit.register(self._close_update_ref)
 
         if oldvalue is None:
             update = 'update %s %s\n' % (ref, newvalue)
@@ -243,9 +243,6 @@ class Git(object):
         return value
 
 
-atexit.register(Git.close, rollback=True)
-
-
 class Mark(int):
     def __str__(self):
         return ':%d' % self
@@ -283,6 +280,8 @@ class FastImport(object):
             if self._done:
                 self.write('feature done\n')
 
+            atexit.register(self.close, rollback=True)
+
             return self._real_proc
 
     def send_done(self):
@@ -315,6 +314,7 @@ class FastImport(object):
             retcode = self._proc._proc.poll()
         else:
             retcode = self._proc.wait()
+        del self._real_proc
         if Git._fast_import == self:
             Git._fast_import = None
         if retcode and not rollback:

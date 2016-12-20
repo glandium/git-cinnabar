@@ -66,6 +66,8 @@ class BaseHelper(object):
                         'Cannot find cinnabar helper executable. '
                         'Please try `git cinnabar download` or build it.')
                 self._helper = None
+            else:
+                atexit.register(self.close)
 
         if not self._helper:
             raise NoHelperException
@@ -190,9 +192,6 @@ class GitHgHelper(BaseHelper):
                        status, path)
 
 
-atexit.register(GitHgHelper.close)
-
-
 class HgRepoHelper(BaseHelper):
     VERSION = 4
     _helper = False
@@ -259,6 +258,3 @@ class HgRepoHelper(BaseHelper):
         with self.query("lookup", key) as stdout:
             success, data = self._read_data(stdout).rstrip().split(' ', 1)
             return data if int(success) else None
-
-
-atexit.register(HgRepoHelper.close)
