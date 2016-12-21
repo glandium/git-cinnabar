@@ -118,7 +118,6 @@ class GitRemoteHelper(object):
             'refs/cinnabar/refs/heads/branches/*\n'
             'refspec refs/heads/bookmarks/*:'
             'refs/cinnabar/refs/heads/bookmarks/*\n'
-            'refspec hg/*:refs/cinnabar/hg/*\n'
             'refspec HEAD:refs/cinnabar/HEAD\n'
             '\n'
         )
@@ -211,9 +210,6 @@ class GitRemoteHelper(object):
             branch_tip = branchmap.tip(branch)
             for head in sorted(branchmap.heads(branch)):
                 sha1 = branchmap.git_sha1(head)
-                refs.append(
-                    ('hg/heads/%s/%s' % (
-                        sanitize_branch_name(branch), head), sha1))
                 if head == branch_tip:
                     continue
                 refs.append(
@@ -224,10 +220,6 @@ class GitRemoteHelper(object):
                     ('refs/heads/branches/%s/tip' % (
                         sanitize_branch_name(branch)),
                      branchmap.git_sha1(branch_tip)))
-                refs.append(
-                    ('hg/tips/%s' % (
-                        sanitize_branch_name(branch)),
-                     branchmap.git_sha1(branch_tip)))
 
         for name, sha1 in sorted(bookmarks.iteritems()):
             if sha1 == NULL_NODE_ID:
@@ -235,9 +227,6 @@ class GitRemoteHelper(object):
             ref = self._store.changeset_ref(sha1)
             if self._graft and not ref:
                 continue
-            refs.append(
-                ('hg/bookmarks/%s' % sanitize_branch_name(name),
-                 ref if ref else '?'))
             refs.append(
                 ('refs/heads/bookmarks/%s' % sanitize_branch_name(name),
                  ref if ref else '?'))
@@ -278,7 +267,6 @@ class GitRemoteHelper(object):
         # If anything wrong happens at any time, we risk git picking
         # the existing refs/cinnabar refs, so remove them preventively.
         for sha1, ref in Git.for_each_ref('refs/cinnabar/refs/heads',
-                                          'refs/cinnabar/hg',
                                           'refs/cinnabar/HEAD'):
             Git.delete_ref(ref)
 
@@ -291,13 +279,6 @@ class GitRemoteHelper(object):
             if head.startswith('refs/heads/bookmarks/'):
                 head = head[21:]
                 return self._bookmarks[unquote(head)]
-            if head.startswith('hg/heads/'):
-                branch, sha1 = head[9:].rsplit('/', 1)
-                return sha1
-            if head.startswith('hg/tips/'):
-                return self._branchmap.tip(unquote(head[8:]))
-            if head.startswith('hg/bookmarks/'):
-                return self._bookmarks[unquote(heads[13:])]
             if head.startswith('hg/revs/'):
                 return head[8:]
             if head == 'HEAD':
@@ -403,8 +384,7 @@ class GitRemoteHelper(object):
                         status[dest] = \
                             'Deleting remote tags is unsupported'
                     continue
-                if not dest.startswith(('refs/heads/bookmarks/',
-                                        'hg/bookmarks/')):
+                if not dest.startswith('refs/heads/bookmarks/'):
                     if source:
                         status[dest] = bool(len(pushed))
                     else:
