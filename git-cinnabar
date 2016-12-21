@@ -339,7 +339,8 @@ def fsck(args):
         # or changesets and set the right variable accordingly, but in
         # practice, it makes no difference. Reevaluate when GitHgStore.close
         # is modified, though.
-        store._files[obj] = None
+        store._git_files[obj] = None
+        store._files_meta[obj] = None
 
     if not status['broken']:
         dangling = all_notes - seen_notes

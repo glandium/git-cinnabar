@@ -1401,7 +1401,10 @@ class GitHgStore(object):
                 from_commit=files_meta_ref,
             ) as commit:
                 for sha1, content in self._files_meta.iteritems():
-                    commit.filemodify(sha1path(sha1), content=content)
+                    if content is None:
+                        commit.filedelete(sha1path(sha1))
+                    else:
+                        commit.filemodify(sha1path(sha1), content=content)
                 update_metadata.append('refs/cinnabar/files-meta')
 
         replace_changed = False
