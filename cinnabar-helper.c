@@ -1240,17 +1240,31 @@ static void do_connect(struct string_list *args)
 
 int cmd_main(int argc, const char *argv[])
 {
+	int initialized = 0;
 	struct strbuf buf = STRBUF_INIT;
 
 	git_extract_argv0_path(argv[0]);
-	setup_git_directory();
-	git_config(git_diff_basic_config, NULL);
+	git_config(git_default_config, NULL);
 	ignore_case = 0;
 
 	while (strbuf_getline(&buf, stdin) != EOF) {
 		struct string_list args = STRING_LIST_INIT_NODUP;
 		const char *command;
 		split_command(buf.buf, &command, &args);
+		if (!strcmp("version", command)) {
+			do_version(&args);
+			continue;
+		} else if (!strcmp("connect", command)) {
+			do_connect(&args);
+			string_list_clear(&args, 0);
+			break;
+		}
+		if (!initialized) {
+			setup_git_directory();
+			git_config(git_diff_basic_config, NULL);
+			ignore_case = 0;
+			initialized = 1;
+		}
 		if (!strcmp("git2hg", command))
 			do_git2hg(&args);
 		else if (!strcmp("hg2git", command))
@@ -1267,13 +1281,7 @@ int cmd_main(int argc, const char *argv[])
 			do_rev_list(&args);
 		else if (!strcmp("diff-tree", command))
 			do_diff_tree(&args);
-		else if (!strcmp("version", command))
-			do_version(&args);
-		else if (!strcmp("connect", command)) {
-			do_connect(&args);
-			string_list_clear(&args, 0);
-			break;
-		} else if (!maybe_handle_command(command, &args))
+		else if (!maybe_handle_command(command, &args))
 			die("Unknown command: \"%s\"", command);
 
 		string_list_clear(&args, 0);
