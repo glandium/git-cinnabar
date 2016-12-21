@@ -267,6 +267,7 @@ class GitRemoteHelper(object):
         # If anything wrong happens at any time, we risk git picking
         # the existing refs/cinnabar refs, so remove them preventively.
         for sha1, ref in Git.for_each_ref('refs/cinnabar/refs/heads',
+                                          'refs/cinnabar/hg',
                                           'refs/cinnabar/HEAD'):
             Git.delete_ref(ref)
 
