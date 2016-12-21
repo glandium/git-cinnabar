@@ -351,10 +351,6 @@ class FastImport(object):
         assert lf == '\n'
         return sha1
 
-    def cmd_mark(self, mark):
-        if mark:
-            self.write('mark :%d\n' % mark)
-
     def cmd_data(self, data):
         self.write('data %d\n' % len(data))
         self.write(data)
@@ -364,7 +360,7 @@ class FastImport(object):
         self.write('blob\n')
         if mark == 0:
             mark = EmptyMark(1)
-        self.cmd_mark(mark)
+        self.write('mark :%d\n' % mark)
         self.cmd_data(data)
         self._done = False
         return self.get_mark(mark)
@@ -400,26 +396,27 @@ class FastImport(object):
                 mode, typ, from_tree, path = self.ls(from_commit)
 
         helper = FastImportCommitHelper(self)
-        self.write('commit %s\n' % ref)
+        helper.write('commit %s\n' % ref)
         if mark == 0:
             mark = EmptyMark(1)
-        self.cmd_mark(mark)
+        helper.write('mark :%d\n' % mark)
         # TODO: properly handle errors, like from the committer being badly
         # formatted.
         if author:
-            self.write('author %s\n' % self._format_committer(author))
-        self.write('committer %s\n' % self._format_committer(committer))
-        self.cmd_data(message)
+            helper.write('author %s\n' % self._format_committer(author))
+        helper.write('committer %s\n' % self._format_committer(committer))
+        helper.cmd_data(message)
 
         if _from:
-            self.write('from %s\n' % _from)
+            helper.write('from %s\n' % _from)
         for merge in merges:
-            self.write('merge %s\n' % merge)
+            helper.write('merge %s\n' % merge)
         if from_tree:
-            self.write('M 040000 %s \n' % from_tree)
+            helper.write('M 040000 %s \n' % from_tree)
 
         yield helper
 
+        helper.flush()
         self.write('\n')
         helper.sha1 = self.get_mark(mark)
         self._done = False
@@ -432,12 +429,18 @@ class FastImport(object):
 class FastImportCommitHelper(object):
     def __init__(self, fast_import):
         self._fast_import = fast_import
+        self._queue = []
 
     def write(self, data):
-        self._fast_import.write(data)
+        self._queue.append((self._fast_import.write, data))
 
     def cmd_data(self, data):
-        self._fast_import.cmd_data(data)
+        self._queue.append((self._fast_import.cmd_data, data))
+
+    def flush(self):
+        for func, data in self._queue:
+            func(data)
+        self._queue = []
 
     def filedelete(self, path):
         self.write('D %s\n' % path)
