@@ -206,21 +206,15 @@ class GitRemoteHelper(object):
                 branchmap = self._branchmap = BranchMap(
                     self._store, new_branchmap, list(new_heads))
 
-        refs = []
+        refs = {}
         for branch in sorted(branchmap.names()):
             branch_tip = branchmap.tip(branch)
             for head in sorted(branchmap.heads(branch)):
-                sha1 = branchmap.git_sha1(head)
                 if head == branch_tip:
                     continue
-                refs.append(
-                    ('refs/heads/branches/%s/%s' % (
-                        sanitize_branch_name(branch), head), sha1))
+                refs['refs/heads/branches/%s/%s' % (branch, head)] = head
             if branch_tip:
-                refs.append(
-                    ('refs/heads/branches/%s/tip' % (
-                        sanitize_branch_name(branch)),
-                     branchmap.git_sha1(branch_tip)))
+                refs['refs/heads/branches/%s/tip' % branch] = branch_tip
 
         for name, sha1 in sorted(bookmarks.iteritems()):
             if sha1 == NULL_NODE_ID:
@@ -228,16 +222,12 @@ class GitRemoteHelper(object):
             ref = self._store.changeset_ref(sha1)
             if self._graft and not ref:
                 continue
-            refs.append(
-                ('refs/heads/bookmarks/%s' % sanitize_branch_name(name),
-                 ref if ref else '?'))
+            refs['refs/heads/bookmarks/%s' % name] = sha1
         if fetch:
-            sha1 = self._store.changeset_ref(fetch)
-            refs.append(('hg/revs/%s' % fetch, sha1 or '?'))
+            refs['hg/revs/%s' % fetch] = fetch
         if not self._has_unknown_heads:
             for tag, ref in sorted(self._store.tags(branchmap.heads())):
-                refs.append(
-                    ('refs/tags/%s' % sanitize_branch_name(tag), ref))
+                refs['refs/tags/%s' % tag] = 'git:%s' % ref
 
         if '@' in bookmarks:
             self._HEAD = 'bookmarks/@'
@@ -245,9 +235,18 @@ class GitRemoteHelper(object):
         if self._graft and head:
             head = self._store.changeset_ref(head)
         if head:
-            refs.append(('HEAD', '@refs/heads/%s' % self._HEAD))
+            refs['HEAD'] = '@refs/heads/%s' % self._HEAD
 
-        for k, v in sorted(refs):
+        self._refs = {sanitize_branch_name(k): v
+                      for k, v in refs.iteritems()}
+
+        for k, v in sorted(self._refs.iteritems()):
+            if v.startswith('git:'):
+                v = v[4:]
+            elif k.startswith('refs/heads/branches/'):
+                v = self._branchmap.git_sha1(v)
+            elif not v.startswith('@'):
+                v = self._store.changeset_ref(v) or '?'
             self._helper.write('%s %s\n' % (v, k))
 
         self._helper.write('\n')
@@ -273,20 +272,13 @@ class GitRemoteHelper(object):
             Git.delete_ref(ref)
 
         def resolve_head(head):
-            if head.startswith('refs/heads/branches/'):
-                head = head[20:]
-                if head[-4:] == '/tip':
-                    return self._branchmap.tip(unquote(head[:-4]))
-                return head[-40:]
-            if head.startswith('refs/heads/bookmarks/'):
-                head = head[21:]
-                return self._bookmarks[unquote(head)]
-            if head.startswith('hg/revs/'):
-                return head[8:]
-            if head == 'HEAD':
-                return (self._bookmarks.get('@') or
-                        self._branchmap.tip('default'))
-            return None
+            resolved = self._refs.get(head)
+            if resolved is None:
+                return resolved
+            if resolved.startswith('@'):
+                return self._refs.get(resolved[1:])
+            assert not resolved.startswith('git:')
+            return resolved
 
         wanted_refs = {k: v for k, v in (
                        (h, resolve_head(h)) for h in refs) if v}
