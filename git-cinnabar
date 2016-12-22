@@ -401,6 +401,20 @@ def fsck(args):
     return 0
 
 
+def do_reclone():
+    do_rollback(NULL_NODE_ID)
+    for line in Git.iter('config', '--get-regexp', 'remote\..*\.url'):
+        config, url = line.split()
+        name = config[len('remote.'):-len('.url')]
+        skip_pref = 'remote.%s.skipDefaultUpdate' % name
+        if (url.startswith(('hg::', 'hg://')) and
+                Git.config(skip_pref) != 'true'):
+            Git.run('remote', 'update', '--prune', name)
+
+    print 'Please note that reclone left your local branches untouched.'
+    print 'They may be based on entirely different commits.'
+
+
 def do_bundle(fname, version, *revs):
     bundle_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
         '--topo-order', '--full-history', '--parents', '--reverse', *revs))
@@ -777,17 +791,7 @@ def main(argv):
     elif cmd == 'fsck':
         return fsck(args)
     elif cmd == 'reclone':
-        do_rollback(NULL_NODE_ID)
-        for line in Git.iter('config', '--get-regexp', 'remote\..*\.url'):
-            config, url = line.split()
-            name = config[len('remote.'):-len('.url')]
-            skip_pref = 'remote.%s.skipDefaultUpdate' % name
-            if (url.startswith(('hg::', 'hg://')) and
-                    Git.config(skip_pref) != 'true'):
-                Git.run('remote', 'update', '--prune', name)
-
-        print 'Please note that reclone left your local branches untouched.'
-        print 'They may be based on entirely different commits.'
+        return do_reclone()
     elif cmd == 'hg2git':
         for arg in args.sha1:
             print GitHgHelper.hg2git(arg)
