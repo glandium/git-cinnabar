@@ -206,11 +206,14 @@ class Git(object):
             proc = GitProcess('config', '-l', '-z')
             data = proc.stdout.read()
             proc.wait()
-            self._config = {
-                k: v
-                for k, v in (l.split('\n', 1)
-                             for l in data.split('\0') if l)
-            }
+            self._config = {}
+            for l in data.split('\0'):
+                if l:
+                    k, v = l.split('\n', 1)
+                    if k in self._config:
+                        self._config[k] += '\0' + v
+                    else:
+                        self._config[k] = v
         var = name
         value = None
         if name.startswith('cinnabar.'):
