@@ -854,8 +854,10 @@ class Process(object):
     def _popen(self, cmd, env, **kwargs):
         assert isinstance(env, VersionedDict)
         proc = subprocess.Popen(cmd, env=env, **kwargs)
-        logging.getLogger('process').info('[%d] %s', proc.pid, LazyCall(
-            ' '.join, chain(self._env_strings(env), cmd)))
+        logger = logging.getLogger('process')
+        if logger.isEnabledFor(logging.INFO):
+            logger.info('[%d] %s', proc.pid,
+                        ' '.join, chain(self._env_strings(env), cmd))
         return proc
 
     def wait(self):

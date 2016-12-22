@@ -38,7 +38,6 @@ from cinnabar.git import (
 from cinnabar.util import (
     check_enabled,
     experiment,
-    LazyCall,
     next,
     progress_iter,
 )
@@ -289,8 +288,8 @@ def findcommon(repo, store, hgheads):
     git_heads = set(store.changeset_ref(h) for h in hgheads)
     git_known = set(store.changeset_ref(h) for h in known)
 
-    logger.debug('known (sub)set: (%d) %s', len(known),
-                 LazyCall(sorted, git_known))
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug('known (sub)set: (%d) %s', len(known), sorted(git_known))
 
     args = ['--topo-order', '--full-history', '--parents']
 
@@ -335,10 +334,10 @@ def findcommon(repo, store, hgheads):
         unknown = set(h for h, k in izip(sample, known) if not k)
         known = set(h for h, k in izip(sample, known) if k)
         logger.info('next sample size: %d' % len(sample))
-        logger.debug('known (sub)set: (%d) %s', len(known),
-                     LazyCall(sorted, known))
-        logger.debug('unknown (sub)set: (%d) %s', len(unknown),
-                     LazyCall(sorted, unknown))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug('known (sub)set: (%d) %s', len(known), sorted(known))
+            logger.debug('unknown (sub)set: (%d) %s', len(unknown),
+                         sorted(unknown))
 
         dag.tag_nodes_and_parents(known, 'known')
         dag.tag_nodes_and_children(unknown, 'unknown')
