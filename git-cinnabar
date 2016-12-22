@@ -7,7 +7,6 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
 import argparse
-import hashlib
 import platform
 import subprocess
 import tempfile
@@ -15,7 +14,7 @@ import threading
 import zipfile
 import errno
 from StringIO import StringIO
-from binascii import hexlify
+from binascii import hexlify, unhexlify
 from cinnabar import VERSION
 from cinnabar.githg import (
     ChangesetData,
@@ -508,7 +507,7 @@ def do_download(args):
         args.dev = ''
 
     if args.dev is not False:
-        h = hashlib.sha1()
+        tree = ''
         d = os.path.join(os.path.dirname(__file__), 'helper')
         has_helper_source = False
         for f in sorted(os.listdir(d)):
@@ -518,7 +517,8 @@ def do_download(args):
                 continue
             if f.endswith(('.h', '.c', '.c.patch')) or f == 'GIT-VERSION.mk':
                 sha1 = git_hash('blob', open(os.path.join(d, f)).read())
-                h.update('%s\n' % sha1)
+                tree += '100644 %s\0' % f
+                tree += unhexlify(sha1)
 
         if not has_helper_source:
             print >>sys.stderr, (
@@ -529,7 +529,7 @@ def do_download(args):
         if args.dev:
             system_variant = '%s-%s' % (system, args.dev.lower())
         url = 'https://s3.amazonaws.com/git-cinnabar/artifacts/%s/%s/%s/%s' % (
-            h.hexdigest(), system_variant, machine, helper)
+            git_hash('tree', tree), system_variant, machine, helper)
     else:
         if system in ('Windows', 'macOS'):
             ext = 'zip'
