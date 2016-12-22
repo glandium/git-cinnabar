@@ -12,10 +12,7 @@ from cinnabar.githg import (
 from cinnabar.hg import Remote
 import logging
 from cinnabar.remote_helper import GitRemoteHelper
-from cinnabar.util import (
-    init_logging,
-    LazyCall,
-)
+from cinnabar.util import init_logging
 
 
 def main(args):
@@ -25,8 +22,6 @@ def main(args):
         import msvcrt
         msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
     init_logging()
-    logger = logging.getLogger('-')
-    logger.info(args)
     assert len(args) == 2
     remote = Remote(*args)
 
@@ -35,8 +30,6 @@ def main(args):
     except UpgradeException as e:
         logging.error(e.message)
         return 1
-
-    logger.info('%s', LazyCall(store.heads))
 
     helper = GitRemoteHelper(store, remote)
     helper.run()
