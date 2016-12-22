@@ -185,7 +185,7 @@ class IOLogger(object):
         self._writer.flush()
 
     def __iter__(self):
-        while True:
+        while self._reader:
             l = self.readline()
             if not l:
                 break
