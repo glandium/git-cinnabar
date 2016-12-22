@@ -1,5 +1,5 @@
 OS_NAME = $(TRAVIS_OS_NAME)$(MSYSTEM)
-include $(addsuffix /,$(dir $(firstword $(MAKEFILE_LIST))))GIT-VERSION.mk
+include $(addsuffix /,$(dir $(firstword $(MAKEFILE_LIST))))helper/GIT-VERSION.mk
 
 ifeq (a,$(firstword a$(subst /, ,$(abspath .))))
 PATHSEP = :

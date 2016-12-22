@@ -509,7 +509,7 @@ def do_download(args):
 
     if args.dev is not False:
         h = hashlib.sha1()
-        d = os.path.dirname(__file__)
+        d = os.path.join(os.path.dirname(__file__), 'helper')
         has_helper_source = False
         for f in sorted(os.listdir(d)):
             if f == 'cinnabar-helper.c':

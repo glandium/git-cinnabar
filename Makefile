@@ -22,7 +22,7 @@ ifndef CINNABAR_RECURSE
 
 ifeq (,$(wildcard $(CURDIR)/git-core/Makefile))
 SYSTEM = $(shell python2.7 -c 'import platform; print platform.system()')
-include GIT-VERSION.mk
+include helper/GIT-VERSION.mk
 ifeq ($(SYSTEM),Windows)
 GIT_REPO = https://github.com/git-for-windows/git
 GIT_VERSION := $(WINDOWS_GIT_VERSION)
@@ -75,7 +75,6 @@ else
 include $(CURDIR)/Makefile
 
 vpath cinnabar/% ..
-vpath %.c ..
 
 all:: $(addprefix pythonlib/,$(PYTHON_LIBS))
 
@@ -119,15 +118,17 @@ CINNABAR_OBJECTS += hg-connect-http.o
 endif
 CINNABAR_OBJECTS += hg-connect-stdio.o
 
-PATCHES = $(notdir $(wildcard ../*.patch))
+PATCHES = $(notdir $(wildcard ../helper/*.patch))
 
-$(addprefix ../,$(PATCHES:%.c.patch=%.patched.c)): ../%.patched.c: ../%.c.patch %.c
+$(addprefix ../helper/,$(PATCHES:%.c.patch=%.patched.c)): ../helper/%.patched.c: ../helper/%.c.patch %.c
 # Funny thing... GNU patch doesn't like -o ../file, and BSD patch doesn't like sending
 # the output to stdout.
-	cd .. && patch -p1 -F0 -o $(notdir $@) $(CURDIR)/$(notdir $(lastword $^)) < $(notdir $<)
+	(cd .. && patch -p1 -F0 -o $(subst ../,,$@) $(CURDIR)/$(notdir $(lastword $^))) < $<
 
 clean-patched:
-	$(RM) $(addprefix ../,$(PATCHES:%.c.patch=%.patched.c))
+	$(RM) $(addprefix ../helper/,$(PATCHES:%.c.patch=%.patched.c))
+
+$(addprefix ../,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c)):
 
 CINNABAR_OBJECTS += $(PATCHES:%.c.patch=%.patched.o)
 
@@ -148,7 +149,7 @@ git-cinnabar-helper$X: $(CINNABAR_OBJECTS) GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
 		$(CURL_LIBCURL) $(LIBS)
 
-$(CINNABAR_OBJECTS): %.o: %.c GIT-CFLAGS $(missing_dep_dirs)
+$(CINNABAR_OBJECTS): %.o: ../helper/%.c GIT-CFLAGS $(missing_dep_dirs)
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
 
 endif
