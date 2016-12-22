@@ -401,7 +401,7 @@ def fsck(args):
     return 0
 
 
-def do_reclone():
+def do_reclone(args):
     do_rollback(NULL_NODE_ID)
     for line in Git.iter('config', '--get-regexp', 'remote\..*\.url'):
         config, url = line.split()
@@ -432,23 +432,23 @@ def do_git2hg(args):
             print NULL_NODE_ID
 
 
-def do_bundle(fname, version, *revs):
+def do_bundle(args):
     bundle_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
-        '--topo-order', '--full-history', '--parents', '--reverse', *revs))
+        '--topo-order', '--full-history', '--parents', '--reverse', *args.rev))
     if bundle_commits:
         # TODO: enable graft support
         # TODO: better UX. For instance, this will fail with an exception when
         # the parent commit doesn't have mercurial metadata.
         store = PushStore()
         store.init_fast_import()
-        if version == 1:
+        if args.version == 1:
             b2caps = {}
-        elif version == 2:
+        elif args.version == 2:
             b2caps = {
                 'HG20': (),
                 'changegroup': ('01', '02'),
             }
-        with open(fname, 'wb') as fh:
+        with open(args.path, 'wb') as fh:
             if not b2caps:
                 fh.write('HG10UN')
             for data in create_bundle(store, bundle_commits, b2caps):
@@ -501,6 +501,10 @@ def do_rollback(ref):
     return 0
 
 
+def rollback(args):
+    do_rollback(args.committish)
+
+
 def do_python(args):
     env = os.environ.copy()
     env['PYTHONPATH'] = os.pathsep.join(sys.path)
@@ -508,7 +512,9 @@ def do_python(args):
     os.execle(sys.executable, sys.executable, *args)
 
 
-def do_fetch(remote, rev):
+def do_fetch(args):
+    remote = args.remote
+    rev = args.rev
     if not re.match('[0-9a-f]{40}$', rev.lower()):
         if remote.startswith('hg:'):
             url = remote
@@ -815,19 +821,19 @@ def main(argv):
     elif cmd == 'fsck':
         return fsck(args)
     elif cmd == 'reclone':
-        return do_reclone()
+        return do_reclone(args)
     elif cmd == 'hg2git':
         return do_hg2git(args)
     elif cmd == 'git2hg':
         return do_git2hg(args)
     elif cmd == 'bundle':
-        return do_bundle(args.path, args.version, *args.rev)
+        return do_bundle(args)
     elif cmd == 'rollback':
-        return do_rollback(args.committish)
+        return rollback(args)
     elif cmd == 'python':
         return do_python(leftovers)
     elif cmd == 'fetch':
-        return do_fetch(args.remote, args.rev)
+        return do_fetch(args)
     elif cmd == 'download':
         return do_download(args)
 
