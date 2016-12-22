@@ -572,7 +572,7 @@ def do_download(args):
         tree = ''
         d = os.path.join(os.path.dirname(__file__), 'helper')
         has_helper_source = False
-        for f in sorted(os.listdir(d)):
+        for f in sorted(os.listdir(d) if os.path.exists(d) else ()):
             if f == 'cinnabar-helper.c':
                 has_helper_source = True
             if 'patched' in f:
