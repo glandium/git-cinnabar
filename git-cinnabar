@@ -56,6 +56,24 @@ from collections import (
 )
 
 
+def do_data(args):
+    try:
+        store = GitHgStore()
+    except UpgradeException as e:
+        print >>sys.stderr, e.message
+        return 1
+    if args.changeset and args.manifest:
+        print >>sys.stderr, 'Cannot use both -c and -m.'
+        return 1
+    if args.changeset:
+        sys.stdout.write(store.changeset(args.rev).data)
+    elif args.manifest:
+        sys.stdout.write(store.manifest(args.rev).data)
+    else:
+        sys.stdout.write(store.file(args.rev).data)
+    store.close()
+
+
 class UpgradeGitHgStore(GitHgStore):
     def metadata(self):
         return self._metadata()
@@ -755,21 +773,7 @@ def main(argv):
 
     cmd = args.command
     if cmd == 'data':
-        try:
-            store = GitHgStore()
-        except UpgradeException as e:
-            print >>sys.stderr, e.message
-            return 1
-        if args.changeset and args.manifest:
-            print >>sys.stderr, 'Cannot use both -c and -m.'
-            return 1
-        if args.changeset:
-            sys.stdout.write(store.changeset(args.rev).data)
-        elif args.manifest:
-            sys.stdout.write(store.manifest(args.rev).data)
-        else:
-            sys.stdout.write(store.file(args.rev).data)
-        store.close()
+        return do_data(args)
     elif cmd == 'fsck':
         return fsck(args)
     elif cmd == 'reclone':
