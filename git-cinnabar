@@ -415,6 +415,23 @@ def do_reclone():
     print 'They may be based on entirely different commits.'
 
 
+def do_hg2git(args):
+    for arg in args.sha1:
+        print GitHgHelper.hg2git(arg)
+
+
+def do_git2hg(args):
+    for sha1, ref in Git.for_each_ref('refs/cinnabar/replace'):
+        Git._replace[ref[22:]] = sha1
+    for arg in args.sha1:
+        data = GitHgHelper.git2hg(arg)
+        if data:
+            data = ChangesetData.parse(data)
+            print data.get('changeset', NULL_NODE_ID)
+        else:
+            print NULL_NODE_ID
+
+
 def do_bundle(fname, version, *revs):
     bundle_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
         '--topo-order', '--full-history', '--parents', '--reverse', *revs))
@@ -793,18 +810,9 @@ def main(argv):
     elif cmd == 'reclone':
         return do_reclone()
     elif cmd == 'hg2git':
-        for arg in args.sha1:
-            print GitHgHelper.hg2git(arg)
+        return do_hg2git(args)
     elif cmd == 'git2hg':
-        for sha1, ref in Git.for_each_ref('refs/cinnabar/replace'):
-            Git._replace[ref[22:]] = sha1
-        for arg in args.sha1:
-            data = GitHgHelper.git2hg(arg)
-            if data:
-                data = ChangesetData.parse(data)
-                print data.get('changeset', NULL_NODE_ID)
-            else:
-                print NULL_NODE_ID
+        return do_git2hg(args)
     elif cmd == 'bundle':
         return do_bundle(args.path, args.version, *args.rev)
     elif cmd == 'rollback':
