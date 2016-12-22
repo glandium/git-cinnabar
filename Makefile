@@ -14,6 +14,15 @@ PYTHON_LIBS := \
 	cinnabar/hg/bundle.py \
 	cinnabar/hg/changegroup.py \
 	cinnabar/cmd/__init__.py \
+	cinnabar/cmd/bundle.py \
+	cinnabar/cmd/convert.py \
+	cinnabar/cmd/data.py \
+	cinnabar/cmd/download.py \
+	cinnabar/cmd/fetch.py \
+	cinnabar/cmd/fsck.py \
+	cinnabar/cmd/python.py \
+	cinnabar/cmd/reclone.py \
+	cinnabar/cmd/rollback.py \
 	cinnabar/cmd/util.py \
 	cinnabar/util.py
 
