@@ -13,6 +13,8 @@ PYTHON_LIBS := \
 	cinnabar/hg/__init__.py \
 	cinnabar/hg/bundle.py \
 	cinnabar/hg/changegroup.py \
+	cinnabar/cmd/__init__.py \
+	cinnabar/cmd/util.py \
 	cinnabar/util.py
 
 NO_GETTEXT ?= 1

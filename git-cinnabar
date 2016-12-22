@@ -16,6 +16,7 @@ import errno
 from StringIO import StringIO
 from binascii import hexlify, unhexlify
 from cinnabar import VERSION
+from cinnabar.cmd.util import CLI
 from cinnabar.githg import (
     ChangesetData,
     git_hash,
@@ -56,7 +57,15 @@ from collections import (
 )
 
 
-def do_data(args):
+@CLI.subcommand
+@CLI.argument('-c', '--changeset', action='store_true',
+              help='open changelog')
+@CLI.argument('-m', '--manifest', action='store_true',
+              help='open manifest')
+@CLI.argument('rev', help='revision')
+def data(args):
+    '''dump the contents of a mercurial revision'''
+
     try:
         store = GitHgStore()
     except UpgradeException as e:
@@ -79,7 +88,16 @@ class UpgradeGitHgStore(GitHgStore):
         return self._metadata()
 
 
+@CLI.subcommand
+@CLI.argument('--manifests', action='store_true',
+              help='Validate manifests hashes')
+@CLI.argument('--files', action='store_true',
+              help='Validate files hashes')
+@CLI.argument('commit', nargs='*',
+              help='Specific commit or changeset to check')
 def fsck(args):
+    '''check cinnabar metadata consistency'''
+
     status = {
         'broken': False,
         'fixed': False,
@@ -401,7 +419,10 @@ def fsck(args):
     return 0
 
 
-def do_reclone(args):
+@CLI.subcommand
+def reclone(args):
+    '''reclone all mercurial remotes'''
+
     do_rollback(NULL_NODE_ID)
     for line in Git.iter('config', '--get-regexp', 'remote\..*\.url'):
         config, url = line.split()
@@ -415,12 +436,20 @@ def do_reclone(args):
     print 'They may be based on entirely different commits.'
 
 
-def do_hg2git(args):
+@CLI.subcommand
+@CLI.argument('sha1', nargs='+', help='mercurial sha1')
+def hg2git(args):
+    '''convert mercurial sha1 to corresponding git sha1'''
+
     for arg in args.sha1:
         print GitHgHelper.hg2git(arg)
 
 
-def do_git2hg(args):
+@CLI.subcommand
+@CLI.argument('sha1', nargs='+', help='git sha1')
+def git2hg(args):
+    '''convert git sha1 to corresponding mercurial sha1'''
+
     for sha1, ref in Git.for_each_ref('refs/cinnabar/replace'):
         Git._replace[ref[22:]] = sha1
     for arg in args.sha1:
@@ -432,7 +461,17 @@ def do_git2hg(args):
             print NULL_NODE_ID
 
 
-def do_bundle(args):
+@CLI.subcommand
+@CLI.argument('--version', choices=(1, 2), type=int,
+              default=2 if unbundle20 else 1,
+              help='bundle version')
+@CLI.argument('path', help='path of the bundle')
+@CLI.argument('rev', nargs='+',
+              help='git revision range (see the Specifying Ranges'
+                   ' section of gitrevisions(7))')
+def bundle(args):
+    '''create a mercurial bundle'''
+
     bundle_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
         '--topo-order', '--full-history', '--parents', '--reverse', *args.rev))
     if bundle_commits:
@@ -501,18 +540,34 @@ def do_rollback(ref):
     return 0
 
 
+@CLI.subcommand
+@CLI.argument('committish',
+              help='committish of the state to rollback to')
 def rollback(args):
+    '''rollback cinnabar metadata state'''
+
     do_rollback(args.committish)
 
 
-def do_python(args):
+@CLI.subcommand
+@CLI.argument('flags', nargs=argparse.REMAINDER,
+              help='flags to pass down to python')
+def python(args):
+    '''open a python shell with the cinnabar module in sys.path'''
+
+    args = list(args.flags)
     env = os.environ.copy()
     env['PYTHONPATH'] = os.pathsep.join(sys.path)
     args.append(env)
     os.execle(sys.executable, sys.executable, *args)
 
 
-def do_fetch(args):
+@CLI.subcommand
+@CLI.argument('remote', help='mercurial remote name or url')
+@CLI.argument('rev', help='mercurial changeset to fetch')
+def fetch(args):
+    '''fetch a changeset from a mercurial remote'''
+
     remote = args.remote
     rev = args.rev
     if not re.match('[0-9a-f]{40}$', rev.lower()):
@@ -539,7 +594,24 @@ def do_fetch(args):
     return proc.wait()
 
 
-def do_download(args):
+@CLI.subcommand
+@CLI.argument('--url', action='store_true',
+              help='only print the download url')
+@CLI.argument('--dev', nargs='?', metavar='VARIANT',
+              default=False,
+              help='download the development helper')
+@CLI.argument('--system', default=platform.system(),
+              help=argparse.SUPPRESS)
+@CLI.argument('--machine', default=platform.machine(),
+              help=argparse.SUPPRESS)
+@CLI.argument('-o', '--output', help=argparse.SUPPRESS)
+@CLI.argument('--no-config', action='store_true',
+              help=argparse.SUPPRESS)
+@CLI.argument('--list', action='store_true',
+              help=argparse.SUPPRESS)
+def download(args):
+    '''download a prebuilt helper'''
+
     helper = 'git-cinnabar-helper'
     system = args.system
     machine = args.machine
@@ -732,101 +804,8 @@ def do_download(args):
 
 
 def main(argv):
-    parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(title='subcommands', dest='command')
-
-    parser.add_argument('--version', action='version', version=VERSION)
-
-    subparser = subparsers.add_parser(
-        'data', help='dump the contents of a mercurial revision')
-    subparser.add_argument('-c', '--changeset', action='store_true',
-                           help='open changelog')
-    subparser.add_argument('-m', '--manifest', action='store_true',
-                           help='open manifest')
-    subparser.add_argument('rev', help='revision')
-    subparser.set_defaults(callback=do_data)
-
-    subparser = subparsers.add_parser(
-        'fsck', help='check cinnabar metadata consistency')
-    subparser.add_argument('--manifests', action='store_true',
-                           help='Validate manifests hashes')
-    subparser.add_argument('--files', action='store_true',
-                           help='Validate files hashes')
-    subparser.add_argument('commit', nargs='*',
-                           help='Specific commit or changeset to check')
-    subparser.set_defaults(callback=fsck)
-
-    subparser = subparsers.add_parser(
-        'reclone', help='reclone all mercurial remotes')
-    subparser.set_defaults(callback=do_reclone)
-
-    subparser = subparsers.add_parser(
-        'fetch', help='fetch a changeset from a mercurial remote')
-    subparser.add_argument('remote', help='mercurial remote name or url')
-    subparser.add_argument('rev', help='mercurial changeset to fetch')
-    subparser.set_defaults(callback=do_fetch)
-
-    subparser = subparsers.add_parser(
-        'hg2git', help='convert mercurial sha1 to corresponding git sha1')
-    subparser.add_argument('sha1', nargs='+', help='mercurial sha1')
-    subparser.set_defaults(callback=do_hg2git)
-
-    subparser = subparsers.add_parser(
-        'git2hg', help='convert git sha1 to corresponding mercurial sha1')
-    subparser.add_argument('sha1', nargs='+', help='git sha1')
-    subparser.set_defaults(callback=do_git2hg)
-
-    subparser = subparsers.add_parser(
-        'bundle', help='create a mercurial bundle')
-    subparser.add_argument('--version', choices=(1, 2), type=int,
-                           default=2 if unbundle20 else 1,
-                           help='bundle version')
-    subparser.add_argument('path', help='path of the bundle')
-    subparser.add_argument('rev', nargs='+',
-                           help='git revision range (see the Specifying Ranges'
-                                ' section of gitrevisions(7))')
-    subparser.set_defaults(callback=do_bundle)
-
-    subparser = subparsers.add_parser(
-        'rollback', help='rollback cinnabar metadata state')
-    subparser.add_argument('committish',
-                           help='committish of the state to rollback to')
-    subparser.set_defaults(callback=rollback)
-
-    subparser = subparsers.add_parser(
-        'python', help='open a python shell with the cinnabar module in'
-                       ' sys.path')
-    subparser.set_defaults(callback=do_python)
-
-    subparser = subparsers.add_parser(
-        'download', help='download a prebuilt helper')
-    subparser.add_argument('--url', action='store_true',
-                           help='only print the download url')
-    subparser.add_argument('--dev', nargs='?', metavar='VARIANT',
-                           default=False,
-                           help='download the development helper')
-    subparser.add_argument('--system', default=platform.system(),
-                           help=argparse.SUPPRESS)
-    subparser.add_argument('--machine', default=platform.machine(),
-                           help=argparse.SUPPRESS)
-    subparser.add_argument('-o', '--output', help=argparse.SUPPRESS)
-    subparser.add_argument('--no-config', action='store_true',
-                           help=argparse.SUPPRESS)
-    subparser.add_argument('--list', action='store_true',
-                           help=argparse.SUPPRESS)
-    subparser.set_defaults(callback=do_download)
-
     init_logging()
-
-    # Because argparse.REMAINDER can't be used as first argument without
-    # making flags emit a "unrecognized argument" error, get the remainder
-    # for the python command with parse_known_args.
-    args, leftovers = parser.parse_known_args(argv)
-    if args.command != 'python':
-        args = parser.parse_args(argv)
-        return args.callback(args)
-    else:
-        return args.callback(leftovers)
+    return CLI.run(argv)
 
 
 if __name__ == '__main__':
