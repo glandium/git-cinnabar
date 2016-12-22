@@ -744,6 +744,7 @@ def main(argv):
     subparser.add_argument('-m', '--manifest', action='store_true',
                            help='open manifest')
     subparser.add_argument('rev', help='revision')
+    subparser.set_defaults(callback=do_data)
 
     subparser = subparsers.add_parser(
         'fsck', help='check cinnabar metadata consistency')
@@ -753,22 +754,27 @@ def main(argv):
                            help='Validate files hashes')
     subparser.add_argument('commit', nargs='*',
                            help='Specific commit or changeset to check')
+    subparser.set_defaults(callback=fsck)
 
     subparser = subparsers.add_parser(
         'reclone', help='reclone all mercurial remotes')
+    subparser.set_defaults(callback=do_reclone)
 
     subparser = subparsers.add_parser(
         'fetch', help='fetch a changeset from a mercurial remote')
     subparser.add_argument('remote', help='mercurial remote name or url')
     subparser.add_argument('rev', help='mercurial changeset to fetch')
+    subparser.set_defaults(callback=do_fetch)
 
     subparser = subparsers.add_parser(
         'hg2git', help='convert mercurial sha1 to corresponding git sha1')
     subparser.add_argument('sha1', nargs='+', help='mercurial sha1')
+    subparser.set_defaults(callback=do_hg2git)
 
     subparser = subparsers.add_parser(
         'git2hg', help='convert git sha1 to corresponding mercurial sha1')
     subparser.add_argument('sha1', nargs='+', help='git sha1')
+    subparser.set_defaults(callback=do_git2hg)
 
     subparser = subparsers.add_parser(
         'bundle', help='create a mercurial bundle')
@@ -779,15 +785,18 @@ def main(argv):
     subparser.add_argument('rev', nargs='+',
                            help='git revision range (see the Specifying Ranges'
                                 ' section of gitrevisions(7))')
+    subparser.set_defaults(callback=do_bundle)
 
     subparser = subparsers.add_parser(
         'rollback', help='rollback cinnabar metadata state')
     subparser.add_argument('committish',
                            help='committish of the state to rollback to')
+    subparser.set_defaults(callback=rollback)
 
     subparser = subparsers.add_parser(
         'python', help='open a python shell with the cinnabar module in'
                        ' sys.path')
+    subparser.set_defaults(callback=do_python)
 
     subparser = subparsers.add_parser(
         'download', help='download a prebuilt helper')
@@ -805,6 +814,9 @@ def main(argv):
                            help=argparse.SUPPRESS)
     subparser.add_argument('--list', action='store_true',
                            help=argparse.SUPPRESS)
+    subparser.set_defaults(callback=do_download)
+
+    init_logging()
 
     # Because argparse.REMAINDER can't be used as first argument without
     # making flags emit a "unrecognized argument" error, get the remainder
@@ -812,30 +824,9 @@ def main(argv):
     args, leftovers = parser.parse_known_args(argv)
     if args.command != 'python':
         args = parser.parse_args(argv)
-
-    init_logging()
-
-    cmd = args.command
-    if cmd == 'data':
-        return do_data(args)
-    elif cmd == 'fsck':
-        return fsck(args)
-    elif cmd == 'reclone':
-        return do_reclone(args)
-    elif cmd == 'hg2git':
-        return do_hg2git(args)
-    elif cmd == 'git2hg':
-        return do_git2hg(args)
-    elif cmd == 'bundle':
-        return do_bundle(args)
-    elif cmd == 'rollback':
-        return rollback(args)
-    elif cmd == 'python':
-        return do_python(leftovers)
-    elif cmd == 'fetch':
-        return do_fetch(args)
-    elif cmd == 'download':
-        return do_download(args)
+        return args.callback(args)
+    else:
+        return args.callback(leftovers)
 
 
 if __name__ == '__main__':
