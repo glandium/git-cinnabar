@@ -8,10 +8,11 @@ import threading
 import zipfile
 import errno
 from StringIO import StringIO
-from binascii import unhexlify
 from cinnabar import VERSION
-from cinnabar.cmd.util import CLI
-from cinnabar.githg import git_hash
+from cinnabar.cmd.util import (
+    CLI,
+    helper_hash,
+)
 from cinnabar.git import Git
 from cinnabar.util import progress_enum
 
@@ -65,20 +66,8 @@ def download(args):
     script_path = os.path.dirname(os.path.abspath(sys.argv[0]))
 
     if args.dev is not False:
-        tree = ''
-        d = os.path.join(script_path, 'helper')
-        has_helper_source = False
-        for f in sorted(os.listdir(d) if os.path.exists(d) else ()):
-            if f == 'cinnabar-helper.c':
-                has_helper_source = True
-            if 'patched' in f:
-                continue
-            if f.endswith(('.h', '.c', '.c.patch')) or f == 'GIT-VERSION.mk':
-                sha1 = git_hash('blob', open(os.path.join(d, f)).read())
-                tree += '100644 %s\0' % f
-                tree += unhexlify(sha1)
-
-        if not has_helper_source:
+        sha1 = helper_hash()
+        if sha1 is None:
             print >>sys.stderr, (
                 'Cannot find the right development helper for this '
                 'version of git cinnabar.')
@@ -87,7 +76,7 @@ def download(args):
         if args.dev:
             system_variant = '%s-%s' % (system, args.dev.lower())
         url = 'https://s3.amazonaws.com/git-cinnabar/artifacts/%s/%s/%s/%s' % (
-            git_hash('tree', tree), system_variant, machine, helper)
+            sha1, system_variant, machine, helper)
     else:
         if system in ('Windows', 'macOS'):
             ext = 'zip'
