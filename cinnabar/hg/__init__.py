@@ -2,8 +2,6 @@ from __future__ import division
 import os
 import sys
 import urllib
-sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
-
 from cinnabar.githg import (
     NothingToGraftException,
     RevChunk,
