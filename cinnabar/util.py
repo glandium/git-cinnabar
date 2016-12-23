@@ -775,7 +775,7 @@ class Process(object):
         logger = logging.getLogger('process')
         if logger.isEnabledFor(logging.INFO):
             logger.info('[%d] %s', proc.pid,
-                        ' '.join, chain(self._env_strings(env), cmd))
+                        ' '.join(chain(self._env_strings(env), cmd)))
         return proc
 
     def wait(self):
