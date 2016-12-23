@@ -160,6 +160,8 @@ git-cinnabar-helper$X: $(CINNABAR_OBJECTS) GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
 		$(CURL_LIBCURL) $(LIBS)
 
+cinnabar-helper.o: EXTRA_CPPFLAGS=-DHELPER_HASH=$(shell $(PYTHON_PATH) ../git-cinnabar --version=helper 2> /dev/null | awk -F/ '{print $$NF}')
+
 $(CINNABAR_OBJECTS): %.o: ../helper/%.c GIT-CFLAGS $(missing_dep_dirs)
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
 

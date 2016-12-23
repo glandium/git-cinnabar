@@ -152,7 +152,7 @@ before_script::
 	$(shell git ls-tree HEAD cinnabar | awk '{print $$3}')) ;; \
 	*) false ;; \
 	esac
-	case "$(shell $(CURDIR)/git-cinnabar --version=helper)" in \
+	case "$(shell $(CURDIR)/git-cinnabar --version=helper 2> /dev/null | awk -F/ '{print $$NF}')" in \
 	$(shell git ls-tree HEAD helper | awk '{print $$3}')) ;; \
 	*) false ;; \
 	esac

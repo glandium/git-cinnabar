@@ -67,6 +67,13 @@
 #include "hg-connect.h"
 #include "cinnabar-fast-import.h"
 
+#define STRINGIFY(s) _STRINGIFY(s)
+#define _STRINGIFY(s) # s
+
+#ifndef HELPER_HASH
+#define HELPER_HASH unknown
+#endif
+
 #define CMD_VERSION 900
 
 #define METADATA_REF "refs/cinnabar/metadata"
@@ -1042,7 +1049,8 @@ static void do_version(struct string_list *args)
 	    version > CMD_VERSION)
 		exit(128);
 
-	write_or_die(1, "ok\n", 3);
+	write_or_die(1, STRINGIFY(HELPER_HASH) "\n",
+	             sizeof(STRINGIFY(HELPER_HASH)));
 }
 
 static void string_list_as_sha1_array(struct string_list *list,

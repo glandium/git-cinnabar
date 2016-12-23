@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import subprocess
+from StringIO import StringIO
 from .git import (
     Git,
     Mark,
@@ -55,7 +56,8 @@ class BaseHelper(object):
                                    stderr=stderr, logger='cinnabar-helper',
                                    env=env)
             self._helper.stdin.write('version %d\n' % self.VERSION)
-            if not self._helper.stdout.readline():
+            self._version = self._helper.stdout.readline()
+            if not self._version:
                 logger = logging.getLogger('helper')
                 if self._helper.wait() == 128:
                     logger.error(
@@ -73,6 +75,11 @@ class BaseHelper(object):
             raise NoHelperException
         if self._helper is self:
             raise HelperClosedException
+
+        if name == 'version':
+            yield StringIO(self._version)
+            return
+
         helper = self._helper
         logger = logging.getLogger(name)
         if logger.isEnabledFor(logging.INFO):

@@ -136,7 +136,16 @@ class Version(argparse.Action):
             else:
                 print sha1
         if values == 'helper' or not values:
+            from cinnabar.helper import GitHgHelper
+            try:
+                with GitHgHelper.query('version') as out:
+                    version = out.read(40)
+            except:
+                version = 'unknown'
+
             sha1 = helper_hash() or 'unknown'
+            if version != sha1:
+                sha1 = '%s/%s' % (version, sha1)
             if not values:
                 print 'helper-hash:', sha1
             else:
