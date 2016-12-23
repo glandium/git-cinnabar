@@ -1,5 +1,6 @@
 #include "git-compat-util.h"
 #include "hg-connect-internal.h"
+#include "hg-bundle.h"
 #include "credential.h"
 #include "http.h"
 #include "strbuf.h"
@@ -289,6 +290,50 @@ static void http_push_command(struct hg_connection *conn,
 	}
 }
 
+/* The first request we send is a "capabilities" request. This sends to
+ * the repo url with a query string "?cmd=capabilities". If the remote
+ * url is not actually a repo, but a bundle, the content will start with
+ * 'HG10' or 'HG20', which is not something that would appear as the first
+ * four characters for the "capabilities" answer. In that case, we output
+ * the stream to stdout.
+ * (Note this assumes HTTP servers serving bundles don't care about query
+ * strings)
+ * Ideally, it would be good to pause the curl request, return a
+ * hg_connection, and give control back to the caller, but git's http.c
+ * doesn't allow pauses.
+ */
+static size_t caps_request_write(char *ptr, size_t size, size_t nmemb,
+				 void *data)
+{
+	struct bundle_writer *writer = (struct bundle_writer *)data;
+	size_t len = size * nmemb;
+	if (writer->type == WRITER_STRBUF && writer->out.buf->len == 0) {
+		if (len > 4 && ptr[0] == 'H' && ptr[1] == 'G' &&
+		    (ptr[2] == '1' || ptr[2] == '2') && ptr[3] == '0') {
+			writer->type = WRITER_FILE;
+			writer->out.file = stdout;
+			fwrite("bundle\n", 1, 7, stdout);
+		}
+	}
+	return write_data((unsigned char *)ptr, len, writer);
+}
+
+static void prepare_caps_request(CURL *curl, struct curl_slist *headers,
+				 void *data)
+{
+	curl_easy_setopt(curl, CURLOPT_FILE, data);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, caps_request_write);
+}
+
+static void http_capabilities_command(struct hg_connection *conn,
+				      struct bundle_writer *writer, ...)
+{
+	va_list ap;
+	va_start(ap, writer);
+	http_command(conn, prepare_caps_request, writer, "capabilities", ap);
+	va_end(ap);
+}
+
 static int http_finish(struct hg_connection *conn)
 {
 	http_cleanup();
@@ -300,13 +345,23 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 {
 	struct hg_connection *conn = xmalloc(sizeof(*conn));
 	struct strbuf caps = STRBUF_INIT;
+	struct bundle_writer writer;
 	string_list_init(&conn->capabilities, 1);
 
 	conn->http.url = xstrdup(url);
 
 	http_init(NULL, conn->http.url, 0);
 
-	http_simple_command(conn, &caps, "capabilities", NULL);
+	writer.type = WRITER_STRBUF;
+	writer.out.buf = &caps;
+	http_capabilities_command(conn, &writer, NULL);
+	/* Cf. comment above caps_request_write. If the bundle stream was
+	 * sent to stdout, the writer was switched to WRITER_FILE. */
+	if (writer.type == WRITER_FILE) {
+		free(conn->http.url);
+		free(conn);
+		return NULL;
+	}
 	split_capabilities(&conn->capabilities, caps.buf);
 	strbuf_release(&caps);
 

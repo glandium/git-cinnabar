@@ -3,8 +3,8 @@
 #include "hg-connect-internal.h"
 #include <stdint.h>
 
-static size_t write_data(const unsigned char *buf, size_t size,
-			 struct bundle_writer *out)
+size_t write_data(const unsigned char *buf, size_t size,
+		  struct bundle_writer *out)
 {
 	switch (out->type) {
 	case WRITER_FILE:
