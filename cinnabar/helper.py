@@ -56,8 +56,8 @@ class BaseHelper(object):
                                    stderr=stderr, logger='cinnabar-helper',
                                    env=env)
             self._helper.stdin.write('version %d\n' % self.VERSION)
-            self._version = self._helper.stdout.readline()
-            if not self._version:
+            response = self._helper.stdout.readline()
+            if not response:
                 logger = logging.getLogger('helper')
                 if self._helper.wait() == 128:
                     logger.error(
@@ -69,6 +69,7 @@ class BaseHelper(object):
                         'Please try `git cinnabar download` or build it.')
                 self._helper = None
             else:
+                self._version = response.lstrip('ok\n') or 'unknown'
                 atexit.register(self.close)
 
         if not self._helper:
