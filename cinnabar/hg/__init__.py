@@ -2,6 +2,7 @@ from __future__ import division
 import os
 import sys
 import urllib
+import urllib2
 from cinnabar.githg import (
     NothingToGraftException,
     RevChunk,
@@ -789,10 +790,15 @@ def get_repo(remote):
             path = path.lstrip('/')
         if not os.path.isdir(path):
             return bundlerepo(path)
+    ui = get_ui()
     if changegroup and remote.parsed_url.scheme == 'file':
-        repo = localpeer(get_ui(), path)
+        repo = localpeer(ui, path)
     else:
-        repo = hg.peer(get_ui(), {}, remote.url)
+        try:
+            repo = hg.peer(ui, {}, remote.url)
+        except (error.RepoError, urllib2.HTTPError, IOError):
+            return bundlerepo(remote.url, url.open(ui, remote.url))
+
     assert repo.capable('getbundle')
 
     return repo
