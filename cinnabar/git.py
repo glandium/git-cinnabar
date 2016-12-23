@@ -201,7 +201,8 @@ class Git(object):
         self.update_ref(ref, '0' * 40, oldvalue)
 
     @classmethod
-    def config(self, name, remote=None, values={}):
+    def config(self, name, remote=None, values={}, multiple=False):
+        assert not (values and multiple)
         if self._config is None:
             proc = GitProcess('config', '-l', '-z')
             data = proc.stdout.read()
@@ -228,6 +229,10 @@ class Git(object):
         if value is None:
             var = name
             value = self._config.get(name)
+        if value:
+            value = value.split('\0')
+            if not multiple:
+                value = value[-1]
         logging.getLogger('config').info('%s = %r', var, value)
         if values:
             if value in values:
