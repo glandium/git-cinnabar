@@ -1,17 +1,7 @@
 #include "git-compat-util.h"
 #include "hg-bundle.h"
+#include "hg-connect-internal.h"
 #include <stdint.h>
-
-struct bundle_writer {
-	union {
-		FILE *file;
-		struct strbuf *buf;
-	} out;
-	int type;
-};
-
-#define WRITER_FILE 1
-#define WRITER_STRBUF 2
 
 static size_t write_data(const unsigned char *buf, size_t size,
 			 struct bundle_writer *out)
@@ -27,7 +17,7 @@ static size_t write_data(const unsigned char *buf, size_t size,
 	}
 }
 
-static size_t copy_data(uint32_t len, FILE *in, struct bundle_writer *out)
+size_t copy_data(size_t len, FILE *in, struct bundle_writer *out)
 {
 	unsigned char buf[4096];
 	size_t ret = len;

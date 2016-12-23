@@ -208,6 +208,8 @@ class HgRepoHelper(BaseHelper):
     def connect(self, url):
         with self.query('connect', url) as stdout:
             resp = stdout.readline().rstrip()
+            if resp == 'bundle':
+                return stdout
             if resp != 'ok':
                 raise Exception(resp)
 

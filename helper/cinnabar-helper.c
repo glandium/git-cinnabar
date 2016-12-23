@@ -1237,13 +1237,15 @@ static void do_connect(struct string_list *args)
 
 	conn = hg_connect(url, 0);
 
+	// hg_connect either dies in case of connection failure,
+	// or returns NULL, in which case it has sent out a stream
+	// to stdout.
 	if (conn) {
 		write_or_die(1, "ok\n", 3);
 		connected_loop(conn);
 
 		hg_finish_connect(conn);
-	} else
-		write_or_die(1, "failed to connect\n", 18);
+	}
 }
 
 int cmd_main(int argc, const char *argv[])

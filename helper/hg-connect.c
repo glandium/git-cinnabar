@@ -111,6 +111,9 @@ struct hg_connection *hg_connect(const char *url, int flags)
 #endif
 		conn = hg_connect_stdio(url, flags);
 
+	if (!conn)
+		return NULL;
+
 	for (i = 0; i < ARRAY_SIZE(required_caps); i++)
 		if (!hg_get_capability(conn, required_caps[i]))
 			die("Mercurial repository doesn't support the required"

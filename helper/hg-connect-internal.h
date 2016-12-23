@@ -8,6 +8,8 @@ extern void split_capabilities(struct string_list *list, const char *buf);
 extern struct hg_connection *hg_connect_stdio(const char *url, int flags);
 extern struct hg_connection *hg_connect_http(const char *url, int flags);
 
+extern struct hg_connection *hg_connect_bundle(const char *path);
+
 /* Generic helpers to handle passing parameters through the mercurial
  * wire protocol. Meant for internal use in hg-connect*.c only. */
 union param_value {

@@ -348,7 +348,6 @@ def findcommon(repo, store, hgheads):
 class HelperRepo(object):
     def __init__(self, url):
         self._url = url
-        HgRepoHelper.connect(url)
 
     def init_state(self):
         state = HgRepoHelper.state()
@@ -445,9 +444,10 @@ class HelperRepo(object):
 # Mercurial's bundlerepo completely unwraps bundles in $TMPDIR but we can be
 # smarter than that.
 class bundlerepo(object):
-    def __init__(self, path):
+    def __init__(self, path, fh=None):
         self._url = path
-        fh = open(path, 'r')
+        if fh is None:
+            fh = open(path, 'r')
         header = readexactly(fh, 4)
         magic, version = header[0:2], header[2:4]
         if magic != 'HG':
@@ -770,6 +770,18 @@ if changegroup:
 
 
 def get_repo(remote):
+    if not changegroup or experiment('wire'):
+        if not changegroup:
+            logging.warning('Mercurial libraries not found. Falling back to '
+                            'native access.')
+        logging.warning(
+            'Native access to mercurial repositories is experimental!')
+
+        stream = HgRepoHelper.connect(remote.url)
+        if stream:
+            return bundlerepo(remote.url, stream)
+        return HelperRepo(remote.url)
+
     if remote.parsed_url.scheme == 'file':
         path = remote.parsed_url.path
         if sys.platform == 'win32':
@@ -777,13 +789,6 @@ def get_repo(remote):
             path = path.lstrip('/')
         if not os.path.isdir(path):
             return bundlerepo(path)
-    if not changegroup or experiment('wire'):
-        if not changegroup:
-            logging.warning('Mercurial libraries not found. Falling back to '
-                            'native access.')
-        logging.warning(
-            'Native access to mercurial repositories is experimental!')
-        return HelperRepo(remote.url)
     if changegroup and remote.parsed_url.scheme == 'file':
         repo = localpeer(get_ui(), path)
     else:

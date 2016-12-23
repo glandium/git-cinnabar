@@ -195,9 +195,31 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 			remote_path++;
 		proc->use_shell = prepare_ssh_command(
 			&proc->args, user, host, port, flags);
-	} else if (protocol == PROTO_FILE || protocol == PROTO_LOCAL)
+	} else if (protocol == PROTO_FILE || protocol == PROTO_LOCAL) {
+		struct stat st;
+		stat(path, &st);
+		if (S_ISREG(st.st_mode)) {
+			FILE *file;
+			struct bundle_writer writer;
+			free(port);
+			free(host);
+			free(user);
+			child_process_clear(proc);
+			string_list_clear(&conn->capabilities, 0);
+			free(conn);
+			// TODO: Eventually we want to have a hg_connection
+			// for bundles, but for now, just send the stream to
+			// stdout and return NULL.
+			file = fopen(path, "r");
+			free(path);
+			fwrite("bundle\n", 1, 7, stdout);
+			writer.type = WRITER_FILE;
+			writer.out.file = stdout;
+			copy_data(st.st_size, file, &writer);
+			return NULL;
+		}
 		proc->use_shell = 1;
-	else
+	} else
 		die("I don't handle protocol '%s'", prot_name(protocol));
 
 	strbuf_addstr(&buf, "hg -R ");
