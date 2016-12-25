@@ -1,7 +1,6 @@
 import sys
 from cinnabar.cmd.util import CLI
 from cinnabar.githg import (
-    git_hash,
     GitHgStore,
     HG_EMPTY_FILE,
     OldUpgradeException,
@@ -14,7 +13,11 @@ from cinnabar.git import (
     Git,
     NULL_NODE_ID,
 )
-from cinnabar.util import progress_iter
+from cinnabar.util import (
+    progress_enum,
+    progress_iter,
+    sorted_merge,
+)
 from cinnabar.helper import GitHgHelper
 from cinnabar.hg.bundle import get_changes
 from collections import (
@@ -136,7 +139,7 @@ def fsck(args):
 
         manifest_commits = OrderedDict((m, p) for m, t, p in progress_iter(
             'Reading %d manifest trees',
-            GitHgHelper.rev_list('--full-history', '--topo-order',
+            GitHgHelper.rev_list('--full-history', '--topo-order', '--reverse',
                                  *revs)
         ))
 
@@ -144,16 +147,48 @@ def fsck(args):
             '--topo-order', '--full-history', '--reverse', git_heads)
 
     if upgrade:
-        iter = ((h, g) for h, (g, t) in all_hg2git.iteritems() if t == 'blob')
-        for hg_sha1, git_sha1 in progress_iter('Upgrading %d files metadata',
-                                               iter):
-            content = GitHgHelper.cat_file('blob', git_sha1)
-            if content.startswith('\1\n'):
-                _, metadata, content = content.split('\1\n', 2)
-                store._files_meta[hg_sha1] = metadata
-                store._git_files[hg_sha1] = git_hash('blob', content)
-            else:
-                store._git_files[hg_sha1] = git_sha1
+        def scan_files():
+            seen_files = set()
+            for i, (m, p) in enumerate(manifest_commits.iteritems(), start=1):
+                git_changes = get_changes(m, p, 'git')
+                hg_changes = get_changes(m, p, 'hg')
+                for path, git_change, hg_change in sorted_merge(git_changes,
+                                                                hg_changes):
+                    if git_change:
+                        git_file, _ = git_change
+                    else:
+                        git_file = one(Git.ls_tree(m, 'git/%s' % path))[2]
+                    hg_file, _ = hg_change
+                    if hg_file != NULL_NODE_ID and hg_file not in seen_files:
+                        seen_files.add(hg_file)
+                        yield (i, len(seen_files)), (hg_file, git_file)
+
+        for f in progress_enum('Scanning %d manifests and '
+                               'upgrading %d files metadata', scan_files()):
+            hg_file, git_file = f
+            if hg_file == HG_EMPTY_FILE:
+                continue
+            if hg_file not in all_hg2git:
+                report('Missing file in hg2git branch: %s' % hg_file)
+                continue
+            hg2git_file, typ = all_hg2git[hg_file]
+            if typ != 'blob':
+                report('Metadata corrupted for file %s' % hg_file)
+                continue
+            if hg2git_file == git_file:
+                continue
+            full_content = GitHgHelper.cat_file('blob', hg2git_file)
+            content = GitHgHelper.cat_file('blob', git_file)
+            metadata = full_content[:len(full_content) - len(content)]
+            if (not metadata.startswith('\1\n') and
+                    not metadata.endswith('\1\n')):
+                report('Metadata corrupted for file %s' % hg_file)
+            store._git_files[hg_file] = git_file
+            store._files_meta[hg_file] = metadata[2:-2]
+
+        if status['broken']:
+            print 'Cannot finish upgrading... You may need to reclone.'
+            return 1
 
         # Technically, all_hg2git should be updated here, but we don't use the
         # git sha1 in there further below, so skip that.
