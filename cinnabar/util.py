@@ -92,14 +92,14 @@ class ConfigSetFunc(object):
                         self._config.remove(c)
                     except KeyError:
                         logging.getLogger('config').warn(
-                            '%s: %s is not one of (%s)'
-                            % (self._key, c, ', '.join(self._config)))
+                            '%s: %s is not one of (%s)',
+                            self._key, c, ', '.join(self._config))
                 elif c in self._values or c in self._extra_values:
                     self._config.add(c)
                 else:
                     logging.getLogger('config').warn(
-                        '%s: %s is not one of (%s)'
-                        % (self._key, c, ', '.join(self._values)))
+                        '%s: %s is not one of (%s)',
+                        self._key, c, ', '.join(self._values))
         return name in self._config
 
 

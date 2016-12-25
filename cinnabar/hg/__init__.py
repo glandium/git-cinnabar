@@ -277,7 +277,7 @@ def findcommon(repo, store, hgheads):
     known = repo.known(unhexlify(h) for h in sample)
     known = set(h for h, k in izip(sample, known) if k)
 
-    logger.info('initial sample size: %d' % len(sample))
+    logger.info('initial sample size: %d', len(sample))
 
     if len(known) == len(hgheads):
         logger.info('all heads known')
@@ -306,12 +306,12 @@ def findcommon(repo, store, hgheads):
     def log_dag(tag):
         if not logger.isEnabledFor(logging.DEBUG):
             return
-        logger.debug('%s dag size: %d' % (
-            tag, sum(1 for n in dag.iternodes(tag))))
+        logger.debug('%s dag size: %d', tag,
+                     sum(1 for n in dag.iternodes(tag)))
         heads = sorted(dag.heads(tag))
-        logger.debug('%s dag heads: (%d) %s' % (tag, len(heads), heads))
+        logger.debug('%s dag heads: (%d) %s', tag, len(heads), heads)
         roots = sorted(dag.roots(tag))
-        logger.debug('%s dag roots: (%d) %s' % (tag, len(roots), roots))
+        logger.debug('%s dag roots: (%d) %s', tag, len(roots), roots)
 
     log_dag('unknown')
     log_dag('known')
@@ -331,7 +331,7 @@ def findcommon(repo, store, hgheads):
         known = repo.known(unhexlify(h) for h in hg_sample)
         unknown = set(h for h, k in izip(sample, known) if not k)
         known = set(h for h, k in izip(sample, known) if k)
-        logger.info('next sample size: %d' % len(sample))
+        logger.info('next sample size: %d', len(sample))
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug('known (sub)set: (%d) %s', len(known), sorted(known))
             logger.debug('unknown (sub)set: (%d) %s', len(unknown),
@@ -558,7 +558,7 @@ def getbundle(repo, store, heads, branch_names):
         bundle = repo._unbundler
     else:
         common = findcommon(repo, store, store.heads(branch_names))
-        logging.info('common: %s' % common)
+        logging.info('common: %s', common)
         kwargs = {}
         if unbundle20 and repo.capable('bundle2'):
             bundle2caps = {
@@ -603,7 +603,7 @@ def getbundle(repo, store, heads, branch_names):
         try:
             store.store_changeset(cs)
         except NothingToGraftException:
-            logging.warn('Cannot graft %s, not importing.' % cs.node)
+            logging.warn('Cannot graft %s, not importing.', cs.node)
             pass
 
 
@@ -629,7 +629,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                 yield rev
 
     common = findcommon(repo, store, set(local_bases()))
-    logging.info('common: %s' % common)
+    logging.info('common: %s', common)
 
     def revs():
         for sha1 in common:
