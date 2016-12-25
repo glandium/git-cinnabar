@@ -235,7 +235,7 @@ def fsck(args):
         git_parents = tuple(store.manifest_ref(p) for p in parents
                             if p != NULL_NODE_ID)
 
-        manifest_dag.add(store.manifest_ref(manifest), git_parents)
+        manifest_dag.add(manifest_ref, git_parents)
 
         if args.manifests:
             if not GitHgHelper.check_manifest(manifest):
