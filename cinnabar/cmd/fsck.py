@@ -2,7 +2,6 @@ import sys
 from cinnabar.cmd.util import CLI
 from cinnabar.githg import (
     git_hash,
-    GitCommit,
     GitHgStore,
     HG_EMPTY_FILE,
     OldUpgradeException,
@@ -129,7 +128,7 @@ def fsck(args):
                             'Reading %d commit to changeset mappings',
                             Git.ls_tree(notes_rev, recursive=True)))
 
-        manifest_commits = OrderedDict((m, None) for m, t, p in progress_iter(
+        manifest_commits = OrderedDict((m, p) for m, t, p in progress_iter(
             'Reading %d manifest trees',
             GitHgHelper.rev_list('--full-history', '--topo-order',
                                  manifests_rev)
@@ -242,11 +241,11 @@ def fsck(args):
             if not GitHgHelper.check_manifest(manifest):
                 report('Sha1 mismatch for manifest %s' % manifest)
 
-        manifest_commit = GitCommit(manifest_ref)
-        if sorted(manifest_commit.parents) != sorted(git_parents):
+        manifest_commit_parents = manifest_commits.get(manifest_ref, ())
+        if sorted(manifest_commit_parents) != sorted(git_parents):
             # TODO: better error
             report('%s(%s) %s != %s' % (manifest, manifest_ref,
-                                        manifest_commit.parents,
+                                        manifest_commit_parents,
                                         git_parents))
 
         git_ls = one(Git.ls_tree(manifest_ref, 'git'))
