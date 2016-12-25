@@ -74,7 +74,7 @@ def get_changes(tree, parents, base_path=''):
     if not parents:
         for line in Git.ls_tree(tree, base_path, recursive=True):
             mode, typ, sha1, path = line
-            yield path[3:], sha1, ()
+            yield path[len(base_path) + 1:] if base_path else path, sha1, ()
     elif len(parents) == 1:
         for path, node, parent in manifest_diff(parents[0], tree, base_path):
             yield path, node, (parent,)
