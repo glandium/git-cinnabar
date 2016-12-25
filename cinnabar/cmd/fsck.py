@@ -1,9 +1,11 @@
 import sys
 from cinnabar.cmd.util import CLI
 from cinnabar.githg import (
+    GeneratedManifestInfo,
     GitCommit,
     GitHgStore,
     HG_EMPTY_FILE,
+    ManifestLine,
     OldUpgradeException,
     one,
     UpgradeException,
@@ -148,24 +150,62 @@ def fsck(args):
             '--topo-order', '--full-history', '--reverse', git_heads)
 
     if upgrade:
+        store._manifest_heads_orig = set()
+
+        def _diff_tree(a, b, base_path):
+            if not b:
+                for line in Git.ls_tree(a, base_path, recursive=True):
+                    mode, typ, sha1, path = line
+                    path = path[len(base_path) + 1:] if base_path else path
+                    yield path, sha1, mode, 'A'
+            else:
+                assert len(b) == 1
+                for line in Git.diff_tree(b[0], a, base_path):
+                    _mode, mode, _sha1, sha1, status, path = line
+                    yield path, sha1, mode, status
+
+        def manifest_git2hg(sha1):
+            return GitCommit(sha1).body
+
         def scan_files():
             seen_files = set()
             for i, (m, p) in enumerate(manifest_commits.iteritems(), start=1):
-                git_changes = get_changes(m, p, 'git')
-                hg_changes = get_changes(m, p, 'hg')
+                git_changes = _diff_tree(m, p[:1], 'git')
+                hg_changes = _diff_tree(m, p[:1], 'hg')
+                manifest = GeneratedManifestInfo(NULL_NODE_ID)
+                manifest.node = manifest_git2hg(m)
+                manifest.set_parents(*(manifest_git2hg(c) for c in p))
+                manifest.delta_node = manifest.parent1
                 for path, git_change, hg_change in sorted_merge(git_changes,
                                                                 hg_changes):
                     if git_change:
-                        git_file, _ = git_change
+                        git_file, mode, _ = git_change
                     else:
-                        git_file = one(Git.ls_tree(m, 'git/%s' % path))[2]
-                    hg_file, _ = hg_change
+                        mode, _, git_file, p = one(
+                            Git.ls_tree(m, 'git/%s' % path))
+                    if hg_change:
+                        hg_file, _, status = hg_change
+                    else:
+                        # The only case where a hg change would be missing is
+                        # when there is an attribute change
+                        status = 'M'
+                        hg_file = one(Git.ls_tree(m, 'hg/%s' % path))[2]
+                    if status == 'D':
+                        manifest.removed.add(path)
+                        continue
+                    attr = store.ATTR[mode]
+                    manifest.append_line(ManifestLine(path, hg_file, attr),
+                                         modified=True)
                     if hg_file != NULL_NODE_ID and hg_file not in seen_files:
                         seen_files.add(hg_file)
                         yield (i, len(seen_files)), (hg_file, git_file)
 
-        for f in progress_enum('Scanning %d manifests and '
-                               'upgrading %d files metadata', scan_files()):
+                store._manifests[manifest.node] = None
+                store.store_manifest(manifest)
+                assert store._manifests[manifest.node] == m
+
+        for f in progress_enum('Upgrading %d manifests and '
+                               '%d files metadata', scan_files()):
             hg_file, git_file = f
             if hg_file == HG_EMPTY_FILE:
                 continue
