@@ -128,10 +128,16 @@ def fsck(args):
                             'Reading %d commit to changeset mappings',
                             Git.ls_tree(notes_rev, recursive=True)))
 
+        commit = GitCommit(Git.resolve_ref('refs/cinnabar/manifests'))
+        if commit.body == 'has-flat-manifest-tree':
+            revs = commit.parents[1:]
+        else:
+            revs = (manifests_rev,)
+
         manifest_commits = OrderedDict((m, p) for m, t, p in progress_iter(
             'Reading %d manifest trees',
             GitHgHelper.rev_list('--full-history', '--topo-order',
-                                 manifests_rev)
+                                 *revs)
         ))
 
         all_git_commits = GitHgHelper.rev_list(
