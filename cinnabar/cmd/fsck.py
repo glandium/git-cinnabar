@@ -204,28 +204,38 @@ def fsck(args):
                 store.store_manifest(manifest)
                 assert store._manifests[manifest.node] == m
 
-        for f in progress_enum('Upgrading %d manifests and '
-                               '%d files metadata', scan_files()):
-            hg_file, git_file = f
-            if hg_file == HG_EMPTY_FILE:
+        if 'files-meta' not in store._flags:
+            for f in progress_enum('Upgrading %d manifests and '
+                                   '%d files metadata', scan_files()):
+                hg_file, git_file = f
+                if hg_file == HG_EMPTY_FILE:
+                    continue
+                if hg_file not in all_hg2git:
+                    report('Missing file in hg2git branch: %s' % hg_file)
+                    continue
+                hg2git_file, typ = all_hg2git[hg_file]
+                if typ != 'blob':
+                    report('Metadata corrupted for file %s' % hg_file)
+                    continue
+                if hg2git_file == git_file:
+                    continue
+                full_content = GitHgHelper.cat_file('blob', hg2git_file)
+                content = GitHgHelper.cat_file('blob', git_file)
+                metadata = full_content[:len(full_content) - len(content)]
+                if (not metadata.startswith('\1\n') and
+                        not metadata.endswith('\1\n')):
+                    report('Metadata corrupted for file %s' % hg_file)
+                store._git_files[hg_file] = git_file
+                store._files_meta[hg_file] = metadata[2:-2]
+        else:
+            def scan_manifests():
+                prev = 0
+                for (i, j), _ in scan_files():
+                    if i != prev:
+                        yield i, None
+                        prev = i
+            for _ in progress_enum('Upgrading %d manifests', scan_manifests()):
                 continue
-            if hg_file not in all_hg2git:
-                report('Missing file in hg2git branch: %s' % hg_file)
-                continue
-            hg2git_file, typ = all_hg2git[hg_file]
-            if typ != 'blob':
-                report('Metadata corrupted for file %s' % hg_file)
-                continue
-            if hg2git_file == git_file:
-                continue
-            full_content = GitHgHelper.cat_file('blob', hg2git_file)
-            content = GitHgHelper.cat_file('blob', git_file)
-            metadata = full_content[:len(full_content) - len(content)]
-            if (not metadata.startswith('\1\n') and
-                    not metadata.endswith('\1\n')):
-                report('Metadata corrupted for file %s' % hg_file)
-            store._git_files[hg_file] = git_file
-            store._files_meta[hg_file] = metadata[2:-2]
 
         if status['broken']:
             print 'Cannot finish upgrading... You may need to reclone.'
