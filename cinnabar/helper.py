@@ -1,7 +1,6 @@
 import atexit
 import logging
 import os
-import re
 import subprocess
 from StringIO import StringIO
 from .git import (
@@ -16,9 +15,6 @@ from .util import (
     Process,
 )
 from contextlib import contextmanager
-
-
-SHA1_RE = re.compile('^[0-9a-fA-F]{40}$')
 
 
 class NoHelperException(Exception):

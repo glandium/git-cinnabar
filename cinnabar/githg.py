@@ -350,26 +350,6 @@ def isplitmanifest(data):
         yield ManifestLine(l[:null], l[null + 1:null + 41], l[null + 41:])
 
 
-def findline(data, offset, first=0, last=-1):
-    if last == -1:
-        last = len(data) - 1
-    first_start = data[first].offset
-    last_start = data[last].offset
-    if offset >= last_start:
-        return last
-    if last - first == 1:
-        return first
-
-    ratio = (offset - first_start) / (last_start - first_start)
-    maybe_line = int(ratio * (last - first) + first)
-    if (offset >= data[maybe_line].offset and
-            offset < data[maybe_line + 1].offset):
-        return maybe_line
-    if offset < data[maybe_line].offset:
-        return findline(data, offset, first, maybe_line)
-    return findline(data, offset, maybe_line, last)
-
-
 class ManifestInfo(RevChunk):
     __slots__ = ('removed', 'modified')
 

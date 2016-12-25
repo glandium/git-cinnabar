@@ -495,7 +495,6 @@ class bundlerepo(object):
         self._branchmap = defaultdict(list)
         for tag, node in self._dag.all_heads():
             self._branchmap[tag].append(unhexlify(node))
-        self._tip = unhexlify(chunk.node)
 
         def repo_unbundler():
             yield chunks
