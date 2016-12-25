@@ -1,6 +1,7 @@
 import sys
 from cinnabar.cmd.util import CLI
 from cinnabar.githg import (
+    GitCommit,
     GitHgStore,
     HG_EMPTY_FILE,
     OldUpgradeException,
