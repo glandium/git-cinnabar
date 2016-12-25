@@ -37,7 +37,6 @@ from cinnabar.git import (
 from cinnabar.util import (
     check_enabled,
     experiment,
-    next,
     progress_iter,
 )
 from collections import (
@@ -480,7 +479,7 @@ class bundlerepo(object):
 
         changeset_chunks = ChunksCollection(progress_iter(
             'Analyzing %d changesets from ' + self._file,
-            iter_and_store(next(raw_unbundler))))
+            iter_and_store(next(raw_unbundler, None))))
 
         for chunk in changeset_chunks.iter_initialized(ChangesetInfo,
                                                        store.changeset):
@@ -498,9 +497,9 @@ class bundlerepo(object):
 
         def repo_unbundler():
             yield chunks
-            yield next(raw_unbundler)
-            yield next(raw_unbundler)
-            if next(raw_unbundler) is not None:
+            yield next(raw_unbundler, None)
+            yield next(raw_unbundler, None)
+            if next(raw_unbundler, None) is not None:
                 assert False
 
         self._unbundler = repo_unbundler()
@@ -576,17 +575,17 @@ def getbundle(repo, store, heads, branch_names):
         bundle = unbundler(bundle)
 
     changeset_chunks = ChunksCollection(progress_iter(
-        'Reading %d changesets', next(bundle)))
+        'Reading %d changesets', next(bundle, None)))
 
     manifest_chunks = ChunksCollection(progress_iter(
-        'Reading %d manifests', next(bundle)))
+        'Reading %d manifests', next(bundle, None)))
 
     for rev_chunk in progress_iter(
             'Reading and importing %d files', iter_initialized(
-                store.file, next(bundle))):
+                store.file, next(bundle, None))):
         store.store_file(rev_chunk)
 
-    if next(bundle) is not None:
+    if next(bundle, None) is not None:
         assert False
     del bundle
 

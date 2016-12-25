@@ -14,7 +14,6 @@ from cinnabar.git import (
 from cinnabar.util import (
     check_enabled,
     experiment,
-    next,
     progress_iter,
     sorted_merge,
 )
@@ -52,13 +51,13 @@ def manifest_diff(a, b, base_path=''):
 def manifest_diff2(a, b, c, base_path=''):
     iter1 = iter(list(manifest_diff(a, c, base_path)))
     iter2 = iter(list(manifest_diff(b, c, base_path)))
-    item1 = next(iter1)
-    item2 = next(iter2)
+    item1 = next(iter1, None)
+    item2 = next(iter2, None)
     while True:
         while item1 and item2 and item1[0] < item2[0]:
-            item1 = next(iter1)
+            item1 = next(iter1, None)
         while item2 and item1 and item2[0] < item1[0]:
-            item2 = next(iter2)
+            item2 = next(iter2, None)
         if item1 is None or item2 is None:
             break
         if item1[0] == item2[0]:
@@ -66,8 +65,8 @@ def manifest_diff2(a, b, c, base_path=''):
             path, sha1_after2, sha1_before2 = item2
             assert sha1_after1 == sha1_after2
             yield path, sha1_after1, (sha1_before1, sha1_before2)
-            item1 = next(iter1)
-            item2 = next(iter2)
+            item1 = next(iter1, None)
+            item2 = next(iter2, None)
 
 
 def get_changes(tree, parents, base_path=''):
