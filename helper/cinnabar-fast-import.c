@@ -96,6 +96,7 @@ static void init()
 	reset_pack_idx_option(&pack_idx_opts);
 	git_pack_config();
 	ignore_case = 0;
+	warn_on_object_refname_ambiguity = 0;
 
 	if (!pack_compression_seen && core_compression_seen)
 		pack_compression_level = core_compression_level;
