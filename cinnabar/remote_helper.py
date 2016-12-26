@@ -8,7 +8,7 @@ from cinnabar.githg import (
     BranchMap,
 )
 from cinnabar.helper import GitHgHelper
-from cinnabar.hg import (
+from cinnabar.hg.repo import (
     bundlerepo,
     getbundle,
     get_repo,

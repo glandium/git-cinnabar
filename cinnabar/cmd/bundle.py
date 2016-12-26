@@ -9,7 +9,7 @@ from cinnabar.hg.bundle import (
     create_bundle,
     PushStore,
 )
-from cinnabar.hg import unbundle20
+from cinnabar.hg.repo import unbundle20
 
 
 @CLI.subcommand

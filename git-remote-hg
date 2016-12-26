@@ -9,7 +9,7 @@ from cinnabar.githg import (
     UpgradeException,
     GitHgStore,
 )
-from cinnabar.hg import Remote
+from cinnabar.hg.repo import Remote
 import logging
 from cinnabar.remote_helper import GitRemoteHelper
 from cinnabar.util import init_logging

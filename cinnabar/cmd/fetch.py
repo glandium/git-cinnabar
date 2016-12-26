@@ -6,7 +6,7 @@ from cinnabar.git import (
     Git,
     GitProcess,
 )
-from cinnabar.hg import (
+from cinnabar.hg.repo import (
     get_repo,
     Remote,
 )
