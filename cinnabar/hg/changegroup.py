@@ -12,6 +12,26 @@ from cinnabar.githg import (
 from cinnabar.git import NULL_NODE_ID
 
 
+class RevDiff(str):
+    class Part(object):
+        __slots__ = ('start', 'end', 'block_len', 'text_data')
+
+        def __init__(self, rev_patch):
+            self.start, self.end, self.block_len = \
+                struct.unpack('>lll', rev_patch[:12])
+            self.text_data = rev_patch[12:12 + self.block_len]
+
+        def __len__(self):
+            return self.block_len + 12
+
+    def __iter__(self):
+        start = 0
+        while start < len(self):
+            part = self.Part(self[start:])
+            yield part
+            start += len(part)
+
+
 class RawRevChunk(bytearray):
     __slots__ = ()
 

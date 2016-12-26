@@ -1,7 +1,6 @@
 #!/usr/bin/env python2.7
 
 from __future__ import division
-import struct
 import types
 from binascii import hexlify, unhexlify
 from itertools import (
@@ -117,17 +116,15 @@ class RevChunk(object):
                                     else '', self._rev_data)
 
     def patch_data(self, data, rev_patch):
+        from .hg.changegroup import RevDiff
         if not rev_patch:
             return data
         new = ''
         end = 0
-        diff_start = 0
-        while diff_start < len(rev_patch):
-            diff = RevDiff(rev_patch[diff_start:])
+        for diff in RevDiff(rev_patch):
             new += data[end:diff.start]
             new += diff.text_data
             end = diff.end
-            diff_start += len(diff)
         new += data[end:]
         return new
 
@@ -289,18 +286,6 @@ class GeneratedFileRev(GeneratedRevChunk):
         return self.node == self.sha1
 
 
-class RevDiff(object):
-    __slots__ = ('start', 'end', 'block_len', 'text_data')
-
-    def __init__(self, rev_patch):
-        self.start, self.end, self.block_len = \
-            struct.unpack('>lll', rev_patch[:12])
-        self.text_data = rev_patch[12:12 + self.block_len]
-
-    def __len__(self):
-        return self.block_len + 12
-
-
 class ChangesetInfo(RevChunk):
     __slots__ = ('message', 'manifest', 'committer', 'date', 'utcoffset',
                  'extra', 'files')
@@ -354,17 +339,15 @@ class ManifestInfo(RevChunk):
     __slots__ = ('removed', 'modified')
 
     def patch_data(self, data, rev_patch):
+        from .hg.changegroup import RevDiff
         new = ''
         end = 0
-        diff_start = 0
         before_list = {}
         after_list = {}
-        while diff_start < len(rev_patch):
-            diff = RevDiff(rev_patch[diff_start:])
+        for diff in RevDiff(rev_patch):
             new += data[end:diff.start]
             new += diff.text_data
             end = diff.end
-            diff_start += len(diff)
 
             start = data.rfind('\n', 0, diff.start) + 1
             if diff.end == 0 or data[diff.end - 1] == '\n':
