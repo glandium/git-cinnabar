@@ -3,12 +3,6 @@ from binascii import (
     unhexlify,
 )
 import struct
-import types
-from cinnabar.githg import (
-    ChangesetInfo,
-    ManifestInfo,
-    RevChunk,
-)
 from cinnabar.git import NULL_NODE_ID
 
 
@@ -106,50 +100,3 @@ class RawRevChunk02(RawRevChunk):
     delta_node = RawRevChunk._field(60, 20, hexlify)
     changeset = RawRevChunk._field(80, 20, hexlify)
     data = RawRevChunk._field(100)
-
-
-def get_previous(store, sha1, type):
-    if issubclass(type, ChangesetInfo):
-        return store.changeset(sha1)
-    if issubclass(type, ManifestInfo):
-        return store.manifest(sha1)
-    return store.file(sha1)
-
-
-def prepare_chunk(store, chunk, previous, chunk_type):
-    if chunk_type == RawRevChunk01:
-        if previous is None and chunk.parent1 != NULL_NODE_ID:
-            previous = get_previous(store, chunk.parent1, type(chunk))
-        return chunk.serialize(previous, chunk_type)
-    elif chunk_type == RawRevChunk02:
-        if isinstance(chunk, ChangesetInfo):
-            parents = (previous if previous
-                       else get_previous(store, p, type(chunk))
-                       for p in chunk.parents[:1])
-        else:
-            parents = (previous if previous and p == previous.node
-                       else get_previous(store, p, type(chunk))
-                       for p in chunk.parents)
-        deltas = sorted((chunk.serialize(p, chunk_type) for p in parents),
-                        key=len)
-        if len(deltas):
-            return deltas[0]
-        else:
-            return chunk.serialize(None, chunk_type)
-    else:
-        assert False
-
-
-def create_changegroup(store, bundle_data, type=RawRevChunk01):
-    previous = None
-    for chunk in bundle_data:
-        if isinstance(chunk, RevChunk):
-            data = prepare_chunk(store, chunk, previous, type)
-        else:
-            data = chunk
-        size = 0 if data is None else len(data) + 4
-        yield struct.pack(">l", size)
-        if data:
-            yield str(data)
-        if isinstance(chunk, (RevChunk, types.NoneType)):
-            previous = chunk
