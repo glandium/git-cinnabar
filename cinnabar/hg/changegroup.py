@@ -31,6 +31,18 @@ class RevDiff(str):
             yield part
             start += len(part)
 
+    def apply(self, orig):
+        new = ''
+        end = 0
+        for diff in self:
+            new += orig[end:diff.start]
+            new += diff.text_data
+            end = diff.end
+        if new == '' and end == 0:
+            return orig
+        new += orig[end:]
+        return new
+
 
 class RawRevChunk(bytearray):
     __slots__ = ()

@@ -117,16 +117,7 @@ class RevChunk(object):
 
     def patch_data(self, data, rev_patch):
         from .hg.changegroup import RevDiff
-        if not rev_patch:
-            return data
-        new = ''
-        end = 0
-        for diff in RevDiff(rev_patch):
-            new += data[end:diff.start]
-            new += diff.text_data
-            end = diff.end
-        new += data[end:]
-        return new
+        return RevDiff(rev_patch).apply(data)
 
     @property
     def sha1(self):
