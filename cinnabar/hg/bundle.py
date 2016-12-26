@@ -1,7 +1,8 @@
 from cinnabar.githg import (
+    FileFindParents,
     GitCommit,
     GitHgStore,
-    GeneratedFileRev,
+    GeneratedRevChunk,
     GeneratedManifestInfo,
     ManifestLine,
 )
@@ -344,11 +345,12 @@ class PushStore(GitHgStore):
     def _create_file_internal(self, sha1, parent1=NULL_NODE_ID,
                               parent2=NULL_NODE_ID,
                               git_manifest_parents=None, path=None):
-        hg_file = GeneratedFileRev(NULL_NODE_ID,
-                                   GitHgHelper.cat_file('blob', sha1))
-        hg_file.set_parents(parent1, parent2,
-                            git_manifest_parents=git_manifest_parents,
-                            path=path)
+        hg_file = GeneratedRevChunk(NULL_NODE_ID,
+                                    GitHgHelper.cat_file('blob', sha1))
+        FileFindParents.set_parents(
+            hg_file, parent1, parent2,
+            git_manifest_parents=git_manifest_parents,
+            path=path)
         node = hg_file.node = hg_file.sha1
         self._git_files.setdefault(node, sha1)
         return hg_file
@@ -369,9 +371,8 @@ class PushStore(GitHgStore):
         metadata = 'copy: %s\ncopyrev: %s\n' % hg_source
         data = '\1\n%s\1\n' % metadata
         data += GitHgHelper.cat_file('blob', sha1)
-        hg_file = GeneratedFileRev(NULL_NODE_ID, data)
-        hg_file.set_parents(git_manifest_parents=git_manifest_parents,
-                            path=path)
+        hg_file = GeneratedRevChunk(NULL_NODE_ID, data)
+        hg_file.set_parents()
         node = hg_file.node = hg_file.sha1
         self._pushed.add(node)
         self._files_meta[node] = metadata

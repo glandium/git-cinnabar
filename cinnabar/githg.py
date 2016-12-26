@@ -167,15 +167,17 @@ class GeneratedRevChunk(RevChunk):
         self.parent2 = parent2
 
 
-class GeneratedFileRev(GeneratedRevChunk):
+class FileFindParents(object):
     logger = logging.getLogger('generated_file')
 
-    def _invalid_if_new(self):
-        if self.node == NULL_NODE_ID:
+    @staticmethod
+    def _invalid_if_new(file):
+        if file.node == NULL_NODE_ID:
             raise Exception('Trying to create an invalid file. '
                             'Please open an issue with details.')
 
-    def set_parents(self, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID,
+    @staticmethod
+    def set_parents(file, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID,
                     git_manifest_parents=None, path=None):
         assert git_manifest_parents is not None and path is not None
 
@@ -186,25 +188,25 @@ class GeneratedFileRev(GeneratedRevChunk):
         # On merges, a file with copy metadata has either no parent, or only
         # one. In that latter case, the parent is always set as second parent.
         # On non-merges, a file with copy metadata doesn't have a parent.
-        if self.data.startswith('\1\n'):
+        if file.data.startswith('\1\n'):
             if len(parents) == 2:
-                self._invalid_if_new()
+                FileFindParents._invalid_if_new(file)
             elif len(parents) == 1:
                 if git_manifest_parents is not None:
                     if len(git_manifest_parents) != 2:
-                        self._invalid_if_new()
+                        FileFindParents._invalid_if_new(file)
                 parents = (NULL_NODE_ID, parents[0])
             elif git_manifest_parents is not None:
                 if len(git_manifest_parents) == 0:
-                    self._invalid_if_new()
+                    FileFindParents._invalid_if_new(file)
         elif len(parents) == 2:
             if git_manifest_parents is not None:
                 if len(git_manifest_parents) != 2:
-                    self._invalid_if_new()
+                    FileFindParents._invalid_if_new(file)
             if parents[0] == parents[1]:
                 parents = parents[:1]
             elif (git_manifest_parents is not None and
-                  (self.node == NULL_NODE_ID or check_enabled('files'))):
+                  (file.node == NULL_NODE_ID or check_enabled('files'))):
                 # Checking if one parent is the ancestor of another is slow.
                 # So, unless we're actually creating this file, skip over
                 # this by default, the fallback will work just fine.
@@ -238,43 +240,46 @@ class GeneratedFileRev(GeneratedRevChunk):
                     if file_dag._tags.get(parents[0]) == 'b':
                         parents = parents[1:]
 
-        super(GeneratedFileRev, self).set_parents(*parents)
-        if self.node != NULL_NODE_ID and self.node != self.sha1:
+        file.set_parents(*parents)
+        if file.node != NULL_NODE_ID and file.node != file.sha1:
             if parents != orig_parents:
-                if self._try_parents(*orig_parents):
-                    self.logger.debug(
+                if FileFindParents._try_parents(file, *orig_parents):
+                    FileFindParents.logger.debug(
                         'Right parents given for %s, but they don\'t match '
-                        'what modern mercurial normally would do', self.node)
+                        'what modern mercurial normally would do', file.node)
                     return
-            self._set_parents_fallback(parent1, parent2)
+            FileFindParents._set_parents_fallback(file, parent1, parent2)
 
-    def _set_parents_fallback(self, parent1=NULL_NODE_ID,
+    @staticmethod
+    def _set_parents_fallback(file, parent1=NULL_NODE_ID,
                               parent2=NULL_NODE_ID):
         result = (  # In some cases, only one parent is stored in a merge,
                     # because the other parent is actually an ancestor of the
                     # first one, but checking that is likely more expensive
                     # than to check if the sha1 matches with either parent.
-                    self._try_parents(parent1) or
-                    self._try_parents(parent2) or
+                    FileFindParents._try_parents(file, parent1) or
+                    FileFindParents._try_parents(file, parent2) or
                     # Some mercurial versions stores the first parent twice in
                     # merges.
-                    self._try_parents(parent1, parent1) or
+                    FileFindParents._try_parents(file, parent1, parent1) or
                     # As last resort, try without any parents.
-                    self._try_parents())
+                    FileFindParents._try_parents(file))
 
-        self.logger.debug('Wrong parents given for %s', self.node)
-        self.logger.debug('  Got: %s %s', parent1, parent2)
+        FileFindParents.logger.debug('Wrong parents given for %s', file.node)
+        FileFindParents.logger.debug('  Got: %s %s', parent1, parent2)
         if result:
-            self.logger.debug('  Expected: %s %s', self.parent1, self.parent2)
+            FileFindParents.logger.debug('  Expected: %s %s', file.parent1,
+                                         file.parent2)
 
         # If none of the above worked, we failed big time
         if not result:
             raise Exception('Failed to create file. '
                             'Please open an issue with details.')
 
-    def _try_parents(self, *parents):
-        super(GeneratedFileRev, self).set_parents(*parents)
-        return self.node == self.sha1
+    @staticmethod
+    def _try_parents(file, *parents):
+        file.set_parents(*parents)
+        return file.node == file.sha1
 
 
 class ChangesetInfo(RevChunk):
@@ -1097,11 +1102,12 @@ class GitHgStore(object):
         if meta:
             content = '\1\n'.join(['', meta, content])
 
-        file = GeneratedFileRev(sha1, content)
+        file = GeneratedRevChunk(sha1, content)
         if file_parents is not None:
-            file.set_parents(*file_parents,
-                             git_manifest_parents=git_manifest_parents,
-                             path=path)
+            FileFindParents.set_parents(
+                file, *file_parents,
+                git_manifest_parents=git_manifest_parents,
+                path=path)
         return file
 
     def git_file_ref(self, sha1):
