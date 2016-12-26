@@ -61,7 +61,7 @@ before_script::
 
 script::
 ifndef NO_BUNDLE2
-	nosetests --all-modules
+	nosetests --all-modules tests
 	flake8 --ignore E402 $$(git ls-files \*\*.py git-cinnabar git-remote-hg)
 endif
 
