@@ -16,6 +16,7 @@ from itertools import (
     izip,
 )
 from types import StringType
+from weakref import WeakKeyDictionary
 
 
 class StreamHandler(logging.StreamHandler):
@@ -453,3 +454,20 @@ class Process(object):
     @property
     def stderr(self):
         return self._proc.stderr
+
+
+class TypedProperty(object):
+    def __init__(self, cls):
+        self.cls = cls
+        self.values = WeakKeyDictionary()
+
+    def __get__(self, obj, cls=None):
+        value = self.values.get(obj)
+        if not value:
+            self.values[obj] = value = self.cls()
+        return value
+
+    def __set__(self, obj, value):
+        # If the class has a "from_obj" static or class method, use it.
+        # Otherwise, just use cls(value)
+        self.values[obj] = getattr(self.cls, 'from_obj', self.cls)(value)
