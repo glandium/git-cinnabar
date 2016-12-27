@@ -5,7 +5,6 @@ import urllib
 import urllib2
 from cinnabar.githg import (
     NothingToGraftException,
-    RevChunk,
     ChangesetInfo,
     ManifestInfo,
 )
@@ -34,6 +33,7 @@ from cinnabar.git import (
     Git,
     NULL_NODE_ID,
 )
+from cinnabar.hg.objects import File
 from cinnabar.util import (
     check_enabled,
     experiment,
@@ -171,21 +171,25 @@ def iterate_files(bundle):
         name_chunk = getchunk(bundle)
         if not name_chunk:
             return
-        for instance in iter_chunks(chunks_in_changegroup(bundle), RevChunk):
-            yield instance
+        for chunk in chunks_in_changegroup(bundle):
+            yield chunk
 
 
-def iter_initialized(get_missing, iterable):
+def iter_initialized(get_missing, iterable, init=None):
     previous = None
     always_check = check_enabled('nodeid')
     for instance in iterable:
         check = always_check
         if instance.delta_node != NULL_NODE_ID:
-            if previous and instance.delta_node == previous.node:
-                instance.init(previous)
-            else:
-                instance.init(get_missing(instance.delta_node))
+            if not previous or instance.delta_node != previous.node:
+                previous = get_missing(instance.delta_node)
                 check = True
+            if init:
+                instance = init(instance, previous)
+            else:
+                instance.init(previous)
+        elif init:
+            instance = init(instance)
         else:
             instance.init(())
         if check and instance.node != instance.sha1:
@@ -582,7 +586,7 @@ def getbundle(repo, store, heads, branch_names):
 
     for rev_chunk in progress_iter(
             'Reading and importing %d files', iter_initialized(
-                store.file, next(bundle, None))):
+                store.file, next(bundle, None), File.from_chunk)):
         store.store_file(rev_chunk)
 
     if next(bundle, None) is not None:

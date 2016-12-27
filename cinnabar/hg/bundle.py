@@ -4,7 +4,6 @@ from cinnabar.githg import (
     FileFindParents,
     GitCommit,
     GitHgStore,
-    GeneratedRevChunk,
     GeneratedManifestInfo,
     ManifestInfo,
     ManifestLine,
@@ -25,6 +24,10 @@ from cinnabar.util import (
 from .changegroup import (
     RawRevChunk01,
     RawRevChunk02,
+)
+from .objects import (
+    File,
+    HgObject,
 )
 from collections import (
     OrderedDict,
@@ -348,8 +351,8 @@ class PushStore(GitHgStore):
     def _create_file_internal(self, sha1, parent1=NULL_NODE_ID,
                               parent2=NULL_NODE_ID,
                               git_manifest_parents=None, path=None):
-        hg_file = GeneratedRevChunk(NULL_NODE_ID,
-                                    GitHgHelper.cat_file('blob', sha1))
+        hg_file = File()
+        hg_file.content = GitHgHelper.cat_file('blob', sha1)
         FileFindParents.set_parents(
             hg_file, parent1, parent2,
             git_manifest_parents=git_manifest_parents,
@@ -371,14 +374,16 @@ class PushStore(GitHgStore):
 
     def create_copy(self, hg_source, sha1, git_manifest_parents=None,
                     path=None):
-        metadata = 'copy: %s\ncopyrev: %s\n' % hg_source
-        data = '\1\n%s\1\n' % metadata
-        data += GitHgHelper.cat_file('blob', sha1)
-        hg_file = GeneratedRevChunk(NULL_NODE_ID, data)
-        hg_file.set_parents()
+        path, rev = hg_source
+        hg_file = File()
+        hg_file.metadata = {
+            'copy': path,
+            'copyrev': rev,
+        }
+        hg_file.content = GitHgHelper.cat_file('blob', sha1)
         node = hg_file.node = hg_file.sha1
         self._pushed.add(node)
-        self._files_meta[node] = metadata
+        self._files_meta[node] = str(hg_file.metadata)
         self._git_files.setdefault(node, sha1)
         return node
 
@@ -570,6 +575,8 @@ def prepare_chunk(store, chunk, previous, chunk_type):
     if chunk_type == RawRevChunk01:
         if previous is None and chunk.parent1 != NULL_NODE_ID:
             previous = get_previous(store, chunk.parent1, type(chunk))
+        if isinstance(chunk, HgObject):
+            return chunk.to_chunk(chunk_type, previous)
         return chunk.serialize(previous, chunk_type)
     elif chunk_type == RawRevChunk02:
         if isinstance(chunk, ChangesetInfo):
@@ -580,10 +587,16 @@ def prepare_chunk(store, chunk, previous, chunk_type):
             parents = (previous if previous and p == previous.node
                        else get_previous(store, p, type(chunk))
                        for p in chunk.parents)
-        deltas = sorted((chunk.serialize(p, chunk_type) for p in parents),
-                        key=len)
+        if isinstance(chunk, HgObject):
+            deltas = sorted((chunk.to_chunk(chunk_type, p) for p in parents),
+                            key=len)
+        else:
+            deltas = sorted((chunk.serialize(p, chunk_type) for p in parents),
+                            key=len)
         if len(deltas):
             return deltas[0]
+        elif isinstance(chunk, HgObject):
+            return chunk.to_chunk(chunk_type)
         else:
             return chunk.serialize(None, chunk_type)
     else:
@@ -593,7 +606,7 @@ def prepare_chunk(store, chunk, previous, chunk_type):
 def create_changegroup(store, bundle_data, type=RawRevChunk01):
     previous = None
     for chunk in bundle_data:
-        if isinstance(chunk, RevChunk):
+        if isinstance(chunk, (RevChunk, HgObject)):
             data = prepare_chunk(store, chunk, previous, type)
         else:
             data = chunk
@@ -601,5 +614,5 @@ def create_changegroup(store, bundle_data, type=RawRevChunk01):
         yield struct.pack(">l", size)
         if data:
             yield str(data)
-        if isinstance(chunk, (RevChunk, types.NoneType)):
+        if isinstance(chunk, (RevChunk, HgObject, types.NoneType)):
             previous = chunk

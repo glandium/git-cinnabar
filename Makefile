@@ -13,6 +13,7 @@ PYTHON_LIBS := \
 	cinnabar/hg/__init__.py \
 	cinnabar/hg/bundle.py \
 	cinnabar/hg/changegroup.py \
+	cinnabar/hg/objects.py \
 	cinnabar/hg/repo.py \
 	cinnabar/cmd/__init__.py \
 	cinnabar/cmd/bundle.py \

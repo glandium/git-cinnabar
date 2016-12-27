@@ -28,5 +28,5 @@ def data(args):
     elif args.manifest:
         sys.stdout.write(store.manifest(args.rev).data)
     else:
-        sys.stdout.write(store.file(args.rev).data)
+        sys.stdout.write(store.file(args.rev).raw_data)
     store.close()

@@ -29,6 +29,7 @@ from .git import (
     NULL_NODE_ID,
     sha1path,
 )
+from .hg.objects import File
 from .helper import GitHgHelper
 from .util import progress_iter
 from .dag import gitdag
@@ -188,7 +189,7 @@ class FileFindParents(object):
         # On merges, a file with copy metadata has either no parent, or only
         # one. In that latter case, the parent is always set as second parent.
         # On non-merges, a file with copy metadata doesn't have a parent.
-        if file.data.startswith('\1\n'):
+        if file.metadata or file.content.startswith('\1\n'):
             if len(parents) == 2:
                 FileFindParents._invalid_if_new(file)
             elif len(parents) == 1:
@@ -240,7 +241,7 @@ class FileFindParents(object):
                     if file_dag._tags.get(parents[0]) == 'b':
                         parents = parents[1:]
 
-        file.set_parents(*parents)
+        file.parents = parents
         if file.node != NULL_NODE_ID and file.node != file.sha1:
             if parents != orig_parents:
                 if FileFindParents._try_parents(file, *orig_parents):
@@ -278,7 +279,7 @@ class FileFindParents(object):
 
     @staticmethod
     def _try_parents(file, *parents):
-        file.set_parents(*parents)
+        file.parents = parents
         return file.node == file.sha1
 
 
@@ -1098,11 +1099,11 @@ class GitHgStore(object):
         else:
             content = GitHgHelper.cat_file('blob', ref)
 
+        file = File(sha1)
         meta = self.file_meta(sha1)
         if meta:
-            content = '\1\n'.join(['', meta, content])
-
-        file = GeneratedRevChunk(sha1, content)
+            file.metadata = meta
+        file.content = content
         if file_parents is not None:
             FileFindParents.set_parents(
                 file, *file_parents,
@@ -1281,12 +1282,11 @@ class GitHgStore(object):
         mark = self.git_file_ref(instance.node)
         if mark:
             return
-        data = instance.data
-        if data.startswith('\1\n'):
-            _, metadata, data = data.split('\1\n', 2)
-            assert not _
+        metadata = str(instance.metadata)
+        if metadata:
             self._files_meta[instance.node] = metadata
-        self._git_files[instance.node] = self._fast_import.put_blob(data)
+        self._git_files[instance.node] = self._fast_import.put_blob(
+            instance.content)
 
     def close(self):
         if self._closed:

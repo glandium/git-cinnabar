@@ -72,6 +72,7 @@ class RawRevChunk01(RawRevChunk):
     parent2 = RawRevChunk._field(40, 20, hexlify)
     changeset = RawRevChunk._field(60, 20, hexlify)
     data = RawRevChunk._field(80)
+    patch = RawRevChunk._field(80, filter=RevDiff)
 
     # Because we keep so many instances of this class on hold, the overhead
     # of having a __dict__ per instance is a deal breaker.
@@ -95,3 +96,4 @@ class RawRevChunk02(RawRevChunk):
     delta_node = RawRevChunk._field(60, 20, hexlify)
     changeset = RawRevChunk._field(80, 20, hexlify)
     data = RawRevChunk._field(100)
+    patch = RawRevChunk._field(100, filter=RevDiff)
