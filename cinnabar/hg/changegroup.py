@@ -3,6 +3,7 @@ from binascii import (
     unhexlify,
 )
 import struct
+from weakref import WeakKeyDictionary
 from cinnabar.git import NULL_NODE_ID
 
 
@@ -64,7 +65,7 @@ class RawRevChunk(bytearray):
 
 
 class RawRevChunk01(RawRevChunk):
-    __slots__ = ()
+    __slots__ = ('__weakref__',)
 
     node = RawRevChunk._field(0, 20, hexlify)
     parent1 = RawRevChunk._field(20, 20, hexlify)
@@ -74,21 +75,15 @@ class RawRevChunk01(RawRevChunk):
 
     # Because we keep so many instances of this class on hold, the overhead
     # of having a __dict__ per instance is a deal breaker.
-    _delta_nodes = {}
+    _delta_nodes = WeakKeyDictionary()
 
     @property
     def delta_node(self):
-        return self._delta_nodes.get(self.node, NULL_NODE_ID)
+        return self._delta_nodes.get(self, NULL_NODE_ID)
 
     @delta_node.setter
     def delta_node(self, value):
-        self._delta_nodes[self.node] = value
-
-    def __del__(self):
-        try:
-            del self._delta_nodes[self.node]
-        except KeyError:
-            pass
+        self._delta_nodes[self] = value
 
 
 class RawRevChunk02(RawRevChunk):
