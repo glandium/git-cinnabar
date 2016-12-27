@@ -5,7 +5,10 @@ from cinnabar.hg.changegroup import (
     RawRevChunk01,
     RawRevChunk02,
 )
-from cinnabar.hg.objects import File
+from cinnabar.hg.objects import (
+    Authorship,
+    File,
+)
 
 
 class TestFileCG01(unittest.TestCase):
@@ -203,3 +206,103 @@ class TestFile(unittest.TestCase):
 
         f.metadata = {}
         self.assertEqual(f.raw_data, 'foo')
+
+
+class TestAuthorship(unittest.TestCase):
+    def test_from_hg(self):
+        # Simple common cases
+        a = Authorship.from_hg('Foo Bar', 0, 0)
+        self.assertEqual(a.name, 'Foo Bar')
+        self.assertEqual(a.email, '')
+
+        a = Authorship.from_hg('foo@bar', 0, 0)
+        self.assertEqual(a.name, '')
+        self.assertEqual(a.email, 'foo@bar')
+
+        a = Authorship.from_hg('<foo@bar>', 0, 0)
+        self.assertEqual(a.name, '')
+        self.assertEqual(a.email, 'foo@bar')
+
+        a = Authorship.from_hg('Foo Bar <foo@bar>', 0, 0)
+        self.assertEqual(a.name, 'Foo Bar')
+        self.assertEqual(a.email, 'foo@bar')
+
+        # Corner cases that exist in the wild, and that may or may not be
+        # handled the nicest way they could, but changing that now would affect
+        # the corresponding git commit sha1.
+        a = Authorship.from_hg('Foo Bar<foo@bar>', 0, 0)
+        self.assertEqual(a.name, 'Foo Bar')
+        self.assertEqual(a.email, 'foo@bar')
+
+        a = Authorship.from_hg('Foo Bar <foo@bar>, Bar Baz <bar@baz>', 0, 0)
+        self.assertEqual(a.name, 'Foo Bar')
+        self.assertEqual(a.email, 'foo@bar')
+
+        a = Authorship.from_hg('Foo Bar (foo@bar)', 0, 0)
+        self.assertEqual(a.name, '')
+        self.assertEqual(a.email, 'Foo Bar (foo@bar)')
+
+        a = Authorship.from_hg('<Foo Bar> foo@bar', 0, 0)
+        self.assertEqual(a.name, '')
+        self.assertEqual(a.email, 'Foo Bar')
+
+        a = Authorship.from_hg('"Foo Bar <foo@bar>"', 0, 0)
+        self.assertEqual(a.name, '"Foo Bar')
+        self.assertEqual(a.email, 'foo@bar')
+
+        a = Authorship.from_hg('"Foo Bar <foo@bar>"', '1482880019', '3600')
+        self.assertEqual(a.timestamp, 1482880019)
+        self.assertEqual(a.utcoffset, 3600)
+
+        a = Authorship.from_hg('"Foo Bar <foo@bar>"', '1482880019', '-1100',
+                               maybe_git_utcoffset=True)
+        self.assertEqual(a.timestamp, 1482880019)
+        self.assertEqual(a.utcoffset, 39600)
+
+        a = Authorship.from_hg('"Foo Bar <foo@bar>"', '1482880019', '-3600',
+                               maybe_git_utcoffset=True)
+        self.assertEqual(a.timestamp, 1482880019)
+        self.assertEqual(a.utcoffset, -3600)
+
+    def test_from_git(self):
+        a = Authorship.from_git('Foo Bar <foo@bar>', 0, 0)
+        self.assertEqual(a.name, 'Foo Bar')
+        self.assertEqual(a.email, 'foo@bar')
+
+        a = Authorship.from_git('Foo Bar <foo@bar>', '1482880019', '-0100')
+        self.assertEqual(a.timestamp, 1482880019)
+        self.assertEqual(a.utcoffset, 3600)
+
+        a = Authorship.from_git('Foo Bar <foo@bar>', '1482880019', '+0200')
+        self.assertEqual(a.timestamp, 1482880019)
+        self.assertEqual(a.utcoffset, -7200)
+
+    def test_to_hg(self):
+        a = Authorship.from_git('Foo Bar <foo@bar>', '1482880019', '+0200')
+        who, timestamp, utcoffset = a.to_hg()
+        self.assertEqual(who, 'Foo Bar <foo@bar>')
+        self.assertEqual(timestamp, '1482880019')
+        self.assertEqual(utcoffset, '-7200')
+
+        for who in (
+            'Foo Bar',
+            '<foo@bar>',
+            'Foo Bar <foo@bar>',
+        ):
+            a = Authorship.from_hg(who, 0, 0)
+            self.assertEqual(who, a.to_hg()[0])
+
+    def test_to_git(self):
+        a = Authorship.from_hg('Foo Bar', 0, 0)
+        self.assertEqual(a.to_git()[0], 'Foo Bar <>')
+
+        a = Authorship.from_hg('foo@bar', 0, 0)
+        self.assertEqual(a.to_git()[0], ' <foo@bar>')
+
+        a = Authorship.from_hg('Foo Bar <foo@bar>', 0, 0)
+        self.assertEqual(a.to_git()[0], 'Foo Bar <foo@bar>')
+
+        a = Authorship.from_hg('Foo Bar <foo@bar>', '1482880019', '-7200')
+        who, timestamp, utcoffset = a.to_git()
+        self.assertEqual(timestamp, '1482880019')
+        self.assertEqual(utcoffset, '+0200')

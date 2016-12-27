@@ -1,6 +1,9 @@
+from __future__ import division
 import hashlib
+import re
 from binascii import unhexlify
 from collections import OrderedDict
+from types import StringTypes
 from .changegroup import RawRevChunk
 from ..git import NULL_NODE_ID
 from ..util import TypedProperty
@@ -8,6 +11,110 @@ try:
     from mercurial.mdiff import textdiff
 except ImportError:
     from ..bdiff import bdiff as textdiff
+
+
+class Authorship(object):
+    __slots__ = ('name', 'email', 'timestamp', 'utcoffset')
+
+    WHO_RE = re.compile(r'^(?P<name>.*?) ?(?:\<(?P<email>.*?)\>)')
+
+    @classmethod
+    def from_hg_str(cls, s, maybe_git_utcoffset=False):
+        return cls.from_hg(*s.rsplit(' ', 2),
+                           maybe_git_utcoffset=maybe_git_utcoffset)
+
+    @classmethod
+    def from_hg(cls, who, timestamp, utcoffset, maybe_git_utcoffset=False):
+        match = cls.WHO_RE.match(who)
+
+        def cleanup(x):
+            return x.replace('<', '').replace('>', '')
+
+        if match:
+            name = cleanup(match.group('name'))
+            email = cleanup(match.group('email'))
+        elif '@' in who:
+            name = ''
+            email = cleanup(who)
+        else:
+            name = cleanup(who)
+            email = ''
+
+        # The UTC offset in mercurial author info is in seconds, formatted as
+        # %d. It also has an opposite sign compared to traditional UTC offsets.
+        # However, committer info stored in mercurial by hg-git can have
+        # git-style UTC offsets, in the form [+-]hhmm.
+
+        # When what we have is in the form +xxxx or -0yyy, it is obviously the
+        # latter. When it's -1yyy, it could be either, so we assume that a
+        # valid UTC offset is always a multiple of 15 minutes. By that
+        # definition, a number between -1000 and -1800 can't be simultaneously
+        # a valid UTC offset in seconds and a valid UTC offset in hhmm form.
+
+        # (cf. https://en.wikipedia.org/wiki/List_of_UTC_time_offsets lists
+        # there exist a few 15-minutes aligned time zones, but they don't match
+        # anything that could match here anyways, but just in case someone one
+        # day creates one, assume it won't be finer grained)
+        if maybe_git_utcoffset and isinstance(utcoffset, StringTypes):
+            is_git = False
+            if utcoffset.startswith(('+', '-0')):
+                is_git = True
+            elif utcoffset.startswith('-1'):
+                utcoffset = int(utcoffset)
+                if (utcoffset > -1800 and utcoffset % 900 != 0 and
+                        (utcoffset % 100) % 15 == 0):
+                    is_git = True
+            if is_git:
+                return cls.from_git('%s <%s>' % (name, email),
+                                    timestamp, utcoffset)
+
+        result = cls()
+        result.name = name
+        result.email = email
+        result.timestamp = int(timestamp)
+        result.utcoffset = int(utcoffset)
+        return result
+
+    @classmethod
+    def from_git_str(cls, s):
+        return cls.from_git(*s.rsplit(' ', 2))
+
+    @classmethod
+    def from_git(cls, who, timestamp, utcoffset):
+        result = cls()
+        match = cls.WHO_RE.match(who)
+        # We don't ever expect a git `who` information to not match the regexp,
+        # as git is very conservative in what it accepts.
+        assert match
+        result.name = match.group('name')
+        result.email = match.group('email')
+        result.timestamp = int(timestamp)
+        utcoffset = int(utcoffset)
+        sign = -cmp(utcoffset, 0)
+        utcoffset = abs(utcoffset)
+        utcoffset = (utcoffset // 100) * 60 + (utcoffset % 100)
+        result.utcoffset = sign * utcoffset * 60
+        return result
+
+    def to_git(self):
+        sign = '+' if self.utcoffset <= 0 else '-'
+        utcoffset = abs(self.utcoffset) // 60
+        utcoffset = '%c%02d%02d' % (sign, utcoffset // 60, utcoffset % 60)
+        who = '%s <%s>' % (self.name, self.email)
+        return who, str(self.timestamp), utcoffset
+
+    def to_git_str(self):
+        return ' '.join(self.to_git())
+
+    def to_hg(self):
+        if self.name and self.email:
+            who = '%s <%s>' % (self.name, self.email)
+        else:
+            who = self.name or '<%s>' % self.email
+        return who, str(self.timestamp), str(self.utcoffset)
+
+    def to_hg_str(self):
+        return ' '.join(self.to_hg())
 
 
 class HgObject(object):
