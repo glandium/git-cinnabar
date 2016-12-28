@@ -26,6 +26,7 @@ from .changegroup import (
     RawRevChunk02,
 )
 from .objects import (
+    Authorship,
     File,
     HgObject,
 )
@@ -297,8 +298,8 @@ class PushStore(GitHgStore):
 
         extra = {}
         if commit_data.author != commit_data.committer:
-            committer = self.hg_author_info(commit_data.committer)
-            extra['committer'] = '%s %d %d' % committer
+            extra['committer'] = Authorship.from_git_str(
+                commit_data.committer).to_hg_str()
 
         if parents:
             parent_changeset_data = self.read_changeset_data(parents[0])

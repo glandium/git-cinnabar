@@ -23,6 +23,7 @@ from cinnabar.util import (
 )
 from cinnabar.helper import GitHgHelper
 from cinnabar.hg.bundle import get_changes
+from cinnabar.hg.objects import Authorship
 from collections import (
     defaultdict,
     OrderedDict,
@@ -277,8 +278,9 @@ def fsck(args):
                 'commit', node).split('\n\n', 1)
             header = dict(l.split(' ', 1) for l in header.splitlines())
             if 'committer' in extra:
-                committer_info = store.hg_author_info(header['committer'])
-                committer = '%s %d %d' % committer_info
+                committer_info = Authorship.from_git_str(
+                    header['committer']).to_hg()
+                committer = ' '.join(committer_info)
                 if (committer != extra['committer'] and
                         header['committer'] != extra['committer'] and
                         committer_info[0] != extra['committer']):

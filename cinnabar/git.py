@@ -373,19 +373,8 @@ class FastImport(object):
         self._done = False
         return self.get_mark(mark)
 
-    @staticmethod
-    def _format_committer(author):
-        author, epoch, utcoffset = author
-        return '%s %d %s%02d%02d' % (
-            author,
-            epoch,
-            '+' if utcoffset >= 0 else '-',
-            abs(utcoffset) // 60,
-            abs(utcoffset) % 60,
-        )
-
     @contextlib.contextmanager
-    def commit(self, ref, committer=('<cinnabar@git>', 0, 0), author=None,
+    def commit(self, ref, committer='<cinnabar@git> 0 +0000', author=None,
                message='', from_commit=None, parents=(), mark=0):
         if isinstance(parents, GeneratorType):
             parents = tuple(parents)
@@ -411,8 +400,8 @@ class FastImport(object):
         # TODO: properly handle errors, like from the committer being badly
         # formatted.
         if author:
-            helper.write('author %s\n' % self._format_committer(author))
-        helper.write('committer %s\n' % self._format_committer(committer))
+            helper.write('author %s\n' % author)
+        helper.write('committer %s\n' % committer)
         helper.cmd_data(message)
 
         if _from:

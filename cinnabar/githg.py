@@ -8,7 +8,6 @@ from itertools import (
     izip,
 )
 import hashlib
-import re
 import urllib
 from collections import (
     Sequence,
@@ -29,7 +28,10 @@ from .git import (
     NULL_NODE_ID,
     sha1path,
 )
-from .hg.objects import File
+from .hg.objects import (
+    Authorship,
+    File,
+)
 from .helper import GitHgHelper
 from .util import progress_iter
 from .dag import gitdag
@@ -63,33 +65,6 @@ class OldUpgradeException(UpgradeException):
 # "\0" * 40 (incidentally, this is the same as for an empty manifest with
 # no parent.
 HG_EMPTY_FILE = 'b80de5d138758541c5f05265ad144ab9fa86d1db'
-
-RE_GIT_AUTHOR = re.compile('^(?P<name>.*?) ?(?:\<(?P<email>.*?)\>)')
-
-
-def get_git_author(author):
-    # check for git author pattern compliance
-    a = RE_GIT_AUTHOR.match(author)
-
-    def cleanup(x):
-        return x.replace('<', '').replace('>', '')
-
-    if a:
-        return '%s <%s>' % (cleanup(a.group('name')),
-                            cleanup(a.group('email')))
-    if '@' in author:
-        return ' <%s>' % cleanup(author)
-    return '%s <>' % cleanup(author)
-
-
-def get_hg_author(author):
-    a = RE_GIT_AUTHOR.match(author)
-    assert a
-    name = a.group('name')
-    email = a.group('email')
-    if name and email:
-        return author
-    return name or '<%s>' % email
 
 
 revchunk_log = logging.getLogger('revchunks')
@@ -624,7 +599,8 @@ class Grafter(object):
             commit = commits.get(c)
             if not commit:
                 commit = commits[c] = GitCommit(c)
-            if not store.hg_author_info(commit.author)[1] == changeset.date:
+            if (Authorship.from_git_str(commit.author).timestamp !=
+                    changeset.date):
                 return False
 
             if all(store._replace.get(p1, p1) == store._replace.get(p2, p2)
@@ -653,8 +629,8 @@ class Grafter(object):
                 # have been munged.
                 possible_nodes = tuple(
                     n for n in possible_nodes
-                    if (store.hg_author_info(commits[n].author)[0] ==
-                        changeset.committer)
+                    if (Authorship.from_git_str(commits[n].author)
+                        .to_hg()[0] == changeset.committer)
                 )
             if len(possible_nodes) == 1:
                 nodes = possible_nodes
@@ -995,15 +971,6 @@ class GitHgStore(object):
                 return gitsha1
         return None
 
-    def hg_author_info(self, author_line):
-        author, date, utcoffset = author_line.rsplit(' ', 2)
-        date = int(date)
-        utcoffset = int(utcoffset)
-        sign = -cmp(utcoffset, 0)
-        utcoffset = abs(utcoffset)
-        utcoffset = (utcoffset // 100) * 60 + (utcoffset % 100)
-        return author, date, sign * utcoffset * 60
-
     def changeset(self, sha1, include_parents=False):
         assert not isinstance(sha1, Mark)
         gitsha1 = self._hg2git(sha1)
@@ -1016,25 +983,24 @@ class GitHgStore(object):
             git_commit = GitCommit(git_commit)
 
         metadata = self.read_changeset_data(git_commit.sha1)
-        author, date, utcoffset = self.hg_author_info(git_commit.author)
+        author, date, utcoffset = Authorship.from_git_str(
+            git_commit.author).to_hg()
         if 'author' in metadata:
             author = metadata['author']
-        else:
-            author = get_hg_author(author)
 
         extra = metadata.get('extra')
         if git_commit.committer != git_commit.author:
             if not extra or 'committer' not in extra:
                 extra = dict(extra) if extra else {}
-                committer = self.hg_author_info(git_commit.committer)
-                extra['committer'] = '%s %d %d' % committer
+                extra['committer'] = Authorship.from_git_str(
+                    git_commit.committer).to_hg_str()
         if extra is not None:
             extra = ' ' + ChangesetData.dump_extra(extra)
         changeset = ''.join(chain(
             [
                 metadata['manifest'], '\n',
                 author, '\n',
-                str(date), ' ', str(utcoffset)
+                date, ' ', utcoffset
             ],
             [extra] if extra else [],
             ['\n', '\n'.join(metadata['files'])]
@@ -1114,12 +1080,6 @@ class GitHgStore(object):
     def git_file_ref(self, sha1):
         return self._git_object(self._git_files, sha1)
 
-    def _git_committer(self, committer, date, utcoffset):
-        utcoffset = int(utcoffset)
-        sign = -cmp(utcoffset, 0)
-        return (get_git_author(committer), int(date),
-                sign * (abs(utcoffset) // 60))
-
     def git_tree(self, manifest_sha1):
         if manifest_sha1 == NULL_NODE_ID:
             return EMPTY_TREE,
@@ -1149,23 +1109,18 @@ class GitHgStore(object):
         elif not commit and mark:
             return
 
-        author = self._git_committer(instance.committer, instance.date,
-                                     instance.utcoffset)
+        author = Authorship.from_hg(instance.committer, instance.date,
+                                    instance.utcoffset)
         extra = instance.extra
         if extra and extra.get('committer'):
             committer = extra['committer']
             if committer[-1] == '>':
-                committer = committer, author[1], author[2]
+                committer = Authorship.from_hg(committer, instance.date,
+                                               instance.utcoffset)
             else:
-                committer_info = committer.rsplit(' ', 2)
-                # If the committer tz is in the form +xxxx or -0yyy, it is
-                # obviously in git format, not in mercurial format.
-                # TODO: handle -1yyy timezones.
-                if committer_info[2].startswith(('+', '-0')):
-                    committer = self.hg_author_info(committer)
-                    committer = self._git_committer(*committer)
-                else:
-                    committer = self._git_committer(*committer_info)
+                committer = Authorship.from_hg_str(committer,
+                                                   maybe_git_utcoffset=True)
+                if committer.to_hg() == committer:
                     extra = dict(instance.extra)
                     del extra['committer']
                     if not extra:
@@ -1190,8 +1145,8 @@ class GitHgStore(object):
                 with self._fast_import.commit(
                     ref='refs/cinnabar/tip',
                     message=body,
-                    committer=committer,
-                    author=author,
+                    committer=committer.to_git_str(),
+                    author=author.to_git_str(),
                     parents=parents,
                 ) as c:
                     if tree != EMPTY_TREE:
@@ -1213,7 +1168,7 @@ class GitHgStore(object):
             data['extra'] = extra
         if instance.files:
             data['files'] = instance.files
-        if author[0] != instance.committer:
+        if author.to_hg()[0] != instance.committer:
             data['author'] = instance.committer
 
         generated_instance = self._changeset(commit, instance.node)
