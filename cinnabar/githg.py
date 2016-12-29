@@ -28,8 +28,13 @@ from .git import (
     NULL_NODE_ID,
     sha1path,
 )
+from .hg.changegroup import (
+    RawRevChunk,
+    RevDiff,
+)
 from .hg.objects import (
     Authorship,
+    Changeset,
     File,
 )
 from .helper import GitHgHelper
@@ -340,6 +345,121 @@ class ManifestInfo(RevChunk):
         self.removed = set(before_list.keys()) - set(after_list.keys())
         self.modified = after_list
         return new
+
+
+class ChangesetPatcher(str):
+    class ChangesetPatch(RawRevChunk):
+        __slots__ = ('patch', '_changeset')
+
+        class Patch(RevDiff):
+            class Part(object):
+                __slots__ = ('start', 'end', 'text_data')
+
+            def __iter__(self):
+                for line in self.split('\0'):
+                    if line:
+                        part = self.Part()
+                        start, end, text_data = line.split(',')
+                        part.start = int(start)
+                        part.end = int(end)
+                        part.text_data = urllib.unquote(text_data)
+                        yield part
+
+            @classmethod
+            def from_items(cls, items):
+                return cls('\0'.join(
+                    ','.join((str(start), str(end), urllib.quote(text_data)))
+                    for start, end, text_data in items))
+
+            @classmethod
+            def from_obj(cls, obj):
+                if isinstance(obj, (tuple, list)):
+                    return cls.from_items(obj)
+                return cls(obj)
+
+        def __init__(self, changeset, patch_data):
+            self._changeset = changeset
+            self.patch = self.Patch(patch_data)
+
+        def __getattr__(self, name):
+            if name == 'delta_node':
+                name = 'node'
+            return getattr(self._changeset, name)
+
+    def apply(self, changeset):
+        # Sneaky way to create a copy of the changeset
+        chunk = self.ChangesetPatch(changeset, '')
+        changeset = Changeset.from_chunk(chunk, changeset)
+
+        for k, v in (l.split(' ', 1) for l in self.splitlines()):
+            if k == 'changeset':
+                changeset.node = v
+            elif k == 'manifest':
+                changeset.manifest = v
+            elif k == 'author':
+                changeset.author = v
+            elif k == 'extra':
+                extra = changeset.extra
+                changeset.extra = v
+                if extra is not None:
+                    changeset.extra.update(
+                        (k, v) for k, v in extra.iteritems()
+                        if k not in changeset.extra)
+            elif k == 'files':
+                changeset.files = v.split('\0')
+            elif k == 'patch':
+                chunk = self.ChangesetPatch(changeset, v)
+                changeset = Changeset.from_chunk(chunk, changeset)
+
+        return changeset
+
+    @classmethod
+    def from_diff(cls, changeset1, changeset2):
+        items = []
+        if changeset1.node != changeset2.node:
+            items.append('changeset %s' % changeset2.node)
+        if changeset1.manifest != changeset2.manifest:
+            items.append('manifest %s' % changeset2.manifest)
+        if changeset1.author != changeset2.author:
+            items.append('author %s' % changeset2.author)
+        if changeset1.extra != changeset2.extra:
+            if changeset2.extra is not None:
+                items.append('extra %s' % Changeset.ExtraData({
+                    k: v
+                    for k, v in changeset2.extra.iteritems()
+                    if not changeset1.extra or changeset1.extra.get(k) != v
+                }))
+        if changeset1.files != changeset2.files:
+            items.append('files %s' % '\0'.join(changeset2.files))
+
+        this = cls('\n'.join(items))
+        new = this.apply(changeset1)
+        if new.raw_data != changeset2.raw_data:
+            items.append('patch %s' % cls.ChangesetPatch.Patch.from_items(
+                byte_diff(new.raw_data, changeset2.raw_data)))
+            this = cls('\n'.join(items))
+
+        return this
+
+
+class Changeset(Changeset):
+    @classmethod
+    def from_git_commit(cls, git_commit):
+        if not isinstance(git_commit, GitCommit):
+            git_commit = GitCommit(git_commit)
+
+        changeset = cls()
+
+        (changeset.author, changeset.timestamp, changeset.utcoffset) = \
+            Authorship.from_git_str(git_commit.author).to_hg()
+
+        if git_commit.committer != git_commit.author:
+            changeset.committer = Authorship.from_git_str(
+                git_commit.committer).to_hg_str()
+
+        changeset.body = git_commit.body
+
+        return changeset
 
 
 class ChangesetData(object):

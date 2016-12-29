@@ -7,6 +7,7 @@ from cinnabar.hg.changegroup import (
 )
 from cinnabar.hg.objects import (
     Authorship,
+    Changeset,
     File,
 )
 
@@ -306,3 +307,115 @@ class TestAuthorship(unittest.TestCase):
         who, timestamp, utcoffset = a.to_git()
         self.assertEqual(timestamp, '1482880019')
         self.assertEqual(utcoffset, '+0200')
+
+
+class TestChangeset(unittest.TestCase):
+    def test_changeset(self):
+        c = Changeset()
+        c.author = 'Foo Bar <foo@bar>'
+        c.timestamp = '1482880019'
+        c.utcoffset = '-7200'
+        c.body = 'Nothing'
+
+        self.assertEqual(
+            c.raw_data,
+            NULL_NODE_ID + '\n' +
+            'Foo Bar <foo@bar>\n' +
+            '1482880019 -7200\n' +
+            '\n' +
+            'Nothing'
+        )
+
+        c = Changeset()
+        c.author = 'Foo Bar <foo@bar>'
+        c.timestamp = '1482880019'
+        c.utcoffset = '-7200'
+        c.files = [
+            'foo',
+            'bar',
+        ]
+        c.body = 'Add foo and bar'
+
+        self.assertEqual(
+            c.raw_data,
+            NULL_NODE_ID + '\n' +
+            'Foo Bar <foo@bar>\n' +
+            '1482880019 -7200\n' +
+            'bar\n' +
+            'foo\n' +
+            '\n' +
+            'Add foo and bar'
+        )
+
+        chunk = c.to_chunk(RawRevChunk02)
+        c2 = Changeset.from_chunk(chunk)
+        self.assertEqual(c2.node, '746f659780ce1db9e78cea98095a93bd570062f2')
+        self.assertEqual(c2.author, 'Foo Bar <foo@bar>')
+        self.assertEqual(c2.timestamp, '1482880019')
+        self.assertEqual(c2.utcoffset, '-7200')
+        self.assertEqual(c2.files, ['bar', 'foo'])
+        self.assertEqual(c2.extra, None)
+        self.assertEqual(c2.body, 'Add foo and bar')
+
+        c.extra = ''
+        self.assertEqual(
+            c.raw_data,
+            NULL_NODE_ID + '\n' +
+            'Foo Bar <foo@bar>\n' +
+            '1482880019 -7200 \n' +
+            'bar\n' +
+            'foo\n' +
+            '\n' +
+            'Add foo and bar'
+        )
+
+        chunk = c.to_chunk(RawRevChunk02)
+        c2 = Changeset.from_chunk(chunk)
+        self.assertEqual(c2.extra, {})
+
+        c.extra = extra = {
+            'rebase_source': '746f659780ce1db9e78cea98095a93bd570062f2',
+        }
+        self.assertEqual(
+            c.raw_data,
+            NULL_NODE_ID + '\n' +
+            'Foo Bar <foo@bar>\n' +
+            '1482880019 -7200 ' +
+            'rebase_source:746f659780ce1db9e78cea98095a93bd570062f2\n' +
+            'bar\n' +
+            'foo\n' +
+            '\n' +
+            'Add foo and bar'
+        )
+
+        chunk = c.to_chunk(RawRevChunk02)
+        c2 = Changeset.from_chunk(chunk)
+        self.assertEqual(c2.extra, extra)
+
+    def test_extra_property(self):
+        c = Changeset()
+        self.assertEqual(c.branch, None)
+        self.assertEqual(c.committer, None)
+        self.assertEqual(c.extra, None)
+
+        c.branch = 'foo'
+        self.assertEqual(c.branch, 'foo')
+        self.assertEqual(c.extra, {
+            'branch': 'foo',
+        })
+
+        c.extra['committer'] = 'Foo Bar <foo@bar>'
+        self.assertEqual(c.committer, 'Foo Bar <foo@bar>')
+        self.assertEqual(c.extra, {
+            'branch': 'foo',
+            'committer': 'Foo Bar <foo@bar>',
+        })
+
+        c.branch = None
+        self.assertEqual(c.extra, {
+            'committer': 'Foo Bar <foo@bar>',
+        })
+
+        c.branch = None
+        c.committer = None
+        self.assertEqual(c.extra, None)

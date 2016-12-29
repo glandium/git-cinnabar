@@ -462,10 +462,7 @@ class TypedProperty(object):
         self.values = WeakKeyDictionary()
 
     def __get__(self, obj, cls=None):
-        value = self.values.get(obj)
-        if not value:
-            self.values[obj] = value = self.cls()
-        return value
+        return self.values.get(obj)
 
     def __set__(self, obj, value):
         # If the class has a "from_obj" static or class method, use it.

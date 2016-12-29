@@ -200,6 +200,7 @@ class File(HgObject):
     def __init__(self, *args, **kwargs):
         super(File, self).__init__(*args, **kwargs)
         self.content = ''
+        self.metadata = {}
 
     @classmethod
     def from_chunk(cls, raw_chunk, delta_file=None):
@@ -244,3 +245,104 @@ class File(HgObject):
             yield metadata
         if self.content:
             yield self.content
+
+
+class Changeset(HgObject):
+    __slots__ = ('manifest', 'author', 'timestamp', 'utcoffset', 'body',
+                 '__weakref__')
+
+    def __init__(self, *args, **kwargs):
+        super(Changeset, self).__init__(*args, **kwargs)
+        self.manifest = NULL_NODE_ID
+        self.author = ''
+        self.timestamp = ''
+        self.utcoffset = ''
+        self.files = []
+        self.body = ''
+
+    @classmethod
+    def from_chunk(cls, raw_chunk, delta_cs=None):
+        this = super(Changeset, cls).from_chunk(raw_chunk, delta_cs)
+        data = raw_chunk.patch.apply(delta_cs.raw_data if delta_cs else '')
+        metadata, this.body = data.split('\n\n', 1)
+        lines = metadata.splitlines()
+        this.manifest, this.author, date = lines[:3]
+        date = date.split(' ', 2)
+        this.timestamp = date[0]
+        this.utcoffset = date[1]
+        if len(date) == 3:
+            this.extra = date[2]
+        this.files = lines[3:]
+        return this
+
+    files = TypedProperty(list)
+
+    class ExtraData(dict):
+        @classmethod
+        def from_str(cls, s):
+            return cls(i.split(':', 1) for i in s.split('\0') if i)
+
+        @classmethod
+        def from_obj(cls, obj):
+            if obj is None:
+                return None
+            if isinstance(obj, dict):
+                return cls(obj)
+            return cls.from_str(obj)
+
+        def __str__(self):
+            return '\0'.join(':'.join(i) for i in sorted(self.iteritems()))
+
+    extra = TypedProperty(ExtraData)
+
+    def _data_iter(self):
+        yield self.manifest
+        yield '\n'
+        yield self.author
+        yield '\n'
+        yield self.timestamp
+        yield ' '
+        yield self.utcoffset
+        if self.extra is not None:
+            yield ' '
+            yield str(self.extra)
+        if self.files:
+            yield '\n'
+            yield '\n'.join(sorted(self.files))
+        yield '\n\n'
+        yield self.body
+
+    @property
+    def changeset(self):
+        return self.node
+
+    @changeset.setter
+    def changeset(self, value):
+        assert value in (self.node, NULL_NODE_ID)
+
+    class ExtraProperty(object):
+        def __init__(self, name):
+            self._name = name
+
+        def __get__(self, obj, type=None):
+            if obj.extra is None:
+                return None
+            return obj.extra.get(self._name)
+
+        def __set__(self, obj, value):
+            if not value:
+                if obj.extra:
+                    try:
+                        del obj.extra[self._name]
+                    except KeyError:
+                        pass
+                if not obj.extra:
+                    obj.extra = None
+            else:
+                if obj.extra is None:
+                    obj.extra = {}
+                obj.extra[self._name] = value
+
+    branch = ExtraProperty('branch')
+    committer = ExtraProperty('committer')
+    close = ExtraProperty('close')
