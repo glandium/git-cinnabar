@@ -171,7 +171,9 @@ endif
 
 PATH_URL = file://$(if $(filter /%,$(CURDIR)),,/)$(CURDIR)
 
-COMPARE_REFS = bash -c "diff -u <(git -C $1 log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches) <(git -C $2 log --format=%H --reverse --date-order --branches=refs/remotes/origin/branches)"
+GET_REF_SHA1 = git -C $1 log --format=%H --reverse --date-order --remotes=origin --no-walk
+
+COMPARE_REFS = bash -c "diff -u <($(call GET_REF_SHA1,$1)) <($(call GET_REF_SHA1,$2))"
 
 HG_INIT = $(HG) init $1
 ifdef NO_BUNDLE2
@@ -183,7 +185,7 @@ script::
 	$(call HG_INIT, hg.hg)
 	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.hg hg.empty.git
 	$(GIT) -C hg.empty.git push --all hg::$(PATH_URL)/hg.hg
-	$(GIT) -C hg.old.git push --all hg::$(PATH_URL)/hg.hg
+	$(GIT) -C hg.old.git push hg::$(PATH_URL)/hg.hg refs/remotes/origin/*:refs/heads/*
 	$(HG) -R hg.hg verify
 	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.hg hg.git
 	$(call COMPARE_REFS, hg.old.git, hg.git)
@@ -207,7 +209,7 @@ script::
 	$(call HG_INIT, hg.http.hg)
 	(echo protocol=http; echo host=localhost:8000; echo username=foo; echo password=bar) | $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' credential approve
 	$(GIT) -C hg.git remote add hg-http hg::http://localhost:8000/
-	$(HG) -R hg.http.hg --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' -C hg.git push --all hg-http
+	$(HG) -R hg.http.hg --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' -C hg.git push hg-http refs/remotes/origin/*:refs/heads/*
 
 endif # PYTHON_CHECKS
 
