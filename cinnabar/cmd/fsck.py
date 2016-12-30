@@ -92,21 +92,21 @@ def fsck(args):
         all_git_commits = {}
 
         for c in args.commit:
-            data = store.read_changeset_data(c)
-            if data:
+            cs = store.hg_changeset(c)
+            if cs:
                 all_notes.add(c)
                 commits.add(c)
-                c = data['changeset']
+                c = cs.node
             commit = GitHgHelper.hg2git(c)
-            if commit == NULL_NODE_ID and not data:
+            if commit == NULL_NODE_ID and not cs:
                 info('Unknown commit or changeset: %s' % c)
                 return 1
             if commit != NULL_NODE_ID:
                 all_hg2git[c] = commit, 'commit'
-            if not data:
-                data = store.read_changeset_data(commit)
+            if not cs:
+                cs = store.hg_changeset(commit)
                 commits.add(commit)
-                if data:
+                if cs:
                     all_notes.add(commit)
 
         all_git_commits = GitHgHelper.rev_list('--no-walk=unsorted', *commits)
@@ -270,10 +270,10 @@ def fsck(args):
             continue
         seen_notes.add(node)
 
-        changeset_data = store.read_changeset_data(node)
-        changeset = changeset_data['changeset']
-        if 'extra' in changeset_data:
-            extra = changeset_data['extra']
+        changeset_data = store.changeset(store.hg_changeset(node))
+        changeset = changeset_data.node
+        if changeset_data.extra:
+            extra = changeset_data.extra
             commit = GitCommit(node)
             if 'committer' in extra:
                 committer_info = Authorship.from_git_str(
@@ -307,9 +307,9 @@ def fsck(args):
 
         dag.add(hg_changeset.node,
                 (hg_changeset.parent1, hg_changeset.parent2),
-                changeset_data.get('extra', {}).get('branch', 'default'))
+                (changeset_data.extra or {}).get('branch', 'default'))
 
-        manifest = changeset_data['manifest']
+        manifest = changeset_data.manifest
         if manifest in seen_manifests or manifest == NULL_NODE_ID:
             continue
         seen_manifests.add(manifest)
@@ -321,7 +321,7 @@ def fsck(args):
                    manifest_ref)
 
         parents = tuple(
-            store.read_changeset_data(store.changeset_ref(p))['manifest']
+            store.changeset(p).manifest
             for p in hg_changeset.parents
         )
         git_parents = tuple(store.manifest_ref(p) for p in parents

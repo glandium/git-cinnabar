@@ -115,14 +115,13 @@ class PushStore(GitHgStore):
         manifest = GeneratedManifestInfo(NULL_NODE_ID)
 
         if parents:
-            parent_changeset_data = self.read_changeset_data(parents[0])
-            parent_manifest = self.manifest(parent_changeset_data['manifest'])
+            parent_changeset = self.changeset(self.hg_changeset(parents[0]))
+            parent_manifest = self.manifest(parent_changeset.manifest)
             parent_node = parent_manifest.node
 
         if len(parents) == 2:
-            parent2_changeset_data = self.read_changeset_data(parents[1])
-            parent2_manifest = self.manifest(
-                parent2_changeset_data['manifest'])
+            parent2_changeset = self.changeset(self.hg_changeset(parents[1]))
+            parent2_manifest = self.manifest(parent2_changeset.manifest)
             parent2_node = parent2_manifest.node
             if parent_node == parent2_node:
                 parents = parents[:1]
@@ -276,19 +275,18 @@ class PushStore(GitHgStore):
 
     def create_hg_metadata(self, commit, parents):
         if check_enabled('bundle'):
-            real_changeset_data = self.read_changeset_data(commit)
+            real_changeset = self.changeset(self.hg_changeset(commit))
         manifest = self.create_hg_manifest(commit, parents)
         commit_data = GitCommit(commit)
 
         if manifest.node == NULL_NODE_ID:
             manifest.node = manifest.sha1
             if check_enabled('bundle'):
-                if real_changeset_data and (
-                        manifest.node != real_changeset_data['manifest']):
+                if real_changeset and (
+                        manifest.node != real_changeset.manifest):
                     for path, created, real in sorted_merge(
                             manifest._lines,
-                            self.manifest(
-                                real_changeset_data['manifest'])._lines,
+                            self.manifest(real_changeset.manifest)._lines,
                             key=lambda i: i.name, non_key=lambda i: i):
                         if str(created) != str(real):
                             logging.error('%r != %r', str(created), str(real))
@@ -302,8 +300,8 @@ class PushStore(GitHgStore):
                 commit_data.committer).to_hg_str()
 
         if parents:
-            parent_changeset_data = self.read_changeset_data(parents[0])
-            branch = parent_changeset_data.get('extra', {}).get('branch')
+            parent_changeset = self.changeset(self.hg_changeset(parents[0]))
+            branch = (parent_changeset.extra or {}).get('branch')
             if branch:
                 extra['branch'] = branch
 
@@ -338,12 +336,12 @@ class PushStore(GitHgStore):
                 del changeset_data['extra']
         self._changesets[changeset.node] = commit
 
-        if check_enabled('bundle') and real_changeset_data:
+        if check_enabled('bundle') and real_changeset:
             error = False
             for k in ('files', 'manifest'):
-                if real_changeset_data.get(k, []) != changeset_data.get(k):
+                if getattr(real_changeset, k, []) != changeset_data.get(k):
                     logging.error('(%s) %r != %r', k,
-                                  real_changeset_data.get(k),
+                                  getattr(real_changeset, k, None),
                                   changeset_data.get(k))
                     error = True
             if error:
@@ -444,18 +442,16 @@ def bundle_data(store, commits):
         is_new = changeset_data is None or check_enabled('bundle')
         if is_new:
             store.create_hg_metadata(node, parents)
-            changeset_data = store.read_changeset_data(node)
-        changeset = changeset_data['changeset']
+        changeset = store.hg_changeset(node)
         hg_changeset = store.changeset(changeset, include_parents=True)
         if is_new:
             store.add_head(hg_changeset.node, hg_changeset.parent1,
                            hg_changeset.parent2)
         yield hg_changeset
-        manifest = changeset_data['manifest']
+        manifest = hg_changeset.manifest
         if manifest not in manifests and manifest != NULL_NODE_ID:
-            if manifest not in (store.read_changeset_data(
-                    store.changeset_ref(p))['manifest']
-                    for p in hg_changeset.parents):
+            if manifest not in (store.changeset(p).manifest
+                                for p in hg_changeset.parents):
                 manifests[manifest] = changeset
 
     yield None

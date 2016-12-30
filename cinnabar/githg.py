@@ -529,7 +529,7 @@ class BranchMap(object):
                 if not sha1:
                     self._unknown_heads.add(head)
                     continue
-                extra = store.read_changeset_data(sha1).get('extra')
+                extra = store.changeset(head).extra
                 if branch and sequenced and extra and not extra.get('close'):
                     self._tips[branch] = head
                 assert head not in self._git_sha1s
@@ -645,7 +645,7 @@ class Grafter(object):
                 commit = commits[node]
                 store.store_changeset(changeset, commit, track_heads=False)
                 sha1 = commit.sha1
-                if store.read_changeset_data(sha1).get('patch'):
+                if not self._is_cinnabar_commit(sha1):
                     possible_nodes.append(node)
             nodes = possible_nodes
 
@@ -885,9 +885,7 @@ class GitHgStore(object):
                    if not branches or b in branches)
 
     def _head_branch(self, head):
-        branch = self.read_changeset_data(self.changeset_ref(head)) \
-            .get('extra', {}) \
-            .get('branch', 'default')
+        branch = (self.changeset(head).extra or {}).get('branch', 'default')
         return branch, head
 
     def add_head(self, head, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
@@ -995,14 +993,14 @@ class GitHgStore(object):
                 extra['committer'] = Authorship.from_git_str(
                     git_commit.committer).to_hg_str()
         if extra is not None:
-            extra = ' ' + ChangesetData.dump_extra(extra)
+            dumped_extra = ' ' + ChangesetData.dump_extra(extra)
         changeset = ''.join(chain(
             [
                 metadata['manifest'], '\n',
                 author, '\n',
                 date, ' ', utcoffset
             ],
-            [extra] if extra else [],
+            [dumped_extra] if extra is not None else [],
             ['\n', '\n'.join(metadata['files'])]
             if metadata.get('files') else [],
             ['\n\n'], git_commit.body))
@@ -1017,6 +1015,8 @@ class GitHgStore(object):
             changeset = new + changeset[last_end:]
 
         hgdata = GeneratedChangesetInfo(sha1, changeset)
+        hgdata.extra = extra
+        hgdata.manifest = metadata['manifest']
         if include_parents:
             assert len(git_commit.parents) <= 2
             hgdata.set_parents(*[

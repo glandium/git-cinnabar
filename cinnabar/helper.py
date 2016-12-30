@@ -137,6 +137,7 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def git2hg(self, sha1):
+        assert sha1 != 'changeset'
         with self.query('git2hg', sha1) as stdout:
             return self._read_file('blob', stdout)
 
