@@ -274,22 +274,20 @@ def fsck(args):
         changeset = changeset_data['changeset']
         if 'extra' in changeset_data:
             extra = changeset_data['extra']
-            header, message = GitHgHelper.cat_file(
-                'commit', node).split('\n\n', 1)
-            header = dict(l.split(' ', 1) for l in header.splitlines())
+            commit = GitCommit(node)
             if 'committer' in extra:
                 committer_info = Authorship.from_git_str(
-                    header['committer']).to_hg()
+                    commit.committer).to_hg()
                 committer = ' '.join(committer_info)
                 if (committer != extra['committer'] and
-                        header['committer'] != extra['committer'] and
+                        commit.committer != extra['committer'] and
                         committer_info[0] != extra['committer']):
                     report('Committer mismatch between commit and metadata for'
                            ' changeset %s' % changeset)
                 if committer == extra['committer']:
                     report('Useless committer metadata for changeset %s'
                            % changeset)
-            if header['committer'] != header['author'] and not extra:
+            if commit.committer != commit.author and not extra:
                 report('Useless empty extra metadata for changeset %s'
                        % changeset)
 
