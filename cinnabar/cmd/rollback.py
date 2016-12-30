@@ -48,7 +48,7 @@ def do_rollback(ref):
             Git.delete_ref(ref)
         else:
             Git.update_ref(ref, commit)
-    Git.close()
+    Git._close_update_ref()
 
     return 0
 
