@@ -244,7 +244,7 @@ class GitRemoteHelper(object):
             if v.startswith('git:'):
                 v = v[4:]
             elif k.startswith('refs/heads/branches/'):
-                v = self._branchmap.git_sha1(v)
+                v = self._store.changeset_ref(v) or self._branchmap.git_sha1(v)
             elif not v.startswith('@'):
                 v = self._store.changeset_ref(v) or '?'
             self._helper.write('%s %s\n' % (v, k))
