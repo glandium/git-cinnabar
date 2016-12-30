@@ -657,11 +657,16 @@ class AmbiguousGraftException(Exception):
 
 class Grafter(object):
     def __init__(self, store):
+        from .git import git_version
         self._store = store
         self._early_history = set()
         self._graft_trees = defaultdict(list)
         self._grafted = False
-        refs = ['--exclude=refs/cinnabar/*', '--all']
+        if git_version >= '1.9':
+            refs = ['--exclude=refs/cinnabar/*', '--all']
+        else:
+            refs = list(r for _, r in Git.for_each_ref('refs/')
+                        if not r.startswith('refs/cinnabar/'))
         if store._has_metadata:
             refs += ['--not', 'refs/cinnabar/metadata^']
         for line in progress_iter('Reading %d graft candidates',
