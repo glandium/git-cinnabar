@@ -171,7 +171,7 @@ endif
 
 PATH_URL = file://$(if $(filter /%,$(CURDIR)),,/)$(CURDIR)
 
-GET_REF_SHA1 = git -C $1 log --format=%H --reverse --date-order --remotes=origin --no-walk
+GET_REF_SHA1 = git -C $1 log --format=%H --reverse --date-order --remotes=origin --no-walk | awk 'END { if (NR == 0) { print \"$1\", NR } }'
 
 COMPARE_REFS = bash -c "diff -u <($(call GET_REF_SHA1,$1)) <($(call GET_REF_SHA1,$2))"
 
