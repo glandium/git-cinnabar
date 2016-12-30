@@ -171,14 +171,18 @@ endif
 
 PATH_URL = file://$(if $(filter /%,$(CURDIR)),,/)$(CURDIR)
 
-GET_REF_SHA1 = git -C $1 log --format=%H --reverse --date-order --remotes=origin --no-walk | awk 'END { if (NR == 0) { print \"$1\", NR } }'
+COMPARE_COMMANDS = bash -c "diff -u <($1) <($2)"
 
-COMPARE_REFS = bash -c "diff -u <($(call GET_REF_SHA1,$1)) <($(call GET_REF_SHA1,$2))"
+GET_REF_SHA1 = git -C $1 log --format=%H --reverse --date-order --remotes=origin --no-walk$(if $2, | $2) | awk 'END { if (NR == 0) { print \"$1\", NR } }'
+
+COMPARE_REFS = $(call COMPARE_COMMANDS,$(call GET_REF_SHA1,$1,$3),$(call GET_REF_SHA1,$2,$3))
 
 HG_INIT = $(HG) init $1
 ifdef NO_BUNDLE2
 HG_INIT += ; (echo "[experimental]"; echo "bundle2-advertise = false") >> $1/.hg/hgrc
 endif
+
+ifndef GRAFT
 
 script::
 	rm -rf hg.hg hg.empty.git hg.git hg.bundle hg.unbundle.git
@@ -210,6 +214,33 @@ script::
 	(echo protocol=http; echo host=localhost:8000; echo username=foo; echo password=bar) | $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' credential approve
 	$(GIT) -C hg.git remote add hg-http hg::http://localhost:8000/
 	$(HG) -R hg.http.hg --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' -C hg.git push hg-http refs/remotes/origin/*:refs/heads/*
+else # GRAFT
+
+GET_ROOTS = $(GIT) -C $1 rev-list $2 --max-parents=0
+
+ifndef NO_BUNDLE2
+
+script::
+	rm -rf hg.graft.git
+	$(GIT) init hg.graft.git
+	$(GIT) -C hg.graft.git remote add origin hg::$(REPO)
+	$(GIT) -C hg.old.git push --mirror $(CURDIR)/hg.graft.git
+	$(GIT) -C hg.graft.git checkout HEAD
+
+	$(GIT) -C hg.graft.git cinnabar rollback 0000000000000000000000000000000000000000
+	$(GIT) -C hg.graft.git filter-branch --msg-filter 'cat ; echo' --original original -- --all
+	$(GIT) -C hg.graft.git -c cinnabar.graft=true remote update
+	$(call COMPARE_REFS, hg.old.git, hg.graft.git, xargs $(GIT) cinnabar git2hg)
+
+	$(GIT) -C hg.graft.git cinnabar rollback 0000000000000000000000000000000000000000
+	$(GIT) -C hg.graft.git filter-branch --index-filter 'test $$GIT_COMMIT = '$$($(call GET_ROOTS,hg.graft.git,--remotes))' && git rm -r --cached -- \* || true' --original original -- --all
+	$(GIT) -C hg.graft.git -c cinnabar.graft=true remote update
+	$(call COMPARE_REFS, hg.old.git, hg.graft.git, xargs $(GIT) cinnabar git2hg)
+	$(call COMPARE_COMMANDS,$(call GET_ROOTS,hg.old.git,--remotes),$(call GET_ROOTS,hg.graft.git,--glob=refs/cinnabar/replace))
+
+endif
+
+endif # GRAFT
 
 endif # PYTHON_CHECKS
 

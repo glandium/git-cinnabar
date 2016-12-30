@@ -57,6 +57,7 @@ matrix:
       - GIT_CINNABAR_EXPERIMENTS=true
     - env: GIT_CINNABAR_OLD_HELPER=1
     - env: GIT_CINNABAR_HELPER=""
+    - env: GRAFT=1
     - env: UPGRADE_FROM=0.3.2
     - env: UPGRADE_FROM=0.3.0
     - env: UPGRADE_FROM=0.2.2
