@@ -86,6 +86,9 @@ else
 GIT=git
 endif
 
+before_script::
+	$(GIT) --version
+
 ifndef GIT_CINNABAR_OLD_HELPER
 GIT += -c core.packedGitWindowSize=8k
 endif
