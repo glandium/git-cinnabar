@@ -176,7 +176,7 @@ PATH_URL = file://$(if $(filter /%,$(CURDIR)),,/)$(CURDIR)
 
 COMPARE_COMMANDS = bash -c "diff -u <($1) <($2)"
 
-GET_REF_SHA1 = git -C $1 log --format=%H --reverse --date-order --remotes=origin --no-walk$(if $2, | $2) | awk 'END { if (NR == 0) { print \"$1\", NR } }'
+GET_REF_SHA1 = git -C $1 log --format=%H --reverse --date-order --remotes=origin --no-walk$(if $2, | $2) | awk '{print} END { if (NR == 0) { print \"$1\", NR } }'
 
 COMPARE_REFS = $(call COMPARE_COMMANDS,$(call GET_REF_SHA1,$1,$3),$(call GET_REF_SHA1,$2,$3))
 
@@ -221,16 +221,26 @@ GET_ROOTS = $(GIT) -C $1 rev-list $2 --max-parents=0
 ifndef NO_BUNDLE2
 
 script::
-	rm -rf hg.graft.git
+	rm -rf hg.graft.git hg.graft2.git
 	$(GIT) init hg.graft.git
 	$(GIT) -C hg.graft.git remote add origin hg::$(REPO)
 	$(GIT) -C hg.old.git push --mirror $(CURDIR)/hg.graft.git
 	$(GIT) -C hg.graft.git checkout HEAD
 
+	$(GIT) init hg.graft2.git
+	$(GIT) -C hg.graft2.git remote add origin hg::$(REPO)
+	$(GIT) -C hg.old.git push --mirror $(CURDIR)/hg.graft2.git
+	$(GIT) -C hg.graft2.git checkout HEAD
+
 	$(GIT) -C hg.graft.git cinnabar rollback 0000000000000000000000000000000000000000
 	$(GIT) -C hg.graft.git filter-branch --msg-filter 'cat ; echo' --original original -- --all
 	$(GIT) -C hg.graft.git -c cinnabar.graft=true remote update
 	$(call COMPARE_REFS, hg.old.git, hg.graft.git, xargs $(GIT) cinnabar git2hg)
+
+	$(GIT) -C hg.graft.git push $(CURDIR)/hg.graft2.git refs/remotes/origin/*:refs/remotes/new/*
+	$(GIT) -C hg.graft2.git remote set-url origin hg::$(REPO)
+	$(GIT) -C hg.graft2.git -c cinnabar.graft=true cinnabar reclone
+	$(call COMPARE_REFS, hg.graft.git, hg.graft2.git)
 
 	$(GIT) -C hg.graft.git cinnabar rollback 0000000000000000000000000000000000000000
 	$(GIT) -C hg.graft.git filter-branch --index-filter 'test $$GIT_COMMIT = '$$($(call GET_ROOTS,hg.graft.git,--remotes))' && git rm -r --cached -- \* || true' --original original -- --all
