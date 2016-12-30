@@ -224,16 +224,26 @@ GET_ROOTS = $(GIT) -C $1 rev-list $2 --max-parents=0
 ifndef NO_BUNDLE2
 
 script::
-	rm -rf hg.graft.git
+	rm -rf hg.graft.git hg.graft2.git
 	$(GIT) init hg.graft.git
 	$(GIT) -C hg.graft.git remote add origin hg::$(REPO)
 	$(GIT) -C hg.old.git push --mirror $(CURDIR)/hg.graft.git
 	$(GIT) -C hg.graft.git checkout HEAD
 
+	$(GIT) init hg.graft2.git
+	$(GIT) -C hg.graft2.git remote add origin hg::$(REPO)
+	$(GIT) -C hg.old.git push --mirror $(CURDIR)/hg.graft2.git
+	$(GIT) -C hg.graft2.git checkout HEAD
+
 	$(GIT) -C hg.graft.git cinnabar rollback 0000000000000000000000000000000000000000
 	$(GIT) -C hg.graft.git filter-branch --msg-filter 'cat ; echo' --original original -- --all
 	$(GIT) -C hg.graft.git -c cinnabar.graft=true remote update
 	$(call COMPARE_REFS, hg.old.git, hg.graft.git, xargs $(GIT) cinnabar git2hg)
+
+	$(GIT) -C hg.graft.git push $(CURDIR)/hg.graft2.git refs/remotes/origin/*:refs/remotes/new/*
+	$(GIT) -C hg.graft2.git remote set-url origin hg::$(REPO)
+	$(GIT) -C hg.graft2.git -c cinnabar.graft=true cinnabar reclone
+	$(call COMPARE_REFS, hg.graft.git, hg.graft2.git)
 
 	$(GIT) -C hg.graft.git cinnabar rollback 0000000000000000000000000000000000000000
 	$(GIT) -C hg.graft.git filter-branch --index-filter 'test $$GIT_COMMIT = '$$($(call GET_ROOTS,hg.graft.git,--remotes))' && git rm -r --cached -- \* || true' --original original -- --all
