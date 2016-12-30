@@ -973,7 +973,7 @@ class GitHgStore(object):
 
     def changeset(self, sha1, include_parents=False):
         assert not isinstance(sha1, Mark)
-        gitsha1 = self._hg2git(sha1)
+        gitsha1 = self.changeset_ref(sha1)
         assert gitsha1
         return self._changeset(gitsha1, sha1, include_parents)
 
@@ -1033,7 +1033,7 @@ class GitHgStore(object):
 
     def manifest(self, sha1, include_parents=False):
         manifest = GeneratedManifestInfo(sha1)
-        gitsha1 = self._hg2git(sha1)
+        gitsha1 = self.manifest_ref(sha1)
         assert gitsha1
         manifest.data = GitHgHelper.manifest('git:%s' % gitsha1)
         if include_parents:
