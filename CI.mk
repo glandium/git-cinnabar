@@ -227,13 +227,13 @@ script::
 	rm -rf hg.graft.git hg.graft2.git
 	$(GIT) init hg.graft.git
 	$(GIT) -C hg.graft.git remote add origin hg::$(REPO)
-	$(GIT) -C hg.old.git push --mirror $(CURDIR)/hg.graft.git
-	$(GIT) -C hg.graft.git checkout HEAD
+	$(GIT) -C hg.old.git push $(CURDIR)/hg.graft.git refs/remotes/*:refs/remotes/*
+	$(GIT) -C hg.graft.git checkout $$($(GIT) -C hg.old.git rev-parse HEAD)
 
 	$(GIT) init hg.graft2.git
 	$(GIT) -C hg.graft2.git remote add origin hg::$(REPO)
-	$(GIT) -C hg.old.git push --mirror $(CURDIR)/hg.graft2.git
-	$(GIT) -C hg.graft2.git checkout HEAD
+	$(GIT) -C hg.old.git push $(CURDIR)/hg.graft2.git refs/remotes/*:refs/remotes/*
+	$(GIT) -C hg.graft2.git checkout $$($(GIT) -C hg.old.git rev-parse HEAD)
 
 	$(GIT) -C hg.graft.git cinnabar rollback 0000000000000000000000000000000000000000
 	$(GIT) -C hg.graft.git filter-branch --msg-filter 'cat ; echo' --original original -- --all
