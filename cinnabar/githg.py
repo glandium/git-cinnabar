@@ -667,6 +667,7 @@ class Grafter(object):
         else:
             refs = list(r for _, r in Git.for_each_ref('refs/')
                         if not r.startswith('refs/cinnabar/'))
+            refs += ['HEAD']
         if store._has_metadata:
             refs += ['--not', 'refs/cinnabar/metadata^']
         for line in progress_iter('Reading %d graft candidates',
