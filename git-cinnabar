@@ -22,6 +22,7 @@ from cinnabar.githg import (
     git_hash,
     GitCommit,
     GitHgStore,
+    InvalidConfig,
     HG_EMPTY_FILE,
     one,
     UpgradeException,
@@ -356,10 +357,20 @@ def do_bundle(fname, *revs):
                                    '--full-history', '--parents', '--reverse',
                                    *revs))
     if bundle_commits:
-        # TODO: enable graft support
         # TODO: better UX. For instance, this will fail with an exception when
         # the parent commit doesn't have mercurial metadata.
-        store = PushStore()
+        GRAFT = {
+            None: False,
+            'false': False,
+            'true': True,
+        }
+        try:
+            self._graft = Git.config('cinnabar.graft', remote=remote.name,
+                                     values=GRAFT)
+        except InvalidConfig as e:
+            logging.error(e.message)
+            return 1
+        store = PushStore(graft=graft)
         store.init_fast_import()
         # TODO: allow to create bundle v2 through command line arguments.
         b2caps = {
