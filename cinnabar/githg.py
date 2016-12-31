@@ -1180,7 +1180,8 @@ class GitHgStore(object):
         if not commit:
             mark = self.changeset_ref(instance.node)
         else:
-            assert isinstance(commit, GitCommit)
+            if not isinstance(commit, GitCommit):
+                commit = GitCommit(commit)
             mark = commit.sha1
         if not mark and self._graft and commit is not False:
             return self._graft.graft(instance, track_heads)
