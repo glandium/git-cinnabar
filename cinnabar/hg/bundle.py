@@ -308,14 +308,10 @@ class PushStore(GitHgStore):
             changeset_data['extra'] = extra
         changeset = self._changeset(commit, include_parents=True)
         if self._graft is True and parents and changeset.data[-1] == '\n':
-            parent_cs = self._changeset(parents[0], skip_patch=True)
-            if 'patch' not in self._changeset_data_cache[parents[0]]:
-                self._graft = False
-            else:
-                patch = self._changeset_data_cache[parents[0]]['patch'][-1]
-                self._graft = (patch[1] == len(parent_cs.data) and
-                               parent_cs.data[-1] == '\n')
-            if self._graft:
+            parent_commit = GitCommit(parents[0])
+            parent_cs = self.changeset(self.hg_changeset(parents[0]))
+            if (parent_commit.body[-1] == '\n' and
+                    parent_commit.body[-2] == parent_cs.data[-1]):
                 self._graft = 'true'
 
         if self._graft == 'true' and changeset.data[-1] == '\n':
