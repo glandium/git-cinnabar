@@ -248,6 +248,14 @@ script::
 	$(call COMPARE_REFS, hg.old.git, hg.graft.git, xargs $(GIT) cinnabar git2hg)
 	$(call COMPARE_COMMANDS,$(call GET_ROOTS,hg.old.git,--remotes),$(call GET_ROOTS,hg.graft.git,--glob=refs/cinnabar/replace))
 
+script::
+	rm -f hg.graft.new.bundle
+	$(GIT) -C hg.graft2.git checkout refs/remotes/new/HEAD
+	$(GIT) -C hg.graft2.git commit --allow-empty -m 'New commit'
+	$(GIT) -C hg.graft2.git -c cinnabar.graft=true cinnabar bundle $(CURDIR)/hg.graft.new.bundle HEAD^!
+	$(GIT) -C hg.graft2.git -c cinnabar.graft=true fetch hg::$(PATH_URL)/hg.graft.new.bundle
+	test "$$($(GIT) -C hg.graft2.git cinnabar data -c $$($(GIT) -C hg.graft2.git cinnabar git2hg FETCH_HEAD) | tail -c 1)" = t
+
 endif
 
 endif # GRAFT

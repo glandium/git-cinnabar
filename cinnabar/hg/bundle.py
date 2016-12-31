@@ -92,8 +92,10 @@ class PushStore(GitHgStore):
         store._init(graft)
 
     def __init__(self, *args, **kwargs):
-        super(PushStore, self).__init__(*args, **kwargs)
         graft = kwargs.get('graft', False)
+        if 'graft' in kwargs:
+            del kwargs['graft']
+        super(PushStore, self).__init__(*args, **kwargs)
         self._init(graft)
 
     def _init(self, graft=False):

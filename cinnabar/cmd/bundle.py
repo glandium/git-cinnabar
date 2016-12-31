@@ -1,4 +1,9 @@
+import logging
 from cinnabar.cmd.util import CLI
+from cinnabar.git import (
+    Git,
+    InvalidConfig,
+)
 from cinnabar.helper import GitHgHelper
 from cinnabar.hg.bundle import (
     create_bundle,
@@ -21,10 +26,19 @@ def bundle(args):
     bundle_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
         '--topo-order', '--full-history', '--parents', '--reverse', *args.rev))
     if bundle_commits:
-        # TODO: enable graft support
         # TODO: better UX. For instance, this will fail with an exception when
         # the parent commit doesn't have mercurial metadata.
-        store = PushStore()
+        GRAFT = {
+            None: False,
+            'false': False,
+            'true': True,
+        }
+        try:
+            graft = Git.config('cinnabar.graft', values=GRAFT)
+        except InvalidConfig as e:
+            logging.error(e.message)
+            return 1
+        store = PushStore(graft=graft)
         store.init_fast_import()
         if args.version == 1:
             b2caps = {}
