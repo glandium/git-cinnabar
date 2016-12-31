@@ -22,7 +22,6 @@ from cinnabar.githg import (
     git_hash,
     GitCommit,
     GitHgStore,
-    InvalidConfig,
     HG_EMPTY_FILE,
     one,
     UpgradeException,
@@ -33,6 +32,7 @@ from cinnabar.git import (
     EMPTY_TREE,
     Git,
     GitProcess,
+    InvalidConfig,
     NULL_NODE_ID,
 )
 from cinnabar.util import (
