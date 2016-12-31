@@ -365,8 +365,7 @@ def do_bundle(fname, *revs):
             'true': True,
         }
         try:
-            self._graft = Git.config('cinnabar.graft', remote=remote.name,
-                                     values=GRAFT)
+            graft = Git.config('cinnabar.graft', values=GRAFT)
         except InvalidConfig as e:
             logging.error(e.message)
             return 1
