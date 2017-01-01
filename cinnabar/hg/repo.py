@@ -5,7 +5,7 @@ import urllib
 import urllib2
 from cinnabar.githg import (
     NothingToGraftException,
-    ChangesetInfo,
+    Changeset,
     ManifestInfo,
 )
 from cinnabar.helper import (
@@ -230,9 +230,10 @@ class ChunksCollection(object):
             except IndexError:
                 return
 
-    def iter_initialized(self, cls, get_missing):
+    def iter_initialized(self, cls, get_missing, init=None):
         if not self._keep:
-            return iter_initialized(get_missing, iter_chunks(self, cls))
+            return iter_initialized(get_missing, iter_chunks(self, cls),
+                                    init=init)
 
         def wrap_iter_chunks(self, cls):
             for chunk in iter_chunks(self, cls):
@@ -259,7 +260,8 @@ class ChunksCollection(object):
             chunk = self._kept[node]
             return chunk
 
-        return iter_initialized(wrap_get_missing, wrap_iter_chunks(self, cls))
+        return iter_initialized(wrap_get_missing, wrap_iter_chunks(self, cls),
+                                init=init)
 
 
 def _sample(l, size):
@@ -485,8 +487,9 @@ class bundlerepo(object):
             'Analyzing %d changesets from ' + self._file,
             iter_and_store(next(raw_unbundler, None))))
 
-        for chunk in changeset_chunks.iter_initialized(ChangesetInfo,
-                                                       store.changeset):
+        for chunk in changeset_chunks.iter_initialized(lambda x: x,
+                                                       store.changeset,
+                                                       Changeset.from_chunk):
             extra = chunk.extra or {}
             branch = extra.get('branch', 'default')
             branches.add(branch)
@@ -603,7 +606,8 @@ def getbundle(repo, store, heads, branch_names):
 
     for cs in progress_iter(
             'Importing %d changesets',
-            changeset_chunks.iter_initialized(ChangesetInfo, store.changeset)):
+            changeset_chunks.iter_initialized(lambda x: x, store.changeset,
+                                              Changeset.from_chunk)):
         try:
             store.store_changeset(cs)
         except NothingToGraftException:

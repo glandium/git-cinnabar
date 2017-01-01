@@ -1,5 +1,4 @@
 from cinnabar.cmd.util import CLI
-from cinnabar.githg import ChangesetData
 from cinnabar.git import (
     Git,
     NULL_NODE_ID,
@@ -26,7 +25,7 @@ def git2hg(args):
     for arg in args.sha1:
         data = GitHgHelper.git2hg(arg)
         if data:
-            data = ChangesetData.parse(data)
-            print data.get('changeset', NULL_NODE_ID)
+            assert data.startswith('changeset ')
+            print data[10:50]
         else:
             print NULL_NODE_ID

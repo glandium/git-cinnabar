@@ -307,7 +307,7 @@ def fsck(args):
 
         dag.add(hg_changeset.node,
                 (hg_changeset.parent1, hg_changeset.parent2),
-                (changeset_data.extra or {}).get('branch', 'default'))
+                changeset_data.branch or 'default')
 
         manifest = changeset_data.manifest
         if manifest in seen_manifests or manifest == NULL_NODE_ID:

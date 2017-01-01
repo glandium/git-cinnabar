@@ -1,6 +1,6 @@
 import types
 from cinnabar.githg import (
-    ChangesetInfo,
+    Changeset,
     FileFindParents,
     GitCommit,
     GitHgStore,
@@ -26,7 +26,6 @@ from .changegroup import (
     RawRevChunk02,
 )
 from .objects import (
-    Authorship,
     File,
     HgObject,
 )
@@ -294,55 +293,36 @@ class PushStore(GitHgStore):
             self.store_manifest(manifest)
             self._manifest_git_tree[manifest.node] = commit_data.tree
 
-        extra = {}
-        if commit_data.author != commit_data.committer:
-            extra['committer'] = Authorship.from_git_str(
-                commit_data.committer).to_hg_str()
+        changeset = Changeset.from_git_commit(commit_data)
+        changeset.parents = tuple(self.hg_changeset(p) for p in parents)
+        changeset.manifest = manifest.node
+        changeset.files = sorted(chain(manifest.removed, manifest.modified))
 
         if parents:
-            parent_changeset = self.changeset(self.hg_changeset(parents[0]))
-            branch = (parent_changeset.extra or {}).get('branch')
-            if branch:
-                extra['branch'] = branch
+            parent_changeset = self.changeset(changeset.parent1)
+            if parent_changeset.branch:
+                changeset.branch = parent_changeset.branch
 
-        changeset_data = self._changeset_data_cache[commit] = {
-            'files': sorted(chain(manifest.removed, manifest.modified)),
-            'manifest': manifest.node,
-        }
-        if extra:
-            changeset_data['extra'] = extra
-        changeset = self._changeset(commit, include_parents=True)
-        if self._graft is True and parents and changeset.data[-1] == '\n':
+        if self._graft is True and parents and changeset.body[-1] == '\n':
             parent_commit = GitCommit(parents[0])
-            parent_cs = self.changeset(self.hg_changeset(parents[0]))
             if (parent_commit.body[-1] == '\n' and
-                    parent_commit.body[-2] == parent_cs.data[-1]):
+                    parent_commit.body[-2] == parent_changeset.body[-1]):
                 self._graft = 'true'
 
-        if self._graft == 'true' and changeset.data[-1] == '\n':
-            changeset.data = changeset.data[:-1]
-            changeset_data['patch'] = (
-                (len(changeset.data), len(changeset.data) + 1, ''),
-            )
-        changeset_data['changeset'] = changeset.changeset = changeset.node = \
-            changeset.sha1
+        if self._graft == 'true' and changeset.body[-1] == '\n':
+            changeset.body = changeset.body[:-1]
+
+        changeset.node = changeset.sha1
         self._pushed.add(changeset.node)
-        # This is a horrible way to do this, but this method is not doing much
-        # better overall anyways.
-        if extra:
-            if 'committer' in extra:
-                del extra['committer']
-            if not extra:
-                del changeset_data['extra']
-        self._changesets[changeset.node] = commit
+        self.store_changeset(changeset, commit_data)
 
         if check_enabled('bundle') and real_changeset:
             error = False
             for k in ('files', 'manifest'):
-                if getattr(real_changeset, k, []) != changeset_data.get(k):
+                if getattr(real_changeset, k, []) != getattr(changeset, k, []):
                     logging.error('(%s) %r != %r', k,
                                   getattr(real_changeset, k, None),
-                                  changeset_data.get(k))
+                                  getattr(changeset, k, None))
                     error = True
             if error:
                 raise Exception('Changeset mismatch')
@@ -442,8 +422,7 @@ def bundle_data(store, commits):
         is_new = changeset_data is None or check_enabled('bundle')
         if is_new:
             store.create_hg_metadata(node, parents)
-        changeset = store.hg_changeset(node)
-        hg_changeset = store.changeset(changeset, include_parents=True)
+        hg_changeset = store._changeset(node, include_parents=True)
         if is_new:
             store.add_head(hg_changeset.node, hg_changeset.parent1,
                            hg_changeset.parent2)
@@ -452,7 +431,7 @@ def bundle_data(store, commits):
         if manifest not in manifests and manifest != NULL_NODE_ID:
             if manifest not in (store.changeset(p).manifest
                                 for p in hg_changeset.parents):
-                manifests[manifest] = changeset
+                manifests[manifest] = hg_changeset.node
 
     yield None
 
@@ -561,7 +540,7 @@ def create_bundle(store, commits, bundle2caps={}):
 
 
 def get_previous(store, sha1, type):
-    if issubclass(type, ChangesetInfo):
+    if issubclass(type, Changeset):
         return store.changeset(sha1)
     if issubclass(type, ManifestInfo):
         return store.manifest(sha1)
@@ -576,7 +555,7 @@ def prepare_chunk(store, chunk, previous, chunk_type):
             return chunk.to_chunk(chunk_type, previous)
         return chunk.serialize(previous, chunk_type)
     elif chunk_type == RawRevChunk02:
-        if isinstance(chunk, ChangesetInfo):
+        if isinstance(chunk, Changeset):
             parents = (previous if previous
                        else get_previous(store, p, type(chunk))
                        for p in chunk.parents[:1])

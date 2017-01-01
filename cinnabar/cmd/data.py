@@ -24,7 +24,7 @@ def data(args):
         print >>sys.stderr, 'Cannot use both -c and -m.'
         return 1
     if args.changeset:
-        sys.stdout.write(store.changeset(args.rev).data)
+        sys.stdout.write(store.changeset(args.rev).raw_data)
     elif args.manifest:
         sys.stdout.write(store.manifest(args.rev).data)
     else:

@@ -1,12 +1,8 @@
 #!/usr/bin/env python2.7
 
 from __future__ import division
-import types
 from binascii import hexlify, unhexlify
-from itertools import (
-    chain,
-    izip,
-)
+from itertools import izip
 import hashlib
 import urllib
 from collections import (
@@ -263,29 +259,6 @@ class FileFindParents(object):
         return file.node == file.sha1
 
 
-class ChangesetInfo(RevChunk):
-    __slots__ = ('message', 'manifest', 'committer', 'date', 'utcoffset',
-                 'extra', 'files')
-
-    def init(self, previous_chunk):
-        super(ChangesetInfo, self).init(previous_chunk)
-        metadata, self.message = self.data.split('\n\n', 1)
-        lines = metadata.splitlines()
-        self.manifest, self.committer, date = lines[:3]
-        date = date.split(' ', 2)
-        self.date = int(date[0])
-        self.utcoffset = int(date[1])
-        if len(date) == 3:
-            self.extra = ChangesetData.parse_extra(date[2])
-        else:
-            self.extra = None
-        self.files = lines[3:]
-
-
-class GeneratedChangesetInfo(ChangesetInfo, GeneratedRevChunk):
-    pass
-
-
 class ManifestLine(object):
     __slots__ = ('name', 'node', 'attr', '_str', '_len')
 
@@ -462,52 +435,6 @@ class Changeset(Changeset):
         return changeset
 
 
-class ChangesetData(object):
-    FIELDS = ('changeset', 'manifest', 'author', 'extra', 'files', 'patch')
-
-    @staticmethod
-    def parse_extra(s):
-        return dict(i.split(':', 1) for i in s.split('\0') if i)
-
-    @staticmethod
-    def parse(s):
-        if isinstance(s, types.StringType):
-            s = s.splitlines()
-        data = {k: v for k, v in (l.split(' ', 1) for l in s)}
-        if 'extra' in data:
-            data['extra'] = ChangesetData.parse_extra(data['extra'])
-        if 'files' in data:
-            data['files'] = data['files'].split('\0')
-        if 'patch' in data:
-            data['patch'] = tuple((int(start), int(end), urllib.unquote(text))
-                                  for line in data['patch'].split('\0')
-                                  for start, end, text in (line.split(','),))
-        return data
-
-    @staticmethod
-    def dump_extra(data):
-        return '\0'.join(':'.join(i) for i in sorted(data.items()))
-
-    @staticmethod
-    def dump(data):
-        def serialize(data):
-            for k in ChangesetData.FIELDS:
-                if k not in data:
-                    continue
-                if k == 'extra':
-                    yield k, ChangesetData.dump_extra(data[k])
-                elif k == 'files':
-                    if data[k]:
-                        yield k, '\0'.join(data[k])
-                elif k == 'patch':
-                    yield k, '\0'.join(
-                        ','.join((str(start), str(end), urllib.quote(text)))
-                        for start, end, text in data[k])
-                else:
-                    yield k, data[k]
-        return '\n'.join('%s %s' % s for s in serialize(data))
-
-
 class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
     __slots__ = ('__lines', '_data')
 
@@ -649,8 +576,8 @@ class BranchMap(object):
                 if not sha1:
                     self._unknown_heads.add(head)
                     continue
-                extra = store.changeset(head).extra
-                if branch and sequenced and extra and not extra.get('close'):
+                changeset = store.changeset(head)
+                if branch and sequenced and not changeset.close:
                     self._tips[branch] = head
                 assert head not in self._git_sha1s
                 self._git_sha1s[head] = sha1
@@ -720,7 +647,7 @@ class Grafter(object):
             if not commit:
                 commit = commits[c] = GitCommit(c)
             if (Authorship.from_git_str(commit.author).timestamp !=
-                    changeset.date):
+                    int(changeset.timestamp)):
                 return False
 
             if all(store._replace.get(p1, p1) == store._replace.get(p2, p2)
@@ -738,7 +665,7 @@ class Grafter(object):
             # following is enough to graft github.com/mozilla/gecko-dev
             # to mozilla-central and related repositories.
             # Try with commits with the same subject line
-            subject = changeset.message.split('\n', 1)[0]
+            subject = changeset.body.split('\n', 1)[0]
             possible_nodes = tuple(
                 n for n in nodes
                 if commits[n].body.split('\n', 1)[0] == subject
@@ -1005,7 +932,7 @@ class GitHgStore(object):
                    if not branches or b in branches)
 
     def _head_branch(self, head):
-        branch = (self.changeset(head).extra or {}).get('branch', 'default')
+        branch = self.changeset(head).branch or 'default'
         return branch, head
 
     def add_head(self, head, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
@@ -1055,13 +982,14 @@ class GitHgStore(object):
         data = GitHgHelper.git2hg(obj)
         if data is None:
             return None
-        ret = ChangesetData.parse(data)
+        ret = ChangesetPatcher(data)
         return ret
 
     def hg_changeset(self, sha1):
         data = self.read_changeset_data(sha1)
         if data:
-            return data['changeset']
+            assert data.startswith('changeset ')
+            return data[10:50]
         return None
 
     def hg_manifest(self, sha1):
@@ -1099,50 +1027,17 @@ class GitHgStore(object):
         if not isinstance(git_commit, GitCommit):
             git_commit = GitCommit(git_commit)
 
+        changeset = Changeset.from_git_commit(git_commit)
         metadata = self.read_changeset_data(git_commit.sha1)
-        author, date, utcoffset = Authorship.from_git_str(
-            git_commit.author).to_hg()
-        if 'author' in metadata:
-            author = metadata['author']
+        changeset = metadata.apply(changeset)
 
-        extra = metadata.get('extra')
-        if git_commit.committer != git_commit.author:
-            if not extra or 'committer' not in extra:
-                extra = dict(extra) if extra else {}
-                extra['committer'] = Authorship.from_git_str(
-                    git_commit.committer).to_hg_str()
-        if extra is not None:
-            dumped_extra = ' ' + ChangesetData.dump_extra(extra)
-        changeset = ''.join(chain(
-            [
-                metadata['manifest'], '\n',
-                author, '\n',
-                date, ' ', utcoffset
-            ],
-            [dumped_extra] if extra is not None else [],
-            ['\n', '\n'.join(metadata['files'])]
-            if metadata.get('files') else [],
-            ['\n\n'], git_commit.body))
-
-        if 'patch' in metadata:
-            new = ''
-            last_end = 0
-            for start, end, text in metadata['patch']:
-                new += changeset[last_end:start]
-                new += text
-                last_end = end
-            changeset = new + changeset[last_end:]
-
-        hgdata = GeneratedChangesetInfo(sha1, changeset)
-        hgdata.extra = extra
-        hgdata.manifest = metadata['manifest']
         if include_parents:
             assert len(git_commit.parents) <= 2
-            hgdata.set_parents(*[
-                self.read_changeset_data(self._replace.get(p, p))['changeset']
-                for p in git_commit.parents])
-            hgdata.changeset = sha1
-        return hgdata
+            changeset.parents = tuple(
+                self.hg_changeset(self._replace.get(p, p))
+                for p in git_commit.parents)
+
+        return changeset
 
     ATTR = {
         '100644': '',
@@ -1225,32 +1120,30 @@ class GitHgStore(object):
             mark = commit.sha1
         if not mark and self._graft and commit is not False:
             return self._graft.graft(instance, track_heads)
-        elif not commit and mark:
-            return
-
-        author = Authorship.from_hg(instance.committer, instance.date,
-                                    instance.utcoffset)
-        extra = instance.extra
-        if extra and extra.get('committer'):
-            committer = extra['committer']
-            if committer[-1] == '>':
-                committer = Authorship.from_hg(committer, instance.date,
-                                               instance.utcoffset)
-            else:
-                committer = Authorship.from_hg_str(committer,
-                                                   maybe_git_utcoffset=True)
-                if committer.to_hg() == committer:
-                    extra = dict(instance.extra)
-                    del extra['committer']
-                    if not extra:
-                        extra = None
-        else:
-            committer = author
-
-        parents = tuple(self.changeset_ref(p) for p in instance.parents)
 
         if not mark:
-            body = instance.message
+            author = Authorship.from_hg(instance.author, instance.timestamp,
+                                        instance.utcoffset)
+            extra = instance.extra
+            if extra and extra.get('committer'):
+                committer = extra['committer']
+                if committer[-1] == '>':
+                    committer = Authorship.from_hg(
+                        committer, instance.timestamp, instance.utcoffset)
+                else:
+                    committer = Authorship.from_hg_str(
+                        committer, maybe_git_utcoffset=True)
+                    if committer.to_hg() == committer:
+                        extra = dict(instance.extra)
+                        del extra['committer']
+                        if not extra:
+                            extra = None
+            else:
+                committer = author
+
+            parents = tuple(self.changeset_ref(p) for p in instance.parents)
+
+            body = instance.body
             tree = self.git_tree(instance.manifest)
 
             # There are cases where two changesets would map to the same
@@ -1276,27 +1169,14 @@ class GitHgStore(object):
                     body += '\0'
                     continue
                 break
-            commit = GitCommit(c.sha1)
+            mark = c.sha1
 
+        if not commit:
+            commit = GitCommit(mark)
         self._changesets[instance.node] = commit.sha1
-        data = self._changeset_data_cache[commit.sha1] = {
-            'changeset': instance.node,
-            'manifest': instance.manifest,
-        }
-        if extra is not None:
-            data['extra'] = extra
-        if instance.files:
-            data['files'] = instance.files
-        if author.to_hg()[0] != instance.committer:
-            data['author'] = instance.committer
-
-        generated_instance = self._changeset(commit, instance.node)
-        if generated_instance.data != instance.data:
-            patch = tuple(byte_diff(generated_instance.data, instance.data))
-            if patch:
-                data['patch'] = patch
-                generated_instance = self._changeset(commit, instance.node)
-                assert generated_instance.data == instance.data
+        changeset = Changeset.from_git_commit(commit)
+        self._changeset_data_cache[commit.sha1] = ChangesetPatcher.from_diff(
+            changeset, instance)
 
         if track_heads:
             self.add_head(instance.node, instance.parent1, instance.parent2)
@@ -1407,7 +1287,7 @@ class GitHgStore(object):
                 for mark in self._changesets.itervalues():
                     if mark:
                         data = self._changeset_data_cache[str(mark)]
-                        commit.notemodify(mark, ChangesetData.dump(data))
+                        commit.notemodify(mark, data)
                 for c in removed_git2hg:
                     commit.write('N %s %s\n' % (NULL_NODE_ID, c))
                 update_metadata.append('refs/notes/cinnabar')
