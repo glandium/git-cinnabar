@@ -74,7 +74,7 @@ void fast_import_sha1write(struct sha1file *f, const void *buf,
 	}
 }
 
-/* Mostly copied from fast-import.c's main() */
+/* Mostly copied from fast-import.c's cmd_main() */
 static void init()
 {
 	int i;
@@ -82,9 +82,6 @@ static void init()
 	reset_pack_idx_option(&pack_idx_opts);
 	git_pack_config();
 	ignore_case = 0;
-
-	if (!pack_compression_seen && core_compression_seen)
-		pack_compression_level = core_compression_level;
 
 	alloc_objects(object_entry_alloc);
 	strbuf_init(&command_buf, 0);
