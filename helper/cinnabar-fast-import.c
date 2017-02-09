@@ -88,7 +88,7 @@ off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
 	return real_find_pack_entry_one(sha1, p);
 }
 
-/* Mostly copied from fast-import.c's main() */
+/* Mostly copied from fast-import.c's cmd_main() */
 static void init()
 {
 	int i;
@@ -97,9 +97,6 @@ static void init()
 	git_pack_config();
 	ignore_case = 0;
 	warn_on_object_refname_ambiguity = 0;
-
-	if (!pack_compression_seen && core_compression_seen)
-		pack_compression_level = core_compression_level;
 
 	alloc_objects(object_entry_alloc);
 	strbuf_init(&command_buf, 0);
