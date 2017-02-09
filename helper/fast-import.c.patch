@@ -1,5 +1,5 @@
 diff --git a/fast-import.c b/fast-import.c
-index cb545d7df..0ce3e3300 100644
+index 64fe602f0..31af6d77f 100644
 --- a/fast-import.c
 +++ b/fast-import.c
 @@ -1,3 +1,5 @@
@@ -8,35 +8,7 @@ index cb545d7df..0ce3e3300 100644
  /*
  (See Documentation/git-fast-import.txt for maintained documentation.)
  Format of STDIN stream:
-@@ -2220,13 +2222,17 @@ static uintmax_t do_change_note_fanout(
- 		char *fullpath, unsigned int fullpath_len,
- 		unsigned char fanout)
- {
--	struct tree_content *t = root->tree;
-+	struct tree_content *t;
- 	struct tree_entry *e, leaf;
- 	unsigned int i, tmp_hex_sha1_len, tmp_fullpath_len;
- 	uintmax_t num_notes = 0;
- 	unsigned char sha1[20];
- 	char realpath[60];
- 
-+	if (!root->tree)
-+		load_tree(root);
-+	t = root->tree;
-+
- 	for (i = 0; t && i < t->entry_count; i++) {
- 		e = t->entries[i];
- 		tmp_hex_sha1_len = hex_sha1_len + e->name->str_len;
-@@ -2278,8 +2284,6 @@ static uintmax_t do_change_note_fanout(
- 				leaf.tree);
- 		} else if (S_ISDIR(e->versions[1].mode)) {
- 			/* This is a subdir that may contain note entries */
--			if (!e->tree)
--				load_tree(e);
- 			num_notes += do_change_note_fanout(orig_root, e,
- 				hex_sha1, tmp_hex_sha1_len,
- 				fullpath, tmp_fullpath_len, fanout);
-@@ -3553,3 +3557,5 @@ int cmd_main(int argc, const char **argv)
+@@ -3542,3 +3544,5 @@ int cmd_main(int argc, const char **argv)
  
  	return failure ? 1 : 0;
  }
