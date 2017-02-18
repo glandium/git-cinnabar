@@ -118,6 +118,7 @@ class GitRemoteHelper(object):
             'refs/cinnabar/refs/heads/branches/*\n'
             'refspec refs/heads/bookmarks/*:'
             'refs/cinnabar/refs/heads/bookmarks/*\n'
+            'refspec hg/*:refs/cinnabar/hg/*\n'
             'refspec HEAD:refs/cinnabar/HEAD\n'
             '\n'
         )
