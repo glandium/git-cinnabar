@@ -175,6 +175,11 @@ class HgObject(ParentsTrait):
     def raw_data(self):
         return ''.join(self._data_iter())
 
+    @raw_data.setter
+    def raw_data(self, data):
+        raise NotImplementedError(
+            '%s.raw_data is not implemented' % self.__class__.__name__)
+
     def _data_iter(self):
         raise NotImplementedError(
             '%s._data_iter is not implemented' % self.__class__.__name__)
@@ -191,12 +196,16 @@ class File(HgObject):
     @classmethod
     def from_chunk(cls, raw_chunk, delta_file=None):
         this = super(File, cls).from_chunk(raw_chunk, delta_file)
-        data = raw_chunk.patch.apply(delta_file.raw_data if delta_file else '')
-        if data.startswith('\1\n'):
-            _, this.metadata, this.content = data.split('\1\n', 2)
-        else:
-            this.content = data
+        this.raw_data = raw_chunk.patch.apply(
+            delta_file.raw_data if delta_file else '')
         return this
+
+    @HgObject.raw_data.setter
+    def raw_data(self, data):
+        if data.startswith('\1\n'):
+            _, self.metadata, self.content = data.split('\1\n', 2)
+        else:
+            self.content = data
 
     class Metadata(OrderedDict):
         @classmethod
@@ -249,17 +258,21 @@ class Changeset(HgObject):
     @classmethod
     def from_chunk(cls, raw_chunk, delta_cs=None):
         this = super(Changeset, cls).from_chunk(raw_chunk, delta_cs)
-        data = raw_chunk.patch.apply(delta_cs.raw_data if delta_cs else '')
-        metadata, this.body = data.split('\n\n', 1)
-        lines = metadata.splitlines()
-        this.manifest, this.author, date = lines[:3]
-        date = date.split(' ', 2)
-        this.timestamp = date[0]
-        this.utcoffset = date[1]
-        if len(date) == 3:
-            this.extra = date[2]
-        this.files = lines[3:]
+        this.raw_data = raw_chunk.patch.apply(
+            delta_cs.raw_data if delta_cs else '')
         return this
+
+    @HgObject.raw_data.setter
+    def raw_data(self, data):
+        metadata, self.body = data.split('\n\n', 1)
+        lines = metadata.splitlines()
+        self.manifest, self.author, date = lines[:3]
+        date = date.split(' ', 2)
+        self.timestamp = date[0]
+        self.utcoffset = date[1]
+        if len(date) == 3:
+            self.extra = date[2]
+        self.files = lines[3:]
 
     files = TypedProperty(list)
 
@@ -332,3 +345,96 @@ class Changeset(HgObject):
     branch = ExtraProperty('branch')
     committer = ExtraProperty('committer')
     close = ExtraProperty('close')
+
+
+class Manifest(HgObject):
+    __slots__ = ('__weakref__',)
+
+    def __init__(self, *args, **kwargs):
+        super(Manifest, self).__init__(*args, **kwargs)
+        self.items = {}
+
+    class ManifestItem(str):
+        @classmethod
+        def from_info(cls, path, sha1=None, attr=''):
+            if isinstance(path, cls):
+                return path
+            return cls('%s\0%s%s' % (path, sha1, attr))
+
+        @property
+        def path(self):
+            attr_len = len(self.attr)
+            assert self[-41 - attr_len] == '\0'
+            return self[:-41 - attr_len]
+
+        @property
+        def attr(self):
+            if self[-1] in 'lx':
+                return self[-1]
+            return ''
+
+        @property
+        def sha1(self):
+            attr_len = len(self.attr)
+            if attr_len:
+                return self[-40 - attr_len:-attr_len]
+            return self[-40 - attr_len:]
+
+    class ManifestDict(OrderedDict):
+        def __init__(self, *args, **kwargs):
+            super(Manifest.ManifestDict, self).__init__(*args, **kwargs)
+            self._last = None
+
+        def __setitem__(self, key, value):
+            assert self._last is None or key > self._last
+            assert isinstance(value, Manifest.ManifestItem)
+            assert key == value.path
+            super(Manifest.ManifestDict, self).__setitem__(key, value)
+            self._last = key
+
+    items = TypedProperty(ManifestDict)
+
+    def add(self, path, sha1=None, attr=''):
+        item = Manifest.ManifestItem.from_info(path, sha1, attr)
+        self.items[item.path] = item
+
+    def __iter__(self):
+        return self.items.itervalues()
+
+    def _data_iter(self):
+        for item in self:
+            yield item
+            yield '\n'
+
+    @classmethod
+    def from_chunk(cls, raw_chunk, delta_mn=None):
+        this = super(Manifest, cls).from_chunk(raw_chunk, delta_mn)
+        items = iter(delta_mn)
+        offset = 0
+        item = ''
+        for part in raw_chunk.patch:
+            while offset < part.start:
+                item = next(items, None)
+                if item is None:
+                    break
+                this.items[item.path] = item
+                offset += len(item) + 1
+            assert offset == part.start
+            for item in part.text_data.tobytes().splitlines():
+                item = this.ManifestItem(item)
+                this.items[item.path] = item
+            while offset < part.end:
+                item = next(items, None)
+                if item is None:
+                    break
+                offset += len(item) + 1
+        for item in items:
+            this.items[item.path] = item
+        return this
+
+    @HgObject.raw_data.setter
+    def raw_data(self, data):
+        self.items.clear()
+        for line in data.splitlines():
+            item = self.ManifestItem(line)
+            self.items[item.path] = item

@@ -9,6 +9,7 @@ from cinnabar.hg.objects import (
     Authorship,
     Changeset,
     File,
+    Manifest,
 )
 
 
@@ -419,3 +420,63 @@ class TestChangeset(unittest.TestCase):
         c.branch = None
         c.committer = None
         self.assertEqual(c.extra, None)
+
+
+class TestManifest(unittest.TestCase):
+    def test_manifest(self):
+        m = Manifest()
+        m.add('foo', '49d8cbb15ce257920447006b46978b7af980a979')
+
+        with self.assertRaises(AssertionError):
+            m.add('bar', 'a324b8bf63f7d56de9d36f8747e3b68a72a4d968')
+
+        m.add('hoge', '618faf0766206b33a8e424f93966ff5d99fd8828', 'x')
+
+        self.assertEqual(m.items, {
+            'foo': 'foo\x0049d8cbb15ce257920447006b46978b7af980a979',
+            'hoge': 'hoge\x00618faf0766206b33a8e424f93966ff5d99fd8828x',
+        })
+
+        self.assertEqual(
+            m.raw_data,
+            'foo\x0049d8cbb15ce257920447006b46978b7af980a979\n'
+            'hoge\x00618faf0766206b33a8e424f93966ff5d99fd8828x\n'
+        )
+
+        m2 = Manifest()
+        m2.add('foo', '49d8cbb15ce257920447006b46978b7af980a979')
+        m2.add('fuga', 'a7b3deabf88ddf313b21064bd29051cfbb284b7c')
+        m2.add('hoge', '618faf0766206b33a8e424f93966ff5d99fd8828', 'x')
+
+        chunk = m2.to_chunk(RawRevChunk02, m)
+        m3 = Manifest.from_chunk(chunk, m)
+        self.assertEquals(m2.items, m3.items)
+
+        chunk = m.to_chunk(RawRevChunk02, m2)
+        m3 = Manifest.from_chunk(chunk, m2)
+        self.assertEquals(m.items, m3.items)
+
+        m2 = Manifest()
+        m2.add('fuga', 'a7b3deabf88ddf313b21064bd29051cfbb284b7c')
+        m2.add('hoge', '618faf0766206b33a8e424f93966ff5d99fd8828', 'x')
+
+        chunk = m2.to_chunk(RawRevChunk02, m)
+        m3 = Manifest.from_chunk(chunk, m)
+        self.assertEquals(m2.items, m3.items)
+
+        m = Manifest()
+        m.raw_data = (
+            'foo\x0049d8cbb15ce257920447006b46978b7af980a979\n'
+            'hoge\x00618faf0766206b33a8e424f93966ff5d99fd8828x\n'
+        )
+
+        self.assertEqual(m.items, {
+            'foo': 'foo\x0049d8cbb15ce257920447006b46978b7af980a979',
+            'hoge': 'hoge\x00618faf0766206b33a8e424f93966ff5d99fd8828x',
+        })
+
+        m2 = Manifest()
+        for i in m:
+            m2.add(i)
+        self.assertEqual(m.raw_data, m2.raw_data)
+        self.assertEqual(m.items, m2.items)
