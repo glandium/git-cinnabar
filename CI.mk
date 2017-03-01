@@ -205,7 +205,9 @@ script::
 script::
 	rm -rf hg.push.hg hg.pure.git
 	$(call HG_INIT, hg.push.hg)
-	$(GIT) clone hg.git hg.pure.git
+	# || exit 1 forces mingw32-make to wrap the command through a shell, which works
+	# around https://github.com/Alexpux/MSYS2-packages/issues/829.
+	$(GIT) clone hg.git hg.pure.git || exit 1
 	# Push everything, including merges
 	$(GIT) -c cinnabar.experiments=merge -C hg.pure.git push hg::$(PATH_URL)/hg.push.hg --all
 
