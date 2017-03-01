@@ -1,6 +1,8 @@
 import sys
 from cinnabar.cmd.util import CLI
 from cinnabar.githg import (
+    Changeset,
+    ChangesetPatcher,
     GeneratedManifestInfo,
     GitCommit,
     GitHgStore,
@@ -23,7 +25,6 @@ from cinnabar.util import (
 )
 from cinnabar.helper import GitHgHelper
 from cinnabar.hg.bundle import get_changes
-from cinnabar.hg.objects import Authorship
 from collections import (
     defaultdict,
     OrderedDict,
@@ -273,24 +274,6 @@ def fsck(args):
 
         changeset_data = store.changeset(store.hg_changeset(node))
         changeset = changeset_data.node
-        if changeset_data.extra:
-            extra = changeset_data.extra
-            commit = GitCommit(node)
-            if 'committer' in extra:
-                committer_info = Authorship.from_git_str(
-                    commit.committer).to_hg()
-                committer = ' '.join(committer_info)
-                if (committer != extra['committer'] and
-                        commit.committer != extra['committer'] and
-                        committer_info[0] != extra['committer']):
-                    report('Committer mismatch between commit and metadata for'
-                           ' changeset %s' % changeset)
-                if committer == extra['committer']:
-                    report('Useless committer metadata for changeset %s'
-                           % changeset)
-            if commit.committer != commit.author and not extra:
-                report('Useless empty extra metadata for changeset %s'
-                       % changeset)
 
         seen_changesets.add(changeset)
         changeset_ref = store.changeset_ref(changeset)
@@ -309,6 +292,13 @@ def fsck(args):
         dag.add(hg_changeset.node,
                 (hg_changeset.parent1, hg_changeset.parent2),
                 changeset_data.branch or 'default')
+
+        raw_changeset = Changeset.from_git_commit(node)
+        patcher = ChangesetPatcher.from_diff(raw_changeset, changeset_data)
+        if patcher != store.read_changeset_data(node):
+            fix('Adjusted changeset metadata for %s' % changeset)
+            store._changesets[changeset] = node
+            store._changeset_data_cache[node] = patcher
 
         manifest = changeset_data.manifest
         if manifest in seen_manifests or manifest == NULL_NODE_ID:
