@@ -250,6 +250,7 @@ def fsck(args):
         # Force the helper to be restarted.
         GitHgHelper._helper = False
         store = GitHgStore()
+        store.init_fast_import(lazy=True)
 
         # Force a files fsck, since we modified files metadata.
         args.files = True
