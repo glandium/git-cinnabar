@@ -159,8 +159,28 @@ class Git(object):
     def diff_tree(self, treeish1, treeish2, path='', detect_copy=False):
         from githg import GitHgHelper
         if path:
-            treeish1 = '%s:%s' % (treeish1, path)
-            treeish2 = '%s:%s' % (treeish2, path)
+            def resolve_treeish(treeish, path):
+                for mode, typ, sha1, p in self.ls_tree(treeish, path):
+                    return sha1
+
+            def one_sided_diff(treeish, status):
+                for line in self.ls_tree(treeish, recursive=True):
+                    mode, typ, sha1, path = line
+                    if status == 'A':
+                        yield '000000', mode, NULL_NODE_ID, sha1, status, path
+                    elif status == 'D':
+                        yield mode, '000000', sha1, NULL_NODE_ID, status, path
+
+            treeish1 = resolve_treeish(treeish1, path)
+            treeish2 = resolve_treeish(treeish2, path)
+
+            if treeish1 is None:
+                if treeish2 is None:
+                    return ()
+                return one_sided_diff(treeish2, 'A')
+            if treeish2 is None:
+                return one_sided_diff(treeish1, 'D')
+
         return GitHgHelper.diff_tree(treeish1, treeish2, detect_copy)
 
     @classmethod
