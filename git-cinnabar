@@ -5,13 +5,8 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
 from cinnabar.cmd import CLI
-from cinnabar.util import init_logging
-
-
-def main(argv):
-    init_logging()
-    return CLI.run(argv)
+from cinnabar.util import run
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv[1:]))
+    run(CLI.run)

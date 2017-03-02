@@ -468,3 +468,8 @@ class TypedProperty(object):
         # If the class has a "from_obj" static or class method, use it.
         # Otherwise, just use cls(value)
         self.values[obj] = getattr(self.cls, 'from_obj', self.cls)(value)
+
+
+def run(func):
+    init_logging()
+    sys.exit(func(sys.argv[1:]))

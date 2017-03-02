@@ -12,7 +12,7 @@ from cinnabar.githg import (
 from cinnabar.hg.repo import Remote
 import logging
 from cinnabar.remote_helper import GitRemoteHelper
-from cinnabar.util import init_logging
+from cinnabar.util import run
 
 
 def main(args):
@@ -21,7 +21,6 @@ def main(args):
         # the calling git process won't recognize in our answers.
         import msvcrt
         msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
-    init_logging()
     assert len(args) == 2
     remote = Remote(*args)
 
@@ -38,4 +37,4 @@ def main(args):
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv[1:]))
+    run(main)
