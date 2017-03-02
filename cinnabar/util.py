@@ -15,6 +15,11 @@ from itertools import (
     chain,
     izip,
 )
+from Queue import (
+    Empty,
+    Queue,
+)
+from threading import Thread
 from types import StringType
 from weakref import WeakKeyDictionary
 
@@ -106,7 +111,7 @@ class ConfigSetFunc(object):
 check_enabled = ConfigSetFunc(
     'cinnabar.check',
     ('nodeid', 'manifests', 'helper'),
-    ('bundle', 'files'),
+    ('bundle', 'files', 'memory'),
 )
 
 experiment = ConfigSetFunc(
@@ -470,6 +475,47 @@ class TypedProperty(object):
         self.values[obj] = getattr(self.cls, 'from_obj', self.cls)(value)
 
 
+class MemoryReporter(Thread):
+    def __init__(self):
+        super(MemoryReporter, self).__init__()
+        self._queue = Queue(1)
+        self._logger = logging.getLogger('memory')
+        self._logger.setLevel(logging.INFO)
+        self.start()
+
+    def _report(self, proc):
+        self._logger.info(
+            '[%s(%d)] %r', proc.name(), proc.pid, proc.memory_info())
+
+    def run(self):
+        import psutil
+        proc = psutil.Process()
+        while True:
+            try:
+                self._queue.get(True, 1)
+                break
+            except Empty:
+                pass
+            except:
+                break
+            finally:
+                children = proc.children(recursive=True)
+                self._report(proc)
+                for p in children:
+                    self._report(p)
+
+    def shutdown(self):
+        self._queue.put(None)
+        self.join()
+
+
 def run(func):
     init_logging()
-    sys.exit(func(sys.argv[1:]))
+    if check_enabled('memory'):
+        reporter = MemoryReporter()
+    try:
+        retcode = func(sys.argv[1:])
+    finally:
+        if check_enabled('memory'):
+            reporter.shutdown()
+    sys.exit(retcode)
