@@ -382,7 +382,9 @@ class FastImport(object):
         _from = None
         from_tree = None
         if parents and parents[0] == from_commit:
-            _from = parents[0]
+            resolved_ref = Git._refs.get(ref)
+            if parents[0] != resolved_ref:
+                _from = parents[0]
             merges = parents[1:]
         else:
             _from = NULL_NODE_ID
