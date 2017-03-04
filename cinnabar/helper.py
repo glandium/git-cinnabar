@@ -5,7 +5,6 @@ import subprocess
 from StringIO import StringIO
 from .git import (
     Git,
-    Mark,
     NULL_NODE_ID,
     split_ls_tree,
 )
@@ -127,11 +126,6 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def cat_file(self, typ, sha1):
-        if isinstance(sha1, Mark):
-            with self.query('get-mark', ':%d' % sha1) as stdout:
-                sha1 = stdout.read(41)
-                assert sha1[-1] == '\n'
-                sha1 = sha1[:40]
         with self.query('cat-file', sha1) as stdout:
             return self._read_file(typ, stdout)
 

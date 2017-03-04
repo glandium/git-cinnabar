@@ -132,11 +132,8 @@ class Git(object):
     @classmethod
     def ls_tree(self, treeish, path='', recursive=False):
         from githg import GitHgHelper
-        if (not isinstance(treeish, Mark) and
-                treeish.startswith('refs/')):
+        if treeish.startswith('refs/'):
             treeish = self.resolve_ref(treeish)
-        if isinstance(treeish, Mark) and self._fast_import:
-            treeish = self._fast_import.get_mark(treeish)
 
         if path.endswith('/') or recursive or path == '':
             path = path.rstrip('/')
@@ -185,7 +182,7 @@ class Git(object):
 
     @classmethod
     def update_ref(self, ref, newvalue, oldvalue=None, store=True):
-        if not isinstance(newvalue, Mark) and newvalue.startswith('refs/'):
+        if newvalue.startswith('refs/'):
             newvalue = self.resolve_ref(newvalue)
         refs = self._refs if store else self._initial_refs
         if newvalue and newvalue != NULL_NODE_ID:
@@ -271,21 +268,11 @@ class Git(object):
         return value
 
 
-class Mark(int):
-    def __str__(self):
-        return ':%d' % self
-
-
-class EmptyMark(Mark):
-    pass
-
-
 class FastImport(object):
     def __init__(self):
         # We reserve mark 1 for commands without an explicit mark.
         # We get the sha1 from the mark anyways, and the caller, in that case,
         # is expected to be getting that sha1.
-        self._last_mark = 1
         self._done = None
 
     @property
@@ -350,7 +337,7 @@ class FastImport(object):
 
     def ls(self, dataref, path=''):
         assert not path.endswith('/')
-        assert dataref and not isinstance(dataref, EmptyMark)
+        assert dataref
         self.write('ls %s %s\n' % (dataref, path))
         line = self.readline()
         if line.startswith('missing '):
@@ -358,7 +345,7 @@ class FastImport(object):
         return split_ls_tree(line[:-1])
 
     def cat_blob(self, dataref):
-        assert dataref and not isinstance(dataref, EmptyMark)
+        assert dataref
         self.write('cat-blob %s\n' % dataref)
         sha1, blob, size = self.readline().split()
         assert blob == 'blob'
@@ -367,10 +354,6 @@ class FastImport(object):
         lf = self.read(1)
         assert lf == '\n'
         return content
-
-    def new_mark(self):
-        self._last_mark += 1
-        return EmptyMark(self._last_mark)
 
     def get_mark(self, mark):
         self.write('get-mark :%d\n' % mark)
@@ -384,27 +367,22 @@ class FastImport(object):
         self.write(data)
         self.write('\n')
 
-    def put_blob(self, data='', mark=0):
+    def put_blob(self, data=''):
         self.write('blob\n')
-        if mark == 0:
-            mark = EmptyMark(1)
-        self.write('mark :%d\n' % mark)
+        self.write('mark :1\n')
         self.cmd_data(data)
         self._done = False
-        return self.get_mark(mark)
+        return self.get_mark(1)
 
     @contextlib.contextmanager
     def commit(self, ref, committer='<cinnabar@git> 0 +0000', author=None,
-               message='', from_commit=None, parents=(), mark=0):
+               message='', from_commit=None, parents=()):
         if isinstance(parents, GeneratorType):
             parents = tuple(parents)
         _from = None
         from_tree = None
         if parents and parents[0] == from_commit:
-            resolved_ref = Git._refs.get(ref)
-            if (not isinstance(resolved_ref, Mark) or
-                    parents[0] != resolved_ref):
-                _from = parents[0]
+            _from = parents[0]
             merges = parents[1:]
         else:
             _from = NULL_NODE_ID
@@ -414,9 +392,7 @@ class FastImport(object):
 
         helper = FastImportCommitHelper(self)
         helper.write('commit %s\n' % ref)
-        if mark == 0:
-            mark = EmptyMark(1)
-        helper.write('mark :%d\n' % mark)
+        helper.write('mark :1\n')
         # TODO: properly handle errors, like from the committer being badly
         # formatted.
         if author:
@@ -435,12 +411,9 @@ class FastImport(object):
 
         helper.flush()
         self.write('\n')
-        helper.sha1 = self.get_mark(mark)
+        helper.sha1 = self.get_mark(1)
         self._done = False
-        if mark:
-            Git._refs[ref] = helper.sha1
-        else:
-            del Git._refs[ref]
+        Git._refs[ref] = helper.sha1
 
 
 class FastImportCommitHelper(object):
@@ -471,8 +444,7 @@ class FastImportCommitHelper(object):
     }
 
     def filemodify(self, path, sha1=None, typ='regular', content=None):
-        assert sha1 and not isinstance(sha1, EmptyMark) or (content and
-                                                            typ == 'regular')
+        assert sha1 or (content and typ == 'regular')
         # We may receive the sha1 for an empty blob, even though there is no
         # empty blob stored in the repository. So for empty blobs, use an
         # inline filemodify.

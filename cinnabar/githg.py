@@ -20,7 +20,6 @@ from .git import (
     EMPTY_TREE,
     FastImport,
     Git,
-    Mark,
     NULL_NODE_ID,
     sha1path,
 )
@@ -1018,7 +1017,6 @@ class GitHgStore(object):
         return None
 
     def changeset(self, sha1, include_parents=False):
-        assert not isinstance(sha1, Mark)
         gitsha1 = self.changeset_ref(sha1)
         assert gitsha1
         return self._changeset(gitsha1, sha1, include_parents)
@@ -1258,8 +1256,6 @@ class GitHgStore(object):
             for node, mark in dic.iteritems():
                 if dic is self._git_files and node == HG_EMPTY_FILE:
                     continue
-                if isinstance(mark, Mark):
-                    raise TypeError(node)
                 hg2git_files.append((sha1path(node), mark, typ))
         if hg2git_files:
             with self._fast_import.commit(
@@ -1345,11 +1341,6 @@ class GitHgStore(object):
                 for sha1, target in self._replace.iteritems():
                     commit.filemodify(sha1, target, 'commit')
 
-        def resolve_commit(c):
-            if isinstance(c, Mark):
-                c = self._fast_import.get_mark(c)
-            return c
-
         for c, f in self._tagcache.items():
             if f is None:
                 tags = self._get_hgtags(c)
@@ -1364,9 +1355,8 @@ class GitHgStore(object):
 
         def tagset_lines(tags):
             for tag, value in tags:
-                nodes = (resolve_commit(n) for n in tags.hist(tag))
-                yield '%s\0%s %s\n' % (tag, resolve_commit(value),
-                                       ' '.join(sorted(nodes)))
+                yield '%s\0%s %s\n' % (tag, value,
+                                       ' '.join(sorted(tags.hist(tag))))
 
         self.init_fast_import(lazy=True)
 
@@ -1380,8 +1370,6 @@ class GitHgStore(object):
             self.tag_changes = True
 
         for c, f in self._tagcache.iteritems():
-            if f and isinstance(c, Mark):
-                c = resolve_commit(c)
             if (f and c not in self._tagcache_items):
                 if f == NULL_NODE_ID:
                     created[c] = (f, 'commit')
