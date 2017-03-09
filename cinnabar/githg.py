@@ -1256,7 +1256,7 @@ class GitHgStore(object):
             for node, mark in dic.iteritems():
                 if dic is self._git_files and node == HG_EMPTY_FILE:
                     continue
-                hg2git_files.append((sha1path(node), mark, typ))
+                hg2git_files.append((node, mark, typ))
         if hg2git_files:
             with self._fast_import.commit(
                 ref='refs/cinnabar/hg2git',
@@ -1264,9 +1264,9 @@ class GitHgStore(object):
             ) as commit:
                 for file in sorted(hg2git_files, key=lambda f: f[0]):
                     if file[1] is None:
-                        commit.filedelete(file[0])
+                        commit.filedelete(sha1path(file[0]))
                     else:
-                        commit.filemodify(*file)
+                        commit.filemodify(sha1path(file[0]), *file[1:])
 
         del hg2git_files
 
