@@ -293,12 +293,14 @@ class HgRepoHelper(BaseHelper):
 
     @classmethod
     def state(self):
+        """returns branchmap, heads, bookmarks"""
+
         with self.query('state') as stdout:
-            return {
-                'branchmap': self._read_data(stdout),
-                'heads': self._read_data(stdout),
-                'bookmarks': self._read_data(stdout),
-            }
+            return (
+                self._read_data(stdout),
+                self._read_data(stdout),
+                self._read_data(stdout),
+            )
 
     @classmethod
     def capable(self, name):

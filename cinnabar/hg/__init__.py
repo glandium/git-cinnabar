@@ -354,16 +354,16 @@ class HelperRepo(object):
         HgRepoHelper.connect(url)
 
     def init_state(self):
-        state = HgRepoHelper.state()
+        branchmap, heads, bookmarks = HgRepoHelper.state()
         self._branchmap = {
             urllib.unquote(branch): [unhexlify(h)
                                      for h in heads.split(' ')]
-            for line in state['branchmap'].splitlines()
+            for line in branchmap.splitlines()
             for branch, heads in (line.split(' ', 1),)
         }
         self._heads = [unhexlify(h)
-                       for h in state['heads'][:-1].split(' ')]
-        self._bookmarks = self._decode_keys(state['bookmarks'])
+                       for h in heads[:-1].split(' ')]
+        self._bookmarks = self._decode_keys(bookmarks)
 
     def url(self):
         return self._url

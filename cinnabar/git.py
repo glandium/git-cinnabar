@@ -33,13 +33,15 @@ def normalize_path(path):
     return path
 
 
+def _sha1path_parts(sha1, depth):
+    i = -2
+    for i in xrange(0, depth * 2, 2):
+        yield sha1[i:i + 2]
+    yield sha1[i + 2:]
+
+
 def sha1path(sha1, depth=2):
-    def parts():
-        i = -1
-        for i in xrange(0, depth):
-            yield sha1[i * 2:i * 2 + 2]
-        yield sha1[i * 2 + 2:]
-    return '/'.join(parts())
+    return '/'.join(_sha1path_parts(sha1, depth))
 
 
 def split_ls_tree(line):
@@ -519,15 +521,16 @@ class EmptyMark(Mark):
 
 
 class FastImport(object):
+    __slots__ = "_last_mark", "_done", "_real_proc"
+
     def __init__(self):
         self._last_mark = 0
         self._done = None
+        self._real_proc = None
 
     @property
     def _proc(self):
-        try:
-            return self._real_proc
-        except AttributeError:
+        if self._real_proc is None:
             from .helper import GitHgHelper, NoHelperException
             # Ensure the helper is there.
             if GitHgHelper._helper is GitHgHelper:
@@ -548,10 +551,10 @@ class FastImport(object):
             if self._done:
                 self.write('feature done\n')
 
-            return self._real_proc
+        return self._real_proc
 
     def send_done(self):
-        assert not hasattr(self, '_real_proc')
+        assert self._real_proc is None
         self._done = True
 
     def read(self, length=0):
@@ -569,7 +572,7 @@ class FastImport(object):
         self._proc.stdin.flush()
 
     def close(self, rollback=False):
-        if not hasattr(self, '_real_proc'):
+        if self._real_proc is None:
             return
         if not rollback or self._done is not False:
             self.write('done\n')
@@ -685,6 +688,8 @@ class FastImport(object):
 
 
 class FastImportCommitHelper(object):
+    __slots__ = "_fast_import",
+
     def __init__(self, fast_import):
         self._fast_import = fast_import
 
