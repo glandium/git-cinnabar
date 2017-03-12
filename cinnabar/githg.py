@@ -558,6 +558,8 @@ def autohexlify(h):
 
 
 class BranchMap(object):
+    __slots__ = "_heads", "_all_heads", "_tips", "_git_sha1s", "_unknown_heads"
+
     def __init__(self, store, remote_branchmap, remote_heads):
         self._heads = {}
         self._all_heads = tuple(autohexlify(h) for h in remote_heads)
@@ -613,6 +615,8 @@ class AmbiguousGraftException(Exception):
 
 
 class Grafter(object):
+    __slots__ = "_store", "_early_history", "_graft_trees", "_grafted"
+
     def __init__(self, store):
         self._store = store
         self._early_history = set()

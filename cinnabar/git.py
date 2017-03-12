@@ -269,17 +269,18 @@ class Git(object):
 
 
 class FastImport(object):
+    __slots__ = "_done", "_real_proc"
+
     def __init__(self):
         # We reserve mark 1 for commands without an explicit mark.
         # We get the sha1 from the mark anyways, and the caller, in that case,
         # is expected to be getting that sha1.
         self._done = None
+        self._real_proc = None
 
     @property
     def _proc(self):
-        try:
-            return self._real_proc
-        except AttributeError:
+        if self._real_proc is None:
             from .helper import GitHgHelper
             # Ensure the helper is there.
             if GitHgHelper._helper is GitHgHelper:
@@ -297,10 +298,10 @@ class FastImport(object):
 
             atexit.register(self.close, rollback=True)
 
-            return self._real_proc
+        return self._real_proc
 
     def send_done(self):
-        assert not hasattr(self, '_real_proc')
+        assert self._real_proc is None
         self._done = True
 
     def read(self, length=0):
@@ -318,7 +319,7 @@ class FastImport(object):
         self._proc.stdin.flush()
 
     def close(self, rollback=False):
-        if not hasattr(self, '_real_proc'):
+        if self._real_proc is None:
             return
         if not rollback or self._done is not False:
             self.write('done\n')
@@ -329,7 +330,7 @@ class FastImport(object):
             retcode = self._proc._proc.poll()
         else:
             retcode = self._proc.wait()
-        del self._real_proc
+        self._real_proc = None
         if Git._fast_import == self:
             Git._fast_import = None
         if retcode and not rollback:
@@ -419,9 +420,12 @@ class FastImport(object):
 
 
 class FastImportCommitHelper(object):
+    __slots__ = "_fast_import", "_queue", "sha1"
+
     def __init__(self, fast_import):
         self._fast_import = fast_import
         self._queue = []
+        self.sha1 = None
 
     def write(self, data):
         self._queue.append((self._fast_import.write, data))
