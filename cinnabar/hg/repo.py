@@ -207,21 +207,8 @@ class ChunksCollection(object):
     def __init__(self, iterator):
         self._chunks = deque()
 
-        # Indicate which chunks to keep around (key: chunk node, value:
-        # last chunk node requiring it)
-        self._keep = {}
-
-        # key: chunk node, value: instance of class given to iter_initialized
-        self._kept = {}
-
-        previous_node = None
         for chunk in iterator:
-            node = chunk.node
-            if not isinstance(chunk, RawRevChunk01) and previous_node:
-                if chunk.delta_node != previous_node:
-                    self._keep[chunk.delta_node] = node
             self._chunks.append(chunk)
-            previous_node = node
 
     def __iter__(self):
         while True:
@@ -231,36 +218,7 @@ class ChunksCollection(object):
                 return
 
     def iter_initialized(self, cls, get_missing, init=None):
-        if not self._keep:
-            return iter_initialized(get_missing, iter_chunks(self, cls),
-                                    init=init)
-
-        def wrap_iter_chunks(self, cls):
-            for chunk in iter_chunks(self, cls):
-                node = chunk.node
-                if node in self._keep:
-                    self._kept[node] = chunk
-                yield chunk
-                delta_node = chunk.delta_node
-                last_use = self._keep.get(delta_node)
-                if node == last_use:
-                    del self._keep[delta_node]
-                    # We don't try to distinguish between the chunks with
-                    # a delta_node from the bundle and those with a
-                    # delta_node from the local repo, so we can end up
-                    # not having delta_node in self._kept.
-                    try:
-                        del self._kept[delta_node]
-                    except KeyError:
-                        pass
-
-        def wrap_get_missing(node):
-            if node not in self._kept:
-                return get_missing(node)
-            chunk = self._kept[node]
-            return chunk
-
-        return iter_initialized(wrap_get_missing, wrap_iter_chunks(self, cls),
+        return iter_initialized(get_missing, iter_chunks(self, cls),
                                 init=init)
 
 
