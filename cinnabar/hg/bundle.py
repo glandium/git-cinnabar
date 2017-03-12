@@ -35,7 +35,6 @@ from collections import (
 )
 import logging
 import struct
-from itertools import chain
 
 
 # We used to have a pseudo string class that didn't derive from str, and
@@ -112,6 +111,7 @@ class PushStore(GitHgStore):
 
     def create_hg_manifest(self, commit, parents):
         manifest = GeneratedManifestInfo(NULL_NODE_ID)
+        changeset_files = []
 
         if parents:
             parent_changeset = self.changeset(self.hg_changeset(parents[0]))
@@ -132,10 +132,11 @@ class PushStore(GitHgStore):
                                         path=path)
                 manifest.append_line(ManifestLine(path, node, self.ATTR[mode]),
                                      modified=True)
+                changeset_files.append(path)
 
             manifest.set_parents(NULL_NODE_ID)
             manifest.delta_node = NULL_NODE_ID
-            return manifest
+            return manifest, changeset_files
 
         elif len(parents) == 2:
             if not experiment('merge'):
@@ -161,6 +162,7 @@ class PushStore(GitHgStore):
                 if not f:  # File was removed
                     if manifest_line_p1:
                         manifest.removed.add(path)
+                        changeset_files.append(path)
                     continue
                 mode, sha1 = f
                 attr = self.ATTR[mode]
@@ -202,10 +204,12 @@ class PushStore(GitHgStore):
                                manifest_line_p1.attr != attr)
                 manifest.append_line(ManifestLine(path, node, attr),
                                      modified=merged or attr_change)
+                if merged or attr_change:
+                    changeset_files.append(path)
             if manifest.data == parent_manifest.data:
-                return parent_manifest
+                return parent_manifest, []
             manifest.set_parents(parent_node, parent2_node)
-            return manifest
+            return manifest, changeset_files
 
         def process_diff(diff):
             for (mode_before, mode_after, sha1_before, sha1_after, status,
@@ -220,7 +224,7 @@ class PushStore(GitHgStore):
                 parents[0], commit, detect_copy=True))
         )
         if not git_diff:
-            return parent_manifest
+            return parent_manifest, []
 
         parent_lines = OrderedDict((l.name, l)
                                    for l in parent_manifest._lines)
@@ -236,6 +240,7 @@ class PushStore(GitHgStore):
             attr = self.ATTR.get(mode_after)
             if status == 'D':
                 manifest.removed.add(path)
+                changeset_files.append(path)
                 continue
             if status in 'MT':
                 if sha1_before == sha1_after:
@@ -268,14 +273,15 @@ class PushStore(GitHgStore):
                     path=path)
             manifest.append_line(ManifestLine(path, node, attr),
                                  modified=True)
+            changeset_files.append(path)
         manifest.set_parents(parent_node)
         manifest.delta_node = parent_node
-        return manifest
+        return manifest, changeset_files
 
     def create_hg_metadata(self, commit, parents):
         if check_enabled('bundle'):
             real_changeset = self.changeset(self.hg_changeset(commit))
-        manifest = self.create_hg_manifest(commit, parents)
+        manifest, changeset_files = self.create_hg_manifest(commit, parents)
         commit_data = GitCommit(commit)
 
         if manifest.node == NULL_NODE_ID:
@@ -296,7 +302,7 @@ class PushStore(GitHgStore):
         changeset = Changeset.from_git_commit(commit_data)
         changeset.parents = tuple(self.hg_changeset(p) for p in parents)
         changeset.manifest = manifest.node
-        changeset.files = sorted(chain(manifest.removed, manifest.modified))
+        changeset.files = changeset_files
 
         if parents:
             parent_changeset = self.changeset(changeset.parent1)
