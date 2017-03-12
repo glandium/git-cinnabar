@@ -10,6 +10,8 @@ from .util import OrderedDefaultDict
 
 # TODO: this class sucks and is probably wrong
 class gitdag(object):
+    __slots__ = "_parents", "_children", "_tags"
+
     def __init__(self, revlist=[]):
         self._parents = OrderedDefaultDict(set)
         self._children = defaultdict(set)

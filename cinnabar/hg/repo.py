@@ -352,8 +352,13 @@ def findcommon(repo, store, hgheads):
 
 
 class HelperRepo(object):
+    __slots__ = "_url", "_branchmap", "_heads", "_bookmarks"
+
     def __init__(self, url):
         self._url = url
+        self._branchmap = None
+        self._heads = None
+        self._bookmarks = None
 
     def init_state(self):
         state = HgRepoHelper.state()
@@ -385,18 +390,18 @@ class HelperRepo(object):
         raise NotImplementedError()
 
     def heads(self):
-        if not hasattr(self, '_heads'):
+        if self._heads is None:
             self.init_state()
         return self._heads
 
     def branchmap(self):
-        if not hasattr(self, '_branchmap'):
+        if self._branchmap is None:
             self.init_state()
         return self._branchmap
 
     def listkeys(self, namespace):
         if namespace == 'bookmarks':
-            if not hasattr(self, '_bookmarks'):
+            if self._bookmarks is None:
                 self.init_state()
             return self._bookmarks
         return self._decode_keys(HgRepoHelper.listkeys(namespace))
