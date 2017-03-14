@@ -52,6 +52,16 @@ endif
 # installed above...
 HG = $$(which hg)
 
+ifeq ($(VARIANT),coverage)
+export PATH := $(CURDIR)/coverage$(PATHSEP)$(PATH)
+export COVERAGE_FILE := $(CURDIR)/.coverage
+BUILD_HELPER = 1
+
+before_install::
+	$(call PIP_INSTALL,codecov)
+
+endif
+
 ifdef PYTHON_CHECKS
 
 before_install::
@@ -61,7 +71,7 @@ before_script::
 
 script::
 ifndef NO_BUNDLE2
-	nosetests --all-modules
+	nosetests --all-modules $(if $(filter coverage,$(VARIANT)),--with-coverage --cover-tests)
 	flake8 --ignore E402 $$(git ls-files \*\*.py git-cinnabar git-remote-hg)
 endif
 
@@ -127,6 +137,11 @@ else
 
 ifeq ($(VARIANT),asan)
 EXTRA_MAKE_FLAGS += CFLAGS="-O2 -g -fsanitize=address"
+endif
+
+ifeq ($(VARIANT),coverage)
+# Would normally use -coverage, but ccache on Travis-CI doesn't support it
+EXTRA_MAKE_FLAGS += CFLAGS="-fprofile-arcs -ftest-coverage"
 endif
 
 ifneq ($(origin CC),default)

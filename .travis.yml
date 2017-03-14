@@ -16,7 +16,9 @@ matrix:
   include:
     - language: python
       python: "2.7"
-      env: PYTHON_CHECKS=1
+      env:
+      - PYTHON_CHECKS=1
+      - VARIANT=coverage
     - os: osx
       compiler: clang
       osx_image: xcode6.4
@@ -57,12 +59,21 @@ matrix:
       - GIT_CINNABAR_EXPERIMENTS=true
     - env: GIT_CINNABAR_OLD_HELPER=1
     - env: GIT_CINNABAR_HELPER=""
-    - env: GRAFT=1
+    - env:
+      - VARIANT=coverage
+      - GRAFT=1
+    - env:
+      - VARIANT=coverage
+      - GIT_CINNABAR_EXPERIMENTS=true
     - env:
       - GIT_VERSION=v1.9.0
       - GRAFT=1
-    - env: UPGRADE_FROM=0.3.2
-    - env: UPGRADE_FROM=0.3.0
+    - env:
+      - VARIANT=coverage
+      - UPGRADE_FROM=0.3.2
+    - env:
+      - VARIANT=coverage
+      - UPGRADE_FROM=0.3.0
     - env: UPGRADE_FROM=0.2.2
     - env: UPGRADE_FROM=0.2.0
     - env: UPGRADE_FROM=0.1.0
@@ -118,3 +129,6 @@ before_script:
 
 script:
   - make -f CI.mk script && make -f CI.mk script NO_BUNDLE2=1 UPGRADE_FROM=
+
+after_success:
+  - if [ "$VARIANT" = coverage ]; then mv git-core/{hg,cinnabar}*.gc* . ; codecov; fi
