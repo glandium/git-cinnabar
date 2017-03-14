@@ -7,6 +7,33 @@ from weakref import WeakKeyDictionary
 from cinnabar.git import NULL_NODE_ID
 
 
+class ParentsTrait(object):
+    __slots__ = ()
+
+    @property
+    def parents(self):
+        if self.parent1 != NULL_NODE_ID:
+            if self.parent2 != NULL_NODE_ID:
+                return (self.parent1, self.parent2)
+            return (self.parent1,)
+        if self.parent2 != NULL_NODE_ID:
+            return (self.parent2,)
+        return ()
+
+    @parents.setter
+    def parents(self, parents):
+        assert isinstance(parents, (tuple, list))
+        assert len(parents) <= 2
+        if len(parents):
+            self.parent1 = parents[0]
+        if len(parents) > 1:
+            self.parent2 = parents[1]
+        else:
+            self.parent2 = NULL_NODE_ID
+        if not parents:
+            self.parent1 = NULL_NODE_ID
+
+
 class RevDiff(str):
     class Part(object):
         __slots__ = ('start', 'end', 'block_len', 'text_data')
@@ -39,7 +66,7 @@ class RevDiff(str):
         return new
 
 
-class RawRevChunk(bytearray):
+class RawRevChunk(bytearray, ParentsTrait):
     __slots__ = ()
 
     @staticmethod

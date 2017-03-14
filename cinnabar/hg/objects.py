@@ -4,7 +4,10 @@ import re
 from binascii import unhexlify
 from collections import OrderedDict
 from types import StringTypes
-from .changegroup import RawRevChunk
+from .changegroup import (
+    ParentsTrait,
+    RawRevChunk,
+)
 from ..git import NULL_NODE_ID
 from ..util import TypedProperty
 try:
@@ -117,7 +120,7 @@ class Authorship(object):
         return ' '.join(self.to_hg())
 
 
-class HgObject(object):
+class HgObject(ParentsTrait):
     __slots__ = ('node', 'parent1', 'parent2', 'changeset')
 
     def __init__(self, node=NULL_NODE_ID, parent1=NULL_NODE_ID,
@@ -153,29 +156,6 @@ class HgObject(object):
             return s if isinstance(s, str) else str(s)
         return textdiff(flatten(delta_object.raw_data) if delta_object else '',
                         flatten(self.raw_data))
-
-    @property
-    def parents(self):
-        if self.parent1 != NULL_NODE_ID:
-            if self.parent2 != NULL_NODE_ID:
-                return (self.parent1, self.parent2)
-            return (self.parent1,)
-        if self.parent2 != NULL_NODE_ID:
-            return (self.parent2,)
-        return ()
-
-    @parents.setter
-    def parents(self, parents):
-        assert isinstance(parents, (tuple, list))
-        assert len(parents) <= 2
-        if len(parents):
-            self.parent1 = parents[0]
-        if len(parents) > 1:
-            self.parent2 = parents[1]
-        else:
-            self.parent2 = NULL_NODE_ID
-        if not parents:
-            self.parent1 = NULL_NODE_ID
 
     @property
     def sha1(self):
