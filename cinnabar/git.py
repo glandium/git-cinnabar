@@ -48,7 +48,7 @@ class GitProcess(Process):
 
         command = ['git']
         command += chain(*(['-c', '%s=%s' % (n, v)]
-                             for n, v in config.iteritems()))
+                           for n, v in config.iteritems()))
         command += args
 
         kwargs.setdefault('logger', args[0])
