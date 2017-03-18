@@ -27,10 +27,10 @@ class InvalidConfig(Exception):
 
 def sha1path(sha1, depth=2):
     def parts():
-        i = -1
-        for i in xrange(0, depth):
-            yield sha1[i * 2:i * 2 + 2]
-        yield sha1[i * 2 + 2:]
+        i = -2
+        for i in xrange(0, depth * 2, 2):
+            yield sha1[i:i + 2]
+        yield sha1[i + 2:]
     return '/'.join(parts())
 
 
@@ -46,9 +46,10 @@ class GitProcess(Process):
     def __init__(self, *args, **kwargs):
         config = kwargs.get('config', {})
 
-        command = ['git'] + list(chain(*(['-c', '%s=%s' % (n, v)]
-                                         for n, v in config.iteritems())))
-        command += list(args)
+        command = ['git']
+        command += chain(*(['-c', '%s=%s' % (n, v)]
+                             for n, v in config.iteritems()))
+        command += args
 
         kwargs.setdefault('logger', args[0])
         super(GitProcess, self).__init__(*command, **kwargs)
