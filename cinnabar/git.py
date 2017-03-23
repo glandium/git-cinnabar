@@ -289,11 +289,6 @@ class FastImport(object):
             with GitHgHelper.query('feature', 'force'):
                 pass
             self._real_proc = GitHgHelper._helper
-            self.write(
-                "feature force\n"
-                "feature ls\n"
-                "feature notes\n"
-            )
             if self._done:
                 self.write('feature done\n')
 

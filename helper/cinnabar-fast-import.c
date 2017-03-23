@@ -117,6 +117,7 @@ static void init()
 	install_packed_git(pack_data);
 	set_die_routine(die_nicely);
 
+	parse_one_feature("force", 0);
 	initialized = 1;
 	atexit(cleanup);
 }
