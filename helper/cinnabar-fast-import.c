@@ -249,10 +249,12 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		parse_feature(command_buf.buf + sizeof("feature"));
 	} else if (!strcmp(command, "blob")) {
 		COMMON_HANDLING();
+		require_explicit_termination = 1;
 		parse_new_blob();
 	} else if (!strcmp(command, "commit")) {
 		char *arg;
 		COMMON_HANDLING();
+		require_explicit_termination = 1;
 		arg = strdup(command_buf.buf + sizeof("commit"));
 		parse_new_commit(command_buf.buf + sizeof("commit"));
 		maybe_reset_notes(arg);

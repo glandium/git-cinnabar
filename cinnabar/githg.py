@@ -968,7 +968,6 @@ class GitHgStore(object):
         assert fi
         self.__fast_import = fi
         Git.register_fast_import(fi)
-        fi.send_done()
 
     def init_fast_import(self, lazy=False):
         if self.__fast_import:

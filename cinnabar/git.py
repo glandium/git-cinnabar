@@ -270,13 +270,12 @@ class Git(object):
 
 
 class FastImport(object):
-    __slots__ = "_done", "_real_proc"
+    __slots__ = ("_real_proc",)
 
     def __init__(self):
         # We reserve mark 1 for commands without an explicit mark.
         # We get the sha1 from the mark anyways, and the caller, in that case,
         # is expected to be getting that sha1.
-        self._done = None
         self._real_proc = None
 
     @property
@@ -289,16 +288,10 @@ class FastImport(object):
             with GitHgHelper.query('feature', 'force'):
                 pass
             self._real_proc = GitHgHelper._helper
-            if self._done:
-                self.write('feature done\n')
 
             atexit.register(self.close, rollback=True)
 
         return self._real_proc
-
-    def send_done(self):
-        assert self._real_proc is None
-        self._done = True
 
     def read(self, length=0):
         self.flush()
@@ -317,9 +310,8 @@ class FastImport(object):
     def close(self, rollback=False):
         if self._real_proc is None:
             return
-        if not rollback or self._done is not False:
+        if not rollback:
             self.write('done\n')
-            self._done = None
         self.flush()
         from githg import GitHgHelper
         if self._proc is GitHgHelper._helper:
@@ -368,7 +360,6 @@ class FastImport(object):
         self.write('blob\n')
         self.write('mark :1\n')
         self.cmd_data(data)
-        self._done = False
         return self.get_mark(1)
 
     @contextlib.contextmanager
@@ -411,7 +402,6 @@ class FastImport(object):
         helper.flush()
         self.write('\n')
         helper.sha1 = self.get_mark(1)
-        self._done = False
         Git._refs[ref] = helper.sha1
 
 
