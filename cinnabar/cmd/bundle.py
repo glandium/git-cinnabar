@@ -39,7 +39,6 @@ def bundle(args):
             logging.error(e.message)
             return 1
         store = PushStore(graft=graft)
-        store.init_fast_import()
         if args.version == 1:
             b2caps = {}
         elif args.version == 2:

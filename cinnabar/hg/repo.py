@@ -579,9 +579,6 @@ def getbundle(repo, store, heads, branch_names):
 
 
 def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
-    if not dry_run:
-        store.init_fast_import()
-
     def heads():
         for sha1 in store.heads(repo_branches):
             yield '^%s' % store.changeset_ref(sha1)

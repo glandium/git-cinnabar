@@ -164,7 +164,6 @@ class GitRemoteHelper(object):
         self._has_unknown_heads = bool(self._branchmap.unknown_heads())
         if self._graft and self._has_unknown_heads and not arg:
             self._store.prepare_graft()
-            self._store.init_fast_import()
             get_heads = set(branchmap.heads()) & branchmap.unknown_heads()
             getbundle(self._repo, self._store, get_heads, branchmap.names())
             # We may have failed to graft all changesets, in which case we
@@ -301,7 +300,6 @@ class GitRemoteHelper(object):
                 unknown_heads = self._branchmap.unknown_heads()
                 if set(heads).issuperset(unknown_heads):
                     heads = set(self._branchmap.heads()) & unknown_heads
-                self._store.init_fast_import()
                 getbundle(self._repo, self._store, heads,
                           self._branchmap.names())
         except:

@@ -84,8 +84,6 @@ def fsck(args):
              'Please re-run without %s.' % what)
         return 1
 
-    store.init_fast_import(lazy=True)
-
     if args.commit:
         all_hg2git = {}
         all_notes = set()
@@ -251,7 +249,6 @@ def fsck(args):
         # Force the helper to be restarted.
         GitHgHelper._helper = False
         store = GitHgStore()
-        store.init_fast_import(lazy=True)
 
         # Force a files fsck, since we modified files metadata.
         args.files = True

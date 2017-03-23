@@ -784,7 +784,7 @@ class GitHgStore(object):
         return metadata
 
     def __init__(self):
-        self.__fast_import = None
+        self._fast_import = FastImport()
         self._flags = set()
         self._changesets = {}
         self._manifests = {}
@@ -875,6 +875,8 @@ class GitHgStore(object):
             if self._replace and not replace:
                 raise OldUpgradeException()
 
+        Git.register_fast_import(self._fast_import)
+
     def prepare_graft(self):
         self._graft = Grafter(self)
 
@@ -955,27 +957,6 @@ class GitHgStore(object):
         self._hgheads[head] = branch
         ref = self.changeset_ref(head)
         self._tagcache[ref] = None
-
-    @property
-    def _fast_import(self):
-        assert self.__fast_import is not None
-        if self.__fast_import is False:
-            self._fast_import = FastImport()
-        return self.__fast_import
-
-    @_fast_import.setter
-    def _fast_import(self, fi):
-        assert fi
-        self.__fast_import = fi
-        Git.register_fast_import(fi)
-
-    def init_fast_import(self, lazy=False):
-        if self.__fast_import:
-            return
-        if lazy:
-            self.__fast_import = False
-        else:
-            self._fast_import = FastImport()
 
     def read_changeset_data(self, obj):
         obj = str(obj)
@@ -1360,8 +1341,6 @@ class GitHgStore(object):
             for tag, value in tags:
                 yield '%s\0%s %s\n' % (tag, value,
                                        ' '.join(sorted(tags.hist(tag))))
-
-        self.init_fast_import(lazy=True)
 
         for f, tags in self._tags.iteritems():
             if f not in self._tagfiles and f != NULL_NODE_ID:
