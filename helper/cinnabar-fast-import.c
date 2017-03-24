@@ -2,6 +2,7 @@
 #include "cinnabar-fast-import.h"
 #include "cinnabar-helper.h"
 #include "notes.h"
+#include "sha1-array.h"
 
 static int initialized = 0;
 
@@ -231,10 +232,77 @@ void maybe_reset_notes(const char *branch)
 	}
 }
 
+struct sha1_array manifest_heads = SHA1_ARRAY_INIT;
+
+static void sha1_array_insert(struct sha1_array *array, int index,
+                              const unsigned char *sha1)
+{
+	ALLOC_GROW(array->sha1, array->nr + 1, array->alloc);
+	memmove(array->sha1[index+1], array->sha1[index],
+	        sizeof(array->sha1[0]) * (array->nr++ - index));
+	hashcpy(array->sha1[index], sha1);
+}
+
+static void sha1_array_remove(struct sha1_array *array, int index)
+{
+	memmove(array->sha1[index], array->sha1[index+1],
+	        sizeof(array->sha1[0]) * (array->nr-- - index));
+}
+
+static void add_head(struct sha1_array *heads, const unsigned char *sha1)
+{
+	struct commit *c = NULL;
+	struct commit_list *parent;
+	int pos;
+
+	/* We always keep the array sorted, so if it's not sorted, it's
+	 * not initialized. */
+	if (!heads->sorted) {
+		const char *body = NULL;
+		heads->sorted = 1;
+		if (heads == &manifest_heads)
+			c = lookup_commit_reference_by_name(MANIFESTS_REF);
+		if (c)
+			body = strstr(get_commit_buffer(c, NULL), "\n\n") + 2;
+		for (parent = c ? c->parents : NULL; parent;
+		     parent = parent->next) {
+			const unsigned char *parent_sha1 =
+				parent->item->object.oid.hash;
+			/* Skip first parent when "has-flat-manifest-tree" is
+			 * there */
+			if (body && parent == c->parents &&
+			    !strcmp(body, "has-flat-manifest-tree"))
+				continue;
+			if (!heads->nr || hashcmp(heads->sha1[heads->nr-1],
+			                          parent_sha1)) {
+				sha1_array_insert(heads, heads->nr, parent_sha1);
+			} else {
+				/* This should not happen, but just in case,
+				 * instead of failing. */
+				add_head(heads, parent_sha1);
+			}
+		}
+	}
+
+	c = lookup_commit(sha1);
+	parse_commit_or_die(c);
+
+	for (parent = c->parents; parent; parent = parent->next) {
+		pos = sha1_array_lookup(heads, parent->item->object.oid.hash);
+		if (pos >= 0)
+			sha1_array_remove(heads, pos);
+	}
+	pos = sha1_array_lookup(heads, sha1);
+	if (pos >= 0)
+		return;
+	sha1_array_insert(heads, -pos - 1, sha1);
+}
+
 static void do_set(struct string_list *args)
 {
 	enum object_type type;
 	struct object_id hg_id, git_id;
+	struct sha1_array *heads = NULL;
 
 	if (args->nr != 3)
 		die("set needs 3 arguments");
@@ -244,6 +312,8 @@ static void do_set(struct string_list *args)
 	} else if (!strcmp(args->items[0].string, "manifest") ||
 	           !strcmp(args->items[0].string, "changeset")) {
 		type = OBJ_COMMIT;
+		if (args->items[0].string[0] == 'm')
+			heads = &manifest_heads;
 	} else {
 		die("Unknown kind of object: %s", args->items[0].string);
 	}
@@ -259,12 +329,15 @@ static void do_set(struct string_list *args)
 		die("Invalid sha1");
 
 	ensure_hg2git();
-	if (is_null_oid(&git_id))
+	if (is_null_oid(&git_id)) {
 		remove_note(&hg2git, hg_id.hash);
-	else if (sha1_object_info(git_id.hash, NULL) != type)
+	} else if (sha1_object_info(git_id.hash, NULL) != type) {
 		die("Invalid object");
-	else
+	} else {
 		add_note(&hg2git, hg_id.hash, git_id.hash, NULL);
+		if (heads)
+			add_head(heads, git_id.hash);
+	}
 }
 
 static int store_each_note(const unsigned char *object_sha1,

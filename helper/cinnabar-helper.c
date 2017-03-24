@@ -75,7 +75,7 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 1000
+#define CMD_VERSION 1100
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -1243,6 +1243,35 @@ static void do_connect(struct string_list *args)
 	}
 }
 
+extern struct sha1_array manifest_heads;
+
+int add_each_head(const unsigned char sha1[20], void *data)
+{
+	struct strbuf *buf = (struct strbuf *)data;
+
+	strbuf_addstr(buf, sha1_to_hex(sha1));
+	strbuf_addch(buf, '\n');
+	return 0;
+}
+
+static void do_heads(struct string_list *args)
+{
+        struct sha1_array *heads = NULL;
+        struct strbuf heads_buf = STRBUF_INIT;
+
+        if (args->nr != 1)
+                die("heads needs 1 argument");
+
+        if (!strcmp(args->items[0].string, "manifests")) {
+                heads = &manifest_heads;
+        } else
+                die("Unknown kind: %s", args->items[0].string);
+
+        sha1_array_for_each_unique(heads, add_each_head, &heads_buf);
+	send_buffer(&heads_buf);
+	strbuf_release(&heads_buf);
+}
+
 int cmd_main(int argc, const char *argv[])
 {
 	int initialized = 0;
@@ -1287,6 +1316,8 @@ int cmd_main(int argc, const char *argv[])
 			do_rev_list(&args);
 		else if (!strcmp("diff-tree", command))
 			do_diff_tree(&args);
+		else if (!strcmp("heads", command))
+			do_heads(&args);
 		else if (!maybe_handle_command(command, &args))
 			die("Unknown command: \"%s\"", command);
 

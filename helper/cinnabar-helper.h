@@ -4,6 +4,7 @@
 #include "notes.h"
 
 #define METADATA_REF "refs/cinnabar/metadata"
+#define MANIFESTS_REF METADATA_REF "^2"
 #define HG2GIT_REF METADATA_REF "^3"
 #define NOTES_REF METADATA_REF "^4"
 

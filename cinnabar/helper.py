@@ -121,7 +121,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 10
+    VERSION = 11
     _helper = False
 
     @classmethod
@@ -203,6 +203,12 @@ class GitHgHelper(BaseHelper):
                 sha1 = stdout.read(41)
                 assert sha1[-1] == '\n'
                 return sha1[:40]
+
+    @classmethod
+    def heads(self, what):
+        with self.query('heads', what) as stdout:
+            data = self._read_data(stdout)
+            return data.split()
 
 
 class HgRepoHelper(BaseHelper):

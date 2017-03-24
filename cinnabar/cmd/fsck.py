@@ -362,10 +362,10 @@ def fsck(args):
                          if t == 'commit')
 
     if not args.commit and not status['broken']:
-        store_manifest_heads = set(store._manifest_dag.heads())
+        store_manifest_heads = set(store._manifest_heads_orig)
         manifest_heads = set(manifest_dag.heads())
         if store_manifest_heads != manifest_heads:
-            store._manifest_dag = manifest_dag
+            store._override_manifest_heads = manifest_heads
 
             def iter_manifests():
                 for h in store_manifest_heads - manifest_heads:

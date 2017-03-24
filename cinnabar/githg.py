@@ -828,15 +828,6 @@ class GitHgStore(object):
         metadata = self.metadata()
         self._has_metadata = bool(metadata)
         if metadata:
-            manifests_ref = Git.resolve_ref('refs/cinnabar/manifests')
-            if manifests_ref:
-                commit = GitCommit(manifests_ref)
-                manifests = commit.parents
-                if commit.body == "has-flat-manifest-tree":
-                    manifests = commit.parents[1:]
-            else:
-                manifests = ()
-
             changesets_ref = Git.resolve_ref('refs/cinnabar/changesets')
             if changesets_ref:
                 commit = GitCommit(changesets_ref)
@@ -845,11 +836,7 @@ class GitHgStore(object):
                     hghead, branch = head.split(' ', 1)
                     self._hgheads._previous[hghead] = branch
 
-        else:
-            manifests = ()
-
-        self._manifest_dag = gitdag((m, ()) for m in manifests)
-        self._manifest_heads_orig = set(self._manifest_dag.heads())
+        self._manifest_heads_orig = set(GitHgHelper.heads('manifests'))
 
         if metadata:
             replace = {}
@@ -1191,7 +1178,6 @@ class GitHgStore(object):
                                   self.git_file_ref(node), typ=self.TYPE[attr])
 
         GitHgHelper.set('manifest', instance.node, commit.sha1)
-        self._manifest_dag.add(commit.sha1, parents)
 
         if check_enabled('manifests'):
             if not GitHgHelper.check_manifest('git:%s' % commit.sha1):
@@ -1252,7 +1238,8 @@ class GitHgStore(object):
             ) as commit:
                 update_metadata.append('refs/cinnabar/changesets')
 
-        manifest_heads = tuple(self._manifest_dag.heads())
+        manifest_heads = getattr(self, '_override_manifest_heads',
+                                 GitHgHelper.heads('manifests'))
         if (set(manifest_heads) != self._manifest_heads_orig or
                 ('refs/cinnabar/changesets' in update_metadata and
                  not manifest_heads)):
