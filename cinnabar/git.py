@@ -356,11 +356,12 @@ class FastImport(object):
         self.write(data)
         self.write('\n')
 
-    def put_blob(self, data=''):
+    def put_blob(self, data='', want_sha1=True):
         self.write('blob\n')
         self.write('mark :1\n')
         self.cmd_data(data)
-        return self.get_mark(1)
+        if want_sha1:
+            return self.get_mark(1)
 
     @contextlib.contextmanager
     def commit(self, ref, committer='<cinnabar@git> 0 +0000', author=None,
