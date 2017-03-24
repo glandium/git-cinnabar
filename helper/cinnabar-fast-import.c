@@ -1,8 +1,7 @@
 #undef sha1write
 #include "cinnabar-fast-import.h"
+#include "cinnabar-helper.h"
 #include "notes.h"
-
-extern struct notes_tree git2hg, hg2git;
 
 static int initialized = 0;
 
@@ -232,13 +231,120 @@ void maybe_reset_notes(const char *branch)
 	}
 }
 
+static void do_set(struct string_list *args)
+{
+	enum object_type type;
+	struct object_id hg_id, git_id;
+
+	if (args->nr != 3)
+		die("set needs 3 arguments");
+
+	if (!strcmp(args->items[0].string, "file")) {
+		type = OBJ_BLOB;
+	} else if (!strcmp(args->items[0].string, "manifest") ||
+	           !strcmp(args->items[0].string, "changeset")) {
+		type = OBJ_COMMIT;
+	} else {
+		die("Unknown kind of object: %s", args->items[0].string);
+	}
+
+	if (get_oid_hex(args->items[1].string, &hg_id))
+		die("Invalid sha1");
+
+	if (args->items[2].string[0] == ':') {
+		uintmax_t mark = parse_mark_ref_eol(args->items[2].string);
+		struct object_entry *oe = find_mark(mark);
+		hashcpy(git_id.hash, oe->idx.sha1);
+	} else if (get_oid_hex(args->items[2].string, &git_id))
+		die("Invalid sha1");
+
+	ensure_hg2git();
+	if (is_null_oid(&git_id))
+		remove_note(&hg2git, hg_id.hash);
+	else if (sha1_object_info(git_id.hash, NULL) != type)
+		die("Invalid object");
+	else
+		add_note(&hg2git, hg_id.hash, git_id.hash, NULL);
+}
+
+static int store_each_note(const unsigned char *object_sha1,
+                           const unsigned char *note_sha1, char *note_path,
+                           void *data)
+{
+	int mode;
+	size_t len;
+	struct tree_entry *tree = (struct tree_entry *)data;
+
+	switch (sha1_object_info(note_sha1, NULL)) {
+	case OBJ_BLOB:
+		mode = S_IFREG | 0644;
+		break;
+	case OBJ_COMMIT:
+		mode = S_IFGITLINK;
+		break;
+	case OBJ_TREE:
+		mode = S_IFDIR;
+		// for_each_note calls with a path ending with a slash, but
+		// tree_content_set doesn't like that
+		len = strlen(note_path);
+		if (note_path[len - 1] == '/')
+			note_path[len - 1] = '\0';
+		break;
+	default:
+		die("Unexpected object type in notes tree");
+	}
+	tree_content_set(tree, note_path, note_sha1, mode, NULL);
+	return 0;
+}
+
+static void store_notes(struct notes_tree *notes, struct object_id *result)
+{
+	hashcpy(result->hash, null_sha1);
+	if (notes->dirty) {
+		struct tree_entry *tree = new_tree_entry();
+
+		require_explicit_termination = 1;
+		memset(tree, 0, sizeof(*tree));
+		if (for_each_note(notes, FOR_EACH_NOTE_DONT_UNPACK_SUBTREES |
+		                         FOR_EACH_NOTE_YIELD_SUBTREES,
+		                  store_each_note, tree))
+			die("Failed to store notes");
+		store_tree(tree);
+		hashcpy(result->hash, tree->versions[1].sha1);
+		release_tree_entry(tree);
+	}
+}
+
+static void do_store(struct string_list *args)
+{
+	if (args->nr != 2)
+		die("store needs 3 arguments");
+
+	if (!strcmp(args->items[0].string, "metadata")) {
+		if (!strcmp(args->items[1].string, "hg2git")) {
+			struct object_id result;
+			store_notes(&hg2git, &result);
+			write_or_die(1, oid_to_hex(&result), 40);
+			write_or_die(1, "\n", 1);
+		} else {
+			die("Unknown metadata kind: %s", args->items[1].string);
+		}
+	} else {
+		die("Unknown store kind: %s", args->items[0].string);
+	}
+}
+
 int maybe_handle_command(const char *command, struct string_list *args)
 {
-#define COMMON_HANDLING() { \
+#define INIT() do { \
 	if (!initialized) \
 		init(); \
+} while (0)
+
+#define COMMON_HANDLING() do { \
+	INIT(); \
 	fill_command_buf(command, args); \
-}
+} while (0)
 
 	if (!strcmp(command, "done")) {
 		COMMON_HANDLING();
@@ -247,6 +353,12 @@ int maybe_handle_command(const char *command, struct string_list *args)
 	} else if (!strcmp(command, "feature")) {
 		COMMON_HANDLING();
 		parse_feature(command_buf.buf + sizeof("feature"));
+	} else if (!strcmp(command, "set")) {
+		INIT();
+		do_set(args);
+	} else if (!strcmp(command, "store")) {
+		INIT();
+		do_store(args);
 	} else if (!strcmp(command, "blob")) {
 		COMMON_HANDLING();
 		require_explicit_termination = 1;

@@ -65,6 +65,7 @@
 #include "tree.h"
 #include "tree-walk.h"
 #include "hg-connect.h"
+#include "cinnabar-helper.h"
 #include "cinnabar-fast-import.h"
 
 #define STRINGIFY(s) _STRINGIFY(s)
@@ -74,11 +75,7 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 900
-
-#define METADATA_REF "refs/cinnabar/metadata"
-#define HG2GIT_REF METADATA_REF "^3"
-#define NOTES_REF METADATA_REF "^4"
+#define CMD_VERSION 1000
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -350,8 +347,7 @@ static void do_git2hg(struct string_list *args)
 	if (args->nr != 1)
 		goto not_found;
 
-	if (!git2hg.initialized)
-		init_notes(&git2hg, NOTES_REF, combine_notes_overwrite, 0);
+	ensure_git2hg();
 
 	if (get_sha1_committish(args->items[0].string, sha1))
 		goto not_found;
@@ -493,8 +489,7 @@ static const unsigned char *resolve_hg2git(const unsigned char *sha1,
 {
 	const unsigned char *note;
 
-	if (!hg2git.initialized)
-		init_notes(&hg2git, HG2GIT_REF, combine_notes_overwrite, 0);
+	ensure_hg2git();
 
 	note = get_note(&hg2git, sha1);
 	if (len == 40)

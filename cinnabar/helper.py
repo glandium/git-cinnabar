@@ -121,7 +121,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 9
+    VERSION = 10
     _helper = False
 
     @classmethod
@@ -190,6 +190,19 @@ class GitHgHelper(BaseHelper):
                 off = end + 1
                 yield (mode_before, mode_after, sha1_before, sha1_after,
                        status, path)
+
+    @classmethod
+    def set(self, *args):
+        with self.query('set', *args):
+            pass
+
+    @classmethod
+    def store(self, what, *args):
+        with self.query('store', what, *args) as stdout:
+            if what == 'metadata':
+                sha1 = stdout.read(41)
+                assert sha1[-1] == '\n'
+                return sha1[:40]
 
 
 class HgRepoHelper(BaseHelper):
