@@ -399,9 +399,9 @@ class PushStore(GitHgStore):
             raise Exception('Sha1 mismatch for changeset %s' % sha1)
         return result
 
-    def changeset_ref(self, sha1, hg2git=True):
+    def changeset_ref(self, sha1):
         # See comment about PseudoString at the beginning of this file.
-        result = super(PushStore, self).changeset_ref(sha1, hg2git)
+        result = super(PushStore, self).changeset_ref(sha1)
         if sha1 in self._pushed:
             return PseudoString(result)
         return result

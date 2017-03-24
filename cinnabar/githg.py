@@ -722,7 +722,7 @@ class Grafter(object):
         if not (is_early_history or result):
             raise NothingToGraftException()
         if is_early_history or not result:
-            commit = store.changeset_ref(changeset.node, hg2git=False)
+            commit = store.changeset_ref(changeset.node)
         else:
             commit = result
         store.store_changeset(changeset, commit or False, track_heads)
@@ -989,16 +989,11 @@ class GitHgStore(object):
             gitsha1 = None
         return gitsha1
 
-    def _git_object(self, dic, sha1, hg2git=True):
+    def _git_object(self, dic, sha1):
         assert sha1 != NULL_NODE_ID
         if sha1 in dic:
             return dic[sha1]
-        sha1 = sha1
-        if hg2git:
-            gitsha1 = self._hg2git(sha1)
-            if gitsha1:
-                return gitsha1
-        return None
+        return self._hg2git(sha1)
 
     def changeset(self, sha1, include_parents=False):
         gitsha1 = self.changeset_ref(sha1)
@@ -1042,8 +1037,8 @@ class GitHgStore(object):
     def manifest_ref(self, sha1):
         return self._git_object(self._manifests, sha1)
 
-    def changeset_ref(self, sha1, hg2git=True):
-        return self._git_object(self._changesets, sha1, hg2git=hg2git)
+    def changeset_ref(self, sha1):
+        return self._git_object(self._changesets, sha1)
 
     def file_meta(self, sha1):
         if sha1 in self._files_meta:
