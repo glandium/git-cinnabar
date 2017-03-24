@@ -786,21 +786,6 @@ class GitHgStore(object):
     def __init__(self):
         self._fast_import = FastImport()
         self._flags = set()
-        self._changesets = {}
-        self._manifests = {}
-        # Because an empty file and an empty manifest, both with no parents,
-        # have the same sha1, we can't store both in the hg2git tree. So, we
-        # choose to never store the file version, and make it forcibly resolve
-        # to the empty blob. Which means we won't be storing an empty blob and
-        # getting a mark for it, and will attempt to use it directly even if
-        # it doesn't exist. The FastImport code works around this.
-        # Theoretically, it is possible to have a non-modified child of the
-        # empty file, and a non-modified child of the empty manifest, which
-        # both would also have the same sha1, but, TTBOMK, it is only possible
-        # to achieve with commands like hg debugparents.
-        self._git_files = {
-            HG_EMPTY_FILE: EMPTY_BLOB,
-        }
         self._files_meta = {}
         self._closed = False
         self._graft = None
@@ -981,9 +966,6 @@ class GitHgStore(object):
         return git_commit.body
 
     def _hg2git(self, sha1):
-        if not self._has_metadata and not self._closed:
-            return None
-
         gitsha1 = GitHgHelper.hg2git(sha1)
         if gitsha1 == NULL_NODE_ID:
             gitsha1 = None
@@ -1035,10 +1017,10 @@ class GitHgStore(object):
         return manifest
 
     def manifest_ref(self, sha1):
-        return self._git_object(self._manifests, sha1)
+        return self._hg2git(sha1)
 
     def changeset_ref(self, sha1):
-        return self._git_object(self._changesets, sha1)
+        return self._hg2git(sha1)
 
     def file_meta(self, sha1):
         if sha1 in self._files_meta:
@@ -1069,7 +1051,19 @@ class GitHgStore(object):
         return file
 
     def git_file_ref(self, sha1):
-        return self._git_object(self._git_files, sha1)
+        # Because an empty file and an empty manifest, both with no parents,
+        # have the same sha1, we can't store both in the hg2git tree. So, we
+        # choose to never store the file version, and make it forcibly resolve
+        # to the empty blob. Which means we won't be storing an empty blob and
+        # getting a mark for it, and will attempt to use it directly even if
+        # it doesn't exist. The FastImport code works around this.
+        # Theoretically, it is possible to have a non-modified child of the
+        # empty file, and a non-modified child of the empty manifest, which
+        # both would also have the same sha1, but, TTBOMK, it is only possible
+        # to achieve with commands like hg debugparents.
+        if sha1 == HG_EMPTY_FILE:
+            return EMPTY_BLOB
+        return self._hg2git(sha1)
 
     def git_tree(self, manifest_sha1):
         if manifest_sha1 == NULL_NODE_ID:
@@ -1141,8 +1135,7 @@ class GitHgStore(object):
                     if tree != EMPTY_TREE:
                         c.filemodify('', tree, typ='tree')
 
-                if (c.sha1 in self._changesets or
-                        self.hg_changeset(c.sha1)):
+                if self.hg_changeset(c.sha1):
                     body += '\0'
                     continue
                 break
@@ -1150,7 +1143,7 @@ class GitHgStore(object):
 
         if not commit:
             commit = GitCommit(mark)
-        self._changesets[instance.node] = commit.sha1
+        GitHgHelper.set('changeset', instance.node, commit.sha1)
         changeset = Changeset.from_git_commit(commit)
         self._changeset_data_cache[commit.sha1] = ChangesetPatcher.from_diff(
             changeset, instance)
@@ -1197,7 +1190,7 @@ class GitHgStore(object):
                 commit.filemodify('git/%s' % name,
                                   self.git_file_ref(node), typ=self.TYPE[attr])
 
-        self._manifests[instance.node] = commit.sha1
+        GitHgHelper.set('manifest', instance.node, commit.sha1)
         self._manifest_dag.add(commit.sha1, parents)
 
         if check_enabled('manifests'):
@@ -1216,8 +1209,9 @@ class GitHgStore(object):
         metadata = str(instance.metadata)
         if metadata:
             self._files_meta[instance.node] = metadata
-        self._git_files[instance.node] = self._fast_import.put_blob(
-            instance.content)
+        sha1 = self._fast_import.put_blob(instance.content)
+        if instance.node != HG_EMPTY_FILE:
+            GitHgHelper.set('file', instance.node, sha1)
 
     def close(self):
         if self._closed:
@@ -1225,44 +1219,26 @@ class GitHgStore(object):
         if self._graft:
             self._graft.close()
         self._closed = True
-        hg2git_files = []
         update_metadata = []
-        for dic, typ in (
-            (self._git_files, 'regular'),
-            (self._manifests, 'commit'),
-            (self._changesets, 'commit'),
-        ):
-            for node, mark in dic.iteritems():
-                if dic is self._git_files and node == HG_EMPTY_FILE:
-                    continue
-                hg2git_files.append((node, mark, typ))
-        if hg2git_files:
+        tree = GitHgHelper.store('metadata', 'hg2git')
+        if tree != NULL_NODE_ID:
             with self._fast_import.commit(
                 ref='refs/cinnabar/hg2git',
-                from_commit=Git.resolve_ref('refs/cinnabar/hg2git'),
             ) as commit:
-                for file in sorted(hg2git_files, key=lambda f: f[0]):
-                    if file[1] is None:
-                        commit.filedelete(sha1path(file[0]))
-                    else:
-                        commit.filemodify(sha1path(file[0]), *file[1:])
-
-        del hg2git_files
+                commit.write('M 040000 %s \n' % tree)
 
         removed_git2hg = [
             c for c, data in self._changeset_data_cache.iteritems()
             if data is None
         ]
-        if self._changesets or removed_git2hg:
+        if self._changeset_data_cache or removed_git2hg:
             notes = Git.resolve_ref('refs/notes/cinnabar')
             with self._fast_import.commit(
                 ref='refs/notes/cinnabar',
                 from_commit=notes,
             ) as commit:
-                for mark in self._changesets.itervalues():
-                    if mark:
-                        data = self._changeset_data_cache[str(mark)]
-                        commit.notemodify(mark, data)
+                for mark, data in self._changeset_data_cache.iteritems():
+                    commit.notemodify(mark, data)
                 for c in removed_git2hg:
                     commit.write('N %s %s\n' % (NULL_NODE_ID, c))
                 update_metadata.append('refs/notes/cinnabar')

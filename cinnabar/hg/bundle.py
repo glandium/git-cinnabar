@@ -343,7 +343,7 @@ class PushStore(GitHgStore):
             git_manifest_parents=git_manifest_parents,
             path=path)
         node = hg_file.node = hg_file.sha1
-        self._git_files.setdefault(node, sha1)
+        GitHgHelper.set('file', node, sha1)
         return hg_file
 
     def _store_file_internal(self, hg_file):
@@ -369,17 +369,8 @@ class PushStore(GitHgStore):
         node = hg_file.node = hg_file.sha1
         self._pushed.add(node)
         self._files_meta[node] = str(hg_file.metadata)
-        self._git_files.setdefault(node, sha1)
+        GitHgHelper.set('file', node, sha1)
         return node
-
-    def _hg2git(self, sha1):
-        if sha1 in self._pushed:
-            if sha1 in self._manifests:
-                return self._manifests[sha1]
-            if sha1 in self._changesets:
-                return self._changesets[sha1]
-            return self._git_files.get(sha1)
-        return super(PushStore, self)._hg2git(sha1)
 
     def manifest(self, sha1, include_parents=False):
         if sha1 not in self._pushed:

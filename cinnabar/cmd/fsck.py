@@ -200,9 +200,9 @@ def fsck(args):
                         seen_files.add(hg_file)
                         yield (i, len(seen_files)), (hg_file, git_file)
 
-                store._manifests[manifest.node] = None
+                GitHgHelper.set('manifest', manifest.node, NULL_NODE_ID)
                 store.store_manifest(manifest)
-                assert store._manifests[manifest.node] == m
+                assert store.manifest_ref(manifest.node) == m
 
         if 'files-meta' not in store._flags:
             for f in progress_enum('Upgrading %d manifests and '
@@ -225,7 +225,7 @@ def fsck(args):
                 if (not metadata.startswith('\1\n') and
                         not metadata.endswith('\1\n')):
                     report('Metadata corrupted for file %s' % hg_file)
-                store._git_files[hg_file] = git_file
+                GitHgHelper.set('file', hg_file, git_file)
                 store._files_meta[hg_file] = metadata[2:-2]
         else:
             def scan_manifests():
@@ -294,7 +294,7 @@ def fsck(args):
         patcher = ChangesetPatcher.from_diff(raw_changeset, changeset_data)
         if patcher != store.read_changeset_data(node):
             fix('Adjusted changeset metadata for %s' % changeset)
-            store._changesets[changeset] = node
+            GitHgHelper.set('changeset', changeset, node)
             store._changeset_data_cache[node] = patcher
 
         manifest = changeset_data.manifest
@@ -394,7 +394,7 @@ def fsck(args):
         # or changesets and set the right variable accordingly, but in
         # practice, it makes no difference. Reevaluate when GitHgStore.close
         # is modified, though.
-        store._git_files[obj] = None
+        GitHgHelper.set('file', obj, NULL_NODE_ID)
         store._files_meta[obj] = None
 
     if not status['broken']:
