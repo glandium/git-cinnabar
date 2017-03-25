@@ -14,7 +14,7 @@ else
 export PATH := $(HOME)/.local/bin$(PATHSEP)$(PATH)
 export PYTHONPATH := $(HOME)/.local/lib/python2.7/site-packages
 endif
-export PATH := $(CURDIR)/old-cinnabar$(PATHSEP)$(CURDIR)$(PATHSEP)$(PATH)
+export PATH := $(CURDIR)$(PATHSEP)$(PATH)
 export PYTHONDONTWRITEBYTECODE := 1
 REPO ?= https://bitbucket.org/cleonello/jqplot
 
@@ -154,6 +154,8 @@ $(GIT_CINNABAR_HELPER):
 endif
 
 ifdef UPGRADE_FROM
+export PATH := $(CURDIR)/old-cinnabar$(PATHSEP)$(PATH)
+
 before_script:: $(GIT_CINNABAR_HELPER)
 	rm -rf old-cinnabar
 	git fetch --unshallow || true
