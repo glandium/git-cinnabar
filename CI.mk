@@ -184,6 +184,7 @@ before_script:: $(GIT_CINNABAR_HELPER)
 ifdef UPGRADE_FROM
 script::
 	rm -rf old-cinnabar
+	$(GIT) -C hg.old.git remote update && echo "Should have been asked to upgrade" && exit 1 || true
 endif
 
 script::
