@@ -1017,11 +1017,10 @@ class GitHgStore(object):
 
     def file(self, sha1, file_parents=None, git_manifest_parents=None,
              path=None):
-        ref = self.git_file_ref(sha1)
-        if ref == EMPTY_BLOB:
+        if sha1 == HG_EMPTY_FILE:
             content = ''
         else:
-            content = GitHgHelper.cat_file('blob', ref)
+            content = self._fast_import.cat_blob(':h%s' % sha1)
 
         file = File(sha1)
         meta = self.file_meta(sha1)
