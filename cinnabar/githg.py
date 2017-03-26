@@ -1153,9 +1153,6 @@ class GitHgStore(object):
         else:
             previous = None
         parents = tuple(self.manifest_ref(p) for p in instance.parents)
-        # Force trigger any helper requests before starting the commit.
-        for node, attr in instance.modified.itervalues():
-            self.git_file_ref(str(node))
         with self._fast_import.commit(
             ref='refs/cinnabar/manifests',
             from_commit=previous,
