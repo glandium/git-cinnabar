@@ -993,9 +993,7 @@ class GitHgStore(object):
 
     def manifest(self, sha1, include_parents=False):
         manifest = GeneratedManifestInfo(sha1)
-        gitsha1 = self.manifest_ref(sha1)
-        assert gitsha1
-        manifest.data = GitHgHelper.manifest('git:%s' % gitsha1)
+        manifest.data = GitHgHelper.manifest(sha1)
         if include_parents:
             git_sha1 = self.manifest_ref(sha1)
             commit = GitCommit(git_sha1)
@@ -1177,7 +1175,7 @@ class GitHgStore(object):
         GitHgHelper.set('manifest', instance.node, commit.sha1)
 
         if check_enabled('manifests'):
-            if not GitHgHelper.check_manifest('git:%s' % commit.sha1):
+            if not GitHgHelper.check_manifest(instance.node):
                 raise Exception(
                     'sha1 mismatch for node %s with parents %s %s and '
                     'previous %s' %
