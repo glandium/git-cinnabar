@@ -1,5 +1,5 @@
 diff --git a/fast-import.c b/fast-import.c
-index 64fe602f0..31af6d77f 100644
+index 64fe602f0..e05b103dd 100644
 --- a/fast-import.c
 +++ b/fast-import.c
 @@ -1,3 +1,5 @@
@@ -8,7 +8,18 @@ index 64fe602f0..31af6d77f 100644
  /*
  (See Documentation/git-fast-import.txt for maintained documentation.)
  Format of STDIN stream:
-@@ -3542,3 +3544,5 @@ int cmd_main(int argc, const char **argv)
+@@ -2308,7 +2310,9 @@ static uintmax_t change_note_fanout(struct tree_entry *root,
+  * Complain if the following character is not what is expected,
+  * either a space or end of the string.
+  */
+-static uintmax_t parse_mark_ref(const char *p, char **endptr)
++static uintmax_t parse_mark_ref(const char *p, char **endptr);
++
++static uintmax_t real_parse_mark_ref(const char *p, char **endptr)
+ {
+ 	uintmax_t mark;
+ 
+@@ -3542,3 +3546,5 @@ int cmd_main(int argc, const char **argv)
  
  	return failure ? 1 : 0;
  }

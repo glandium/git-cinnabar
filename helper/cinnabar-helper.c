@@ -75,7 +75,7 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 1100
+#define CMD_VERSION 1200
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 

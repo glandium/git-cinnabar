@@ -178,6 +178,36 @@ static void cleanup()
 	pack_report();
 }
 
+/* Override fast-import.c's parse_mark_ref to allow a syntax for
+ * mercurial sha1s, resolved through hg2git. Hack: it uses a fixed
+ * mark for this: 2.
+ * The added syntax is: :h<sha1> */
+static uintmax_t parse_mark_ref(const char *p, char **endptr)
+{
+	struct object_id oid;
+	const unsigned char *note;
+	struct object_entry *e;
+
+	assert(*p == ':');
+	if (p[1] != 'h')
+		return real_parse_mark_ref(p, endptr);
+	if (get_oid_hex(p + 2, &oid))
+		die("Invalid sha1");
+
+	ensure_hg2git();
+	note = get_note(&hg2git, oid.hash);
+	e = find_object((unsigned char *)note);
+	if (!e) {
+		e = insert_object((unsigned char *)note);
+		e->type = sha1_object_info(note, NULL);
+		e->pack_id = MAX_PACK_ID;
+		e->idx.offset = 1;
+	}
+	insert_mark(2, e);
+	*endptr = (char *)p + 42;
+	return 2;
+}
+
 /* Fill fast-import.c's command_buf and recent commands */
 static void fill_command_buf(const char *command, struct string_list *args)
 {
