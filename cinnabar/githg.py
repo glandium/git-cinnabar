@@ -1097,7 +1097,7 @@ class GitHgStore(object):
             else:
                 committer = author
 
-            parents = tuple(self.changeset_ref(p) for p in instance.parents)
+            parents = tuple(':h%s' % p for p in instance.parents)
 
             body = instance.body
             tree = self.git_tree(instance.manifest)
@@ -1116,15 +1116,16 @@ class GitHgStore(object):
                     committer=committer.to_git_str(),
                     author=author.to_git_str(),
                     parents=parents,
+                    pseudo_mark=':h%s' % instance.node,
                 ) as c:
                     if tree != EMPTY_TREE:
                         c.filemodify('', tree, typ='tree')
 
-                if self.hg_changeset(c.sha1):
+                mark = self._fast_import.get_mark(1)
+                if self.hg_changeset(mark):
                     body += '\0'
                     continue
                 break
-            mark = c.sha1
 
         if not commit:
             commit = GitCommit(mark)
