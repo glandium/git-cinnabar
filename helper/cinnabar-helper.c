@@ -366,9 +366,8 @@ not_found:
 
 static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1)
 {
-	unsigned char *start = sha1;
+	const char *hex_start = hex;
 	unsigned char *end = sha1 + 20;
-	size_t len;
 	while (sha1 < end) {
 		unsigned int val;
 		if (!hex[0])
@@ -384,11 +383,10 @@ static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1)
 			break;
 		hex += 2;
 	}
-	len = (sha1 - start - 1) * 2 + !!hex[0];
 	while (sha1 < end) {
 		*sha1++ = 0xff;
 	}
-	return len;
+	return hex - hex_start + !!hex[0];
 }
 
 int abbrev_sha1_cmp(const unsigned char *ref_sha1,
