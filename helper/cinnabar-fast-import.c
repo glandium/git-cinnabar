@@ -100,6 +100,7 @@ static void init()
 
 	alloc_objects(object_entry_alloc);
 	strbuf_init(&command_buf, 0);
+	atom_table_sz = 131071;
 	atom_table = xcalloc(atom_table_sz, sizeof(struct atom_str*));
 	branch_table = xcalloc(branch_table_sz, sizeof(struct branch*));
 	avail_tree_table = xcalloc(avail_tree_table_sz, sizeof(struct avail_tree_content*));
