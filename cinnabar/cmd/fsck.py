@@ -225,6 +225,7 @@ def fsck(args):
                 if (not metadata.startswith('\1\n') and
                         not metadata.endswith('\1\n')):
                     report('Metadata corrupted for file %s' % hg_file)
+                GitHgHelper.set('file', hg_file, NULL_NODE_ID)
                 GitHgHelper.set('file', hg_file, git_file)
                 store._files_meta[hg_file] = metadata[2:-2]
         else:
@@ -294,6 +295,7 @@ def fsck(args):
         patcher = ChangesetPatcher.from_diff(raw_changeset, changeset_data)
         if patcher != store.read_changeset_data(node):
             fix('Adjusted changeset metadata for %s' % changeset)
+            GitHgHelper.set('changeset', changeset, NULL_NODE_ID)
             GitHgHelper.set('changeset', changeset, node)
             store._changeset_data_cache[node] = patcher
 

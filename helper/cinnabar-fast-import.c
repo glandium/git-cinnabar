@@ -260,7 +260,7 @@ void maybe_reset_notes(const char *branch)
 			if (notes->initialized)
 				free_notes(notes);
 			init_notes(notes, sha1_to_hex(b->sha1),
-				   combine_notes_overwrite, 0);
+				   combine_notes_ignore, 0);
 		}
 	}
 }

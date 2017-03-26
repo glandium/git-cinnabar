@@ -13,13 +13,13 @@ extern struct notes_tree git2hg, hg2git;
 static inline void ensure_git2hg()
 {
 	if (!git2hg.initialized)
-		init_notes(&git2hg, NOTES_REF, combine_notes_overwrite, 0);
+		init_notes(&git2hg, NOTES_REF, combine_notes_ignore, 0);
 }
 
 static inline void ensure_hg2git()
 {
 	if (!hg2git.initialized)
-		init_notes(&hg2git, HG2GIT_REF, combine_notes_overwrite, 0);
+		init_notes(&hg2git, HG2GIT_REF, combine_notes_ignore, 0);
 }
 
 #endif

@@ -694,6 +694,7 @@ class Grafter(object):
             for node in nodes:
                 commit = commits[node]
                 store.store_changeset(changeset, commit, track_heads=False)
+                GitHgHelper.set('changeset', changeset.node, NULL_NODE_ID)
                 sha1 = commit.sha1
                 if not self._is_cinnabar_commit(sha1):
                     possible_nodes.append(node)
@@ -1067,7 +1068,7 @@ class GitHgStore(object):
 
     def store_changeset(self, instance, commit=None, track_heads=True):
         if not commit:
-            mark = self.changeset_ref(instance.node)
+            mark = None
         else:
             if not isinstance(commit, GitCommit):
                 commit = GitCommit(commit)
@@ -1142,9 +1143,6 @@ class GitHgStore(object):
     }
 
     def store_manifest(self, instance):
-        mark = self.manifest_ref(instance.node)
-        if mark:
-            return
         if getattr(instance, 'delta_node', NULL_NODE_ID) != NULL_NODE_ID:
             previous = ':h%s' % instance.delta_node
         else:
@@ -1186,9 +1184,6 @@ class GitHgStore(object):
                 )
 
     def store_file(self, instance):
-        mark = self.git_file_ref(instance.node)
-        if mark:
-            return
         metadata = str(instance.metadata)
         if metadata:
             self._files_meta[instance.node] = metadata
