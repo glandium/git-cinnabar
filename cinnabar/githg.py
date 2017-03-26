@@ -1053,8 +1053,7 @@ class GitHgStore(object):
     def git_tree(self, manifest_sha1):
         if manifest_sha1 == NULL_NODE_ID:
             return EMPTY_TREE,
-        manifest_commit = self.manifest_ref(manifest_sha1)
-        line = one(Git.ls_tree(manifest_commit, 'git'))
+        line = one(Git.ls_tree(':h%s' % manifest_sha1, 'git'))
         if line:
             mode, typ, tree, path = line
             assert typ == 'tree' and path == 'git'
