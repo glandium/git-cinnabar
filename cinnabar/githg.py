@@ -1147,15 +1147,16 @@ class GitHgStore(object):
         if mark:
             return
         if getattr(instance, 'delta_node', NULL_NODE_ID) != NULL_NODE_ID:
-            previous = self.manifest_ref(instance.delta_node)
+            previous = ':h%s' % instance.delta_node
         else:
             previous = None
-        parents = tuple(self.manifest_ref(p) for p in instance.parents)
+        parents = tuple(':h%s' % p for p in instance.parents)
         with self._fast_import.commit(
             ref='refs/cinnabar/manifests',
             from_commit=previous,
             parents=parents,
             message=instance.node,
+            pseudo_mark=':h%s' % instance.node,
         ) as commit:
             if hasattr(instance, 'delta_node'):
                 for name in instance.removed:
@@ -1170,9 +1171,11 @@ class GitHgStore(object):
                 node = str(node)
                 commit.filemodify('hg/%s' % name, node, typ='commit')
                 commit.filemodify('git/%s' % name,
-                                  self.git_file_ref(node), typ=self.TYPE[attr])
+                                  EMPTY_BLOB if node == HG_EMPTY_FILE
+                                  else ':h%s' % node,
+                                  typ=self.TYPE[attr])
 
-        GitHgHelper.set('manifest', instance.node, commit.sha1)
+        GitHgHelper.set('manifest', instance.node, ':1')
 
         if check_enabled('manifests'):
             if not GitHgHelper.check_manifest(instance.node):

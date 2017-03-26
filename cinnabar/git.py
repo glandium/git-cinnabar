@@ -365,7 +365,7 @@ class FastImport(object):
 
     @contextlib.contextmanager
     def commit(self, ref, committer='<cinnabar@git> 0 +0000', author=None,
-               message='', from_commit=None, parents=()):
+               message='', from_commit=None, parents=(), pseudo_mark=None):
         if isinstance(parents, GeneratorType):
             parents = tuple(parents)
         _from = None
@@ -402,8 +402,11 @@ class FastImport(object):
 
         helper.flush()
         self.write('\n')
-        helper.sha1 = self.get_mark(1)
-        Git._refs[ref] = helper.sha1
+        if pseudo_mark:
+            Git._refs[ref] = pseudo_mark
+        else:
+            helper.sha1 = self.get_mark(1)
+            Git._refs[ref] = helper.sha1
 
 
 class FastImportCommitHelper(object):
