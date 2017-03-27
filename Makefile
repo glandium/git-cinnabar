@@ -123,6 +123,7 @@ ALL_PROGRAMS += git-cinnabar-helper$X
 
 all:: git-cinnabar-helper$X
 
+CINNABAR_OBJECTS += cinnabar-fast-import.o
 CINNABAR_OBJECTS += cinnabar-helper.o
 CINNABAR_OBJECTS += hg-bundle.o
 CINNABAR_OBJECTS += hg-connect.o
@@ -143,7 +144,9 @@ clean-patched:
 
 $(addprefix ../,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c)):
 
-CINNABAR_OBJECTS += $(PATCHES:%.c.patch=%.patched.o)
+CINNABAR_OBJECTS += $(filter-out fast-import.patched.o,$(PATCHES:%.c.patch=%.patched.o))
+
+cinnabar-fast-import.o: ../helper/fast-import.patched.c
 
 ifdef USE_COMPUTED_HEADER_DEPENDENCIES
 dep_files := $(foreach f,$(CINNABAR_OBJECTS),$(dir $f).depend/$(notdir $f).d)

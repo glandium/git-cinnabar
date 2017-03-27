@@ -1,3 +1,6 @@
+#define cmd_main fast_import_main
+#define sha1write fast_import_sha1write
+#include "fast-import.patched.c"
 #undef sha1write
 #include "cinnabar-fast-import.h"
 #include "cinnabar-helper.h"

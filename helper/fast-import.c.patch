@@ -1,14 +1,8 @@
 diff --git a/fast-import.c b/fast-import.c
-index 64fe602f0..e05b103dd 100644
+index 64fe602f0..77de85a28 100644
 --- a/fast-import.c
 +++ b/fast-import.c
-@@ -1,3 +1,5 @@
-+#define cmd_main fast_import_main
-+#define sha1write fast_import_sha1write
- /*
- (See Documentation/git-fast-import.txt for maintained documentation.)
- Format of STDIN stream:
-@@ -2308,7 +2310,9 @@ static uintmax_t change_note_fanout(struct tree_entry *root,
+@@ -2308,7 +2308,9 @@ static uintmax_t change_note_fanout(struct tree_entry *root,
   * Complain if the following character is not what is expected,
   * either a space or end of the string.
   */
@@ -19,9 +13,3 @@ index 64fe602f0..e05b103dd 100644
  {
  	uintmax_t mark;
  
-@@ -3542,3 +3546,5 @@ int cmd_main(int argc, const char **argv)
- 
- 	return failure ? 1 : 0;
- }
-+
-+#include "cinnabar-fast-import.c"
