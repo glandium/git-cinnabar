@@ -543,6 +543,11 @@ class GitCommit(object):
         self.parents = tuple(parents)
 
 
+class PseudoGitCommit(GitCommit):
+    def __init__(self, sha1):
+        self.sha1 = sha1
+
+
 def git_hash(type, data):
     h = hashlib.sha1('%s %d\0' % (type, len(data)))
     h.update(data)
@@ -1067,16 +1072,12 @@ class GitHgStore(object):
         return tree
 
     def store_changeset(self, instance, commit=None, track_heads=True):
-        if not commit:
-            mark = None
-        else:
-            if not isinstance(commit, GitCommit):
-                commit = GitCommit(commit)
-            mark = commit.sha1
-        if not mark and self._graft and commit is not False:
+        if commit and not isinstance(commit, GitCommit):
+            commit = GitCommit(commit)
+        if commit is None and self._graft:
             return self._graft.graft(instance, track_heads)
 
-        if not mark:
+        if not commit:
             author = Authorship.from_hg(instance.author, instance.timestamp,
                                         instance.utcoffset)
             extra = instance.extra
@@ -1108,12 +1109,14 @@ class GitHgStore(object):
             # In that case, add invisible characters to the commit
             # message until we find a commit that doesn't map to another
             # changeset.
+            committer = committer.to_git_str()
+            author = author.to_git_str()
             while True:
                 with self._fast_import.commit(
                     ref='refs/cinnabar/tip',
                     message=body,
-                    committer=committer.to_git_str(),
-                    author=author.to_git_str(),
+                    committer=committer,
+                    author=author,
                     parents=parents,
                     pseudo_mark=':h%s' % instance.node,
                 ) as c:
@@ -1126,8 +1129,11 @@ class GitHgStore(object):
                     continue
                 break
 
-        if not commit:
-            commit = GitCommit(mark)
+            commit = PseudoGitCommit(mark)
+            commit.author = author
+            commit.committer = committer
+            commit.body = body
+
         GitHgHelper.set('changeset', instance.node, commit.sha1)
         changeset = Changeset.from_git_commit(commit)
         self._changeset_data_cache[commit.sha1] = ChangesetPatcher.from_diff(
