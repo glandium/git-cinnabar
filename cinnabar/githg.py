@@ -92,7 +92,6 @@ class RevChunk(object):
                                     else '', self._rev_data)
 
     def patch_data(self, data, rev_patch):
-        from .hg.changegroup import RevDiff
         return RevDiff(rev_patch).apply(data)
 
     @property
@@ -288,7 +287,6 @@ class ManifestInfo(RevChunk):
     __slots__ = ('removed', 'modified')
 
     def patch_data(self, data, rev_patch):
-        from .hg.changegroup import RevDiff
         new = ''
         end = 0
         before_list = {}
