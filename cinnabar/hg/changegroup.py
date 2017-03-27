@@ -34,36 +34,40 @@ class ParentsTrait(object):
             self.parent1 = NULL_NODE_ID
 
 
-class RevDiff(str):
+class RevDiff(object):
     class Part(object):
         __slots__ = ('start', 'end', 'block_len', 'text_data')
 
         def __init__(self, rev_patch):
             self.start, self.end, self.block_len = \
-                struct.unpack('>lll', rev_patch[:12])
+                struct.unpack('>lll', rev_patch[:12].tobytes())
             self.text_data = rev_patch[12:12 + self.block_len]
 
         def __len__(self):
             return self.block_len + 12
 
+    def __init__(self, buf):
+        self._buf = memoryview(buf)
+
     def __iter__(self):
         start = 0
-        while start < len(self):
-            part = self.Part(self[start:])
+        while start < len(self._buf):
+            part = self.Part(self._buf[start:])
             yield part
             start += len(part)
 
-    def apply(self, orig):
-        new = ''
+    def apply(self, raw_orig):
+        new = bytearray()
+        orig = memoryview(raw_orig)
         end = 0
         for diff in self:
             new += orig[end:diff.start]
             new += diff.text_data
             end = diff.end
         if new == '' and end == 0:
-            return orig
+            return raw_orig
         new += orig[end:]
-        return new
+        return str(new)
 
 
 class RawRevChunk(bytearray, ParentsTrait):

@@ -286,8 +286,9 @@ def isplitmanifest(data):
 class ManifestInfo(RevChunk):
     __slots__ = ('removed', 'modified')
 
-    def patch_data(self, data, rev_patch):
-        new = ''
+    def patch_data(self, raw_data, rev_patch):
+        new = bytearray()
+        data = memoryview(raw_data)
         end = 0
         before_list = {}
         after_list = {}
@@ -296,19 +297,20 @@ class ManifestInfo(RevChunk):
             new += diff.text_data
             end = diff.end
 
-            start = data.rfind('\n', 0, diff.start) + 1
+            start = raw_data.rfind('\n', 0, diff.start) + 1
             if diff.end == 0 or data[diff.end - 1] == '\n':
                 finish = diff.end
             else:
-                finish = data.find('\n', diff.end)
+                finish = raw_data.find('\n', diff.end)
             if finish != -1:
                 before = data[start:finish]
             else:
                 before = data[start:]
-            after = before[:diff.start - start] + diff.text_data + \
-                before[diff.end - start:]
+            after = before[:diff.start - start].tobytes() + \
+                diff.text_data.tobytes() + \
+                before[diff.end - start:].tobytes()
             before_list.update({f.name: (f.node, f.attr)
-                                for f in isplitmanifest(before)})
+                                for f in isplitmanifest(before.tobytes())})
             after_list.update({f.name: (f.node, f.attr)
                                for f in isplitmanifest(after)})
         new += data[end:]
@@ -325,8 +327,14 @@ class ChangesetPatcher(str):
             class Part(object):
                 __slots__ = ('start', 'end', 'text_data')
 
+            def __init__(self, buf):
+                self._buf = buf
+
+            def __str__(self):
+                return self._buf
+
             def __iter__(self):
-                for line in self.split('\0'):
+                for line in self._buf.split('\0'):
                     if line:
                         part = self.Part()
                         start, end, text_data = line.split(',')
