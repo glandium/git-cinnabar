@@ -1106,7 +1106,6 @@ class GitHgStore(object):
             parents = tuple(':h%s' % p for p in instance.parents)
 
             body = instance.body
-            tree = self.git_tree(instance.manifest)
 
             # There are cases where two changesets would map to the same
             # git commit because their differences are not in information
@@ -1126,8 +1125,8 @@ class GitHgStore(object):
                     parents=parents,
                     pseudo_mark=':h%s' % instance.node,
                 ) as c:
-                    if tree != EMPTY_TREE:
-                        c.filemodify('', tree, typ='tree')
+                    c.filemodify('', ':h%s:git' % instance.manifest,
+                                 typ='tree')
 
                 mark = self._fast_import.get_mark(1)
                 if self.hg_changeset(mark):

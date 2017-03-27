@@ -4,6 +4,7 @@
 #include "mru.h"
 #include "notes.h"
 #include "sha1-array.h"
+#include "tree-walk.h"
 
 static int initialized = 0;
 
@@ -180,10 +181,16 @@ static void cleanup()
 	pack_report();
 }
 
+const unsigned char empty_tree[20] = {
+	0x4b, 0x82, 0x5d, 0xc6, 0x42, 0xcb, 0x6e, 0xb9, 0xa0, 0x60,
+	0xe5, 0x4b, 0xf8, 0xd6, 0x92, 0x88, 0xfb, 0xee, 0x49, 0x04,
+};
+
 /* Override fast-import.c's parse_mark_ref to allow a syntax for
  * mercurial sha1s, resolved through hg2git. Hack: it uses a fixed
  * mark for this: 2.
- * The added syntax is: :h<sha1> */
+ * The added syntax is: :h<sha1>[:path]
+ * With :path, a tree is returned. */
 static uintmax_t parse_mark_ref(const char *p, char **endptr)
 {
 	struct object_id oid;
@@ -198,6 +205,20 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 
 	ensure_hg2git();
 	note = get_note(&hg2git, oid.hash);
+	*endptr = (char *)p + 42;
+	if (**endptr == ':') {
+		char *path_end = strpbrk(++(*endptr), " \n");
+		if (path_end) {
+			unsigned mode;
+			char *path = xstrndup(*endptr, path_end - *endptr);
+			if (!get_tree_entry(note, path, oid.hash, &mode))
+				note = oid.hash;
+			else
+				note = empty_tree;
+			free(path);
+			*endptr = path_end;
+		}
+	}
 	e = find_object((unsigned char *)note);
 	if (!e) {
 		e = insert_object((unsigned char *)note);
@@ -206,7 +227,6 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 		e->idx.offset = 1;
 	}
 	insert_mark(2, e);
-	*endptr = (char *)p + 42;
 	return 2;
 }
 
