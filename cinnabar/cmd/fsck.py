@@ -297,7 +297,8 @@ def fsck(args):
             fix('Adjusted changeset metadata for %s' % changeset)
             GitHgHelper.set('changeset', changeset, NULL_NODE_ID)
             GitHgHelper.set('changeset', changeset, node)
-            store._changeset_data_cache[node] = patcher
+            store._fast_import.put_blob(patcher, want_sha1=False)
+            GitHgHelper.set('changeset-metadata', changeset, ':1')
 
         manifest = changeset_data.manifest
         if manifest in seen_manifests or manifest == NULL_NODE_ID:
@@ -403,7 +404,7 @@ def fsck(args):
         dangling = all_notes - seen_notes
     for c in dangling:
         fix('Removing dangling note for commit ' + c)
-        store._changeset_data_cache[c] = None
+        GitHgHelper.set('changeset-metadata', c, NULL_NODE_ID)
 
     if status['broken']:
         info('Your git-cinnabar repository appears to be corrupted. There\n'

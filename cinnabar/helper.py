@@ -121,7 +121,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 14
+    VERSION = 15
     _helper = False
 
     @classmethod

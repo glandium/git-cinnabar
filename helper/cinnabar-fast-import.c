@@ -365,6 +365,7 @@ static void do_set(struct string_list *args)
 	enum object_type type;
 	struct object_id hg_id, git_id;
 	struct sha1_array *heads = NULL;
+	struct notes_tree *notes = &hg2git;
 
 	if (args->nr != 3)
 		die("set needs 3 arguments");
@@ -376,6 +377,9 @@ static void do_set(struct string_list *args)
 		type = OBJ_COMMIT;
 		if (args->items[0].string[0] == 'm')
 			heads = &manifest_heads;
+	} else if (!strcmp(args->items[0].string, "changeset-metadata")) {
+		type = OBJ_BLOB;
+		notes = &git2hg;
 	} else {
 		die("Unknown kind of object: %s", args->items[0].string);
 	}
@@ -390,13 +394,23 @@ static void do_set(struct string_list *args)
 	} else if (get_oid_hex(args->items[2].string, &git_id))
 		die("Invalid sha1");
 
-	ensure_notes(&hg2git);
+	if (notes == &git2hg) {
+		const unsigned char *note;
+		ensure_notes(&hg2git);
+		note = get_note(&hg2git, hg_id.hash);
+		if (note)
+			hashcpy(hg_id.hash, note);
+		else if (!is_null_oid(&git_id))
+			die("Invalid sha1");
+	}
+
+	ensure_notes(notes);
 	if (is_null_oid(&git_id)) {
-		remove_note(&hg2git, hg_id.hash);
+		remove_note(notes, hg_id.hash);
 	} else if (sha1_object_info(git_id.hash, NULL) != type) {
 		die("Invalid object");
 	} else {
-		add_note(&hg2git, hg_id.hash, git_id.hash, NULL);
+		add_note(notes, hg_id.hash, git_id.hash, NULL);
 		if (heads)
 			add_head(heads, git_id.hash);
 	}
@@ -456,9 +470,11 @@ static void do_store(struct string_list *args)
 		die("store needs 3 arguments");
 
 	if (!strcmp(args->items[0].string, "metadata")) {
-		if (!strcmp(args->items[1].string, "hg2git")) {
+		if (!strcmp(args->items[1].string, "hg2git") ||
+		    !strcmp(args->items[1].string, "git2hg")) {
 			struct object_id result;
-			store_notes(&hg2git, &result);
+			store_notes(args->items[1].string[0] == 'h' ?
+			            &hg2git : &git2hg, &result);
 			write_or_die(1, oid_to_hex(&result), 40);
 			write_or_die(1, "\n", 1);
 		} else {

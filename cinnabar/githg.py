@@ -802,8 +802,6 @@ class GitHgStore(object):
         self._closed = False
         self._graft = None
 
-        self._changeset_data_cache = {}
-
         self._hgheads = VersionedDict()
 
         self._replace = Git._replace
@@ -944,8 +942,6 @@ class GitHgStore(object):
 
     def read_changeset_data(self, obj):
         obj = str(obj)
-        if obj in self._changeset_data_cache:
-            return self._changeset_data_cache[obj]
         data = GitHgHelper.git2hg(obj)
         if data is None:
             return None
@@ -1141,8 +1137,9 @@ class GitHgStore(object):
 
         GitHgHelper.set('changeset', instance.node, commit.sha1)
         changeset = Changeset.from_git_commit(commit)
-        self._changeset_data_cache[commit.sha1] = ChangesetPatcher.from_diff(
-            changeset, instance)
+        self._fast_import.put_blob(
+            ChangesetPatcher.from_diff(changeset, instance), want_sha1=False)
+        GitHgHelper.set('changeset-metadata', instance.node, ':1')
 
         if track_heads:
             self.add_head(instance.node, instance.parent1, instance.parent2)
@@ -1216,20 +1213,14 @@ class GitHgStore(object):
             ) as commit:
                 commit.write('M 040000 %s \n' % tree)
 
-        removed_git2hg = [
-            c for c, data in self._changeset_data_cache.iteritems()
-            if data is None
-        ]
-        if self._changeset_data_cache or removed_git2hg:
+        tree = GitHgHelper.store('metadata', 'git2hg')
+        if tree != NULL_NODE_ID:
             notes = Git.resolve_ref('refs/notes/cinnabar')
             with self._fast_import.commit(
                 ref='refs/notes/cinnabar',
-                from_commit=notes,
             ) as commit:
-                for mark, data in self._changeset_data_cache.iteritems():
-                    commit.notemodify(mark, data)
-                for c in removed_git2hg:
-                    commit.write('N %s %s\n' % (NULL_NODE_ID, c))
+                commit.write('M 040000 %s \n' % tree)
+            if commit.sha1 != notes:
                 update_metadata.append('refs/notes/cinnabar')
 
         if any(self._hgheads.iterchanges()):
