@@ -70,6 +70,9 @@ matrix:
     - env:
       - VARIANT=coverage
       - UPGRADE_FROM=0.3.0
+    - env:
+      - VARIANT=coverage
+      - UPGRADE_FROM=0.4.0
     - env: GIT_VERSION=v2.7.4
     - env: GIT_VERSION=v1.8.5
     - env: MERCURIAL_VERSION=installed
