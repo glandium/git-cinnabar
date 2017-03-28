@@ -370,12 +370,53 @@ static void add_head(struct sha1_array *heads, const unsigned char *sha1)
 	sha1_array_insert(heads, -pos - 1, sha1);
 }
 
+static void handle_changeset_conflict(struct object_id *hg_id,
+                                      struct object_id *git_id)
+{
+	/* There are cases where two changesets would map to the same git
+	 * commit because their differences are not in information stored in
+	 * the git commit (different manifest node, but identical tree ;
+	 * different branches ; etc.)
+	 * In that case, add invisible characters to the commit message until
+	 * we find a commit that doesn't map to another changeset.
+	 */
+	struct strbuf buf = STRBUF_INIT;
+	const unsigned char *note;
+
+	ensure_notes(&git2hg);
+	while ((note = get_note(&git2hg, git_id->hash))) {
+		struct object_id oid;
+		enum object_type type;
+		unsigned long len;
+		char *content = read_sha1_file_extended(note, &type, &len, 0);
+		if (len < 50 || !starts_with(content, "changeset ") ||
+		    get_oid_hex(&content[10], &oid))
+			die("Invalid git2hg note for %s", oid_to_hex(git_id));
+
+		/* We might just already have the changeset in store */
+		if (oidcmp(&oid, hg_id) == 0)
+			break;
+
+		if (!buf.len) {
+			content = read_sha1_file_extended(git_id->hash, &type,
+			                                  &len, 0);
+			strbuf_add(&buf, content, len);
+		}
+
+		strbuf_addch(&buf, '\0');
+		store_object(OBJ_COMMIT, &buf, NULL, git_id->hash, 0);
+	}
+	strbuf_release(&buf);
+
+}
+
 static void do_set(struct string_list *args)
 {
 	enum object_type type;
 	struct object_id hg_id, git_id;
 	struct sha1_array *heads = NULL;
 	struct notes_tree *notes = &hg2git;
+	int is_changeset = 0;
 
 	if (args->nr != 3)
 		die("set needs 3 arguments");
@@ -387,6 +428,8 @@ static void do_set(struct string_list *args)
 		type = OBJ_COMMIT;
 		if (args->items[0].string[0] == 'm')
 			heads = &manifest_heads;
+		else
+			is_changeset = 1;
 	} else if (!strcmp(args->items[0].string, "changeset-metadata")) {
 		type = OBJ_BLOB;
 		notes = &git2hg;
@@ -420,6 +463,8 @@ static void do_set(struct string_list *args)
 	} else if (sha1_object_info(git_id.hash, NULL) != type) {
 		die("Invalid object");
 	} else {
+		if (is_changeset)
+			handle_changeset_conflict(&hg_id, &git_id);
 		add_note(notes, hg_id.hash, git_id.hash, NULL);
 		if (heads)
 			add_head(heads, git_id.hash);

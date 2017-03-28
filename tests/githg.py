@@ -225,3 +225,32 @@ class TestChangesetPatcher(unittest.TestCase):
             'patch 74,75,1\x00187,187,%0A'
         )
         self.compare(patcher.apply(changeset), changeset2)
+
+    def test_changeset_conflict(self):
+        changeset = Changeset()
+        changeset.author = 'Foo Bar <foo@bar>'
+        changeset.timestamp = '1482880019'
+        changeset.utcoffset = '-7200'
+        changeset.body = 'Some commit'
+
+        patcher = ChangesetPatcher(
+            'changeset 819432449785de2ce91b6afffec95a3cdee8c58b\n'
+            'manifest b80de5d138758541c5f05265ad144ab9fa86d1db\n'
+        )
+
+        changeset2 = patcher.apply(changeset)
+
+        self.assertEqual(changeset2.sha1, changeset2.node)
+
+        patcher = ChangesetPatcher(
+            'changeset 44d7916212a640292755f2a135e3cf90f355a1ff\n'
+            'manifest b80de5d138758541c5f05265ad144ab9fa86d1db\n'
+            'extra branch:foo\n'
+        )
+
+        changeset2 = patcher.apply(changeset)
+        self.assertEqual(changeset2.sha1, changeset2.node)
+
+        changeset.body += '\0'
+        changeset2 = patcher.apply(changeset)
+        self.assertEqual(changeset2.sha1, changeset2.node)

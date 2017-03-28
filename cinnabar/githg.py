@@ -389,6 +389,13 @@ class ChangesetPatcher(str):
                 chunk = self.ChangesetPatch(changeset, v)
                 changeset = Changeset.from_chunk(chunk, changeset)
 
+        # This should not occur in normal changeset bodies. If it occurs,
+        # it likely comes from our handling of conflicting commits.
+        # So in that case, adjust until we have the right sha1.
+        while changeset.body.endswith('\0') and \
+                changeset.sha1 != changeset.node:
+            changeset.body = changeset.body[:-1]
+
         return changeset
 
     @classmethod
@@ -1112,25 +1119,18 @@ class GitHgStore(object):
             # changeset.
             committer = committer.to_git_str()
             author = author.to_git_str()
-            while True:
-                with self._fast_import.commit(
-                    ref='refs/cinnabar/tip',
-                    message=body,
-                    committer=committer,
-                    author=author,
-                    parents=parents,
-                    pseudo_mark=':h%s' % instance.node,
-                ) as c:
-                    c.filemodify('', ':h%s:git' % instance.manifest,
-                                 typ='tree')
+            with self._fast_import.commit(
+                ref='refs/cinnabar/tip',
+                message=body,
+                committer=committer,
+                author=author,
+                parents=parents,
+                pseudo_mark=':h%s' % instance.node,
+            ) as c:
+                c.filemodify('', ':h%s:git' % instance.manifest,
+                             typ='tree')
 
-                mark = self._fast_import.get_mark(1)
-                if self.hg_changeset(mark):
-                    body += '\0'
-                    continue
-                break
-
-            commit = PseudoGitCommit(mark)
+            commit = PseudoGitCommit(':1')
             commit.author = author
             commit.committer = committer
             commit.body = body
