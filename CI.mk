@@ -223,6 +223,16 @@ script::
 	$(GIT) -C hg.unbundle.git cinnabar fsck
 
 script::
+	rm -rf hg.incr.hg hg.incr.git
+	$(HG) init hg.incr.hg
+	# /!\ this only really works for an unchanged $(REPO)
+	$(HG) -R hg.incr.hg pull $(CURDIR)/hg.hg -r c262fcbf0656 -r 46585998e744
+	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.incr.hg hg.incr.git
+	$(HG) -R hg.incr.hg pull $(CURDIR)/hg.hg
+	$(GIT) -C hg.incr.git remote update
+	$(GIT) -C hg.incr.git cinnabar fsck
+
+script::
 	rm -rf hg.push.hg hg.pure.git
 	$(call HG_INIT, hg.push.hg)
 	# || exit 1 forces mingw32-make to wrap the command through a shell, which works
