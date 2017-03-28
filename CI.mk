@@ -215,10 +215,12 @@ script::
 	$(HG) -R hg.hg verify
 	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.hg hg.git
 	$(call COMPARE_REFS, hg.old.git, hg.git)
+	$(GIT) -C hg.git cinnabar fsck
 
 	$(GIT) -C hg.git cinnabar bundle $(CURDIR)/hg.bundle -- --remotes
 	$(GIT) -c fetch.prune=true clone hg::$(CURDIR)/hg.bundle hg.unbundle.git
 	$(call COMPARE_REFS, hg.git, hg.unbundle.git)
+	$(GIT) -C hg.unbundle.git cinnabar fsck
 
 script::
 	rm -rf hg.push.hg hg.pure.git
