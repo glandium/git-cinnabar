@@ -652,7 +652,7 @@ class Grafter(object):
 
     def _is_cinnabar_commit(self, commit):
         data = self._store.read_changeset_data(commit)
-        return 'patch' not in data if data else False
+        return '\npatch' not in data if data else False
 
     def _graft(self, changeset, parents):
         store = self._store
@@ -711,10 +711,9 @@ class Grafter(object):
             possible_nodes = []
             for node in nodes:
                 commit = commits[node]
-                store.store_changeset(changeset, commit, track_heads=False)
-                GitHgHelper.set('changeset', changeset.node, NULL_NODE_ID)
-                sha1 = commit.sha1
-                if not self._is_cinnabar_commit(sha1):
+                cs = Changeset.from_git_commit(commit)
+                patcher = ChangesetPatcher.from_diff(cs, changeset)
+                if '\npatch' in patcher:
                     possible_nodes.append(node)
             nodes = possible_nodes
 
