@@ -347,7 +347,7 @@ static void do_git2hg(struct string_list *args)
 	if (args->nr != 1)
 		goto not_found;
 
-	ensure_git2hg();
+	ensure_notes(&git2hg);
 
 	if (get_sha1_committish(args->items[0].string, sha1))
 		goto not_found;
@@ -487,7 +487,7 @@ static const unsigned char *resolve_hg2git(const unsigned char *sha1,
 {
 	const unsigned char *note;
 
-	ensure_hg2git();
+	ensure_notes(&hg2git);
 
 	note = get_note(&hg2git, sha1);
 	if (len == 40)

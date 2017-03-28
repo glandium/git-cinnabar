@@ -10,16 +10,18 @@
 
 extern struct notes_tree git2hg, hg2git;
 
-static inline void ensure_git2hg()
+static inline void ensure_notes(struct notes_tree *notes)
 {
-	if (!git2hg.initialized)
-		init_notes(&git2hg, NOTES_REF, combine_notes_ignore, 0);
-}
-
-static inline void ensure_hg2git()
-{
-	if (!hg2git.initialized)
-		init_notes(&hg2git, HG2GIT_REF, combine_notes_ignore, 0);
+	if (!notes->initialized) {
+		const char *ref;
+		if (notes == &git2hg)
+			ref = NOTES_REF;
+		else if (notes == &hg2git)
+			ref = HG2GIT_REF;
+		else
+			die("Unknown notes tree");
+		init_notes(notes, ref, combine_notes_ignore, 0);
+	}
 }
 
 #endif

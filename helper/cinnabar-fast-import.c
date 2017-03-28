@@ -212,7 +212,7 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 	if (get_oid_hex(p + 2, &oid))
 		die("Invalid sha1");
 
-	ensure_hg2git();
+	ensure_notes(&hg2git);
 	note = get_note(&hg2git, oid.hash);
 	*endptr = (char *)p + 42;
 	if (**endptr == ':') {
@@ -390,7 +390,7 @@ static void do_set(struct string_list *args)
 	} else if (get_oid_hex(args->items[2].string, &git_id))
 		die("Invalid sha1");
 
-	ensure_hg2git();
+	ensure_notes(&hg2git);
 	if (is_null_oid(&git_id)) {
 		remove_note(&hg2git, hg_id.hash);
 	} else if (sha1_object_info(git_id.hash, NULL) != type) {
