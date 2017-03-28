@@ -311,41 +311,51 @@ static void sha1_array_remove(struct sha1_array *array, int index)
 	        sizeof(array->sha1[0]) * (array->nr-- - index));
 }
 
+static void add_head(struct sha1_array *heads, const unsigned char *sha1);
+
+void ensure_heads(struct sha1_array *heads)
+{
+	struct commit *c = NULL;
+	struct commit_list *parent;
+	const char *body = NULL;
+
+	/* We always keep the array sorted, so if it's not sorted, it's
+	 * not initialized. */
+	if (heads->sorted)
+		return;
+
+	heads->sorted = 1;
+	if (heads == &manifest_heads)
+		c = lookup_commit_reference_by_name(MANIFESTS_REF);
+	if (c)
+		body = strstr(get_commit_buffer(c, NULL), "\n\n") + 2;
+	for (parent = c ? c->parents : NULL; parent;
+	     parent = parent->next) {
+		const unsigned char *parent_sha1 =
+			parent->item->object.oid.hash;
+		/* Skip first parent when "has-flat-manifest-tree" is
+		 * there */
+		if (body && parent == c->parents &&
+		    !strcmp(body, "has-flat-manifest-tree"))
+			continue;
+		if (!heads->nr || hashcmp(heads->sha1[heads->nr-1],
+		                          parent_sha1)) {
+			sha1_array_insert(heads, heads->nr, parent_sha1);
+		} else {
+			/* This should not happen, but just in case,
+			 * instead of failing. */
+			add_head(heads, parent_sha1);
+		}
+	}
+}
+
 static void add_head(struct sha1_array *heads, const unsigned char *sha1)
 {
 	struct commit *c = NULL;
 	struct commit_list *parent;
 	int pos;
 
-	/* We always keep the array sorted, so if it's not sorted, it's
-	 * not initialized. */
-	if (!heads->sorted) {
-		const char *body = NULL;
-		heads->sorted = 1;
-		if (heads == &manifest_heads)
-			c = lookup_commit_reference_by_name(MANIFESTS_REF);
-		if (c)
-			body = strstr(get_commit_buffer(c, NULL), "\n\n") + 2;
-		for (parent = c ? c->parents : NULL; parent;
-		     parent = parent->next) {
-			const unsigned char *parent_sha1 =
-				parent->item->object.oid.hash;
-			/* Skip first parent when "has-flat-manifest-tree" is
-			 * there */
-			if (body && parent == c->parents &&
-			    !strcmp(body, "has-flat-manifest-tree"))
-				continue;
-			if (!heads->nr || hashcmp(heads->sha1[heads->nr-1],
-			                          parent_sha1)) {
-				sha1_array_insert(heads, heads->nr, parent_sha1);
-			} else {
-				/* This should not happen, but just in case,
-				 * instead of failing. */
-				add_head(heads, parent_sha1);
-			}
-		}
-	}
-
+	ensure_heads(heads);
 	c = lookup_commit(sha1);
 	parse_commit_or_die(c);
 

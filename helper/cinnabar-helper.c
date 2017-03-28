@@ -1241,8 +1241,6 @@ static void do_connect(struct string_list *args)
 	}
 }
 
-extern struct sha1_array manifest_heads;
-
 int add_each_head(const unsigned char sha1[20], void *data)
 {
 	struct strbuf *buf = (struct strbuf *)data;
@@ -1265,7 +1263,8 @@ static void do_heads(struct string_list *args)
         } else
                 die("Unknown kind: %s", args->items[0].string);
 
-        sha1_array_for_each_unique(heads, add_each_head, &heads_buf);
+	ensure_heads(heads);
+	sha1_array_for_each_unique(heads, add_each_head, &heads_buf);
 	send_buffer(&heads_buf);
 	strbuf_release(&heads_buf);
 }

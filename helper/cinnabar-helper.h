@@ -8,6 +8,10 @@
 #define HG2GIT_REF METADATA_REF "^3"
 #define NOTES_REF METADATA_REF "^4"
 
+extern struct sha1_array manifest_heads;
+
+extern void ensure_heads(struct sha1_array *heads);
+
 extern struct notes_tree git2hg, hg2git;
 
 static inline void ensure_notes(struct notes_tree *notes)
