@@ -728,7 +728,7 @@ class Grafter(object):
             return commits[node]
         return None
 
-    def graft(self, changeset, track_heads=True):
+    def graft(self, changeset):
         # TODO: clarify this function because it's hard to follow.
         store = self._store
         parents = tuple(store.changeset_ref(p) for p in changeset.parents)
@@ -743,7 +743,7 @@ class Grafter(object):
             commit = store.changeset_ref(changeset.node)
         else:
             commit = result
-        store.store_changeset(changeset, commit or False, track_heads)
+        store.store_changeset(changeset, commit or False)
         commit = store.changeset_ref(changeset.node)
         if is_early_history:
             if result:
@@ -1079,11 +1079,11 @@ class GitHgStore(object):
             tree = EMPTY_TREE
         return tree
 
-    def store_changeset(self, instance, commit=None, track_heads=True):
+    def store_changeset(self, instance, commit=None):
         if commit and not isinstance(commit, GitCommit):
             commit = GitCommit(commit)
         if commit is None and self._graft:
-            return self._graft.graft(instance, track_heads)
+            return self._graft.graft(instance)
 
         if not commit:
             author = Authorship.from_hg(instance.author, instance.timestamp,
@@ -1140,8 +1140,7 @@ class GitHgStore(object):
             ChangesetPatcher.from_diff(changeset, instance), want_sha1=False)
         GitHgHelper.set('changeset-metadata', instance.node, ':1')
 
-        if track_heads:
-            self.add_head(instance.node, instance.parent1, instance.parent2)
+        self.add_head(instance.node, instance.parent1, instance.parent2)
 
     TYPE = {
         '': 'regular',
