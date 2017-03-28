@@ -270,17 +270,20 @@ script::
 	$(GIT) -C hg.graft.git filter-branch --msg-filter 'cat ; echo' --original original -- --all
 	$(GIT) -C hg.graft.git -c cinnabar.graft=true remote update
 	$(call COMPARE_REFS, hg.old.git, hg.graft.git, XARGS_GIT2HG)
+	$(GIT) -C hg.graft.git cinnabar fsck
 
 	$(GIT) -C hg.graft.git push $(CURDIR)/hg.graft2.git refs/remotes/origin/*:refs/remotes/new/*
 	$(GIT) -C hg.graft2.git remote set-url origin hg::$(REPO)
 	$(GIT) -C hg.graft2.git -c cinnabar.graft=true cinnabar reclone
 	$(call COMPARE_REFS, hg.graft.git, hg.graft2.git)
+	$(GIT) -C hg.graft2.git cinnabar fsck
 
 	$(GIT) -C hg.graft.git cinnabar rollback 0000000000000000000000000000000000000000
 	$(GIT) -C hg.graft.git filter-branch --index-filter 'test $$GIT_COMMIT = '$$($(call GET_ROOTS,hg.graft.git,--remotes))' && git rm -r --cached -- \* || true' --original original -- --all
 	$(GIT) -C hg.graft.git -c cinnabar.graft=true remote update
 	$(call COMPARE_REFS, hg.old.git, hg.graft.git, XARGS_GIT2HG)
 	$(call COMPARE_COMMANDS,$(call GET_ROOTS,hg.old.git,--remotes),$(call GET_ROOTS,hg.graft.git,--glob=refs/cinnabar/replace))
+	$(GIT) -C hg.graft.git cinnabar fsck
 
 script::
 	rm -f hg.graft.new.bundle
