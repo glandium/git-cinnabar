@@ -307,9 +307,10 @@ def fsck(args):
         manifest_ref = store.manifest_ref(manifest)
         if not manifest_ref:
             report('Missing manifest in hg2git branch: %s' % manifest)
-        elif (not args.commit and manifest_ref not in manifest_commits):
-            report('Missing manifest commit in manifest branch: %s' %
-                   manifest_ref)
+        elif not args.commit and manifest_ref not in manifest_commits:
+            fix('Missing manifest commit in manifest branch: %s' %
+                manifest_ref)
+            manifest_commits[manifest_ref] = GitCommit(manifest_ref).parents
 
         parents = tuple(
             store.changeset(p).manifest
