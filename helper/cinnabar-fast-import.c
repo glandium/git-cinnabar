@@ -134,6 +134,23 @@ static void cleanup()
 	if (!initialized)
 		return;
 
+	if (require_explicit_termination)
+		object_count = 0;
+	end_packfile();
+	reprepare_packed_git();
+
+	if (!require_explicit_termination)
+		dump_branches();
+
+	unkeep_all_packs();
+
+	initialized = 0;
+
+	pack_report();
+}
+
+static void end_packfile()
+{
 	if (prev_win)
 		unuse_pack(&prev_win);
 	if (pack_data) {
@@ -152,6 +169,7 @@ static void cleanup()
 	if (pack_win) {
 		free(pack_win->base);
 		free(pack_win);
+		pack_win = NULL;
 	}
 
 	/* uninstall_packed_git(pack_data) */
@@ -169,19 +187,7 @@ static void cleanup()
 		}
 	}
 
-	if (require_explicit_termination)
-		object_count = 0;
-	end_packfile();
-	reprepare_packed_git();
-
-	if (!require_explicit_termination)
-		dump_branches();
-
-	unkeep_all_packs();
-
-	initialized = 0;
-
-	pack_report();
+	real_end_packfile();
 }
 
 const unsigned char empty_tree[20] = {

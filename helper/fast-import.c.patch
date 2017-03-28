@@ -1,7 +1,16 @@
 diff --git a/fast-import.c b/fast-import.c
-index 64fe602f0..77de85a28 100644
+index 64fe602f0..346ed573c 100644
 --- a/fast-import.c
 +++ b/fast-import.c
+@@ -994,7 +994,7 @@ static int loosen_small_pack(const struct packed_git *p)
+ 	return run_command(&unpack);
+ }
+ 
+-static void end_packfile(void)
++static void real_end_packfile(void)
+ {
+ 	static int running;
+ 
 @@ -2308,7 +2308,9 @@ static uintmax_t change_note_fanout(struct tree_entry *root,
   * Complain if the following character is not what is expected,
   * either a space or end of the string.
