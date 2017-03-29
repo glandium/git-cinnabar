@@ -255,14 +255,18 @@ XARGS_GIT2HG = xargs $(GIT) -C $1 cinnabar git2hg
 ifndef NO_BUNDLE2
 
 script::
+	rm -rf hg.hg
+	$(HG) clone $(REPO) hg.hg
+
+script::
 	rm -rf hg.graft.git hg.graft2.git
 	$(GIT) init hg.graft.git
-	$(GIT) -C hg.graft.git remote add origin hg::$(REPO)
+	$(GIT) -C hg.graft.git remote add origin hg::$(PATH_URL)/hg.hg
 	$(GIT) -C hg.old.git push $(CURDIR)/hg.graft.git refs/remotes/*:refs/remotes/*
 	$(GIT) -C hg.graft.git checkout $$($(GIT) -C hg.old.git rev-parse HEAD)
 
 	$(GIT) init hg.graft2.git
-	$(GIT) -C hg.graft2.git remote add origin hg::$(REPO)
+	$(GIT) -C hg.graft2.git remote add origin hg::$(PATH_URL)/hg.hg
 	$(GIT) -C hg.old.git push $(CURDIR)/hg.graft2.git refs/remotes/*:refs/remotes/*
 	$(GIT) -C hg.graft2.git checkout $$($(GIT) -C hg.old.git rev-parse HEAD)
 
@@ -273,7 +277,7 @@ script::
 	$(GIT) -C hg.graft.git cinnabar fsck
 
 	$(GIT) -C hg.graft.git push $(CURDIR)/hg.graft2.git refs/remotes/origin/*:refs/remotes/new/*
-	$(GIT) -C hg.graft2.git remote set-url origin hg::$(REPO)
+	$(GIT) -C hg.graft2.git remote set-url origin hg::$(PATH_URL)/hg.hg
 	$(GIT) -C hg.graft2.git -c cinnabar.graft=true cinnabar reclone
 	$(call COMPARE_REFS, hg.graft.git, hg.graft2.git)
 	$(GIT) -C hg.graft2.git cinnabar fsck
