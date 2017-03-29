@@ -289,6 +289,10 @@ script::
 	$(call COMPARE_COMMANDS,$(call GET_ROOTS,hg.old.git,--remotes),$(call GET_ROOTS,hg.graft.git,--glob=refs/cinnabar/replace))
 	$(GIT) -C hg.graft.git cinnabar fsck
 
+	$(GIT) -C hg.graft.git cinnabar rollback 0000000000000000000000000000000000000000
+	$(GIT) for-each-ref --format='%(refname)' | grep -v refs/remotes/origin/HEAD | sed 's/^/delete /' | $(GIT) update-ref --stdin
+	$(GIT) -C hg.graft.git -c cinnabar.graft=true remote update
+
 script::
 	rm -f hg.graft.new.bundle
 	$(GIT) -C hg.graft2.git checkout refs/remotes/new/HEAD
