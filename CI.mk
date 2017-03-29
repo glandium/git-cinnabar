@@ -290,7 +290,7 @@ script::
 	$(GIT) -C hg.graft.git cinnabar fsck
 
 	$(GIT) -C hg.graft.git cinnabar rollback 0000000000000000000000000000000000000000
-	$(GIT) for-each-ref --format='%(refname)' | grep -v refs/remotes/origin/HEAD | sed 's/^/delete /' | $(GIT) update-ref --stdin
+	$(GIT) -C hg.graft.git for-each-ref --format='%(refname)' | grep -v refs/remotes/origin/HEAD | sed 's/^/delete /' | $(GIT) -C hg.graft.git update-ref --stdin
 	$(GIT) -C hg.graft.git -c cinnabar.graft=true remote update
 
 script::
