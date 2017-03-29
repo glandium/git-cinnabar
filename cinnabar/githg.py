@@ -938,13 +938,8 @@ class GitHgStore(object):
                 if parent_head in self._hgheads:
                     assert parent_branch == self._hgheads[parent_head]
                     del self._hgheads[parent_head]
-                ref = self.changeset_ref(parent_head)
-                if ref in self._tagcache:
-                    self._tagcache[ref] = False
 
         self._hgheads[head] = branch
-        ref = self.changeset_ref(head)
-        self._tagcache[ref] = None
 
     def read_changeset_data(self, obj):
         obj = str(obj)
@@ -1221,12 +1216,15 @@ class GitHgStore(object):
             if commit.sha1 != notes:
                 update_metadata.append('refs/notes/cinnabar')
 
+        hg_changeset_heads = list(self._hgheads)
+        changeset_heads = sorted(self.changeset_ref(h)
+                                 for h in hg_changeset_heads)
         if any(self._hgheads.iterchanges()):
             with self._fast_import.commit(
                 ref='refs/cinnabar/changesets',
-                parents=(self.changeset_ref(h) for h in self._hgheads),
-                message='\n'.join('%s %s' % (h, b)
-                                  for h, b in self._hgheads.iteritems()),
+                parents=changeset_heads,
+                message='\n'.join('%s %s' % (h, self._hgheads[h])
+                                  for h in hg_changeset_heads),
             ) as commit:
                 update_metadata.append('refs/cinnabar/changesets')
 
@@ -1275,8 +1273,12 @@ class GitHgStore(object):
                 for sha1, target in self._replace.iteritems():
                     commit.filemodify(sha1, target, 'commit')
 
-        for c, f in self._tagcache.items():
-            if f is None:
+        for c in self._tagcache:
+            if c not in changeset_heads:
+                self._tagcache[c] = False
+
+        for c in changeset_heads:
+            if c not in self._tagcache:
                 tags = self._get_hgtags(c)
 
         files = set(self._tagcache.itervalues())
