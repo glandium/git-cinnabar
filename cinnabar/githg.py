@@ -809,6 +809,7 @@ class GitHgStore(object):
         self._graft = None
 
         self._hgheads = VersionedDict()
+        self._branches = {}
 
         self._replace = Git._replace
         # While doing a for_each_ref, ensure refs/notes/cinnabar is in the
@@ -925,7 +926,12 @@ class GitHgStore(object):
                    if not branches or b in branches)
 
     def _head_branch(self, head):
+        if head in self._hgheads:
+            return self._hgheads[head], head
+        if head in self._branches:
+            return self._branches[head], head
         branch = self.changeset(head).branch or 'default'
+        self._branches[head] = branch
         return branch, head
 
     def add_head(self, head, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
@@ -1135,6 +1141,7 @@ class GitHgStore(object):
             ChangesetPatcher.from_diff(changeset, instance), want_sha1=False)
         GitHgHelper.set('changeset-metadata', instance.node, ':1')
 
+        self._branches[instance.node] = instance.branch or 'default'
         self.add_head(instance.node, instance.parent1, instance.parent2)
 
     TYPE = {
