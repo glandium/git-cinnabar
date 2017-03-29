@@ -11,7 +11,10 @@ from cinnabar.githg import (
 )
 from cinnabar.hg.repo import Remote
 import logging
-from cinnabar.remote_helper import GitRemoteHelper
+from cinnabar.remote_helper import (
+    GitRemoteHelper,
+    TagsRemoteHelper,
+)
 from cinnabar.util import run
 
 
@@ -30,7 +33,10 @@ def main(args):
         logging.error(e.message)
         return 1
 
-    helper = GitRemoteHelper(store, remote)
+    if remote.url == 'tags:':
+        helper = TagsRemoteHelper(store)
+    else:
+        helper = GitRemoteHelper(store, remote)
     helper.run()
 
     store.close()

@@ -42,38 +42,11 @@ def sanitize_branch_name(name):
     return name.replace('%', '%25').replace(' ', '%20')
 
 
-class GitRemoteHelper(object):
-    def __init__(self, store, remote, stdin=sys.stdin, stdout=sys.stdout):
-        self._store = store
-        self._repo = get_repo(remote)
-        if isinstance(self._repo, bundlerepo):
-            self._repo.init(self._store)
-        self._remote = remote
+class BaseRemoteHelper(object):
+    def __init__(self, stdin=sys.stdin, stdout=sys.stdout):
+        self._dry_run = False
         self._helper = IOLogger(logging.getLogger('remote-helper'),
                                 stdin, stdout)
-
-        self._dry_run = False
-        self._branchmap = None
-        self._bookmarks = {}
-        self._HEAD = 'branches/default/tip'
-        self._has_unknown_heads = False
-
-        GRAFT = {
-            None: False,
-            'false': False,
-            'true': True,
-        }
-        try:
-            self._graft = Git.config('cinnabar.graft', remote=remote.name,
-                                     values=GRAFT)
-        except InvalidConfig as e:
-            logging.error(e.message)
-            return 1
-        if Git.config('cinnabar.graft-refs') is not None:
-            logging.warn(
-                'The cinnabar.graft-refs configuration is deprecated.\n'
-                'Please unset it.'
-            )
 
     def run(self):
         while True:
@@ -100,15 +73,83 @@ class GitRemoteHelper(object):
                 assert args
                 args = args[0].split(' ', 1)
 
-            func = {
-                'capabilities': self.capabilities,
-                'list': self.list,
-                'option': self.option,
-                'import': self.import_,
-                'push': self.push,
-            }.get(cmd)
+            if cmd in (
+                'capabilities',
+                'list',
+                'option',
+                'import',
+                'push',
+            ):
+                if cmd == 'import':
+                    # Can't have a method named import
+                    cmd = 'import_'
+                func = getattr(self, cmd, None)
             assert func
             func(*args)
+
+    def option(self, name, value):
+        if name == 'progress' and value in ('true', 'false'):
+            cinnabar.util.progress = value == 'true'
+            self._helper.write('ok\n')
+        elif name == 'dry-run' and value in ('true', 'false'):
+            self._dry_run = value == 'true'
+            self._helper.write('ok\n')
+        else:
+            self._helper.write('unsupported\n')
+        self._helper.flush()
+
+
+class TagsRemoteHelper(BaseRemoteHelper):
+    def __init__(self, store, stdin=sys.stdin, stdout=sys.stdout):
+        super(TagsRemoteHelper, self).__init__(stdin, stdout)
+        self._store = store
+
+    def capabilities(self):
+        self._helper.write(
+            'option\n'
+            'import\n'
+            'refspec HEAD:refs/cinnabar/HEAD\n'
+            '\n'
+        )
+        self._helper.flush()
+
+    def list(self, arg=None):
+        for tag, ref in sorted(self._store.tags(self._store.heads())):
+            self._helper.write('%s refs/tags/%s\n' % (ref, tag))
+        self._helper.write('\n')
+        self._helper.flush()
+
+
+class GitRemoteHelper(BaseRemoteHelper):
+    def __init__(self, store, remote, stdin=sys.stdin, stdout=sys.stdout):
+        super(GitRemoteHelper, self).__init__(stdin, stdout)
+        self._store = store
+        self._repo = get_repo(remote)
+        if isinstance(self._repo, bundlerepo):
+            self._repo.init(self._store)
+        self._remote = remote
+
+        self._branchmap = None
+        self._bookmarks = {}
+        self._HEAD = 'branches/default/tip'
+        self._has_unknown_heads = False
+
+        GRAFT = {
+            None: False,
+            'false': False,
+            'true': True,
+        }
+        try:
+            self._graft = Git.config('cinnabar.graft', remote=remote.name,
+                                     values=GRAFT)
+        except InvalidConfig as e:
+            logging.error(e.message)
+            return 1
+        if Git.config('cinnabar.graft-refs') is not None:
+            logging.warn(
+                'The cinnabar.graft-refs configuration is deprecated.\n'
+                'Please unset it.'
+            )
 
     def capabilities(self):
         self._helper.write(
@@ -225,9 +266,6 @@ class GitRemoteHelper(object):
             refs['refs/heads/bookmarks/%s' % name] = sha1
         if fetch:
             refs['hg/revs/%s' % fetch] = fetch
-        if not self._has_unknown_heads:
-            for tag, ref in sorted(self._store.tags(branchmap.heads())):
-                refs['refs/tags/%s' % tag] = 'git:%s' % ref
 
         if '@' in bookmarks:
             self._HEAD = 'bookmarks/@'
@@ -241,26 +279,13 @@ class GitRemoteHelper(object):
                       for k, v in refs.iteritems()}
 
         for k, v in sorted(self._refs.iteritems()):
-            if v.startswith('git:'):
-                v = v[4:]
-            elif k.startswith('refs/heads/branches/'):
+            if k.startswith('refs/heads/branches/'):
                 v = self._store.changeset_ref(v) or self._branchmap.git_sha1(v)
             elif not v.startswith('@'):
                 v = self._store.changeset_ref(v) or '?'
             self._helper.write('%s %s\n' % (v, k))
 
         self._helper.write('\n')
-        self._helper.flush()
-
-    def option(self, name, value):
-        if name == 'progress' and value in ('true', 'false'):
-            cinnabar.util.progress = value == 'true'
-            self._helper.write('ok\n')
-        elif name == 'dry-run' and value in ('true', 'false'):
-            self._dry_run = value == 'true'
-            self._helper.write('ok\n')
-        else:
-            self._helper.write('unsupported\n')
         self._helper.flush()
 
     def import_(self, *refs):
@@ -277,7 +302,6 @@ class GitRemoteHelper(object):
                 return resolved
             if resolved.startswith('@'):
                 return self._refs.get(resolved[1:])
-            assert not resolved.startswith('git:')
             return resolved
 
         wanted_refs = {k: v for k, v in (

@@ -87,6 +87,28 @@ like `refs/heads/branches/*/tip:ref/remotes/$remote/*`.
 See https://github.com/glandium/git-cinnabar/wiki/Mozilla:-A-git-workflow-for-Gecko-development
 for an example workflow for Mozilla repositories.
 
+Tags:
+-----
+
+Because mercurial stores tags in a file in the repository, it is not possible
+for git-cinnabar to know them when git asks for them, except when the
+repository has already been updated. Until version 0.4.0, git-cinnabar would
+try to get tags in a best effort way.
+
+Furthermore, the way tags are tracked across branches in mercurial can make it
+awkward when pulling from multiple mercurial repositories. For example, pulling
+tags from mozilla-release, mozilla-beta, and mozilla-esr\* repositories is messy.
+
+So, as of 0.5.0, tags are not associated with mercurial remotes anymore, and one
+needs to setup a separate remote that consolidates all mercurial tags tracked by
+git-cinnabar. That remote can be set like the following:
+
+`$ git remote add tags hg::tags:`
+
+And tags can be updated with, e.g.:
+
+`$ git fetch tags`
+
 Translating git commits to mercurial changesets and vice-versa:
 ---------------------------------------------------------------
 
@@ -201,3 +223,9 @@ The default protocol is https, and the port can be omitted.
   becomes
 
   `hg://localhost:8080.http/foo`
+
+- `hg::tags:`
+
+  becomes
+
+  `hg://:tags`
