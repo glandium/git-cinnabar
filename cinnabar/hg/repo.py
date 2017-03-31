@@ -417,6 +417,21 @@ class HelperRepo(object):
         raise Exception('Unknown revision %s' % key)
 
 
+def unbundle_fh(fh, path):
+    header = readexactly(fh, 4)
+    magic, version = header[0:2], header[2:4]
+    if magic != 'HG':
+        raise Exception('%s: not a Mercurial bundle' % path)
+    if version == '10':
+        alg = readexactly(fh, 2)
+        return cg1unpacker(fh, alg)
+    elif unbundle20 and version.startswith('2'):
+        return getunbundler(get_ui(), fh, magicstring=header)
+    else:
+        raise Exception('%s: unsupported bundle version %s' % (path,
+                        version))
+
+
 # Mercurial's bundlerepo completely unwraps bundles in $TMPDIR but we can be
 # smarter than that.
 class bundlerepo(object):
@@ -424,18 +439,7 @@ class bundlerepo(object):
         self._url = path
         if fh is None:
             fh = open(path, 'r')
-        header = readexactly(fh, 4)
-        magic, version = header[0:2], header[2:4]
-        if magic != 'HG':
-            raise Exception('%s: not a Mercurial bundle' % path)
-        if version == '10':
-            alg = readexactly(fh, 2)
-            self._bundle = cg1unpacker(fh, alg)
-        elif unbundle20 and version.startswith('2'):
-            self._bundle = getunbundler(get_ui(), fh, magicstring=header)
-        else:
-            raise Exception('%s: unsupported bundle version %s' % (path,
-                            version))
+        self._bundle = unbundle_fh(fh, path)
         self._file = os.path.basename(path)
 
     def url(self):
