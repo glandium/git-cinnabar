@@ -534,6 +534,44 @@ def unbundler(bundle):
                 'ignoring bundle2 part: %s', part.type)
 
 
+class BundleApplier(object):
+    def __init__(self, bundle):
+        self._bundle = bundle
+
+    def __call__(self, store):
+        changeset_chunks = ChunksCollection(progress_iter(
+            'Reading %d changesets', next(self._bundle, None)))
+
+        manifest_chunks = ChunksCollection(progress_iter(
+            'Reading %d manifests', next(self._bundle, None)))
+
+        for rev_chunk in progress_iter(
+                'Reading and importing %d files', iter_initialized(
+                    store.file, next(self._bundle, None), File.from_chunk)):
+            store.store_file(rev_chunk)
+
+        if next(self._bundle, None) is not None:
+            assert False
+        del self._bundle
+
+        for mn in progress_iter(
+                'Importing %d manifests',
+                manifest_chunks.iter_initialized(ManifestInfo,
+                                                 store.manifest)):
+            store.store_manifest(mn)
+
+        del manifest_chunks
+
+        for cs in progress_iter(
+                'Importing %d changesets',
+                changeset_chunks.iter_initialized(lambda x: x, store.changeset,
+                                                  Changeset.from_chunk)):
+            try:
+                store.store_changeset(cs)
+            except NothingToGraftException:
+                logging.warn('Cannot graft %s, not importing.', cs.node)
+
+
 def getbundle(repo, store, heads, branch_names):
     if isinstance(repo, bundlerepo):
         bundle = repo._unbundler
@@ -555,38 +593,10 @@ def getbundle(repo, store, heads, branch_names):
 
         bundle = unbundler(bundle)
 
-    changeset_chunks = ChunksCollection(progress_iter(
-        'Reading %d changesets', next(bundle, None)))
-
-    manifest_chunks = ChunksCollection(progress_iter(
-        'Reading %d manifests', next(bundle, None)))
-
-    for rev_chunk in progress_iter(
-            'Reading and importing %d files', iter_initialized(
-                store.file, next(bundle, None), File.from_chunk)):
-        store.store_file(rev_chunk)
-
-    if next(bundle, None) is not None:
-        assert False
+    # Manual move semantics
+    apply_bundle = BundleApplier(bundle)
     del bundle
-
-    for mn in progress_iter(
-            'Importing %d manifests',
-            manifest_chunks.iter_initialized(ManifestInfo,
-                                             store.manifest)):
-        store.store_manifest(mn)
-
-    del manifest_chunks
-
-    for cs in progress_iter(
-            'Importing %d changesets',
-            changeset_chunks.iter_initialized(lambda x: x, store.changeset,
-                                              Changeset.from_chunk)):
-        try:
-            store.store_changeset(cs)
-        except NothingToGraftException:
-            logging.warn('Cannot graft %s, not importing.', cs.node)
-            pass
+    apply_bundle(store)
 
 
 def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
