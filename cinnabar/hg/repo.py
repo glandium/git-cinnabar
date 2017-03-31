@@ -310,13 +310,20 @@ def findcommon(repo, store, hgheads):
 
 
 class HelperRepo(object):
-    __slots__ = "_url", "_branchmap", "_heads", "_bookmarks"
+    __slots__ = "_url", "_branchmap", "_heads", "_bookmarks", "_ui"
 
     def __init__(self, url):
         self._url = url
         self._branchmap = None
         self._heads = None
         self._bookmarks = None
+        self._ui = None
+
+    @property
+    def ui(self):
+        if not self._ui:
+            self._ui = get_ui()
+        return self._ui
 
     def init_state(self):
         state = HgRepoHelper.state()
@@ -374,7 +381,7 @@ class HelperRepo(object):
                                       ','.join(kwargs.get('bundlecaps', ())))
         header = readexactly(data, 4)
         if header == 'HG20':
-            return unbundle20(get_ui(), data)
+            return unbundle20(self.ui, data)
 
         class Reader(object):
             def __init__(self, header, data):
@@ -397,7 +404,7 @@ class HelperRepo(object):
         data = HgRepoHelper.unbundle(cg, (hexlify(h) if h != 'force' else h
                                           for h in heads))
         if isinstance(data, str) and data.startswith('HG20'):
-            data = unbundle20(get_ui(), StringIO(data[4:]))
+            data = unbundle20(self.ui, StringIO(data[4:]))
         return data
 
     def local(self):
