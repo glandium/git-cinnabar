@@ -75,7 +75,7 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 1600
+#define CMD_VERSION 1700
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -93,17 +93,24 @@ static void split_command(char *line, const char **command,
 	string_list_clear(&split_line, 0);
 }
 
+static int can_send_null_buffer = 0;
+
 static void send_buffer(struct strbuf *buf)
 {
-	struct strbuf header = STRBUF_INIT;
+	if (buf) {
+		struct strbuf header = STRBUF_INIT;
 
-	strbuf_addf(&header, "%lu\n", buf->len);
-	write_or_die(1, header.buf, header.len);
-	strbuf_release(&header);
+		strbuf_addf(&header, "%lu\n", buf->len);
+		write_or_die(1, header.buf, header.len);
+		strbuf_release(&header);
 
-	write_or_die(1, buf->buf, buf->len);
-	write_or_die(1, "\n", 1);
-	return;
+		write_or_die(1, buf->buf, buf->len);
+		write_or_die(1, "\n", 1);
+	} else if (can_send_null_buffer) {
+		write_or_die(1, "-1\n\n", 4);
+	} else {
+		write_or_die(1, "0\n\n", 3);
+	}
 }
 
 /* Send git object info and content to stdout, like cat-file --batch does. */
@@ -1036,11 +1043,13 @@ static void do_version(struct string_list *args)
 		exit(1);
 
 	version = strtol(args->items[0].string, NULL, 10);
+	if (version < 100)
+		version *= 100;
 
-	if (!version || version < 4 ||
-	    (version > CMD_VERSION / 100 && version < 400) ||
-	    version > CMD_VERSION)
+	if (!version || version < 400 || version > CMD_VERSION)
 		exit(128);
+
+	can_send_null_buffer = (version >= 1700);
 
 	write_or_die(1, STRINGIFY(HELPER_HASH) "\n",
 	             sizeof(STRINGIFY(HELPER_HASH)));
