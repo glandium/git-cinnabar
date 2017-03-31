@@ -1154,9 +1154,12 @@ static void do_capable(struct hg_connection *conn, struct string_list *args)
 		exit(1);
 
 	result_str = hg_get_capability(conn, args->items[0].string);
-	if (result_str && *result_str)
+	if (result_str) {
 		strbuf_addstr(&result, result_str);
-	send_buffer(&result);
+		send_buffer(&result);
+	} else {
+		send_buffer(NULL);
+	}
 	strbuf_release(&result);
 }
 

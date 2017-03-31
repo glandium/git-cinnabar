@@ -114,7 +114,10 @@ class BaseHelper(object):
     @classmethod
     def _read_data(self, stdout):
         size = int(stdout.readline().strip())
-        ret = stdout.read(size)
+        if size < 0:
+            ret = None
+        else:
+            ret = stdout.read(size)
         lf = stdout.read(1)
         assert lf == '\n'
         return ret
@@ -212,7 +215,7 @@ class GitHgHelper(BaseHelper):
 
 
 class HgRepoHelper(BaseHelper):
-    VERSION = 4
+    VERSION = 17
     _helper = False
 
     @classmethod

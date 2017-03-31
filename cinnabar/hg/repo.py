@@ -348,7 +348,7 @@ class HelperRepo(object):
 
     def capable(self, capability):
         if capability == 'bundle2':
-            return urllib.quote(HgRepoHelper.capable('bundle2'))
+            return urllib.quote(HgRepoHelper.capable('bundle2') or '')
         return capability in ('getbundle', 'unbundle', 'lookup')
 
     def batch(self):
