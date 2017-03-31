@@ -61,4 +61,6 @@ extern void hg_listkeys(struct hg_connection *conn, struct strbuf *result,
 extern void hg_lookup(struct hg_connection *conn, struct strbuf *result,
 		      const char *key);
 
+extern void hg_clonebundles(struct hg_connection *conn, struct strbuf *result);
+
 #endif

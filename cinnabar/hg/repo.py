@@ -346,9 +346,16 @@ class HelperRepo(object):
             for line in data.splitlines()
         )
 
+    def _call(self, command, *args):
+        if command == 'clonebundles':
+            return HgRepoHelper.clonebundles()
+        raise NotImplementedError()
+
     def capable(self, capability):
         if capability == 'bundle2':
             return urllib.quote(HgRepoHelper.capable('bundle2') or '')
+        if capability == 'clonebundles':
+            return HgRepoHelper.capable(capability) is not None
         return capability in ('getbundle', 'unbundle', 'lookup')
 
     def batch(self):
@@ -534,6 +541,41 @@ def unbundler(bundle):
                 'ignoring bundle2 part: %s', part.type)
 
 
+def get_clonebundle(repo):
+    try:
+        from mercurial.exchange import (
+            parseclonebundlesmanifest,
+            filterclonebundleentries,
+        )
+    except ImportError:
+        return None
+
+    bundles = repo._call('clonebundles')
+
+    class dummy(object):
+        pass
+
+    fakerepo = dummy()
+    fakerepo.requirements = set()
+    fakerepo.supportedformats = set()
+    fakerepo.ui = repo.ui
+
+    entries = parseclonebundlesmanifest(fakerepo, bundles)
+    if not entries:
+        return None
+
+    entries = filterclonebundleentries(fakerepo, entries)
+    if not entries:
+        return None
+
+    url = entries[0].get('URL')
+    if not url:
+        return None
+
+    sys.stderr.write('Getting clone bundle from %s\n' % url)
+    return unbundle_fh(urllib2.urlopen(url), url)
+
+
 class BundleApplier(object):
     def __init__(self, bundle):
         self._bundle = bundle
@@ -578,6 +620,17 @@ def getbundle(repo, store, heads, branch_names):
     else:
         common = findcommon(repo, store, store.heads(branch_names))
         logging.info('common: %s', common)
+        if not common and experiment('clonebundles') and \
+                repo.capable('clonebundles'):
+            bundle = get_clonebundle(repo)
+            bundle = unbundler(bundle)
+            # Manual move semantics
+            apply_bundle = BundleApplier(bundle)
+            del bundle
+            apply_bundle(store)
+            common = findcommon(repo, store, store.heads(branch_names))
+            logging.info('common: %s', common)
+
         kwargs = {}
         if unbundle20 and repo.capable('bundle2'):
             bundle2caps = {

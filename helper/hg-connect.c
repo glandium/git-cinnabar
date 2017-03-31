@@ -302,6 +302,11 @@ void hg_lookup(struct hg_connection *conn, struct strbuf *result,
 	conn->simple_command(conn, result, "lookup", "key", key, NULL);
 }
 
+void hg_clonebundles(struct hg_connection *conn, struct strbuf *result)
+{
+	conn->simple_command(conn, result, "clonebundles", NULL);
+}
+
 int hg_finish_connect(struct hg_connection *conn)
 {
 	int code = conn->finish(conn);

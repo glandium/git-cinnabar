@@ -1192,6 +1192,17 @@ static void do_lookup(struct hg_connection *conn, struct string_list *args)
 	strbuf_release(&result);
 }
 
+static void do_clonebundles(struct hg_connection *conn, struct string_list *args)
+{
+	struct strbuf result = STRBUF_INIT;
+	if (args->nr != 0)
+		exit(1);
+
+	hg_clonebundles(conn, &result);
+	send_buffer(&result);
+	strbuf_release(&result);
+}
+
 static void connected_loop(struct hg_connection *conn)
 {
 	struct strbuf buf = STRBUF_INIT;
@@ -1221,6 +1232,8 @@ static void connected_loop(struct hg_connection *conn)
 			do_state(conn, &args);
 		else if (!strcmp("lookup", command))
 			do_lookup(conn, &args);
+		else if (!strcmp("clonebundles", command))
+			do_clonebundles(conn, &args);
 		else
 			die("Unknown command: \"%s\"", command);
 

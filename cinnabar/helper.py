@@ -282,3 +282,8 @@ class HgRepoHelper(BaseHelper):
         with self.query("lookup", key) as stdout:
             success, data = self._read_data(stdout).rstrip().split(' ', 1)
             return data if int(success) else None
+
+    @classmethod
+    def clonebundles(self):
+        with self.query("clonebundles") as stdout:
+            return self._read_data(stdout)
