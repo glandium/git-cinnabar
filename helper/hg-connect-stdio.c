@@ -191,7 +191,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	remote_path = path;
 
 	if (protocol == PROTO_SSH) {
-		if (*remote_path == '/')
+		while (*remote_path == '/')
 			remote_path++;
 		proc->use_shell = prepare_ssh_command(
 			&proc->args, user, host, port, flags);
@@ -223,7 +223,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 		die("I don't handle protocol '%s'", prot_name(protocol));
 
 	strbuf_addstr(&buf, "hg -R ");
-	maybe_sq_quote_buf(&buf, path);
+	maybe_sq_quote_buf(&buf, remote_path);
 	strbuf_addstr(&buf, " serve --stdio");
 	argv_array_push(&proc->args, buf.buf);
 	strbuf_release(&buf);
