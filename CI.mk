@@ -16,7 +16,7 @@ export PYTHONPATH := $(HOME)/.local/lib/python2.7/site-packages
 endif
 export PATH := $(CURDIR)$(PATHSEP)$(PATH)
 export PYTHONDONTWRITEBYTECODE := 1
-REPO ?= https://bitbucket.org/cleonello/jqplot
+REPO ?= https://hg.mozilla.org/users/mh_glandium.org/jqplot
 
 -include CI-data.mk
 
