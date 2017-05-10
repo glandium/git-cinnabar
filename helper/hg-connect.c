@@ -7,13 +7,13 @@
 #include "url.h"
 
 /* Copied from bisect.c */
-static char *join_sha1_array_hex(struct sha1_array *array, char delim)
+static char *join_oid_array_hex(struct oid_array *array, char delim)
 {
 	struct strbuf joined_hexs = STRBUF_INIT;
 	int i;
 
 	for (i = 0; i < array->nr; i++) {
-		strbuf_addstr(&joined_hexs, sha1_to_hex(array->sha1[i]));
+		strbuf_addstr(&joined_hexs, oid_to_hex(&array->oid[i]));
 		if (i + 1 < array->nr)
 			strbuf_addch(&joined_hexs, delim);
 	}
@@ -185,9 +185,9 @@ void hg_get_repo_state(struct hg_connection *conn, struct strbuf *branchmap,
 }
 
 void hg_known(struct hg_connection *conn, struct strbuf *result,
-	      struct sha1_array *nodes)
+	      struct oid_array *nodes)
 {
-	char *nodes_str = join_sha1_array_hex(nodes, ' ');
+	char *nodes_str = join_oid_array_hex(nodes, ' ');
 	conn->simple_command(conn, result, "known",
 			     "nodes", nodes_str,
 			     "*", NULL, NULL);
@@ -202,7 +202,7 @@ void hg_listkeys(struct hg_connection *conn, struct strbuf *result,
 }
 
 void hg_getbundle(struct hg_connection *conn, FILE *out,
-		  struct sha1_array *heads, struct sha1_array *common,
+		  struct oid_array *heads, struct oid_array *common,
 		  const char *bundle2caps)
 {
 	struct string_list args = STRING_LIST_INIT_NODUP;
@@ -210,11 +210,11 @@ void hg_getbundle(struct hg_connection *conn, FILE *out,
 
 	if (heads && heads->nr) {
 		item = string_list_append(&args, "heads");
-		item->util = join_sha1_array_hex(heads, ' ');
+		item->util = join_oid_array_hex(heads, ' ');
 	}
 	if (common && common->nr) {
 		item = string_list_append(&args, "common");
-		item->util = join_sha1_array_hex(common, ' ');
+		item->util = join_oid_array_hex(common, ' ');
 	}
 	if (bundle2caps && *bundle2caps) {
 		item = string_list_append(&args, "bundlecaps");
@@ -226,17 +226,17 @@ void hg_getbundle(struct hg_connection *conn, FILE *out,
 	fflush(out);
 }
 
-static int unbundlehash(const unsigned char sha1[20], void *data)
+static int unbundlehash(const struct object_id *oid, void *data)
 {
 	git_SHA_CTX *ctx = (git_SHA_CTX *) data;
 
-	git_SHA1_Update(ctx, sha1, 20);
+	git_SHA1_Update(ctx, oid->hash, 20);
 
 	return 0;
 }
 
 void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
-		 struct sha1_array *heads)
+		 struct oid_array *heads)
 {
 	struct tempfile *tmpfile = xcalloc(1, sizeof(*tmpfile));
 	struct stat st;
@@ -255,12 +255,12 @@ void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 			heads_str = malloc(54);
 			memcpy(heads_str, "686173686564 ", 13);
 			git_SHA1_Init(&ctx);
-			/* sha1_array_for_each_unique sorts the sha1 list */
-			sha1_array_for_each_unique(heads, unbundlehash, &ctx);
+			/* oid_array_for_each_unique sorts the sha1 list */
+			oid_array_for_each_unique(heads, unbundlehash, &ctx);
 			git_SHA1_Final(sha1, &ctx);
 			sha1_to_hex_r(&heads_str[13], sha1);
 		} else
-			heads_str = join_sha1_array_hex(heads, ' ');
+			heads_str = join_oid_array_hex(heads, ' ');
 	} else
 		heads_str = "666f726365";
 

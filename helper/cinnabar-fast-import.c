@@ -294,26 +294,26 @@ void maybe_reset_notes(const char *branch)
 	}
 }
 
-struct sha1_array manifest_heads = SHA1_ARRAY_INIT;
+struct oid_array manifest_heads = OID_ARRAY_INIT;
 
-static void sha1_array_insert(struct sha1_array *array, int index,
-                              const unsigned char *sha1)
+static void oid_array_insert(struct oid_array *array, int index,
+                             const struct object_id *oid)
 {
-	ALLOC_GROW(array->sha1, array->nr + 1, array->alloc);
-	memmove(array->sha1[index+1], array->sha1[index],
-	        sizeof(array->sha1[0]) * (array->nr++ - index));
-	hashcpy(array->sha1[index], sha1);
+	ALLOC_GROW(array->oid, array->nr + 1, array->alloc);
+	memmove(&array->oid[index+1], &array->oid[index],
+	        sizeof(array->oid[0]) * (array->nr++ - index));
+	oidcpy(&array->oid[index], oid);
 }
 
-static void sha1_array_remove(struct sha1_array *array, int index)
+static void oid_array_remove(struct oid_array *array, int index)
 {
-	memmove(array->sha1[index], array->sha1[index+1],
-	        sizeof(array->sha1[0]) * (array->nr-- - index));
+	memmove(&array->oid[index], &array->oid[index+1],
+	        sizeof(array->oid[0]) * (array->nr-- - index));
 }
 
-static void add_head(struct sha1_array *heads, const unsigned char *sha1);
+static void add_head(struct oid_array *heads, const struct object_id *oid);
 
-void ensure_heads(struct sha1_array *heads)
+void ensure_heads(struct oid_array *heads)
 {
 	struct commit *c = NULL;
 	struct commit_list *parent;
@@ -331,16 +331,16 @@ void ensure_heads(struct sha1_array *heads)
 		body = strstr(get_commit_buffer(c, NULL), "\n\n") + 2;
 	for (parent = c ? c->parents : NULL; parent;
 	     parent = parent->next) {
-		const unsigned char *parent_sha1 =
-			parent->item->object.oid.hash;
+		const struct object_id *parent_sha1 =
+			&parent->item->object.oid;
 		/* Skip first parent when "has-flat-manifest-tree" is
 		 * there */
 		if (body && parent == c->parents &&
 		    !strcmp(body, "has-flat-manifest-tree"))
 			continue;
-		if (!heads->nr || hashcmp(heads->sha1[heads->nr-1],
-		                          parent_sha1)) {
-			sha1_array_insert(heads, heads->nr, parent_sha1);
+		if (!heads->nr || oidcmp(&heads->oid[heads->nr-1],
+		                         parent_sha1)) {
+			oid_array_insert(heads, heads->nr, parent_sha1);
 		} else {
 			/* This should not happen, but just in case,
 			 * instead of failing. */
@@ -349,25 +349,25 @@ void ensure_heads(struct sha1_array *heads)
 	}
 }
 
-static void add_head(struct sha1_array *heads, const unsigned char *sha1)
+static void add_head(struct oid_array *heads, const struct object_id *oid)
 {
 	struct commit *c = NULL;
 	struct commit_list *parent;
 	int pos;
 
 	ensure_heads(heads);
-	c = lookup_commit(sha1);
+	c = lookup_commit(oid->hash);
 	parse_commit_or_die(c);
 
 	for (parent = c->parents; parent; parent = parent->next) {
-		pos = sha1_array_lookup(heads, parent->item->object.oid.hash);
+		pos = oid_array_lookup(heads, &parent->item->object.oid);
 		if (pos >= 0)
-			sha1_array_remove(heads, pos);
+			oid_array_remove(heads, pos);
 	}
-	pos = sha1_array_lookup(heads, sha1);
+	pos = oid_array_lookup(heads, oid);
 	if (pos >= 0)
 		return;
-	sha1_array_insert(heads, -pos - 1, sha1);
+	oid_array_insert(heads, -pos - 1, oid);
 }
 
 static void handle_changeset_conflict(struct object_id *hg_id,
@@ -414,7 +414,7 @@ static void do_set(struct string_list *args)
 {
 	enum object_type type;
 	struct object_id hg_id, git_id;
-	struct sha1_array *heads = NULL;
+	struct oid_array *heads = NULL;
 	struct notes_tree *notes = &hg2git;
 	int is_changeset = 0;
 
@@ -467,7 +467,7 @@ static void do_set(struct string_list *args)
 			handle_changeset_conflict(&hg_id, &git_id);
 		add_note(notes, hg_id.hash, git_id.hash, NULL);
 		if (heads)
-			add_head(heads, git_id.hash);
+			add_head(heads, &git_id);
 	}
 }
 

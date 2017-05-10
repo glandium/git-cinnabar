@@ -1055,25 +1055,25 @@ static void do_version(struct string_list *args)
 	             sizeof(STRINGIFY(HELPER_HASH)));
 }
 
-static void string_list_as_sha1_array(struct string_list *list,
-				      struct sha1_array *array)
+static void string_list_as_oid_array(struct string_list *list,
+				     struct oid_array *array)
 {
 	struct string_list_item *item;
 	for_each_string_list_item(item, list) {
-		unsigned char sha1[20];
-		if (!get_sha1_hex(item->string, sha1))
-			sha1_array_append(array, sha1);
+		struct object_id oid;
+		if (!get_oid_hex(item->string, &oid))
+			oid_array_append(array, &oid);
 	}
 }
 
 static void do_known(struct hg_connection *conn, struct string_list *args)
 {
 	struct strbuf result = STRBUF_INIT;
-	struct sha1_array nodes = SHA1_ARRAY_INIT;
-	string_list_as_sha1_array(args, &nodes);
+	struct oid_array nodes = OID_ARRAY_INIT;
+	string_list_as_oid_array(args, &nodes);
 	hg_known(conn, &result, &nodes);
 	send_buffer(&result);
-	sha1_array_clear(&nodes);
+	oid_array_clear(&nodes);
 	strbuf_release(&result);
 }
 
@@ -1088,47 +1088,47 @@ static void do_listkeys(struct hg_connection *conn, struct string_list *args)
 	strbuf_release(&result);
 }
 
-static void arg_as_sha1_array(char *nodes, struct sha1_array *array)
+static void arg_as_oid_array(char *nodes, struct oid_array *array)
 {
 	struct string_list list = STRING_LIST_INIT_NODUP;
 	string_list_split_in_place(&list, nodes, ',', -1);
-	string_list_as_sha1_array(&list, array);
+	string_list_as_oid_array(&list, array);
 	string_list_clear(&list, 0);
 }
 
 static void do_getbundle(struct hg_connection *conn, struct string_list *args)
 {
-	struct sha1_array heads = SHA1_ARRAY_INIT;
-	struct sha1_array common = SHA1_ARRAY_INIT;
+	struct oid_array heads = OID_ARRAY_INIT;
+	struct oid_array common = OID_ARRAY_INIT;
 	const char *bundle2caps = NULL;
 
 	if (args->nr > 3)
 		exit(1);
 
 	if (args->nr > 0)
-		arg_as_sha1_array(args->items[0].string, &heads);
+		arg_as_oid_array(args->items[0].string, &heads);
 	if (args->nr > 1)
-		arg_as_sha1_array(args->items[1].string, &common);
+		arg_as_oid_array(args->items[1].string, &common);
 	if (args->nr > 2)
 		bundle2caps = args->items[2].string;
 
 	hg_getbundle(conn, stdout, &heads, &common, bundle2caps);
 
-	sha1_array_clear(&common);
-	sha1_array_clear(&heads);
+	oid_array_clear(&common);
+	oid_array_clear(&heads);
 }
 
 static void do_unbundle(struct hg_connection *conn, struct string_list *args)
 {
 	struct strbuf result = STRBUF_INIT;
-	struct sha1_array heads = SHA1_ARRAY_INIT;
+	struct oid_array heads = OID_ARRAY_INIT;
 	if (args->nr < 1)
 		exit(1);
 	if (args->nr != 1 || strcmp(args->items[0].string, "force"))
-		string_list_as_sha1_array(args, &heads);
+		string_list_as_oid_array(args, &heads);
 	hg_unbundle(conn, &result, stdin, &heads);
 	send_buffer(&result);
-	sha1_array_clear(&heads);
+	oid_array_clear(&heads);
 	strbuf_release(&result);
 }
 
@@ -1266,18 +1266,18 @@ static void do_connect(struct string_list *args)
 	}
 }
 
-int add_each_head(const unsigned char sha1[20], void *data)
+int add_each_head(const struct object_id *oid, void *data)
 {
 	struct strbuf *buf = (struct strbuf *)data;
 
-	strbuf_addstr(buf, sha1_to_hex(sha1));
+	strbuf_addstr(buf, oid_to_hex(oid));
 	strbuf_addch(buf, '\n');
 	return 0;
 }
 
 static void do_heads(struct string_list *args)
 {
-        struct sha1_array *heads = NULL;
+        struct oid_array *heads = NULL;
         struct strbuf heads_buf = STRBUF_INIT;
 
         if (args->nr != 1)
@@ -1289,7 +1289,7 @@ static void do_heads(struct string_list *args)
                 die("Unknown kind: %s", args->items[0].string);
 
 	ensure_heads(heads);
-	sha1_array_for_each_unique(heads, add_each_head, &heads_buf);
+	oid_array_for_each_unique(heads, add_each_head, &heads_buf);
 	send_buffer(&heads_buf);
 	strbuf_release(&heads_buf);
 }

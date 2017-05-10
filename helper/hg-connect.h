@@ -42,14 +42,14 @@ extern void hg_get_repo_state(struct hg_connection *conn,
 			      struct strbuf *bookmarks);
 
 extern void hg_known(struct hg_connection *conn, struct strbuf *result,
-		     struct sha1_array *nodes);
+		     struct oid_array *nodes);
 
 extern void hg_getbundle(struct hg_connection *conn, FILE *out,
-			 struct sha1_array *heads, struct sha1_array *common,
+			 struct oid_array *heads, struct oid_array *common,
 			 const char *bundle2caps);
 
 extern void hg_unbundle(struct hg_connection *conn, struct strbuf *response,
-			FILE *in, struct sha1_array *heads);
+			FILE *in, struct oid_array *heads);
 
 extern void hg_pushkey(struct hg_connection *conn, struct strbuf *response,
 		       const char *namespace, const char *key, const char *old,
