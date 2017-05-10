@@ -66,19 +66,20 @@ HG_EMPTY_FILE = 'b80de5d138758541c5f05265ad144ab9fa86d1db'
 RE_GIT_AUTHOR = re.compile('^(?P<name>.*?) ?(?:\<(?P<email>.*?)\>)')
 
 
+def _cleanup(x):
+    return x.translate(None, '<>')
+
+
 def get_git_author(author):
     # check for git author pattern compliance
     a = RE_GIT_AUTHOR.match(author)
 
-    def cleanup(x):
-        return x.replace('<', '').replace('>', '')
-
     if a:
-        return '%s <%s>' % (cleanup(a.group('name')),
-                            cleanup(a.group('email')))
+        return '%s <%s>' % (_cleanup(a.group('name')),
+                            _cleanup(a.group('email')))
     if '@' in author:
-        return ' <%s>' % cleanup(author)
-    return '%s <>' % cleanup(author)
+        return ' <%s>' % _cleanup(author)
+    return '%s <>' % _cleanup(author)
 
 
 def get_hg_author(author):
@@ -601,6 +602,8 @@ def autohexlify(h):
 
 
 class BranchMap(object):
+    __slots__ = "_heads", "_all_heads", "_tips", "_git_sha1s", "_unknown_heads"
+
     def __init__(self, store, remote_branchmap, remote_heads):
         self._heads = {}
         self._all_heads = tuple(autohexlify(h) for h in remote_heads)
@@ -656,6 +659,8 @@ class AmbiguousGraftException(Exception):
 
 
 class Grafter(object):
+    __slots__ = "_store", "_early_history", "_graft_trees", "_grafted"
+
     def __init__(self, store):
         from .git import git_version
         self._store = store
@@ -665,8 +670,8 @@ class Grafter(object):
         if git_version >= '1.9':
             refs = ['--exclude=refs/cinnabar/*', '--all']
         else:
-            refs = list(r for _, r in Git.for_each_ref('refs/')
-                        if not r.startswith('refs/cinnabar/'))
+            refs = [r for _, r in Git.for_each_ref('refs/')
+                    if not r.startswith('refs/cinnabar/')]
             refs += ['HEAD']
         if store._has_metadata:
             refs += ['--not', 'refs/cinnabar/metadata^']

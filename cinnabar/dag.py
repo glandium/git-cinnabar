@@ -8,18 +8,23 @@ from collections import (
 import unittest
 from .util import OrderedDefaultDict
 
+__all__ = ['gitdag']
+
+
+def iter_revlist(revlist):
+    for line in revlist:
+        line = line.split(' ', 1)
+        if len(line) == 1:
+            yield line[0], ()
+        else:
+            yield line[0], line[1].split(' ')
+
 
 # TODO: this class sucks and is probably wrong
 class gitdag(object):
-    def __init__(self, revlist=[]):
-        def iter_revlist(revlist):
-            for line in revlist:
-                line = line.split(' ', 1)
-                if len(line) == 1:
-                    yield line[0], ()
-                else:
-                    yield line[0], line[1].split(' ')
+    __slots__ = "_parents", "_children", "_tags"
 
+    def __init__(self, revlist=[]):
         self._parents = OrderedDefaultDict(set)
         self._children = defaultdict(set)
         for node, parents in iter_revlist(revlist):
