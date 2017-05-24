@@ -38,15 +38,21 @@ def download(args):
     helper = 'git-cinnabar-helper'
     system = args.system
     machine = args.machine
+
+    if system.startswith('MSYS_NT'):
+        system = 'Windows'
+
     if system == 'Darwin':
         system = 'macOS'
     elif system == 'Windows':
         helper += '.exe'
+        if machine == 'AMD64':
+            machine = 'x86_64'
 
     available = (
         ('Linux', 'x86_64'),
         ('macOS', 'x86_64'),
-        ('Windows', 'AMD64'),
+        ('Windows', 'x86_64'),
         ('Windows', 'x86'),
     )
 
