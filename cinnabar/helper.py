@@ -47,14 +47,18 @@ class BaseHelper(object):
                 command = (helper_path,)
             else:
                 command = ('git', 'cinnabar-helper')
-            self._helper = Process(*command, stdin=subprocess.PIPE,
-                                   stderr=stderr, logger='cinnabar-helper',
-                                   env=env)
-            self._helper.stdin.write('version %d\n' % self.VERSION)
-            response = self._helper.stdout.readline()
+            try:
+                self._helper = Process(*command, stdin=subprocess.PIPE,
+                                       stderr=stderr, logger='cinnabar-helper',
+                                       env=env)
+                self._helper.stdin.write('version %d\n' % self.VERSION)
+                response = self._helper.stdout.readline()
+            except Exception:
+                self._helper = None
+                response = None
             if not response:
                 logger = logging.getLogger('helper')
-                if self._helper.wait() == 128:
+                if self._helper and self._helper.wait() == 128:
                     logger.error(
                         'Cinnabar helper executable is outdated. '
                         'Please try `git cinnabar download` or rebuild it.')
