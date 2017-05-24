@@ -3,7 +3,7 @@ version: '{build}'
 environment:
   matrix:
   - MSYSTEM: MINGW64
-    MACHINE: AMD64
+    MACHINE: x86_64
     CPU: x86_64
   - MSYSTEM: MINGW32
     MACHINE: x86
