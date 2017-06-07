@@ -564,6 +564,7 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		do_set(args);
 	} else if (!strcmp(command, "store")) {
 		INIT();
+		require_explicit_termination = 1;
 		do_store(args);
 	} else if (!strcmp(command, "blob")) {
 		COMMON_HANDLING();
