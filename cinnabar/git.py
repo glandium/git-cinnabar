@@ -25,15 +25,6 @@ class InvalidConfig(Exception):
     pass
 
 
-def sha1path(sha1, depth=2):
-    def parts():
-        i = -2
-        for i in xrange(0, depth * 2, 2):
-            yield sha1[i:i + 2]
-        yield sha1[i + 2:]
-    return '/'.join(parts())
-
-
 def split_ls_tree(line):
     mode, typ, remainder = line.split(' ', 2)
     sha1, path = remainder.split('\t', 1)
