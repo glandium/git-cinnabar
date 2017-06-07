@@ -433,6 +433,9 @@ static void do_set(struct string_list *args)
 	} else if (!strcmp(args->items[0].string, "changeset-metadata")) {
 		type = OBJ_BLOB;
 		notes = &git2hg;
+	} else if (!strcmp(args->items[0].string, "file-meta")) {
+		type = OBJ_BLOB;
+		notes = &files_meta;
 	} else {
 		die("Unknown kind of object: %s", args->items[0].string);
 	}
@@ -526,10 +529,21 @@ static void do_store(struct string_list *args)
 
 	if (!strcmp(args->items[0].string, "metadata")) {
 		if (!strcmp(args->items[1].string, "hg2git") ||
-		    !strcmp(args->items[1].string, "git2hg")) {
+		    !strcmp(args->items[1].string, "git2hg") ||
+		    !strcmp(args->items[1].string, "files-meta")) {
 			struct object_id result;
-			store_notes(args->items[1].string[0] == 'h' ?
-			            &hg2git : &git2hg, &result);
+			struct notes_tree *notes = NULL;
+			switch (args->items[1].string[0]) {
+			case 'f':
+				notes = &files_meta;
+				break;
+			case 'g':
+				notes = &git2hg;
+				break;
+			case 'h':
+				notes = &hg2git;
+			}
+			store_notes(notes, &result);
 			write_or_die(1, oid_to_hex(&result), 40);
 			write_or_die(1, "\n", 1);
 		} else {

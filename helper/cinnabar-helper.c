@@ -75,11 +75,13 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 1700
+#define CMD_VERSION 1800
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
-struct notes_tree git2hg, hg2git;
+struct notes_tree git2hg, hg2git, files_meta;
+
+int metadata_flags = 0;
 
 static void split_command(char *line, const char **command,
 			  struct string_list *args)
@@ -346,7 +348,7 @@ static void do_diff_tree(struct string_list *args)
 	strbuf_release(&buf);
 }
 
-static void do_git2hg(struct string_list *args)
+static void do_get_note(struct notes_tree *t, struct string_list *args)
 {
 	unsigned char sha1[20];
 	const unsigned char *note;
@@ -354,12 +356,12 @@ static void do_git2hg(struct string_list *args)
 	if (args->nr != 1)
 		goto not_found;
 
-	ensure_notes(&git2hg);
+	ensure_notes(t);
 
 	if (get_sha1_committish(args->items[0].string, sha1))
 		goto not_found;
 
-	note = get_note(&git2hg, lookup_replace_object(sha1));
+	note = get_note(t, lookup_replace_object(sha1));
 	if (!note)
 		goto not_found;
 
@@ -1294,6 +1296,25 @@ static void do_heads(struct string_list *args)
 	strbuf_release(&heads_buf);
 }
 
+static void init_flags()
+{
+	struct commit *c;
+	const char *body;
+	struct strbuf **flags, **f;
+
+	c = lookup_commit_reference_by_name(METADATA_REF);
+	if (!c)
+		return;
+	body = strstr(get_commit_buffer(c, NULL), "\n\n") + 2;
+	flags = strbuf_split_str(body, ' ', -1);
+	for (f = flags; *f; f++) {
+		strbuf_trim(*f);
+		if (!strcmp("files-meta", (*f)->buf))
+			metadata_flags |= FILES_META;
+	}
+	strbuf_list_free(flags);
+}
+
 int cmd_main(int argc, const char *argv[])
 {
 	int initialized = 0;
@@ -1320,10 +1341,13 @@ int cmd_main(int argc, const char *argv[])
 			setup_git_directory();
 			git_config(git_diff_basic_config, NULL);
 			ignore_case = 0;
+			init_flags();
 			initialized = 1;
 		}
 		if (!strcmp("git2hg", command))
-			do_git2hg(&args);
+			do_get_note(&git2hg, &args);
+		else if (!strcmp("file-meta", command))
+			do_get_note(&files_meta, &args);
 		else if (!strcmp("hg2git", command))
 			do_hg2git(&args);
 		else if (!strcmp("manifest", command))

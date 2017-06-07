@@ -227,7 +227,8 @@ def fsck(args):
                     report('Metadata corrupted for file %s' % hg_file)
                 GitHgHelper.set('file', hg_file, NULL_NODE_ID)
                 GitHgHelper.set('file', hg_file, git_file)
-                store._files_meta[hg_file] = metadata[2:-2]
+                store._fast_import.put_blob(metadata[2:-2], want_sha1=False)
+                GitHgHelper.set('file-meta', hg_file, ':1')
         else:
             def scan_manifests():
                 prev = 0
@@ -399,7 +400,7 @@ def fsck(args):
         # practice, it makes no difference. Reevaluate when GitHgStore.close
         # is modified, though.
         GitHgHelper.set('file', obj, NULL_NODE_ID)
-        store._files_meta[obj] = None
+        GitHgHelper.set('file-meta', hg_file, NULL_NODE_ID)
 
     if not status['broken']:
         dangling = all_notes - seen_notes

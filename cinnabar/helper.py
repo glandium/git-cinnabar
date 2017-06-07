@@ -128,7 +128,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 16
+    VERSION = 18
     _helper = False
 
     @classmethod
@@ -140,6 +140,11 @@ class GitHgHelper(BaseHelper):
     def git2hg(self, sha1):
         assert sha1 != 'changeset'
         with self.query('git2hg', sha1) as stdout:
+            return self._read_file('blob', stdout)
+
+    @classmethod
+    def file_meta(self, sha1):
+        with self.query('file-meta', sha1) as stdout:
             return self._read_file('blob', stdout)
 
     @classmethod

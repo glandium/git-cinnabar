@@ -21,7 +21,6 @@ from .git import (
     FastImport,
     Git,
     NULL_NODE_ID,
-    sha1path,
 )
 from .hg.changegroup import (
     RawRevChunk,
@@ -804,7 +803,6 @@ class GitHgStore(object):
     def __init__(self):
         self._fast_import = FastImport()
         self._flags = set()
-        self._files_meta = {}
         self._closed = False
         self._graft = None
 
@@ -1023,12 +1021,7 @@ class GitHgStore(object):
         return self._hg2git(sha1)
 
     def file_meta(self, sha1):
-        if sha1 in self._files_meta:
-            return self._files_meta[sha1]
-        meta_ref = Git.resolve_ref('refs/cinnabar/files-meta')
-        if meta_ref:
-            for mode, typ, blob, path in Git.ls_tree(meta_ref, sha1path(sha1)):
-                return GitHgHelper.cat_file('blob', blob)
+        return GitHgHelper.file_meta(sha1)
 
     def file(self, sha1, file_parents=None, git_manifest_parents=None,
              path=None):
@@ -1194,7 +1187,8 @@ class GitHgStore(object):
     def store_file(self, instance):
         metadata = str(instance.metadata)
         if metadata:
-            self._files_meta[instance.node] = metadata
+            self._fast_import.put_blob(metadata, want_sha1=False)
+            GitHgHelper.set('file-meta', instance.node, ':1')
         self._fast_import.put_blob(instance.content, want_sha1=False)
         if instance.node != HG_EMPTY_FILE:
             GitHgHelper.set('file', instance.node, ':1')
@@ -1246,17 +1240,14 @@ class GitHgStore(object):
             ) as commit:
                 update_metadata.append('refs/cinnabar/manifests')
 
-        files_meta_ref = Git.resolve_ref('refs/cinnabar/files-meta')
-        if self._files_meta or (files_meta_ref is None and update_metadata):
+        tree = GitHgHelper.store('metadata', 'files-meta')
+        if tree != NULL_NODE_ID:
+            files_meta_ref = Git.resolve_ref('refs/cinnabar/files-meta')
             with self._fast_import.commit(
                 ref='refs/cinnabar/files-meta',
-                from_commit=files_meta_ref,
             ) as commit:
-                for sha1, content in self._files_meta.iteritems():
-                    if content is None:
-                        commit.filedelete(sha1path(sha1))
-                    else:
-                        commit.filemodify(sha1path(sha1), content=content)
+                commit.write('M 040000 %s \n' % tree)
+            if commit.sha1 != files_meta_ref:
                 update_metadata.append('refs/cinnabar/files-meta')
 
         replace_changed = False
