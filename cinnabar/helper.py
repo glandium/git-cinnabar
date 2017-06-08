@@ -8,6 +8,10 @@ from .git import (
     NULL_NODE_ID,
     split_ls_tree,
 )
+from .hg.changegroup import (
+    RawRevChunk01,
+    RawRevChunk02,
+)
 from .util import (
     check_enabled,
     IOLogger,
@@ -128,7 +132,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 18
+    VERSION = 19
     _helper = False
 
     @classmethod
@@ -210,11 +214,23 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def store(self, what, *args):
-        with self.query('store', what, *args) as stdout:
-            if what == 'metadata':
+        if what == 'metadata':
+            with self.query('store', what, *args) as stdout:
                 sha1 = stdout.read(41)
                 assert sha1[-1] == '\n'
                 return sha1[:40]
+        elif what == 'file':
+            obj = args[0]
+            if isinstance(obj, RawRevChunk01):
+                delta_node = obj.delta_node
+            elif isinstance(obj, RawRevChunk02):
+                delta_node = 'cg2'
+            else:
+                assert False
+            with self.query('store', what, delta_node, str(len(obj))):
+                self._helper.stdin.write(obj)
+        else:
+            assert False
 
     @classmethod
     def heads(self, what):

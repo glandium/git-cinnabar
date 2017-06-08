@@ -4,6 +4,7 @@
 #undef sha1write
 #include "cinnabar-fast-import.h"
 #include "cinnabar-helper.h"
+#include "hg-bundle.h"
 #include "mru.h"
 #include "notes.h"
 #include "sha1-array.h"
@@ -194,6 +195,11 @@ static void end_packfile()
 const unsigned char empty_tree[20] = {
 	0x4b, 0x82, 0x5d, 0xc6, 0x42, 0xcb, 0x6e, 0xb9, 0xa0, 0x60,
 	0xe5, 0x4b, 0xf8, 0xd6, 0x92, 0x88, 0xfb, 0xee, 0x49, 0x04,
+};
+
+const unsigned char empty_hg_file[20] = {
+	0xb8, 0x0d, 0xe5, 0xd1, 0x38, 0x75, 0x85, 0x41, 0xc5, 0xf0,
+	0x52, 0x65, 0xad, 0x14, 0x4a, 0xb9, 0xfa, 0x86, 0xd1, 0xdb,
 };
 
 /* Override fast-import.c's parse_mark_ref to allow a syntax for
@@ -526,12 +532,173 @@ static void store_notes(struct notes_tree *notes, struct object_id *result)
 	}
 }
 
+struct hg_file {
+	unsigned char sha1[20];
+
+	struct strbuf file;
+	struct strbuf metadata;
+	struct strbuf content;
+
+	struct object_entry *content_oe;
+};
+
+static void _hg_file_split(struct hg_file *result, size_t metadata_len)
+{
+	result->metadata.buf = metadata_len ? result->file.buf + 2 : NULL;
+	result->metadata.len = metadata_len - 4;
+	result->content.buf = result->file.buf + metadata_len;
+	result->content.len = result->file.len - metadata_len;
+}
+
+static void hg_file_load(struct hg_file *result, const unsigned char *sha1)
+{
+	const unsigned char *note;
+	char *content;
+	enum object_type type;
+	unsigned long len;
+	size_t metadata_len;
+
+	strbuf_release(&result->file);
+	hashcpy(result->sha1, sha1);
+
+	ensure_notes(&files_meta);
+	note = get_note(&files_meta, sha1);
+	if (note) {
+		content = read_sha1_file_extended(note, &type, &len, 0);
+		strbuf_add(&result->file, "\1\n", 2);
+		strbuf_add(&result->file, content, len);
+		strbuf_add(&result->file, "\1\n", 2);
+		free(content);
+	}
+
+	metadata_len = result->file.len;
+
+	ensure_notes(&hg2git);
+	note = get_note(&hg2git, sha1);
+	if (!note)
+		die("Missing data");
+
+	content = read_sha1_file_extended(note, &type, &len, 0);
+	strbuf_add(&result->file, content, len);
+	free(content);
+
+	// Note this duplicates work read_sha1_file already did.
+	result->content_oe = find_object((unsigned char*) note);
+
+	_hg_file_split(result, metadata_len);
+}
+
+static void hg_file_from_memory(struct hg_file *result,
+                                const unsigned char *sha1, struct strbuf *buf)
+{
+	size_t metadata_len = 0;
+
+	strbuf_swap(&result->file, buf);
+	hashcpy(result->sha1, sha1);
+	result->content_oe = NULL;
+
+	if (result->file.len > 4 && memcmp(result->file.buf, "\1\n", 2) == 0) {
+		char *metadata_end = strstr(result->file.buf + 2, "\1\n");
+		if (metadata_end)
+			metadata_len = metadata_end + 2 - result->file.buf;
+	}
+
+	_hg_file_split(result, metadata_len);
+}
+
+static void hg_file_swap(struct hg_file *a, struct hg_file *b)
+{
+	SWAP(*a, *b);
+}
+
+static void hg_file_init(struct hg_file *file)
+{
+	hashcpy(file->sha1, null_sha1);
+	strbuf_init(&file->file, 0);
+	file->metadata.buf = NULL;
+	file->metadata.len = 0;
+	strbuf_init(&file->content, 0);
+	file->content_oe = NULL;
+}
+
+static void hg_file_release(struct hg_file *file)
+{
+	strbuf_release(&file->file);
+	hg_file_init(file);
+}
+
+static void hg_file_store(struct hg_file *file, struct hg_file *reference)
+{
+	unsigned char sha1[20];
+	struct last_object last_blob = { STRBUF_INIT, 0, 0, 1 };
+
+	if (file->metadata.buf) {
+		store_object(OBJ_BLOB, &file->metadata, NULL, sha1, 0);
+		ensure_notes(&files_meta);
+		add_note(&files_meta, file->sha1, sha1, NULL);
+	}
+
+	if (reference->content_oe && reference->content_oe->idx.offset > 1) {
+		last_blob.data.buf = reference->content.buf;
+		last_blob.data.len = reference->content.len;
+		last_blob.offset = reference->content_oe->idx.offset;
+		last_blob.depth = reference->content_oe->depth;
+	}
+	store_object(OBJ_BLOB, &file->content, &last_blob, sha1, 0);
+	ensure_notes(&hg2git);
+	add_note(&hg2git, file->sha1, sha1, NULL);
+
+	file->content_oe = find_object(sha1);
+}
+
+static void store_file(struct rev_chunk *chunk)
+{
+	static struct hg_file last_file;
+	struct hg_file file;
+	struct strbuf data = STRBUF_INIT;
+	struct rev_diff_part diff;
+	size_t last_end = 0;
+
+	if (!hashcmp(chunk->node, empty_hg_file))
+		return;
+
+	if (hashcmp(chunk->delta_node, last_file.sha1)) {
+		hg_file_release(&last_file);
+
+		if (!is_null_sha1(chunk->delta_node) &&
+		    hashcmp(chunk->delta_node, empty_hg_file))
+			hg_file_load(&last_file, chunk->delta_node);
+
+	}
+
+	rev_diff_start_iter(&diff, chunk);
+	while (rev_diff_iter_next(&diff)) {
+		strbuf_add(&data, last_file.file.buf + last_end,
+		           diff.start - last_end);
+		strbuf_addbuf(&data, &diff.data);
+
+		last_end = diff.end;
+	}
+
+	strbuf_add(&data, last_file.file.buf + last_end,
+		   last_file.file.len - last_end);
+
+	hg_file_init(&file);
+	hg_file_from_memory(&file, chunk->node, &data);
+
+	hg_file_store(&file, &last_file);
+	hg_file_swap(&file, &last_file);
+	hg_file_release(&file);
+}
+
 static void do_store(struct string_list *args)
 {
-	if (args->nr != 2)
-		die("store needs 3 arguments");
+	if (args->nr < 2)
+		die("store needs at least 3 arguments");
 
 	if (!strcmp(args->items[0].string, "metadata")) {
+		if (args->nr != 2)
+			die("store metadata needs 3 arguments");
 		if (!strcmp(args->items[1].string, "hg2git") ||
 		    !strcmp(args->items[1].string, "git2hg") ||
 		    !strcmp(args->items[1].string, "files-meta")) {
@@ -553,6 +720,30 @@ static void do_store(struct string_list *args)
 		} else {
 			die("Unknown metadata kind: %s", args->items[1].string);
 		}
+	} else if (!strcmp(args->items[0].string, "file")) {
+		struct strbuf buf = STRBUF_INIT;
+		struct rev_chunk chunk;
+		size_t length;
+		struct object_id oid;
+		unsigned char *delta_node;
+
+		if (args->nr != 3)
+			die("store file needs 4 arguments");
+		if (!strcmp(args->items[1].string, "cg2")) {
+			delta_node = NULL;
+		} else {
+			if (get_oid_hex(args->items[1].string, &oid))
+				die("Neither 'cg2' nor a sha1: %s",
+				    args->items[1].string);
+			delta_node = oid.hash;
+		}
+
+		// TODO: Error handling
+		length = strtol(args->items[2].string, NULL, 10);
+		strbuf_fread(&buf, length, stdin);
+		rev_chunk_from_memory(&chunk, &buf, delta_node);
+		store_file(&chunk);
+		rev_chunk_release(&chunk);
 	} else {
 		die("Unknown store kind: %s", args->items[0].string);
 	}

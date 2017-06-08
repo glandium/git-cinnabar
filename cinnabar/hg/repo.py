@@ -33,7 +33,6 @@ from cinnabar.git import (
     Git,
     NULL_NODE_ID,
 )
-from cinnabar.hg.objects import File
 from cinnabar.util import (
     check_enabled,
     experiment,
@@ -588,9 +587,8 @@ class BundleApplier(object):
             'Reading %d manifests', next(self._bundle, None)))
 
         for rev_chunk in progress_iter(
-                'Reading and importing %d files', iter_initialized(
-                    store.file, next(self._bundle, None), File.from_chunk)):
-            store.store_file(rev_chunk)
+                'Reading and importing %d files', next(self._bundle, None)):
+            GitHgHelper.store('file', rev_chunk)
 
         if next(self._bundle, None) is not None:
             assert False
