@@ -394,6 +394,8 @@ static void handle_changeset_conflict(struct object_id *hg_id,
 		    get_oid_hex(&content[10], &oid))
 			die("Invalid git2hg note for %s", oid_to_hex(git_id));
 
+		free(content);
+
 		/* We might just already have the changeset in store */
 		if (oidcmp(&oid, hg_id) == 0)
 			break;
@@ -402,6 +404,7 @@ static void handle_changeset_conflict(struct object_id *hg_id,
 			content = read_sha1_file_extended(git_id->hash, &type,
 			                                  &len, 0);
 			strbuf_add(&buf, content, len);
+			free(content);
 		}
 
 		strbuf_addch(&buf, '\0');
