@@ -101,6 +101,7 @@ static void init()
 	reset_pack_idx_option(&pack_idx_opts);
 	git_pack_config();
 	ignore_case = 0;
+	max_depth = 50;
 	warn_on_object_refname_ambiguity = 0;
 
 	alloc_objects(object_entry_alloc);
