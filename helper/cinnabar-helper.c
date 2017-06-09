@@ -1268,7 +1268,7 @@ static void do_connect(struct string_list *args)
 	}
 }
 
-int add_each_head(const struct object_id *oid, void *data)
+static int add_each_head(const struct object_id *oid, void *data)
 {
 	struct strbuf *buf = (struct strbuf *)data;
 
