@@ -565,8 +565,10 @@ struct manifest_tree {
 
 static void track_tree(struct tree *tree, struct object_list **tree_list)
 {
-	object_list_insert(&tree->object, tree_list);
-	tree->object.flags |= SEEN;
+	if (tree_list) {
+		object_list_insert(&tree->object, tree_list);
+		tree->object.flags |= SEEN;
+	}
 }
 
 /* Fills a manifest_tree with the tree sha1s for the git/ and hg/
