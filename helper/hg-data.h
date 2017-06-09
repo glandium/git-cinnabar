@@ -3,6 +3,8 @@
 
 #include "strbuf.h"
 
+extern int is_empty_hg_file(const unsigned char *sha1);
+
 struct hg_file {
 	unsigned char sha1[20];
 

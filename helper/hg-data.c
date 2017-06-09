@@ -4,6 +4,16 @@
 #include "cinnabar-fast-import.h"
 #include "hg-data.h"
 
+static const unsigned char empty_hg_file[20] = {
+	0xb8, 0x0d, 0xe5, 0xd1, 0x38, 0x75, 0x85, 0x41, 0xc5, 0xf0,
+	0x52, 0x65, 0xad, 0x14, 0x4a, 0xb9, 0xfa, 0x86, 0xd1, 0xdb,
+};
+
+int is_empty_hg_file(const unsigned char *sha1)
+{
+	return hashcmp(empty_hg_file, sha1) == 0;
+}
+
 void _hg_file_split(struct hg_file *result, size_t metadata_len)
 {
 	result->metadata.buf = metadata_len ? result->file.buf + 2 : NULL;

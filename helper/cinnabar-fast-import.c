@@ -203,11 +203,6 @@ const unsigned char empty_tree[20] = {
 	0xe5, 0x4b, 0xf8, 0xd6, 0x92, 0x88, 0xfb, 0xee, 0x49, 0x04,
 };
 
-const unsigned char empty_hg_file[20] = {
-	0xb8, 0x0d, 0xe5, 0xd1, 0x38, 0x75, 0x85, 0x41, 0xc5, 0xf0,
-	0x52, 0x65, 0xad, 0x14, 0x4a, 0xb9, 0xfa, 0x86, 0xd1, 0xdb,
-};
-
 /* Override fast-import.c's parse_mark_ref to allow a syntax for
  * mercurial sha1s, resolved through hg2git. Hack: it uses a fixed
  * mark for this: 2.
@@ -573,14 +568,14 @@ static void store_file(struct rev_chunk *chunk)
 	struct rev_diff_part diff;
 	size_t last_end = 0;
 
-	if (!hashcmp(chunk->node, empty_hg_file))
+	if (is_empty_hg_file(chunk->node))
 		return;
 
 	if (hashcmp(chunk->delta_node, last_file.sha1)) {
 		hg_file_release(&last_file);
 
 		if (!is_null_sha1(chunk->delta_node) &&
-		    hashcmp(chunk->delta_node, empty_hg_file))
+		    !is_empty_hg_file(chunk->delta_node))
 			hg_file_load(&last_file, chunk->delta_node);
 
 	}
