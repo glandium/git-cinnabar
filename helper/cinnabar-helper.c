@@ -643,7 +643,6 @@ static int manifest_tree_state_init(const struct manifest_tree *tree,
 
 struct manifest_entry {
 	const unsigned char *sha1;
-	/* Used for trees only. */
 	const unsigned char *other_sha1;
 	const char *path;
 	unsigned int mode;
@@ -671,8 +670,8 @@ static int manifest_tree_entry(struct manifest_tree_state *state,
 	if (S_ISDIR(entry_git.mode)) {
 		if (entry_git.mode != entry_hg.mode)
 			goto corrupted;
-		result->other_sha1 = entry_git.oid->hash;
 	}
+	result->other_sha1 = entry_git.oid->hash;
 	return 1;
 corrupted:
 	die("Corrupted metadata");
