@@ -11,6 +11,11 @@
 #include "sha1-array.h"
 #include "tree-walk.h"
 
+#define ENSURE_INIT() do { \
+	if (!initialized) \
+		init(); \
+} while (0)
+
 static int initialized = 0;
 
 static void cleanup();
@@ -539,6 +544,8 @@ void hg_file_store(struct hg_file *file, struct hg_file *reference)
 	struct last_object last_blob = { STRBUF_INIT, 0, 0, 1 };
 	struct object_entry *oe;
 
+	ENSURE_INIT();
+
 	if (file->metadata.buf) {
 		store_object(OBJ_BLOB, &file->metadata, NULL, sha1, 0);
 		ensure_notes(&files_meta);
@@ -660,13 +667,8 @@ static void do_store(struct string_list *args)
 
 int maybe_handle_command(const char *command, struct string_list *args)
 {
-#define INIT() do { \
-	if (!initialized) \
-		init(); \
-} while (0)
-
 #define COMMON_HANDLING() do { \
-	INIT(); \
+	ENSURE_INIT(); \
 	fill_command_buf(command, args); \
 } while (0)
 
@@ -678,10 +680,10 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		COMMON_HANDLING();
 		parse_feature(command_buf.buf + sizeof("feature"));
 	} else if (!strcmp(command, "set")) {
-		INIT();
+		ENSURE_INIT();
 		do_set(args);
 	} else if (!strcmp(command, "store")) {
-		INIT();
+		ENSURE_INIT();
 		require_explicit_termination = 1;
 		do_store(args);
 	} else if (!strcmp(command, "blob")) {
