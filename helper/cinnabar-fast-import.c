@@ -542,7 +542,7 @@ void hg_file_store(struct hg_file *file, struct hg_file *reference)
 {
 	unsigned char sha1[20];
 	struct last_object last_blob = { STRBUF_INIT, 0, 0, 1 };
-	struct object_entry *oe;
+	struct object_entry *oe = NULL;
 
 	ENSURE_INIT();
 
@@ -552,7 +552,8 @@ void hg_file_store(struct hg_file *file, struct hg_file *reference)
 		add_note(&files_meta, file->sha1, sha1, NULL);
 	}
 
-	oe = (struct object_entry *) reference->content_oe;
+	if (reference)
+		oe = (struct object_entry *) reference->content_oe;
 
 	if (oe && oe->idx.offset > 1) {
 		last_blob.data.buf = reference->content.buf;
