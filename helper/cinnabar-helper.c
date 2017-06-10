@@ -571,17 +571,12 @@ static void track_tree(struct tree *tree, struct object_list **tree_list)
 
 /* Fills a manifest_tree with the tree sha1s for the git/ and hg/
  * subdirectories of the given (git) manifest tree. */
-static int get_manifest_tree(const unsigned char *git_sha1,
+static int get_manifest_tree(struct tree *tree,
                              struct manifest_tree *result,
                              struct object_list **tree_list)
 {
-	struct tree *tree = NULL;
 	struct tree_desc desc;
 	struct name_entry entry;
-
-	tree = parse_tree_indirect(git_sha1);
-	if (!tree)
-		return -1;
 
 	track_tree(tree, tree_list);
 
@@ -867,6 +862,7 @@ static struct strbuf *generate_manifest(const unsigned char *git_sha1)
 	struct manifest_tree manifest_tree;
 	struct strbuf content = STRBUF_INIT;
 	struct object_list *tree_list = NULL;
+	struct tree *tree = NULL;
 
 	/* We keep a list of all the trees we've seen while generating the
 	 * previous manifest. Each tree is marked as SEEN at that time.
@@ -880,7 +876,11 @@ static struct strbuf *generate_manifest(const unsigned char *git_sha1)
 		previous_list = previous_list->next;
 	}
 
-	if (get_manifest_tree(git_sha1, &manifest_tree, &tree_list))
+	tree = parse_tree_indirect(git_sha1);
+	if (!tree)
+		goto not_found;
+
+	if (get_manifest_tree(tree, &manifest_tree, &tree_list))
 		goto not_found;
 
 	if (generated_manifest.content.len) {
