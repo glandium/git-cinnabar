@@ -78,7 +78,7 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 2000
+#define CMD_VERSION 2100
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -1078,6 +1078,66 @@ error:
 	write_or_die(1, "error\n", 6);
 }
 
+static void do_check_file(struct string_list *args)
+{
+	struct hg_file file;
+	unsigned char sha1[20], parent1[20], parent2[20], result[20];
+
+	hg_file_init(&file);
+
+	if (args->nr < 1 || args->nr > 3)
+		goto error;
+
+	if (get_sha1_hex(args->items[0].string, sha1))
+		goto error;
+
+	if (args->nr > 1) {
+		if (get_sha1_hex(args->items[1].string, parent1))
+			goto error;
+	} else
+		hashclr(parent1);
+
+	if (args->nr > 2) {
+		if (get_sha1_hex(args->items[2].string, parent2))
+			goto error;
+	} else
+		hashclr(parent2);
+
+	hg_file_load(&file, sha1);
+
+	/* We do the quick and dirty thing here, for now.
+	 * See details in cinnabar.githg.FileFindParents._set_parents_fallback
+	 */
+	hg_sha1(&file.file, parent1, parent2, result);
+	if (hashcmp(sha1, result) == 0)
+		goto ok;
+
+	hg_sha1(&file.file, parent1, NULL, result);
+	if (hashcmp(sha1, result) == 0)
+		goto ok;
+
+	hg_sha1(&file.file, parent2, NULL, result);
+	if (hashcmp(sha1, result) == 0)
+		goto ok;
+
+	hg_sha1(&file.file, parent1, parent1, result);
+	if (hashcmp(sha1, result) == 0)
+		goto ok;
+
+	hg_sha1(&file.file, NULL, NULL, result);
+	if (hashcmp(sha1, result))
+		goto error;
+
+ok:
+	write_or_die(1, "ok\n", 3);
+	hg_file_release(&file);
+	return;
+
+error:
+	write_or_die(1, "error\n", 6);
+	hg_file_release(&file);
+}
+
 static void do_version(struct string_list *args)
 {
 	long int version;
@@ -1523,6 +1583,8 @@ int cmd_main(int argc, const char *argv[])
 			do_manifest(&args);
 		else if (!strcmp("check-manifest", command))
 			do_check_manifest(&args);
+		else if (!strcmp("check-file", command))
+			do_check_file(&args);
 		else if (!strcmp("cat-file", command))
 			do_cat_file(&args);
 		else if (!strcmp("ls-tree", command))
