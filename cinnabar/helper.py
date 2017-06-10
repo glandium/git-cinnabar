@@ -130,7 +130,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 20
+    VERSION = 21
     _helper = False
 
     @classmethod
@@ -164,6 +164,11 @@ class GitHgHelper(BaseHelper):
     @classmethod
     def check_manifest(self, hg_sha1):
         with self.query('check-manifest', hg_sha1) as stdout:
+            return stdout.readline().strip() == 'ok'
+
+    @classmethod
+    def check_file(self, hg_sha1, *parents):
+        with self.query('check-file', hg_sha1, *parents) as stdout:
             return stdout.readline().strip() == 'ok'
 
     @classmethod

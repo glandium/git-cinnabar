@@ -1,8 +1,10 @@
+import logging
 import sys
 from cinnabar.cmd.util import CLI
 from cinnabar.githg import (
     Changeset,
     ChangesetPatcher,
+    FileFindParents,
     GitCommit,
     GitHgStore,
     HG_EMPTY_FILE,
@@ -94,7 +96,7 @@ def fsck(args):
         store = GitHgStore()
 
         # Force a files fsck, since we modified files metadata.
-        args.files = True
+        args.files = 'upgrade'
 
     if args.commit:
         all_hg2git = {}
@@ -168,6 +170,8 @@ def fsck(args):
 
     dag = gitdag()
     manifest_dag = gitdag()
+
+    full_file_check = FileFindParents.logger.isEnabledFor(logging.DEBUG)
 
     for node, tree, parents in progress_iter('Checking %d changesets',
                                              all_git_commits):
@@ -263,9 +267,14 @@ def fsck(args):
             changes = get_changes(manifest_ref, git_parents, 'hg')
             for path, hg_file, hg_fileparents in changes:
                 if hg_file != NULL_NODE_ID and hg_file not in seen_files:
-                    file = store.file(hg_file, hg_fileparents, git_parents,
-                                      path)
-                    if file.node != file.sha1:
+                    if full_file_check:
+                        file = store.file(hg_file, hg_fileparents, git_parents,
+                                          path)
+                        valid = file.node == file.sha1
+                    else:
+                        valid = GitHgHelper.check_file(hg_file,
+                                                       *hg_fileparents)
+                    if not valid:
                         report('Sha1 mismatch for file %s in manifest %s'
                                % (hg_file, manifest_ref))
                     seen_files.add(hg_file)
