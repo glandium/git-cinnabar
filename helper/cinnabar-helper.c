@@ -1070,7 +1070,7 @@ static void do_check_manifest(struct string_list *args)
 		get_manifest_sha1(manifest_commit, sha1);
 
 	if (hashcmp(result, sha1) == 0) {
-		write(1, "ok\n", 3);
+		write_or_die(1, "ok\n", 3);
 		return;
 	}
 
@@ -1505,7 +1505,7 @@ static void do_upgrade(struct string_list *args)
 	}
         stop_progress(&track.progress);
 
-	write(1, "ok\n", 3);
+	write_or_die(1, "ok\n", 3);
 }
 
 static void init_config()
