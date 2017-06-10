@@ -1574,6 +1574,7 @@ int cmd_main(int argc, const char *argv[])
 		split_command(buf.buf, &command, &args);
 		if (!strcmp("version", command)) {
 			do_version(&args);
+			string_list_clear(&args, 0);
 			continue;
 		} else if (!strcmp("connect", command)) {
 			do_connect(&args);
