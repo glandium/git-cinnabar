@@ -60,11 +60,14 @@
 #include "notes.h"
 #include "streaming.h"
 #include "object.h"
+#include "oidset.h"
+#include "progress.h"
 #include "quote.h"
 #include "revision.h"
 #include "tree.h"
 #include "tree-walk.h"
 #include "hg-connect.h"
+#include "hg-data.h"
 #include "cinnabar-helper.h"
 #include "cinnabar-fast-import.h"
 
@@ -75,7 +78,7 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 1900
+#define CMD_VERSION 2000
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -1322,6 +1325,117 @@ static void do_heads(struct string_list *args)
 	strbuf_release(&heads_buf);
 }
 
+struct track_upgrade {
+	struct oidset set;
+	struct progress *progress;
+};
+
+static void upgrade_files(const struct manifest_tree *tree,
+                          struct track_upgrade *track)
+{
+	struct manifest_tree_state state;
+	struct manifest_entry entry;
+
+	state.tree_hg = lookup_tree(tree->hg);
+	if (!state.tree_hg)
+		goto corrupted;
+
+	if (state.tree_hg->object.flags & SEEN)
+		goto cleanup;
+
+	if (manifest_tree_state_init(tree, &state, NULL))
+		goto corrupted;
+
+	while (manifest_tree_entry(&state, &entry)) {
+		struct object_id oid;
+		if (S_ISDIR(entry.mode)) {
+			struct manifest_tree subtree;
+			hashcpy(subtree.git, entry.other_sha1);
+			hashcpy(subtree.hg, entry.sha1);
+			upgrade_files(&subtree, track);
+			continue;
+		}
+
+		hashcpy(oid.hash, entry.sha1);
+		if (oidset_insert(&track->set, &oid))
+			continue;
+
+		const unsigned char *note = get_note(&hg2git, entry.sha1);
+		if (!note && !is_empty_hg_file(entry.sha1))
+			goto corrupted;
+		if (note && hashcmp(note, entry.other_sha1)) {
+			struct hg_file file;
+			struct strbuf buf = STRBUF_INIT;
+			unsigned long len;
+			enum object_type t;
+			char *content;
+			content = read_sha1_file_extended(note, &t, &len, 0);
+			strbuf_attach(&buf, content, len, len);
+			hg_file_init(&file);
+			hg_file_from_memory(&file, entry.sha1, &buf);
+			remove_note(&hg2git, entry.sha1);
+			hg_file_store(&file, NULL);
+			hg_file_release(&file);
+			note = get_note(&hg2git, entry.sha1);
+			if (hashcmp(note, entry.other_sha1))
+				goto corrupted;
+		}
+		display_progress(track->progress, track->set.map.size);
+	}
+
+	free_tree_buffer(state.tree_git);
+cleanup:
+	state.tree_hg->object.flags |= SEEN;
+	free_tree_buffer(state.tree_hg);
+	return;
+corrupted:
+	die("Corrupted metadata");
+
+}
+
+static int revs_add_each_head(const struct object_id *oid, void *data)
+{
+	struct rev_info *revs = (struct rev_info *)data;
+
+	add_pending_sha1(revs, oid_to_hex(oid), oid->hash, 0);
+
+	return 0;
+}
+
+static void do_upgrade(struct string_list *args)
+{
+	struct rev_info revs;
+	struct commit *commit;
+
+        if (args->nr != 0)
+                die("upgrade takes no arguments");
+
+	ensure_notes(&hg2git);
+
+	init_revisions(&revs, NULL);
+
+	ensure_heads(&manifest_heads);
+	oid_array_for_each_unique(&manifest_heads, revs_add_each_head, &revs);
+
+	if (prepare_revision_walk(&revs))
+		die("revision walk setup failed");
+
+	struct track_upgrade track = { OIDSET_INIT, NULL };
+	track.progress = start_progress("Upgrading files metadata", 0);
+	while ((commit = get_revision(&revs)) != NULL) {
+		if (parse_tree(commit->tree))
+			die("Corrupt mercurial metadata");
+		struct manifest_tree manifest_tree;
+		if (get_manifest_tree(commit->tree, &manifest_tree, NULL))
+			die("Corrupt mercurial metadata");
+		upgrade_files(&manifest_tree, &track);
+		free_tree_buffer(commit->tree);
+	}
+        stop_progress(&track.progress);
+
+	write(1, "ok\n", 3);
+}
+
 static void init_config()
 {
 	struct strbuf conf = STRBUF_INIT;
@@ -1407,6 +1521,8 @@ int cmd_main(int argc, const char *argv[])
 			do_diff_tree(&args);
 		else if (!strcmp("heads", command))
 			do_heads(&args);
+		else if (!strcmp("upgrade", command))
+			do_upgrade(&args);
 		else if (!maybe_handle_command(command, &args))
 			die("Unknown command: \"%s\"", command);
 

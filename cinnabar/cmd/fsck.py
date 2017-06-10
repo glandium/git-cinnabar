@@ -3,11 +3,9 @@ from cinnabar.cmd.util import CLI
 from cinnabar.githg import (
     Changeset,
     ChangesetPatcher,
-    GeneratedManifestInfo,
     GitCommit,
     GitHgStore,
     HG_EMPTY_FILE,
-    ManifestLine,
     OldUpgradeException,
     one,
     UpgradeException,
@@ -19,9 +17,7 @@ from cinnabar.git import (
     NULL_NODE_ID,
 )
 from cinnabar.util import (
-    progress_enum,
     progress_iter,
-    sorted_merge,
 )
 from cinnabar.helper import GitHgHelper
 from cinnabar.hg.bundle import get_changes
@@ -83,6 +79,22 @@ def fsck(args):
         info('Git-cinnabar metadata needs upgrade. '
              'Please re-run without %s.' % what)
         return 1
+
+    if upgrade:
+        if not GitHgHelper.upgrade():
+            print 'Cannot finish upgrading... You may need to reclone.'
+            return 1
+
+        info('Finalizing upgrade...')
+        # "Reboot" the store, and run a normal fsck from the upgraded store.
+        store.close()
+
+        # Force the helper to be restarted.
+        GitHgHelper._helper = False
+        store = GitHgStore()
+
+        # Force a files fsck, since we modified files metadata.
+        args.files = True
 
     if args.commit:
         all_hg2git = {}
@@ -148,112 +160,6 @@ def fsck(args):
 
         all_git_commits = GitHgHelper.rev_list(
             '--topo-order', '--full-history', '--reverse', git_heads)
-
-    if upgrade:
-        store._manifest_heads_orig = set()
-
-        def _diff_tree(a, b, base_path):
-            if not b:
-                for line in Git.ls_tree(a, base_path, recursive=True):
-                    mode, typ, sha1, path = line
-                    path = path[len(base_path) + 1:] if base_path else path
-                    yield path, sha1, mode, 'A'
-            else:
-                assert len(b) == 1
-                for line in Git.diff_tree(b[0], a, base_path):
-                    _mode, mode, _sha1, sha1, status, path = line
-                    yield path, sha1, mode, status
-
-        def manifest_git2hg(sha1):
-            return GitCommit(sha1).body
-
-        def scan_files():
-            seen_files = set()
-            for i, (m, p) in enumerate(manifest_commits.iteritems(), start=1):
-                git_changes = _diff_tree(m, p[:1], 'git')
-                hg_changes = _diff_tree(m, p[:1], 'hg')
-                manifest = GeneratedManifestInfo(NULL_NODE_ID)
-                manifest.node = manifest_git2hg(m)
-                manifest.set_parents(*(manifest_git2hg(c) for c in p))
-                manifest.delta_node = manifest.parent1
-                for path, git_change, hg_change in sorted_merge(git_changes,
-                                                                hg_changes):
-                    if git_change:
-                        git_file, mode, _ = git_change
-                    else:
-                        mode, _, git_file, p = one(
-                            Git.ls_tree(m, 'git/%s' % path))
-                    if hg_change:
-                        hg_file, _, status = hg_change
-                    else:
-                        # The only case where a hg change would be missing is
-                        # when there is an attribute change
-                        status = 'M'
-                        hg_file = one(Git.ls_tree(m, 'hg/%s' % path))[2]
-                    if status == 'D':
-                        manifest.removed.add(path)
-                        continue
-                    attr = store.ATTR[mode]
-                    manifest.append_line(ManifestLine(path, hg_file, attr),
-                                         modified=True)
-                    if hg_file != NULL_NODE_ID and hg_file not in seen_files:
-                        seen_files.add(hg_file)
-                        yield (i, len(seen_files)), (hg_file, git_file)
-
-                GitHgHelper.set('manifest', manifest.node, NULL_NODE_ID)
-                store.store_manifest(manifest)
-                assert store.manifest_ref(manifest.node) == m
-
-        if 'files-meta' not in store._flags:
-            for f in progress_enum('Upgrading %d manifests and '
-                                   '%d files metadata', scan_files()):
-                hg_file, git_file = f
-                if hg_file == HG_EMPTY_FILE:
-                    continue
-                if hg_file not in all_hg2git:
-                    report('Missing file in hg2git branch: %s' % hg_file)
-                    continue
-                hg2git_file, typ = all_hg2git[hg_file]
-                if typ != 'blob':
-                    report('Metadata corrupted for file %s' % hg_file)
-                    continue
-                if hg2git_file == git_file:
-                    continue
-                full_content = GitHgHelper.cat_file('blob', hg2git_file)
-                content = GitHgHelper.cat_file('blob', git_file)
-                metadata = full_content[:len(full_content) - len(content)]
-                if (not metadata.startswith('\1\n') and
-                        not metadata.endswith('\1\n')):
-                    report('Metadata corrupted for file %s' % hg_file)
-                GitHgHelper.set('file', hg_file, NULL_NODE_ID)
-                GitHgHelper.set('file', hg_file, git_file)
-                store._fast_import.put_blob(metadata[2:-2], want_sha1=False)
-                GitHgHelper.set('file-meta', hg_file, ':1')
-        else:
-            def scan_manifests():
-                prev = 0
-                for (i, j), _ in scan_files():
-                    if i != prev:
-                        yield i, None
-                        prev = i
-            for _ in progress_enum('Upgrading %d manifests', scan_manifests()):
-                continue
-
-        if status['broken']:
-            print 'Cannot finish upgrading... You may need to reclone.'
-            return 1
-
-        # Technically, all_hg2git should be updated here, but we don't use the
-        # git sha1 in there further below, so skip that.
-
-        # "Reboot" the store, and run a normal fsck from the upgraded store.
-        store.close()
-        # Force the helper to be restarted.
-        GitHgHelper._helper = False
-        store = GitHgStore()
-
-        # Force a files fsck, since we modified files metadata.
-        args.files = True
 
     seen_changesets = set()
     seen_manifests = set()

@@ -130,7 +130,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 19
+    VERSION = 20
     _helper = False
 
     @classmethod
@@ -235,6 +235,11 @@ class GitHgHelper(BaseHelper):
         with self.query('heads', what) as stdout:
             data = self._read_data(stdout)
             return data.split()
+
+    @classmethod
+    def upgrade(self):
+        with self.query('upgrade') as stdout:
+            return stdout.readline().strip() == 'ok'
 
 
 class HgRepoHelper(BaseHelper):
