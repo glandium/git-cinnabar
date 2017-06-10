@@ -233,7 +233,10 @@ def fsck(args):
             if not GitHgHelper.check_manifest(manifest):
                 report('Sha1 mismatch for manifest %s' % manifest)
 
-        manifest_commit_parents = manifest_commits.get(manifest_ref, ())
+        if args.commit:
+            manifest_commit_parents = GitCommit(manifest_ref).parents
+        else:
+            manifest_commit_parents = manifest_commits.get(manifest_ref, ())
         if sorted(manifest_commit_parents) != sorted(git_parents):
             # TODO: better error
             report('%s(%s) %s != %s' % (manifest, manifest_ref,
