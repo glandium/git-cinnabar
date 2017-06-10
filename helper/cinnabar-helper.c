@@ -996,13 +996,37 @@ static void get_manifest_sha1(const struct commit *commit, unsigned char *sha1)
 	unuse_commit_buffer(commit, msg);
 }
 
+static void hg_sha1(struct strbuf *data, const unsigned char *parent1,
+                    const unsigned char *parent2, unsigned char *result)
+{
+	git_SHA_CTX ctx;
+
+	if (!parent1)
+		parent1 = null_sha1;
+	if (!parent2)
+		parent2 = null_sha1;
+
+	git_SHA1_Init(&ctx);
+
+	if (hashcmp(parent1, parent2) < 0) {
+		git_SHA1_Update(&ctx, parent1, 20);
+		git_SHA1_Update(&ctx, parent2, 20);
+	} else {
+		git_SHA1_Update(&ctx, parent2, 20);
+		git_SHA1_Update(&ctx, parent1, 20);
+	}
+
+	git_SHA1_Update(&ctx, data->buf, data->len);
+
+	git_SHA1_Final(result, &ctx);
+}
+
 static void do_check_manifest(struct string_list *args)
 {
 	unsigned char sha1[20], parent1[20], parent2[20], result[20];
 	const unsigned char *manifest_sha1;
 	const struct commit *manifest_commit;
 	struct strbuf *manifest = NULL;
-	git_SHA_CTX ctx;
 
 	if (args->nr != 1)
 		goto error;
@@ -1040,19 +1064,7 @@ static void do_check_manifest(struct string_list *args)
 		hashclr(parent2);
 	}
 
-	git_SHA1_Init(&ctx);
-
-	if (hashcmp(parent1, parent2) < 0) {
-		git_SHA1_Update(&ctx, parent1, sizeof(parent1));
-		git_SHA1_Update(&ctx, parent2, sizeof(parent2));
-	} else {
-		git_SHA1_Update(&ctx, parent2, sizeof(parent2));
-		git_SHA1_Update(&ctx, parent1, sizeof(parent1));
-	}
-
-	git_SHA1_Update(&ctx, manifest->buf, manifest->len);
-
-	git_SHA1_Final(result, &ctx);
+	hg_sha1(manifest, parent1, parent2, result);
 
 	if (manifest_sha1 == sha1)
 		get_manifest_sha1(manifest_commit, sha1);
