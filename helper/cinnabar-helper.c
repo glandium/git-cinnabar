@@ -1626,5 +1626,8 @@ int cmd_main(int argc, const char *argv[])
 	if (hg2git.initialized)
 		free_notes(&hg2git);
 
+	if (files_meta.initialized)
+		free_notes(&files_meta);
+
 	return 0;
 }
