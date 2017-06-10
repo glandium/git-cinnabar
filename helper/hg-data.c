@@ -33,6 +33,9 @@ void hg_file_load(struct hg_file *result, const unsigned char *sha1)
 	strbuf_release(&result->file);
 	hashcpy(result->sha1, sha1);
 
+	if (is_empty_hg_file(sha1))
+		return;
+
 	ensure_notes(&files_meta);
 	note = get_note(&files_meta, sha1);
 	if (note) {

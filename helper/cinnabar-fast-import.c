@@ -583,8 +583,7 @@ static void store_file(struct rev_chunk *chunk)
 	if (hashcmp(chunk->delta_node, last_file.sha1)) {
 		hg_file_release(&last_file);
 
-		if (!is_null_sha1(chunk->delta_node) &&
-		    !is_empty_hg_file(chunk->delta_node))
+		if (!is_null_sha1(chunk->delta_node))
 			hg_file_load(&last_file, chunk->delta_node);
 
 	}
