@@ -205,6 +205,7 @@ def fsck(args):
             GitHgHelper.set('changeset', changeset, NULL_NODE_ID)
             GitHgHelper.set('changeset', changeset, node)
             store._fast_import.put_blob(patcher, want_sha1=False)
+            GitHgHelper.set('changeset-metadata', changeset, NULL_NODE_ID)
             GitHgHelper.set('changeset-metadata', changeset, ':1')
 
         manifest = changeset_data.manifest
