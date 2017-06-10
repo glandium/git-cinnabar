@@ -1202,10 +1202,13 @@ class GitHgStore(object):
         update_metadata = []
         tree = GitHgHelper.store('metadata', 'hg2git')
         if tree != NULL_NODE_ID:
+            hg2git = Git.resolve_ref('refs/cinnabar/hg2git')
             with self._fast_import.commit(
                 ref='refs/cinnabar/hg2git',
             ) as commit:
                 commit.write('M 040000 %s \n' % tree)
+            if commit.sha1 != hg2git:
+                update_metadata.append('refs/cinnabar/hg2git')
 
         tree = GitHgHelper.store('metadata', 'git2hg')
         if tree != NULL_NODE_ID:
