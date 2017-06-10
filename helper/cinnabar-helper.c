@@ -111,6 +111,18 @@ static int config(const char *name, struct strbuf *result)
 	return 0;
 }
 
+static void rev_info_release(struct rev_info *revs)
+{
+	int i;
+
+	object_array_clear(&revs->pending);
+	object_array_clear(&revs->boundary_commits);
+	for (i = 0; i < revs->cmdline.nr; i++)
+		free((void *)revs->cmdline.rev[i].name);
+	free(revs->cmdline.rev);
+	revs->cmdline.rev = NULL;
+}
+
 static void split_command(char *line, const char **command,
 			  struct string_list *args)
 {
@@ -311,6 +323,7 @@ static void do_rev_list(struct string_list *args)
 	clear_object_flags(ALL_REV_FLAGS);
 	send_buffer(&buf);
 	strbuf_release(&buf);
+	rev_info_release(&revs);
 }
 
 static void strbuf_diff_tree(struct diff_queue_struct *q,
@@ -374,6 +387,7 @@ static void do_diff_tree(struct string_list *args)
 	log_tree_diff_flush(&revs);
 	send_buffer(&buf);
 	strbuf_release(&buf);
+	rev_info_release(&revs);
 }
 
 static void do_get_note(struct notes_tree *t, struct string_list *args)
@@ -1506,6 +1520,7 @@ static void do_upgrade(struct string_list *args)
         stop_progress(&track.progress);
 
 	write_or_die(1, "ok\n", 3);
+	rev_info_release(&revs);
 }
 
 static void init_config()
