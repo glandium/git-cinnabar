@@ -13,7 +13,6 @@ from .hg.changegroup import (
     RawRevChunk02,
 )
 from .util import (
-    check_enabled,
     IOLogger,
     Process,
 )
@@ -43,7 +42,6 @@ class BaseHelper(object):
             if helper_path == '':
                 self._helper = None
         if self._helper is False:
-            stderr = None if check_enabled('helper') else open(os.devnull, 'w')
             env = {
                 'GIT_REPLACE_REF_BASE': 'refs/cinnabar/replace/',
             }
@@ -53,7 +51,7 @@ class BaseHelper(object):
                 command = ('git', 'cinnabar-helper')
             try:
                 self._helper = Process(*command, stdin=subprocess.PIPE,
-                                       stderr=stderr, logger='cinnabar-helper',
+                                       stderr=None, logger='cinnabar-helper',
                                        env=env)
                 self._helper.stdin.write('version %d\n' % self.VERSION)
                 response = self._helper.stdout.readline()

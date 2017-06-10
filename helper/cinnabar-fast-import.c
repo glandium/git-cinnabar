@@ -159,7 +159,8 @@ static void cleanup()
 
 	initialized = 0;
 
-	pack_report();
+	if (cinnabar_check & CHECK_HELPER)
+		pack_report();
 }
 
 static void end_packfile()

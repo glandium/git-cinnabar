@@ -82,6 +82,31 @@ static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 struct notes_tree git2hg, hg2git, files_meta;
 
 int metadata_flags = 0;
+int cinnabar_check = 0;
+
+static int config(const char *name, struct strbuf *result)
+{
+	struct strbuf key = STRBUF_INIT;
+	char *p, *end;
+	const char *val;
+
+	strbuf_addstr(&key, "GIT_CINNABAR_");
+	strbuf_addstr(&key, name);
+	for (p = key.buf + sizeof("git_cinnabar"), end = key.buf + key.len;
+	     p < end; p++)
+		*p = toupper(*p);
+	val = getenv(key.buf);
+	if (!val) {
+		strbuf_release(&key);
+		strbuf_addstr(&key, "cinnabar.");
+		strbuf_addstr(&key, name);
+		if (git_config_get_value(key.buf, &val))
+			return 1;
+	}
+	strbuf_addstr(result, val);
+	strbuf_release(&key);
+	return 0;
+}
 
 static void split_command(char *line, const char **command,
 			  struct string_list *args)
@@ -1297,6 +1322,22 @@ static void do_heads(struct string_list *args)
 	strbuf_release(&heads_buf);
 }
 
+static void init_config()
+{
+	struct strbuf conf = STRBUF_INIT;
+	if (!config("check", &conf)) {
+		struct strbuf **check = strbuf_split(&conf, ',');
+		struct strbuf **c;
+		for (c = check; *c; c++)
+			if (!strcmp((*c)->buf, "true") ||
+			    !strcmp((*c)->buf, "all") ||
+			    !strcmp((*c)->buf, "helper"))
+				cinnabar_check |= CHECK_HELPER;
+		strbuf_list_free(check);
+	}
+	strbuf_release(&conf);
+}
+
 static void init_flags()
 {
 	struct commit *c;
@@ -1342,6 +1383,7 @@ int cmd_main(int argc, const char *argv[])
 			setup_git_directory();
 			git_config(git_diff_basic_config, NULL);
 			ignore_case = 0;
+			init_config();
 			init_flags();
 			initialized = 1;
 		}

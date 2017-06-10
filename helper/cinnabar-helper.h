@@ -14,6 +14,10 @@
 
 extern int metadata_flags;
 
+#define CHECK_HELPER 0x1
+
+extern int cinnabar_check;
+
 extern struct oid_array manifest_heads;
 
 extern void ensure_heads(struct oid_array *heads);
