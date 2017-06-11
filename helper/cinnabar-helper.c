@@ -223,6 +223,7 @@ not_found:
 
 struct ls_tree_context {
 	struct strbuf buf;
+	struct object_list *list;
 	int recursive;
 };
 
@@ -237,6 +238,7 @@ static int fill_ls_tree(const unsigned char *sha1, struct strbuf *base,
 	if (S_ISGITLINK(mode)) {
 		type = commit_type;
 	} else if (S_ISDIR(mode)) {
+		object_list_insert(lookup_tree(sha1), &ctx->list);
 		if (ctx->recursive)
 			return READ_TREE_RECURSIVE;
 		type = tree_type;
@@ -253,7 +255,7 @@ static void do_ls_tree(struct string_list *args)
 {
 	unsigned char sha1[20];
 	struct tree *tree = NULL;
-	struct ls_tree_context ctx = { STRBUF_INIT, 0 };
+	struct ls_tree_context ctx = { STRBUF_INIT, NULL, 0 };
 	struct pathspec match_all;
 
 	if (args->nr == 2) {
@@ -274,6 +276,14 @@ static void do_ls_tree(struct string_list *args)
 	read_tree_recursive(tree, "", 0, 0, &match_all, fill_ls_tree, &ctx);
 	send_buffer(&ctx.buf);
 	strbuf_release(&ctx.buf);
+
+	while (ctx.list) {
+		struct object *obj = ctx.list->item;
+		struct object_list *elem = ctx.list;
+		ctx.list = elem->next;
+		free(elem);
+		free_tree_buffer((struct tree *)obj);
+	}
 	return;
 not_found:
 	write_or_die(1, "0\n\n", 3);
