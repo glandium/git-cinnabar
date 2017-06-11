@@ -111,10 +111,18 @@ static int config(const char *name, struct strbuf *result)
 	return 0;
 }
 
+static int cleanup_object_array_entry(struct object_array_entry *entry, void *data)
+{
+	if (entry->item->type == OBJ_TREE)
+		free_tree_buffer(entry->item);
+	return 1;
+}
+
 static void rev_info_release(struct rev_info *revs)
 {
 	int i;
 
+	object_array_filter(&revs->pending, cleanup_object_array_entry, NULL);
 	object_array_clear(&revs->pending);
 	object_array_clear(&revs->boundary_commits);
 	for (i = 0; i < revs->cmdline.nr; i++)
