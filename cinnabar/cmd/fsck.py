@@ -251,10 +251,7 @@ def fsck(args):
         if git_ls:
             mode, typ, sha1, path = git_ls
         else:
-            header, message = GitHgHelper.cat_file(
-                'commit', manifest_ref).split('\n\n', 1)
-            header = dict(l.split(' ', 1) for l in header.splitlines())
-            if header['tree'] == EMPTY_TREE:
+            if GitCommit(manifest_ref).tree == EMPTY_TREE:
                 sha1 = EMPTY_TREE
             else:
                 report('Missing git tree in manifest commit %s' % manifest_ref)
