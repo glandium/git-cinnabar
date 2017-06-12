@@ -176,12 +176,13 @@ def fsck(args):
     for node, tree, parents in progress_iter('Checking %d changesets',
                                              all_git_commits):
         node = store._replace.get(node, node)
-        if node not in all_notes:
+        hg_node = store.hg_changeset(node)
+        if not hg_node:
             report('Missing note for git commit: ' + node)
             continue
         seen_notes.add(node)
 
-        changeset_data = store.changeset(store.hg_changeset(node))
+        changeset_data = store.changeset(hg_node)
         changeset = changeset_data.node
 
         seen_changesets.add(changeset)
