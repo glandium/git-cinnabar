@@ -165,7 +165,7 @@ endif
 
 before_script::
 	case "$(shell $(CURDIR)/git-cinnabar --version=cinnabar)" in \
-	*a|$(shell git describe --tags --abbrev=0 HEAD)) ;; \
+	*a$(addprefix |,$(shell git describe --tags --abbrev=0 HEAD 2> /dev/null))) ;; \
 	*) false ;; \
 	esac
 	case "$(shell $(CURDIR)/git-cinnabar --version=module)" in \
