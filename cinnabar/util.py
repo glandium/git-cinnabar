@@ -11,6 +11,7 @@ from difflib import (
     Match,
     SequenceMatcher,
 )
+from functools import wraps
 from itertools import (
     chain,
     izip,
@@ -379,6 +380,89 @@ def sorted_merge(iter_a, iter_b, key=lambda i: i[0], non_key=lambda i: i[1:]):
             yield key_a, non_key(item_a), non_key(item_b)
             item_a = next(iter_a, None)
             item_b = next(iter_b, None)
+
+
+class lrucache(object):
+    class node(object):
+        __slots__ = ('next', 'prev', 'key', 'value')
+
+        def __init__(self):
+            self.next = self.prev = None
+
+        def insert(self, after):
+            if self.next and self.prev:
+                self.next.prev = self.prev
+                self.prev.next = self.next
+            self.next = after.next
+            self.prev = after
+            after.next = self
+            self.next.prev = self
+
+        def detach(self):
+            assert self.next
+            assert self.prev
+            self.prev.next = self.next
+            self.next.prev = self.prev
+            self.next = self.prev = None
+
+    def __init__(self, size):
+        self._size = max(size, 2)
+        self._cache = {}
+        self._top = self.node()
+        self._top.next = self._top
+        self._top.prev = self._top
+
+    def __call__(self, func):
+        @wraps(func)
+        def wrapper(*args):
+            try:
+                return self[args]
+            except KeyError:
+                result = func(*args)
+                self[args] = result
+                return result
+        wrapper.invalidate = self.invalidate
+        return wrapper
+
+    def invalidate(self, *args):
+        try:
+            del self[args]
+        except KeyError:
+            pass
+
+    def __getitem__(self, key):
+        node = self._cache[key]
+        node.insert(self._top)
+        return node.value
+
+    def __setitem__(self, key, value):
+        if key in self._cache:
+            node = self._cache[key]
+        else:
+            node = self.node()
+            node.key = key
+
+        node.value = value
+        node.insert(self._top)
+
+        self._cache[key] = node
+        while len(self._cache) > self._size:
+            node = self._top.prev
+            node.detach()
+            del self._cache[node.key]
+
+    def __delitem__(self, key):
+        node = self._cache.pop(key)
+        node.detach()
+
+    def __len__(self):
+        node = self._top.next
+        count = 0
+        while node is not self._top:
+            count += 1
+            node = node.next
+        assert count == len(self._cache)
+        return len(self._cache)
 
 
 class Process(object):

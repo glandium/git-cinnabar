@@ -14,6 +14,7 @@ from .hg.changegroup import (
 )
 from .util import (
     IOLogger,
+    lrucache,
     Process,
 )
 from contextlib import contextmanager
@@ -134,11 +135,23 @@ class GitHgHelper(BaseHelper):
     _helper = False
 
     @classmethod
-    def cat_file(self, typ, sha1):
+    def _cat_file(self, typ, sha1):
         with self.query('cat-file', sha1) as stdout:
             return self._read_file(typ, stdout)
 
     @classmethod
+    @lrucache(16)
+    def _cat_commit(self, sha1):
+        return self._cat_file('commit', sha1)
+
+    @classmethod
+    def cat_file(self, typ, sha1):
+        if typ == 'commit':
+            return self._cat_commit(sha1)
+        return self._cat_file(typ, sha1)
+
+    @classmethod
+    @lrucache(16)
     def git2hg(self, sha1):
         assert sha1 != 'changeset'
         with self.query('git2hg', sha1) as stdout:
@@ -150,6 +163,7 @@ class GitHgHelper(BaseHelper):
             return self._read_file('blob', stdout)
 
     @classmethod
+    @lrucache(16)
     def hg2git(self, hg_sha1):
         with self.query('hg2git', hg_sha1) as stdout:
             sha1 = stdout.read(41)
@@ -212,6 +226,10 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def set(self, *args):
+        if args[0] == 'changeset-metadata':
+            self.git2hg.invalidate(self, self.hg2git(args[1]))
+        elif args[0] != 'file-meta':
+            self.hg2git.invalidate(self, args[1])
         with self.query('set', *args):
             pass
 
