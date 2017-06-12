@@ -118,7 +118,7 @@ ifdef GIT_CINNABAR_OLD_HELPER
 	rm -rf old-cinnabar
 	git fetch --unshallow || true
 	git clone -n . old-cinnabar
-	git -C old-cinnabar checkout $$(git log --format=%H -S '#define CMD_VERSION $(shell python -c 'from cinnabar.helper import *; print GitHgHelper.VERSION')$$' --pickaxe-regex HEAD | tail -1)
+	git -C old-cinnabar checkout "$$(git log --format=%H -S '#define CMD_VERSION $(shell python -c 'from cinnabar.helper import *; print GitHgHelper.VERSION')00$$' --pickaxe-regex HEAD | tail -1)" --
 	$(MAKE) -C old-cinnabar -f CI.mk $(HELPER) GIT_CINNABAR_HELPER=$(HELPER) GIT_CINNABAR_OLD_HELPER=
 	mv old-cinnabar/$(HELPER) $@
 	rm -rf old-cinnabar
