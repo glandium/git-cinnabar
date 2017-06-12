@@ -1538,6 +1538,7 @@ static void do_upgrade(struct string_list *args)
 	}
         stop_progress(&track.progress);
 
+	oidset_clear(&track.set);
 	write_or_die(1, "ok\n", 3);
 	rev_info_release(&revs);
 }
