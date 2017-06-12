@@ -114,7 +114,7 @@ static int config(const char *name, struct strbuf *result)
 static int cleanup_object_array_entry(struct object_array_entry *entry, void *data)
 {
 	if (entry->item->type == OBJ_TREE)
-		free_tree_buffer(entry->item);
+		free_tree_buffer((struct tree *)entry->item);
 	return 1;
 }
 
@@ -238,7 +238,8 @@ static int fill_ls_tree(const unsigned char *sha1, struct strbuf *base,
 	if (S_ISGITLINK(mode)) {
 		type = commit_type;
 	} else if (S_ISDIR(mode)) {
-		object_list_insert(lookup_tree(sha1), &ctx->list);
+		object_list_insert((struct object *)lookup_tree(sha1),
+		                   &ctx->list);
 		if (ctx->recursive)
 			return READ_TREE_RECURSIVE;
 		type = tree_type;
