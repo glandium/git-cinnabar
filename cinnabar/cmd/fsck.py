@@ -99,7 +99,6 @@ def fsck(args):
         args.files = 'upgrade'
 
     if args.commit:
-        all_hg2git = {}
         all_notes = set()
         commits = set()
         all_git_commits = {}
@@ -114,8 +113,6 @@ def fsck(args):
             if commit == NULL_NODE_ID and not cs:
                 info('Unknown commit or changeset: %s' % c)
                 return 1
-            if commit != NULL_NODE_ID:
-                all_hg2git[c] = commit, 'commit'
             if not cs:
                 cs = store.hg_changeset(commit)
                 commits.add(commit)
@@ -131,17 +128,9 @@ def fsck(args):
             # not).
             git_heads = '%s^@' % Git.resolve_ref('refs/cinnabar/changesets')
             manifests_rev = '%s^@' % Git.resolve_ref('refs/cinnabar/manifests')
-            hg2git_rev = Git.resolve_ref('refs/cinnabar/hg2git')
             notes_rev = Git.resolve_ref('refs/notes/cinnabar')
         else:
             assert False
-
-        all_hg2git = {
-            path.replace('/', ''): (filesha1, intern(typ))
-            for mode, typ, filesha1, path in
-            progress_iter('Reading %d mercurial to git mappings',
-                          Git.ls_tree(hg2git_rev, recursive=True))
-        }
 
         all_notes = set(path.replace('/', '') for mode, typ, filesha1, path in
                         progress_iter(
@@ -279,12 +268,6 @@ def fsck(args):
                     seen_files.add(hg_file)
                     if hg_file != HG_EMPTY_FILE:
                         GitHgHelper.seen('hg2git', hg_file)
-
-    if args.files:
-        all_hg2git = set(all_hg2git.iterkeys())
-    else:
-        all_hg2git = set(k for k, (s, t) in all_hg2git.iteritems()
-                         if t == 'commit')
 
     if not args.commit and not status['broken']:
         store_manifest_heads = set(store._manifest_heads_orig)
