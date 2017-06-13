@@ -317,7 +317,7 @@ def fsck(args):
         # practice, it makes no difference. Reevaluate when GitHgStore.close
         # is modified, though.
         GitHgHelper.set('file', obj, NULL_NODE_ID)
-        GitHgHelper.set('file-meta', hg_file, NULL_NODE_ID)
+        GitHgHelper.set('file-meta', obj, NULL_NODE_ID)
 
     if not args.commit and not status['broken']:
         dangling = all_notes - seen_notes
