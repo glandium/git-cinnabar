@@ -78,7 +78,7 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 2200
+#define CMD_VERSION 2300
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -1551,6 +1551,7 @@ static void do_upgrade(struct string_list *args)
 static void do_seen(struct string_list *args)
 {
 	struct object_id oid;
+	int seen = 0;
 
 	if (args->nr != 2)
 		die("seen takes two argument");
@@ -1559,13 +1560,19 @@ static void do_seen(struct string_list *args)
 		die("Invalid sha1");
 
 	if (!strcmp(args->items[0].string, "hg2git"))
-		oidset_insert(&hg2git_seen, &oid);
+		seen = oidset_insert(&hg2git_seen, &oid);
 	else if (!strcmp(args->items[0].string, "git2hg")) {
 		struct commit *c = lookup_commit(oid.hash);
 		if (!c)
 			die("Unknown commit");
+		seen = c->object.flags & FSCK_SEEN;
 		c->object.flags |= FSCK_SEEN;
 	}
+
+	if (seen)
+		write_or_die(1, "yes\n", 4);
+	else
+		write_or_die(1, "no\n", 3);
 }
 
 struct dangling_data {

@@ -131,7 +131,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 22
+    VERSION = 23
     _helper = False
 
     @classmethod
@@ -266,8 +266,8 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def seen(self, typ, sha1):
-        with self.query('seen', typ, sha1):
-            pass
+        with self.query('seen', typ, sha1) as stdout:
+            return stdout.readline().strip() == 'yes'
 
     @classmethod
     def dangling(self, typ):
