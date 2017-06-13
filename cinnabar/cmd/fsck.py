@@ -166,7 +166,6 @@ def fsck(args):
     seen_changesets = set()
     seen_manifests = set()
     seen_files = set()
-    seen_notes = set()
 
     dag = gitdag()
     manifest_dag = gitdag()
@@ -180,7 +179,6 @@ def fsck(args):
         if not hg_node:
             report('Missing note for git commit: ' + node)
             continue
-        seen_notes.add(node)
         GitHgHelper.seen('git2hg', node)
 
         changeset_data = store.changeset(hg_node)
