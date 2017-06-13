@@ -181,11 +181,13 @@ def fsck(args):
             report('Missing note for git commit: ' + node)
             continue
         seen_notes.add(node)
+        GitHgHelper.seen('git2hg', node)
 
         changeset_data = store.changeset(hg_node)
         changeset = changeset_data.node
 
         seen_changesets.add(changeset)
+        GitHgHelper.seen('hg2git', changeset)
         changeset_ref = store.changeset_ref(changeset)
         if not changeset_ref:
             report('Missing changeset in hg2git branch: %s' % changeset)
@@ -217,6 +219,7 @@ def fsck(args):
         if manifest in seen_manifests or manifest == NULL_NODE_ID:
             continue
         seen_manifests.add(manifest)
+        GitHgHelper.seen('hg2git', manifest)
         manifest_ref = store.manifest_ref(manifest)
         if not manifest_ref:
             report('Missing manifest in hg2git branch: %s' % manifest)
@@ -276,6 +279,8 @@ def fsck(args):
                         report('Sha1 mismatch for file %s in manifest %s'
                                % (hg_file, manifest_ref))
                     seen_files.add(hg_file)
+                    if hg_file != HG_EMPTY_FILE:
+                        GitHgHelper.seen('hg2git', hg_file)
 
     if args.files:
         all_hg2git = set(all_hg2git.iterkeys())
@@ -307,9 +312,8 @@ def fsck(args):
                         'metadata.' % h)
     dangling = ()
     if not args.commit and not status['broken']:
-        dangling = all_hg2git - seen_changesets - seen_manifests - seen_files
-        if HG_EMPTY_FILE in all_hg2git:
-            dangling.add(HG_EMPTY_FILE)
+        dangling = GitHgHelper.dangling(
+            'hg2git' if args.files else 'hg2git-no-blobs')
     for obj in dangling:
         fix('Removing dangling metadata for ' + obj)
         # Theoretically, we should figure out if they are files, manifests
@@ -320,7 +324,7 @@ def fsck(args):
         GitHgHelper.set('file-meta', obj, NULL_NODE_ID)
 
     if not args.commit and not status['broken']:
-        dangling = all_notes - seen_notes
+        dangling = GitHgHelper.dangling('git2hg')
     for c in dangling:
         fix('Removing dangling note for commit ' + c)
         GitHgHelper.set('changeset-metadata', c, NULL_NODE_ID)

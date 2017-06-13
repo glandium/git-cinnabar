@@ -131,7 +131,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 21
+    VERSION = 22
     _helper = False
 
     @classmethod
@@ -263,6 +263,17 @@ class GitHgHelper(BaseHelper):
     def upgrade(self):
         with self.query('upgrade') as stdout:
             return stdout.readline().strip() == 'ok'
+
+    @classmethod
+    def seen(self, typ, sha1):
+        with self.query('seen', typ, sha1):
+            pass
+
+    @classmethod
+    def dangling(self, typ):
+        with self.query('dangling', typ) as stdout:
+            data = self._read_data(stdout)
+            return data.splitlines()
 
 
 class HgRepoHelper(BaseHelper):

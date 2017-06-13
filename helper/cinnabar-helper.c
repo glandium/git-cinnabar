@@ -78,11 +78,13 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 2100
+#define CMD_VERSION 2200
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
 struct notes_tree git2hg, hg2git, files_meta;
+
+struct oidset hg2git_seen = OIDSET_INIT;
 
 int metadata_flags = 0;
 int cinnabar_check = 0;
@@ -1543,6 +1545,87 @@ static void do_upgrade(struct string_list *args)
 	rev_info_release(&revs);
 }
 
+// 12th bit is only used by builtin/blame.c, so it should be safe to use.
+#define FSCK_SEEN (1 << 12)
+
+static void do_seen(struct string_list *args)
+{
+	struct object_id oid;
+
+	if (args->nr != 2)
+		die("seen takes two argument");
+
+	if (get_oid_hex(args->items[1].string, &oid))
+		die("Invalid sha1");
+
+	if (!strcmp(args->items[0].string, "hg2git"))
+		oidset_insert(&hg2git_seen, &oid);
+	else if (!strcmp(args->items[0].string, "git2hg")) {
+		struct commit *c = lookup_commit(oid.hash);
+		if (!c)
+			die("Unknown commit");
+		c->object.flags |= FSCK_SEEN;
+	}
+}
+
+struct dangling_data {
+	struct notes_tree *notes;
+	struct strbuf *buf;
+	int exclude_blobs;
+};
+
+static int dangling_note(const unsigned char *object_sha1,
+                         const unsigned char *note_sha1, char *note_path,
+                         void *cb_data)
+{
+	struct dangling_data *data = (struct dangling_data *)cb_data;
+	struct object_id oid;
+	int is_dangling = 0;
+
+	hashcpy(oid.hash, object_sha1);
+	if (data->notes == &hg2git) {
+		if (!data->exclude_blobs ||
+		    (sha1_object_info(note_sha1, NULL) != OBJ_BLOB))
+			is_dangling = !oidset_contains(&hg2git_seen, &oid);
+	} else if (data->notes == &git2hg) {
+		struct commit *c = lookup_commit(oid.hash);
+		is_dangling = !c || !(c->object.flags & FSCK_SEEN);
+	}
+
+	if (is_dangling) {
+		strbuf_add(data->buf, oid_to_hex(&oid), 40);
+		strbuf_addch(data->buf, '\n');
+	}
+
+	return 0;
+}
+
+static void do_dangling(struct string_list *args)
+{
+	struct strbuf buf = STRBUF_INIT;
+	struct dangling_data data = { NULL, &buf, 0 };
+
+        if (args->nr != 1)
+                die("dangling takes one argument");
+
+	if (!strcmp(args->items[0].string, "hg2git-no-blobs")) {
+		data.notes = &hg2git;
+		data.exclude_blobs = 1;
+	} else if (!strcmp(args->items[0].string, "hg2git")) {
+		data.notes = &hg2git;
+	} else if (!strcmp(args->items[0].string, "git2hg")) {
+		data.notes = &git2hg;
+	} else {
+		die("Unknown argument");
+	}
+
+	ensure_notes(data.notes);
+	for_each_note(data.notes, 0, dangling_note, &data);
+
+	send_buffer(&buf);
+	strbuf_release(&buf);
+}
+
 static void init_config()
 {
 	struct strbuf conf = STRBUF_INIT;
@@ -1634,6 +1717,10 @@ int cmd_main(int argc, const char *argv[])
 			do_heads(&args);
 		else if (!strcmp("upgrade", command))
 			do_upgrade(&args);
+		else if (!strcmp("seen", command))
+			do_seen(&args);
+		else if (!strcmp("dangling", command))
+			do_dangling(&args);
 		else if (!maybe_handle_command(command, &args))
 			die("Unknown command: \"%s\"", command);
 
@@ -1650,6 +1737,8 @@ int cmd_main(int argc, const char *argv[])
 
 	if (files_meta.initialized)
 		free_notes(&files_meta);
+
+	oidset_clear(&hg2git_seen);
 
 	return 0;
 }
