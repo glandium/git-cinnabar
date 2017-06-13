@@ -142,7 +142,6 @@ def fsck(args):
         all_git_commits = GitHgHelper.rev_list(
             '--topo-order', '--full-history', '--reverse', git_heads)
 
-    seen_changesets = set()
     seen_manifests = set()
     seen_files = set()
 
@@ -163,7 +162,6 @@ def fsck(args):
         changeset_data = store.changeset(hg_node)
         changeset = changeset_data.node
 
-        seen_changesets.add(changeset)
         GitHgHelper.seen('hg2git', changeset)
         changeset_ref = store.changeset_ref(changeset)
         if not changeset_ref:
