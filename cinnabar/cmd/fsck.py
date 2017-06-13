@@ -99,14 +99,12 @@ def fsck(args):
         args.files = 'upgrade'
 
     if args.commit:
-        all_notes = set()
         commits = set()
         all_git_commits = {}
 
         for c in args.commit:
             cs = store.hg_changeset(c)
             if cs:
-                all_notes.add(c)
                 commits.add(c)
                 c = cs.node
             commit = GitHgHelper.hg2git(c)
@@ -116,8 +114,6 @@ def fsck(args):
             if not cs:
                 cs = store.hg_changeset(commit)
                 commits.add(commit)
-                if cs:
-                    all_notes.add(commit)
 
         all_git_commits = GitHgHelper.rev_list('--no-walk=unsorted', *commits)
     else:
@@ -128,14 +124,8 @@ def fsck(args):
             # not).
             git_heads = '%s^@' % Git.resolve_ref('refs/cinnabar/changesets')
             manifests_rev = '%s^@' % Git.resolve_ref('refs/cinnabar/manifests')
-            notes_rev = Git.resolve_ref('refs/notes/cinnabar')
         else:
             assert False
-
-        all_notes = set(path.replace('/', '') for mode, typ, filesha1, path in
-                        progress_iter(
-                            'Reading %d commit to changeset mappings',
-                            Git.ls_tree(notes_rev, recursive=True)))
 
         commit = GitCommit(Git.resolve_ref('refs/cinnabar/manifests'))
         if commit.body == 'has-flat-manifest-tree':
