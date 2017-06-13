@@ -142,9 +142,6 @@ def fsck(args):
         all_git_commits = GitHgHelper.rev_list(
             '--topo-order', '--full-history', '--reverse', git_heads)
 
-    seen_manifests = set()
-    seen_files = set()
-
     dag = gitdag()
     manifest_dag = gitdag()
 
@@ -191,10 +188,8 @@ def fsck(args):
             GitHgHelper.set('changeset-metadata', changeset, ':1')
 
         manifest = changeset_data.manifest
-        if manifest in seen_manifests or manifest == NULL_NODE_ID:
+        if GitHgHelper.seen('hg2git', manifest) or manifest == NULL_NODE_ID:
             continue
-        seen_manifests.add(manifest)
-        GitHgHelper.seen('hg2git', manifest)
         manifest_ref = store.manifest_ref(manifest)
         if not manifest_ref:
             report('Missing manifest in hg2git branch: %s' % manifest)
@@ -242,7 +237,9 @@ def fsck(args):
         if args.files:
             changes = get_changes(manifest_ref, git_parents, 'hg')
             for path, hg_file, hg_fileparents in changes:
-                if hg_file != NULL_NODE_ID and hg_file not in seen_files:
+                if hg_file != NULL_NODE_ID and (hg_file == HG_EMPTY_FILE or
+                                                GitHgHelper.seen('hg2git',
+                                                                 hg_file)):
                     if full_file_check:
                         file = store.file(hg_file, hg_fileparents, git_parents,
                                           path)
@@ -253,9 +250,6 @@ def fsck(args):
                     if not valid:
                         report('Sha1 mismatch for file %s in manifest %s'
                                % (hg_file, manifest_ref))
-                    seen_files.add(hg_file)
-                    if hg_file != HG_EMPTY_FILE:
-                        GitHgHelper.seen('hg2git', hg_file)
 
     if not args.commit and not status['broken']:
         store_manifest_heads = set(store._manifest_heads_orig)
