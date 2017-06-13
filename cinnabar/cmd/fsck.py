@@ -306,7 +306,7 @@ def fsck(args):
                     fix('Removing non-head reference to %s in manifests '
                         'metadata.' % h)
     dangling = ()
-    if not status['broken']:
+    if not args.commit and not status['broken']:
         dangling = all_hg2git - seen_changesets - seen_manifests - seen_files
         if HG_EMPTY_FILE in all_hg2git:
             dangling.add(HG_EMPTY_FILE)
@@ -319,7 +319,7 @@ def fsck(args):
         GitHgHelper.set('file', obj, NULL_NODE_ID)
         GitHgHelper.set('file-meta', hg_file, NULL_NODE_ID)
 
-    if not status['broken']:
+    if not args.commit and not status['broken']:
         dangling = all_notes - seen_notes
     for c in dangling:
         fix('Removing dangling note for commit ' + c)
