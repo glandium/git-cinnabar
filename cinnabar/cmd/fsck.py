@@ -8,7 +8,6 @@ from cinnabar.githg import (
     GitCommit,
     GitHgStore,
     HG_EMPTY_FILE,
-    OldUpgradeException,
     one,
     UpgradeException,
 )
@@ -26,11 +25,6 @@ from cinnabar.hg.bundle import get_changes
 from collections import (
     defaultdict,
 )
-
-
-class UpgradeGitHgStore(GitHgStore):
-    def metadata(self):
-        return self._metadata()
 
 
 @CLI.subcommand
@@ -62,40 +56,9 @@ def fsck(args):
 
     try:
         store = GitHgStore()
-    except OldUpgradeException as e:
+    except UpgradeException as e:
         print >>sys.stderr, e.message
         return 1
-    except UpgradeException:
-        store = UpgradeGitHgStore()
-
-    upgrade = isinstance(store, UpgradeGitHgStore)
-
-    if upgrade and (args.commit or args.manifests or args.files):
-        if args.commit:
-            what = 'specifying commit(s)'
-        elif args.manifests:
-            what = '--manifests'
-        elif args.files:
-            what = '--files'
-        info('Git-cinnabar metadata needs upgrade. '
-             'Please re-run without %s.' % what)
-        return 1
-
-    if upgrade:
-        if not GitHgHelper.upgrade():
-            print 'Cannot finish upgrading... You may need to reclone.'
-            return 1
-
-        info('Finalizing upgrade...')
-        # "Reboot" the store, and run a normal fsck from the upgraded store.
-        store.close()
-
-        # Force the helper to be restarted.
-        GitHgHelper._helper = False
-        store = GitHgStore()
-
-        # Force a files fsck, since we modified files metadata.
-        args.files = 'upgrade'
 
     if args.commit:
         commits = set()

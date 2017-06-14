@@ -188,6 +188,7 @@ script::
 endif
 
 script::
+	$(GIT) -C hg.old.git cinnabar upgrade || [ "$$?" = 2 ]
 	$(GIT) -C hg.old.git cinnabar fsck || [ "$$?" = 2 ]
 
 PATH_URL = file://$(if $(filter /%,$(CURDIR)),,/)$(CURDIR)

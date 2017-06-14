@@ -47,7 +47,7 @@ class UpgradeException(Exception):
         super(UpgradeException, self).__init__(
             message or
             'Git-cinnabar metadata needs upgrade. '
-            'Please run `git cinnabar fsck`.'
+            'Please run `git cinnabar upgrade`.'
         )
 
 
