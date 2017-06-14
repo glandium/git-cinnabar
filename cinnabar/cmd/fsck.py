@@ -25,7 +25,6 @@ from cinnabar.helper import GitHgHelper
 from cinnabar.hg.bundle import get_changes
 from collections import (
     defaultdict,
-    OrderedDict,
 )
 
 
@@ -123,27 +122,15 @@ def fsck(args):
             # We rely on the store having created these refs (temporarily or
             # not).
             git_heads = '%s^@' % Git.resolve_ref('refs/cinnabar/changesets')
-            manifests_rev = '%s^@' % Git.resolve_ref('refs/cinnabar/manifests')
         else:
             assert False
-
-        commit = GitCommit(Git.resolve_ref('refs/cinnabar/manifests'))
-        if commit.body == 'has-flat-manifest-tree':
-            revs = commit.parents[1:]
-        else:
-            revs = (manifests_rev,)
-
-        manifest_commits = OrderedDict((m, p) for m, t, p in progress_iter(
-            'Reading %d manifest trees',
-            GitHgHelper.rev_list('--full-history', '--topo-order', '--reverse',
-                                 *revs)
-        ))
 
         all_git_commits = GitHgHelper.rev_list(
             '--topo-order', '--full-history', '--reverse', git_heads)
 
     dag = gitdag()
-    manifest_dag = gitdag()
+
+    GitHgHelper.reset_heads('manifests')
 
     full_file_check = FileFindParents.logger.isEnabledFor(logging.DEBUG)
 
@@ -193,10 +180,6 @@ def fsck(args):
         manifest_ref = store.manifest_ref(manifest)
         if not manifest_ref:
             report('Missing manifest in hg2git branch: %s' % manifest)
-        elif not args.commit and manifest_ref not in manifest_commits:
-            fix('Missing manifest commit in manifest branch: %s' %
-                manifest_ref)
-            manifest_commits[manifest_ref] = GitCommit(manifest_ref).parents
 
         parents = tuple(
             store.changeset(p).manifest
@@ -205,16 +188,15 @@ def fsck(args):
         git_parents = tuple(store.manifest_ref(p) for p in parents
                             if p != NULL_NODE_ID)
 
-        manifest_dag.add(manifest_ref, git_parents)
+        # This doesn't change the value but makes the helper track the manifest
+        # dag.
+        GitHgHelper.set('manifest', manifest, manifest_ref)
 
         if args.manifests:
             if not GitHgHelper.check_manifest(manifest):
                 report('Sha1 mismatch for manifest %s' % manifest)
 
-        if args.commit:
-            manifest_commit_parents = GitCommit(manifest_ref).parents
-        else:
-            manifest_commit_parents = manifest_commits.get(manifest_ref, ())
+        manifest_commit_parents = GitCommit(manifest_ref).parents
         if sorted(manifest_commit_parents) != sorted(git_parents):
             # TODO: better error
             report('%s(%s) %s != %s' % (manifest, manifest_ref,
@@ -253,10 +235,8 @@ def fsck(args):
 
     if not args.commit and not status['broken']:
         store_manifest_heads = set(store._manifest_heads_orig)
-        manifest_heads = set(manifest_dag.heads())
+        manifest_heads = set(GitHgHelper.heads('manifests'))
         if store_manifest_heads != manifest_heads:
-            store._override_manifest_heads = manifest_heads
-
             def iter_manifests():
                 for h in store_manifest_heads - manifest_heads:
                     yield h
@@ -270,7 +250,7 @@ def fsck(args):
                     'changeset' % (m))
 
             for h in store_manifest_heads - manifest_heads:
-                if h in manifest_dag:
+                if GitHgHelper.seen(store.hg_manifest(h)):
                     fix('Removing non-head reference to %s in manifests '
                         'metadata.' % h)
     dangling = ()

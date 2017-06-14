@@ -78,7 +78,7 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 2300
+#define CMD_VERSION 2400
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -1432,6 +1432,22 @@ static void do_heads(struct string_list *args)
 	strbuf_release(&heads_buf);
 }
 
+static void do_reset_heads(struct string_list *args)
+{
+        struct oid_array *heads = NULL;
+
+        if (args->nr != 1)
+                die("reset-heads needs 1 argument");
+
+        if (!strcmp(args->items[0].string, "manifests")) {
+                heads = &manifest_heads;
+        } else
+                die("Unknown kind: %s", args->items[0].string);
+
+	ensure_heads(heads);
+	oid_array_clear(heads);
+}
+
 struct track_upgrade {
 	struct oidset set;
 	struct progress *progress;
@@ -1722,6 +1738,8 @@ int cmd_main(int argc, const char *argv[])
 			do_diff_tree(&args);
 		else if (!strcmp("heads", command))
 			do_heads(&args);
+		else if (!strcmp("reset-heads", command))
+			do_reset_heads(&args);
 		else if (!strcmp("upgrade", command))
 			do_upgrade(&args);
 		else if (!strcmp("seen", command))

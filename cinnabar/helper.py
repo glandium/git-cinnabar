@@ -131,7 +131,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 23
+    VERSION = 24
     _helper = False
 
     @classmethod
@@ -258,6 +258,11 @@ class GitHgHelper(BaseHelper):
         with self.query('heads', what) as stdout:
             data = self._read_data(stdout)
             return data.split()
+
+    @classmethod
+    def reset_heads(self, what):
+        with self.query('reset-heads', what):
+            pass
 
     @classmethod
     def upgrade(self):

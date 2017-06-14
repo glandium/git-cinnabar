@@ -1232,8 +1232,7 @@ class GitHgStore(object):
             ) as commit:
                 update_metadata.append('refs/cinnabar/changesets')
 
-        manifest_heads = getattr(self, '_override_manifest_heads',
-                                 GitHgHelper.heads('manifests'))
+        manifest_heads = GitHgHelper.heads('manifests')
         if (set(manifest_heads) != self._manifest_heads_orig or
                 ('refs/cinnabar/changesets' in update_metadata and
                  not manifest_heads)):
