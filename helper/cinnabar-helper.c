@@ -1446,6 +1446,9 @@ static void do_reset_heads(struct string_list *args)
 
 	ensure_heads(heads);
 	oid_array_clear(heads);
+	// We don't want subsequent ensure_heads to refill the array,
+	// so mark it as sorted, which means it's initialized.
+	heads->sorted = 1;
 }
 
 struct track_upgrade {
