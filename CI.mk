@@ -234,6 +234,14 @@ script::
 	$(GIT) -C hg.incr.git cinnabar fsck
 
 script::
+	rm -rf hg.clonebundles.hg hg.clonebundles.git
+	$(HG) clone hg.hg hg.clonebundles.hg
+	$(HG) -R hg.clonebundles.hg bundle -a -r c262fcbf0656 -r 46585998e744 repo.bundle
+	echo $(PATH_URL)/repo.bundle > hg.clonebundles.hg/.hg/clonebundles.manifest
+	$(HG) -R hg.clonebundles.hg --config extensions.clonebundles= --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) -c cinnabar.experiments=clonebundles clone hg::http://localhost:8000/ hg.clonebundles.git
+	$(call COMPARE_REFS, hg.git, hg.clonebundles.git)
+
+script::
 	rm -rf hg.push.hg hg.pure.git
 	$(call HG_INIT, hg.push.hg)
 	# || exit 1 forces mingw32-make to wrap the command through a shell, which works
