@@ -213,7 +213,7 @@ def fsck(args):
                     'changeset' % (m))
 
             for h in store_manifest_heads - manifest_heads:
-                if GitHgHelper.seen(store.hg_manifest(h)):
+                if GitHgHelper.seen('hg2git', store.hg_manifest(h)):
                     fix('Removing non-head reference to %s in manifests '
                         'metadata.' % h)
     dangling = ()
