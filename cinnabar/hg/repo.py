@@ -618,9 +618,11 @@ def getbundle(repo, store, heads, branch_names):
     else:
         common = findcommon(repo, store, store.heads(branch_names))
         logging.info('common: %s', common)
+        bundle = None
         if not common and experiment('clonebundles') and \
                 repo.capable('clonebundles'):
             bundle = get_clonebundle(repo)
+        if bundle:
             bundle = unbundler(bundle)
             # Manual move semantics
             apply_bundle = BundleApplier(bundle)
