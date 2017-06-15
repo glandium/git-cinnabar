@@ -8,9 +8,13 @@ from .git import (
     NULL_NODE_ID,
     split_ls_tree,
 )
+from .hg.changegroup import (
+    RawRevChunk01,
+    RawRevChunk02,
+)
 from .util import (
-    check_enabled,
     IOLogger,
+    lrucache,
     Process,
 )
 from contextlib import contextmanager
@@ -39,7 +43,6 @@ class BaseHelper(object):
             if helper_path == '':
                 self._helper = None
         if self._helper is False:
-            stderr = None if check_enabled('helper') else open(os.devnull, 'w')
             env = {
                 'GIT_REPLACE_REF_BASE': 'refs/cinnabar/replace/',
             }
@@ -49,7 +52,7 @@ class BaseHelper(object):
                 command = ('git', 'cinnabar-helper')
             try:
                 self._helper = Process(*command, stdin=subprocess.PIPE,
-                                       stderr=stderr, logger='cinnabar-helper',
+                                       stderr=None, logger='cinnabar-helper',
                                        env=env)
                 self._helper.stdin.write('version %d\n' % self.VERSION)
                 response = self._helper.stdout.readline()
@@ -128,21 +131,39 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 16
+    VERSION = 24
     _helper = False
 
     @classmethod
-    def cat_file(self, typ, sha1):
+    def _cat_file(self, typ, sha1):
         with self.query('cat-file', sha1) as stdout:
             return self._read_file(typ, stdout)
 
     @classmethod
+    @lrucache(16)
+    def _cat_commit(self, sha1):
+        return self._cat_file('commit', sha1)
+
+    @classmethod
+    def cat_file(self, typ, sha1):
+        if typ == 'commit':
+            return self._cat_commit(sha1)
+        return self._cat_file(typ, sha1)
+
+    @classmethod
+    @lrucache(16)
     def git2hg(self, sha1):
         assert sha1 != 'changeset'
         with self.query('git2hg', sha1) as stdout:
             return self._read_file('blob', stdout)
 
     @classmethod
+    def file_meta(self, sha1):
+        with self.query('file-meta', sha1) as stdout:
+            return self._read_file('blob', stdout)
+
+    @classmethod
+    @lrucache(16)
     def hg2git(self, hg_sha1):
         with self.query('hg2git', hg_sha1) as stdout:
             sha1 = stdout.read(41)
@@ -157,6 +178,11 @@ class GitHgHelper(BaseHelper):
     @classmethod
     def check_manifest(self, hg_sha1):
         with self.query('check-manifest', hg_sha1) as stdout:
+            return stdout.readline().strip() == 'ok'
+
+    @classmethod
+    def check_file(self, hg_sha1, *parents):
+        with self.query('check-file', hg_sha1, *parents) as stdout:
             return stdout.readline().strip() == 'ok'
 
     @classmethod
@@ -200,22 +226,59 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def set(self, *args):
+        if args[0] == 'changeset-metadata':
+            self.git2hg.invalidate(self, self.hg2git(args[1]))
+        elif args[0] != 'file-meta':
+            self.hg2git.invalidate(self, args[1])
         with self.query('set', *args):
             pass
 
     @classmethod
     def store(self, what, *args):
-        with self.query('store', what, *args) as stdout:
-            if what == 'metadata':
+        if what == 'metadata':
+            with self.query('store', what, *args) as stdout:
                 sha1 = stdout.read(41)
                 assert sha1[-1] == '\n'
                 return sha1[:40]
+        elif what == 'file':
+            obj = args[0]
+            if isinstance(obj, RawRevChunk01):
+                delta_node = obj.delta_node
+            elif isinstance(obj, RawRevChunk02):
+                delta_node = 'cg2'
+            else:
+                assert False
+            with self.query('store', what, delta_node, str(len(obj))):
+                self._helper.stdin.write(obj)
+        else:
+            assert False
 
     @classmethod
     def heads(self, what):
         with self.query('heads', what) as stdout:
             data = self._read_data(stdout)
             return data.split()
+
+    @classmethod
+    def reset_heads(self, what):
+        with self.query('reset-heads', what):
+            pass
+
+    @classmethod
+    def upgrade(self):
+        with self.query('upgrade') as stdout:
+            return stdout.readline().strip() == 'ok'
+
+    @classmethod
+    def seen(self, typ, sha1):
+        with self.query('seen', typ, sha1) as stdout:
+            return stdout.readline().strip() == 'yes'
+
+    @classmethod
+    def dangling(self, typ):
+        with self.query('dangling', typ) as stdout:
+            data = self._read_data(stdout)
+            return data.splitlines()
 
 
 class HgRepoHelper(BaseHelper):

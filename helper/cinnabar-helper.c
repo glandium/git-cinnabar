@@ -60,11 +60,14 @@
 #include "notes.h"
 #include "streaming.h"
 #include "object.h"
+#include "oidset.h"
+#include "progress.h"
 #include "quote.h"
 #include "revision.h"
 #include "tree.h"
 #include "tree-walk.h"
 #include "hg-connect.h"
+#include "hg-data.h"
 #include "cinnabar-helper.h"
 #include "cinnabar-fast-import.h"
 
@@ -75,11 +78,60 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 1700
+#define CMD_VERSION 2400
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
-struct notes_tree git2hg, hg2git;
+struct notes_tree git2hg, hg2git, files_meta;
+
+struct oidset hg2git_seen = OIDSET_INIT;
+
+int metadata_flags = 0;
+int cinnabar_check = 0;
+
+static int config(const char *name, struct strbuf *result)
+{
+	struct strbuf key = STRBUF_INIT;
+	char *p, *end;
+	const char *val;
+
+	strbuf_addstr(&key, "GIT_CINNABAR_");
+	strbuf_addstr(&key, name);
+	for (p = key.buf + sizeof("git_cinnabar"), end = key.buf + key.len;
+	     p < end; p++)
+		*p = toupper(*p);
+	val = getenv(key.buf);
+	if (!val) {
+		strbuf_release(&key);
+		strbuf_addstr(&key, "cinnabar.");
+		strbuf_addstr(&key, name);
+		if (git_config_get_value(key.buf, &val))
+			return 1;
+	}
+	strbuf_addstr(result, val);
+	strbuf_release(&key);
+	return 0;
+}
+
+static int cleanup_object_array_entry(struct object_array_entry *entry, void *data)
+{
+	if (entry->item->type == OBJ_TREE)
+		free_tree_buffer((struct tree *)entry->item);
+	return 1;
+}
+
+static void rev_info_release(struct rev_info *revs)
+{
+	int i;
+
+	object_array_filter(&revs->pending, cleanup_object_array_entry, NULL);
+	object_array_clear(&revs->pending);
+	object_array_clear(&revs->boundary_commits);
+	for (i = 0; i < revs->cmdline.nr; i++)
+		free((void *)revs->cmdline.rev[i].name);
+	free(revs->cmdline.rev);
+	revs->cmdline.rev = NULL;
+}
 
 static void split_command(char *line, const char **command,
 			  struct string_list *args)
@@ -173,6 +225,7 @@ not_found:
 
 struct ls_tree_context {
 	struct strbuf buf;
+	struct object_list *list;
 	int recursive;
 };
 
@@ -187,6 +240,8 @@ static int fill_ls_tree(const unsigned char *sha1, struct strbuf *base,
 	if (S_ISGITLINK(mode)) {
 		type = commit_type;
 	} else if (S_ISDIR(mode)) {
+		object_list_insert((struct object *)lookup_tree(sha1),
+		                   &ctx->list);
 		if (ctx->recursive)
 			return READ_TREE_RECURSIVE;
 		type = tree_type;
@@ -203,7 +258,7 @@ static void do_ls_tree(struct string_list *args)
 {
 	unsigned char sha1[20];
 	struct tree *tree = NULL;
-	struct ls_tree_context ctx = { STRBUF_INIT, 0 };
+	struct ls_tree_context ctx = { STRBUF_INIT, NULL, 0 };
 	struct pathspec match_all;
 
 	if (args->nr == 2) {
@@ -224,6 +279,14 @@ static void do_ls_tree(struct string_list *args)
 	read_tree_recursive(tree, "", 0, 0, &match_all, fill_ls_tree, &ctx);
 	send_buffer(&ctx.buf);
 	strbuf_release(&ctx.buf);
+
+	while (ctx.list) {
+		struct object *obj = ctx.list->item;
+		struct object_list *elem = ctx.list;
+		ctx.list = elem->next;
+		free(elem);
+		free_tree_buffer((struct tree *)obj);
+	}
 	return;
 not_found:
 	write_or_die(1, "0\n\n", 3);
@@ -281,6 +344,7 @@ static void do_rev_list(struct string_list *args)
 	clear_object_flags(ALL_REV_FLAGS);
 	send_buffer(&buf);
 	strbuf_release(&buf);
+	rev_info_release(&revs);
 }
 
 static void strbuf_diff_tree(struct diff_queue_struct *q,
@@ -344,9 +408,10 @@ static void do_diff_tree(struct string_list *args)
 	log_tree_diff_flush(&revs);
 	send_buffer(&buf);
 	strbuf_release(&buf);
+	rev_info_release(&revs);
 }
 
-static void do_git2hg(struct string_list *args)
+static void do_get_note(struct notes_tree *t, struct string_list *args)
 {
 	unsigned char sha1[20];
 	const unsigned char *note;
@@ -354,12 +419,12 @@ static void do_git2hg(struct string_list *args)
 	if (args->nr != 1)
 		goto not_found;
 
-	ensure_notes(&git2hg);
+	ensure_notes(t);
 
 	if (get_sha1_committish(args->items[0].string, sha1))
 		goto not_found;
 
-	note = get_note(&git2hg, lookup_replace_object(sha1));
+	note = get_note(t, lookup_replace_object(sha1));
 	if (!note)
 		goto not_found;
 
@@ -563,23 +628,20 @@ struct manifest_tree {
 
 static void track_tree(struct tree *tree, struct object_list **tree_list)
 {
-	object_list_insert(&tree->object, tree_list);
-	tree->object.flags |= SEEN;
+	if (tree_list) {
+		object_list_insert(&tree->object, tree_list);
+		tree->object.flags |= SEEN;
+	}
 }
 
 /* Fills a manifest_tree with the tree sha1s for the git/ and hg/
  * subdirectories of the given (git) manifest tree. */
-static int get_manifest_tree(const unsigned char *git_sha1,
+static int get_manifest_tree(struct tree *tree,
                              struct manifest_tree *result,
                              struct object_list **tree_list)
 {
-	struct tree *tree = NULL;
 	struct tree_desc desc;
 	struct name_entry entry;
-
-	tree = parse_tree_indirect(git_sha1);
-	if (!tree)
-		return -1;
 
 	track_tree(tree, tree_list);
 
@@ -644,7 +706,6 @@ static int manifest_tree_state_init(const struct manifest_tree *tree,
 
 struct manifest_entry {
 	const unsigned char *sha1;
-	/* Used for trees only. */
 	const unsigned char *other_sha1;
 	const char *path;
 	unsigned int mode;
@@ -672,8 +733,8 @@ static int manifest_tree_entry(struct manifest_tree_state *state,
 	if (S_ISDIR(entry_git.mode)) {
 		if (entry_git.mode != entry_hg.mode)
 			goto corrupted;
-		result->other_sha1 = entry_git.oid->hash;
 	}
+	result->other_sha1 = entry_git.oid->hash;
 	return 1;
 corrupted:
 	die("Corrupted metadata");
@@ -865,6 +926,7 @@ static struct strbuf *generate_manifest(const unsigned char *git_sha1)
 	struct manifest_tree manifest_tree;
 	struct strbuf content = STRBUF_INIT;
 	struct object_list *tree_list = NULL;
+	struct tree *tree = NULL;
 
 	/* We keep a list of all the trees we've seen while generating the
 	 * previous manifest. Each tree is marked as SEEN at that time.
@@ -878,7 +940,11 @@ static struct strbuf *generate_manifest(const unsigned char *git_sha1)
 		previous_list = previous_list->next;
 	}
 
-	if (get_manifest_tree(git_sha1, &manifest_tree, &tree_list))
+	tree = parse_tree_indirect(git_sha1);
+	if (!tree)
+		goto not_found;
+
+	if (get_manifest_tree(tree, &manifest_tree, &tree_list))
 		goto not_found;
 
 	if (generated_manifest.content.len) {
@@ -965,13 +1031,37 @@ static void get_manifest_sha1(const struct commit *commit, unsigned char *sha1)
 	unuse_commit_buffer(commit, msg);
 }
 
+static void hg_sha1(struct strbuf *data, const unsigned char *parent1,
+                    const unsigned char *parent2, unsigned char *result)
+{
+	git_SHA_CTX ctx;
+
+	if (!parent1)
+		parent1 = null_sha1;
+	if (!parent2)
+		parent2 = null_sha1;
+
+	git_SHA1_Init(&ctx);
+
+	if (hashcmp(parent1, parent2) < 0) {
+		git_SHA1_Update(&ctx, parent1, 20);
+		git_SHA1_Update(&ctx, parent2, 20);
+	} else {
+		git_SHA1_Update(&ctx, parent2, 20);
+		git_SHA1_Update(&ctx, parent1, 20);
+	}
+
+	git_SHA1_Update(&ctx, data->buf, data->len);
+
+	git_SHA1_Final(result, &ctx);
+}
+
 static void do_check_manifest(struct string_list *args)
 {
 	unsigned char sha1[20], parent1[20], parent2[20], result[20];
 	const unsigned char *manifest_sha1;
 	const struct commit *manifest_commit;
 	struct strbuf *manifest = NULL;
-	git_SHA_CTX ctx;
 
 	if (args->nr != 1)
 		goto error;
@@ -1009,30 +1099,78 @@ static void do_check_manifest(struct string_list *args)
 		hashclr(parent2);
 	}
 
-	git_SHA1_Init(&ctx);
-
-	if (hashcmp(parent1, parent2) < 0) {
-		git_SHA1_Update(&ctx, parent1, sizeof(parent1));
-		git_SHA1_Update(&ctx, parent2, sizeof(parent2));
-	} else {
-		git_SHA1_Update(&ctx, parent2, sizeof(parent2));
-		git_SHA1_Update(&ctx, parent1, sizeof(parent1));
-	}
-
-	git_SHA1_Update(&ctx, manifest->buf, manifest->len);
-
-	git_SHA1_Final(result, &ctx);
+	hg_sha1(manifest, parent1, parent2, result);
 
 	if (manifest_sha1 == sha1)
 		get_manifest_sha1(manifest_commit, sha1);
 
 	if (hashcmp(result, sha1) == 0) {
-		write(1, "ok\n", 3);
+		write_or_die(1, "ok\n", 3);
 		return;
 	}
 
 error:
 	write_or_die(1, "error\n", 6);
+}
+
+static void do_check_file(struct string_list *args)
+{
+	struct hg_file file;
+	unsigned char sha1[20], parent1[20], parent2[20], result[20];
+
+	hg_file_init(&file);
+
+	if (args->nr < 1 || args->nr > 3)
+		goto error;
+
+	if (get_sha1_hex(args->items[0].string, sha1))
+		goto error;
+
+	if (args->nr > 1) {
+		if (get_sha1_hex(args->items[1].string, parent1))
+			goto error;
+	} else
+		hashclr(parent1);
+
+	if (args->nr > 2) {
+		if (get_sha1_hex(args->items[2].string, parent2))
+			goto error;
+	} else
+		hashclr(parent2);
+
+	hg_file_load(&file, sha1);
+
+	/* We do the quick and dirty thing here, for now.
+	 * See details in cinnabar.githg.FileFindParents._set_parents_fallback
+	 */
+	hg_sha1(&file.file, parent1, parent2, result);
+	if (hashcmp(sha1, result) == 0)
+		goto ok;
+
+	hg_sha1(&file.file, parent1, NULL, result);
+	if (hashcmp(sha1, result) == 0)
+		goto ok;
+
+	hg_sha1(&file.file, parent2, NULL, result);
+	if (hashcmp(sha1, result) == 0)
+		goto ok;
+
+	hg_sha1(&file.file, parent1, parent1, result);
+	if (hashcmp(sha1, result) == 0)
+		goto ok;
+
+	hg_sha1(&file.file, NULL, NULL, result);
+	if (hashcmp(sha1, result))
+		goto error;
+
+ok:
+	write_or_die(1, "ok\n", 3);
+	hg_file_release(&file);
+	return;
+
+error:
+	write_or_die(1, "error\n", 6);
+	hg_file_release(&file);
 }
 
 static void do_version(struct string_list *args)
@@ -1266,7 +1404,7 @@ static void do_connect(struct string_list *args)
 	}
 }
 
-int add_each_head(const struct object_id *oid, void *data)
+static int add_each_head(const struct object_id *oid, void *data)
 {
 	struct strbuf *buf = (struct strbuf *)data;
 
@@ -1294,6 +1432,261 @@ static void do_heads(struct string_list *args)
 	strbuf_release(&heads_buf);
 }
 
+static void do_reset_heads(struct string_list *args)
+{
+        struct oid_array *heads = NULL;
+
+        if (args->nr != 1)
+                die("reset-heads needs 1 argument");
+
+        if (!strcmp(args->items[0].string, "manifests")) {
+                heads = &manifest_heads;
+        } else
+                die("Unknown kind: %s", args->items[0].string);
+
+	ensure_heads(heads);
+	oid_array_clear(heads);
+	// We don't want subsequent ensure_heads to refill the array,
+	// so mark it as sorted, which means it's initialized.
+	heads->sorted = 1;
+}
+
+struct track_upgrade {
+	struct oidset set;
+	struct progress *progress;
+};
+
+static void upgrade_files(const struct manifest_tree *tree,
+                          struct track_upgrade *track)
+{
+	struct manifest_tree_state state;
+	struct manifest_entry entry;
+
+	state.tree_hg = lookup_tree(tree->hg);
+	if (!state.tree_hg)
+		goto corrupted;
+
+	if (state.tree_hg->object.flags & SEEN)
+		goto cleanup;
+
+	if (manifest_tree_state_init(tree, &state, NULL))
+		goto corrupted;
+
+	while (manifest_tree_entry(&state, &entry)) {
+		struct object_id oid;
+		if (S_ISDIR(entry.mode)) {
+			struct manifest_tree subtree;
+			hashcpy(subtree.git, entry.other_sha1);
+			hashcpy(subtree.hg, entry.sha1);
+			upgrade_files(&subtree, track);
+			continue;
+		}
+
+		hashcpy(oid.hash, entry.sha1);
+		if (oidset_insert(&track->set, &oid))
+			continue;
+
+		const unsigned char *note = get_note(&hg2git, entry.sha1);
+		if (!note && !is_empty_hg_file(entry.sha1))
+			goto corrupted;
+		if (note && hashcmp(note, entry.other_sha1)) {
+			struct hg_file file;
+			struct strbuf buf = STRBUF_INIT;
+			unsigned long len;
+			enum object_type t;
+			char *content;
+			content = read_sha1_file_extended(note, &t, &len, 0);
+			strbuf_attach(&buf, content, len, len);
+			hg_file_init(&file);
+			hg_file_from_memory(&file, entry.sha1, &buf);
+			remove_note(&hg2git, entry.sha1);
+			hg_file_store(&file, NULL);
+			hg_file_release(&file);
+			note = get_note(&hg2git, entry.sha1);
+			if (hashcmp(note, entry.other_sha1))
+				goto corrupted;
+		}
+		display_progress(track->progress, track->set.map.size);
+	}
+
+	free_tree_buffer(state.tree_git);
+cleanup:
+	state.tree_hg->object.flags |= SEEN;
+	free_tree_buffer(state.tree_hg);
+	return;
+corrupted:
+	die("Corrupted metadata");
+
+}
+
+static int revs_add_each_head(const struct object_id *oid, void *data)
+{
+	struct rev_info *revs = (struct rev_info *)data;
+
+	add_pending_sha1(revs, oid_to_hex(oid), oid->hash, 0);
+
+	return 0;
+}
+
+static void do_upgrade(struct string_list *args)
+{
+	struct rev_info revs;
+	struct commit *commit;
+
+        if (args->nr != 0)
+                die("upgrade takes no arguments");
+
+	ensure_notes(&hg2git);
+
+	init_revisions(&revs, NULL);
+
+	ensure_heads(&manifest_heads);
+	oid_array_for_each_unique(&manifest_heads, revs_add_each_head, &revs);
+
+	if (prepare_revision_walk(&revs))
+		die("revision walk setup failed");
+
+	struct track_upgrade track = { OIDSET_INIT, NULL };
+	track.progress = start_progress("Upgrading files metadata", 0);
+	while ((commit = get_revision(&revs)) != NULL) {
+		if (parse_tree(commit->tree))
+			die("Corrupt mercurial metadata");
+		struct manifest_tree manifest_tree;
+		if (get_manifest_tree(commit->tree, &manifest_tree, NULL))
+			die("Corrupt mercurial metadata");
+		upgrade_files(&manifest_tree, &track);
+		free_tree_buffer(commit->tree);
+	}
+        stop_progress(&track.progress);
+
+	oidset_clear(&track.set);
+	write_or_die(1, "ok\n", 3);
+	rev_info_release(&revs);
+}
+
+// 12th bit is only used by builtin/blame.c, so it should be safe to use.
+#define FSCK_SEEN (1 << 12)
+
+static void do_seen(struct string_list *args)
+{
+	struct object_id oid;
+	int seen = 0;
+
+	if (args->nr != 2)
+		die("seen takes two argument");
+
+	if (get_oid_hex(args->items[1].string, &oid))
+		die("Invalid sha1");
+
+	if (!strcmp(args->items[0].string, "hg2git"))
+		seen = oidset_insert(&hg2git_seen, &oid);
+	else if (!strcmp(args->items[0].string, "git2hg")) {
+		struct commit *c = lookup_commit(oid.hash);
+		if (!c)
+			die("Unknown commit");
+		seen = c->object.flags & FSCK_SEEN;
+		c->object.flags |= FSCK_SEEN;
+	}
+
+	if (seen)
+		write_or_die(1, "yes\n", 4);
+	else
+		write_or_die(1, "no\n", 3);
+}
+
+struct dangling_data {
+	struct notes_tree *notes;
+	struct strbuf *buf;
+	int exclude_blobs;
+};
+
+static int dangling_note(const unsigned char *object_sha1,
+                         const unsigned char *note_sha1, char *note_path,
+                         void *cb_data)
+{
+	struct dangling_data *data = (struct dangling_data *)cb_data;
+	struct object_id oid;
+	int is_dangling = 0;
+
+	hashcpy(oid.hash, object_sha1);
+	if (data->notes == &hg2git) {
+		if (!data->exclude_blobs ||
+		    (sha1_object_info(note_sha1, NULL) != OBJ_BLOB))
+			is_dangling = !oidset_contains(&hg2git_seen, &oid);
+	} else if (data->notes == &git2hg) {
+		struct commit *c = lookup_commit(oid.hash);
+		is_dangling = !c || !(c->object.flags & FSCK_SEEN);
+	}
+
+	if (is_dangling) {
+		strbuf_add(data->buf, oid_to_hex(&oid), 40);
+		strbuf_addch(data->buf, '\n');
+	}
+
+	return 0;
+}
+
+static void do_dangling(struct string_list *args)
+{
+	struct strbuf buf = STRBUF_INIT;
+	struct dangling_data data = { NULL, &buf, 0 };
+
+        if (args->nr != 1)
+                die("dangling takes one argument");
+
+	if (!strcmp(args->items[0].string, "hg2git-no-blobs")) {
+		data.notes = &hg2git;
+		data.exclude_blobs = 1;
+	} else if (!strcmp(args->items[0].string, "hg2git")) {
+		data.notes = &hg2git;
+	} else if (!strcmp(args->items[0].string, "git2hg")) {
+		data.notes = &git2hg;
+	} else {
+		die("Unknown argument");
+	}
+
+	ensure_notes(data.notes);
+	for_each_note(data.notes, 0, dangling_note, &data);
+
+	send_buffer(&buf);
+	strbuf_release(&buf);
+}
+
+static void init_config()
+{
+	struct strbuf conf = STRBUF_INIT;
+	if (!config("check", &conf)) {
+		struct strbuf **check = strbuf_split(&conf, ',');
+		struct strbuf **c;
+		for (c = check; *c; c++)
+			if (!strcmp((*c)->buf, "true") ||
+			    !strcmp((*c)->buf, "all") ||
+			    !strcmp((*c)->buf, "helper"))
+				cinnabar_check |= CHECK_HELPER;
+		strbuf_list_free(check);
+	}
+	strbuf_release(&conf);
+}
+
+static void init_flags()
+{
+	struct commit *c;
+	const char *body;
+	struct strbuf **flags, **f;
+
+	c = lookup_commit_reference_by_name(METADATA_REF);
+	if (!c)
+		return;
+	body = strstr(get_commit_buffer(c, NULL), "\n\n") + 2;
+	flags = strbuf_split_str(body, ' ', -1);
+	for (f = flags; *f; f++) {
+		strbuf_trim(*f);
+		if (!strcmp("files-meta", (*f)->buf))
+			metadata_flags |= FILES_META;
+	}
+	strbuf_list_free(flags);
+}
+
 int cmd_main(int argc, const char *argv[])
 {
 	int initialized = 0;
@@ -1302,6 +1695,7 @@ int cmd_main(int argc, const char *argv[])
 	git_extract_argv0_path(argv[0]);
 	git_config(git_default_config, NULL);
 	ignore_case = 0;
+	save_commit_buffer = 0;
 	warn_on_object_refname_ambiguity = 0;
 
 	while (strbuf_getline(&buf, stdin) != EOF) {
@@ -1310,6 +1704,7 @@ int cmd_main(int argc, const char *argv[])
 		split_command(buf.buf, &command, &args);
 		if (!strcmp("version", command)) {
 			do_version(&args);
+			string_list_clear(&args, 0);
 			continue;
 		} else if (!strcmp("connect", command)) {
 			do_connect(&args);
@@ -1320,16 +1715,22 @@ int cmd_main(int argc, const char *argv[])
 			setup_git_directory();
 			git_config(git_diff_basic_config, NULL);
 			ignore_case = 0;
+			init_config();
+			init_flags();
 			initialized = 1;
 		}
 		if (!strcmp("git2hg", command))
-			do_git2hg(&args);
+			do_get_note(&git2hg, &args);
+		else if (!strcmp("file-meta", command))
+			do_get_note(&files_meta, &args);
 		else if (!strcmp("hg2git", command))
 			do_hg2git(&args);
 		else if (!strcmp("manifest", command))
 			do_manifest(&args);
 		else if (!strcmp("check-manifest", command))
 			do_check_manifest(&args);
+		else if (!strcmp("check-file", command))
+			do_check_file(&args);
 		else if (!strcmp("cat-file", command))
 			do_cat_file(&args);
 		else if (!strcmp("ls-tree", command))
@@ -1340,6 +1741,14 @@ int cmd_main(int argc, const char *argv[])
 			do_diff_tree(&args);
 		else if (!strcmp("heads", command))
 			do_heads(&args);
+		else if (!strcmp("reset-heads", command))
+			do_reset_heads(&args);
+		else if (!strcmp("upgrade", command))
+			do_upgrade(&args);
+		else if (!strcmp("seen", command))
+			do_seen(&args);
+		else if (!strcmp("dangling", command))
+			do_dangling(&args);
 		else if (!maybe_handle_command(command, &args))
 			die("Unknown command: \"%s\"", command);
 
@@ -1353,6 +1762,11 @@ int cmd_main(int argc, const char *argv[])
 
 	if (hg2git.initialized)
 		free_notes(&hg2git);
+
+	if (files_meta.initialized)
+		free_notes(&files_meta);
+
+	oidset_clear(&hg2git_seen);
 
 	return 0;
 }

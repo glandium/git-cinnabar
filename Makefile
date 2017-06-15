@@ -25,6 +25,7 @@ PYTHON_LIBS := \
 	cinnabar/cmd/python.py \
 	cinnabar/cmd/reclone.py \
 	cinnabar/cmd/rollback.py \
+	cinnabar/cmd/upgrade.py \
 	cinnabar/cmd/util.py \
 	cinnabar/util.py
 
@@ -131,6 +132,7 @@ ifndef NO_CURL
 CINNABAR_OBJECTS += hg-connect-http.o
 endif
 CINNABAR_OBJECTS += hg-connect-stdio.o
+CINNABAR_OBJECTS += hg-data.o
 
 PATCHES = $(notdir $(wildcard ../helper/*.patch))
 

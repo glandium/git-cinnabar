@@ -25,15 +25,6 @@ class InvalidConfig(Exception):
     pass
 
 
-def sha1path(sha1, depth=2):
-    def parts():
-        i = -2
-        for i in xrange(0, depth * 2, 2):
-            yield sha1[i:i + 2]
-        yield sha1[i + 2:]
-    return '/'.join(parts())
-
-
 def split_ls_tree(line):
     mode, typ, remainder = line.split(' ', 2)
     sha1, path = remainder.split('\t', 1)
@@ -157,10 +148,6 @@ class Git(object):
     def diff_tree(self, treeish1, treeish2, path='', detect_copy=False):
         from githg import GitHgHelper
         if path:
-            def resolve_treeish(treeish, path):
-                for mode, typ, sha1, p in self.ls_tree(treeish, path):
-                    return sha1
-
             def one_sided_diff(treeish, status):
                 for line in self.ls_tree(treeish, recursive=True):
                     mode, typ, sha1, path = line
@@ -169,8 +156,8 @@ class Git(object):
                     elif status == 'D':
                         yield mode, '000000', sha1, NULL_NODE_ID, status, path
 
-            treeish1 = resolve_treeish(treeish1, path)
-            treeish2 = resolve_treeish(treeish2, path)
+            treeish1 = '%s:%s' % (treeish1, path)
+            treeish2 = '%s:%s' % (treeish2, path)
 
             if treeish1 is None:
                 if treeish2 is None:

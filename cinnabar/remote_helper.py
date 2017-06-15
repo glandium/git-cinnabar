@@ -353,13 +353,8 @@ class GitRemoteHelper(BaseRemoteHelper):
 
         if self._store.tag_changes:
             sys.stderr.write(
-                '\nRun the following command to update remote tags:\n')
-            if self._remote.name:
-                sys.stderr.write(
-                    '  git remote update %s\n' % self._remote.name)
-            else:
-                sys.stderr.write(
-                    '  git fetch --tags %s\n' % self._remote.git_url)
+                '\nRun the following command to update tags:\n')
+            sys.stderr.write('  git fetch --tags hg::tags: tag "*"\n')
 
     def push(self, *refspecs):
         try:

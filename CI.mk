@@ -165,7 +165,7 @@ endif
 
 before_script::
 	case "$(shell $(CURDIR)/git-cinnabar --version=cinnabar)" in \
-	*a|$(shell git describe --tags --abbrev=0 HEAD)) ;; \
+	*a$(addprefix |,$(shell git describe --tags --abbrev=0 HEAD 2> /dev/null))) ;; \
 	*) false ;; \
 	esac
 	case "$(shell $(CURDIR)/git-cinnabar --version=module)" in \
@@ -188,6 +188,7 @@ script::
 endif
 
 script::
+	$(GIT) -C hg.old.git cinnabar upgrade || [ "$$?" = 2 ]
 	$(GIT) -C hg.old.git cinnabar fsck || [ "$$?" = 2 ]
 
 PATH_URL = file://$(if $(filter /%,$(CURDIR)),,/)$(CURDIR)
@@ -231,6 +232,14 @@ script::
 	$(HG) -R hg.incr.hg pull $(CURDIR)/hg.hg
 	$(GIT) -C hg.incr.git remote update
 	$(GIT) -C hg.incr.git cinnabar fsck
+
+script::
+	rm -rf hg.clonebundles.hg hg.clonebundles.git
+	$(HG) clone hg.hg hg.clonebundles.hg
+	$(HG) -R hg.clonebundles.hg bundle -a -r c262fcbf0656 -r 46585998e744 repo.bundle
+	echo $(PATH_URL)/repo.bundle > hg.clonebundles.hg/.hg/clonebundles.manifest
+	$(HG) -R hg.clonebundles.hg --config extensions.clonebundles= --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) clone hg://localhost:8000.http/ hg.clonebundles.git
+	$(call COMPARE_REFS, hg.git, hg.clonebundles.git)
 
 script::
 	rm -rf hg.push.hg hg.pure.git

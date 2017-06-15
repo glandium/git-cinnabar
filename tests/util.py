@@ -1,6 +1,7 @@
 import unittest
 from cinnabar.util import (
     byte_diff,
+    lrucache,
     sorted_merge,
     VersionedDict,
 )
@@ -342,3 +343,87 @@ class TestSortedMerge(unittest.TestCase):
             ('a', (1,), ()),
             ('b', (2,), ('B',)),
         ])
+
+
+class TestLRUCache(unittest.TestCase):
+    def test_node(self):
+        top = lrucache.node()
+        top.next = top
+        top.prev = top
+
+        node = lrucache.node()
+        node.insert(top)
+
+        self.assertEquals(top.next, node)
+        self.assertEquals(top.prev, node)
+        self.assertEquals(node.next, top)
+        self.assertEquals(node.prev, top)
+
+        node2 = lrucache.node()
+        node2.insert(top)
+        self.assertEquals(node2.next, node)
+        self.assertEquals(node2.prev, top)
+        self.assertEquals(top.next, node2)
+        self.assertEquals(top.prev, node)
+        self.assertEquals(node.next, top)
+        self.assertEquals(node.prev, node2)
+
+        node.insert(top)
+        self.assertEquals(node.next, node2)
+        self.assertEquals(node.prev, top)
+        self.assertEquals(top.next, node)
+        self.assertEquals(top.prev, node2)
+        self.assertEquals(node2.next, top)
+        self.assertEquals(node2.prev, node)
+
+        node2.detach()
+        self.assertEquals(top.next, node)
+        self.assertEquals(top.prev, node)
+        self.assertEquals(node.next, top)
+        self.assertEquals(node.prev, top)
+
+    def test_lru_cache(self):
+        cache = lrucache(2)
+
+        self.calls = 0
+
+        @cache
+        def foo(value):
+            self.calls += 1
+            return value * 2
+
+        self.assertEquals(foo(1), 2)
+        self.assertEquals(self.calls, 1)
+        self.assertEquals(foo(1), 2)
+        self.assertEquals(self.calls, 1)
+        self.assertEquals(len(cache), 1)
+
+        self.assertEquals(foo(2), 4)
+        self.assertEquals(self.calls, 2)
+        self.assertEquals(foo(2), 4)
+        self.assertEquals(self.calls, 2)
+        self.assertEquals(len(cache), 2)
+
+        self.assertEquals(foo(1), 2)
+        self.assertEquals(self.calls, 2)
+
+        self.assertEquals(foo(3), 6)
+        self.assertEquals(self.calls, 3)
+        self.assertEquals(len(cache), 2)
+
+        self.assertEquals(foo(1), 2)
+        self.assertEquals(self.calls, 3)
+
+        self.assertEquals(foo(2), 4)
+        self.assertEquals(self.calls, 4)
+        self.assertEquals(len(cache), 2)
+
+        foo.invalidate(1)
+        self.assertEquals(foo(1), 2)
+        self.assertEquals(self.calls, 5)
+
+        self.assertEquals(foo(2), 4)
+        self.assertEquals(self.calls, 5)
+        self.assertEquals(len(cache), 2)
+
+        foo.invalidate(3)

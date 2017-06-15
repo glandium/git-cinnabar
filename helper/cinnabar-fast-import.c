@@ -4,10 +4,17 @@
 #undef sha1write
 #include "cinnabar-fast-import.h"
 #include "cinnabar-helper.h"
+#include "hg-bundle.h"
+#include "hg-data.h"
 #include "mru.h"
 #include "notes.h"
 #include "sha1-array.h"
 #include "tree-walk.h"
+
+#define ENSURE_INIT() do { \
+	if (!initialized) \
+		init(); \
+} while (0)
 
 static int initialized = 0;
 
@@ -93,6 +100,11 @@ off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
 	return real_find_pack_entry_one(sha1, p);
 }
 
+void *get_object_entry(const unsigned char *sha1)
+{
+	return find_object((unsigned char *)sha1);
+}
+
 /* Mostly copied from fast-import.c's cmd_main() */
 static void init()
 {
@@ -101,6 +113,7 @@ static void init()
 	reset_pack_idx_option(&pack_idx_opts);
 	git_pack_config();
 	ignore_case = 0;
+	max_depth = 50;
 	warn_on_object_refname_ambiguity = 0;
 
 	alloc_objects(object_entry_alloc);
@@ -146,7 +159,8 @@ static void cleanup()
 
 	initialized = 0;
 
-	pack_report();
+	if (cinnabar_check & CHECK_HELPER)
+		pack_report();
 }
 
 static void end_packfile()
@@ -393,6 +407,8 @@ static void handle_changeset_conflict(struct object_id *hg_id,
 		    get_oid_hex(&content[10], &oid))
 			die("Invalid git2hg note for %s", oid_to_hex(git_id));
 
+		free(content);
+
 		/* We might just already have the changeset in store */
 		if (oidcmp(&oid, hg_id) == 0)
 			break;
@@ -401,6 +417,7 @@ static void handle_changeset_conflict(struct object_id *hg_id,
 			content = read_sha1_file_extended(git_id->hash, &type,
 			                                  &len, 0);
 			strbuf_add(&buf, content, len);
+			free(content);
 		}
 
 		strbuf_addch(&buf, '\0');
@@ -433,6 +450,9 @@ static void do_set(struct string_list *args)
 	} else if (!strcmp(args->items[0].string, "changeset-metadata")) {
 		type = OBJ_BLOB;
 		notes = &git2hg;
+	} else if (!strcmp(args->items[0].string, "file-meta")) {
+		type = OBJ_BLOB;
+		notes = &files_meta;
 	} else {
 		die("Unknown kind of object: %s", args->items[0].string);
 	}
@@ -519,22 +539,128 @@ static void store_notes(struct notes_tree *notes, struct object_id *result)
 	}
 }
 
+void hg_file_store(struct hg_file *file, struct hg_file *reference)
+{
+	unsigned char sha1[20];
+	struct last_object last_blob = { STRBUF_INIT, 0, 0, 1 };
+	struct object_entry *oe = NULL;
+
+	ENSURE_INIT();
+
+	if (file->metadata.buf) {
+		store_object(OBJ_BLOB, &file->metadata, NULL, sha1, 0);
+		ensure_notes(&files_meta);
+		add_note(&files_meta, file->sha1, sha1, NULL);
+	}
+
+	if (reference)
+		oe = (struct object_entry *) reference->content_oe;
+
+	if (oe && oe->idx.offset > 1) {
+		last_blob.data.buf = reference->content.buf;
+		last_blob.data.len = reference->content.len;
+		last_blob.offset = oe->idx.offset;
+		last_blob.depth = oe->depth;
+	}
+	store_object(OBJ_BLOB, &file->content, &last_blob, sha1, 0);
+	ensure_notes(&hg2git);
+	add_note(&hg2git, file->sha1, sha1, NULL);
+
+	file->content_oe = find_object(sha1);
+}
+
+static void store_file(struct rev_chunk *chunk)
+{
+	static struct hg_file last_file;
+	struct hg_file file;
+	struct strbuf data = STRBUF_INIT;
+	struct rev_diff_part diff;
+	size_t last_end = 0;
+
+	if (is_empty_hg_file(chunk->node))
+		return;
+
+	if (hashcmp(chunk->delta_node, last_file.sha1)) {
+		hg_file_release(&last_file);
+
+		if (!is_null_sha1(chunk->delta_node))
+			hg_file_load(&last_file, chunk->delta_node);
+
+	}
+
+	rev_diff_start_iter(&diff, chunk);
+	while (rev_diff_iter_next(&diff)) {
+		strbuf_add(&data, last_file.file.buf + last_end,
+		           diff.start - last_end);
+		strbuf_addbuf(&data, &diff.data);
+
+		last_end = diff.end;
+	}
+
+	strbuf_add(&data, last_file.file.buf + last_end,
+		   last_file.file.len - last_end);
+
+	hg_file_init(&file);
+	hg_file_from_memory(&file, chunk->node, &data);
+
+	hg_file_store(&file, &last_file);
+	hg_file_swap(&file, &last_file);
+	hg_file_release(&file);
+}
+
 static void do_store(struct string_list *args)
 {
-	if (args->nr != 2)
-		die("store needs 3 arguments");
+	if (args->nr < 2)
+		die("store needs at least 3 arguments");
 
 	if (!strcmp(args->items[0].string, "metadata")) {
+		if (args->nr != 2)
+			die("store metadata needs 3 arguments");
 		if (!strcmp(args->items[1].string, "hg2git") ||
-		    !strcmp(args->items[1].string, "git2hg")) {
+		    !strcmp(args->items[1].string, "git2hg") ||
+		    !strcmp(args->items[1].string, "files-meta")) {
 			struct object_id result;
-			store_notes(args->items[1].string[0] == 'h' ?
-			            &hg2git : &git2hg, &result);
+			struct notes_tree *notes = NULL;
+			switch (args->items[1].string[0]) {
+			case 'f':
+				notes = &files_meta;
+				break;
+			case 'g':
+				notes = &git2hg;
+				break;
+			case 'h':
+				notes = &hg2git;
+			}
+			store_notes(notes, &result);
 			write_or_die(1, oid_to_hex(&result), 40);
 			write_or_die(1, "\n", 1);
 		} else {
 			die("Unknown metadata kind: %s", args->items[1].string);
 		}
+	} else if (!strcmp(args->items[0].string, "file")) {
+		struct strbuf buf = STRBUF_INIT;
+		struct rev_chunk chunk;
+		size_t length;
+		struct object_id oid;
+		unsigned char *delta_node;
+
+		if (args->nr != 3)
+			die("store file needs 4 arguments");
+		if (!strcmp(args->items[1].string, "cg2")) {
+			delta_node = NULL;
+		} else {
+			if (get_oid_hex(args->items[1].string, &oid))
+				die("Neither 'cg2' nor a sha1: %s",
+				    args->items[1].string);
+			delta_node = oid.hash;
+		}
+
+		// TODO: Error handling
+		length = strtol(args->items[2].string, NULL, 10);
+		strbuf_fread(&buf, length, stdin);
+		rev_chunk_from_memory(&chunk, &buf, delta_node);
+		store_file(&chunk);
+		rev_chunk_release(&chunk);
 	} else {
 		die("Unknown store kind: %s", args->items[0].string);
 	}
@@ -542,13 +668,8 @@ static void do_store(struct string_list *args)
 
 int maybe_handle_command(const char *command, struct string_list *args)
 {
-#define INIT() do { \
-	if (!initialized) \
-		init(); \
-} while (0)
-
 #define COMMON_HANDLING() do { \
-	INIT(); \
+	ENSURE_INIT(); \
 	fill_command_buf(command, args); \
 } while (0)
 
@@ -560,10 +681,11 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		COMMON_HANDLING();
 		parse_feature(command_buf.buf + sizeof("feature"));
 	} else if (!strcmp(command, "set")) {
-		INIT();
+		ENSURE_INIT();
 		do_set(args);
 	} else if (!strcmp(command, "store")) {
-		INIT();
+		ENSURE_INIT();
+		require_explicit_termination = 1;
 		do_store(args);
 	} else if (!strcmp(command, "blob")) {
 		COMMON_HANDLING();
