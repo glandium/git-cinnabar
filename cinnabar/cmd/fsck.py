@@ -200,15 +200,21 @@ def fsck(args):
         store_manifest_heads = set(store._manifest_heads_orig)
         manifest_heads = set(GitHgHelper.heads('manifests'))
         if store_manifest_heads != manifest_heads:
-            def iter_manifests():
-                for h in store_manifest_heads - manifest_heads:
+            def iter_manifests(a, b):
+                for h in a - b:
                     yield h
-                for h in manifest_heads:
+                for h in b:
                     yield '^%s' % h
 
             for m, t, p in GitHgHelper.rev_list(
                     '--topo-order', '--full-history', '--reverse',
-                    *iter_manifests()):
+                    *iter_manifests(manifest_heads, store_manifest_heads)):
+                fix('Missing manifest commit in manifest branch: %s'
+                    % m)
+
+            for m, t, p in GitHgHelper.rev_list(
+                    '--topo-order', '--full-history', '--reverse',
+                    *iter_manifests(store_manifest_heads, manifest_heads)):
                 fix('Removing metadata commit %s with no corresponding '
                     'changeset' % (m))
 
