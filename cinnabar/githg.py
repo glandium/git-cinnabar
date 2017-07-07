@@ -1243,14 +1243,14 @@ class GitHgStore(object):
                 update_metadata.append('refs/cinnabar/manifests')
 
         tree = GitHgHelper.store('metadata', 'files-meta')
-        if tree != NULL_NODE_ID:
-            files_meta_ref = Git.resolve_ref('refs/cinnabar/files-meta')
-            with self._fast_import.commit(
-                ref='refs/cinnabar/files-meta',
-            ) as commit:
+        files_meta_ref = Git.resolve_ref('refs/cinnabar/files-meta')
+        with self._fast_import.commit(
+            ref='refs/cinnabar/files-meta',
+        ) as commit:
+            if tree != NULL_NODE_ID:
                 commit.write('M 040000 %s \n' % tree)
-            if commit.sha1 != files_meta_ref:
-                update_metadata.append('refs/cinnabar/files-meta')
+        if commit.sha1 != files_meta_ref:
+            update_metadata.append('refs/cinnabar/files-meta')
 
         replace_changed = False
         for status, ref, sha1 in self._replace.iterchanges():
