@@ -1242,9 +1242,9 @@ class GitHgStore(object):
             ) as commit:
                 update_metadata.append('refs/cinnabar/manifests')
 
-        if update_metadata:
-            tree = GitHgHelper.store('metadata', 'files-meta')
-            files_meta_ref = Git.resolve_ref('refs/cinnabar/files-meta')
+        tree = GitHgHelper.store('metadata', 'files-meta')
+        files_meta_ref = Git.resolve_ref('refs/cinnabar/files-meta')
+        if update_metadata and (tree != NULL_NODE_ID or not files_meta_ref):
             with self._fast_import.commit(
                 ref='refs/cinnabar/files-meta',
             ) as commit:
