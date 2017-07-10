@@ -105,8 +105,10 @@ static int config(const char *name, struct strbuf *result)
 		strbuf_release(&key);
 		strbuf_addstr(&key, "cinnabar.");
 		strbuf_addstr(&key, name);
-		if (git_config_get_value(key.buf, &val))
+		if (git_config_get_value(key.buf, &val)) {
+			strbuf_release(&key);
 			return 1;
+		}
 	}
 	strbuf_addstr(result, val);
 	strbuf_release(&key);
