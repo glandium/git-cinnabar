@@ -341,8 +341,11 @@ void ensure_heads(struct oid_array *heads)
 	heads->sorted = 1;
 	if (heads == &manifest_heads)
 		c = lookup_commit_reference_by_name(MANIFESTS_REF);
-	if (c)
-		body = strstr(get_commit_buffer(c, NULL), "\n\n") + 2;
+	if (c) {
+		const char *msg = get_commit_buffer(c, NULL);
+		body = strstr(msg, "\n\n") + 2;
+		unuse_commit_buffer(c, msg);
+	}
 	for (parent = c ? c->parents : NULL; parent;
 	     parent = parent->next) {
 		const struct object_id *parent_sha1 =

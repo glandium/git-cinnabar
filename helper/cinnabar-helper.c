@@ -1671,13 +1671,15 @@ static void init_config()
 static void init_flags()
 {
 	struct commit *c;
-	const char *body;
+	const char *msg, *body;
 	struct strbuf **flags, **f;
 
 	c = lookup_commit_reference_by_name(METADATA_REF);
 	if (!c)
 		return;
-	body = strstr(get_commit_buffer(c, NULL), "\n\n") + 2;
+	msg = get_commit_buffer(c, NULL);
+	body = strstr(msg, "\n\n") + 2;
+	unuse_commit_buffer(c, msg);
 	flags = strbuf_split_str(body, ' ', -1);
 	for (f = flags; *f; f++) {
 		strbuf_trim(*f);
