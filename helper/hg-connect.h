@@ -26,6 +26,7 @@ struct hg_connection {
 		} stdio;
 		struct {
 			char *url;
+			int initial_request;
 		} http;
 	};
 };
