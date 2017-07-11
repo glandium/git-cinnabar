@@ -1,0 +1,13 @@
+diff --git a/diff.c b/diff.c
+index 74283d900..c3adbebd7 100644
+--- a/diff.c
++++ b/diff.c
+@@ -2706,7 +2706,7 @@ void fill_filespec(struct diff_filespec *spec, const unsigned char *sha1,
+ 		   int sha1_valid, unsigned short mode)
+ {
+ 	if (mode) {
+-		spec->mode = canon_mode(mode);
++		spec->mode = mode;
+ 		hashcpy(spec->oid.hash, sha1);
+ 		spec->oid_valid = sha1_valid;
+ 	}

@@ -325,8 +325,6 @@ static void oid_array_remove(struct oid_array *array, int index)
 	        sizeof(array->oid[0]) * (array->nr-- - index));
 }
 
-static void add_head(struct oid_array *heads, const struct object_id *oid);
-
 void ensure_heads(struct oid_array *heads)
 {
 	struct commit *c = NULL;
@@ -366,7 +364,7 @@ void ensure_heads(struct oid_array *heads)
 	}
 }
 
-static void add_head(struct oid_array *heads, const struct object_id *oid)
+void add_head(struct oid_array *heads, const struct object_id *oid)
 {
 	struct commit *c = NULL;
 	struct commit_list *parent;
@@ -667,6 +665,34 @@ static void do_store(struct string_list *args)
 	} else {
 		die("Unknown store kind: %s", args->items[0].string);
 	}
+}
+
+void store_git_tree(struct strbuf *tree_buf, struct object_id *result)
+{
+	ENSURE_INIT();
+	store_object(OBJ_TREE, tree_buf, NULL, result->hash, 0);
+}
+
+void store_git_commit(struct strbuf *commit_buf, struct object_id *result)
+{
+	ENSURE_INIT();
+	store_object(OBJ_COMMIT, commit_buf, NULL, result->hash, 0);
+}
+
+const unsigned char empty_blob[20] = {
+	0xe6, 0x9d, 0xe2, 0x9b, 0xb2, 0xd1, 0xd6, 0x43, 0x4b, 0x8b,
+	0x29, 0xae, 0x77, 0x5a, 0xd8, 0xc2, 0xe4, 0x8c, 0x53, 0x91,
+};
+
+const unsigned char *ensure_empty_blob() {
+	struct object_entry *oe = find_object((unsigned char *)empty_blob);
+	if (!oe) {
+		struct object_id hash;
+		struct strbuf buf = STRBUF_INIT;
+		store_object(OBJ_BLOB, &buf, NULL, hash.hash, 0);
+		assert(hashcmp(hash.hash, empty_blob) == 0);
+	}
+	return empty_blob;
 }
 
 int maybe_handle_command(const char *command, struct string_list *args)

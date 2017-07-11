@@ -8,12 +8,10 @@ from cinnabar.githg import (
     GitCommit,
     GitHgStore,
     HG_EMPTY_FILE,
-    one,
     UpgradeException,
 )
 from cinnabar.dag import gitdag
 from cinnabar.git import (
-    EMPTY_TREE,
     Git,
     NULL_NODE_ID,
 )
@@ -166,21 +164,10 @@ def fsck(args):
                                         manifest_commit_parents,
                                         git_parents))
 
-        git_ls = one(Git.ls_tree(manifest_ref, 'git'))
-        if git_ls:
-            mode, typ, sha1, path = git_ls
-        else:
-            if GitCommit(manifest_ref).tree == EMPTY_TREE:
-                sha1 = EMPTY_TREE
-            else:
-                report('Missing git tree in manifest commit %s' % manifest_ref)
-                sha1 = None
-        if sha1 and sha1 != tree:
-            report('Tree mismatch between manifest commit %s and commit %s'
-                   % (manifest_ref, node))
+        # TODO: check that manifest content matches changeset content
 
         if args.files:
-            changes = get_changes(manifest_ref, git_parents, 'hg')
+            changes = get_changes(manifest_ref, git_parents)
             for path, hg_file, hg_fileparents in changes:
                 if hg_file != NULL_NODE_ID and (hg_file == HG_EMPTY_FILE or
                                                 GitHgHelper.seen('hg2git',

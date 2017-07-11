@@ -440,7 +440,7 @@ def bundle_data(store, commits):
         yield hg_manifest
         manifest_ref = store.manifest_ref(manifest)
         parents = tuple(store.manifest_ref(p) for p in hg_manifest.parents)
-        changes = get_changes(manifest_ref, parents, 'hg')
+        changes = get_changes(manifest_ref, parents)
         for path, hg_file, hg_fileparents in changes:
             if hg_file != NULL_NODE_ID:
                 files[path].append(

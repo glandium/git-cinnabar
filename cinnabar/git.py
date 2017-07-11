@@ -433,7 +433,7 @@ class FastImportCommitHelper(object):
         # inline filemodify.
         dataref = 'inline' if sha1 in (EMPTY_BLOB, None) else sha1
         self.write('M %s %s %s\n' % (
-            self.MODE[typ],
+            self.MODE.get(typ, typ),
             dataref,
             path,
         ))

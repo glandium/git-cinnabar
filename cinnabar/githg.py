@@ -186,16 +186,15 @@ class FileFindParents(object):
                 # this by default, the fallback will work just fine.
                 file_dag = gitdag()
                 mapping = {}
-                hg_path = 'hg/%s' % path
                 for sha1, tree, fparents in GitHgHelper.rev_list(
                         '--parents', '--boundary', '--topo-order', '--reverse',
-                        '%s...%s' % git_manifest_parents, '--', hg_path):
+                        '%s...%s' % git_manifest_parents, '--', path):
                     if sha1.startswith('-'):
                         sha1 = sha1[1:]
                     node = [
                         s
                         for mode, typ, s, p in
-                        Git.ls_tree(sha1, hg_path)
+                        Git.ls_tree(sha1, path)
                     ]
                     if not node:
                         continue
@@ -656,7 +655,7 @@ class Grafter(object):
     def _graft(self, changeset, parents):
         store = self._store
         tree = store.git_tree(changeset.manifest)
-        do_graft = tree in self._graft_trees
+        do_graft = tree and tree in self._graft_trees
         if not do_graft:
             return None
 
@@ -769,6 +768,7 @@ class Grafter(object):
 class GitHgStore(object):
     FLAGS = [
         'files-meta',
+        'unified-manifests',
     ]
 
     METADATA_REFS = (
@@ -1063,18 +1063,7 @@ class GitHgStore(object):
     def git_tree(self, manifest_sha1):
         if manifest_sha1 == NULL_NODE_ID:
             return EMPTY_TREE,
-        line = one(Git.ls_tree(':h%s' % manifest_sha1, 'git'))
-        if line:
-            mode, typ, tree, path = line
-            assert typ == 'tree' and path == 'git'
-        else:
-            # If there is no git directory in the manifest tree, it means the
-            # manifest tree is empty, so the corresponding git tree needs to
-            # be empty too, although there is no entry for it. No need to
-            # actually get the sha1 for the empty directory, since it's a fixed
-            # value.
-            tree = EMPTY_TREE
-        return tree
+        return GitHgHelper.create_git_tree(manifest_sha1)
 
     def store_changeset(self, instance, commit=None):
         if commit and not isinstance(commit, GitCommit):
@@ -1123,7 +1112,7 @@ class GitHgStore(object):
                 parents=parents,
                 pseudo_mark=':h%s' % instance.node,
             ) as c:
-                c.filemodify('', ':h%s:git' % instance.manifest,
+                c.filemodify('', self.git_tree(instance.manifest),
                              typ='tree')
 
             commit = PseudoGitCommit(':1')
@@ -1140,10 +1129,10 @@ class GitHgStore(object):
         self._branches[instance.node] = instance.branch or 'default'
         self.add_head(instance.node, instance.parent1, instance.parent2)
 
-    TYPE = {
-        '': 'regular',
-        'l': 'symlink',
-        'x': 'exec',
+    MODE = {
+        '': '160644',
+        'l': '160000',
+        'x': '160755',
     }
 
     def store_manifest(self, instance):
@@ -1161,8 +1150,7 @@ class GitHgStore(object):
         ) as commit:
             if hasattr(instance, 'delta_node'):
                 for name in instance.removed:
-                    commit.filedelete('hg/%s' % name)
-                    commit.filedelete('git/%s' % name)
+                    commit.filedelete(name)
                 modified = instance.modified.items()
             else:
                 # slow
@@ -1170,11 +1158,7 @@ class GitHgStore(object):
                             for line in instance._lines)
             for name, (node, attr) in modified:
                 node = str(node)
-                commit.filemodify('hg/%s' % name, node, typ='commit')
-                commit.filemodify('git/%s' % name,
-                                  EMPTY_BLOB if node == HG_EMPTY_FILE
-                                  else ':h%s' % node,
-                                  typ=self.TYPE[attr])
+                commit.filemodify(name, node, self.MODE[attr])
 
         GitHgHelper.set('manifest', instance.node, ':1')
 
