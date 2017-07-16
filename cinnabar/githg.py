@@ -697,7 +697,7 @@ class Grafter(object):
                 possible_nodes = tuple(
                     n for n in possible_nodes
                     if (Authorship.from_git_str(commits[n].author)
-                        .to_hg()[0] == changeset.committer)
+                        .to_hg()[0] == changeset.author)
                 )
             if len(possible_nodes) == 1:
                 nodes = possible_nodes
