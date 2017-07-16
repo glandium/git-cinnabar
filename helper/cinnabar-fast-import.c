@@ -63,7 +63,7 @@ void fast_import_sha1write(struct sha1file *f, const void *buf,
 		 * preceding window, so that use_pack() won't create an overlapping
 		 * window on its own) */
 		off_t offset = pack_win->offset;
-		pack_win->offset = ((pack_data->pack_size - 20 + 1)
+		pack_win->offset = ((pack_data->pack_size - 20)
 			/ packed_git_window_size) * packed_git_window_size - 20;
 		assert(offset != pack_win->offset);
 		pack_win->len = pack_data->pack_size - pack_win->offset;
