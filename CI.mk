@@ -167,7 +167,7 @@ before_script:: $(GIT_CINNABAR_HELPER)
 	git clone -n . old-cinnabar
 	git -C old-cinnabar checkout $(UPGRADE_FROM)
 ifeq (,$(filter 0.3.%,$(UPGRADE_FROM)))
-	old-cinnabar/git-cinnabar download --no-config $(DOWNLOAD_FLAGS)
+	old-cinnabar/git-cinnabar download --no-config $(addprefix --machine ,$(MACHINE))
 endif
 endif
 
