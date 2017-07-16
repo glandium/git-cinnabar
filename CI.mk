@@ -107,7 +107,6 @@ HELPER := git-cinnabar-helper
 endif
 GIT_CINNABAR_HELPER=$(CURDIR)/$(HELPER)
 endif
-export GIT_CINNABAR_HELPER
 COMMA=,
 export GIT_CINNABAR_CHECK=all$(if $(HELPER),,$(COMMA)-helper)
 export GIT_CINNABAR_LOG=process:3
@@ -167,6 +166,9 @@ before_script:: $(GIT_CINNABAR_HELPER)
 	$(UNSHALLOW)
 	git clone -n . old-cinnabar
 	git -C old-cinnabar checkout $(UPGRADE_FROM)
+ifeq (,$(filter 0.3.%,$(UPGRADE_FROM)))
+	old-cinnabar/git-cinnabar download --no-config $(DOWNLOAD_FLAGS)
+endif
 endif
 
 before_script::
