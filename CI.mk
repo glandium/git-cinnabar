@@ -115,7 +115,7 @@ define PREPARE_OLD_CINNABAR
 rm -rf old-cinnabar
 git fetch --unshallow --all --tags || true
 git init old-cinnabar
-git push $(CURDIR)/old-cinnabar $1:old
+git push $(CURDIR)/old-cinnabar $1:refs/heads/old
 git -C old-cinnabar checkout old
 endef
 
