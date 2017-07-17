@@ -111,7 +111,7 @@ COMMA=,
 export GIT_CINNABAR_CHECK=all$(if $(HELPER),,$(COMMA)-helper)
 export GIT_CINNABAR_LOG=process:3
 
-define UNSHALLOW
+define PREPARE_OLD_CINNABAR
 rm -rf old-cinnabar
 git fetch --unshallow --all --tags || true
 git init old-cinnabar
@@ -123,7 +123,6 @@ ifndef BUILD_HELPER
 $(GIT_CINNABAR_HELPER):
 ifdef GIT_CINNABAR_OLD_HELPER
 	$(call PREPARE_OLD_CINNABAR,"$$(git log --format=%H -S '#define CMD_VERSION $(shell python -c 'from cinnabar.helper import *; print GitHgHelper.VERSION')00$$' --pickaxe-regex HEAD | tail -1)")
-	git -C old-cinnabar checkout "$$(git log --format=%H -S '#define CMD_VERSION $(shell python -c 'from cinnabar.helper import *; print GitHgHelper.VERSION')00$$' --pickaxe-regex HEAD | tail -1)" --
 	$(MAKE) -C old-cinnabar -f CI.mk $(HELPER) GIT_CINNABAR_HELPER=$(HELPER) GIT_CINNABAR_OLD_HELPER=
 	mv old-cinnabar/$(HELPER) $@
 	rm -rf old-cinnabar
