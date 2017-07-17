@@ -114,6 +114,8 @@ export GIT_CINNABAR_LOG=process:3
 define PREPARE_OLD_CINNABAR
 rm -rf old-cinnabar
 git fetch --unshallow --all --tags || true
+# git 1.8.x, which is used on travis doesn't seem to get enough from the command above
+git fetch --unshallow --all || true
 git init old-cinnabar
 git push $(CURDIR)/old-cinnabar $1:refs/heads/old
 git -C old-cinnabar checkout old
