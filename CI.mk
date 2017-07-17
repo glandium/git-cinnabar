@@ -112,17 +112,17 @@ export GIT_CINNABAR_CHECK=all$(if $(HELPER),,$(COMMA)-helper)
 export GIT_CINNABAR_LOG=process:3
 
 define UNSHALLOW
+rm -rf old-cinnabar
 git fetch --unshallow --all --tags || true
-# git 1.8.x, which is used on travis doesn't seem to get enough from the command above
-git fetch --unshallow || true
+git init old-cinnabar
+git push $(CURDIR)/old-cinnabar $1:old
+git -C old-cinnabar checkout old
 endef
 
 ifndef BUILD_HELPER
 $(GIT_CINNABAR_HELPER):
 ifdef GIT_CINNABAR_OLD_HELPER
-	rm -rf old-cinnabar
-	$(UNSHALLOW)
-	git clone -n . old-cinnabar
+	$(call PREPARE_OLD_CINNABAR,"$$(git log --format=%H -S '#define CMD_VERSION $(shell python -c 'from cinnabar.helper import *; print GitHgHelper.VERSION')00$$' --pickaxe-regex HEAD | tail -1)")
 	git -C old-cinnabar checkout "$$(git log --format=%H -S '#define CMD_VERSION $(shell python -c 'from cinnabar.helper import *; print GitHgHelper.VERSION')00$$' --pickaxe-regex HEAD | tail -1)" --
 	$(MAKE) -C old-cinnabar -f CI.mk $(HELPER) GIT_CINNABAR_HELPER=$(HELPER) GIT_CINNABAR_OLD_HELPER=
 	mv old-cinnabar/$(HELPER) $@
@@ -162,10 +162,7 @@ ifdef UPGRADE_FROM
 export PATH := $(CURDIR)/old-cinnabar$(PATHSEP)$(PATH)
 
 before_script:: $(GIT_CINNABAR_HELPER)
-	rm -rf old-cinnabar
-	$(UNSHALLOW)
-	git clone -n . old-cinnabar
-	git -C old-cinnabar checkout $(UPGRADE_FROM)
+	$(call PREPARE_OLD_CINNABAR,$(UPGRADE_FROM))
 ifeq (,$(filter 0.3.%,$(UPGRADE_FROM)))
 	old-cinnabar/git-cinnabar download --no-config $(addprefix --machine ,$(MACHINE))
 endif
