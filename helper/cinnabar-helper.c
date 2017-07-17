@@ -1532,6 +1532,31 @@ corrupted:
 
 }
 
+static struct name_entry *
+lazy_tree_entry_by_name(struct manifest_tree_state *state,
+                        const struct object_id *tree_id,
+                        const char *path)
+{
+	int cmp;
+
+	if (!tree_id)
+		return NULL;
+
+	if (!state->tree) {
+		if (manifest_tree_state_init(tree_id, state, NULL))
+			return NULL;
+	}
+
+	while (state->desc.size &&
+	       (cmp = strcmp(state->desc.entry.path, path)) < 0)
+		update_tree_entry(&state->desc);
+
+	if (state->desc.size && cmp == 0)
+		return &state->desc.entry;
+
+	return NULL;
+}
+
 struct track_manifests_upgrade {
 	struct progress *progress;
 	struct hashmap tree_cache;
@@ -1569,6 +1594,7 @@ static int oid_map_entry_cmp(const void *e1, const void *e2, const void *keydata
 }
 
 static void upgrade_manifest_tree(struct old_manifest_tree *tree,
+                                  const struct object_id *reference,
                                   struct object_id *result,
                                   struct hashmap *cache)
 {
@@ -1580,6 +1606,7 @@ static void upgrade_manifest_tree(struct old_manifest_tree *tree,
 	if (!old2new) {
 		struct old_manifest_tree_state state;
 		struct old_manifest_entry entry;
+		struct manifest_tree_state ref_state = { NULL, };
 		struct strbuf tree_buf = STRBUF_INIT;
 
 		if (old_manifest_tree_state_init(tree, &state, NULL))
@@ -1590,9 +1617,15 @@ static void upgrade_manifest_tree(struct old_manifest_tree *tree,
 			unsigned mode = entry.mode;
 			if (S_ISDIR(mode)) {
 				struct old_manifest_tree subtree;
+				struct name_entry *ref_entry;
+				ref_entry = lazy_tree_entry_by_name(
+					&ref_state, reference, entry.path);
 				hashcpy(subtree.git, entry.other_sha1);
 				hashcpy(subtree.hg, entry.sha1);
-				upgrade_manifest_tree(&subtree, &oid, cache);
+				upgrade_manifest_tree(
+					&subtree,
+					ref_entry ? ref_entry->oid : NULL,
+					&oid, cache);
 			} else {
 				if (S_ISLNK(mode))
 					mode = S_IFGITLINK;
@@ -1607,12 +1640,14 @@ static void upgrade_manifest_tree(struct old_manifest_tree *tree,
 		old2new = xmalloc(sizeof(k));
 		old2new->ent = k.ent;
 		old2new->old_tree = k.old_tree;
-		store_git_tree(&tree_buf, &old2new->new_tree);
+		store_git_tree(&tree_buf, reference, &old2new->new_tree);
 		strbuf_release(&tree_buf);
 		hashmap_add(cache, old2new);
 
 		free_tree_buffer(state.tree_git);
 		free_tree_buffer(state.tree_hg);
+		if (ref_state.tree)
+			free_tree_buffer(ref_state.tree);
 	}
 	oidcpy(result, &old2new->new_tree);
 }
@@ -1628,6 +1663,7 @@ static void upgrade_manifest(struct commit *commit,
 	char *cursor;
 	unsigned char sha1[20];
 	struct oid_map_entry *entry;
+	struct object_id *ref_tree = NULL;
 
 	if (parse_tree(commit->tree))
 		die("Corrupt mercurial metadata");
@@ -1635,7 +1671,21 @@ static void upgrade_manifest(struct commit *commit,
 	if (get_old_manifest_tree(commit->tree, &manifest_tree, NULL))
 		die("Corrupt mercurial metadata");
 
-	upgrade_manifest_tree(&manifest_tree, &new_tree_id, &track->tree_cache);
+	if (commit->parents) {
+		struct oid_map_entry k;
+		struct commit *p;
+		oidcpy(&k.old_oid, &commit->parents->item->object.oid);
+		hashmap_entry_init(&k.ent, sha1hash(k.old_oid.hash));
+		entry = hashmap_get(&track->commit_cache, &k, NULL);
+		if (!entry)
+			die("Something went wrong");
+		p = lookup_commit(entry->new_oid.hash);
+		if (!p)
+			die("Something went wrong");
+		ref_tree = &p->tree->object.oid;
+	}
+	upgrade_manifest_tree(&manifest_tree, ref_tree, &new_tree_id,
+	                      &track->tree_cache);
 
 	buf = get_commit_buffer(commit, &size);
 	strbuf_add(&new_commit, buf, size);
@@ -1796,7 +1846,7 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 		cache_entry = xmalloc(sizeof(k));
 		cache_entry->ent = k.ent;
 		cache_entry->old_oid = k.old_oid;
-		store_git_tree(&tree_buf, &cache_entry->new_oid);
+		store_git_tree(&tree_buf, NULL, &cache_entry->new_oid);
 		strbuf_release(&tree_buf);
 		hashmap_add(cache, cache_entry);
 	}

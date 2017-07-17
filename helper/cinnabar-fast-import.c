@@ -667,10 +667,32 @@ static void do_store(struct string_list *args)
 	}
 }
 
-void store_git_tree(struct strbuf *tree_buf, struct object_id *result)
+void store_git_tree(struct strbuf *tree_buf, const struct object_id *reference,
+                    struct object_id *result)
 {
+	struct last_object ref_blob = { STRBUF_INIT, 0, 0, 1 };
+	struct last_object *last_blob = NULL;
+	struct object_entry *oe = NULL;
+	char *buf = NULL;
+
 	ENSURE_INIT();
-	store_object(OBJ_TREE, tree_buf, NULL, result->hash, 0);
+	if (reference) {
+		oe = find_object((unsigned char *)reference->hash);
+	}
+	if (oe && oe->idx.offset > 1) {
+		unsigned long len;
+		ref_blob.data.buf = buf = gfi_unpack_entry(oe, &len);
+		ref_blob.data.len = len;
+		ref_blob.offset = oe->idx.offset;
+		ref_blob.depth = oe->depth;
+		last_blob = &ref_blob;
+	}
+	store_object(OBJ_TREE, tree_buf, last_blob, result->hash, 0);
+	if (last_blob) {
+		// store_object messes with last_blob so free using an old
+		// copy of the pointer.
+		free(buf);
+	}
 }
 
 void store_git_commit(struct strbuf *commit_buf, struct object_id *result)
