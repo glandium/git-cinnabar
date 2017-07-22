@@ -247,6 +247,14 @@ script::
 	$(call COMPARE_REFS, hg.git, hg.clonebundles.git)
 
 script::
+	rm -rf hg.clonebundles-full.hg hg.clonebundles-full.git
+	$(HG) clone hg.hg hg.clonebundles-full.hg
+	$(HG) -R hg.clonebundles-full.hg bundle -a repo.bundle
+	echo $(PATH_URL)/repo.bundle > hg.clonebundles-full.hg/.hg/clonebundles.manifest
+	$(HG) -R hg.clonebundles-full.hg --config extensions.clonebundles= --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) clone hg://localhost:8000.http/ hg.clonebundles-full.git
+	$(call COMPARE_REFS, hg.git, hg.clonebundles.git)
+
+script::
 	rm -rf hg.push.hg hg.pure.git
 	$(call HG_INIT, hg.push.hg)
 	# || exit 1 forces mingw32-make to wrap the command through a shell, which works
