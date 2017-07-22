@@ -308,6 +308,7 @@ void maybe_reset_notes(const char *branch)
 	}
 }
 
+struct oid_array changeset_heads = OID_ARRAY_INIT;
 struct oid_array manifest_heads = OID_ARRAY_INIT;
 
 static void oid_array_insert(struct oid_array *array, int index,
@@ -337,7 +338,9 @@ void ensure_heads(struct oid_array *heads)
 		return;
 
 	heads->sorted = 1;
-	if (heads == &manifest_heads)
+	if (heads == &changeset_heads)
+		c = lookup_commit_reference_by_name(CHANGESETS_REF);
+	else if (heads == &manifest_heads)
 		c = lookup_commit_reference_by_name(MANIFESTS_REF);
 	if (c) {
 		const char *msg = get_commit_buffer(c, NULL);
@@ -350,7 +353,7 @@ void ensure_heads(struct oid_array *heads)
 			&parent->item->object.oid;
 		/* Skip first parent when "has-flat-manifest-tree" is
 		 * there */
-		if (body && parent == c->parents &&
+		if (heads == &manifest_heads && body && parent == c->parents &&
 		    !strcmp(body, "has-flat-manifest-tree"))
 			continue;
 		if (!heads->nr || oidcmp(&heads->oid[heads->nr-1],

@@ -4,6 +4,7 @@
 #include "notes.h"
 
 #define METADATA_REF "refs/cinnabar/metadata"
+#define CHANGESETS_REF METADATA_REF "^1"
 #define MANIFESTS_REF METADATA_REF "^2"
 #define HG2GIT_REF METADATA_REF "^3"
 #define NOTES_REF METADATA_REF "^4"
@@ -19,7 +20,7 @@ extern int metadata_flags;
 
 extern int cinnabar_check;
 
-extern struct oid_array manifest_heads;
+extern struct oid_array changeset_heads, manifest_heads;
 
 extern void ensure_heads(struct oid_array *heads);
 

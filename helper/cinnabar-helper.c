@@ -1559,6 +1559,7 @@ lazy_tree_entry_by_name(struct manifest_tree_state *state,
 
 struct track_manifests_upgrade {
 	struct progress *progress;
+	struct oidset manifests;
 	struct hashmap tree_cache;
 	struct hashmap commit_cache;
 };
@@ -1665,6 +1666,9 @@ static void upgrade_manifest(struct commit *commit,
 	struct oid_map_entry *entry;
 	struct object_id *ref_tree = NULL;
 
+	if (parse_commit(commit))
+		die("Corrupt mercurial metadata");
+
 	if (parse_tree(commit->tree))
 		die("Corrupt mercurial metadata");
 
@@ -1714,6 +1718,7 @@ static void upgrade_manifest(struct commit *commit,
 	oidcpy(&entry->old_oid, &commit->object.oid);
 	store_git_commit(&new_commit, &entry->new_oid);
 	hashmap_add(&track->commit_cache, entry);
+	oidset_insert(&track->manifests, &entry->new_oid);
 
 	get_manifest_sha1(commit, sha1);
 	add_note(&hg2git, sha1, entry->new_oid.hash, combine_notes_overwrite);
@@ -1731,6 +1736,47 @@ static int revs_add_each_head(const struct object_id *oid, void *data)
 	add_pending_sha1(revs, oid_to_hex(oid), oid->hash, 0);
 
 	return 0;
+}
+
+static struct commit *
+resolve_manifest_for_upgrade(struct commit *commit,
+                             struct track_manifests_upgrade *track)
+{
+	const unsigned char *note;
+	char *buffer;
+	const char *manifest;
+	enum object_type type;
+	unsigned long size;
+	unsigned char manifest_sha1[20];
+	const unsigned char *git_manifest;
+
+	ensure_notes(&git2hg);
+	note = get_note(&git2hg, lookup_replace_object(commit->object.oid.hash));
+	if (!note)
+		goto corrupted;
+
+	buffer = read_sha1_file(note, &type, &size);
+
+	if (!buffer || type != OBJ_BLOB)
+		goto corrupted;
+
+	manifest = strstr(buffer, "manifest ") + sizeof("manifest");
+	if (get_sha1_hex(manifest, manifest_sha1))
+		goto corrupted;
+
+	git_manifest = resolve_hg2git(manifest_sha1, 40);
+	if (!git_manifest)
+		goto corrupted;
+
+	free(buffer);
+
+	if (oidset_contains(&track->manifests,
+	                    (struct object_id *)git_manifest))
+		return NULL;
+	return lookup_commit(git_manifest);
+
+corrupted:
+	die("Corrupt mercurial metadata");
 }
 
 static void do_upgrade(struct string_list *args)
@@ -1771,15 +1817,18 @@ static void do_upgrade(struct string_list *args)
 	}
 
 	if (!(metadata_flags & UNIFIED_MANIFESTS)) {
-		struct track_manifests_upgrade track = { NULL, };
+		struct track_manifests_upgrade track = { NULL, OIDSET_INIT, };
 		track.progress = start_progress("Upgrading manifests metadata", 0);
 		hashmap_init(&track.tree_cache, old2new_manifest_tree_cmp, 0);
 		hashmap_init(&track.commit_cache, oid_map_entry_cmp, 0);
 
-		ensure_heads(&manifest_heads);
-		oid_array_for_each_unique(&manifest_heads, revs_add_each_head,
-		                          &revs);
 		reset_heads(&manifest_heads);
+		// Normally, we'd operate on manifest_heads, but some might be
+		// missing for $reasons, and a partial upgrade would leave things
+		// in a very bad shape, so we use changeset_heads instead.
+		ensure_heads(&changeset_heads);
+		oid_array_for_each_unique(&changeset_heads,
+		                          revs_add_each_head, &revs);
 
 		revs.topo_order = 1;
 		revs.limited = 1;
@@ -1790,11 +1839,17 @@ static void do_upgrade(struct string_list *args)
 			die("revision walk setup failed");
 
 		while ((commit = get_revision(&revs)) != NULL) {
-			upgrade_manifest(commit, &track);
-			free_tree_buffer(commit->tree);
+			struct commit *manifest_commit;
+			manifest_commit = resolve_manifest_for_upgrade(commit,
+			                                               &track);
+			if (manifest_commit) {
+				upgrade_manifest(manifest_commit, &track);
+				free_tree_buffer(manifest_commit->tree);
+			}
 		}
 		hashmap_free(&track.commit_cache, 1);
 		hashmap_free(&track.tree_cache, 1);
+		oidset_clear(&track.manifests);
 		stop_progress(&track.progress);
 	}
 
