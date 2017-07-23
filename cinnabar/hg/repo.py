@@ -627,6 +627,10 @@ def getbundle(repo, store, heads, branch_names):
             apply_bundle = BundleApplier(bundle)
             del bundle
             apply_bundle(store)
+            # Eliminate the heads that we got from the clonebundle.
+            heads = [h for h in heads if not store.changeset_ref(h)]
+            if not heads:
+                return
             common = findcommon(repo, store, store.heads(branch_names))
             logging.info('common: %s', common)
 
