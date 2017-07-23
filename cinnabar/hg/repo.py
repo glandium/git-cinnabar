@@ -583,8 +583,12 @@ class BundleApplier(object):
         changeset_chunks = ChunksCollection(progress_iter(
             'Reading %d changesets', next(self._bundle, None)))
 
-        manifest_chunks = ChunksCollection(progress_iter(
-            'Reading %d manifests', next(self._bundle, None)))
+        for mn in progress_iter(
+                'Reading and importing %d manifests',
+                iter_initialized(store.manifest,
+                                 iter_chunks(next(self._bundle, None),
+                                             ManifestInfo))):
+            store.store_manifest(mn)
 
         for rev_chunk in progress_iter(
                 'Reading and importing %d files', next(self._bundle, None)):
@@ -593,14 +597,6 @@ class BundleApplier(object):
         if next(self._bundle, None) is not None:
             assert False
         del self._bundle
-
-        for mn in progress_iter(
-                'Importing %d manifests',
-                manifest_chunks.iter_initialized(ManifestInfo,
-                                                 store.manifest)):
-            store.store_manifest(mn)
-
-        del manifest_chunks
 
         for cs in progress_iter(
                 'Importing %d changesets',
