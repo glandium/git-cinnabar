@@ -731,7 +731,10 @@ class Grafter(object):
         # TODO: clarify this function because it's hard to follow.
         store = self._store
         parents = tuple(store.changeset_ref(p) for p in changeset.parents)
-        result = self._graft(changeset, parents)
+        if None in parents:
+            result = None
+        else:
+            result = self._graft(changeset, parents)
         if parents:
             is_early_history = all(p in self._early_history for p in parents)
         else:
