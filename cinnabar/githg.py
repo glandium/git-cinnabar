@@ -654,7 +654,7 @@ class Grafter(object):
 
     def _graft(self, changeset, parents):
         store = self._store
-        tree = store.git_tree(changeset.manifest)
+        tree = store.git_tree(changeset.manifest, *changeset.parents[:1])
         do_graft = tree and tree in self._graft_trees
         if not do_graft:
             return None
@@ -1060,10 +1060,10 @@ class GitHgStore(object):
             return EMPTY_BLOB
         return self._hg2git(sha1)
 
-    def git_tree(self, manifest_sha1):
+    def git_tree(self, manifest_sha1, ref_changeset=None):
         if manifest_sha1 == NULL_NODE_ID:
             return EMPTY_TREE,
-        return GitHgHelper.create_git_tree(manifest_sha1)
+        return GitHgHelper.create_git_tree(manifest_sha1, ref_changeset)
 
     def store_changeset(self, instance, commit=None):
         if commit and not isinstance(commit, GitCommit):
@@ -1112,7 +1112,8 @@ class GitHgStore(object):
                 parents=parents,
                 pseudo_mark=':h%s' % instance.node,
             ) as c:
-                c.filemodify('', self.git_tree(instance.manifest),
+                c.filemodify('', self.git_tree(instance.manifest,
+                                               *instance.parents[:1]),
                              typ='tree')
 
             commit = PseudoGitCommit(':1')

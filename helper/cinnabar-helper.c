@@ -79,7 +79,7 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 2500
+#define CMD_VERSION 2600
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -1858,6 +1858,7 @@ static void do_upgrade(struct string_list *args)
 }
 
 static void recurse_create_git_tree(const struct object_id *tree_id,
+                                    const struct object_id *reference,
                                     struct object_id *result,
 				    struct hashmap *cache)
 {
@@ -1868,6 +1869,7 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 	cache_entry = hashmap_get(cache, &k, NULL);
 	if (!cache_entry) {
 		struct manifest_tree_state state;
+		struct manifest_tree_state ref_state = { NULL, };
 		struct name_entry entry;
 		struct strbuf tree_buf = STRBUF_INIT;
 
@@ -1878,7 +1880,13 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 			struct object_id oid;
 			unsigned mode = entry.mode;
 			if (S_ISDIR(mode)) {
-				recurse_create_git_tree(entry.oid, &oid, cache);
+				struct name_entry *ref_entry;
+				ref_entry = lazy_tree_entry_by_name(
+					&ref_state, reference, entry.path);
+				recurse_create_git_tree(
+					entry.oid,
+					ref_entry ? ref_entry->oid : NULL,
+					&oid, cache);
 			} else {
 				const unsigned char *file_sha1;
 				file_sha1 = resolve_hg2git(entry.oid->hash, 40);
@@ -1901,9 +1909,12 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 		cache_entry = xmalloc(sizeof(k));
 		cache_entry->ent = k.ent;
 		cache_entry->old_oid = k.old_oid;
-		store_git_tree(&tree_buf, NULL, &cache_entry->new_oid);
+		store_git_tree(&tree_buf, reference, &cache_entry->new_oid);
 		strbuf_release(&tree_buf);
 		hashmap_add(cache, cache_entry);
+
+		if (ref_state.tree)
+			free_tree_buffer(ref_state.tree);
 	}
 	oidcpy(result, &cache_entry->new_oid);
 }
@@ -1915,9 +1926,10 @@ static void do_create_git_tree(struct string_list *args)
 	struct object_id oid;
 	const unsigned char *manifest_sha1;
 	struct commit *commit;
+	struct object_id *ref_tree = NULL;
 
-	if (args->nr != 1)
-		goto not_found;
+	if (args->nr == 0 || args->nr > 2)
+		die("create-git-tree takes 1 or 2 arguments");
 
 	if (!strncmp(args->items[0].string, "git:", 4)) {
 		if (get_oid_hex(args->items[0].string + 4, &oid))
@@ -1936,7 +1948,22 @@ static void do_create_git_tree(struct string_list *args)
 	if (parse_commit(commit))
 		goto not_found;
 
-	recurse_create_git_tree(&commit->tree->object.oid, &oid, &git_tree_cache);
+	if (args->nr == 2) {
+		struct object_id ref_oid;
+		const unsigned char *ref_commit_sha1;
+		struct commit *ref_commit;
+		if (get_oid_hex(args->items[1].string, &ref_oid))
+			die("invalid argument");
+		ref_commit_sha1 = resolve_hg2git(ref_oid.hash, 40);
+		if (!ref_commit_sha1)
+			die("invalid argument");
+		ref_commit = lookup_commit(ref_commit_sha1);
+		parse_commit_or_die(ref_commit);
+		ref_tree = &ref_commit->tree->object.oid;
+	}
+
+	recurse_create_git_tree(&commit->tree->object.oid, ref_tree, &oid,
+	                        &git_tree_cache);
 
 	write_or_die(1, oid_to_hex(&oid), 40);
 	write_or_die(1, "\n", 1);
