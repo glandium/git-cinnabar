@@ -57,6 +57,7 @@
 #include "exec-cmd.h"
 #include "hashmap.h"
 #include "log-tree.h"
+#include "strslice.h"
 #include "strbuf.h"
 #include "string-list.h"
 #include "notes.h"
@@ -809,11 +810,6 @@ corrupted:
 
 }
 
-struct strslice {
-	size_t len;
-	const char *buf;
-};
-
 /* Return whether two entries have matching sha1s and modes */
 static int manifest_entry_equal(const struct name_entry *e1,
                                 const struct name_entry *e2)
@@ -963,10 +959,8 @@ static struct strbuf *generate_manifest(const struct object_id *oid)
 	}
 
 	if (generated_manifest.content.len) {
-		struct strslice gm = {
-			generated_manifest.content.len,
-			generated_manifest.content.buf
-		};
+		struct strslice gm;
+		strbuf_slice(&gm, &generated_manifest.content, 0, SIZE_MAX);
 		strbuf_grow(&content, generated_manifest.content.len);
 		recurse_manifest2(&generated_manifest.tree_id, &gm,
 		                  oid, &content, "", &tree_list);
