@@ -13,6 +13,6 @@ extern void store_git_commit(struct strbuf *commit_buf, struct object_id *result
 
 extern void add_head(struct oid_array *heads, const struct object_id *oid);
 
-extern const unsigned char *ensure_empty_blob();
+extern const struct object_id *ensure_empty_blob();
 
 #endif

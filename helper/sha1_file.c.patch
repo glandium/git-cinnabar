@@ -1,8 +1,8 @@
 diff --git a/sha1_file.c b/sha1_file.c
-index 9c86d1924..7a1b277c8 100644
+index b60ae15f7..ffc176e34 100644
 --- a/sha1_file.c
 +++ b/sha1_file.c
-@@ -2616,7 +2616,7 @@ off_t nth_packed_object_offset(const struct packed_git *p, uint32_t n)
+@@ -2753,7 +2753,7 @@ off_t nth_packed_object_offset(const struct packed_git *p, uint32_t n)
  	}
  }
  
