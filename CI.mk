@@ -43,6 +43,8 @@ else
 	$(call PIP_INSTALL,pip)
 endif
 
+MERCURIAL_VERSION ?= 4.2.2
+
 ifneq ($(MERCURIAL_VERSION),installed)
 before_install::
 	$(call PIP_INSTALL,mercurial$(addprefix ==,$(MERCURIAL_VERSION)))$(if $(MERCURIAL_VERSION), || $(call PIP_INSTALL,https://www.mercurial-scm.org/release/mercurial-$(MERCURIAL_VERSION).tar.gz))
