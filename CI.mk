@@ -186,7 +186,7 @@ before_script::
 
 before_script:: $(GIT_CINNABAR_HELPER)
 	rm -rf hg.old.git
-	$(GIT) -c fetch.prune=true clone hg::$(REPO) hg.old.git
+	$(GIT) -c fetch.prune=true clone -n hg::$(REPO) hg.old.git
 
 ifdef UPGRADE_FROM
 script::
@@ -217,16 +217,16 @@ ifndef GRAFT
 script::
 	rm -rf hg.hg hg.empty.git hg.git hg.bundle hg.unbundle.git
 	$(call HG_INIT, hg.hg)
-	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.hg hg.empty.git
+	$(GIT) -c fetch.prune=true clone -n hg::$(PATH_URL)/hg.hg hg.empty.git
 	$(GIT) -C hg.empty.git push --all hg::$(PATH_URL)/hg.hg
 	$(GIT) -C hg.old.git push hg::$(PATH_URL)/hg.hg refs/remotes/origin/*:refs/heads/*
 	$(HG) -R hg.hg verify
-	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.hg hg.git
+	$(GIT) -c fetch.prune=true clone -n hg::$(PATH_URL)/hg.hg hg.git
 	$(call COMPARE_REFS, hg.old.git, hg.git)
 	$(GIT) -C hg.git cinnabar fsck
 
 	$(GIT) -C hg.git cinnabar bundle $(CURDIR)/hg.bundle -- --remotes
-	$(GIT) -c fetch.prune=true clone hg::$(CURDIR)/hg.bundle hg.unbundle.git
+	$(GIT) -c fetch.prune=true clone -n hg::$(CURDIR)/hg.bundle hg.unbundle.git
 	$(call COMPARE_REFS, hg.git, hg.unbundle.git)
 	$(GIT) -C hg.unbundle.git cinnabar fsck
 
@@ -235,25 +235,25 @@ script::
 	$(HG) init hg.incr.hg
 	# /!\ this only really works for an unchanged $(REPO)
 	$(HG) -R hg.incr.hg pull $(CURDIR)/hg.hg -r c262fcbf0656 -r 46585998e744
-	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.incr.hg hg.incr.git
+	$(GIT) -c fetch.prune=true clone -n hg::$(PATH_URL)/hg.incr.hg hg.incr.git
 	$(HG) -R hg.incr.hg pull $(CURDIR)/hg.hg
 	$(GIT) -C hg.incr.git remote update
 	$(GIT) -C hg.incr.git cinnabar fsck
 
 script::
 	rm -rf hg.clonebundles.hg hg.clonebundles.git
-	$(HG) clone hg.hg hg.clonebundles.hg
+	$(HG) clone -U hg.hg hg.clonebundles.hg
 	$(HG) -R hg.clonebundles.hg bundle -a -r c262fcbf0656 -r 46585998e744 repo.bundle
 	echo $(PATH_URL)/repo.bundle > hg.clonebundles.hg/.hg/clonebundles.manifest
-	$(HG) -R hg.clonebundles.hg --config extensions.clonebundles= --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) clone hg://localhost:8000.http/ hg.clonebundles.git
+	$(HG) -R hg.clonebundles.hg --config extensions.clonebundles= --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) clone -n hg://localhost:8000.http/ hg.clonebundles.git
 	$(call COMPARE_REFS, hg.git, hg.clonebundles.git)
 
 script::
 	rm -rf hg.clonebundles-full.hg hg.clonebundles-full.git
-	$(HG) clone hg.hg hg.clonebundles-full.hg
+	$(HG) clone -U hg.hg hg.clonebundles-full.hg
 	$(HG) -R hg.clonebundles-full.hg bundle -a repo.bundle
 	echo $(PATH_URL)/repo.bundle > hg.clonebundles-full.hg/.hg/clonebundles.manifest
-	$(HG) -R hg.clonebundles-full.hg --config extensions.clonebundles= --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) clone hg://localhost:8000.http/ hg.clonebundles-full.git
+	$(HG) -R hg.clonebundles-full.hg --config extensions.clonebundles= --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) clone -n hg://localhost:8000.http/ hg.clonebundles-full.git
 	$(call COMPARE_REFS, hg.git, hg.clonebundles.git)
 
 script::
@@ -261,7 +261,7 @@ script::
 	$(call HG_INIT, hg.push.hg)
 	# || exit 1 forces mingw32-make to wrap the command through a shell, which works
 	# around https://github.com/Alexpux/MSYS2-packages/issues/829.
-	$(GIT) clone hg.git hg.pure.git || exit 1
+	$(GIT) clone -n hg.git hg.pure.git || exit 1
 	# Push everything, including merges
 	$(GIT) -c cinnabar.experiments=merge -C hg.pure.git push hg::$(PATH_URL)/hg.push.hg --all
 
@@ -280,7 +280,7 @@ ifndef NO_BUNDLE2
 
 script::
 	rm -rf hg.hg
-	$(HG) clone $(REPO) hg.hg
+	$(HG) clone -U $(REPO) hg.hg
 
 script::
 	rm -rf hg.graft.git hg.graft2.git
