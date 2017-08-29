@@ -974,12 +974,6 @@ class GitHgStore(object):
             gitsha1 = None
         return gitsha1
 
-    def _git_object(self, dic, sha1):
-        assert sha1 != NULL_NODE_ID
-        if sha1 in dic:
-            return dic[sha1]
-        return self._hg2git(sha1)
-
     def changeset(self, sha1, include_parents=False):
         gitsha1 = self.changeset_ref(sha1)
         assert gitsha1
