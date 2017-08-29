@@ -507,8 +507,6 @@ static int store_each_note(const struct object_id *object_oid,
 
 	switch (sha1_object_info(note_oid->hash, NULL)) {
 	case OBJ_BLOB:
-		mode = S_IFREG | 0644;
-		break;
 	case OBJ_COMMIT:
 		mode = S_IFGITLINK;
 		break;
