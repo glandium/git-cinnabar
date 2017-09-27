@@ -179,6 +179,9 @@ static void send_object(unsigned const char *sha1)
 
 	st = open_istream(sha1, &type, &sz, NULL);
 
+	if (!st)
+		die("open_istream failed for %s", sha1_to_hex(sha1));
+
 	strbuf_addf(&header, "%s %s %lu\n", sha1_to_hex(sha1), typename(type),
 	            sz);
 
