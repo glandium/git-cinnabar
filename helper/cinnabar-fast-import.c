@@ -497,16 +497,26 @@ static void do_set(struct string_list *args)
 	}
 }
 
+struct store_each_note_data {
+	struct tree_entry *tree;
+	struct notes_tree *notes;
+};
+
 static int store_each_note(const struct object_id *object_oid,
                            const struct object_id *note_oid, char *note_path,
                            void *data)
 {
 	int mode;
 	size_t len;
-	struct tree_entry *tree = (struct tree_entry *)data;
+	struct store_each_note_data *d = (struct store_each_note_data *)data;
 
 	switch (sha1_object_info(note_oid->hash, NULL)) {
-	case OBJ_BLOB:
+	case OBJ_BLOB: {
+		if (d->notes == &files_meta) {
+			mode = S_IFREG | 0644;
+			break;
+		}
+	}
 	case OBJ_COMMIT:
 		mode = S_IFGITLINK;
 		break;
@@ -521,7 +531,7 @@ static int store_each_note(const struct object_id *object_oid,
 	default:
 		die("Unexpected object type in notes tree");
 	}
-	tree_content_set(tree, note_path, note_oid, mode, NULL);
+	tree_content_set(d->tree, note_path, note_oid, mode, NULL);
 	return 0;
 }
 
@@ -529,17 +539,19 @@ static void store_notes(struct notes_tree *notes, struct object_id *result)
 {
 	hashcpy(result->hash, null_sha1);
 	if (notes->dirty) {
-		struct tree_entry *tree = new_tree_entry();
+		struct store_each_note_data data;
+		data.tree = new_tree_entry();
+		data.notes = notes;
 
 		require_explicit_termination = 1;
-		memset(tree, 0, sizeof(*tree));
+		memset(data.tree, 0, sizeof(*data.tree));
 		if (for_each_note(notes, FOR_EACH_NOTE_DONT_UNPACK_SUBTREES |
 		                         FOR_EACH_NOTE_YIELD_SUBTREES,
-		                  store_each_note, tree))
+		                  store_each_note, &data))
 			die("Failed to store notes");
-		store_tree(tree);
-		oidcpy(result, &tree->versions[1].oid);
-		release_tree_entry(tree);
+		store_tree(data.tree);
+		oidcpy(result, &data.tree->versions[1].oid);
+		release_tree_entry(data.tree);
 	}
 }
 
