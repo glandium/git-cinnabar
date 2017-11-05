@@ -780,9 +780,10 @@ class Remote(object):
 if changegroup:
     class localpeer(sshpeer):
         def __init__(self, ui, path):
-            self._url = self.path = path
-            self.ui = ui
+            self._url = self.path = self._path = path
+            self.ui = self._ui = ui
             self.pipeo = self.pipei = self.pipee = None
+            self._pipeo = self._pipei = self._pipee = None
 
             shellquote = util.shellquote
             util.shellquote = lambda x: x
