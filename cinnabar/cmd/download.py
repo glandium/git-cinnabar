@@ -111,7 +111,7 @@ def download(args):
             d = os.path.join(os.path.expanduser('~'), '.git-cinnabar')
             try:
                 os.makedirs(d)
-            except:
+            except Exception:
                 pass
             if not os.path.isdir(d):
                 print >>sys.stderr, (

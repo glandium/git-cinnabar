@@ -140,7 +140,7 @@ class Version(argparse.Action):
             try:
                 with GitHgHelper.query('version') as out:
                     version = out.read(40)
-            except:
+            except Exception:
                 version = 'unknown'
 
             sha1 = helper_hash() or 'unknown'

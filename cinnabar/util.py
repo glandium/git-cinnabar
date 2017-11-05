@@ -71,7 +71,7 @@ def init_logging():
                 name = ''
             logging.getLogger(name).setLevel(
                 max(logging.DEBUG, logging.FATAL - value * 10))
-        except:
+        except Exception:
             pass
 
 
@@ -580,7 +580,7 @@ class MemoryReporter(Thread):
                 break
             except Empty:
                 pass
-            except:
+            except Exception:
                 break
             finally:
                 children = proc.children(recursive=True)
