@@ -176,14 +176,22 @@ class GitRemoteHelper(BaseRemoteHelper):
             bookmarks = {}
 
         elif self._repo.capable('batch'):
-            batch = self._repo.batch()
-            branchmap = batch.branchmap()
-            heads = batch.heads()
-            bookmarks = batch.listkeys('bookmarks')
-            batch.submit()
-            branchmap = branchmap.value
-            heads = heads.value
-            bookmarks = bookmarks.value
+            if hasattr(self._repo, 'iterbatch'):
+                batch = self._repo.iterbatch()
+                batch.branchmap()
+                batch.heads()
+                batch.listkeys('bookmarks')
+                batch.submit()
+                branchmap, heads, bookmarks = batch.results()
+            else:
+                batch = self._repo.batch()
+                branchmap = batch.branchmap()
+                heads = batch.heads()
+                bookmarks = batch.listkeys('bookmarks')
+                batch.submit()
+                branchmap = branchmap.value
+                heads = heads.value
+                bookmarks = bookmarks.value
             if heads == ['\0' * 20]:
                 heads = []
         else:
