@@ -105,6 +105,7 @@ matrix:
     - env: MERCURIAL_VERSION=3.6
 #    - env: MERCURIAL_VERSION=3.7
 #    - env: MERCURIAL_VERSION=3.8
+    - env: MERCURIAL_VERSION=4.4
   # Workaround for https://github.com/travis-ci/travis-ci/issues/4681
   exclude:
     - os: linux
