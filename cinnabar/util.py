@@ -185,17 +185,17 @@ class IOLogger(object):
 
     def __iter__(self):
         while self._reader:
-            l = self.readline()
-            if not l:
+            line = self.readline()
+            if not line:
                 break
-            yield l
+            yield line
 
 
-def one(l):
-    l = list(l)
-    if l:
-        assert len(l) == 1
-        return l[0]
+def one(iterable):
+    lst = list(iterable)
+    if lst:
+        assert len(lst) == 1
+        return lst[0]
     return None
 
 

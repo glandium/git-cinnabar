@@ -130,12 +130,12 @@ def readexactly(stream, n):
 def getchunk(stream):
     """return the next chunk from stream as a string"""
     d = readexactly(stream, 4)
-    l = struct.unpack(">l", d)[0]
-    if l <= 4:
-        if l:
-            raise Exception("invalid chunk length %d" % l)
+    length = struct.unpack(">l", d)[0]
+    if length <= 4:
+        if length:
+            raise Exception("invalid chunk length %d" % length)
         return ""
-    return readexactly(stream, l - 4)
+    return readexactly(stream, length - 4)
 
 
 def RawRevChunkType(bundle):
