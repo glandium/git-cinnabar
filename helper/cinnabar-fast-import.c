@@ -136,7 +136,7 @@ static void init()
 	prepare_packed_git();
 	start_packfile();
 	install_packed_git(pack_data);
-	mru_append(packed_git_mru, pack_data);
+	mru_append(&packed_git_mru, pack_data);
 	set_die_routine(die_nicely);
 
 	parse_one_feature("force", 0);

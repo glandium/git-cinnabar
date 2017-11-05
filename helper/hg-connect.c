@@ -238,7 +238,7 @@ static int unbundlehash(const struct object_id *oid, void *data)
 void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 		 struct oid_array *heads)
 {
-	struct tempfile *tmpfile = xcalloc(1, sizeof(*tmpfile));
+	struct tempfile *tmpfile;
 	struct stat st;
 	FILE *file;
 	/* When the heads list is empty, we send "force", which needs to be
@@ -267,10 +267,10 @@ void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 	/* Neither the stdio nor the HTTP protocols can handle a stream for
 	 * push commands, so store the data as a temporary file. */
 	//TODO: error checking
-	mks_tempfile_ts(tmpfile, "hg-bundle-XXXXXX.hg", 3);
+	tmpfile = mks_tempfile_ts("hg-bundle-XXXXXX.hg", 3);
 	file = fdopen_tempfile(tmpfile, "w");
 	copy_bundle(in, file);
-	close_tempfile(tmpfile);
+	close_tempfile_gently(tmpfile);
 
 	file = fopen(tmpfile->filename.buf, "r");
 	fstat(fileno(file), &st);
@@ -278,7 +278,7 @@ void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 			   "heads", heads_str, NULL);
 	fclose(file);
 
-	delete_tempfile(tmpfile);
+	delete_tempfile(&tmpfile);
 	if (heads->nr)
 		free(heads_str);
 }

@@ -214,15 +214,15 @@ static void send_object(unsigned const char *sha1)
 
 static void do_cat_file(struct string_list *args)
 {
-	unsigned char sha1[20];
+	struct object_id oid;
 
 	if (args->nr != 1)
 		goto not_found;
 
-	if (get_sha1(args->items[0].string, sha1))
+	if (get_oid(args->items[0].string, &oid))
 		goto not_found;
 
-	send_object(sha1);
+	send_object(oid.hash);
 	return;
 
 not_found:
@@ -422,8 +422,7 @@ static void do_diff_tree(struct string_list *args)
 
 static void do_get_note(struct notes_tree *t, struct string_list *args)
 {
-	unsigned char sha1[20];
-	struct object_id oid;
+	struct object_id oid, oid2;
 	const struct object_id *note;
 
 	if (args->nr != 1)
@@ -431,11 +430,11 @@ static void do_get_note(struct notes_tree *t, struct string_list *args)
 
 	ensure_notes(t);
 
-	if (get_sha1_committish(args->items[0].string, sha1))
+	if (get_oid_committish(args->items[0].string, &oid))
 		goto not_found;
 
-	hashcpy(oid.hash, lookup_replace_object(sha1));
-	note = get_note(t, &oid);
+	hashcpy(oid2.hash, lookup_replace_object(oid.hash));
+	note = get_note(t, &oid2);
 	if (!note)
 		goto not_found;
 
@@ -1528,7 +1527,8 @@ static void upgrade_files(const struct old_manifest_tree *tree,
 			if (oidcmp(note, entry.other_oid))
 				goto corrupted;
 		}
-		display_progress(track->progress, track->set.map.size);
+		display_progress(track->progress,
+		                 hashmap_get_size(&track->set.map.map));
 	}
 
 	free_tree_buffer(state.tree_git);
@@ -1736,7 +1736,8 @@ static void upgrade_manifest(struct commit *commit,
 
 	strbuf_release(&new_commit);
 
-	display_progress(track->progress, track->commit_cache.size);
+	display_progress(track->progress,
+	                 hashmap_get_size(&track->commit_cache));
 }
 
 static int revs_add_each_head(const struct object_id *oid, void *data)
