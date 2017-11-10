@@ -227,13 +227,13 @@ class Git(object):
             value = os.environ.get(var)
             if value is None and remote:
                 var = 'remote.%s.%s' % (remote, name.replace('.', '-'))
-                value = self._config.get(var)
+                value = self._config.get(var.lower())
         elif name == 'fetch.prune' and remote:
             var = 'remote.%s.prune' % remote
-            value = self._config.get(var)
+            value = self._config.get(var.lower())
         if value is None:
             var = name
-            value = self._config.get(name)
+            value = self._config.get(var.lower())
         if value:
             value = value.split('\0')
             if not multiple:
