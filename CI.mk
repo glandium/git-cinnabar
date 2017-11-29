@@ -269,6 +269,13 @@ script::
 	(echo protocol=http; echo host=localhost:8000; echo username=foo; echo password=bar) | $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' credential approve
 	$(GIT) -C hg.git remote add hg-http hg::http://localhost:8000/
 	$(HG) -R hg.http.hg --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' -C hg.git push hg-http refs/remotes/origin/*:refs/heads/*
+
+script::
+	rm -rf hg.cinnabarclone.git
+	$(GIT) init hg.cinnabarclone.git
+	$(GIT) -C hg.cinnabarclone.git fetch ../hg.incr.git refs/heads/*:refs/heads/* refs/remotes/*:refs/remotes/*
+	$(GIT) -C hg.cinnabarclone.git fetch ../hg.incr.git refs/cinnabar/metadata:refs/cinnabar/metadata
+	$(GIT) -C hg.cinnabarclone.git cinnabar fsck
 else # GRAFT
 
 GET_ROOTS = $(GIT) -C $1 rev-list $2 --max-parents=0
