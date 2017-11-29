@@ -990,7 +990,7 @@ static struct strbuf *generate_manifest(const unsigned char *git_sha1)
 		struct object_list *elem = previous_list;
 		previous_list = elem->next;
 		free(elem);
-		if (!obj->flags & SEEN)
+		if (!(obj->flags & SEEN))
 			free_tree_buffer((struct tree *)obj);
 	}
 	return &generated_manifest.content;
