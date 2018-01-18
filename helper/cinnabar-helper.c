@@ -405,7 +405,7 @@ static void do_diff_tree(struct string_list *args)
 	revs.diffopt.output_format = DIFF_FORMAT_CALLBACK;
 	revs.diffopt.format_callback = strbuf_diff_tree;
 	revs.diffopt.format_callback_data = &buf;
-	DIFF_OPT_SET(&revs.diffopt, RECURSIVE);
+	revs.diffopt.flags.recursive = 1;
 	free(argv);
 
 	if (revs.pending.nr != 2)
