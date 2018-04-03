@@ -1,12 +1,12 @@
 #define cmd_main fast_import_main
-#define sha1write fast_import_sha1write
+#define hashwrite fast_import_hashwrite
 #include "fast-import.patched.c"
-#undef sha1write
+#undef hashwrite
 #include "cinnabar-fast-import.h"
 #include "cinnabar-helper.h"
 #include "hg-bundle.h"
 #include "hg-data.h"
-#include "mru.h"
+#include "list.h"
 #include "notes.h"
 #include "sha1-array.h"
 #include "tree-walk.h"
@@ -20,15 +20,15 @@ static int initialized = 0;
 
 static void cleanup();
 
-/* Divert fast-import.c's calls to sha1write so as to keep a fake pack window
+/* Divert fast-import.c's calls to hashwrite so as to keep a fake pack window
  * on the last written bits, avoiding munmap/mmap cycles from
  * gfi_unpack_entry. */
 static struct pack_window *pack_win;
 static struct pack_window *prev_win;
 
-extern void sha1write(struct sha1file *, const void *, unsigned int);
+extern void hashwrite(struct hashfile *, const void *, unsigned int);
 
-void fast_import_sha1write(struct sha1file *f, const void *buf,
+void fast_import_hashwrite(struct hashfile *f, const void *buf,
 			   unsigned int count)
 {
 	size_t window_size;
@@ -40,13 +40,13 @@ void fast_import_sha1write(struct sha1file *f, const void *buf,
 		pack_win->base = xmalloc(packed_git_window_size + 20);
 		pack_win->next = NULL;
 	}
-	/* pack_data is not set the first time sha1write is called */
+	/* pack_data is not set the first time hashwrite is called */
 	if (pack_data && !pack_data->windows) {
 		pack_data->windows = pack_win;
 		pack_data->pack_size = pack_win->len;
 	}
 
-	sha1write(f, buf, count);
+	hashwrite(f, buf, count);
 	pack_win->last_used = -1; /* always last used */
 	pack_win->inuse_cnt = -1;
 	if (pack_data)
@@ -69,7 +69,7 @@ void fast_import_sha1write(struct sha1file *f, const void *buf,
 		pack_win->len = pack_data->pack_size - pack_win->offset;
 
 		/* Ensure a pack window on the data preceding that. */
-		sha1flush(f);
+		hashflush(f);
 		if (prev_win)
 			unuse_pack(&prev_win);
 		use_pack(pack_data, &prev_win,
@@ -136,7 +136,7 @@ static void init()
 	prepare_packed_git();
 	start_packfile();
 	install_packed_git(pack_data);
-	mru_append(&packed_git_mru, pack_data);
+	list_add_tail(&pack_data->mru, &packed_git_mru);
 	set_die_routine(die_nicely);
 
 	parse_one_feature("force", 0);

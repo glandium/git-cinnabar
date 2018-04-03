@@ -182,7 +182,7 @@ static void send_object(unsigned const char *sha1)
 	if (!st)
 		die("open_istream failed for %s", sha1_to_hex(sha1));
 
-	strbuf_addf(&header, "%s %s %lu\n", sha1_to_hex(sha1), typename(type),
+	strbuf_addf(&header, "%s %s %lu\n", sha1_to_hex(sha1), type_name(type),
 	            sz);
 
 	write_or_die(1, header.buf, header.len);
