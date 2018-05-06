@@ -32,10 +32,8 @@ def split_ls_tree(line):
 
 
 class GitProcess(Process):
-    KWARGS = Process.KWARGS | set(['config'])
-
     def __init__(self, *args, **kwargs):
-        config = kwargs.get('config', {})
+        config = kwargs.pop('config', {})
 
         command = ['git']
         command += chain(*(['-c', '%s=%s' % (n, v)]

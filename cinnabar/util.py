@@ -466,15 +466,14 @@ class lrucache(object):
 
 
 class Process(object):
-    KWARGS = set(['stdin', 'stdout', 'stderr', 'env', 'logger'])
-
     def __init__(self, *args, **kwargs):
-        assert not kwargs or not set(kwargs.keys()) - self.KWARGS
-        stdin = kwargs.get('stdin', None)
-        stdout = kwargs.get('stdout', subprocess.PIPE)
-        stderr = kwargs.get('stderr', None)
-        logger = kwargs.get('logger', args[0])
-        env = kwargs.get('env', {})
+        stdin = kwargs.pop('stdin', None)
+        stdout = kwargs.pop('stdout', subprocess.PIPE)
+        stderr = kwargs.pop('stderr', None)
+        logger = kwargs.pop('logger', args[0])
+        env = kwargs.pop('env', {})
+        cwd = kwargs.pop('cwd', None)
+        assert not kwargs
         if isinstance(stdin, (StringType, Iterable)):
             proc_stdin = subprocess.PIPE
         else:
@@ -485,7 +484,7 @@ class Process(object):
             full_env.update(env)
 
         self._proc = self._popen(args, stdin=proc_stdin, stdout=stdout,
-                                 stderr=stderr, env=full_env)
+                                 stderr=stderr, env=full_env, cwd=cwd)
 
         logger = logging.getLogger(logger)
         if logger.isEnabledFor(logging.INFO):
