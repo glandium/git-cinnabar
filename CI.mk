@@ -217,7 +217,7 @@ script::
 	$(call HG_INIT, hg.hg)
 	$(GIT) -c fetch.prune=true clone -n hg::$(PATH_URL)/hg.hg hg.empty.git
 	$(GIT) -C hg.empty.git push --all hg::$(PATH_URL)/hg.hg
-	$(GIT) -C hg.old.git push hg::$(PATH_URL)/hg.hg refs/remotes/origin/*:refs/heads/*
+	$(GIT) -C hg.old.git push hg::$(PATH_URL)/hg.hg 'refs/remotes/origin/*:refs/heads/*'
 	$(HG) -R hg.hg verify
 	$(GIT) -c fetch.prune=true clone -n hg::$(PATH_URL)/hg.hg hg.git
 	$(call COMPARE_REFS, hg.old.git, hg.git)
