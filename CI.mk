@@ -32,7 +32,7 @@ helper_hash:
 # On Travis-CI, an old pip is installed with easy_install, which means its
 # egg ends up before our $PYTHONPATH in sys.path, such that upgrading pip with
 # --user and using $PYTHONPATH for subsequent pip calls doesn't work.
-PIP = $(if $(PYTHON_CHECKS),pip,python -c 'import os, sys; sys.path[:0] = os.environ.get("PYTHONPATH", "").split(os.pathsep); from pip import main; sys.exit(main())')
+PIP = $(if $(PYTHON_CHECKS),pip,python -c 'import os, sys; sys.path[:0] = os.environ.get("PYTHONPATH", "").split(os.pathsep); from pip._internal import main; sys.exit(main())')
 PIP_INSTALL = $(PIP) install $(if $(or $(PYTHON_CHECKS),$(filter MINGW%,$(OS_NAME))),,--user )--upgrade --force-reinstall $1
 
 before_install::
