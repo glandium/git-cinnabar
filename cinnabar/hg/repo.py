@@ -68,12 +68,13 @@ try:
         util,
     )
     try:
-        from mercurial.sshpeer import sshv1peer as sshpeer
+        from mercurial.sshpeer import instance as sshpeer
     except ImportError:
-        try:
-            from mercurial.sshpeer import sshpeer
-        except ImportError:
-            from mercurial.sshrepo import sshrepository as sshpeer
+        from mercurial.sshrepo import instance as sshpeer
+    try:
+        from mercurial.utils import procutil
+    except ImportError:
+        from mercurial import util as procutil
 except ImportError:
     changegroup = unbundle20 = False
 
@@ -783,36 +784,53 @@ class Remote(object):
 
 
 if changegroup:
-    class localpeer(sshpeer):
-        def __init__(self, ui, path):
-            self._url = self.path = self._path = path
-            self.ui = self._ui = ui
-            self.pipeo = self.pipei = self.pipee = None
-            self._pipeo = self._pipei = self._pipee = None
+    def localpeer(ui, path):
+        ui.setconfig('ui', 'ssh', '')
 
-            shellquote = util.shellquote
-            util.shellquote = lambda x: x
-            quotecommand = util.quotecommand
+        has_checksafessh = hasattr(util, 'checksafessh')
 
-            # In very old versions of mercurial, shellquote was not used, and
-            # double quotes were hardcoded. Remove them by overriding
-            # quotecommand.
-            def override_quotecommand(cmd):
-                cmd = cmd.lstrip()
-                if cmd.startswith('"'):
-                    cmd = cmd[1:-1]
-                return quotecommand(cmd)
-            util.quotecommand = override_quotecommand
+        sshargs = procutil.sshargs
+        shellquote = procutil.shellquote
+        quotecommand = procutil.quotecommand
+        url = util.url
+        if has_checksafessh:
+            checksafessh = util.checksafessh
 
-            args = ('', '', 'hg')
-            try:
-                validate_repo = super(localpeer, self)._validaterepo
-            except AttributeError:
-                validate_repo = super(localpeer, self).validate_repo
-                args = (ui,) + args
-            validate_repo(*args)
-            util.shellquote = shellquote
-            util.quotecommand = quotecommand
+        procutil.sshargs = lambda *a: ''
+        procutil.shellquote = lambda x: x
+        if has_checksafessh:
+            util.checksafessh = lambda x: None
+
+        # In very old versions of mercurial, shellquote was not used, and
+        # double quotes were hardcoded. Remove them by overriding
+        # quotecommand.
+        def override_quotecommand(cmd):
+            cmd = cmd.lstrip()
+            if cmd.startswith('"'):
+                cmd = cmd[1:-1]
+            return quotecommand(cmd)
+        procutil.quotecommand = override_quotecommand
+
+        class override_url(object):
+            def __init__(self, *args, **kwargs):
+                self.scheme = 'ssh'
+                self.host = 'localhost'
+                self.port = None
+                self.path = path
+                self.user = 'user'
+                self.passwd = None
+        util.url = override_url
+
+        repo = sshpeer(ui, path, False)
+
+        if has_checksafessh:
+            util.checksafessh = checksafessh
+        util.url = url
+        procutil.quotecommand = quotecommand
+        procutil.shellquote = shellquote
+        procutil.sshargs = sshargs
+
+        return repo
 
 
 def get_repo(remote):
