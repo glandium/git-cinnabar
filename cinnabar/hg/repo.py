@@ -68,9 +68,12 @@ try:
         util,
     )
     try:
-        from mercurial.sshpeer import sshpeer
+        from mercurial.sshpeer import sshv1peer as sshpeer
     except ImportError:
-        from mercurial.sshrepo import sshrepository as sshpeer
+        try:
+            from mercurial.sshpeer import sshpeer
+        except ImportError:
+            from mercurial.sshrepo import sshrepository as sshpeer
 except ImportError:
     changegroup = unbundle20 = False
 

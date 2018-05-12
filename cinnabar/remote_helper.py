@@ -176,7 +176,17 @@ class GitRemoteHelper(BaseRemoteHelper):
             bookmarks = {}
 
         elif self._repo.capable('batch'):
-            if hasattr(self._repo, 'iterbatch'):
+            if hasattr(self._repo, 'commandexecutor'):
+                with self._repo.commandexecutor() as e:
+                    branchmap = e.callcommand('branchmap', {})
+                    heads = e.callcommand('heads', {})
+                    bookmarks = e.callcommand('listkeys', {
+                        'namespace': 'bookmarks'
+                    })
+                branchmap = branchmap.result()
+                heads = heads.result()
+                bookmarks = bookmarks.result()
+            elif hasattr(self._repo, 'iterbatch'):
                 batch = self._repo.iterbatch()
                 batch.branchmap()
                 batch.heads()
