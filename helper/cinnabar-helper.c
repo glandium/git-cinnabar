@@ -2106,7 +2106,7 @@ static void init_flags()
 		strbuf_trim(*f);
 		if (!strcmp("files-meta", (*f)->buf))
 			metadata_flags |= FILES_META;
-		else if (!strcmp("unified-manifest", (*f)->buf))
+		else if (!strcmp("unified-manifests", (*f)->buf))
 			metadata_flags |= UNIFIED_MANIFESTS;
 	}
 	strbuf_list_free(flags);
