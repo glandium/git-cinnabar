@@ -1,7 +1,7 @@
 language: c
 
-os: linux
-compiler: gcc
+os: osx
+compiler: clang
 
 cache:
 - ccache
@@ -14,106 +14,20 @@ git:
 
 matrix:
   include:
-    - language: python
-      python: "2.7"
-      env:
-      - PYTHON_CHECKS=1
-      - VARIANT=coverage
-    - os: osx
-      compiler: clang
-      osx_image: xcode6.4
+    - osx_image: xcode6.4
       # Without an env, it ends up with all the env variables from the matrix
       # (so, in practice, the last value of each)
       env:
       - VARIANT=
       - GIT_CINNABAR_EXPERIMENTS=true
-    - os: osx
-      compiler: clang
-      osx_image: xcode7.3
+    - osx_image: xcode7.3
       env:
       - VARIANT=asan
       - GIT_CINNABAR_EXPERIMENTS=true
-    - os: osx
-      osx_image: xcode6.4
+    - osx_image: xcode6.4
       env:
       - VARIANT=
       - GIT_CINNABAR_OLD_HELPER=1
-    - os: linux
-      compiler: gcc
-      env:
-      - VARIANT=
-      - GIT_CINNABAR_EXPERIMENTS=true
-    - os: linux
-      compiler: gcc-4.8
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-          packages:
-            - gcc-4.8
-        artifacts:
-          paths: artifacts
-          target_paths: /artifacts
-      env:
-      - VARIANT=asan
-      - GIT_CINNABAR_EXPERIMENTS=true
-    - env: GIT_CINNABAR_OLD_HELPER=1
-    - env:
-      - VARIANT=coverage
-      - GRAFT=1
-    - env:
-      - VARIANT=coverage
-      - GIT_CINNABAR_EXPERIMENTS=true
-    - env:
-      - VARIANT=coverage
-      - UPGRADE_FROM=0.3.2
-      - MERCURIAL_VERSION=4.3
-    - env:
-      - VARIANT=coverage
-      - UPGRADE_FROM=0.3.0
-      - MERCURIAL_VERSION=4.3
-    - env:
-      - VARIANT=coverage
-      - UPGRADE_FROM=0.4.0
-      - MERCURIAL_VERSION=4.3
-    - env:
-      - VARIANT=coverage
-      - UPGRADE_FROM=0.5.0b2
-      - MERCURIAL_VERSION=4.3
-    - env: GIT_VERSION=v2.7.4
-    - env: GIT_VERSION=v1.8.5
-    - env: MERCURIAL_VERSION=installed
-      addons:
-        apt:
-          packages: mercurial
-    - env: MERCURIAL_VERSION=1.9
-#    - env: MERCURIAL_VERSION=2.0
-#    - env: MERCURIAL_VERSION=2.1
-#    - env: MERCURIAL_VERSION=2.2
-#    - env: MERCURIAL_VERSION=2.3
-#    - env: MERCURIAL_VERSION=2.4
-    - env: MERCURIAL_VERSION=2.5
-    # First version available on pip
-    - env: MERCURIAL_VERSION=2.6.2
-    # 2.7 and 2.7.1 fail to clone https with urllib2.URLError: <urlopen error [Errno 1] _ssl.c:504: error:14094410:SSL routines:SSL3_READ_BYTES:sslv3 alert handshake failure.
-    # See http://bz.mercurial-scm.org/show_bug.cgi?id=4038
-    - env: MERCURIAL_VERSION=2.7.2
-#    - env: MERCURIAL_VERSION=2.8
-#    - env: MERCURIAL_VERSION=2.9
-    - env: MERCURIAL_VERSION=3.0
-#    - env: MERCURIAL_VERSION=3.1
-#    - env: MERCURIAL_VERSION=3.2
-#    - env: MERCURIAL_VERSION=3.3
-#    - env: MERCURIAL_VERSION=3.4
-#    - env: MERCURIAL_VERSION=3.5
-    - env: MERCURIAL_VERSION=3.6
-#    - env: MERCURIAL_VERSION=3.7
-#    - env: MERCURIAL_VERSION=3.8
-    - env: MERCURIAL_VERSION=4.4
-  # Workaround for https://github.com/travis-ci/travis-ci/issues/4681
-  exclude:
-    - os: linux
-    - compiler: gcc
 
 addons:
   artifacts:
@@ -127,7 +41,4 @@ before_script:
   - make -f CI.mk before_script
 
 script:
-  - make -f CI.mk script && make -f CI.mk script NO_BUNDLE2=1 UPGRADE_FROM=
-
-after_success:
-  - if [ "$VARIANT" = coverage ]; then mv git-core/{hg,cinnabar}*.gc* . ; codecov; fi
+  - make -f CI.mk script && make -f CI.mk script NO_BUNDLE2=1
