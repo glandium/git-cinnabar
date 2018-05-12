@@ -55,7 +55,9 @@ try:
     # ever using it. It shouldn't hurt to set it here.
     import ssl
     if not hasattr(ssl, 'PROTOCOL_SSLv2'):
-        ssl.PROTOCOL_SSLv2 = -1
+        ssl.PROTOCOL_SSLv2 = 0
+    if not hasattr(ssl, 'PROTOCOL_SSLv3'):
+        ssl.PROTOCOL_SSLv3 = 1
 
     from mercurial import (
         changegroup,
