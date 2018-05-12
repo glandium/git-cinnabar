@@ -222,7 +222,8 @@ for upgrade in UPGRADE_FROM:
 for git in ('1.8.5', '2.7.4'):
     TestTask(git=git)
 
-for hg in ('1.9', '2.5', '2.6.2', '2.7.2', '3.0', '3.6', '4.3.3', '4.4'):
+for hg in ('1.9', '2.5', '2.6.2', '2.7.2', '3.0', '3.6', '4.3.3', '4.4',
+           '4.6'):
     TestTask(hg=hg)
 
 TestTask(
