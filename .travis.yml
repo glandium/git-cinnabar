@@ -26,11 +26,6 @@ matrix:
       - VARIANT=asan
       - GIT_CINNABAR_EXPERIMENTS=true
       - MERCURIAL_VERSION=4.5
-    - osx_image: xcode6.4
-      env:
-      - VARIANT=
-      - GIT_CINNABAR_OLD_HELPER=1
-      - MERCURIAL_VERSION=4.5
 
 addons:
   artifacts:
