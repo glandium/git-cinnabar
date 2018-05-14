@@ -1925,6 +1925,8 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 		strbuf_release(&tree_buf);
 		hashmap_add(cache, cache_entry);
 
+		if (state.tree)
+			free_tree_buffer(state.tree);
 		if (ref_state.tree)
 			free_tree_buffer(ref_state.tree);
 	}
