@@ -186,7 +186,7 @@ TestTask(
     }
 )
 
-for env in ('linux', 'mingw32', 'mingw64'):
+for env in ('linux', 'mingw64'):
     TestTask(task_env=env)
 
     requests = [] if env == 'linux' else ['pip install requests']
