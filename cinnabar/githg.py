@@ -510,6 +510,8 @@ class TagSet(object):
         return self._tags[key]
 
     def update(self, other):
+        if not other:
+            return
         assert isinstance(other, TagSet)
         for key, anode in other._tags.iteritems():
             # derived from mercurial's _updatetags
@@ -826,7 +828,9 @@ class GitHgStore(object):
         self._tagcache = {}
         self._tagfiles = {}
         self._tags = {NULL_NODE_ID: {}}
-        self._tagcache_ref = Git.resolve_ref('refs/cinnabar/tag-cache')
+        # Delete old tag-cache, which may contain incomplete data.
+        Git.delete_ref('refs/cinnabar/tag-cache')
+        self._tagcache_ref = Git.resolve_ref('refs/cinnabar/tag_cache')
         self._tagcache_items = set()
         if self._tagcache_ref:
             for line in Git.ls_tree(self._tagcache_ref):
@@ -871,9 +875,6 @@ class GitHgStore(object):
         self._graft = Grafter(self)
 
     def tags(self, heads):
-        # The given heads are assumed to be ordered by mercurial
-        # revision number, such that the last is the one where
-        # tags are the most relevant.
         tags = TagSet()
         for h in heads:
             h = self.changeset_ref(h)
@@ -917,8 +918,8 @@ class GitHgStore(object):
                         node = self.changeset_ref(node)
                     if node:
                         tags[tag] = node
-        self._tags[tagfile] = tags
-        return tags
+            self._tags[tagfile] = tags
+        return self._tags[tagfile]
 
     def heads(self, branches={}):
         if not isinstance(branches, (dict, set)):
@@ -1297,7 +1298,7 @@ class GitHgStore(object):
 
         if created or deleted:
             with self._fast_import.commit(
-                ref='refs/cinnabar/tag-cache',
+                ref='refs/cinnabar/tag_cache',
                 from_commit=self._tagcache_ref,
             ) as commit:
                 for f in deleted:
