@@ -152,7 +152,10 @@ def RawRevChunkType(bundle):
     raise Exception('Unknown changegroup type %s' % type(bundle).__name__)
 
 
-def chunks_in_changegroup(bundle):
+chunks_logger = logging.getLogger('chunks')
+
+
+def chunks_in_changegroup(bundle, category=None):
     previous_node = None
     chunk_type = RawRevChunkType(bundle)
     while True:
@@ -162,6 +165,12 @@ def chunks_in_changegroup(bundle):
         chunk = chunk_type(chunk)
         if isinstance(chunk, RawRevChunk01):
             chunk.delta_node = previous_node or chunk.parent1
+        if category and chunks_logger.isEnabledFor(logging.DEBUG):
+            chunks_logger.debug(
+                '%s %s',
+                category,
+                chunk.node,
+            )
         yield chunk
         previous_node = chunk.node
 
@@ -176,7 +185,7 @@ def iterate_files(bundle):
         name_chunk = getchunk(bundle)
         if not name_chunk:
             return
-        for chunk in chunks_in_changegroup(bundle):
+        for chunk in chunks_in_changegroup(bundle, name_chunk):
             yield chunk
 
 
@@ -536,8 +545,8 @@ def unbundler(bundle):
     else:
         cg = bundle
 
-    yield chunks_in_changegroup(cg)
-    yield chunks_in_changegroup(cg)
+    yield chunks_in_changegroup(cg, 'changeset')
+    yield chunks_in_changegroup(cg, 'manifest')
     yield iterate_files(cg)
 
     if unbundle20 and isinstance(bundle, unbundle20):
