@@ -828,8 +828,6 @@ class GitHgStore(object):
         self._tagcache = {}
         self._tagfiles = {}
         self._tags = {NULL_NODE_ID: {}}
-        # Delete old tag-cache, which may contain incomplete data.
-        Git.delete_ref('refs/cinnabar/tag-cache')
         self._tagcache_ref = Git.resolve_ref('refs/cinnabar/tag_cache')
         self._tagcache_items = set()
         if self._tagcache_ref:
@@ -870,6 +868,9 @@ class GitHgStore(object):
                 raise OldUpgradeException()
 
         Git.register_fast_import(self._fast_import)
+
+        # Delete old tag-cache, which may contain incomplete data.
+        Git.delete_ref('refs/cinnabar/tag-cache')
 
     def prepare_graft(self):
         self._graft = Grafter(self)
