@@ -168,7 +168,7 @@ class Helper(Task):
                 hash, env.os, env.cpu, prefix('.', variant)),
             expireIn='26 weeks',
             command=Task.checkout(commit=head) + [
-                'make -C repo -j $(nproc) helper{}'.format(
+                'make -C repo -j $(nproc) helper prefix=/usr{}'.format(
                     prefix(' ', make_flags)),
                 'mv repo/{} $ARTIFACTS/'.format(artifact),
             ] + extra_commands,

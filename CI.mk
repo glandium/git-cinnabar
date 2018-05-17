@@ -151,7 +151,7 @@ EXTRA_MAKE_FLAGS += CC=$(CC)
 endif
 
 $(GIT_CINNABAR_HELPER):
-	$(MAKE) --jobs=2 $(@F) $(EXTRA_MAKE_FLAGS)
+	$(MAKE) --jobs=2 $(@F) prefix=/usr $(EXTRA_MAKE_FLAGS)
 	cp git-core/$(@F) $@
 	mkdir -p $(dir $(HELPER_PATH))
 	cp $@ $(HELPER_PATH)
