@@ -32,10 +32,8 @@ def split_ls_tree(line):
 
 
 class GitProcess(Process):
-    KWARGS = Process.KWARGS | set(['config'])
-
     def __init__(self, *args, **kwargs):
-        config = kwargs.get('config', {})
+        config = kwargs.pop('config', {})
 
         command = ['git']
         command += chain(*(['-c', '%s=%s' % (n, v)]
@@ -227,13 +225,13 @@ class Git(object):
             value = os.environ.get(var)
             if value is None and remote:
                 var = 'remote.%s.%s' % (remote, name.replace('.', '-'))
-                value = self._config.get(var)
+                value = self._config.get(var.lower())
         elif name == 'fetch.prune' and remote:
             var = 'remote.%s.prune' % remote
-            value = self._config.get(var)
+            value = self._config.get(var.lower())
         if value is None:
             var = name
-            value = self._config.get(name)
+            value = self._config.get(var.lower())
         if value:
             value = value.split('\0')
             if not multiple:
@@ -433,7 +431,7 @@ class FastImportCommitHelper(object):
         # inline filemodify.
         dataref = 'inline' if sha1 in (EMPTY_BLOB, None) else sha1
         self.write('M %s %s %s\n' % (
-            self.MODE[typ],
+            self.MODE.get(typ, typ),
             dataref,
             path,
         ))

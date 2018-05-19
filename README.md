@@ -109,6 +109,14 @@ And tags can be updated with, e.g.:
 
 `$ git fetch tags`
 
+Fetching a specific mercurial changeset:
+----------------------------------------
+
+It can sometimes be useful to fetch a specific mercurial changeset from a
+remote server, without fetching the entire repository. This can be done with a command line such as:
+
+`$ git cinnabar fetch hg::<mercurial repo> <changeset sha1>`
+
 Translating git commits to mercurial changesets and vice-versa:
 ---------------------------------------------------------------
 

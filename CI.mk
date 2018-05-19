@@ -32,7 +32,7 @@ helper_hash:
 # On Travis-CI, an old pip is installed with easy_install, which means its
 # egg ends up before our $PYTHONPATH in sys.path, such that upgrading pip with
 # --user and using $PYTHONPATH for subsequent pip calls doesn't work.
-PIP = $(if $(PYTHON_CHECKS),pip,python -c 'import os, sys; sys.path[:0] = os.environ.get("PYTHONPATH", "").split(os.pathsep); from pip import main; sys.exit(main())')
+PIP = $(if $(PYTHON_CHECKS),pip,python -c 'import os, sys; sys.path[:0] = os.environ.get("PYTHONPATH", "").split(os.pathsep); from pip._internal import main; sys.exit(main())')
 PIP_INSTALL = $(PIP) install $(if $(or $(PYTHON_CHECKS),$(filter MINGW%,$(OS_NAME))),,--user )--upgrade --force-reinstall $1
 
 before_install::
@@ -107,18 +107,23 @@ HELPER := git-cinnabar-helper
 endif
 GIT_CINNABAR_HELPER=$(CURDIR)/$(HELPER)
 endif
-export GIT_CINNABAR_HELPER
 COMMA=,
 export GIT_CINNABAR_CHECK=all$(if $(HELPER),,$(COMMA)-helper)
 export GIT_CINNABAR_LOG=process:3
 
+define PREPARE_OLD_CINNABAR
+rm -rf old-cinnabar
+git fetch --unshallow || true
+git fetch --all --tags || true
+git init old-cinnabar
+git push $(CURDIR)/old-cinnabar $1:refs/heads/old
+git -C old-cinnabar checkout old
+endef
+
 ifndef BUILD_HELPER
 $(GIT_CINNABAR_HELPER):
 ifdef GIT_CINNABAR_OLD_HELPER
-	rm -rf old-cinnabar
-	git fetch --unshallow || true
-	git clone -n . old-cinnabar
-	git -C old-cinnabar checkout "$$(git log --format=%H -S '#define CMD_VERSION $(shell python -c 'from cinnabar.helper import *; print GitHgHelper.VERSION')00$$' --pickaxe-regex HEAD | tail -1)" --
+	$(call PREPARE_OLD_CINNABAR,"$$(git log --format=%H -S '#define CMD_VERSION $(shell python -c 'from cinnabar.helper import *; print GitHgHelper.VERSION')00$$' --pickaxe-regex HEAD | tail -1)")
 	$(MAKE) -C old-cinnabar -f CI.mk $(HELPER) GIT_CINNABAR_HELPER=$(HELPER) GIT_CINNABAR_OLD_HELPER=
 	mv old-cinnabar/$(HELPER) $@
 	rm -rf old-cinnabar
@@ -146,7 +151,7 @@ EXTRA_MAKE_FLAGS += CC=$(CC)
 endif
 
 $(GIT_CINNABAR_HELPER):
-	$(MAKE) --jobs=2 $(@F) $(EXTRA_MAKE_FLAGS)
+	$(MAKE) --jobs=2 $(@F) prefix=/usr $(EXTRA_MAKE_FLAGS)
 	cp git-core/$(@F) $@
 	mkdir -p $(dir $(HELPER_PATH))
 	cp $@ $(HELPER_PATH)
@@ -157,10 +162,10 @@ ifdef UPGRADE_FROM
 export PATH := $(CURDIR)/old-cinnabar$(PATHSEP)$(PATH)
 
 before_script:: $(GIT_CINNABAR_HELPER)
-	rm -rf old-cinnabar
-	git fetch --unshallow || true
-	git clone -n . old-cinnabar
-	git -C old-cinnabar checkout $(UPGRADE_FROM)
+	$(call PREPARE_OLD_CINNABAR,$(UPGRADE_FROM))
+ifeq (,$(filter 0.3.%,$(UPGRADE_FROM)))
+	old-cinnabar/git-cinnabar download --no-config $(addprefix --machine ,$(MACHINE))
+endif
 endif
 
 before_script::
@@ -179,7 +184,7 @@ before_script::
 
 before_script:: $(GIT_CINNABAR_HELPER)
 	rm -rf hg.old.git
-	$(GIT) -c fetch.prune=true clone hg::$(REPO) hg.old.git
+	$(GIT) -c fetch.prune=true clone -n hg::$(REPO) hg.old.git
 
 ifdef UPGRADE_FROM
 script::
@@ -210,16 +215,16 @@ ifndef GRAFT
 script::
 	rm -rf hg.hg hg.empty.git hg.git hg.bundle hg.unbundle.git
 	$(call HG_INIT, hg.hg)
-	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.hg hg.empty.git
+	$(GIT) -c fetch.prune=true clone -n hg::$(PATH_URL)/hg.hg hg.empty.git
 	$(GIT) -C hg.empty.git push --all hg::$(PATH_URL)/hg.hg
-	$(GIT) -C hg.old.git push hg::$(PATH_URL)/hg.hg refs/remotes/origin/*:refs/heads/*
+	$(GIT) -C hg.old.git push hg::$(PATH_URL)/hg.hg 'refs/remotes/origin/*:refs/heads/*'
 	$(HG) -R hg.hg verify
-	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.hg hg.git
+	$(GIT) -c fetch.prune=true clone -n hg::$(PATH_URL)/hg.hg hg.git
 	$(call COMPARE_REFS, hg.old.git, hg.git)
 	$(GIT) -C hg.git cinnabar fsck
 
 	$(GIT) -C hg.git cinnabar bundle $(CURDIR)/hg.bundle -- --remotes
-	$(GIT) -c fetch.prune=true clone hg::$(CURDIR)/hg.bundle hg.unbundle.git
+	$(GIT) -c fetch.prune=true clone -n hg::$(CURDIR)/hg.bundle hg.unbundle.git
 	$(call COMPARE_REFS, hg.git, hg.unbundle.git)
 	$(GIT) -C hg.unbundle.git cinnabar fsck
 
@@ -228,17 +233,25 @@ script::
 	$(HG) init hg.incr.hg
 	# /!\ this only really works for an unchanged $(REPO)
 	$(HG) -R hg.incr.hg pull $(CURDIR)/hg.hg -r c262fcbf0656 -r 46585998e744
-	$(GIT) -c fetch.prune=true clone hg::$(PATH_URL)/hg.incr.hg hg.incr.git
+	$(GIT) -c fetch.prune=true clone -n hg::$(PATH_URL)/hg.incr.hg hg.incr.git
 	$(HG) -R hg.incr.hg pull $(CURDIR)/hg.hg
 	$(GIT) -C hg.incr.git remote update
 	$(GIT) -C hg.incr.git cinnabar fsck
 
 script::
 	rm -rf hg.clonebundles.hg hg.clonebundles.git
-	$(HG) clone hg.hg hg.clonebundles.hg
+	$(HG) clone -U hg.hg hg.clonebundles.hg
 	$(HG) -R hg.clonebundles.hg bundle -a -r c262fcbf0656 -r 46585998e744 repo.bundle
 	echo $(PATH_URL)/repo.bundle > hg.clonebundles.hg/.hg/clonebundles.manifest
-	$(HG) -R hg.clonebundles.hg --config extensions.clonebundles= --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) clone hg://localhost:8000.http/ hg.clonebundles.git
+	$(HG) -R hg.clonebundles.hg --config extensions.clonebundles= --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) clone -n hg://localhost:8000.http/ hg.clonebundles.git
+	$(call COMPARE_REFS, hg.git, hg.clonebundles.git)
+
+script::
+	rm -rf hg.clonebundles-full.hg hg.clonebundles-full.git
+	$(HG) clone -U hg.hg hg.clonebundles-full.hg
+	$(HG) -R hg.clonebundles-full.hg bundle -a repo.bundle
+	echo $(PATH_URL)/repo.bundle > hg.clonebundles-full.hg/.hg/clonebundles.manifest
+	$(HG) -R hg.clonebundles-full.hg --config extensions.clonebundles= --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) clone -n hg://localhost:8000.http/ hg.clonebundles-full.git
 	$(call COMPARE_REFS, hg.git, hg.clonebundles.git)
 
 script::
@@ -246,7 +259,7 @@ script::
 	$(call HG_INIT, hg.push.hg)
 	# || exit 1 forces mingw32-make to wrap the command through a shell, which works
 	# around https://github.com/Alexpux/MSYS2-packages/issues/829.
-	$(GIT) clone hg.git hg.pure.git || exit 1
+	$(GIT) clone -n hg.git hg.pure.git || exit 1
 	# Push everything, including merges
 	$(GIT) -c cinnabar.experiments=merge -C hg.pure.git push hg::$(PATH_URL)/hg.push.hg --all
 
@@ -256,6 +269,13 @@ script::
 	(echo protocol=http; echo host=localhost:8000; echo username=foo; echo password=bar) | $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' credential approve
 	$(GIT) -C hg.git remote add hg-http hg::http://localhost:8000/
 	$(HG) -R hg.http.hg --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' -C hg.git push hg-http refs/remotes/origin/*:refs/heads/*
+
+script::
+	rm -rf hg.cinnabarclone.git
+	$(GIT) init hg.cinnabarclone.git
+	$(GIT) -C hg.cinnabarclone.git fetch ../hg.incr.git refs/heads/*:refs/heads/* refs/remotes/*:refs/remotes/*
+	$(GIT) -C hg.cinnabarclone.git fetch ../hg.incr.git refs/cinnabar/metadata:refs/cinnabar/metadata
+	$(GIT) -C hg.cinnabarclone.git cinnabar fsck
 else # GRAFT
 
 GET_ROOTS = $(GIT) -C $1 rev-list $2 --max-parents=0
@@ -265,7 +285,7 @@ ifndef NO_BUNDLE2
 
 script::
 	rm -rf hg.hg
-	$(HG) clone $(REPO) hg.hg
+	$(HG) clone -U $(REPO) hg.hg
 
 script::
 	rm -rf hg.graft.git hg.graft2.git
@@ -324,7 +344,7 @@ $(PACKAGE):
 	@mkdir -p tmp
 	@rm -rf tmp/git-cinnabar
 	git archive --format=tar --prefix=git-cinnabar/ HEAD | tar -C tmp -x
-	@$(CURDIR)/git-cinnabar download --dev -o tmp/git-cinnabar/$(call PACKAGE,--dev) $(PACKAGE_FLAGS)
+	@$(CURDIR)/git-cinnabar download --no-config --dev -o tmp/git-cinnabar/$(call PACKAGE,--dev) $(PACKAGE_FLAGS)
 ifneq (,$(filter %.tar.xz,$(PACKAGE)))
 	tar --owner cinnabar:1000 --group cinnabar:1000 -C tmp --remove-files --sort=name -Jcvf $@ git-cinnabar
 else

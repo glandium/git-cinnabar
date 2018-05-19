@@ -24,7 +24,8 @@ void _hg_file_split(struct hg_file *result, size_t metadata_len)
 
 void hg_file_load(struct hg_file *result, const unsigned char *sha1)
 {
-	const unsigned char *note;
+	const struct object_id *note;
+	struct object_id oid;
 	char *content;
 	enum object_type type;
 	unsigned long len;
@@ -36,10 +37,11 @@ void hg_file_load(struct hg_file *result, const unsigned char *sha1)
 	if (is_empty_hg_file(sha1))
 		return;
 
+	hashcpy(oid.hash, sha1);
 	ensure_notes(&files_meta);
-	note = get_note(&files_meta, sha1);
+	note = get_note(&files_meta, &oid);
 	if (note) {
-		content = read_sha1_file_extended(note, &type, &len, 0);
+		content = read_sha1_file_extended(note->hash, &type, &len, 0);
 		strbuf_add(&result->file, "\1\n", 2);
 		strbuf_add(&result->file, content, len);
 		strbuf_add(&result->file, "\1\n", 2);
@@ -49,16 +51,16 @@ void hg_file_load(struct hg_file *result, const unsigned char *sha1)
 	metadata_len = result->file.len;
 
 	ensure_notes(&hg2git);
-	note = get_note(&hg2git, sha1);
+	note = get_note(&hg2git, &oid);
 	if (!note)
 		die("Missing data");
 
-	content = read_sha1_file_extended(note, &type, &len, 0);
+	content = read_sha1_file_extended(note->hash, &type, &len, 0);
 	strbuf_add(&result->file, content, len);
 	free(content);
 
 	// Note this duplicates work read_sha1_file already did.
-	result->content_oe = get_object_entry((unsigned char*) note);
+	result->content_oe = get_object_entry(note->hash);
 
 	_hg_file_split(result, metadata_len);
 }

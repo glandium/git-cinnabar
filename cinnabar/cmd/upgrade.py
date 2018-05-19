@@ -29,8 +29,8 @@ def upgrade(args):
     print 'Finalizing upgrade...'
     store.close()
     print (
-        'You may want to run `git cinnabar fsck --files` to ensure '
-        'the upgrade went well.\n'
+        'You may want to run `git cinnabar fsck --manifests --files` to '
+        'ensure the upgrade went well.\n'
         'Please be aware this might take a while.'
     )
     return 0

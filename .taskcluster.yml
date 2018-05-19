@@ -1,0 +1,113 @@
+version: 0
+allowPullRequests: public
+tasks:
+  - provisionerId: '{{ taskcluster.docker.provisionerId }}'
+    workerType: '{{ taskcluster.docker.workerType }}'
+    retries: 0
+    extra:
+      github:
+        env: true
+        events:
+          - push
+    scopes:
+      - assume:repo:github.com/glandium/git-cinnabar:decision-task
+      - 'queue:route:index.github.{{ event.head.user.login }}.{{ event.head.repo.name }}.*'
+      - secrets:get:repo:github.com/glandium.git-cinnabar:codecov
+    routes:
+      - 'index.github.{{ event.head.user.login }}.{{ event.head.repo.name }}.decision.{{ event.head.sha }}'
+    payload:
+      maxRunTime: 3600
+      image: python:2.7
+      features:
+        taskclusterProxy: true
+      env:
+        TASKCLUSTER_PROXY: 1
+      command:
+        - sh
+        - '-c'
+        - >-
+          git clone -n {{ event.head.repo.url }} repo &&
+          git -c advice.detachedHead=false -C repo checkout {{ event.head.sha }} &&
+          virtualenv venv &&
+          venv/bin/pip install requests &&
+          venv/bin/python repo/.taskcluster/decision.py
+    deadline: '{{ "2 hours" | $fromNow }}'
+    expires: '{{ "26 weeks" | $fromNow }}'
+    metadata:
+      name: decision task
+      description: '{{ event.head.repo.name }} decision task'
+      owner: '{{ event.head.user.email }}'
+      source: '{{ event.head.repo.url }}'
+
+  - provisionerId: '{{ taskcluster.docker.provisionerId }}'
+    workerType: '{{ taskcluster.docker.workerType }}'
+    retries: 0
+    extra:
+      github:
+        env: true
+        events:
+          - release
+    scopes:
+      - assume:repo:github.com/glandium/git-cinnabar:decision-task
+      - 'queue:route:index.github.{{ event.head.user.login }}.{{ event.head.repo.name }}.*'
+      - secrets:get:repo:github.com/glandium.git-cinnabar:codecov
+    routes:
+      - 'index.github.{{ event.head.user.login }}.{{ event.head.repo.name }}.decision.{{ event.version }}'
+    payload:
+      maxRunTime: 3600
+      image: python:2.7
+      features:
+        taskclusterProxy: true
+      env:
+        TASKCLUSTER_PROXY: 1
+      command:
+        - sh
+        - '-c'
+        - >-
+          git clone -n {{ event.head.repo.url }} repo &&
+          git -c advice.detachedHead=false -C repo checkout {{ event.head.sha }} &&
+          virtualenv venv &&
+          venv/bin/pip install requests &&
+          venv/bin/python repo/.taskcluster/decision.py
+    deadline: '{{ "2 hours" | $fromNow }}'
+    expires: '{{ "26 weeks" | $fromNow }}'
+    metadata:
+      name: decision task
+      description: '{{ event.head.repo.name }} decision task'
+      owner: '{{ event.head.user.email }}'
+      source: '{{ event.head.repo.url }}'
+
+  - provisionerId: '{{ taskcluster.docker.provisionerId }}'
+    workerType: '{{ taskcluster.docker.workerType }}'
+    retries: 0
+    extra:
+      github:
+        env: true
+        events:
+          - pull_request.opened
+          - pull_request.synchronize
+    scopes:
+      - assume:repo:github.com/glandium/git-cinnabar:decision-task
+    payload:
+      maxRunTime: 3600
+      image: python:2.7
+      features:
+        taskclusterProxy: true
+      env:
+        TASKCLUSTER_PROXY: 1
+      command:
+        - sh
+        - '-c'
+        - >-
+          git clone -n {{ event.head.repo.url }} repo &&
+          git -c advice.detachedHead=false -C repo checkout {{ event.head.sha }} &&
+          virtualenv venv &&
+          venv/bin/pip install requests &&
+          venv/bin/python repo/.taskcluster/decision.py
+    deadline: '{{ "2 hours" | $fromNow }}'
+    expires: '{{ "26 weeks" | $fromNow }}'
+    metadata:
+      name: decision task
+      description: '{{ event.head.repo.name }} decision task'
+      owner: '{{ event.head.user.email }}'
+      source: '{{ event.head.repo.url }}'
