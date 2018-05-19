@@ -18,3 +18,4 @@ GITHUB_HEAD_BRANCH = os.environ.get('GITHUB_HEAD_BRANCH', 'HEAD')
 GITHUB_BASE_USER = os.environ.get('GITHUB_BASE_USER', GITHUB_HEAD_USER)
 GITHUB_BASE_REPO_NAME = os.environ.get('GITHUB_BASE_REPO_NAME',
                                        GITHUB_HEAD_REPO_NAME)
+GITHUB_EVENT = os.environ.get('GITHUB_EVENT', '')

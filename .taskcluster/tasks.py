@@ -229,8 +229,9 @@ class Task(object):
             elif k == 'description':
                 task['metadata'][k] = task['metadata']['name'] = v
             elif k == 'index':
-                task['routes'] = ['index.github.{}.{}.{}'.format(
-                    GITHUB_HEAD_USER, GITHUB_HEAD_REPO_NAME, v)]
+                if GITHUB_EVENT == 'push':
+                    task['routes'] = ['index.github.{}.{}.{}'.format(
+                        GITHUB_HEAD_USER, GITHUB_HEAD_REPO_NAME, v)]
             elif k == 'expireIn':
                 value = v.split()
                 if len(value) == 1:

@@ -270,26 +270,28 @@ for task in TestTask.coverage:
         ('find . \( -name .coverage -o -name coverage.xml -o -name \*.gcda'
          ' -o -name \*.gcov \) -delete'),
     ])
-Task(
-    task_env=TaskEnvironment.by_name('linux.codecov'),
-    description='upload coverage',
-    scopes=['secrets:get:repo:github.com/glandium.git-cinnabar:codecov'],
-    command=list(chain(
-        Task.checkout(),
-        [
-            'set +x',
-            ('export CODECOV_TOKEN=$(curl -sL http://taskcluster/secrets/v1'
-             '/secret/repo:github.com/glandium.git-cinnabar:codecov | '
-             'python -c "import json, sys; print(json.load(sys.stdin)'
-             '[\\"secret\\"][\\"token\\"])")'),
-            'set -x',
-            'cd repo',
-            'curl -L {{{}.artifacts[1]}} | tar -Jxf -'.format(
-                Helper.by_name('linux.coverage')),
-        ],
-        upload_coverage,
-    )),
-)
+
+if GITHUB_EVENT == 'push':
+    Task(
+        task_env=TaskEnvironment.by_name('linux.codecov'),
+        description='upload coverage',
+        scopes=['secrets:get:repo:github.com/glandium.git-cinnabar:codecov'],
+        command=list(chain(
+            Task.checkout(),
+            [
+                'set +x',
+                ('export CODECOV_TOKEN=$(curl -sL http://taskcluster/secrets/v1'
+                 '/secret/repo:github.com/glandium.git-cinnabar:codecov | '
+                 'python -c "import json, sys; print(json.load(sys.stdin)'
+                 '[\\"secret\\"][\\"token\\"])")'),
+                'set -x',
+                'cd repo',
+                'curl -L {{{}.artifacts[1]}} | tar -Jxf -'.format(
+                    Helper.by_name('linux.coverage')),
+            ],
+            upload_coverage,
+        )),
+    )
 
 for t in Task.by_id.itervalues():
     t.submit()
