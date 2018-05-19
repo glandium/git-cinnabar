@@ -64,14 +64,18 @@ command = cmdutil.command(cmdtable)
 
 
 def perform_authentication(hgweb, req, op):
-    if req.env.get('REQUEST_METHOD') == 'POST':
-        auth = req.env.get('HTTP_AUTHORIZATION')
+    if hasattr(req, 'env'):
+        env = req.env
+    else:
+        env = req.rawenv
+    if env.get('REQUEST_METHOD') == 'POST':
+        auth = env.get('HTTP_AUTHORIZATION')
         if not auth:
             raise common.ErrorResponse(
                 common.HTTP_UNAUTHORIZED, 'who',
                 [('WWW-Authenticate', 'Basic Realm="mercurial"')])
-        user, password = base64.b64decode(auth.split()[1]).split(':', 1)
-        req.env['REMOTE_USER'] = user
+        if base64.b64decode(auth.split()[1]).split(':', 1) != ['foo', 'bar']:
+            raise common.ErrorResponse(common.HTTP_FORBIDDEN, 'no')
 
 
 def extsetup():
@@ -81,10 +85,10 @@ def extsetup():
 @command('serve-and-exec', ())
 def serve_and_exec(ui, repo, *command):
     ui.setconfig('web', 'push_ssl', False, 'hgweb')
-    ui.setconfig('web', 'allow_push', 'foo', 'hgweb')
+    ui.setconfig('web', 'allow_push', '*', 'hgweb')
     # For older versions of mercurial
     repo.baseui.setconfig('web', 'push_ssl', False, 'hgweb')
-    repo.baseui.setconfig('web', 'allow_push', 'foo', 'hgweb')
+    repo.baseui.setconfig('web', 'allow_push', '*', 'hgweb')
     app = hgweb.hgweb(repo, baseui=ui)
     service = httpservice(ui, app, {'port': 8000})
     print command

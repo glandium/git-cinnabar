@@ -176,14 +176,32 @@ class GitRemoteHelper(BaseRemoteHelper):
             bookmarks = {}
 
         elif self._repo.capable('batch'):
-            batch = self._repo.batch()
-            branchmap = batch.branchmap()
-            heads = batch.heads()
-            bookmarks = batch.listkeys('bookmarks')
-            batch.submit()
-            branchmap = branchmap.value
-            heads = heads.value
-            bookmarks = bookmarks.value
+            if hasattr(self._repo, 'commandexecutor'):
+                with self._repo.commandexecutor() as e:
+                    branchmap = e.callcommand('branchmap', {})
+                    heads = e.callcommand('heads', {})
+                    bookmarks = e.callcommand('listkeys', {
+                        'namespace': 'bookmarks'
+                    })
+                branchmap = branchmap.result()
+                heads = heads.result()
+                bookmarks = bookmarks.result()
+            elif hasattr(self._repo, 'iterbatch'):
+                batch = self._repo.iterbatch()
+                batch.branchmap()
+                batch.heads()
+                batch.listkeys('bookmarks')
+                batch.submit()
+                branchmap, heads, bookmarks = batch.results()
+            else:
+                batch = self._repo.batch()
+                branchmap = batch.branchmap()
+                heads = batch.heads()
+                bookmarks = batch.listkeys('bookmarks')
+                batch.submit()
+                branchmap = branchmap.value
+                heads = heads.value
+                bookmarks = bookmarks.value
             if heads == ['\0' * 20]:
                 heads = []
         else:
@@ -326,7 +344,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                     heads = set(self._branchmap.heads()) & unknown_heads
                 getbundle(self._repo, self._store, heads,
                           self._branchmap.names())
-        except:
+        except Exception:
             wanted_refs = {}
             raise
         finally:

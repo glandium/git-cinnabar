@@ -93,7 +93,7 @@ def tree_hash(files, full_base, base=''):
 
 
 def helper_hash():
-    script_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+    script_path = os.path.join(os.path.dirname(__file__), '..', '..')
     d = os.path.join(script_path, 'helper')
     files = (os.listdir(d) if os.path.exists(d) else ())
 
@@ -140,7 +140,7 @@ class Version(argparse.Action):
             try:
                 with GitHgHelper.query('version') as out:
                     version = out.read(40)
-            except:
+            except Exception:
                 version = 'unknown'
 
             sha1 = helper_hash() or 'unknown'

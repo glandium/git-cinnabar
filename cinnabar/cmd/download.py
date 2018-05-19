@@ -78,11 +78,20 @@ def download(args):
                 'Cannot find the right development helper for this '
                 'version of git cinnabar.')
             return 1
-        system_variant = system
-        if args.dev:
-            system_variant = '%s-%s' % (system, args.dev.lower())
-        url = 'https://s3.amazonaws.com/git-cinnabar/artifacts/%s/%s/%s/%s' % (
-            sha1, system_variant, machine, helper)
+        if system == 'macOS':
+            system_variant = system
+            if args.dev:
+                system_variant = '%s-%s' % (system, args.dev.lower())
+            url = 'https://s3.amazonaws.com/git-cinnabar/artifacts/'
+            url += '%s/%s/%s/%s' % (sha1, system_variant, machine, helper)
+        else:
+            url = 'https://index.taskcluster.net/v1/task/github'
+            url += '.glandium.git-cinnabar.helper.'
+            url += '{}.{}.{}.{}'.format(
+                sha1, system.lower(), machine,
+                args.dev.lower() if args.dev else '').rstrip('.')
+            url += '/artifacts/public/{}'.format(helper)
+
     else:
         if system in ('Windows', 'macOS'):
             ext = 'zip'
@@ -111,7 +120,7 @@ def download(args):
             d = os.path.join(os.path.expanduser('~'), '.git-cinnabar')
             try:
                 os.makedirs(d)
-            except:
+            except Exception:
                 pass
             if not os.path.isdir(d):
                 print >>sys.stderr, (

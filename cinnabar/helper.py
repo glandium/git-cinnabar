@@ -131,7 +131,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 24
+    VERSION = 27
     _helper = False
 
     @classmethod
@@ -270,6 +270,15 @@ class GitHgHelper(BaseHelper):
             return stdout.readline().strip() == 'ok'
 
     @classmethod
+    def create_git_tree(self, manifest_sha1, ref_commit=None):
+        extra_arg = (ref_commit,) if ref_commit else ()
+        with self.query('create-git-tree', manifest_sha1,
+                        *extra_arg) as stdout:
+            sha1 = stdout.read(41)
+            assert sha1[-1] == '\n'
+            return sha1[:40]
+
+    @classmethod
     def seen(self, typ, sha1):
         with self.query('seen', typ, sha1) as stdout:
             return stdout.readline().strip() == 'yes'
@@ -282,7 +291,7 @@ class GitHgHelper(BaseHelper):
 
 
 class HgRepoHelper(BaseHelper):
-    VERSION = 17
+    VERSION = 25
     _helper = False
 
     @classmethod

@@ -8,11 +8,26 @@
 typedef void (*prepare_request_cb_t)(CURL *curl, struct curl_slist *headers,
 				     void *data);
 
+struct http_request_info {
+	long redirects;
+	char *effective_url;
+	void *data;
+};
+
+struct command_request_data {
+	struct hg_connection *conn;
+	prepare_request_cb_t prepare_request_cb;
+	void *data;
+	const char *command;
+	struct strbuf args;
+};
+
 static int http_request(prepare_request_cb_t prepare_request_cb, void *data)
 {
 	struct active_request_slot *slot;
 	struct slot_results results;
 	struct curl_slist *headers = NULL;
+	struct http_request_info *info = (struct http_request_info *)data;
 	int ret;
 
 	slot = get_active_slot();
@@ -22,7 +37,7 @@ static int http_request(prepare_request_cb_t prepare_request_cb, void *data)
 
 	headers = curl_slist_append(headers,
 				    "Accept: application/mercurial-0.1");
-	prepare_request_cb(slot->curl, headers, data);
+	prepare_request_cb(slot->curl, headers, info->data);
 
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, headers);
 	/* Strictly speaking, this is not necessary, but bitbucket does
@@ -34,20 +49,41 @@ static int http_request(prepare_request_cb_t prepare_request_cb, void *data)
 	ret = run_one_slot(slot, &results);
 	curl_slist_free_all(headers);
 
+	curl_easy_getinfo(slot->curl, CURLINFO_REDIRECT_COUNT, &info->redirects);
+	curl_easy_getinfo(slot->curl, CURLINFO_EFFECTIVE_URL, &info->effective_url);
+
 	return ret;
 }
 
 static int http_request_reauth(prepare_request_cb_t prepare_request_cb,
 			       void *data)
 {
-	int ret = http_request(prepare_request_cb, data);
+	struct http_request_info info = { 0, NULL, data };
+	int ret = http_request(prepare_request_cb, &info);
+
+	if (ret != HTTP_OK && ret != HTTP_REAUTH)
+		return ret;
+
+	if (info.redirects) {
+		char *query = strstr(info.effective_url, "?cmd=");
+		if (query) {
+			struct command_request_data *request_data =
+				(struct command_request_data *)data;
+			free(request_data->conn->http.url);
+			request_data->conn->http.url =
+				xstrndup(info.effective_url,
+				         query - info.effective_url);
+			warning("redirecting to %s",
+			        request_data->conn->http.url);
+		}
+	}
 
 	if (ret != HTTP_REAUTH)
 		return ret;
 
 	credential_fill(&http_auth);
 
-	return http_request(prepare_request_cb, data);
+	return http_request(prepare_request_cb, &info);
 }
 
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.
@@ -104,18 +140,11 @@ static void prepare_pushkey_request(CURL *curl, struct curl_slist *headers,
 	prepare_simple_request(curl, headers, data);
 	curl_easy_setopt(curl, CURLOPT_POST, 1);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 0);
+	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0);
 	headers = curl_slist_append(headers,
 				    "Content-Type: application/mercurial-0.1");
 	headers = curl_slist_append(headers, "Expect:");
 }
-
-struct command_request_data {
-	struct hg_connection *conn;
-	prepare_request_cb_t prepare_request_cb;
-	void *data;
-	const char *command;
-	struct strbuf args;
-};
 
 static void prepare_command_request(CURL *curl, struct curl_slist *headers,
 				    void *data)
@@ -131,6 +160,12 @@ static void prepare_command_request(CURL *curl, struct curl_slist *headers,
 
 	if (httpheader && end[0] != '\0')
 		httpheader = 0;
+
+	if (http_follow_config == HTTP_FOLLOW_INITIAL &&
+	    request_data->conn->http.initial_request) {
+		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
+		request_data->conn->http.initial_request = 0;
+	}
 
 	request_data->prepare_request_cb(curl, headers, request_data->data);
 
@@ -171,8 +206,13 @@ static void http_command(struct hg_connection *conn,
 		STRBUF_INIT,
 	};
 	prepare_command(&request_data.args, http_query_add_param, ap);
-	// TODO: handle errors
-	http_request_reauth(prepare_command_request, &request_data);
+	// TODO: better handle errors
+	switch (http_request_reauth(prepare_command_request, &request_data)) {
+	case HTTP_OK:
+		break;
+	default:
+		die("unable to access '%s': %s", conn->http.url, curl_errorstr);
+	}
 	strbuf_release(&request_data.args);
 }
 
@@ -349,6 +389,7 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 	string_list_init(&conn->capabilities, 1);
 
 	conn->http.url = xstrdup(url);
+	conn->http.initial_request = 1;
 
 	http_init(NULL, conn->http.url, 0);
 

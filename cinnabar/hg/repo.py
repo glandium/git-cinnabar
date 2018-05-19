@@ -55,7 +55,9 @@ try:
     # ever using it. It shouldn't hurt to set it here.
     import ssl
     if not hasattr(ssl, 'PROTOCOL_SSLv2'):
-        ssl.PROTOCOL_SSLv2 = -1
+        ssl.PROTOCOL_SSLv2 = 0
+    if not hasattr(ssl, 'PROTOCOL_SSLv3'):
+        ssl.PROTOCOL_SSLv3 = 1
 
     from mercurial import (
         changegroup,
@@ -66,9 +68,13 @@ try:
         util,
     )
     try:
-        from mercurial.sshpeer import sshpeer
+        from mercurial.sshpeer import instance as sshpeer
     except ImportError:
-        from mercurial.sshrepo import sshrepository as sshpeer
+        from mercurial.sshrepo import instance as sshpeer
+    try:
+        from mercurial.utils import procutil
+    except ImportError:
+        from mercurial import util as procutil
 except ImportError:
     changegroup = unbundle20 = False
 
@@ -130,12 +136,12 @@ def readexactly(stream, n):
 def getchunk(stream):
     """return the next chunk from stream as a string"""
     d = readexactly(stream, 4)
-    l = struct.unpack(">l", d)[0]
-    if l <= 4:
-        if l:
-            raise Exception("invalid chunk length %d" % l)
+    length = struct.unpack(">l", d)[0]
+    if length <= 4:
+        if length:
+            raise Exception("invalid chunk length %d" % length)
         return ""
-    return readexactly(stream, l - 4)
+    return readexactly(stream, length - 4)
 
 
 def RawRevChunkType(bundle):
@@ -146,7 +152,10 @@ def RawRevChunkType(bundle):
     raise Exception('Unknown changegroup type %s' % type(bundle).__name__)
 
 
-def chunks_in_changegroup(bundle):
+chunks_logger = logging.getLogger('chunks')
+
+
+def chunks_in_changegroup(bundle, category=None):
     previous_node = None
     chunk_type = RawRevChunkType(bundle)
     while True:
@@ -156,6 +165,12 @@ def chunks_in_changegroup(bundle):
         chunk = chunk_type(chunk)
         if isinstance(chunk, RawRevChunk01):
             chunk.delta_node = previous_node or chunk.parent1
+        if category and chunks_logger.isEnabledFor(logging.DEBUG):
+            chunks_logger.debug(
+                '%s %s',
+                category,
+                chunk.node,
+            )
         yield chunk
         previous_node = chunk.node
 
@@ -170,7 +185,7 @@ def iterate_files(bundle):
         name_chunk = getchunk(bundle)
         if not name_chunk:
             return
-        for chunk in chunks_in_changegroup(bundle):
+        for chunk in chunks_in_changegroup(bundle, name_chunk):
             yield chunk
 
 
@@ -530,8 +545,8 @@ def unbundler(bundle):
     else:
         cg = bundle
 
-    yield chunks_in_changegroup(cg)
-    yield chunks_in_changegroup(cg)
+    yield chunks_in_changegroup(cg, 'changeset')
+    yield chunks_in_changegroup(cg, 'manifest')
     yield iterate_files(cg)
 
     if unbundle20 and isinstance(bundle, unbundle20):
@@ -583,8 +598,12 @@ class BundleApplier(object):
         changeset_chunks = ChunksCollection(progress_iter(
             'Reading %d changesets', next(self._bundle, None)))
 
-        manifest_chunks = ChunksCollection(progress_iter(
-            'Reading %d manifests', next(self._bundle, None)))
+        for mn in progress_iter(
+                'Reading and importing %d manifests',
+                iter_initialized(store.manifest,
+                                 iter_chunks(next(self._bundle, None),
+                                             ManifestInfo))):
+            store.store_manifest(mn)
 
         for rev_chunk in progress_iter(
                 'Reading and importing %d files', next(self._bundle, None)):
@@ -593,14 +612,6 @@ class BundleApplier(object):
         if next(self._bundle, None) is not None:
             assert False
         del self._bundle
-
-        for mn in progress_iter(
-                'Importing %d manifests',
-                manifest_chunks.iter_initialized(ManifestInfo,
-                                                 store.manifest)):
-            store.store_manifest(mn)
-
-        del manifest_chunks
 
         for cs in progress_iter(
                 'Importing %d changesets',
@@ -627,6 +638,10 @@ def getbundle(repo, store, heads, branch_names):
             apply_bundle = BundleApplier(bundle)
             del bundle
             apply_bundle(store)
+            # Eliminate the heads that we got from the clonebundle.
+            heads = [h for h in heads if not store.changeset_ref(h)]
+            if not heads:
+                return
             common = findcommon(repo, store, store.heads(branch_names))
             logging.info('common: %s', common)
 
@@ -778,35 +793,53 @@ class Remote(object):
 
 
 if changegroup:
-    class localpeer(sshpeer):
-        def __init__(self, ui, path):
-            self._url = self.path = path
-            self.ui = ui
-            self.pipeo = self.pipei = self.pipee = None
+    def localpeer(ui, path):
+        ui.setconfig('ui', 'ssh', '')
 
-            shellquote = util.shellquote
-            util.shellquote = lambda x: x
-            quotecommand = util.quotecommand
+        has_checksafessh = hasattr(util, 'checksafessh')
 
-            # In very old versions of mercurial, shellquote was not used, and
-            # double quotes were hardcoded. Remove them by overriding
-            # quotecommand.
-            def override_quotecommand(cmd):
-                cmd = cmd.lstrip()
-                if cmd.startswith('"'):
-                    cmd = cmd[1:-1]
-                return quotecommand(cmd)
-            util.quotecommand = override_quotecommand
+        sshargs = procutil.sshargs
+        shellquote = procutil.shellquote
+        quotecommand = procutil.quotecommand
+        url = util.url
+        if has_checksafessh:
+            checksafessh = util.checksafessh
 
-            args = ('', '', 'hg')
-            try:
-                validate_repo = super(localpeer, self)._validaterepo
-            except AttributeError:
-                validate_repo = super(localpeer, self).validate_repo
-                args = (ui,) + args
-            validate_repo(*args)
-            util.shellquote = shellquote
-            util.quotecommand = quotecommand
+        procutil.sshargs = lambda *a: ''
+        procutil.shellquote = lambda x: x
+        if has_checksafessh:
+            util.checksafessh = lambda x: None
+
+        # In very old versions of mercurial, shellquote was not used, and
+        # double quotes were hardcoded. Remove them by overriding
+        # quotecommand.
+        def override_quotecommand(cmd):
+            cmd = cmd.lstrip()
+            if cmd.startswith('"'):
+                cmd = cmd[1:-1]
+            return quotecommand(cmd)
+        procutil.quotecommand = override_quotecommand
+
+        class override_url(object):
+            def __init__(self, *args, **kwargs):
+                self.scheme = 'ssh'
+                self.host = 'localhost'
+                self.port = None
+                self.path = path
+                self.user = 'user'
+                self.passwd = None
+        util.url = override_url
+
+        repo = sshpeer(ui, path, False)
+
+        if has_checksafessh:
+            util.checksafessh = checksafessh
+        util.url = url
+        procutil.quotecommand = quotecommand
+        procutil.shellquote = shellquote
+        procutil.sshargs = sshargs
+
+        return repo
 
 
 def get_repo(remote):

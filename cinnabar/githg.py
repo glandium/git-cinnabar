@@ -186,16 +186,15 @@ class FileFindParents(object):
                 # this by default, the fallback will work just fine.
                 file_dag = gitdag()
                 mapping = {}
-                hg_path = 'hg/%s' % path
                 for sha1, tree, fparents in GitHgHelper.rev_list(
                         '--parents', '--boundary', '--topo-order', '--reverse',
-                        '%s...%s' % git_manifest_parents, '--', hg_path):
+                        '%s...%s' % git_manifest_parents, '--', path):
                     if sha1.startswith('-'):
                         sha1 = sha1[1:]
                     node = [
                         s
                         for mode, typ, s, p in
-                        Git.ls_tree(sha1, hg_path)
+                        Git.ls_tree(sha1, path)
                     ]
                     if not node:
                         continue
@@ -511,6 +510,8 @@ class TagSet(object):
         return self._tags[key]
 
     def update(self, other):
+        if not other:
+            return
         assert isinstance(other, TagSet)
         for key, anode in other._tags.iteritems():
             # derived from mercurial's _updatetags
@@ -655,8 +656,8 @@ class Grafter(object):
 
     def _graft(self, changeset, parents):
         store = self._store
-        tree = store.git_tree(changeset.manifest)
-        do_graft = tree in self._graft_trees
+        tree = store.git_tree(changeset.manifest, *changeset.parents[:1])
+        do_graft = tree and tree in self._graft_trees
         if not do_graft:
             return None
 
@@ -697,7 +698,7 @@ class Grafter(object):
                 possible_nodes = tuple(
                     n for n in possible_nodes
                     if (Authorship.from_git_str(commits[n].author)
-                        .to_hg()[0] == changeset.committer)
+                        .to_hg()[0] == changeset.author)
                 )
             if len(possible_nodes) == 1:
                 nodes = possible_nodes
@@ -731,7 +732,10 @@ class Grafter(object):
         # TODO: clarify this function because it's hard to follow.
         store = self._store
         parents = tuple(store.changeset_ref(p) for p in changeset.parents)
-        result = self._graft(changeset, parents)
+        if None in parents:
+            result = None
+        else:
+            result = self._graft(changeset, parents)
         if parents:
             is_early_history = all(p in self._early_history for p in parents)
         else:
@@ -766,6 +770,7 @@ class Grafter(object):
 class GitHgStore(object):
     FLAGS = [
         'files-meta',
+        'unified-manifests',
     ]
 
     METADATA_REFS = (
@@ -823,7 +828,7 @@ class GitHgStore(object):
         self._tagcache = {}
         self._tagfiles = {}
         self._tags = {NULL_NODE_ID: {}}
-        self._tagcache_ref = Git.resolve_ref('refs/cinnabar/tag-cache')
+        self._tagcache_ref = Git.resolve_ref('refs/cinnabar/tag_cache')
         self._tagcache_items = set()
         if self._tagcache_ref:
             for line in Git.ls_tree(self._tagcache_ref):
@@ -864,13 +869,13 @@ class GitHgStore(object):
 
         Git.register_fast_import(self._fast_import)
 
+        # Delete old tag-cache, which may contain incomplete data.
+        Git.delete_ref('refs/cinnabar/tag-cache')
+
     def prepare_graft(self):
         self._graft = Grafter(self)
 
     def tags(self, heads):
-        # The given heads are assumed to be ordered by mercurial
-        # revision number, such that the last is the one where
-        # tags are the most relevant.
         tags = TagSet()
         for h in heads:
             h = self.changeset_ref(h)
@@ -914,8 +919,8 @@ class GitHgStore(object):
                         node = self.changeset_ref(node)
                     if node:
                         tags[tag] = node
-        self._tags[tagfile] = tags
-        return tags
+            self._tags[tagfile] = tags
+        return self._tags[tagfile]
 
     def heads(self, branches={}):
         if not isinstance(branches, (dict, set)):
@@ -970,12 +975,6 @@ class GitHgStore(object):
         if gitsha1 == NULL_NODE_ID:
             gitsha1 = None
         return gitsha1
-
-    def _git_object(self, dic, sha1):
-        assert sha1 != NULL_NODE_ID
-        if sha1 in dic:
-            return dic[sha1]
-        return self._hg2git(sha1)
 
     def changeset(self, sha1, include_parents=False):
         gitsha1 = self.changeset_ref(sha1)
@@ -1057,21 +1056,10 @@ class GitHgStore(object):
             return EMPTY_BLOB
         return self._hg2git(sha1)
 
-    def git_tree(self, manifest_sha1):
+    def git_tree(self, manifest_sha1, ref_changeset=None):
         if manifest_sha1 == NULL_NODE_ID:
             return EMPTY_TREE,
-        line = one(Git.ls_tree(':h%s' % manifest_sha1, 'git'))
-        if line:
-            mode, typ, tree, path = line
-            assert typ == 'tree' and path == 'git'
-        else:
-            # If there is no git directory in the manifest tree, it means the
-            # manifest tree is empty, so the corresponding git tree needs to
-            # be empty too, although there is no entry for it. No need to
-            # actually get the sha1 for the empty directory, since it's a fixed
-            # value.
-            tree = EMPTY_TREE
-        return tree
+        return GitHgHelper.create_git_tree(manifest_sha1, ref_changeset)
 
     def store_changeset(self, instance, commit=None):
         if commit and not isinstance(commit, GitCommit):
@@ -1120,7 +1108,8 @@ class GitHgStore(object):
                 parents=parents,
                 pseudo_mark=':h%s' % instance.node,
             ) as c:
-                c.filemodify('', ':h%s:git' % instance.manifest,
+                c.filemodify('', self.git_tree(instance.manifest,
+                                               *instance.parents[:1]),
                              typ='tree')
 
             commit = PseudoGitCommit(':1')
@@ -1137,10 +1126,10 @@ class GitHgStore(object):
         self._branches[instance.node] = instance.branch or 'default'
         self.add_head(instance.node, instance.parent1, instance.parent2)
 
-    TYPE = {
-        '': 'regular',
-        'l': 'symlink',
-        'x': 'exec',
+    MODE = {
+        '': '160644',
+        'l': '160000',
+        'x': '160755',
     }
 
     def store_manifest(self, instance):
@@ -1158,8 +1147,7 @@ class GitHgStore(object):
         ) as commit:
             if hasattr(instance, 'delta_node'):
                 for name in instance.removed:
-                    commit.filedelete('hg/%s' % name)
-                    commit.filedelete('git/%s' % name)
+                    commit.filedelete(name)
                 modified = instance.modified.items()
             else:
                 # slow
@@ -1167,11 +1155,7 @@ class GitHgStore(object):
                             for line in instance._lines)
             for name, (node, attr) in modified:
                 node = str(node)
-                commit.filemodify('hg/%s' % name, node, typ='commit')
-                commit.filemodify('git/%s' % name,
-                                  EMPTY_BLOB if node == HG_EMPTY_FILE
-                                  else ':h%s' % node,
-                                  typ=self.TYPE[attr])
+                commit.filemodify(name, node, self.MODE[attr])
 
         GitHgHelper.set('manifest', instance.node, ':1')
 
@@ -1243,12 +1227,13 @@ class GitHgStore(object):
                 update_metadata.append('refs/cinnabar/manifests')
 
         tree = GitHgHelper.store('metadata', 'files-meta')
-        if tree != NULL_NODE_ID:
-            files_meta_ref = Git.resolve_ref('refs/cinnabar/files-meta')
+        files_meta_ref = Git.resolve_ref('refs/cinnabar/files-meta')
+        if update_metadata and (tree != NULL_NODE_ID or not files_meta_ref):
             with self._fast_import.commit(
                 ref='refs/cinnabar/files-meta',
             ) as commit:
-                commit.write('M 040000 %s \n' % tree)
+                if tree != NULL_NODE_ID:
+                    commit.write('M 040000 %s \n' % tree)
             if commit.sha1 != files_meta_ref:
                 update_metadata.append('refs/cinnabar/files-meta')
 
@@ -1314,7 +1299,7 @@ class GitHgStore(object):
 
         if created or deleted:
             with self._fast_import.commit(
-                ref='refs/cinnabar/tag-cache',
+                ref='refs/cinnabar/tag_cache',
                 from_commit=self._tagcache_ref,
             ) as commit:
                 for f in deleted:
