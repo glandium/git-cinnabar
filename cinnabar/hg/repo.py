@@ -447,7 +447,7 @@ def unbundle_fh(fh, path):
         alg = readexactly(fh, 2)
         return cg1unpacker(fh, alg)
     elif unbundle20 and version.startswith('2'):
-        return getunbundler(get_ui(), fh, magicstring=header)
+        return getunbundler(get_ui(), fh, header)
     else:
         raise Exception('%s: unsupported bundle version %s' % (path,
                         version))
