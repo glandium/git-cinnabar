@@ -280,8 +280,8 @@ if GITHUB_EVENT == 'push':
             Task.checkout(),
             [
                 'set +x',
-                ('export CODECOV_TOKEN=$(curl -sL http://taskcluster/secrets/v1'
-                 '/secret/repo:github.com/glandium.git-cinnabar:codecov | '
+                ('export CODECOV_TOKEN=$(curl -sL http://taskcluster/secrets'
+                 '/v1/secret/repo:github.com/glandium.git-cinnabar:codecov | '
                  'python -c "import json, sys; print(json.load(sys.stdin)'
                  '[\\"secret\\"][\\"token\\"])")'),
                 'set -x',
