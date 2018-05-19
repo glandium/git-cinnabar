@@ -46,7 +46,7 @@ tasks:
       github:
         env: true
         events:
-          - release
+          - tag
     scopes:
       - assume:repo:github.com/glandium/git-cinnabar:decision-task
       - 'queue:route:index.github.{{ event.head.user.login }}.{{ event.head.repo.name }}.*'
