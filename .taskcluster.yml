@@ -3,7 +3,7 @@ allowPullRequests: public
 tasks:
   - provisionerId: '{{ taskcluster.docker.provisionerId }}'
     workerType: '{{ taskcluster.docker.workerType }}'
-    retries: 0
+    retries: 5
     extra:
       github:
         env: true
@@ -41,7 +41,7 @@ tasks:
 
   - provisionerId: '{{ taskcluster.docker.provisionerId }}'
     workerType: '{{ taskcluster.docker.workerType }}'
-    retries: 0
+    retries: 5
     extra:
       github:
         env: true
@@ -79,7 +79,7 @@ tasks:
 
   - provisionerId: '{{ taskcluster.docker.provisionerId }}'
     workerType: '{{ taskcluster.docker.workerType }}'
-    retries: 0
+    retries: 5
     extra:
       github:
         env: true

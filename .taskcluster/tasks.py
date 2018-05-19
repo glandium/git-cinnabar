@@ -206,7 +206,7 @@ class Task(object):
         task = {
             'created': now.format(),
             'deadline': (now + 3600).format(),
-            'retries': 0,
+            'retries': 5,
             'provisionerId': 'aws-provisioner-v1',
             'workerType': 'github-worker',
             'schedulerId': 'taskcluster-github',
