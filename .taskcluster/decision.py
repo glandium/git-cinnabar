@@ -209,7 +209,7 @@ for env in ('linux', 'mingw64'):
         ],
     )
 
-# Because nothing is using the i686 windows helper, we need to manually touch
+# Because nothing is using the x86 windows helper, we need to manually touch
 # it.
 Helper.by_name('mingw32')
 

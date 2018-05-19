@@ -12,27 +12,33 @@ from tasks import (
 from docker import DockerImage
 
 
-CPUS = ('i686', 'x86_64')
+CPUS = ('x86', 'x86_64')
 MSYS_VERSION = '20161025'
 
 
 def mingw(cpu):
     return {
-        'i686': 'MINGW32',
+        'x86': 'MINGW32',
         'x86_64': 'MINGW64',
     }.get(cpu)
 
 
 def msys(cpu):
     return {
-        'i686': 'msys32',
+        'x86': 'msys32',
         'x86_64': 'msys64',
     }.get(cpu)
 
 
+def msys_cpu(cpu):
+    return {
+        'x86': 'i686',
+    }.get(cpu, cpu)
+
+
 def bits(cpu):
     return {
-        'i686': '32',
+        'x86': '32',
         'x86_64': '64',
     }.get(cpu)
 
@@ -81,7 +87,7 @@ class MsysBase(MsysCommon, Task):
             'curl -L http://repo.msys2.org/distrib/{cpu}'
             '/msys2-base-{cpu}-{version}.tar.xz | xz -cd | bzip2 -c'
             ' > $ARTIFACTS/msys2.tar.bz2'.format(
-                cpu=cpu, version=MSYS_VERSION)
+                cpu=msys_cpu(cpu), version=MSYS_VERSION)
         )
         h = hashlib.sha1(_create_command)
         self.hexdigest = h.hexdigest()
@@ -134,7 +140,10 @@ class MsysEnvironment(MsysCommon):
 
     def packages(self, name):
         def mingw_packages(pkgs):
-            return ['mingw-w64-{}-{}'.format(self.cpu, pkg) for pkg in pkgs]
+            return [
+                'mingw-w64-{}-{}'.format(msys_cpu(self.cpu), pkg)
+                for pkg in pkgs
+            ]
 
         packages = mingw_packages([
             'curl',
@@ -162,7 +171,7 @@ class MsysEnvironment(MsysCommon):
 class Msys32Environment(MsysEnvironment, Task):
     __metaclass__ = TaskEnvironment
     PREFIX = 'mingw32'
-    cpu = 'i686'
+    cpu = 'x86'
     __init__ = MsysEnvironment.__init__
 
 
