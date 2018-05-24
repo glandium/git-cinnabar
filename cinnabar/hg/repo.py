@@ -26,6 +26,7 @@ from urlparse import (
     urlunparse,
 )
 import logging
+import socket
 import struct
 import random
 from cinnabar.dag import gitdag
@@ -587,7 +588,53 @@ def get_clonebundle(repo):
         return None
 
     sys.stderr.write('Getting clone bundle from %s\n' % url)
-    return unbundle_fh(urllib2.urlopen(url), url)
+
+    class Getter(object):
+        def __init__(self, url):
+            self.fh = urllib2.urlopen(url)
+            self.offset = 0
+
+        def read(self, size):
+            try:
+                result = self.fh.read(size)
+            except socket.error as e:
+                # Processing large manifests can be slow. Especially with
+                # changegroup v2 and lots of consecutive manifests not being
+                # directly connected (such that the diff is not against the
+                # last one).
+                # With highly compressed but nevertheless large bundles, this
+                # means it can take time to process relatively small
+                # (compressed) inputs: in the order of several minutes for a
+                # few megabytes.  When that happens, SSL connections can end
+                # up being aborted between two large TCP receives. In that
+                # case, try again with an HTTP Range request if the server
+                # supports it.
+                # TODO: This is a stopgap until manifest processing is faster.
+                req = urllib2.Request(url)
+                req.add_header('Range', 'bytes=%d-' % self.offset)
+                self.fh = urllib2.urlopen(req)
+                if self.fh.getcode() != 206:
+                    raise e
+                range = self.fh.headers['Content-Range'].split(None, 1)
+                if len(range) != 2:
+                    raise e
+                unit, range = range
+                if unit != 'bytes':
+                    raise e
+                range = range.split('-', 1)
+                if len(range) != 2:
+                    raise e
+                start, end = range
+                start = int(start)
+                if start > self.offset:
+                    raise e
+                if start < self.offset:
+                    self.fh.read(self.offset - start)
+                result = self.fh.read(size)
+            self.offset += len(result)
+            return result
+
+    return unbundle_fh(Getter(url), url)
 
 
 class BundleApplier(object):
