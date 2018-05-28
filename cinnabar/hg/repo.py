@@ -630,8 +630,8 @@ def get_clonebundle(repo):
                     raise e
                 logging.getLogger('clonebundle').debug(
                     'Retrying from offset %d', start)
-                if start < self.offset:
-                    self.fh.read(self.offset - start)
+                while start < self.offset:
+                    start += len(self.fh.read(self.offset - start))
                 result = self.fh.read(size)
             self.offset += len(result)
             return result
