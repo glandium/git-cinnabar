@@ -43,7 +43,10 @@ class Git(Task):
             env = TaskEnvironment.by_name('{}.build'.format(os))
             raw_version = version
             if 'windows' not in version:
-                version = version + '.windows.1'
+                version = {
+                    version: version + '.windows.1',
+                    '2.17.1': '2.17.1.windows.2',
+                }.get(version)
             if version.endswith('.windows.1'):
                 min_ver = version[:-len('.windows.1')]
             else:
