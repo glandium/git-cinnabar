@@ -1205,14 +1205,14 @@ class GitHgStore(object):
                 update_metadata.append('refs/notes/cinnabar')
 
         hg_changeset_heads = list(self._hgheads)
-        changeset_heads = sorted(self.changeset_ref(h)
-                                 for h in hg_changeset_heads)
+        changeset_heads = set(self.changeset_ref(h)
+                              for h in hg_changeset_heads)
         if any(self._hgheads.iterchanges()):
+            heads = sorted(((self._hgheads[h], h) for h in hg_changeset_heads))
             with self._fast_import.commit(
                 ref='refs/cinnabar/changesets',
-                parents=changeset_heads,
-                message='\n'.join('%s %s' % (h, self._hgheads[h])
-                                  for h in hg_changeset_heads),
+                parents=list(self.changeset_ref(h) for _, h in heads),
+                message='\n'.join('%s %s' % (h, b) for b, h in heads),
             ) as commit:
                 update_metadata.append('refs/cinnabar/changesets')
 
