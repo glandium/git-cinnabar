@@ -2119,7 +2119,6 @@ int cmd_main(int argc, const char *argv[])
 	int initialized = 0;
 	struct strbuf buf = STRBUF_INIT;
 
-	git_extract_argv0_path(argv[0]);
 	git_config(git_default_config, NULL);
 	ignore_case = 0;
 	save_commit_buffer = 0;
