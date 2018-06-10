@@ -138,16 +138,16 @@ class Helper(Task):
         def prefix(p, s):
             return p + s if s else s
 
-        make_flags = ''
+        make_flags = []
         hash = None
         head = None
         desc_variant = variant
         extra_commands = []
         if variant == 'asan':
-            make_flags = ('CFLAGS="-O2 -g -fsanitize=address"'
-                          ' LDFLAGS=-static-libasan')
+            make_flags.append('CFLAGS="-O2 -g -fsanitize=address"')
+            make_flags.append('LDFLAGS=-static-libasan')
         elif variant == 'coverage':
-            make_flags = 'CFLAGS="-coverage"'
+            make_flags.append('CFLAGS="-coverage"')
             artifacts += ['coverage.tar.xz']
             extra_commands = [
                 'mv repo/git-core/{{cinnabar,connect,hg}}*.gcno repo/helper',
@@ -160,6 +160,10 @@ class Helper(Task):
             variant = ''
         elif variant:
             raise Exception('Unknown variant: {}'.format(variant))
+
+        if os == 'linux':
+            make_flags.append('CURL_COMPAT=1')
+
         hash = hash or helper_hash()
 
         Task.__init__(
@@ -172,7 +176,7 @@ class Helper(Task):
             expireIn='26 weeks',
             command=Task.checkout(commit=head) + [
                 'make -C repo -j $(nproc) helper prefix=/usr{}'.format(
-                    prefix(' ', make_flags)),
+                    prefix(' ', ' '.join(make_flags))),
                 'mv repo/{} $ARTIFACTS/'.format(artifact),
             ] + extra_commands,
             artifacts=artifacts,

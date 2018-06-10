@@ -172,4 +172,12 @@ cinnabar-helper.o: EXTRA_CPPFLAGS=-DHELPER_HASH=$(shell $(PYTHON_PATH) ../git-ci
 $(CINNABAR_OBJECTS): %.o: ../helper/%.c GIT-CFLAGS $(missing_dep_dirs)
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
 
+ifdef CURL_COMPAT
+git-cinnabar-helper$X: CURL_LIBCURL=$(CURDIR)/libcurl.so
+git-cinnabar-helper$X: libcurl.so
+
+libcurl.so: ../helper/curl-compat.c
+	$(CC) -shared -Wl,-soname,libcurl.so.4 -o $@ $<
+endif
+
 endif
