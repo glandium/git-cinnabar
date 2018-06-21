@@ -1,8 +1,8 @@
 diff --git a/packfile.c b/packfile.c
-index 4a5fe7ab1..4390bdb1e 100644
+index 7cd45aa4b2..f956192f66 100644
 --- a/packfile.c
 +++ b/packfile.c
-@@ -1707,7 +1707,7 @@ off_t nth_packed_object_offset(const struct packed_git *p, uint32_t n)
+@@ -1769,7 +1769,7 @@ off_t nth_packed_object_offset(const struct packed_git *p, uint32_t n)
  	}
  }
  
@@ -10,4 +10,4 @@ index 4a5fe7ab1..4390bdb1e 100644
 +off_t real_find_pack_entry_one(const unsigned char *sha1,
  				  struct packed_git *p)
  {
- 	const uint32_t *level1_ofs = p->index_data;
+ 	const unsigned char *index = p->index_data;

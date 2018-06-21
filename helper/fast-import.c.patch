@@ -1,8 +1,8 @@
 diff --git a/fast-import.c b/fast-import.c
-index a959161b4..aa66e3e9a 100644
+index 4d55910ab9..7132d00821 100644
 --- a/fast-import.c
 +++ b/fast-import.c
-@@ -997,7 +997,7 @@ static int loosen_small_pack(const struct packed_git *p)
+@@ -955,7 +955,7 @@ static int loosen_small_pack(const struct packed_git *p)
  	return run_command(&unpack);
  }
  
@@ -11,7 +11,7 @@ index a959161b4..aa66e3e9a 100644
  {
  	static int running;
  
-@@ -2317,7 +2317,9 @@ static uintmax_t change_note_fanout(struct tree_entry *root,
+@@ -2280,7 +2280,9 @@ static uintmax_t change_note_fanout(struct tree_entry *root,
   * Complain if the following character is not what is expected,
   * either a space or end of the string.
   */
@@ -22,7 +22,7 @@ index a959161b4..aa66e3e9a 100644
  {
  	uintmax_t mark;
  
-@@ -2381,9 +2383,8 @@ static void file_change_m(const char *p, struct branch *b)
+@@ -2344,9 +2346,8 @@ static void file_change_m(const char *p, struct branch *b)
  	case S_IFDIR:
  	case S_IFGITLINK:
  		/* ok */

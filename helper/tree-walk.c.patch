@@ -1,5 +1,5 @@
 diff --git a/tree-walk.c b/tree-walk.c
-index 6a42e402b..7483e9352 100644
+index 8f5090862b..b24d5b0d99 100644
 --- a/tree-walk.c
 +++ b/tree-walk.c
 @@ -45,7 +45,7 @@ static int decode_tree_entry(struct tree_desc *desc, const char *buf, unsigned l

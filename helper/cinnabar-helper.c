@@ -54,7 +54,7 @@
 #include "config.h"
 #include "diff.h"
 #include "diffcore.h"
-#include "exec_cmd.h"
+#include "exec-cmd.h"
 #include "hashmap.h"
 #include "log-tree.h"
 #include "strbuf.h"
@@ -65,6 +65,7 @@
 #include "oidset.h"
 #include "progress.h"
 #include "quote.h"
+#include "replace-object.h"
 #include "revision.h"
 #include "tree.h"
 #include "tree-walk.h"
@@ -170,19 +171,19 @@ static void send_buffer(struct strbuf *buf)
 }
 
 /* Send git object info and content to stdout, like cat-file --batch does. */
-static void send_object(unsigned const char *sha1)
+static void send_object(const struct object_id *oid)
 {
 	struct strbuf header = STRBUF_INIT;
 	enum object_type type;
 	unsigned long sz;
 	struct git_istream *st;
 
-	st = open_istream(sha1, &type, &sz, NULL);
+	st = open_istream(oid, &type, &sz, NULL);
 
 	if (!st)
-		die("open_istream failed for %s", sha1_to_hex(sha1));
+		die("open_istream failed for %s", oid_to_hex(oid));
 
-	strbuf_addf(&header, "%s %s %lu\n", sha1_to_hex(sha1), type_name(type),
+	strbuf_addf(&header, "%s %s %lu\n", oid_to_hex(oid), type_name(type),
 	            sz);
 
 	write_or_die(1, header.buf, header.len);
@@ -222,7 +223,7 @@ static void do_cat_file(struct string_list *args)
 	if (get_oid(args->items[0].string, &oid))
 		goto not_found;
 
-	send_object(oid.hash);
+	send_object(&oid);
 	return;
 
 not_found:
@@ -236,7 +237,7 @@ struct ls_tree_context {
 	int recursive;
 };
 
-static int fill_ls_tree(const unsigned char *sha1, struct strbuf *base,
+static int fill_ls_tree(const struct object_id *oid, struct strbuf *base,
 			const char *pathname, unsigned mode, int stage,
 			void *context)
 {
@@ -247,16 +248,14 @@ static int fill_ls_tree(const unsigned char *sha1, struct strbuf *base,
 	if (S_ISGITLINK(mode)) {
 		type = commit_type;
 	} else if (S_ISDIR(mode)) {
-		struct object_id oid;
-		hashcpy(oid.hash, sha1);
-		object_list_insert((struct object *)lookup_tree(&oid),
+		object_list_insert((struct object *)lookup_tree(oid),
 		                   &ctx->list);
 		if (ctx->recursive)
 			return READ_TREE_RECURSIVE;
 		type = tree_type;
 	}
 
-	strbuf_addf(buf, "%06o %s %s\t", mode, type, sha1_to_hex(sha1));
+	strbuf_addf(buf, "%06o %s %s\t", mode, type, oid_to_hex(oid));
 	strbuf_addbuf(buf, base);
 	strbuf_addstr(buf, pathname);
 	strbuf_addch(buf, '\0');
@@ -337,7 +336,7 @@ static void do_rev_list(struct string_list *args)
 			strbuf_addch(&buf, '-');
 		strbuf_addstr(&buf, oid_to_hex(&commit->object.oid));
 		strbuf_addch(&buf, ' ');
-		strbuf_addstr(&buf, oid_to_hex(&commit->tree->object.oid));
+		strbuf_addstr(&buf, oid_to_hex(get_commit_tree_oid(commit)));
 		parent = commit->parents;
 		while (parent) {
 			strbuf_addch(&buf, ' ');
@@ -422,7 +421,7 @@ static void do_diff_tree(struct string_list *args)
 
 static void do_get_note(struct notes_tree *t, struct string_list *args)
 {
-	struct object_id oid, oid2;
+	struct object_id oid;
 	const struct object_id *note;
 
 	if (args->nr != 1)
@@ -433,12 +432,11 @@ static void do_get_note(struct notes_tree *t, struct string_list *args)
 	if (get_oid_committish(args->items[0].string, &oid))
 		goto not_found;
 
-	hashcpy(oid2.hash, lookup_replace_object(oid.hash));
-	note = get_note(t, &oid2);
+	note = get_note(t, lookup_replace_object(the_repository, &oid));
 	if (!note)
 		goto not_found;
 
-	send_object(note->hash);
+	send_object(note);
 	return;
 
 not_found:
@@ -1516,7 +1514,7 @@ static void upgrade_files(const struct old_manifest_tree *tree,
 			unsigned long len;
 			enum object_type t;
 			char *content;
-			content = read_sha1_file_extended(note->hash, &t, &len, 0);
+			content = read_object_file_extended(note, &t, &len, 0);
 			strbuf_attach(&buf, content, len, len);
 			hg_file_init(&file);
 			hg_file_from_memory(&file, entry.oid->hash, &buf);
@@ -1675,14 +1673,17 @@ static void upgrade_manifest(struct commit *commit,
 	struct object_id oid;
 	struct oid_map_entry *entry;
 	struct object_id *ref_tree = NULL;
+	struct tree *tree;
 
 	if (parse_commit(commit))
 		die("Corrupt mercurial metadata");
 
-	if (parse_tree(commit->tree))
+	tree = get_commit_tree(commit);
+
+	if (parse_tree(tree))
 		die("Corrupt mercurial metadata");
 
-	if (get_old_manifest_tree(commit->tree, &manifest_tree, NULL))
+	if (get_old_manifest_tree(tree, &manifest_tree, NULL))
 		die("Corrupt mercurial metadata");
 
 	if (commit->parents) {
@@ -1696,7 +1697,7 @@ static void upgrade_manifest(struct commit *commit,
 		p = lookup_commit(&entry->new_oid);
 		if (!p)
 			die("Something went wrong");
-		ref_tree = &p->tree->object.oid;
+		ref_tree = get_commit_tree_oid(p);
 	}
 	upgrade_manifest_tree(&manifest_tree, ref_tree, &new_tree_id,
 	                      &track->tree_cache);
@@ -1762,12 +1763,11 @@ resolve_manifest_for_upgrade(struct commit *commit,
 	const struct object_id *git_manifest;
 
 	ensure_notes(&git2hg);
-	hashcpy(manifest_oid.hash, lookup_replace_object(commit->object.oid.hash));
-	note = get_note(&git2hg, &manifest_oid);
+	note = get_note(&git2hg, lookup_replace_object(the_repository, &commit->object.oid));
 	if (!note)
 		goto corrupted;
 
-	buffer = read_sha1_file(note->hash, &type, &size);
+	buffer = read_object_file(note, &type, &size);
 
 	if (!buffer || type != OBJ_BLOB)
 		goto corrupted;
@@ -1782,8 +1782,7 @@ resolve_manifest_for_upgrade(struct commit *commit,
 
 	free(buffer);
 
-	if (oidset_contains(&track->manifests,
-	                    (struct object_id *)git_manifest))
+	if (oidset_contains(&track->manifests, git_manifest))
 		return NULL;
 	return lookup_commit(git_manifest);
 
@@ -1815,10 +1814,11 @@ static void do_upgrade(struct string_list *args)
 			die("revision walk setup failed");
 
 		while ((commit = get_revision(&revs)) != NULL) {
-			if (parse_tree(commit->tree))
+			struct tree *tree = get_commit_tree(commit);
+			if (parse_tree(tree))
 				die("Corrupt mercurial metadata");
 			struct old_manifest_tree manifest_tree;
-			if (get_old_manifest_tree(commit->tree, &manifest_tree,
+			if (get_old_manifest_tree(tree, &manifest_tree,
 			                          NULL))
 				die("Corrupt mercurial metadata");
 			upgrade_files(&manifest_tree, &track);
@@ -1856,7 +1856,7 @@ static void do_upgrade(struct string_list *args)
 			                                               &track);
 			if (manifest_commit) {
 				upgrade_manifest(manifest_commit, &track);
-				free_tree_buffer(manifest_commit->tree);
+				free_tree_buffer(get_commit_tree(manifest_commit));
 			}
 		}
 		hashmap_free(&track.commit_cache, 1);
@@ -1973,10 +1973,10 @@ static void do_create_git_tree(struct string_list *args)
 			die("invalid argument");
 		ref_commit = lookup_commit(ref_commit_oid);
 		parse_commit_or_die(ref_commit);
-		ref_tree = &ref_commit->tree->object.oid;
+		ref_tree = get_commit_tree_oid(ref_commit);
 	}
 
-	recurse_create_git_tree(&commit->tree->object.oid, ref_tree, &oid,
+	recurse_create_git_tree(get_commit_tree_oid(commit), ref_tree, &oid,
 	                        &git_tree_cache);
 
 	write_or_die(1, oid_to_hex(&oid), 40);
@@ -2034,7 +2034,7 @@ static int dangling_note(const struct object_id *object_oid,
 	oidcpy(&oid, object_oid);
 	if (data->notes == &hg2git) {
 		if (!data->exclude_blobs ||
-		    (sha1_object_info(note_oid->hash, NULL) != OBJ_BLOB))
+		    (oid_object_info(the_repository, note_oid, NULL) != OBJ_BLOB))
 			is_dangling = !oidset_contains(&hg2git_seen, &oid);
 	} else if (data->notes == &git2hg) {
 		struct commit *c = lookup_commit(&oid);

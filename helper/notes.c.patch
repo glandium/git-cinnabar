@@ -1,8 +1,8 @@
 diff --git a/notes.c b/notes.c
-index 5c6286257..268556b92 100644
+index a386d450c4..4d34d5d676 100644
 --- a/notes.c
 +++ b/notes.c
-@@ -429,11 +429,6 @@ static void load_subtree(struct notes_tree *t, struct leaf_node *subtree,
+@@ -412,11 +412,6 @@ static void load_subtree(struct notes_tree *t, struct leaf_node *subtree,
  
  		if (path_len == 2 * (GIT_SHA1_RAWSZ - prefix_len)) {
  			/* This is potentially the remainder of the SHA-1 */

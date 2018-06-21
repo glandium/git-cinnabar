@@ -124,19 +124,18 @@ static void init()
 	atom_table = xcalloc(atom_table_sz, sizeof(struct atom_str*));
 	branch_table = xcalloc(branch_table_sz, sizeof(struct branch*));
 	avail_tree_table = xcalloc(avail_tree_table_sz, sizeof(struct avail_tree_content*));
-	marks = pool_calloc(1, sizeof(struct mark_set));
+	marks = mem_pool_calloc(&fi_mem_pool, 1, sizeof(struct mark_set));
 
 	global_argc = 1;
 
-	rc_free = pool_alloc(cmd_save * sizeof(*rc_free));
+	rc_free = mem_pool_alloc(&fi_mem_pool, cmd_save * sizeof(*rc_free));
 	for (i = 0; i < (cmd_save - 1); i++)
 		rc_free[i].next = &rc_free[i + 1];
 	rc_free[cmd_save - 1].next = NULL;
 
-	prepare_packed_git();
 	start_packfile();
-	install_packed_git(pack_data);
-	list_add_tail(&pack_data->mru, &packed_git_mru);
+	install_packed_git(the_repository, pack_data);
+	list_add_tail(&pack_data->mru, &the_repository->objects->packed_git_mru);
 	set_die_routine(die_nicely);
 
 	parse_one_feature("force", 0);
@@ -152,7 +151,7 @@ static void cleanup()
 	if (require_explicit_termination)
 		object_count = 0;
 	end_packfile();
-	reprepare_packed_git();
+	reprepare_packed_git(the_repository);
 
 	if (!require_explicit_termination)
 		dump_branches();
@@ -191,14 +190,14 @@ static void end_packfile()
 	/* uninstall_packed_git(pack_data) */
 	{
 		struct packed_git *pack, *prev;
-		for (prev = NULL, pack = packed_git; pack;
-		     prev = pack, pack = pack->next) {
+		for (prev = NULL, pack = the_repository->objects->packed_git;
+                     pack; prev = pack, pack = pack->next) {
 			if (pack != pack_data)
 				continue;
 			if (prev)
 				prev->next = pack->next;
 			else
-				packed_git = pack->next;
+				the_repository->objects->packed_git = pack->next;
 			break;
 		}
 	}
@@ -236,7 +235,7 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 		if (path_end) {
 			unsigned mode;
 			char *path = xstrndup(*endptr, path_end - *endptr);
-			if (!get_tree_entry(note->hash, path, oid.hash, &mode))
+			if (!get_tree_entry(note, path, &oid, &mode))
 				note = &oid;
 			else
 				note = &empty_tree;
@@ -247,7 +246,7 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 	e = find_object((struct object_id *)note);
 	if (!e) {
 		e = insert_object((struct object_id *)note);
-		e->type = sha1_object_info(note->hash, NULL);
+		e->type = oid_object_info(the_repository, note, NULL);
 		e->pack_id = MAX_PACK_ID;
 		e->idx.offset = 1;
 	}
@@ -408,7 +407,7 @@ static void handle_changeset_conflict(struct object_id *hg_id,
 		struct object_id oid;
 		enum object_type type;
 		unsigned long len;
-		char *content = read_sha1_file_extended(note->hash, &type, &len, 0);
+		char *content = read_object_file_extended(note, &type, &len, 0);
 		if (len < 50 || !starts_with(content, "changeset ") ||
 		    get_oid_hex(&content[10], &oid))
 			die("Invalid git2hg note for %s", oid_to_hex(git_id));
@@ -420,8 +419,8 @@ static void handle_changeset_conflict(struct object_id *hg_id,
 			break;
 
 		if (!buf.len) {
-			content = read_sha1_file_extended(git_id->hash, &type,
-			                                  &len, 0);
+			content = read_object_file_extended(git_id, &type,
+			                                    &len, 0);
 			strbuf_add(&buf, content, len);
 			free(content);
 		}
@@ -486,7 +485,7 @@ static void do_set(struct string_list *args)
 	ensure_notes(notes);
 	if (is_null_oid(&git_id)) {
 		remove_note(notes, hg_id.hash);
-	} else if (sha1_object_info(git_id.hash, NULL) != type) {
+	} else if (oid_object_info(the_repository, &git_id, NULL) != type) {
 		die("Invalid object");
 	} else {
 		if (is_changeset)
@@ -510,7 +509,7 @@ static int store_each_note(const struct object_id *object_oid,
 	size_t len;
 	struct store_each_note_data *d = (struct store_each_note_data *)data;
 
-	switch (sha1_object_info(note_oid->hash, NULL)) {
+	switch (oid_object_info(the_repository, note_oid, NULL)) {
 	case OBJ_BLOB: {
 		if (d->notes != &hg2git) {
 			mode = S_IFREG | 0644;
