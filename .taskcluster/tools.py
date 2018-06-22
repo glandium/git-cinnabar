@@ -166,6 +166,7 @@ class Helper(Task):
         else:
             make_flags.append('USE_LIBPCRE1=YesPlease')
             make_flags.append('USE_LIBPCRE2=')
+            make_flags.append('CFLAGS+=-DCURLOPT_PROXY_CAINFO=246')
 
         hash = hash or helper_hash()
 
