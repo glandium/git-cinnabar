@@ -163,6 +163,8 @@ class Helper(Task):
 
         if os == 'linux':
             make_flags.append('CURL_COMPAT=1')
+        else:
+            make_flags.append('USE_LIBPCRE1=YesPlease')
 
         hash = hash or helper_hash()
 
