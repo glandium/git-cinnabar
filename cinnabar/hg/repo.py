@@ -647,12 +647,19 @@ class BundleApplier(object):
         changeset_chunks = ChunksCollection(progress_iter(
             'Reading %d changesets', next(self._bundle, None)))
 
-        for mn in progress_iter(
-                'Reading and importing %d manifests',
-                iter_initialized(store.manifest,
-                                 iter_chunks(next(self._bundle, None),
-                                             ManifestInfo))):
-            store.store_manifest(mn)
+        if experiment('store-manifest'):
+            for rev_chunk in progress_iter(
+                    'Reading and importing %d manifests',
+                    next(self._bundle, None)):
+                GitHgHelper.store('manifest', rev_chunk)
+                store.check_manifest(rev_chunk)
+        else:
+            for mn in progress_iter(
+                    'Reading and importing %d manifests',
+                    iter_initialized(store.manifest,
+                                     iter_chunks(next(self._bundle, None),
+                                                 ManifestInfo))):
+                store.store_manifest(mn)
 
         for rev_chunk in progress_iter(
                 'Reading and importing %d files', next(self._bundle, None)):

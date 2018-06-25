@@ -82,7 +82,7 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 2700
+#define CMD_VERSION 2800
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -941,7 +941,7 @@ struct manifest {
 static struct manifest generated_manifest = MANIFEST_INIT;
 
 /* The returned strbuf must not be released and/or freed. */
-static struct strbuf *generate_manifest(const struct object_id *oid)
+struct strbuf *generate_manifest(const struct object_id *oid)
 {
 	struct strbuf content = STRBUF_INIT;
 	struct object_list *tree_list = NULL;
