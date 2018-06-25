@@ -945,12 +945,10 @@ struct manifest {
 static struct manifest generated_manifest = MANIFEST_INIT;
 
 /* The returned strbuf must not be released and/or freed. */
-static struct strbuf *generate_manifest(const unsigned char *git_sha1)
+static struct strbuf *generate_manifest(const struct object_id *oid)
 {
 	struct strbuf content = STRBUF_INIT;
 	struct object_list *tree_list = NULL;
-	struct object_id oid;
-	hashcpy(oid.hash, git_sha1);
 
 	/* We keep a list of all the trees we've seen while generating the
 	 * previous manifest. Each tree is marked as SEEN at that time.
@@ -971,12 +969,12 @@ static struct strbuf *generate_manifest(const unsigned char *git_sha1)
 		};
 		strbuf_grow(&content, generated_manifest.content.len);
 		recurse_manifest2(&generated_manifest.tree_id, &gm,
-		                  &oid, &content, "", &tree_list);
+		                  oid, &content, "", &tree_list);
 	} else {
-		recurse_manifest(&oid, &content, "", &tree_list);
+		recurse_manifest(oid, &content, "", &tree_list);
 	}
 
-	oidcpy(&generated_manifest.tree_id, &oid);
+	oidcpy(&generated_manifest.tree_id, oid);
 	strbuf_swap(&content, &generated_manifest.content);
 	strbuf_release(&content);
 
@@ -1018,7 +1016,7 @@ static void do_manifest(struct string_list *args)
 			goto not_found;
 	}
 
-	manifest = generate_manifest(manifest_oid->hash);
+	manifest = generate_manifest(manifest_oid);
 	if (!manifest)
 		goto not_found;
 
@@ -1093,7 +1091,7 @@ static void do_check_manifest(struct string_list *args)
 			goto error;
 	}
 
-	manifest = generate_manifest(manifest_oid->hash);
+	manifest = generate_manifest(manifest_oid);
 	if (!manifest)
 		goto error;
 
