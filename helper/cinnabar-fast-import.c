@@ -608,12 +608,19 @@ static void store_file(struct rev_chunk *chunk)
 
 	rev_diff_start_iter(&diff, chunk);
 	while (rev_diff_iter_next(&diff)) {
+		if (diff.start > last_file.file.len || diff.start < last_end)
+			die("Malformed chunk for %s",
+			    sha1_to_hex(chunk->node));
 		strbuf_add(&data, last_file.file.buf + last_end,
 		           diff.start - last_end);
 		strbuf_addbuf(&data, &diff.data);
 
 		last_end = diff.end;
 	}
+
+	if (last_file.file.len < last_end)
+		die("Malformed chunk for %s",
+		    sha1_to_hex(chunk->node));
 
 	strbuf_add(&data, last_file.file.buf + last_end,
 		   last_file.file.len - last_end);
