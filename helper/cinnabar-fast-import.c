@@ -191,7 +191,7 @@ static void end_packfile()
 	{
 		struct packed_git *pack, *prev;
 		for (prev = NULL, pack = the_repository->objects->packed_git;
-                     pack; prev = pack, pack = pack->next) {
+		     pack; prev = pack, pack = pack->next) {
 			if (pack != pack_data)
 				continue;
 			if (prev)
@@ -563,7 +563,7 @@ void hg_file_store(struct hg_file *file, struct hg_file *reference)
 
 	ENSURE_INIT();
 
-        hashcpy(file_oid.hash, file->sha1);
+	hashcpy(file_oid.hash, file->sha1);
 
 	if (file->metadata.buf) {
 		store_object(OBJ_BLOB, &file->metadata, NULL, &oid, 0);
