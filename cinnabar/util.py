@@ -112,7 +112,7 @@ class ConfigSetFunc(object):
 check_enabled = ConfigSetFunc(
     'cinnabar.check',
     ('nodeid', 'manifests', 'helper'),
-    ('bundle', 'files', 'memory'),
+    ('bundle', 'files', 'memory', 'time'),
 )
 
 experiment = ConfigSetFunc(
@@ -140,19 +140,24 @@ def progress_iter(fmt, iter, filter_func=None):
 
 def progress_enum(fmt, enum_iter):
     count = 0
-    t0 = 0
+    t0 = start = time.time()
     try:
         for count, item in enum_iter:
             if progress:
                 t1 = time.time()
                 if t1 - t0 > 0.1:
                     sys.stderr.write(('\r' + fmt) % count)
+                    if check_enabled('time'):
+                        sys.stderr.write(' in %.1fs' % (t1 - start))
                     sys.stderr.flush()
                     t0 = t1
             yield item
     finally:
         if progress and count:
-            sys.stderr.write(('\r' + fmt + '\n') % count)
+            timed = ''
+            if check_enabled('time'):
+                timed = ' in %.1fs' % (time.time() - start)
+            sys.stderr.write(('\r' + fmt + timed + '\n') % count)
             sys.stderr.flush()
 
 
