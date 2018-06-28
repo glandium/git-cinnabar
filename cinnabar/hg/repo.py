@@ -602,7 +602,7 @@ def get_clonebundle(repo):
         def read(self, size):
             try:
                 result = self.fh.read(size)
-            except socket.error as e:
+            except socket.error:
                 result = ''
 
             # When self.length is None, self.offset < self.length is always
@@ -621,20 +621,20 @@ def get_clonebundle(repo):
                 req.add_header('Range', 'bytes=%d-' % self.offset)
                 self.fh = urllib2.urlopen(req)
                 if self.fh.getcode() != 206:
-                    raise e
+                    return ''
                 range = self.fh.headers['Content-Range'].split(None, 1)
                 if len(range) != 2:
-                    raise e
+                    return ''
                 unit, range = range
                 if unit != 'bytes':
-                    raise e
+                    return ''
                 range = range.split('-', 1)
                 if len(range) != 2:
-                    raise e
+                    return ''
                 start, end = range
                 start = int(start)
                 if start > self.offset:
-                    raise e
+                    return ''
                 logging.getLogger('clonebundle').debug(
                     'Retrying from offset %d', start)
                 while start < self.offset:
