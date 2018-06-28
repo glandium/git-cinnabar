@@ -592,16 +592,19 @@ def get_clonebundle(repo):
     class Getter(object):
         def __init__(self, url):
             self.fh = urllib2.urlopen(url)
+            self.length = self.fh.headers.get('content-length')
             self.offset = 0
 
         def read(self, size):
             try:
                 result = self.fh.read(size)
             except socket.error as e:
-                # Processing large manifests can be slow. Especially with
-                # changegroup v2 and lots of consecutive manifests not being
-                # directly connected (such that the diff is not against the
-                # last one).
+                result = ''
+
+            # When self.length is None, self.offset < self.length is always
+            # false.
+            if not result and self.offset < self.length:
+                # Processing large manifests or large files can be slow.
                 # With highly compressed but nevertheless large bundles, this
                 # means it can take time to process relatively small
                 # (compressed) inputs: in the order of several minutes for a
@@ -609,7 +612,7 @@ def get_clonebundle(repo):
                 # up being aborted between two large TCP receives. In that
                 # case, try again with an HTTP Range request if the server
                 # supports it.
-                # TODO: This is a stopgap until manifest processing is faster.
+                # TODO: This is a stopgap until processing is faster.
                 req = urllib2.Request(url)
                 req.add_header('Range', 'bytes=%d-' % self.offset)
                 self.fh = urllib2.urlopen(req)
@@ -631,7 +634,10 @@ def get_clonebundle(repo):
                 logging.getLogger('clonebundle').debug(
                     'Retrying from offset %d', start)
                 while start < self.offset:
-                    start += len(self.fh.read(self.offset - start))
+                    l = len(self.fh.read(self.offset - start))
+                    if not l:
+                        return ''
+                    start += l
                 result = self.fh.read(size)
             self.offset += len(result)
             return result
