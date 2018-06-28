@@ -592,6 +592,7 @@ def get_clonebundle(repo):
     class Getter(object):
         def __init__(self, url):
             self.fh = urllib2.urlopen(url)
+            self.url = url
             self.length = self.fh.headers.get('content-length')
             self.offset = 0
 
@@ -613,7 +614,7 @@ def get_clonebundle(repo):
                 # case, try again with an HTTP Range request if the server
                 # supports it.
                 # TODO: This is a stopgap until processing is faster.
-                req = urllib2.Request(url)
+                req = urllib2.Request(self.url)
                 req.add_header('Range', 'bytes=%d-' % self.offset)
                 self.fh = urllib2.urlopen(req)
                 if self.fh.getcode() != 206:
