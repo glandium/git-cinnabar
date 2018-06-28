@@ -593,7 +593,10 @@ def get_clonebundle(repo):
         def __init__(self, url):
             self.fh = urllib2.urlopen(url)
             self.url = url
-            self.length = self.fh.headers.get('content-length')
+            try:
+                self.length = int(self.fh.headers['content-length'])
+            except (ValueError, KeyError):
+                self.length = None
             self.offset = 0
 
         def read(self, size):
