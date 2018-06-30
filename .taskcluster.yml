@@ -30,7 +30,7 @@ tasks:
           git -c advice.detachedHead=false -C repo checkout {{ event.head.sha }} &&
           virtualenv venv &&
           venv/bin/pip install requests &&
-          venv/bin/python repo/.taskcluster/decision.py
+          venv/bin/python repo/CI/decision.py
     deadline: '{{ "2 hours" | $fromNow }}'
     expires: '{{ "26 weeks" | $fromNow }}'
     metadata:
@@ -68,7 +68,7 @@ tasks:
           git -c advice.detachedHead=false -C repo checkout {{ event.head.sha }} &&
           virtualenv venv &&
           venv/bin/pip install requests &&
-          venv/bin/python repo/.taskcluster/decision.py
+          venv/bin/python repo/CI/decision.py
     deadline: '{{ "2 hours" | $fromNow }}'
     expires: '{{ "26 weeks" | $fromNow }}'
     metadata:
@@ -103,7 +103,7 @@ tasks:
           git -c advice.detachedHead=false -C repo checkout {{ event.head.sha }} &&
           virtualenv venv &&
           venv/bin/pip install requests &&
-          venv/bin/python repo/.taskcluster/decision.py
+          venv/bin/python repo/CI/decision.py
     deadline: '{{ "2 hours" | $fromNow }}'
     expires: '{{ "26 weeks" | $fromNow }}'
     metadata:

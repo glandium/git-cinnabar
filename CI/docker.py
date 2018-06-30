@@ -168,9 +168,9 @@ class DockerImageTask(DockerImage, Task):
             dind=True,
             command=Task.checkout() + [
                 'pip install requests-unixsocket zstandard==0.8.1',
-                'python2.7 repo/.taskcluster/docker.py build {}'
+                'python2.7 repo/CI/docker.py build {}'
                 .format(name),
-                'python2.7 repo/.taskcluster/docker.py save {}'
+                'python2.7 repo/CI/docker.py save {}'
                 ' > $ARTIFACTS/image.tar.zst'.format(name),
             ],
             artifact='image.tar.zst',
