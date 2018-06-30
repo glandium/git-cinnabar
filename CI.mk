@@ -17,16 +17,6 @@ export PATH := $(CURDIR)/coverage$(PATHSEP)$(PATH)
 export COVERAGE_FILE := $(CURDIR)/.coverage
 endif
 
-ifdef PYTHON_CHECKS
-
-script::
-ifndef NO_BUNDLE2
-	nosetests --all-modules $(if $(filter coverage,$(VARIANT)),--with-coverage --cover-tests )tests
-	flake8 --ignore E402 $$(git ls-files \*\*.py git-cinnabar git-remote-hg)
-endif
-
-else
-
 GIT=git
 
 ifndef GIT_CINNABAR_OLD_HELPER
@@ -191,8 +181,6 @@ script::
 endif
 
 endif # GRAFT
-
-endif # PYTHON_CHECKS
 
 ifeq ($(MAKECMDGOALS),package)
 PACKAGE_FLAGS = $(addprefix --system ,$(SYSTEM)) $(addprefix --machine ,$(MACHINE))

@@ -181,9 +181,12 @@ TestTask(
     description='python lint & tests',
     variant='coverage',
     clone=False,
-    env={
-        'PYTHON_CHECKS': '1',
-    }
+    command=[
+        '(cd repo &&'
+        ' nosetests --all-modules --with-coverage --cover-tests tests)',
+        '(cd repo && flake8 --ignore E402 $(git ls-files \*\*.py git-cinnabar'
+        ' git-remote-hg))',
+    ],
 )
 
 for env in ('linux', 'mingw64'):
