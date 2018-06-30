@@ -1,4 +1,3 @@
-OS_NAME = $(TRAVIS_OS_NAME)$(MSYSTEM)
 include $(addsuffix /,$(dir $(firstword $(MAKEFILE_LIST))))helper/GIT-VERSION.mk
 
 ifeq (a,$(firstword a$(subst /, ,$(abspath .))))
@@ -7,67 +6,18 @@ else
 PATHSEP = ;
 endif
 
-ifeq ($(OS_NAME),osx)
-export PATH := $(HOME)/Library/Python/2.7/bin$(PATHSEP)$(PATH)
-export PYTHONPATH := $(HOME)/Library/Python/2.7/lib/python/site-packages
-else
-export PATH := $(HOME)/.local/bin$(PATHSEP)$(PATH)
-export PYTHONPATH := $(HOME)/.local/lib/python2.7/site-packages
-endif
 export PATH := $(CURDIR)$(PATHSEP)$(PATH)
 export PYTHONDONTWRITEBYTECODE := 1
 REPO ?= https://hg.mozilla.org/users/mh_glandium.org/jqplot
 
--include CI-data.mk
-
-DOWNLOAD_FLAGS = --dev $(VARIANT) $(addprefix --machine ,$(MACHINE))
-
-HELPER_PATH = $(subst https://s3.amazonaws.com/git-cinnabar/,,$(shell $(CURDIR)/git-cinnabar download --url $(DOWNLOAD_FLAGS)))
-
-helper_hash:
-	@echo $(word 2,$(subst /, ,$(HELPER_PATH))) > $@
-
-.PHONY: helper_hash
-
-# On Travis-CI, an old pip is installed with easy_install, which means its
-# egg ends up before our $PYTHONPATH in sys.path, such that upgrading pip with
-# --user and using $PYTHONPATH for subsequent pip calls doesn't work.
-PIP = $(if $(PYTHON_CHECKS),pip,python -c 'import os, sys; sys.path[:0] = os.environ.get("PYTHONPATH", "").split(os.pathsep); from pip._internal import main; sys.exit(main())')
-PIP_INSTALL = $(PIP) install $(if $(or $(PYTHON_CHECKS),$(filter MINGW%,$(OS_NAME))),,--user )--upgrade --force-reinstall $1
-
-before_install::
-ifeq ($(OS_NAME),osx)
-	curl -O -s https://bootstrap.pypa.io/get-pip.py
-	python get-pip.py --user
-else
-	$(call PIP_INSTALL,pip)
-endif
-
-ifneq ($(MERCURIAL_VERSION),installed)
-before_install::
-	$(call PIP_INSTALL,mercurial$(addprefix ==,$(MERCURIAL_VERSION)))$(if $(MERCURIAL_VERSION), || $(call PIP_INSTALL,https://www.mercurial-scm.org/release/mercurial-$(MERCURIAL_VERSION).tar.gz))
-endif
-
-# Somehow, OSX's make doesn't want to pick hg from $PATH on its own after it's
-# installed above...
-HG = $$(which hg)
+HG = hg
 
 ifeq ($(VARIANT),coverage)
 export PATH := $(CURDIR)/coverage$(PATHSEP)$(PATH)
 export COVERAGE_FILE := $(CURDIR)/.coverage
-BUILD_HELPER = 1
-
-before_install::
-	$(call PIP_INSTALL,codecov)
-
 endif
 
 ifdef PYTHON_CHECKS
-
-before_install::
-	$(call PIP_INSTALL,flake8)
-
-before_script::
 
 script::
 ifndef NO_BUNDLE2
@@ -77,30 +27,14 @@ endif
 
 else
 
-ifneq (file,$(origin GIT_VERSION))
-# TODO: cache as artifacts.
-GIT=$(CURDIR)/git.git/bin-wrappers/git
-
-before_script::
-	rm -rf git.git
-	git submodule update --init
-	git clone -n git-core git.git
-	git -C git.git checkout $(GIT_VERSION)
-	$(MAKE) -C git.git --jobs=2 NO_GETTEXT=1 NO_CURL=1 NO_OPENSSL=1
-
-else
 GIT=git
-endif
-
-before_script::
-	$(GIT) --version
 
 ifndef GIT_CINNABAR_OLD_HELPER
 GIT += -c core.packedGitWindowSize=8k
 endif
 
 ifeq (undefined,$(origin GIT_CINNABAR_HELPER))
-ifneq (,$(filter MINGW%,$(OS_NAME)))
+ifdef MSYSTEM
 HELPER := git-cinnabar-helper.exe
 else
 HELPER := git-cinnabar-helper
@@ -111,84 +45,8 @@ COMMA=,
 export GIT_CINNABAR_CHECK=all$(if $(HELPER),,$(COMMA)-helper)
 export GIT_CINNABAR_LOG=process:3
 
-define PREPARE_OLD_CINNABAR
-rm -rf old-cinnabar
-git fetch --unshallow || true
-git fetch --all --tags || true
-git init old-cinnabar
-git push $(CURDIR)/old-cinnabar $1:refs/heads/old
-git -C old-cinnabar checkout old
-endef
-
-ifndef BUILD_HELPER
-$(GIT_CINNABAR_HELPER):
-ifdef GIT_CINNABAR_OLD_HELPER
-	$(call PREPARE_OLD_CINNABAR,"$$(git log --format=%H -S '#define CMD_VERSION $(shell python -c 'from cinnabar.helper import *; print GitHgHelper.VERSION')00$$' --pickaxe-regex HEAD | tail -1)")
-	$(MAKE) -C old-cinnabar -f CI.mk $(HELPER) GIT_CINNABAR_HELPER=$(HELPER) GIT_CINNABAR_OLD_HELPER=
-	mv old-cinnabar/$(HELPER) $@
-	rm -rf old-cinnabar
-else
-ifdef ARTIFACTS_BUCKET
-	$(call PIP_INSTALL,requests)
-	-$(GIT) cinnabar download -o $@ --no-config $(DOWNLOAD_FLAGS)
-endif
-	MACOSX_DEPLOYMENT_TARGET=10.6 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) $@ BUILD_HELPER=1
-endif
-
-else
-
-ifeq ($(VARIANT),asan)
-EXTRA_MAKE_FLAGS += CFLAGS="-O2 -g -fsanitize=address"
-endif
-
-ifeq ($(VARIANT),coverage)
-# Would normally use -coverage, but ccache on Travis-CI doesn't support it
-EXTRA_MAKE_FLAGS += CFLAGS="-fprofile-arcs -ftest-coverage"
-endif
-
-ifneq ($(origin CC),default)
-EXTRA_MAKE_FLAGS += CC=$(CC)
-endif
-
-$(GIT_CINNABAR_HELPER):
-	$(MAKE) --jobs=2 $(@F) prefix=/usr $(EXTRA_MAKE_FLAGS)
-	cp git-core/$(@F) $@
-	mkdir -p $(dir $(HELPER_PATH))
-	cp $@ $(HELPER_PATH)
-
-endif
-
-ifdef UPGRADE_FROM
-export PATH := $(CURDIR)/old-cinnabar$(PATHSEP)$(PATH)
-
-before_script:: $(GIT_CINNABAR_HELPER)
-	$(call PREPARE_OLD_CINNABAR,$(UPGRADE_FROM))
-ifeq (,$(filter 0.3.%,$(UPGRADE_FROM)))
-	old-cinnabar/git-cinnabar download --no-config $(addprefix --machine ,$(MACHINE))
-endif
-endif
-
-before_script::
-	case "$(shell $(CURDIR)/git-cinnabar --version=cinnabar)" in \
-	*a$(addprefix |,$(shell git describe --tags --abbrev=0 HEAD 2> /dev/null))) ;; \
-	*) false ;; \
-	esac
-	case "$(shell $(CURDIR)/git-cinnabar --version=module)" in \
-	$(shell git ls-tree HEAD cinnabar | awk '{print $$3}')) ;; \
-	*) false ;; \
-	esac
-	case "$(shell $(CURDIR)/git-cinnabar --version=helper 2> /dev/null | awk -F/ '{print $$NF}')" in \
-	$(shell git ls-tree HEAD helper | awk '{print $$3}')) ;; \
-	*) false ;; \
-	esac
-
-before_script:: $(GIT_CINNABAR_HELPER)
-	rm -rf hg.old.git
-	$(GIT) -c fetch.prune=true clone -n hg::$(REPO) hg.old.git
-
 ifdef UPGRADE_FROM
 script::
-	rm -rf old-cinnabar
 	$(GIT) -C hg.old.git remote update && echo "Should have been asked to upgrade" && exit 1 || true
 endif
 

@@ -1,4 +1,2 @@
-CI-data
-CI-data.mk
 git-cinnabar-helper
 *.patched.c
