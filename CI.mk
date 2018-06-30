@@ -243,7 +243,7 @@ script::
 	$(HG) clone -U hg.hg hg.clonebundles.hg
 	$(HG) -R hg.clonebundles.hg bundle -a -r c262fcbf0656 -r 46585998e744 repo.bundle
 	echo $(PATH_URL)/repo.bundle > hg.clonebundles.hg/.hg/clonebundles.manifest
-	$(HG) -R hg.clonebundles.hg --config extensions.clonebundles= --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) clone -n hg://localhost:8000.http/ hg.clonebundles.git
+	$(HG) -R hg.clonebundles.hg --config extensions.clonebundles= --config extensions.x=CI/hg-serve-exec.py serve-and-exec -- $(GIT) clone -n hg://localhost:8000.http/ hg.clonebundles.git
 	$(call COMPARE_REFS, hg.git, hg.clonebundles.git)
 
 script::
@@ -251,7 +251,7 @@ script::
 	$(HG) clone -U hg.hg hg.clonebundles-full.hg
 	$(HG) -R hg.clonebundles-full.hg bundle -a repo.bundle
 	echo $(PATH_URL)/repo.bundle > hg.clonebundles-full.hg/.hg/clonebundles.manifest
-	$(HG) -R hg.clonebundles-full.hg --config extensions.clonebundles= --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) clone -n hg://localhost:8000.http/ hg.clonebundles-full.git
+	$(HG) -R hg.clonebundles-full.hg --config extensions.clonebundles= --config extensions.x=CI/hg-serve-exec.py serve-and-exec -- $(GIT) clone -n hg://localhost:8000.http/ hg.clonebundles-full.git
 	$(call COMPARE_REFS, hg.git, hg.clonebundles.git)
 
 script::
@@ -268,7 +268,7 @@ script::
 	$(call HG_INIT, hg.http.hg)
 	(echo protocol=http; echo host=localhost:8000; echo username=foo; echo password=bar) | $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' credential approve
 	$(GIT) -C hg.git remote add hg-http hg::http://localhost:8000/
-	$(HG) -R hg.http.hg --config extensions.x=CI-hg-serve-exec.py serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' -C hg.git push hg-http refs/remotes/origin/*:refs/heads/*
+	$(HG) -R hg.http.hg --config extensions.x=CI/hg-serve-exec.py serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/gitcredentials' -C hg.git push hg-http refs/remotes/origin/*:refs/heads/*
 
 script::
 	rm -rf hg.cinnabarclone.git
