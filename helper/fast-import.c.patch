@@ -1,7 +1,16 @@
 diff --git a/fast-import.c b/fast-import.c
-index 4d55910ab9..7132d00821 100644
+index 4d55910ab9..4fd6c4e226 100644
 --- a/fast-import.c
 +++ b/fast-import.c
+@@ -849,7 +849,7 @@ static struct tree_content *dup_tree_content(struct tree_content *s)
+ 	return d;
+ }
+ 
+-static void start_packfile(void)
++static void real_start_packfile(void)
+ {
+ 	struct strbuf tmp_file = STRBUF_INIT;
+ 	struct packed_git *p;
 @@ -955,7 +955,7 @@ static int loosen_small_pack(const struct packed_git *p)
  	return run_command(&unpack);
  }

@@ -1,5 +1,6 @@
 #define cmd_main fast_import_main
 #define hashwrite fast_import_hashwrite
+static void start_packfile();
 #include "fast-import.patched.c"
 #undef hashwrite
 #include "cinnabar-fast-import.h"
@@ -94,7 +95,7 @@ off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
 {
 	if (p == pack_data) {
 		struct object_entry *oe = get_object_entry(sha1);
-		if (oe && oe->idx.offset > 1)
+		if (oe && oe->idx.offset > 1 && oe->pack_id == pack_id)
 			return oe->idx.offset;
 		return 0;
 	}
@@ -135,8 +136,6 @@ static void init()
 	rc_free[cmd_save - 1].next = NULL;
 
 	start_packfile();
-	install_packed_git(the_repository, pack_data);
-	list_add_tail(&pack_data->mru, &the_repository->objects->packed_git_mru);
 	set_die_routine(die_nicely);
 
 	parse_one_feature("force", 0);
@@ -165,6 +164,13 @@ static void cleanup()
 		pack_report();
 }
 
+static void start_packfile()
+{
+	real_start_packfile();
+	install_packed_git(the_repository, pack_data);
+	list_add_tail(&pack_data->mru, &the_repository->objects->packed_git_mru);
+}
+
 static void end_packfile()
 {
 	if (prev_win)
@@ -189,7 +195,7 @@ static void end_packfile()
 	}
 
 	/* uninstall_packed_git(pack_data) */
-	{
+	if (pack_data) {
 		struct packed_git *pack, *prev;
 		for (prev = NULL, pack = the_repository->objects->packed_git;
 		     pack; prev = pack, pack = pack->next) {
@@ -201,6 +207,7 @@ static void end_packfile()
 				the_repository->objects->packed_git = pack->next;
 			break;
 		}
+		list_del_init(&pack_data->mru);
 	}
 
 	real_end_packfile();
@@ -575,7 +582,7 @@ void hg_file_store(struct hg_file *file, struct hg_file *reference)
 	if (reference)
 		oe = (struct object_entry *) reference->content_oe;
 
-	if (oe && oe->idx.offset > 1) {
+	if (oe && oe->idx.offset > 1 && oe->pack_id == pack_id) {
 		last_blob.data.buf = reference->content.buf;
 		last_blob.data.len = reference->content.len;
 		last_blob.offset = oe->idx.offset;
@@ -895,7 +902,7 @@ void store_git_tree(struct strbuf *tree_buf, const struct object_id *reference,
 	if (reference) {
 		oe = find_object((struct object_id *)reference);
 	}
-	if (oe && oe->idx.offset > 1) {
+	if (oe && oe->idx.offset > 1 && oe->pack_id == pack_id) {
 		unsigned long len;
 		ref_blob.data.buf = buf = gfi_unpack_entry(oe, &len);
 		ref_blob.data.len = len;
