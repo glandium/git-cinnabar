@@ -17,22 +17,13 @@ export PATH := $(CURDIR)/coverage$(PATHSEP)$(PATH)
 export COVERAGE_FILE := $(CURDIR)/.coverage
 endif
 
-GIT=git
+GIT = git
 
 ifndef GIT_CINNABAR_OLD_HELPER
 GIT += -c core.packedGitWindowSize=8k
 endif
 
-ifeq (undefined,$(origin GIT_CINNABAR_HELPER))
-ifdef MSYSTEM
-HELPER := git-cinnabar-helper.exe
-else
-HELPER := git-cinnabar-helper
-endif
-GIT_CINNABAR_HELPER=$(CURDIR)/$(HELPER)
-endif
-COMMA=,
-export GIT_CINNABAR_CHECK=all$(if $(HELPER),,$(COMMA)-helper)
+export GIT_CINNABAR_CHECK=all
 export GIT_CINNABAR_LOG=process:3
 
 ifdef UPGRADE_FROM
