@@ -37,4 +37,4 @@ before_script:
   - make -f CI/travis.mk before_script
 
 script:
-  - make -f CI/travis.mk script && make -f CI/travis.mk script NO_BUNDLE2=1
+  - make -f CI/tests.mk

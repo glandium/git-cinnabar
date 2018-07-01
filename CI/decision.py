@@ -102,8 +102,7 @@ class TestTask(Task):
             kwargs['command'] = command + kwargs['command']
         else:
             kwargs['command'] = command + [
-                'make -C repo -f CI.mk script',
-                'make -C repo -f CI.mk script NO_BUNDLE2=1 UPGRADE_FROM=',
+                'make -C repo -f CI/tests.mk',
             ]
         if variant == 'coverage':
             kwargs['command'].extend([
