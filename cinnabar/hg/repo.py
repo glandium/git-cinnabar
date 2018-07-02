@@ -364,12 +364,14 @@ class HelperRepo(object):
     def _call(self, command, *args):
         if command == 'clonebundles':
             return HgRepoHelper.clonebundles()
+        if command == 'cinnabarclone':
+            return HgRepoHelper.cinnabarclone()
         raise NotImplementedError()
 
     def capable(self, capability):
         if capability == 'bundle2':
             return urllib.quote(HgRepoHelper.capable('bundle2') or '')
-        if capability == 'clonebundles':
+        if capability in ('clonebundles', 'cinnabarclone'):
             return HgRepoHelper.capable(capability) is not None
         return capability in ('getbundle', 'unbundle', 'lookup')
 
@@ -689,6 +691,23 @@ class BundleApplier(object):
                 logging.warn('Cannot graft %s, not importing.', cs.node)
 
 
+def do_cinnabarclone(repo, store):
+    data = repo._call('cinnabarclone').splitlines()
+    if not data:
+        logging.warn('Server advertizes cinnabarclone but didn\'t provide '
+                     'a git repository url to fetch from.')
+        return False
+    if len(data) > 1:
+        logging.warn('cinnabarclone from multiple git repositories is not '
+                     'supported yet.')
+        return False
+
+    url = data[0]
+    url, branch = (url.split('#', 1) + [None])[:2]
+    sys.stderr.write('Fetching cinnabar metadata from %s\n' % url)
+    return store.merge(url, branch)
+
+
 def getbundle(repo, store, heads, branch_names):
     if isinstance(repo, bundlerepo):
         bundle = repo._unbundler
@@ -696,15 +715,25 @@ def getbundle(repo, store, heads, branch_names):
         common = findcommon(repo, store, store.heads(branch_names))
         logging.info('common: %s', common)
         bundle = None
-        if not common and repo.capable('clonebundles'):
-            bundle = get_clonebundle(repo)
+        got_partial = False
+        if not common:
+            if not store._has_metadata and experiment('git-clone') and \
+                    repo.capable('cinnabarclone'):
+                got_partial = do_cinnabarclone(repo, store)
+                if not got_partial:
+                    logging.warn('Falling back to normal clone.')
+            if not got_partial and repo.capable('clonebundles'):
+                bundle = get_clonebundle(repo)
+                got_partial = True
         if bundle:
             bundle = unbundler(bundle)
             # Manual move semantics
             apply_bundle = BundleApplier(bundle)
             del bundle
             apply_bundle(store)
-            # Eliminate the heads that we got from the clonebundle.
+        if got_partial:
+            # Eliminate the heads that we got from the clonebundle or
+            # cinnabarclone.
             heads = [h for h in heads if not store.changeset_ref(h)]
             if not heads:
                 return

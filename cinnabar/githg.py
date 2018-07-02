@@ -5,10 +5,13 @@ from binascii import hexlify, unhexlify
 from itertools import izip
 import hashlib
 import urllib
+import sys
 from collections import (
+    OrderedDict,
     Sequence,
     defaultdict,
 )
+from urlparse import urlparse
 from .util import (
     byte_diff,
     check_enabled,
@@ -20,6 +23,7 @@ from .git import (
     EMPTY_TREE,
     FastImport,
     Git,
+    GitProcess,
     NULL_NODE_ID,
 )
 from .hg.changegroup import (
@@ -874,6 +878,134 @@ class GitHgStore(object):
 
     def prepare_graft(self):
         self._graft = Grafter(self)
+
+    @staticmethod
+    def _try_merge_branches(git_repo_url):
+        parsed_url = urlparse(git_repo_url)
+        branches = []
+        path = parsed_url.path.lstrip('/').rstrip('/')
+        if path:
+            parts = list(reversed(path.split('/')))
+        else:
+            parts = []
+        host = parsed_url.netloc.split(':', 1)[0]
+        if host:
+            parts.append(host)
+        last_path = ''
+        for part in parts:
+            if last_path:
+                last_path = '%s/%s' % (part, last_path)
+            else:
+                last_path = part
+            branches.append(last_path)
+        branches.append('metadata')
+        return branches
+
+    @staticmethod
+    def _find_branch(branches, remote_refs):
+        for branch in branches:
+            if branch in remote_refs:
+                return branch
+            if 'refs/cinnabar/%s' % branch in remote_refs:
+                return 'refs/cinnabar/%s' % branch
+            if 'refs/heads/%s' % branch in remote_refs:
+                return 'refs/heads/%s' % branch
+
+    def merge(self, git_repo_url, branch=None):
+        # Eventually we'll want to handle a full merge, but for now, we only
+        # handle the case where we don't have metadata to begin with.
+        # The caller should avoid calling this function otherwise.
+        assert not self._has_metadata
+        remote_refs = OrderedDict()
+        for line in Git.iter('ls-remote', git_repo_url):
+            sha1, ref = line.split(None, 1)
+            remote_refs[ref] = sha1
+        if branch:
+            branches = [branch]
+        else:
+            branches = self._try_merge_branches(git_repo_url)
+
+        ref = self._find_branch(branches, remote_refs)
+        if ref is None:
+            logging.error('Could not find cinnabar metadata')
+            return False
+
+        proc = GitProcess(
+            'fetch', git_repo_url, ref + ':refs/cinnabar/fetch',
+            stdout=sys.stdout)
+        if proc.wait():
+            logging.error('Failed to fetch cinnabar metadata.')
+            return False
+
+        # Do some basic validation on the metadata we just got.
+        commit = GitCommit(remote_refs[ref])
+        if 'cinnabar@git' not in commit.author:
+            logging.error('Invalid cinnabar metadata.')
+            return False
+
+        flags = set(commit.body.split())
+        if 'files-meta' not in flags or 'unified-manifests' not in flags or \
+                len(commit.parents) != len(self.METADATA_REFS):
+            logging.error('Invalid cinnabar metadata.')
+            return False
+
+        # At this point, we'll just assume this is good enough.
+
+        # Get replace refs.
+        if commit.tree != EMPTY_TREE:
+            errors = False
+            by_sha1 = {}
+            for k, v in remote_refs.iteritems():
+                if v not in by_sha1:
+                    by_sha1[v] = k
+            needed = []
+            for line in Git.ls_tree(commit.tree):
+                mode, typ, sha1, path = line
+                if sha1 in by_sha1:
+                    needed.append('%s:refs/cinnabar/replace/%s' % (
+                        by_sha1[sha1], path))
+                else:
+                    logging.error('Missing commit: %s', sha1)
+                    errors = True
+            if errors:
+                return False
+
+            proc = GitProcess('fetch', git_repo_url, *needed,
+                              stdout=sys.stdout)
+            if proc.wait():
+                logging.error('Failed to fetch cinnabar metadata.')
+                return False
+
+        Git.update_ref('refs/cinnabar/metadata', commit.sha1)
+        GitHgHelper.reload()
+        Git.delete_ref('refs/cinnabar/fetch')
+
+        # TODO: avoid the duplication of code with __init__
+        metadata = self.metadata()
+
+        if not metadata:
+            # This should never happen, but just in case.
+            logging.warn('Could not find cinnabar metadata')
+            Git.delete_ref('refs/cinnabar/metadata')
+            GitHgHelper.reload()
+            return False
+
+        self._has_metadata = True
+        changesets_ref = Git.resolve_ref('refs/cinnabar/changesets')
+        if changesets_ref:
+            commit = GitCommit(changesets_ref)
+            for sha1, head in izip(commit.parents,
+                                   commit.body.splitlines()):
+                hghead, branch = head.split(' ', 1)
+                self._hgheads._previous[hghead] = branch
+
+        self._manifest_heads_orig = set(GitHgHelper.heads('manifests'))
+
+        for line in Git.ls_tree(metadata.tree):
+            mode, typ, sha1, path = line
+            self._replace[path] = sha1
+
+        return True
 
     def tags(self, heads):
         tags = TagSet()

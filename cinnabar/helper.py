@@ -131,8 +131,16 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 28
+    VERSION = 29
     _helper = False
+
+    @classmethod
+    def reload(self):
+        with self.query('reload'):
+            pass
+        self.git2hg.invalidate()
+        self.hg2git.invalidate()
+        self._cat_commit.invalidate()
 
     @classmethod
     def _cat_file(self, typ, sha1):
@@ -291,7 +299,7 @@ class GitHgHelper(BaseHelper):
 
 
 class HgRepoHelper(BaseHelper):
-    VERSION = 25
+    VERSION = 29
     _helper = False
 
     @classmethod
@@ -362,4 +370,9 @@ class HgRepoHelper(BaseHelper):
     @classmethod
     def clonebundles(self):
         with self.query("clonebundles") as stdout:
+            return self._read_data(stdout)
+
+    @classmethod
+    def cinnabarclone(self):
+        with self.query("cinnabarclone") as stdout:
             return self._read_data(stdout)

@@ -1,5 +1,5 @@
 diff --git a/fast-import.c b/fast-import.c
-index 4d55910ab9..4fd6c4e226 100644
+index 4d55910ab9..028ed69785 100644
 --- a/fast-import.c
 +++ b/fast-import.c
 @@ -849,7 +849,7 @@ static struct tree_content *dup_tree_content(struct tree_content *s)
@@ -20,6 +20,15 @@ index 4d55910ab9..4fd6c4e226 100644
  {
  	static int running;
  
+@@ -1752,7 +1752,7 @@ static int update_branch(struct branch *b)
+ 	return 0;
+ }
+ 
+-static void dump_branches(void)
++void dump_branches(void)
+ {
+ 	unsigned int i;
+ 	struct branch *b;
 @@ -2280,7 +2280,9 @@ static uintmax_t change_note_fanout(struct tree_entry *root,
   * Complain if the following character is not what is expected,
   * either a space or end of the string.

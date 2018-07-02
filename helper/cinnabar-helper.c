@@ -82,7 +82,7 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 2800
+#define CMD_VERSION 2900
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -1347,6 +1347,17 @@ static void do_clonebundles(struct hg_connection *conn, struct string_list *args
 	strbuf_release(&result);
 }
 
+static void do_cinnabarclone(struct hg_connection *conn, struct string_list *args)
+{
+	struct strbuf result = STRBUF_INIT;
+	if (args->nr != 0)
+		exit(1);
+
+	hg_cinnabarclone(conn, &result);
+	send_buffer(&result);
+	strbuf_release(&result);
+}
+
 static void connected_loop(struct hg_connection *conn)
 {
 	struct strbuf buf = STRBUF_INIT;
@@ -1378,6 +1389,8 @@ static void connected_loop(struct hg_connection *conn)
 			do_lookup(conn, &args);
 		else if (!strcmp("clonebundles", command))
 			do_clonebundles(conn, &args);
+		else if (!strcmp("cinnabarclone", command))
+			do_cinnabarclone(conn, &args);
 		else
 			die("Unknown command: \"%s\"", command);
 
@@ -2106,6 +2119,36 @@ static void init_flags()
 	strbuf_list_free(flags);
 }
 
+extern void dump_branches(void);
+
+static void do_reload(struct string_list *args)
+{
+        if (args->nr != 0)
+                die("reload takes no arguments");
+
+	if (git2hg.initialized)
+		free_notes(&git2hg);
+
+	if (hg2git.initialized)
+		free_notes(&hg2git);
+
+	if (files_meta.initialized)
+		free_notes(&files_meta);
+
+	oidset_clear(&hg2git_seen);
+
+	hashmap_free(&git_tree_cache, 1);
+	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
+
+	oid_array_clear(&manifest_heads);
+	oid_array_clear(&changeset_heads);
+
+	dump_branches();
+
+	metadata_flags = 0;
+	init_flags();
+}
+
 int cmd_main(int argc, const char *argv[])
 {
 	int initialized = 0;
@@ -2170,6 +2213,8 @@ int cmd_main(int argc, const char *argv[])
 			do_seen(&args);
 		else if (!strcmp("dangling", command))
 			do_dangling(&args);
+		else if (!strcmp("reload", command))
+			do_reload(&args);
 		else if (!maybe_handle_command(command, &args))
 			die("Unknown command: \"%s\"", command);
 

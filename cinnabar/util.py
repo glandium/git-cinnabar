@@ -117,7 +117,7 @@ check_enabled = ConfigSetFunc(
 
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
-    ('wire', 'merge', 'store-manifest'),
+    ('wire', 'merge', 'store-manifest', 'git-clone'),
 )
 
 
@@ -430,6 +430,11 @@ class lrucache(object):
         return wrapper
 
     def invalidate(self, *args):
+        if len(args) == 0:
+            keys = list(self._cache)
+            for k in keys:
+                del self[k]
+            return
         try:
             del self[args]
         except KeyError:
