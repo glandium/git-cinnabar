@@ -691,8 +691,8 @@ class BundleApplier(object):
                 logging.warn('Cannot graft %s, not importing.', cs.node)
 
 
-def do_cinnabarclone(repo, store):
-    data = repo._call('cinnabarclone').splitlines()
+def do_cinnabarclone(manifest, store):
+    data = manifest.splitlines()
     if not data:
         logging.warn('Server advertizes cinnabarclone but didn\'t provide '
                      'a git repository url to fetch from.')
@@ -717,11 +717,15 @@ def getbundle(repo, store, heads, branch_names):
         bundle = None
         got_partial = False
         if not common:
-            if not store._has_metadata and experiment('git-clone') and \
-                    repo.capable('cinnabarclone'):
-                got_partial = do_cinnabarclone(repo, store)
-                if not got_partial:
-                    logging.warn('Falling back to normal clone.')
+            if not store._has_metadata:
+                manifest = Git.config('cinnabar.clone')
+                if not manifest and experiment('git-clone') and \
+                        repo.capable('cinnabarclone'):
+                    manifest = repo._call('cinnabarclone')
+                if manifest:
+                    got_partial = do_cinnabarclone(manifest, store)
+                    if not got_partial:
+                        logging.warn('Falling back to normal clone.')
             if not got_partial and repo.capable('clonebundles'):
                 bundle = get_clonebundle(repo)
                 got_partial = True
