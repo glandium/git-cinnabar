@@ -365,7 +365,7 @@ class Task(object):
                 raise Exception("Don't know how to handle {}".format(k))
         task['dependencies'] = sorted(dependencies)
         self.task = task
-        Task.by_id[self.id] = self
+        Task.by_id.setdefault(self.id, self)
 
     def __str__(self):
         return self.id
