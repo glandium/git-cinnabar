@@ -517,27 +517,19 @@ static int store_each_note(const struct object_id *object_oid,
 	size_t len;
 	struct store_each_note_data *d = (struct store_each_note_data *)data;
 
-	switch (oid_object_info(the_repository, note_oid, NULL)) {
-	case OBJ_BLOB: {
-		if (d->notes != &hg2git) {
-			mode = S_IFREG | 0644;
-			break;
-		}
-	}
-	case OBJ_COMMIT:
-		mode = S_IFGITLINK;
-		break;
-	case OBJ_TREE:
+	// for_each_note calls with a path ending with a slash when giving a
+	// tree.
+	len = strlen(note_path);
+	if (note_path[len - 1] == '/') {
+		// tree_content_set doesn't like that, though, so strip it.
+		note_path[len - 1] = '\0';
 		mode = S_IFDIR;
-		// for_each_note calls with a path ending with a slash, but
-		// tree_content_set doesn't like that
-		len = strlen(note_path);
-		if (note_path[len - 1] == '/')
-			note_path[len - 1] = '\0';
-		break;
-	default:
-		die("Unexpected object type in notes tree");
+	} else if (d->notes == &hg2git) {
+		mode = S_IFGITLINK;
+	} else {
+		mode = S_IFREG | 0644;
 	}
+
 	tree_content_set(d->tree, note_path, note_oid, mode, NULL);
 	return 0;
 }
