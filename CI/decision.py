@@ -201,9 +201,9 @@ for env in ('linux', 'mingw64'):
             install_hg('{}.{}'.format(env, MERCURIAL_VERSION)),
             Task.checkout(),
             requests + [
-                '(cd repo ; ./git-cinnabar download)',
+                '(cd repo ; ./git-cinnabar download --dev)',
                 'rm -rf repo/.git',
-                '(cd repo ; ./git-cinnabar download)',
+                '(cd repo ; ./git-cinnabar download --dev)',
             ],
         )),
         dependencies=[
