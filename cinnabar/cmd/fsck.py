@@ -1,6 +1,7 @@
 import logging
 import sys
 from cinnabar.cmd.util import CLI
+from cinnabar.exceptions import UpgradeAbort
 from cinnabar.githg import (
     Changeset,
     ChangesetPatcher,
@@ -8,7 +9,6 @@ from cinnabar.githg import (
     GitCommit,
     GitHgStore,
     HG_EMPTY_FILE,
-    UpgradeException,
 )
 from cinnabar.dag import gitdag
 from cinnabar.git import (
@@ -54,7 +54,7 @@ def fsck(args):
 
     try:
         store = GitHgStore()
-    except UpgradeException as e:
+    except UpgradeAbort as e:
         print >>sys.stderr, e.message
         return 1
 

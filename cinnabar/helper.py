@@ -3,6 +3,7 @@ import logging
 import os
 import subprocess
 from StringIO import StringIO
+from .exceptions import NoHelperAbort, HelperClosedError
 from .git import (
     Git,
     NULL_NODE_ID,
@@ -18,14 +19,6 @@ from .util import (
     Process,
 )
 from contextlib import contextmanager
-
-
-class NoHelperException(Exception):
-    pass
-
-
-class HelperClosedException(Exception):
-    pass
 
 
 class BaseHelper(object):
@@ -47,6 +40,7 @@ class BaseHelper(object):
                 command = (helper_path,)
             else:
                 command = ('git', 'cinnabar-helper')
+
             try:
                 self._helper = Process(*command, stdin=subprocess.PIPE,
                                        stderr=None, logger='cinnabar-helper',
@@ -56,25 +50,25 @@ class BaseHelper(object):
             except Exception:
                 self._helper = None
                 response = None
+
             if not response:
                 logger = logging.getLogger('helper')
                 if self._helper and self._helper.wait() == 128:
-                    logger.error(
-                        'Cinnabar helper executable is outdated. '
-                        'Please try `git cinnabar download` or rebuild it.')
+                    message = ('Cinnabar helper executable is outdated. '
+                               'Please try `git cinnabar download` or '
+                               'rebuild it.')
                 else:
-                    logger.error(
-                        'Cannot find cinnabar helper executable. '
-                        'Please try `git cinnabar download` or build it.')
-                self._helper = None
+                    message = ('Cannot find cinnabar helper executable. '
+                               'Please try `git cinnabar download` or '
+                               'build it.')
+
+                raise NoHelperAbort(message)
             else:
                 self._version = response.lstrip('ok\n') or 'unknown'
                 atexit.register(self.close)
 
-        if not self._helper:
-            raise NoHelperException
         if self._helper is self:
-            raise HelperClosedException
+            raise HelperClosedError
 
         if name == 'version':
             yield StringIO(self._version)

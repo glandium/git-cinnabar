@@ -3,8 +3,8 @@ import os
 import sys
 import urllib
 import urllib2
+from cinnabar.exceptions import NothingToGraftException
 from cinnabar.githg import (
-    NothingToGraftException,
     Changeset,
     ManifestInfo,
 )

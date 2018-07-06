@@ -1,9 +1,7 @@
 import sys
 from cinnabar.cmd.util import CLI
-from cinnabar.githg import (
-    GitHgStore,
-    UpgradeException,
-)
+from cinnabar.exceptions import UpgradeAbort
+from cinnabar.githg import GitHgStore
 
 
 @CLI.subcommand
@@ -17,7 +15,7 @@ def data(args):
 
     try:
         store = GitHgStore()
-    except UpgradeException as e:
+    except UpgradeAbort as e:
         print >>sys.stderr, e.message
         return 1
     if args.changeset and args.manifest:

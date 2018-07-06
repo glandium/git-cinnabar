@@ -12,6 +12,12 @@ from collections import (
     defaultdict,
 )
 from urlparse import urlparse
+from .exceptions import (
+    AmbiguousGraftAbort,
+    NothingToGraftException,
+    OldUpgradeAbort,
+    UpgradeAbort,
+)
 from .util import (
     byte_diff,
     check_enabled,
@@ -44,24 +50,6 @@ except ImportError:
     from .bdiff import bdiff as textdiff
 
 import logging
-
-
-class UpgradeException(Exception):
-    def __init__(self, message=None):
-        super(UpgradeException, self).__init__(
-            message or
-            'Git-cinnabar metadata needs upgrade. '
-            'Please run `git cinnabar upgrade`.'
-        )
-
-
-class OldUpgradeException(UpgradeException):
-    def __init__(self):
-        super(OldUpgradeException, self).__init__(
-            'Metadata from git-cinnabar versions older than 0.3.0 is not '
-            'supported.\n'
-            'Please run `git cinnabar fsck` with version 0.3.x first.'
-        )
 
 
 # An empty mercurial file with no parent has a fixed sha1 which is that of
@@ -629,14 +617,6 @@ class BranchMap(object):
         return self._tips.get(branch, None)
 
 
-class NothingToGraftException(Exception):
-    pass
-
-
-class AmbiguousGraftException(Exception):
-    pass
-
-
 class Grafter(object):
     __slots__ = "_store", "_early_history", "_graft_trees", "_grafted"
 
@@ -723,7 +703,7 @@ class Grafter(object):
             nodes = possible_nodes
 
         if len(nodes) > 1:
-            raise AmbiguousGraftException(
+            raise AmbiguousGraftAbort(
                 'Cannot graft changeset %s. Candidates: %s'
                 % (changeset.node, ', '.join(nodes)))
 
@@ -803,11 +783,11 @@ class GitHgStore(object):
         metadata = self._metadata()
         if metadata:
             if len(self._flags) > len(self.FLAGS):
-                raise UpgradeException(
+                raise UpgradeAbort(
                     'It looks like this repository was used with a newer '
                     'version of git-cinnabar. Cannot use this version.')
             if set(self._flags) != set(self.FLAGS):
-                raise UpgradeException()
+                raise UpgradeAbort()
         return metadata
 
     def __init__(self):
@@ -827,7 +807,7 @@ class GitHgStore(object):
             if ref.startswith('refs/cinnabar/replace/'):
                 self._replace[ref[22:]] = sha1
             elif ref.startswith('refs/cinnabar/branches/'):
-                raise OldUpgradeException()
+                raise OldUpgradeAbort()
         self._replace = VersionedDict(self._replace)
 
         self._tagcache = {}
@@ -870,7 +850,7 @@ class GitHgStore(object):
                 replace[path] = sha1
 
             if self._replace and not replace:
-                raise OldUpgradeException()
+                raise OldUpgradeAbort()
 
         Git.register_fast_import(self._fast_import)
 

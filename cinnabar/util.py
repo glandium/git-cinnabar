@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import time
+import traceback
 from collections import (
     Iterable,
     OrderedDict,
@@ -23,6 +24,8 @@ from Queue import (
 from threading import Thread
 from types import StringType
 from weakref import WeakKeyDictionary
+
+from .exceptions import Abort
 
 
 class StreamHandler(logging.StreamHandler):
@@ -112,7 +115,7 @@ class ConfigSetFunc(object):
 check_enabled = ConfigSetFunc(
     'cinnabar.check',
     ('nodeid', 'manifests', 'helper'),
-    ('bundle', 'files', 'memory', 'time'),
+    ('bundle', 'files', 'memory', 'time', 'traceback'),
 )
 
 experiment = ConfigSetFunc(
@@ -611,8 +614,25 @@ def run(func):
     init_logging()
     if check_enabled('memory'):
         reporter = MemoryReporter()
+
     try:
         retcode = func(sys.argv[1:])
+    except Abort as e:
+        # These exceptions are normal abort and require no traceback
+        retcode = 1
+        logging.error(e.message)
+    except Exception as e:
+        # Catch all exceptions and provide a nice message
+        retcode = 70  # Internal software error
+        if check_enabled('traceback') or not getattr(e, 'message', None):
+            traceback.print_exc()
+        else:
+            logging.error(e.message)
+
+            sys.stderr.write(
+                'Run the command again with '
+                '`git -c cinnabar.check=traceback <command>` to see the '
+                'full traceback.\n')
     finally:
         if check_enabled('memory'):
             reporter.shutdown()
