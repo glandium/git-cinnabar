@@ -65,13 +65,16 @@ class Index(dict):
         hint = os.environ.get(index_env(key))
         if hint:
             result = self.Existing(hint)
-        elif (GITHUB_BASE_USER != GITHUB_HEAD_USER or
-                GITHUB_BASE_REPO_NAME != GITHUB_HEAD_REPO_NAME):
-            result = self._try_key('github.{}.{}.{}'.format(
-                GITHUB_HEAD_USER, GITHUB_HEAD_REPO_NAME, key))
-        if not result:
-            result = self._try_key('github.{}.{}.{}'.format(
-                GITHUB_BASE_USER, GITHUB_BASE_REPO_NAME, key))
+        elif hint is not None:  # empty environment variable
+            pass
+        else:
+            if (GITHUB_BASE_USER != GITHUB_HEAD_USER or
+                    GITHUB_BASE_REPO_NAME != GITHUB_HEAD_REPO_NAME):
+                result = self._try_key('github.{}.{}.{}'.format(
+                    GITHUB_HEAD_USER, GITHUB_HEAD_REPO_NAME, key))
+            if not result:
+                result = self._try_key('github.{}.{}.{}'.format(
+                    GITHUB_BASE_USER, GITHUB_BASE_REPO_NAME, key))
         if not result:
             result = slugid()
         self[key] = result
