@@ -52,7 +52,7 @@ tasks:
       - 'queue:route:index.github.{{ event.head.user.login }}.{{ event.head.repo.name }}.*'
       - secrets:get:repo:github.com/glandium.git-cinnabar:codecov
     routes:
-      - 'index.github.{{ event.head.user.login }}.{{ event.head.repo.name }}.decision.{{ event.version }}'
+      - 'index.github.{{ event.head.user.login }}.{{ event.head.repo.name }}.decision.{{ event.head.tag }}'
     payload:
       maxRunTime: 3600
       image: python:2.7
