@@ -645,7 +645,7 @@ static int split_manifest_line(struct strslice *slice,
        // The format of a manifest line is:
        //    <path>\0<sha1><attr>
        // where attr is one of '', 'l', 'x'
-       strslice_split_index(&result->path, slice, '\0');
+       result->path = strslice_split_index(slice, '\0');
        if (result->path.len == 0)
 	       return -1;
 
@@ -653,18 +653,18 @@ static int split_manifest_line(struct strslice *slice,
 	       return -1;
        if (get_sha1_hex(slice->buf, result->sha1))
 	       return -1;
-       strslice_slice(slice, slice, 40, SIZE_MAX);
+       *slice = strslice_slice(*slice, 40, SIZE_MAX);
 
        result->attr = slice->buf[0];
        if (result->attr == 'l' || result->attr == 'x') {
-	       strslice_slice(slice, slice, 1, SIZE_MAX);
+	       *slice = strslice_slice(*slice, 1, SIZE_MAX);
        } else if (result->attr == '\n')
 	       result->attr = '\0';
        else
 	       return -1;
        if (slice->len < 1 || slice->buf[0] != '\n')
 	       return -1;
-       strslice_slice(slice, slice, 1, SIZE_MAX);
+       *slice = strslice_slice(*slice, 1, SIZE_MAX);
        return 0;
 }
 
@@ -754,15 +754,15 @@ static void store_manifest(struct rev_chunk *chunk)
 		// TODO: Avoid a remove+add cycle for same-file modifications.
 
 		// Process removed files.
-		strbuf_slice(&slice, &last_manifest_content, diff.start,
-                             diff.end - diff.start);
+		slice = strbuf_slice(&last_manifest_content, diff.start,
+                                     diff.end - diff.start);
 		while (split_manifest_line(&slice, &line) == 0) {
 			tree_content_remove(&last_manifest->branch_tree,
 			                    line.path.buf, NULL, 1);
 		}
 
 		// Process added files.
-		strbuf_slice(&slice, &diff.data, 0, diff.data.len);
+		slice = strbuf_slice(&diff.data, 0, diff.data.len);
 		while (split_manifest_line(&slice, &line) == 0) {
 			uint16_t mode;
 			struct object_id file_node;

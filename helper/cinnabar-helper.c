@@ -960,7 +960,7 @@ struct strbuf *generate_manifest(const struct object_id *oid)
 
 	if (generated_manifest.content.len) {
 		struct strslice gm;
-		strbuf_slice(&gm, &generated_manifest.content, 0, SIZE_MAX);
+		gm = strbuf_slice(&generated_manifest.content, 0, SIZE_MAX);
 		strbuf_grow(&content, generated_manifest.content.len);
 		recurse_manifest2(&generated_manifest.tree_id, &gm,
 		                  oid, &content, "", &tree_list);
