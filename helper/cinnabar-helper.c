@@ -779,12 +779,11 @@ corrupted:
 }
 
 static void recurse_manifest(const struct object_id *tree_id,
-                             struct strbuf *manifest, char *base,
+                             struct strbuf *manifest, struct strslice base,
                              struct object_list **tree_list)
 {
 	struct manifest_tree_state state;
 	struct name_entry entry;
-	size_t base_len = strlen(base);
 
 	if (manifest_tree_state_init(tree_id, &state, tree_list))
 		goto corrupted;
@@ -792,16 +791,17 @@ static void recurse_manifest(const struct object_id *tree_id,
 	while (tree_entry(&state.desc, &entry)) {
 		if (S_ISDIR(entry.mode)) {
 			struct strbuf dir = STRBUF_INIT;
-			if (base_len)
-				strbuf_add(&dir, base, base_len);
+			strbuf_addslice(&dir, base);
 			strbuf_addstr(&dir, entry.path);
 			strbuf_addch(&dir, '/');
-			recurse_manifest(entry.oid, manifest, dir.buf, tree_list);
+			recurse_manifest(entry.oid, manifest,
+			                 strbuf_as_slice(&dir), tree_list);
 			strbuf_release(&dir);
 			continue;
 		}
-		strbuf_addf(manifest, "%s%s%c%s%s\n", base, entry.path,
-		            '\0', oid_to_hex(entry.oid), hgattr(entry.mode));
+		strbuf_addslice(manifest, base);
+		strbuf_addf(manifest, "%s%c%s%s\n", entry.path, '\0',
+		            oid_to_hex(entry.oid), hgattr(entry.mode));
 	}
 
 	return;
@@ -830,14 +830,13 @@ static int path_match(const char *base, size_t base_len,
 static void recurse_manifest2(const struct object_id *ref_tree_id,
                               struct strslice *ref_manifest,
                               const struct object_id *tree_id,
-                              struct strbuf *manifest, char *base,
+                              struct strbuf *manifest, struct strslice base,
                               struct object_list **tree_list)
 {
 	struct manifest_tree_state ref, cur;
 	struct name_entry ref_entry, cur_entry;
 	const char *next = ref_manifest->buf;
 	struct strbuf dir = STRBUF_INIT;
-	size_t base_len = strlen(base);
 	size_t ref_entry_len = 0;
 	int cmp = 0;
 
@@ -860,7 +859,7 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 			ref_entry_len = ref_entry.path ?
 				strlen(ref_entry.path) : 0;
 			assert(!ref_entry.path ||
-			       path_match(base, base_len, ref_entry.path,
+			       path_match(base.buf, base.len, ref_entry.path,
 			                  ref_entry_len, next));
 		}
 		if (!ref_entry.path) {
@@ -876,13 +875,13 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 		}
 		if (cmp <= 0) {
 			const char *tail = next + ref_manifest->len;
-			size_t len = base_len + ref_entry_len + 41;
+			size_t len = base.len + ref_entry_len + 41;
 			do {
 				next = memchr(next + len, '\n', tail - next)
 				       + 1;
 			} while (S_ISDIR(ref_entry.mode) &&
 			         (tail - next > len) &&
-			         path_match(base, base_len, ref_entry.path,
+			         path_match(base.buf, base.len, ref_entry.path,
 			                    ref_entry_len, next));
 		}
 		/* File/directory was removed, nothing to do */
@@ -896,24 +895,23 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 			continue;
 		}
 		if (!S_ISDIR(cur_entry.mode)) {
-			strbuf_addf(manifest, "%s%s%c%s%s\n", base,
-			            cur_entry.path, '\0',
-			            oid_to_hex(cur_entry.oid),
+			strbuf_addslice(manifest, base);
+			strbuf_addf(manifest, "%s%c%s%s\n", cur_entry.path,
+			            '\0', oid_to_hex(cur_entry.oid),
 			            hgattr(cur_entry.mode));
 			continue;
 		}
 
-		if (base_len)
-			strbuf_add(&dir, base, base_len);
+		strbuf_addslice(&dir, base);
 		strbuf_addstr(&dir, cur_entry.path);
 		strbuf_addch(&dir, '/');
 		if (cmp == 0 && S_ISDIR(ref_entry.mode)) {
 			recurse_manifest2(ref_entry.oid, ref_manifest,
-				          cur_entry.oid, manifest, dir.buf,
-			                  tree_list);
+				          cur_entry.oid, manifest,
+			                  strbuf_as_slice(&dir), tree_list);
 		} else
-			recurse_manifest(cur_entry.oid, manifest, dir.buf,
-			                 tree_list);
+			recurse_manifest(cur_entry.oid, manifest,
+			                 strbuf_as_slice(&dir), tree_list);
 		strbuf_release(&dir);
 	}
 
@@ -963,9 +961,9 @@ struct strbuf *generate_manifest(const struct object_id *oid)
 		gm = strbuf_slice(&generated_manifest.content, 0, SIZE_MAX);
 		strbuf_grow(&content, generated_manifest.content.len);
 		recurse_manifest2(&generated_manifest.tree_id, &gm,
-		                  oid, &content, "", &tree_list);
+		                  oid, &content, empty_strslice(), &tree_list);
 	} else {
-		recurse_manifest(oid, &content, "", &tree_list);
+		recurse_manifest(oid, &content, empty_strslice(), &tree_list);
 	}
 
 	oidcpy(&generated_manifest.tree_id, oid);

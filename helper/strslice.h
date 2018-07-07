@@ -9,6 +9,12 @@ struct strslice {
 	const char *buf;
 };
 
+static inline
+struct strslice empty_strslice()
+{
+	struct strslice result = { 0, NULL };
+	return result;
+}
 
 static inline
 struct strslice strslice_slice(struct strslice slice, size_t start, size_t len)
@@ -23,13 +29,21 @@ struct strslice strslice_slice(struct strslice slice, size_t start, size_t len)
 	return result;
 }
 
+static inline struct strslice strbuf_as_slice(const struct strbuf *buf)
+{
+	struct strslice result = { buf->len, buf->buf };
+	return result;
+}
+
 static inline struct strslice strbuf_slice(const struct strbuf *buf,
                                            size_t start, size_t len)
 {
-	struct strslice slice;
-	slice.buf = buf->buf;
-	slice.len = buf->len;
-	return strslice_slice(slice, start, len);
+	return strslice_slice(strbuf_as_slice(buf), start, len);
+}
+
+static inline void strbuf_addslice(struct strbuf *buf, struct strslice slice)
+{
+	strbuf_add(buf, slice.buf, slice.len);
 }
 
 static inline size_t strslice_index(struct strslice slice, int c)
