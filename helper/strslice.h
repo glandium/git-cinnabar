@@ -17,6 +17,13 @@ struct strslice empty_strslice()
 }
 
 static inline
+struct strslice strslice_from_str(const char *buf)
+{
+	struct strslice result = { strlen(buf), buf };
+	return result;
+}
+
+static inline
 struct strslice strslice_slice(struct strslice slice, size_t start, size_t len)
 {
 	struct strslice result;
