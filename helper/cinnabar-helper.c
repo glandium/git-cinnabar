@@ -818,13 +818,18 @@ static int manifest_entry_equal(const struct name_entry *e1,
 }
 
 /* Return whether base + name matches path */
-static int path_match(const char *base, size_t base_len,
-                      const char *name, size_t name_len, const char *path)
+static int path_match(struct strslice base, struct strslice name,
+                      struct strslice path)
 {
-	return memcmp(base, path, base_len) == 0 &&
-	       memcmp(name, path + base_len, name_len) == 0 &&
-	       (path[base_len + name_len] == '\0' ||
-	        path[base_len + name_len] == '/');
+	struct strslice slice;
+
+	if (!strslice_startswith(path, base) ||
+	    !strslice_startswith(strslice_slice(path, base.len, SIZE_MAX),
+	                         name))
+		return 0;
+
+	slice = strslice_slice(path, name.len + base.len, 1);
+	return slice.len == 1 && (slice.buf[0] == '\0' || slice.buf[0] == '/');
 }
 
 static void recurse_manifest2(const struct object_id *ref_tree_id,
@@ -864,8 +869,7 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 			}
 			ref_manifest = next;
 			assert(!ref_entry_path.len ||
-			       path_match(base.buf, base.len, ref_entry_path.buf,
-			                  ref_entry_path.len, next.buf));
+			       path_match(base, ref_entry_path, next));
 		}
 		if (!ref_entry_path.len) {
 			if (!cur_entry_path.len)
@@ -884,8 +888,7 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 				strslice_split_once(&next, '\n');
 			} while (S_ISDIR(ref_entry.mode) &&
 			         (next.len > len) &&
-			         path_match(base.buf, base.len, ref_entry_path.buf,
-			                    ref_entry_path.len, next.buf));
+			         path_match(base, ref_entry_path, next));
 		}
 		/* File/directory was removed, nothing to do */
 		if (cmp < 0)
