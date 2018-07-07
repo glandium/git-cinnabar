@@ -70,7 +70,7 @@ static inline size_t strslice_rindex(struct strslice slice, int c)
 }
 
 static inline
-struct strslice strslice_split_at(struct strslice *slice, size_t off)
+struct strslice _strslice_split_at(struct strslice *slice, size_t off)
 {
 	struct strslice result;
 	result = strslice_slice(*slice, 0, off == SIZE_MAX ? 0 : off);
@@ -80,15 +80,15 @@ struct strslice strslice_split_at(struct strslice *slice, size_t off)
 }
 
 static inline
-struct strslice strslice_split_index(struct strslice *slice, int c)
+struct strslice strslice_split_once(struct strslice *slice, int c)
 {
-	return strslice_split_at(slice, strslice_index(*slice, c));
+	return _strslice_split_at(slice, strslice_index(*slice, c));
 }
 
 static inline
-struct strslice strslice_split_rindex(struct strslice *slice, int c)
+struct strslice strslice_rsplit_once(struct strslice *slice, int c)
 {
-	return strslice_split_at(slice, strslice_rindex(*slice, c));
+	return _strslice_split_at(slice, strslice_rindex(*slice, c));
 }
 
 static inline int strslice_cmp(const struct strslice a,

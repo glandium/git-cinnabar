@@ -881,7 +881,7 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 		if (cmp <= 0) {
 			size_t len = base.len + ref_entry_path.len + 41;
 			do {
-				strslice_split_index(&next, '\n');
+				strslice_split_once(&next, '\n');
 			} while (S_ISDIR(ref_entry.mode) &&
 			         (next.len > len) &&
 			         path_match(base.buf, base.len, ref_entry_path.buf,

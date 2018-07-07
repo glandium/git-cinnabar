@@ -645,7 +645,7 @@ static int split_manifest_line(struct strslice *slice,
        // The format of a manifest line is:
        //    <path>\0<sha1><attr>
        // where attr is one of '', 'l', 'x'
-       result->path = strslice_split_index(slice, '\0');
+       result->path = strslice_split_once(slice, '\0');
        if (result->path.len == 0)
 	       return -1;
 
