@@ -30,7 +30,7 @@ def git_rev_parse(committish):
 
 MERCURIAL_VERSION = '4.6.1'
 GIT_VERSION = '2.18.0'
-UPGRADE_FROM = ('0.3.0', '0.3.2', '0.4.0', '0.5.0b2')
+UPGRADE_FROM = ('0.3.0', '0.3.2', '0.4.0', '0.5.0b2', '0.5.0b3')
 
 
 def install_hg(name):

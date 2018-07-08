@@ -158,6 +158,7 @@ class FileFindParents(object):
     def set_parents(file, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID,
                     git_manifest_parents=None, path=None):
         assert git_manifest_parents is not None and path is not None
+        path = GitHgStore.manifest_metadata_path(path)
 
         # Remove null nodes
         parents = tuple(p for p in (parent1, parent2) if p != NULL_NODE_ID)
@@ -774,7 +775,7 @@ class Grafter(object):
 class GitHgStore(object):
     FLAGS = [
         'files-meta',
-        'unified-manifests',
+        'unified-manifests-v2',
     ]
 
     METADATA_REFS = (
@@ -944,8 +945,8 @@ class GitHgStore(object):
             return False
 
         flags = set(commit.body.split())
-        if 'files-meta' not in flags or 'unified-manifests' not in flags or \
-                len(commit.parents) != len(self.METADATA_REFS):
+        if 'files-meta' not in flags or 'unified-manifests-v2' not in flags \
+                or len(commit.parents) != len(self.METADATA_REFS):
             logging.error('Invalid cinnabar metadata.')
             return False
 
@@ -1135,6 +1136,16 @@ class GitHgStore(object):
         '120000': 'l',
     }
 
+    @staticmethod
+    def manifest_metadata_path(path):
+        if path.startswith('/') or '//' in path:
+            raise Exception('Empty path component found in input')
+        return '_' + path.replace('/', '/_')
+
+    @staticmethod
+    def manifest_path(path):
+        return path[1:].replace('/_', '/')
+
     def manifest(self, sha1, include_parents=False):
         manifest = GeneratedManifestInfo(sha1)
         manifest.data = GitHgHelper.manifest(sha1)
@@ -1279,7 +1290,7 @@ class GitHgStore(object):
         ) as commit:
             if hasattr(instance, 'delta_node'):
                 for name in instance.removed:
-                    commit.filedelete(name)
+                    commit.filedelete(self.manifest_metadata_path(name))
                 modified = instance.modified.items()
             else:
                 # slow
@@ -1287,7 +1298,8 @@ class GitHgStore(object):
                             for line in instance._lines)
             for name, (node, attr) in modified:
                 node = str(node)
-                commit.filemodify(name, node, self.MODE[attr])
+                commit.filemodify(self.manifest_metadata_path(name), node,
+                                  self.MODE[attr])
 
         GitHgHelper.set('manifest', instance.node, ':1')
 

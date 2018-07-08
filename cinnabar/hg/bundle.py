@@ -443,7 +443,7 @@ def bundle_data(store, commits):
         changes = get_changes(manifest_ref, parents)
         for path, hg_file, hg_fileparents in changes:
             if hg_file != NULL_NODE_ID:
-                files[path].append(
+                files[store.manifest_path(path)].append(
                     (hg_file, hg_fileparents, changeset, parents))
 
     yield None

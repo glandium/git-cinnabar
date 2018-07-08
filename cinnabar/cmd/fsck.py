@@ -174,7 +174,7 @@ def fsck(args):
                                                                  hg_file)):
                     if full_file_check:
                         file = store.file(hg_file, hg_fileparents, git_parents,
-                                          path)
+                                          store.manifest_path(path))
                         valid = file.node == file.sha1
                     else:
                         valid = GitHgHelper.check_file(hg_file,

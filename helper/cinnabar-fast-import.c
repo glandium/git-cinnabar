@@ -688,12 +688,31 @@ static int add_parent(struct strbuf *data,
 	return 0;
 }
 
+static void manifest_metadata_path(struct strbuf *out, struct strslice *in)
+{
+	struct strslice part;
+	part = strslice_split_once(in, '/');
+	while (part.len) {
+		strbuf_addch(out, '_');
+		strbuf_addslice(out, part);
+		strbuf_addch(out, '/');
+		part = strslice_split_once(in, '/');
+	}
+	// In case the original slice started with /, or contained two
+	// consecutive ones.
+	if (in->len > 0 && in->buf[0] == '/')
+		die("Empty path component found in input");
+	strbuf_addch(out, '_');
+	strbuf_addslice(out, *in);
+}
+
 static void store_manifest(struct rev_chunk *chunk)
 {
 	static struct object_id last_manifest_oid;
 	static struct branch *last_manifest;
 	static struct strbuf last_manifest_content = STRBUF_INIT;
 	struct strbuf data = STRBUF_INIT;
+	struct strbuf path = STRBUF_INIT;
 	struct rev_diff_part diff;
 	size_t last_end = 0;
 	struct strslice slice;
@@ -757,8 +776,10 @@ static void store_manifest(struct rev_chunk *chunk)
 		slice = strbuf_slice(&last_manifest_content, diff.start,
                                      diff.end - diff.start);
 		while (split_manifest_line(&slice, &line) == 0) {
+			manifest_metadata_path(&path, &line.path);
 			tree_content_remove(&last_manifest->branch_tree,
-			                    line.path.buf, NULL, 1);
+			                    path.buf, NULL, 1);
+			strbuf_reset(&path);
 		}
 
 		// Process added files.
@@ -777,8 +798,10 @@ static void store_manifest(struct rev_chunk *chunk)
 			else
 				goto malformed;
 
+			manifest_metadata_path(&path, &line.path);
 			tree_content_set(&last_manifest->branch_tree,
-			                 line.path.buf, &file_node, mode, NULL);
+			                 path.buf, &file_node, mode, NULL);
+			strbuf_reset(&path);
 		}
 	}
 
