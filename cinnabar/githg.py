@@ -932,8 +932,8 @@ class GitHgStore(object):
             return False
 
         proc = GitProcess(
-            'fetch', '--no-tags', git_repo_url, ref + ':refs/cinnabar/fetch',
-            stdout=sys.stdout)
+            'fetch', '--no-tags', '--no-recurse-submodules', git_repo_url,
+            ref + ':refs/cinnabar/fetch', stdout=sys.stdout)
         if proc.wait():
             logging.error('Failed to fetch cinnabar metadata.')
             return False
@@ -971,8 +971,8 @@ class GitHgStore(object):
             if errors:
                 return False
 
-            proc = GitProcess('fetch', '--no-tags', git_repo_url, *needed,
-                              stdout=sys.stdout)
+            proc = GitProcess('fetch', '--no-tags', '--no-recurse-submodules',
+                              git_repo_url, *needed, stdout=sys.stdout)
             if proc.wait():
                 logging.error('Failed to fetch cinnabar metadata.')
                 return False
