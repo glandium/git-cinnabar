@@ -885,8 +885,8 @@ static void do_store(struct string_list *args)
 void store_git_tree(struct strbuf *tree_buf, const struct object_id *reference,
                     struct object_id *result)
 {
-	struct last_object ref_blob = { STRBUF_INIT, 0, 0, 1 };
-	struct last_object *last_blob = NULL;
+	struct last_object ref_tree = { STRBUF_INIT, 0, 0, 1 };
+	struct last_object *last_tree = NULL;
 	struct object_entry *oe = NULL;
 	char *buf = NULL;
 
@@ -896,15 +896,15 @@ void store_git_tree(struct strbuf *tree_buf, const struct object_id *reference,
 	}
 	if (oe && oe->idx.offset > 1 && oe->pack_id == pack_id) {
 		unsigned long len;
-		ref_blob.data.buf = buf = gfi_unpack_entry(oe, &len);
-		ref_blob.data.len = len;
-		ref_blob.offset = oe->idx.offset;
-		ref_blob.depth = oe->depth;
-		last_blob = &ref_blob;
+		ref_tree.data.buf = buf = gfi_unpack_entry(oe, &len);
+		ref_tree.data.len = len;
+		ref_tree.offset = oe->idx.offset;
+		ref_tree.depth = oe->depth;
+		last_tree = &ref_tree;
 	}
-	store_object(OBJ_TREE, tree_buf, last_blob, result, 0);
-	if (last_blob) {
-		// store_object messes with last_blob so free using an old
+	store_object(OBJ_TREE, tree_buf, last_tree, result, 0);
+	if (last_tree) {
+		// store_object messes with last_tree so free using an old
 		// copy of the pointer.
 		free(buf);
 	}
