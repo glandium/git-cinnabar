@@ -1,2 +1,3 @@
 git-cinnabar-helper
 *.patched.c
+*.pyc
