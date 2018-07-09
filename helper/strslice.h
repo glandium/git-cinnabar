@@ -74,7 +74,7 @@ struct strslice _strslice_split_at(struct strslice *slice, size_t off)
 {
 	struct strslice result;
 	result = strslice_slice(*slice, 0, off == SIZE_MAX ? 0 : off);
-	*slice = strslice_slice(*slice, result.len ? result.len + 1 : 0,
+	*slice = strslice_slice(*slice, off == SIZE_MAX ? 0 : off + 1,
 	                        SIZE_MAX);
 	return result;
 }
