@@ -535,7 +535,12 @@ class Process(object):
         for fh in (self._proc.stdin, self._proc.stdout, self._proc.stderr):
             if fh:
                 fh.close()
-        return self._proc.wait()
+        pid = self._proc.pid
+        retcode = self._proc.wait()
+        logger = logging.getLogger('process')
+        if logger.isEnabledFor(logging.INFO):
+            logger.info('[%d] Exited with code %d', pid, retcode)
+        return retcode
 
     @property
     def pid(self):
