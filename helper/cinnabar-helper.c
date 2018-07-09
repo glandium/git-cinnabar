@@ -1688,6 +1688,7 @@ static void upgrade_manifest_tree(struct old_manifest_tree *tree,
 		struct old_manifest_entry entry;
 		struct manifest_tree_state ref_state = { NULL, };
 		struct strbuf tree_buf = STRBUF_INIT;
+		struct strbuf entry_buf = STRBUF_INIT;
 
 		if (old_manifest_tree_state_init(tree, &state, NULL))
 			die("Corrupted metadata");
@@ -1698,8 +1699,11 @@ static void upgrade_manifest_tree(struct old_manifest_tree *tree,
 			if (S_ISDIR(mode)) {
 				struct old_manifest_tree subtree;
 				struct name_entry *ref_entry;
+				strbuf_addch(&entry_buf, '_');
+				strbuf_addstr(&entry_buf, entry.path);
 				ref_entry = lazy_tree_entry_by_name(
-					&ref_state, reference, entry.path);
+					&ref_state, reference, entry_buf.buf);
+				strbuf_reset(&entry_buf);
 				oidcpy(&subtree.git, entry.other_oid);
 				oidcpy(&subtree.hg, entry.oid);
 				upgrade_manifest_tree(
@@ -1722,6 +1726,7 @@ static void upgrade_manifest_tree(struct old_manifest_tree *tree,
 		old2new->old_tree = k.old_tree;
 		store_git_tree(&tree_buf, reference, &old2new->new_tree);
 		strbuf_release(&tree_buf);
+		strbuf_release(&entry_buf);
 		hashmap_add(cache, old2new);
 
 		free_tree_buffer(state.tree_git);
@@ -1980,7 +1985,7 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 			if (S_ISDIR(mode)) {
 				struct name_entry *ref_entry;
 				ref_entry = lazy_tree_entry_by_name(
-					&ref_state, reference, entry.path);
+					&ref_state, reference, entry_path.buf);
 				recurse_create_git_tree(
 					entry.oid,
 					ref_entry ? ref_entry->oid : NULL,
