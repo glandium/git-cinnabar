@@ -805,6 +805,8 @@ static void store_manifest(struct rev_chunk *chunk)
 		}
 	}
 
+	strbuf_release(&path);
+
 	if (last_manifest_content.len < last_end)
 		goto malformed;
 
