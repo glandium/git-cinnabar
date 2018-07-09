@@ -43,7 +43,10 @@ class Git(Task):
             env = TaskEnvironment.by_name('{}.build'.format(os))
             raw_version = version
             if 'windows' not in version:
-                version = version + '.windows.1'
+                version = {
+                    version: version + '.windows.1',
+                    '2.17.1': '2.17.1.windows.2',
+                }.get(version)
             if version.endswith('.windows.1'):
                 min_ver = version[:-len('.windows.1')]
             else:
@@ -135,16 +138,16 @@ class Helper(Task):
         def prefix(p, s):
             return p + s if s else s
 
-        make_flags = ''
+        make_flags = []
         hash = None
         head = None
         desc_variant = variant
         extra_commands = []
         if variant == 'asan':
-            make_flags = ('CFLAGS="-O2 -g -fsanitize=address"'
-                          ' LDFLAGS=-static-libasan')
+            make_flags.append('CFLAGS="-O2 -g -fsanitize=address"')
+            make_flags.append('LDFLAGS=-static-libasan')
         elif variant == 'coverage':
-            make_flags = 'CFLAGS="-coverage"'
+            make_flags.append('CFLAGS="-coverage"')
             artifacts += ['coverage.tar.xz']
             extra_commands = [
                 'mv repo/git-core/{{cinnabar,connect,hg}}*.gcno repo/helper',
@@ -157,6 +160,14 @@ class Helper(Task):
             variant = ''
         elif variant:
             raise Exception('Unknown variant: {}'.format(variant))
+
+        if os == 'linux':
+            make_flags.append('CURL_COMPAT=1')
+        else:
+            make_flags.append('USE_LIBPCRE1=YesPlease')
+            make_flags.append('USE_LIBPCRE2=')
+            make_flags.append('CFLAGS+=-DCURLOPT_PROXY_CAINFO=246')
+
         hash = hash or helper_hash()
 
         Task.__init__(
@@ -169,7 +180,7 @@ class Helper(Task):
             expireIn='26 weeks',
             command=Task.checkout(commit=head) + [
                 'make -C repo -j $(nproc) helper prefix=/usr{}'.format(
-                    prefix(' ', make_flags)),
+                    prefix(' ', ' '.join(make_flags))),
                 'mv repo/{} $ARTIFACTS/'.format(artifact),
             ] + extra_commands,
             artifacts=artifacts,

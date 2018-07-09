@@ -31,10 +31,10 @@ addons:
     target_paths: /artifacts
 
 before_install:
-  - make -f CI.mk before_install
+  - make -f CI/travis.mk before_install
 
 before_script:
-  - make -f CI.mk before_script
+  - make -f CI/travis.mk before_script
 
 script:
-  - make -f CI.mk script && make -f CI.mk script NO_BUNDLE2=1
+  - make -f CI/tests.mk

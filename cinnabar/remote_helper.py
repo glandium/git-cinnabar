@@ -301,7 +301,8 @@ class GitRemoteHelper(BaseRemoteHelper):
                 v = self._store.changeset_ref(v) or self._branchmap.git_sha1(v)
             elif not v.startswith('@'):
                 v = self._store.changeset_ref(v) or '?'
-            self._helper.write('%s %s\n' % (v, k))
+            if not self._graft or v != '?':
+                self._helper.write('%s %s\n' % (v, k))
 
         self._helper.write('\n')
         self._helper.flush()

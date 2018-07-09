@@ -4,6 +4,7 @@ from cinnabar.githg import (
     Changeset,
     ChangesetPatcher,
     GitCommit,
+    GitHgStore,
 )
 
 
@@ -254,3 +255,38 @@ class TestChangesetPatcher(unittest.TestCase):
         changeset.body += '\0'
         changeset2 = patcher.apply(changeset)
         self.assertEqual(changeset2.sha1, changeset2.node)
+
+
+class TestMergeBranches(unittest.TestCase):
+    def test_merge_branches(self):
+        self.assertEqual(GitHgStore._try_merge_branches(
+            'https://server/'), [
+                'server',
+                'metadata',
+        ])
+        self.assertEqual(GitHgStore._try_merge_branches(
+            'https://server:443/'), [
+                'server',
+                'metadata',
+        ])
+        self.assertEqual(GitHgStore._try_merge_branches(
+            'https://server:443/repo'), [
+                'repo',
+                'server/repo',
+                'metadata',
+        ])
+        self.assertEqual(GitHgStore._try_merge_branches(
+            'https://server:443/dir_a/repo'), [
+                'repo',
+                'dir_a/repo',
+                'server/dir_a/repo',
+                'metadata',
+        ])
+        self.assertEqual(GitHgStore._try_merge_branches(
+            'https://server:443/dir_a/dir_b/repo'), [
+                'repo',
+                'dir_b/repo',
+                'dir_a/dir_b/repo',
+                'server/dir_a/dir_b/repo',
+                'metadata',
+        ])

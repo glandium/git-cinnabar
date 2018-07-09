@@ -403,14 +403,15 @@ class FastImportCommitHelper(object):
         self.sha1 = None
 
     def write(self, data):
-        self._queue.append((self._fast_import.write, data))
+        self._queue.append(data)
 
     def cmd_data(self, data):
-        self._queue.append((self._fast_import.cmd_data, data))
+        self._queue.append('data %d\n' % len(data))
+        self._queue.append(data)
+        self._queue.append('\n')
 
     def flush(self):
-        for func, data in self._queue:
-            func(data)
+        self._fast_import.write(''.join(self._queue))
         self._queue = []
 
     def filedelete(self, path):

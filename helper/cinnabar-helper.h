@@ -45,4 +45,6 @@ static inline void ensure_notes(struct notes_tree *notes)
 	}
 }
 
+extern struct strbuf *generate_manifest(const struct object_id *oid);
+
 #endif

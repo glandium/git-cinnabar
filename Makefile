@@ -34,7 +34,6 @@ NO_OPENSSL ?= 1
 
 ifndef CINNABAR_RECURSE
 
-ifeq (,$(wildcard $(CURDIR)/git-core/Makefile))
 SYSTEM = $(shell python2.7 -c 'import platform; print platform.system()')
 include helper/GIT-VERSION.mk
 ifeq ($(SYSTEM),Windows)
@@ -56,6 +55,7 @@ ifeq ($(SUBMODULE_STATUS),no)
 $(eval $(call exec,git clone -n $(GIT_REPO) git-core))
 $(eval $(call exec,git -C git-core checkout $(GIT_VERSION)))
 else
+ifneq ($(shell git -C git-core rev-parse HEAD),$(shell git -C git-core rev-parse $(GIT_VERSION)^{commit}))
 $(eval $(call exec,git submodule update --init))
 ifeq ($(SYSTEM),Windows)
 $(eval $(call exec,git -C git-core remote add git4win $(GIT_REPO)))
@@ -63,9 +63,9 @@ $(eval $(call exec,git -C git-core remote update git4win))
 $(eval $(call exec,git -C git-core checkout $(GIT_VERSION)))
 endif
 endif
+endif
 ifneq ($(shell git -C git-core rev-parse HEAD),$(shell git -C git-core rev-parse $(GIT_VERSION)^{commit}))
 $(error git-core is not checked out at $(GIT_VERSION))
-endif
 endif
 
 all:
@@ -171,5 +171,13 @@ cinnabar-helper.o: EXTRA_CPPFLAGS=-DHELPER_HASH=$(shell $(PYTHON_PATH) ../git-ci
 
 $(CINNABAR_OBJECTS): %.o: ../helper/%.c GIT-CFLAGS $(missing_dep_dirs)
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
+
+ifdef CURL_COMPAT
+git-cinnabar-helper$X: CURL_LIBCURL=$(CURDIR)/libcurl.so
+git-cinnabar-helper$X: libcurl.so
+
+libcurl.so: ../helper/curl-compat.c
+	$(CC) -shared -Wl,-soname,libcurl.so.4 -o $@ $<
+endif
 
 endif

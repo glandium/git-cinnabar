@@ -131,8 +131,16 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 27
+    VERSION = 29
     _helper = False
+
+    @classmethod
+    def reload(self):
+        with self.query('reload'):
+            pass
+        self.git2hg.invalidate()
+        self.hg2git.invalidate()
+        self._cat_commit.invalidate()
 
     @classmethod
     def _cat_file(self, typ, sha1):
@@ -240,7 +248,7 @@ class GitHgHelper(BaseHelper):
                 sha1 = stdout.read(41)
                 assert sha1[-1] == '\n'
                 return sha1[:40]
-        elif what == 'file':
+        elif what in ('file', 'manifest'):
             obj = args[0]
             if isinstance(obj, RawRevChunk01):
                 delta_node = obj.delta_node
@@ -291,7 +299,7 @@ class GitHgHelper(BaseHelper):
 
 
 class HgRepoHelper(BaseHelper):
-    VERSION = 25
+    VERSION = 29
     _helper = False
 
     @classmethod
@@ -362,4 +370,9 @@ class HgRepoHelper(BaseHelper):
     @classmethod
     def clonebundles(self):
         with self.query("clonebundles") as stdout:
+            return self._read_data(stdout)
+
+    @classmethod
+    def cinnabarclone(self):
+        with self.query("cinnabarclone") as stdout:
             return self._read_data(stdout)
