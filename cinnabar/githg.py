@@ -881,8 +881,8 @@ class GitHgStore(object):
         self._graft = Grafter(self)
 
     @staticmethod
-    def _try_merge_branches(git_repo_url):
-        parsed_url = urlparse(git_repo_url)
+    def _try_merge_branches(repo_url):
+        parsed_url = urlparse(repo_url)
         branches = []
         path = parsed_url.path.lstrip('/').rstrip('/')
         if path:
@@ -912,7 +912,7 @@ class GitHgStore(object):
             if 'refs/heads/%s' % branch in remote_refs:
                 return 'refs/heads/%s' % branch
 
-    def merge(self, git_repo_url, branch=None):
+    def merge(self, git_repo_url, hg_repo_url, branch=None):
         # Eventually we'll want to handle a full merge, but for now, we only
         # handle the case where we don't have metadata to begin with.
         # The caller should avoid calling this function otherwise.
@@ -924,7 +924,7 @@ class GitHgStore(object):
         if branch:
             branches = [branch]
         else:
-            branches = self._try_merge_branches(git_repo_url)
+            branches = self._try_merge_branches(hg_repo_url)
 
         ref = self._find_branch(branches, remote_refs)
         if ref is None:
