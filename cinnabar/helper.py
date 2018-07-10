@@ -40,9 +40,6 @@ class BaseHelper(object):
     def query(self, name, *args):
         if self._helper is False:
             helper_path = Git.config('cinnabar.helper')
-            if helper_path == '':
-                self._helper = None
-        if self._helper is False:
             env = {
                 'GIT_REPLACE_REF_BASE': 'refs/cinnabar/replace/',
             }
