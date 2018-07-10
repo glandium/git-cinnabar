@@ -192,13 +192,11 @@ def iterate_files(bundle):
 
 def iter_initialized(get_missing, iterable, init=None):
     previous = None
-    always_check = check_enabled('nodeid')
+    check = check_enabled('nodeid')
     for instance in iterable:
-        check = always_check
         if instance.delta_node != NULL_NODE_ID:
             if not previous or instance.delta_node != previous.node:
                 previous = get_missing(instance.delta_node)
-                check = True
             if init:
                 instance = init(instance, previous)
             else:
