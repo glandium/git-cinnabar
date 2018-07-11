@@ -1,7 +1,6 @@
 import logging
 import sys
 from cinnabar.cmd.util import CLI
-from cinnabar.exceptions import UpgradeAbort
 from cinnabar.githg import (
     Changeset,
     ChangesetPatcher,
@@ -52,11 +51,7 @@ def fsck(args):
         status['broken'] = True
         info(message)
 
-    try:
-        store = GitHgStore()
-    except UpgradeAbort as e:
-        print >>sys.stderr, e.message
-        return 1
+    store = GitHgStore()
 
     if args.commit:
         commits = set()
