@@ -977,6 +977,10 @@ struct strbuf *generate_manifest(const struct object_id *oid)
 		previous_list = previous_list->next;
 	}
 
+	if (oidcmp(&generated_manifest.tree_id, oid) == 0) {
+		return &generated_manifest.content;
+	}
+
 	if (generated_manifest.content.len) {
 		struct strslice gm;
 		gm = strbuf_slice(&generated_manifest.content, 0, SIZE_MAX);
