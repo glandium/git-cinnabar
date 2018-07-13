@@ -226,40 +226,41 @@ comma-separated list of those features to enable the selected ones, or to
 `all` to enable them all. The available features are:
 
 - **wire**
-In order to talk to Mercurial repositories, git-cinnabar normally uses
-mercurial python modules. This experimental feature allows to access Mercurial
-repositories without using the mercurial python modules. It then relies on
-git-cinnabar-helper to connect to the repository through the mercurial wire
-protocol. Please note the mercurial python modules are still needed for
-mercurial bundle v2 support.
+  In order to talk to Mercurial repositories, git-cinnabar normally uses
+  mercurial python modules. This experimental feature allows to access
+  Mercurial repositories without using the mercurial python modules. It then
+  relies on git-cinnabar-helper to connect to the repository through the
+  mercurial wire protocol. Please note the mercurial python modules are still
+  needed for mercurial bundle v2 support.
 
-The feature is automatically enabled when Mercurial is not installed.
+  The feature is automatically enabled when Mercurial is not installed.
 
 - **merge**
-Git-cinnabar currently doesn’t allow to push merge commits. The main reason for
-this is that generating the correct mercurial data for those merges is tricky,
-and needs to be gotten right.
+  Git-cinnabar currently doesn’t allow to push merge commits. The main
+  reason for this is that generating the correct mercurial data for those
+  merges is tricky, and needs to be gotten right.
 
-The main caveat with this experimental support for pushing merges is that it
-currently doesn’t handle the case where a file was moved on one of the branches
-the same way mercurial would (i.e. the information would be lost to mercurial
-users).
+  The main caveat with this experimental support for pushing merges is that it
+  currently doesn’t handle the case where a file was moved on one of the
+  branches the same way mercurial would (i.e. the information would be lost to
+  mercurial users).
 
 - **git-clone**
-For large repositories, an initial clone can take a large amount of time. This
-experimental feature allows to get an initial clone (including git-cinnabar
-metadata) from a git repository. This requires an extension on the mercurial
-server (see hg/cinnabarclone.py), and to push a fresh `refs/cinnabar/metadata`
-to some git repository.
+  For large repositories, an initial clone can take a large amount of time.
+  This experimental feature allows to get an initial clone (including
+  git-cinnabar metadata) from a git repository. This requires an extension on
+  the mercurial server (see hg/cinnabarclone.py), and to push a fresh
+  `refs/cinnabar/metadata` to some git repository.
 
-It can also be used without the extension on the mercurial server, by setting
-the `cinnabar.clone` git configuration item to the url of the git cinnabar
-metadata repository as it would be set up in the mercurial server
-configuration.
+  It can also be used without the extension on the mercurial server, by setting
+  the `cinnabar.clone` git configuration item to the url of the git cinnabar
+  metadata repository as it would be set up in the mercurial server
+  configuration.
 
 - **store-manifest**
-Importing mercurial manifests is usually the longest operation when getting
-mercurial data. It currently happens with battle tested python code. This
-experimental feature makes it use newer native code from the cinnabar-helper,
-which at the moment is only slightly faster. Future versions will have an even
-faster, albeit more risky, implementation.
+
+  Importing mercurial manifests is usually the longest operation when getting
+  mercurial data. It currently happens with battle tested python code. This
+  experimental feature makes it use newer native code from the cinnabar-helper,
+  which at the moment is only slightly faster. Future versions will have an
+  even faster, albeit more risky, implementation.
