@@ -8,27 +8,34 @@ from cinnabar.git import (
 from cinnabar.util import VersionedDict
 
 
+def get_previous_metadata(metadata):
+    commit = GitCommit(metadata)
+    flags = commit.body.split(' ')
+    if len(commit.parents) == 5 + ('files-meta' in flags):
+        return commit.parents[-1]
+
+
 def do_rollback(ref):
-    sha1 = Git.resolve_ref(ref)
-    if not sha1:
-        logging.error('Invalid ref: %s', ref)
-        return 1
-    if sha1 != NULL_NODE_ID:
-        # Validate that the sha1 is in the history of the current metadata
-        metadata = Git.resolve_ref('refs/cinnabar/metadata')
-        while metadata:
-            if sha1 == metadata:
-                break
-            commit = GitCommit(metadata)
-            flags = commit.body.split(' ')
-            if len(commit.parents) == 5 + ('files-meta' in flags):
-                metadata = commit.parents[-1]
-            else:
-                metadata = None
-        if not metadata:
-            logging.error('Cannot rollback to %s, it is not in the history of '
-                          'the current metadata.', ref)
+    if ref:
+        sha1 = Git.resolve_ref(ref)
+        if not sha1:
+            logging.error('Invalid ref: %s', ref)
             return 1
+        if sha1 != NULL_NODE_ID:
+            # Validate that the sha1 is in the history of the current metadata
+            metadata = Git.resolve_ref('refs/cinnabar/metadata')
+            while metadata and metadata != sha1:
+                metadata = get_previous_metadata(metadata)
+            if not metadata:
+                logging.error('Cannot rollback to %s, it is not in the '
+                              'history of the current metadata.', ref)
+                return 1
+    else:
+        metadata = Git.resolve_ref('refs/cinnabar/metadata')
+        if metadata:
+            sha1 = get_previous_metadata(metadata) or NULL_NODE_ID
+        else:
+            sha1 = NULL_NODE_ID
 
     refs = VersionedDict(
         (ref, commit)
@@ -54,7 +61,7 @@ def do_rollback(ref):
 
 
 @CLI.subcommand
-@CLI.argument('committish',
+@CLI.argument('committish', nargs='?',
               help='committish of the state to rollback to')
 def rollback(args):
     '''rollback cinnabar metadata state'''
