@@ -7,6 +7,7 @@ PYTHON_LIBS := \
 	cinnabar/githg.py \
 	cinnabar/bdiff.py \
 	cinnabar/dag.py \
+	cinnabar/exceptions.py \
 	cinnabar/helper.py \
 	cinnabar/remote_helper.py \
 	cinnabar/git.py \
