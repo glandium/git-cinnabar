@@ -202,38 +202,17 @@ A `hg://` url thus looks like:
 
 The default protocol is https, and the port can be omitted.
 
-- `hg::https://hg.mozilla.org/mozilla-central`
-
-  becomes
-
+- `hg::https://hg.mozilla.org/mozilla-central` becomes
   `hg://hg.mozilla.org/mozilla-central`
 
-- `hg::http://hg.mozilla.org/mozilla-central`
-
-  becomes
-
+- `hg::http://hg.mozilla.org/mozilla-central` becomes
   `hg://hg.mozilla.org:http/mozilla-central`
 
-- `hg::ssh://hg.mozilla.org/mozilla-central`
-
-  becomes
-
+- `hg::ssh://hg.mozilla.org/mozilla-central` becomes
   `hg://hg.mozilla.org:ssh/mozilla-central`
 
-- `hg::file:///some/path`
+- `hg::file:///some/path` becomes (awkward) `hg://:file/some/path`
 
-  becomes (awkward)
+- `hg::http://localhost:8080/foo` becomes `hg://localhost:8080.http/foo`
 
-  `hg://:file/some/path`
-
-- `hg::http://localhost:8080/foo`
-
-  becomes
-
-  `hg://localhost:8080.http/foo`
-
-- `hg::tags:`
-
-  becomes
-
-  `hg://:tags`
+- `hg::tags:` becomes `hg://:tags`
