@@ -691,17 +691,15 @@ static int add_parent(struct strbuf *data,
 static void manifest_metadata_path(struct strbuf *out, struct strslice *in)
 {
 	struct strslice part;
+	size_t len = in->len;
 	part = strslice_split_once(in, '/');
-	while (part.len) {
+	while (len != in->len) {
 		strbuf_addch(out, '_');
 		strbuf_addslice(out, part);
 		strbuf_addch(out, '/');
+		len = in->len;
 		part = strslice_split_once(in, '/');
 	}
-	// In case the original slice started with /, or contained two
-	// consecutive ones.
-	if (in->len > 0 && in->buf[0] == '/')
-		die("Empty path component found in input");
 	strbuf_addch(out, '_');
 	strbuf_addslice(out, *in);
 }

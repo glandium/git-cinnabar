@@ -790,10 +790,11 @@ static void recurse_manifest(const struct object_id *tree_id,
 
 	while (tree_entry(&state.desc, &entry)) {
 		struct strslice entry_path;
+		struct strslice underscore = { 1, "_" };
 		entry_path = strslice_from_str(entry.path);
-		entry_path = strslice_slice(entry_path, 1, SIZE_MAX);
-		if (entry_path.len == 0)
+		if (!strslice_startswith(entry_path, underscore))
 			goto corrupted;
+		entry_path = strslice_slice(entry_path, 1, SIZE_MAX);
 		if (S_ISDIR(entry.mode)) {
 			struct strbuf dir = STRBUF_INIT;
 			strbuf_addslice(&dir, base);
@@ -803,7 +804,8 @@ static void recurse_manifest(const struct object_id *tree_id,
 			                 strbuf_as_slice(&dir), tree_list);
 			strbuf_release(&dir);
 			continue;
-		}
+		} else if (entry_path.len == 0)
+			goto corrupted;
 		strbuf_addslice(manifest, base);
 		strbuf_addslice(manifest, entry_path);
 		strbuf_addf(manifest, "%c%s%s\n", '\0',
@@ -848,6 +850,7 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 	struct name_entry ref_entry, cur_entry;
 	struct strslice ref_entry_path, cur_entry_path;
 	struct strslice next = ref_manifest;
+	struct strslice underscore = { 1, "_" };
 	struct strbuf dir = STRBUF_INIT;
 	int cmp = 0;
 
@@ -862,9 +865,7 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 			if (tree_entry(&cur.desc, &cur_entry)) {
 				cur_entry_path =
 					strslice_from_str(cur_entry.path);
-				cur_entry_path =
-					strslice_slice(cur_entry_path, 1, SIZE_MAX);
-				if (cur_entry_path.len == 0)
+				if (!strslice_startswith(cur_entry_path, underscore))
 					goto corrupted;
 			} else {
 				cur_entry_path.len = 0;
@@ -874,16 +875,15 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 			if (tree_entry(&ref.desc, &ref_entry)) {
 				ref_entry_path =
 					strslice_from_str(ref_entry.path);
-				ref_entry_path =
-					strslice_slice(ref_entry_path, 1, SIZE_MAX);
-				if (ref_entry_path.len == 0)
+				if (!strslice_startswith(ref_entry_path, underscore))
 					goto corrupted;
 			} else {
 				ref_entry_path.len = 0;
 			}
 			ref_manifest = next;
 			assert(!ref_entry_path.len ||
-			       path_match(base, ref_entry_path, next));
+			       path_match(base, strslice_slice(
+					ref_entry_path, 1, SIZE_MAX), next));
 		}
 		if (!ref_entry_path.len) {
 			if (!cur_entry_path.len)
@@ -897,12 +897,13 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 				cur_entry_path.buf, cur_entry_path.len);
 		}
 		if (cmp <= 0) {
-			size_t len = base.len + ref_entry_path.len + 41;
+			size_t len = base.len + ref_entry_path.len + 40;
 			do {
 				strslice_split_once(&next, '\n');
 			} while (S_ISDIR(ref_entry.mode) &&
 			         (next.len > len) &&
-			         path_match(base, ref_entry_path, next));
+			         path_match(base, strslice_slice(
+					ref_entry_path, 1, SIZE_MAX), next));
 		}
 		/* File/directory was removed, nothing to do */
 		if (cmp < 0)
@@ -915,8 +916,11 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 			continue;
 		}
 		if (!S_ISDIR(cur_entry.mode)) {
+			if (cur_entry_path.len == 0)
+				goto corrupted;
 			strbuf_addslice(manifest, base);
-			strbuf_addslice(manifest, cur_entry_path);
+			strbuf_addslice(manifest, strslice_slice(
+				cur_entry_path, 1, SIZE_MAX));
 			strbuf_addf(manifest, "%c%s%s\n", '\0',
 			            oid_to_hex(cur_entry.oid),
 			            hgattr(cur_entry.mode));
@@ -924,7 +928,8 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 		}
 
 		strbuf_addslice(&dir, base);
-		strbuf_addslice(&dir, cur_entry_path);
+		strbuf_addslice(&dir, strslice_slice(
+			cur_entry_path, 1, SIZE_MAX));
 		strbuf_addch(&dir, '/');
 		if (cmp == 0 && S_ISDIR(ref_entry.mode)) {
 			recurse_manifest2(ref_entry.oid, ref_manifest,
@@ -1975,6 +1980,7 @@ static void do_upgrade(struct string_list *args)
 
 static void recurse_create_git_tree(const struct object_id *tree_id,
                                     const struct object_id *reference,
+                                    struct strbuf *tree_buf,
                                     struct object_id *result,
 				    struct hashmap *cache)
 {
@@ -1987,33 +1993,43 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 		struct manifest_tree_state state;
 		struct manifest_tree_state ref_state = { NULL, };
 		struct name_entry entry;
-		struct strbuf tree_buf = STRBUF_INIT;
+		struct strbuf tree_buf_ = STRBUF_INIT;
+		if (!tree_buf)
+			tree_buf = &tree_buf_;
 
 		if (manifest_tree_state_init(tree_id, &state, NULL))
-			die("Corrupt mercurial metadata");
+			goto corrupted;
 
 		while (tree_entry(&state.desc, &entry)) {
 			struct object_id oid;
 			unsigned mode = entry.mode;
 			struct strslice entry_path;
+			struct strslice underscore = { 1, "_" };
 			entry_path = strslice_from_str(entry.path);
+			if (!strslice_startswith(entry_path, underscore))
+				goto corrupted;
 			entry_path = strslice_slice(entry_path, 1, SIZE_MAX);
-			if (entry_path.len == 0)
-				die("Corrupt mercurial metadata");
-			if (S_ISDIR(mode)) {
+			if (entry_path.len == 0) {
+				if (!S_ISDIR(mode))
+					goto corrupted;
+				recurse_create_git_tree(
+					entry.oid, NULL, tree_buf, NULL,
+					cache);
+				continue;
+			} else if (S_ISDIR(mode)) {
 				struct name_entry *ref_entry;
 				ref_entry = lazy_tree_entry_by_name(
 					&ref_state, reference, entry_path.buf);
 				recurse_create_git_tree(
 					entry.oid,
 					ref_entry ? ref_entry->oid : NULL,
-					&oid, cache);
+					NULL, &oid, cache);
 			} else {
 				const struct object_id *file_oid;
 				file_oid = resolve_hg2git(entry.oid, 40);
 				if (!file_oid) {
 					if (!is_empty_hg_file(entry.oid->hash))
-						die("Corrupt mercurial metadata");
+						goto corrupted;
 					file_oid = ensure_empty_blob();
 				}
 				oidcpy(&oid, file_oid);
@@ -2023,25 +2039,32 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 				else
 					mode = S_IFREG | mode;
 			}
-			strbuf_addf(&tree_buf, "%o ", canon_mode(mode));
-			strbuf_addslice(&tree_buf, entry_path);
-			strbuf_addch(&tree_buf, '\0');
-			strbuf_add(&tree_buf, oid.hash, 20);
+			strbuf_addf(tree_buf, "%o ", canon_mode(mode));
+			strbuf_addslice(tree_buf, entry_path);
+			strbuf_addch(tree_buf, '\0');
+			strbuf_add(tree_buf, oid.hash, 20);
 		}
 
-		cache_entry = xmalloc(sizeof(k));
-		cache_entry->ent = k.ent;
-		cache_entry->old_oid = k.old_oid;
-		store_git_tree(&tree_buf, reference, &cache_entry->new_oid);
-		strbuf_release(&tree_buf);
-		hashmap_add(cache, cache_entry);
+		if (tree_buf == &tree_buf_) {
+			cache_entry = xmalloc(sizeof(k));
+			cache_entry->ent = k.ent;
+			cache_entry->old_oid = k.old_oid;
+			store_git_tree(tree_buf, reference, &cache_entry->new_oid);
+			strbuf_release(&tree_buf_);
+			hashmap_add(cache, cache_entry);
+		}
 
 		if (state.tree)
 			free_tree_buffer(state.tree);
 		if (ref_state.tree)
 			free_tree_buffer(ref_state.tree);
 	}
-	oidcpy(result, &cache_entry->new_oid);
+	if (result && cache_entry)
+		oidcpy(result, &cache_entry->new_oid);
+	return;
+
+corrupted:
+	die("Corrupt mercurial metadata");
 }
 
 static struct hashmap git_tree_cache;
@@ -2087,8 +2110,8 @@ static void do_create_git_tree(struct string_list *args)
 		ref_tree = get_commit_tree_oid(ref_commit);
 	}
 
-	recurse_create_git_tree(get_commit_tree_oid(commit), ref_tree, &oid,
-	                        &git_tree_cache);
+	recurse_create_git_tree(get_commit_tree_oid(commit), ref_tree, NULL,
+	                        &oid, &git_tree_cache);
 
 	write_or_die(1, oid_to_hex(&oid), 40);
 	write_or_die(1, "\n", 1);

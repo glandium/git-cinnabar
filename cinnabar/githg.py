@@ -1118,8 +1118,6 @@ class GitHgStore(object):
 
     @staticmethod
     def manifest_metadata_path(path):
-        if path.startswith('/') or '//' in path:
-            raise Exception('Empty path component found in input')
         return '_' + path.replace('/', '/_')
 
     @staticmethod
