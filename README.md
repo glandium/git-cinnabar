@@ -226,6 +226,7 @@ comma-separated list of those features to enable the selected ones, or to
 `all` to enable them all. The available features are:
 
 - **wire**
+
   In order to talk to Mercurial repositories, git-cinnabar normally uses
   mercurial python modules. This experimental feature allows to access
   Mercurial repositories without using the mercurial python modules. It then
@@ -236,6 +237,7 @@ comma-separated list of those features to enable the selected ones, or to
   The feature is automatically enabled when Mercurial is not installed.
 
 - **merge**
+
   Git-cinnabar currently doesn’t allow to push merge commits. The main
   reason for this is that generating the correct mercurial data for those
   merges is tricky, and needs to be gotten right.
@@ -246,6 +248,7 @@ comma-separated list of those features to enable the selected ones, or to
   mercurial users).
 
 - **git-clone**
+
   For large repositories, an initial clone can take a large amount of time.
   This experimental feature allows to get an initial clone (including
   git-cinnabar metadata) from a git repository. This requires an extension on
