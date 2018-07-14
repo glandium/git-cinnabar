@@ -27,9 +27,14 @@ extern void ensure_heads(struct oid_array *heads);
 
 extern struct notes_tree git2hg, hg2git, files_meta;
 
+static inline int notes_initialized(struct notes_tree *notes)
+{
+	return notes->initialized;
+}
+
 static inline void ensure_notes(struct notes_tree *notes)
 {
-	if (!notes->initialized) {
+	if (!notes_initialized(notes)) {
 		const char *ref;
 		int flags = 0;
 		if (notes == &git2hg)

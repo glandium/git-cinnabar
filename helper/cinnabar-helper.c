@@ -557,7 +557,7 @@ const struct object_id *get_abbrev_note(struct notes_tree *t,
 
 	if (!t)
 		t = &default_notes_tree;
-	assert(t->initialized);
+	assert(notes_initialized(t));
 	found = note_tree_abbrev_find(t, t->root, 0, object_oid->hash, len);
 	return found ? &found->val_oid : NULL;
 }
@@ -2257,13 +2257,13 @@ static void do_reload(struct string_list *args)
         if (args->nr != 0)
                 die("reload takes no arguments");
 
-	if (git2hg.initialized)
+	if (notes_initialized(&git2hg))
 		free_notes(&git2hg);
 
-	if (hg2git.initialized)
+	if (notes_initialized(&hg2git))
 		free_notes(&hg2git);
 
-	if (files_meta.initialized)
+	if (notes_initialized(&files_meta))
 		free_notes(&files_meta);
 
 	oidset_clear(&hg2git_seen);
@@ -2354,13 +2354,13 @@ int cmd_main(int argc, const char *argv[])
 
 	strbuf_release(&buf);
 
-	if (git2hg.initialized)
+	if (notes_initialized(&git2hg))
 		free_notes(&git2hg);
 
-	if (hg2git.initialized)
+	if (notes_initialized(&hg2git))
 		free_notes(&hg2git);
 
-	if (files_meta.initialized)
+	if (notes_initialized(&files_meta))
 		free_notes(&files_meta);
 
 	oidset_clear(&hg2git_seen);

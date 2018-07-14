@@ -309,7 +309,7 @@ void maybe_reset_notes(const char *branch)
 	if (notes) {
 		struct branch *b = lookup_branch(branch);
 		if (!is_null_oid(&b->oid)) {
-			if (notes->initialized)
+			if (notes_initialized(notes))
 				free_notes(notes);
 			init_notes(notes, oid_to_hex(&b->oid),
 				   combine_notes_ignore, 0);
