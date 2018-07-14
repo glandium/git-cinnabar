@@ -1,7 +1,7 @@
 #ifndef CINNABAR_HELPER_H
 #define CINNABAR_HELPER_H
 
-#include "notes.h"
+#include "cinnabar-notes.h"
 
 #define METADATA_REF "refs/cinnabar/metadata"
 #define CHANGESETS_REF METADATA_REF "^1"
@@ -26,11 +26,6 @@ extern struct oid_array changeset_heads, manifest_heads;
 extern void ensure_heads(struct oid_array *heads);
 
 extern struct notes_tree git2hg, hg2git, files_meta;
-
-static inline int notes_initialized(struct notes_tree *notes)
-{
-	return notes->initialized;
-}
 
 static inline void ensure_notes(struct notes_tree *notes)
 {

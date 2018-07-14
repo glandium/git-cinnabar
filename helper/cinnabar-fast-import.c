@@ -5,10 +5,10 @@ static void start_packfile();
 #undef hashwrite
 #include "cinnabar-fast-import.h"
 #include "cinnabar-helper.h"
+#include "cinnabar-notes.h"
 #include "hg-bundle.h"
 #include "hg-data.h"
 #include "list.h"
-#include "notes.h"
 #include "sha1-array.h"
 #include "strslice.h"
 #include "tree-walk.h"
