@@ -177,19 +177,27 @@ static int merge_note(const struct object_id *object_oid,
 int cinnabar_for_each_note(struct cinnabar_notes_tree *t, int flags,
                            each_note_fn fn, void *cb_data)
 {
-	/* Reinitialize current */
-	combine_notes_fn combine_notes = t->current.combine_notes;
+	struct int_node empty_node = { 0, };
 	char *notes_ref = xstrdup_or_null(t->current.ref);
-	free_notes(&t->current);
-	init_notes(&t->current, notes_ref, combine_notes, t->init_flags);
-	/* Merge additions */
-	for_each_note(&t->additions, FOR_EACH_NOTE_DONT_UNPACK_SUBTREES,
-	              merge_note, &t->current);
-	/* Reinitialize additions */
-	free_notes(&t->additions);
-	init_notes(&t->additions, notes_ref, combine_notes_ignore,
-	           NOTES_INIT_EMPTY);
-
+	if (memcmp(&t->current.root, &empty_node, sizeof(empty_node)) == 0) {
+		// If current is empty, we just copy the additions to it.
+		free_notes(&t->current);
+		memcpy(&t->current, &t->additions, sizeof(struct notes_tree));
+		init_notes(&t->additions, notes_ref, combine_notes_ignore,
+		           NOTES_INIT_EMPTY);
+	} else {
+		/* Reinitialize current */
+		combine_notes_fn combine_notes = t->current.combine_notes;
+		free_notes(&t->current);
+		init_notes(&t->current, notes_ref, combine_notes, t->init_flags);
+		/* Merge additions */
+		for_each_note(&t->additions, FOR_EACH_NOTE_DONT_UNPACK_SUBTREES,
+		              merge_note, &t->current);
+		/* Reinitialize additions */
+		free_notes(&t->additions);
+		init_notes(&t->additions, notes_ref, combine_notes_ignore,
+		           NOTES_INIT_EMPTY);
+	}
 	free(notes_ref);
 
 	/* Now we can iterate the updated current */
