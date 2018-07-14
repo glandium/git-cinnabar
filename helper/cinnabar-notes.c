@@ -1,6 +1,14 @@
 #include "cache.h"
 #include "cinnabar-notes.h"
 
+#undef notes_tree
+#undef init_notes
+#undef free_notes
+#undef add_note
+#undef remove_note
+#undef get_note
+#undef for_each_note
+
 static int abbrev_sha1_cmp(const unsigned char *ref_sha1,
                            const unsigned char *abbrev_sha1, size_t len)
 {
@@ -81,14 +89,109 @@ static struct leaf_node *note_tree_abbrev_find(struct notes_tree *t,
 	}
 }
 
-const struct object_id *get_abbrev_note(struct notes_tree *t,
+const struct object_id *get_abbrev_note(struct cinnabar_notes_tree *t,
 		const struct object_id *object_oid, size_t len)
 {
 	struct leaf_node *found;
 
-	if (!t)
-		t = &default_notes_tree;
+	assert(t);
 	assert(notes_initialized(t));
-	found = note_tree_abbrev_find(t, t->root, 0, object_oid->hash, len);
+	found = note_tree_abbrev_find(&t->current, t->current.root, 0,
+	                              object_oid->hash, len);
+	if (!found)
+		found = note_tree_abbrev_find(
+			&t->additions, t->additions.root, 0,
+			object_oid->hash, len);
 	return found ? &found->val_oid : NULL;
+}
+
+void cinnabar_init_notes(struct cinnabar_notes_tree *t, const char *notes_ref,
+                         combine_notes_fn combine_notes, int flags)
+{
+	t->init_flags = flags;
+	init_notes(&t->current, notes_ref, combine_notes, flags);
+	init_notes(&t->additions, notes_ref, combine_notes_ignore,
+	           NOTES_INIT_EMPTY);
+}
+
+void cinnabar_free_notes(struct cinnabar_notes_tree *t)
+{
+	free_notes(&t->current);
+	free_notes(&t->additions);
+}
+
+int cinnabar_add_note(
+	struct cinnabar_notes_tree *t, const struct object_id *object_oid,
+	const struct object_id *note_oid, combine_notes_fn combine_notes)
+{
+	if (!combine_notes)
+		combine_notes = t->current.combine_notes;
+	if (combine_notes == combine_notes_ignore) {
+		if (get_note(&t->current, object_oid))
+			return 0;
+	} else if (combine_notes != combine_notes_overwrite) {
+		die("Unsupported combine_notes");
+	}
+
+	return add_note(&t->additions, object_oid, note_oid, NULL);
+}
+
+int cinnabar_remove_note(struct cinnabar_notes_tree *t,
+                         const unsigned char *object_sha1)
+{
+	int result = remove_note(&t->current, object_sha1);
+	int result2 = remove_note(&t->additions, object_sha1);
+	if (!result) {
+		struct object_id oid;
+		hashcpy(oid.hash, object_sha1);
+		add_note(&t->additions, &oid, &null_oid, NULL);
+	}
+	return result && result2;
+}
+
+const struct object_id *cinnabar_get_note(struct cinnabar_notes_tree *t,
+                                          const struct object_id *object_oid)
+{
+	const struct object_id *note = get_note(&t->current, object_oid);
+	if (!note) {
+		note = get_note(&t->additions, object_oid);
+		if (note && is_null_oid(note))
+			note = NULL;
+	}
+	return note;
+}
+
+static int merge_note(const struct object_id *object_oid,
+                      const struct object_id *note_oid, char *note_path,
+                      void *data)
+{
+	struct notes_tree *notes = (struct notes_tree *)data;
+	if (is_null_oid(note_oid))
+		remove_note(notes, object_oid->hash);
+	else
+		add_note(notes, object_oid, note_oid, combine_notes_overwrite);
+
+	return 0;
+}
+
+int cinnabar_for_each_note(struct cinnabar_notes_tree *t, int flags,
+                           each_note_fn fn, void *cb_data)
+{
+	/* Reinitialize current */
+	combine_notes_fn combine_notes = t->current.combine_notes;
+	char *notes_ref = xstrdup_or_null(t->current.ref);
+	free_notes(&t->current);
+	init_notes(&t->current, notes_ref, combine_notes, t->init_flags);
+	/* Merge additions */
+	for_each_note(&t->additions, FOR_EACH_NOTE_DONT_UNPACK_SUBTREES,
+	              merge_note, &t->current);
+	/* Reinitialize additions */
+	free_notes(&t->additions);
+	init_notes(&t->additions, notes_ref, combine_notes_ignore,
+	           NOTES_INIT_EMPTY);
+
+	free(notes_ref);
+
+	/* Now we can iterate the updated current */
+	return for_each_note(&t->current, flags, fn, cb_data);
 }
