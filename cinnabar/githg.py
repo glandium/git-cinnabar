@@ -813,6 +813,7 @@ class GitHgStore(object):
         self._tagcache = {}
         self._tagfiles = {}
         self._tags = {NULL_NODE_ID: {}}
+        self._cached_changeset_ref = {}
         self._tagcache_ref = Git.resolve_ref('refs/cinnabar/tag_cache')
         self._tagcache_items = set()
         if self._tagcache_ref:
@@ -1029,7 +1030,7 @@ class GitHgStore(object):
                     except TypeError:
                         continue
                     if node != NULL_NODE_ID:
-                        node = self.changeset_ref(node)
+                        node = self.cached_changeset_ref(node)
                     if node:
                         tags[tag] = node
             self._tags[tagfile] = tags
@@ -1139,6 +1140,13 @@ class GitHgStore(object):
 
     def changeset_ref(self, sha1):
         return self._hg2git(sha1)
+
+    def cached_changeset_ref(self, sha1):
+        try:
+            return self._cached_changeset_ref[sha1]
+        except KeyError:
+            res = self._cached_changeset_ref[sha1] = self.changeset_ref(sha1)
+            return res
 
     def file_meta(self, sha1):
         return GitHgHelper.file_meta(sha1)
@@ -1330,16 +1338,20 @@ class GitHgStore(object):
                 update_metadata.append('refs/notes/cinnabar')
 
         hg_changeset_heads = list(self._hgheads)
-        changeset_heads = set(self.changeset_ref(h)
-                              for h in hg_changeset_heads)
+        changeset_heads = list(self.changeset_ref(h)
+                               for h in hg_changeset_heads)
         if any(self._hgheads.iterchanges()):
-            heads = sorted(((self._hgheads[h], h) for h in hg_changeset_heads))
+            heads = sorted((self._hgheads[h], h, g)
+                           for h, g in izip(hg_changeset_heads,
+                                            changeset_heads))
             with self._fast_import.commit(
                 ref='refs/cinnabar/changesets',
-                parents=list(self.changeset_ref(h) for _, h in heads),
-                message='\n'.join('%s %s' % (h, b) for b, h in heads),
+                parents=list(h for _, __, h in heads),
+                message='\n'.join('%s %s' % (h, b) for b, h, _ in heads),
             ) as commit:
                 update_metadata.append('refs/cinnabar/changesets')
+
+        changeset_heads = set(changeset_heads)
 
         manifest_heads = GitHgHelper.heads('manifests')
         if (set(manifest_heads) != self._manifest_heads_orig or
