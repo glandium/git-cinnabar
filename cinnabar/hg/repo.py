@@ -480,7 +480,7 @@ class bundlerepo(object):
                 yield item
 
         changeset_chunks = ChunksCollection(progress_iter(
-            'Analyzing %d changesets from ' + self._file,
+            'Analyzing {} changesets from ' + self._file,
             iter_and_store(next(raw_unbundler, None))))
 
         for chunk in changeset_chunks.iter_initialized(lambda x: x,
@@ -655,24 +655,24 @@ class BundleApplier(object):
 
     def __call__(self, store):
         changeset_chunks = ChunksCollection(progress_iter(
-            'Reading %d changesets', next(self._bundle, None)))
+            'Reading {} changesets', next(self._bundle, None)))
 
         if experiment('store-manifest'):
             for rev_chunk in progress_iter(
-                    'Reading and importing %d manifests',
+                    'Reading and importing {} manifests',
                     next(self._bundle, None)):
                 GitHgHelper.store('manifest', rev_chunk)
                 store.check_manifest(rev_chunk)
         else:
             for mn in progress_iter(
-                    'Reading and importing %d manifests',
+                    'Reading and importing {} manifests',
                     iter_initialized(store.manifest,
                                      iter_chunks(next(self._bundle, None),
                                                  ManifestInfo))):
                 store.store_manifest(mn)
 
         for rev_chunk in progress_iter(
-                'Reading and importing %d files', next(self._bundle, None)):
+                'Reading and importing {} files', next(self._bundle, None)):
             GitHgHelper.store('file', rev_chunk)
 
         if next(self._bundle, None) is not None:
@@ -680,7 +680,7 @@ class BundleApplier(object):
         del self._bundle
 
         for cs in progress_iter(
-                'Importing %d changesets',
+                'Importing {} changesets',
                 changeset_chunks.iter_initialized(lambda x: x, store.changeset,
                                                   Changeset.from_chunk)):
             try:

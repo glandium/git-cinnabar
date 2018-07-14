@@ -411,7 +411,7 @@ def bundle_data(store, commits):
     manifests = OrderedDict()
     files = defaultdict(list)
 
-    for node, parents in progress_iter('Bundling %d changesets', commits):
+    for node, parents in progress_iter('Bundling {} changesets', commits):
         if len(parents) > 2:
             raise Exception(
                 'Pushing octopus merges to mercurial is not supported')
@@ -433,7 +433,7 @@ def bundle_data(store, commits):
 
     yield None
 
-    for manifest, changeset in progress_iter('Bundling %d manifests',
+    for manifest, changeset in progress_iter('Bundling {} manifests',
                                              manifests.iteritems()):
         hg_manifest = store.manifest(manifest, include_parents=True)
         hg_manifest.changeset = changeset
@@ -472,7 +472,7 @@ def bundle_data(store, commits):
             self._previous = chunk
             return ret
 
-    for chunk in progress_iter('Bundling %d files', iter_files(files), Filt()):
+    for chunk in progress_iter('Bundling {} files', iter_files(files), Filt()):
         yield chunk
 
     yield None

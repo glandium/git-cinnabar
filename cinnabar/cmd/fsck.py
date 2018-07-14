@@ -90,7 +90,7 @@ def fsck(args):
 
     full_file_check = FileFindParents.logger.isEnabledFor(logging.DEBUG)
 
-    for node, tree, parents in progress_iter('Checking %d changesets',
+    for node, tree, parents in progress_iter('Checking {} changesets',
                                              all_git_commits):
         node = store._replace.get(node, node)
         hg_node = store.hg_changeset(node)

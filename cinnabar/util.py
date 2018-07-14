@@ -149,7 +149,7 @@ def progress_enum(fmt, enum_iter):
             if progress:
                 t1 = time.time()
                 if t1 - t0 > 0.1:
-                    sys.stderr.write(('\r' + fmt) % count)
+                    sys.stderr.write('\r' + fmt.format(count))
                     if check_enabled('time'):
                         sys.stderr.write(' in %.1fs' % (t1 - start))
                     sys.stderr.flush()
@@ -160,7 +160,7 @@ def progress_enum(fmt, enum_iter):
             timed = ''
             if check_enabled('time'):
                 timed = ' in %.1fs' % (time.time() - start)
-            sys.stderr.write(('\r' + fmt + timed + '\n') % count)
+            sys.stderr.write('\r' + fmt.format(count) + timed + '\n')
             sys.stderr.flush()
 
 

@@ -629,7 +629,7 @@ class Grafter(object):
         if store._has_metadata:
             refs += ['--not', 'refs/cinnabar/metadata^']
         for node, tree, parents in progress_iter(
-                'Reading %d graft candidates',
+                'Reading {} graft candidates',
                 GitHgHelper.rev_list('--full-history', *refs)):
             self._graft_trees[tree].append(node)
         if not self._graft_trees:
