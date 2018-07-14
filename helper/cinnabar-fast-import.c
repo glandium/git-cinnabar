@@ -537,7 +537,7 @@ static int store_each_note(const struct object_id *object_oid,
 static void store_notes(struct notes_tree *notes, struct object_id *result)
 {
 	hashcpy(result->hash, null_sha1);
-	if (notes->dirty) {
+	if (notes_dirty(notes)) {
 		struct store_each_note_data data;
 		data.tree = new_tree_entry();
 		data.notes = notes;
