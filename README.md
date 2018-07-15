@@ -46,20 +46,19 @@ Setup:
   $ git cinnabar download
   ```
 
-  Alternatively, you can do the following to build it:
+  Alternatively, you can build it:
 
   ```
-  $ make helper
+  $ make
   ```
 
-Or see `git-core/INSTALL` after initializing the submodule, for build/install
-instructions, but run the commands in this directory. This will build/install
-git as well as the tools from this directory. Note that if you have a
-non-standard Python installation location (for example if you are on macOS and
-have installed it using homebrew) you need to pass
-`--with-python=/path/to/python` to the configure script or set the
-`PYTHON_PATH` environment variable to your Python installation path when using
-make to build this tool.
+  If you want to build git along the helper, you can run `make git`.
+
+  If you have a non-standard Python installation location (for example if you
+  are on macOS and have installed it using homebrew) you need to pass
+  `--with-python=/path/to/python` to the configure script or set the
+  `PYTHON_PATH` environment variable to your Python installation path when
+  using make to build the helper.
 
 Usage:
 ------

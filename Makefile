@@ -69,18 +69,25 @@ ifneq ($(shell git -C git-core rev-parse HEAD),$(shell git -C git-core rev-parse
 $(error git-core is not checked out at $(GIT_VERSION))
 endif
 
-all:
+helper:
 
 .SUFFIXES:
 
+TARGET=$@
+git: TARGET=all
+git-install: TARGET=install
+
 %:
-	$(MAKE) -C $(CURDIR)/git-core -f $(CURDIR)/Makefile $@ SCRIPT_PYTHON="git-p4.py $(PYTHON_SCRIPTS)" CINNABAR_RECURSE=1
+	$(MAKE) -C $(CURDIR)/git-core -f $(CURDIR)/Makefile $(TARGET) SCRIPT_PYTHON="git-p4.py $(PYTHON_SCRIPTS)" CINNABAR_RECURSE=1
+
+install:
+	$(error Not a supported target)
 
 include git-core/config.mak.uname
 
 .PHONY: FORCE
 
-git-cinnabar-helper$X: FORCE
+git-cinnabar-helper$X git git-install: FORCE
 
 helper: git-cinnabar-helper$X
 	mv git-core/$^ $^
