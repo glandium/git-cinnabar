@@ -21,6 +21,7 @@ struct cinnabar_notes_tree {
 #define remove_note cinnabar_remove_note
 #define get_note cinnabar_get_note
 #define for_each_note cinnabar_for_each_note
+#define write_notes_tree cinnabar_write_notes_tree
 
 static inline int notes_initialized(struct notes_tree *notes)
 {
@@ -51,5 +52,10 @@ extern const struct object_id *get_note(struct notes_tree *t,
 
 extern int for_each_note(struct notes_tree *t, int flags, each_note_fn fn,
                          void *cb_data);
+
+extern int write_notes_tree(struct notes_tree *t, struct object_id *result,
+                            unsigned int mode);
+
+extern void consolidate_notes(struct notes_tree *t);
 
 #endif

@@ -13,6 +13,10 @@ static void start_packfile();
 #include "strslice.h"
 #include "tree-walk.h"
 
+// Including tag.h conflicts with fast-import.c, so manually define what
+// we use.
+extern const char *tag_type;
+
 #define ENSURE_INIT() do { \
 	if (!initialized) \
 		init(); \
@@ -504,33 +508,26 @@ static void do_set(struct string_list *args)
 	}
 }
 
-struct store_each_note_data {
-	struct tree_entry *tree;
-	struct notes_tree *notes;
-};
-
-static int store_each_note(const struct object_id *object_oid,
-                           const struct object_id *note_oid, char *note_path,
-                           void *data)
+int write_object_file(const void *buf, unsigned long len, const char *type,
+                      struct object_id *oid)
 {
-	int mode;
-	size_t len;
-	struct store_each_note_data *d = (struct store_each_note_data *)data;
-
-	// for_each_note calls with a path ending with a slash when giving a
-	// tree.
-	len = strlen(note_path);
-	if (note_path[len - 1] == '/') {
-		// tree_content_set doesn't like that, though, so strip it.
-		note_path[len - 1] = '\0';
-		mode = S_IFDIR;
-	} else if (d->notes == &hg2git) {
-		mode = S_IFGITLINK;
+	struct strbuf data;
+	enum object_type t;
+	if (type == tree_type) {
+		t = OBJ_TREE;
+	} else if (type == blob_type) {
+		t = OBJ_BLOB;
+	} else if (type == commit_type) {
+		t = OBJ_COMMIT;
+	} else if (type == tag_type) {
+		t = OBJ_TAG;
 	} else {
-		mode = S_IFREG | 0644;
+		die("Unknown type");
 	}
-
-	tree_content_set(d->tree, note_path, note_oid, mode, NULL);
+	data.buf = (void *)buf;
+	data.len = len;
+	data.alloc = len;
+	store_object(t, &data, NULL, oid, 0);
 	return 0;
 }
 
@@ -538,19 +535,9 @@ static void store_notes(struct notes_tree *notes, struct object_id *result)
 {
 	hashcpy(result->hash, null_sha1);
 	if (notes_dirty(notes)) {
-		struct store_each_note_data data;
-		data.tree = new_tree_entry();
-		data.notes = notes;
-
-		require_explicit_termination = 1;
-		memset(data.tree, 0, sizeof(*data.tree));
-		if (for_each_note(notes, FOR_EACH_NOTE_DONT_UNPACK_SUBTREES |
-		                         FOR_EACH_NOTE_YIELD_SUBTREES,
-		                  store_each_note, &data))
-			die("Failed to store notes");
-		store_tree(data.tree);
-		oidcpy(result, &data.tree->versions[1].oid);
-		release_tree_entry(data.tree);
+		unsigned int mode = (notes == &hg2git) ? S_IFGITLINK
+		                                       : S_IFREG | 0644;
+		write_notes_tree(notes, result, mode);
 	}
 }
 

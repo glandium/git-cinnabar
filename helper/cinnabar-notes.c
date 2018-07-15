@@ -8,6 +8,7 @@
 #undef remove_note
 #undef get_note
 #undef for_each_note
+#undef write_notes_tree
 
 static int abbrev_sha1_cmp(const unsigned char *ref_sha1,
                            const unsigned char *abbrev_sha1, size_t len)
@@ -177,6 +178,21 @@ static int merge_note(const struct object_id *object_oid,
 int cinnabar_for_each_note(struct cinnabar_notes_tree *t, int flags,
                            each_note_fn fn, void *cb_data)
 {
+	consolidate_notes(t);
+	return for_each_note(&t->current, flags, fn, cb_data);
+}
+
+extern int write_notes_tree_mode(
+	struct notes_tree *t, struct object_id *result, unsigned int mode);
+
+int cinnabar_write_notes_tree(struct cinnabar_notes_tree *t,
+                              struct object_id *result, unsigned int mode)
+{
+	consolidate_notes(t);
+	return write_notes_tree_mode(&t->current, result, mode);
+}
+
+void consolidate_notes(struct cinnabar_notes_tree *t) {
 	struct int_node empty_node = { { NULL, } };
 	char *notes_ref = xstrdup_or_null(t->current.ref);
 	if (memcmp(t->current.root, &empty_node, sizeof(empty_node)) == 0) {
@@ -200,7 +216,4 @@ int cinnabar_for_each_note(struct cinnabar_notes_tree *t, int flags,
 		           NOTES_INIT_EMPTY);
 	}
 	free(notes_ref);
-
-	/* Now we can iterate the updated current */
-	return for_each_note(&t->current, flags, fn, cb_data);
 }
