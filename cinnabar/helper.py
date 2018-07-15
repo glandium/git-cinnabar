@@ -3,6 +3,7 @@ import logging
 import os
 import subprocess
 from StringIO import StringIO
+from .exceptions import NoHelperAbort, HelperClosedError
 from .git import (
     Git,
     NULL_NODE_ID,
@@ -20,14 +21,6 @@ from .util import (
 from contextlib import contextmanager
 
 
-class NoHelperException(Exception):
-    pass
-
-
-class HelperClosedException(Exception):
-    pass
-
-
 class BaseHelper(object):
     @classmethod
     def close(self):
@@ -40,9 +33,6 @@ class BaseHelper(object):
     def query(self, name, *args):
         if self._helper is False:
             helper_path = Git.config('cinnabar.helper')
-            if helper_path == '':
-                self._helper = None
-        if self._helper is False:
             env = {
                 'GIT_REPLACE_REF_BASE': 'refs/cinnabar/replace/',
             }
@@ -50,6 +40,7 @@ class BaseHelper(object):
                 command = (helper_path,)
             else:
                 command = ('git', 'cinnabar-helper')
+
             try:
                 self._helper = Process(*command, stdin=subprocess.PIPE,
                                        stderr=None, logger='cinnabar-helper',
@@ -59,25 +50,25 @@ class BaseHelper(object):
             except Exception:
                 self._helper = None
                 response = None
+
             if not response:
                 logger = logging.getLogger('helper')
                 if self._helper and self._helper.wait() == 128:
-                    logger.error(
-                        'Cinnabar helper executable is outdated. '
-                        'Please try `git cinnabar download` or rebuild it.')
+                    message = ('Cinnabar helper executable is outdated. '
+                               'Please try `git cinnabar download` or '
+                               'rebuild it.')
                 else:
-                    logger.error(
-                        'Cannot find cinnabar helper executable. '
-                        'Please try `git cinnabar download` or build it.')
-                self._helper = None
+                    message = ('Cannot find cinnabar helper executable. '
+                               'Please try `git cinnabar download` or '
+                               'build it.')
+
+                raise NoHelperAbort(message)
             else:
                 self._version = response.lstrip('ok\n') or 'unknown'
                 atexit.register(self.close)
 
-        if not self._helper:
-            raise NoHelperException
         if self._helper is self:
-            raise HelperClosedException
+            raise HelperClosedError
 
         if name == 'version':
             yield StringIO(self._version)
@@ -131,8 +122,16 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 27
+    VERSION = 30
     _helper = False
+
+    @classmethod
+    def reload(self):
+        with self.query('reload'):
+            pass
+        self.git2hg.invalidate()
+        self.hg2git.invalidate()
+        self._cat_commit.invalidate()
 
     @classmethod
     def _cat_file(self, typ, sha1):
@@ -240,7 +239,7 @@ class GitHgHelper(BaseHelper):
                 sha1 = stdout.read(41)
                 assert sha1[-1] == '\n'
                 return sha1[:40]
-        elif what == 'file':
+        elif what in ('file', 'manifest'):
             obj = args[0]
             if isinstance(obj, RawRevChunk01):
                 delta_node = obj.delta_node
@@ -291,7 +290,7 @@ class GitHgHelper(BaseHelper):
 
 
 class HgRepoHelper(BaseHelper):
-    VERSION = 25
+    VERSION = 29
     _helper = False
 
     @classmethod
@@ -362,4 +361,9 @@ class HgRepoHelper(BaseHelper):
     @classmethod
     def clonebundles(self):
         with self.query("clonebundles") as stdout:
+            return self._read_data(stdout)
+
+    @classmethod
+    def cinnabarclone(self):
+        with self.query("cinnabarclone") as stdout:
             return self._read_data(stdout)

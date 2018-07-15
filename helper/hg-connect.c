@@ -307,6 +307,11 @@ void hg_clonebundles(struct hg_connection *conn, struct strbuf *result)
 	conn->simple_command(conn, result, "clonebundles", NULL);
 }
 
+void hg_cinnabarclone(struct hg_connection *conn, struct strbuf *result)
+{
+	conn->simple_command(conn, result, "cinnabarclone", NULL);
+}
+
 int hg_finish_connect(struct hg_connection *conn)
 {
 	int code = conn->finish(conn);

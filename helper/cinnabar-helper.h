@@ -1,7 +1,7 @@
 #ifndef CINNABAR_HELPER_H
 #define CINNABAR_HELPER_H
 
-#include "notes.h"
+#include "cinnabar-notes.h"
 
 #define METADATA_REF "refs/cinnabar/metadata"
 #define CHANGESETS_REF METADATA_REF "^1"
@@ -13,6 +13,7 @@
 
 #define FILES_META 0x1
 #define UNIFIED_MANIFESTS 0x2
+#define UNIFIED_MANIFESTS_v2 0x4
 
 extern int metadata_flags;
 
@@ -28,7 +29,7 @@ extern struct notes_tree git2hg, hg2git, files_meta;
 
 static inline void ensure_notes(struct notes_tree *notes)
 {
-	if (!notes->initialized) {
+	if (!notes_initialized(notes)) {
 		const char *ref;
 		int flags = 0;
 		if (notes == &git2hg)
@@ -44,5 +45,7 @@ static inline void ensure_notes(struct notes_tree *notes)
 		init_notes(notes, ref, combine_notes_ignore, flags);
 	}
 }
+
+extern struct strbuf *generate_manifest(const struct object_id *oid);
 
 #endif

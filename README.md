@@ -46,20 +46,19 @@ Setup:
   $ git cinnabar download
   ```
 
-  Alternatively, you can do the following to build it:
+  Alternatively, you can build it:
 
   ```
-  $ make helper
+  $ make
   ```
 
-Or see `git-core/INSTALL` after initializing the submodule, for build/install
-instructions, but run the commands in this directory. This will build/install
-git as well as the tools from this directory. Note that if you have a
-non-standard Python installation location (for example if you are on macOS and
-have installed it using homebrew) you need to pass
-`--with-python=/path/to/python` to the configure script or set the
-`PYTHON_PATH` environment variable to your Python installation path when using
-make to build this tool.
+  If you want to build git along the helper, you can run `make git`.
+
+  If you have a non-standard Python installation location (for example if you
+  are on macOS and have installed it using homebrew) you need to pass
+  `--with-python=/path/to/python` to the configure script or set the
+  `PYTHON_PATH` environment variable to your Python installation path when
+  using make to build the helper.
 
 Usage:
 ------
@@ -202,38 +201,68 @@ A `hg://` url thus looks like:
 
 The default protocol is https, and the port can be omitted.
 
-- `hg::https://hg.mozilla.org/mozilla-central`
-
-  becomes
-
+- `hg::https://hg.mozilla.org/mozilla-central` becomes
   `hg://hg.mozilla.org/mozilla-central`
 
-- `hg::http://hg.mozilla.org/mozilla-central`
-
-  becomes
-
+- `hg::http://hg.mozilla.org/mozilla-central` becomes
   `hg://hg.mozilla.org:http/mozilla-central`
 
-- `hg::ssh://hg.mozilla.org/mozilla-central`
-
-  becomes
-
+- `hg::ssh://hg.mozilla.org/mozilla-central` becomes
   `hg://hg.mozilla.org:ssh/mozilla-central`
 
-- `hg::file:///some/path`
+- `hg::file:///some/path` becomes (awkward) `hg://:file/some/path`
 
-  becomes (awkward)
+- `hg::http://localhost:8080/foo` becomes `hg://localhost:8080.http/foo`
 
-  `hg://:file/some/path`
+- `hg::tags:` becomes `hg://:tags`
 
-- `hg::http://localhost:8080/foo`
+Experimental features:
+----------------------
 
-  becomes
+Git-cinnabar has a set of experimental features that can be enabled
+independently. You can set the `cinnabar.experiments` git configuration to a
+comma-separated list of those features to enable the selected ones, or to
+`all` to enable them all. The available features are:
 
-  `hg://localhost:8080.http/foo`
+- **wire**
 
-- `hg::tags:`
+  In order to talk to Mercurial repositories, git-cinnabar normally uses
+  mercurial python modules. This experimental feature allows to access
+  Mercurial repositories without using the mercurial python modules. It then
+  relies on git-cinnabar-helper to connect to the repository through the
+  mercurial wire protocol. Please note the mercurial python modules are still
+  needed for mercurial bundle v2 support.
 
-  becomes
+  The feature is automatically enabled when Mercurial is not installed.
 
-  `hg://:tags`
+- **merge**
+
+  Git-cinnabar currently doesn’t allow to push merge commits. The main
+  reason for this is that generating the correct mercurial data for those
+  merges is tricky, and needs to be gotten right.
+
+  The main caveat with this experimental support for pushing merges is that it
+  currently doesn’t handle the case where a file was moved on one of the
+  branches the same way mercurial would (i.e. the information would be lost to
+  mercurial users).
+
+- **git-clone**
+
+  For large repositories, an initial clone can take a large amount of time.
+  This experimental feature allows to get an initial clone (including
+  git-cinnabar metadata) from a git repository. This requires an extension on
+  the mercurial server (see hg/cinnabarclone.py), and to push a fresh
+  `refs/cinnabar/metadata` to some git repository.
+
+  It can also be used without the extension on the mercurial server, by setting
+  the `cinnabar.clone` git configuration item to the url of the git cinnabar
+  metadata repository as it would be set up in the mercurial server
+  configuration.
+
+- **store-manifest**
+
+  Importing mercurial manifests is usually the longest operation when getting
+  mercurial data. It currently happens with battle tested python code. This
+  experimental feature makes it use newer native code from the cinnabar-helper,
+  which at the moment is only slightly faster. Future versions will have an
+  even faster, albeit more risky, implementation.

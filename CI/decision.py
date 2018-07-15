@@ -28,9 +28,9 @@ def git_rev_parse(committish):
                         cwd=os.path.join(BASE_DIR, '..')))
 
 
-MERCURIAL_VERSION = '4.5'
-GIT_VERSION = '2.17.0'
-UPGRADE_FROM = ('0.3.0', '0.3.2', '0.4.0', '0.5.0b2')
+MERCURIAL_VERSION = '4.6.1'
+GIT_VERSION = '2.18.0'
+UPGRADE_FROM = ('0.3.0', '0.3.2', '0.4.0', '0.5.0b2', '0.5.0b3')
 
 
 def install_hg(name):
@@ -102,8 +102,7 @@ class TestTask(Task):
             kwargs['command'] = command + kwargs['command']
         else:
             kwargs['command'] = command + [
-                'make -C repo -f CI.mk script',
-                'make -C repo -f CI.mk script NO_BUNDLE2=1 UPGRADE_FROM=',
+                'make -C repo -f CI/tests.mk',
             ]
         if variant == 'coverage':
             kwargs['command'].extend([
@@ -181,9 +180,12 @@ TestTask(
     description='python lint & tests',
     variant='coverage',
     clone=False,
-    env={
-        'PYTHON_CHECKS': '1',
-    }
+    command=[
+        '(cd repo &&'
+        ' nosetests --all-modules --with-coverage --cover-tests tests)',
+        '(cd repo && flake8 --ignore E402 $(git ls-files \*\*.py git-cinnabar'
+        ' git-remote-hg))',
+    ],
 )
 
 for env in ('linux', 'mingw64'):
@@ -199,9 +201,9 @@ for env in ('linux', 'mingw64'):
             install_hg('{}.{}'.format(env, MERCURIAL_VERSION)),
             Task.checkout(),
             requests + [
-                '(cd repo ; ./git-cinnabar download)',
+                '(cd repo ; ./git-cinnabar download --dev)',
                 'rm -rf repo/.git',
-                '(cd repo ; ./git-cinnabar download)',
+                '(cd repo ; ./git-cinnabar download --dev)',
             ],
         )),
         dependencies=[
@@ -226,9 +228,15 @@ for upgrade in UPGRADE_FROM:
 for git in ('1.8.5', '2.7.4'):
     TestTask(git=git)
 
-for hg in ('1.9', '2.5', '2.6.2', '2.7.2', '3.0', '3.6', '4.3.3', '4.4',
-           '4.6'):
+for hg in ('1.9.3', '2.5.4', '2.6.3', '2.7.2', '3.0.1', '3.4.2', '3.6.3',
+           '4.3.3', '4.4.2', '4.5.3'):
     TestTask(hg=hg)
+
+# for hg in ('1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
+#            '2.6.3', '2.7.2', '2.8.2', '2.9.1', '3.0.1', '3.1.2', '3.2.4',
+#            '3.3.3', '3.4.2', '3.5.2', '3.6.3', '3.7.3', '3.8.4', '3.9.2',
+#            '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.1'):
+#     TestTask(hg=hg)
 
 TestTask(
     variant='asan',

@@ -6,12 +6,8 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__)))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'pythonlib'))
 
-from cinnabar.githg import (
-    UpgradeException,
-    GitHgStore,
-)
+from cinnabar.githg import GitHgStore
 from cinnabar.hg.repo import Remote
-import logging
 from cinnabar.remote_helper import (
     GitRemoteHelper,
     TagsRemoteHelper,
@@ -28,11 +24,7 @@ def main(args):
     assert len(args) == 2
     remote = Remote(*args)
 
-    try:
-        store = GitHgStore()
-    except UpgradeException as e:
-        logging.error(e.message)
-        return 1
+    store = GitHgStore()
 
     if remote.url == 'tags:':
         helper = TagsRemoteHelper(store)

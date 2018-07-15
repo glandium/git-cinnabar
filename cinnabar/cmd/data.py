@@ -1,9 +1,6 @@
 import sys
 from cinnabar.cmd.util import CLI
-from cinnabar.githg import (
-    GitHgStore,
-    UpgradeException,
-)
+from cinnabar.githg import GitHgStore
 
 
 @CLI.subcommand
@@ -15,11 +12,7 @@ from cinnabar.githg import (
 def data(args):
     '''dump the contents of a mercurial revision'''
 
-    try:
-        store = GitHgStore()
-    except UpgradeException as e:
-        print >>sys.stderr, e.message
-        return 1
+    store = GitHgStore()
     if args.changeset and args.manifest:
         print >>sys.stderr, 'Cannot use both -c and -m.'
         return 1

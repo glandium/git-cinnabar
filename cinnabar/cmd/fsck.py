@@ -8,7 +8,6 @@ from cinnabar.githg import (
     GitCommit,
     GitHgStore,
     HG_EMPTY_FILE,
-    UpgradeException,
 )
 from cinnabar.dag import gitdag
 from cinnabar.git import (
@@ -52,11 +51,7 @@ def fsck(args):
         status['broken'] = True
         info(message)
 
-    try:
-        store = GitHgStore()
-    except UpgradeException as e:
-        print >>sys.stderr, e.message
-        return 1
+    store = GitHgStore()
 
     if args.commit:
         commits = set()
@@ -95,7 +90,7 @@ def fsck(args):
 
     full_file_check = FileFindParents.logger.isEnabledFor(logging.DEBUG)
 
-    for node, tree, parents in progress_iter('Checking %d changesets',
+    for node, tree, parents in progress_iter('Checking {} changesets',
                                              all_git_commits):
         node = store._replace.get(node, node)
         hg_node = store.hg_changeset(node)
@@ -174,7 +169,7 @@ def fsck(args):
                                                                  hg_file)):
                     if full_file_check:
                         file = store.file(hg_file, hg_fileparents, git_parents,
-                                          path)
+                                          store.manifest_path(path))
                         valid = file.node == file.sha1
                     else:
                         valid = GitHgHelper.check_file(hg_file,

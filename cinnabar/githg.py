@@ -5,9 +5,18 @@ from binascii import hexlify, unhexlify
 from itertools import izip
 import hashlib
 import urllib
+import sys
 from collections import (
+    OrderedDict,
     Sequence,
     defaultdict,
+)
+from urlparse import urlparse
+from .exceptions import (
+    AmbiguousGraftAbort,
+    NothingToGraftException,
+    OldUpgradeAbort,
+    UpgradeAbort,
 )
 from .util import (
     byte_diff,
@@ -20,6 +29,7 @@ from .git import (
     EMPTY_TREE,
     FastImport,
     Git,
+    GitProcess,
     NULL_NODE_ID,
 )
 from .hg.changegroup import (
@@ -40,24 +50,6 @@ except ImportError:
     from .bdiff import bdiff as textdiff
 
 import logging
-
-
-class UpgradeException(Exception):
-    def __init__(self, message=None):
-        super(UpgradeException, self).__init__(
-            message or
-            'Git-cinnabar metadata needs upgrade. '
-            'Please run `git cinnabar upgrade`.'
-        )
-
-
-class OldUpgradeException(UpgradeException):
-    def __init__(self):
-        super(OldUpgradeException, self).__init__(
-            'Metadata from git-cinnabar versions older than 0.3.0 is not '
-            'supported.\n'
-            'Please run `git cinnabar fsck` with version 0.3.x first.'
-        )
 
 
 # An empty mercurial file with no parent has a fixed sha1 which is that of
@@ -154,6 +146,7 @@ class FileFindParents(object):
     def set_parents(file, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID,
                     git_manifest_parents=None, path=None):
         assert git_manifest_parents is not None and path is not None
+        path = GitHgStore.manifest_metadata_path(path)
 
         # Remove null nodes
         parents = tuple(p for p in (parent1, parent2) if p != NULL_NODE_ID)
@@ -624,14 +617,6 @@ class BranchMap(object):
         return self._tips.get(branch, None)
 
 
-class NothingToGraftException(Exception):
-    pass
-
-
-class AmbiguousGraftException(Exception):
-    pass
-
-
 class Grafter(object):
     __slots__ = "_store", "_early_history", "_graft_trees", "_grafted"
 
@@ -644,7 +629,7 @@ class Grafter(object):
         if store._has_metadata:
             refs += ['--not', 'refs/cinnabar/metadata^']
         for node, tree, parents in progress_iter(
-                'Reading %d graft candidates',
+                'Reading {} graft candidates',
                 GitHgHelper.rev_list('--full-history', *refs)):
             self._graft_trees[tree].append(node)
         if not self._graft_trees:
@@ -718,7 +703,7 @@ class Grafter(object):
             nodes = possible_nodes
 
         if len(nodes) > 1:
-            raise AmbiguousGraftException(
+            raise AmbiguousGraftAbort(
                 'Cannot graft changeset %s. Candidates: %s'
                 % (changeset.node, ', '.join(nodes)))
 
@@ -770,7 +755,7 @@ class Grafter(object):
 class GitHgStore(object):
     FLAGS = [
         'files-meta',
-        'unified-manifests',
+        'unified-manifests-v2',
     ]
 
     METADATA_REFS = (
@@ -798,11 +783,11 @@ class GitHgStore(object):
         metadata = self._metadata()
         if metadata:
             if len(self._flags) > len(self.FLAGS):
-                raise UpgradeException(
+                raise UpgradeAbort(
                     'It looks like this repository was used with a newer '
                     'version of git-cinnabar. Cannot use this version.')
             if set(self._flags) != set(self.FLAGS):
-                raise UpgradeException()
+                raise UpgradeAbort()
         return metadata
 
     def __init__(self):
@@ -822,12 +807,13 @@ class GitHgStore(object):
             if ref.startswith('refs/cinnabar/replace/'):
                 self._replace[ref[22:]] = sha1
             elif ref.startswith('refs/cinnabar/branches/'):
-                raise OldUpgradeException()
+                raise OldUpgradeAbort()
         self._replace = VersionedDict(self._replace)
 
         self._tagcache = {}
         self._tagfiles = {}
         self._tags = {NULL_NODE_ID: {}}
+        self._cached_changeset_ref = {}
         self._tagcache_ref = Git.resolve_ref('refs/cinnabar/tag_cache')
         self._tagcache_items = set()
         if self._tagcache_ref:
@@ -865,7 +851,7 @@ class GitHgStore(object):
                 replace[path] = sha1
 
             if self._replace and not replace:
-                raise OldUpgradeException()
+                raise OldUpgradeAbort()
 
         Git.register_fast_import(self._fast_import)
 
@@ -874,6 +860,134 @@ class GitHgStore(object):
 
     def prepare_graft(self):
         self._graft = Grafter(self)
+
+    @staticmethod
+    def _try_merge_branches(repo_url):
+        parsed_url = urlparse(repo_url)
+        branches = []
+        path = parsed_url.path.lstrip('/').rstrip('/')
+        if path:
+            parts = list(reversed(path.split('/')))
+        else:
+            parts = []
+        host = parsed_url.netloc.split(':', 1)[0]
+        if host:
+            parts.append(host)
+        last_path = ''
+        for part in parts:
+            if last_path:
+                last_path = '%s/%s' % (part, last_path)
+            else:
+                last_path = part
+            branches.append(last_path)
+        branches.append('metadata')
+        return branches
+
+    @staticmethod
+    def _find_branch(branches, remote_refs):
+        for branch in branches:
+            if branch in remote_refs:
+                return branch
+            if 'refs/cinnabar/%s' % branch in remote_refs:
+                return 'refs/cinnabar/%s' % branch
+            if 'refs/heads/%s' % branch in remote_refs:
+                return 'refs/heads/%s' % branch
+
+    def merge(self, git_repo_url, hg_repo_url, branch=None):
+        # Eventually we'll want to handle a full merge, but for now, we only
+        # handle the case where we don't have metadata to begin with.
+        # The caller should avoid calling this function otherwise.
+        assert not self._has_metadata
+        remote_refs = OrderedDict()
+        for line in Git.iter('ls-remote', git_repo_url):
+            sha1, ref = line.split(None, 1)
+            remote_refs[ref] = sha1
+        if branch:
+            branches = [branch]
+        else:
+            branches = self._try_merge_branches(hg_repo_url)
+
+        ref = self._find_branch(branches, remote_refs)
+        if ref is None:
+            logging.error('Could not find cinnabar metadata')
+            return False
+
+        proc = GitProcess(
+            'fetch', '--no-tags', '--no-recurse-submodules', git_repo_url,
+            ref + ':refs/cinnabar/fetch', stdout=sys.stdout)
+        if proc.wait():
+            logging.error('Failed to fetch cinnabar metadata.')
+            return False
+
+        # Do some basic validation on the metadata we just got.
+        commit = GitCommit(remote_refs[ref])
+        if 'cinnabar@git' not in commit.author:
+            logging.error('Invalid cinnabar metadata.')
+            return False
+
+        flags = set(commit.body.split())
+        if 'files-meta' not in flags or 'unified-manifests-v2' not in flags \
+                or len(commit.parents) != len(self.METADATA_REFS):
+            logging.error('Invalid cinnabar metadata.')
+            return False
+
+        # At this point, we'll just assume this is good enough.
+
+        # Get replace refs.
+        if commit.tree != EMPTY_TREE:
+            errors = False
+            by_sha1 = {}
+            for k, v in remote_refs.iteritems():
+                if v not in by_sha1:
+                    by_sha1[v] = k
+            needed = []
+            for line in Git.ls_tree(commit.tree):
+                mode, typ, sha1, path = line
+                if sha1 in by_sha1:
+                    needed.append('%s:refs/cinnabar/replace/%s' % (
+                        by_sha1[sha1], path))
+                else:
+                    logging.error('Missing commit: %s', sha1)
+                    errors = True
+            if errors:
+                return False
+
+            proc = GitProcess('fetch', '--no-tags', '--no-recurse-submodules',
+                              git_repo_url, *needed, stdout=sys.stdout)
+            if proc.wait():
+                logging.error('Failed to fetch cinnabar metadata.')
+                return False
+
+        Git.update_ref('refs/cinnabar/metadata', commit.sha1)
+        GitHgHelper.reload()
+        Git.delete_ref('refs/cinnabar/fetch')
+
+        # TODO: avoid the duplication of code with __init__
+        metadata = self.metadata()
+
+        if not metadata:
+            # This should never happen, but just in case.
+            logging.warn('Could not find cinnabar metadata')
+            Git.delete_ref('refs/cinnabar/metadata')
+            GitHgHelper.reload()
+            return False
+
+        self._has_metadata = True
+        changesets_ref = Git.resolve_ref('refs/cinnabar/changesets')
+        if changesets_ref:
+            commit = GitCommit(changesets_ref)
+            for sha1, head in izip(commit.parents,
+                                   commit.body.splitlines()):
+                hghead, branch = head.split(' ', 1)
+                self._hgheads._previous[hghead] = branch
+
+        self._manifest_heads_orig = set(GitHgHelper.heads('manifests'))
+
+        for line in Git.ls_tree(metadata.tree):
+            mode, typ, sha1, path = line
+            self._replace[path] = sha1
+
+        return True
 
     def tags(self, heads):
         tags = TagSet()
@@ -916,7 +1030,7 @@ class GitHgStore(object):
                     except TypeError:
                         continue
                     if node != NULL_NODE_ID:
-                        node = self.changeset_ref(node)
+                        node = self.cached_changeset_ref(node)
                     if node:
                         tags[tag] = node
             self._tags[tagfile] = tags
@@ -1003,6 +1117,14 @@ class GitHgStore(object):
         '120000': 'l',
     }
 
+    @staticmethod
+    def manifest_metadata_path(path):
+        return '_' + path.replace('/', '/_')
+
+    @staticmethod
+    def manifest_path(path):
+        return path[1:].replace('/_', '/')
+
     def manifest(self, sha1, include_parents=False):
         manifest = GeneratedManifestInfo(sha1)
         manifest.data = GitHgHelper.manifest(sha1)
@@ -1018,6 +1140,13 @@ class GitHgStore(object):
 
     def changeset_ref(self, sha1):
         return self._hg2git(sha1)
+
+    def cached_changeset_ref(self, sha1):
+        try:
+            return self._cached_changeset_ref[sha1]
+        except KeyError:
+            res = self._cached_changeset_ref[sha1] = self.changeset_ref(sha1)
+            return res
 
     def file_meta(self, sha1):
         return GitHgHelper.file_meta(sha1)
@@ -1147,7 +1276,7 @@ class GitHgStore(object):
         ) as commit:
             if hasattr(instance, 'delta_node'):
                 for name in instance.removed:
-                    commit.filedelete(name)
+                    commit.filedelete(self.manifest_metadata_path(name))
                 modified = instance.modified.items()
             else:
                 # slow
@@ -1155,10 +1284,14 @@ class GitHgStore(object):
                             for line in instance._lines)
             for name, (node, attr) in modified:
                 node = str(node)
-                commit.filemodify(name, node, self.MODE[attr])
+                commit.filemodify(self.manifest_metadata_path(name), node,
+                                  self.MODE[attr])
 
         GitHgHelper.set('manifest', instance.node, ':1')
 
+        self.check_manifest(instance)
+
+    def check_manifest(self, instance):
         if check_enabled('manifests'):
             if not GitHgHelper.check_manifest(instance.node):
                 raise Exception(
@@ -1205,16 +1338,20 @@ class GitHgStore(object):
                 update_metadata.append('refs/notes/cinnabar')
 
         hg_changeset_heads = list(self._hgheads)
-        changeset_heads = sorted(self.changeset_ref(h)
-                                 for h in hg_changeset_heads)
+        changeset_heads = list(self.changeset_ref(h)
+                               for h in hg_changeset_heads)
         if any(self._hgheads.iterchanges()):
+            heads = sorted((self._hgheads[h], h, g)
+                           for h, g in izip(hg_changeset_heads,
+                                            changeset_heads))
             with self._fast_import.commit(
                 ref='refs/cinnabar/changesets',
-                parents=changeset_heads,
-                message='\n'.join('%s %s' % (h, self._hgheads[h])
-                                  for h in hg_changeset_heads),
+                parents=list(h for _, __, h in heads),
+                message='\n'.join('%s %s' % (h, b) for b, h, _ in heads),
             ) as commit:
                 update_metadata.append('refs/cinnabar/changesets')
+
+        changeset_heads = set(changeset_heads)
 
         manifest_heads = GitHgHelper.heads('manifests')
         if (set(manifest_heads) != self._manifest_heads_orig or

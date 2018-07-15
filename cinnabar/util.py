@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import time
+import traceback
 from collections import (
     Iterable,
     OrderedDict,
@@ -23,6 +24,8 @@ from Queue import (
 from threading import Thread
 from types import StringType
 from weakref import WeakKeyDictionary
+
+from .exceptions import Abort
 
 
 class StreamHandler(logging.StreamHandler):
@@ -112,12 +115,12 @@ class ConfigSetFunc(object):
 check_enabled = ConfigSetFunc(
     'cinnabar.check',
     ('nodeid', 'manifests', 'helper'),
-    ('bundle', 'files', 'memory'),
+    ('bundle', 'files', 'memory', 'time', 'traceback'),
 )
 
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
-    ('wire', 'merge'),
+    ('wire', 'merge', 'store-manifest', 'git-clone'),
 )
 
 
@@ -140,19 +143,24 @@ def progress_iter(fmt, iter, filter_func=None):
 
 def progress_enum(fmt, enum_iter):
     count = 0
-    t0 = 0
+    t0 = start = time.time()
     try:
         for count, item in enum_iter:
             if progress:
                 t1 = time.time()
                 if t1 - t0 > 0.1:
-                    sys.stderr.write(('\r' + fmt) % count)
+                    sys.stderr.write('\r' + fmt.format(count))
+                    if check_enabled('time'):
+                        sys.stderr.write(' in %.1fs' % (t1 - start))
                     sys.stderr.flush()
                     t0 = t1
             yield item
     finally:
         if progress and count:
-            sys.stderr.write(('\r' + fmt + '\n') % count)
+            timed = ''
+            if check_enabled('time'):
+                timed = ' in %.1fs' % (time.time() - start)
+            sys.stderr.write('\r' + fmt.format(count) + timed + '\n')
             sys.stderr.flush()
 
 
@@ -425,6 +433,11 @@ class lrucache(object):
         return wrapper
 
     def invalidate(self, *args):
+        if len(args) == 0:
+            keys = list(self._cache)
+            for k in keys:
+                del self[k]
+            return
         try:
             del self[args]
         except KeyError:
@@ -525,7 +538,12 @@ class Process(object):
         for fh in (self._proc.stdin, self._proc.stdout, self._proc.stderr):
             if fh:
                 fh.close()
-        return self._proc.wait()
+        pid = self._proc.pid
+        retcode = self._proc.wait()
+        logger = logging.getLogger('process')
+        if logger.isEnabledFor(logging.INFO):
+            logger.info('[%d] Exited with code %d', pid, retcode)
+        return retcode
 
     @property
     def pid(self):
@@ -596,8 +614,25 @@ def run(func):
     init_logging()
     if check_enabled('memory'):
         reporter = MemoryReporter()
+
     try:
         retcode = func(sys.argv[1:])
+    except Abort as e:
+        # These exceptions are normal abort and require no traceback
+        retcode = 1
+        logging.error(e.message)
+    except Exception as e:
+        # Catch all exceptions and provide a nice message
+        retcode = 70  # Internal software error
+        if check_enabled('traceback') or not getattr(e, 'message', None):
+            traceback.print_exc()
+        else:
+            logging.error(e.message)
+
+            sys.stderr.write(
+                'Run the command again with '
+                '`git -c cinnabar.check=traceback <command>` to see the '
+                'full traceback.\n')
     finally:
         if check_enabled('memory'):
             reporter.shutdown()

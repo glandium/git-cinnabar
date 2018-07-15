@@ -1,8 +1,6 @@
 from cinnabar.cmd.util import CLI
-from cinnabar.githg import (
-    GitHgStore,
-    UpgradeException,
-)
+from cinnabar.exceptions import UpgradeAbort
+from cinnabar.githg import GitHgStore
 from cinnabar.helper import GitHgHelper
 
 
@@ -19,7 +17,7 @@ def upgrade(args):
         store = GitHgStore()
         print 'No metadata to upgrade'
         return 2
-    except UpgradeException:
+    except UpgradeAbort:
         store = UpgradeGitHgStore()
 
     if not GitHgHelper.upgrade():

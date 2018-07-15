@@ -1,15 +1,21 @@
 #define cmd_main fast_import_main
 #define hashwrite fast_import_hashwrite
+static void start_packfile();
 #include "fast-import.patched.c"
 #undef hashwrite
 #include "cinnabar-fast-import.h"
 #include "cinnabar-helper.h"
+#include "cinnabar-notes.h"
 #include "hg-bundle.h"
 #include "hg-data.h"
 #include "list.h"
-#include "notes.h"
 #include "sha1-array.h"
+#include "strslice.h"
 #include "tree-walk.h"
+
+// Including tag.h conflicts with fast-import.c, so manually define what
+// we use.
+extern const char *tag_type;
 
 #define ENSURE_INIT() do { \
 	if (!initialized) \
@@ -93,7 +99,7 @@ off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
 {
 	if (p == pack_data) {
 		struct object_entry *oe = get_object_entry(sha1);
-		if (oe && oe->idx.offset > 1)
+		if (oe && oe->idx.offset > 1 && oe->pack_id == pack_id)
 			return oe->idx.offset;
 		return 0;
 	}
@@ -124,19 +130,16 @@ static void init()
 	atom_table = xcalloc(atom_table_sz, sizeof(struct atom_str*));
 	branch_table = xcalloc(branch_table_sz, sizeof(struct branch*));
 	avail_tree_table = xcalloc(avail_tree_table_sz, sizeof(struct avail_tree_content*));
-	marks = pool_calloc(1, sizeof(struct mark_set));
+	marks = mem_pool_calloc(&fi_mem_pool, 1, sizeof(struct mark_set));
 
 	global_argc = 1;
 
-	rc_free = pool_alloc(cmd_save * sizeof(*rc_free));
+	rc_free = mem_pool_alloc(&fi_mem_pool, cmd_save * sizeof(*rc_free));
 	for (i = 0; i < (cmd_save - 1); i++)
 		rc_free[i].next = &rc_free[i + 1];
 	rc_free[cmd_save - 1].next = NULL;
 
-	prepare_packed_git();
 	start_packfile();
-	install_packed_git(pack_data);
-	list_add_tail(&pack_data->mru, &packed_git_mru);
 	set_die_routine(die_nicely);
 
 	parse_one_feature("force", 0);
@@ -152,7 +155,7 @@ static void cleanup()
 	if (require_explicit_termination)
 		object_count = 0;
 	end_packfile();
-	reprepare_packed_git();
+	reprepare_packed_git(the_repository);
 
 	if (!require_explicit_termination)
 		dump_branches();
@@ -163,6 +166,13 @@ static void cleanup()
 
 	if (cinnabar_check & CHECK_HELPER)
 		pack_report();
+}
+
+static void start_packfile()
+{
+	real_start_packfile();
+	install_packed_git(the_repository, pack_data);
+	list_add_tail(&pack_data->mru, &the_repository->objects->packed_git_mru);
 }
 
 static void end_packfile()
@@ -189,18 +199,19 @@ static void end_packfile()
 	}
 
 	/* uninstall_packed_git(pack_data) */
-	{
+	if (pack_data) {
 		struct packed_git *pack, *prev;
-		for (prev = NULL, pack = packed_git; pack;
-		     prev = pack, pack = pack->next) {
+		for (prev = NULL, pack = the_repository->objects->packed_git;
+		     pack; prev = pack, pack = pack->next) {
 			if (pack != pack_data)
 				continue;
 			if (prev)
 				prev->next = pack->next;
 			else
-				packed_git = pack->next;
+				the_repository->objects->packed_git = pack->next;
 			break;
 		}
+		list_del_init(&pack_data->mru);
 	}
 
 	real_end_packfile();
@@ -236,7 +247,7 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 		if (path_end) {
 			unsigned mode;
 			char *path = xstrndup(*endptr, path_end - *endptr);
-			if (!get_tree_entry(note->hash, path, oid.hash, &mode))
+			if (!get_tree_entry(note, path, &oid, &mode))
 				note = &oid;
 			else
 				note = &empty_tree;
@@ -247,7 +258,7 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 	e = find_object((struct object_id *)note);
 	if (!e) {
 		e = insert_object((struct object_id *)note);
-		e->type = sha1_object_info(note->hash, NULL);
+		e->type = oid_object_info(the_repository, note, NULL);
 		e->pack_id = MAX_PACK_ID;
 		e->idx.offset = 1;
 	}
@@ -302,7 +313,7 @@ void maybe_reset_notes(const char *branch)
 	if (notes) {
 		struct branch *b = lookup_branch(branch);
 		if (!is_null_oid(&b->oid)) {
-			if (notes->initialized)
+			if (notes_initialized(notes))
 				free_notes(notes);
 			init_notes(notes, oid_to_hex(&b->oid),
 				   combine_notes_ignore, 0);
@@ -408,7 +419,7 @@ static void handle_changeset_conflict(struct object_id *hg_id,
 		struct object_id oid;
 		enum object_type type;
 		unsigned long len;
-		char *content = read_sha1_file_extended(note->hash, &type, &len, 0);
+		char *content = read_object_file_extended(note, &type, &len, 0);
 		if (len < 50 || !starts_with(content, "changeset ") ||
 		    get_oid_hex(&content[10], &oid))
 			die("Invalid git2hg note for %s", oid_to_hex(git_id));
@@ -420,8 +431,8 @@ static void handle_changeset_conflict(struct object_id *hg_id,
 			break;
 
 		if (!buf.len) {
-			content = read_sha1_file_extended(git_id->hash, &type,
-			                                  &len, 0);
+			content = read_object_file_extended(git_id, &type,
+			                                    &len, 0);
 			strbuf_add(&buf, content, len);
 			free(content);
 		}
@@ -486,7 +497,7 @@ static void do_set(struct string_list *args)
 	ensure_notes(notes);
 	if (is_null_oid(&git_id)) {
 		remove_note(notes, hg_id.hash);
-	} else if (sha1_object_info(git_id.hash, NULL) != type) {
+	} else if (oid_object_info(the_repository, &git_id, NULL) != type) {
 		die("Invalid object");
 	} else {
 		if (is_changeset)
@@ -497,61 +508,36 @@ static void do_set(struct string_list *args)
 	}
 }
 
-struct store_each_note_data {
-	struct tree_entry *tree;
-	struct notes_tree *notes;
-};
-
-static int store_each_note(const struct object_id *object_oid,
-                           const struct object_id *note_oid, char *note_path,
-                           void *data)
+int write_object_file(const void *buf, unsigned long len, const char *type,
+                      struct object_id *oid)
 {
-	int mode;
-	size_t len;
-	struct store_each_note_data *d = (struct store_each_note_data *)data;
-
-	switch (sha1_object_info(note_oid->hash, NULL)) {
-	case OBJ_BLOB: {
-		if (d->notes != &hg2git) {
-			mode = S_IFREG | 0644;
-			break;
-		}
+	struct strbuf data;
+	enum object_type t;
+	if (type == tree_type) {
+		t = OBJ_TREE;
+	} else if (type == blob_type) {
+		t = OBJ_BLOB;
+	} else if (type == commit_type) {
+		t = OBJ_COMMIT;
+	} else if (type == tag_type) {
+		t = OBJ_TAG;
+	} else {
+		die("Unknown type");
 	}
-	case OBJ_COMMIT:
-		mode = S_IFGITLINK;
-		break;
-	case OBJ_TREE:
-		mode = S_IFDIR;
-		// for_each_note calls with a path ending with a slash, but
-		// tree_content_set doesn't like that
-		len = strlen(note_path);
-		if (note_path[len - 1] == '/')
-			note_path[len - 1] = '\0';
-		break;
-	default:
-		die("Unexpected object type in notes tree");
-	}
-	tree_content_set(d->tree, note_path, note_oid, mode, NULL);
+	data.buf = (void *)buf;
+	data.len = len;
+	data.alloc = len;
+	store_object(t, &data, NULL, oid, 0);
 	return 0;
 }
 
 static void store_notes(struct notes_tree *notes, struct object_id *result)
 {
 	hashcpy(result->hash, null_sha1);
-	if (notes->dirty) {
-		struct store_each_note_data data;
-		data.tree = new_tree_entry();
-		data.notes = notes;
-
-		require_explicit_termination = 1;
-		memset(data.tree, 0, sizeof(*data.tree));
-		if (for_each_note(notes, FOR_EACH_NOTE_DONT_UNPACK_SUBTREES |
-		                         FOR_EACH_NOTE_YIELD_SUBTREES,
-		                  store_each_note, &data))
-			die("Failed to store notes");
-		store_tree(data.tree);
-		oidcpy(result, &data.tree->versions[1].oid);
-		release_tree_entry(data.tree);
+	if (notes_dirty(notes)) {
+		unsigned int mode = (notes == &hg2git) ? S_IFGITLINK
+		                                       : S_IFREG | 0644;
+		write_notes_tree(notes, result, mode);
 	}
 }
 
@@ -564,7 +550,7 @@ void hg_file_store(struct hg_file *file, struct hg_file *reference)
 
 	ENSURE_INIT();
 
-        hashcpy(file_oid.hash, file->sha1);
+	hashcpy(file_oid.hash, file->sha1);
 
 	if (file->metadata.buf) {
 		store_object(OBJ_BLOB, &file->metadata, NULL, &oid, 0);
@@ -575,7 +561,7 @@ void hg_file_store(struct hg_file *file, struct hg_file *reference)
 	if (reference)
 		oe = (struct object_entry *) reference->content_oe;
 
-	if (oe && oe->idx.offset > 1) {
+	if (oe && oe->idx.offset > 1 && oe->pack_id == pack_id) {
 		last_blob.data.buf = reference->content.buf;
 		last_blob.data.len = reference->content.len;
 		last_blob.offset = oe->idx.offset;
@@ -609,12 +595,19 @@ static void store_file(struct rev_chunk *chunk)
 
 	rev_diff_start_iter(&diff, chunk);
 	while (rev_diff_iter_next(&diff)) {
+		if (diff.start > last_file.file.len || diff.start < last_end)
+			die("Malformed file chunk for %s",
+			    sha1_to_hex(chunk->node));
 		strbuf_add(&data, last_file.file.buf + last_end,
 		           diff.start - last_end);
 		strbuf_addbuf(&data, &diff.data);
 
 		last_end = diff.end;
 	}
+
+	if (last_file.file.len < last_end)
+		die("Malformed file chunk for %s",
+		    sha1_to_hex(chunk->node));
 
 	strbuf_add(&data, last_file.file.buf + last_end,
 		   last_file.file.len - last_end);
@@ -625,6 +618,231 @@ static void store_file(struct rev_chunk *chunk)
 	hg_file_store(&file, &last_file);
 	hg_file_swap(&file, &last_file);
 	hg_file_release(&file);
+}
+
+struct manifest_line {
+       struct strslice path;
+       unsigned char sha1[20];
+       char attr;
+};
+
+static int split_manifest_line(struct strslice *slice,
+                               struct manifest_line *result)
+{
+       // The format of a manifest line is:
+       //    <path>\0<sha1><attr>
+       // where attr is one of '', 'l', 'x'
+       result->path = strslice_split_once(slice, '\0');
+       if (result->path.len == 0)
+	       return -1;
+
+       if (slice->len < 41)
+	       return -1;
+       if (get_sha1_hex(slice->buf, result->sha1))
+	       return -1;
+       *slice = strslice_slice(*slice, 40, SIZE_MAX);
+
+       result->attr = slice->buf[0];
+       if (result->attr == 'l' || result->attr == 'x') {
+	       *slice = strslice_slice(*slice, 1, SIZE_MAX);
+       } else if (result->attr == '\n')
+	       result->attr = '\0';
+       else
+	       return -1;
+       if (slice->len < 1 || slice->buf[0] != '\n')
+	       return -1;
+       *slice = strslice_slice(*slice, 1, SIZE_MAX);
+       return 0;
+}
+
+static int add_parent(struct strbuf *data,
+                      const struct object_id *last_manifest_oid,
+                      const struct branch *last_manifest,
+                      const unsigned char *parent)
+{
+	if (!is_null_sha1(parent)) {
+		const struct object_id *note;
+		struct object_id parent_oid;
+		hashcpy(parent_oid.hash, parent);
+		if (oidcmp(&parent_oid, last_manifest_oid) == 0)
+			note = &last_manifest->oid;
+		else
+			note = get_note(&hg2git, &parent_oid);
+		if (!note)
+			return -1;
+		strbuf_addf(data, "parent %s\n", oid_to_hex(note));
+	}
+	return 0;
+}
+
+static void manifest_metadata_path(struct strbuf *out, struct strslice *in)
+{
+	struct strslice part;
+	size_t len = in->len;
+	part = strslice_split_once(in, '/');
+	while (len != in->len) {
+		strbuf_addch(out, '_');
+		strbuf_addslice(out, part);
+		strbuf_addch(out, '/');
+		len = in->len;
+		part = strslice_split_once(in, '/');
+	}
+	strbuf_addch(out, '_');
+	strbuf_addslice(out, *in);
+}
+
+static void store_manifest(struct rev_chunk *chunk)
+{
+	static struct object_id last_manifest_oid;
+	static struct branch *last_manifest;
+	static struct strbuf last_manifest_content = STRBUF_INIT;
+	struct strbuf data = STRBUF_INIT;
+	struct strbuf path = STRBUF_INIT;
+	struct rev_diff_part diff;
+	size_t last_end = 0;
+	struct strslice slice;
+	struct manifest_line line;
+
+	if (!last_manifest) {
+		last_manifest = new_branch("refs/cinnabar/manifests");
+	}
+	if (!is_null_sha1(chunk->delta_node) &&
+	    hashcmp(chunk->delta_node, last_manifest_oid.hash)) {
+		const struct object_id *note;
+		struct object_id delta_node;
+		hashcpy(delta_node.hash, chunk->delta_node);
+		note = get_note(&hg2git, &delta_node);
+		if (!note)
+			die("Cannot find delta node %s for %s",
+			    sha1_to_hex(chunk->delta_node),
+			    sha1_to_hex(chunk->node));
+
+		// TODO: this could be smarter, avoiding to throw everything
+		// away. But this is what the equivalent fast-import commands
+		// would do so for now, this is good enough.
+		if (last_manifest->branch_tree.tree) {
+			release_tree_content_recursive(
+				last_manifest->branch_tree.tree);
+			last_manifest->branch_tree.tree = NULL;
+		}
+		hashcpy(last_manifest_oid.hash, chunk->delta_node);
+		oidcpy(&last_manifest->oid, note);
+		parse_from_existing(last_manifest);
+		load_tree(&last_manifest->branch_tree);
+		strbuf_reset(&last_manifest_content);
+		strbuf_addbuf(&last_manifest_content, generate_manifest(note));
+	}
+
+	// While not exact, the total length of the previous manifest and the
+	// chunk will be an upper bound on the size of the new manifest.
+	strbuf_grow(&data, last_manifest_content.len + chunk->raw.len);
+	rev_diff_start_iter(&diff, chunk);
+	while (rev_diff_iter_next(&diff)) {
+		if (diff.start > last_manifest_content.len ||
+		    diff.start < last_end || diff.start > diff.end)
+			goto malformed;
+		strbuf_add(&data, last_manifest_content.buf + last_end,
+		           diff.start - last_end);
+		strbuf_addbuf(&data, &diff.data);
+
+		last_end = diff.end;
+
+		// We assume manifest diffs are line-based.
+		if (diff.start > 0 &&
+		    last_manifest_content.buf[diff.start - 1] != '\n')
+			goto malformed;
+		if (diff.end > 0 &&
+		    last_manifest_content.buf[diff.end - 1] != '\n')
+			goto malformed;
+
+		// TODO: Avoid a remove+add cycle for same-file modifications.
+
+		// Process removed files.
+		slice = strbuf_slice(&last_manifest_content, diff.start,
+                                     diff.end - diff.start);
+		while (split_manifest_line(&slice, &line) == 0) {
+			manifest_metadata_path(&path, &line.path);
+			tree_content_remove(&last_manifest->branch_tree,
+			                    path.buf, NULL, 1);
+			strbuf_reset(&path);
+		}
+
+		// Some manifest chunks can have diffs like:
+		//   - start: off, end: off, data: string of length len
+		//   - start: off, end: off + len, data: ""
+		// which is valid, albeit wasteful.
+		// (example: 13b23929aeb7d1f1f21458dfcb32b8efe9aad39d in the
+		// mercurial mercurial repository, as of writing)
+		// What that means, however, is that we can't
+		// tree_content_set for additions until the end because a
+		// subsequent iteration might be removing what we just
+		// added. So we don't do them now, we'll re-iterate the diff
+		// later.
+	}
+
+	rev_diff_start_iter(&diff, chunk);
+	while (rev_diff_iter_next(&diff)) {
+		// Process added files.
+		slice = strbuf_slice(&diff.data, 0, diff.data.len);
+		while (split_manifest_line(&slice, &line) == 0) {
+			uint16_t mode;
+			struct object_id file_node;
+			hashcpy(file_node.hash, line.sha1);
+
+			if (line.attr == '\0')
+				mode = 0160644;
+			else if (line.attr == 'x')
+				mode = 0160755;
+			else if (line.attr == 'l')
+				mode = 0160000;
+			else
+				goto malformed;
+
+			manifest_metadata_path(&path, &line.path);
+			tree_content_set(&last_manifest->branch_tree,
+			                 path.buf, &file_node, mode, NULL);
+			strbuf_reset(&path);
+		}
+	}
+
+	strbuf_release(&path);
+
+	if (last_manifest_content.len < last_end)
+		goto malformed;
+
+	strbuf_add(&data, last_manifest_content.buf + last_end,
+		   last_manifest_content.len - last_end);
+
+	strbuf_swap(&last_manifest_content, &data);
+	strbuf_release(&data);
+
+	store_tree(&last_manifest->branch_tree);
+	oidcpy(&last_manifest->branch_tree.versions[0].oid,
+	       &last_manifest->branch_tree.versions[1].oid);
+
+	strbuf_addf(&data, "tree %s\n",
+	            oid_to_hex(&last_manifest->branch_tree.versions[1].oid));
+
+	if ((add_parent(&data, &last_manifest_oid, last_manifest,
+	                chunk->parent1) == -1) ||
+	    (add_parent(&data, &last_manifest_oid, last_manifest,
+	                chunk->parent2) == -1))
+		goto malformed;
+
+	hashcpy(last_manifest_oid.hash, chunk->node);
+	strbuf_addstr(&data, "author  <cinnabar@git> 0 +0000\n"
+	                     "committer  <cinnabar@git> 0 +0000\n"
+	                     "\n");
+	strbuf_addstr(&data, oid_to_hex(&last_manifest_oid));
+	store_object(OBJ_COMMIT, &data, NULL, &last_manifest->oid, 0);
+	strbuf_release(&data);
+	ensure_notes(&hg2git);
+	add_note(&hg2git, &last_manifest_oid, &last_manifest->oid, NULL);
+	add_head(&manifest_heads, &last_manifest->oid);
+	return;
+
+malformed:
+	die("Malformed manifest chunk for %s", sha1_to_hex(chunk->node));
 }
 
 static void do_store(struct string_list *args)
@@ -656,7 +874,8 @@ static void do_store(struct string_list *args)
 		} else {
 			die("Unknown metadata kind: %s", args->items[1].string);
 		}
-	} else if (!strcmp(args->items[0].string, "file")) {
+	} else if (!strcmp(args->items[0].string, "file") ||
+		   !strcmp(args->items[0].string, "manifest")) {
 		struct strbuf buf = STRBUF_INIT;
 		struct rev_chunk chunk;
 		size_t length;
@@ -678,7 +897,10 @@ static void do_store(struct string_list *args)
 		length = strtol(args->items[2].string, NULL, 10);
 		strbuf_fread(&buf, length, stdin);
 		rev_chunk_from_memory(&chunk, &buf, delta_node);
-		store_file(&chunk);
+		if (args->items[0].string[0] == 'f')
+			store_file(&chunk);
+		else
+			store_manifest(&chunk);
 		rev_chunk_release(&chunk);
 	} else {
 		die("Unknown store kind: %s", args->items[0].string);
@@ -688,8 +910,8 @@ static void do_store(struct string_list *args)
 void store_git_tree(struct strbuf *tree_buf, const struct object_id *reference,
                     struct object_id *result)
 {
-	struct last_object ref_blob = { STRBUF_INIT, 0, 0, 1 };
-	struct last_object *last_blob = NULL;
+	struct last_object ref_tree = { STRBUF_INIT, 0, 0, 1 };
+	struct last_object *last_tree = NULL;
 	struct object_entry *oe = NULL;
 	char *buf = NULL;
 
@@ -697,17 +919,17 @@ void store_git_tree(struct strbuf *tree_buf, const struct object_id *reference,
 	if (reference) {
 		oe = find_object((struct object_id *)reference);
 	}
-	if (oe && oe->idx.offset > 1) {
+	if (oe && oe->idx.offset > 1 && oe->pack_id == pack_id) {
 		unsigned long len;
-		ref_blob.data.buf = buf = gfi_unpack_entry(oe, &len);
-		ref_blob.data.len = len;
-		ref_blob.offset = oe->idx.offset;
-		ref_blob.depth = oe->depth;
-		last_blob = &ref_blob;
+		ref_tree.data.buf = buf = gfi_unpack_entry(oe, &len);
+		ref_tree.data.len = len;
+		ref_tree.offset = oe->idx.offset;
+		ref_tree.depth = oe->depth;
+		last_tree = &ref_tree;
 	}
-	store_object(OBJ_TREE, tree_buf, last_blob, result, 0);
-	if (last_blob) {
-		// store_object messes with last_blob so free using an old
+	store_object(OBJ_TREE, tree_buf, last_tree, result, 0);
+	if (last_tree) {
+		// store_object messes with last_tree so free using an old
 		// copy of the pointer.
 		free(buf);
 	}

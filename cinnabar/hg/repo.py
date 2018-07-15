@@ -3,8 +3,8 @@ import os
 import sys
 import urllib
 import urllib2
+from cinnabar.exceptions import NothingToGraftException
 from cinnabar.githg import (
-    NothingToGraftException,
     Changeset,
     ManifestInfo,
 )
@@ -26,6 +26,7 @@ from urlparse import (
     urlunparse,
 )
 import logging
+import socket
 import struct
 import random
 from cinnabar.dag import gitdag
@@ -191,13 +192,11 @@ def iterate_files(bundle):
 
 def iter_initialized(get_missing, iterable, init=None):
     previous = None
-    always_check = check_enabled('nodeid')
+    check = check_enabled('nodeid')
     for instance in iterable:
-        check = always_check
         if instance.delta_node != NULL_NODE_ID:
             if not previous or instance.delta_node != previous.node:
                 previous = get_missing(instance.delta_node)
-                check = True
             if init:
                 instance = init(instance, previous)
             else:
@@ -363,12 +362,14 @@ class HelperRepo(object):
     def _call(self, command, *args):
         if command == 'clonebundles':
             return HgRepoHelper.clonebundles()
+        if command == 'cinnabarclone':
+            return HgRepoHelper.cinnabarclone()
         raise NotImplementedError()
 
     def capable(self, capability):
         if capability == 'bundle2':
             return urllib.quote(HgRepoHelper.capable('bundle2') or '')
-        if capability == 'clonebundles':
+        if capability in ('clonebundles', 'cinnabarclone'):
             return HgRepoHelper.capable(capability) is not None
         return capability in ('getbundle', 'unbundle', 'lookup')
 
@@ -447,7 +448,7 @@ def unbundle_fh(fh, path):
         alg = readexactly(fh, 2)
         return cg1unpacker(fh, alg)
     elif unbundle20 and version.startswith('2'):
-        return getunbundler(get_ui(), fh, magicstring=header)
+        return getunbundler(get_ui(), fh, header)
     else:
         raise Exception('%s: unsupported bundle version %s' % (path,
                         version))
@@ -479,7 +480,7 @@ class bundlerepo(object):
                 yield item
 
         changeset_chunks = ChunksCollection(progress_iter(
-            'Analyzing %d changesets from ' + self._file,
+            'Analyzing {} changesets from ' + self._file,
             iter_and_store(next(raw_unbundler, None))))
 
         for chunk in changeset_chunks.iter_initialized(lambda x: x,
@@ -587,7 +588,65 @@ def get_clonebundle(repo):
         return None
 
     sys.stderr.write('Getting clone bundle from %s\n' % url)
-    return unbundle_fh(urllib2.urlopen(url), url)
+
+    class Getter(object):
+        def __init__(self, url):
+            self.fh = urllib2.urlopen(url)
+            self.url = url
+            try:
+                self.length = int(self.fh.headers['content-length'])
+            except (ValueError, KeyError):
+                self.length = None
+            self.offset = 0
+
+        def read(self, size):
+            try:
+                result = self.fh.read(size)
+            except socket.error:
+                result = ''
+
+            # When self.length is None, self.offset < self.length is always
+            # false.
+            if not result and self.offset < self.length:
+                # Processing large manifests or large files can be slow.
+                # With highly compressed but nevertheless large bundles, this
+                # means it can take time to process relatively small
+                # (compressed) inputs: in the order of several minutes for a
+                # few megabytes.  When that happens, SSL connections can end
+                # up being aborted between two large TCP receives. In that
+                # case, try again with an HTTP Range request if the server
+                # supports it.
+                # TODO: This is a stopgap until processing is faster.
+                req = urllib2.Request(self.url)
+                req.add_header('Range', 'bytes=%d-' % self.offset)
+                self.fh = urllib2.urlopen(req)
+                if self.fh.getcode() != 206:
+                    return ''
+                range = self.fh.headers['Content-Range'].split(None, 1)
+                if len(range) != 2:
+                    return ''
+                unit, range = range
+                if unit != 'bytes':
+                    return ''
+                range = range.split('-', 1)
+                if len(range) != 2:
+                    return ''
+                start, end = range
+                start = int(start)
+                if start > self.offset:
+                    return ''
+                logging.getLogger('clonebundle').debug(
+                    'Retrying from offset %d', start)
+                while start < self.offset:
+                    l = len(self.fh.read(self.offset - start))
+                    if not l:
+                        return ''
+                    start += l
+                result = self.fh.read(size)
+            self.offset += len(result)
+            return result
+
+    return unbundle_fh(Getter(url), url)
 
 
 class BundleApplier(object):
@@ -596,17 +655,24 @@ class BundleApplier(object):
 
     def __call__(self, store):
         changeset_chunks = ChunksCollection(progress_iter(
-            'Reading %d changesets', next(self._bundle, None)))
+            'Reading {} changesets', next(self._bundle, None)))
 
-        for mn in progress_iter(
-                'Reading and importing %d manifests',
-                iter_initialized(store.manifest,
-                                 iter_chunks(next(self._bundle, None),
-                                             ManifestInfo))):
-            store.store_manifest(mn)
+        if experiment('store-manifest'):
+            for rev_chunk in progress_iter(
+                    'Reading and importing {} manifests',
+                    next(self._bundle, None)):
+                GitHgHelper.store('manifest', rev_chunk)
+                store.check_manifest(rev_chunk)
+        else:
+            for mn in progress_iter(
+                    'Reading and importing {} manifests',
+                    iter_initialized(store.manifest,
+                                     iter_chunks(next(self._bundle, None),
+                                                 ManifestInfo))):
+                store.store_manifest(mn)
 
         for rev_chunk in progress_iter(
-                'Reading and importing %d files', next(self._bundle, None)):
+                'Reading and importing {} files', next(self._bundle, None)):
             GitHgHelper.store('file', rev_chunk)
 
         if next(self._bundle, None) is not None:
@@ -614,13 +680,30 @@ class BundleApplier(object):
         del self._bundle
 
         for cs in progress_iter(
-                'Importing %d changesets',
+                'Importing {} changesets',
                 changeset_chunks.iter_initialized(lambda x: x, store.changeset,
                                                   Changeset.from_chunk)):
             try:
                 store.store_changeset(cs)
             except NothingToGraftException:
                 logging.warn('Cannot graft %s, not importing.', cs.node)
+
+
+def do_cinnabarclone(repo, manifest, store):
+    data = manifest.splitlines()
+    if not data:
+        logging.warn('Server advertizes cinnabarclone but didn\'t provide '
+                     'a git repository url to fetch from.')
+        return False
+    if len(data) > 1:
+        logging.warn('cinnabarclone from multiple git repositories is not '
+                     'supported yet.')
+        return False
+
+    url = data[0]
+    url, branch = (url.split('#', 1) + [None])[:2]
+    sys.stderr.write('Fetching cinnabar metadata from %s\n' % url)
+    return store.merge(url, repo.url(), branch)
 
 
 def getbundle(repo, store, heads, branch_names):
@@ -630,15 +713,29 @@ def getbundle(repo, store, heads, branch_names):
         common = findcommon(repo, store, store.heads(branch_names))
         logging.info('common: %s', common)
         bundle = None
-        if not common and repo.capable('clonebundles'):
-            bundle = get_clonebundle(repo)
+        got_partial = False
+        if not common:
+            if not store._has_metadata:
+                manifest = Git.config('cinnabar.clone')
+                if not manifest and experiment('git-clone') and \
+                        repo.capable('cinnabarclone'):
+                    manifest = repo._call('cinnabarclone')
+                if manifest:
+                    got_partial = do_cinnabarclone(repo, manifest, store)
+                    if not got_partial:
+                        logging.warn('Falling back to normal clone.')
+            if not got_partial and repo.capable('clonebundles'):
+                bundle = get_clonebundle(repo)
+                got_partial = True
         if bundle:
             bundle = unbundler(bundle)
             # Manual move semantics
             apply_bundle = BundleApplier(bundle)
             del bundle
             apply_bundle(store)
-            # Eliminate the heads that we got from the clonebundle.
+        if got_partial:
+            # Eliminate the heads that we got from the clonebundle or
+            # cinnabarclone.
             heads = [h for h in heads if not store.changeset_ref(h)]
             if not heads:
                 return
