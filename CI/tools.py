@@ -144,7 +144,8 @@ class Helper(Task):
         desc_variant = variant
         extra_commands = []
         if variant == 'asan':
-            make_flags.append('CFLAGS="-O2 -g -fsanitize=address"')
+            make_flags.append(
+                'CFLAGS="-Og -g -fsanitize=address -fno-omit-frame-pointer"')
             make_flags.append('LDFLAGS=-static-libasan')
         elif variant == 'coverage':
             make_flags.append('CFLAGS="-coverage"')
