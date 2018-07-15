@@ -780,6 +780,21 @@ static void store_manifest(struct rev_chunk *chunk)
 			strbuf_reset(&path);
 		}
 
+		// Some manifest chunks can have diffs like:
+		//   - start: off, end: off, data: string of length len
+		//   - start: off, end: off + len, data: ""
+		// which is valid, albeit wasteful.
+		// (example: 13b23929aeb7d1f1f21458dfcb32b8efe9aad39d in the
+		// mercurial mercurial repository, as of writing)
+		// What that means, however, is that we can't
+		// tree_content_set for additions until the end because a
+		// subsequent iteration might be removing what we just
+		// added. So we don't do them now, we'll re-iterate the diff
+		// later.
+	}
+
+	rev_diff_start_iter(&diff, chunk);
+	while (rev_diff_iter_next(&diff)) {
 		// Process added files.
 		slice = strbuf_slice(&diff.data, 0, diff.data.len);
 		while (split_manifest_line(&slice, &line) == 0) {
