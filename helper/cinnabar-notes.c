@@ -177,12 +177,13 @@ static int merge_note(const struct object_id *object_oid,
 int cinnabar_for_each_note(struct cinnabar_notes_tree *t, int flags,
                            each_note_fn fn, void *cb_data)
 {
-	struct int_node empty_node = { 0, };
+	struct int_node empty_node = { { NULL, } };
 	char *notes_ref = xstrdup_or_null(t->current.ref);
-	if (memcmp(&t->current.root, &empty_node, sizeof(empty_node)) == 0) {
+	if (memcmp(t->current.root, &empty_node, sizeof(empty_node)) == 0) {
 		// If current is empty, we just copy the additions to it.
 		free_notes(&t->current);
 		memcpy(&t->current, &t->additions, sizeof(struct notes_tree));
+		t->additions.initialized = 0;
 		init_notes(&t->additions, notes_ref, combine_notes_ignore,
 		           NOTES_INIT_EMPTY);
 	} else {
