@@ -150,7 +150,7 @@ def download(args):
                 else:
                     yield read, chunk
 
-        fmt = ' %d%%' if size else ' %d bytes'
+        fmt = ' {}%' if size else ' {} bytes'
         return progress_enum(fmt, _progress(iter, size))
 
     helper_content = progress(req.iter_content(chunk_size=4096), size)
