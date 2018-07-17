@@ -104,6 +104,25 @@ class Hg(Task):
         )
 
 
+def old_compatible_python():
+    '''Find the oldest version of the python code that is compatible with the
+    current helper'''
+    from cinnabar.git import Git
+    with open(os.path.join(os.path.dirname(__file__), '..', 'helper',
+                           'cinnabar-helper.c')) as fh:
+        min_version = None
+        for l in fh:
+            if l.startswith('#define MIN_CMD_VERSION'):
+                min_version = l.rstrip().split()[-1][:2]
+                break
+        if not min_version:
+            raise Exception('Cannot find MIN_CMD_VERSION')
+    return list(Git.iter(
+        'log', 'HEAD', '--format=%H', '-S',
+        'class GitHgHelper(BaseHelper):\n    VERSION = {}'.format(min_version),
+        cwd=os.path.join(os.path.dirname(__file__), '..')))[-1]
+
+
 def old_helper_head():
     from cinnabar.git import Git
     from cinnabar.helper import GitHgHelper
@@ -155,8 +174,11 @@ class Helper(Task):
                 '(cd repo && tar -Jcf $ARTIFACTS/coverage.tar.xz'
                 ' helper/{{cinnabar,connect,hg}}*.gcno)',
             ]
-        elif variant == 'old':
-            head = old_helper_head()
+        elif variant == 'old' or variant.startswith('old:'):
+            if len(variant) > 3:
+                head = variant[4:]
+            else:
+                head = old_helper_head()
             hash = old_helper_hash(head)
             variant = ''
         elif variant:
@@ -180,7 +202,7 @@ class Helper(Task):
                 hash, env.os, env.cpu, prefix('.', variant)),
             expireIn='26 weeks',
             command=Task.checkout(commit=head) + [
-                'make -C repo -j $(nproc) prefix=/usr{}'.format(
+                'make -C repo helper -j $(nproc) prefix=/usr{}'.format(
                     prefix(' ', ' '.join(make_flags))),
                 'mv repo/{} $ARTIFACTS/'.format(artifact),
             ] + extra_commands,

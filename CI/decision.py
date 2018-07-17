@@ -17,6 +17,7 @@ from tools import (
     Git,
     Helper,
     Hg,
+    old_compatible_python,
 )
 from variables import *  # noqa: F403
 
@@ -142,9 +143,12 @@ class Clone(TestTask):
     def __init__(self, version):
         sha1 = git_rev_parse(version)
         expireIn = '26 weeks'
-        if version == GITHUB_HEAD_SHA:
-            download = install_helper('linux')
-            expireIn = '4 weeks'
+        if version == GITHUB_HEAD_SHA or len(version) == 40:
+            if version == GITHUB_HEAD_SHA:
+                download = install_helper('linux')
+            else:
+                download = install_helper('linux.old:{}'.format(version))
+            expireIn = '26 weeks'
         elif parse_version(version) > parse_version('0.5.0a'):
             download = ['repo/git-cinnabar download']
         elif parse_version(version) == parse_version('0.4.0'):
@@ -250,6 +254,14 @@ TestTask(
     env={
         'GIT_CINNABAR_OLD_HELPER': '1',
     },
+)
+
+rev = old_compatible_python()
+
+TestTask(
+    commit=rev,
+    clone=rev,
+    extra_desc='old python',
 )
 
 TestTask(
