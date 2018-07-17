@@ -167,7 +167,7 @@ hg.cinnabarclone-graft-replace.git: hg.graft.replace.git
 hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-graft.git hg.cinnabarclone-graft-replace.git: hg.pure.hg
 	$(HG) clone -U $< $@.hg
 	echo $(PATH_URL)/$(word 2,$^) > $@.hg/.hg/cinnabar.manifest
-	$(HG) -R $@.hg --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(TOPDIR)/hg/cinnabarclone.py serve-and-exec -- $(GIT) -c cinnabar.experiments=git-clone clone hg://localhost:8000.http/ $@
+	$(HG) -R $@.hg --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(TOPDIR)/mercurial/cinnabarclone.py serve-and-exec -- $(GIT) -c cinnabar.experiments=git-clone clone hg://localhost:8000.http/ $@
 	$(call COMPARE_REFS, $(or $(word 3,$^),$(word 2,$^)), $@)
 	$(GIT) -C $@ cinnabar fsck --manifest --files
 
