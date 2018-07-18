@@ -8,6 +8,7 @@ sys.path.append(os.path.join(BASE_DIR, '..'))
 
 from itertools import chain
 from tasks import (
+    action,
     parse_version,
     Task,
     TaskEnvironment,
@@ -94,7 +95,8 @@ class TestTask(Task):
             artifacts.append('coverage.tar.xz')
             self.coverage.append(self)
         if not desc:
-            desc = 'test w/ git-{} hg-{}'.format(git, hg)
+            desc = 'test w/ git-{} hg-{}'.format(
+                git, 'r' + hg if len(hg) == 40 else hg)
             if variant and variant != 'coverage':
                 desc = ' '.join((desc, variant))
         if extra_desc:
@@ -149,7 +151,8 @@ class Clone(TestTask):
         )
 
 
-if not TC_ACTION:
+@action('decision')
+def decision():
     TestTask(
         description='python lint & tests',
         variant='coverage',
@@ -244,13 +247,39 @@ if not TC_ACTION:
             'GRAFT': '1',
         },
     )
-elif TC_ACTION == 'more-hg-versions':
+
+
+@action('more-hg-versions',
+        title='More hg versions',
+        description='Trigger tests against more mercurial versions')
+def more_hg_versions():
     for hg in ALL_MERCURIAL_VERSIONS:
         if hg != MERCURIAL_VERSION and hg not in SOME_MERCURIAL_VERSIONS:
             TestTask(hg=hg)
-else:
-    raise Exception('Unsupported action: %s', TC_ACTION)
 
+
+@action('hg-trunk',
+        title='Test w/ hg trunk',
+        description='Trigger tests against current mercurial trunk')
+def hg_trunk():
+    import requests
+    r = requests.get('https://www.mercurial-scm.org/repo/hg/?cmd=branchmap')
+    trunk = None
+    for l in r.text.splitlines():
+        fields = l.split()
+        if fields[0] == 'default':
+            trunk = fields[-1]
+    if not trunk:
+        raise Exception('Cannot find mercurial trunk changeset')
+    TestTask(hg=trunk)
+
+
+try:
+    func = action.by_name[TC_ACTION or 'decision'].func
+except AttributeError:
+    raise Exception('Unsupported action: %s', TC_ACTION or 'decision')
+
+func()
 
 upload_coverage = []
 
@@ -290,33 +319,24 @@ for t in Task.by_id.itervalues():
     t.submit()
 
 if not TC_ACTION and 'TC_GROUP_ID' in os.environ:
-    import json
-    import yaml
-
-    with open(os.path.join(os.path.dirname(__file__), '..',
-              '.taskcluster.yml')) as fh:
-        contents = yaml.load(fh)
-    task = contents['tasks'][0]['then']['in']
-    del task['taskId']
-    task['payload']['env']['TC_ACTION'] = 'more-hg-versions'
-    data = dict(TC_DATA)
-    data['decision_id'] = ''
-    action = {
+    actions = {
         'version': 1,
-        'actions': [
-            {
-                'kind': 'task',
-                'name': 'more-hg-versions',
-                'title': 'More hg versions',
-                'description': 'Trigger tests against more mercurial versions',
-                'context': [],
-                'task': task,
-            },
-        ],
+        'actions': [],
         'variables': {
-            'e': data,
+            'e': dict(TC_DATA, decision_id=''),
             'tasks_for': 'action',
         },
     }
+    for name, a in action.by_name.iteritems():
+        if name != 'decision':
+            actions['actions'].append({
+                'kind': 'task',
+                'name': a.name,
+                'title': a.title,
+                'description': a.description,
+                'context': [],
+                'task': a.task,
+            })
+
     with open('actions.json', 'w') as out:
-        out.write(json.dumps(action, indent=True))
+        out.write(json.dumps(actions, indent=True))

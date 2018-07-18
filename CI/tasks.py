@@ -385,3 +385,42 @@ class Task(object):
 
 def bash_command(*commands):
     return ['bash', '-c', '-x', '-e', '; '.join(commands)]
+
+
+class action(object):
+    by_name = OrderedDict()
+
+    template = None
+
+    def __init__(self, name, title=None, description=None):
+        assert name not in self.by_name
+        self.by_name[name] = self
+        self.name = name
+        self.title = title
+        self.description = description
+
+        if self.template is None:
+            import yaml
+            with open(os.path.join(os.path.dirname(__file__), '..',
+                      '.taskcluster.yml')) as fh:
+                contents = yaml.load(fh)
+            task = contents['tasks'][0]['then']['in']
+            del task['taskId']
+            self.__class__.template = task
+
+        def adjust(s):
+            return s.replace('decision', 'action') + ' ({})'.format(title)
+
+        metadata = self.template['metadata']
+        self.task = dict(
+            self.template,
+            payload=dict(self.template['payload'],
+                         env=dict(self.template['payload']['env'],
+                                  TC_ACTION=name)),
+            metadata=dict(metadata,
+                          name=adjust(metadata['name']),
+                          description=adjust(metadata['description'])))
+
+    def __call__(self, func):
+        self.func = func
+        return func

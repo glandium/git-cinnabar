@@ -108,15 +108,34 @@ class Hg(Task):
         (os, version) = os_and_version.split('.', 1)
         env = TaskEnvironment.by_name('{}.build'.format(os))
 
-        desc = 'hg v{}'.format(version)
+        if len(version) == 40:
+            # Assume it's a sha1
+            pretty_version = 'r{}'.format(version)
+            artifact_version = 'unknown'
+            expire = '2 weeks'
+        else:
+            pretty_version = 'v{}'.format(version)
+            artifact_version = version
+            expire = '26 weeks'
+        desc = 'hg {}'.format(pretty_version)
         if os == 'linux':
             artifact = 'mercurial-{}-cp27-none-linux_x86_64.whl'
         else:
             desc = '{} {} {}'.format(desc, env.os, env.cpu)
             artifact = 'mercurial-{}-cp27-cp27m-mingw.whl'
 
+        pre_command = []
+        if len(version) == 40:
+            source = './hg'
+            pre_command.extend(
+                self.install('{}.{}'.format(os, MERCURIAL_VERSION)))
+            pre_command.extend([
+                'hg clone https://www.mercurial-scm.org/repo/hg -r {}'
+                .format(version),
+                'rm -rf hg/.hg',
+            ])
         # 2.6.2 is the first version available on pypi
-        if parse_version('2.6.2') <= parse_version(version):
+        elif parse_version('2.6.2') <= parse_version(version):
             source = 'mercurial=={}'
         else:
             source = 'https://mercurial-scm.org/release/mercurial-{}.tar.gz'
@@ -125,13 +144,13 @@ class Hg(Task):
             self,
             task_env=env,
             description=desc,
-            index='{}.hg.v{}'.format(env.hexdigest, version),
-            expireIn='26 weeks',
+            index='{}.hg.{}'.format(env.hexdigest, pretty_version),
+            expireIn=expire,
             command=pre_command + [
                 'python -m pip wheel -v --build-option -b --build-option'
                 ' $PWD/wheel -w $ARTIFACTS {}'.format(source.format(version)),
             ],
-            artifact=artifact.format(version),
+            artifact=artifact.format(artifact_version),
         )
 
     @classmethod
