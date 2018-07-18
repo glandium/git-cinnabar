@@ -280,18 +280,18 @@ TestTask(
     },
 )
 
-upload_coverage = []
-for task in TestTask.coverage:
-    upload_coverage.extend([
-        'curl -L {{{}.artifact}} | tar -Jxf -'.format(task),
-        'codecov --name "{}" --commit {} --branch {}'.format(
-            task.task['metadata']['name'], GITHUB_HEAD_SHA,
-            GITHUB_HEAD_BRANCH),
-        ('find . \( -name .coverage -o -name coverage.xml -o -name \*.gcda'
-         ' -o -name \*.gcov \) -delete'),
-    ])
-
 if GITHUB_EVENT == 'push':
+    upload_coverage = []
+    for task in TestTask.coverage:
+        upload_coverage.extend([
+            'curl -L {{{}.artifact}} | tar -Jxf -'.format(task),
+            'codecov --name "{}" --commit {} --branch {}'.format(
+                task.task['metadata']['name'], GITHUB_HEAD_SHA,
+                GITHUB_HEAD_BRANCH),
+            ('find . \( -name .coverage -o -name coverage.xml -o -name \*.gcda'
+             ' -o -name \*.gcov \) -delete'),
+        ])
+
     Task(
         task_env=TaskEnvironment.by_name('linux.codecov'),
         description='upload coverage',
