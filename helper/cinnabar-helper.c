@@ -83,6 +83,7 @@
 #endif
 
 #define CMD_VERSION 3000
+#define MIN_CMD_VERSION 3000
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -1121,7 +1122,7 @@ static void do_version(struct string_list *args)
 	if (version < 100)
 		version *= 100;
 
-	if (!version || version < 2500 || version > CMD_VERSION)
+	if (!version || version < MIN_CMD_VERSION || version > CMD_VERSION)
 		exit(128);
 
 	write_or_die(1, STRINGIFY(HELPER_HASH) "\n",
