@@ -48,39 +48,6 @@ assert MERCURIAL_VERSION in ALL_MERCURIAL_VERSIONS
 assert all(v in ALL_MERCURIAL_VERSIONS for v in SOME_MERCURIAL_VERSIONS)
 
 
-def install_hg(name):
-    hg = Hg.by_name(name)
-    filename = os.path.basename(hg.artifacts[0])
-    return [
-        'curl -L {{{}.artifact}} -o {}'.format(hg, filename),
-        'pip install {}'.format(filename)
-    ]
-
-
-def install_git(name):
-    url = '{{{}.artifact}}'.format(Git.by_name(name))
-    if name.startswith('linux.'):
-        return [
-            'curl -L {} | tar -C / -Jxf -'.format(url)
-        ]
-    else:
-        return [
-            'curl -L {} -o git.tar.bz2'.format(url),
-            'tar -jxf git.tar.bz2',
-        ]
-
-
-def install_helper(name):
-    helper = Helper.by_name(name)
-    filename = os.path.basename(helper.artifacts[0])
-    return [
-        'curl --compressed -o {} -L {{{}.artifacts[0]}}'.format(
-            filename, Helper.by_name(name)),
-        'chmod +x {}'.format(filename),
-        'git config --global cinnabar.helper $PWD/{}'.format(filename),
-    ]
-
-
 class TestTask(Task):
     coverage = []
 
@@ -96,15 +63,15 @@ class TestTask(Task):
         extra_desc = kwargs.pop('extra_desc', None)
         if helper is None:
             helper = '{}.{}'.format(task_env, variant) if variant else task_env
-            helper = install_helper(helper)
+            helper = Helper.install(helper)
         if variant:
             kwargs.setdefault('env', {})['VARIANT'] = variant
         env = TaskEnvironment.by_name('{}.test'.format(task_env))
         command = []
         if hg:
-            command.extend(install_hg('{}.{}'.format(task_env, hg)))
+            command.extend(Hg.install('{}.{}'.format(task_env, hg)))
         if git:
-            command.extend(install_git('{}.{}'.format(task_env, git)))
+            command.extend(Git.install('{}.{}'.format(task_env, git)))
         command.extend(Task.checkout(commit=commit))
         command.extend(helper)
         if clone:
@@ -159,9 +126,9 @@ class Clone(TestTask):
         expireIn = '26 weeks'
         if version == TC_COMMIT or len(version) == 40:
             if version == TC_COMMIT:
-                download = install_helper('linux')
+                download = Helper.install('linux')
             else:
-                download = install_helper('linux.old:{}'.format(version))
+                download = Helper.install('linux.old:{}'.format(version))
             expireIn = '26 weeks'
         elif parse_version(version) > parse_version('0.5.0a'):
             download = ['repo/git-cinnabar download']
@@ -217,8 +184,8 @@ if not TC_ACTION:
             description='download helper {} {}'.format(task_env.os,
                                                        task_env.cpu),
             command=list(chain(
-                install_git('{}.{}'.format(env, GIT_VERSION)),
-                install_hg('{}.{}'.format(env, MERCURIAL_VERSION)),
+                Git.install('{}.{}'.format(env, GIT_VERSION)),
+                Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
                 Task.checkout(),
                 requests + [
                     '(cd repo ; ./git-cinnabar download --dev)',

@@ -68,6 +68,19 @@ class Git(Task):
                 artifact='git-{}.tar.bz2'.format(raw_version),
             )
 
+    @classmethod
+    def install(cls, name):
+        url = '{{{}.artifact}}'.format(cls.by_name(name))
+        if name.startswith('linux.'):
+            return [
+                'curl -L {} | tar -C / -Jxf -'.format(url)
+            ]
+        else:
+            return [
+                'curl -L {} -o git.tar.bz2'.format(url),
+                'tar -jxf git.tar.bz2',
+            ]
+
 
 class Hg(Task):
     __metaclass__ = Tool
@@ -102,6 +115,15 @@ class Hg(Task):
             ),
             artifact=artifact.format(version),
         )
+
+    @classmethod
+    def install(cls, name):
+        hg = cls.by_name(name)
+        filename = os.path.basename(hg.artifacts[0])
+        return [
+            'curl -L {{{}.artifact}} -o {}'.format(hg, filename),
+            'pip install {}'.format(filename)
+        ]
 
 
 def old_compatible_python():
@@ -208,3 +230,14 @@ class Helper(Task):
             ] + extra_commands,
             artifacts=artifacts,
         )
+
+    @classmethod
+    def install(cls, name):
+        helper = cls.by_name(name)
+        filename = os.path.basename(helper.artifacts[0])
+        return [
+            'curl --compressed -o {} -L {{{}.artifacts[0]}}'.format(
+                filename, helper),
+            'chmod +x {}'.format(filename),
+            'git config --global cinnabar.helper $PWD/{}'.format(filename),
+        ]
