@@ -14,7 +14,7 @@ from tasks import (
 )
 from variables import (
     ARTIFACT_URL,
-    GITHUB_HEAD_REPO_NAME,
+    TC_REPO_NAME,
 )
 
 
@@ -113,7 +113,7 @@ class DockerImage(object):
 
     def __str__(self):
         return '{}/{}:{}'.format(
-            GITHUB_HEAD_REPO_NAME,
+            TC_REPO_NAME,
             self.name,
             self.hexdigest
         )

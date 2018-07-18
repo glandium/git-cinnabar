@@ -29,7 +29,7 @@ def git_rev_parse(committish):
                         cwd=os.path.join(BASE_DIR, '..')))
 
 
-MERCURIAL_VERSION = '4.6.1'
+MERCURIAL_VERSION = '4.6.2'
 GIT_VERSION = '2.18.0'
 UPGRADE_FROM = ('0.3.0', '0.3.2', '0.4.0', '0.5.0b2', '0.5.0b3')
 
@@ -77,7 +77,7 @@ class TestTask(Task):
         task_env = kwargs.pop('task_env', 'linux')
         variant = kwargs.pop('variant', None)
         helper = kwargs.pop('helper', None)
-        clone = kwargs.pop('clone', GITHUB_HEAD_SHA)
+        clone = kwargs.pop('clone', TC_COMMIT)
         desc = kwargs.pop('description', None)
         extra_desc = kwargs.pop('extra_desc', None)
         if helper is None:
@@ -143,8 +143,8 @@ class Clone(TestTask):
     def __init__(self, version):
         sha1 = git_rev_parse(version)
         expireIn = '26 weeks'
-        if version == GITHUB_HEAD_SHA or len(version) == 40:
-            if version == GITHUB_HEAD_SHA:
+        if version == TC_COMMIT or len(version) == 40:
+            if version == TC_COMMIT:
                 download = install_helper('linux')
             else:
                 download = install_helper('linux.old:{}'.format(version))
@@ -280,18 +280,17 @@ TestTask(
     },
 )
 
-upload_coverage = []
-for task in TestTask.coverage:
-    upload_coverage.extend([
-        'curl -L {{{}.artifact}} | tar -Jxf -'.format(task),
-        'codecov --name "{}" --commit {} --branch {}'.format(
-            task.task['metadata']['name'], GITHUB_HEAD_SHA,
-            GITHUB_HEAD_BRANCH),
-        ('find . \( -name .coverage -o -name coverage.xml -o -name \*.gcda'
-         ' -o -name \*.gcov \) -delete'),
-    ])
+if TC_IS_PUSH and TC_BRANCH:
+    upload_coverage = []
+    for task in TestTask.coverage:
+        upload_coverage.extend([
+            'curl -L {{{}.artifact}} | tar -Jxf -'.format(task),
+            'codecov --name "{}" --commit {} --branch {}'.format(
+                task.task['metadata']['name'], TC_COMMIT, TC_BRANCH),
+            ('find . \( -name .coverage -o -name coverage.xml -o -name \*.gcda'
+             ' -o -name \*.gcov \) -delete'),
+        ])
 
-if GITHUB_EVENT == 'push':
     Task(
         task_env=TaskEnvironment.by_name('linux.codecov'),
         description='upload coverage',
