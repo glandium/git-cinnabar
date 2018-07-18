@@ -151,8 +151,6 @@ static void split_command(char *line, const char **command,
 	string_list_clear(&split_line, 0);
 }
 
-static int can_send_null_buffer = 0;
-
 static void send_buffer(struct strbuf *buf)
 {
 	if (buf) {
@@ -164,10 +162,8 @@ static void send_buffer(struct strbuf *buf)
 
 		write_or_die(1, buf->buf, buf->len);
 		write_or_die(1, "\n", 1);
-	} else if (can_send_null_buffer) {
-		write_or_die(1, "-1\n\n", 4);
 	} else {
-		write_or_die(1, "0\n\n", 3);
+		write_or_die(1, "-1\n\n", 4);
 	}
 }
 
@@ -1127,8 +1123,6 @@ static void do_version(struct string_list *args)
 
 	if (!version || version < 2500 || version > CMD_VERSION)
 		exit(128);
-
-	can_send_null_buffer = (version >= 1700);
 
 	write_or_die(1, STRINGIFY(HELPER_HASH) "\n",
 	             sizeof(STRINGIFY(HELPER_HASH)));
