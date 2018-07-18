@@ -41,8 +41,7 @@ ALL_MERCURIAL_VERSIONS = (
 )
 
 SOME_MERCURIAL_VERSIONS = (
-    '1.9.3', '2.5.4', '2.6.3', '2.7.2', '3.0.1', '3.4.2', '3.6.3',
-    '4.3.3', '4.4.2', '4.5.3',
+    '1.9.3', '2.5.4', '3.4.2',
 )
 
 assert MERCURIAL_VERSION in ALL_MERCURIAL_VERSIONS
