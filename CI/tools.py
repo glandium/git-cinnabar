@@ -109,7 +109,7 @@ def old_helper_head():
     from cinnabar.helper import GitHgHelper
     version = GitHgHelper.VERSION
     return list(Git.iter(
-        'log', 'HEAD', '--format=%H', '--pickaxe-regex',
+        'log', 'HEAD', '--format=%H',
         '-S', '#define CMD_VERSION {}'.format(version),
         cwd=os.path.join(os.path.dirname(__file__), '..')))[-1]
 
