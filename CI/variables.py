@@ -1,3 +1,4 @@
+import json
 import os
 
 
@@ -7,11 +8,30 @@ else:
     PROXY_INDEX_URL = 'https://index.taskcluster.net/v1/task/{}'
 ARTIFACT_URL = 'https://queue.taskcluster.net/v1/task/{}/artifacts/{}'
 
-TC_LOGIN = os.environ.get('TC_LOGIN', 'glandium')
-TC_REPO_NAME = os.environ.get('TC_REPO_NAME', 'git-cinnabar')
-TC_REPO_URL = os.environ.get(
-    'TC_REPO_URL',
-    'https://github.com/{}/{}'.format(TC_LOGIN, TC_REPO_NAME))
-TC_COMMIT = os.environ.get('TC_COMMIT', 'HEAD')
-TC_BRANCH = os.environ.get('TC_BRANCH')
+DEFAULT_DATA = {
+    'repo_name': 'git-cinnabar',
+    'login': 'glandium',
+    'commit': 'HEAD',
+    'branch': '',
+    'decision_id': '',
+}
+DEFAULT_DATA['repo_url'] = 'https://github.com/{}/{}'.format(
+    DEFAULT_DATA['login'], DEFAULT_DATA['repo_name'])
+for k in ('repo_name', 'login'):
+    DEFAULT_DATA['base_{}'.format(k)] = DEFAULT_DATA[k]
+
+TC_DATA = json.loads(os.environ.get('TC_DATA', json.dumps(DEFAULT_DATA)))
+
+
+def get(k):
+    return TC_DATA.get(k, DEFAULT_DATA[k])
+
+
+TC_LOGIN = get('login')
+TC_REPO_NAME = get('repo_name')
+TC_REPO_URL = get('repo_url')
+TC_COMMIT = get('commit')
+TC_BRANCH = get('branch')
+
+TC_ACTION = os.environ.get('TC_ACTION')
 TC_IS_PUSH = os.environ.get('TC_IS_PUSH') == '1'

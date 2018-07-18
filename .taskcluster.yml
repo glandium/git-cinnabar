@@ -30,9 +30,11 @@ tasks:
             base_repo_name: ${event.pull_request.base.repo.name}
             base_login: ${event.pull_request.base.repo.owner.login}
             decision_id:
-      in:
-        taskId: {$eval: as_slugid("decision")}
         taskGroupId: {$eval: as_slugid("decision")}
+      in:
+        taskId: ${taskGroupId}
+        taskGroupId: ${taskGroupId}
+        schedulerId: taskcluster-github
         provisionerId: aws-provisioner-v1
         workerType: github-worker
         retries: 5
@@ -54,11 +56,8 @@ tasks:
             taskclusterProxy: true
           env:
             TC_PROXY: 1
-            TC_LOGIN: ${e.login}
-            TC_REPO_NAME: ${e.repo_name}
-            TC_REPO_URL: ${e.repo_url}
-            TC_COMMIT: ${e.commit}
-            TC_BRANCH: ${e.branch}
+            TC_DATA: {$json: {$eval: e}}
+            TC_GROUP_ID: ${taskGroupId}
             TC_IS_PUSH: {$if: 'tasks_for == "github-push"', then: 1}
           command:
             - sh
@@ -67,11 +66,20 @@ tasks:
               git clone -n ${e.repo_url} repo &&
               git -c advice.detachedHead=false -C repo checkout ${e.commit} &&
               virtualenv venv &&
-              venv/bin/pip install requests &&
+              venv/bin/pip install pyyaml requests &&
               venv/bin/python repo/CI/decision.py
+          artifacts:
+            $if: 'e.decision_id'
+            then:
+              public/actions.json:
+                path: actions.json
+                type: file
         created: {$fromNow: ''}
         deadline: {$fromNow: '2 hours'}
-        expires: {$fromNow: '26 weeks'}
+        expires:
+          $if: 'tasks_for == "action"'
+          then: {$fromNow: '26 weeks'}
+          else: {$fromNow: '2 hours'}
         metadata:
           name: decision task
           description: ${e.repo_name} decision task

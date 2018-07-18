@@ -42,7 +42,7 @@ class datetime(datetime.datetime):
         return self.combine(d.date(), d.timetz())
 
 
-task_group_id = os.environ.get('TASK_ID') or slugid()
+task_group_id = os.environ.get('TC_GROUP_ID') or slugid()
 now = datetime.utcnow()
 
 
