@@ -109,10 +109,10 @@ class Hg(Task):
             description=desc,
             index='{}.hg.v{}'.format(env.hexdigest, version),
             expireIn='26 weeks',
-            command=(
-                'pip wheel -v --build-option -b --build-option $PWD/wheel'
-                ' -w $ARTIFACTS {}'.format(source.format(version)),
-            ),
+            command=pre_command + [
+                'python -m pip wheel -v --build-option -b --build-option'
+                ' $PWD/wheel -w $ARTIFACTS {}'.format(source.format(version)),
+            ],
             artifact=artifact.format(version),
         )
 
@@ -122,7 +122,7 @@ class Hg(Task):
         filename = os.path.basename(hg.artifacts[0])
         return [
             'curl -L {{{}.artifact}} -o {}'.format(hg, filename),
-            'pip install {}'.format(filename)
+            'python -m pip install {}'.format(filename)
         ]
 
 

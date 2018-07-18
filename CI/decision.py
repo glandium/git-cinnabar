@@ -177,7 +177,7 @@ if not TC_ACTION:
     for env in ('linux', 'mingw64'):
         TestTask(task_env=env)
 
-        requests = [] if env == 'linux' else ['pip install requests']
+        requests = [] if env == 'linux' else ['python -m pip install requests']
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
         Task(
             task_env=task_env,

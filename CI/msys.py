@@ -114,9 +114,8 @@ class MsysEnvironment(MsysCommon):
             'pacman --noconfirm -Sy tar {}'.format(
                 ' '.join(self.packages(name))),
             'rm -rf /var/cache/pacman/pkg',
+            'python -m pip install pip==10.0.1 --upgrade',
             'pip install wheel',
-            'sed -i "1s,.*,#!python2.exe," {}/{}/bin/pip-script.py'.format(
-                msys(cpu), mingw(cpu)),
             'mv {}/{}/bin/{{{{mingw32-,}}}}make.exe'.format(msys(cpu),
                                                             mingw(cpu)),
             'tar -jcf msys2.tar.bz2 {}'.format(msys(cpu)),
