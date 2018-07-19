@@ -14,6 +14,10 @@ from tasks import (
     Tool,
 )
 from tools import (
+    GIT_VERSION,
+    MERCURIAL_VERSION,
+    ALL_MERCURIAL_VERSIONS,
+    SOME_MERCURIAL_VERSIONS,
     Git,
     Helper,
     Hg,
@@ -29,23 +33,7 @@ def git_rev_parse(committish):
                         cwd=os.path.join(BASE_DIR, '..')))
 
 
-MERCURIAL_VERSION = '4.6.2'
-GIT_VERSION = '2.18.0'
 UPGRADE_FROM = ('0.3.0', '0.3.2', '0.4.0', '0.5.0b2', '0.5.0b3')
-
-ALL_MERCURIAL_VERSIONS = (
-    '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
-    '2.6.3', '2.7.2', '2.8.2', '2.9.1', '3.0.1', '3.1.2', '3.2.4',
-    '3.3.3', '3.4.2', '3.5.2', '3.6.3', '3.7.3', '3.8.4', '3.9.2',
-    '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
-)
-
-SOME_MERCURIAL_VERSIONS = (
-    '1.9.3', '2.5.4', '3.4.2',
-)
-
-assert MERCURIAL_VERSION in ALL_MERCURIAL_VERSIONS
-assert all(v in ALL_MERCURIAL_VERSIONS for v in SOME_MERCURIAL_VERSIONS)
 
 
 class TestTask(Task):
