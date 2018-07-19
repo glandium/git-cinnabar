@@ -78,8 +78,8 @@ tasks:
         deadline: {$fromNow: '2 hours'}
         expires:
           $if: 'tasks_for == "action"'
-          then: {$fromNow: '26 weeks'}
-          else: {$fromNow: '2 hours'}
+          then: {$fromNow: '2 hours'}
+          else: {$fromNow: '26 weeks'}
         metadata:
           name: decision task
           description: ${e.repo_name} decision task
