@@ -7,6 +7,8 @@ sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '..'))
 
 from itertools import chain
+
+import osx  # noqa: F401
 from tasks import (
     action,
     parse_version,
@@ -168,7 +170,7 @@ def decision():
         ],
     )
 
-    for env in ('linux', 'mingw64'):
+    for env in ('linux', 'mingw64', 'osx10_10'):
         TestTask(task_env=env)
 
         requests = [] if env == 'linux' else ['python -m pip install requests']
@@ -213,12 +215,14 @@ def decision():
         if hg != MERCURIAL_VERSION:
             TestTask(hg=hg)
 
-    TestTask(
-        variant='asan',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'true',
-        },
-    )
+    for env in ('linux', 'osx10_11'):
+        TestTask(
+            task_env=env,
+            variant='asan',
+            env={
+                'GIT_CINNABAR_EXPERIMENTS': 'true',
+            },
+        )
 
     TestTask(
         variant='old',

@@ -37,13 +37,23 @@ class Git(Task):
 
     def __init__(self, os_and_version):
         (os, version) = os_and_version.split('.', 1)
-        build_image = DockerImage.by_name('build')
-        if os == 'linux':
+        if os.startswith('osx'):
+            build_image = TaskEnvironment.by_name('osx10_10.build')
+        else:
+            build_image = DockerImage.by_name('build')
+        if os == 'linux' or os.startswith('osx'):
+            if os == 'linux':
+                description = 'git v{}'.format(version)
+                index = 'v2.{}.git.v{}'.format(build_image.hexdigest, version)
+            else:
+                env = build_image
+                description = 'git v{} {} {}'.format(version, env.os, env.cpu)
+                index = '{}.{}.git.v{}'.format(env.os, env.version, version)
             Task.__init__(
                 self,
                 task_env=build_image,
-                description='git v{}'.format(version),
-                index='v2.{}.git.v{}'.format(build_image.hexdigest, version),
+                description=description,
+                index=index,
                 expireIn='26 weeks',
                 command=Task.checkout(
                     'git://git.kernel.org/pub/scm/git/git.git',
@@ -109,6 +119,7 @@ class Hg(Task):
     def __init__(self, os_and_version):
         (os, version) = os_and_version.split('.', 1)
         env = TaskEnvironment.by_name('{}.build'.format(os))
+        kwargs = {}
 
         if len(version) == 40:
             # Assume it's a sha1
@@ -124,7 +135,13 @@ class Hg(Task):
             artifact = 'mercurial-{}-cp27-none-linux_x86_64.whl'
         else:
             desc = '{} {} {}'.format(desc, env.os, env.cpu)
-            artifact = 'mercurial-{}-cp27-cp27m-mingw.whl'
+            if os.startswith('osx'):
+                artifact = ('mercurial-{{}}-cp27-cp27m-macosx_{}_intel.whl'
+                            .format(os[3:]))
+                kwargs.setdefault('env', {})['MACOSX_DEPLOYMENT_TARGET'] = \
+                    '10.10'
+            else:
+                artifact = 'mercurial-{}-cp27-cp27m-mingw.whl'
 
         pre_command = []
         if len(version) == 40:
@@ -153,6 +170,7 @@ class Hg(Task):
                 ' $PWD/wheel -w $ARTIFACTS {}'.format(source.format(version)),
             ],
             artifact=artifact.format(artifact_version),
+            **kwargs
         )
 
     @classmethod
@@ -208,10 +226,12 @@ class Helper(Task):
 
     def __init__(self, os_and_variant):
         os, variant = (os_and_variant.split('.', 2) + [''])[:2]
+        if variant == 'asan' and os == 'osx10_10':
+            os = 'osx10_11'
         env = TaskEnvironment.by_name('{}.build'.format(os))
 
         artifact = 'git-cinnabar-helper'
-        if os != 'linux':
+        if os.startswith('mingw'):
             artifact += '.exe'
         artifacts = [artifact]
 
@@ -224,9 +244,14 @@ class Helper(Task):
         desc_variant = variant
         extra_commands = []
         if variant == 'asan':
+            if os.startswith('osx'):
+                opt = '-O2'
+            else:
+                opt = '-Og'
+                make_flags.append('LDFLAGS=-static-libasan')
             make_flags.append(
-                'CFLAGS="-Og -g -fsanitize=address -fno-omit-frame-pointer"')
-            make_flags.append('LDFLAGS=-static-libasan')
+                'CFLAGS="{} -g -fsanitize=address -fno-omit-frame-pointer"'
+                .format(opt))
         elif variant == 'coverage':
             make_flags.append('CFLAGS="-coverage"')
             artifacts += ['coverage.tar.xz']
@@ -247,7 +272,7 @@ class Helper(Task):
 
         if os == 'linux':
             make_flags.append('CURL_COMPAT=1')
-        else:
+        elif not os.startswith('osx'):
             make_flags.append('USE_LIBPCRE1=YesPlease')
             make_flags.append('USE_LIBPCRE2=')
             make_flags.append('CFLAGS+=-DCURLOPT_PROXY_CAINFO=246')

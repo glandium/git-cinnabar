@@ -268,6 +268,8 @@ class Task(object):
                     resolver.format(a)
                     for a in v
                 ]
+                if kwargs.get('workerType', '').startswith('osx'):
+                    task['payload']['command'] = [task['payload']['command']]
                 for t in resolver.used():
                     dependencies.append(t.id)
 
@@ -283,8 +285,8 @@ class Task(object):
                     ARTIFACT_URL.format(self.id, a)
                     for a in artifacts
                 ]
-                if kwargs.get('workerType') in ('dummy-worker-packet',
-                                                'win2012r2'):
+                if kwargs.get('workerType', '').startswith(
+                        ('osx', 'win2012r2')):
                     artifacts = [
                         a.update(name=name) or a
                         for name, a in artifacts.iteritems()
