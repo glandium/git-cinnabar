@@ -59,8 +59,10 @@ class TestTask(Task):
         command = []
         if hg:
             command.extend(Hg.install('{}.{}'.format(task_env, hg)))
+            command.append('hg --version')
         if git:
             command.extend(Git.install('{}.{}'.format(task_env, git)))
+            command.append('git --version')
         command.extend(Task.checkout(commit=commit))
         command.extend(helper)
         if clone:
