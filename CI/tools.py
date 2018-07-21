@@ -43,16 +43,16 @@ class Git(Task):
                 self,
                 task_env=build_image,
                 description='git v{}'.format(version),
-                index='{}.git.v{}'.format(build_image.hexdigest, version),
+                index='v2.{}.git.v{}'.format(build_image.hexdigest, version),
                 expireIn='26 weeks',
                 command=Task.checkout(
                     'git://git.kernel.org/pub/scm/git/git.git',
                     'v{}'.format(version)
                 ) + [
-                    'make -C repo -j$(nproc) install prefix=/usr'
+                    'make -C repo -j$(nproc) install prefix=/'
                     ' NO_GETTEXT=1 NO_OPENSSL=1 NO_TCLTK=1'
-                    ' DESTDIR=/tmp/git-install',
-                    'tar -C /tmp/git-install -Jcf $ARTIFACTS/git-{}.tar.xz .'
+                    ' DESTDIR=/tmp/git',
+                    'tar -C /tmp -Jcf $ARTIFACTS/git-{}.tar.xz git'
                     .format(version),
                 ],
                 artifact='git-{}.tar.xz'.format(version),
@@ -91,7 +91,9 @@ class Git(Task):
         url = '{{{}.artifact}}'.format(cls.by_name(name))
         if name.startswith('linux.'):
             return [
-                'curl -L {} | tar -C / -Jxf -'.format(url)
+                'curl -L {} | tar -Jxf -'.format(url),
+                'export PATH=$PWD/git/bin:$PATH',
+                'export GIT_EXEC_PATH=$PWD/git/libexec/git-core',
             ]
         else:
             return [
