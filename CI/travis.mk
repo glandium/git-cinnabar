@@ -66,20 +66,6 @@ $(GIT_CINNABAR_HELPER):
 
 endif
 
-before_script::
-	case "$(shell $(CURDIR)/git-cinnabar --version=cinnabar)" in \
-	*a$(addprefix |,$(shell git describe --tags --abbrev=0 HEAD 2> /dev/null))) ;; \
-	*) false ;; \
-	esac
-	case "$(shell $(CURDIR)/git-cinnabar --version=module)" in \
-	$(shell git ls-tree HEAD cinnabar | awk '{print $$3}')) ;; \
-	*) false ;; \
-	esac
-	case "$(shell $(CURDIR)/git-cinnabar --version=helper 2> /dev/null | awk -F/ '{print $$NF}')" in \
-	$(shell git ls-tree HEAD helper | awk '{print $$3}')) ;; \
-	*) false ;; \
-	esac
-
 before_script:: $(GIT_CINNABAR_HELPER)
 	rm -rf hg.old.git
 	$(GIT) -c fetch.prune=true clone -n hg::$(REPO) hg.old.git
