@@ -218,7 +218,7 @@ class Task(object):
             },
         }
         kwargs.setdefault('expireIn', '4 weeks')
-        dependencies = [task_group_id]
+        dependencies = [os.environ.get('TASK_ID') or task_group_id]
         self.artifacts = []
 
         for k, v in kwargs.iteritems():
