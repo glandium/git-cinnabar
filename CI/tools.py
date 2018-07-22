@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import hashlib
 import os
 
 from tasks import (
@@ -42,18 +43,18 @@ class Git(Task):
         else:
             build_image = DockerImage.by_name('build')
         if os == 'linux' or os.startswith('osx'):
+            h = hashlib.sha1(build_image.hexdigest)
+            h.update('v2')
             if os == 'linux':
                 description = 'git v{}'.format(version)
-                index = 'v2.{}.git.v{}'.format(build_image.hexdigest, version)
             else:
                 env = build_image
                 description = 'git v{} {} {}'.format(version, env.os, env.cpu)
-                index = '{}.{}.git.v{}'.format(env.os, env.version, version)
             Task.__init__(
                 self,
                 task_env=build_image,
                 description=description,
-                index=index,
+                index='{}.git.v{}'.format(h.hexdigest(), version),
                 expireIn='26 weeks',
                 command=Task.checkout(
                     'git://git.kernel.org/pub/scm/git/git.git',
@@ -61,8 +62,8 @@ class Git(Task):
                 ) + [
                     'make -C repo -j$(nproc) install prefix=/'
                     ' NO_GETTEXT=1 NO_OPENSSL=1 NO_TCLTK=1'
-                    ' DESTDIR=/tmp/git',
-                    'tar -C /tmp -Jcf $ARTIFACTS/git-{}.tar.xz git'
+                    ' DESTDIR=$PWD/git',
+                    'tar -Jcf $ARTIFACTS/git-{}.tar.xz git'
                     .format(version),
                 ],
                 artifact='git-{}.tar.xz'.format(version),
