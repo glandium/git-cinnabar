@@ -49,7 +49,7 @@ Setup:
   Alternatively, you can build it:
 
   ```
-  $ make
+  $ make helper
   ```
 
   If you want to build git along the helper, you can run `make git`.
