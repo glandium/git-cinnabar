@@ -69,7 +69,7 @@ class Index(dict):
             pass
         else:
             result = self._try_key('github.{}.{}.{}'.format(
-                TC_LOGIN, TC_REPO_NAME, key))
+                TC_BASE_LOGIN, TC_BASE_REPO_NAME, key))
         if not result:
             result = slugid()
         self[key] = result

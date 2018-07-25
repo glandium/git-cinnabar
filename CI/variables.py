@@ -32,6 +32,8 @@ TC_REPO_NAME = get('repo_name')
 TC_REPO_URL = get('repo_url')
 TC_COMMIT = get('commit')
 TC_BRANCH = get('branch')
+TC_BASE_LOGIN = get('base_login')
+TC_BASE_REPO_NAME = get('base_repo_name')
 
 TC_ACTION = os.environ.get('TC_ACTION')
 TC_IS_PUSH = os.environ.get('TC_IS_PUSH') == '1'
