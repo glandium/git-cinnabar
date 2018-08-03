@@ -1928,12 +1928,12 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 					NULL, &oid, cache);
 			} else {
 				const struct object_id *file_oid;
-				file_oid = resolve_hg2git(entry.oid, 40);
-				if (!file_oid) {
-					if (!is_empty_hg_file(entry.oid->hash))
-						goto corrupted;
+				if (is_empty_hg_file(entry.oid->hash))
 					file_oid = ensure_empty_blob();
-				}
+				else
+					file_oid = resolve_hg2git(entry.oid, 40);
+				if (!file_oid)
+					goto corrupted;
 				oidcpy(&oid, file_oid);
 				mode &= 0777;
 				if (!mode)
