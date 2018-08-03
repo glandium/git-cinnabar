@@ -131,7 +131,8 @@ class Clone(TestTask):
             download = ['(cd repo ; ./git-cinnabar download)']
         else:
             download = []
-        if parse_version(version) < parse_version('0.5.0b3'):
+        if (parse_version(version) < parse_version('0.5.0b3') and
+                version != TC_COMMIT):
             hg = '4.3.3'
         else:
             hg = MERCURIAL_VERSION
