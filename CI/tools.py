@@ -14,7 +14,7 @@ import msys
 from cinnabar.cmd.util import helper_hash
 
 
-MERCURIAL_VERSION = '4.6.2'
+MERCURIAL_VERSION = '4.7'
 GIT_VERSION = '2.18.0'
 
 ALL_MERCURIAL_VERSIONS = (
@@ -22,6 +22,7 @@ ALL_MERCURIAL_VERSIONS = (
     '2.6.3', '2.7.2', '2.8.2', '2.9.1', '3.0.1', '3.1.2', '3.2.4',
     '3.3.3', '3.4.2', '3.5.2', '3.6.3', '3.7.3', '3.8.4', '3.9.2',
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
+    '4.7',
 )
 
 SOME_MERCURIAL_VERSIONS = (
