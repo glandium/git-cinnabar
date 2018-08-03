@@ -77,6 +77,9 @@ class TestTask(Task):
         if 'command' in kwargs:
             kwargs['command'] = command + kwargs['command']
         else:
+            if commit:
+                # Always use the current CI scripts
+                command.append('git -C repo checkout {} CI'.format(TC_COMMIT))
             kwargs['command'] = command + [
                 'make -C repo -f CI/tests.mk',
             ]
