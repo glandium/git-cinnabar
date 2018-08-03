@@ -1,3 +1,4 @@
+import hashlib
 import os
 import sys
 
@@ -134,11 +135,15 @@ class Clone(TestTask):
             hg = '4.3.3'
         else:
             hg = MERCURIAL_VERSION
+        if REPO == DEFAULT_REPO:
+            index = 'clone.{}'.format(sha1)
+        else:
+            index = 'clone.{}.{}'.format(hashlib.sha1(REPO).hexdigest(), sha1)
         TestTask.__init__(
             self,
             hg=hg,
             description='clone w/ {}'.format(version),
-            index='clone.{}'.format(sha1),
+            index=index,
             expireIn=expireIn,
             helper=download,
             commit=sha1,
@@ -150,7 +155,7 @@ class Clone(TestTask):
             ],
             artifact='clone.tar.xz',
             env={
-                'REPO': 'https://hg.mozilla.org/users/mh_glandium.org/jqplot',
+                'REPO': REPO,
             },
         )
 

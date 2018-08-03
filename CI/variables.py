@@ -37,3 +37,6 @@ TC_BASE_REPO_NAME = get('base_repo_name')
 
 TC_ACTION = os.environ.get('TC_ACTION')
 TC_IS_PUSH = os.environ.get('TC_IS_PUSH') == '1'
+
+DEFAULT_REPO = 'https://hg.mozilla.org/users/mh_glandium.org/jqplot'
+REPO = os.environ.get('REPO', DEFAULT_REPO)
