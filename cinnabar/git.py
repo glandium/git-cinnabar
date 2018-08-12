@@ -115,11 +115,6 @@ class Git(object):
         return self._refs[ref]
 
     @classmethod
-    def cat_file(self, typ, sha1):
-        from githg import GitHgHelper
-        return GitHgHelper.cat_file(typ, sha1)
-
-    @classmethod
     def ls_tree(self, treeish, path='', recursive=False):
         from githg import GitHgHelper
         if treeish.startswith('refs/'):
