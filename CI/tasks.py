@@ -42,7 +42,8 @@ class datetime(datetime.datetime):
         return self.combine(d.date(), d.timetz())
 
 
-task_group_id = os.environ.get('TASK_ID') or slugid()
+task_group_id = (os.environ.get('TC_GROUP_ID') or
+                 os.environ.get('TASK_ID') or slugid())
 now = datetime.utcnow()
 
 
@@ -68,13 +69,8 @@ class Index(dict):
         elif hint is not None:  # empty environment variable
             pass
         else:
-            if (GITHUB_BASE_USER != GITHUB_HEAD_USER or
-                    GITHUB_BASE_REPO_NAME != GITHUB_HEAD_REPO_NAME):
-                result = self._try_key('github.{}.{}.{}'.format(
-                    GITHUB_HEAD_USER, GITHUB_HEAD_REPO_NAME, key))
-            if not result:
-                result = self._try_key('github.{}.{}.{}'.format(
-                    GITHUB_BASE_USER, GITHUB_BASE_REPO_NAME, key))
+            result = self._try_key('github.{}.{}.{}'.format(
+                TC_BASE_LOGIN, TC_BASE_REPO_NAME, key))
         if not result:
             result = slugid()
         self[key] = result
@@ -187,8 +183,8 @@ class Task(object):
 
     @staticmethod
     def checkout(repo=None, commit=None):
-        repo = repo or GITHUB_HEAD_REPO_URL
-        commit = commit or GITHUB_HEAD_SHA
+        repo = repo or TC_REPO_URL
+        commit = commit or TC_COMMIT
         return [
             'git clone -n {} repo'.format(repo),
             'git -c advice.detachedHead=false -C repo checkout {}'.format(
@@ -215,15 +211,15 @@ class Task(object):
             'schedulerId': 'taskcluster-github',
             'taskGroupId': task_group_id,
             'metadata': {
-                'owner': GITHUB_HEAD_USER_EMAIL,
-                'source': GITHUB_HEAD_REPO_URL,
+                'owner': '{}@users.noreply.github.com'.format(TC_LOGIN),
+                'source': TC_REPO_URL,
             },
             'payload': {
                 'maxRunTime': 1800,
             },
         }
         kwargs.setdefault('expireIn', '4 weeks')
-        dependencies = [task_group_id]
+        dependencies = [os.environ.get('TASK_ID') or task_group_id]
         self.artifacts = []
 
         for k, v in kwargs.iteritems():
@@ -232,9 +228,9 @@ class Task(object):
             elif k == 'description':
                 task['metadata'][k] = task['metadata']['name'] = v
             elif k == 'index':
-                if GITHUB_EVENT == 'push':
+                if TC_IS_PUSH:
                     task['routes'] = ['index.github.{}.{}.{}'.format(
-                        GITHUB_HEAD_USER, GITHUB_HEAD_REPO_NAME, v)]
+                        TC_LOGIN, TC_REPO_NAME, v)]
             elif k == 'expireIn':
                 value = v.split()
                 if len(value) == 1:
@@ -273,6 +269,8 @@ class Task(object):
                     resolver.format(a)
                     for a in v
                 ]
+                if kwargs.get('workerType', '').startswith('osx'):
+                    task['payload']['command'] = [task['payload']['command']]
                 for t in resolver.used():
                     dependencies.append(t.id)
 
@@ -288,8 +286,8 @@ class Task(object):
                     ARTIFACT_URL.format(self.id, a)
                     for a in artifacts
                 ]
-                if kwargs.get('workerType') in ('dummy-worker-packet',
-                                                'win2012r2'):
+                if kwargs.get('workerType', '').startswith(
+                        ('osx', 'win2012r2')):
                     artifacts = [
                         a.update(name=name) or a
                         for name, a in artifacts.iteritems()
@@ -375,7 +373,7 @@ class Task(object):
             return
         print('Submitting task "{}":'.format(self.id))
         print(json.dumps(self.task, indent=4, sort_keys=True))
-        if 'TASKCLUSTER_PROXY' not in os.environ:
+        if 'TC_PROXY' not in os.environ:
             return
         url = 'http://taskcluster/queue/v1/task/{}'.format(self.id)
         res = session.put(url, data=json.dumps(self.task))
@@ -390,3 +388,42 @@ class Task(object):
 
 def bash_command(*commands):
     return ['bash', '-c', '-x', '-e', '; '.join(commands)]
+
+
+class action(object):
+    by_name = OrderedDict()
+
+    template = None
+
+    def __init__(self, name, title=None, description=None):
+        assert name not in self.by_name
+        self.by_name[name] = self
+        self.name = name
+        self.title = title
+        self.description = description
+
+        if self.template is None:
+            import yaml
+            with open(os.path.join(os.path.dirname(__file__), '..',
+                      '.taskcluster.yml')) as fh:
+                contents = yaml.load(fh)
+            task = contents['tasks'][0]['then']['in']
+            del task['taskId']
+            self.__class__.template = task
+
+        def adjust(s):
+            return s.replace('decision', 'action') + ' ({})'.format(title)
+
+        metadata = self.template['metadata']
+        self.task = dict(
+            self.template,
+            payload=dict(self.template['payload'],
+                         env=dict(self.template['payload']['env'],
+                                  TC_ACTION=name)),
+            metadata=dict(metadata,
+                          name=adjust(metadata['name']),
+                          description=adjust(metadata['description'])))
+
+    def __call__(self, func):
+        self.func = func
+        return func

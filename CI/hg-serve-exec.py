@@ -2,7 +2,11 @@ import base64
 import subprocess
 from threading import Thread
 
-from mercurial import cmdutil
+try:
+    from mercurial import cmdutil
+    cmdutil.command
+except AttributeError:
+    from mercurial import registrar as cmdutil
 from mercurial import hgweb
 from mercurial.hgweb import common
 try:
@@ -90,7 +94,7 @@ def serve_and_exec(ui, repo, *command):
     repo.baseui.setconfig('web', 'push_ssl', False, 'hgweb')
     repo.baseui.setconfig('web', 'allow_push', '*', 'hgweb')
     app = hgweb.hgweb(repo, baseui=ui)
-    service = httpservice(ui, app, {'port': 8000})
+    service = httpservice(ui, app, {'port': 8000, 'print_url': False})
     print command
     service.init()
     service_thread = Thread(target=service.run)

@@ -83,6 +83,7 @@
 #endif
 
 #define CMD_VERSION 3000
+#define MIN_CMD_VERSION 3000
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -151,8 +152,6 @@ static void split_command(char *line, const char **command,
 	string_list_clear(&split_line, 0);
 }
 
-static int can_send_null_buffer = 0;
-
 static void send_buffer(struct strbuf *buf)
 {
 	if (buf) {
@@ -164,10 +163,8 @@ static void send_buffer(struct strbuf *buf)
 
 		write_or_die(1, buf->buf, buf->len);
 		write_or_die(1, "\n", 1);
-	} else if (can_send_null_buffer) {
-		write_or_die(1, "-1\n\n", 4);
 	} else {
-		write_or_die(1, "0\n\n", 3);
+		write_or_die(1, "-1\n\n", 4);
 	}
 }
 
@@ -896,7 +893,7 @@ struct strbuf *generate_manifest(const struct object_id *oid)
 	if (generated_manifest.content.len) {
 		struct strslice gm;
 		gm = strbuf_slice(&generated_manifest.content, 0, SIZE_MAX);
-		strbuf_grow(&content, generated_manifest.content.len);
+		strbuf_grow(&content, generated_manifest.content.alloc - 1);
 		recurse_manifest2(&generated_manifest.tree_id, gm,
 		                  oid, &content, empty_strslice(), &tree_list);
 	} else {
@@ -1125,10 +1122,8 @@ static void do_version(struct string_list *args)
 	if (version < 100)
 		version *= 100;
 
-	if (!version || version < 2500 || version > CMD_VERSION)
+	if (!version || version < MIN_CMD_VERSION || version > CMD_VERSION)
 		exit(128);
-
-	can_send_null_buffer = (version >= 1700);
 
 	write_or_die(1, STRINGIFY(HELPER_HASH) "\n",
 	             sizeof(STRINGIFY(HELPER_HASH)));
@@ -1933,12 +1928,12 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 					NULL, &oid, cache);
 			} else {
 				const struct object_id *file_oid;
-				file_oid = resolve_hg2git(entry.oid, 40);
-				if (!file_oid) {
-					if (!is_empty_hg_file(entry.oid->hash))
-						goto corrupted;
+				if (is_empty_hg_file(entry.oid->hash))
 					file_oid = ensure_empty_blob();
-				}
+				else
+					file_oid = resolve_hg2git(entry.oid, 40);
+				if (!file_oid)
+					goto corrupted;
 				oidcpy(&oid, file_oid);
 				mode &= 0777;
 				if (!mode)

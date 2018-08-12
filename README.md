@@ -251,7 +251,7 @@ comma-separated list of those features to enable the selected ones, or to
   For large repositories, an initial clone can take a large amount of time.
   This experimental feature allows to get an initial clone (including
   git-cinnabar metadata) from a git repository. This requires an extension on
-  the mercurial server (see hg/cinnabarclone.py), and to push a fresh
+  the mercurial server (see mercurial/cinnabarclone.py), and to push a fresh
   `refs/cinnabar/metadata` to some git repository.
 
   It can also be used without the extension on the mercurial server, by setting

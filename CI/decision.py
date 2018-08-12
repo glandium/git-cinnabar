@@ -1,3 +1,4 @@
+import hashlib
 import os
 import sys
 
@@ -7,16 +8,24 @@ sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '..'))
 
 from itertools import chain
+
+import osx  # noqa: F401
 from tasks import (
+    action,
     parse_version,
     Task,
     TaskEnvironment,
     Tool,
 )
 from tools import (
+    GIT_VERSION,
+    MERCURIAL_VERSION,
+    ALL_MERCURIAL_VERSIONS,
+    SOME_MERCURIAL_VERSIONS,
     Git,
     Helper,
     Hg,
+    old_compatible_python,
 )
 from variables import *  # noqa: F403
 
@@ -28,42 +37,7 @@ def git_rev_parse(committish):
                         cwd=os.path.join(BASE_DIR, '..')))
 
 
-MERCURIAL_VERSION = '4.6.1'
-GIT_VERSION = '2.18.0'
 UPGRADE_FROM = ('0.3.0', '0.3.2', '0.4.0', '0.5.0b2', '0.5.0b3')
-
-
-def install_hg(name):
-    hg = Hg.by_name(name)
-    filename = os.path.basename(hg.artifacts[0])
-    return [
-        'curl -L {{{}.artifact}} -o {}'.format(hg, filename),
-        'pip install {}'.format(filename)
-    ]
-
-
-def install_git(name):
-    url = '{{{}.artifact}}'.format(Git.by_name(name))
-    if name.startswith('linux.'):
-        return [
-            'curl -L {} | tar -C / -Jxf -'.format(url)
-        ]
-    else:
-        return [
-            'curl -L {} -o git.tar.bz2'.format(url),
-            'tar -jxf git.tar.bz2',
-        ]
-
-
-def install_helper(name):
-    helper = Helper.by_name(name)
-    filename = os.path.basename(helper.artifacts[0])
-    return [
-        'curl --compressed -o {} -L {{{}.artifacts[0]}}'.format(
-            filename, Helper.by_name(name)),
-        'chmod +x {}'.format(filename),
-        'git config --global cinnabar.helper $PWD/{}'.format(filename),
-    ]
 
 
 class TestTask(Task):
@@ -76,20 +50,22 @@ class TestTask(Task):
         task_env = kwargs.pop('task_env', 'linux')
         variant = kwargs.pop('variant', None)
         helper = kwargs.pop('helper', None)
-        clone = kwargs.pop('clone', GITHUB_HEAD_SHA)
+        clone = kwargs.pop('clone', TC_COMMIT)
         desc = kwargs.pop('description', None)
         extra_desc = kwargs.pop('extra_desc', None)
         if helper is None:
             helper = '{}.{}'.format(task_env, variant) if variant else task_env
-            helper = install_helper(helper)
+            helper = Helper.install(helper)
         if variant:
             kwargs.setdefault('env', {})['VARIANT'] = variant
         env = TaskEnvironment.by_name('{}.test'.format(task_env))
         command = []
         if hg:
-            command.extend(install_hg('{}.{}'.format(task_env, hg)))
+            command.extend(Hg.install('{}.{}'.format(task_env, hg)))
+            command.append('hg --version')
         if git:
-            command.extend(install_git('{}.{}'.format(task_env, git)))
+            command.extend(Git.install('{}.{}'.format(task_env, git)))
+            command.append('git --version')
         command.extend(Task.checkout(commit=commit))
         command.extend(helper)
         if clone:
@@ -101,6 +77,9 @@ class TestTask(Task):
         if 'command' in kwargs:
             kwargs['command'] = command + kwargs['command']
         else:
+            if commit:
+                # Always use the current CI scripts
+                command.append('git -C repo checkout {} CI'.format(TC_COMMIT))
             kwargs['command'] = command + [
                 'make -C repo -f CI/tests.mk',
             ]
@@ -124,7 +103,8 @@ class TestTask(Task):
             artifacts.append('coverage.tar.xz')
             self.coverage.append(self)
         if not desc:
-            desc = 'test w/ git-{} hg-{}'.format(git, hg)
+            desc = 'test w/ git-{} hg-{}'.format(
+                git, 'r' + hg if len(hg) == 40 else hg)
             if variant and variant != 'coverage':
                 desc = ' '.join((desc, variant))
         if extra_desc:
@@ -142,24 +122,32 @@ class Clone(TestTask):
     def __init__(self, version):
         sha1 = git_rev_parse(version)
         expireIn = '26 weeks'
-        if version == GITHUB_HEAD_SHA:
-            download = install_helper('linux')
-            expireIn = '4 weeks'
+        if version == TC_COMMIT or len(version) == 40:
+            if version == TC_COMMIT:
+                download = Helper.install('linux')
+            else:
+                download = Helper.install('linux.old:{}'.format(version))
+            expireIn = '26 weeks'
         elif parse_version(version) > parse_version('0.5.0a'):
             download = ['repo/git-cinnabar download']
         elif parse_version(version) == parse_version('0.4.0'):
             download = ['(cd repo ; ./git-cinnabar download)']
         else:
             download = []
-        if parse_version(version) < parse_version('0.5.0b3'):
+        if (parse_version(version) < parse_version('0.5.0b3') and
+                version != TC_COMMIT):
             hg = '4.3.3'
         else:
             hg = MERCURIAL_VERSION
+        if REPO == DEFAULT_REPO:
+            index = 'clone.{}'.format(sha1)
+        else:
+            index = 'clone.{}.{}'.format(hashlib.sha1(REPO).hexdigest(), sha1)
         TestTask.__init__(
             self,
             hg=hg,
             description='clone w/ {}'.format(version),
-            index='clone.{}'.format(sha1),
+            index=index,
             expireIn=expireIn,
             helper=download,
             commit=sha1,
@@ -171,115 +159,157 @@ class Clone(TestTask):
             ],
             artifact='clone.tar.xz',
             env={
-                'REPO': 'https://hg.mozilla.org/users/mh_glandium.org/jqplot',
+                'REPO': REPO,
             },
         )
 
 
-TestTask(
-    description='python lint & tests',
-    variant='coverage',
-    clone=False,
-    command=[
-        '(cd repo &&'
-        ' nosetests --all-modules --with-coverage --cover-tests tests)',
-        '(cd repo && flake8 --ignore E402 $(git ls-files \*\*.py git-cinnabar'
-        ' git-remote-hg))',
-    ],
-)
-
-for env in ('linux', 'mingw64'):
-    TestTask(task_env=env)
-
-    requests = [] if env == 'linux' else ['pip install requests']
-    task_env = TaskEnvironment.by_name('{}.test'.format(env))
-    Task(
-        task_env=task_env,
-        description='download helper {} {}'.format(task_env.os, task_env.cpu),
-        command=list(chain(
-            install_git('{}.{}'.format(env, GIT_VERSION)),
-            install_hg('{}.{}'.format(env, MERCURIAL_VERSION)),
-            Task.checkout(),
-            requests + [
-                '(cd repo ; ./git-cinnabar download --dev)',
-                'rm -rf repo/.git',
-                '(cd repo ; ./git-cinnabar download --dev)',
-            ],
-        )),
-        dependencies=[
-            Helper.by_name(env),
+@action('decision')
+def decision():
+    TestTask(
+        description='python lint & tests',
+        variant='coverage',
+        clone=False,
+        command=[
+            'make -C repo -f CI/tests.mk check-version',
+            '(cd repo &&'
+            ' nosetests --all-modules --with-coverage --cover-tests tests)',
+            '(cd repo && flake8 --ignore E402 $(git ls-files \*\*.py'
+            ' git-cinnabar git-remote-hg))',
         ],
     )
 
-# Because nothing is using the x86 windows helper, we need to manually touch
-# it.
-Helper.by_name('mingw32')
+    for env in ('linux', 'mingw64', 'osx10_10'):
+        TestTask(task_env=env)
 
-for upgrade in UPGRADE_FROM:
+        requests = [] if env == 'linux' else ['python -m pip install requests']
+        task_env = TaskEnvironment.by_name('{}.test'.format(env))
+        Task(
+            task_env=task_env,
+            description='download helper {} {}'.format(task_env.os,
+                                                       task_env.cpu),
+            command=list(chain(
+                Git.install('{}.{}'.format(env, GIT_VERSION)),
+                Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
+                Task.checkout(),
+                requests + [
+                    '(cd repo ; ./git-cinnabar download --dev)',
+                    'rm -rf repo/.git',
+                    '(cd repo ; ./git-cinnabar download --dev)',
+                ],
+            )),
+            dependencies=[
+                Helper.by_name(env),
+            ],
+        )
+
+    # Because nothing is using the x86 windows helper, we need to manually
+    # touch it.
+    Helper.by_name('mingw32')
+
+    for upgrade in UPGRADE_FROM:
+        TestTask(
+            extra_desc='upgrade-from-{}'.format(upgrade),
+            variant='coverage',
+            clone=upgrade,
+            env={
+                'UPGRADE_FROM': upgrade,
+            },
+        )
+
+    for git in ('1.8.5', '2.7.4'):
+        TestTask(git=git)
+
+    for hg in SOME_MERCURIAL_VERSIONS:
+        if hg != MERCURIAL_VERSION:
+            TestTask(hg=hg)
+
+    for env in ('linux', 'osx10_11'):
+        TestTask(
+            task_env=env,
+            variant='asan',
+            env={
+                'GIT_CINNABAR_EXPERIMENTS': 'true',
+            },
+        )
+
     TestTask(
-        extra_desc='upgrade-from-{}'.format(upgrade),
-        variant='coverage',
-        clone=upgrade,
+        variant='old',
         env={
-            'UPGRADE_FROM': upgrade,
+            'GIT_CINNABAR_OLD_HELPER': '1',
         },
     )
 
-for git in ('1.8.5', '2.7.4'):
-    TestTask(git=git)
+    rev = old_compatible_python()
 
-for hg in ('1.9.3', '2.5.4', '2.6.3', '2.7.2', '3.0.1', '3.4.2', '3.6.3',
-           '4.3.3', '4.4.2', '4.5.3'):
-    TestTask(hg=hg)
+    TestTask(
+        commit=rev,
+        clone=rev,
+        extra_desc='old python',
+    )
 
-# for hg in ('1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
-#            '2.6.3', '2.7.2', '2.8.2', '2.9.1', '3.0.1', '3.1.2', '3.2.4',
-#            '3.3.3', '3.4.2', '3.5.2', '3.6.3', '3.7.3', '3.8.4', '3.9.2',
-#            '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.1'):
-#     TestTask(hg=hg)
+    TestTask(
+        variant='coverage',
+        extra_desc='experiments',
+        env={
+            'GIT_CINNABAR_EXPERIMENTS': 'true',
+        },
+    )
 
-TestTask(
-    variant='asan',
-    env={
-        'GIT_CINNABAR_EXPERIMENTS': 'true',
-    },
-)
+    TestTask(
+        variant='coverage',
+        extra_desc='graft',
+        env={
+            'GRAFT': '1',
+        },
+    )
 
-TestTask(
-    variant='old',
-    env={
-        'GIT_CINNABAR_OLD_HELPER': '1',
-    },
-)
 
-TestTask(
-    variant='coverage',
-    extra_desc='experiments',
-    env={
-        'GIT_CINNABAR_EXPERIMENTS': 'true',
-    },
-)
+@action('more-hg-versions',
+        title='More hg versions',
+        description='Trigger tests against more mercurial versions')
+def more_hg_versions():
+    for hg in ALL_MERCURIAL_VERSIONS:
+        if hg != MERCURIAL_VERSION and hg not in SOME_MERCURIAL_VERSIONS:
+            TestTask(hg=hg)
 
-TestTask(
-    variant='coverage',
-    extra_desc='graft',
-    env={
-        'GRAFT': '1',
-    },
-)
+
+@action('hg-trunk',
+        title='Test w/ hg trunk',
+        description='Trigger tests against current mercurial trunk')
+def hg_trunk():
+    import requests
+    r = requests.get('https://www.mercurial-scm.org/repo/hg/?cmd=branchmap')
+    trunk = None
+    for l in r.text.splitlines():
+        fields = l.split()
+        if fields[0] == 'default':
+            trunk = fields[-1]
+    if not trunk:
+        raise Exception('Cannot find mercurial trunk changeset')
+    TestTask(hg=trunk)
+
+
+try:
+    func = action.by_name[TC_ACTION or 'decision'].func
+except AttributeError:
+    raise Exception('Unsupported action: %s', TC_ACTION or 'decision')
+
+func()
 
 upload_coverage = []
-for task in TestTask.coverage:
-    upload_coverage.extend([
-        'curl -L {{{}.artifact}} | tar -Jxf -'.format(task),
-        'codecov --name "{}" --commit {} --branch {}'.format(
-            task.task['metadata']['name'], GITHUB_HEAD_SHA,
-            GITHUB_HEAD_BRANCH),
-        ('find . \( -name .coverage -o -name coverage.xml -o -name \*.gcda'
-         ' -o -name \*.gcov \) -delete'),
-    ])
 
-if GITHUB_EVENT == 'push':
+if TC_IS_PUSH and TC_BRANCH:
+    for task in TestTask.coverage:
+        upload_coverage.extend([
+            'curl -L {{{}.artifact}} | tar -Jxf -'.format(task),
+            'codecov --name "{}" --commit {} --branch {}'.format(
+                task.task['metadata']['name'], TC_COMMIT, TC_BRANCH),
+            ('find . \( -name .coverage -o -name coverage.xml -o -name \*.gcda'
+             ' -o -name \*.gcov \) -delete'),
+        ])
+
+if upload_coverage:
     Task(
         task_env=TaskEnvironment.by_name('linux.codecov'),
         description='upload coverage',
@@ -303,3 +333,26 @@ if GITHUB_EVENT == 'push':
 
 for t in Task.by_id.itervalues():
     t.submit()
+
+if not TC_ACTION and 'TC_GROUP_ID' in os.environ:
+    actions = {
+        'version': 1,
+        'actions': [],
+        'variables': {
+            'e': dict(TC_DATA, decision_id=''),
+            'tasks_for': 'action',
+        },
+    }
+    for name, a in action.by_name.iteritems():
+        if name != 'decision':
+            actions['actions'].append({
+                'kind': 'task',
+                'name': a.name,
+                'title': a.title,
+                'description': a.description,
+                'context': [],
+                'task': a.task,
+            })
+
+    with open('actions.json', 'w') as out:
+        out.write(json.dumps(actions, indent=True))

@@ -290,7 +290,7 @@ class GitHgHelper(BaseHelper):
 
 
 class HgRepoHelper(BaseHelper):
-    VERSION = 29
+    VERSION = 30
     _helper = False
 
     @classmethod

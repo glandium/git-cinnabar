@@ -69,6 +69,7 @@ ifneq ($(shell git -C git-core rev-parse HEAD),$(shell git -C git-core rev-parse
 $(error git-core is not checked out at $(GIT_VERSION))
 endif
 
+.PHONY: helper
 helper:
 
 .SUFFIXES:

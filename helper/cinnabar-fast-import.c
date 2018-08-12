@@ -733,8 +733,13 @@ static void store_manifest(struct rev_chunk *chunk)
 		strbuf_addbuf(&last_manifest_content, generate_manifest(note));
 	}
 
+	// Start with the same allocation size as last manifest. (-1 before
+	// strbuf_grow always adds 1 for a final '\0')
+	if (last_manifest_content.alloc)
+		strbuf_grow(&data, last_manifest_content.alloc - 1);
 	// While not exact, the total length of the previous manifest and the
-	// chunk will be an upper bound on the size of the new manifest.
+	// chunk will be an upper bound on the size of the new manifest, so
+	// ensure we'll have enough room for that.
 	strbuf_grow(&data, last_manifest_content.len + chunk->raw.len);
 	rev_diff_start_iter(&diff, chunk);
 	while (rev_diff_iter_next(&diff)) {

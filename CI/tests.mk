@@ -167,7 +167,7 @@ hg.cinnabarclone-graft-replace.git: hg.graft.replace.git
 hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-graft.git hg.cinnabarclone-graft-replace.git: hg.pure.hg
 	$(HG) clone -U $< $@.hg
 	echo $(PATH_URL)/$(word 2,$^) > $@.hg/.hg/cinnabar.manifest
-	$(HG) -R $@.hg --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(TOPDIR)/hg/cinnabarclone.py serve-and-exec -- $(GIT) -c cinnabar.experiments=git-clone clone hg://localhost:8000.http/ $@
+	$(HG) -R $@.hg --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(TOPDIR)/mercurial/cinnabarclone.py serve-and-exec -- $(GIT) -c cinnabar.experiments=git-clone clone hg://localhost:8000.http/ $@
 	$(call COMPARE_REFS, $(or $(word 3,$^),$(word 2,$^)), $@)
 	$(GIT) -C $@ cinnabar fsck --manifest --files
 
@@ -218,3 +218,17 @@ hg.graft.new.bundle: hg.graft2.git
 	$(GIT) -C $@.git -c cinnabar.graft=true cinnabar bundle $(CURDIR)/$@ HEAD^!
 	$(GIT) -C $@.git -c cinnabar.graft=true fetch hg::$(PATH_URL)/$@
 	test "$$($(GIT) -C $@.git cinnabar data -c $$($(GIT) -C $@.git cinnabar git2hg FETCH_HEAD) | tail -c 1)" = t
+
+check-version:
+	case "$(shell $(CURDIR)/git-cinnabar --version=cinnabar)" in \
+	*a$(addprefix |,$(shell git describe --tags --abbrev=0 HEAD 2> /dev/null))) ;; \
+	*) false ;; \
+	esac
+	case "$(shell $(CURDIR)/git-cinnabar --version=module)" in \
+	$(shell git ls-tree HEAD cinnabar | awk '{print $$3}')) ;; \
+	*) false ;; \
+	esac
+	case "$(shell $(CURDIR)/git-cinnabar --version=helper 2> /dev/null | awk -F/ '{print $$NF}')" in \
+	$(shell git ls-tree HEAD helper | awk '{print $$3}')) ;; \
+	*) false ;; \
+	esac

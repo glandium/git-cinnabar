@@ -1,113 +1,87 @@
-version: 0
-allowPullRequests: public
+version: 1
+policy:
+  pullRequests: public
 tasks:
-  - provisionerId: '{{ taskcluster.docker.provisionerId }}'
-    workerType: '{{ taskcluster.docker.workerType }}'
-    retries: 5
-    extra:
-      github:
-        env: true
-        events:
-          - push
-    scopes:
-      - assume:repo:github.com/glandium/git-cinnabar:decision-task
-      - 'queue:route:index.github.{{ event.head.user.login }}.{{ event.head.repo.name }}.*'
-      - secrets:get:repo:github.com/glandium.git-cinnabar:codecov
-    routes:
-      - 'index.github.{{ event.head.user.login }}.{{ event.head.repo.name }}.decision.{{ event.head.sha }}'
-    payload:
-      maxRunTime: 3600
-      image: python:2.7
-      features:
-        taskclusterProxy: true
-      env:
-        TASKCLUSTER_PROXY: 1
-      command:
-        - sh
-        - '-c'
-        - >-
-          git clone -n {{ event.head.repo.url }} repo &&
-          git -c advice.detachedHead=false -C repo checkout {{ event.head.sha }} &&
-          virtualenv venv &&
-          venv/bin/pip install requests &&
-          venv/bin/python repo/CI/decision.py
-    deadline: '{{ "2 hours" | $fromNow }}'
-    expires: '{{ "26 weeks" | $fromNow }}'
-    metadata:
-      name: decision task
-      description: '{{ event.head.repo.name }} decision task'
-      owner: '{{ event.head.user.email }}'
-      source: '{{ event.head.repo.url }}'
-
-  - provisionerId: '{{ taskcluster.docker.provisionerId }}'
-    workerType: '{{ taskcluster.docker.workerType }}'
-    retries: 5
-    extra:
-      github:
-        env: true
-        events:
-          - tag
-    scopes:
-      - assume:repo:github.com/glandium/git-cinnabar:decision-task
-      - 'queue:route:index.github.{{ event.head.user.login }}.{{ event.head.repo.name }}.*'
-      - secrets:get:repo:github.com/glandium.git-cinnabar:codecov
-    routes:
-      - 'index.github.{{ event.head.user.login }}.{{ event.head.repo.name }}.decision.{{ event.head.tag }}'
-    payload:
-      maxRunTime: 3600
-      image: python:2.7
-      features:
-        taskclusterProxy: true
-      env:
-        TASKCLUSTER_PROXY: 1
-      command:
-        - sh
-        - '-c'
-        - >-
-          git clone -n {{ event.head.repo.url }} repo &&
-          git -c advice.detachedHead=false -C repo checkout {{ event.head.sha }} &&
-          virtualenv venv &&
-          venv/bin/pip install requests &&
-          venv/bin/python repo/CI/decision.py
-    deadline: '{{ "2 hours" | $fromNow }}'
-    expires: '{{ "26 weeks" | $fromNow }}'
-    metadata:
-      name: decision task
-      description: '{{ event.head.repo.name }} decision task'
-      owner: '{{ event.head.user.email }}'
-      source: '{{ event.head.repo.url }}'
-
-  - provisionerId: '{{ taskcluster.docker.provisionerId }}'
-    workerType: '{{ taskcluster.docker.workerType }}'
-    retries: 5
-    extra:
-      github:
-        env: true
-        events:
-          - pull_request.opened
-          - pull_request.synchronize
-    scopes:
-      - assume:repo:github.com/glandium/git-cinnabar:decision-task
-    payload:
-      maxRunTime: 3600
-      image: python:2.7
-      features:
-        taskclusterProxy: true
-      env:
-        TASKCLUSTER_PROXY: 1
-      command:
-        - sh
-        - '-c'
-        - >-
-          git clone -n {{ event.head.repo.url }} repo &&
-          git -c advice.detachedHead=false -C repo checkout {{ event.head.sha }} &&
-          virtualenv venv &&
-          venv/bin/pip install requests &&
-          venv/bin/python repo/CI/decision.py
-    deadline: '{{ "2 hours" | $fromNow }}'
-    expires: '{{ "26 weeks" | $fromNow }}'
-    metadata:
-      name: decision task
-      description: '{{ event.head.repo.name }} decision task'
-      owner: '{{ event.head.user.email }}'
-      source: '{{ event.head.repo.url }}'
+  - $if: 'tasks_for == "github-push" || (tasks_for == "github-pull-request" && event["action"] in ["opened", "reopened", "synchronize"])'
+    then:
+      $let:
+        e: # FIXME after https://github.com/taskcluster/json-e/issues/249
+          $if: 'tasks_for == "github-push"'
+          then:
+            repo_name: ${event.repository.name}
+            repo_url: ${event.repository.url}
+            login: ${event.pusher.name}
+            commit: ${event.after}
+            branch:
+              $if: 'event.ref[:11] == "refs/heads/"'
+              then: ${event.ref[11:]}
+            base_repo_name: ${event.repository.name}
+            base_login: ${event.repository.owner.name}
+            decision_id:
+              $if: 'event.ref[:10] == "refs/tags/"'
+              then: ${event.ref[10:]}
+              else: ${event.after}
+          else:
+            repo_name: ${event.pull_request.head.repo.name}
+            repo_url: ${event.pull_request.head.repo.clone_url}
+            login: ${event.pull_request.head.user.login}
+            commit: ${event.pull_request.head.sha}
+            branch: ${event.pull_request.base.ref}
+            base_repo_name: ${event.pull_request.base.repo.name}
+            base_login: ${event.pull_request.base.repo.owner.login}
+            decision_id:
+        taskGroupId: {$eval: as_slugid("decision")}
+      in:
+        taskId: ${taskGroupId}
+        taskGroupId: ${taskGroupId}
+        schedulerId: taskcluster-github
+        provisionerId: aws-provisioner-v1
+        workerType: github-worker
+        retries: 5
+        scopes:
+          $flatten:
+            - assume:repo:github.com/${e.base_login}/${e.base_repo_name}:decision-task
+            - $if: 'tasks_for == "github-push"'
+              then:
+              - 'queue:route:index.github.${e.base_login}.${e.base_repo_name}.*'
+              - secrets:get:repo:github.com/${e.base_login}.${e.base_repo_name}:codecov
+        routes:
+          $if: 'e.decision_id'
+          then:
+            - 'index.github.${e.login}.${e.repo_name}.decision.${e.decision_id}'
+        payload:
+          maxRunTime: 3600
+          image: python:2.7
+          features:
+            taskclusterProxy: true
+          env:
+            TC_PROXY: 1
+            TC_DATA: {$json: {$eval: e}}
+            TC_GROUP_ID: ${taskGroupId}
+            TC_IS_PUSH: {$if: 'tasks_for == "github-push"', then: 1}
+          command:
+            - sh
+            - '-c'
+            - >-
+              git clone -n ${e.repo_url} repo &&
+              git -c advice.detachedHead=false -C repo checkout ${e.commit} &&
+              virtualenv venv &&
+              venv/bin/pip install pyyaml requests &&
+              venv/bin/python repo/CI/decision.py
+          artifacts:
+            $if: 'e.decision_id'
+            then:
+              public/actions.json:
+                path: actions.json
+                type: file
+        created: {$fromNow: ''}
+        deadline: {$fromNow: '2 hours'}
+        expires:
+          $if: 'tasks_for == "action"'
+          then: {$fromNow: '2 hours'}
+          else: {$fromNow: '26 weeks'}
+        metadata:
+          name: decision task
+          description: ${e.repo_name} decision task
+          owner: ${e.login}@users.noreply.github.com
+          source: ${e.repo_url}

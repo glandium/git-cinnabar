@@ -14,7 +14,7 @@ from tasks import (
 )
 from variables import (
     ARTIFACT_URL,
-    GITHUB_HEAD_REPO_NAME,
+    TC_REPO_NAME,
 )
 
 
@@ -41,6 +41,7 @@ DOCKER_IMAGES = {
          unzip\\
          xz-utils\\
          && apt-get clean
+        RUN pip install pip==10.0.1 --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
             '20180502T162513Z', (
                 ('debian', 'jessie'),
@@ -113,7 +114,7 @@ class DockerImage(object):
 
     def __str__(self):
         return '{}/{}:{}'.format(
-            GITHUB_HEAD_REPO_NAME,
+            TC_REPO_NAME,
             self.name,
             self.hexdigest
         )

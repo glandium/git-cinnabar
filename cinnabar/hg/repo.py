@@ -37,6 +37,7 @@ from cinnabar.git import (
 from cinnabar.util import (
     check_enabled,
     experiment,
+    progress_enum,
     progress_iter,
 )
 from collections import (
@@ -183,11 +184,11 @@ def iter_chunks(chunks, cls):
 
 def iterate_files(bundle):
     while True:
-        name_chunk = getchunk(bundle)
-        if not name_chunk:
+        name = getchunk(bundle)
+        if not name:
             return
-        for chunk in chunks_in_changegroup(bundle, name_chunk):
-            yield chunk
+        for chunk in chunks_in_changegroup(bundle, name):
+            yield name, chunk
 
 
 def iter_initialized(get_missing, iterable, init=None):
@@ -671,8 +672,18 @@ class BundleApplier(object):
                                                  ManifestInfo))):
                 store.store_manifest(mn)
 
-        for rev_chunk in progress_iter(
-                'Reading and importing {} files', next(self._bundle, None)):
+        def enumerate_files(iter):
+            last_name = None
+            count_names = 0
+            for count_chunks, (name, chunk) in enumerate(iter):
+                if name != last_name:
+                    count_names += 1
+                last_name = name
+                yield (count_chunks, count_names), chunk
+
+        for rev_chunk in progress_enum(
+                'Reading and importing {} revisions of {} files',
+                enumerate_files(next(self._bundle, None))):
             GitHgHelper.store('file', rev_chunk)
 
         if next(self._bundle, None) is not None:
