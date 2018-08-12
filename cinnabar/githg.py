@@ -786,6 +786,10 @@ class GitHgStore(object):
                 raise UpgradeAbort(
                     'It looks like this repository was used with a newer '
                     'version of git-cinnabar. Cannot use this version.')
+
+            if 'unified-manifests-v2' not in self._flags:
+                raise OldUpgradeAbort()
+
             if set(self._flags) != set(self.FLAGS):
                 raise UpgradeAbort()
         return metadata

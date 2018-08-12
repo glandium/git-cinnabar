@@ -32,7 +32,7 @@ class OldUpgradeAbort(UpgradeAbort):
     """Metadata needs a consistency check."""
     def __init__(self):
         super(OldUpgradeAbort, self).__init__(
-            'Metadata from git-cinnabar versions older than 0.3.0 is not '
+            'Metadata from git-cinnabar versions older than 0.5.0 is not '
             'supported.\n'
-            'Please run `git cinnabar fsck` with version 0.3.x first.'
+            'Please run `git cinnabar upgrade` with version 0.5.x first.'
         )
