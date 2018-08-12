@@ -411,7 +411,3 @@ class FastImportCommitHelper(object):
             self.cmd_data('')
         elif sha1 is None:
             self.cmd_data(content)
-
-    def notemodify(self, commitish, note):
-        self.write('N inline %s\n' % commitish)
-        self.cmd_data(note)
