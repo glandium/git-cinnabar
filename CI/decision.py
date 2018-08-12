@@ -37,7 +37,7 @@ def git_rev_parse(committish):
                         cwd=os.path.join(BASE_DIR, '..')))
 
 
-UPGRADE_FROM = ('0.5.0',)
+UPGRADE_FROM = ()  # ('0.5.0',)
 
 
 class TestTask(Task):
