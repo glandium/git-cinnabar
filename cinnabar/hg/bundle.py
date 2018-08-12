@@ -47,16 +47,16 @@ class PseudoString(str):
 
 # TODO: Avoid a diff-tree when we already have done it to generate the
 # manifest in the first place.
-def manifest_diff(a, b, base_path=''):
-    for line in Git.diff_tree(a, b, base_path):
+def manifest_diff(a, b):
+    for line in GitHgHelper.diff_tree(a, b):
         mode_before, mode_after, sha1_before, sha1_after, status, path = line
         if sha1_before != sha1_after:
             yield path, sha1_after, sha1_before
 
 
-def manifest_diff2(a, b, c, base_path=''):
-    iter1 = iter(list(manifest_diff(a, c, base_path)))
-    iter2 = iter(list(manifest_diff(b, c, base_path)))
+def manifest_diff2(a, b, c):
+    iter1 = iter(list(manifest_diff(a, c)))
+    iter2 = iter(list(manifest_diff(b, c)))
     item1 = next(iter1, None)
     item2 = next(iter2, None)
     while True:
@@ -75,17 +75,17 @@ def manifest_diff2(a, b, c, base_path=''):
             item2 = next(iter2, None)
 
 
-def get_changes(tree, parents, base_path=''):
+def get_changes(tree, parents):
     if not parents:
-        for line in Git.ls_tree(tree, base_path, recursive=True):
+        for line in Git.ls_tree(tree, recursive=True):
             mode, typ, sha1, path = line
-            yield path[len(base_path) + 1:] if base_path else path, sha1, ()
+            yield path, sha1, ()
     elif len(parents) == 1:
-        for path, node, parent in manifest_diff(parents[0], tree, base_path):
+        for path, node, parent in manifest_diff(parents[0], tree):
             yield path, node, (parent,)
     else:
         for path, node, parents in manifest_diff2(parents[0], parents[1],
-                                                  tree, base_path):
+                                                  tree):
             yield path, node, parents
 
 
@@ -220,7 +220,7 @@ class PushStore(GitHgStore):
                 yield path, (mode_after, sha1_before, sha1_after,
                              status)
         git_diff = sorted(
-            l for l in process_diff(Git.diff_tree(
+            l for l in process_diff(GitHgHelper.diff_tree(
                 parents[0], commit, detect_copy=True))
         )
         if not git_diff:
