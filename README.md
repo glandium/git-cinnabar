@@ -1,4 +1,4 @@
-git-cinnabar 0.5
+git-cinnabar 0.6
 ================
 
 When you update, please read this file again, it may contain important notes.
@@ -24,8 +24,8 @@ The main focus at the moment is to make it work with mozilla-central and
 related mercurial repositories and support Mozilla workflows (try server,
 etc.).
 
-Repositories last used with versions lower than 0.3.0 are not supported.
-Please run `git cinnabar fsck` with version 0.3.0 first.
+Repositories last used with versions lower than 0.5.0 are not supported.
+Please run `git cinnabar upgrade` with version 0.5.0 first.
 
 Requirements:
 -------------
