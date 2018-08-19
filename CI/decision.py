@@ -171,7 +171,6 @@ def decision():
         variant='coverage',
         clone=False,
         command=[
-            'make -C repo -f CI/tests.mk check-version',
             '(cd repo &&'
             ' nosetests --all-modules --with-coverage --cover-tests tests)',
             '(cd repo && flake8 --ignore E402 $(git ls-files \*\*.py'

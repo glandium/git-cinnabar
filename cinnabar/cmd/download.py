@@ -15,6 +15,7 @@ from cinnabar.cmd.util import (
 )
 from cinnabar.git import Git
 from cinnabar.util import progress_enum
+from distutils.version import StrictVersion
 
 
 @CLI.subcommand
@@ -66,8 +67,16 @@ def download(args):
                                                                  machine)
         return 1
 
-    if args.dev is False and VERSION.endswith('a'):
-        args.dev = ''
+    if args.dev is False:
+        version = VERSION
+        if version.endswith('a'):
+            v = StrictVersion(version[:-1]).version + (0, 0, 0)
+            if v[2] == 0:
+                # For version x.y.0a, download a development helper
+                args.dev = ''
+            else:
+                # For version x.y.za, download the helper from x.y.(z-1)
+                version = '{}.{}.{}'.format(v[0], v[1], v[2] - 1)
 
     script_path = os.path.dirname(os.path.abspath(sys.argv[0]))
 
@@ -92,7 +101,7 @@ def download(args):
             ext = 'tar.xz'
         REPO_BASE = 'https://github.com/glandium'
         url = '%s/git-cinnabar/releases/download/%s/git-cinnabar.%s.%s.%s' % (
-            REPO_BASE, VERSION, system.lower(), machine.lower(), ext)
+            REPO_BASE, version, system.lower(), machine.lower(), ext)
 
     if args.url:
         print url

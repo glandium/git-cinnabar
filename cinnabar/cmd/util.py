@@ -117,33 +117,44 @@ class Version(argparse.Action):
             nargs='?', choices=('cinnabar', 'module', 'helper'),
             help=help)
 
+    @staticmethod
+    def cinnabar_version():
+        return VERSION
+
+    @staticmethod
+    def module_version():
+        # Import the remote_helper module, that is not imported by
+        # git-cinnabar
+        import cinnabar.remote_helper
+        # Import the bdiff module, that is only imported if mercurial is
+        # not installed
+        import cinnabar.bdiff
+        cinnabar_path = os.path.dirname(cinnabar.__file__)
+        return tree_hash(iter_modules_in_path(cinnabar_path), cinnabar_path)
+
+    @staticmethod
+    def helper_version():
+        from cinnabar.helper import GitHgHelper
+        try:
+            with GitHgHelper.query('version') as out:
+                version = out.read(40)
+        except Exception:
+            version = 'unknown'
+
+        sha1 = helper_hash() or 'unknown'
+        return version, sha1
+
     def __call__(self, parser, namespace, values, option_string=None):
         if values == 'cinnabar' or not values:
-            print VERSION
+            print self.cinnabar_version()
         if values == 'module' or not values:
-            # Import the remote_helper module, that is not imported by
-            # git-cinnabar
-            import cinnabar.remote_helper
-            # Import the bdiff module, that is only imported if mercurial is
-            # not installed
-            import cinnabar.bdiff
-            cinnabar_path = os.path.dirname(cinnabar.__file__)
-
-            sha1 = tree_hash(iter_modules_in_path(cinnabar_path),
-                             cinnabar_path)
+            sha1 = self.module_version()
             if not values:
                 print 'module-hash:', sha1
             else:
                 print sha1
         if values == 'helper' or not values:
-            from cinnabar.helper import GitHgHelper
-            try:
-                with GitHgHelper.query('version') as out:
-                    version = out.read(40)
-            except Exception:
-                version = 'unknown'
-
-            sha1 = helper_hash() or 'unknown'
+            version, sha1 = self.helper_version()
             if version != sha1:
                 sha1 = '%s/%s' % (version, sha1)
             if not values:
