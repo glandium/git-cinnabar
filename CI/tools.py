@@ -205,13 +205,21 @@ def old_compatible_python():
 
 
 def old_helper_head():
-    from cinnabar.git import Git
-    from cinnabar.helper import GitHgHelper
-    version = GitHgHelper.VERSION
-    return list(Git.iter(
-        'log', 'HEAD', '--format=%H',
-        '-S', '#define CMD_VERSION {}'.format(version),
-        cwd=os.path.join(os.path.dirname(__file__), '..')))[-1]
+    from cinnabar import VERSION
+    version = VERSION
+    if version.endswith('a'):
+        from distutils.version import StrictVersion
+        v = StrictVersion(VERSION[:-1]).version + (0, 0, 0)
+        if v[2] == 0:
+            from cinnabar.git import Git
+            from cinnabar.helper import GitHgHelper
+            version = GitHgHelper.VERSION
+            return list(Git.iter(
+                'log', 'HEAD', '--format=%H',
+                '-S', '#define CMD_VERSION {}'.format(version),
+                cwd=os.path.join(os.path.dirname(__file__), '..')))[-1]
+        version = '{}.{}.{}'.format(v[0], v[1], v[2] - 1)
+    return version
 
 
 def old_helper_hash(head):
