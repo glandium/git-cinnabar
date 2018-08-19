@@ -50,12 +50,6 @@ class Formatter(logging.Formatter):
         return super(Formatter, self).format(record)
 
 
-logger = logging.getLogger()
-handler = StreamHandler()
-handler.setFormatter(Formatter())
-logger.addHandler(handler)
-
-
 def init_logging():
     # Initialize logging from the GIT_CINNABAR_LOG environment variable
     # or the cinnabar.log configuration, the former taking precedence.
@@ -76,6 +70,11 @@ def init_logging():
                 max(logging.DEBUG, logging.FATAL - value * 10))
         except Exception:
             pass
+
+    logger = logging.getLogger()
+    handler = StreamHandler()
+    handler.setFormatter(Formatter())
+    logger.addHandler(handler)
 
 
 class ConfigSetFunc(object):
