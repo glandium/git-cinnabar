@@ -72,12 +72,11 @@ def fsck(args):
 
         all_git_commits = GitHgHelper.rev_list('--no-walk=unsorted', *commits)
     else:
-        all_refs = set(ref for sha1, ref in Git.for_each_ref('refs/cinnabar'))
+        all_refs = dict((ref, sha1)
+                        for sha1, ref in Git.for_each_ref('refs/cinnabar'))
 
         if 'refs/cinnabar/metadata' in all_refs:
-            # We rely on the store having created these refs (temporarily or
-            # not).
-            git_heads = '%s^@' % Git.resolve_ref('refs/cinnabar/changesets')
+            git_heads = '%s^^@' % all_refs['refs/cinnabar/metadata']
         else:
             assert False
 

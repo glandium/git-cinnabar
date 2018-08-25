@@ -117,8 +117,7 @@ class Git(object):
     @classmethod
     def ls_tree(self, treeish, path='', recursive=False):
         from githg import GitHgHelper
-        if treeish.startswith('refs/'):
-            treeish = self.resolve_ref(treeish)
+        assert not treeish.startswith('refs/')
 
         if path.endswith('/') or recursive or path == '':
             path = path.rstrip('/')
@@ -139,8 +138,7 @@ class Git(object):
 
     @classmethod
     def update_ref(self, ref, newvalue, store=True):
-        if newvalue.startswith('refs/'):
-            newvalue = self.resolve_ref(newvalue)
+        assert not newvalue.startswith('refs/')
         refs = self._refs if store else self._initial_refs
         if newvalue and newvalue != NULL_NODE_ID:
             refs[ref] = newvalue

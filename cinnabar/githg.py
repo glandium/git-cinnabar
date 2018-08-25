@@ -775,9 +775,7 @@ class GitHgStore(object):
             if 'files-meta' not in self._flags:
                 refs = list(refs)
                 refs.remove('refs/cinnabar/files-meta')
-            for ref, value in zip(refs, metadata.parents):
-                Git.update_ref(ref, value, store=False)
-            return metadata
+            return metadata, dict(zip(refs, metadata.parents))
 
     def metadata(self):
         metadata = self._metadata()
@@ -832,9 +830,13 @@ class GitHgStore(object):
         self.tag_changes = False
 
         metadata = self.metadata()
-        self._has_metadata = bool(metadata)
         if metadata:
-            changesets_ref = Git.resolve_ref('refs/cinnabar/changesets')
+            metadata, refs = metadata
+        self._has_metadata = bool(metadata)
+        self._metadata_refs = refs if metadata else {}
+        if metadata:
+            changesets_ref = self._metadata_refs.get(
+                'refs/cinnabar/changesets')
             if changesets_ref:
                 commit = GitCommit(changesets_ref)
                 for sha1, head in izip(commit.parents,
@@ -972,8 +974,10 @@ class GitHgStore(object):
             GitHgHelper.reload()
             return False
 
+        metadata, refs = metadata
         self._has_metadata = True
-        changesets_ref = Git.resolve_ref('refs/cinnabar/changesets')
+        self._metadata_refs = refs if metadata else {}
+        changesets_ref = self._metadata_refs.get('refs/cinnabar/changesets')
         if changesets_ref:
             commit = GitCommit(changesets_ref)
             for sha1, head in izip(commit.parents,
@@ -1307,26 +1311,26 @@ class GitHgStore(object):
         if self._graft:
             self._graft.close()
         self._closed = True
-        update_metadata = []
+        update_metadata = {}
         tree = GitHgHelper.store('metadata', 'hg2git')
         if tree != NULL_NODE_ID:
-            hg2git = Git.resolve_ref('refs/cinnabar/hg2git')
+            hg2git = self._metadata_refs.get('refs/cinnabar/hg2git')
             with self._fast_import.commit(
                 ref='refs/cinnabar/hg2git',
             ) as commit:
                 commit.write('M 040000 %s \n' % tree)
             if commit.sha1 != hg2git:
-                update_metadata.append('refs/cinnabar/hg2git')
+                update_metadata['refs/cinnabar/hg2git'] = commit.sha1
 
         tree = GitHgHelper.store('metadata', 'git2hg')
         if tree != NULL_NODE_ID:
-            notes = Git.resolve_ref('refs/notes/cinnabar')
+            notes = self._metadata_refs.get('refs/notes/cinnabar')
             with self._fast_import.commit(
                 ref='refs/notes/cinnabar',
             ) as commit:
                 commit.write('M 040000 %s \n' % tree)
             if commit.sha1 != notes:
-                update_metadata.append('refs/notes/cinnabar')
+                update_metadata['refs/notes/cinnabar'] = commit.sha1
 
         hg_changeset_heads = list(self._hgheads)
         changeset_heads = list(self.changeset_ref(h)
@@ -1340,7 +1344,8 @@ class GitHgStore(object):
                 parents=list(h for _, __, h in heads),
                 message='\n'.join('%s %s' % (h, b) for b, h, _ in heads),
             ) as commit:
-                update_metadata.append('refs/cinnabar/changesets')
+                pass
+            update_metadata['refs/cinnabar/changesets'] = commit.sha1
 
         changeset_heads = set(changeset_heads)
 
@@ -1352,10 +1357,11 @@ class GitHgStore(object):
                 ref='refs/cinnabar/manifests',
                 parents=sorted(manifest_heads),
             ) as commit:
-                update_metadata.append('refs/cinnabar/manifests')
+                pass
+            update_metadata['refs/cinnabar/manifests'] = commit.sha1
 
         tree = GitHgHelper.store('metadata', 'files-meta')
-        files_meta_ref = Git.resolve_ref('refs/cinnabar/files-meta')
+        files_meta_ref = self._metadata_refs.get('refs/cinnabar/files-meta')
         if update_metadata and (tree != NULL_NODE_ID or not files_meta_ref):
             with self._fast_import.commit(
                 ref='refs/cinnabar/files-meta',
@@ -1363,7 +1369,7 @@ class GitHgStore(object):
                 if tree != NULL_NODE_ID:
                     commit.write('M 040000 %s \n' % tree)
             if commit.sha1 != files_meta_ref:
-                update_metadata.append('refs/cinnabar/files-meta')
+                update_metadata['refs/cinnabar/files-meta'] = commit.sha1
 
         replace_changed = False
         for status, ref, sha1 in self._replace.iterchanges():
@@ -1374,7 +1380,8 @@ class GitHgStore(object):
             replace_changed = True
 
         if update_metadata or replace_changed:
-            parents = list(Git.resolve_ref(r) for r in self.METADATA_REFS)
+            parents = list(update_metadata.get(r) or self._metadata_refs[r]
+                           for r in self.METADATA_REFS)
             metadata_ref = Git.resolve_ref('refs/cinnabar/metadata')
             if metadata_ref:
                 parents.append(metadata_ref)
