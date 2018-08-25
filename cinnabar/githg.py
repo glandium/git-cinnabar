@@ -1301,15 +1301,6 @@ class GitHgStore(object):
                      instance.delta_node)
                 )
 
-    def store_file(self, instance):
-        metadata = str(instance.metadata)
-        if metadata:
-            self._fast_import.put_blob(metadata, want_sha1=False)
-            GitHgHelper.set('file-meta', instance.node, ':1')
-        self._fast_import.put_blob(instance.content, want_sha1=False)
-        if instance.node != HG_EMPTY_FILE:
-            GitHgHelper.set('file', instance.node, ':1')
-
     def close(self):
         if self._closed:
             return
