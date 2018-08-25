@@ -137,17 +137,15 @@ class Git(object):
                     yield split_ls_tree(line[:-1])
 
     @classmethod
-    def update_ref(self, ref, newvalue, store=True):
+    def update_ref(self, ref, newvalue):
         assert not newvalue.startswith('refs/')
-        refs = self._refs if store else self._initial_refs
+        refs = self._refs
         if newvalue and newvalue != NULL_NODE_ID:
             refs[ref] = newvalue
             if refs is self._initial_refs and ref in self._refs._deleted:
                 self._refs._deleted.remove(ref)
         elif ref in refs:
             del refs[ref]
-        if not store:
-            return
         if self._fast_import:
             self._fast_import.write(
                 'reset %s\n'
