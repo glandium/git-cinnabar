@@ -138,7 +138,7 @@ class Git(object):
                     yield split_ls_tree(line[:-1])
 
     @classmethod
-    def update_ref(self, ref, newvalue, oldvalue=None, store=True):
+    def update_ref(self, ref, newvalue, store=True):
         if newvalue.startswith('refs/'):
             newvalue = self.resolve_ref(newvalue)
         refs = self._refs if store else self._initial_refs
@@ -164,15 +164,11 @@ class Git(object):
                                           stdin=subprocess.PIPE)
             atexit.register(self._close_update_ref)
 
-        if oldvalue is None:
-            update = 'update %s %s\n' % (ref, newvalue)
-        else:
-            update = 'update %s %s %s\n' % (ref, newvalue, oldvalue)
-        self._update_ref.stdin.write(update)
+        self._update_ref.stdin.write('update %s %s\n' % (ref, newvalue))
 
     @classmethod
-    def delete_ref(self, ref, oldvalue=None):
-        self.update_ref(ref, '0' * 40, oldvalue)
+    def delete_ref(self, ref):
+        self.update_ref(ref, '0' * 40)
 
     @classmethod
     def config(self, name, remote=None, values={}, multiple=False):
