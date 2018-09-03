@@ -767,9 +767,8 @@ class GitHgStore(object):
     )
 
     def _metadata(self):
-        metadata_ref = Git.resolve_ref('refs/cinnabar/metadata')
-        if metadata_ref:
-            metadata = GitCommit(metadata_ref)
+        if self._metadata_sha1:
+            metadata = GitCommit(self._metadata_sha1)
             self._flags = set(metadata.body.split())
             refs = self.METADATA_REFS
             if 'files-meta' not in self._flags:
@@ -798,6 +797,8 @@ class GitHgStore(object):
         self._branches = {}
 
         self._replace = Git._replace
+        self._tagcache_ref = None
+        self._metadata_sha1 = None
         # While doing a for_each_ref, ensure refs/notes/cinnabar is in the
         # cache.
         for sha1, ref in Git.for_each_ref('refs/cinnabar',
@@ -806,13 +807,16 @@ class GitHgStore(object):
                 self._replace[ref[22:]] = sha1
             elif ref.startswith('refs/cinnabar/branches/'):
                 raise OldUpgradeAbort()
+            elif ref == 'refs/cinnabar/metadata':
+                self._metadata_sha1 = sha1
+            elif ref == 'refs/cinnabar/tag_cache':
+                self._tagcache_ref = sha1
         self._replace = VersionedDict(self._replace)
 
         self._tagcache = {}
         self._tagfiles = {}
         self._tags = {NULL_NODE_ID: {}}
         self._cached_changeset_ref = {}
-        self._tagcache_ref = Git.resolve_ref('refs/cinnabar/tag_cache')
         self._tagcache_items = set()
         if self._tagcache_ref:
             for line in Git.ls_tree(self._tagcache_ref):
@@ -834,7 +838,6 @@ class GitHgStore(object):
             metadata, refs = metadata
         self._has_metadata = bool(metadata)
         self._metadata_refs = refs if metadata else {}
-        self._metadata_sha1 = metadata.sha1 if metadata else None
         if metadata:
             changesets_ref = self._metadata_refs.get(
                 'refs/cinnabar/changesets')
@@ -962,6 +965,7 @@ class GitHgStore(object):
                 return False
 
         Git.update_ref('refs/cinnabar/metadata', commit.sha1)
+        self._metadata_sha1 = commit.sha1
         GitHgHelper.reload()
         Git.delete_ref('refs/cinnabar/fetch')
 
