@@ -368,7 +368,7 @@ class PushStore(GitHgStore):
         hg_file.content = GitHgHelper.cat_file('blob', sha1)
         node = hg_file.node = hg_file.sha1
         self._pushed.add(node)
-        self._fast_import.put_blob(str(hg_file.metadata), want_sha1=False)
+        GitHgHelper.put_blob(str(hg_file.metadata), want_sha1=False)
         GitHgHelper.set('file-meta', node, ':1')
         GitHgHelper.set('file', node, sha1)
         return node
@@ -400,7 +400,7 @@ class PushStore(GitHgStore):
 
     def close(self, rollback=False):
         if rollback:
-            self._fast_import.close(rollback)
+            GitHgHelper.close(rollback)
             self._closed = True
         if self._closed:
             return

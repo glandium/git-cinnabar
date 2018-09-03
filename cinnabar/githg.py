@@ -27,7 +27,6 @@ from .util import (
 from .git import (
     EMPTY_BLOB,
     EMPTY_TREE,
-    FastImport,
     Git,
     GitProcess,
     NULL_NODE_ID,
@@ -788,7 +787,6 @@ class GitHgStore(object):
         return metadata
 
     def __init__(self):
-        self._fast_import = FastImport()
         self._flags = set()
         self._closed = False
         self._graft = None
@@ -858,8 +856,6 @@ class GitHgStore(object):
 
             if self._replace and not replace:
                 raise OldUpgradeAbort()
-
-        Git.register_fast_import(self._fast_import)
 
         # Delete old tag-cache, which may contain incomplete data.
         Git.delete_ref('refs/cinnabar/tag-cache')
@@ -1165,7 +1161,7 @@ class GitHgStore(object):
         if sha1 == HG_EMPTY_FILE:
             content = ''
         else:
-            content = self._fast_import.cat_blob(':h%s' % sha1)
+            content = GitHgHelper.cat_blob(':h%s' % sha1)
 
         file = File(sha1)
         meta = self.file_meta(sha1)
@@ -1238,7 +1234,7 @@ class GitHgStore(object):
             # changeset.
             committer = committer.to_git_str()
             author = author.to_git_str()
-            with self._fast_import.commit(
+            with GitHgHelper.commit(
                 ref='refs/cinnabar/tip',
                 message=body,
                 committer=committer,
@@ -1257,7 +1253,7 @@ class GitHgStore(object):
 
         GitHgHelper.set('changeset', instance.node, commit.sha1)
         changeset = Changeset.from_git_commit(commit)
-        self._fast_import.put_blob(
+        GitHgHelper.put_blob(
             ChangesetPatcher.from_diff(changeset, instance), want_sha1=False)
         GitHgHelper.set('changeset-metadata', instance.node, ':1')
 
@@ -1276,7 +1272,7 @@ class GitHgStore(object):
         else:
             previous = None
         parents = tuple(':h%s' % p for p in instance.parents)
-        with self._fast_import.commit(
+        with GitHgHelper.commit(
             ref='refs/cinnabar/manifests',
             from_commit=previous,
             parents=parents,
@@ -1320,7 +1316,7 @@ class GitHgStore(object):
         tree = GitHgHelper.store('metadata', 'hg2git')
         if tree != NULL_NODE_ID:
             hg2git = self._metadata_refs.get('refs/cinnabar/hg2git')
-            with self._fast_import.commit(
+            with GitHgHelper.commit(
                 ref='refs/cinnabar/hg2git',
             ) as commit:
                 commit.write('M 040000 %s \n' % tree)
@@ -1330,7 +1326,7 @@ class GitHgStore(object):
         tree = GitHgHelper.store('metadata', 'git2hg')
         if tree != NULL_NODE_ID:
             notes = self._metadata_refs.get('refs/notes/cinnabar')
-            with self._fast_import.commit(
+            with GitHgHelper.commit(
                 ref='refs/notes/cinnabar',
             ) as commit:
                 commit.write('M 040000 %s \n' % tree)
@@ -1344,7 +1340,7 @@ class GitHgStore(object):
             heads = sorted((self._hgheads[h], h, g)
                            for h, g in izip(hg_changeset_heads,
                                             changeset_heads))
-            with self._fast_import.commit(
+            with GitHgHelper.commit(
                 ref='refs/cinnabar/changesets',
                 parents=list(h for _, __, h in heads),
                 message='\n'.join('%s %s' % (h, b) for b, h, _ in heads),
@@ -1358,7 +1354,7 @@ class GitHgStore(object):
         if (set(manifest_heads) != self._manifest_heads_orig or
                 ('refs/cinnabar/changesets' in update_metadata and
                  not manifest_heads)):
-            with self._fast_import.commit(
+            with GitHgHelper.commit(
                 ref='refs/cinnabar/manifests',
                 parents=sorted(manifest_heads),
             ) as commit:
@@ -1368,7 +1364,7 @@ class GitHgStore(object):
         tree = GitHgHelper.store('metadata', 'files-meta')
         files_meta_ref = self._metadata_refs.get('refs/cinnabar/files-meta')
         if update_metadata and (tree != NULL_NODE_ID or not files_meta_ref):
-            with self._fast_import.commit(
+            with GitHgHelper.commit(
                 ref='refs/cinnabar/files-meta',
             ) as commit:
                 if tree != NULL_NODE_ID:
@@ -1389,7 +1385,7 @@ class GitHgStore(object):
                            for r in self.METADATA_REFS)
             if self._metadata_sha1:
                 parents.append(self._metadata_sha1)
-            with self._fast_import.commit(
+            with GitHgHelper.commit(
                 ref='refs/cinnabar/metadata',
                 parents=parents,
                 message=' '.join(sorted(self.FLAGS)),
@@ -1421,7 +1417,7 @@ class GitHgStore(object):
         for f, tags in self._tags.iteritems():
             if f not in self._tagfiles and f != NULL_NODE_ID:
                 data = ''.join(tagset_lines(tags))
-                mark = self._fast_import.put_blob(data=data)
+                mark = GitHgHelper.put_blob(data=data)
                 created[f] = (mark, 'exec')
 
         if created or deleted:
@@ -1437,7 +1433,7 @@ class GitHgStore(object):
                 deleted.add(c)
 
         if created or deleted:
-            with self._fast_import.commit(
+            with GitHgHelper.commit(
                 ref='refs/cinnabar/tag_cache',
                 from_commit=self._tagcache_ref,
             ) as commit:
@@ -1452,5 +1448,4 @@ class GitHgStore(object):
             if ref not in ('refs/notes/cinnabar',):
                 Git.delete_ref(ref)
 
-        Git.close()
         GitHgHelper.close()

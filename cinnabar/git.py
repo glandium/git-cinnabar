@@ -1,12 +1,8 @@
 from __future__ import division
-import atexit
-import contextlib
 import logging
 import os
 import posixpath
-import subprocess
 import time
-from types import GeneratorType
 from .util import (
     one,
     Process,
@@ -44,29 +40,9 @@ class GitProcess(Process):
 
 
 class Git(object):
-    _update_ref = None
-    _fast_import = None
     _notes_depth = {}
     _config = None
     _replace = {}
-
-    @classmethod
-    def register_fast_import(self, fast_import):
-        self._fast_import = fast_import
-
-    @classmethod
-    def _close_update_ref(self):
-        if self._update_ref:
-            retcode = self._update_ref.wait()
-            self._update_ref = None
-            if retcode:
-                raise Exception('git-update-ref failed')
-
-    @classmethod
-    def close(self, rollback=False):
-        if self._fast_import:
-            self._fast_import.close(rollback)
-            self._fast_import = None
 
     @classmethod
     def iter(self, *args, **kwargs):
@@ -103,7 +79,7 @@ class Git(object):
 
     @classmethod
     def ls_tree(self, treeish, path='', recursive=False):
-        from githg import GitHgHelper
+        from .helper import GitHgHelper
         assert not treeish.startswith('refs/')
 
         if path.endswith('/') or recursive or path == '':
@@ -116,8 +92,6 @@ class Git(object):
                 else:
                     yield mode, typ, sha1, p
         else:
-            # self._fast_import might not be initialized, so use the ls command
-            # through the helper instead.
             with GitHgHelper.query('ls', treeish, path) as stdout:
                 line = stdout.readline()
                 if not line.startswith('missing '):
@@ -126,21 +100,8 @@ class Git(object):
     @classmethod
     def update_ref(self, ref, newvalue):
         assert not newvalue.startswith('refs/')
-        if self._fast_import:
-            self._fast_import.write(
-                'reset %s\n'
-                'from %s\n'
-                '\n'
-                % (ref, newvalue)
-            )
-            self._fast_import.flush()
-            return
-        if not self._update_ref:
-            self._update_ref = GitProcess('update-ref', '--stdin',
-                                          stdin=subprocess.PIPE)
-            atexit.register(self._close_update_ref)
-
-        self._update_ref.stdin.write('update %s %s\n' % (ref, newvalue))
+        from .helper import GitHgHelper
+        GitHgHelper.update_ref(ref, newvalue)
 
     @classmethod
     def delete_ref(self, ref):
@@ -195,184 +156,3 @@ class Git(object):
                         'Invalid value for %s: %s. Valid values: %s' % (
                             var, repr(value), values))
         return value
-
-
-class FastImport(object):
-    __slots__ = ("_real_proc",)
-
-    def __init__(self):
-        # We reserve mark 1 for commands without an explicit mark.
-        # We get the sha1 from the mark anyways, and the caller, in that case,
-        # is expected to be getting that sha1.
-        self._real_proc = None
-
-    @property
-    def _proc(self):
-        if self._real_proc is None:
-            from .helper import GitHgHelper
-            # Ensure the helper is there.
-            if GitHgHelper._helper is GitHgHelper:
-                GitHgHelper._helper = False
-            with GitHgHelper.query('feature', 'force'):
-                pass
-            self._real_proc = GitHgHelper._helper
-
-            atexit.register(self.close, rollback=True)
-
-        return self._real_proc
-
-    def read(self, length=0):
-        self.flush()
-        return self._proc.stdout.read(length)
-
-    def readline(self):
-        self.flush()
-        return self._proc.stdout.readline()
-
-    def write(self, data):
-        return self._proc.stdin.write(data)
-
-    def flush(self):
-        self._proc.stdin.flush()
-
-    def close(self, rollback=False):
-        if self._real_proc is None:
-            return
-        if not rollback:
-            self.write('done\n')
-        self.flush()
-        from githg import GitHgHelper
-        if self._proc is GitHgHelper._helper:
-            retcode = self._proc._proc.poll()
-        else:
-            retcode = self._proc.wait()
-        self._real_proc = None
-        if Git._fast_import == self:
-            Git._fast_import = None
-        if retcode and not rollback:
-            raise Exception('git-fast-import failed')
-
-    def ls(self, dataref, path=''):
-        assert not path.endswith('/')
-        assert dataref
-        self.write('ls %s %s\n' % (dataref, path))
-        line = self.readline()
-        if line.startswith('missing '):
-            return None, None, None, None
-        return split_ls_tree(line[:-1])
-
-    def cat_blob(self, dataref):
-        assert dataref
-        self.write('cat-blob %s\n' % dataref)
-        sha1, blob, size = self.readline().split()
-        assert blob == 'blob'
-        size = int(size)
-        content = self.read(size)
-        lf = self.read(1)
-        assert lf == '\n'
-        return content
-
-    def get_mark(self, mark):
-        self.write('get-mark :%d\n' % mark)
-        sha1 = self.read(40)
-        lf = self.read(1)
-        assert lf == '\n'
-        return sha1
-
-    def cmd_data(self, data):
-        self.write('data %d\n' % len(data))
-        self.write(data)
-        self.write('\n')
-
-    def put_blob(self, data='', want_sha1=True):
-        self.write('blob\n')
-        self.write('mark :1\n')
-        self.cmd_data(data)
-        if want_sha1:
-            return self.get_mark(1)
-
-    @contextlib.contextmanager
-    def commit(self, ref, committer='<cinnabar@git> 0 +0000', author=None,
-               message='', from_commit=None, parents=(), pseudo_mark=None):
-        if isinstance(parents, GeneratorType):
-            parents = tuple(parents)
-        from_tree = None
-        if parents and parents[0] == from_commit:
-            _from = parents[0]
-            merges = parents[1:]
-        else:
-            _from = NULL_NODE_ID
-            merges = parents
-            if from_commit:
-                mode, typ, from_tree, path = self.ls(from_commit)
-
-        helper = FastImportCommitHelper(self)
-        helper.write('commit %s\n' % ref)
-        helper.write('mark :1\n')
-        # TODO: properly handle errors, like from the committer being badly
-        # formatted.
-        if author:
-            helper.write('author %s\n' % author)
-        helper.write('committer %s\n' % committer)
-        helper.cmd_data(message)
-
-        helper.write('from %s\n' % _from)
-        for merge in merges:
-            helper.write('merge %s\n' % merge)
-        if from_tree:
-            helper.write('M 040000 %s \n' % from_tree)
-
-        yield helper
-
-        helper.flush()
-        self.write('\n')
-        if not pseudo_mark:
-            helper.sha1 = self.get_mark(1)
-
-
-class FastImportCommitHelper(object):
-    __slots__ = "_fast_import", "_queue", "sha1"
-
-    def __init__(self, fast_import):
-        self._fast_import = fast_import
-        self._queue = []
-        self.sha1 = None
-
-    def write(self, data):
-        self._queue.append(data)
-
-    def cmd_data(self, data):
-        self._queue.append('data %d\n' % len(data))
-        self._queue.append(data)
-        self._queue.append('\n')
-
-    def flush(self):
-        self._fast_import.write(''.join(self._queue))
-        self._queue = []
-
-    def filedelete(self, path):
-        self.write('D %s\n' % path)
-
-    MODE = {
-        'regular': '644',
-        'exec': '755',
-        'tree': '040000',
-        'symlink': '120000',
-        'commit': '160000',
-    }
-
-    def filemodify(self, path, sha1=None, typ='regular', content=None):
-        assert sha1 or (content and typ == 'regular')
-        # We may receive the sha1 for an empty blob, even though there is no
-        # empty blob stored in the repository. So for empty blobs, use an
-        # inline filemodify.
-        dataref = 'inline' if sha1 in (EMPTY_BLOB, None) else sha1
-        self.write('M %s %s %s\n' % (
-            self.MODE.get(typ, typ),
-            dataref,
-            path,
-        ))
-        if sha1 == EMPTY_BLOB:
-            self.cmd_data('')
-        elif sha1 is None:
-            self.cmd_data(content)

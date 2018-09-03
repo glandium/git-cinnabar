@@ -5,6 +5,7 @@ from cinnabar.git import (
     Git,
     NULL_NODE_ID,
 )
+from cinnabar.helper import GitHgHelper
 from cinnabar.util import VersionedDict
 
 
@@ -55,7 +56,7 @@ def do_rollback(ref):
             Git.delete_ref(ref)
         else:
             Git.update_ref(ref, commit)
-    Git._close_update_ref()
+    GitHgHelper.close()
 
     return 0
 
