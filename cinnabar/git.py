@@ -316,12 +316,9 @@ class FastImport(object):
                message='', from_commit=None, parents=(), pseudo_mark=None):
         if isinstance(parents, GeneratorType):
             parents = tuple(parents)
-        _from = None
         from_tree = None
         if parents and parents[0] == from_commit:
-            resolved_ref = Git._refs.get(ref)
-            if parents[0] != resolved_ref:
-                _from = parents[0]
+            _from = parents[0]
             merges = parents[1:]
         else:
             _from = NULL_NODE_ID
@@ -339,8 +336,7 @@ class FastImport(object):
         helper.write('committer %s\n' % committer)
         helper.cmd_data(message)
 
-        if _from:
-            helper.write('from %s\n' % _from)
+        helper.write('from %s\n' % _from)
         for merge in merges:
             helper.write('merge %s\n' % merge)
         if from_tree:
