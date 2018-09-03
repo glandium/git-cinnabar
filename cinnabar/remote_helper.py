@@ -391,7 +391,7 @@ class GitRemoteHelper(BaseRemoteHelper):
             logging.error(e.message)
             return 1
 
-        pushes = {s.lstrip('+'): (d, s.startswith('+'))
+        pushes = {Git.resolve_ref(s.lstrip('+')): (d, s.startswith('+'))
                   for s, d in (r.split(':', 1) for r in refspecs)}
         if not self._repo.capable('unbundle'):
             for source, (dest, force) in pushes.iteritems():
@@ -424,8 +424,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                     continue
                 name = unquote(dest[21:])
                 if source:
-                    source = self._store.hg_changeset(Git.resolve_ref(source))\
-                        or ''
+                    source = self._store.hg_changeset(source) or ''
                 status[dest] = self._repo.pushkey(
                     'bookmarks', name, self._bookmarks.get(name, ''), source)
 
