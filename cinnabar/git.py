@@ -10,7 +10,6 @@ from types import GeneratorType
 from .util import (
     one,
     Process,
-    VersionedDict,
 )
 from itertools import chain
 
@@ -48,15 +47,12 @@ class Git(object):
     _update_ref = None
     _fast_import = None
     _notes_depth = {}
-    _refs = VersionedDict()
-    _initial_refs = _refs._previous
     _config = None
     _replace = {}
 
     @classmethod
     def register_fast_import(self, fast_import):
         self._fast_import = fast_import
-        self._refs = VersionedDict(self._refs)
 
     @classmethod
     def _close_update_ref(self):
@@ -71,8 +67,6 @@ class Git(object):
         if self._fast_import:
             self._fast_import.close(rollback)
             self._fast_import = None
-
-            self._refs = self._refs.flattened()
 
     @classmethod
     def iter(self, *args, **kwargs):
@@ -101,18 +95,11 @@ class Git(object):
         # matching the given patterns are already known.
         for line in self.iter('for-each-ref', '--format',
                               '%(objectname) %(refname)', *patterns):
-            sha1, ref = line.split(' ', 1)
-            self._initial_refs[ref] = sha1
-            # The ref might have been removed in self._refs
-            if ref in self._refs:
-                yield self._refs[ref], ref
+            yield line.split(' ', 1)
 
     @classmethod
     def resolve_ref(self, ref):
-        if ref not in self._refs:
-            self._initial_refs[ref] = one(
-                Git.iter('rev-parse', '--revs-only', ref))
-        return self._refs[ref]
+        return one(Git.iter('rev-parse', '--revs-only', ref))
 
     @classmethod
     def ls_tree(self, treeish, path='', recursive=False):
@@ -139,13 +126,6 @@ class Git(object):
     @classmethod
     def update_ref(self, ref, newvalue):
         assert not newvalue.startswith('refs/')
-        refs = self._refs
-        if newvalue and newvalue != NULL_NODE_ID:
-            refs[ref] = newvalue
-            if refs is self._initial_refs and ref in self._refs._deleted:
-                self._refs._deleted.remove(ref)
-        elif ref in refs:
-            del refs[ref]
         if self._fast_import:
             self._fast_import.write(
                 'reset %s\n'
@@ -346,11 +326,8 @@ class FastImport(object):
 
         helper.flush()
         self.write('\n')
-        if pseudo_mark:
-            Git._refs[ref] = pseudo_mark
-        else:
+        if not pseudo_mark:
             helper.sha1 = self.get_mark(1)
-            Git._refs[ref] = helper.sha1
 
 
 class FastImportCommitHelper(object):
