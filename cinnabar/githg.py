@@ -834,6 +834,7 @@ class GitHgStore(object):
             metadata, refs = metadata
         self._has_metadata = bool(metadata)
         self._metadata_refs = refs if metadata else {}
+        self._metadata_sha1 = metadata.sha1 if metadata else None
         if metadata:
             changesets_ref = self._metadata_refs.get(
                 'refs/cinnabar/changesets')
@@ -1382,9 +1383,8 @@ class GitHgStore(object):
         if update_metadata or replace_changed:
             parents = list(update_metadata.get(r) or self._metadata_refs[r]
                            for r in self.METADATA_REFS)
-            metadata_ref = Git.resolve_ref('refs/cinnabar/metadata')
-            if metadata_ref:
-                parents.append(metadata_ref)
+            if self._metadata_sha1:
+                parents.append(self._metadata_sha1)
             with self._fast_import.commit(
                 ref='refs/cinnabar/metadata',
                 parents=parents,
