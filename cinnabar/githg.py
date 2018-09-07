@@ -836,6 +836,7 @@ class GitHgStore(object):
             metadata, refs = metadata
         self._has_metadata = bool(metadata)
         self._metadata_refs = refs if metadata else {}
+        self._manifest_heads_orig = set()
         if metadata:
             changesets_ref = self._metadata_refs.get(
                 'refs/cinnabar/changesets')
@@ -846,9 +847,8 @@ class GitHgStore(object):
                     hghead, branch = head.split(' ', 1)
                     self._hgheads._previous[hghead] = branch
 
-        self._manifest_heads_orig = set(GitHgHelper.heads('manifests'))
+            self._manifest_heads_orig = set(GitHgHelper.heads('manifests'))
 
-        if metadata:
             replace = {}
             for line in Git.ls_tree(metadata.tree):
                 mode, typ, sha1, path = line
@@ -857,8 +857,8 @@ class GitHgStore(object):
             if self._replace and not replace:
                 raise OldUpgradeAbort()
 
-        # Delete old tag-cache, which may contain incomplete data.
-        Git.delete_ref('refs/cinnabar/tag-cache')
+            # Delete old tag-cache, which may contain incomplete data.
+            Git.delete_ref('refs/cinnabar/tag-cache')
 
     def prepare_graft(self):
         self._graft = Grafter(self)
@@ -1090,6 +1090,8 @@ class GitHgStore(object):
         return git_commit.body
 
     def _hg2git(self, sha1):
+        if not self._has_metadata and not GitHgHelper._helper:
+            return None
         gitsha1 = GitHgHelper.hg2git(sha1)
         if gitsha1 == NULL_NODE_ID:
             gitsha1 = None
@@ -1312,6 +1314,9 @@ class GitHgStore(object):
         if self._graft:
             self._graft.close()
         self._closed = True
+        # If the helper is not running, we don't have anything to update.
+        if not GitHgHelper._helper:
+            return
         update_metadata = {}
         tree = GitHgHelper.store('metadata', 'hg2git')
         if tree != NULL_NODE_ID:
