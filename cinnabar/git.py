@@ -70,12 +70,14 @@ class Git(object):
         # Ideally, this would not actually call for-each-ref if all refs
         # matching the given patterns are already known.
         for line in self.iter('for-each-ref', '--format',
-                              '%(objectname) %(refname)', *patterns):
+                              '%(objectname) %(refname)', *patterns,
+                              stderr=open(os.devnull, 'w')):
             yield line.split(' ', 1)
 
     @classmethod
     def resolve_ref(self, ref):
-        return one(Git.iter('rev-parse', '--revs-only', ref))
+        return one(Git.iter('rev-parse', '--revs-only', ref,
+                            stderr=open(os.devnull, 'w')))
 
     @classmethod
     def ls_tree(self, treeish, path='', recursive=False):
