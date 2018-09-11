@@ -387,7 +387,7 @@ void add_head(struct oid_array *heads, const struct object_id *oid)
 	int pos;
 
 	ensure_heads(heads);
-	c = lookup_commit(oid);
+	c = lookup_commit(the_repository, oid);
 	parse_commit_or_die(c);
 
 	for (parent = c->parents; parent; parent = parent->next) {

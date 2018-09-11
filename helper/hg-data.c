@@ -1,5 +1,5 @@
 #include "git-compat-util.h"
-#include "cache.h"
+#include "object-store.h"
 #include "cinnabar-helper.h"
 #include "cinnabar-fast-import.h"
 #include "hg-data.h"

@@ -37,7 +37,7 @@ void split_capabilities(struct string_list *list, const char *buf)
 			if (!strcmp(item->string, "bundle2")) {
 				char *decoded = url_decode(value);
 				/* url decoded is always smaller. */
-				strcpy(value, decoded);
+				xsnprintf(value, strlen(value), "%s", decoded);
 				free(decoded);
 			}
 		}

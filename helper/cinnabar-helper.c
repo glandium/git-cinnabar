@@ -246,7 +246,7 @@ static int fill_ls_tree(const struct object_id *oid, struct strbuf *base,
 	if (S_ISGITLINK(mode)) {
 		type = commit_type;
 	} else if (S_ISDIR(mode)) {
-		object_list_insert((struct object *)lookup_tree(oid),
+		object_list_insert((struct object *)lookup_tree(the_repository, oid),
 		                   &ctx->list);
 		if (ctx->recursive)
 			return READ_TREE_RECURSIVE;
@@ -1021,7 +1021,7 @@ static void do_check_manifest(struct string_list *args)
 	if (!manifest)
 		goto error;
 
-	manifest_commit = lookup_commit(manifest_oid);
+	manifest_commit = lookup_commit(the_repository, manifest_oid);
 	if (!manifest_commit)
 		goto error;
 
@@ -1416,7 +1416,7 @@ static void upgrade_files(const struct old_manifest_tree *tree,
 	struct old_manifest_tree_state state;
 	struct old_manifest_entry entry;
 
-	state.tree_hg = lookup_tree(&tree->hg);
+	state.tree_hg = lookup_tree(the_repository, &tree->hg);
 	if (!state.tree_hg)
 		goto corrupted;
 
@@ -1691,7 +1691,7 @@ static void upgrade_manifest(struct commit *commit,
 		entry = hashmap_get(&track->commit_cache, &k, NULL);
 		if (!entry)
 			die("Something went wrong");
-		p = lookup_commit(&entry->new_oid);
+		p = lookup_commit(the_repository, &entry->new_oid);
 		if (!p)
 			die("Something went wrong");
 		ref_tree = get_commit_tree_oid(p);
@@ -1791,7 +1791,7 @@ resolve_manifest_for_upgrade(struct commit *commit,
 
 	if (oidset_contains(&track->manifests, git_manifest))
 		return NULL;
-	return lookup_commit(git_manifest);
+	return lookup_commit(the_repository, git_manifest);
 
 corrupted:
 	die("Corrupt mercurial metadata");
@@ -1994,7 +1994,7 @@ static void do_create_git_tree(struct string_list *args)
 			goto not_found;
 	}
 
-	commit = lookup_commit(manifest_oid);
+	commit = lookup_commit(the_repository, manifest_oid);
 	if (parse_commit(commit))
 		goto not_found;
 
@@ -2007,7 +2007,7 @@ static void do_create_git_tree(struct string_list *args)
 		ref_commit_oid = resolve_hg2git(&ref_oid, 40);
 		if (!ref_commit_oid)
 			die("invalid argument");
-		ref_commit = lookup_commit(ref_commit_oid);
+		ref_commit = lookup_commit(the_repository, ref_commit_oid);
 		parse_commit_or_die(ref_commit);
 		ref_tree = get_commit_tree_oid(ref_commit);
 	}
@@ -2040,7 +2040,7 @@ static void do_seen(struct string_list *args)
 	if (!strcmp(args->items[0].string, "hg2git"))
 		seen = oidset_insert(&hg2git_seen, &oid);
 	else if (!strcmp(args->items[0].string, "git2hg")) {
-		struct commit *c = lookup_commit(&oid);
+		struct commit *c = lookup_commit(the_repository, &oid);
 		if (!c)
 			die("Unknown commit");
 		seen = c->object.flags & FSCK_SEEN;
@@ -2073,7 +2073,7 @@ static int dangling_note(const struct object_id *object_oid,
 		    (oid_object_info(the_repository, note_oid, NULL) != OBJ_BLOB))
 			is_dangling = !oidset_contains(&hg2git_seen, &oid);
 	} else if (data->notes == &git2hg) {
-		struct commit *c = lookup_commit(&oid);
+		struct commit *c = lookup_commit(the_repository, &oid);
 		is_dangling = !c || !(c->object.flags & FSCK_SEEN);
 	}
 
