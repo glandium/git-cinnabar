@@ -17,6 +17,7 @@ from cinnabar.git import (
 )
 from cinnabar.util import (
     check_enabled,
+    chunkbuffer,
     experiment,
     progress_iter,
     sorted_merge,
@@ -520,7 +521,6 @@ def create_bundle(store, commits, bundle2caps={}):
                 version = '02'
     cg = create_changegroup(store, bundle_data(store, commits), chunk_type)
     if bundle2caps:
-        from mercurial.util import chunkbuffer
         yield 'HG20'
         yield '\0' * 4  # bundle parameters length: no params
         replycaps = bundle2caps.get('replycaps')

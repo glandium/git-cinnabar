@@ -41,12 +41,11 @@ from .hg.objects import (
     File,
 )
 from .helper import GitHgHelper
-from .util import progress_iter
+from .util import (
+    progress_iter,
+    textdiff,
+)
 from .dag import gitdag
-try:
-    from mercurial.mdiff import textdiff
-except ImportError:
-    from .bdiff import bdiff as textdiff
 
 import logging
 

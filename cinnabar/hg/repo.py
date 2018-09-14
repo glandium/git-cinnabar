@@ -36,6 +36,7 @@ from cinnabar.git import (
 )
 from cinnabar.util import (
     check_enabled,
+    chunkbuffer,
     experiment,
     progress_enum,
     progress_iter,
@@ -52,6 +53,8 @@ from .changegroup import (
 from cStringIO import StringIO
 
 try:
+    if check_enabled('no-mercurial'):
+        raise ImportError('Do not use mercurial')
     # Old versions of mercurial use an old version of socketutil that tries to
     # assign a local PROTOCOL_SSLv2, copying it from the ssl module, without
     # ever using it. It shouldn't hurt to set it here.
@@ -559,6 +562,8 @@ def unbundler(bundle):
 
 def get_clonebundle(repo):
     try:
+        if check_enabled('no-mercurial'):
+            raise ImportError('Do not use mercurial')
         from mercurial.exchange import (
             parseclonebundlesmanifest,
             filterclonebundleentries,
@@ -827,7 +832,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
             b2caps['replycaps'] = encodecaps({'error': ['abort']})
         cg = create_bundle(store, push_commits, b2caps)
         if not isinstance(repo, HelperRepo):
-            cg = util.chunkbuffer(cg)
+            cg = chunkbuffer(cg)
             if not b2caps:
                 cg = cg1unpacker(cg, 'UN')
         reply = repo.unbundle(cg, repo_heads, '')

@@ -5,6 +5,7 @@ import sys
 import time
 import traceback
 from collections import (
+    deque,
     Iterable,
     OrderedDict,
 )
@@ -114,7 +115,7 @@ class ConfigSetFunc(object):
 check_enabled = ConfigSetFunc(
     'cinnabar.check',
     ('nodeid', 'manifests', 'helper'),
-    ('bundle', 'files', 'memory', 'time', 'traceback'),
+    ('bundle', 'files', 'memory', 'time', 'traceback', 'no-mercurial'),
 )
 
 experiment = ConfigSetFunc(
@@ -124,6 +125,14 @@ experiment = ConfigSetFunc(
 
 
 progress = True
+
+
+try:
+    if check_enabled('no-mercurial'):
+        raise ImportError('Do not use mercurial')
+    from mercurial.mdiff import textdiff  # noqa: F401
+except ImportError:
+    from .bdiff import bdiff as textdiff  # noqa: F401
 
 
 def progress_iter(fmt, iter, filter_func=None):
@@ -479,6 +488,91 @@ class lrucache(object):
             node = node.next
         assert count == len(self._cache)
         return len(self._cache)
+
+
+# The following class was copied from mercurial.
+#  Copyright 2005 K. Thananchayan <thananck@yahoo.com>
+#  Copyright 2005-2007 Matt Mackall <mpm@selenic.com>
+#  Copyright 2006 Vadim Gelfer <vadim.gelfer@gmail.com>
+class chunkbuffer(object):
+    """Allow arbitrary sized chunks of data to be efficiently read from an
+    iterator over chunks of arbitrary size."""
+
+    def __init__(self, in_iter):
+        """in_iter is the iterator that's iterating over the input chunks."""
+        def splitbig(chunks):
+            for chunk in chunks:
+                if len(chunk) > 2 ** 20:
+                    pos = 0
+                    while pos < len(chunk):
+                        end = pos + 2 ** 18
+                        yield chunk[pos:end]
+                        pos = end
+                else:
+                    yield chunk
+        self.iter = splitbig(in_iter)
+        self._queue = deque()
+        self._chunkoffset = 0
+
+    def read(self, l=None):
+        """Read L bytes of data from the iterator of chunks of data.
+        Returns less than L bytes if the iterator runs dry.
+
+        If size parameter is omitted, read everything"""
+        if l is None:
+            return ''.join(self.iter)
+
+        left = l
+        buf = []
+        queue = self._queue
+        while left > 0:
+            # refill the queue
+            if not queue:
+                target = 2 ** 18
+                for chunk in self.iter:
+                    queue.append(chunk)
+                    target -= len(chunk)
+                    if target <= 0:
+                        break
+                if not queue:
+                    break
+
+            # The easy way to do this would be to queue.popleft(), modify the
+            # chunk (if necessary), then queue.appendleft(). However, for cases
+            # where we read partial chunk content, this incurs 2 dequeue
+            # mutations and creates a new str for the remaining chunk in the
+            # queue. Our code below avoids this overhead.
+
+            chunk = queue[0]
+            chunkl = len(chunk)
+            offset = self._chunkoffset
+
+            # Use full chunk.
+            if offset == 0 and left >= chunkl:
+                left -= chunkl
+                queue.popleft()
+                buf.append(chunk)
+                # self._chunkoffset remains at 0.
+                continue
+
+            chunkremaining = chunkl - offset
+
+            # Use all of unconsumed part of chunk.
+            if left >= chunkremaining:
+                left -= chunkremaining
+                queue.popleft()
+                # offset == 0 is enabled by block above, so this won't merely
+                # copy via ``chunk[0:]``.
+                buf.append(chunk[offset:])
+                self._chunkoffset = 0
+
+            # Partial chunk needed.
+            else:
+                buf.append(chunk[offset:offset + left])
+                self._chunkoffset += left
+                left -= chunkremaining
+
+        return ''.join(buf)
 
 
 class Process(object):
