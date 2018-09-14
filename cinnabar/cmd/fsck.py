@@ -72,12 +72,11 @@ def fsck(args):
 
         all_git_commits = GitHgHelper.rev_list('--no-walk=unsorted', *commits)
     else:
-        all_refs = set(ref for sha1, ref in Git.for_each_ref('refs/cinnabar'))
+        all_refs = dict((ref, sha1)
+                        for sha1, ref in Git.for_each_ref('refs/cinnabar'))
 
         if 'refs/cinnabar/metadata' in all_refs:
-            # We rely on the store having created these refs (temporarily or
-            # not).
-            git_heads = '%s^@' % Git.resolve_ref('refs/cinnabar/changesets')
+            git_heads = '%s^^@' % all_refs['refs/cinnabar/metadata']
         else:
             assert False
 
@@ -126,7 +125,7 @@ def fsck(args):
             fix('Adjusted changeset metadata for %s' % changeset)
             GitHgHelper.set('changeset', changeset, NULL_NODE_ID)
             GitHgHelper.set('changeset', changeset, node)
-            store._fast_import.put_blob(patcher, want_sha1=False)
+            GitHgHelper.put_blob(patcher, want_sha1=False)
             GitHgHelper.set('changeset-metadata', changeset, NULL_NODE_ID)
             GitHgHelper.set('changeset-metadata', changeset, ':1')
 
