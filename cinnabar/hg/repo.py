@@ -90,6 +90,8 @@ if changegroup:
         from mercurial.changegroup import unbundle10 as cg1unpacker
 
     try:
+        if check_enabled('no-bundle2'):
+            raise ImportError('Do not use bundlev2')
         from mercurial.bundle2 import (
             bundle2caps,
             encodecaps,

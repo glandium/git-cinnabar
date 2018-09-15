@@ -115,7 +115,8 @@ class ConfigSetFunc(object):
 check_enabled = ConfigSetFunc(
     'cinnabar.check',
     ('nodeid', 'manifests', 'helper'),
-    ('bundle', 'files', 'memory', 'time', 'traceback', 'no-mercurial'),
+    ('bundle', 'files', 'memory', 'time', 'traceback', 'no-mercurial',
+     'no-bundle2'),
 )
 
 experiment = ConfigSetFunc(
