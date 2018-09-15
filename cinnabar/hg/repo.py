@@ -962,7 +962,7 @@ if changegroup:
 
 def get_repo(remote):
     if not changegroup or experiment('wire'):
-        if not changegroup:
+        if not changegroup and not check_enabled('no-mercurial'):
             logging.warning('Mercurial libraries not found. Falling back to '
                             'native access.')
         logging.warning(
