@@ -231,7 +231,8 @@ static void http_simple_command(struct hg_connection *conn,
 	va_end(ap);
 }
 
-struct deflater {
+struct changegroup_response_data {
+	CURL *curl;
 	FILE *out;
 	git_zstream strm;
 };
@@ -239,26 +240,48 @@ struct deflater {
 static size_t deflate_response(char *ptr, size_t size, size_t nmemb, void *data)
 {
 	char buf[4096];
-	struct deflater *deflater = (struct deflater *)data;
+	struct changegroup_response_data *response_data =
+		(struct changegroup_response_data *)data;
 	int ret;
 
-	deflater->strm.next_in = (void *)ptr;
-	deflater->strm.avail_in = size * nmemb;
+	response_data->strm.next_in = (void *)ptr;
+	response_data->strm.avail_in = size * nmemb;
 
 	do {
-		deflater->strm.next_out = (void *)buf;
-		deflater->strm.avail_out = sizeof(buf);
-		ret = git_inflate(&deflater->strm, Z_SYNC_FLUSH);
-		fwrite(buf, 1, sizeof(buf) - deflater->strm.avail_out,
-		       deflater->out);
-	} while (deflater->strm.avail_in && ret == Z_OK);
+		response_data->strm.next_out = (void *)buf;
+		response_data->strm.avail_out = sizeof(buf);
+		ret = git_inflate(&response_data->strm, Z_SYNC_FLUSH);
+		fwrite(buf, 1, sizeof(buf) - response_data->strm.avail_out,
+		       response_data->out);
+	} while (response_data->strm.avail_in && ret == Z_OK);
 
 	return size * nmemb;
 }
 
-static void prepare_compressed_request(CURL *curl, struct curl_slist *headers,
-				       void *data)
+static size_t changegroup_header(char *buffer, size_t size, size_t nmemb, void* data)
 {
+	struct changegroup_response_data *response_data =
+		(struct changegroup_response_data *)data;
+
+	if (strcmp(buffer, "Content-Type: application/hg-error\r\n") == 0) {
+		fwrite("err\n", 4, 1, response_data->out);
+		response_data->out = stderr;
+		curl_easy_setopt(response_data->curl, CURLOPT_FILE, stderr);
+		curl_easy_setopt(response_data->curl, CURLOPT_WRITEFUNCTION, fwrite);
+	}
+	return size * nmemb;
+}
+
+static void prepare_changegroup_request(CURL *curl, struct curl_slist *headers,
+				        void *data)
+{
+	struct changegroup_response_data *response_data =
+		(struct changegroup_response_data *)data;
+
+	response_data->curl = curl;
+
+	curl_easy_setopt(curl, CURLOPT_HEADERDATA, data);
+	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, changegroup_header);
 	curl_easy_setopt(curl, CURLOPT_FILE, data);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, deflate_response);
 }
@@ -269,14 +292,14 @@ static void http_changegroup_command(struct hg_connection *conn, FILE *out,
 				      const char *command, ...)
 {
 	va_list ap;
-	struct deflater deflater;
+	struct changegroup_response_data response_data;
 
-	memset(&deflater, 0, sizeof(deflater));
-	deflater.out = out;
+	memset(&response_data, 0, sizeof(response_data));
+	response_data.out = out;
 	va_start(ap, command);
-	git_inflate_init(&deflater.strm);
-	http_command(conn, prepare_compressed_request, &deflater, command, ap);
-	git_inflate_end(&deflater.strm);
+	git_inflate_init(&response_data.strm);
+	http_command(conn, prepare_changegroup_request, &response_data, command, ap);
+	git_inflate_end(&response_data.strm);
 	va_end(ap);
 }
 

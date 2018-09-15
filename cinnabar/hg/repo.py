@@ -20,6 +20,7 @@ from itertools import (
     chain,
     izip,
 )
+from io import BytesIO
 from urlparse import (
     ParseResult,
     urlparse,
@@ -423,6 +424,8 @@ class HelperRepo(object):
                     result += self.data.read(length - len(result))
                 return result
 
+        if header == 'err\n':
+            return Reader('', BytesIO())
         return Reader(header, data)
 
     def pushkey(self, namespace, key, old, new):
