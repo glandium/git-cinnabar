@@ -127,6 +127,10 @@ if changegroup:
                 return username, password
 
     url.passwordmgr = passwordmgr
+else:
+    def cg1unpacker(fh, alg):
+        assert alg == 'UN'
+        return fh
 
 
 # The following two functions (readexactly, getchunk) were copied from the
