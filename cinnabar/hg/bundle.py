@@ -19,6 +19,7 @@ from cinnabar.util import (
     check_enabled,
     chunkbuffer,
     experiment,
+    progress_enum,
     progress_iter,
     sorted_merge,
 )
@@ -450,30 +451,24 @@ def bundle_data(store, commits):
     yield None
 
     def iter_files(files):
-        for path in sorted(files):
-            yield path
+        count_chunks = 0
+        for count_names, path in enumerate(sorted(files), 1):
+            yield (count_chunks, count_names), path
             nodes = set()
             for node, parents, changeset, mn_parents in files[path]:
                 if node in nodes:
                     continue
+                count_chunks += 1
                 nodes.add(node)
                 file = store.file(node, parents, mn_parents, path)
                 file.changeset = changeset
                 assert file.node == file.sha1
-                yield file
+                yield (count_chunks, count_names), file
 
-            yield None
+            yield (count_chunks, count_names), None
 
-    class Filt(object):
-        def __init__(self):
-            self._previous = None
-
-        def __call__(self, chunk):
-            ret = self._previous and chunk is not None
-            self._previous = chunk
-            return ret
-
-    for chunk in progress_iter('Bundling {} files', iter_files(files), Filt()):
+    for chunk in progress_enum('Bundling {} revisions of {} files',
+                               iter_files(files)):
         yield chunk
 
     yield None
