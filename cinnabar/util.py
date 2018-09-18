@@ -136,18 +136,8 @@ except ImportError:
     from .bdiff import bdiff as textdiff  # noqa: F401
 
 
-def progress_iter(fmt, iter, filter_func=None):
-    if not filter_func:
-        return progress_enum(fmt, enumerate(iter, start=1))
-
-    def _progress_iter():
-        count = 0
-        for item in iter:
-            if filter_func(item):
-                count += 1
-            yield count, item
-
-    return progress_enum(fmt, _progress_iter())
+def progress_iter(fmt, iter):
+    return progress_enum(fmt, enumerate(iter, start=1))
 
 
 def progress_enum(fmt, enum_iter):
