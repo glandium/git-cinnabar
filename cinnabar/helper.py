@@ -387,7 +387,7 @@ class GitHgHelper(BaseHelper):
             helper.sha1 = self._get_last()
 
     @classmethod
-    def close(self, rollback=False):
+    def close(self, rollback=True):
         if not rollback and self._helper != self:
             with self.query('done'):
                 pass

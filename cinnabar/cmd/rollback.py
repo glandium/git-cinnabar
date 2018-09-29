@@ -56,7 +56,7 @@ def do_rollback(ref):
             Git.delete_ref(ref)
         else:
             Git.update_ref(ref, commit)
-    GitHgHelper.close()
+    GitHgHelper.close(rollback=False)
 
     return 0
 
