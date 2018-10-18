@@ -39,7 +39,7 @@ def sanitize_branch_name(name):
     urllib.unquote.'''
     # TODO: Actually sanitize all the conflicting cases, see
     # git-check-ref-format(1).
-    return name.replace('%', '%25').replace(' ', '%20')
+    return name.replace('%', '%25').replace(' ', '%20').replace('\r','%0D').replace('\n','%0A')
 
 
 class BaseRemoteHelper(object):
