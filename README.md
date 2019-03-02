@@ -258,11 +258,3 @@ comma-separated list of those features to enable the selected ones, or to
   the `cinnabar.clone` git configuration item to the url of the git cinnabar
   metadata repository as it would be set up in the mercurial server
   configuration.
-
-- **store-manifest**
-
-  Importing mercurial manifests is usually the longest operation when getting
-  mercurial data. It currently happens with battle tested python code. This
-  experimental feature makes it use newer native code from the cinnabar-helper,
-  which at the moment is only slightly faster. Future versions will have an
-  even faster, albeit more risky, implementation.

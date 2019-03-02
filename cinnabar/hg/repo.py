@@ -4,10 +4,7 @@ import sys
 import urllib
 import urllib2
 from cinnabar.exceptions import NothingToGraftException
-from cinnabar.githg import (
-    Changeset,
-    ManifestInfo,
-)
+from cinnabar.githg import Changeset
 from cinnabar.helper import (
     GitHgHelper,
     HgRepoHelper,
@@ -672,19 +669,11 @@ class BundleApplier(object):
         changeset_chunks = ChunksCollection(progress_iter(
             'Reading {} changesets', next(self._bundle, None)))
 
-        if experiment('store-manifest'):
-            for rev_chunk in progress_iter(
-                    'Reading and importing {} manifests',
-                    next(self._bundle, None)):
-                GitHgHelper.store('manifest', rev_chunk)
-                store.check_manifest(rev_chunk)
-        else:
-            for mn in progress_iter(
-                    'Reading and importing {} manifests',
-                    iter_initialized(store.manifest,
-                                     iter_chunks(next(self._bundle, None),
-                                                 ManifestInfo))):
-                store.store_manifest(mn)
+        for rev_chunk in progress_iter(
+                'Reading and importing {} manifests',
+                next(self._bundle, None)):
+            GitHgHelper.store('manifest', rev_chunk)
+            store.check_manifest(rev_chunk)
 
         def enumerate_files(iter):
             last_name = None
