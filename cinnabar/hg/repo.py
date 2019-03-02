@@ -716,6 +716,11 @@ def do_cinnabarclone(repo, manifest, store):
 
     url = data[0]
     url, branch = (url.split('#', 1) + [None])[:2]
+    parsed_url = urlparse(url)
+    if parsed_url.scheme not in ('http', 'https', 'git'):
+        logging.warn('Server advertizes cinnabarclone but provided a non '
+                     'http/https git repository. Skipping.')
+        return False
     sys.stderr.write('Fetching cinnabar metadata from %s\n' % url)
     return store.merge(url, repo.url(), branch)
 

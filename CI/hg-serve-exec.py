@@ -1,5 +1,8 @@
 import base64
+import os
+import shutil
 import subprocess
+from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 
 try:
@@ -86,8 +89,63 @@ def extsetup():
     common.permhooks.insert(0, perform_authentication)
 
 
+class GitServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.git_http_backend()
+
+    def do_POST(self):
+        self.git_http_backend()
+
+    def git_http_backend(self):
+        env = dict(os.environ)
+        env['REQUEST_METHOD'] = self.command
+        env['GIT_HTTP_EXPORT_ALL'] = '1'
+        env['GIT_PROJECT_ROOT'] = os.path.abspath(os.curdir)
+        path, _, query = self.path.partition('?')
+        env['PATH_INFO'] = path
+        env['QUERY_STRING'] = query
+        self.send_response(200, "Script output follows")
+        if self.command == 'POST':
+            length = self.headers.getheader('Content-Length')
+            env['CONTENT_LENGTH'] = length
+            env['CONTENT_TYPE'] = self.headers.getheader('Content-Type')
+            try:
+                length = int(length)
+            except (TypeError, ValueError):
+                length = 0
+            data = self.rfile.read(length)
+            stdin = subprocess.PIPE
+        else:
+            stdin = None
+
+        p = subprocess.Popen(['git', 'http-backend'], stdin=stdin,
+                             stdout=subprocess.PIPE, env=env)
+        if stdin:
+            p.stdin.write(data)
+            p.stdin.close()
+        shutil.copyfileobj(p.stdout, self.wfile)
+        p.stdout.close()
+
+
+class OtherServer(object):
+    def __init__(self, typ):
+        if typ == 'git':
+            cls = GitServer
+        else:
+            assert False
+        self.httpd = HTTPServer(('', 8080), cls)
+
+    def run(self):
+        self.httpd.serve_forever()
+
+
 @command('serve-and-exec', ())
 def serve_and_exec(ui, repo, *command):
+    other_server = os.environ.get('OTHER_SERVER')
+    if other_server:
+        other_server = OtherServer(other_server)
+        other_server_thread = Thread(target=other_server.run)
+        other_server_thread.start()
     ui.setconfig('web', 'push_ssl', False, 'hgweb')
     ui.setconfig('web', 'allow_push', '*', 'hgweb')
     # For older versions of mercurial
@@ -102,4 +160,7 @@ def serve_and_exec(ui, repo, *command):
     ret = subprocess.call(command)
     service.httpd.shutdown()
     service_thread.join()
+    if other_server:
+        other_server.httpd.shutdown()
+        other_server_thread.join()
     return ret
