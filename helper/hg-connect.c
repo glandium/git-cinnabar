@@ -256,6 +256,7 @@ void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 			memcpy(heads_str, "686173686564 ", 13);
 			git_SHA1_Init(&ctx);
 			/* oid_array_for_each_unique sorts the sha1 list */
+			/* XXX: should use hg_object_id-specific function */
 			oid_array_for_each_unique(heads, unbundlehash, &ctx);
 			git_SHA1_Final(sha1, &ctx);
 			sha1_to_hex_r(&heads_str[13], sha1);

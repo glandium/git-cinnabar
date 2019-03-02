@@ -1,7 +1,9 @@
 #ifndef BUNDLE_H
 #define BUNDLE_H
 
+#include "cache.h"
 #include "strbuf.h"
+#include "hg-data.h"
 #include <stdio.h>
 
 struct bundle_writer {
@@ -25,12 +27,12 @@ extern void copy_bundle_to_strbuf(FILE *in, struct strbuf *out);
 struct rev_chunk {
 	struct strbuf raw;
 
-	const unsigned char *node;
-	const unsigned char *parent1;
-	const unsigned char *parent2;
+	const struct hg_object_id *node;
+	const struct hg_object_id *parent1;
+	const struct hg_object_id *parent2;
 	// Only in changegroupv2
-	const unsigned char *delta_node;
-/*	const unsigned char *changeset; // We actually don't care about this */
+	const struct hg_object_id *delta_node;
+/*	const struct hg_object_id *changeset; // We actually don't care about this */
 	const unsigned char *diff_data;
 };
 
@@ -43,12 +45,12 @@ struct rev_diff_part {
 
 extern void rev_chunk_from_memory(struct rev_chunk *result,
                                   struct strbuf *buf,
-                                  const unsigned char *delta_node);
+                                  const struct hg_object_id *delta_node);
 
 static inline void rev_chunk_release(struct rev_chunk *chunk)
 {
 	strbuf_release(&chunk->raw);
-	chunk->node = chunk->parent1 = chunk->parent2 = chunk->delta_node =
+	chunk->node = chunk->parent1 = chunk->parent2 = chunk->delta_node = NULL;
 	chunk->diff_data = NULL;
 }
 

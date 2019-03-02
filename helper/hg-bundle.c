@@ -107,7 +107,7 @@ void copy_bundle_to_strbuf(FILE *in, struct strbuf *out)
 }
 
 void rev_chunk_from_memory(struct rev_chunk *result, struct strbuf *buf,
-                           const unsigned char *delta_node)
+                           const struct hg_object_id *delta_node)
 {
 	size_t data_offset = 80 + 20 * !!(delta_node == NULL);
 	unsigned char *data = (unsigned char *) buf->buf;
@@ -116,10 +116,11 @@ void rev_chunk_from_memory(struct rev_chunk *result, struct strbuf *buf,
 	if (result->raw.len < data_offset)
 		die("Invalid revchunk");
 
-	result->node = data;
-	result->parent1 = data + 20;
-	result->parent2 = data + 40;
-	result->delta_node = delta_node ? delta_node : data + 60;
+	result->node = (const struct hg_object_id *)data;
+	result->parent1 = (const struct hg_object_id *)(data + 20);
+	result->parent2 = (const struct hg_object_id *)(data + 40);
+	result->delta_node = delta_node ? delta_node
+	                                : (const struct hg_object_id *)(data + 60);
 /*	result->changeset = data + 60 + 20 * !!(delta_node == NULL); */
 	result->diff_data = data + data_offset;
 }

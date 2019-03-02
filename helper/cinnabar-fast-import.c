@@ -229,26 +229,27 @@ const struct object_id empty_tree = { {
  * With :path, a tree is returned. */
 static uintmax_t parse_mark_ref(const char *p, char **endptr)
 {
-	struct object_id oid;
+	struct hg_object_id oid;
+	struct object_id git_oid;
 	const struct object_id *note;
 	struct object_entry *e;
 
 	assert(*p == ':');
 	if (p[1] != 'h')
 		return real_parse_mark_ref(p, endptr);
-	if (get_oid_hex(p + 2, &oid))
+	if (get_sha1_hex(p + 2, oid.hash))
 		die("Invalid sha1");
 
 	ensure_notes(&hg2git);
-	note = get_note(&hg2git, &oid);
+	note = get_note_hg(&hg2git, &oid);
 	*endptr = (char *)p + 42;
 	if (**endptr == ':') {
 		char *path_end = strpbrk(++(*endptr), " \n");
 		if (path_end) {
 			unsigned mode;
 			char *path = xstrndup(*endptr, path_end - *endptr);
-			if (!get_tree_entry(note, path, &oid, &mode))
-				note = &oid;
+			if (!get_tree_entry(note, path, &git_oid, &mode))
+				note = &git_oid;
 			else
 				note = &empty_tree;
 			free(path);
@@ -401,7 +402,7 @@ void add_head(struct oid_array *heads, const struct object_id *oid)
 	oid_array_insert(heads, -pos - 1, oid);
 }
 
-static void handle_changeset_conflict(struct object_id *hg_id,
+static void handle_changeset_conflict(struct hg_object_id *hg_id,
                                       struct object_id *git_id)
 {
 	/* There are cases where two changesets would map to the same git
@@ -416,18 +417,18 @@ static void handle_changeset_conflict(struct object_id *hg_id,
 
 	ensure_notes(&git2hg);
 	while ((note = get_note(&git2hg, git_id))) {
-		struct object_id oid;
+		struct hg_object_id oid;
 		enum object_type type;
 		unsigned long len;
 		char *content = read_object_file_extended(note, &type, &len, 0);
 		if (len < 50 || !starts_with(content, "changeset ") ||
-		    get_oid_hex(&content[10], &oid))
+		    get_sha1_hex(&content[10], oid.hash))
 			die("Invalid git2hg note for %s", oid_to_hex(git_id));
 
 		free(content);
 
 		/* We might just already have the changeset in store */
-		if (oidcmp(&oid, hg_id) == 0)
+		if (hg_oideq(&oid, hg_id))
 			break;
 
 		if (!buf.len) {
@@ -447,7 +448,8 @@ static void handle_changeset_conflict(struct object_id *hg_id,
 static void do_set(struct string_list *args)
 {
 	enum object_type type;
-	struct object_id hg_id, git_id;
+	struct hg_object_id hg_id;
+	struct object_id git_id;
 	struct oid_array *heads = NULL;
 	struct notes_tree *notes = &hg2git;
 	int is_changeset = 0;
@@ -474,7 +476,7 @@ static void do_set(struct string_list *args)
 		die("Unknown kind of object: %s", args->items[0].string);
 	}
 
-	if (get_oid_hex(args->items[1].string, &hg_id))
+	if (get_sha1_hex(args->items[1].string, hg_id.hash))
 		die("Invalid sha1");
 
 	if (args->items[2].string[0] == ':') {
@@ -487,22 +489,31 @@ static void do_set(struct string_list *args)
 	if (notes == &git2hg) {
 		const struct object_id *note;
 		ensure_notes(&hg2git);
-		note = get_note(&hg2git, &hg_id);
-		if (note)
-			oidcpy(&hg_id, note);
-		else if (!is_null_oid(&git_id))
+		note = get_note_hg(&hg2git, &hg_id);
+		if (note) {
+			ensure_notes(&git2hg);
+			if (is_null_oid(&git_id)) {
+				remove_note(notes, note->hash);
+			} else if (oid_object_info(the_repository, &git_id,
+			                           NULL) != OBJ_BLOB) {
+				die("Invalid object");
+			} else {
+				add_note(notes, note, &git_id, NULL);
+			}
+		} else if (!is_null_oid(&git_id))
 			die("Invalid sha1");
+		return;
 	}
 
 	ensure_notes(notes);
 	if (is_null_oid(&git_id)) {
-		remove_note(notes, hg_id.hash);
+		remove_note_hg(notes, &hg_id);
 	} else if (oid_object_info(the_repository, &git_id, NULL) != type) {
 		die("Invalid object");
 	} else {
 		if (is_changeset)
 			handle_changeset_conflict(&hg_id, &git_id);
-		add_note(notes, &hg_id, &git_id, NULL);
+		add_note_hg(notes, &hg_id, &git_id, NULL);
 		if (heads)
 			add_head(heads, &git_id);
 	}
@@ -533,7 +544,7 @@ int write_object_file(const void *buf, unsigned long len, const char *type,
 
 static void store_notes(struct notes_tree *notes, struct object_id *result)
 {
-	hashcpy(result->hash, null_sha1);
+	oidclr(result);
 	if (notes_dirty(notes)) {
 		unsigned int mode = (notes == &hg2git) ? S_IFGITLINK
 		                                       : S_IFREG | 0644;
@@ -543,19 +554,16 @@ static void store_notes(struct notes_tree *notes, struct object_id *result)
 
 void hg_file_store(struct hg_file *file, struct hg_file *reference)
 {
-	struct object_id file_oid;
 	struct object_id oid;
 	struct last_object last_blob = { STRBUF_INIT, 0, 0, 1 };
 	struct object_entry *oe = NULL;
 
 	ENSURE_INIT();
 
-	hashcpy(file_oid.hash, file->sha1);
-
 	if (file->metadata.buf) {
 		store_object(OBJ_BLOB, &file->metadata, NULL, &oid, 0);
 		ensure_notes(&files_meta);
-		add_note(&files_meta, &file_oid, &oid, NULL);
+		add_note_hg(&files_meta, &file->oid, &oid, NULL);
 	}
 
 	if (reference)
@@ -569,7 +577,7 @@ void hg_file_store(struct hg_file *file, struct hg_file *reference)
 	}
 	store_object(OBJ_BLOB, &file->content, &last_blob, &oid, 0);
 	ensure_notes(&hg2git);
-	add_note(&hg2git, &file_oid, &oid, NULL);
+	add_note_hg(&hg2git, &file->oid, &oid, NULL);
 
 	file->content_oe = find_object(&oid);
 }
@@ -585,10 +593,10 @@ static void store_file(struct rev_chunk *chunk)
 	if (is_empty_hg_file(chunk->node))
 		return;
 
-	if (hashcmp(chunk->delta_node, last_file.sha1)) {
+	if (!hg_oideq(chunk->delta_node, &last_file.oid)) {
 		hg_file_release(&last_file);
 
-		if (!is_null_sha1(chunk->delta_node))
+		if (!is_null_hg_oid(chunk->delta_node))
 			hg_file_load(&last_file, chunk->delta_node);
 
 	}
@@ -597,7 +605,7 @@ static void store_file(struct rev_chunk *chunk)
 	while (rev_diff_iter_next(&diff)) {
 		if (diff.start > last_file.file.len || diff.start < last_end)
 			die("Malformed file chunk for %s",
-			    sha1_to_hex(chunk->node));
+			    sha1_to_hex(chunk->node->hash));
 		strbuf_add(&data, last_file.file.buf + last_end,
 		           diff.start - last_end);
 		strbuf_addbuf(&data, &diff.data);
@@ -607,7 +615,7 @@ static void store_file(struct rev_chunk *chunk)
 
 	if (last_file.file.len < last_end)
 		die("Malformed file chunk for %s",
-		    sha1_to_hex(chunk->node));
+		    sha1_to_hex(chunk->node->hash));
 
 	strbuf_add(&data, last_file.file.buf + last_end,
 		   last_file.file.len - last_end);
@@ -622,7 +630,7 @@ static void store_file(struct rev_chunk *chunk)
 
 struct manifest_line {
        struct strslice path;
-       unsigned char sha1[20];
+       struct hg_object_id oid;
        char attr;
 };
 
@@ -638,7 +646,7 @@ static int split_manifest_line(struct strslice *slice,
 
        if (slice->len < 41)
 	       return -1;
-       if (get_sha1_hex(slice->buf, result->sha1))
+       if (get_sha1_hex(slice->buf, result->oid.hash))
 	       return -1;
        *slice = strslice_slice(*slice, 40, SIZE_MAX);
 
@@ -656,18 +664,17 @@ static int split_manifest_line(struct strslice *slice,
 }
 
 static int add_parent(struct strbuf *data,
-                      const struct object_id *last_manifest_oid,
+                      const struct hg_object_id *last_manifest_oid,
                       const struct branch *last_manifest,
-                      const unsigned char *parent)
+                      const struct hg_object_id *parent_oid)
 {
-	if (!is_null_sha1(parent)) {
+	if (!is_null_hg_oid(parent_oid)) {
 		const struct object_id *note;
-		struct object_id parent_oid;
-		hashcpy(parent_oid.hash, parent);
-		if (oidcmp(&parent_oid, last_manifest_oid) == 0)
+		if (hg_oideq(parent_oid, last_manifest_oid))
 			note = &last_manifest->oid;
-		else
-			note = get_note(&hg2git, &parent_oid);
+		else {
+			note = get_note_hg(&hg2git, parent_oid);
+		}
 		if (!note)
 			return -1;
 		strbuf_addf(data, "parent %s\n", oid_to_hex(note));
@@ -693,7 +700,7 @@ static void manifest_metadata_path(struct strbuf *out, struct strslice *in)
 
 static void store_manifest(struct rev_chunk *chunk)
 {
-	static struct object_id last_manifest_oid;
+	static struct hg_object_id last_manifest_oid;
 	static struct branch *last_manifest;
 	static struct strbuf last_manifest_content = STRBUF_INIT;
 	struct strbuf data = STRBUF_INIT;
@@ -706,16 +713,14 @@ static void store_manifest(struct rev_chunk *chunk)
 	if (!last_manifest) {
 		last_manifest = new_branch("refs/cinnabar/manifests");
 	}
-	if (!is_null_sha1(chunk->delta_node) &&
-	    hashcmp(chunk->delta_node, last_manifest_oid.hash)) {
+	if (!is_null_hg_oid(chunk->delta_node) &&
+	    !hg_oideq(chunk->delta_node, &last_manifest_oid)) {
 		const struct object_id *note;
-		struct object_id delta_node;
-		hashcpy(delta_node.hash, chunk->delta_node);
-		note = get_note(&hg2git, &delta_node);
+		note = get_note_hg(&hg2git, chunk->delta_node);
 		if (!note)
 			die("Cannot find delta node %s for %s",
-			    sha1_to_hex(chunk->delta_node),
-			    sha1_to_hex(chunk->node));
+			    sha1_to_hex(chunk->delta_node->hash),
+			    sha1_to_hex(chunk->node->hash));
 
 		// TODO: this could be smarter, avoiding to throw everything
 		// away. But this is what the equivalent fast-import commands
@@ -725,7 +730,7 @@ static void store_manifest(struct rev_chunk *chunk)
 				last_manifest->branch_tree.tree);
 			last_manifest->branch_tree.tree = NULL;
 		}
-		hashcpy(last_manifest_oid.hash, chunk->delta_node);
+		hg_oidcpy(&last_manifest_oid, chunk->delta_node);
 		oidcpy(&last_manifest->oid, note);
 		parse_from_existing(last_manifest);
 		load_tree(&last_manifest->branch_tree);
@@ -792,7 +797,7 @@ static void store_manifest(struct rev_chunk *chunk)
 		while (split_manifest_line(&slice, &line) == 0) {
 			uint16_t mode;
 			struct object_id file_node;
-			hashcpy(file_node.hash, line.sha1);
+			hg_oidcpy2git(&file_node, &line.oid);
 
 			if (line.attr == '\0')
 				mode = 0160644;
@@ -834,20 +839,20 @@ static void store_manifest(struct rev_chunk *chunk)
 	                chunk->parent2) == -1))
 		goto malformed;
 
-	hashcpy(last_manifest_oid.hash, chunk->node);
+	hg_oidcpy(&last_manifest_oid, chunk->node);
 	strbuf_addstr(&data, "author  <cinnabar@git> 0 +0000\n"
 	                     "committer  <cinnabar@git> 0 +0000\n"
 	                     "\n");
-	strbuf_addstr(&data, oid_to_hex(&last_manifest_oid));
+	strbuf_addstr(&data, sha1_to_hex(last_manifest_oid.hash));
 	store_object(OBJ_COMMIT, &data, NULL, &last_manifest->oid, 0);
 	strbuf_release(&data);
 	ensure_notes(&hg2git);
-	add_note(&hg2git, &last_manifest_oid, &last_manifest->oid, NULL);
+	add_note_hg(&hg2git, &last_manifest_oid, &last_manifest->oid, NULL);
 	add_head(&manifest_heads, &last_manifest->oid);
 	return;
 
 malformed:
-	die("Malformed manifest chunk for %s", sha1_to_hex(chunk->node));
+	die("Malformed manifest chunk for %s", sha1_to_hex(chunk->node->hash));
 }
 
 static void do_store(struct string_list *args)
@@ -884,18 +889,18 @@ static void do_store(struct string_list *args)
 		struct strbuf buf = STRBUF_INIT;
 		struct rev_chunk chunk;
 		size_t length;
-		struct object_id oid;
-		unsigned char *delta_node;
+		struct hg_object_id oid;
+		struct hg_object_id *delta_node;
 
 		if (args->nr != 3)
 			die("store file needs 4 arguments");
 		if (!strcmp(args->items[1].string, "cg2")) {
 			delta_node = NULL;
 		} else {
-			if (get_oid_hex(args->items[1].string, &oid))
+			if (get_sha1_hex(args->items[1].string, oid.hash))
 				die("Neither 'cg2' nor a sha1: %s",
 				    args->items[1].string);
-			delta_node = oid.hash;
+			delta_node = &oid;
 		}
 
 		// TODO: Error handling
