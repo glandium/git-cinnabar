@@ -742,6 +742,8 @@ def getbundle(repo, store, heads, branch_names):
                 if manifest:
                     got_partial = do_cinnabarclone(repo, manifest, store)
                     if not got_partial:
+                        if check_enabled('cinnabarclone'):
+                            raise Exception('cinnabarclone failed.')
                         logging.warn('Falling back to normal clone.')
             if not got_partial and repo.capable('clonebundles'):
                 bundle = get_clonebundle(repo)
