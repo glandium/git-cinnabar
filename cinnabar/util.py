@@ -1,9 +1,11 @@
 import logging
 import os
+import socket
 import subprocess
 import sys
 import time
 import traceback
+import urllib2
 from collections import (
     deque,
     Iterable,
@@ -564,6 +566,64 @@ class chunkbuffer(object):
                 left -= chunkremaining
 
         return ''.join(buf)
+
+
+class HTTPReader(object):
+    def __init__(self, url):
+        self.fh = urllib2.urlopen(url)
+        self.url = url
+        try:
+            self.length = int(self.fh.headers['content-length'])
+        except (ValueError, KeyError):
+            self.length = None
+        self.offset = 0
+
+    def read(self, size):
+        try:
+            result = self.fh.read(size)
+        except socket.error:
+            result = ''
+
+        # When self.length is None, self.offset < self.length is always
+        # false.
+        if not result and self.offset < self.length:
+            # Processing large manifests or large files can be slow.
+            # With highly compressed but nevertheless large bundles, this
+            # means it can take time to process relatively small
+            # (compressed) inputs: in the order of several minutes for a
+            # few megabytes.  When that happens, SSL connections can end
+            # up being aborted between two large TCP receives. In that
+            # case, try again with an HTTP Range request if the server
+            # supports it.
+            # TODO: This is a stopgap until processing is faster.
+            req = urllib2.Request(self.url)
+            req.add_header('Range', 'bytes=%d-' % self.offset)
+            self.fh = urllib2.urlopen(req)
+            if self.fh.getcode() != 206:
+                return ''
+            range = self.fh.headers['Content-Range'].split(None, 1)
+            if len(range) != 2:
+                return ''
+            unit, range = range
+            if unit != 'bytes':
+                return ''
+            range = range.split('-', 1)
+            if len(range) != 2:
+                return ''
+            start, end = range
+            start = int(start)
+            if start > self.offset:
+                return ''
+            logging.getLogger('httpreader').debug(
+                'Retrying from offset %d', start)
+            while start < self.offset:
+                l = len(self.fh.read(self.offset - start))
+                if not l:
+                    return ''
+                start += l
+            result = self.fh.read(size)
+        self.offset += len(result)
+        return result
 
 
 class Process(object):
