@@ -420,7 +420,8 @@ static void handle_changeset_conflict(struct hg_object_id *hg_id,
 		struct hg_object_id oid;
 		enum object_type type;
 		unsigned long len;
-		char *content = read_object_file_extended(note, &type, &len, 0);
+		char *content = read_object_file_extended(
+			the_repository, note, &type, &len, 0);
 		if (len < 50 || !starts_with(content, "changeset ") ||
 		    get_sha1_hex(&content[10], oid.hash))
 			die("Invalid git2hg note for %s", oid_to_hex(git_id));
@@ -432,8 +433,8 @@ static void handle_changeset_conflict(struct hg_object_id *hg_id,
 			break;
 
 		if (!buf.len) {
-			content = read_object_file_extended(git_id, &type,
-			                                    &len, 0);
+			content = read_object_file_extended(
+				the_repository, git_id, &type, &len, 0);
 			strbuf_add(&buf, content, len);
 			free(content);
 		}

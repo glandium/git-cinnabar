@@ -283,7 +283,8 @@ static void do_ls_tree(struct string_list *args)
 		goto not_found;
 
 	memset(&match_all, 0, sizeof(match_all));
-	read_tree_recursive(tree, "", 0, 0, &match_all, fill_ls_tree, &ctx);
+	read_tree_recursive(the_repository, tree, "", 0, 0, &match_all,
+	                    fill_ls_tree, &ctx);
 	send_buffer(&ctx.buf);
 	strbuf_release(&ctx.buf);
 
@@ -585,14 +586,14 @@ static int get_old_manifest_tree(struct tree *tree,
 		goto not_found;
 	if (strcmp(entry.path, "git"))
 		goto not_found;
-	oidcpy(&result->git, entry.oid);
+	oidcpy(&result->git, &entry.oid);
 
 	/* The second entry in the manifest tree is the hg subtree. */
 	if (!tree_entry(&desc, &entry))
 		goto not_found;
 	if (strcmp(entry.path, "hg"))
 		goto not_found;
-	oidcpy(&result->hg, entry.oid);
+	oidcpy(&result->hg, &entry.oid);
 
 	/* There shouldn't be any other entry. */
 	if (tree_entry(&desc, &entry))
@@ -650,8 +651,8 @@ static int old_manifest_tree_state_init(const struct old_manifest_tree *tree,
 }
 
 struct old_manifest_entry {
-	const struct object_id *oid;
-	const struct object_id *other_oid;
+	struct object_id oid;
+	struct object_id other_oid;
 	const char *path;
 	unsigned int mode;
 };
@@ -670,7 +671,7 @@ static int old_manifest_tree_entry(struct old_manifest_tree_state *state,
 		return 0;
 	}
 
-	result->oid = entry_hg.oid;
+	oidcpy(&result->oid, &entry_hg.oid);
 	result->path = entry_hg.path;
 	result->mode = entry_git.mode;
 	if (strcmp(entry_hg.path, entry_git.path))
@@ -679,7 +680,7 @@ static int old_manifest_tree_entry(struct old_manifest_tree_state *state,
 		if (entry_git.mode != entry_hg.mode)
 			goto corrupted;
 	}
-	result->other_oid = entry_git.oid;
+	oidcpy(&result->other_oid, &entry_git.oid);
 	return 1;
 corrupted:
 	die("Corrupted metadata");
@@ -707,7 +708,7 @@ static void recurse_manifest(const struct object_id *tree_id,
 			strbuf_addslice(&dir, base);
 			strbuf_addslice(&dir, entry_path);
 			strbuf_addch(&dir, '/');
-			recurse_manifest(entry.oid, manifest,
+			recurse_manifest(&entry.oid, manifest,
 			                 strbuf_as_slice(&dir), tree_list);
 			strbuf_release(&dir);
 			continue;
@@ -716,7 +717,7 @@ static void recurse_manifest(const struct object_id *tree_id,
 		strbuf_addslice(manifest, base);
 		strbuf_addslice(manifest, entry_path);
 		strbuf_addf(manifest, "%c%s%s\n", '\0',
-		            oid_to_hex(entry.oid), hgattr(entry.mode));
+		            oid_to_hex(&entry.oid), hgattr(entry.mode));
 	}
 
 	return;
@@ -729,7 +730,7 @@ corrupted:
 static int manifest_entry_equal(const struct name_entry *e1,
                                 const struct name_entry *e2)
 {
-	return (e1->mode == e2->mode) && (oidcmp(e1->oid, e2->oid) == 0);
+	return (e1->mode == e2->mode) && (oidcmp(&e1->oid, &e2->oid) == 0);
 }
 
 /* Return whether base + name matches path */
@@ -829,7 +830,7 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 			strbuf_addslice(manifest, strslice_slice(
 				cur_entry_path, 1, SIZE_MAX));
 			strbuf_addf(manifest, "%c%s%s\n", '\0',
-			            oid_to_hex(cur_entry.oid),
+			            oid_to_hex(&cur_entry.oid),
 			            hgattr(cur_entry.mode));
 			continue;
 		}
@@ -839,11 +840,11 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 			cur_entry_path, 1, SIZE_MAX));
 		strbuf_addch(&dir, '/');
 		if (cmp == 0 && S_ISDIR(ref_entry.mode)) {
-			recurse_manifest2(ref_entry.oid, ref_manifest,
-				          cur_entry.oid, manifest,
+			recurse_manifest2(&ref_entry.oid, ref_manifest,
+				          &cur_entry.oid, manifest,
 			                  strbuf_as_slice(&dir), tree_list);
 		} else
-			recurse_manifest(cur_entry.oid, manifest,
+			recurse_manifest(&cur_entry.oid, manifest,
 			                 strbuf_as_slice(&dir), tree_list);
 		strbuf_release(&dir);
 	}
@@ -1438,27 +1439,28 @@ static void upgrade_files(const struct old_manifest_tree *tree,
 		const struct object_id *note;
 		if (S_ISDIR(entry.mode)) {
 			struct old_manifest_tree subtree;
-			oidcpy(&subtree.git, entry.other_oid);
-			oidcpy(&subtree.hg, entry.oid);
+			oidcpy(&subtree.git, &entry.other_oid);
+			oidcpy(&subtree.hg, &entry.oid);
 			upgrade_files(&subtree, track);
 			continue;
 		}
 
-		oidcpy(&oid, entry.oid);
+		oidcpy(&oid, &entry.oid);
 		if (oidset_insert(&track->set, &oid))
 			continue;
 
-		oidcpy2hg(&hg_oid, entry.oid);
+		oidcpy2hg(&hg_oid, &entry.oid);
 		note = get_note_hg(&hg2git, &hg_oid);
 		if (!note && !is_empty_hg_file(&hg_oid))
 			goto corrupted;
-		if (note && oidcmp(note, entry.other_oid)) {
+		if (note && oidcmp(note, &entry.other_oid)) {
 			struct hg_file file;
 			struct strbuf buf = STRBUF_INIT;
 			unsigned long len;
 			enum object_type t;
 			char *content;
-			content = read_object_file_extended(note, &t, &len, 0);
+			content = read_object_file_extended(
+				the_repository, note, &t, &len, 0);
 			strbuf_attach(&buf, content, len, len);
 			hg_file_init(&file);
 			hg_file_from_memory(&file, &hg_oid, &buf);
@@ -1466,7 +1468,7 @@ static void upgrade_files(const struct old_manifest_tree *tree,
 			hg_file_store(&file, NULL);
 			hg_file_release(&file);
 			note = get_note_hg(&hg2git, &hg_oid);
-			if (oidcmp(note, entry.other_oid))
+			if (oidcmp(note, &entry.other_oid))
 				goto corrupted;
 		}
 		display_progress(track->progress,
@@ -1582,12 +1584,12 @@ static void upgrade_manifest_tree_v1(const struct object_id *tree_id,
 					&ref_state, reference, entry_buf.buf);
 				strbuf_reset(&entry_buf);
 				upgrade_manifest_tree_v1(
-					entry.oid,
-					ref_entry ? ref_entry->oid : NULL,
+					&entry.oid,
+					ref_entry ? &ref_entry->oid : NULL,
 					&new_subtree, cache);
 				strbuf_add(&tree_buf, new_subtree.hash, 20);
 			} else {
-				strbuf_add(&tree_buf, entry.oid->hash, 20);
+				strbuf_add(&tree_buf, entry.oid.hash, 20);
 			}
 		}
 
@@ -1638,18 +1640,18 @@ static void upgrade_manifest_tree(struct old_manifest_tree *tree,
 				ref_entry = lazy_tree_entry_by_name(
 					&ref_state, reference, entry_buf.buf);
 				strbuf_reset(&entry_buf);
-				oidcpy(&subtree.git, entry.other_oid);
-				oidcpy(&subtree.hg, entry.oid);
+				oidcpy(&subtree.git, &entry.other_oid);
+				oidcpy(&subtree.hg, &entry.oid);
 				upgrade_manifest_tree(
 					&subtree,
-					ref_entry ? ref_entry->oid : NULL,
+					ref_entry ? &ref_entry->oid : NULL,
 					&oid, cache);
 			} else {
 				if (S_ISLNK(mode))
 					mode = S_IFGITLINK;
 				else
 					mode |= S_IFGITLINK;
-				oidcpy(&oid, entry.oid);
+				oidcpy(&oid, &entry.oid);
 			}
 			strbuf_addf(&tree_buf, "%o _%s%c", mode, entry.path, '\0');
 			strbuf_add(&tree_buf, oid.hash, 20);
@@ -1924,7 +1926,7 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 				if (!S_ISDIR(mode))
 					goto corrupted;
 				recurse_create_git_tree(
-					entry.oid, NULL, tree_buf, NULL,
+					&entry.oid, NULL, tree_buf, NULL,
 					cache);
 				continue;
 			} else if (S_ISDIR(mode)) {
@@ -1932,13 +1934,13 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 				ref_entry = lazy_tree_entry_by_name(
 					&ref_state, reference, entry_path.buf);
 				recurse_create_git_tree(
-					entry.oid,
-					ref_entry ? ref_entry->oid : NULL,
+					&entry.oid,
+					ref_entry ? &ref_entry->oid : NULL,
 					NULL, &oid, cache);
 			} else {
 				const struct object_id *file_oid;
 				struct hg_object_id hg_oid;
-				oidcpy2hg(&hg_oid, entry.oid);
+				oidcpy2hg(&hg_oid, &entry.oid);
 				if (is_empty_hg_file(&hg_oid))
 					file_oid = ensure_empty_blob();
 				else

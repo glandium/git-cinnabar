@@ -1,8 +1,8 @@
 diff --git a/diff.c b/diff.c
-index 136d44b455..63de707cfd 100644
+index 5306c48652..94bf823ee2 100644
 --- a/diff.c
 +++ b/diff.c
-@@ -3430,7 +3430,7 @@ void fill_filespec(struct diff_filespec *spec, const struct object_id *oid,
+@@ -3810,7 +3810,7 @@ void fill_filespec(struct diff_filespec *spec, const struct object_id *oid,
  		   int oid_valid, unsigned short mode)
  {
  	if (mode) {
