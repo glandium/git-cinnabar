@@ -31,7 +31,7 @@ ifndef GIT_CINNABAR_OLD_HELPER
 GIT += -c core.packedGitWindowSize=8k
 endif
 
-export GIT_CINNABAR_CHECK=all,traceback,cinnabarclone
+export GIT_CINNABAR_CHECK=all,traceback,cinnabarclone,clonebundles
 export GIT_CINNABAR_LOG=process:3
 
 hg.pure.hg:

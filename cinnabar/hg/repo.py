@@ -747,7 +747,9 @@ def getbundle(repo, store, heads, branch_names):
                         logging.warn('Falling back to normal clone.')
             if not got_partial and repo.capable('clonebundles'):
                 bundle = get_clonebundle(repo)
-                got_partial = True
+                got_partial = bool(bundle)
+                if not got_partial and check_enabled('clonebundles'):
+                    raise Exception('clonebundles failed.')
         if bundle:
             bundle = unbundler(bundle)
             # Manual move semantics

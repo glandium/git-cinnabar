@@ -116,7 +116,7 @@ check_enabled = ConfigSetFunc(
     'cinnabar.check',
     ('nodeid', 'manifests', 'helper'),
     ('bundle', 'files', 'memory', 'time', 'traceback', 'no-mercurial',
-     'no-bundle2', 'cinnabarclone'),
+     'no-bundle2', 'cinnabarclone', 'clonebundles'),
 )
 
 experiment = ConfigSetFunc(
