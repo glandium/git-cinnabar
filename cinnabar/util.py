@@ -576,6 +576,8 @@ class HTTPReader(object):
             self.length = int(self.fh.headers['content-length'])
         except (ValueError, KeyError):
             self.length = None
+        self.can_recover = \
+            self.fh.headers.getheader('Accept-Ranges') == 'bytes'
         self.offset = 0
         self.closed = False
 
@@ -587,7 +589,7 @@ class HTTPReader(object):
 
         # When self.length is None, self.offset < self.length is always
         # false.
-        if not result and self.offset < self.length:
+        if not result and self.can_recover and self.offset < self.length:
             # Processing large manifests or large files can be slow.
             # With highly compressed but nevertheless large bundles, this
             # means it can take time to process relatively small
