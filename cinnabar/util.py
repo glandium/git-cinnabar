@@ -60,8 +60,9 @@ def init_logging():
     # filled before logging is setup, so that the output of
     # `git config -l` is never logged.
     from .git import Git
-    log_conf = Git.config('cinnabar.log')
-    if not log_conf:
+    log_conf = Git.config('cinnabar.log') or ''
+    if not log_conf and not check_enabled('memory') and \
+            not check_enabled('cpu'):
         return
     for assignment in log_conf.split(','):
         try:
