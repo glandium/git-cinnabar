@@ -478,6 +478,15 @@ class bundlerepo(object):
         return self._url
 
     def init(self, store):
+        self._store = store
+
+    def _ensure_ready(self):
+        assert hasattr(self, '_store')
+        if self._store is None:
+            return
+        store = self._store
+        self._store = None
+
         raw_unbundler = unbundler(self._bundle)
         self._dag = gitdag()
         branches = set()
@@ -518,9 +527,11 @@ class bundlerepo(object):
         self._unbundler = repo_unbundler()
 
     def heads(self):
+        self._ensure_ready()
         return self._heads
 
     def branchmap(self):
+        self._ensure_ready()
         return self._branchmap
 
     def capable(self, capability):
@@ -530,6 +541,7 @@ class bundlerepo(object):
         return {}
 
     def known(self, heads):
+        self._ensure_ready()
         return [h in self._dag for h in heads]
 
 
