@@ -582,51 +582,54 @@ class HTTPReader(object):
         self.closed = False
 
     def read(self, size):
-        try:
-            result = self.fh.read(size)
-        except socket.error:
-            result = ''
+        result = []
+        length = 0
+        while length < size:
+            try:
+                buf = self.fh.read(size - length)
+            except socket.error:
+                buf = ''
+            if not buf:
+                # When self.length is None, self.offset < self.length is always
+                # false.
+                if self.can_recover and self.offset < self.length:
+                    current_fh = self.fh
+                    self.fh = self._reopen()
+                    if self.fh is current_fh:
+                        break
+                    continue
+                break
+            length += len(buf)
+            self.offset += len(buf)
+            result.append(buf)
+        return ''.join(result)
 
-        # When self.length is None, self.offset < self.length is always
-        # false.
-        if not result and self.can_recover and self.offset < self.length:
-            # Processing large manifests or large files can be slow.
-            # With highly compressed but nevertheless large bundles, this
-            # means it can take time to process relatively small
-            # (compressed) inputs: in the order of several minutes for a
-            # few megabytes.  When that happens, SSL connections can end
-            # up being aborted between two large TCP receives. In that
-            # case, try again with an HTTP Range request if the server
-            # supports it.
-            # TODO: This is a stopgap until processing is faster.
-            req = urllib2.Request(self.url)
-            req.add_header('Range', 'bytes=%d-' % self.offset)
-            self.fh = urllib2.urlopen(req)
-            if self.fh.getcode() != 206:
-                return ''
-            range = self.fh.headers['Content-Range'].split(None, 1)
-            if len(range) != 2:
-                return ''
-            unit, range = range
-            if unit != 'bytes':
-                return ''
-            range = range.split('-', 1)
-            if len(range) != 2:
-                return ''
-            start, end = range
+    def _reopen(self):
+        # This reopens the network connection with a HTTP Range request
+        # starting from self.offset.
+        req = urllib2.Request(self.url)
+        req.add_header('Range', 'bytes=%d-' % self.offset)
+        fh = urllib2.urlopen(req)
+        if fh.getcode() != 206:
+            return self.fh
+        range = fh.headers.getheader('Content-Range') or ''
+        unit, _, range = range.partition(' ')
+        if unit != 'bytes':
+            return self.fh
+        start, _, end = range.lstrip().partition('-')
+        try:
             start = int(start)
-            if start > self.offset:
-                return ''
-            logging.getLogger('httpreader').debug(
-                'Retrying from offset %d', start)
-            while start < self.offset:
-                l = len(self.fh.read(self.offset - start))
-                if not l:
-                    return ''
-                start += l
-            result = self.fh.read(size)
-        self.offset += len(result)
-        return result
+        except (TypeError, ValueError):
+            start = 0
+        if start > self.offset:
+            return self.fh
+        logging.getLogger('httpreader').debug('Retrying from offset %d', start)
+        while start < self.offset:
+            l = len(fh.read(self.offset - start))
+            if not l:
+                return self.fh
+            start += l
+        return fh
 
     def readable(self):
         return True

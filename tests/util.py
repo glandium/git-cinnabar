@@ -1,5 +1,9 @@
+from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from threading import Thread
+
 import unittest
 from cinnabar.util import (
+    HTTPReader,
     byte_diff,
     lrucache,
     sorted_merge,
@@ -427,3 +431,71 @@ class TestLRUCache(unittest.TestCase):
         self.assertEquals(len(cache), 2)
 
         foo.invalidate(3)
+
+
+class TestHTTPReader(unittest.TestCase):
+    def test_recovery(self):
+        sizes = {}
+        length = 0
+        for s in [162000, 64000, 57932]:
+            sizes[length] = s
+            length += s
+        the_test = self
+
+        # This HTTP server handler cuts responses before the full content is
+        # returned, according to the partial sizes defined above.
+        # It assumes the client will retry with a Range request starting from
+        # where it left, up to the end of the file.
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                range_def = self.headers.getheader('Range')
+                if range_def:
+                    start, end = range_def.partition('bytes=')[2].split('-')
+                    start = int(start) if start else 0
+                    end = int(end) if end else length - 1
+                    the_test.assertIn(start, sizes)
+                    the_test.assertEqual(end, length - 1)
+                    self.send_response(206)
+                    self.send_header('Content-Range',
+                                     'bytes %d-%d/%d' % (start, end, length))
+                else:
+                    start = 0
+                    self.send_response(200)
+                self.send_header('Content-Type', 'text/plain')
+                self.send_header('Content-Length', str(length))
+                self.send_header('Accept-Ranges', 'bytes')
+                self.end_headers()
+
+                buf = '-' * 4096
+                left = sizes[start]
+                while left:
+                    if left < len(buf):
+                        buf = buf[:left]
+                    self.wfile.write(buf)
+                    left -= len(buf)
+
+            def log_request(self, *args, **kwargs):
+                pass
+
+        server = HTTPServer(('', 0), Handler)
+        port = server.socket.getsockname()[1]
+        thread = Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            reader = HTTPReader('http://localhost:%d/foo' % port)
+            read = 0
+            while True:
+                buf = reader.read(1250)
+                # If the read above is interrupted and the HTTPReader can
+                # recover with a range request, we still expect the right
+                # size.
+                self.assertEqual(len(buf), min(1250, length - read))
+                read += len(buf)
+                if not buf:
+                    break
+
+            self.assertEqual(read, length)
+
+        finally:
+            server.shutdown()
+            thread.join()
