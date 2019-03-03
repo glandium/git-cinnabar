@@ -577,6 +577,7 @@ class HTTPReader(object):
         except (ValueError, KeyError):
             self.length = None
         self.offset = 0
+        self.closed = False
 
     def read(self, size):
         try:
@@ -624,6 +625,14 @@ class HTTPReader(object):
             result = self.fh.read(size)
         self.offset += len(result)
         return result
+
+    def readable(self):
+        return True
+
+    def readinto(self, b):
+        buf = self.read(len(b))
+        b[:len(buf)] = buf
+        return len(buf)
 
 
 class Process(object):

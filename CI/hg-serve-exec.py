@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from SimpleHTTPServer import SimpleHTTPRequestHandler
 from threading import Thread
 
 try:
@@ -131,6 +132,8 @@ class OtherServer(object):
     def __init__(self, typ):
         if typ == 'git':
             cls = GitServer
+        elif typ == 'http':
+            cls = SimpleHTTPRequestHandler
         else:
             assert False
         self.httpd = HTTPServer(('', 8080), cls)
