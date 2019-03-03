@@ -117,7 +117,7 @@ class ConfigSetFunc(object):
 check_enabled = ConfigSetFunc(
     'cinnabar.check',
     ('nodeid', 'manifests', 'helper'),
-    ('bundle', 'files', 'memory', 'time', 'traceback', 'no-mercurial',
+    ('bundle', 'files', 'memory', 'cpu', 'time', 'traceback', 'no-mercurial',
      'no-bundle2', 'cinnabarclone', 'clonebundles'),
 )
 
@@ -738,17 +738,26 @@ class TypedProperty(object):
         self.values[obj] = getattr(self.cls, 'from_obj', self.cls)(value)
 
 
-class MemoryReporter(Thread):
-    def __init__(self):
-        super(MemoryReporter, self).__init__()
+class MemoryCPUReporter(Thread):
+    def __init__(self, memory=False, cpu=False):
+        assert memory or cpu
+        super(MemoryCPUReporter, self).__init__()
         self._queue = Queue(1)
-        self._logger = logging.getLogger('memory')
+        self._logger = logging.getLogger('report')
         self._logger.setLevel(logging.INFO)
+        self._format = '[%s(%d)] %r'
+        if memory and cpu:
+            self._format += ' %r'
+            self._info = lambda p: (p.memory_info(), p.cpu_times())
+        elif memory:
+            self._info = lambda p: (p.memory_info(),)
+        elif cpu:
+            self._info = lambda p: (p.cpu_times(),)
         self.start()
 
     def _report(self, proc):
         self._logger.info(
-            '[%s(%d)] %r', proc.name(), proc.pid, proc.memory_info())
+            self._format, proc.name(), proc.pid, *self._info(proc))
 
     def run(self):
         import psutil
@@ -774,8 +783,9 @@ class MemoryReporter(Thread):
 
 def run(func):
     init_logging()
-    if check_enabled('memory'):
-        reporter = MemoryReporter()
+    if check_enabled('memory') or check_enabled('cpu'):
+        reporter = MemoryCPUReporter(memory=check_enabled('memory'),
+                                     cpu=check_enabled('cpu'))
 
     try:
         retcode = func(sys.argv[1:])
@@ -796,6 +806,6 @@ def run(func):
                 '`git -c cinnabar.check=traceback <command>` to see the '
                 'full traceback.\n')
     finally:
-        if check_enabled('memory'):
+        if check_enabled('memory') or check_enabled('cpu'):
             reporter.shutdown()
     sys.exit(retcode)
