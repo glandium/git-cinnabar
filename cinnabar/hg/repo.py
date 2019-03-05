@@ -579,35 +579,38 @@ def unbundler(bundle):
 
 
 def get_clonebundle(repo):
-    try:
-        if check_enabled('no-mercurial'):
-            raise ImportError('Do not use mercurial')
-        from mercurial.exchange import (
-            parseclonebundlesmanifest,
-            filterclonebundleentries,
-        )
-    except ImportError:
-        return None
+    url = Git.config('cinnabar.clonebundle')
+    if not url:
+        try:
+            if check_enabled('no-mercurial'):
+                raise ImportError('Do not use mercurial')
+            from mercurial.exchange import (
+                parseclonebundlesmanifest,
+                filterclonebundleentries,
+            )
+        except ImportError:
+            return None
 
-    bundles = repo._call('clonebundles')
+        bundles = repo._call('clonebundles')
 
-    class dummy(object):
-        pass
+        class dummy(object):
+            pass
 
-    fakerepo = dummy()
-    fakerepo.requirements = set()
-    fakerepo.supportedformats = set()
-    fakerepo.ui = repo.ui
+        fakerepo = dummy()
+        fakerepo.requirements = set()
+        fakerepo.supportedformats = set()
+        fakerepo.ui = repo.ui
 
-    entries = parseclonebundlesmanifest(fakerepo, bundles)
-    if not entries:
-        return None
+        entries = parseclonebundlesmanifest(fakerepo, bundles)
+        if not entries:
+            return None
 
-    entries = filterclonebundleentries(fakerepo, entries)
-    if not entries:
-        return None
+        entries = filterclonebundleentries(fakerepo, entries)
+        if not entries:
+            return None
 
-    url = entries[0].get('URL')
+        url = entries[0].get('URL')
+
     if not url:
         return None
 
