@@ -337,7 +337,7 @@ static void oid_array_insert(struct oid_array *array, int index,
 static void oid_array_remove(struct oid_array *array, int index)
 {
 	memmove(&array->oid[index], &array->oid[index+1],
-	        sizeof(array->oid[0]) * (array->nr-- - index));
+	        sizeof(array->oid[0]) * (--array->nr - index));
 }
 
 void ensure_heads(struct oid_array *heads)
