@@ -1120,6 +1120,7 @@ error:
 static void do_version(struct string_list *args)
 {
 	long int version;
+	struct strbuf version_s = STRBUF_INIT;
 
 	if (args->nr != 1)
 		exit(1);
@@ -1131,8 +1132,12 @@ static void do_version(struct string_list *args)
 	if (!version || version < MIN_CMD_VERSION || version > CMD_VERSION)
 		exit(128);
 
-	write_or_die(1, STRINGIFY(HELPER_HASH) "\n",
-	             sizeof(STRINGIFY(HELPER_HASH)));
+	strbuf_add(&version_s, STRINGIFY(HELPER_HASH), sizeof(STRINGIFY(HELPER_HASH)) - 1);
+	if (version >= 3000)
+		strbuf_addf(&version_s, " " STRINGIFY(CMD_VERSION));
+	strbuf_addch(&version_s, '\n');
+	write_or_die(1, version_s.buf, version_s.len);
+	strbuf_release(&version_s);
 }
 
 static void string_list_as_oid_array(struct string_list *list,
