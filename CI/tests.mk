@@ -64,6 +64,10 @@ COMPARE_REFS = $(call COMPARE_COMMANDS,$(call GET_REF_SHA1,$1,$(if $3, $(call $3
 HG_INIT = $(HG) init $1
 %.nobundle2: HG_INIT += ; (echo "[experimental]"; echo "bundle2-advertise = false") >> $1/.hg/hgrc
 
+print-version:
+	$(GIT) cinnabar --version
+
+check: print-version
 check: hg.empty.git
 check: hg.git hg.git.nobundle2
 check: hg.unbundle.git
