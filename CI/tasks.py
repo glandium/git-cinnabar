@@ -362,6 +362,7 @@ class Task(object):
             else:
                 raise Exception("Don't know how to handle {}".format(k))
         task['dependencies'] = sorted(dependencies)
+        task.setdefault('routes', []).append('checks')
         self.task = task
         Task.by_id.setdefault(self.id, self)
 
