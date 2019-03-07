@@ -1306,6 +1306,7 @@ static void connected_loop(struct hg_connection *conn)
 	while (strbuf_getline(&buf, stdin) != EOF) {
 		struct string_list args = STRING_LIST_INIT_NODUP;
 		const char *command;
+		record_command(&buf);
 		split_command(buf.buf, &command, &args);
 
 		if (!*command) {
@@ -2214,6 +2215,7 @@ int cmd_main(int argc, const char *argv[])
 	while (strbuf_getline(&buf, stdin) != EOF) {
 		struct string_list args = STRING_LIST_INIT_NODUP;
 		const char *command;
+		record_command(&buf);
 		split_command(buf.buf, &command, &args);
 		if (!strcmp("version", command)) {
 			do_version(&args);

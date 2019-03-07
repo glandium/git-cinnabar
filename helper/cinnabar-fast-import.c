@@ -267,10 +267,9 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 	return 2;
 }
 
-/* Fill fast-import.c's command_buf and recent commands */
+/* Fill fast-import.c's command_buf */
 static void fill_command_buf(const char *command, struct string_list *args)
 {
-	struct recent_command *rc;
 	struct string_list_item *arg;
 
 	strbuf_detach(&command_buf, NULL);
@@ -279,23 +278,6 @@ static void fill_command_buf(const char *command, struct string_list *args)
 		strbuf_addch(&command_buf, ' ');
 		strbuf_addstr(&command_buf, arg->string);
 	}
-
-	/* Copied from fast-import.c's read_next_command() */
-	rc = rc_free;
-	if (rc)
-		rc_free = rc->next;
-	else {
-		rc = cmd_hist.next;
-		cmd_hist.next = rc->next;
-		cmd_hist.next->prev = &cmd_hist;
-		free(rc->buf);
-	}
-
-	rc->buf = command_buf.buf;
-	rc->prev = cmd_tail;
-	rc->next = cmd_hist.prev;
-	rc->prev->next = rc;
-	cmd_tail = rc;
 }
 
 void maybe_reset_notes(const char *branch)
@@ -1021,4 +1003,23 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		return 0;
 
 	return 1;
+}
+
+void record_command(struct strbuf *buf) {
+	struct recent_command *rc;
+	// Copied from fast-import.c's run_next_command.
+	rc = rc_free;
+	if (rc)
+		rc_free = rc->next;
+	else {
+		rc = cmd_hist.next;
+		cmd_hist.next = rc->next;
+		cmd_hist.next->prev = &cmd_hist;
+		free(rc->buf);
+	}
+	rc->buf = xstrndup(buf->buf, buf->len);
+	rc->prev = cmd_tail;
+	rc->next = cmd_hist.prev;
+	rc->prev->next = rc;
+	cmd_tail = rc;
 }
