@@ -518,7 +518,7 @@ class bundlerepo(object):
             self._branchmap[tag].append(unhexlify(node))
 
         def repo_unbundler():
-            yield chunks
+            yield iter(chunks)
             yield next(raw_unbundler, None)
             yield next(raw_unbundler, None)
             if next(raw_unbundler, None) is not None:
@@ -619,9 +619,52 @@ def get_clonebundle(repo):
     return unbundle_fh(HTTPReader(url), url)
 
 
+# TODO: Get the changegroup stream directly and send it, instead of
+# recreating a stream we parsed.
+def store_changegroup(changegroup):
+    changesets = next(changegroup, None)
+    first_changeset = next(changesets, None)
+    version = 1
+    if isinstance(first_changeset, RawRevChunk02):
+        version = 2
+    with GitHgHelper.store_changegroup(version) as fh:
+        def iter_chunks(iter):
+            for chunk in iter:
+                fh.write(struct.pack('>l', len(chunk) + 4))
+                fh.write(chunk)
+                yield chunk
+            fh.write(struct.pack('>l', 0))
+
+        yield iter_chunks(chain((first_changeset,), changesets))
+        yield iter_chunks(next(changegroup, None))
+
+        def iter_files(iter):
+            last_name = None
+            for name, chunk in iter:
+                if name != last_name:
+                    if last_name is not None:
+                        fh.write(struct.pack('>l', 0))
+                    fh.write(struct.pack('>l', len(name) + 4))
+                    fh.write(name)
+                last_name = name
+                fh.write(struct.pack('>l', len(chunk) + 4))
+                fh.write(chunk)
+                yield name, chunk
+            if last_name is not None:
+                fh.write(struct.pack('>l', 0))
+            fh.write(struct.pack('>l', 0))
+
+        yield iter_files(next(changegroup, None))
+
+
 class BundleApplier(object):
     def __init__(self, bundle):
         self._bundle = bundle
+        self._use_store_changegroup = False
+        if GitHgHelper.supports(GitHgHelper.STORE_CHANGEGROUP) and \
+                experiment('store-changegroup'):
+            self._use_store_changegroup = True
+            self._bundle = store_changegroup(bundle)
 
     def __call__(self, store):
         changeset_chunks = ChunksCollection(progress_iter(
@@ -630,8 +673,9 @@ class BundleApplier(object):
         for rev_chunk in progress_iter(
                 'Reading and importing {} manifests',
                 next(self._bundle, None)):
-            GitHgHelper.store('manifest', rev_chunk)
-            store.check_manifest(rev_chunk)
+            if not self._use_store_changegroup:
+                GitHgHelper.store('manifest', rev_chunk)
+                store.check_manifest(rev_chunk)
 
         def enumerate_files(iter):
             last_name = None
@@ -645,7 +689,8 @@ class BundleApplier(object):
         for rev_chunk in progress_enum(
                 'Reading and importing {} revisions of {} files',
                 enumerate_files(next(self._bundle, None))):
-            GitHgHelper.store('file', rev_chunk)
+            if not self._use_store_changegroup:
+                GitHgHelper.store('file', rev_chunk)
 
         if next(self._bundle, None) is not None:
             assert False

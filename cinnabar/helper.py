@@ -155,6 +155,7 @@ class BaseHelper(object):
 
 class GitHgHelper(BaseHelper):
     VERSION = 3000
+    STORE_CHANGEGROUP = 3001
     _helper = False
 
     @classmethod
@@ -281,8 +282,17 @@ class GitHgHelper(BaseHelper):
                 assert False
             with self.query('store', what, delta_node, str(len(obj))):
                 self._helper.stdin.write(obj)
+        elif what == 'manifest_changegroup':
+            with self.query('store', what, *args):
+                return self._helper.stdin
         else:
             assert False
+
+    @classmethod
+    @contextmanager
+    def store_changegroup(self, version):
+        with self.query('store', 'changegroup', str(version)):
+            yield self._helper.stdin
 
     @classmethod
     def heads(self, what):

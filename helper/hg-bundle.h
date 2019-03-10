@@ -24,6 +24,8 @@ extern size_t copy_data(size_t len, FILE *in, struct bundle_writer *out);
 extern void copy_bundle(FILE *in, FILE *out);
 extern void copy_bundle_to_strbuf(FILE *in, struct strbuf *out);
 
+extern void read_chunk(FILE *in, struct strbuf *out);
+
 struct rev_chunk {
 	struct strbuf raw;
 

@@ -837,6 +837,27 @@ malformed:
 	die("Malformed manifest chunk for %s", sha1_to_hex(chunk->node->hash));
 }
 
+static void for_each_changegroup_chunk(FILE *in, int version,
+                                       void (*callback)(struct rev_chunk *))
+{
+	int cg2 = version == 2;
+	struct strbuf buf = STRBUF_INIT;
+	struct rev_chunk chunk = { STRBUF_INIT, };
+	struct hg_object_id delta_node = { hash : { 0, }};
+
+	while (read_chunk(in, &buf), buf.len) {
+		rev_chunk_from_memory(&chunk, &buf, cg2 ? NULL : &delta_node);
+		if (!cg2 && is_null_hg_oid(&delta_node))
+			hg_oidcpy(&delta_node, chunk.parent1);
+		callback(&chunk);
+		if (!cg2)
+			hg_oidcpy(&delta_node, chunk.node);
+		rev_chunk_release(&chunk);
+	}
+}
+
+static void skip_chunk(struct rev_chunk *chunk) {}
+
 static void do_store(struct string_list *args)
 {
 	if (args->nr < 2)
@@ -894,6 +915,27 @@ static void do_store(struct string_list *args)
 		else
 			store_manifest(&chunk);
 		rev_chunk_release(&chunk);
+	} else if (!strcmp(args->items[0].string, "changegroup")) {
+		int version;
+		struct strbuf buf = STRBUF_INIT;
+		if (args->nr != 2)
+			die("store changegroup only takes one argument");
+		if (!strcmp(args->items[1].string, "1"))
+			version = 1;
+		else if (!strcmp(args->items[1].string, "2"))
+			version = 2;
+		else
+			die("unsupported version");
+
+		/* changesets */
+		for_each_changegroup_chunk(stdin, version, skip_chunk);
+		/* manifests */
+		for_each_changegroup_chunk(stdin, version, store_manifest);
+		/* files */
+		while (read_chunk(stdin, &buf), buf.len) {
+			strbuf_release(&buf);
+			for_each_changegroup_chunk(stdin, version, store_file);
+		}
 	} else {
 		die("Unknown store kind: %s", args->items[0].string);
 	}
