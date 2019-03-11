@@ -998,14 +998,48 @@ static void hg_sha1(struct strbuf *data, const struct hg_object_id *parent1,
 	git_SHA1_Final(result->hash, &ctx);
 }
 
+int check_manifest(const struct object_id *oid,
+                   struct hg_object_id *hg_oid)
+{
+	struct hg_object_id parent1, parent2, stored, computed;
+	const struct commit *manifest_commit;
+	struct strbuf *manifest;
+
+	manifest = generate_manifest(oid);
+	if (!manifest)
+		return 0;
+
+	manifest_commit = lookup_commit(the_repository, oid);
+	if (!manifest_commit)
+		return 0;
+
+	if (manifest_commit->parents) {
+		get_manifest_oid(manifest_commit->parents->item, &parent1);
+		if (manifest_commit->parents->next) {
+			get_manifest_oid(manifest_commit->parents->next->item,
+			                 &parent2);
+		} else
+			hg_oidclr(&parent2);
+	} else {
+		hg_oidclr(&parent1);
+		hg_oidclr(&parent2);
+	}
+
+	if (!hg_oid)
+		hg_oid = &computed;
+
+	hg_sha1(manifest, &parent1, &parent2, hg_oid);
+
+	get_manifest_oid(manifest_commit, &stored);
+
+	return hg_oideq(&stored, hg_oid);
+}
+
 static void do_check_manifest(struct string_list *args)
 {
-	struct hg_object_id parent1, parent2, result;
-	struct hg_object_id hg_oid;
+	struct hg_object_id hg_oid, stored;
 	struct object_id oid;
 	const struct object_id *manifest_oid;
-	const struct commit *manifest_commit;
-	struct strbuf *manifest = NULL;
 
 	if (args->nr != 1)
 		goto error;
@@ -1023,36 +1057,14 @@ static void do_check_manifest(struct string_list *args)
 			goto error;
 	}
 
-	manifest = generate_manifest(manifest_oid);
-	if (!manifest)
+	if (!check_manifest(manifest_oid, &stored))
 		goto error;
 
-	manifest_commit = lookup_commit(the_repository, manifest_oid);
-	if (!manifest_commit)
+	if (manifest_oid != &oid && !hg_oideq(&stored, &hg_oid))
 		goto error;
 
-	if (manifest_commit->parents) {
-		get_manifest_oid(manifest_commit->parents->item, &parent1);
-		if (manifest_commit->parents->next) {
-			get_manifest_oid(manifest_commit->parents->next->item,
-			                 &parent2);
-		} else
-			hg_oidclr(&parent2);
-	} else {
-		hg_oidclr(&parent1);
-		hg_oidclr(&parent2);
-	}
-
-	hg_sha1(manifest, &parent1, &parent2, &result);
-
-	if (manifest_oid == &oid)
-		get_manifest_oid(manifest_commit, &hg_oid);
-
-	if (hg_oideq(&result, &hg_oid)) {
-		write_or_die(1, "ok\n", 3);
-		return;
-	}
-
+	write_or_die(1, "ok\n", 3);
+	return;
 error:
 	write_or_die(1, "error\n", 6);
 }

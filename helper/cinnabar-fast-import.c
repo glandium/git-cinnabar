@@ -831,6 +831,9 @@ static void store_manifest(struct rev_chunk *chunk)
 	ensure_notes(&hg2git);
 	add_note_hg(&hg2git, &last_manifest_oid, &last_manifest->oid, NULL);
 	add_head(&manifest_heads, &last_manifest->oid);
+	if ((cinnabar_check & CHECK_MANIFESTS) &&
+	    !check_manifest(&last_manifest->oid, NULL))
+		die("sha1 mismatch for node %s", sha1_to_hex(chunk->node->hash));
 	return;
 
 malformed:

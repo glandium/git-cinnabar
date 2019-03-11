@@ -675,7 +675,6 @@ class BundleApplier(object):
                 next(self._bundle, None)):
             if not self._use_store_changegroup:
                 GitHgHelper.store('manifest', rev_chunk)
-                store.check_manifest(rev_chunk)
 
         def enumerate_files(iter):
             last_name = None
