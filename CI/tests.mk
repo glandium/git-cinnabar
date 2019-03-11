@@ -171,6 +171,8 @@ hg.bundle.git: hg.git
 hg.incr.bundle.git hg.bundle.git:
 	$(GIT) -C $^ bundle create $(CURDIR)/$@ refs/cinnabar/metadata
 
+HG_CINNABARCLONE_EXT=$(or $(wildcard $(TOPDIR)/mercurial/cinnabarclone.py),$(TOPDIR)/hg/cinnabarclone.py)
+
 hg.cinnabarclone.git: hg.incr.base.git hg.git
 hg.cinnabarclone-full.git: hg.git
 hg.cinnabarclone-bundle.git: hg.incr.bundle.git hg.git
@@ -182,7 +184,7 @@ hg.cinnabarclone-bundle.git hg.cinnabarclone-bundle-full.git: OTHER_SERVER=http
 hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-bundle.git hg.cinnabarclone-bundle-full.git hg.cinnabarclone-graft.git hg.cinnabarclone-graft-replace.git: hg.pure.hg
 	$(HG) clone -U $< $@.hg
 	echo http://localhost:8080/$(word 2,$^) > $@.hg/.hg/cinnabar.manifest
-	OTHER_SERVER=$(OTHER_SERVER) $(HG) -R $@.hg --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(TOPDIR)/mercurial/cinnabarclone.py serve-and-exec -- $(GIT) -c cinnabar.experiments=git-clone clone hg://localhost:8000.http/ $@
+	OTHER_SERVER=$(OTHER_SERVER) $(HG) -R $@.hg --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(HG_CINNABARCLONE_EXT) serve-and-exec -- $(GIT) -c cinnabar.experiments=git-clone clone hg://localhost:8000.http/ $@
 	$(call COMPARE_REFS, $(or $(word 3,$^),$(word 2,$^)), $@)
 	$(GIT) -C $@ cinnabar fsck --manifest --files
 

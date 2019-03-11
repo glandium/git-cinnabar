@@ -238,9 +238,26 @@ def decision():
         )
 
     TestTask(
+        variant='coverage',
+        extra_desc='graft',
+        env={
+            'GRAFT': '1',
+        },
+    )
+
+    TestTask(
         variant='old',
         env={
             'GIT_CINNABAR_OLD_HELPER': '1',
+        },
+    )
+
+    TestTask(
+        variant='old',
+        extra_desc='graft',
+        env={
+            'GIT_CINNABAR_OLD_HELPER': '1',
+            'GRAFT': '1',
         },
     )
 
@@ -253,6 +270,15 @@ def decision():
     )
 
     TestTask(
+        commit=rev,
+        clone=rev,
+        extra_desc='old python graft',
+        env={
+            'GRAFT': '1',
+        },
+    )
+
+    TestTask(
         variant='coverage',
         extra_desc='experiments',
         env={
@@ -262,8 +288,9 @@ def decision():
 
     TestTask(
         variant='coverage',
-        extra_desc='graft',
+        extra_desc='experiments graft',
         env={
+            'GIT_CINNABAR_EXPERIMENTS': 'true',
             'GRAFT': '1',
         },
     )
