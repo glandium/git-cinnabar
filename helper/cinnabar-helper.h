@@ -18,6 +18,7 @@
 extern int metadata_flags;
 
 #define CHECK_HELPER 0x1
+#define CHECK_MANIFESTS 0x2
 
 extern int cinnabar_check;
 

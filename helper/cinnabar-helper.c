@@ -2137,11 +2137,18 @@ static void init_config()
 	if (!config("check", &conf)) {
 		struct strbuf **check = strbuf_split(&conf, ',');
 		struct strbuf **c;
-		for (c = check; *c; c++)
+		for (c = check; *c; c++) {
+			// strbuf_split leaves the `,`.
+			if ((*c)->buf[(*c) -> len - 1] == ',')
+				strbuf_setlen(*c, (*c)->len - 1);
 			if (!strcmp((*c)->buf, "true") ||
-			    !strcmp((*c)->buf, "all") ||
-			    !strcmp((*c)->buf, "helper"))
+			    !strcmp((*c)->buf, "all"))
+				cinnabar_check = -1;
+			else if (!strcmp((*c)->buf, "helper"))
 				cinnabar_check |= CHECK_HELPER;
+			else if (!strcmp((*c)->buf, "manifests"))
+				cinnabar_check |= CHECK_MANIFESTS;
+		}
 		strbuf_list_free(check);
 	}
 	strbuf_release(&conf);
