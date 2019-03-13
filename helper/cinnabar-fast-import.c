@@ -885,7 +885,7 @@ static void for_each_changegroup_chunk(struct chunk_queue *queue, int version,
 	int cg2 = version == 2;
 	struct strbuf buf = STRBUF_INIT;
 	struct rev_chunk chunk = { STRBUF_INIT, };
-	struct hg_object_id delta_node = { hash : { 0, }};
+	struct hg_object_id delta_node = {{ 0, }};
 
 	while (get_chunk(queue, &buf), buf.len) {
 		rev_chunk_from_memory(&chunk, &buf, cg2 ? NULL : &delta_node);
