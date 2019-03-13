@@ -656,6 +656,9 @@ def store_changegroup(changegroup):
 
         yield iter_files(next(changegroup, None))
 
+        if next(changegroup, None) is not None:
+            assert False
+
 
 class BundleApplier(object):
     def __init__(self, bundle):
