@@ -840,46 +840,7 @@ malformed:
 	die("Malformed manifest chunk for %s", sha1_to_hex(chunk->node->hash));
 }
 
-struct chunk_queue_node {
-	struct chunk_queue_node *next;
-	struct strbuf chunk;
-};
-
-struct chunk_queue {
-	struct chunk_queue_node *head;
-	struct chunk_queue_node *tail;
-};
-
-static void queue_chunk(struct chunk_queue *queue, struct strbuf *raw_chunk)
-{
-	struct chunk_queue_node *node =
-		xmalloc(sizeof(struct chunk_queue_node));
-	node->next = NULL;
-	strbuf_init(&node->chunk, 0);
-	strbuf_swap(&node->chunk, raw_chunk);
-
-	if (queue->head) {
-		queue->tail->next = node;
-	} else {
-		queue->head = node;
-	}
-	queue->tail = node;
-}
-
-static void get_chunk(struct chunk_queue *queue, struct strbuf *buf)
-{
-	if (queue->head) {
-		struct chunk_queue_node *node = queue->head;
-		queue->head = queue->head->next;
-		if (!queue->head)
-			queue->tail = NULL;
-		strbuf_swap(&node->chunk, buf);
-		free(node);
-	} else
-		die("Empty queue");
-}
-
-static void for_each_changegroup_chunk(struct chunk_queue *queue, int version,
+static void for_each_changegroup_chunk(FILE *in, int version,
                                        void (*callback)(struct rev_chunk *))
 {
 	int cg2 = version == 2;
@@ -887,7 +848,7 @@ static void for_each_changegroup_chunk(struct chunk_queue *queue, int version,
 	struct rev_chunk chunk = { STRBUF_INIT, };
 	struct hg_object_id delta_node = {{ 0, }};
 
-	while (get_chunk(queue, &buf), buf.len) {
+	while (read_chunk(in, &buf), buf.len) {
 		rev_chunk_from_memory(&chunk, &buf, cg2 ? NULL : &delta_node);
 		if (!cg2 && is_null_hg_oid(&delta_node))
 			hg_oidcpy(&delta_node, chunk.parent1);
@@ -897,6 +858,8 @@ static void for_each_changegroup_chunk(struct chunk_queue *queue, int version,
 		rev_chunk_release(&chunk);
 	}
 }
+
+static void skip_chunk(struct rev_chunk *chunk) {}
 
 static void do_store(struct string_list *args)
 {
@@ -958,7 +921,6 @@ static void do_store(struct string_list *args)
 	} else if (!strcmp(args->items[0].string, "changegroup")) {
 		int version;
 		struct strbuf buf = STRBUF_INIT;
-		struct chunk_queue queue = { NULL, };
 		if (args->nr != 2)
 			die("store changegroup only takes one argument");
 		if (!strcmp(args->items[1].string, "1"))
@@ -969,30 +931,13 @@ static void do_store(struct string_list *args)
 			die("unsupported version");
 
 		/* changesets */
-		while (read_chunk(stdin, &buf), buf.len) {
-			strbuf_release(&buf);
-		}
+		for_each_changegroup_chunk(stdin, version, skip_chunk);
 		/* manifests */
-		while (read_chunk(stdin, &buf), buf.len) {
-			queue_chunk(&queue, &buf);
-		}
-		queue_chunk(&queue, &buf);
+		for_each_changegroup_chunk(stdin, version, store_manifest);
 		/* files */
 		while (read_chunk(stdin, &buf), buf.len) {
-			queue_chunk(&queue, &buf);
-			while (read_chunk(stdin, &buf), buf.len) {
-				queue_chunk(&queue, &buf);
-			}
-			queue_chunk(&queue, &buf);
-		}
-		queue_chunk(&queue, &buf);
-
-		/* manifests */
-		for_each_changegroup_chunk(&queue, version, store_manifest);
-		/* files */
-		while (get_chunk(&queue, &buf), buf.len) {
 			strbuf_release(&buf);
-			for_each_changegroup_chunk(&queue, version, store_file);
+			for_each_changegroup_chunk(stdin, version, store_file);
 		}
 	} else {
 		die("Unknown store kind: %s", args->items[0].string);

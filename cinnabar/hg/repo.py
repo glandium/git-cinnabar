@@ -670,11 +670,6 @@ class BundleApplier(object):
             self._bundle = store_changegroup(bundle)
 
     def __call__(self, store):
-        if self._use_store_changegroup:
-            import cinnabar.util
-            progress = cinnabar.util.progress
-            cinnabar.util.progress = False
-
         changeset_chunks = ChunksCollection(progress_iter(
             'Reading {} changesets', next(self._bundle, None)))
 
@@ -702,9 +697,6 @@ class BundleApplier(object):
         if next(self._bundle, None) is not None:
             assert False
         del self._bundle
-
-        if self._use_store_changegroup:
-            cinnabar.util.progress = progress
 
         for cs in progress_iter(
                 'Importing {} changesets',
