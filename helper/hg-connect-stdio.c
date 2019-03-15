@@ -110,7 +110,7 @@ static void stdio_changegroup_command(struct hg_connection *conn, FILE *out,
 
 	/* We're going to receive a stream, but we don't know how big it is
 	 * going to be in advance, so we have to read it according to its
-	 * format: the changegroup format. For now, only support changegroupv1
+	 * format: changegroup or bundle2.
 	 */
 	copy_bundle(conn->stdio.out, out);
 	va_end(ap);
