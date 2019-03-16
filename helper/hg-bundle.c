@@ -1,5 +1,6 @@
 #include "git-compat-util.h"
 #include "cinnabar-util.h"
+#include "http.h"
 #include "hg-bundle.h"
 #include "hg-connect-internal.h"
 #include <stdint.h>
@@ -67,7 +68,7 @@ static void copy_bundle_internal(FILE *in, struct writer *out)
 void copy_bundle(FILE *in, FILE *out)
 {
 	struct writer writer;
-	writer.write = write_to_file;
+	writer.write = (write_callback)fwrite;
 	writer.context = out;
 	copy_bundle_internal(in, &writer);
 }
@@ -75,7 +76,7 @@ void copy_bundle(FILE *in, FILE *out)
 void copy_bundle_to_strbuf(FILE *in, struct strbuf *out)
 {
 	struct writer writer;
-	writer.write = write_to_strbuf;
+	writer.write = fwrite_buffer;
 	writer.context = out;
 	copy_bundle_internal(in, &writer);
 }

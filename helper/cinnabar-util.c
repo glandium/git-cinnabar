@@ -1,19 +1,16 @@
 #include "cache.h"
 #include "cinnabar-util.h"
 
-size_t write_to_strbuf(char *buf, size_t size, size_t nmemb, void *context)
+#ifdef NO_CURL
+size_t fwrite_buffer(char *ptr, size_t eltsize, size_t nmemb, void *buffer_)
 {
-	struct strbuf *out = (struct strbuf *) context;
-	size_t len = size * nmemb;
-	strbuf_add(out, buf, len);
-	return len;
-}
+	size_t size = eltsize * nmemb;
+	struct strbuf *buffer = buffer_;
 
-size_t write_to_file(char *buf, size_t size, size_t nmemb, void *context)
-{
-	FILE *out = (FILE *) context;
-	return fwrite(buf, size, nmemb, out);
+	strbuf_add(buffer, ptr, size);
+	return size;
 }
+#endif
 
 size_t copy_to(FILE *in, size_t len, struct writer *writer)
 {

@@ -214,7 +214,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 			file = fopen(path, "r");
 			free(path);
 			fwrite("bundle\n", 1, 7, stdout);
-			writer.write = write_to_file;
+			writer.write = (write_callback)fwrite;
 			writer.context = stdout;
 			copy_to(file, st.st_size, &writer);
 			return NULL;

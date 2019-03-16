@@ -297,7 +297,7 @@ static void http_changegroup_command(struct hg_connection *conn, FILE *out,
 	struct changegroup_response_data response_data;
 
 	memset(&response_data, 0, sizeof(response_data));
-	response_data.deflater.out.write = write_to_file;
+	response_data.deflater.out.write = (write_callback)fwrite;
 	response_data.deflater.out.context = out;
 	va_start(ap, command);
 	git_inflate_init(&response_data.deflater.strm);
@@ -373,10 +373,10 @@ static size_t caps_request_write(char *ptr, size_t size, size_t nmemb,
 {
 	struct writer *writer = (struct writer *)data;
 	size_t len = size * nmemb;
-	if (writer->write == write_to_strbuf && ((struct strbuf *)writer->context)->len == 0) {
+	if (writer->write == fwrite_buffer && ((struct strbuf *)writer->context)->len == 0) {
 		if (len > 4 && ptr[0] == 'H' && ptr[1] == 'G' &&
 		    (ptr[2] == '1' || ptr[2] == '2') && ptr[3] == '0') {
-			writer->write = write_to_file;
+			writer->write = (write_callback)fwrite;
 			writer->context = stdout;
 			fwrite("bundle\n", 1, 7, stdout);
 		}
@@ -419,12 +419,12 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 
 	http_init(NULL, conn->http.url, 0);
 
-	writer.write = write_to_strbuf;
+	writer.write = fwrite_buffer;
 	writer.context = &caps;
 	http_capabilities_command(conn, &writer, NULL);
 	/* Cf. comment above caps_request_write. If the bundle stream was
-	 * sent to stdout, the writer was switched to write_to_file. */
-	if (writer.write == write_to_file) {
+	 * sent to stdout, the writer was switched to fwrite. */
+	if (writer.write == (write_callback)fwrite) {
 		free(conn->http.url);
 		free(conn);
 		return NULL;
