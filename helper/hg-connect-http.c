@@ -1,4 +1,5 @@
 #include "git-compat-util.h"
+#include "cinnabar-util.h"
 #include "hg-connect-internal.h"
 #include "hg-bundle.h"
 #include "credential.h"
@@ -368,17 +369,17 @@ static void http_push_command(struct hg_connection *conn,
 static size_t caps_request_write(char *ptr, size_t size, size_t nmemb,
 				 void *data)
 {
-	struct bundle_writer *writer = (struct bundle_writer *)data;
+	struct writer *writer = (struct writer *)data;
 	size_t len = size * nmemb;
-	if (writer->type == WRITER_STRBUF && writer->out.buf->len == 0) {
+	if (writer->write == write_to_strbuf && ((struct strbuf *)writer->context)->len == 0) {
 		if (len > 4 && ptr[0] == 'H' && ptr[1] == 'G' &&
 		    (ptr[2] == '1' || ptr[2] == '2') && ptr[3] == '0') {
-			writer->type = WRITER_FILE;
-			writer->out.file = stdout;
+			writer->write = write_to_file;
+			writer->context = stdout;
 			fwrite("bundle\n", 1, 7, stdout);
 		}
 	}
-	return write_data((unsigned char *)ptr, len, writer);
+	return write_to(ptr, size, nmemb, writer);
 }
 
 static void prepare_caps_request(CURL *curl, struct curl_slist *headers,
@@ -389,7 +390,7 @@ static void prepare_caps_request(CURL *curl, struct curl_slist *headers,
 }
 
 static void http_capabilities_command(struct hg_connection *conn,
-				      struct bundle_writer *writer, ...)
+				      struct writer *writer, ...)
 {
 	va_list ap;
 	va_start(ap, writer);
@@ -408,7 +409,7 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 {
 	struct hg_connection *conn = xmalloc(sizeof(*conn));
 	struct strbuf caps = STRBUF_INIT;
-	struct bundle_writer writer;
+	struct writer writer;
 	string_list_init(&conn->capabilities, 1);
 
 	conn->http.url = xstrdup(url);
@@ -416,12 +417,12 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 
 	http_init(NULL, conn->http.url, 0);
 
-	writer.type = WRITER_STRBUF;
-	writer.out.buf = &caps;
+	writer.write = write_to_strbuf;
+	writer.context = &caps;
 	http_capabilities_command(conn, &writer, NULL);
 	/* Cf. comment above caps_request_write. If the bundle stream was
-	 * sent to stdout, the writer was switched to WRITER_FILE. */
-	if (writer.type == WRITER_FILE) {
+	 * sent to stdout, the writer was switched to write_to_file. */
+	if (writer.write == write_to_file) {
 		free(conn->http.url);
 		free(conn);
 		return NULL;

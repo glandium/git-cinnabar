@@ -1,4 +1,5 @@
 #include "git-compat-util.h"
+#include "cinnabar-util.h"
 #include "hg-connect-internal.h"
 #include "hg-bundle.h"
 #include "strbuf.h"
@@ -200,7 +201,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 		stat(path, &st);
 		if (S_ISREG(st.st_mode)) {
 			FILE *file;
-			struct bundle_writer writer;
+			struct writer writer;
 			free(port);
 			free(host);
 			free(user);
@@ -213,9 +214,9 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 			file = fopen(path, "r");
 			free(path);
 			fwrite("bundle\n", 1, 7, stdout);
-			writer.type = WRITER_FILE;
-			writer.out.file = stdout;
-			copy_data(st.st_size, file, &writer);
+			writer.write = write_to_file;
+			writer.context = stdout;
+			copy_to(file, st.st_size, &writer);
 			return NULL;
 		}
 		proc->use_shell = 1;
