@@ -232,32 +232,34 @@ static void http_simple_command(struct hg_connection *conn,
 	va_end(ap);
 }
 
-struct changegroup_response_data {
-	CURL *curl;
-	FILE *out;
+struct deflate_writer {
+	struct writer out;
 	git_zstream strm;
 };
 
-static size_t deflate_response(char *ptr, size_t size, size_t nmemb, void *data)
+static size_t deflate_to(char *ptr, size_t size, size_t nmemb, void *data)
 {
 	char buf[4096];
-	struct changegroup_response_data *response_data =
-		(struct changegroup_response_data *)data;
+	struct deflate_writer *writer = (struct deflate_writer *)data;
 	int ret;
 
-	response_data->strm.next_in = (void *)ptr;
-	response_data->strm.avail_in = size * nmemb;
+	writer->strm.next_in = (void *)ptr;
+	writer->strm.avail_in = size * nmemb;
 
 	do {
-		response_data->strm.next_out = (void *)buf;
-		response_data->strm.avail_out = sizeof(buf);
-		ret = git_inflate(&response_data->strm, Z_SYNC_FLUSH);
-		fwrite(buf, 1, sizeof(buf) - response_data->strm.avail_out,
-		       response_data->out);
-	} while (response_data->strm.avail_in && ret == Z_OK);
+		writer->strm.next_out = (void *)buf;
+		writer->strm.avail_out = sizeof(buf);
+		ret = git_inflate(&writer->strm, Z_SYNC_FLUSH);
+		write_to(buf, 1, sizeof(buf) - writer->strm.avail_out, &writer->out);
+	} while (writer->strm.avail_in && ret == Z_OK);
 
 	return size * nmemb;
 }
+
+struct changegroup_response_data {
+	CURL *curl;
+	struct deflate_writer deflater;
+};
 
 static size_t changegroup_header(char *buffer, size_t size, size_t nmemb, void* data)
 {
@@ -265,8 +267,7 @@ static size_t changegroup_header(char *buffer, size_t size, size_t nmemb, void* 
 		(struct changegroup_response_data *)data;
 
 	if (strcmp(buffer, "Content-Type: application/hg-error\r\n") == 0) {
-		fwrite("err\n", 4, 1, response_data->out);
-		response_data->out = stderr;
+		write_to("err\n", 4, 1, &response_data->deflater.out);
 		curl_easy_setopt(response_data->curl, CURLOPT_FILE, stderr);
 		curl_easy_setopt(response_data->curl, CURLOPT_WRITEFUNCTION, fwrite);
 	}
@@ -283,8 +284,8 @@ static void prepare_changegroup_request(CURL *curl, struct curl_slist *headers,
 
 	curl_easy_setopt(curl, CURLOPT_HEADERDATA, data);
 	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, changegroup_header);
-	curl_easy_setopt(curl, CURLOPT_FILE, data);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, deflate_response);
+	curl_easy_setopt(curl, CURLOPT_FILE, &response_data->deflater);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, deflate_to);
 }
 
 /* The changegroup, changegroupsubset and getbundle commands return a raw
@@ -296,11 +297,12 @@ static void http_changegroup_command(struct hg_connection *conn, FILE *out,
 	struct changegroup_response_data response_data;
 
 	memset(&response_data, 0, sizeof(response_data));
-	response_data.out = out;
+	response_data.deflater.out.write = write_to_file;
+	response_data.deflater.out.context = out;
 	va_start(ap, command);
-	git_inflate_init(&response_data.strm);
+	git_inflate_init(&response_data.deflater.strm);
 	http_command(conn, prepare_changegroup_request, &response_data, command, ap);
-	git_inflate_end(&response_data.strm);
+	git_inflate_end(&response_data.deflater.strm);
 	va_end(ap);
 }
 
