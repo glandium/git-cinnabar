@@ -682,7 +682,7 @@ class BundleApplier(object):
         def enumerate_files(iter):
             last_name = None
             count_names = 0
-            for count_chunks, (name, chunk) in enumerate(iter):
+            for count_chunks, (name, chunk) in enumerate(iter, start=1):
                 if name != last_name:
                     count_names += 1
                 last_name = name
