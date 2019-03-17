@@ -28,7 +28,7 @@ static int http_request(prepare_request_cb_t prepare_request_cb, void *data)
 	struct active_request_slot *slot;
 	struct slot_results results;
 	struct curl_slist *headers = NULL;
-	struct http_request_info *info = (struct http_request_info *)data;
+	struct http_request_info *info = data;
 	int ret;
 
 	slot = get_active_slot();
@@ -116,7 +116,7 @@ static char *query_encode(const char *buf)
 static void http_query_add_param(void *data, const char *name,
 				 union param_value value)
 {
-	struct strbuf *command_url = (struct strbuf *)data;
+	struct strbuf *command_url = data;
 	char *encoded;
 	if (!strcmp(name, "*"))
 		return;
@@ -240,7 +240,7 @@ struct inflate_context {
 static size_t inflate_to(char *ptr, size_t size, size_t nmemb, void *data)
 {
 	char buf[4096];
-	struct inflate_context *context = (struct inflate_context *)data;
+	struct inflate_context *context = data;
 	int ret;
 
 	context->strm.next_in = (void *)ptr;
@@ -258,7 +258,7 @@ static size_t inflate_to(char *ptr, size_t size, size_t nmemb, void *data)
 
 static int inflate_close(void *data)
 {
-	struct inflate_context *context = (struct inflate_context *)data;
+	struct inflate_context *context = data;
 	int ret;
 	git_inflate_end(&context->strm);
 	ret = writer_close(&context->out);
@@ -340,7 +340,7 @@ struct push_request_info {
 static void prepare_push_request(CURL *curl, struct curl_slist *headers,
 				 void *data)
 {
-	struct push_request_info *info = (struct push_request_info *)data;
+	struct push_request_info *info = data;
 	prepare_simple_request(curl, headers, info->response);
 	curl_easy_setopt(curl, CURLOPT_POST, 1);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, info->len);
@@ -396,7 +396,7 @@ static void http_push_command(struct hg_connection *conn,
 static size_t caps_request_write(char *ptr, size_t size, size_t nmemb,
 				 void *data)
 {
-	struct writer *writer = (struct writer *)data;
+	struct writer *writer = data;
 	size_t len = size * nmemb;
 	if (writer->write == fwrite_buffer && ((struct strbuf *)writer->context)->len == 0) {
 		if (len > 4 && ptr[0] == 'H' && ptr[1] == 'G' &&

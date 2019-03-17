@@ -240,7 +240,7 @@ static int fill_ls_tree(const struct object_id *oid, struct strbuf *base,
 			const char *pathname, unsigned mode, int stage,
 			void *context)
 {
-	struct ls_tree_context *ctx = (struct ls_tree_context *) context;
+	struct ls_tree_context *ctx = context;
 	struct strbuf *buf = &ctx->buf;
 	const char *type = blob_type;
 
@@ -358,7 +358,7 @@ static void do_rev_list(struct string_list *args)
 static void strbuf_diff_tree(struct diff_queue_struct *q,
                              struct diff_options *opt, void *data)
 {
-	struct strbuf *buf = (struct strbuf *) data;
+	struct strbuf *buf = data;
 	int i;
 
 	for (i = 0; i < q->nr; i++) {
@@ -1379,7 +1379,7 @@ static void do_connect(struct string_list *args)
 
 static int add_each_head(const struct object_id *oid, void *data)
 {
-	struct strbuf *buf = (struct strbuf *)data;
+	struct strbuf *buf = data;
 
 	strbuf_addstr(buf, oid_to_hex(oid));
 	strbuf_addch(buf, '\n');
@@ -1779,7 +1779,7 @@ static void upgrade_manifest(struct commit *commit,
 
 static int revs_add_each_head(const struct object_id *oid, void *data)
 {
-	struct rev_info *revs = (struct rev_info *)data;
+	struct rev_info *revs = data;
 
 	add_pending_oid(revs, oid_to_hex(oid), oid, 0);
 
@@ -2095,7 +2095,7 @@ static int dangling_note(const struct object_id *object_oid,
                          const struct object_id *note_oid, char *note_path,
                          void *cb_data)
 {
-	struct dangling_data *data = (struct dangling_data *)cb_data;
+	struct dangling_data *data = cb_data;
 	struct object_id oid;
 	int is_dangling = 0;
 
