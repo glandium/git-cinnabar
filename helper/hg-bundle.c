@@ -45,7 +45,7 @@ static size_t copy_bundle2_chunk(FILE *in, struct writer *out)
 	return copy_chunk(0, in, out);
 }
 
-static void copy_bundle_internal(FILE *in, struct writer *out)
+void copy_bundle(FILE *in, struct writer *out)
 {
 	char buf[4];
 	const char *p = buf;
@@ -65,13 +65,13 @@ static void copy_bundle_internal(FILE *in, struct writer *out)
 	}
 }
 
-void copy_bundle(FILE *in, FILE *out)
+void copy_bundle_to_file(FILE *in, FILE *out)
 {
 	struct writer writer;
 	writer.write = (write_callback)fwrite;
 	writer.close = (close_callback)fflush;
 	writer.context = out;
-	copy_bundle_internal(in, &writer);
+	copy_bundle(in, &writer);
 }
 
 void copy_bundle_to_strbuf(FILE *in, struct strbuf *out)
@@ -80,7 +80,7 @@ void copy_bundle_to_strbuf(FILE *in, struct strbuf *out)
 	writer.write = fwrite_buffer;
 	writer.close = NULL;
 	writer.context = out;
-	copy_bundle_internal(in, &writer);
+	copy_bundle(in, &writer);
 }
 
 void read_chunk(FILE *in, struct strbuf *out)

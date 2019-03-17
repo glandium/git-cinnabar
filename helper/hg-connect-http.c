@@ -260,13 +260,14 @@ static int inflate_close(void *data)
 {
 	struct inflate_context *context = (struct inflate_context *)data;
 	git_inflate_end(&context->strm);
+	writer_close(&context->out);
 	free(context);
 	return 0;
 }
 
 struct changegroup_response_data {
 	CURL *curl;
-	struct writer writer;
+	struct writer *writer;
 };
 
 static size_t changegroup_write(char *buffer, size_t size, size_t nmemb, void* data)
@@ -282,21 +283,21 @@ static size_t changegroup_write(char *buffer, size_t size, size_t nmemb, void* d
 				struct inflate_context *inflater
 					= xcalloc(1, sizeof(struct inflate_context));
 				git_inflate_init(&inflater->strm);
-				inflater->out = response_data->writer;
-				response_data->writer.write = inflate_to;
-				response_data->writer.close = inflate_close;
-				response_data->writer.context = inflater;
+				inflater->out = *response_data->writer;
+				response_data->writer->write = inflate_to;
+				response_data->writer->close = inflate_close;
+				response_data->writer->context = inflater;
 			} else if (strcmp(content_type, "application/hg-error") == 0) {
-				write_to("err\n", 4, 1, &response_data->writer);
-				response_data->writer.write = (write_callback)fwrite;
-				response_data->writer.close = (close_callback)fflush;
-				response_data->writer.context = stderr;
+				write_to("err\n", 4, 1, response_data->writer);
+				response_data->writer->write = (write_callback)fwrite;
+				response_data->writer->close = (close_callback)fflush;
+				response_data->writer->context = stderr;
 			}
 		}
 		response_data->curl = NULL;
 	}
 
-	return write_to(buffer, size, nmemb, &response_data->writer);
+	return write_to(buffer, size, nmemb, response_data->writer);
 }
 
 static void prepare_changegroup_request(CURL *curl, struct curl_slist *headers,
@@ -313,22 +314,19 @@ static void prepare_changegroup_request(CURL *curl, struct curl_slist *headers,
 
 /* The changegroup, changegroupsubset and getbundle commands return a raw
  * zlib stream when called over HTTP. */
-static void http_changegroup_command(struct hg_connection *conn, FILE *out,
-				      const char *command, ...)
+static void http_changegroup_command(struct hg_connection *conn,
+                                     struct writer *out,
+                                     const char *command, ...)
 {
 	va_list ap;
 	struct changegroup_response_data response_data;
 
 	response_data.curl = NULL;
-	response_data.writer.write = (write_callback)fwrite;
-	response_data.writer.close = (close_callback)fflush;
-	response_data.writer.context = out;
+	response_data.writer = out;
 
 	va_start(ap, command);
 	http_command(conn, prepare_changegroup_request, &response_data, command, ap);
 	va_end(ap);
-
-	writer_close(&response_data.writer);
 }
 
 struct push_request_info {

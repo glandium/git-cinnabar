@@ -3,10 +3,12 @@
 
 #include "cache.h"
 #include "strbuf.h"
+#include "cinnabar-util.h"
 #include "hg-data.h"
 #include <stdio.h>
 
-extern void copy_bundle(FILE *in, FILE *out);
+extern void copy_bundle(FILE *in, struct writer *out);
+extern void copy_bundle_to_file(FILE *in, FILE *out);
 extern void copy_bundle_to_strbuf(FILE *in, struct strbuf *out);
 
 extern void read_chunk(FILE *in, struct strbuf *out);

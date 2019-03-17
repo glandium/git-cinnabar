@@ -102,7 +102,8 @@ static void stdio_simple_command(struct hg_connection *conn,
 	va_end(ap);
 }
 
-static void stdio_changegroup_command(struct hg_connection *conn, FILE *out,
+static void stdio_changegroup_command(struct hg_connection *conn,
+                                      struct writer *out,
 				      const char *command, ...)
 {
 	va_list ap;

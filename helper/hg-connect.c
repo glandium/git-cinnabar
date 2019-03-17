@@ -207,6 +207,7 @@ void hg_getbundle(struct hg_connection *conn, FILE *out,
 {
 	struct string_list args = STRING_LIST_INIT_NODUP;
 	struct string_list_item *item;
+	struct writer writer;
 
 	if (heads && heads->nr) {
 		item = string_list_append(&args, "heads");
@@ -220,10 +221,13 @@ void hg_getbundle(struct hg_connection *conn, FILE *out,
 		item = string_list_append(&args, "bundlecaps");
 		item->util = strdup(bundle2caps);
 	}
-	conn->changegroup_command(conn, out, "getbundle", "*", &args, NULL);
+	writer.write = (write_callback)fwrite;
+	writer.close = (close_callback)fflush;
+	writer.context = out;
+	conn->changegroup_command(conn, &writer, "getbundle", "*", &args, NULL);
 	string_list_clear(&args, 1);
 
-	fflush(out);
+	writer_close(&writer);
 }
 
 static int unbundlehash(const struct object_id *oid, void *data)
@@ -270,7 +274,7 @@ void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 	//TODO: error checking
 	tmpfile = mks_tempfile_ts("hg-bundle-XXXXXX.hg", 3);
 	file = fdopen_tempfile(tmpfile, "w");
-	copy_bundle(in, file);
+	copy_bundle_to_file(in, file);
 	close_tempfile_gently(tmpfile);
 
 	file = fopen(tmpfile->filename.buf, "r");
