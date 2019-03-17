@@ -5,7 +5,7 @@
 #include "strbuf.h"
 
 typedef size_t (*write_callback)(char *ptr, size_t eltsize, size_t nmemb, void *context);
-typedef int (*flush_callback)(void *context);
+typedef int (*close_callback)(void *context);
 
 #ifdef NO_CURL
 extern size_t fwrite_buffer(char *ptr, size_t eltsize, size_t nmemb, void *strbuf);
@@ -13,7 +13,7 @@ extern size_t fwrite_buffer(char *ptr, size_t eltsize, size_t nmemb, void *strbu
 
 struct writer {
 	write_callback write;
-	flush_callback flush;
+	close_callback close;
 	void *context;
 };
 
@@ -24,10 +24,10 @@ size_t write_to(char *buf, size_t size, size_t nmemb, struct writer *writer)
 }
 
 static inline
-int writer_flush(struct writer* writer)
+int writer_close(struct writer* writer)
 {
-	if (writer->flush)
-		return writer->flush(writer->context);
+	if (writer->close)
+		return writer->close(writer->context);
 	return 0;
 }
 

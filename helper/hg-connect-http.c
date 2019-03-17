@@ -256,7 +256,7 @@ static size_t inflate_to(char *ptr, size_t size, size_t nmemb, void *data)
 	return size * nmemb;
 }
 
-static int inflate_flush(void *data)
+static int inflate_close(void *data)
 {
 	struct inflate_context *context = (struct inflate_context *)data;
 	git_inflate_end(&context->strm);
@@ -283,12 +283,12 @@ static size_t changegroup_write(char *buffer, size_t size, size_t nmemb, void* d
 				git_inflate_init(&inflater->strm);
 				inflater->out = response_data->writer;
 				response_data->writer.write = inflate_to;
-				response_data->writer.flush = inflate_flush;
+				response_data->writer.close = inflate_close;
 				response_data->writer.context = inflater;
 			} else if (strcmp(content_type, "application/hg-error") == 0) {
 				write_to("err\n", 4, 1, &response_data->writer);
 				response_data->writer.write = (write_callback)fwrite;
-				response_data->writer.flush = (flush_callback)fflush;
+				response_data->writer.close = (close_callback)fflush;
 				response_data->writer.context = stderr;
 			}
 		}
@@ -320,14 +320,14 @@ static void http_changegroup_command(struct hg_connection *conn, FILE *out,
 
 	response_data.curl = NULL;
 	response_data.writer.write = (write_callback)fwrite;
-	response_data.writer.flush = (flush_callback)fflush;
+	response_data.writer.close = (close_callback)fflush;
 	response_data.writer.context = out;
 
 	va_start(ap, command);
 	http_command(conn, prepare_changegroup_request, &response_data, command, ap);
 	va_end(ap);
 
-	writer_flush(&response_data.writer);
+	writer_close(&response_data.writer);
 	if (response_data.writer.write == inflate_to) {
 		free(response_data.writer.context);
 	}
@@ -447,13 +447,13 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 	http_init(NULL, conn->http.url, 0);
 
 	writer.write = fwrite_buffer;
-	writer.flush = NULL;
+	writer.close = NULL;
 	writer.context = &caps;
 	http_capabilities_command(conn, &writer, NULL);
 	/* Cf. comment above caps_request_write. If the bundle stream was
 	 * sent to stdout, the writer was switched to fwrite. */
 	if (writer.write == (write_callback)fwrite) {
-		writer_flush(&writer);
+		writer_close(&writer);
 		free(conn->http.url);
 		free(conn);
 		return NULL;

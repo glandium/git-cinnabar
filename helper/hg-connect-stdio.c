@@ -215,10 +215,10 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 			free(path);
 			fwrite("bundle\n", 1, 7, stdout);
 			writer.write = (write_callback)fwrite;
-			writer.flush = (flush_callback)fflush;
+			writer.close = (close_callback)fflush;
 			writer.context = stdout;
 			copy_to(file, st.st_size, &writer);
-			writer_flush(&writer);
+			writer_close(&writer);
 			return NULL;
 		}
 		proc->use_shell = 1;
