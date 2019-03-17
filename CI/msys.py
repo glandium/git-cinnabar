@@ -118,7 +118,7 @@ class MsysEnvironment(MsysCommon):
             'pip install wheel',
             'mv {}/{}/bin/{{{{mingw32-,}}}}make.exe'.format(msys(cpu),
                                                             mingw(cpu)),
-            'tar -jcf msys2.tar.bz2 {}'.format(msys(cpu)),
+            'tar -jcf msys2.tar.bz2 --hard-dereference {}'.format(msys(cpu)),
         )
 
         env = MsysBase.by_name(cpu)

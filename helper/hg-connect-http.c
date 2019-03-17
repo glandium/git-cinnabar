@@ -1,4 +1,5 @@
 #include "git-compat-util.h"
+#include "cinnabar-util.h"
 #include "hg-connect-internal.h"
 #include "hg-bundle.h"
 #include "credential.h"
@@ -231,52 +232,102 @@ static void http_simple_command(struct hg_connection *conn,
 	va_end(ap);
 }
 
-struct deflater {
-	FILE *out;
+struct inflate_context {
+	struct writer out;
 	git_zstream strm;
 };
 
-static size_t deflate_response(char *ptr, size_t size, size_t nmemb, void *data)
+static size_t inflate_to(char *ptr, size_t size, size_t nmemb, void *data)
 {
 	char buf[4096];
-	struct deflater *deflater = (struct deflater *)data;
+	struct inflate_context *context = (struct inflate_context *)data;
 	int ret;
 
-	deflater->strm.next_in = (void *)ptr;
-	deflater->strm.avail_in = size * nmemb;
+	context->strm.next_in = (void *)ptr;
+	context->strm.avail_in = size * nmemb;
 
 	do {
-		deflater->strm.next_out = (void *)buf;
-		deflater->strm.avail_out = sizeof(buf);
-		ret = git_inflate(&deflater->strm, Z_SYNC_FLUSH);
-		fwrite(buf, 1, sizeof(buf) - deflater->strm.avail_out,
-		       deflater->out);
-	} while (deflater->strm.avail_in && ret == Z_OK);
+		context->strm.next_out = (void *)buf;
+		context->strm.avail_out = sizeof(buf);
+		ret = git_inflate(&context->strm, Z_SYNC_FLUSH);
+		write_to(buf, 1, sizeof(buf) - context->strm.avail_out, &context->out);
+	} while (context->strm.avail_in && ret == Z_OK);
 
 	return size * nmemb;
 }
 
-static void prepare_compressed_request(CURL *curl, struct curl_slist *headers,
-				       void *data)
+static int inflate_close(void *data)
 {
-	curl_easy_setopt(curl, CURLOPT_FILE, data);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, deflate_response);
+	struct inflate_context *context = (struct inflate_context *)data;
+	int ret;
+	git_inflate_end(&context->strm);
+	ret = writer_close(&context->out);
+	free(context);
+	return ret;
+}
+
+struct changegroup_response_data {
+	CURL *curl;
+	struct writer *writer;
+};
+
+static size_t changegroup_write(char *buffer, size_t size, size_t nmemb, void* data)
+{
+	struct changegroup_response_data *response_data =
+		(struct changegroup_response_data *)data;
+
+	if (response_data->curl) {
+		char *content_type;
+		if (!curl_easy_getinfo(response_data->curl, CURLINFO_CONTENT_TYPE,
+		                       &content_type) && content_type) {
+			if (strcmp(content_type, "application/mercurial-0.1") == 0) {
+				struct inflate_context *inflater
+					= xcalloc(1, sizeof(struct inflate_context));
+				git_inflate_init(&inflater->strm);
+				inflater->out = *response_data->writer;
+				response_data->writer->write = inflate_to;
+				response_data->writer->close = inflate_close;
+				response_data->writer->context = inflater;
+			} else if (strcmp(content_type, "application/hg-error") == 0) {
+				write_to("err\n", 4, 1, response_data->writer);
+				response_data->writer->write = (write_callback)fwrite;
+				response_data->writer->close = (close_callback)fflush;
+				response_data->writer->context = stderr;
+			}
+		}
+		bufferize_writer(response_data->writer);
+		response_data->curl = NULL;
+	}
+
+	return write_to(buffer, size, nmemb, response_data->writer);
+}
+
+static void prepare_changegroup_request(CURL *curl, struct curl_slist *headers,
+				        void *data)
+{
+	struct changegroup_response_data *response_data =
+		(struct changegroup_response_data *)data;
+
+	response_data->curl = curl;
+
+	curl_easy_setopt(curl, CURLOPT_FILE, response_data);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, changegroup_write);
 }
 
 /* The changegroup, changegroupsubset and getbundle commands return a raw
  * zlib stream when called over HTTP. */
-static void http_changegroup_command(struct hg_connection *conn, FILE *out,
-				      const char *command, ...)
+static void http_changegroup_command(struct hg_connection *conn,
+                                     struct writer *out,
+                                     const char *command, ...)
 {
 	va_list ap;
-	struct deflater deflater;
+	struct changegroup_response_data response_data;
 
-	memset(&deflater, 0, sizeof(deflater));
-	deflater.out = out;
+	response_data.curl = NULL;
+	response_data.writer = out;
+
 	va_start(ap, command);
-	git_inflate_init(&deflater.strm);
-	http_command(conn, prepare_compressed_request, &deflater, command, ap);
-	git_inflate_end(&deflater.strm);
+	http_command(conn, prepare_changegroup_request, &response_data, command, ap);
 	va_end(ap);
 }
 
@@ -345,17 +396,18 @@ static void http_push_command(struct hg_connection *conn,
 static size_t caps_request_write(char *ptr, size_t size, size_t nmemb,
 				 void *data)
 {
-	struct bundle_writer *writer = (struct bundle_writer *)data;
+	struct writer *writer = (struct writer *)data;
 	size_t len = size * nmemb;
-	if (writer->type == WRITER_STRBUF && writer->out.buf->len == 0) {
+	if (writer->write == fwrite_buffer && ((struct strbuf *)writer->context)->len == 0) {
 		if (len > 4 && ptr[0] == 'H' && ptr[1] == 'G' &&
 		    (ptr[2] == '1' || ptr[2] == '2') && ptr[3] == '0') {
-			writer->type = WRITER_FILE;
-			writer->out.file = stdout;
+			writer->write = (write_callback)fwrite;
+			writer->context = stdout;
 			fwrite("bundle\n", 1, 7, stdout);
+			bufferize_writer(writer);
 		}
 	}
-	return write_data((unsigned char *)ptr, len, writer);
+	return write_to(ptr, size, nmemb, writer);
 }
 
 static void prepare_caps_request(CURL *curl, struct curl_slist *headers,
@@ -366,7 +418,7 @@ static void prepare_caps_request(CURL *curl, struct curl_slist *headers,
 }
 
 static void http_capabilities_command(struct hg_connection *conn,
-				      struct bundle_writer *writer, ...)
+				      struct writer *writer, ...)
 {
 	va_list ap;
 	va_start(ap, writer);
@@ -385,7 +437,7 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 {
 	struct hg_connection *conn = xmalloc(sizeof(*conn));
 	struct strbuf caps = STRBUF_INIT;
-	struct bundle_writer writer;
+	struct writer writer;
 	string_list_init(&conn->capabilities, 1);
 
 	conn->http.url = xstrdup(url);
@@ -393,12 +445,14 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 
 	http_init(NULL, conn->http.url, 0);
 
-	writer.type = WRITER_STRBUF;
-	writer.out.buf = &caps;
+	writer.write = fwrite_buffer;
+	writer.close = NULL;
+	writer.context = &caps;
 	http_capabilities_command(conn, &writer, NULL);
 	/* Cf. comment above caps_request_write. If the bundle stream was
-	 * sent to stdout, the writer was switched to WRITER_FILE. */
-	if (writer.type == WRITER_FILE) {
+	 * sent to stdout, the writer was switched to fwrite. */
+	if (writer.write != fwrite_buffer) {
+		writer_close(&writer);
 		free(conn->http.url);
 		free(conn);
 		return NULL;

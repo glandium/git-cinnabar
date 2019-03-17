@@ -1,4 +1,5 @@
 #include "git-compat-util.h"
+#include "cinnabar-util.h"
 #include "hg-connect-internal.h"
 #include "hg-bundle.h"
 #include "strbuf.h"
@@ -101,7 +102,8 @@ static void stdio_simple_command(struct hg_connection *conn,
 	va_end(ap);
 }
 
-static void stdio_changegroup_command(struct hg_connection *conn, FILE *out,
+static void stdio_changegroup_command(struct hg_connection *conn,
+                                      struct writer *out,
 				      const char *command, ...)
 {
 	va_list ap;
@@ -110,8 +112,10 @@ static void stdio_changegroup_command(struct hg_connection *conn, FILE *out,
 
 	/* We're going to receive a stream, but we don't know how big it is
 	 * going to be in advance, so we have to read it according to its
-	 * format: the changegroup format. For now, only support changegroupv1
+	 * format: changegroup or bundle2.
 	 */
+	if (conn->stdio.is_remote)
+		bufferize_writer(out);
 	copy_bundle(conn->stdio.out, out);
 	va_end(ap);
 }
@@ -134,7 +138,7 @@ static void stdio_push_command(struct hg_connection *conn,
 	va_end(ap);
 
 	//TODO: chunk in smaller pieces.
-	strbuf_addf(&header, "%"PRIuMAX"\n", len);
+	strbuf_addf(&header, "%"PRIdMAX"\n", (intmax_t)len);
 	xwrite(conn->stdio.proc.in, header.buf, header.len);
 	strbuf_release(&header);
 
@@ -200,7 +204,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 		stat(path, &st);
 		if (S_ISREG(st.st_mode)) {
 			FILE *file;
-			struct bundle_writer writer;
+			struct writer writer;
 			free(port);
 			free(host);
 			free(user);
@@ -213,9 +217,11 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 			file = fopen(path, "r");
 			free(path);
 			fwrite("bundle\n", 1, 7, stdout);
-			writer.type = WRITER_FILE;
-			writer.out.file = stdout;
-			copy_data(st.st_size, file, &writer);
+			writer.write = (write_callback)fwrite;
+			writer.close = (close_callback)fflush;
+			writer.context = stdout;
+			copy_to(file, st.st_size, &writer);
+			writer_close(&writer);
 			return NULL;
 		}
 		proc->use_shell = 1;
@@ -229,6 +235,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	strbuf_release(&buf);
 
 	start_command(proc);
+	conn->stdio.is_remote = (protocol == PROTO_SSH);
 	conn->stdio.out = xfdopen(proc->out, "r");
 	// TODO: return earlier in case the command fails somehow.
 

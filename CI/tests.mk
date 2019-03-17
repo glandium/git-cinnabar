@@ -31,7 +31,7 @@ ifndef GIT_CINNABAR_OLD_HELPER
 GIT += -c core.packedGitWindowSize=8k
 endif
 
-export GIT_CINNABAR_CHECK=all,traceback
+export GIT_CINNABAR_CHECK=all,traceback,cinnabarclone,clonebundles
 export GIT_CINNABAR_LOG=process:3
 
 hg.pure.hg:
@@ -64,6 +64,10 @@ COMPARE_REFS = $(call COMPARE_COMMANDS,$(call GET_REF_SHA1,$1,$(if $3, $(call $3
 HG_INIT = $(HG) init $1
 %.nobundle2: HG_INIT += ; (echo "[experimental]"; echo "bundle2-advertise = false") >> $1/.hg/hgrc
 
+print-version:
+	$(GIT) cinnabar --version
+
+check: print-version
 check: hg.empty.git
 check: hg.git hg.git.nobundle2
 check: hg.unbundle.git
@@ -74,6 +78,8 @@ check: hg.push.hg hg.push.hg.nobundle2
 check: hg.http.hg hg.http.hg.nobundle2
 check: hg.cinnabarclone.git
 check: hg.cinnabarclone-full.git
+check: hg.cinnabarclone-bundle.git
+check: hg.cinnabarclone-bundle-full.git
 
 check-graft: hg.graft.git
 check-graft: hg.graft2.git
@@ -160,14 +166,25 @@ hg.incr.base.git: hg.incr.hg
 	$(HG) clone -U $< $@.hg
 	$(GIT) -c fetch.prune=true clone -n hg::$(PATH_URL)/$@.hg $@
 
+hg.incr.bundle.git: hg.incr.base.git
+hg.bundle.git: hg.git
+hg.incr.bundle.git hg.bundle.git:
+	$(GIT) -C $^ bundle create $(CURDIR)/$@ refs/cinnabar/metadata
+
+HG_CINNABARCLONE_EXT=$(or $(wildcard $(TOPDIR)/mercurial/cinnabarclone.py),$(TOPDIR)/hg/cinnabarclone.py)
+
 hg.cinnabarclone.git: hg.incr.base.git hg.git
 hg.cinnabarclone-full.git: hg.git
+hg.cinnabarclone-bundle.git: hg.incr.bundle.git hg.git
+hg.cinnabarclone-bundle-full.git: hg.bundle.git hg.git
 hg.cinnabarclone-graft.git: hg.graft.git
 hg.cinnabarclone-graft-replace.git: hg.graft.replace.git
-hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-graft.git hg.cinnabarclone-graft-replace.git: hg.pure.hg
+hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-graft.git hg.cinnabarclone-graft-replace.git: OTHER_SERVER=git
+hg.cinnabarclone-bundle.git hg.cinnabarclone-bundle-full.git: OTHER_SERVER=http
+hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-bundle.git hg.cinnabarclone-bundle-full.git hg.cinnabarclone-graft.git hg.cinnabarclone-graft-replace.git: hg.pure.hg
 	$(HG) clone -U $< $@.hg
-	echo $(PATH_URL)/$(word 2,$^) > $@.hg/.hg/cinnabar.manifest
-	$(HG) -R $@.hg --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(TOPDIR)/mercurial/cinnabarclone.py serve-and-exec -- $(GIT) -c cinnabar.experiments=git-clone clone hg://localhost:8000.http/ $@
+	echo http://localhost:8080/$(word 2,$^) > $@.hg/.hg/cinnabar.manifest
+	OTHER_SERVER=$(OTHER_SERVER) $(HG) -R $@.hg --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(HG_CINNABARCLONE_EXT) serve-and-exec -- $(GIT) -c cinnabar.experiments=git-clone clone hg://localhost:8000.http/ $@
 	$(call COMPARE_REFS, $(or $(word 3,$^),$(word 2,$^)), $@)
 	$(GIT) -C $@ cinnabar fsck --manifest --files
 

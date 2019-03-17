@@ -136,7 +136,7 @@ class Version(argparse.Action):
     def helper_version():
         from cinnabar.helper import GitHgHelper
         try:
-            with GitHgHelper.query('version') as out:
+            with GitHgHelper.query('revision') as out:
                 version = out.read(40)
         except Exception:
             version = 'unknown'

@@ -70,10 +70,15 @@ class TestTask(Task):
         command.extend(helper)
         if clone:
             command.extend([
-                'curl -L {{{}.artifact}} -o clone.tar.xz'.format(
+                'curl -L {{{}.artifact}} -o repo/bundle.git'.format(
                     Clone.by_name(clone)),
-                'tar -C repo -Jxf clone.tar.xz',
+                'git init repo/hg.old.git',
+                'git -C repo/hg.old.git fetch ../bundle.git refs/*:refs/*',
+                'git -C repo/hg.old.git remote add origin hg::$REPO',
+                'git -C repo/hg.old.git symbolic-ref HEAD'
+                ' refs/heads/branches/default/tip',
             ])
+            kwargs.setdefault('env', {})['REPO'] = REPO
         if 'command' in kwargs:
             kwargs['command'] = command + kwargs['command']
         else:
@@ -140,9 +145,9 @@ class Clone(TestTask):
         else:
             hg = MERCURIAL_VERSION
         if REPO == DEFAULT_REPO:
-            index = 'clone.{}'.format(sha1)
+            index = 'bundle.{}'.format(sha1)
         else:
-            index = 'clone.{}.{}'.format(hashlib.sha1(REPO).hexdigest(), sha1)
+            index = 'bundle.{}.{}'.format(hashlib.sha1(REPO).hexdigest(), sha1)
         TestTask.__init__(
             self,
             hg=hg,
@@ -155,9 +160,9 @@ class Clone(TestTask):
             command=[
                 'PATH=$PWD/repo:$PATH'
                 ' git -c fetch.prune=true clone -n hg::$REPO hg.old.git',
-                'tar -Jcf $ARTIFACTS/clone.tar.xz hg.old.git',
+                'git -C hg.old.git bundle create $ARTIFACTS/bundle.git --all',
             ],
-            artifact='clone.tar.xz',
+            artifact='bundle.git',
             env={
                 'REPO': REPO,
             },
@@ -233,9 +238,26 @@ def decision():
         )
 
     TestTask(
+        variant='coverage',
+        extra_desc='graft',
+        env={
+            'GRAFT': '1',
+        },
+    )
+
+    TestTask(
         variant='old',
         env={
             'GIT_CINNABAR_OLD_HELPER': '1',
+        },
+    )
+
+    TestTask(
+        variant='old',
+        extra_desc='graft',
+        env={
+            'GIT_CINNABAR_OLD_HELPER': '1',
+            'GRAFT': '1',
         },
     )
 
@@ -248,6 +270,15 @@ def decision():
     )
 
     TestTask(
+        commit=rev,
+        clone=rev,
+        extra_desc='old python graft',
+        env={
+            'GRAFT': '1',
+        },
+    )
+
+    TestTask(
         variant='coverage',
         extra_desc='experiments',
         env={
@@ -257,8 +288,9 @@ def decision():
 
     TestTask(
         variant='coverage',
-        extra_desc='graft',
+        extra_desc='experiments graft',
         env={
+            'GIT_CINNABAR_EXPERIMENTS': 'true',
             'GRAFT': '1',
         },
     )

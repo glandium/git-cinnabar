@@ -82,13 +82,14 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 3000
+#define CMD_VERSION 3001
 #define MIN_CMD_VERSION 3000
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
 struct notes_tree git2hg, hg2git, files_meta;
 
+// XXX: Should use a hg-specific oidset type.
 struct oidset hg2git_seen = OIDSET_INIT;
 
 int metadata_flags = 0;
@@ -282,7 +283,8 @@ static void do_ls_tree(struct string_list *args)
 		goto not_found;
 
 	memset(&match_all, 0, sizeof(match_all));
-	read_tree_recursive(tree, "", 0, 0, &match_all, fill_ls_tree, &ctx);
+	read_tree_recursive(the_repository, tree, "", 0, 0, &match_all,
+	                    fill_ls_tree, &ctx);
 	send_buffer(&ctx.buf);
 	strbuf_release(&ctx.buf);
 
@@ -467,23 +469,25 @@ static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1)
 	return hex - hex_start + !!hex[0];
 }
 
-static const struct object_id *resolve_hg2git(const struct object_id *oid,
+static const struct object_id *resolve_hg2git(const struct hg_object_id *oid,
                                               size_t len)
 {
+	struct object_id git_oid;
 	const struct object_id *note;
 
 	ensure_notes(&hg2git);
 
-	note = get_note(&hg2git, oid);
+	note = get_note_hg(&hg2git, oid);
 	if (len == 40)
 		return note;
 
-	return get_abbrev_note(&hg2git, oid, len);
+	hg_oidcpy2git(&git_oid, oid);
+	return get_abbrev_note(&hg2git, &git_oid, len);
 }
 
 static void do_hg2git(struct string_list *args)
 {
-        struct object_id oid;
+        struct hg_object_id oid;
 	const struct object_id *note;
 	size_t sha1_len;
 
@@ -593,7 +597,7 @@ static void recurse_manifest(const struct object_id *tree_id,
 			strbuf_addslice(&dir, base);
 			strbuf_addslice(&dir, entry_path);
 			strbuf_addch(&dir, '/');
-			recurse_manifest(entry.oid, manifest,
+			recurse_manifest(&entry.oid, manifest,
 			                 strbuf_as_slice(&dir), tree_list);
 			strbuf_release(&dir);
 			continue;
@@ -602,7 +606,7 @@ static void recurse_manifest(const struct object_id *tree_id,
 		strbuf_addslice(manifest, base);
 		strbuf_addslice(manifest, entry_path);
 		strbuf_addf(manifest, "%c%s%s\n", '\0',
-		            oid_to_hex(entry.oid), hgattr(entry.mode));
+		            oid_to_hex(&entry.oid), hgattr(entry.mode));
 	}
 
 	return;
@@ -615,7 +619,7 @@ corrupted:
 static int manifest_entry_equal(const struct name_entry *e1,
                                 const struct name_entry *e2)
 {
-	return (e1->mode == e2->mode) && (oidcmp(e1->oid, e2->oid) == 0);
+	return (e1->mode == e2->mode) && (oidcmp(&e1->oid, &e2->oid) == 0);
 }
 
 /* Return whether base + name matches path */
@@ -715,7 +719,7 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 			strbuf_addslice(manifest, strslice_slice(
 				cur_entry_path, 1, SIZE_MAX));
 			strbuf_addf(manifest, "%c%s%s\n", '\0',
-			            oid_to_hex(cur_entry.oid),
+			            oid_to_hex(&cur_entry.oid),
 			            hgattr(cur_entry.mode));
 			continue;
 		}
@@ -725,11 +729,11 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 			cur_entry_path, 1, SIZE_MAX));
 		strbuf_addch(&dir, '/');
 		if (cmp == 0 && S_ISDIR(ref_entry.mode)) {
-			recurse_manifest2(ref_entry.oid, ref_manifest,
-				          cur_entry.oid, manifest,
+			recurse_manifest2(&ref_entry.oid, ref_manifest,
+				          &cur_entry.oid, manifest,
 			                  strbuf_as_slice(&dir), tree_list);
 		} else
-			recurse_manifest(cur_entry.oid, manifest,
+			recurse_manifest(&cur_entry.oid, manifest,
 			                 strbuf_as_slice(&dir), tree_list);
 		strbuf_release(&dir);
 	}
@@ -809,6 +813,7 @@ struct strbuf *generate_manifest(const struct object_id *oid)
 
 static void do_manifest(struct string_list *args)
 {
+	struct hg_object_id hg_oid;
 	struct object_id oid;
 	const struct object_id *manifest_oid;
 	struct strbuf *manifest = NULL;
@@ -822,11 +827,11 @@ static void do_manifest(struct string_list *args)
 			goto not_found;
 		manifest_oid = &oid;
 	} else {
-		sha1_len = get_abbrev_sha1_hex(args->items[0].string, oid.hash);
+		sha1_len = get_abbrev_sha1_hex(args->items[0].string, hg_oid.hash);
 		if (!sha1_len)
 			goto not_found;
 
-		manifest_oid = resolve_hg2git(&oid, sha1_len);
+		manifest_oid = resolve_hg2git(&hg_oid, sha1_len);
 		if (!manifest_oid)
 			goto not_found;
 	}
@@ -842,7 +847,7 @@ not_found:
 	write_or_die(1, "0\n\n", 3);
 }
 
-static void get_manifest_sha1(const struct commit *commit, unsigned char *sha1)
+static void get_manifest_oid(const struct commit *commit, struct hg_object_id *oid)
 {
 	const char *msg;
 	const char *hex_sha1;
@@ -851,25 +856,25 @@ static void get_manifest_sha1(const struct commit *commit, unsigned char *sha1)
 
 	hex_sha1 = strstr(msg, "\n\n") + 2;
 
-	if (get_sha1_hex(hex_sha1, sha1))
-		hashclr(sha1);
+	if (get_sha1_hex(hex_sha1, oid->hash))
+		hg_oidclr(oid);
 
 	unuse_commit_buffer(commit, msg);
 }
 
-static void hg_sha1(struct strbuf *data, const unsigned char *parent1,
-                    const unsigned char *parent2, unsigned char *result)
+static void hg_sha1(struct strbuf *data, const struct hg_object_id *parent1,
+                    const struct hg_object_id *parent2, struct hg_object_id *result)
 {
 	git_SHA_CTX ctx;
 
 	if (!parent1)
-		parent1 = null_sha1;
+		parent1 = &hg_null_oid;
 	if (!parent2)
-		parent2 = null_sha1;
+		parent2 = &hg_null_oid;
 
 	git_SHA1_Init(&ctx);
 
-	if (hashcmp(parent1, parent2) < 0) {
+	if (hg_oidcmp(parent1, parent2) < 0) {
 		git_SHA1_Update(&ctx, parent1, 20);
 		git_SHA1_Update(&ctx, parent2, 20);
 	} else {
@@ -879,16 +884,51 @@ static void hg_sha1(struct strbuf *data, const unsigned char *parent1,
 
 	git_SHA1_Update(&ctx, data->buf, data->len);
 
-	git_SHA1_Final(result, &ctx);
+	git_SHA1_Final(result->hash, &ctx);
+}
+
+int check_manifest(const struct object_id *oid,
+                   struct hg_object_id *hg_oid)
+{
+	struct hg_object_id parent1, parent2, stored, computed;
+	const struct commit *manifest_commit;
+	struct strbuf *manifest;
+
+	manifest = generate_manifest(oid);
+	if (!manifest)
+		return 0;
+
+	manifest_commit = lookup_commit(the_repository, oid);
+	if (!manifest_commit)
+		return 0;
+
+	if (manifest_commit->parents) {
+		get_manifest_oid(manifest_commit->parents->item, &parent1);
+		if (manifest_commit->parents->next) {
+			get_manifest_oid(manifest_commit->parents->next->item,
+			                 &parent2);
+		} else
+			hg_oidclr(&parent2);
+	} else {
+		hg_oidclr(&parent1);
+		hg_oidclr(&parent2);
+	}
+
+	if (!hg_oid)
+		hg_oid = &computed;
+
+	hg_sha1(manifest, &parent1, &parent2, hg_oid);
+
+	get_manifest_oid(manifest_commit, &stored);
+
+	return hg_oideq(&stored, hg_oid);
 }
 
 static void do_check_manifest(struct string_list *args)
 {
-	unsigned char parent1[20], parent2[20], result[20];
+	struct hg_object_id hg_oid, stored;
 	struct object_id oid;
 	const struct object_id *manifest_oid;
-	const struct commit *manifest_commit;
-	struct strbuf *manifest = NULL;
 
 	if (args->nr != 1)
 		goto error;
@@ -898,44 +938,22 @@ static void do_check_manifest(struct string_list *args)
 			goto error;
 		manifest_oid = &oid;
 	} else {
-		if (get_oid_hex(args->items[0].string, &oid))
+		if (get_sha1_hex(args->items[0].string, hg_oid.hash))
 			goto error;
 
-		manifest_oid = resolve_hg2git(&oid, 40);
+		manifest_oid = resolve_hg2git(&hg_oid, 40);
 		if (!manifest_oid)
 			goto error;
 	}
 
-	manifest = generate_manifest(manifest_oid);
-	if (!manifest)
+	if (!check_manifest(manifest_oid, &stored))
 		goto error;
 
-	manifest_commit = lookup_commit(the_repository, manifest_oid);
-	if (!manifest_commit)
+	if (manifest_oid != &oid && !hg_oideq(&stored, &hg_oid))
 		goto error;
 
-	if (manifest_commit->parents) {
-		get_manifest_sha1(manifest_commit->parents->item, parent1);
-		if (manifest_commit->parents->next) {
-			get_manifest_sha1(manifest_commit->parents->next->item,
-			                  parent2);
-		} else
-			hashclr(parent2);
-	} else {
-		hashclr(parent1);
-		hashclr(parent2);
-	}
-
-	hg_sha1(manifest, parent1, parent2, result);
-
-	if (manifest_oid == &oid)
-		get_manifest_sha1(manifest_commit, oid.hash);
-
-	if (hashcmp(result, oid.hash) == 0) {
-		write_or_die(1, "ok\n", 3);
-		return;
-	}
-
+	write_or_die(1, "ok\n", 3);
+	return;
 error:
 	write_or_die(1, "error\n", 6);
 }
@@ -943,51 +961,51 @@ error:
 static void do_check_file(struct string_list *args)
 {
 	struct hg_file file;
-	unsigned char sha1[20], parent1[20], parent2[20], result[20];
+	struct hg_object_id oid, parent1, parent2, result;
 
 	hg_file_init(&file);
 
 	if (args->nr < 1 || args->nr > 3)
 		goto error;
 
-	if (get_sha1_hex(args->items[0].string, sha1))
+	if (get_sha1_hex(args->items[0].string, oid.hash))
 		goto error;
 
 	if (args->nr > 1) {
-		if (get_sha1_hex(args->items[1].string, parent1))
+		if (get_sha1_hex(args->items[1].string, parent1.hash))
 			goto error;
 	} else
-		hashclr(parent1);
+		hg_oidclr(&parent1);
 
 	if (args->nr > 2) {
-		if (get_sha1_hex(args->items[2].string, parent2))
+		if (get_sha1_hex(args->items[2].string, parent2.hash))
 			goto error;
 	} else
-		hashclr(parent2);
+		hg_oidclr(&parent2);
 
-	hg_file_load(&file, sha1);
+	hg_file_load(&file, &oid);
 
 	/* We do the quick and dirty thing here, for now.
 	 * See details in cinnabar.githg.FileFindParents._set_parents_fallback
 	 */
-	hg_sha1(&file.file, parent1, parent2, result);
-	if (hashcmp(sha1, result) == 0)
+	hg_sha1(&file.file, &parent1, &parent2, &result);
+	if (hg_oideq(&oid, &result))
 		goto ok;
 
-	hg_sha1(&file.file, parent1, NULL, result);
-	if (hashcmp(sha1, result) == 0)
+	hg_sha1(&file.file, &parent1, NULL, &result);
+	if (hg_oideq(&oid, &result))
 		goto ok;
 
-	hg_sha1(&file.file, parent2, NULL, result);
-	if (hashcmp(sha1, result) == 0)
+	hg_sha1(&file.file, &parent2, NULL, &result);
+	if (hg_oideq(&oid, &result))
 		goto ok;
 
-	hg_sha1(&file.file, parent1, parent1, result);
-	if (hashcmp(sha1, result) == 0)
+	hg_sha1(&file.file, &parent1, &parent1, &result);
+	if (hg_oideq(&oid, &result))
 		goto ok;
 
-	hg_sha1(&file.file, NULL, NULL, result);
-	if (hashcmp(sha1, result))
+	hg_sha1(&file.file, NULL, NULL, &result);
+	if (hg_oideq(&oid, &result))
 		goto error;
 
 ok:
@@ -1003,6 +1021,7 @@ error:
 static void do_version(struct string_list *args)
 {
 	long int version;
+	struct strbuf version_s = STRBUF_INIT;
 
 	if (args->nr != 1)
 		exit(1);
@@ -1014,8 +1033,12 @@ static void do_version(struct string_list *args)
 	if (!version || version < MIN_CMD_VERSION || version > CMD_VERSION)
 		exit(128);
 
-	write_or_die(1, STRINGIFY(HELPER_HASH) "\n",
-	             sizeof(STRINGIFY(HELPER_HASH)));
+	strbuf_add(&version_s, STRINGIFY(HELPER_HASH), sizeof(STRINGIFY(HELPER_HASH)) - 1);
+	if (version >= 3000)
+		strbuf_addf(&version_s, " " STRINGIFY(CMD_VERSION));
+	strbuf_addch(&version_s, '\n');
+	write_or_die(1, version_s.buf, version_s.len);
+	strbuf_release(&version_s);
 }
 
 static void string_list_as_oid_array(struct string_list *list,
@@ -1184,6 +1207,7 @@ static void connected_loop(struct hg_connection *conn)
 	while (strbuf_getline(&buf, stdin) != EOF) {
 		struct string_list args = STRING_LIST_INIT_NODUP;
 		const char *command;
+		record_command(&buf);
 		split_command(buf.buf, &command, &args);
 
 		if (!*command) {
@@ -1253,6 +1277,7 @@ static int add_each_head(const struct object_id *oid, void *data)
 
 static void do_heads(struct string_list *args)
 {
+	//XXX: Should use hg specific oid array.
         struct oid_array *heads = NULL;
         struct strbuf heads_buf = STRBUF_INIT;
 
@@ -1393,7 +1418,7 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 				if (!S_ISDIR(mode))
 					goto corrupted;
 				recurse_create_git_tree(
-					entry.oid, NULL, tree_buf, NULL,
+					&entry.oid, NULL, tree_buf, NULL,
 					cache);
 				continue;
 			} else if (S_ISDIR(mode)) {
@@ -1401,15 +1426,17 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 				ref_entry = lazy_tree_entry_by_name(
 					&ref_state, reference, entry_path.buf);
 				recurse_create_git_tree(
-					entry.oid,
-					ref_entry ? ref_entry->oid : NULL,
+					&entry.oid,
+					ref_entry ? &ref_entry->oid : NULL,
 					NULL, &oid, cache);
 			} else {
 				const struct object_id *file_oid;
-				if (is_empty_hg_file(entry.oid->hash))
+				struct hg_object_id hg_oid;
+				oidcpy2hg(&hg_oid, &entry.oid);
+				if (is_empty_hg_file(&hg_oid))
 					file_oid = ensure_empty_blob();
 				else
-					file_oid = resolve_hg2git(entry.oid, 40);
+					file_oid = resolve_hg2git(&hg_oid, 40);
 				if (!file_oid)
 					goto corrupted;
 				oidcpy(&oid, file_oid);
@@ -1451,6 +1478,7 @@ static struct hashmap git_tree_cache;
 
 static void do_create_git_tree(struct string_list *args)
 {
+	struct hg_object_id hg_oid;
 	struct object_id oid;
 	const struct object_id *manifest_oid;
 	struct commit *commit;
@@ -1464,10 +1492,10 @@ static void do_create_git_tree(struct string_list *args)
 			goto not_found;
 		manifest_oid = &oid;
 	} else {
-		if (get_oid_hex(args->items[0].string, &oid))
+		if (get_sha1_hex(args->items[0].string, hg_oid.hash))
 			goto not_found;
 
-		manifest_oid = resolve_hg2git(&oid, 40);
+		manifest_oid = resolve_hg2git(&hg_oid, 40);
 		if (!manifest_oid)
 			goto not_found;
 	}
@@ -1477,10 +1505,10 @@ static void do_create_git_tree(struct string_list *args)
 		goto not_found;
 
 	if (args->nr == 2) {
-		struct object_id ref_oid;
+		struct hg_object_id ref_oid;
 		const struct object_id *ref_commit_oid;
 		struct commit *ref_commit;
-		if (get_oid_hex(args->items[1].string, &ref_oid))
+		if (get_sha1_hex(args->items[1].string, ref_oid.hash))
 			die("invalid argument");
 		ref_commit_oid = resolve_hg2git(&ref_oid, 40);
 		if (!ref_commit_oid)
@@ -1595,11 +1623,18 @@ static void init_config()
 	if (!config("check", &conf)) {
 		struct strbuf **check = strbuf_split(&conf, ',');
 		struct strbuf **c;
-		for (c = check; *c; c++)
+		for (c = check; *c; c++) {
+			// strbuf_split leaves the `,`.
+			if ((*c)->buf[(*c) -> len - 1] == ',')
+				strbuf_setlen(*c, (*c)->len - 1);
 			if (!strcmp((*c)->buf, "true") ||
-			    !strcmp((*c)->buf, "all") ||
-			    !strcmp((*c)->buf, "helper"))
+			    !strcmp((*c)->buf, "all"))
+				cinnabar_check = -1;
+			else if (!strcmp((*c)->buf, "helper"))
 				cinnabar_check |= CHECK_HELPER;
+			else if (!strcmp((*c)->buf, "manifests"))
+				cinnabar_check |= CHECK_MANIFESTS;
+		}
 		strbuf_list_free(check);
 	}
 	strbuf_release(&conf);
@@ -1673,6 +1708,7 @@ int cmd_main(int argc, const char *argv[])
 	while (strbuf_getline(&buf, stdin) != EOF) {
 		struct string_list args = STRING_LIST_INIT_NODUP;
 		const char *command;
+		record_command(&buf);
 		split_command(buf.buf, &command, &args);
 		if (!strcmp("version", command)) {
 			do_version(&args);
@@ -1695,6 +1731,7 @@ int cmd_main(int argc, const char *argv[])
 		if (!strcmp("git2hg", command))
 			do_get_note(&git2hg, &args);
 		else if (!strcmp("file-meta", command))
+			// XXX: Should use a different function that reads a hg oid.
 			do_get_note(&files_meta, &args);
 		else if (!strcmp("hg2git", command))
 			do_hg2git(&args);

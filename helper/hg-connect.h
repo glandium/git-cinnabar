@@ -1,6 +1,7 @@
 #ifndef HG_CONNECT_H
 #define HG_CONNECT_H
 
+#include "cinnabar-util.h"
 #include "run-command.h"
 #include "sha1-array.h"
 #include "string-list.h"
@@ -11,7 +12,7 @@ struct hg_connection {
 	void (*simple_command)(struct hg_connection *, struct strbuf *response,
 			       const char *command, ...);
 
-	void (*changegroup_command)(struct hg_connection *, FILE *out,
+	void (*changegroup_command)(struct hg_connection *, struct writer *out,
 				    const char *command, ...);
 
 	void (*push_command)(struct hg_connection *, struct strbuf *response,
@@ -23,6 +24,7 @@ struct hg_connection {
 		struct {
 			struct child_process proc;
 			FILE *out;
+			int is_remote;
 		} stdio;
 		struct {
 			char *url;

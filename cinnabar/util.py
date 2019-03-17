@@ -1,10 +1,13 @@
 import logging
 import os
+import socket
 import subprocess
 import sys
 import time
 import traceback
+import urllib2
 from collections import (
+    deque,
     Iterable,
     OrderedDict,
 )
@@ -57,8 +60,9 @@ def init_logging():
     # filled before logging is setup, so that the output of
     # `git config -l` is never logged.
     from .git import Git
-    log_conf = Git.config('cinnabar.log')
-    if not log_conf:
+    log_conf = Git.config('cinnabar.log') or ''
+    if not log_conf and not check_enabled('memory') and \
+            not check_enabled('cpu'):
         return
     for assignment in log_conf.split(','):
         try:
@@ -114,30 +118,29 @@ class ConfigSetFunc(object):
 check_enabled = ConfigSetFunc(
     'cinnabar.check',
     ('nodeid', 'manifests', 'helper'),
-    ('bundle', 'files', 'memory', 'time', 'traceback'),
+    ('bundle', 'files', 'memory', 'cpu', 'time', 'traceback', 'no-mercurial',
+     'no-bundle2', 'cinnabarclone', 'clonebundles'),
 )
 
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
-    ('wire', 'merge', 'store-manifest', 'git-clone'),
+    ('wire', 'merge', 'git-clone', 'store-changegroup'),
 )
 
 
 progress = True
 
 
-def progress_iter(fmt, iter, filter_func=None):
-    if not filter_func:
-        return progress_enum(fmt, enumerate(iter, start=1))
+try:
+    if check_enabled('no-mercurial'):
+        raise ImportError('Do not use mercurial')
+    from mercurial.mdiff import textdiff  # noqa: F401
+except ImportError:
+    from .bdiff import bdiff as textdiff  # noqa: F401
 
-    def _progress_iter():
-        count = 0
-        for item in iter:
-            if filter_func(item):
-                count += 1
-            yield count, item
 
-    return progress_enum(fmt, _progress_iter())
+def progress_iter(fmt, iter):
+    return progress_enum(fmt, enumerate(iter, start=1))
 
 
 def progress_enum(fmt, enum_iter):
@@ -481,6 +484,163 @@ class lrucache(object):
         return len(self._cache)
 
 
+# The following class was copied from mercurial.
+#  Copyright 2005 K. Thananchayan <thananck@yahoo.com>
+#  Copyright 2005-2007 Matt Mackall <mpm@selenic.com>
+#  Copyright 2006 Vadim Gelfer <vadim.gelfer@gmail.com>
+class chunkbuffer(object):
+    """Allow arbitrary sized chunks of data to be efficiently read from an
+    iterator over chunks of arbitrary size."""
+
+    def __init__(self, in_iter):
+        """in_iter is the iterator that's iterating over the input chunks."""
+        def splitbig(chunks):
+            for chunk in chunks:
+                if len(chunk) > 2 ** 20:
+                    pos = 0
+                    while pos < len(chunk):
+                        end = pos + 2 ** 18
+                        yield chunk[pos:end]
+                        pos = end
+                else:
+                    yield chunk
+        self.iter = splitbig(in_iter)
+        self._queue = deque()
+        self._chunkoffset = 0
+
+    def read(self, l=None):
+        """Read L bytes of data from the iterator of chunks of data.
+        Returns less than L bytes if the iterator runs dry.
+
+        If size parameter is omitted, read everything"""
+        if l is None:
+            return ''.join(self.iter)
+
+        left = l
+        buf = []
+        queue = self._queue
+        while left > 0:
+            # refill the queue
+            if not queue:
+                target = 2 ** 18
+                for chunk in self.iter:
+                    queue.append(chunk)
+                    target -= len(chunk)
+                    if target <= 0:
+                        break
+                if not queue:
+                    break
+
+            # The easy way to do this would be to queue.popleft(), modify the
+            # chunk (if necessary), then queue.appendleft(). However, for cases
+            # where we read partial chunk content, this incurs 2 dequeue
+            # mutations and creates a new str for the remaining chunk in the
+            # queue. Our code below avoids this overhead.
+
+            chunk = queue[0]
+            chunkl = len(chunk)
+            offset = self._chunkoffset
+
+            # Use full chunk.
+            if offset == 0 and left >= chunkl:
+                left -= chunkl
+                queue.popleft()
+                buf.append(chunk)
+                # self._chunkoffset remains at 0.
+                continue
+
+            chunkremaining = chunkl - offset
+
+            # Use all of unconsumed part of chunk.
+            if left >= chunkremaining:
+                left -= chunkremaining
+                queue.popleft()
+                # offset == 0 is enabled by block above, so this won't merely
+                # copy via ``chunk[0:]``.
+                buf.append(chunk[offset:])
+                self._chunkoffset = 0
+
+            # Partial chunk needed.
+            else:
+                buf.append(chunk[offset:offset + left])
+                self._chunkoffset += left
+                left -= chunkremaining
+
+        return ''.join(buf)
+
+
+class HTTPReader(object):
+    def __init__(self, url):
+        self.fh = urllib2.urlopen(url)
+        self.url = url
+        try:
+            self.length = int(self.fh.headers['content-length'])
+        except (ValueError, KeyError):
+            self.length = None
+        self.can_recover = \
+            self.fh.headers.getheader('Accept-Ranges') == 'bytes'
+        self.offset = 0
+        self.closed = False
+
+    def read(self, size):
+        result = []
+        length = 0
+        while length < size:
+            try:
+                buf = self.fh.read(size - length)
+            except socket.error:
+                buf = ''
+            if not buf:
+                # When self.length is None, self.offset < self.length is always
+                # false.
+                if self.can_recover and self.offset < self.length:
+                    current_fh = self.fh
+                    self.fh = self._reopen()
+                    if self.fh is current_fh:
+                        break
+                    continue
+                break
+            length += len(buf)
+            self.offset += len(buf)
+            result.append(buf)
+        return ''.join(result)
+
+    def _reopen(self):
+        # This reopens the network connection with a HTTP Range request
+        # starting from self.offset.
+        req = urllib2.Request(self.url)
+        req.add_header('Range', 'bytes=%d-' % self.offset)
+        fh = urllib2.urlopen(req)
+        if fh.getcode() != 206:
+            return self.fh
+        range = fh.headers.getheader('Content-Range') or ''
+        unit, _, range = range.partition(' ')
+        if unit != 'bytes':
+            return self.fh
+        start, _, end = range.lstrip().partition('-')
+        try:
+            start = int(start)
+        except (TypeError, ValueError):
+            start = 0
+        if start > self.offset:
+            return self.fh
+        logging.getLogger('httpreader').debug('Retrying from offset %d', start)
+        while start < self.offset:
+            l = len(fh.read(self.offset - start))
+            if not l:
+                return self.fh
+            start += l
+        return fh
+
+    def readable(self):
+        return True
+
+    def readinto(self, b):
+        buf = self.read(len(b))
+        b[:len(buf)] = buf
+        return len(buf)
+
+
 class Process(object):
     def __init__(self, *args, **kwargs):
         stdin = kwargs.pop('stdin', None)
@@ -579,17 +739,26 @@ class TypedProperty(object):
         self.values[obj] = getattr(self.cls, 'from_obj', self.cls)(value)
 
 
-class MemoryReporter(Thread):
-    def __init__(self):
-        super(MemoryReporter, self).__init__()
+class MemoryCPUReporter(Thread):
+    def __init__(self, memory=False, cpu=False):
+        assert memory or cpu
+        super(MemoryCPUReporter, self).__init__()
         self._queue = Queue(1)
-        self._logger = logging.getLogger('memory')
+        self._logger = logging.getLogger('report')
         self._logger.setLevel(logging.INFO)
+        self._format = '[%s(%d)] %r'
+        if memory and cpu:
+            self._format += ' %r'
+            self._info = lambda p: (p.memory_info(), p.cpu_times())
+        elif memory:
+            self._info = lambda p: (p.memory_info(),)
+        elif cpu:
+            self._info = lambda p: (p.cpu_times(),)
         self.start()
 
     def _report(self, proc):
         self._logger.info(
-            '[%s(%d)] %r', proc.name(), proc.pid, proc.memory_info())
+            self._format, proc.name(), proc.pid, *self._info(proc))
 
     def run(self):
         import psutil
@@ -615,8 +784,9 @@ class MemoryReporter(Thread):
 
 def run(func):
     init_logging()
-    if check_enabled('memory'):
-        reporter = MemoryReporter()
+    if check_enabled('memory') or check_enabled('cpu'):
+        reporter = MemoryCPUReporter(memory=check_enabled('memory'),
+                                     cpu=check_enabled('cpu'))
 
     try:
         retcode = func(sys.argv[1:])
@@ -637,6 +807,6 @@ def run(func):
                 '`git -c cinnabar.check=traceback <command>` to see the '
                 'full traceback.\n')
     finally:
-        if check_enabled('memory'):
+        if check_enabled('memory') or check_enabled('cpu'):
             reporter.shutdown()
     sys.exit(retcode)

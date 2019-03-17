@@ -4,10 +4,7 @@ import sys
 import urllib
 import urllib2
 from cinnabar.exceptions import NothingToGraftException
-from cinnabar.githg import (
-    Changeset,
-    ManifestInfo,
-)
+from cinnabar.githg import Changeset
 from cinnabar.helper import (
     GitHgHelper,
     HgRepoHelper,
@@ -20,13 +17,13 @@ from itertools import (
     chain,
     izip,
 )
+from io import BytesIO
 from urlparse import (
     ParseResult,
     urlparse,
     urlunparse,
 )
 import logging
-import socket
 import struct
 import random
 from cinnabar.dag import gitdag
@@ -35,7 +32,9 @@ from cinnabar.git import (
     NULL_NODE_ID,
 )
 from cinnabar.util import (
+    HTTPReader,
     check_enabled,
+    chunkbuffer,
     experiment,
     progress_enum,
     progress_iter,
@@ -52,6 +51,8 @@ from .changegroup import (
 from cStringIO import StringIO
 
 try:
+    if check_enabled('no-mercurial'):
+        raise ImportError('Do not use mercurial')
     # Old versions of mercurial use an old version of socketutil that tries to
     # assign a local PROTOCOL_SSLv2, copying it from the ssl module, without
     # ever using it. It shouldn't hurt to set it here.
@@ -87,6 +88,8 @@ if changegroup:
         from mercurial.changegroup import unbundle10 as cg1unpacker
 
     try:
+        if check_enabled('no-bundle2'):
+            raise ImportError('Do not use bundlev2')
         from mercurial.bundle2 import (
             bundle2caps,
             encodecaps,
@@ -121,6 +124,10 @@ if changegroup:
                 return username, password
 
     url.passwordmgr = passwordmgr
+else:
+    def cg1unpacker(fh, alg):
+        assert alg == 'UN'
+        return fh
 
 
 # The following two functions (readexactly, getchunk) were copied from the
@@ -418,6 +425,8 @@ class HelperRepo(object):
                     result += self.data.read(length - len(result))
                 return result
 
+        if header == 'err\n':
+            return Reader('', BytesIO())
         return Reader(header, data)
 
     def pushkey(self, namespace, key, old, new):
@@ -469,6 +478,15 @@ class bundlerepo(object):
         return self._url
 
     def init(self, store):
+        self._store = store
+
+    def _ensure_ready(self):
+        assert hasattr(self, '_store')
+        if self._store is None:
+            return
+        store = self._store
+        self._store = None
+
         raw_unbundler = unbundler(self._bundle)
         self._dag = gitdag()
         branches = set()
@@ -500,7 +518,7 @@ class bundlerepo(object):
             self._branchmap[tag].append(unhexlify(node))
 
         def repo_unbundler():
-            yield chunks
+            yield iter(chunks)
             yield next(raw_unbundler, None)
             yield next(raw_unbundler, None)
             if next(raw_unbundler, None) is not None:
@@ -509,9 +527,11 @@ class bundlerepo(object):
         self._unbundler = repo_unbundler()
 
     def heads(self):
+        self._ensure_ready()
         return self._heads
 
     def branchmap(self):
+        self._ensure_ready()
         return self._branchmap
 
     def capable(self, capability):
@@ -521,6 +541,7 @@ class bundlerepo(object):
         return {}
 
     def known(self, heads):
+        self._ensure_ready()
         return [h in self._dag for h in heads]
 
 
@@ -558,124 +579,110 @@ def unbundler(bundle):
 
 
 def get_clonebundle(repo):
-    try:
-        from mercurial.exchange import (
-            parseclonebundlesmanifest,
-            filterclonebundleentries,
-        )
-    except ImportError:
-        return None
+    url = Git.config('cinnabar.clonebundle')
+    if not url:
+        try:
+            if check_enabled('no-mercurial'):
+                raise ImportError('Do not use mercurial')
+            from mercurial.exchange import (
+                parseclonebundlesmanifest,
+                filterclonebundleentries,
+            )
+        except ImportError:
+            return None
 
-    bundles = repo._call('clonebundles')
+        bundles = repo._call('clonebundles')
 
-    class dummy(object):
-        pass
+        class dummy(object):
+            pass
 
-    fakerepo = dummy()
-    fakerepo.requirements = set()
-    fakerepo.supportedformats = set()
-    fakerepo.ui = repo.ui
+        fakerepo = dummy()
+        fakerepo.requirements = set()
+        fakerepo.supportedformats = set()
+        fakerepo.ui = repo.ui
 
-    entries = parseclonebundlesmanifest(fakerepo, bundles)
-    if not entries:
-        return None
+        entries = parseclonebundlesmanifest(fakerepo, bundles)
+        if not entries:
+            return None
 
-    entries = filterclonebundleentries(fakerepo, entries)
-    if not entries:
-        return None
+        entries = filterclonebundleentries(fakerepo, entries)
+        if not entries:
+            return None
 
-    url = entries[0].get('URL')
+        url = entries[0].get('URL')
+
     if not url:
         return None
 
     sys.stderr.write('Getting clone bundle from %s\n' % url)
 
-    class Getter(object):
-        def __init__(self, url):
-            self.fh = urllib2.urlopen(url)
-            self.url = url
-            try:
-                self.length = int(self.fh.headers['content-length'])
-            except (ValueError, KeyError):
-                self.length = None
-            self.offset = 0
+    return unbundle_fh(HTTPReader(url), url)
 
-        def read(self, size):
-            try:
-                result = self.fh.read(size)
-            except socket.error:
-                result = ''
 
-            # When self.length is None, self.offset < self.length is always
-            # false.
-            if not result and self.offset < self.length:
-                # Processing large manifests or large files can be slow.
-                # With highly compressed but nevertheless large bundles, this
-                # means it can take time to process relatively small
-                # (compressed) inputs: in the order of several minutes for a
-                # few megabytes.  When that happens, SSL connections can end
-                # up being aborted between two large TCP receives. In that
-                # case, try again with an HTTP Range request if the server
-                # supports it.
-                # TODO: This is a stopgap until processing is faster.
-                req = urllib2.Request(self.url)
-                req.add_header('Range', 'bytes=%d-' % self.offset)
-                self.fh = urllib2.urlopen(req)
-                if self.fh.getcode() != 206:
-                    return ''
-                range = self.fh.headers['Content-Range'].split(None, 1)
-                if len(range) != 2:
-                    return ''
-                unit, range = range
-                if unit != 'bytes':
-                    return ''
-                range = range.split('-', 1)
-                if len(range) != 2:
-                    return ''
-                start, end = range
-                start = int(start)
-                if start > self.offset:
-                    return ''
-                logging.getLogger('clonebundle').debug(
-                    'Retrying from offset %d', start)
-                while start < self.offset:
-                    l = len(self.fh.read(self.offset - start))
-                    if not l:
-                        return ''
-                    start += l
-                result = self.fh.read(size)
-            self.offset += len(result)
-            return result
+# TODO: Get the changegroup stream directly and send it, instead of
+# recreating a stream we parsed.
+def store_changegroup(changegroup):
+    changesets = next(changegroup, None)
+    first_changeset = next(changesets, None)
+    version = 1
+    if isinstance(first_changeset, RawRevChunk02):
+        version = 2
+    with GitHgHelper.store_changegroup(version) as fh:
+        def iter_chunks(iter):
+            for chunk in iter:
+                fh.write(struct.pack('>l', len(chunk) + 4))
+                fh.write(chunk)
+                yield chunk
+            fh.write(struct.pack('>l', 0))
 
-    return unbundle_fh(Getter(url), url)
+        yield iter_chunks(chain((first_changeset,), changesets))
+        yield iter_chunks(next(changegroup, None))
+
+        def iter_files(iter):
+            last_name = None
+            for name, chunk in iter:
+                if name != last_name:
+                    if last_name is not None:
+                        fh.write(struct.pack('>l', 0))
+                    fh.write(struct.pack('>l', len(name) + 4))
+                    fh.write(name)
+                last_name = name
+                fh.write(struct.pack('>l', len(chunk) + 4))
+                fh.write(chunk)
+                yield name, chunk
+            if last_name is not None:
+                fh.write(struct.pack('>l', 0))
+            fh.write(struct.pack('>l', 0))
+
+        yield iter_files(next(changegroup, None))
+
+        if next(changegroup, None) is not None:
+            assert False
 
 
 class BundleApplier(object):
     def __init__(self, bundle):
         self._bundle = bundle
+        self._use_store_changegroup = False
+        if GitHgHelper.supports(GitHgHelper.STORE_CHANGEGROUP) and \
+                experiment('store-changegroup'):
+            self._use_store_changegroup = True
+            self._bundle = store_changegroup(bundle)
 
     def __call__(self, store):
         changeset_chunks = ChunksCollection(progress_iter(
             'Reading {} changesets', next(self._bundle, None)))
 
-        if experiment('store-manifest'):
-            for rev_chunk in progress_iter(
-                    'Reading and importing {} manifests',
-                    next(self._bundle, None)):
+        for rev_chunk in progress_iter(
+                'Reading and importing {} manifests',
+                next(self._bundle, None)):
+            if not self._use_store_changegroup:
                 GitHgHelper.store('manifest', rev_chunk)
-                store.check_manifest(rev_chunk)
-        else:
-            for mn in progress_iter(
-                    'Reading and importing {} manifests',
-                    iter_initialized(store.manifest,
-                                     iter_chunks(next(self._bundle, None),
-                                                 ManifestInfo))):
-                store.store_manifest(mn)
 
         def enumerate_files(iter):
             last_name = None
             count_names = 0
-            for count_chunks, (name, chunk) in enumerate(iter):
+            for count_chunks, (name, chunk) in enumerate(iter, start=1):
                 if name != last_name:
                     count_names += 1
                 last_name = name
@@ -684,7 +691,8 @@ class BundleApplier(object):
         for rev_chunk in progress_enum(
                 'Reading and importing {} revisions of {} files',
                 enumerate_files(next(self._bundle, None))):
-            GitHgHelper.store('file', rev_chunk)
+            if not self._use_store_changegroup:
+                GitHgHelper.store('file', rev_chunk)
 
         if next(self._bundle, None) is not None:
             assert False
@@ -713,6 +721,11 @@ def do_cinnabarclone(repo, manifest, store):
 
     url = data[0]
     url, branch = (url.split('#', 1) + [None])[:2]
+    parsed_url = urlparse(url)
+    if parsed_url.scheme not in ('http', 'https', 'git'):
+        logging.warn('Server advertizes cinnabarclone but provided a non '
+                     'http/https git repository. Skipping.')
+        return False
     sys.stderr.write('Fetching cinnabar metadata from %s\n' % url)
     return store.merge(url, repo.url(), branch)
 
@@ -734,10 +747,14 @@ def getbundle(repo, store, heads, branch_names):
                 if manifest:
                     got_partial = do_cinnabarclone(repo, manifest, store)
                     if not got_partial:
+                        if check_enabled('cinnabarclone'):
+                            raise Exception('cinnabarclone failed.')
                         logging.warn('Falling back to normal clone.')
             if not got_partial and repo.capable('clonebundles'):
                 bundle = get_clonebundle(repo)
-                got_partial = True
+                got_partial = bool(bundle)
+                if not got_partial and check_enabled('clonebundles'):
+                    raise Exception('clonebundles failed.')
         if bundle:
             bundle = unbundler(bundle)
             # Manual move semantics
@@ -827,7 +844,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
             b2caps['replycaps'] = encodecaps({'error': ['abort']})
         cg = create_bundle(store, push_commits, b2caps)
         if not isinstance(repo, HelperRepo):
-            cg = util.chunkbuffer(cg)
+            cg = chunkbuffer(cg)
             if not b2caps:
                 cg = cg1unpacker(cg, 'UN')
         reply = repo.unbundle(cg, repo_heads, '')
@@ -952,7 +969,7 @@ if changegroup:
 
 def get_repo(remote):
     if not changegroup or experiment('wire'):
-        if not changegroup:
+        if not changegroup and not check_enabled('no-mercurial'):
             logging.warning('Mercurial libraries not found. Falling back to '
                             'native access.')
         logging.warning(
@@ -977,7 +994,7 @@ def get_repo(remote):
         try:
             repo = hg.peer(ui, {}, remote.url)
         except (error.RepoError, urllib2.HTTPError, IOError):
-            return bundlerepo(remote.url, url.open(ui, remote.url))
+            return bundlerepo(remote.url, HTTPReader(remote.url))
 
     assert repo.capable('getbundle')
 

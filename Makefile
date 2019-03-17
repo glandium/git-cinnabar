@@ -60,7 +60,7 @@ ifneq ($(shell git -C git-core rev-parse HEAD),$(shell git -C git-core rev-parse
 $(eval $(call exec,git submodule update --init))
 ifeq ($(SYSTEM),Windows)
 $(eval $(call exec,git -C git-core remote add git4win $(GIT_REPO)))
-$(eval $(call exec,git -C git-core remote update git4win))
+$(eval $(call exec,git -C git-core fetch git4win --tags))
 $(eval $(call exec,git -C git-core checkout $(GIT_VERSION)))
 endif
 endif
@@ -136,6 +136,7 @@ all:: git-cinnabar-helper$X
 CINNABAR_OBJECTS += cinnabar-fast-import.o
 CINNABAR_OBJECTS += cinnabar-helper.o
 CINNABAR_OBJECTS += cinnabar-notes.o
+CINNABAR_OBJECTS += cinnabar-util.o
 CINNABAR_OBJECTS += hg-bundle.o
 CINNABAR_OBJECTS += hg-connect.o
 ifndef NO_CURL

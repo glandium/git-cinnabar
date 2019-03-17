@@ -1,6 +1,7 @@
 #ifndef CINNABAR_HELPER_H
 #define CINNABAR_HELPER_H
 
+#include "hg-data.h"
 #include "cinnabar-notes.h"
 
 #define METADATA_REF "refs/cinnabar/metadata"
@@ -18,6 +19,7 @@
 extern int metadata_flags;
 
 #define CHECK_HELPER 0x1
+#define CHECK_MANIFESTS 0x2
 
 extern int cinnabar_check;
 
@@ -47,5 +49,8 @@ static inline void ensure_notes(struct notes_tree *notes)
 }
 
 extern struct strbuf *generate_manifest(const struct object_id *oid);
+
+extern int check_manifest(const struct object_id *oid,
+                          struct hg_object_id *hg_oid);
 
 #endif

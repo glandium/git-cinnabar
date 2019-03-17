@@ -9,11 +9,10 @@ from .changegroup import (
     RawRevChunk,
 )
 from ..git import NULL_NODE_ID
-from ..util import TypedProperty
-try:
-    from mercurial.mdiff import textdiff
-except ImportError:
-    from ..bdiff import bdiff as textdiff
+from ..util import (
+    textdiff,
+    TypedProperty,
+)
 
 
 class Authorship(object):

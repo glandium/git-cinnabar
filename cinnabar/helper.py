@@ -49,8 +49,7 @@ class BaseHelper(object):
         self._helper = self
 
     @classmethod
-    @contextmanager
-    def query(self, name, *args):
+    def _ensure_helper(self):
         if self._helper is False:
             helper_path = Git.config('cinnabar.helper')
             env = {
@@ -72,7 +71,6 @@ class BaseHelper(object):
                 response = None
 
             if not response:
-                logger = logging.getLogger('helper')
                 if self._helper and self._helper.wait() == 128:
                     message = ('Cinnabar helper executable is outdated. '
                                'Please try `git cinnabar download` or '
@@ -84,14 +82,23 @@ class BaseHelper(object):
 
                 raise NoHelperAbort(message)
             else:
-                self._version = response.lstrip('ok\n') or 'unknown'
+                version = response.lstrip('ok\n') or 'unknown'
+                self._revision, _, version = version.partition(' ')
+                if version:
+                    self._version = int(version)
+                else:
+                    self._version = self.VERSION
                 atexit.register(self.close)
 
         if self._helper is self:
             raise HelperClosedError
 
-        if name == 'version':
-            yield StringIO(self._version)
+    @classmethod
+    @contextmanager
+    def query(self, name, *args):
+        self._ensure_helper()
+        if name == 'revision':
+            yield StringIO(self._revision)
             return
 
         helper = self._helper
@@ -140,9 +147,15 @@ class BaseHelper(object):
         assert lf == '\n'
         return ret
 
+    @classmethod
+    def supports(self, version):
+        self._ensure_helper()
+        return version <= self._version
+
 
 class GitHgHelper(BaseHelper):
-    VERSION = 30
+    VERSION = 3000
+    STORE_CHANGEGROUP = 3001
     _helper = False
 
     @classmethod
@@ -269,8 +282,17 @@ class GitHgHelper(BaseHelper):
                 assert False
             with self.query('store', what, delta_node, str(len(obj))):
                 self._helper.stdin.write(obj)
+        elif what == 'manifest_changegroup':
+            with self.query('store', what, *args):
+                return self._helper.stdin
         else:
             assert False
+
+    @classmethod
+    @contextmanager
+    def store_changegroup(self, version):
+        with self.query('store', 'changegroup', str(version)):
+            yield self._helper.stdin
 
     @classmethod
     def heads(self, what):
@@ -387,7 +409,7 @@ class GitHgHelper(BaseHelper):
             helper.sha1 = self._get_last()
 
     @classmethod
-    def close(self, rollback=False):
+    def close(self, rollback=True):
         if not rollback and self._helper != self:
             with self.query('done'):
                 pass
@@ -443,7 +465,7 @@ class CommitHelper(object):
 
 
 class HgRepoHelper(BaseHelper):
-    VERSION = 30
+    VERSION = 3000
     _helper = False
 
     @classmethod

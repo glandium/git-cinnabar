@@ -4,8 +4,12 @@ from __future__ import division
 from binascii import hexlify, unhexlify
 from itertools import izip
 import hashlib
-import urllib
+import io
+import os
+import shutil
+import subprocess
 import sys
+import urllib
 from collections import (
     OrderedDict,
     Sequence,
@@ -19,6 +23,7 @@ from .exceptions import (
     UpgradeAbort,
 )
 from .util import (
+    HTTPReader,
     byte_diff,
     check_enabled,
     one,
@@ -41,12 +46,11 @@ from .hg.objects import (
     File,
 )
 from .helper import GitHgHelper
-from .util import progress_iter
+from .util import (
+    progress_iter,
+    textdiff,
+)
 from .dag import gitdag
-try:
-    from mercurial.mdiff import textdiff
-except ImportError:
-    from .bdiff import bdiff as textdiff
 
 import logging
 
@@ -905,9 +909,25 @@ class GitHgStore(object):
         # The caller should avoid calling this function otherwise.
         assert not self._has_metadata
         remote_refs = OrderedDict()
-        for line in Git.iter('ls-remote', git_repo_url):
+        for line in Git.iter('ls-remote', git_repo_url,
+                             stderr=open(os.devnull, 'w')):
             sha1, ref = line.split(None, 1)
             remote_refs[ref] = sha1
+        bundle = None
+        if not remote_refs:
+            bundle = HTTPReader(git_repo_url)
+            BUNDLE_SIGNATURE = '# v2 git bundle\n'
+            signature = bundle.read(len(BUNDLE_SIGNATURE))
+            if signature != BUNDLE_SIGNATURE:
+                logging.error('Could not find cinnabar metadata')
+                return False
+            bundle = io.BufferedReader(bundle)
+            while True:
+                line = bundle.readline().rstrip()
+                if not line:
+                    break
+                sha1, ref = line.split(' ', 1)
+                remote_refs[ref] = sha1
         if branch:
             branches = [branch]
         else:
@@ -918,9 +938,15 @@ class GitHgStore(object):
             logging.error('Could not find cinnabar metadata')
             return False
 
-        proc = GitProcess(
-            'fetch', '--no-tags', '--no-recurse-submodules', git_repo_url,
-            ref + ':refs/cinnabar/fetch', stdout=sys.stdout)
+        if bundle:
+            proc = GitProcess('index-pack', '--stdin', '-v',
+                              stdin=subprocess.PIPE,
+                              stdout=open(os.devnull, 'w'))
+            shutil.copyfileobj(bundle, proc.stdin)
+        else:
+            proc = GitProcess(
+                'fetch', '--no-tags', '--no-recurse-submodules', git_repo_url,
+                ref + ':refs/cinnabar/fetch', stdout=sys.stdout)
         if proc.wait():
             logging.error('Failed to fetch cinnabar metadata.')
             return False
@@ -1457,4 +1483,4 @@ class GitHgStore(object):
             if ref not in ('refs/notes/cinnabar',):
                 Git.delete_ref(ref)
 
-        GitHgHelper.close()
+        GitHgHelper.close(rollback=False)
