@@ -33,6 +33,12 @@ assert MERCURIAL_VERSION in ALL_MERCURIAL_VERSIONS
 assert all(v in ALL_MERCURIAL_VERSIONS for v in SOME_MERCURIAL_VERSIONS)
 
 
+def nproc(env):
+    if env.os == 'macos':
+        return 'sysctl -n hg.physicalcpu'
+    return 'nproc --all'
+
+
 class Git(Task):
     __metaclass__ = Tool
     PREFIX = "git"
@@ -61,9 +67,9 @@ class Git(Task):
                     'git://git.kernel.org/pub/scm/git/git.git',
                     'v{}'.format(version)
                 ) + [
-                    'make -C repo -j$(nproc) install prefix=/'
-                    ' NO_GETTEXT=1 NO_OPENSSL=1 NO_TCLTK=1'
-                    ' DESTDIR=$PWD/git',
+                    'make -C repo -j$({}) install prefix=/ NO_GETTEXT=1'
+                    ' NO_OPENSSL=1 NO_TCLTK=1 DESTDIR=$PWD/git'.format(
+                        nproc(build_image)),
                     'tar -Jcf $ARTIFACTS/git-{}.tar.xz git'
                     .format(version),
                 ],
@@ -303,8 +309,8 @@ class Helper(Task):
                 hash, env.os, env.cpu, prefix('.', variant)),
             expireIn='26 weeks',
             command=Task.checkout(commit=head) + [
-                'make -C repo helper -j $(nproc) prefix=/usr{}'.format(
-                    prefix(' ', ' '.join(make_flags))),
+                'make -C repo helper -j $({}) prefix=/usr{}'.format(
+                    nproc(env), prefix(' ', ' '.join(make_flags))),
                 'mv repo/{} $ARTIFACTS/'.format(artifact),
             ] + extra_commands,
             artifacts=artifacts,
