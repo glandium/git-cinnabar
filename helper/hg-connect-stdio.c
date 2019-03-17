@@ -114,6 +114,8 @@ static void stdio_changegroup_command(struct hg_connection *conn,
 	 * going to be in advance, so we have to read it according to its
 	 * format: changegroup or bundle2.
 	 */
+	if (conn->stdio.is_remote)
+		bufferize_writer(out);
 	copy_bundle(conn->stdio.out, out);
 	va_end(ap);
 }
@@ -233,6 +235,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	strbuf_release(&buf);
 
 	start_command(proc);
+	conn->stdio.is_remote = (protocol == PROTO_SSH);
 	conn->stdio.out = xfdopen(proc->out, "r");
 	// TODO: return earlier in case the command fails somehow.
 

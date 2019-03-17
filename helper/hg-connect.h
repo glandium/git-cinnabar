@@ -24,6 +24,7 @@ struct hg_connection {
 		struct {
 			struct child_process proc;
 			FILE *out;
+			int is_remote;
 		} stdio;
 		struct {
 			char *url;

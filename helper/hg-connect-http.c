@@ -259,10 +259,11 @@ static size_t inflate_to(char *ptr, size_t size, size_t nmemb, void *data)
 static int inflate_close(void *data)
 {
 	struct inflate_context *context = (struct inflate_context *)data;
+	int ret;
 	git_inflate_end(&context->strm);
-	writer_close(&context->out);
+	ret = writer_close(&context->out);
 	free(context);
-	return 0;
+	return ret;
 }
 
 struct changegroup_response_data {
@@ -294,6 +295,7 @@ static size_t changegroup_write(char *buffer, size_t size, size_t nmemb, void* d
 				response_data->writer->context = stderr;
 			}
 		}
+		bufferize_writer(response_data->writer);
 		response_data->curl = NULL;
 	}
 
@@ -402,6 +404,7 @@ static size_t caps_request_write(char *ptr, size_t size, size_t nmemb,
 			writer->write = (write_callback)fwrite;
 			writer->context = stdout;
 			fwrite("bundle\n", 1, 7, stdout);
+			bufferize_writer(writer);
 		}
 	}
 	return write_to(ptr, size, nmemb, writer);
@@ -448,7 +451,7 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 	http_capabilities_command(conn, &writer, NULL);
 	/* Cf. comment above caps_request_write. If the bundle stream was
 	 * sent to stdout, the writer was switched to fwrite. */
-	if (writer.write == (write_callback)fwrite) {
+	if (writer.write != fwrite_buffer) {
 		writer_close(&writer);
 		free(conn->http.url);
 		free(conn);
