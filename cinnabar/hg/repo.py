@@ -2,7 +2,6 @@ from __future__ import division
 import os
 import sys
 import urllib
-import urllib2
 from cinnabar.exceptions import NothingToGraftException
 from cinnabar.githg import Changeset
 from cinnabar.helper import (
@@ -65,19 +64,9 @@ try:
     from mercurial import (
         changegroup,
         error,
-        hg,
         ui,
         url,
-        util,
     )
-    try:
-        from mercurial.sshpeer import instance as sshpeer
-    except ImportError:
-        from mercurial.sshrepo import instance as sshpeer
-    try:
-        from mercurial.utils import procutil
-    except ImportError:
-        from mercurial import util as procutil
 except ImportError:
     changegroup = unbundle20 = False
 
@@ -873,13 +862,6 @@ def get_ui():
     ui_.fout = ui_.ferr
     ui_.setconfig('ui', 'interactive', False)
     ui_.setconfig('progress', 'disable', True)
-    ssh = os.environ.get('GIT_SSH_COMMAND')
-    if not ssh:
-        ssh = os.environ.get('GIT_SSH')
-        if ssh:
-            ssh = util.shellquote(ssh)
-    if ssh:
-        ui_.setconfig('ui', 'ssh', ssh)
     return ui_
 
 
@@ -917,85 +899,8 @@ class Remote(object):
         self.git_url = url if url.startswith('hg://') else 'hg::%s' % url
 
 
-if changegroup:
-    def localpeer(ui, path):
-        ui.setconfig('ui', 'ssh', '')
-
-        has_checksafessh = hasattr(util, 'checksafessh')
-
-        sshargs = procutil.sshargs
-        shellquote = procutil.shellquote
-        quotecommand = procutil.quotecommand
-        url = util.url
-        if has_checksafessh:
-            checksafessh = util.checksafessh
-
-        procutil.sshargs = lambda *a: ''
-        procutil.shellquote = lambda x: x
-        if has_checksafessh:
-            util.checksafessh = lambda x: None
-
-        # In very old versions of mercurial, shellquote was not used, and
-        # double quotes were hardcoded. Remove them by overriding
-        # quotecommand.
-        def override_quotecommand(cmd):
-            cmd = cmd.lstrip()
-            if cmd.startswith('"'):
-                cmd = cmd[1:-1]
-            return quotecommand(cmd)
-        procutil.quotecommand = override_quotecommand
-
-        class override_url(object):
-            def __init__(self, *args, **kwargs):
-                self.scheme = 'ssh'
-                self.host = 'localhost'
-                self.port = None
-                self.path = path
-                self.user = 'user'
-                self.passwd = None
-        util.url = override_url
-
-        repo = sshpeer(ui, path, False)
-
-        if has_checksafessh:
-            util.checksafessh = checksafessh
-        util.url = url
-        procutil.quotecommand = quotecommand
-        procutil.shellquote = shellquote
-        procutil.sshargs = sshargs
-
-        return repo
-
-
 def get_repo(remote):
-    if not changegroup or experiment('wire'):
-        if not changegroup and not check_enabled('no-mercurial'):
-            logging.warning('Mercurial libraries not found. Falling back to '
-                            'native access.')
-        logging.warning(
-            'Native access to mercurial repositories is experimental!')
-
-        stream = HgRepoHelper.connect(remote.url)
-        if stream:
-            return bundlerepo(remote.url, stream)
-        return HelperRepo(remote.url)
-
-    if remote.parsed_url.scheme == 'file':
-        path = remote.parsed_url.path
-        if sys.platform == 'win32':
-            # TODO: This probably needs more thought.
-            path = path.lstrip('/')
-        if not os.path.isdir(path):
-            return bundlerepo(path)
-    ui = get_ui()
-    if changegroup and remote.parsed_url.scheme == 'file':
-        repo = localpeer(ui, path)
-    else:
-        try:
-            repo = hg.peer(ui, {}, remote.url)
-        except (error.RepoError, urllib2.HTTPError, IOError):
-            return bundlerepo(remote.url, HTTPReader(remote.url))
-
-    assert repo.capable('getbundle')
-
-    return repo
+    stream = HgRepoHelper.connect(remote.url)
+    if stream:
+        return bundlerepo(remote.url, stream)
+    return HelperRepo(remote.url)

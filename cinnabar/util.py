@@ -124,7 +124,7 @@ check_enabled = ConfigSetFunc(
 
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
-    ('wire', 'merge', 'git-clone', 'store-changegroup'),
+    ('merge', 'git-clone', 'store-changegroup'),
 )
 
 

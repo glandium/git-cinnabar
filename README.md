@@ -224,17 +224,6 @@ independently. You can set the `cinnabar.experiments` git configuration to a
 comma-separated list of those features to enable the selected ones, or to
 `all` to enable them all. The available features are:
 
-- **wire**
-
-  In order to talk to Mercurial repositories, git-cinnabar normally uses
-  mercurial python modules. This experimental feature allows to access
-  Mercurial repositories without using the mercurial python modules. It then
-  relies on git-cinnabar-helper to connect to the repository through the
-  mercurial wire protocol. Please note the mercurial python modules are still
-  needed for mercurial bundle v2 support.
-
-  The feature is automatically enabled when Mercurial is not installed.
-
 - **merge**
 
   Git-cinnabar currently doesn’t allow to push merge commits. The main
