@@ -256,6 +256,13 @@ static size_t deflate_to(char *ptr, size_t size, size_t nmemb, void *data)
 	return size * nmemb;
 }
 
+static int deflate_flush(void *data)
+{
+	struct deflate_writer *writer = (struct deflate_writer *)data;
+	git_inflate_end(&writer->strm);
+	return 0;
+}
+
 struct changegroup_response_data {
 	CURL *curl;
 	struct deflate_writer deflater;
@@ -295,15 +302,22 @@ static void http_changegroup_command(struct hg_connection *conn, FILE *out,
 {
 	va_list ap;
 	struct changegroup_response_data response_data;
+	struct writer writer;
 
 	memset(&response_data, 0, sizeof(response_data));
 	response_data.deflater.out.write = (write_callback)fwrite;
+	response_data.deflater.out.flush = (flush_callback)fflush;
 	response_data.deflater.out.context = out;
-	va_start(ap, command);
 	git_inflate_init(&response_data.deflater.strm);
+	writer.write = deflate_to;
+	writer.flush = deflate_flush;
+	writer.context = &response_data.deflater;
+
+	va_start(ap, command);
 	http_command(conn, prepare_changegroup_request, &response_data, command, ap);
-	git_inflate_end(&response_data.deflater.strm);
 	va_end(ap);
+
+	writer_flush(&writer);
 }
 
 struct push_request_info {
@@ -420,11 +434,13 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 	http_init(NULL, conn->http.url, 0);
 
 	writer.write = fwrite_buffer;
+	writer.flush = NULL;
 	writer.context = &caps;
 	http_capabilities_command(conn, &writer, NULL);
 	/* Cf. comment above caps_request_write. If the bundle stream was
 	 * sent to stdout, the writer was switched to fwrite. */
 	if (writer.write == (write_callback)fwrite) {
+		writer_flush(&writer);
 		free(conn->http.url);
 		free(conn);
 		return NULL;

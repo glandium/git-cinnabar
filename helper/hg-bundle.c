@@ -69,6 +69,7 @@ void copy_bundle(FILE *in, FILE *out)
 {
 	struct writer writer;
 	writer.write = (write_callback)fwrite;
+	writer.flush = (flush_callback)fflush;
 	writer.context = out;
 	copy_bundle_internal(in, &writer);
 }
@@ -77,6 +78,7 @@ void copy_bundle_to_strbuf(FILE *in, struct strbuf *out)
 {
 	struct writer writer;
 	writer.write = fwrite_buffer;
+	writer.flush = NULL;
 	writer.context = out;
 	copy_bundle_internal(in, &writer);
 }
