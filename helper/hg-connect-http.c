@@ -260,6 +260,7 @@ static int inflate_close(void *data)
 {
 	struct inflate_context *context = (struct inflate_context *)data;
 	git_inflate_end(&context->strm);
+	free(context);
 	return 0;
 }
 
@@ -328,9 +329,6 @@ static void http_changegroup_command(struct hg_connection *conn, FILE *out,
 	va_end(ap);
 
 	writer_close(&response_data.writer);
-	if (response_data.writer.write == inflate_to) {
-		free(response_data.writer.context);
-	}
 }
 
 struct push_request_info {
