@@ -3,9 +3,9 @@
 #include "cinnabar-util.h"
 
 #ifdef NO_CURL
-size_t fwrite_buffer(char *ptr, size_t eltsize, size_t nmemb, void *buffer_)
+size_t fwrite_buffer(char *ptr, size_t size, size_t nmemb, void *buffer_)
 {
-	size_t size = eltsize * nmemb;
+	size_t size = size * nmemb;
 	struct strbuf *buffer = buffer_;
 
 	strbuf_add(buffer, ptr, size);
@@ -60,10 +60,10 @@ static void create_buffer(struct buffered_context *context) {
 	context->left = BUFFER_SIZE;
 }
 
-static size_t buffered_write(char *ptr, size_t eltsize, size_t nmemb, void *context_)
+static size_t buffered_write(char *ptr, size_t size, size_t nmemb, void *context_)
 {
 	struct buffered_context *context = context_;
-	size_t len = eltsize * nmemb;
+	size_t len = size * nmemb;
 	do {
 		size_t fill = len > context->left ? context->left : len;
 		memcpy(context->append, ptr, fill);
@@ -80,7 +80,7 @@ static size_t buffered_write(char *ptr, size_t eltsize, size_t nmemb, void *cont
 		pthread_cond_signal(&context->cond);
 		pthread_mutex_unlock(&context->mutex);
 	} while (len);
-	return eltsize * nmemb;
+	return size * nmemb;
 }
 
 static int buffered_close(void *context_)
