@@ -232,40 +232,40 @@ static void http_simple_command(struct hg_connection *conn,
 	va_end(ap);
 }
 
-struct deflate_writer {
+struct inflate_context {
 	struct writer out;
 	git_zstream strm;
 };
 
-static size_t deflate_to(char *ptr, size_t size, size_t nmemb, void *data)
+static size_t inflate_to(char *ptr, size_t size, size_t nmemb, void *data)
 {
 	char buf[4096];
-	struct deflate_writer *writer = (struct deflate_writer *)data;
+	struct inflate_context *context = (struct inflate_context *)data;
 	int ret;
 
-	writer->strm.next_in = (void *)ptr;
-	writer->strm.avail_in = size * nmemb;
+	context->strm.next_in = (void *)ptr;
+	context->strm.avail_in = size * nmemb;
 
 	do {
-		writer->strm.next_out = (void *)buf;
-		writer->strm.avail_out = sizeof(buf);
-		ret = git_inflate(&writer->strm, Z_SYNC_FLUSH);
-		write_to(buf, 1, sizeof(buf) - writer->strm.avail_out, &writer->out);
-	} while (writer->strm.avail_in && ret == Z_OK);
+		context->strm.next_out = (void *)buf;
+		context->strm.avail_out = sizeof(buf);
+		ret = git_inflate(&context->strm, Z_SYNC_FLUSH);
+		write_to(buf, 1, sizeof(buf) - context->strm.avail_out, &context->out);
+	} while (context->strm.avail_in && ret == Z_OK);
 
 	return size * nmemb;
 }
 
-static int deflate_flush(void *data)
+static int inflate_flush(void *data)
 {
-	struct deflate_writer *writer = (struct deflate_writer *)data;
-	git_inflate_end(&writer->strm);
+	struct inflate_context *context = (struct inflate_context *)data;
+	git_inflate_end(&context->strm);
 	return 0;
 }
 
 struct changegroup_response_data {
 	CURL *curl;
-	struct deflate_writer deflater;
+	struct inflate_context inflater;
 };
 
 static size_t changegroup_header(char *buffer, size_t size, size_t nmemb, void* data)
@@ -274,7 +274,7 @@ static size_t changegroup_header(char *buffer, size_t size, size_t nmemb, void* 
 		(struct changegroup_response_data *)data;
 
 	if (strcmp(buffer, "Content-Type: application/hg-error\r\n") == 0) {
-		write_to("err\n", 4, 1, &response_data->deflater.out);
+		write_to("err\n", 4, 1, &response_data->inflater.out);
 		curl_easy_setopt(response_data->curl, CURLOPT_FILE, stderr);
 		curl_easy_setopt(response_data->curl, CURLOPT_WRITEFUNCTION, fwrite);
 	}
@@ -291,8 +291,8 @@ static void prepare_changegroup_request(CURL *curl, struct curl_slist *headers,
 
 	curl_easy_setopt(curl, CURLOPT_HEADERDATA, data);
 	curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, changegroup_header);
-	curl_easy_setopt(curl, CURLOPT_FILE, &response_data->deflater);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, deflate_to);
+	curl_easy_setopt(curl, CURLOPT_FILE, &response_data->inflater);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, inflate_to);
 }
 
 /* The changegroup, changegroupsubset and getbundle commands return a raw
@@ -305,13 +305,13 @@ static void http_changegroup_command(struct hg_connection *conn, FILE *out,
 	struct writer writer;
 
 	memset(&response_data, 0, sizeof(response_data));
-	response_data.deflater.out.write = (write_callback)fwrite;
-	response_data.deflater.out.flush = (flush_callback)fflush;
-	response_data.deflater.out.context = out;
-	git_inflate_init(&response_data.deflater.strm);
-	writer.write = deflate_to;
-	writer.flush = deflate_flush;
-	writer.context = &response_data.deflater;
+	response_data.inflater.out.write = (write_callback)fwrite;
+	response_data.inflater.out.flush = (flush_callback)fflush;
+	response_data.inflater.out.context = out;
+	git_inflate_init(&response_data.inflater.strm);
+	writer.write = inflate_to;
+	writer.flush = inflate_flush;
+	writer.context = &response_data.inflater;
 
 	va_start(ap, command);
 	http_command(conn, prepare_changegroup_request, &response_data, command, ap);
