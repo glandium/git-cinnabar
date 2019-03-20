@@ -186,7 +186,6 @@ def decision():
     for env in ('linux', 'mingw64', 'osx10_10'):
         TestTask(task_env=env)
 
-        requests = [] if env == 'linux' else ['python -m pip install requests']
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
         Task(
             task_env=task_env,
@@ -196,7 +195,7 @@ def decision():
                 Git.install('{}.{}'.format(env, GIT_VERSION)),
                 Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
                 Task.checkout(),
-                requests + [
+                [
                     '(cd repo ; ./git-cinnabar download --dev)',
                     'rm -rf repo/.git',
                     '(cd repo ; ./git-cinnabar download --dev)',

@@ -139,35 +139,51 @@ except ImportError:
     from .bdiff import bdiff as textdiff  # noqa: F401
 
 
+class Progress(object):
+    def __init__(self, fmt):
+        self._count = 0
+        self._start = self._t0 = time.time()
+        self._fmt = fmt
+
+    def progress(self, count):
+        if not progress:
+            return
+        t1 = time.time()
+        if t1 - self._t0 > 0.1:
+            self._print_count(count, t1)
+        self._count = count
+
+    def _print_count(self, count, t1=None):
+        if not isinstance(count, tuple):
+            count = (count,)
+        timed = ''
+        if check_enabled('time'):
+            t1 = t1 or time.time()
+            timed = ' in %.1fs' % (t1 - self._start)
+        sys.stderr.write('\r' + self._fmt.format(*count) + timed)
+        sys.stderr.flush()
+        self._t0 = t1
+
+    def finish(self, count=None):
+        self._print_count(count or self._count)
+        sys.stderr.write('\n')
+        sys.stderr.flush()
+
+
 def progress_iter(fmt, iter):
     return progress_enum(fmt, enumerate(iter, start=1))
 
 
 def progress_enum(fmt, enum_iter):
     count = 0
-    t0 = start = time.time()
+    progress = Progress(fmt)
     try:
         for count, item in enum_iter:
-            if progress:
-                t1 = time.time()
-                if t1 - t0 > 0.1:
-                    if not isinstance(count, tuple):
-                        count = (count,)
-                    sys.stderr.write('\r' + fmt.format(*count))
-                    if check_enabled('time'):
-                        sys.stderr.write(' in %.1fs' % (t1 - start))
-                    sys.stderr.flush()
-                    t0 = t1
+            progress.progress(count)
             yield item
     finally:
-        if progress and count:
-            if not isinstance(count, tuple):
-                count = (count,)
-            timed = ''
-            if check_enabled('time'):
-                timed = ' in %.1fs' % (time.time() - start)
-            sys.stderr.write('\r' + fmt.format(*count) + timed + '\n')
-            sys.stderr.flush()
+        if count:
+            progress.finish(count)
 
 
 class IOLogger(object):
