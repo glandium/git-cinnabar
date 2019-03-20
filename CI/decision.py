@@ -186,6 +186,7 @@ def decision():
     for env in ('linux', 'mingw64', 'osx10_10'):
         TestTask(task_env=env)
 
+    for env in ('linux', 'mingw64', 'osx10_11'):
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
         Task(
             task_env=task_env,
@@ -199,6 +200,7 @@ def decision():
                     '(cd repo ; ./git-cinnabar download --dev)',
                     'rm -rf repo/.git',
                     '(cd repo ; ./git-cinnabar download --dev)',
+                    '(cd repo ; ./git-cinnabar download)',
                 ],
             )),
             dependencies=[
