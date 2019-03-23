@@ -48,7 +48,7 @@ static void maybe_sq_quote_buf(struct strbuf *buf, const char *src)
 static void stdio_command_add_param(void *data, const char *name,
 				    union param_value value)
 {
-	struct strbuf *cmd = (struct strbuf *)data;
+	struct strbuf *cmd = data;
 	int is_asterisk = !strcmp(name, "*");
 	uintmax_t len = is_asterisk ? value.size : strlen(value.value);
 	strbuf_addf(cmd, "%s %"PRIuMAX"\n", name, len);

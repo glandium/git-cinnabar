@@ -4,11 +4,11 @@
 #include <stdio.h>
 #include "strbuf.h"
 
-typedef size_t (*write_callback)(char *ptr, size_t eltsize, size_t nmemb, void *context);
+typedef size_t (*write_callback)(char *ptr, size_t size, size_t nmemb, void *context);
 typedef int (*close_callback)(void *context);
 
 #ifdef NO_CURL
-extern size_t fwrite_buffer(char *ptr, size_t eltsize, size_t nmemb, void *strbuf);
+extern size_t fwrite_buffer(char *ptr, size_t size, size_t nmemb, void *strbuf);
 #endif
 
 struct writer {

@@ -406,7 +406,7 @@ class action(object):
             import yaml
             with open(os.path.join(os.path.dirname(__file__), '..',
                       '.taskcluster.yml')) as fh:
-                contents = yaml.load(fh)
+                contents = yaml.safe_load(fh)
             task = contents['tasks'][0]['then']['in']
             del task['taskId']
             self.__class__.template = task

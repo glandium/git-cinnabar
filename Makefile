@@ -56,7 +56,7 @@ ifeq ($(SUBMODULE_STATUS),no)
 $(eval $(call exec,git clone -n $(GIT_REPO) git-core))
 $(eval $(call exec,git -C git-core checkout $(GIT_VERSION)))
 else
-ifneq ($(shell git -C git-core rev-parse HEAD),$(shell git -C git-core rev-parse $(GIT_VERSION)^{commit}))
+ifneq ($(shell git -C git-core rev-parse HEAD),$(shell git -C git-core rev-parse --revs-only $(GIT_VERSION)^{commit}))
 $(eval $(call exec,git submodule update --init))
 ifeq ($(SYSTEM),Windows)
 $(eval $(call exec,git -C git-core remote add git4win $(GIT_REPO)))
@@ -65,7 +65,7 @@ $(eval $(call exec,git -C git-core checkout $(GIT_VERSION)))
 endif
 endif
 endif
-ifneq ($(shell git -C git-core rev-parse HEAD),$(shell git -C git-core rev-parse $(GIT_VERSION)^{commit}))
+ifneq ($(shell git -C git-core rev-parse HEAD),$(shell git -C git-core rev-parse --revs-only $(GIT_VERSION)^{commit}))
 $(error git-core is not checked out at $(GIT_VERSION))
 endif
 
@@ -191,4 +191,7 @@ libcurl.so: ../helper/curl-compat.c
 	$(CC) -shared -Wl,-soname,libcurl.so.4 -o $@ $<
 endif
 
+config.patched.sp config.patched.s config.patched.o: GIT-PREFIX
+config.patched.sp config.patched.s config.patched.o: EXTRA_CPPFLAGS = \
+	-DETC_GITCONFIG='"$(ETC_GITCONFIG_SQ)"'
 endif

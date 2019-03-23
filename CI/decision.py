@@ -186,7 +186,7 @@ def decision():
     for env in ('linux', 'mingw64', 'osx10_10'):
         TestTask(task_env=env)
 
-        requests = [] if env == 'linux' else ['python -m pip install requests']
+    for env in ('linux', 'mingw64', 'osx10_11'):
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
         Task(
             task_env=task_env,
@@ -196,10 +196,11 @@ def decision():
                 Git.install('{}.{}'.format(env, GIT_VERSION)),
                 Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
                 Task.checkout(),
-                requests + [
+                [
                     '(cd repo ; ./git-cinnabar download --dev)',
                     'rm -rf repo/.git',
                     '(cd repo ; ./git-cinnabar download --dev)',
+                    '(cd repo ; ./git-cinnabar download)',
                 ],
             )),
             dependencies=[
@@ -330,10 +331,22 @@ func()
 
 upload_coverage = []
 
-if TC_IS_PUSH and TC_BRANCH:
+if TestTask.coverage and TC_IS_PUSH and TC_BRANCH:
+    download_coverage = [
+        'curl -o cov-{{{}.id}}.tar.xz -L {{{}.artifact}}'.format(task, task)
+        for task in TestTask.coverage
+    ]
+    task = Helper.by_name('linux.coverage')
+    download_coverage.append(
+        'curl -o gcda-helper.tar.xz -L {{{}.artifacts[1]}}'.format(task))
+
+    upload_coverage.extend([
+        '(' + '& '.join(download_coverage) + '& wait)',
+        'tar -Jxf gcda-helper.tar.xz',
+    ])
     for task in TestTask.coverage:
         upload_coverage.extend([
-            'curl -L {{{}.artifact}} | tar -Jxf -'.format(task),
+            'tar -Jxf cov-{{{}.id}}.tar.xz'.format(task),
             'codecov --name "{}" --commit {} --branch {}'.format(
                 task.task['metadata']['name'], TC_COMMIT, TC_BRANCH),
             ('find . \( -name .coverage -o -name coverage.xml -o -name \*.gcda'
@@ -355,8 +368,6 @@ if upload_coverage:
                  '[\\"secret\\"][\\"token\\"])")'),
                 'set -x',
                 'cd repo',
-                'curl -L {{{}.artifacts[1]}} | tar -Jxf -'.format(
-                    Helper.by_name('linux.coverage')),
             ],
             upload_coverage,
         )),
