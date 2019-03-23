@@ -191,4 +191,7 @@ libcurl.so: ../helper/curl-compat.c
 	$(CC) -shared -Wl,-soname,libcurl.so.4 -o $@ $<
 endif
 
+config.patched.sp config.patched.s config.patched.o: GIT-PREFIX
+config.patched.sp config.patched.s config.patched.o: EXTRA_CPPFLAGS = \
+	-DETC_GITCONFIG='"$(ETC_GITCONFIG_SQ)"'
 endif

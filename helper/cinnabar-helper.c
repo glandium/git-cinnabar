@@ -2221,11 +2221,70 @@ static void do_reload(struct string_list *args)
 	init_flags();
 }
 
+extern int configset_add_value(struct config_set *, const char*, const char *);
+
+static int config_set_callback(const char *key, const char *value, void *data)
+{
+	struct config_set *config = data;
+	configset_add_value(config, key, value);
+	return 0;
+}
+
+static void init_git_config()
+{
+	struct child_process proc = CHILD_PROCESS_INIT;
+	struct strbuf path = STRBUF_INIT;
+	const char *env = getenv(EXEC_PATH_ENVIRONMENT);
+	/* As the helper is not necessarily built with the same build options
+	 * as git (because it's built separately), the way its libgit.a is
+	 * going to find the system gitconfig may not match git's, and there
+	 * might be important configuration items there (like http.sslcainfo
+	 * on git for windows).
+	 * Trick git into giving us the path to it system gitconfig. */
+	if (env && *env) {
+		setup_path();
+		argv_array_push(&proc.args, "git-config");
+	} else {
+		argv_array_push(&proc.args, "git");
+		argv_array_push(&proc.args, "config");
+	}
+	argv_array_push(&proc.args, "--system");
+	argv_array_push(&proc.args, "-e");
+	argv_array_push(&proc.env_array, "GIT_EDITOR=echo");
+	proc.no_stdin = 1;
+	proc.no_stderr = 1;
+	/* We don't really care about the capture_command return value. If
+	 * the path we get is empty we'll know it failed. */
+	capture_command(&proc, &path, 0);
+	strbuf_trim_trailing_newline(&path);
+	/* If we couldn't get a path, then so be it. We may just not have
+	 * a complete configuration. */
+	if (!path.len)
+		return;
+
+	if (!git_config_system() || access_or_die(path.buf, R_OK, 0))
+		return;
+
+	if (the_repository->config)
+		// This shouldn't happen, but just in case...
+		git_configset_clear(the_repository->config);
+	else
+		the_repository->config = xcalloc(1, sizeof(struct config_set));
+
+	git_configset_init(the_repository->config);
+	git_configset_add_file(the_repository->config, path.buf);
+	// Avoid read_early_config reading the config we just read (or the
+	// wrong system gitconfig).
+	putenv("GIT_CONFIG_NOSYSTEM=1");
+	read_early_config(config_set_callback, the_repository->config);
+}
+
 int cmd_main(int argc, const char *argv[])
 {
 	int initialized = 0;
 	struct strbuf buf = STRBUF_INIT;
 
+	init_git_config();
 	git_config(git_default_config, NULL);
 	ignore_case = 0;
 	save_commit_buffer = 0;

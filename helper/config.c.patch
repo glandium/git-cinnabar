@@ -1,0 +1,13 @@
+diff --git a/config.c b/config.c
+index 24ad1a9854..2be637e09d 100644
+--- a/config.c
++++ b/config.c
+@@ -1811,7 +1811,7 @@ static struct config_set_element *configset_find_element(struct config_set *cs,
+ 	return found_entry;
+ }
+ 
+-static int configset_add_value(struct config_set *cs, const char *key, const char *value)
++int configset_add_value(struct config_set *cs, const char *key, const char *value)
+ {
+ 	struct config_set_element *e;
+ 	struct string_list_item *si;
