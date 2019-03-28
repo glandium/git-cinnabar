@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import sys
 
@@ -34,7 +35,7 @@ def git_rev_parse(committish):
     from cinnabar.git import Git
     from cinnabar.util import one
     return one(Git.iter('rev-parse', committish,
-                        cwd=os.path.join(BASE_DIR, '..')))
+                        cwd=os.path.join(BASE_DIR, '..'))).decode()
 
 
 UPGRADE_FROM = ('0.3.0', '0.3.2', '0.4.0', '0.5.0b2', '0.5.0b3')
@@ -120,8 +121,7 @@ class TestTask(Task):
         Task.__init__(self, task_env=env, **kwargs)
 
 
-class Clone(TestTask):
-    __metaclass__ = Tool
+class Clone(TestTask, metaclass=Tool):
     PREFIX = "clone"
 
     def __init__(self, version):
@@ -178,8 +178,10 @@ def decision():
         command=[
             '(cd repo &&'
             ' nosetests --all-modules --with-coverage --cover-tests tests)',
-            '(cd repo && flake8 --ignore E402 $(git ls-files \*\*.py'
-            ' git-cinnabar git-remote-hg))',
+            '(cd repo && flake8 --ignore E402 $(git ls-files \\*\\*.py'
+            ' git-cinnabar git-remote-hg | grep -v ^CI/))',
+            '(cd repo && python3 -m flake8 --ignore E402 '
+            '$(git ls-files CI/\\*\\*.py))',
         ],
     )
 
@@ -349,8 +351,8 @@ if TestTask.coverage and TC_IS_PUSH and TC_BRANCH:
             'tar -Jxf cov-{{{}.id}}.tar.xz'.format(task),
             'codecov --name "{}" --commit {} --branch {}'.format(
                 task.task['metadata']['name'], TC_COMMIT, TC_BRANCH),
-            ('find . \( -name .coverage -o -name coverage.xml -o -name \*.gcda'
-             ' -o -name \*.gcov \) -delete'),
+            ('find . \\( -name .coverage -o -name coverage.xml '
+             '-o -name \\*.gcda -o -name \\*.gcov \\) -delete'),
         ])
 
 if upload_coverage:
@@ -373,7 +375,7 @@ if upload_coverage:
         )),
     )
 
-for t in Task.by_id.itervalues():
+for t in Task.by_id.values():
     t.submit()
 
 if not TC_ACTION and 'TC_GROUP_ID' in os.environ:
@@ -385,7 +387,7 @@ if not TC_ACTION and 'TC_GROUP_ID' in os.environ:
             'tasks_for': 'action',
         },
     }
-    for name, a in action.by_name.iteritems():
+    for name, a in action.by_name.items():
         if name != 'decision':
             actions['actions'].append({
                 'kind': 'task',

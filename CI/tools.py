@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 import hashlib
 import os
 
@@ -38,8 +36,7 @@ def nproc(env):
     return 'nproc --all'
 
 
-class Git(Task):
-    __metaclass__ = Tool
+class Git(Task, metaclass=Tool):
     PREFIX = "git"
 
     def __init__(self, os_and_version):
@@ -49,8 +46,8 @@ class Git(Task):
         else:
             build_image = DockerImage.by_name('build')
         if os == 'linux' or os.startswith('osx'):
-            h = hashlib.sha1(build_image.hexdigest)
-            h.update('v2')
+            h = hashlib.sha1(build_image.hexdigest.encode())
+            h.update(b'v2')
             if os == 'linux':
                 description = 'git v{}'.format(version)
             else:
@@ -124,8 +121,7 @@ class Git(Task):
             ]
 
 
-class Hg(Task):
-    __metaclass__ = Tool
+class Hg(Task, metaclass=Tool):
     PREFIX = "hg"
 
     def __init__(self, os_and_version):
@@ -211,7 +207,7 @@ def old_compatible_python():
     return list(Git.iter(
         'log', 'HEAD', '--format=%H', '-S',
         'class GitHgHelper(BaseHelper):\n    VERSION = {}'.format(min_version),
-        cwd=os.path.join(os.path.dirname(__file__), '..')))[-1]
+        cwd=os.path.join(os.path.dirname(__file__), '..')))[-1].decode()
 
 
 def old_helper_head():
@@ -227,7 +223,8 @@ def old_helper_head():
             return list(Git.iter(
                 'log', 'HEAD', '--format=%H',
                 '-S', '#define CMD_VERSION {}'.format(version),
-                cwd=os.path.join(os.path.dirname(__file__), '..')))[-1]
+                cwd=os.path.join(os.path.dirname(__file__),
+                                 '..')))[-1].decode()
         version = '{}.{}.{}'.format(v[0], v[1], v[2] - 1)
     return version
 
@@ -237,11 +234,10 @@ def helper_hash(head='HEAD'):
     from cinnabar.util import one
     return split_ls_tree(one(Git.iter(
         'ls-tree', head, 'helper',
-        cwd=os.path.join(os.path.dirname(__file__), '..'))))[2]
+        cwd=os.path.join(os.path.dirname(__file__), '..'))))[2].decode()
 
 
-class Helper(Task):
-    __metaclass__ = Tool
+class Helper(Task, metaclass=Tool):
     PREFIX = 'helper'
 
     def __init__(self, os_and_variant):

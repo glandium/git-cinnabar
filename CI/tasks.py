@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 import base64
 import datetime
 import json
@@ -16,12 +14,12 @@ from variables import *  # noqa: F403
 
 
 def slugid():
-    rawBytes = uuid.uuid4().bytes
+    rawBytes = bytearray(uuid.uuid4().bytes)
     # Ensure base64-encoded bytes start with [A-Za-f]
-    first = ord(rawBytes[0])
-    if first >= 0xd0:
-        rawBytes = chr(first & 0x7f) + rawBytes[1:]
-    return base64.urlsafe_b64encode(rawBytes)[:-2]  # Drop '==' padding
+    if rawBytes[0] >= 0xd0:
+        rawBytes[0] = rawBytes[0] & 0x7f
+    result = base64.urlsafe_b64encode(rawBytes)[:-2]  # Drop '==' padding
+    return result.decode()
 
 
 timedelta = datetime.timedelta
@@ -222,7 +220,7 @@ class Task(object):
         dependencies = [os.environ.get('TASK_ID') or task_group_id]
         self.artifacts = []
 
-        for k, v in kwargs.iteritems():
+        for k, v in kwargs.items():
             if k in ('provisionerId', 'workerType'):
                 task[k] = v
             elif k == 'description':
@@ -237,7 +235,7 @@ class Task(object):
                     value, multiplier = value, 1
                 elif len(value) == 2:
                     value, unit = value
-                    value = long(value)
+                    value = int(value)
                     unit = unit.rstrip('s')
                     multiplier = 1
                     if unit == 'year':
@@ -290,7 +288,7 @@ class Task(object):
                         ('osx', 'win2012r2')):
                     artifacts = [
                         a.update(name=name) or a
-                        for name, a in artifacts.iteritems()
+                        for name, a in artifacts.items()
                     ]
                 task['payload']['artifacts'] = artifacts
                 if len(artifacts) > 1:

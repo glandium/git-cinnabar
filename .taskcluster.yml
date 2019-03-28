@@ -51,7 +51,7 @@ tasks:
             - 'index.github.${e.login}.${e.repo_name}.decision.${e.decision_id}'
         payload:
           maxRunTime: 3600
-          image: python:2.7
+          image: python:3.7
           features:
             taskclusterProxy: true
           env:
@@ -65,7 +65,7 @@ tasks:
             - >-
               git clone -n ${e.repo_url} repo &&
               git -c advice.detachedHead=false -C repo checkout ${e.commit} &&
-              virtualenv venv &&
+              python3 -m venv venv &&
               venv/bin/pip install pyyaml requests &&
               venv/bin/python repo/CI/decision.py
           artifacts:
