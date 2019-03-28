@@ -11,7 +11,6 @@ from tasks import (
 )
 from docker import DockerImage
 import msys
-from cinnabar.cmd.util import helper_hash
 
 
 MERCURIAL_VERSION = '4.9'
@@ -233,7 +232,7 @@ def old_helper_head():
     return version
 
 
-def old_helper_hash(head):
+def helper_hash(head='HEAD'):
     from cinnabar.git import Git, split_ls_tree
     from cinnabar.util import one
     return split_ls_tree(one(Git.iter(
@@ -286,7 +285,7 @@ class Helper(Task):
                 head = variant[4:]
             else:
                 head = old_helper_head()
-            hash = old_helper_hash(head)
+            hash = helper_hash(head)
             variant = ''
         elif variant:
             raise Exception('Unknown variant: {}'.format(variant))
