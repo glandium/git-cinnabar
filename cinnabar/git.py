@@ -21,8 +21,8 @@ class InvalidConfig(Exception):
 
 
 def split_ls_tree(line):
-    mode, typ, remainder = line.split(' ', 2)
-    sha1, path = remainder.split('\t', 1)
+    mode, typ, remainder = line.split(b' ', 2)
+    sha1, path = remainder.split(b'\t', 1)
     return mode, typ, sha1, path
 
 
@@ -32,7 +32,7 @@ class GitProcess(Process):
 
         command = ['git']
         command += chain(*(['-c', '%s=%s' % (n, v)]
-                           for n, v in config.iteritems()))
+                           for n, v in config.items()))
         command += args
 
         kwargs.setdefault('logger', args[0])
@@ -51,7 +51,7 @@ class Git(object):
         proc = GitProcess(*args, **kwargs)
         try:
             for line in proc.stdout or ():
-                line = line.rstrip('\n')
+                line = line.rstrip(b'\n')
                 yield line
 
         finally:
@@ -72,7 +72,7 @@ class Git(object):
         for line in self.iter('for-each-ref', '--format',
                               '%(objectname) %(refname)', *patterns,
                               stderr=open(os.devnull, 'w')):
-            yield line.split(' ', 1)
+            yield line.split(b' ', 1)
 
     @classmethod
     def resolve_ref(self, ref):
@@ -117,11 +117,11 @@ class Git(object):
             data = proc.stdout.read()
             proc.wait()
             self._config = {}
-            for l in data.split('\0'):
+            for l in data.split(b'\0'):
                 if l:
-                    k, v = l.split('\n', 1)
+                    k, v = l.split(b'\n', 1)
                     if k in self._config:
-                        self._config[k] += '\0' + v
+                        self._config[k] += b'\0' + v
                     else:
                         self._config[k] = v
         var = name
@@ -139,7 +139,7 @@ class Git(object):
             var = name
             value = self._config.get(var.lower())
         if value:
-            value = value.split('\0')
+            value = value.split(b'\0')
             if not multiple:
                 value = value[-1]
         logging.getLogger('config').info('%s = %r', var, value)
