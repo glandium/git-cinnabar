@@ -44,12 +44,10 @@ from .hg.objects import (
     Authorship,
     Changeset,
     File,
-)
-from .helper import GitHgHelper
-from .util import (
-    progress_iter,
     textdiff,
 )
+from .helper import GitHgHelper
+from .util import progress_iter
 from .dag import gitdag
 
 import logging
