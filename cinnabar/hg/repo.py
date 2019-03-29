@@ -664,8 +664,7 @@ class BundleApplier(object):
     def __init__(self, bundle):
         self._bundle = bundle
         self._use_store_changegroup = False
-        if GitHgHelper.supports(GitHgHelper.STORE_CHANGEGROUP) and \
-                experiment('store-changegroup'):
+        if GitHgHelper.supports(GitHgHelper.STORE_CHANGEGROUP):
             self._use_store_changegroup = True
             self._bundle = store_changegroup(bundle)
 
