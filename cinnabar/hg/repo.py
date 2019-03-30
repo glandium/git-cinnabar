@@ -254,18 +254,21 @@ def findcommon(repo, store, hgheads):
     logger = logging.getLogger('findcommon')
     logger.debug(hgheads)
     if not hgheads:
+        logger.info('no requests')
         return set()
 
     sample_size = 100
 
     sample = _sample(hgheads, sample_size)
+    requests = 1
     known = repo.known(unhexlify(h) for h in sample)
     known = set(h for h, k in izip(sample, known) if k)
 
-    logger.info('initial sample size: %d', len(sample))
+    logger.debug('initial sample size: %d', len(sample))
 
     if len(known) == len(hgheads):
-        logger.info('all heads known')
+        logger.debug('all heads known')
+        logger.info('1 request')
         return hgheads
 
     git_heads = set(store.changeset_ref(h) for h in hgheads)
@@ -313,10 +316,11 @@ def findcommon(repo, store, hgheads):
 
         sample = list(sample)
         hg_sample = [store.hg_changeset(h) for h in sample]
+        requests += 1
         known = repo.known(unhexlify(h) for h in hg_sample)
         unknown = set(h for h, k in izip(sample, known) if not k)
         known = set(h for h, k in izip(sample, known) if k)
-        logger.info('next sample size: %d', len(sample))
+        logger.debug('next sample size: %d', len(sample))
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug('known (sub)set: (%d) %s', len(known), sorted(known))
             logger.debug('unknown (sub)set: (%d) %s', len(unknown),
@@ -327,6 +331,7 @@ def findcommon(repo, store, hgheads):
         log_dag('unknown')
         log_dag('known')
 
+    logger.info('%d requests', requests)
     return [store.hg_changeset(h) for h in dag.heads('known')]
 
 
