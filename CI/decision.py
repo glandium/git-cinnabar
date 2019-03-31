@@ -185,6 +185,15 @@ def decision():
         ],
     )
 
+    TestTask(
+        description='cram tests',
+        variant='coverage',
+        clone=False,
+        command=[
+            'cram --verbose repo/tests',
+        ],
+    )
+
     for env in ('linux', 'mingw64', 'osx10_10'):
         TestTask(task_env=env)
 
