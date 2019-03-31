@@ -131,7 +131,6 @@ class GitRemoteHelper(BaseRemoteHelper):
 
         self._branchmap = None
         self._bookmarks = {}
-        self._HEAD = 'branches/default/tip'
         self._has_unknown_heads = False
 
         GRAFT = {
@@ -285,13 +284,14 @@ class GitRemoteHelper(BaseRemoteHelper):
         if fetch:
             refs['hg/revs/%s' % fetch] = fetch
 
+        head_ref = 'branches/default/tip'
         if '@' in bookmarks:
-            self._HEAD = 'bookmarks/@'
+            head_ref = 'bookmarks/@'
         head = bookmarks.get('@', branchmap.tip('default'))
         if self._graft and head:
             head = self._store.changeset_ref(head)
         if head:
-            refs['HEAD'] = '@refs/heads/%s' % self._HEAD
+            refs['HEAD'] = '@refs/heads/%s' % head_ref
 
         self._refs = {sanitize_branch_name(k): v
                       for k, v in refs.iteritems()}
