@@ -169,6 +169,8 @@ class Progress(object):
         self._t0 = t1
 
     def finish(self, count=None):
+        if not progress:
+            return
         self._print_count(count or self._count)
         sys.stderr.write('\n')
         sys.stderr.flush()
