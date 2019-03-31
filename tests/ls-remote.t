@@ -1,3 +1,6 @@
+  $ PATH=$TESTDIR/..${VARIANT:+/$VARIANT}:$PATH
+  $ export COVERAGE_FILE=$TESTDIR/../.coverage
+
   $ n=0
   $ create() {
   >   echo $1 > $1
@@ -7,6 +10,10 @@
   > }
 
   $ hg init repo
+  $ REPO=$(pwd)/repo
+
+  $ git ls-remote hg::$REPO
+
   $ cd repo
   $ for f in a b; do create $f; done
   $ hg update -r 0 > /dev/null
@@ -14,11 +21,8 @@
   $ hg update -r 2 > /dev/null
   $ hg branch foo > /dev/null
   $ for f in e f; do create $f; done
-  $ REPO=$(pwd)
   $ cd ..
 
-  $ PATH=$TESTDIR/..${VARIANT:+/$VARIANT}:$PATH
-  $ export COVERAGE_FILE=$TESTDIR/../.coverage
   $ git ls-remote hg::$REPO
   0000000000000000000000000000000000000000	HEAD
   0000000000000000000000000000000000000000	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
