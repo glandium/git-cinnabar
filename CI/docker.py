@@ -69,7 +69,7 @@ DOCKER_IMAGES = {
          python-coverage\\
          && apt-get clean
         RUN ln -s /usr/bin/python-coverage /usr/local/bin/coverage\\
-         && pip install codecov
+         && pip install codecov==2.0.15
         ''',
 
     'test': '''\
