@@ -3,7 +3,7 @@ import logging
 import os
 import subprocess
 from types import GeneratorType
-from StringIO import StringIO
+from io import BytesIO
 from .exceptions import NoHelperAbort, HelperClosedError
 from .git import (
     EMPTY_BLOB,
@@ -98,7 +98,7 @@ class BaseHelper(object):
     def query(self, name, *args):
         self._ensure_helper()
         if name == 'revision':
-            yield StringIO(self._revision)
+            yield BytesIO(self._revision)
             return
 
         helper = self._helper
