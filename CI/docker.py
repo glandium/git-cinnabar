@@ -81,7 +81,8 @@ DOCKER_IMAGES = {
          python3-flake8\\
          python-nose\\
          python-requests\\
-         && apt-get clean
+         && apt-get clean\\
+         && pip install cram==0.7
         ''',
 }
 
