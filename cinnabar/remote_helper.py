@@ -26,6 +26,7 @@ from cinnabar.git import (
 )
 from cinnabar.util import (
     IOLogger,
+    strip_suffix,
     VersionedDict,
 )
 import cinnabar.util
@@ -128,6 +129,10 @@ class GitRemoteHelper(BaseRemoteHelper):
         if isinstance(self._repo, bundlerepo):
             self._repo.init(self._store)
         self._remote = remote
+
+        self._head_template = None
+        self._tip_template = None
+        self._bookmark_template = None
 
         self._branchmap = None
         self._bookmarks = {}
@@ -261,40 +266,88 @@ class GitRemoteHelper(BaseRemoteHelper):
                 branchmap = self._branchmap = BranchMap(
                     self._store, new_branchmap, list(new_heads))
 
-        refs = {}
-        for branch in sorted(branchmap.names()):
-            branch_tip = branchmap.tip(branch)
-            for head in sorted(branchmap.heads(branch)):
-                if head == branch_tip:
-                    continue
-                refs['refs/heads/branches/%s/%s' % (branch, head)] = head
-            if branch_tip:
-                refs['refs/heads/branches/%s/tip' % branch] = branch_tip
+        refs_style = None
+        if not fetch and branchmap.heads():
+            refs_styles = [
+                None,
+                '',
+                'all',
+                'bookmarks',
+                'heads',
+                'tips',
+            ]
 
-        for name, sha1 in sorted(bookmarks.iteritems()):
-            if sha1 == NULL_NODE_ID:
-                continue
-            ref = self._store.changeset_ref(sha1)
-            if self._graft and not ref:
-                continue
-            refs['refs/heads/bookmarks/%s' % name] = sha1
+            refs_configs = ['cinnabar.refs']
+            if arg == 'for-push':
+                refs_configs.insert(0, 'cinnabar.pushrefs')
+
+            for refs_config in refs_configs:
+                refs_style = Git.config(refs_config, remote=self._remote.name,
+                                        values=refs_styles)
+                if refs_style:
+                    break
+
+        refs_style = refs_style or 'all'
+        self._refs_style = refs_style
+
+        refs = {}
+        if refs_style in ('all', 'heads', 'tips'):
+            if refs_style == 'all':
+                self._head_template = 'refs/heads/branches/{}/{}'
+                self._tip_template = 'refs/heads/branches/{}/tip'
+            elif refs_style == 'heads':
+                self._head_template = 'refs/heads/{}/{}'
+            elif refs_style == 'tips':
+                self._tip_template = 'refs/heads/{}'
+
+            for branch in sorted(branchmap.names()):
+                branch_tip = branchmap.tip(branch)
+                if refs_style != 'tips':
+                    for head in sorted(branchmap.heads(branch)):
+                        if head == branch_tip and refs_style == 'all':
+                            continue
+                        refs[self._head_template.format(branch, head)] = head
+                if branch_tip and refs_style != 'heads':
+                    refs[self._tip_template.format(branch)] = branch_tip
+
+        if refs_style in ('all', 'bookmarks'):
+            if refs_style == 'all':
+                self._bookmark_template = 'refs/heads/bookmarks/{}'
+            else:
+                self._bookmark_template = 'refs/heads/{}'
+            for name, sha1 in sorted(bookmarks.iteritems()):
+                if sha1 == NULL_NODE_ID:
+                    continue
+                ref = self._store.changeset_ref(sha1)
+                if self._graft and not ref:
+                    continue
+                refs[self._bookmark_template.format(name)] = sha1
+
         if fetch:
             refs['hg/revs/%s' % fetch] = fetch
 
-        head_ref = 'branches/default/tip'
-        if '@' in bookmarks:
-            head_ref = 'bookmarks/@'
-        head = bookmarks.get('@', branchmap.tip('default'))
-        if self._graft and head:
-            head = self._store.changeset_ref(head)
-        if head:
-            refs['HEAD'] = '@refs/heads/%s' % head_ref
+        head_ref = None
+        if refs_style in ('all', 'bookmarks') and '@' in bookmarks:
+            head_ref = self._bookmark_template.format('@')
+        elif refs_style in ('all', 'tips'):
+            head_ref = self._tip_template.format('default')
+        elif refs_style == 'heads':
+            head_ref = self._head_template.format(
+                'default', branchmap.tip('default'))
+
+        if head_ref:
+            head = refs.get(head_ref)
+            if self._graft and head:
+                head = self._store.changeset_ref(head)
+            if head:
+                refs['HEAD'] = '@{}'.format(head_ref)
 
         self._refs = {sanitize_branch_name(k): v
                       for k, v in refs.iteritems()}
 
+        head_prefix = strip_suffix((self._head_template or ''), '{}/{}')
         for k, v in sorted(self._refs.iteritems()):
-            if k.startswith('refs/heads/branches/'):
+            if head_prefix and k.startswith(head_prefix):
                 v = self._store.changeset_ref(v) or self._branchmap.git_sha1(v)
             elif not v.startswith('@'):
                 v = self._store.changeset_ref(v) or '?'
@@ -355,7 +408,7 @@ class GitRemoteHelper(BaseRemoteHelper):
         self._helper.write('done\n')
         self._helper.flush()
 
-        if self._remote.name:
+        if self._remote.name and self._refs_style in ('all', 'heads'):
             if Git.config('fetch.prune', self._remote.name) != 'true':
                 prune = 'remote.%s.prune' % self._remote.name
                 sys.stderr.write(
@@ -412,14 +465,16 @@ class GitRemoteHelper(BaseRemoteHelper):
                         status[dest] = \
                             'Deleting remote tags is unsupported'
                     continue
-                if not dest.startswith('refs/heads/bookmarks/'):
+                bookmark_prefix = strip_suffix(
+                    (self._bookmark_template or ''), '{}')
+                if not bookmark_prefix or not dest.startswith(bookmark_prefix):
                     if source:
                         status[dest] = bool(len(pushed))
                     else:
                         status[dest] = \
                             'Deleting remote branches is unsupported'
                     continue
-                name = unquote(dest[21:])
+                name = unquote(dest[len(bookmark_prefix):])
                 if source:
                     source = self._store.hg_changeset(source) or ''
                 status[dest] = self._repo.pushkey(
