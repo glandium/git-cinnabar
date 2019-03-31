@@ -113,6 +113,7 @@ class Git(Task, metaclass=Tool):
                 'curl -L {} | tar -Jxf -'.format(url),
                 'export PATH=$PWD/git/bin:$PATH',
                 'export GIT_EXEC_PATH=$PWD/git/libexec/git-core',
+                'export GIT_TEMPLATE_DIR=$PWD/git/share/git-core/templates',
             ]
         else:
             return [
