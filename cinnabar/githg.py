@@ -44,12 +44,10 @@ from .hg.objects import (
     Authorship,
     Changeset,
     File,
-)
-from .helper import GitHgHelper
-from .util import (
-    progress_iter,
     textdiff,
 )
+from .helper import GitHgHelper
+from .util import progress_iter
 from .dag import gitdag
 
 import logging
@@ -591,14 +589,18 @@ class BranchMap(object):
                 if not sha1:
                     self._unknown_heads.add(head)
                     continue
-                changeset = store.changeset(head)
-                if branch and sequenced and not changeset.close:
-                    self._tips[branch] = head
                 assert head not in self._git_sha1s
                 self._git_sha1s[head] = sha1
-            # Use last head as tip if we didn't set one.
-            if branch and heads and sequenced and branch not in self._tips:
-                self._tips[branch] = head
+            # Use last non-closed head as tip. Caveat: we don't know a
+            # head is closed until we've pulled it.
+            if branch and heads and sequenced:
+                for head in reversed(branch_heads):
+                    if head in self._git_sha1s:
+                        changeset = store.changeset(head)
+                        if changeset.close:
+                            continue
+                    self._tips[branch] = head
+                    break
             if branch:
                 self._heads[branch] = tuple(branch_heads)
 

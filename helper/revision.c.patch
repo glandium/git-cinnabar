@@ -1,0 +1,13 @@
+diff --git a/revision.c b/revision.c
+index 162d511d46..0d2e071569 100644
+--- a/revision.c
++++ b/revision.c
+@@ -1117,7 +1117,7 @@ static int still_interesting(struct commit_list *src, timestamp_t date, int slop
+ 		return SLOP;
+ 
+ 	/* Ok, we're closing in.. */
+-	return slop-1;
++	return slop;
+ }
+ 
+ /*

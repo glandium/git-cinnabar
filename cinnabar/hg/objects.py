@@ -10,9 +10,16 @@ from .changegroup import (
 )
 from ..git import NULL_NODE_ID
 from ..util import (
-    textdiff,
+    check_enabled,
     TypedProperty,
 )
+
+try:
+    if check_enabled('no-mercurial'):
+        raise ImportError('Do not use mercurial')
+    from mercurial.mdiff import textdiff  # noqa: F401
+except ImportError:
+    from .bdiff import bdiff as textdiff  # noqa: F401
 
 
 class Authorship(object):

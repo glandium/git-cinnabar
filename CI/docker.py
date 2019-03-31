@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 import hashlib
 import os
 import sys
@@ -71,7 +69,7 @@ DOCKER_IMAGES = {
          python-coverage\\
          && apt-get clean
         RUN ln -s /usr/bin/python-coverage /usr/local/bin/coverage\\
-         && pip install codecov
+         && pip install codecov==2.0.15
         ''',
 
     'test': '''\
@@ -80,9 +78,11 @@ DOCKER_IMAGES = {
          make\\
          python-coverage\\
          python-flake8\\
+         python3-flake8\\
          python-nose\\
          python-requests\\
-         && apt-get clean
+         && apt-get clean\\
+         && pip install cram==0.7
         ''',
 }
 
@@ -143,12 +143,10 @@ class DockerImage(object):
             info.uname = info.gname = ''
             info.mtime = 0
             info.size = len(dockerfile)
-            tar.addfile(info, BytesIO(dockerfile))
+            tar.addfile(info, BytesIO(dockerfile.encode()))
 
 
-class DockerImageTask(DockerImage, Task):
-    __metaclass__ = TaskEnvironment
-
+class DockerImageTask(DockerImage, Task, metaclass=TaskEnvironment):
     PREFIX = 'linux'
     cpu = 'x86_64'
     os = 'linux'
@@ -165,13 +163,13 @@ class DockerImageTask(DockerImage, Task):
             description='docker image: {}'.format(name),
             index=self.index,
             expireIn='26 weeks',
-            image='python:2.7',
+            image='python:3.7',
             dind=True,
             command=Task.checkout() + [
                 'pip install requests-unixsocket zstandard==0.8.1',
-                'python2.7 repo/CI/docker.py build {}'
+                'python repo/CI/docker.py build {}'
                 .format(name),
-                'python2.7 repo/CI/docker.py save {}'
+                'python repo/CI/docker.py save {}'
                 ' > $ARTIFACTS/image.tar.zst'.format(name),
             ],
             artifact='image.tar.zst',
@@ -199,16 +197,19 @@ def docker_session():
 
 
 def docker_url(path, **kwargs):
-    import urllib
-    import urlparse
+    from urllib.parse import (
+        quote,
+        urlencode,
+        urlunparse,
+    )
 
     docker_socket = os.environ.get('DOCKER_SOCKET', '/var/run/docker.sock')
-    return urlparse.urlunparse((
+    return urlunparse((
         'http+unix',
-        urllib.quote(docker_socket, safe=''),
+        quote(docker_socket, safe=''),
         path,
         '',
-        urllib.urlencode(kwargs),
+        urlencode(kwargs),
         ''))
 
 
@@ -239,7 +240,7 @@ class CommandHandler(object):
         if cls._request_error(request):
             return 1
         status_line = {}
-        buf = ''
+        buf = b''
         for content in request.iter_content(chunk_size=None):
             if not content:
                 continue
@@ -250,7 +251,7 @@ class CommandHandler(object):
                 data = json.loads(buf)
             except Exception:
                 continue
-            buf = ''
+            buf = b''
             # data is sometimes an empty dict.
             if not data:
                 continue
@@ -371,11 +372,11 @@ class CommandHandler(object):
         for raw in r.iter_content(zstd.COMPRESSION_RECOMMENDED_INPUT_SIZE):
             chunk = compressor.compress(raw)
             if chunk:
-                sys.stdout.write(chunk)
+                sys.stdout.buffer.write(chunk)
 
         chunk = compressor.flush()
         if chunk:
-            sys.stdout.write(chunk)
+            sys.stdout.buffer.write(chunk)
 
 
 if __name__ == '__main__':

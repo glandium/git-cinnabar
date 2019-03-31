@@ -198,7 +198,10 @@ def download(args):
     encoding = reader.fh.headers.get('Content-Encoding', 'identity')
     helper_content = ReaderProgress(reader, reader.length)
     if encoding == 'gzip':
-        helper_content = GzipFile(mode='rb', fileobj=helper_content)
+        class WrapGzipFile(GzipFile):
+            def finish(self):
+                self.fileobj.finish()
+        helper_content = WrapGzipFile(mode='rb', fileobj=helper_content)
 
     if args.dev is False:
         content = StringIO()

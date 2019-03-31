@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 import hashlib
 import re
 
@@ -77,8 +75,7 @@ class MsysCommon(object):
         return '.'.join(('env', self.PREFIX, self.cpu, self.hexdigest))
 
 
-class MsysBase(MsysCommon, Task):
-    __metaclass__ = Tool
+class MsysBase(MsysCommon, Task, metaclass=Tool):
     PREFIX = "msys"
 
     def __init__(self, cpu):
@@ -89,7 +86,7 @@ class MsysBase(MsysCommon, Task):
             ' > $ARTIFACTS/msys2.tar.bz2'.format(
                 cpu=msys_cpu(cpu), version=MSYS_VERSION)
         )
-        h = hashlib.sha1(_create_command)
+        h = hashlib.sha1(_create_command.encode())
         self.hexdigest = h.hexdigest()
         self.cpu = cpu
 
@@ -123,8 +120,8 @@ class MsysEnvironment(MsysCommon):
 
         env = MsysBase.by_name(cpu)
 
-        h = hashlib.sha1(env.hexdigest)
-        h.update(';'.join(create_commands))
+        h = hashlib.sha1(env.hexdigest.encode())
+        h.update(';'.join(create_commands).encode())
         self.hexdigest = h.hexdigest()
 
         Task.__init__(
@@ -167,15 +164,13 @@ class MsysEnvironment(MsysCommon):
         raise Exception('Unknown name: {}'.format(name))
 
 
-class Msys32Environment(MsysEnvironment, Task):
-    __metaclass__ = TaskEnvironment
+class Msys32Environment(MsysEnvironment, Task, metaclass=TaskEnvironment):
     PREFIX = 'mingw32'
     cpu = 'x86'
     __init__ = MsysEnvironment.__init__
 
 
-class Msys64Environment(MsysEnvironment, Task):
-    __metaclass__ = TaskEnvironment
+class Msys64Environment(MsysEnvironment, Task, metaclass=TaskEnvironment):
     PREFIX = 'mingw64'
     cpu = 'x86_64'
     __init__ = MsysEnvironment.__init__

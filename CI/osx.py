@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 import hashlib
 
 from tasks import (
@@ -13,7 +11,7 @@ class OsxCommon(object):
     cpu = 'x86_64'
 
     def __init__(self, name):
-        self.hexdigest = hashlib.sha1('0').hexdigest()
+        self.hexdigest = hashlib.sha1(b'0').hexdigest()
         self.name = name
 
     def prepare_params(self, params):
@@ -34,13 +32,11 @@ class OsxCommon(object):
         return params
 
 
-class Osx10_10(OsxCommon):
-    __metaclass__ = TaskEnvironment
+class Osx10_10(OsxCommon, metaclass=TaskEnvironment):
     PREFIX = 'osx10_10'
     version = '10.10'
 
 
-class Osx10_11(OsxCommon):
-    __metaclass__ = TaskEnvironment
+class Osx10_11(OsxCommon, metaclass=TaskEnvironment):
     PREFIX = 'osx10_11'
     version = '10.11'

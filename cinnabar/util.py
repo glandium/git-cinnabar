@@ -5,7 +5,16 @@ import subprocess
 import sys
 import time
 import traceback
-import urllib2
+try:
+    from urllib2 import (
+        Request,
+        urlopen,
+    )
+except ImportError:
+    from urllib.request import (
+        Request,
+        urlopen,
+    )
 from collections import (
     deque,
     Iterable,
@@ -16,16 +25,19 @@ from difflib import (
     SequenceMatcher,
 )
 from functools import wraps
-from itertools import (
-    chain,
-    izip,
-)
-from Queue import (
-    Empty,
-    Queue,
-)
+from itertools import chain
+try:
+    from itertools import izip as zip
+    from Queue import (
+        Empty,
+        Queue,
+    )
+except ImportError:
+    from queue import (
+        Empty,
+        Queue,
+    )
 from threading import Thread
-from types import StringType
 from weakref import WeakKeyDictionary
 
 from .exceptions import Abort
@@ -124,19 +136,11 @@ check_enabled = ConfigSetFunc(
 
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
-    ('merge', 'git-clone', 'store-changegroup'),
+    ('merge', 'git-clone'),
 )
 
 
 progress = True
-
-
-try:
-    if check_enabled('no-mercurial'):
-        raise ImportError('Do not use mercurial')
-    from mercurial.mdiff import textdiff  # noqa: F401
-except ImportError:
-    from .bdiff import bdiff as textdiff  # noqa: F401
 
 
 class Progress(object):
@@ -165,6 +169,8 @@ class Progress(object):
         self._t0 = t1
 
     def finish(self, count=None):
+        if not progress:
+            return
         self._print_count(count or self._count)
         sys.stderr.write('\n')
         sys.stderr.flush()
@@ -229,6 +235,12 @@ def one(iterable):
     return None
 
 
+def strip_suffix(s, suffix):
+    if s.endswith(suffix):
+        return s[:-len(suffix)]
+    return s
+
+
 class OrderedDefaultDict(OrderedDict):
     def __init__(self, default_factory, *args, **kwargs):
         OrderedDict.__init__(self, *args, **kwargs)
@@ -244,7 +256,7 @@ class VersionedDict(object):
         if content:
             if kwargs:
                 self._previous = VersionedDict(content)
-                for k, v in kwargs.iteritems():
+                for k, v in kwargs.items():
                     self._previous[k] = v
             elif isinstance(content, (VersionedDict, dict)):
                 self._previous = content
@@ -258,10 +270,10 @@ class VersionedDict(object):
     def update(self, content=None, **kwargs):
         if content:
             if isinstance(content, (VersionedDict, dict)):
-                content = content.iteritems()
+                content = content.items()
             for k, v in content:
                 self[k] = v
-        for k, v in kwargs.iteritems():
+        for k, v in kwargs.items():
             self[k] = v
 
     def __getitem__(self, key):
@@ -308,7 +320,7 @@ class VersionedDict(object):
         if self._previous:
             return list(chain(
                 self._dict.values(),
-                (v for k, v in self._previous.iteritems()
+                (v for k, v in self._previous.items()
                  if k not in self._deleted and k not in self._dict)))
         return self._dict.values()
 
@@ -319,20 +331,23 @@ class VersionedDict(object):
                           if k not in self._deleted and k not in self._dict))
         return iter(self._dict)
 
+    def items(self):
+        return self.iteritems()
+
     def iteritems(self):
         if self._previous:
             return chain(
-                self._dict.iteritems(),
-                ((k, v) for k, v in self._previous.iteritems()
+                self._dict.items(),
+                ((k, v) for k, v in self._previous.items()
                  if k not in self._deleted and k not in self._dict))
-        return self._dict.iteritems()
+        return self._dict.items()
 
     CREATED = 1
     MODIFIED = 2
     REMOVED = 3
 
     def iterchanges(self):
-        for k, v in self._dict.iteritems():
+        for k, v in self._dict.items():
             if k in self._previous:
                 if self._previous[k] == v:
                     continue
@@ -366,7 +381,7 @@ class VersionedDict(object):
 
 def _iter_diff_blocks(a, b):
     m = SequenceMatcher(a=a, b=b, autojunk=False).get_matching_blocks()
-    for start, end in izip(chain((Match(0, 0, 0),), m), m):
+    for start, end in zip(chain((Match(0, 0, 0),), m), m):
         if start.a + start.size != end.a or start.b + start.size != end.b:
             yield start.a + start.size, end.a, start.b + start.size, end.b
 
@@ -587,7 +602,7 @@ class chunkbuffer(object):
 
 class HTTPReader(object):
     def __init__(self, url):
-        self.fh = urllib2.urlopen(url)
+        self.fh = urlopen(url)
         self.url = url
         try:
             self.length = int(self.fh.headers['content-length'])
@@ -624,9 +639,9 @@ class HTTPReader(object):
     def _reopen(self):
         # This reopens the network connection with a HTTP Range request
         # starting from self.offset.
-        req = urllib2.Request(self.url)
+        req = Request(self.url)
         req.add_header('Range', 'bytes=%d-' % self.offset)
-        fh = urllib2.urlopen(req)
+        fh = urlopen(req)
         if fh.getcode() != 206:
             return self.fh
         range = fh.headers.getheader('Content-Range') or ''
@@ -666,7 +681,7 @@ class Process(object):
         env = kwargs.pop('env', {})
         cwd = kwargs.pop('cwd', None)
         assert not kwargs
-        if isinstance(stdin, (StringType, Iterable)):
+        if isinstance(stdin, (str, Iterable)):
             proc_stdin = subprocess.PIPE
         else:
             proc_stdin = stdin
@@ -691,7 +706,7 @@ class Process(object):
             self._stdout = self._proc.stdout
 
         if proc_stdin == subprocess.PIPE:
-            if isinstance(stdin, StringType):
+            if isinstance(stdin, str):
                 self._stdin.write(stdin)
             elif isinstance(stdin, Iterable):
                 for line in stdin:
