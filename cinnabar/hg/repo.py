@@ -435,10 +435,8 @@ def unbundle_fh(fh, path):
 # Mercurial's bundlerepo completely unwraps bundles in $TMPDIR but we can be
 # smarter than that.
 class bundlerepo(object):
-    def __init__(self, path, fh=None):
+    def __init__(self, path, fh):
         self._url = path
-        if fh is None:
-            fh = open(path, 'r')
         self._bundle = unbundle_fh(fh, path)
         self._file = os.path.basename(path)
 
