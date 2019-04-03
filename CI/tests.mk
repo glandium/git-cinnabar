@@ -31,7 +31,12 @@ ifndef GIT_CINNABAR_OLD_HELPER
 GIT += -c core.packedGitWindowSize=8k
 endif
 
-export GIT_CINNABAR_CHECK=all,traceback,cinnabarclone,clonebundles
+COMMA=,
+ifneq (,$(filter no-mercurial,$(subst $(COMMA), ,$(GIT_CINNABAR_CHECK))))
+NO_MERCURIAL = 1
+endif
+
+export GIT_CINNABAR_CHECK:=all,traceback,cinnabarclone,clonebundles$(addprefix $(COMMA),$(GIT_CINNABAR_CHECK))
 export GIT_CINNABAR_LOG=process:3
 
 hg.pure.hg:
@@ -72,8 +77,10 @@ check: hg.empty.git
 check: hg.git hg.git.nobundle2
 check: hg.unbundle.git
 check: hg.incr.git hg.incr.hg.nobundle2
+ifndef NO_MERCURIAL
 check: hg.clonebundles.git
 check: hg.clonebundles-full.git
+endif
 check: hg.push.hg hg.push.hg.nobundle2
 check: hg.http.hg hg.http.hg.nobundle2
 check: hg.cinnabarclone.git

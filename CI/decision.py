@@ -54,6 +54,7 @@ class TestTask(Task):
         clone = kwargs.pop('clone', TC_COMMIT)
         desc = kwargs.pop('description', None)
         extra_desc = kwargs.pop('extra_desc', None)
+        pre_command = kwargs.pop('pre_command', None)
         if helper is None:
             helper = '{}.{}'.format(task_env, variant) if variant else task_env
             helper = Helper.install(helper)
@@ -61,6 +62,8 @@ class TestTask(Task):
             kwargs.setdefault('env', {})['VARIANT'] = variant
         env = TaskEnvironment.by_name('{}.test'.format(task_env))
         command = []
+        if pre_command:
+            command.extend(pre_command)
         if hg:
             command.extend(Hg.install('{}.{}'.format(task_env, hg)))
             command.append('hg --version')
@@ -304,6 +307,27 @@ def decision():
         env={
             'GIT_CINNABAR_EXPERIMENTS': 'true',
             'GRAFT': '1',
+        },
+    )
+
+    TestTask(
+        variant='coverage',
+        extra_desc='no-mercurial',
+        pre_command=[
+            'python -m virtualenv venv',
+            '. venv/bin/activate',
+        ],
+        command=[
+            'deactivate',
+            # deactivate removes the git directory from $PATH.
+            # Also add the virtualenv bin directory to $PATH for mercurial
+            # to be found, but at the end for the system python to still
+            # be picked.
+            'export PATH=$PWD/git/bin:$PATH:$PWD/venv/bin',
+            'make -C repo -f CI/tests.mk',
+        ],
+        env={
+            'GIT_CINNABAR_CHECK': 'no-mercurial',
         },
     )
 
