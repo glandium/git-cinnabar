@@ -43,7 +43,11 @@ from collections import (
     defaultdict,
     deque,
 )
-from .bundle import create_bundle
+from .bundle import (
+    create_bundle,
+    encodecaps,
+    decodecaps,
+)
 from .changegroup import (
     RawRevChunk01,
     RawRevChunk02,
@@ -91,8 +95,6 @@ if changegroup:
         if check_enabled('no-bundle2'):
             raise ImportError('Do not use bundlev2')
         from mercurial.bundle2 import (
-            bundle2caps,
-            encodecaps,
             unbundle20,
             getunbundler,
         )
@@ -842,7 +844,12 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
     if push_commits and not dry_run:
         if repo.local():
             repo.local().ui.setconfig('server', 'validate', True)
-        b2caps = bundle2caps(repo) if unbundle20 else {}
+        if unbundle20:
+            b2caps = repo.capable('bundle2') or {}
+        else:
+            b2caps = {}
+        if b2caps:
+            b2caps = decodecaps(urllib.unquote(b2caps))
         logging.getLogger('bundle2').debug('%r', b2caps)
         if b2caps:
             b2caps['replycaps'] = encodecaps({'error': ['abort']})

@@ -1,3 +1,4 @@
+import urllib
 import types
 from cinnabar.githg import (
     Changeset,
@@ -585,3 +586,19 @@ def create_changegroup(store, bundle_data, type=RawRevChunk01):
             yield str(data)
         if isinstance(chunk, (RevChunk, HgObject, types.NoneType)):
             previous = chunk
+
+
+def encodecaps(caps):
+    return '\n'.join(
+        '%s=%s' % (urllib.quote(k), ','.join(urllib.quote(v) for v in values))
+        if values else urllib.quote(k)
+        for k, values in sorted(caps.items())
+    )
+
+
+def decodecaps(caps):
+    return {
+        urllib.unquote(key): [urllib.unquote(v)
+                              for v in val.split(',')] if val else []
+        for key, eq, val in (l.partition('=') for l in caps.splitlines())
+    }
