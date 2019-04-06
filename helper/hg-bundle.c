@@ -185,9 +185,24 @@ static size_t decompress_bundle_to(char *ptr, size_t size, size_t nmemb, void *d
 			if (nmemb < 8)
 				die("Need at least 8 bytes for initial read");
 			params_len = get_be32(ptr + 4);
-			if (params_len > 0)
-				goto passthrough;
+			if (params_len > 0) {
+				if (nmemb < params_len + 8 || params_len != 14 ||
+				    memcmp(ptr + 8, "Compression=", 12))
+					goto passthrough;
+				if (memcmp(ptr + 20, "GZ", 2) == 0) {
+					inflate_writer(&context->out);
+				} else if (memcmp(ptr + 20, "BZ", 2) == 0) {
+					goto passthrough;
+				} else if (memcmp(ptr + 20, "SZ", 2) == 0) {
+					goto passthrough;
+				} else {
+					die("Unrecognized mercurial bundle "
+					    "compression: %c%c", ptr[20],
+					    ptr[21]);
+				}
+			}
 			header_size = write("HG20\0\0\0\0", 1, 8, data);
+			header_size += params_len;
 		} else if (memcmp(ptr, "HG10", 4) == 0) {
 			if (memcmp(ptr + 4, "UN", 2) == 0) {
 				// Uncompressed, do nothing.
