@@ -94,10 +94,7 @@ if changegroup:
     try:
         if check_enabled('no-bundle2'):
             raise ImportError('Do not use bundlev2')
-        from mercurial.bundle2 import (
-            unbundle20,
-            getunbundler,
-        )
+        from mercurial.bundle2 import unbundle20
         from mercurial.changegroup import cg2unpacker
     except ImportError:
         unbundle20 = False
@@ -465,7 +462,7 @@ def unbundle_fh(fh, path):
         alg = readexactly(fh, 2)
         return cg1unpacker(fh, alg)
     elif unbundle20 and version.startswith('2'):
-        return getunbundler(get_ui(), fh, header)
+        return unbundle20(get_ui(), fh)
     else:
         raise Exception('%s: unsupported bundle version %s' % (path,
                         version))
