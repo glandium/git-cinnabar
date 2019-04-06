@@ -128,6 +128,64 @@ else:
         return fh
 
 
+if not unbundle20 and not check_enabled('no-bundle2'):
+    class unbundle20(object):
+        def __init__(self, ui, fh):
+            self.fh = fh
+            params_len = readexactly(fh, 4)
+            assert params_len == '\0\0\0\0'
+
+        def iterparts(self):
+            while True:
+                d = readexactly(self.fh, 4)
+                length = struct.unpack('>i', d)[0]
+                if length == 0:
+                    break
+                assert length > 0
+                header = readexactly(self.fh, length)
+                yield Part(header, self.fh)
+
+    class Part(object):
+        def __init__(self, rawheader, fh):
+            rawheader = memoryview(rawheader)
+            part_type_len = struct.unpack('>B', rawheader[0])[0]
+            self.type = rawheader[1:part_type_len + 1].tobytes().lower()
+            rawheader = rawheader[part_type_len + 5:]
+            params_count1, params_count2 = struct.unpack('>BB', rawheader[:2])
+            rawheader = rawheader[2:]
+            count = params_count1 + params_count2
+            param_sizes = struct.unpack(
+                '>' + ('BB' * count), rawheader[:2 * count])
+            rawheader = rawheader[2 * count:]
+            data = []
+            for size in param_sizes:
+                data.append(rawheader[:size])
+                rawheader = rawheader[size:]
+            assert len(rawheader) == 0
+            self.params = {
+                k.tobytes(): v.tobytes()
+                for k, v in zip(data[::2], data[1::2])
+            }
+            self.fh = fh
+            self.chunk_offset = 0
+            self.chunk_size = 0
+
+        def read(self, size):
+            ret = ''
+            while size:
+                if self.chunk_size == self.chunk_offset:
+                    d = readexactly(self.fh, 4)
+                    self.chunk_size = struct.unpack('>i', d)[0]
+                    self.chunk_offset = 0
+
+                data = readexactly(
+                    self.fh, min(size, self.chunk_size - self.chunk_offset))
+                size -= len(data)
+                self.chunk_offset += len(data)
+                ret += data
+            return ret
+
+
 # The following two functions (readexactly, getchunk) were copied from the
 # mercurial source code.
 # Copyright 2006 Matt Mackall <mpm@selenic.com> and others
@@ -869,6 +927,8 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
 
 
 def get_ui():
+    if not changegroup:
+        return None
     ui_ = ui.ui()
     ui_.fout = ui_.ferr
     ui_.setconfig('ui', 'interactive', False)
