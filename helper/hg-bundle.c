@@ -172,13 +172,22 @@ static size_t decompress_bundle_to(char *ptr, size_t size, size_t nmemb, void *d
 		write_callback write = context->out.write;
 		data = context->out.context;
 
-		if (size * nmemb < 6)
+		nmemb = nmemb * size - header_size;
+		size = 1;
+
+		if (nmemb < 6)
 			die("Need at least 6 bytes for initial read");
 
 		context->saw_header = 1;
 
 		if (memcmp(ptr, "HG20", 4) == 0) {
-			goto passthrough;
+			uint32_t params_len;
+			if (nmemb < 8)
+				die("Need at least 8 bytes for initial read");
+			params_len = get_be32(ptr + 4);
+			if (params_len > 0)
+				goto passthrough;
+			header_size = write("HG20\0\0\0\0", 1, 8, data);
 		} else if (memcmp(ptr, "HG10", 4) == 0) {
 			if (memcmp(ptr + 4, "UN", 2) == 0) {
 				// Uncompressed, do nothing.
@@ -190,13 +199,11 @@ static size_t decompress_bundle_to(char *ptr, size_t size, size_t nmemb, void *d
 				die("Unrecognized mercurial bundle "
 				    "compression: %c%c", ptr[4], ptr[5]);
 			}
-			write("HG10UN", 1, 6, data);
-			header_size = 6;
+			header_size = write("HG10UN", 1, 6, data);
 		} else {
 			die("Unrecognized mercurial bundle");
 		}
-		nmemb = nmemb * size - header_size;
-		size = 1;
+		nmemb -= header_size;
 		ptr += header_size;
 	}
 
