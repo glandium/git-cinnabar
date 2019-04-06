@@ -35,4 +35,6 @@ extern size_t copy_to(FILE *in, size_t len, struct writer *writer);
 
 extern void bufferize_writer(struct writer *writer);
 
+extern void inflate_writer(struct writer *writer);
+
 #endif
