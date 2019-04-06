@@ -364,6 +364,7 @@ static size_t caps_request_write(char *ptr, size_t size, size_t nmemb,
 			writer->write = (write_callback)fwrite;
 			writer->context = stdout;
 			fwrite("bundle\n", 1, 7, stdout);
+			decompress_bundle_writer(writer);
 			bufferize_writer(writer);
 		}
 	}

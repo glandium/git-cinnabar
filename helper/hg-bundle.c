@@ -157,3 +157,66 @@ int rev_diff_iter_next(struct rev_diff_part *iterator)
 
 	return 1;
 }
+
+struct decompress_bundle_context {
+	int saw_header;
+	struct writer out;
+};
+
+static size_t decompress_bundle_to(char *ptr, size_t size, size_t nmemb, void *data)
+{
+	struct decompress_bundle_context *context = data;
+	size_t header_size = 0;
+
+	if (!context->saw_header) {
+		write_callback write = context->out.write;
+		data = context->out.context;
+
+		if (size * nmemb < 6)
+			die("Need at least 6 bytes for initial read");
+
+		context->saw_header = 1;
+
+		if (memcmp(ptr, "HG20", 4) == 0) {
+			goto passthrough;
+		} else if (memcmp(ptr, "HG10", 4) == 0) {
+			if (memcmp(ptr + 4, "UN", 2) == 0) {
+				// Uncompressed, do nothing.
+			} else if (memcmp(ptr + 4, "GZ", 2) == 0) {
+				inflate_writer(&context->out);
+			} else if (memcmp(ptr + 4, "BZ", 2) == 0) {
+				goto passthrough;
+			} else {
+				die("Unrecognized mercurial bundle "
+				    "compression: %c%c", ptr[4], ptr[5]);
+			}
+			write("HG10UN", 1, 6, data);
+			header_size = 6;
+		} else {
+			die("Unrecognized mercurial bundle");
+		}
+		nmemb = nmemb * size - header_size;
+		size = 1;
+		ptr += header_size;
+	}
+
+passthrough:
+	return header_size + write_to(ptr, size, nmemb, &context->out);
+}
+
+static int decompress_bundle_close(void *data)
+{
+	struct decompress_bundle_context *context = data;
+	int ret = writer_close(&context->out);
+	free(context);
+	return ret;
+}
+
+void decompress_bundle_writer(struct writer *writer)
+{
+	struct decompress_bundle_context *context = xcalloc(1, sizeof(struct decompress_bundle_context));
+	context->out = *writer;
+	writer->write = decompress_bundle_to;
+	writer->close = decompress_bundle_close;
+	writer->context = context;
+}
