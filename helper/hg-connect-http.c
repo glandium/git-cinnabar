@@ -249,7 +249,7 @@ static size_t changegroup_write(char *buffer, size_t size, size_t nmemb, void* d
 			if (strcmp(content_type, "application/mercurial-0.1") == 0) {
 				inflate_writer(response_data->writer);
 			} else if (strcmp(content_type, "application/hg-error") == 0) {
-				write_to("err\n", 4, 1, response_data->writer);
+				write_to("err\n", 1, 4, response_data->writer);
 				response_data->writer->write = (write_callback)fwrite;
 				response_data->writer->close = (close_callback)fflush;
 				response_data->writer->context = stderr;
