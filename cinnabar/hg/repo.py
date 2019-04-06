@@ -95,7 +95,6 @@ if changegroup:
         if check_enabled('no-bundle2'):
             raise ImportError('Do not use bundlev2')
         from mercurial.bundle2 import unbundle20
-        from mercurial.changegroup import cg2unpacker
     except ImportError:
         unbundle20 = False
 
@@ -152,20 +151,11 @@ def getchunk(stream):
     return readexactly(stream, length - 4)
 
 
-def RawRevChunkType(bundle):
-    if unbundle20 and isinstance(bundle, cg2unpacker):
-        return RawRevChunk02
-    if hasattr(bundle, 'read') or isinstance(bundle, cg1unpacker):
-        return RawRevChunk01
-    raise Exception('Unknown changegroup type %s' % type(bundle).__name__)
-
-
 chunks_logger = logging.getLogger('chunks')
 
 
-def chunks_in_changegroup(bundle, category=None):
+def chunks_in_changegroup(chunk_type, bundle, category=None):
     previous_node = None
-    chunk_type = RawRevChunkType(bundle)
     while True:
         chunk = getchunk(bundle)
         if not chunk:
@@ -188,12 +178,12 @@ def iter_chunks(chunks, cls):
         yield cls(chunk)
 
 
-def iterate_files(bundle):
+def iterate_files(chunk_type, bundle):
     while True:
         name = getchunk(bundle)
         if not name:
             return
-        for chunk in chunks_in_changegroup(bundle, name):
+        for chunk in chunks_in_changegroup(chunk_type, bundle, name):
             yield name, chunk
 
 
@@ -561,20 +551,22 @@ def unbundler(bundle):
             logging.getLogger('bundle2').debug('params: %r', part.params)
             version = part.params.get('version', '01')
             if version == '01':
-                cg = cg1unpacker(part, 'UN')
+                chunk_type = RawRevChunk01
             elif version == '02':
-                cg = cg2unpacker(part, 'UN')
+                chunk_type = RawRevChunk02
             else:
                 raise Exception('Unknown changegroup version %s' % version)
+            cg = part
             break
         else:
             raise Exception('No changegroups in the bundle')
     else:
+        chunk_type = RawRevChunk01
         cg = bundle
 
-    yield chunks_in_changegroup(cg, 'changeset')
-    yield chunks_in_changegroup(cg, 'manifest')
-    yield iterate_files(cg)
+    yield chunks_in_changegroup(chunk_type, cg, 'changeset')
+    yield chunks_in_changegroup(chunk_type, cg, 'manifest')
+    yield iterate_files(chunk_type, cg)
 
     if unbundle20 and isinstance(bundle, unbundle20):
         for part in parts:
