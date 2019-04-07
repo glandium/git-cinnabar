@@ -542,3 +542,7 @@ class HgRepoHelper(BaseHelper):
     def cinnabarclone(self):
         with self.query("cinnabarclone") as stdout:
             return self._read_data(stdout)
+
+
+class BundleHelper(HgRepoHelper):
+    _helper = False

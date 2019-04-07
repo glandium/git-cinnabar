@@ -8,6 +8,7 @@ from cinnabar.githg import Changeset
 from cinnabar.helper import (
     GitHgHelper,
     HgRepoHelper,
+    BundleHelper,
 )
 from binascii import (
     hexlify,
@@ -676,7 +677,14 @@ def get_clonebundle(repo):
 
     sys.stderr.write('Getting clone bundle from %s\n' % url)
 
-    return unbundle_fh(HTTPReader(url), url)
+    reader = None
+    if not changegroup:
+        reader = BundleHelper.connect(url)
+        if not reader:
+            BundleHelper.close()
+    if not reader:
+        reader = HTTPReader(url)
+    return unbundle_fh(reader, url)
 
 
 # TODO: Get the changegroup stream directly and send it, instead of
@@ -820,6 +828,8 @@ def getbundle(repo, store, heads, branch_names):
             apply_bundle = BundleApplier(bundle)
             del bundle
             apply_bundle(store)
+            if not changegroup:
+                BundleHelper.close()
         if got_partial:
             # Eliminate the heads that we got from the clonebundle or
             # cinnabarclone.
