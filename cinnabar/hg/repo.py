@@ -673,11 +673,12 @@ def get_clonebundle_url(repo):
 
     # TODO: get capabilities from HgRepoHelper
     caps = {
-        'compression': ('GZ',),
+        'compression': ('UN',),
     }
     supported_bundles = ('v1', 'v2')
     supported_compressions = tuple(
         k for k, v in (
+            ('none', 'UN'),
             ('gzip', 'GZ'),
             ('bzip2', 'BZ'),
             ('zstd', 'ZS'),

@@ -131,16 +131,21 @@ hg.incr.git hg.incr.git.nobundle2: hg.incr.git%: hg.incr.hg% hg.hg% hg.git%
 	$(call COMPARE_REFS, $(word 3,$^), $@)
 	$(GIT) -C $@ cinnabar fsck --manifest --files
 
+BUNDLESPEC = gzip-v2
+ifneq (,$(findstring no-mercurial,$(GIT_CINNABAR_CHECK)))
+BUNDLESPEC = none-v2
+endif
+
 hg.incr.bundle: hg.incr.hg
 hg.full.bundle: hg.hg
 hg.incr.bundle hg.full.bundle:
-	$(HG) -R $< bundle -t gzip-v2 -a $@
+	$(HG) -R $< bundle -t $(BUNDLESPEC) -a $@
 
 hg.clonebundles.hg: hg.hg hg.incr.bundle
 hg.clonebundles-full.hg: hg.hg hg.full.bundle
 hg.clonebundles.hg hg.clonebundles-full.hg:
 	$(HG) clone -U $< $@
-	echo $(PATH_URL)/$(word 2,$^) BUNDLESPEC=gzip-v2 > $@/.hg/clonebundles.manifest
+	echo $(PATH_URL)/$(word 2,$^) BUNDLESPEC=$(BUNDLESPEC) > $@/.hg/clonebundles.manifest
 
 hg.clonebundles.git: hg.clonebundles.hg hg.git
 hg.clonebundles-full.git: hg.clonebundles-full.hg hg.git
