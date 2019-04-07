@@ -56,9 +56,10 @@ class BaseHelper(object):
                 'GIT_REPLACE_REF_BASE': 'refs/cinnabar/replace/',
             }
             if helper_path and os.path.exists(helper_path):
-                command = (helper_path,)
+                command = [helper_path]
             else:
-                command = ('git', 'cinnabar-helper')
+                command = ['git', 'cinnabar-helper']
+            command.append('--{}'.format(self.MODE))
 
             try:
                 self._helper = Process(*command, stdin=subprocess.PIPE,
@@ -174,6 +175,7 @@ class BaseHelper(object):
 
 class GitHgHelper(BaseHelper):
     VERSION = 3000
+    MODE = 'import'
     STORE_CHANGEGROUP = 3001
     _helper = False
 
@@ -485,6 +487,7 @@ class CommitHelper(object):
 
 class HgRepoHelper(BaseHelper):
     VERSION = 3000
+    MODE = 'wire'
     _helper = False
 
     @classmethod
