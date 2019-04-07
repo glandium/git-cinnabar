@@ -87,6 +87,11 @@
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
+static int mode = 0xff; // Enable everything by default
+
+#define MODE_IMPORT 0x01
+#define MODE_WIRE 0x02
+
 struct notes_tree git2hg, hg2git, files_meta;
 
 // XXX: Should use a hg-specific oidset type.
@@ -1159,7 +1164,8 @@ static void do_helpercaps(struct string_list *args)
 	if (args->nr != 0)
 		die("helpercaps takes no arguments");
 
-	strbuf_addstr(&caps, "compression=UN,GZ");
+	if (mode & MODE_WIRE)
+		strbuf_addstr(&caps, "compression=UN,GZ");
 	send_buffer(&caps);
 	strbuf_release(&caps);
 }
@@ -2296,6 +2302,16 @@ int cmd_main(int argc, const char *argv[])
 	int initialized = 0;
 	struct strbuf buf = STRBUF_INIT;
 
+	if (argc > 1) {
+		if (argc > 2)
+			die("Too many arguments");
+		if (!strcmp(argv[1], "--wire")) {
+			mode = MODE_WIRE;
+		} else if (!strcmp(argv[1], "--import")) {
+			mode = MODE_IMPORT;
+		}
+	}
+
 	init_git_config();
 	git_config(git_default_config, NULL);
 	ignore_case = 0;
@@ -2315,11 +2331,13 @@ int cmd_main(int argc, const char *argv[])
 			do_helpercaps(&args);
 			string_list_clear(&args, 0);
 			continue;
-		} else if (!strcmp("connect", command)) {
+		} else if ((mode & MODE_WIRE) && !strcmp("connect", command)) {
 			do_connect(&args);
 			string_list_clear(&args, 0);
 			break;
 		}
+		if (!(mode & MODE_IMPORT))
+			die("Unknown command: \"%s\"", command);
 		if (!initialized) {
 			setup_git_directory();
 			git_config(git_diff_basic_config, NULL);
