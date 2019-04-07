@@ -362,6 +362,7 @@ static size_t caps_request_write(char *ptr, size_t size, size_t nmemb,
 		if (len > 4 && ptr[0] == 'H' && ptr[1] == 'G' &&
 		    (ptr[2] == '1' || ptr[2] == '2') && ptr[3] == '0') {
 			writer->write = (write_callback)fwrite;
+			writer->close = (close_callback)fflush;
 			writer->context = stdout;
 			fwrite("bundle\n", 1, 7, stdout);
 			decompress_bundle_writer(writer);
