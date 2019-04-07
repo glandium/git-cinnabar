@@ -132,8 +132,10 @@ hg.incr.git hg.incr.git.nobundle2: hg.incr.git%: hg.incr.hg% hg.hg% hg.git%
 	$(GIT) -C $@ cinnabar fsck --manifest --files
 
 BUNDLESPEC = gzip-v2
+ifdef GIT_CINNABAR_OLD_HELPER
 ifneq (,$(findstring no-mercurial,$(GIT_CINNABAR_CHECK)))
 BUNDLESPEC = none-v2
+endif
 endif
 
 hg.incr.bundle: hg.incr.hg

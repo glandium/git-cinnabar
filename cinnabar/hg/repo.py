@@ -671,10 +671,6 @@ def get_clonebundle_url(repo):
 
         return entries[0].get('URL')
 
-    # TODO: get capabilities from HgRepoHelper
-    caps = {
-        'compression': ('UN',),
-    }
     supported_bundles = ('v1', 'v2')
     supported_compressions = tuple(
         k for k, v in (
@@ -682,7 +678,7 @@ def get_clonebundle_url(repo):
             ('gzip', 'GZ'),
             ('bzip2', 'BZ'),
             ('zstd', 'ZS'),
-        ) if v in caps['compression']
+        ) if HgRepoHelper.supports(('compression', v))
     )
 
     has_sni = getattr(ssl, 'HAS_SNI', False)

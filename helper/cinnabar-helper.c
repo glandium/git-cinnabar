@@ -82,7 +82,7 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 3001
+#define CMD_VERSION 3002
 #define MIN_CMD_VERSION 3000
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
@@ -1150,6 +1150,18 @@ static void do_version(struct string_list *args)
 	strbuf_addch(&version_s, '\n');
 	write_or_die(1, version_s.buf, version_s.len);
 	strbuf_release(&version_s);
+}
+
+static void do_helpercaps(struct string_list *args)
+{
+	struct strbuf caps = STRBUF_INIT;
+
+	if (args->nr != 0)
+		die("helpercaps takes no arguments");
+
+	strbuf_addstr(&caps, "compression=UN,GZ");
+	send_buffer(&caps);
+	strbuf_release(&caps);
 }
 
 static void string_list_as_oid_array(struct string_list *list,
@@ -2297,6 +2309,10 @@ int cmd_main(int argc, const char *argv[])
 		split_command(buf.buf, &command, &args);
 		if (!strcmp("version", command)) {
 			do_version(&args);
+			string_list_clear(&args, 0);
+			continue;
+		} else if (!strcmp("helpercaps", command)) {
+			do_helpercaps(&args);
 			string_list_clear(&args, 0);
 			continue;
 		} else if (!strcmp("connect", command)) {

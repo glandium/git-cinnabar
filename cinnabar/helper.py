@@ -88,6 +88,17 @@ class BaseHelper(object):
                     self._version = int(version)
                 else:
                     self._version = self.VERSION
+                if self._version >= 3002:
+                    self._helper.stdin.write('helpercaps\n')
+                    response = self._read_data(self._helper.stdout)
+                else:
+                    response = ''
+                self._caps = {
+                    k: v.split(',')
+                    for k, _, v in (l.partition('=')
+                                    for l in response.splitlines())
+                }
+
                 atexit.register(self.close)
 
         if self._helper is self:
@@ -148,9 +159,17 @@ class BaseHelper(object):
         return ret
 
     @classmethod
-    def supports(self, version):
+    def supports(self, feature):
         self._ensure_helper()
-        return version <= self._version
+        if self._version < 3002:
+            feature = {
+                ('compression', 'UN'): 3000,
+            }.get(feature, feature)
+        if isinstance(feature, int):
+            return feature <= self._version
+        assert isinstance(feature, tuple) and len(feature) == 2
+        k, v = feature
+        return v in self._caps.get(k, ())
 
 
 class GitHgHelper(BaseHelper):
