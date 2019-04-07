@@ -72,6 +72,10 @@ def init_logging():
     # filled before logging is setup, so that the output of
     # `git config -l` is never logged.
     from .git import Git
+    logger = logging.getLogger()
+    handler = StreamHandler()
+    handler.setFormatter(Formatter())
+    logger.addHandler(handler)
     log_conf = Git.config('cinnabar.log') or ''
     if not log_conf and not check_enabled('memory') and \
             not check_enabled('cpu'):
@@ -86,11 +90,6 @@ def init_logging():
                 max(logging.DEBUG, logging.FATAL - value * 10))
         except Exception:
             pass
-
-    logger = logging.getLogger()
-    handler = StreamHandler()
-    handler.setFormatter(Formatter())
-    logger.addHandler(handler)
 
 
 class ConfigSetFunc(object):
