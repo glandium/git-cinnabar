@@ -8,6 +8,7 @@ BASE_DIR = os.path.dirname(__file__)
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '..'))
 
+from distutils.version import LooseVersion
 from itertools import chain
 
 import osx  # noqa: F401
@@ -67,6 +68,8 @@ class TestTask(Task):
         if hg:
             command.extend(Hg.install('{}.{}'.format(task_env, hg)))
             command.append('hg --version')
+            if LooseVersion(hg) < '3.6':
+                kwargs.setdefault('env', {})['NO_CLONEBUNDLES'] = '1'
         if git:
             command.extend(Git.install('{}.{}'.format(task_env, git)))
             command.append('git --version')

@@ -1,5 +1,6 @@
 from __future__ import division
 import os
+import ssl
 import sys
 import urllib
 import urllib2
@@ -61,7 +62,6 @@ try:
     # Old versions of mercurial use an old version of socketutil that tries to
     # assign a local PROTOCOL_SSLv2, copying it from the ssl module, without
     # ever using it. It shouldn't hurt to set it here.
-    import ssl
     if not hasattr(ssl, 'PROTOCOL_SSLv2'):
         ssl.PROTOCOL_SSLv2 = 0
     if not hasattr(ssl, 'PROTOCOL_SSLv3'):
@@ -639,21 +639,20 @@ def unbundler(bundle):
                 'ignoring bundle2 part: %s', part.type)
 
 
-def get_clonebundle(repo):
-    url = Git.config('cinnabar.clonebundle')
-    if not url:
-        try:
-            if check_enabled('no-mercurial'):
-                raise ImportError('Do not use mercurial')
-            from mercurial.exchange import (
-                parseclonebundlesmanifest,
-                filterclonebundleentries,
-            )
-        except ImportError:
-            return None
+def get_clonebundle_url(repo):
+    bundles = repo._call('clonebundles')
 
-        bundles = repo._call('clonebundles')
+    try:
+        if check_enabled('no-mercurial'):
+            raise ImportError('Do not use mercurial')
+        from mercurial.exchange import (
+            parseclonebundlesmanifest,
+            filterclonebundleentries,
+        )
+    except ImportError:
+        parseclonebundlesmanifest = False
 
+    if parseclonebundlesmanifest:
         class dummy(object):
             pass
 
@@ -670,7 +669,64 @@ def get_clonebundle(repo):
         if not entries:
             return None
 
-        url = entries[0].get('URL')
+        return entries[0].get('URL')
+
+    # TODO: get capabilities from HgRepoHelper
+    caps = {
+        'compression': ('GZ',),
+    }
+    supported_bundles = ('v1', 'v2')
+    supported_compressions = tuple(
+        k for k, v in (
+            ('gzip', 'GZ'),
+            ('bzip2', 'BZ'),
+            ('zstd', 'ZS'),
+        ) if v in caps['compression']
+    )
+
+    has_sni = getattr(ssl, 'HAS_SNI', False)
+
+    logger = logging.getLogger('clonebundle')
+
+    for line in bundles.splitlines():
+        attrs = line.split()
+        if not attrs:
+            continue
+        url = attrs.pop(0)
+        logger.debug(url)
+        attrs = {
+            urllib.unquote(k): urllib.unquote(v)
+            for k, _, v in (a.partition('=') for a in attrs)
+        }
+        logger.debug(attrs)
+        if 'REQUIRESNI' in attrs and not has_sni:
+            logger.debug('Skip because of REQUIRESNI, but SNI unsupported')
+            continue
+
+        spec = attrs.get('BUNDLESPEC')
+        if not spec:
+            logger.debug('Skip because missing BUNDLESPEC')
+            continue
+
+        typ, _, params = spec.partition(';')
+        compression, _, version = typ.partition('-')
+
+        if compression not in supported_compressions:
+            logger.debug('Skip because unsupported compression (%s)',
+                         compression)
+            continue
+        if version not in supported_bundles:
+            logger.debug('Skip because unsupported bundle type (%s)',
+                         version)
+            continue
+
+        return url
+
+
+def get_clonebundle(repo):
+    url = Git.config('cinnabar.clonebundle')
+    if not url:
+        url = get_clonebundle_url(repo)
 
     if not url:
         return None
