@@ -129,8 +129,8 @@ class ConfigSetFunc(object):
 check_enabled = ConfigSetFunc(
     'cinnabar.check',
     ('nodeid', 'manifests', 'helper'),
-    ('bundle', 'files', 'memory', 'cpu', 'time', 'traceback', 'no-mercurial',
-     'no-bundle2', 'cinnabarclone', 'clonebundles'),
+    ('bundle', 'files', 'memory', 'cpu', 'time', 'traceback', 'no-bundle2',
+     'cinnabarclone', 'clonebundles'),
 )
 
 experiment = ConfigSetFunc(
@@ -839,9 +839,4 @@ def run(func):
     finally:
         if check_enabled('memory') or check_enabled('cpu'):
             reporter.shutdown()
-    if check_enabled('no-mercurial'):
-        if any(k.startswith('mercurial.') or k == 'mercurial'
-               for k in sys.modules):
-            sys.stderr.write('Mercurial libraries were loaded!')
-            retcode = 70
     sys.exit(retcode)

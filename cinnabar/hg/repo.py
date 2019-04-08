@@ -55,44 +55,13 @@ from .changegroup import (
 )
 from cStringIO import StringIO
 
-try:
-    if check_enabled('no-mercurial'):
-        raise ImportError('Do not use mercurial')
-    # Old versions of mercurial use an old version of socketutil that tries to
-    # assign a local PROTOCOL_SSLv2, copying it from the ssl module, without
-    # ever using it. It shouldn't hurt to set it here.
-    if not hasattr(ssl, 'PROTOCOL_SSLv2'):
-        ssl.PROTOCOL_SSLv2 = 0
-    if not hasattr(ssl, 'PROTOCOL_SSLv3'):
-        ssl.PROTOCOL_SSLv3 = 1
 
-    from mercurial import (
-        changegroup,
-        error,
-        ui,
-    )
-except ImportError:
-    changegroup = unbundle20 = False
-
-if changegroup:
-    try:
-        from mercurial.changegroup import cg1unpacker
-    except ImportError:
-        from mercurial.changegroup import unbundle10 as cg1unpacker
-
-    try:
-        if check_enabled('no-bundle2'):
-            raise ImportError('Do not use bundlev2')
-        from mercurial.bundle2 import unbundle20
-    except ImportError:
-        unbundle20 = False
-else:
-    def cg1unpacker(fh, alg):
-        assert alg == 'UN'
-        return fh
+def cg1unpacker(fh, alg):
+    assert alg == 'UN'
+    return fh
 
 
-if not unbundle20 and not check_enabled('no-bundle2'):
+if not check_enabled('no-bundle2'):
     class unbundle20(object):
         def __init__(self, ui, fh):
             self.fh = fh
@@ -603,35 +572,6 @@ def unbundler(bundle):
 def get_clonebundle_url(repo):
     bundles = repo._call('clonebundles')
 
-    try:
-        if check_enabled('no-mercurial'):
-            raise ImportError('Do not use mercurial')
-        from mercurial.exchange import (
-            parseclonebundlesmanifest,
-            filterclonebundleentries,
-        )
-    except ImportError:
-        parseclonebundlesmanifest = False
-
-    if parseclonebundlesmanifest:
-        class dummy(object):
-            pass
-
-        fakerepo = dummy()
-        fakerepo.requirements = set()
-        fakerepo.supportedformats = set()
-        fakerepo.ui = repo.ui
-
-        entries = parseclonebundlesmanifest(fakerepo, bundles)
-        if not entries:
-            return None
-
-        entries = filterclonebundleentries(fakerepo, entries)
-        if not entries:
-            return None
-
-        return entries[0].get('URL')
-
     supported_bundles = ('v1', 'v2')
     supported_compressions = tuple(
         k for k, v in (
@@ -695,11 +635,9 @@ def get_clonebundle(repo):
 
     sys.stderr.write('Getting clone bundle from %s\n' % url)
 
-    reader = None
-    if not changegroup:
-        reader = BundleHelper.connect(url)
-        if not reader:
-            BundleHelper.close()
+    reader = BundleHelper.connect(url)
+    if not reader:
+        BundleHelper.close()
     if not reader:
         reader = HTTPReader(url)
     return unbundle_fh(reader, url)
@@ -846,8 +784,7 @@ def getbundle(repo, store, heads, branch_names):
             apply_bundle = BundleApplier(bundle)
             del bundle
             apply_bundle(store)
-            if not changegroup:
-                BundleHelper.close()
+            BundleHelper.close()
         if got_partial:
             # Eliminate the heads that we got from the clonebundle or
             # cinnabarclone.
@@ -951,8 +888,8 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                     # TODO: should check params['in-reply-to']
                     reply = int(part.params['return'])
                 elif part.type == 'error:abort':
-                    raise error.Abort(part.params['message'],
-                                      hint=part.params.get('hint'))
+                    raise Exception(part.params['message'],
+                                    hint=part.params.get('hint'))
                 else:
                     logging.getLogger('bundle2').warning(
                         'ignoring bundle2 part: %s', part.type)
@@ -961,13 +898,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
 
 
 def get_ui():
-    if not changegroup:
-        return None
-    ui_ = ui.ui()
-    ui_.fout = ui_.ferr
-    ui_.setconfig('ui', 'interactive', False)
-    ui_.setconfig('progress', 'disable', True)
-    return ui_
+    return None
 
 
 def munge_url(url):

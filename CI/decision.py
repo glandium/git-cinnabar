@@ -313,31 +313,6 @@ def decision():
         },
     )
 
-    for variant in ('coverage', 'old'):
-        env = {
-            'GIT_CINNABAR_CHECK': 'no-mercurial',
-        }
-        if variant == 'old':
-            env['GIT_CINNABAR_OLD_HELPER'] = '1'
-        TestTask(
-            variant=variant,
-            extra_desc='no-mercurial',
-            pre_command=[
-                'python -m virtualenv venv',
-                '. venv/bin/activate',
-            ],
-            command=[
-                'deactivate',
-                # deactivate removes the git directory from $PATH.
-                # Also add the virtualenv bin directory to $PATH for mercurial
-                # to be found, but at the end for the system python to still
-                # be picked.
-                'export PATH=$PWD/git/bin:$PATH:$PWD/venv/bin',
-                'make -C repo -f CI/tests.mk',
-            ],
-            env=env
-        )
-
 
 @action('more-hg-versions',
         title='More hg versions',

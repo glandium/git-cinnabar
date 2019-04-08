@@ -9,17 +9,9 @@ from .changegroup import (
     RawRevChunk,
 )
 from ..git import NULL_NODE_ID
-from ..util import (
-    check_enabled,
-    TypedProperty,
-)
+from ..util import TypedProperty
 
-try:
-    if check_enabled('no-mercurial'):
-        raise ImportError('Do not use mercurial')
-    from mercurial.mdiff import textdiff  # noqa: F401
-except ImportError:
-    from ..bdiff import bdiff as textdiff  # noqa: F401
+from ..bdiff import bdiff as textdiff
 
 
 class Authorship(object):

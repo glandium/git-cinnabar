@@ -32,7 +32,6 @@ Requirements:
 
 - Git (any version should work)
 - Python 2.7
-- Mercurial version 1.9 or newer
 
 Setup:
 ------
