@@ -2272,15 +2272,13 @@ static void init_git_config()
 	 * might be important configuration items there (like http.sslcainfo
 	 * on git for windows).
 	 * Trick git into giving us the path to it system gitconfig. */
+	const char *argv[] = {
+		"git", "config", "--system", "-e", NULL
+	};
 	if (env && *env) {
 		setup_path();
-		argv_array_push(&proc.args, "git-config");
-	} else {
-		argv_array_push(&proc.args, "git");
-		argv_array_push(&proc.args, "config");
 	}
-	argv_array_push(&proc.args, "--system");
-	argv_array_push(&proc.args, "-e");
+	proc.argv = argv;
 	argv_array_push(&proc.env_array, "GIT_EDITOR=echo");
 	proc.no_stdin = 1;
 	proc.no_stderr = 1;
