@@ -219,8 +219,11 @@ def old_helper_head():
         v = StrictVersion(VERSION[:-1]).version + (0, 0, 0)
         if v[2] == 0:
             from cinnabar.git import Git
-            from cinnabar.helper import GitHgHelper
-            version = GitHgHelper.VERSION
+            from cinnabar.helper import (
+                GitHgHelper,
+                HgRepoHelper,
+            )
+            version = max(GitHgHelper.VERSION, HgRepoHelper.VERSION)
             return list(Git.iter(
                 'log', 'HEAD', '--format=%H',
                 '-S', '#define CMD_VERSION {}'.format(version),

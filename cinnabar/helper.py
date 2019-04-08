@@ -486,7 +486,7 @@ class CommitHelper(object):
 
 
 class HgRepoHelper(BaseHelper):
-    VERSION = 3000
+    VERSION = 3002
     MODE = 'wire'
     _helper = False
 
