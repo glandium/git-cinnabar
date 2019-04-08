@@ -175,6 +175,12 @@ static void prepare_truncated_bzip2(struct writer *writer)
 	write_to("BZ", 1, 2, writer);
 }
 
+static void prepare_zstd(struct writer *writer)
+{
+	const char *argv[] = { "zstd", "-d", NULL };
+	pipe_writer(writer, argv);
+}
+
 static size_t decompress_bundle_to(char *ptr, size_t size, size_t nmemb, void *data)
 {
 	struct decompress_bundle_context *context = data;
@@ -206,8 +212,8 @@ static size_t decompress_bundle_to(char *ptr, size_t size, size_t nmemb, void *d
 					prepare_decompress = inflate_writer;
 				} else if (memcmp(ptr + 20, "BZ", 2) == 0) {
 					prepare_decompress = prepare_bzip2;
-				} else if (memcmp(ptr + 20, "SZ", 2) == 0) {
-					goto passthrough;
+				} else if (memcmp(ptr + 20, "ZS", 2) == 0) {
+					prepare_decompress = prepare_zstd;
 				} else {
 					die("Unrecognized mercurial bundle "
 					    "compression: %c%c", ptr[20],

@@ -1173,6 +1173,11 @@ static void do_helpercaps(struct string_list *args)
 			free(resolved);
 			strbuf_addstr(&caps, ",BZ");
 		}
+		resolved = which("zstd");
+		if (resolved) {
+			free(resolved);
+			strbuf_addstr(&caps, ",ZS");
+		}
 	}
 	send_buffer(&caps);
 	strbuf_release(&caps);
