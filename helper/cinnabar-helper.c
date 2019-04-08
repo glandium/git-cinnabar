@@ -74,6 +74,7 @@
 #include "cinnabar-helper.h"
 #include "cinnabar-fast-import.h"
 #include "cinnabar-notes.h"
+#include "which.h"
 
 #define STRINGIFY(s) _STRINGIFY(s)
 #define _STRINGIFY(s) # s
@@ -1164,8 +1165,15 @@ static void do_helpercaps(struct string_list *args)
 	if (args->nr != 0)
 		die("helpercaps takes no arguments");
 
-	if (mode & MODE_WIRE)
+	if (mode & MODE_WIRE) {
+		char *resolved;
 		strbuf_addstr(&caps, "compression=UN,GZ");
+		resolved = which("bzip2");
+		if (resolved) {
+			free(resolved);
+			strbuf_addstr(&caps, ",BZ");
+		}
+	}
 	send_buffer(&caps);
 	strbuf_release(&caps);
 }

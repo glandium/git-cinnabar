@@ -163,10 +163,23 @@ struct decompress_bundle_context {
 	struct writer out;
 };
 
+static void prepare_bzip2(struct writer *writer)
+{
+	const char *argv[] = { "bzip2", "-d", NULL };
+	pipe_writer(writer, argv);
+}
+
+static void prepare_truncated_bzip2(struct writer *writer)
+{
+	prepare_bzip2(writer);
+	write_to("BZ", 1, 2, writer);
+}
+
 static size_t decompress_bundle_to(char *ptr, size_t size, size_t nmemb, void *data)
 {
 	struct decompress_bundle_context *context = data;
 	size_t header_size = 0;
+	void (*prepare_decompress)(struct writer *) = NULL;
 
 	if (!context->saw_header) {
 		write_callback write = context->out.write;
@@ -190,9 +203,9 @@ static size_t decompress_bundle_to(char *ptr, size_t size, size_t nmemb, void *d
 				    memcmp(ptr + 8, "Compression=", 12))
 					goto passthrough;
 				if (memcmp(ptr + 20, "GZ", 2) == 0) {
-					inflate_writer(&context->out);
+					prepare_decompress = inflate_writer;
 				} else if (memcmp(ptr + 20, "BZ", 2) == 0) {
-					goto passthrough;
+					prepare_decompress = prepare_bzip2;
 				} else if (memcmp(ptr + 20, "SZ", 2) == 0) {
 					goto passthrough;
 				} else {
@@ -207,9 +220,9 @@ static size_t decompress_bundle_to(char *ptr, size_t size, size_t nmemb, void *d
 			if (memcmp(ptr + 4, "UN", 2) == 0) {
 				// Uncompressed, do nothing.
 			} else if (memcmp(ptr + 4, "GZ", 2) == 0) {
-				inflate_writer(&context->out);
+				prepare_decompress = inflate_writer;
 			} else if (memcmp(ptr + 4, "BZ", 2) == 0) {
-				goto passthrough;
+				prepare_decompress = prepare_truncated_bzip2;
 			} else {
 				die("Unrecognized mercurial bundle "
 				    "compression: %c%c", ptr[4], ptr[5]);
@@ -218,6 +231,8 @@ static size_t decompress_bundle_to(char *ptr, size_t size, size_t nmemb, void *d
 		} else {
 			die("Unrecognized mercurial bundle");
 		}
+		if (prepare_decompress)
+			prepare_decompress(&context->out);
 		nmemb -= header_size;
 		ptr += header_size;
 	}

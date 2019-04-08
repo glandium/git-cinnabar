@@ -144,6 +144,7 @@ CINNABAR_OBJECTS += hg-connect-http.o
 endif
 CINNABAR_OBJECTS += hg-connect-stdio.o
 CINNABAR_OBJECTS += hg-data.o
+CINNABAR_OBJECTS += which.o
 
 PATCHES = $(notdir $(wildcard ../helper/*.patch))
 

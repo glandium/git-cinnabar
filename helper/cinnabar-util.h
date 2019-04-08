@@ -37,4 +37,6 @@ extern void bufferize_writer(struct writer *writer);
 
 extern void inflate_writer(struct writer *writer);
 
+extern void pipe_writer(struct writer *writer, const char **argv);
+
 #endif

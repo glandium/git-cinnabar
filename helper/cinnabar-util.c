@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "run-command.h"
 #include "thread-utils.h"
 #include "cinnabar-util.h"
 
@@ -210,5 +211,47 @@ void inflate_writer(struct writer *writer) {
 	context->out = *writer;
 	writer->write = inflate_to;
 	writer->close = inflate_close;
+	writer->context = context;
+}
+
+struct pipe_context {
+	struct child_process proc;
+	FILE *pipe;
+};
+
+static size_t pipe_write(char *ptr, size_t size, size_t nmemb, void *data)
+{
+	struct pipe_context *context = data;
+	return fwrite(ptr, size, nmemb, context->pipe);
+}
+
+static int pipe_close(void *data)
+{
+	struct pipe_context *context = data;
+	int ret;
+	fclose(context->pipe);
+	close(context->proc.in);
+	ret = finish_command(&context->proc);
+	free(context);
+	return ret;
+}
+
+void pipe_writer(struct writer *writer, const char **argv) {
+	struct pipe_context *context = xcalloc(1, sizeof(struct pipe_context));
+
+	if (writer->write != (write_callback)fwrite &&
+	    writer->close != (close_callback)fflush)
+		die("pipe_writer can only redirect an fwrite writer");
+
+	writer_close(writer);
+	child_process_init(&context->proc);
+	context->proc.argv = argv;
+	context->proc.in = -1;
+	context->proc.out = fileno((FILE*)writer->context);
+	context->proc.no_stderr = 1;
+	start_command(&context->proc);
+	context->pipe = xfdopen(context->proc.in, "w");
+	writer->write = pipe_write;
+	writer->close = pipe_close;
 	writer->context = context;
 }
