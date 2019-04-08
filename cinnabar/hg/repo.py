@@ -1114,7 +1114,8 @@ def get_repo(remote):
         return HelperRepo(remote.url)
 
     if remote.parsed_url.scheme == 'file':
-        path = remote.parsed_url.path
+        # Make file://c:/... paths work by taking the netloc
+        path = remote.parsed_url.netloc + remote.parsed_url.path
         if sys.platform == 'win32':
             # TODO: This probably needs more thought.
             path = path.lstrip('/')

@@ -53,7 +53,7 @@ hg.upgraded.git: hg.old.git
 	$(GIT) -C $@ cinnabar upgrade || [ "$$?" = 2 ]
 	$(GIT) -C $@ cinnabar fsck --manifest --files || [ "$$?" = 2 ]
 
-PATH_URL = file://$(if $(filter /%,$(CURDIR)),,/)$(CURDIR)
+PATH_URL = file://$(CURDIR)
 
 COMPARE_COMMANDS = bash -c "diff -u <($1) <($2)"
 
