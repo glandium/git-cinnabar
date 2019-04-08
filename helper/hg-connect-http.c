@@ -232,40 +232,6 @@ static void http_simple_command(struct hg_connection *conn,
 	va_end(ap);
 }
 
-struct inflate_context {
-	struct writer out;
-	git_zstream strm;
-};
-
-static size_t inflate_to(char *ptr, size_t size, size_t nmemb, void *data)
-{
-	char buf[4096];
-	struct inflate_context *context = data;
-	int ret;
-
-	context->strm.next_in = (void *)ptr;
-	context->strm.avail_in = size * nmemb;
-
-	do {
-		context->strm.next_out = (void *)buf;
-		context->strm.avail_out = sizeof(buf);
-		ret = git_inflate(&context->strm, Z_SYNC_FLUSH);
-		write_to(buf, 1, sizeof(buf) - context->strm.avail_out, &context->out);
-	} while (context->strm.avail_in && ret == Z_OK);
-
-	return size * nmemb;
-}
-
-static int inflate_close(void *data)
-{
-	struct inflate_context *context = data;
-	int ret;
-	git_inflate_end(&context->strm);
-	ret = writer_close(&context->out);
-	free(context);
-	return ret;
-}
-
 struct changegroup_response_data {
 	CURL *curl;
 	struct writer *writer;
@@ -281,15 +247,9 @@ static size_t changegroup_write(char *buffer, size_t size, size_t nmemb, void* d
 		if (!curl_easy_getinfo(response_data->curl, CURLINFO_CONTENT_TYPE,
 		                       &content_type) && content_type) {
 			if (strcmp(content_type, "application/mercurial-0.1") == 0) {
-				struct inflate_context *inflater
-					= xcalloc(1, sizeof(struct inflate_context));
-				git_inflate_init(&inflater->strm);
-				inflater->out = *response_data->writer;
-				response_data->writer->write = inflate_to;
-				response_data->writer->close = inflate_close;
-				response_data->writer->context = inflater;
+				inflate_writer(response_data->writer);
 			} else if (strcmp(content_type, "application/hg-error") == 0) {
-				write_to("err\n", 4, 1, response_data->writer);
+				write_to("err\n", 1, 4, response_data->writer);
 				response_data->writer->write = (write_callback)fwrite;
 				response_data->writer->close = (close_callback)fflush;
 				response_data->writer->context = stderr;
@@ -402,8 +362,10 @@ static size_t caps_request_write(char *ptr, size_t size, size_t nmemb,
 		if (len > 4 && ptr[0] == 'H' && ptr[1] == 'G' &&
 		    (ptr[2] == '1' || ptr[2] == '2') && ptr[3] == '0') {
 			writer->write = (write_callback)fwrite;
+			writer->close = (close_callback)fflush;
 			writer->context = stdout;
 			fwrite("bundle\n", 1, 7, stdout);
+			decompress_bundle_writer(writer);
 			bufferize_writer(writer);
 		}
 	}

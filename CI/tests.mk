@@ -32,10 +32,6 @@ GIT += -c core.packedGitWindowSize=8k
 endif
 
 COMMA=,
-ifneq (,$(filter no-mercurial,$(subst $(COMMA), ,$(GIT_CINNABAR_CHECK))))
-NO_MERCURIAL = 1
-endif
-
 export GIT_CINNABAR_CHECK:=all,traceback,cinnabarclone,clonebundles$(addprefix $(COMMA),$(GIT_CINNABAR_CHECK))
 export GIT_CINNABAR_LOG=process:3
 
@@ -77,7 +73,7 @@ check: hg.empty.git
 check: hg.git hg.git.nobundle2
 check: hg.unbundle.git
 check: hg.incr.git hg.incr.hg.nobundle2
-ifndef NO_MERCURIAL
+ifndef NO_CLONEBUNDLES
 check: hg.clonebundles.git
 check: hg.clonebundles-full.git
 endif
@@ -135,16 +131,23 @@ hg.incr.git hg.incr.git.nobundle2: hg.incr.git%: hg.incr.hg% hg.hg% hg.git%
 	$(call COMPARE_REFS, $(word 3,$^), $@)
 	$(GIT) -C $@ cinnabar fsck --manifest --files
 
+BUNDLESPEC = gzip-v2
+ifdef GIT_CINNABAR_OLD_HELPER
+ifneq (,$(findstring no-mercurial,$(GIT_CINNABAR_CHECK)))
+BUNDLESPEC = none-v2
+endif
+endif
+
 hg.incr.bundle: hg.incr.hg
 hg.full.bundle: hg.hg
 hg.incr.bundle hg.full.bundle:
-	$(HG) -R $< bundle -a $@
+	$(HG) -R $< bundle -t $(BUNDLESPEC) -a $@
 
 hg.clonebundles.hg: hg.hg hg.incr.bundle
 hg.clonebundles-full.hg: hg.hg hg.full.bundle
 hg.clonebundles.hg hg.clonebundles-full.hg:
 	$(HG) clone -U $< $@
-	echo $(PATH_URL)/$(word 2,$^) > $@/.hg/clonebundles.manifest
+	echo $(PATH_URL)/$(word 2,$^) BUNDLESPEC=$(BUNDLESPEC) > $@/.hg/clonebundles.manifest
 
 hg.clonebundles.git: hg.clonebundles.hg hg.git
 hg.clonebundles-full.git: hg.clonebundles-full.hg hg.git

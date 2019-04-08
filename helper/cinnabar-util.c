@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "run-command.h"
 #include "thread-utils.h"
 #include "cinnabar-util.h"
 
@@ -168,4 +169,89 @@ void bufferize_writer(struct writer *writer)
 		writer->close = buffered_close;
 		writer->context = context;
 	}
+}
+
+struct inflate_context {
+	struct writer out;
+	git_zstream strm;
+};
+
+static size_t inflate_to(char *ptr, size_t size, size_t nmemb, void *data)
+{
+	char buf[4096];
+	struct inflate_context *context = data;
+	int ret;
+
+	context->strm.next_in = (void *)ptr;
+	context->strm.avail_in = size * nmemb;
+
+	do {
+		context->strm.next_out = (void *)buf;
+		context->strm.avail_out = sizeof(buf);
+		ret = git_inflate(&context->strm, Z_SYNC_FLUSH);
+		write_to(buf, 1, sizeof(buf) - context->strm.avail_out, &context->out);
+	} while (context->strm.avail_in && ret == Z_OK);
+
+	return size * nmemb;
+}
+
+static int inflate_close(void *data)
+{
+	struct inflate_context *context = data;
+	int ret;
+	git_inflate_end(&context->strm);
+	ret = writer_close(&context->out);
+	free(context);
+	return ret;
+}
+
+void inflate_writer(struct writer *writer) {
+	struct inflate_context *context = xcalloc(1, sizeof(struct inflate_context));
+	git_inflate_init(&context->strm);
+	context->out = *writer;
+	writer->write = inflate_to;
+	writer->close = inflate_close;
+	writer->context = context;
+}
+
+struct pipe_context {
+	struct child_process proc;
+	FILE *pipe;
+};
+
+static size_t pipe_write(char *ptr, size_t size, size_t nmemb, void *data)
+{
+	struct pipe_context *context = data;
+	return fwrite(ptr, size, nmemb, context->pipe);
+}
+
+static int pipe_close(void *data)
+{
+	struct pipe_context *context = data;
+	int ret;
+	fclose(context->pipe);
+	close(context->proc.in);
+	ret = finish_command(&context->proc);
+	free(context);
+	return ret;
+}
+
+void pipe_writer(struct writer *writer, const char **argv) {
+	struct pipe_context *context = xcalloc(1, sizeof(struct pipe_context));
+
+	if (writer->write != (write_callback)fwrite &&
+	    writer->close != (close_callback)fflush)
+		die("pipe_writer can only redirect an fwrite writer");
+
+	writer_close(writer);
+	child_process_init(&context->proc);
+	context->proc.argv = argv;
+	context->proc.in = -1;
+	context->proc.out = fileno((FILE*)writer->context);
+	context->proc.no_stderr = 1;
+	start_command(&context->proc);
+	context->pipe = xfdopen(context->proc.in, "w");
+	writer->write = pipe_write;
+	writer->close = pipe_close;
+	writer->context = context;
 }

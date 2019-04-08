@@ -157,3 +157,109 @@ int rev_diff_iter_next(struct rev_diff_part *iterator)
 
 	return 1;
 }
+
+struct decompress_bundle_context {
+	int saw_header;
+	struct writer out;
+};
+
+static void prepare_bzip2(struct writer *writer)
+{
+	const char *argv[] = { "bzip2", "-d", NULL };
+	pipe_writer(writer, argv);
+}
+
+static void prepare_truncated_bzip2(struct writer *writer)
+{
+	prepare_bzip2(writer);
+	write_to("BZ", 1, 2, writer);
+}
+
+static void prepare_zstd(struct writer *writer)
+{
+	const char *argv[] = { "zstd", "-d", NULL };
+	pipe_writer(writer, argv);
+}
+
+static size_t decompress_bundle_to(char *ptr, size_t size, size_t nmemb, void *data)
+{
+	struct decompress_bundle_context *context = data;
+	size_t header_size = 0;
+	void (*prepare_decompress)(struct writer *) = NULL;
+
+	if (!context->saw_header) {
+		write_callback write = context->out.write;
+		data = context->out.context;
+
+		nmemb = nmemb * size - header_size;
+		size = 1;
+
+		if (nmemb < 6)
+			die("Need at least 6 bytes for initial read");
+
+		context->saw_header = 1;
+
+		if (memcmp(ptr, "HG20", 4) == 0) {
+			uint32_t params_len;
+			if (nmemb < 8)
+				die("Need at least 8 bytes for initial read");
+			params_len = get_be32(ptr + 4);
+			if (params_len > 0) {
+				if (nmemb < params_len + 8 || params_len != 14 ||
+				    memcmp(ptr + 8, "Compression=", 12))
+					goto passthrough;
+				if (memcmp(ptr + 20, "GZ", 2) == 0) {
+					prepare_decompress = inflate_writer;
+				} else if (memcmp(ptr + 20, "BZ", 2) == 0) {
+					prepare_decompress = prepare_bzip2;
+				} else if (memcmp(ptr + 20, "ZS", 2) == 0) {
+					prepare_decompress = prepare_zstd;
+				} else {
+					die("Unrecognized mercurial bundle "
+					    "compression: %c%c", ptr[20],
+					    ptr[21]);
+				}
+			}
+			header_size = write("HG20\0\0\0\0", 1, 8, data);
+			header_size += params_len;
+		} else if (memcmp(ptr, "HG10", 4) == 0) {
+			if (memcmp(ptr + 4, "UN", 2) == 0) {
+				// Uncompressed, do nothing.
+			} else if (memcmp(ptr + 4, "GZ", 2) == 0) {
+				prepare_decompress = inflate_writer;
+			} else if (memcmp(ptr + 4, "BZ", 2) == 0) {
+				prepare_decompress = prepare_truncated_bzip2;
+			} else {
+				die("Unrecognized mercurial bundle "
+				    "compression: %c%c", ptr[4], ptr[5]);
+			}
+			header_size = write("HG10UN", 1, 6, data);
+		} else {
+			die("Unrecognized mercurial bundle");
+		}
+		if (prepare_decompress)
+			prepare_decompress(&context->out);
+		nmemb -= header_size;
+		ptr += header_size;
+	}
+
+passthrough:
+	return header_size + write_to(ptr, size, nmemb, &context->out);
+}
+
+static int decompress_bundle_close(void *data)
+{
+	struct decompress_bundle_context *context = data;
+	int ret = writer_close(&context->out);
+	free(context);
+	return ret;
+}
+
+void decompress_bundle_writer(struct writer *writer)
+{
+	struct decompress_bundle_context *context = xcalloc(1, sizeof(struct decompress_bundle_context));
+	context->out = *writer;
+	writer->write = decompress_bundle_to;
+	writer->close = decompress_bundle_close;
+	writer->context = context;
+}

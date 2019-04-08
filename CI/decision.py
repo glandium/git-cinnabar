@@ -8,6 +8,7 @@ BASE_DIR = os.path.dirname(__file__)
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '..'))
 
+from distutils.version import LooseVersion
 from itertools import chain
 
 import osx  # noqa: F401
@@ -67,6 +68,8 @@ class TestTask(Task):
         if hg:
             command.extend(Hg.install('{}.{}'.format(task_env, hg)))
             command.append('hg --version')
+            if LooseVersion(hg) < '3.6':
+                kwargs.setdefault('env', {})['NO_CLONEBUNDLES'] = '1'
         if git:
             command.extend(Git.install('{}.{}'.format(task_env, git)))
             command.append('git --version')
@@ -310,26 +313,30 @@ def decision():
         },
     )
 
-    TestTask(
-        variant='coverage',
-        extra_desc='no-mercurial',
-        pre_command=[
-            'python -m virtualenv venv',
-            '. venv/bin/activate',
-        ],
-        command=[
-            'deactivate',
-            # deactivate removes the git directory from $PATH.
-            # Also add the virtualenv bin directory to $PATH for mercurial
-            # to be found, but at the end for the system python to still
-            # be picked.
-            'export PATH=$PWD/git/bin:$PATH:$PWD/venv/bin',
-            'make -C repo -f CI/tests.mk',
-        ],
-        env={
+    for variant in ('coverage', 'old'):
+        env = {
             'GIT_CINNABAR_CHECK': 'no-mercurial',
-        },
-    )
+        }
+        if variant == 'old':
+            env['GIT_CINNABAR_OLD_HELPER'] = '1'
+        TestTask(
+            variant=variant,
+            extra_desc='no-mercurial',
+            pre_command=[
+                'python -m virtualenv venv',
+                '. venv/bin/activate',
+            ],
+            command=[
+                'deactivate',
+                # deactivate removes the git directory from $PATH.
+                # Also add the virtualenv bin directory to $PATH for mercurial
+                # to be found, but at the end for the system python to still
+                # be picked.
+                'export PATH=$PWD/git/bin:$PATH:$PWD/venv/bin',
+                'make -C repo -f CI/tests.mk',
+            ],
+            env=env
+        )
 
 
 @action('more-hg-versions',

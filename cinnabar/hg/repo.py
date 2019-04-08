@@ -1,5 +1,6 @@
 from __future__ import division
 import os
+import ssl
 import sys
 import urllib
 from cinnabar.exceptions import NothingToGraftException
@@ -7,6 +8,7 @@ from cinnabar.githg import Changeset
 from cinnabar.helper import (
     GitHgHelper,
     HgRepoHelper,
+    BundleHelper,
 )
 from binascii import (
     hexlify,
@@ -42,7 +44,11 @@ from collections import (
     defaultdict,
     deque,
 )
-from .bundle import create_bundle
+from .bundle import (
+    create_bundle,
+    encodecaps,
+    decodecaps,
+)
 from .changegroup import (
     RawRevChunk01,
     RawRevChunk02,
@@ -55,7 +61,6 @@ try:
     # Old versions of mercurial use an old version of socketutil that tries to
     # assign a local PROTOCOL_SSLv2, copying it from the ssl module, without
     # ever using it. It shouldn't hurt to set it here.
-    import ssl
     if not hasattr(ssl, 'PROTOCOL_SSLv2'):
         ssl.PROTOCOL_SSLv2 = 0
     if not hasattr(ssl, 'PROTOCOL_SSLv3'):
@@ -78,19 +83,77 @@ if changegroup:
     try:
         if check_enabled('no-bundle2'):
             raise ImportError('Do not use bundlev2')
-        from mercurial.bundle2 import (
-            bundle2caps,
-            encodecaps,
-            unbundle20,
-            getunbundler,
-        )
-        from mercurial.changegroup import cg2unpacker
+        from mercurial.bundle2 import unbundle20
     except ImportError:
         unbundle20 = False
 else:
     def cg1unpacker(fh, alg):
         assert alg == 'UN'
         return fh
+
+
+if not unbundle20 and not check_enabled('no-bundle2'):
+    class unbundle20(object):
+        def __init__(self, ui, fh):
+            self.fh = fh
+            params_len = readexactly(fh, 4)
+            assert params_len == '\0\0\0\0'
+
+        def iterparts(self):
+            while True:
+                d = readexactly(self.fh, 4)
+                length = struct.unpack('>i', d)[0]
+                if length == 0:
+                    break
+                assert length > 0
+                header = readexactly(self.fh, length)
+                yield Part(header, self.fh)
+
+    class Part(object):
+        def __init__(self, rawheader, fh):
+            rawheader = memoryview(rawheader)
+            part_type_len = struct.unpack('>B', rawheader[0])[0]
+            self.type = rawheader[1:part_type_len + 1].tobytes().lower()
+            rawheader = rawheader[part_type_len + 5:]
+            params_count1, params_count2 = struct.unpack('>BB', rawheader[:2])
+            rawheader = rawheader[2:]
+            count = params_count1 + params_count2
+            param_sizes = struct.unpack(
+                '>' + ('BB' * count), rawheader[:2 * count])
+            rawheader = rawheader[2 * count:]
+            data = []
+            for size in param_sizes:
+                data.append(rawheader[:size])
+                rawheader = rawheader[size:]
+            assert len(rawheader) == 0
+            self.params = {
+                k.tobytes(): v.tobytes()
+                for k, v in zip(data[::2], data[1::2])
+            }
+            self.fh = fh
+            self.chunk_offset = 0
+            self.chunk_size = 0
+            self.consumed = False
+
+        def read(self, size):
+            ret = ''
+            while size and not self.consumed:
+                if self.chunk_size == self.chunk_offset:
+                    d = readexactly(self.fh, 4)
+                    self.chunk_size = struct.unpack('>i', d)[0]
+                    if self.chunk_size == 0:
+                        self.consumed = True
+                        break
+                    # TODO: handle -1, which is a special value
+                    assert self.chunk_size > 0
+                    self.chunk_offset = 0
+
+                data = readexactly(
+                    self.fh, min(size, self.chunk_size - self.chunk_offset))
+                size -= len(data)
+                self.chunk_offset += len(data)
+                ret += data
+            return ret
 
 
 # The following two functions (readexactly, getchunk) were copied from the
@@ -116,20 +179,11 @@ def getchunk(stream):
     return readexactly(stream, length - 4)
 
 
-def RawRevChunkType(bundle):
-    if unbundle20 and isinstance(bundle, cg2unpacker):
-        return RawRevChunk02
-    if hasattr(bundle, 'read') or isinstance(bundle, cg1unpacker):
-        return RawRevChunk01
-    raise Exception('Unknown changegroup type %s' % type(bundle).__name__)
-
-
 chunks_logger = logging.getLogger('chunks')
 
 
-def chunks_in_changegroup(bundle, category=None):
+def chunks_in_changegroup(chunk_type, bundle, category=None):
     previous_node = None
-    chunk_type = RawRevChunkType(bundle)
     while True:
         chunk = getchunk(bundle)
         if not chunk:
@@ -152,12 +206,12 @@ def iter_chunks(chunks, cls):
         yield cls(chunk)
 
 
-def iterate_files(bundle):
+def iterate_files(chunk_type, bundle):
     while True:
         name = getchunk(bundle)
         if not name:
             return
-        for chunk in chunks_in_changegroup(bundle, name):
+        for chunk in chunks_in_changegroup(chunk_type, bundle, name):
             yield name, chunk
 
 
@@ -426,7 +480,7 @@ def unbundle_fh(fh, path):
         alg = readexactly(fh, 2)
         return cg1unpacker(fh, alg)
     elif unbundle20 and version.startswith('2'):
-        return getunbundler(get_ui(), fh, header)
+        return unbundle20(get_ui(), fh)
     else:
         raise Exception('%s: unsupported bundle version %s' % (path,
                         version))
@@ -523,20 +577,22 @@ def unbundler(bundle):
             logging.getLogger('bundle2').debug('params: %r', part.params)
             version = part.params.get('version', '01')
             if version == '01':
-                cg = cg1unpacker(part, 'UN')
+                chunk_type = RawRevChunk01
             elif version == '02':
-                cg = cg2unpacker(part, 'UN')
+                chunk_type = RawRevChunk02
             else:
                 raise Exception('Unknown changegroup version %s' % version)
+            cg = part
             break
         else:
             raise Exception('No changegroups in the bundle')
     else:
+        chunk_type = RawRevChunk01
         cg = bundle
 
-    yield chunks_in_changegroup(cg, 'changeset')
-    yield chunks_in_changegroup(cg, 'manifest')
-    yield iterate_files(cg)
+    yield chunks_in_changegroup(chunk_type, cg, 'changeset')
+    yield chunks_in_changegroup(chunk_type, cg, 'manifest')
+    yield iterate_files(chunk_type, cg)
 
     if unbundle20 and isinstance(bundle, unbundle20):
         for part in parts:
@@ -544,21 +600,20 @@ def unbundler(bundle):
                 'ignoring bundle2 part: %s', part.type)
 
 
-def get_clonebundle(repo):
-    url = Git.config('cinnabar.clonebundle')
-    if not url:
-        try:
-            if check_enabled('no-mercurial'):
-                raise ImportError('Do not use mercurial')
-            from mercurial.exchange import (
-                parseclonebundlesmanifest,
-                filterclonebundleentries,
-            )
-        except ImportError:
-            return None
+def get_clonebundle_url(repo):
+    bundles = repo._call('clonebundles')
 
-        bundles = repo._call('clonebundles')
+    try:
+        if check_enabled('no-mercurial'):
+            raise ImportError('Do not use mercurial')
+        from mercurial.exchange import (
+            parseclonebundlesmanifest,
+            filterclonebundleentries,
+        )
+    except ImportError:
+        parseclonebundlesmanifest = False
 
+    if parseclonebundlesmanifest:
         class dummy(object):
             pass
 
@@ -575,14 +630,75 @@ def get_clonebundle(repo):
         if not entries:
             return None
 
-        url = entries[0].get('URL')
+        return entries[0].get('URL')
+
+    supported_bundles = ('v1', 'v2')
+    supported_compressions = tuple(
+        k for k, v in (
+            ('none', 'UN'),
+            ('gzip', 'GZ'),
+            ('bzip2', 'BZ'),
+            ('zstd', 'ZS'),
+        ) if HgRepoHelper.supports(('compression', v))
+    )
+
+    has_sni = getattr(ssl, 'HAS_SNI', False)
+
+    logger = logging.getLogger('clonebundle')
+
+    for line in bundles.splitlines():
+        attrs = line.split()
+        if not attrs:
+            continue
+        url = attrs.pop(0)
+        logger.debug(url)
+        attrs = {
+            urllib.unquote(k): urllib.unquote(v)
+            for k, _, v in (a.partition('=') for a in attrs)
+        }
+        logger.debug(attrs)
+        if 'REQUIRESNI' in attrs and not has_sni:
+            logger.debug('Skip because of REQUIRESNI, but SNI unsupported')
+            continue
+
+        spec = attrs.get('BUNDLESPEC')
+        if not spec:
+            logger.debug('Skip because missing BUNDLESPEC')
+            continue
+
+        typ, _, params = spec.partition(';')
+        compression, _, version = typ.partition('-')
+
+        if compression not in supported_compressions:
+            logger.debug('Skip because unsupported compression (%s)',
+                         compression)
+            continue
+        if version not in supported_bundles:
+            logger.debug('Skip because unsupported bundle type (%s)',
+                         version)
+            continue
+
+        return url
+
+
+def get_clonebundle(repo):
+    url = Git.config('cinnabar.clonebundle')
+    if not url:
+        url = get_clonebundle_url(repo)
 
     if not url:
         return None
 
     sys.stderr.write('Getting clone bundle from %s\n' % url)
 
-    return unbundle_fh(HTTPReader(url), url)
+    reader = None
+    if not changegroup:
+        reader = BundleHelper.connect(url)
+        if not reader:
+            BundleHelper.close()
+    if not reader:
+        reader = HTTPReader(url)
+    return unbundle_fh(reader, url)
 
 
 # TODO: Get the changegroup stream directly and send it, instead of
@@ -726,6 +842,8 @@ def getbundle(repo, store, heads, branch_names):
             apply_bundle = BundleApplier(bundle)
             del bundle
             apply_bundle(store)
+            if not changegroup:
+                BundleHelper.close()
         if got_partial:
             # Eliminate the heads that we got from the clonebundle or
             # cinnabarclone.
@@ -803,7 +921,12 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
     if push_commits and not dry_run:
         if repo.local():
             repo.local().ui.setconfig('server', 'validate', True)
-        b2caps = bundle2caps(repo) if unbundle20 else {}
+        if unbundle20:
+            b2caps = repo.capable('bundle2') or {}
+        else:
+            b2caps = {}
+        if b2caps:
+            b2caps = decodecaps(urllib.unquote(b2caps))
         logging.getLogger('bundle2').debug('%r', b2caps)
         if b2caps:
             b2caps['replycaps'] = encodecaps({'error': ['abort']})
@@ -834,6 +957,8 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
 
 
 def get_ui():
+    if not changegroup:
+        return None
     ui_ = ui.ui()
     ui_.fout = ui_.ferr
     ui_.setconfig('ui', 'interactive', False)

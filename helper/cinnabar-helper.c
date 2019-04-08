@@ -74,6 +74,7 @@
 #include "cinnabar-helper.h"
 #include "cinnabar-fast-import.h"
 #include "cinnabar-notes.h"
+#include "which.h"
 
 #define STRINGIFY(s) _STRINGIFY(s)
 #define _STRINGIFY(s) # s
@@ -82,10 +83,15 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 3001
+#define CMD_VERSION 3002
 #define MIN_CMD_VERSION 3000
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
+
+static int mode = 0xff; // Enable everything by default
+
+#define MODE_IMPORT 0x01
+#define MODE_WIRE 0x02
 
 struct notes_tree git2hg, hg2git, files_meta;
 
@@ -1041,6 +1047,31 @@ static void do_version(struct string_list *args)
 	strbuf_release(&version_s);
 }
 
+static void do_helpercaps(struct string_list *args)
+{
+	struct strbuf caps = STRBUF_INIT;
+
+	if (args->nr != 0)
+		die("helpercaps takes no arguments");
+
+	if (mode & MODE_WIRE) {
+		char *resolved;
+		strbuf_addstr(&caps, "compression=UN,GZ");
+		resolved = which("bzip2");
+		if (resolved) {
+			free(resolved);
+			strbuf_addstr(&caps, ",BZ");
+		}
+		resolved = which("zstd");
+		if (resolved) {
+			free(resolved);
+			strbuf_addstr(&caps, ",ZS");
+		}
+	}
+	send_buffer(&caps);
+	strbuf_release(&caps);
+}
+
 static void string_list_as_oid_array(struct string_list *list,
 				     struct oid_array *array)
 {
@@ -1758,6 +1789,16 @@ int cmd_main(int argc, const char *argv[])
 	int initialized = 0;
 	struct strbuf buf = STRBUF_INIT;
 
+	if (argc > 1) {
+		if (argc > 2)
+			die("Too many arguments");
+		if (!strcmp(argv[1], "--wire")) {
+			mode = MODE_WIRE;
+		} else if (!strcmp(argv[1], "--import")) {
+			mode = MODE_IMPORT;
+		}
+	}
+
 	init_git_config();
 	git_config(git_default_config, NULL);
 	ignore_case = 0;
@@ -1773,11 +1814,17 @@ int cmd_main(int argc, const char *argv[])
 			do_version(&args);
 			string_list_clear(&args, 0);
 			continue;
-		} else if (!strcmp("connect", command)) {
+		} else if (!strcmp("helpercaps", command)) {
+			do_helpercaps(&args);
+			string_list_clear(&args, 0);
+			continue;
+		} else if ((mode & MODE_WIRE) && !strcmp("connect", command)) {
 			do_connect(&args);
 			string_list_clear(&args, 0);
 			break;
 		}
+		if (!(mode & MODE_IMPORT))
+			die("Unknown command: \"%s\"", command);
 		if (!initialized) {
 			setup_git_directory();
 			git_config(git_diff_basic_config, NULL);

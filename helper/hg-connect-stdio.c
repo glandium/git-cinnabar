@@ -220,6 +220,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 			writer.write = (write_callback)fwrite;
 			writer.close = (close_callback)fflush;
 			writer.context = stdout;
+			decompress_bundle_writer(&writer);
 			copy_to(file, st.st_size, &writer);
 			writer_close(&writer);
 			return NULL;
