@@ -53,7 +53,7 @@ hg.upgraded.git: hg.old.git
 	$(GIT) -C $@ cinnabar upgrade || [ "$$?" = 2 ]
 	$(GIT) -C $@ cinnabar fsck --manifest --files || [ "$$?" = 2 ]
 
-PATH_URL = file://$(if $(filter /%,$(CURDIR)),,/)$(CURDIR)
+PATH_URL = file://$(CURDIR)
 
 COMPARE_COMMANDS = bash -c "diff -u <($1) <($2)"
 
@@ -147,12 +147,12 @@ hg.clonebundles.hg: hg.hg hg.incr.bundle
 hg.clonebundles-full.hg: hg.hg hg.full.bundle
 hg.clonebundles.hg hg.clonebundles-full.hg:
 	$(HG) clone -U $< $@
-	echo $(PATH_URL)/$(word 2,$^) BUNDLESPEC=$(BUNDLESPEC) > $@/.hg/clonebundles.manifest
+	echo http://localhost:8080/$(word 2,$^) BUNDLESPEC=$(BUNDLESPEC) > $@/.hg/clonebundles.manifest
 
 hg.clonebundles.git: hg.clonebundles.hg hg.git
 hg.clonebundles-full.git: hg.clonebundles-full.hg hg.git
 hg.clonebundles.git hg.clonebundles-full.git:
-	$(HG) -R $< --config extensions.clonebundles= --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py serve-and-exec -- $(GIT) clone -n hg://localhost:8000.http/ $@
+	OTHER_SERVER=http $(HG) -R $< --config extensions.clonebundles= --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py serve-and-exec -- $(GIT) clone -n hg://localhost:8000.http/ $@
 	$(call COMPARE_REFS, $(word 2,$^), $@)
 
 hg.pure.git: hg.git

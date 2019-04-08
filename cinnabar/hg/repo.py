@@ -689,6 +689,10 @@ def get_clonebundle(repo):
     if not url:
         return None
 
+    parsed_url = urlparse(url)
+    if parsed_url.scheme not in ('http', 'https'):
+        return None
+
     sys.stderr.write('Getting clone bundle from %s\n' % url)
 
     reader = None
