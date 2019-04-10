@@ -730,6 +730,8 @@ def get_clonebundle(repo):
 
     parsed_url = urlparse(url)
     if parsed_url.scheme not in ('http', 'https'):
+        logging.warn('Server advertizes clone bundle but provided a non '
+                     'http/https url. Skipping.')
         return None
 
     sys.stderr.write('Getting clone bundle from %s\n' % url)
