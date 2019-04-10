@@ -58,10 +58,14 @@ class Formatter(logging.Formatter):
         super(Formatter, self).__init__(
             '\r%(timestamp).3f %(levelname)s [%(name)s] %(message)s')
         self._root_formatter = logging.Formatter('\r%(levelname)s %(message)s')
+        self._no_timestamp_formatter = logging.Formatter(
+            '\r%(levelname)s [%(name)s] %(message)s')
 
     def format(self, record):
         if record.name == 'root':
             return self._root_formatter.format(record)
+        if record.levelno >= logging.WARNING:
+            return self._no_timestamp_formatter.format(record)
         return super(Formatter, self).format(record)
 
 
