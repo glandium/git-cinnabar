@@ -12,16 +12,16 @@ mercurial directly.
 This extension will look for a `.hg/cinnabar.manifest` file on the server
 side to serve to clients requesting a `cinnabarclone`.
 
-The file contains a list of git repository urls to be pulled from, one
-after the other. Each line has the format:
+The file contains a list of git repository or bundles urls to be pulled
+from, one after the other. Each line has the format:
 
    `<url>[#<branch>]`
 
-where `<url>` is the URL of the git repository, and `<branch>` (optional)
-is the name of the branch to fetch. The branch can be a full qualified
-ref name (`refs/heads/branch`), or a simple name (`branch`). In the latter
-case, the client will fetch the `refs/cinnabar/<branch>` ref if it exists,
-or the `refs/heads/<branch>` ref otherwise.
+where `<url>` is the URL of the git repository or bundle, and `<branch>`
+(optional) is the name of the branch to fetch. The branch can be a full
+qualified ref name (`refs/heads/branch`), or a simple name (`branch`). In
+the latter case, the client will fetch the `refs/cinnabar/<branch>` ref
+if it exists, or the `refs/heads/<branch>` ref otherwise.
 
 If <branch> is ommitted, the client will try names matching the mercurial
 repository url, or `metadata` as last resort.
