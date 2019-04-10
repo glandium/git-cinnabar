@@ -42,7 +42,7 @@ def fetch(args):
                 return 1
         full_revs.append(rev)
 
-    refs = ['hg/revs/%s' % rev for rev in full_revs]
+    refs = ['hg/revs/%s' % r for r in full_revs]
 
     proc = GitProcess('fetch', remote, *refs, stdout=sys.stdout,
                       config={'cinnabar.fetch': ' '.join(full_revs)})
