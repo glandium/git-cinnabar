@@ -835,18 +835,23 @@ class BundleApplier(object):
 
 
 def do_cinnabarclone(repo, manifest, store):
-    data = manifest.splitlines()
-    if not data:
+    url = None
+    for line in manifest.splitlines():
+        line = line.strip()
+        spec, _, params = line.partition(' ')
+        if params:
+            # Future proofing: ignore lines with params.
+            continue
+        url, _, branch = spec.partition('#')
+        url, branch = (url.split('#', 1) + [None])[:2]
+        if url:
+            break
+
+    if not url:
         logging.warn('Server advertizes cinnabarclone but didn\'t provide '
                      'a git repository url to fetch from.')
         return False
-    if len(data) > 1:
-        logging.warn('cinnabarclone from multiple git repositories is not '
-                     'supported yet.')
-        return False
 
-    url = data[0]
-    url, branch = (url.split('#', 1) + [None])[:2]
     parsed_url = urlparse(url)
     if parsed_url.scheme not in ('http', 'https', 'git'):
         logging.warn('Server advertizes cinnabarclone but provided a non '
