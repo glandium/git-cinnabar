@@ -285,6 +285,9 @@ def decision():
         commit=rev,
         clone=rev,
         extra_desc='old python',
+        env={
+            'GIT_CINNABAR_OLD': '1',
+        },
     )
 
     TestTask(
@@ -292,6 +295,7 @@ def decision():
         clone=rev,
         extra_desc='old python graft',
         env={
+            'GIT_CINNABAR_OLD': '1',
             'GRAFT': '1',
         },
     )
