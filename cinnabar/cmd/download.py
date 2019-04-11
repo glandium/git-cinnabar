@@ -9,11 +9,9 @@ import zipfile
 import errno
 from StringIO import StringIO
 from cinnabar import VERSION
-from cinnabar.cmd.util import (
-    CLI,
-    helper_hash,
-)
+from cinnabar.cmd.util import CLI
 from cinnabar.git import Git
+from cinnabar.helper import helper_hash
 from cinnabar.util import (
     HTTPReader,
     Progress,

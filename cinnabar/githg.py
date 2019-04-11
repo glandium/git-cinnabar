@@ -555,12 +555,6 @@ class PseudoGitCommit(GitCommit):
         self.sha1 = sha1
 
 
-def git_hash(type, data):
-    h = hashlib.sha1('%s %d\0' % (type, len(data)))
-    h.update(data)
-    return h.hexdigest()
-
-
 def autohexlify(h):
     if len(h) == 40:
         return h
