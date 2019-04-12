@@ -1122,9 +1122,9 @@ class GitHgStore(object):
     def changeset(self, sha1, include_parents=False):
         gitsha1 = self.changeset_ref(sha1)
         assert gitsha1
-        return self._changeset(gitsha1, sha1, include_parents)
+        return self._changeset(gitsha1, include_parents)
 
-    def _changeset(self, git_commit, sha1=NULL_NODE_ID, include_parents=False):
+    def _changeset(self, git_commit, include_parents=False):
         if not isinstance(git_commit, GitCommit):
             git_commit = GitCommit(git_commit)
 
