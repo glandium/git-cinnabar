@@ -1122,7 +1122,7 @@ static void do_check_file(struct string_list *args)
 		goto ok;
 
 	hg_sha1(&file.file, NULL, NULL, &result);
-	if (hg_oideq(&oid, &result))
+	if (!hg_oideq(&oid, &result))
 		goto error;
 
 ok:
