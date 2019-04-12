@@ -24,6 +24,26 @@ from collections import (
 )
 
 
+class FsckStatus(object):
+    def __init__(self):
+        self.status = 'ok'
+
+    def __call__(self, status):
+        return self.status == status
+
+    def info(self, message):
+        sys.stderr.write('\r')
+        print message
+
+    def fix(self, message):
+        self.status = 'fixed'
+        self.info(message)
+
+    def report(self, message):
+        self.status = 'broken'
+        self.info(message)
+
+
 @CLI.subcommand
 @CLI.argument('--manifests', action='store_true',
               help='Validate manifests hashes')
@@ -34,22 +54,7 @@ from collections import (
 def fsck(args):
     '''check cinnabar metadata consistency'''
 
-    status = {
-        'broken': False,
-        'fixed': False,
-    }
-
-    def info(message):
-        sys.stderr.write('\r')
-        print message
-
-    def fix(message):
-        status['fixed'] = True
-        info(message)
-
-    def report(message):
-        status['broken'] = True
-        info(message)
+    status = FsckStatus()
 
     store = GitHgStore()
 
@@ -64,7 +69,7 @@ def fsck(args):
                 c = cs.node
             commit = GitHgHelper.hg2git(c)
             if commit == NULL_NODE_ID and not cs:
-                info('Unknown commit or changeset: %s' % c)
+                status.info('Unknown commit or changeset: %s' % c)
                 return 1
             if not cs:
                 cs = store.hg_changeset(commit)
@@ -94,7 +99,7 @@ def fsck(args):
         node = store._replace.get(node, node)
         hg_node = store.hg_changeset(node)
         if not hg_node:
-            report('Missing note for git commit: ' + node)
+            status.report('Missing note for git commit: ' + node)
             continue
         GitHgHelper.seen('git2hg', node)
 
@@ -104,16 +109,16 @@ def fsck(args):
         GitHgHelper.seen('hg2git', changeset)
         changeset_ref = store.changeset_ref(changeset)
         if not changeset_ref:
-            report('Missing changeset in hg2git branch: %s' % changeset)
+            status.report('Missing changeset in hg2git branch: %s' % changeset)
             continue
         elif str(changeset_ref) != node:
-            report('Commit mismatch for changeset %s\n'
-                   '  hg2git: %s\n  commit: %s'
-                   % (changeset, changeset_ref, node))
+            status.report('Commit mismatch for changeset %s\n'
+                          '  hg2git: %s\n  commit: %s'
+                          % (changeset, changeset_ref, node))
 
         hg_changeset = store.changeset(changeset, include_parents=True)
         if hg_changeset.node != hg_changeset.sha1:
-            report('Sha1 mismatch for changeset %s' % changeset)
+            status.report('Sha1 mismatch for changeset %s' % changeset)
 
         dag.add(hg_changeset.node,
                 (hg_changeset.parent1, hg_changeset.parent2),
@@ -122,7 +127,7 @@ def fsck(args):
         raw_changeset = Changeset.from_git_commit(node)
         patcher = ChangesetPatcher.from_diff(raw_changeset, changeset_data)
         if patcher != store.read_changeset_data(node):
-            fix('Adjusted changeset metadata for %s' % changeset)
+            status.fix('Adjusted changeset metadata for %s' % changeset)
             GitHgHelper.set('changeset', changeset, NULL_NODE_ID)
             GitHgHelper.set('changeset', changeset, node)
             GitHgHelper.put_blob(patcher, want_sha1=False)
@@ -134,7 +139,7 @@ def fsck(args):
             continue
         manifest_ref = store.manifest_ref(manifest)
         if not manifest_ref:
-            report('Missing manifest in hg2git branch: %s' % manifest)
+            status.report('Missing manifest in hg2git branch: %s' % manifest)
 
         parents = tuple(
             store.changeset(p).manifest
@@ -149,14 +154,14 @@ def fsck(args):
 
         if args.manifests:
             if not GitHgHelper.check_manifest(manifest):
-                report('Sha1 mismatch for manifest %s' % manifest)
+                status.report('Sha1 mismatch for manifest %s' % manifest)
 
         manifest_commit_parents = GitCommit(manifest_ref).parents
         if sorted(manifest_commit_parents) != sorted(git_parents):
             # TODO: better error
-            report('%s(%s) %s != %s' % (manifest, manifest_ref,
-                                        manifest_commit_parents,
-                                        git_parents))
+            status.report('%s(%s) %s != %s' % (manifest, manifest_ref,
+                                               manifest_commit_parents,
+                                               git_parents))
 
         # TODO: check that manifest content matches changeset content
 
@@ -174,10 +179,11 @@ def fsck(args):
                         valid = GitHgHelper.check_file(hg_file,
                                                        *hg_fileparents)
                     if not valid:
-                        report('Sha1 mismatch for file %s in manifest %s'
-                               % (hg_file, manifest_ref))
+                        status.report(
+                            'Sha1 mismatch for file %s in manifest %s'
+                            % (hg_file, manifest_ref))
 
-    if not args.commit and not status['broken']:
+    if not args.commit and not status('broken'):
         store_manifest_heads = set(store._manifest_heads_orig)
         manifest_heads = set(GitHgHelper.heads('manifests'))
         if store_manifest_heads != manifest_heads:
@@ -190,25 +196,25 @@ def fsck(args):
             for m, t, p in GitHgHelper.rev_list(
                     '--topo-order', '--full-history', '--reverse',
                     *iter_manifests(manifest_heads, store_manifest_heads)):
-                fix('Missing manifest commit in manifest branch: %s'
-                    % m)
+                status.fix('Missing manifest commit in manifest branch: %s'
+                           % m)
 
             for m, t, p in GitHgHelper.rev_list(
                     '--topo-order', '--full-history', '--reverse',
                     *iter_manifests(store_manifest_heads, manifest_heads)):
-                fix('Removing metadata commit %s with no corresponding '
-                    'changeset' % (m))
+                status.fix('Removing metadata commit %s with no corresponding '
+                           'changeset' % (m))
 
             for h in store_manifest_heads - manifest_heads:
                 if GitHgHelper.seen('hg2git', store.hg_manifest(h)):
-                    fix('Removing non-head reference to %s in manifests '
-                        'metadata.' % h)
+                    status.fix('Removing non-head reference to %s in manifests'
+                               ' metadata.' % h)
     dangling = ()
-    if not args.commit and not status['broken']:
+    if not args.commit and not status('broken'):
         dangling = GitHgHelper.dangling(
             'hg2git' if args.files else 'hg2git-no-blobs')
     for obj in dangling:
-        fix('Removing dangling metadata for ' + obj)
+        status.fix('Removing dangling metadata for ' + obj)
         # Theoretically, we should figure out if they are files, manifests
         # or changesets and set the right variable accordingly, but in
         # practice, it makes no difference. Reevaluate when GitHgStore.close
@@ -216,24 +222,25 @@ def fsck(args):
         GitHgHelper.set('file', obj, NULL_NODE_ID)
         GitHgHelper.set('file-meta', obj, NULL_NODE_ID)
 
-    if not args.commit and not status['broken']:
+    if not args.commit and not status('broken'):
         dangling = GitHgHelper.dangling('git2hg')
     for c in dangling:
-        fix('Removing dangling note for commit ' + c)
+        status.fix('Removing dangling note for commit ' + c)
         GitHgHelper.set('changeset-metadata', c, NULL_NODE_ID)
 
-    if status['broken']:
-        info('Your git-cinnabar repository appears to be corrupted. There\n'
-             'are known issues in older revisions that have been fixed.\n'
-             'Please try running the following command to reset:\n'
-             '  git cinnabar reclone\n\n'
-             'Please note this command may change the commit sha1s. Your\n'
-             'local branches will however stay untouched.\n'
-             'Please report any corruption that fsck would detect after a\n'
-             'reclone.')
+    if status('broken'):
+        status.info(
+            'Your git-cinnabar repository appears to be corrupted. There\n'
+            'are known issues in older revisions that have been fixed.\n'
+            'Please try running the following command to reset:\n'
+            '  git cinnabar reclone\n\n'
+            'Please note this command may change the commit sha1s. Your\n'
+            'local branches will however stay untouched.\n'
+            'Please report any corruption that fsck would detect after a\n'
+            'reclone.')
 
     if not args.commit:
-        info('Checking head references...')
+        status.info('Checking head references...')
         computed_heads = defaultdict(set)
         for branch, head in dag.all_heads():
             computed_heads[branch].add(head)
@@ -241,18 +248,18 @@ def fsck(args):
         for branch in sorted(dag.tags()):
             stored_heads = store.heads({branch})
             for head in computed_heads[branch] - stored_heads:
-                fix('Adding missing head %s in branch %s' %
-                    (head, branch))
+                status.fix('Adding missing head %s in branch %s' %
+                           (head, branch))
                 store.add_head(head)
             for head in stored_heads - computed_heads[branch]:
-                fix('Removing non-head reference to %s in branch %s' %
-                    (head, branch))
+                status.fix('Removing non-head reference to %s in branch %s' %
+                           (head, branch))
                 del store._hgheads[head]
 
     store.close()
 
-    if status['broken']:
+    if status('broken'):
         return 1
-    if status['fixed']:
+    if status('fixed'):
         return 2
     return 0
