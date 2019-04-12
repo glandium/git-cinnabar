@@ -156,7 +156,8 @@ class BaseHelper(object):
 
                 if BaseHelper._helper_hash is None:
                     BaseHelper._helper_hash = helper_hash() or False
-                    if BaseHelper._helper_hash != self._revision:
+                    if BaseHelper._helper_hash is not False and \
+                            BaseHelper._helper_hash != self._revision:
                         logging.warning(outdated)
 
                 atexit.register(self.close)
