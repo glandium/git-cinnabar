@@ -113,10 +113,14 @@ def fsck_quick():
                     p = store.manifest_path(path)
                     status.report(
                         'Sha1 mismatch for file %s\n'
-                        '  revision %s\n'
-                        '  with parent%s %s\n'
-                        % (p, hg_file, 's' if len(hg_fileparents) > 1 else '',
-                           ' '.join(hg_fileparents)))
+                        '  revision %s' % (p, hg_file))
+
+                    print_parents = ' '.join(p for p in hg_fileparents
+                                             if p != NULL_NODE_ID)
+                    if print_parents:
+                        status.report('  with parent%s %s' % (
+                            's' if len(print_parents) > 41 else '',
+                            print_parents))
                 del files[path]
                 progress.progress()
             queue.extend(commit.parents)
@@ -127,7 +131,7 @@ def fsck_quick():
             status.info(
                 'Could not find all files of manifest %s\n'
                 'in ancestry of changeset %s.\n'
-                'This might be a bug in `git cinnabar fsck`. Please open'
+                'This might be a bug in `git cinnabar fsck`. Please open '
                 'an issue, with the message above, on\n'
                 'https://github.com/glandium/git-cinnabar/issues'
                 % (changeset.manifest, changeset.node))
