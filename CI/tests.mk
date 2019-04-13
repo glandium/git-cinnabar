@@ -116,6 +116,7 @@ hg.unbundle.git hg.git hg.git.nobundle2:
 	$(GIT) -c fetch.prune=true clone -n hg::$(CURDIR)/$< $@
 	$(call COMPARE_REFS, $(word 2,$^), $@)
 	$(GIT) -C $@ cinnabar fsck --manifest --files
+	$(GIT) -C $@ cinnabar fsck --quick
 	$(GIT) -C $@ remote add hg-http hg::http://localhost:8000/
 
 hg.incr.hg hg.incr.hg.nobundle2: hg.incr.hg%: hg.hg%
@@ -130,6 +131,7 @@ hg.incr.git hg.incr.git.nobundle2: hg.incr.git%: hg.incr.hg% hg.hg% hg.git%
 	$(GIT) -C $@ remote update
 	$(call COMPARE_REFS, $(word 3,$^), $@)
 	$(GIT) -C $@ cinnabar fsck --manifest --files
+	$(GIT) -C $@ cinnabar fsck --quick
 
 BUNDLESPEC = gzip-v2
 ifdef GIT_CINNABAR_OLD_HELPER
@@ -197,6 +199,7 @@ hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-bundle.git hg.ci
 	OTHER_SERVER=$(OTHER_SERVER) $(HG) -R $@.hg --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(HG_CINNABARCLONE_EXT) serve-and-exec -- $(GIT) -c cinnabar.experiments=git-clone clone hg://localhost:8000.http/ $@
 	$(call COMPARE_REFS, $(or $(word 3,$^),$(word 2,$^)), $@)
 	$(GIT) -C $@ cinnabar fsck --manifest --files
+	$(GIT) -C $@ cinnabar fsck --quick
 
 GET_ROOTS = $(GIT) -C $1 rev-list $2 --max-parents=0
 XARGS_GIT2HG = xargs $(GIT) -C $1 cinnabar git2hg

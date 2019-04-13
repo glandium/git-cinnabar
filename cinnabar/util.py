@@ -152,9 +152,11 @@ class Progress(object):
         self._start = self._t0 = time.time()
         self._fmt = fmt
 
-    def progress(self, count):
+    def progress(self, count=None):
         if not progress:
             return
+        if count is None:
+            count = self._count + 1
         t1 = time.time()
         if t1 - self._t0 > 0.1:
             self._print_count(count, t1)

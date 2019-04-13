@@ -1128,8 +1128,10 @@ class GitHgStore(object):
         if not isinstance(git_commit, GitCommit):
             git_commit = GitCommit(git_commit)
 
-        changeset = Changeset.from_git_commit(git_commit)
         metadata = self.read_changeset_data(git_commit.sha1)
+        if not metadata:
+            return None
+        changeset = Changeset.from_git_commit(git_commit)
         changeset = metadata.apply(changeset)
 
         if include_parents:

@@ -15,12 +15,14 @@ from cinnabar.git import (
     NULL_NODE_ID,
 )
 from cinnabar.util import (
+    Progress,
     progress_iter,
 )
 from cinnabar.helper import GitHgHelper
 from cinnabar.hg.bundle import get_changes
 from collections import (
     defaultdict,
+    deque,
 )
 
 
@@ -44,7 +46,105 @@ class FsckStatus(object):
         self.info(message)
 
 
+def fsck_quick():
+    status = FsckStatus()
+    store = GitHgStore()
+
+    # Look for an ancestor with cinnabar metadata
+    commit = Git.resolve_ref('HEAD')
+    if not commit:
+        status.info('Cannot find HEAD')
+        return 1
+
+    changeset = None
+    while not changeset:
+        git_commit = GitCommit(commit)
+        changeset = store._changeset(git_commit, include_parents=True)
+        if not changeset:
+            parents = git_commit.parents
+            if not parents:
+                break
+            commit = parents[0]
+            continue
+
+    if not changeset:
+        status.info(
+            'Could not find a mercurial changeset in the ancestors of '
+            'current HEAD\n'
+            'Is this a git-cinnabar clone?')
+        return 1
+
+    git_manifest = GitHgHelper.hg2git(changeset.manifest)
+
+    hg2git_commit = GitHgHelper.hg2git(changeset.node)
+    if commit != hg2git_commit:
+        status.report(
+            'Commit mismatch:\n'
+            '  %s maps to changeset %s'
+            '  but changeset %s maps to %s'
+            % (commit, changeset.node, changeset.node, hg2git_commit))
+    elif changeset.node != changeset.sha1:
+        status.report('Sha1 mismatch for changeset %s' % changeset.node)
+    elif not git_manifest:
+        status.report('Missing manifest in hg2git branch: %s'
+                      % changeset.manifest)
+    elif not GitHgHelper.check_manifest(changeset.manifest):
+        status.report('Sha1 mismatch for manifest %s' % changeset.manifest)
+    else:
+        files = {
+            path: sha1
+            for _, _, sha1, path in GitHgHelper.ls_tree(
+                git_manifest, recursive=True)
+        }
+        queue = deque((git_manifest,))
+        seen = set()
+        progress = Progress('Checking {} files')
+        while files and queue:
+            commit = queue.popleft()
+            if commit in seen:
+                continue
+            seen.add(commit)
+            commit = GitCommit(commit)
+            changes = get_changes(commit.sha1, commit.parents)
+            for path, hg_file, hg_fileparents in changes:
+                if files.get(path) != hg_file or hg_file in hg_fileparents:
+                    continue
+                if not GitHgHelper.check_file(hg_file, *hg_fileparents):
+                    p = store.manifest_path(path)
+                    status.report(
+                        'Sha1 mismatch for file %s\n'
+                        '  revision %s\n'
+                        '  with parent%s %s\n'
+                        % (p, hg_file, 's' if len(hg_fileparents) > 1 else '',
+                           ' '.join(hg_fileparents)))
+                del files[path]
+                progress.progress()
+            queue.extend(commit.parents)
+
+        progress.finish()
+
+        if files:
+            status.info(
+                'Could not find all files of manifest %s\n'
+                'in ancestry of changeset %s.\n'
+                'This might be a bug in `git cinnabar fsck`. Please open'
+                'an issue, with the message above, on\n'
+                'https://github.com/glandium/git-cinnabar/issues'
+                % (changeset.manifest, changeset.node))
+            return 1
+
+    if status('broken'):
+        status.info(
+            'Your git-cinnabar repository appears to be corrupted.')
+        # TODO: add more instructions
+
+    return 0
+
+
 @CLI.subcommand
+@CLI.argument('--quick', action='store_true',
+              help='Quickly validate mercurial changeset close to current'
+                   'HEAD')
 @CLI.argument('--manifests', action='store_true',
               help='Validate manifests hashes')
 @CLI.argument('--files', action='store_true',
@@ -53,6 +153,13 @@ class FsckStatus(object):
               help='Specific commit or changeset to check')
 def fsck(args):
     '''check cinnabar metadata consistency'''
+
+    if args.quick:
+        if args.commit or args.manifests or args.files:
+            print("`git cinnabar fsck --quick` doesn't accept other "
+                  "arguments.")
+            return 1
+        return fsck_quick()
 
     status = FsckStatus()
 
