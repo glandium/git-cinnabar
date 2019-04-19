@@ -105,9 +105,15 @@ def fsck_quick():
                 continue
             seen.add(commit)
             commit = GitCommit(commit)
-            changes = get_changes(commit.sha1, commit.parents)
+            changes = get_changes(commit.sha1, commit.parents, all=True)
+            interesting_parents = 1
             for path, hg_file, hg_fileparents in changes:
-                if files.get(path) != hg_file or hg_file in hg_fileparents:
+                if files.get(path) != hg_file:
+                    continue
+                if hg_fileparents[1:] == (hg_file,):
+                    interesting_parents = 2
+                    continue
+                elif hg_fileparents[:1] == (hg_file,):
                     continue
                 if not GitHgHelper.check_file(hg_file, *hg_fileparents):
                     p = store.manifest_path(path)
@@ -123,7 +129,7 @@ def fsck_quick():
                             print_parents))
                 del files[path]
                 progress.progress()
-            queue.extend(commit.parents)
+            queue.extend(commit.parents[:interesting_parents])
 
         progress.finish()
 
