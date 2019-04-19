@@ -83,7 +83,7 @@
 #define HELPER_HASH unknown
 #endif
 
-#define CMD_VERSION 3002
+#define CMD_VERSION 3003
 #define MIN_CMD_VERSION 3000
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
@@ -2197,11 +2197,21 @@ static void init_config()
 	strbuf_release(&conf);
 }
 
-static void init_flags()
+static void reset_replace_map()
+{
+	oidmap_free(the_repository->objects->replace_map, 1);
+	FREE_AND_NULL(the_repository->objects->replace_map);
+}
+
+static void init_metadata()
 {
 	struct commit *c;
 	const char *msg, *body;
 	struct strbuf **flags, **f;
+	struct tree *tree;
+	struct tree_desc desc;
+	struct name_entry entry;
+	struct replace_object *replace;
 
 	c = lookup_commit_reference_by_name(METADATA_REF);
 	if (!c)
@@ -2220,6 +2230,31 @@ static void init_flags()
 			metadata_flags |= UNIFIED_MANIFESTS_v2;
 	}
 	strbuf_list_free(flags);
+
+	reset_replace_map();
+	the_repository->objects->replace_map =
+		xmalloc(sizeof(*the_repository->objects->replace_map));
+	oidmap_init(the_repository->objects->replace_map, 0);
+
+	tree = get_commit_tree(c);
+	parse_tree(tree);
+	init_tree_desc(&desc, tree->buffer, tree->size);
+	while (tree_entry(&desc, &entry)) {
+		replace = xmalloc(sizeof(*replace));
+		if (entry.pathlen != 40 ||
+		    get_oid_hex(entry.path, &replace->original.oid)) {
+			struct strbuf buf = STRBUF_INIT;
+			free(replace);
+			strbuf_add(&buf, entry.path, entry.pathlen);
+			warning(_("bad replace name: %s"), buf.buf);
+			strbuf_release(&buf);
+			continue;
+		}
+		oidcpy(&replace->replacement, &entry.oid);
+		if (oidmap_put(the_repository->objects->replace_map, replace))
+			die(_("duplicate replace: %s"),
+			    oid_to_hex(&replace->original.oid));
+	}
 }
 
 extern void dump_branches(void);
@@ -2249,7 +2284,8 @@ static void do_reload(struct string_list *args)
 	dump_branches();
 
 	metadata_flags = 0;
-	init_flags();
+	reset_replace_map();
+	init_metadata();
 }
 
 extern int configset_add_value(struct config_set *, const char*, const char *);
@@ -2354,7 +2390,7 @@ int cmd_main(int argc, const char *argv[])
 			git_config(git_diff_basic_config, NULL);
 			ignore_case = 0;
 			init_config();
-			init_flags();
+			init_metadata();
 			initialized = 1;
 			hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
 		}
