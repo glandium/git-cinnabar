@@ -1,4 +1,5 @@
 import logging
+import re
 import sys
 from cinnabar.cmd.util import CLI
 from cinnabar.githg import (
@@ -24,6 +25,10 @@ from collections import (
     defaultdict,
     deque,
 )
+from itertools import izip
+
+
+SHA1_RE = re.compile('[0-9a-f]{40}$')
 
 
 class FsckStatus(object):
@@ -50,98 +55,172 @@ def fsck_quick():
     status = FsckStatus()
     store = GitHgStore()
 
-    # Look for an ancestor with cinnabar metadata
-    commit = Git.resolve_ref('HEAD')
+    commit = Git.resolve_ref('refs/cinnabar/metadata')
     if not commit:
-        status.info('Cannot find HEAD')
-        return 1
-
-    changeset = None
-    while not changeset:
-        git_commit = GitCommit(commit)
-        changeset = store._changeset(git_commit, include_parents=True)
-        if not changeset:
-            parents = git_commit.parents
-            if not parents:
-                break
-            commit = parents[0]
-            continue
-
-    if not changeset:
         status.info(
-            'Could not find a mercurial changeset in the ancestors of '
-            'current HEAD\n'
-            'Is this a git-cinnabar clone?')
+            'There does not seem to be any git-cinnabar metadata.\n'
+            'Is this a git-cinnabar clone?'
+        )
+        return 1
+    commit = GitCommit(commit)
+    if commit.body != 'files-meta unified-manifests-v2':
+        status.info(
+            'The git-cinnabar metadata is incompatible with this version.\n'
+            'Please use the git-cinnabar version it was used with last.\n'
+        )
+        return 1
+    if len(commit.parents) > 6 or len(commit.parents) < 5:
+        status.report('The git-cinnabar metadata seems to be corrupted in '
+                      'unexpected ways.\n')
+        return 1
+    changesets, manifests, hg2git, git2hg, files_meta = commit.parents[:5]
+
+    commit = GitCommit(changesets)
+    descriptors = commit.body.splitlines()
+    if len(descriptors) != len(commit.parents):
+        status.report('The git-cinnabar metadata seems to be corrupted in '
+                      'unexpected ways.\n')
         return 1
 
-    git_manifest = GitHgHelper.hg2git(changeset.manifest)
+    manifest_nodes = []
 
-    hg2git_commit = GitHgHelper.hg2git(changeset.node)
-    if commit != hg2git_commit:
-        status.report(
-            'Commit mismatch:\n'
-            '  %s maps to changeset %s'
-            '  but changeset %s maps to %s'
-            % (commit, changeset.node, changeset.node, hg2git_commit))
-    elif changeset.node != changeset.sha1:
-        status.report('Sha1 mismatch for changeset %s' % changeset.node)
-    elif not git_manifest:
-        status.report('Missing manifest in hg2git branch: %s'
-                      % changeset.manifest)
-    elif not GitHgHelper.check_manifest(changeset.manifest):
-        status.report('Sha1 mismatch for manifest %s' % changeset.manifest)
-    else:
-        files = {
-            path: sha1
-            for _, _, sha1, path in GitHgHelper.ls_tree(
-                git_manifest, recursive=True)
-        }
-        queue = deque((git_manifest,))
-        seen = set()
-        progress = Progress('Checking {} files')
-        while files and queue:
-            commit = queue.popleft()
-            if commit in seen:
+    # TODO: Check that the recorded heads are actually dag heads.
+    for c, desc in progress_iter('Checking {} changesets',
+                                 izip(commit.parents, descriptors)):
+        changeset_node, _, branch = desc.partition(' ')
+        gitsha1 = GitHgHelper.hg2git(changeset_node)
+        if gitsha1 == NULL_NODE_ID:
+            status.report('Missing hg2git metadata for changeset %s'
+                          % changeset_node)
+            continue
+        if gitsha1 != c:
+            status.report(
+                'Inconsistent metadata:\n'
+                '  Head metadata says changeset %s maps to %s\n'
+                '  but hg2git metadata says it maps to %s'
+                % (changeset_node, c, gitsha1))
+            continue
+        changeset = store._changeset(c, include_parents=True)
+        if not changeset:
+            status.report('Missing git2hg metadata for git commit %s' % c)
+            continue
+        if changeset.node != changeset_node:
+            status.report(
+                'Inconsistent metadata:\n'
+                '  Head metadata says %s maps to changeset %s\n'
+                '  but git2hg metadata says it maps to changeset %s'
+                % (c, changeset_node, changeset.node))
+            continue
+        if changeset.node != changeset.sha1:
+            status.report('Sha1 mismatch for changeset %s' % changeset.node)
+            continue
+        changeset_branch = changeset.branch or 'default'
+        if branch != changeset_branch:
+            status.report(
+                'Inconsistent metadata:\n'
+                '  Head metadata says changeset %s is in branch %s\n'
+                '  but git2hg metadata says it is in branch %s'
+                % (changeset_node, branch, changeset_branch))
+            continue
+        manifest_nodes.append(changeset.manifest)
+
+    if status('broken'):
+        return 1
+
+    manifests_commit = GitCommit(manifests)
+    # TODO: check that all manifest_nodes gathered above are available in the
+    # manifests dag, and that the dag heads are the recorded heads.
+    previous = None
+    interesting = {}
+    all_interesting = set()
+    for m in progress_iter('Checking {} manifests', manifests_commit.parents):
+        c = GitCommit(m)
+        if not SHA1_RE.match(c.body):
+            status.report('Invalid manifest metadata in git commit %s' % m)
+            continue
+        gitsha1 = GitHgHelper.hg2git(c.body)
+        if gitsha1 == NULL_NODE_ID:
+            status.report('Missing hg2git metadata for manifest %s' % c.body)
+            continue
+        if not GitHgHelper.check_manifest(c.body):
+            status.report('Sha1 mismatch for manifest %s' % c.body)
+
+        files = {}
+        if previous:
+            for _, _, before, after, d, path in GitHgHelper.diff_tree(
+                    previous, m):
+                if d in 'AM' and before != after and \
+                        (path, after) not in all_interesting:
+                    files[path] = after
+        else:
+            for _, t, sha1, path in GitHgHelper.ls_tree(m, recursive=True):
+                if (path, sha1) not in all_interesting:
+                    files[path] = sha1
+        interesting[m] = files
+        all_interesting.update(files.iteritems())
+        previous = m
+
+    if status('broken'):
+        return 1
+
+    manifest_queue = deque(
+        (m, parents)
+        for m, _, parents in progress_iter(
+            'Loading {} manifests', GitHgHelper.rev_list(
+                '--topo-order', '--full-history', '%s^@'
+                % manifests_commit.sha1))
+    )
+
+    def update_interesting(manifest, more_files):
+        more_files.update(interesting.get(manifest, {}))
+        interesting[manifest] = more_files
+
+    progress = Progress('Checking {} files')
+    while all_interesting and manifest_queue:
+        (m, parents) = manifest_queue.popleft()
+        interesting_here = interesting.pop(m, None)
+        if not interesting_here:
+            continue
+        interesting_there = {}
+        changes = get_changes(m, parents, all=True)
+        for path, hg_file, hg_fileparents in changes:
+            if interesting_here.get(path) != hg_file:
                 continue
-            seen.add(commit)
-            commit = GitCommit(commit)
-            changes = get_changes(commit.sha1, commit.parents, all=True)
-            interesting_parents = 1
-            for path, hg_file, hg_fileparents in changes:
-                if files.get(path) != hg_file:
-                    continue
-                if hg_fileparents[1:] == (hg_file,):
-                    interesting_parents = 2
-                    continue
-                elif hg_fileparents[:1] == (hg_file,):
-                    continue
-                if not GitHgHelper.check_file(hg_file, *hg_fileparents):
-                    p = store.manifest_path(path)
-                    status.report(
-                        'Sha1 mismatch for file %s\n'
-                        '  revision %s' % (p, hg_file))
+            if hg_fileparents[1:] == (hg_file,):
+                interesting_there[path] = hg_file
+                del interesting_here[path]
+                continue
+            elif hg_fileparents[:1] == (hg_file,):
+                continue
+            if not GitHgHelper.check_file(hg_file, *hg_fileparents):
+                p = store.manifest_path(path)
+                status.report(
+                    'Sha1 mismatch for file %s\n'
+                    '  revision %s' % (p, hg_file))
 
-                    print_parents = ' '.join(p for p in hg_fileparents
-                                             if p != NULL_NODE_ID)
-                    if print_parents:
-                        status.report('  with parent%s %s' % (
-                            's' if len(print_parents) > 41 else '',
-                            print_parents))
-                del files[path]
-                progress.progress()
-            queue.extend(commit.parents[:interesting_parents])
-
-        progress.finish()
-
-        if files:
-            status.info(
-                'Could not find all files of manifest %s\n'
-                'in ancestry of changeset %s.\n'
-                'This might be a bug in `git cinnabar fsck`. Please open '
-                'an issue, with the message above, on\n'
-                'https://github.com/glandium/git-cinnabar/issues'
-                % (changeset.manifest, changeset.node))
-            return 1
+                print_parents = ' '.join(p for p in hg_fileparents
+                                         if p != NULL_NODE_ID)
+                if print_parents:
+                    status.report('  with parent%s %s' % (
+                        's' if len(print_parents) > 41 else '',
+                        print_parents))
+            all_interesting.remove((path, hg_file))
+            del interesting_here[path]
+            progress.progress()
+        if parents:
+            update_interesting(parents[0], interesting_here)
+        if interesting_there:
+            update_interesting(parents[1], interesting_there)
+    if all_interesting:
+        status.info('Could not find the following files:')
+        for path, sha1 in sorted(all_interesting):
+            p = store.manifest_path(path)
+            status.info('  %s %s' % (sha1, path))
+        status.info(
+            'This might be a bug in `git cinnabar fsck`. Please open '
+            'an issue, with the message above, on\n'
+            'https://github.com/glandium/git-cinnabar/issues')
+        return 1
 
     if status('broken'):
         status.info(
@@ -153,8 +232,7 @@ def fsck_quick():
 
 @CLI.subcommand
 @CLI.argument('--quick', action='store_true',
-              help='Quickly validate mercurial changeset close to current'
-                   'HEAD')
+              help='Quickly validate all changeset, manifest and file heads')
 @CLI.argument('--manifests', action='store_true',
               help='Validate manifests hashes')
 @CLI.argument('--files', action='store_true',
