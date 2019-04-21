@@ -21,10 +21,7 @@ from cinnabar.util import (
 )
 from cinnabar.helper import GitHgHelper
 from cinnabar.hg.bundle import get_changes
-from collections import (
-    defaultdict,
-    deque,
-)
+from collections import defaultdict
 from itertools import izip
 
 
@@ -124,16 +121,59 @@ def fsck_quick():
             continue
         manifest_nodes.append(changeset.manifest)
 
+    # Rebuilding manifests benefits from limiting the difference with
+    # the last rebuilt manifest. Similarly, building the list of unique
+    # files in all manifests benefits from that too.
+    # Unfortunately, the manifest heads are not ordered in a topological
+    # relevant matter, and the differences between two consecutive manifests
+    # can be much larger than they could be. The consequence is spending a
+    # large amount of time rebuilding the manifests and gathering the files
+    # list. It's actually faster to attempt to reorder them according to
+    # some heuristics first, such that the differences are smaller.
+    # Here, we use the depth from the root node(s) to reorder the manifests.
+    # This doesn't give the most optimal ordering, but it's already much
+    # faster. On a clone of multiple mozilla-* repositories with > 1400 heads,
+    # it's close to an order of magnitude difference on the "Checking
+    # manifests" loop.
+    depths = {}
+    roots = []
+    manifest_queue = []
+    for m, _, parents in progress_iter(
+            'Loading {} manifests', GitHgHelper.rev_list(
+                '--topo-order', '--reverse', '--full-history', '%s^@'
+                % manifests)):
+        manifest_queue.append((m, parents))
+        if parents:
+            depth = {}
+            for p in parents:
+                for root, num in depths[p].iteritems():
+                    if root in depth:
+                        depth[root] = max(depth[root], num + 1)
+                    else:
+                        depth[root] = num + 1
+            depths[m] = depth
+            del depth
+        else:
+            depths[m] = {m: 0}
+            roots.append(m)
+
     if status('broken'):
         return 1
 
-    manifests_commit = GitCommit(manifests)
     # TODO: check that all manifest_nodes gathered above are available in the
     # manifests dag, and that the dag heads are the recorded heads.
+    manifests_commit = GitCommit(manifests)
+    depths = [
+        [depths[p].get(r, 0) for r in roots]
+        for p in manifests_commit.parents
+    ]
+    manifests_commit_parents = [
+        p for _, p in sorted(zip(depths, manifests_commit.parents))
+    ]
     previous = None
     interesting = {}
     all_interesting = set()
-    for m in progress_iter('Checking {} manifests', manifests_commit.parents):
+    for m in progress_iter('Checking {} manifests', manifests_commit_parents):
         c = GitCommit(m)
         if not SHA1_RE.match(c.body):
             status.report('Invalid manifest metadata in git commit %s' % m)
@@ -163,21 +203,13 @@ def fsck_quick():
     if status('broken'):
         return 1
 
-    manifest_queue = deque(
-        (m, parents)
-        for m, _, parents in progress_iter(
-            'Loading {} manifests', GitHgHelper.rev_list(
-                '--topo-order', '--full-history', '%s^@'
-                % manifests_commit.sha1))
-    )
-
     def update_interesting(manifest, more_files):
         more_files.update(interesting.get(manifest, {}))
         interesting[manifest] = more_files
 
     progress = Progress('Checking {} files')
     while all_interesting and manifest_queue:
-        (m, parents) = manifest_queue.popleft()
+        (m, parents) = manifest_queue.pop()
         interesting_here = interesting.pop(m, None)
         if not interesting_here:
             continue
