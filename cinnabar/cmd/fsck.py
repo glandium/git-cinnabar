@@ -216,14 +216,26 @@ def fsck_quick():
         interesting_there = {}
         changes = get_changes(m, parents, all=True)
         for path, hg_file, hg_fileparents in changes:
-            if interesting_here.get(path) != hg_file:
-                continue
             if hg_fileparents[1:] == (hg_file,):
-                interesting_there[path] = hg_file
-                del interesting_here[path]
+                if interesting_here.get(path) == hg_file:
+                    interesting_there[path] = hg_file
+                    del interesting_here[path]
                 continue
             elif hg_fileparents[:1] == (hg_file,):
                 continue
+            # Reaching here means the file received a modification compared
+            # to its parents. If it's a file we're going to check below,
+            # it means we don't need to check its parents if somehow they were
+            # going to be checked. If it's not a file we're going to check
+            # below, it's because it's either a file we weren't interested in
+            # in the first place, or it's the parent of a file we have checked.
+            # Either way, we aren't interested in the parents.
+            for p in hg_fileparents:
+                all_interesting.discard((path, p))
+            if interesting_here.get(path) != hg_file or \
+                    (path, hg_file) not in all_interesting:
+                continue
+            all_interesting.remove((path, hg_file))
             if not GitHgHelper.check_file(hg_file, *hg_fileparents):
                 p = store.manifest_path(path)
                 status.report(
@@ -236,7 +248,6 @@ def fsck_quick():
                     status.report('  with parent%s %s' % (
                         's' if len(print_parents) > 41 else '',
                         print_parents))
-            all_interesting.remove((path, hg_file))
             del interesting_here[path]
             progress.progress()
         if parents:
