@@ -171,7 +171,6 @@ def fsck_quick():
         p for _, p in sorted(zip(depths, manifests_commit.parents))
     ]
     previous = None
-    interesting = {}
     all_interesting = set()
     for m in progress_iter('Checking {} manifests', manifests_commit_parents):
         c = GitCommit(m)
@@ -196,30 +195,18 @@ def fsck_quick():
             for _, t, sha1, path in GitHgHelper.ls_tree(m, recursive=True):
                 if (path, sha1) not in all_interesting:
                     files[path] = sha1
-        interesting[m] = files
         all_interesting.update(files.iteritems())
         previous = m
 
     if status('broken'):
         return 1
 
-    def update_interesting(manifest, more_files):
-        more_files.update(interesting.get(manifest, {}))
-        interesting[manifest] = more_files
-
     progress = Progress('Checking {} files')
     while all_interesting and manifest_queue:
         (m, parents) = manifest_queue.pop()
-        interesting_here = interesting.pop(m, None)
-        if not interesting_here:
-            continue
-        interesting_there = {}
         changes = get_changes(m, parents, all=True)
         for path, hg_file, hg_fileparents in changes:
             if hg_fileparents[1:] == (hg_file,):
-                if interesting_here.get(path) == hg_file:
-                    interesting_there[path] = hg_file
-                    del interesting_here[path]
                 continue
             elif hg_fileparents[:1] == (hg_file,):
                 continue
@@ -232,8 +219,7 @@ def fsck_quick():
             # Either way, we aren't interested in the parents.
             for p in hg_fileparents:
                 all_interesting.discard((path, p))
-            if interesting_here.get(path) != hg_file or \
-                    (path, hg_file) not in all_interesting:
+            if (path, hg_file) not in all_interesting:
                 continue
             all_interesting.remove((path, hg_file))
             if not GitHgHelper.check_file(hg_file, *hg_fileparents):
@@ -248,12 +234,7 @@ def fsck_quick():
                     status.report('  with parent%s %s' % (
                         's' if len(print_parents) > 41 else '',
                         print_parents))
-            del interesting_here[path]
             progress.progress()
-        if parents:
-            update_interesting(parents[0], interesting_here)
-        if interesting_there:
-            update_interesting(parents[1], interesting_there)
     if all_interesting:
         status.info('Could not find the following files:')
         for path, sha1 in sorted(all_interesting):
