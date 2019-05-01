@@ -97,7 +97,7 @@ static int buffered_close(void *context_)
 	pthread_cond_destroy(&context->cond);
 	pthread_mutex_destroy(&context->mutex);
 	for (i = 0; i < context->nr_buffers; i++)
-		free(context->buffers[0]);
+		free(context->buffers[i]);
 	free(context->buffers);
 	free(context);
 	return ret;
