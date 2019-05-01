@@ -9,16 +9,13 @@ import zipfile
 import errno
 from StringIO import StringIO
 from cinnabar import VERSION
-from cinnabar.cmd.util import (
-    CLI,
-    helper_hash,
-)
+from cinnabar.cmd.util import CLI
 from cinnabar.git import Git
+from cinnabar.helper import helper_hash
 from cinnabar.util import (
     HTTPReader,
     Progress,
 )
-from distutils.version import StrictVersion
 from gzip import GzipFile
 from shutil import copyfileobj
 from urllib2 import HTTPError
@@ -76,13 +73,8 @@ def download(args):
     if args.dev is False:
         version = VERSION
         if version.endswith('a'):
-            v = StrictVersion(version[:-1]).version + (0, 0, 0)
-            if v[2] == 0:
-                # For version x.y.0a, download a development helper
-                args.dev = ''
-            else:
-                # For version x.y.za, download the helper from x.y.(z-1)
-                version = '{}.{}.{}'.format(v[0], v[1], v[2] - 1)
+            # For version x.y.za, download a development helper
+            args.dev = ''
 
     script_path = os.path.dirname(os.path.abspath(sys.argv[0]))
 

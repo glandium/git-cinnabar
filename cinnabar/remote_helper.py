@@ -170,9 +170,9 @@ class GitRemoteHelper(BaseRemoteHelper):
     def list(self, arg=None):
         assert not arg or arg == 'for-push'
 
-        fetch = Git.config('cinnabar.fetch')
+        fetch = (Git.config('cinnabar.fetch') or '').split()
         if fetch:
-            heads = [unhexlify(fetch)]
+            heads = [unhexlify(f) for f in fetch]
             branchmap = {None: heads}
             bookmarks = {}
 
@@ -323,8 +323,8 @@ class GitRemoteHelper(BaseRemoteHelper):
                     continue
                 refs[self._bookmark_template.format(name)] = sha1
 
-        if fetch:
-            refs['hg/revs/%s' % fetch] = fetch
+        for f in fetch:
+            refs['hg/revs/%s' % f] = f
 
         head_ref = None
         if refs_style in ('all', 'bookmarks') and '@' in bookmarks:

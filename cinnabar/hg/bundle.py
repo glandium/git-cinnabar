@@ -78,7 +78,34 @@ def manifest_diff2(a, b, c):
             item2 = next(iter2, None)
 
 
-def get_changes(tree, parents):
+def manifest_diff2_all(a, b, c):
+    iter1 = iter(list(manifest_diff(a, c)))
+    iter2 = iter(list(manifest_diff(b, c)))
+    item1 = next(iter1, None)
+    item2 = next(iter2, None)
+    while True:
+        while item1:
+            if item2 and item1[0] >= item2[0]:
+                break
+            yield item1[0], item1[1], (item1[2], item1[1])
+            item1 = next(iter1, None)
+        while item2:
+            if item1 and item2[0] >= item1[0]:
+                break
+            yield item2[0], item2[1], (item2[1], item2[2])
+            item2 = next(iter2, None)
+        if item1 is None and item2 is None:
+            break
+        if item1 and item2 and item1[0] == item2[0]:
+            path, sha1_after1, sha1_before1 = item1
+            path, sha1_after2, sha1_before2 = item2
+            assert sha1_after1 == sha1_after2
+            yield path, sha1_after1, (sha1_before1, sha1_before2)
+            item1 = next(iter1, None)
+            item2 = next(iter2, None)
+
+
+def get_changes(tree, parents, all=False):
     if not parents:
         for line in Git.ls_tree(tree, recursive=True):
             mode, typ, sha1, path = line
@@ -87,8 +114,8 @@ def get_changes(tree, parents):
         for path, node, parent in manifest_diff(parents[0], tree):
             yield path, node, (parent,)
     else:
-        for path, node, parents in manifest_diff2(parents[0], parents[1],
-                                                  tree):
+        diff = manifest_diff2_all if all else manifest_diff2
+        for path, node, parents in diff(parents[0], parents[1], tree):
             yield path, node, parents
 
 

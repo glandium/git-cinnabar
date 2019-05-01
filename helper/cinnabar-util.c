@@ -1,5 +1,6 @@
 #include "cache.h"
 #include "run-command.h"
+#include "strslice.h"
 #include "thread-utils.h"
 #include "cinnabar-util.h"
 
@@ -36,14 +37,9 @@ struct buffered_context {
 	size_t nr_buffers;
 	size_t alloc_buffers;
 	/* Location where to append data to. */
-	char *append;
-	/* Amount we can append. Storing more data would require using a new
-	 *buffer. */
-	size_t left;
-	/* Amount of data buffered in total */
-	size_t buffered;
-	/* Offset in buffers[0] where buffered data starts. */
-	size_t offset;
+	struct strslice append_buf;
+	/* (Unwritten out) buffered data in buffers[0] */
+	struct strslice buffered;
 	/* Whether the buffered writer was closed by the caller, meaning
 	 * nothing more will be written (and thus the background thread
 	 * doesn't have to wait for more data anymore). */
@@ -57,30 +53,30 @@ struct buffered_context {
 static void create_buffer(struct buffered_context *context) {
 	ALLOC_GROW(context->buffers, context->nr_buffers + 1, context->alloc_buffers);
 	context->buffers[context->nr_buffers] = xmalloc(BUFFER_SIZE);
-	context->append = context->buffers[context->nr_buffers++];
-	context->left = BUFFER_SIZE;
+	context->append_buf.buf = context->buffers[context->nr_buffers++];
+	context->append_buf.len = BUFFER_SIZE;
 }
 
 static size_t buffered_write(char *ptr, size_t size, size_t nmemb, void *context_)
 {
 	struct buffered_context *context = context_;
-	size_t len = size * nmemb;
+	struct strslice in = { size * nmemb, ptr };
 	do {
-		size_t fill = len > context->left ? context->left : len;
-		memcpy(context->append, ptr, fill);
-		ptr += fill;
-		len -= fill;
+		struct strslice in_slice =
+			strslice_slice(in, 0, context->append_buf.len);
+		in = strslice_slice(in, in_slice.len, SIZE_MAX);
+		memcpy((void *)context->append_buf.buf, in_slice.buf, in_slice.len);
 		pthread_mutex_lock(&context->mutex);
-		if (fill == context->left) {
-			create_buffer(context);
-		} else {
-			context->append += fill;
-			context->left -= fill;
-		}
-		context->buffered += fill;
+		/* strslice_slice would set buf to strbuf_slop */
+		context->append_buf.buf += in_slice.len;
+		context->append_buf.len -= in_slice.len;
+		if (context->nr_buffers == 1)
+			context->buffered.len += in_slice.len;
 		pthread_cond_signal(&context->cond);
+		if (context->append_buf.len == 0)
+			create_buffer(context);
 		pthread_mutex_unlock(&context->mutex);
-	} while (len);
+	} while (in.len);
 	return size * nmemb;
 }
 
@@ -97,7 +93,7 @@ static int buffered_close(void *context_)
 	pthread_cond_destroy(&context->cond);
 	pthread_mutex_destroy(&context->mutex);
 	for (i = 0; i < context->nr_buffers; i++)
-		free(context->buffers[0]);
+		free(context->buffers[i]);
 	free(context->buffers);
 	free(context);
 	return ret;
@@ -106,47 +102,32 @@ static int buffered_close(void *context_)
 void *buffered_thread(void *context_)
 {
 	struct buffered_context *context = context_;
-	size_t fill, left, offset;
-	int free_buf;
-	char *buf;
 	pthread_mutex_lock(&context->mutex);
-	while (!context->closed || context->buffered) {
-		if (!context->buffered)
+	while (!context->closed || context->buffered.len || context->nr_buffers > 1) {
+		if (!context->buffered.len)
 			pthread_cond_wait(&context->cond, &context->mutex);
-		offset = context->offset;
-		/* Maximum amount of data we can read from buffers[0]. */
-		left = BUFFER_SIZE - offset;
-		/* Amount of data actually available from buffers[0]. */
-		fill = context->buffered > left ? left : context->buffered;
-		/* Pop the first buffer if it's full, otherwise keep it in
-		 * place for context->append, and adjust the offset for next
-		 * round. */
-		buf = context->buffers[0];
-		if (fill == left) {
-			memmove(context->buffers, context->buffers + 1,
-			        (--context->nr_buffers) * sizeof(char *));
-			context->offset = 0;
-		} else
-			context->offset += fill;
-		context->buffered -= fill;
-		/* We'll free the buffer if it was full. */
-		free_buf = (fill == left);
+		struct strslice out_slice = context->buffered;
+		/* strslice_slice would set buf to strbuf_slop */
+		context->buffered.buf += context->buffered.len;
+		context->buffered.len = 0;
 		/* We can perform the possibly blocking write and the buffer
 		 * freeing without locking because it's not shared state with
 		 * the other thread anymore. */
 		pthread_mutex_unlock(&context->mutex);
-		write_to(buf + offset, 1, fill, &context->out);
-		if (free_buf)
-			free(buf);
+		write_to((void*)out_slice.buf, 1, out_slice.len, &context->out);
 		pthread_mutex_lock(&context->mutex);
-		/* If while we were writing, the other thread didn't write more
-		 * data, and we've writted out everything, and there's possibly
-		 * more data incoming, make the data go at the beginning of the
-		 * first buffer, rather than wherever we were at. */
-		if (!context->buffered && !context->closed) {
-			context->append = context->buffers[0];
-			context->left = BUFFER_SIZE;
-			context->offset = 0;
+		/* If buffers[0] was emptied out, and there are more buffers,
+		 * free that first buffer and shift everything. */
+		if (!context->buffered.len && context->nr_buffers > 1) {
+			free(context->buffers[0]);
+			memmove(context->buffers, context->buffers + 1,
+			        (--context->nr_buffers) * sizeof(char *));
+			context->buffered.buf = context->buffers[0];
+			if (context->nr_buffers == 1)
+				context->buffered.len =
+					context->append_buf.buf - context->buffered.buf;
+			else
+				context->buffered.len = BUFFER_SIZE;
 		}
 	}
 	pthread_mutex_unlock(&context->mutex);
@@ -158,6 +139,7 @@ void bufferize_writer(struct writer *writer)
 	if (HAVE_THREADS) {
 		struct buffered_context *context = xcalloc(1, sizeof(struct buffered_context));
 		create_buffer(context);
+		context->buffered.buf = context->buffers[0];
 		pthread_mutex_init(&context->mutex, NULL);
 		pthread_cond_init(&context->cond, NULL);
 		context->out = *writer;

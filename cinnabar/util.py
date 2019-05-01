@@ -58,10 +58,14 @@ class Formatter(logging.Formatter):
         super(Formatter, self).__init__(
             '\r%(timestamp).3f %(levelname)s [%(name)s] %(message)s')
         self._root_formatter = logging.Formatter('\r%(levelname)s %(message)s')
+        self._no_timestamp_formatter = logging.Formatter(
+            '\r%(levelname)s [%(name)s] %(message)s')
 
     def format(self, record):
         if record.name == 'root':
             return self._root_formatter.format(record)
+        if record.levelno >= logging.WARNING:
+            return self._no_timestamp_formatter.format(record)
         return super(Formatter, self).format(record)
 
 
@@ -148,9 +152,11 @@ class Progress(object):
         self._start = self._t0 = time.time()
         self._fmt = fmt
 
-    def progress(self, count):
+    def progress(self, count=None):
         if not progress:
             return
+        if count is None:
+            count = self._count + 1
         t1 = time.time()
         if t1 - self._t0 > 0.1:
             self._print_count(count, t1)

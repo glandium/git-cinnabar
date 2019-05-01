@@ -1,7 +1,9 @@
 import atexit
+import hashlib
 import logging
 import os
 import subprocess
+from binascii import unhexlify
 from types import GeneratorType
 from io import BytesIO
 from .exceptions import NoHelperAbort, HelperClosedError
@@ -23,6 +25,54 @@ from .util import (
 from contextlib import contextmanager
 
 
+def git_hash(type, data):
+    h = hashlib.sha1('%s %d\0' % (type, len(data)))
+    h.update(data)
+    return h.hexdigest()
+
+
+def tree_hash(files, full_base, base=''):
+    if base:
+        base = base + '/'
+    tree = {}
+    for f in files:
+        p = f.split(os.sep, 1)
+        if len(p) == 1:
+            tree[p[0]] = None
+        else:
+            tree.setdefault(p[0], list()).append(p[1])
+    content = ''
+    for f, subtree in sorted(tree.iteritems()):
+        path = os.path.join(full_base, f)
+        if subtree:
+            sha1 = tree_hash(subtree, path, '%s%s' % (base, f))
+            attr = '40000'
+        else:
+            sha1 = git_hash('blob', open(path).read())
+            attr = '100644'
+            logging.debug('%s %s %s%s', attr, sha1, base, f)
+        content += '%s %s\0%s' % (attr, f, unhexlify(sha1))
+    sha1 = git_hash('tree', content)
+    logging.debug('040000 %s %s', sha1, base.rstrip('/'))
+    return sha1
+
+
+def helper_hash():
+    script_path = os.path.join(os.path.dirname(__file__), '..')
+    d = os.path.join(script_path, 'helper')
+    files = (os.listdir(d) if os.path.exists(d) else ())
+
+    def match(f):
+        return (f.endswith(('.h', '.c', '.c.patch')) and
+                'patched' not in f) or f == 'GIT-VERSION.mk'
+    files = list(f for f in files if match(f))
+
+    if 'cinnabar-helper.c' not in files:
+        return None
+
+    return tree_hash(files, d)
+
+
 class ReadWriter(object):
     def __init__(self, reader, writer):
         self._reader = reader
@@ -42,6 +92,8 @@ class ReadWriter(object):
 
 
 class BaseHelper(object):
+    _helper_hash = None
+
     @classmethod
     def close(self):
         if self._helper and self._helper is not self:
@@ -71,11 +123,13 @@ class BaseHelper(object):
                 self._helper = None
                 response = None
 
+            outdated = ('Cinnabar helper executable is outdated. '
+                        'Please try `git cinnabar download` or '
+                        'rebuild it.')
+
             if not response:
                 if self._helper and self._helper.wait() == 128:
-                    message = ('Cinnabar helper executable is outdated. '
-                               'Please try `git cinnabar download` or '
-                               'rebuild it.')
+                    message = outdated
                 else:
                     message = ('Cannot find cinnabar helper executable. '
                                'Please try `git cinnabar download` or '
@@ -99,6 +153,12 @@ class BaseHelper(object):
                     for k, _, v in (l.partition('=')
                                     for l in response.splitlines())
                 }
+
+                if BaseHelper._helper_hash is None:
+                    BaseHelper._helper_hash = helper_hash() or False
+                    if BaseHelper._helper_hash is not False and \
+                            BaseHelper._helper_hash != self._revision:
+                        logging.warning(outdated)
 
                 atexit.register(self.close)
 
