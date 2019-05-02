@@ -250,6 +250,7 @@ def fsck_quick():
         status.info(
             'Your git-cinnabar repository appears to be corrupted.')
         # TODO: add more instructions
+        return 1
 
     return 0
 
