@@ -32,7 +32,7 @@ GIT += -c core.packedGitWindowSize=8k
 endif
 
 COMMA=,
-export GIT_CINNABAR_CHECK:=all,traceback,cinnabarclone,clonebundles$(addprefix $(COMMA),$(GIT_CINNABAR_CHECK))
+export GIT_CINNABAR_CHECK:=all,traceback,cinnabarclone,clonebundles,no-version-check$(addprefix $(COMMA),$(GIT_CINNABAR_CHECK))
 export GIT_CINNABAR_LOG=process:3
 
 hg.pure.hg:
