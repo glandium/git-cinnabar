@@ -214,7 +214,8 @@ class GitRemoteHelper(BaseRemoteHelper):
                 # Some branch heads can be non-heads topologically, but if
                 # some heads don't appear in the branchmap, then something
                 # was pushed to the repo between branchmap() and heads()
-                if set(heads).issubset(set(chain(*branchmap.values()))):
+                if set(heads).issubset(
+                        set(chain(*(v for _, v in branchmap.iteritems())))):
                     break
             bookmarks = self._repo.listkeys('bookmarks')
 

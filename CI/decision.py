@@ -198,6 +198,9 @@ def decision():
         command=[
             'cram --verbose repo/tests',
         ],
+        env={
+            'GIT_CINNABAR_CHECK': 'no-version-check',
+        },
     )
 
     for env in ('linux', 'mingw64', 'osx10_10'):

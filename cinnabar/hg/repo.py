@@ -910,8 +910,22 @@ def get_ui():
 
 def munge_url(url):
     parsed_url = urlparse(url)
-    if not parsed_url.scheme:
-        return ParseResult('file', '', parsed_url.path, '', '', '')
+    # On Windows, assume that a one-letter scheme and no host means we
+    # originally had something like c:/foo.
+    if not parsed_url.scheme or (
+            sys.platform == 'win32' and not parsed_url.netloc and
+            len(parsed_url.scheme) == 1):
+        if parsed_url.scheme:
+            path = '{}:{}'.format(parsed_url.scheme, parsed_url.path)
+        else:
+            path = parsed_url.path
+        return ParseResult(
+            'file',
+            '',
+            path,
+            parsed_url.params,
+            parsed_url.query,
+            parsed_url.fragment)
 
     if parsed_url.scheme != 'hg':
         return parsed_url

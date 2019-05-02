@@ -71,13 +71,13 @@ class Git(object):
         # matching the given patterns are already known.
         for line in self.iter('for-each-ref', '--format',
                               '%(objectname) %(refname)', *patterns,
-                              stderr=open(os.devnull, 'w')):
+                              stderr=open(os.devnull, 'wb')):
             yield line.split(b' ', 1)
 
     @classmethod
     def resolve_ref(self, ref):
         return one(Git.iter('rev-parse', '--revs-only', ref,
-                            stderr=open(os.devnull, 'w')))
+                            stderr=open(os.devnull, 'wb')))
 
     @classmethod
     def ls_tree(self, treeish, path='', recursive=False):
