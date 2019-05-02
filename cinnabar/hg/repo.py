@@ -1026,7 +1026,13 @@ def get_ui():
 def munge_url(url):
     parsed_url = urlparse(url)
     if not parsed_url.scheme:
-        return ParseResult('file', '', parsed_url.path, '', '', '')
+        return ParseResult(
+            'file',
+            '',
+            parsed_url.path,
+            parsed_url.params,
+            parsed_url.query,
+            parsed_url.fragment)
 
     if parsed_url.scheme != 'hg':
         return parsed_url
