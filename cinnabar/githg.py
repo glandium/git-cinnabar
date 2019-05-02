@@ -902,7 +902,7 @@ class GitHgStore(object):
         assert not self._has_metadata
         remote_refs = OrderedDict()
         for line in Git.iter('ls-remote', git_repo_url,
-                             stderr=open(os.devnull, 'w')):
+                             stderr=open(os.devnull, 'wb')):
             sha1, ref = line.split(None, 1)
             remote_refs[ref] = sha1
         bundle = None
@@ -933,7 +933,7 @@ class GitHgStore(object):
         if bundle:
             proc = GitProcess('index-pack', '--stdin', '-v',
                               stdin=subprocess.PIPE,
-                              stdout=open(os.devnull, 'w'))
+                              stdout=open(os.devnull, 'wb'))
             shutil.copyfileobj(bundle, proc.stdin)
         else:
             proc = GitProcess(

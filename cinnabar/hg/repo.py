@@ -529,7 +529,7 @@ class bundlerepo(object):
     def __init__(self, path, fh=None):
         self._url = path
         if fh is None:
-            fh = open(path, 'r')
+            fh = open(path, 'rb')
         self._bundle = unbundle_fh(fh, path)
         self._file = os.path.basename(path)
 
