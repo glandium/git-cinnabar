@@ -62,9 +62,13 @@ def do_rollback(ref):
 
 
 @CLI.subcommand
+@CLI.argument('--fsck', action='store_true',
+              help='rollback to the last checked state')
 @CLI.argument('committish', nargs='?',
               help='committish of the state to rollback to')
 def rollback(args):
     '''rollback cinnabar metadata state'''
-
-    return do_rollback(args.committish)
+    if args.fsck and args.committish:
+        logging.error('Cannot use --fsck along a commit.')
+        return 1
+    return do_rollback(args.committish or 'refs/cinnabar/checked')

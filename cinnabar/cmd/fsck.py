@@ -52,14 +52,14 @@ def fsck_quick():
     status = FsckStatus()
     store = GitHgStore()
 
-    commit = Git.resolve_ref('refs/cinnabar/metadata')
-    if not commit:
+    metadata_commit = Git.resolve_ref('refs/cinnabar/metadata')
+    if not metadata_commit:
         status.info(
             'There does not seem to be any git-cinnabar metadata.\n'
             'Is this a git-cinnabar clone?'
         )
         return 1
-    commit = GitCommit(commit)
+    commit = GitCommit(metadata_commit)
     if commit.body != 'files-meta unified-manifests-v2':
         status.info(
             'The git-cinnabar metadata is incompatible with this version.\n'
@@ -252,6 +252,8 @@ def fsck_quick():
         # TODO: add more instructions
         return 1
 
+    Git.update_ref('refs/cinnabar/checked', metadata_commit)
+    store.close()
     return 0
 
 
@@ -476,10 +478,13 @@ def fsck(args):
                            (head, branch))
                 del store._hgheads[head]
 
-    store.close()
-
     if status('broken'):
         return 1
+
+    metadata_commit = Git.resolve_ref('refs/cinnabar/metadata')
+    Git.update_ref('refs/cinnabar/checked', metadata_commit)
+    store.close()
+
     if status('fixed'):
         return 2
     return 0
