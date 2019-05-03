@@ -67,4 +67,4 @@ def do_rollback(ref):
 def rollback(args):
     '''rollback cinnabar metadata state'''
 
-    do_rollback(args.committish)
+    return do_rollback(args.committish)
