@@ -235,6 +235,7 @@ def fsck_quick():
                         's' if len(print_parents) > 41 else '',
                         print_parents))
             progress.progress()
+    progress.finish()
     if all_interesting:
         status.info('Could not find the following files:')
         for path, sha1 in sorted(all_interesting):
