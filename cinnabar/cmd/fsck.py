@@ -21,7 +21,10 @@ from cinnabar.util import (
 )
 from cinnabar.helper import GitHgHelper
 from cinnabar.hg.bundle import get_changes
-from collections import defaultdict
+from collections import (
+    defaultdict,
+    OrderedDict,
+)
 from itertools import izip
 
 
@@ -73,51 +76,61 @@ def fsck_quick():
     changesets, manifests, hg2git, git2hg, files_meta = commit.parents[:5]
 
     commit = GitCommit(changesets)
-    descriptors = commit.body.splitlines()
-    if len(descriptors) != len(commit.parents):
+    heads = OrderedDict(
+        (node, branch)
+        for node, _, branch in (d.partition(' ')
+                                for d in commit.body.splitlines()))
+    if len(heads) != len(commit.parents):
         status.report('The git-cinnabar metadata seems to be corrupted in '
                       'unexpected ways.\n')
         return 1
 
     manifest_nodes = []
 
+    parents = None
+    fix_changeset_heads = False
     # TODO: Check that the recorded heads are actually dag heads.
-    for c, desc in progress_iter('Checking {} changesets',
-                                 izip(commit.parents, descriptors)):
-        changeset_node, _, branch = desc.partition(' ')
+    for c, changeset_node in progress_iter(
+            'Checking {} changesets', izip(commit.parents, heads)):
         gitsha1 = GitHgHelper.hg2git(changeset_node)
         if gitsha1 == NULL_NODE_ID:
             status.report('Missing hg2git metadata for changeset %s'
                           % changeset_node)
             continue
         if gitsha1 != c:
-            status.report(
-                'Inconsistent metadata:\n'
-                '  Head metadata says changeset %s maps to %s\n'
-                '  but hg2git metadata says it maps to %s'
-                % (changeset_node, c, gitsha1))
-            continue
+            if parents is None:
+                parents = set(commit.parents)
+            if gitsha1 not in parents:
+                status.report(
+                    'Inconsistent metadata:\n'
+                    '  Head metadata says changeset %s maps to %s\n'
+                    '  but hg2git metadata says it maps to %s'
+                    % (changeset_node, c, gitsha1))
+                continue
+            fix_changeset_heads = True
         changeset = store._changeset(c, include_parents=True)
         if not changeset:
             status.report('Missing git2hg metadata for git commit %s' % c)
             continue
         if changeset.node != changeset_node:
-            status.report(
-                'Inconsistent metadata:\n'
-                '  Head metadata says %s maps to changeset %s\n'
-                '  but git2hg metadata says it maps to changeset %s'
-                % (c, changeset_node, changeset.node))
-            continue
+            if changeset.node not in heads:
+                status.report(
+                    'Inconsistent metadata:\n'
+                    '  Head metadata says %s maps to changeset %s\n'
+                    '  but git2hg metadata says it maps to changeset %s'
+                    % (c, changeset_node, changeset.node))
+                continue
+            fix_changeset_heads = True
         if changeset.node != changeset.sha1:
             status.report('Sha1 mismatch for changeset %s' % changeset.node)
             continue
         changeset_branch = changeset.branch or 'default'
-        if branch != changeset_branch:
+        if heads[changeset.node] != changeset_branch:
             status.report(
                 'Inconsistent metadata:\n'
                 '  Head metadata says changeset %s is in branch %s\n'
                 '  but git2hg metadata says it is in branch %s'
-                % (changeset_node, branch, changeset_branch))
+                % (changeset.node, heads[changeset.node], changeset_branch))
             continue
         manifest_nodes.append(changeset.manifest)
 
@@ -272,8 +285,14 @@ def fsck_quick():
             'debugging.')
         return 1
 
+    refresh = []
+    if fix_changeset_heads:
+        status.fix('Fixing changeset heads metadata order.')
+        refresh.append('refs/cinnabar/changesets')
+    store.close(refresh=refresh)
+    GitHgHelper._helper = False
+    metadata_commit = Git.resolve_ref('refs/cinnabar/metadata')
     Git.update_ref('refs/cinnabar/checked', metadata_commit)
-    store.close()
     return 0
 
 
