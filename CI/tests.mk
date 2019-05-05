@@ -51,6 +51,7 @@ endif
 hg.upgraded.git: hg.old.git
 	cp -r $< $@
 	$(GIT) -C $@ cinnabar upgrade || [ "$$?" = 2 ]
+	$(GIT) -C $@ cinnabar fsck
 	$(GIT) -C $@ cinnabar fsck --full || [ "$$?" = 2 ]
 
 PATH_URL = file://$(CURDIR)
