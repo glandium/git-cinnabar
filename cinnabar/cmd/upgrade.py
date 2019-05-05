@@ -6,7 +6,6 @@ from cinnabar.helper import GitHgHelper
 
 class UpgradeGitHgStore(GitHgStore):
     def metadata(self):
-        self._upgrading = True
         return self._metadata()
 
 
@@ -26,7 +25,7 @@ def upgrade(args):
         return 1
 
     print 'Finalizing upgrade...'
-    store.close()
+    store.close(refresh=store.METADATA_REFS)
     print (
         'You may want to run `git cinnabar fsck` to ensure the upgrade '
         'went well.\n'
