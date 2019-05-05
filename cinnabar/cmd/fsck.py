@@ -248,8 +248,23 @@ def fsck_quick():
 
     if status('broken'):
         status.info(
-            'Your git-cinnabar repository appears to be corrupted.')
-        # TODO: add more instructions
+            'Your git-cinnabar repository appears to be corrupted.\n'
+            'Please open an issue, with the information above, on\n'
+            'https://github.com/glandium/git-cinnabar/issues')
+        Git.update_ref('refs/cinnabar/broken', metadata_commit)
+        if Git.resolve_ref('refs/cinnabar/checked'):
+            status.info(
+                '\nThen please try to run `git cinnabar rollback --fsck`, '
+                'and to update from the mercurial repository.')
+        else:
+            status.info('\nThen please try to run `git cinnabar reclone`.')
+        status.info(
+            '\nPlease note this may affect the commit sha1s of mercurial '
+            'changesets, and may require to rebase your local branches.')
+        status.info(
+            '\nAlternatively, you may start afresh with a new clone. In any '
+            'case, please keep this corrupted repository around for further '
+            'debugging.')
         return 1
 
     Git.update_ref('refs/cinnabar/checked', metadata_commit)
