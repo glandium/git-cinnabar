@@ -91,7 +91,7 @@ def fsck_quick():
     fix_changeset_heads = False
     # TODO: Check that the recorded heads are actually dag heads.
     for c, changeset_node in progress_iter(
-            'Checking {} changesets', izip(commit.parents, heads)):
+            'Checking {} changeset heads', izip(commit.parents, heads)):
         gitsha1 = GitHgHelper.hg2git(changeset_node)
         if gitsha1 == NULL_NODE_ID:
             status.report('Missing hg2git metadata for changeset %s'
@@ -188,7 +188,8 @@ def fsck_quick():
     ]
     previous = None
     all_interesting = set()
-    for m in progress_iter('Checking {} manifests', manifests_commit_parents):
+    for m in progress_iter('Checking {} manifest heads',
+                           manifests_commit_parents):
         c = GitCommit(m)
         if not SHA1_RE.match(c.body):
             status.report('Invalid manifest metadata in git commit %s' % m)
