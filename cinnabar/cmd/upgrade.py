@@ -6,6 +6,7 @@ from cinnabar.helper import GitHgHelper
 
 class UpgradeGitHgStore(GitHgStore):
     def metadata(self):
+        self._upgrading = True
         return self._metadata()
 
 

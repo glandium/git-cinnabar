@@ -790,6 +790,7 @@ class GitHgStore(object):
         self._flags = set()
         self._closed = False
         self._graft = None
+        self._upgrading = False
 
         self._hgheads = VersionedDict()
         self._branches = {}
@@ -1363,7 +1364,7 @@ class GitHgStore(object):
         hg_changeset_heads = list(self._hgheads)
         changeset_heads = list(self.changeset_ref(h)
                                for h in hg_changeset_heads)
-        if any(self._hgheads.iterchanges()):
+        if any(self._hgheads.iterchanges()) or self._upgrading:
             heads = sorted((self._hgheads[h], h, g)
                            for h, g in izip(hg_changeset_heads,
                                             changeset_heads))
@@ -1380,7 +1381,7 @@ class GitHgStore(object):
         manifest_heads = GitHgHelper.heads('manifests')
         if (set(manifest_heads) != self._manifest_heads_orig or
                 ('refs/cinnabar/changesets' in update_metadata and
-                 not manifest_heads)):
+                 not manifest_heads) or self._upgrading):
             with GitHgHelper.commit(
                 ref='refs/cinnabar/manifests',
                 parents=sorted(manifest_heads),
