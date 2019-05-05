@@ -121,6 +121,9 @@ def fsck_quick():
             continue
         manifest_nodes.append(changeset.manifest)
 
+    if status('broken'):
+        return 1
+
     # Rebuilding manifests benefits from limiting the difference with
     # the last rebuilt manifest. Similarly, building the list of unique
     # files in all manifests benefits from that too.
