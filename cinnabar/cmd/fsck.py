@@ -254,8 +254,9 @@ def fsck_quick():
         Git.update_ref('refs/cinnabar/broken', metadata_commit)
         if Git.resolve_ref('refs/cinnabar/checked'):
             status.info(
-                '\nThen please try to run `git cinnabar rollback --fsck`, '
-                'and to update from the mercurial repository.')
+                '\nThen please try to run `git cinnabar rollback --fsck` to '
+                'restore last known state, and to update from the mercurial '
+                'repository.')
         else:
             status.info('\nThen please try to run `git cinnabar reclone`.')
         status.info(
