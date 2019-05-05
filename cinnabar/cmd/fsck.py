@@ -493,10 +493,11 @@ def fsck(args):
                            (head, branch))
                 del store._hgheads[head]
 
+    metadata_commit = Git.resolve_ref('refs/cinnabar/metadata')
     if status('broken'):
+        Git.update_ref('refs/cinnabar/broken', metadata_commit)
         return 1
 
-    metadata_commit = Git.resolve_ref('refs/cinnabar/metadata')
     if args.manifests and args.files:
         Git.update_ref('refs/cinnabar/checked', metadata_commit)
     store.close()
