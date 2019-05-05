@@ -179,10 +179,9 @@ The following command allows to detect various types of metadata corruption:
 This command will fix the corruptions it can, as well as adjust some of the
 metadata that contains items that became unnecessary in newer versions.
 
-The `--manifests` and `--files` options may be added for additional validation
-on manifests and files. Using either or both adds a significant amount of work,
-and the command can take more than half an hour on repositories the size of
-mozilla-central.
+The `--full` option may be added for a more thorough validation of the metadata
+contents. Using this option adds a significant amount of work, and the command
+can take more than half an hour on repositories the size of mozilla-central.
 
 `hg://` urls:
 -----------

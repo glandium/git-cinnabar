@@ -51,7 +51,7 @@ endif
 hg.upgraded.git: hg.old.git
 	cp -r $< $@
 	$(GIT) -C $@ cinnabar upgrade || [ "$$?" = 2 ]
-	$(GIT) -C $@ cinnabar fsck --manifest --files || [ "$$?" = 2 ]
+	$(GIT) -C $@ cinnabar fsck --full || [ "$$?" = 2 ]
 
 PATH_URL = file://$(CURDIR)
 
@@ -115,8 +115,8 @@ hg.unbundle.git: hg.bundle hg.git
 hg.unbundle.git hg.git hg.git.nobundle2:
 	$(GIT) -c fetch.prune=true clone -n hg::$(CURDIR)/$< $@
 	$(call COMPARE_REFS, $(word 2,$^), $@)
-	$(GIT) -C $@ cinnabar fsck --manifest --files
-	$(GIT) -C $@ cinnabar fsck --quick
+	$(GIT) -C $@ cinnabar fsck
+	$(GIT) -C $@ cinnabar fsck --full
 	$(GIT) -C $@ remote add hg-http hg::http://localhost:8000/
 
 hg.incr.hg hg.incr.hg.nobundle2: hg.incr.hg%: hg.hg%
@@ -130,8 +130,8 @@ hg.incr.git hg.incr.git.nobundle2: hg.incr.git%: hg.incr.hg% hg.hg% hg.git%
 	$(HG) -R $@.hg pull $(CURDIR)/$(word 2,$^)
 	$(GIT) -C $@ remote update
 	$(call COMPARE_REFS, $(word 3,$^), $@)
-	$(GIT) -C $@ cinnabar fsck --manifest --files
-	$(GIT) -C $@ cinnabar fsck --quick
+	$(GIT) -C $@ cinnabar fsck
+	$(GIT) -C $@ cinnabar fsck --full
 
 BUNDLESPEC = gzip-v2
 ifdef GIT_CINNABAR_OLD_HELPER
@@ -198,8 +198,8 @@ hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-bundle.git hg.ci
 	($(if $(GIT_CINNABAR_OLD),,echo http://localhost:8888/$(word 2,$^) foo=1 ; )echo http://localhost:8080/$(word 2,$^)) > $@.hg/.hg/cinnabar.manifest
 	OTHER_SERVER=$(OTHER_SERVER) $(HG) -R $@.hg --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(HG_CINNABARCLONE_EXT) serve-and-exec -- $(GIT) -c cinnabar.experiments=git-clone clone hg://localhost:8000.http/ $@
 	$(call COMPARE_REFS, $(or $(word 3,$^),$(word 2,$^)), $@)
-	$(GIT) -C $@ cinnabar fsck --manifest --files
-	$(GIT) -C $@ cinnabar fsck --quick
+	$(GIT) -C $@ cinnabar fsck
+	$(GIT) -C $@ cinnabar fsck --full
 
 GET_ROOTS = $(GIT) -C $1 rev-list $2 --max-parents=0
 XARGS_GIT2HG = xargs $(GIT) -C $1 cinnabar git2hg
@@ -216,7 +216,7 @@ hg.graft.git: hg.graft.base.git hg.upgraded.git
 	$(GIT) -C $@ filter-branch --msg-filter 'cat ; echo' --original original -- --all
 	$(GIT) -C $@ -c cinnabar.graft=true remote update
 	$(call COMPARE_REFS, $(word 2,$^), $@, XARGS_GIT2HG)
-	$(GIT) -C $@ cinnabar fsck --manifest --files
+	$(GIT) -C $@ cinnabar fsck --full
 
 hg.graft2.git: hg.graft.git hg.pure.hg hg.graft2.base.git
 	cp -r $(word 3,$^) $@
@@ -224,7 +224,7 @@ hg.graft2.git: hg.graft.git hg.pure.hg hg.graft2.base.git
 	$(GIT) -C $@ remote set-url origin hg::$(PATH_URL)/$(word 2,$^)
 	$(GIT) -C $@ -c cinnabar.graft=true cinnabar reclone
 	$(call COMPARE_REFS, $<, $@)
-	$(GIT) -C $@ cinnabar fsck --manifest --files
+	$(GIT) -C $@ cinnabar fsck --full
 
 hg.graft.replace.git: hg.graft.git hg.upgraded.git
 	cp -r $< $@
@@ -233,7 +233,7 @@ hg.graft.replace.git: hg.graft.git hg.upgraded.git
 	$(GIT) -C $@ -c cinnabar.graft=true remote update
 	$(call COMPARE_REFS, $(word 2,$^), $@, XARGS_GIT2HG)
 	$(call COMPARE_COMMANDS,$(call GET_ROOTS,$(word 2,$^),--remotes),$(call GET_ROOTS,$@,--glob=refs/cinnabar/replace))
-	$(GIT) -C $@ cinnabar fsck --manifest --files
+	$(GIT) -C $@ cinnabar fsck --full
 
 hg.cant.graft.git: hg.graft.replace.git
 	cp -r $< $@

@@ -274,27 +274,23 @@ def fsck_quick():
 
 
 @CLI.subcommand
-@CLI.argument('--quick', action='store_true',
-              help='Quickly validate all changeset, manifest and file heads')
-@CLI.argument('--manifests', action='store_true',
-              help='Validate manifests hashes')
-@CLI.argument('--files', action='store_true',
-              help='Validate files hashes')
+@CLI.argument('--full', action='store_true',
+              help='Check more thoroughly')
 @CLI.argument('commit', nargs='*',
               help='Specific commit or changeset to check')
 def fsck(args):
     '''check cinnabar metadata consistency'''
 
-    if args.quick:
-        if args.commit or args.manifests or args.files:
-            print("`git cinnabar fsck --quick` doesn't accept other "
-                  "arguments.")
-            return 1
+    if not args.commit and not args.full:
         return fsck_quick()
 
     status = FsckStatus()
 
     store = GitHgStore()
+
+    if args.full and args.commit:
+        logging.error('Cannot pass both --full and a commit')
+        return 1
 
     if args.commit:
         commits = set()
@@ -390,9 +386,8 @@ def fsck(args):
         # dag.
         GitHgHelper.set('manifest', manifest, manifest_ref)
 
-        if args.manifests:
-            if not GitHgHelper.check_manifest(manifest):
-                status.report('Sha1 mismatch for manifest %s' % manifest)
+        if not GitHgHelper.check_manifest(manifest):
+            status.report('Sha1 mismatch for manifest %s' % manifest)
 
         manifest_commit_parents = GitCommit(manifest_ref).parents
         if sorted(manifest_commit_parents) != sorted(git_parents):
@@ -403,23 +398,22 @@ def fsck(args):
 
         # TODO: check that manifest content matches changeset content
 
-        if args.files:
-            changes = get_changes(manifest_ref, git_parents)
-            for path, hg_file, hg_fileparents in changes:
-                if hg_file != NULL_NODE_ID and (hg_file == HG_EMPTY_FILE or
-                                                GitHgHelper.seen('hg2git',
-                                                                 hg_file)):
-                    if full_file_check:
-                        file = store.file(hg_file, hg_fileparents, git_parents,
-                                          store.manifest_path(path))
-                        valid = file.node == file.sha1
-                    else:
-                        valid = GitHgHelper.check_file(hg_file,
-                                                       *hg_fileparents)
-                    if not valid:
-                        status.report(
-                            'Sha1 mismatch for file %s in manifest %s'
-                            % (hg_file, manifest_ref))
+        changes = get_changes(manifest_ref, git_parents)
+        for path, hg_file, hg_fileparents in changes:
+            if hg_file != NULL_NODE_ID and (hg_file == HG_EMPTY_FILE or
+                                            GitHgHelper.seen('hg2git',
+                                                             hg_file)):
+                if full_file_check:
+                    file = store.file(hg_file, hg_fileparents, git_parents,
+                                      store.manifest_path(path))
+                    valid = file.node == file.sha1
+                else:
+                    valid = GitHgHelper.check_file(hg_file,
+                                                   *hg_fileparents)
+                if not valid:
+                    status.report(
+                        'Sha1 mismatch for file %s in manifest %s'
+                        % (hg_file, manifest_ref))
 
     if not args.commit and not status('broken'):
         store_manifest_heads = set(store._manifest_heads_orig)
@@ -449,8 +443,7 @@ def fsck(args):
                                ' metadata.' % h)
     dangling = ()
     if not args.commit and not status('broken'):
-        dangling = GitHgHelper.dangling(
-            'hg2git' if args.files else 'hg2git-no-blobs')
+        dangling = GitHgHelper.dangling('hg2git')
     for obj in dangling:
         status.fix('Removing dangling metadata for ' + obj)
         # Theoretically, we should figure out if they are files, manifests
@@ -499,7 +492,7 @@ def fsck(args):
         Git.update_ref('refs/cinnabar/broken', metadata_commit)
         return 1
 
-    if args.manifests and args.files:
+    if args.full:
         Git.update_ref('refs/cinnabar/checked', metadata_commit)
     store.close()
 
