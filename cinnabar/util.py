@@ -143,6 +143,21 @@ experiment = ConfigSetFunc(
 )
 
 
+def interval_expired(config_key, interval):
+    from .git import Git
+    config_key = 'cinnabar.{}'.format(config_key)
+    try:
+        last = int(Git.config(config_key))
+    except (ValueError, TypeError):
+        last = None
+    now = time.time()
+    if last:
+        if last + interval > now:
+            return False
+    Git.run('config', '--global', config_key, str(int(now)))
+    return bool(last)
+
+
 progress = True
 
 
@@ -830,7 +845,8 @@ class VersionCheck(Thread):
         from distutils.version import StrictVersion
         parent_dir = os.path.dirname(os.path.dirname(__file__))
         if not os.path.exists(os.path.join(parent_dir, '.git')) or \
-                check_enabled('no-version-check'):
+                check_enabled('no-version-check') or \
+                not interval_expired('version-check', 86400):
             return
         REPO = 'https://github.com/glandium/git-cinnabar'
         devnull = open(os.devnull, 'wb')
