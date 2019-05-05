@@ -45,6 +45,8 @@ class CLI(object):
                 'callback': args.callback,
                 args.callback.cli_remainder: leftovers,
             })
+        else:
+            args = CLI.parser.parse_args(argv)
         return args.callback(args)
 
 
