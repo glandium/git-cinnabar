@@ -72,7 +72,7 @@ def do_rollback(ref):
 
 @CLI.subcommand
 @CLI.argument('--fsck', action='store_true',
-              help='rollback to the last checked state')
+              help='rollback to the last successful fsck state')
 @CLI.argument('committish', nargs='?',
               help='committish of the state to rollback to')
 def rollback(args):
@@ -81,7 +81,10 @@ def rollback(args):
         logging.error('Cannot use --fsck along a commit.')
         return 1
     if args.fsck:
-        committish = 'refs/cinnabar/checked'
+        committish = Git.resolve_ref('refs/cinnabar/checked')
+        if not committish:
+            logging.error('No successful fsck has been recorded. '
+                          'Cannot rollback.')
     else:
         committish = args.committish
     return do_rollback(committish)
