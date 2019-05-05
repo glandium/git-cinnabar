@@ -50,7 +50,7 @@ def do_rollback(ref):
                                             'refs/notes/cinnabar')
     )
     for ref in refs:
-        if ref != 'refs/cinnabar/checked':
+        if ref not in ('refs/cinnabar/checked', 'refs/cinnabar/broken'):
             del refs[ref]
     if sha1 != NULL_NODE_ID:
         refs['refs/cinnabar/metadata'] = sha1
