@@ -842,8 +842,7 @@ class GitHgStore(object):
                 'refs/cinnabar/changesets')
             if changesets_ref:
                 commit = GitCommit(changesets_ref)
-                for sha1, head in izip(commit.parents,
-                                       commit.body.splitlines()):
+                for head in commit.body.splitlines():
                     hghead, branch = head.split(' ', 1)
                     self._hgheads._previous[hghead] = branch
 
@@ -1003,8 +1002,7 @@ class GitHgStore(object):
         changesets_ref = self._metadata_refs.get('refs/cinnabar/changesets')
         if changesets_ref:
             commit = GitCommit(changesets_ref)
-            for sha1, head in izip(commit.parents,
-                                   commit.body.splitlines()):
+            for head in commit.body.splitlines():
                 hghead, branch = head.split(' ', 1)
                 self._hgheads._previous[hghead] = branch
 
