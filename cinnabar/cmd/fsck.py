@@ -497,7 +497,8 @@ def fsck(args):
         return 1
 
     metadata_commit = Git.resolve_ref('refs/cinnabar/metadata')
-    Git.update_ref('refs/cinnabar/checked', metadata_commit)
+    if args.manifests and args.files:
+        Git.update_ref('refs/cinnabar/checked', metadata_commit)
     store.close()
 
     if status('fixed'):
