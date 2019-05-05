@@ -1411,8 +1411,10 @@ class GitHgStore(object):
         if update_metadata or replace_changed:
             parents = list(update_metadata.get(r) or self._metadata_refs[r]
                            for r in self.METADATA_REFS)
-            if self._metadata_sha1:
-                parents.append(self._metadata_sha1)
+            metadata_sha1 = (Git.config('cinnabar.previous-metadata') or
+                             self._metadata_sha1)
+            if metadata_sha1:
+                parents.append(metadata_sha1)
             with GitHgHelper.commit(
                 ref='refs/cinnabar/metadata',
                 parents=parents,

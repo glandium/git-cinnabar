@@ -60,8 +60,8 @@ class Git(object):
                                             proc.pid, time.time() - start)
 
     @classmethod
-    def run(self, *args):
-        return tuple(self.iter(*args, stdout=None))
+    def run(self, *args, **kwargs):
+        return tuple(self.iter(*args, stdout=None, **kwargs))
 
     @classmethod
     def for_each_ref(self, *patterns):
