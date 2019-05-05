@@ -80,4 +80,8 @@ def rollback(args):
     if args.fsck and args.committish:
         logging.error('Cannot use --fsck along a commit.')
         return 1
-    return do_rollback(args.committish or 'refs/cinnabar/checked')
+    if args.fsck:
+        committish = 'refs/cinnabar/checked'
+    else:
+        committish = args.committish
+    return do_rollback(committish)
