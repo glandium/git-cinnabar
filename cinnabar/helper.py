@@ -115,8 +115,8 @@ class BaseHelper(object):
 
             try:
                 self._helper = Process(*command, stdin=subprocess.PIPE,
-                                       stderr=None, logger='cinnabar-helper',
-                                       env=env)
+                                       stderr=None, env=env,
+                                       logger='helper-{}'.format(self.MODE))
                 self._helper.stdin.write('version %d\n' % self.VERSION)
                 response = self._helper.stdout.readline()
             except Exception:

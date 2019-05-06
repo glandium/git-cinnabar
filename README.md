@@ -71,20 +71,42 @@ mercurial repository, or a http, https or ssh url.
 Essentially, use git like you would for a git repository, but use a `hg::` url
 where you would use a `git://` url.
 
-Mercurial bookmarks are exposed as `refs/heads/bookmarks/$bookmark` remote
-refs. If you want to interact exclusively with mercurial with bookmarks, you
-can use a refspec like `refs/heads/bookmarks/*:refs/remotes/$remote/*`.
-
-Mercurial branches are exposed as namespaces under `refs/heads/branches/`. As
-mercurial branches can have multiple heads, each head is exposed as
-`refs/heads/branches/$branch/$head`, where `$head` is the mercurial sha1 of the
-head changeset. There is however an exception to that pattern, for the tip
-changeset of the branch, which is exposed as `refs/heads/branches/$branch/tip`.
-If you only care about the tip changeset of each branch, you can use a refspec
-like `refs/heads/branches/*/tip:ref/remotes/$remote/*`.
-
 See https://github.com/glandium/git-cinnabar/wiki/Mozilla:-A-git-workflow-for-Gecko-development
 for an example workflow for Mozilla repositories.
+
+Remote refs styles:
+-------------------
+
+Mercurial has two different ways to handle what git would call branches:
+branches and bookmarks. Mercurial branches are permanent markers on each
+changeset that belongs to them, and bookmarks are similar to git branches.
+
+You may choose how to interact with those with the `cinnabar.refs`
+configuration. The following values are supported:
+
+- `bookmarks`: in this mode, the mercurial repository's bookmarks are exposed
+  as `refs/heads/$bookmark`. Practically speaking, this means the mercurial
+  bookmarks appear as the remote git branches.
+
+- `tips`: in this mode, the most recent head of each mercurial branch is
+  exposed as `refs/heads/$branch`. Any other head of the same branch is not
+  exposed. This mode can be useful when branches have no more than one head.
+
+- `heads`: in this mode, the mercurial repository's heads are exposed as
+  `refs/heads/$branch/$head`, where `$branch` is the mercurial branch name
+  and `$head` is the full changeset sha1 of that head.
+
+- `all` (default): in this mode:
+  - bookmarks are exposed as `refs/heads/bookmarks/$bookmark`,
+  - branch heads are exposed as `refs/heads/branches/$branch/$head` (where
+    `$head` is the full changeset sha1 of the head),
+  - except the branch tip, which is exposed as
+    `refs/heads/branches/$branch/tip`.
+
+The refs style can also be configured per remote with the
+`remote.$remote.cinnabar-refs` configuration. It is also possible to use
+`cinnabar.pushrefs` or `remote.$remote.cinnabar-pushrefs` to use a different
+scheme for pushes only.
 
 Tags:
 -----
@@ -178,10 +200,9 @@ The following command allows to detect various types of metadata corruption:
 This command will fix the corruptions it can, as well as adjust some of the
 metadata that contains items that became unnecessary in newer versions.
 
-The `--manifests` and `--files` options may be added for additional validation
-on manifests and files. Using either or both adds a significant amount of work,
-and the command can take more than half an hour on repositories the size of
-mozilla-central.
+The `--full` option may be added for a more thorough validation of the metadata
+contents. Using this option adds a significant amount of work, and the command
+can take more than half an hour on repositories the size of mozilla-central.
 
 `hg://` urls:
 -----------

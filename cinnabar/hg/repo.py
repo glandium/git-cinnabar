@@ -769,7 +769,7 @@ def getbundle(repo, store, heads, branch_names):
         bundle = None
         got_partial = False
         if not common:
-            if not store._has_metadata:
+            if not store._has_metadata and not store._graft:
                 manifest = Git.config('cinnabar.clone')
                 if not manifest and experiment('git-clone') and \
                         repo.capable('cinnabarclone'):

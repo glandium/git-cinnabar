@@ -30,10 +30,9 @@ def upgrade(args):
         return 1
 
     print 'Finalizing upgrade...'
-    store.close()
+    store.close(refresh=store.METADATA_REFS)
     print (
-        'You may want to run `git cinnabar fsck --manifests --files` to '
-        'ensure the upgrade went well.\n'
-        'Please be aware this might take a while.'
+        'You may want to run `git cinnabar fsck` to ensure the upgrade '
+        'went well.\n'
     )
     return 0

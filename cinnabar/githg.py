@@ -26,6 +26,7 @@ from .util import (
     HTTPReader,
     byte_diff,
     check_enabled,
+    interval_expired,
     one,
     VersionedDict,
 )
@@ -846,8 +847,7 @@ class GitHgStore(object):
                 'refs/cinnabar/changesets')
             if changesets_ref:
                 commit = GitCommit(changesets_ref)
-                for sha1, head in izip(commit.parents,
-                                       commit.body.splitlines()):
+                for head in commit.body.splitlines():
                     hghead, branch = head.split(' ', 1)
                     self._hgheads._previous[hghead] = branch
 
@@ -1007,8 +1007,7 @@ class GitHgStore(object):
         changesets_ref = self._metadata_refs.get('refs/cinnabar/changesets')
         if changesets_ref:
             commit = GitCommit(changesets_ref)
-            for sha1, head in izip(commit.parents,
-                                   commit.body.splitlines()):
+            for head in commit.body.splitlines():
                 hghead, branch = head.split(' ', 1)
                 self._hgheads._previous[hghead] = branch
 
@@ -1336,7 +1335,7 @@ class GitHgStore(object):
                      instance.delta_node)
                 )
 
-    def close(self):
+    def close(self, refresh=()):
         if self._closed:
             return
         if self._graft:
@@ -1369,7 +1368,8 @@ class GitHgStore(object):
         hg_changeset_heads = list(self._hgheads)
         changeset_heads = list(self.changeset_ref(h)
                                for h in hg_changeset_heads)
-        if any(self._hgheads.iterchanges()):
+        if (any(self._hgheads.iterchanges()) or
+                'refs/cinnabar/changesets' in refresh):
             heads = sorted((self._hgheads[h], h, g)
                            for h, g in izip(hg_changeset_heads,
                                             changeset_heads))
@@ -1386,7 +1386,7 @@ class GitHgStore(object):
         manifest_heads = GitHgHelper.heads('manifests')
         if (set(manifest_heads) != self._manifest_heads_orig or
                 ('refs/cinnabar/changesets' in update_metadata and
-                 not manifest_heads)):
+                 not manifest_heads) or 'refs/cinnabar/manifests' in refresh):
             with GitHgHelper.commit(
                 ref='refs/cinnabar/manifests',
                 parents=sorted(manifest_heads),
@@ -1416,8 +1416,10 @@ class GitHgStore(object):
         if update_metadata or replace_changed:
             parents = list(update_metadata.get(r) or self._metadata_refs[r]
                            for r in self.METADATA_REFS)
-            if self._metadata_sha1:
-                parents.append(self._metadata_sha1)
+            metadata_sha1 = (Git.config('cinnabar.previous-metadata') or
+                             self._metadata_sha1)
+            if metadata_sha1:
+                parents.append(metadata_sha1)
             with GitHgHelper.commit(
                 ref='refs/cinnabar/metadata',
                 parents=parents,
@@ -1481,4 +1483,7 @@ class GitHgStore(object):
             if ref not in ('refs/notes/cinnabar',):
                 Git.delete_ref(ref)
 
+        if self._metadata_sha1 and update_metadata and not refresh and \
+                interval_expired('fsck', 86400 * 7):
+            logging.warn('Have you run `git cinnabar fsck` recently?')
         GitHgHelper.close(rollback=False)

@@ -17,6 +17,7 @@ def get_previous_metadata(metadata):
 
 
 def do_rollback(ref):
+    checked = Git.resolve_ref('refs/cinnabar/checked')
     if ref:
         sha1 = Git.resolve_ref(ref)
         if not sha1:
@@ -26,7 +27,10 @@ def do_rollback(ref):
             # Validate that the sha1 is in the history of the current metadata
             metadata = Git.resolve_ref('refs/cinnabar/metadata')
             while metadata and metadata != sha1:
-                metadata = get_previous_metadata(metadata)
+                previous_metadata = get_previous_metadata(metadata)
+                if checked == metadata:
+                    checked = previous_metadata
+                metadata = previous_metadata
             if not metadata:
                 logging.error('Cannot rollback to %s, it is not in the '
                               'history of the current metadata.', ref)
@@ -37,6 +41,8 @@ def do_rollback(ref):
             sha1 = get_previous_metadata(metadata) or NULL_NODE_ID
         else:
             sha1 = NULL_NODE_ID
+        if checked and checked == metadata:
+            checked = sha1
 
     refs = VersionedDict(
         (ref, commit)
@@ -44,9 +50,12 @@ def do_rollback(ref):
                                             'refs/notes/cinnabar')
     )
     for ref in refs:
-        del refs[ref]
+        if ref not in ('refs/cinnabar/checked', 'refs/cinnabar/broken'):
+            del refs[ref]
     if sha1 != NULL_NODE_ID:
         refs['refs/cinnabar/metadata'] = sha1
+        if checked:
+            refs['refs/cinnabar/checked'] = checked
         for line in Git.ls_tree(sha1):
             mode, typ, commit, path = line
             refs['refs/cinnabar/replace/%s' % path] = commit
@@ -62,9 +71,20 @@ def do_rollback(ref):
 
 
 @CLI.subcommand
+@CLI.argument('--fsck', action='store_true',
+              help='rollback to the last successful fsck state')
 @CLI.argument('committish', nargs='?',
               help='committish of the state to rollback to')
 def rollback(args):
     '''rollback cinnabar metadata state'''
-
-    do_rollback(args.committish)
+    if args.fsck and args.committish:
+        logging.error('Cannot use --fsck along a commit.')
+        return 1
+    if args.fsck:
+        committish = Git.resolve_ref('refs/cinnabar/checked')
+        if not committish:
+            logging.error('No successful fsck has been recorded. '
+                          'Cannot rollback.')
+    else:
+        committish = args.committish
+    return do_rollback(committish)
