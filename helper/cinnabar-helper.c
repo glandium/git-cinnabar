@@ -1727,6 +1727,7 @@ static void upgrade_manifest(struct commit *commit,
 {
 	struct object_id new_tree_id;
 	size_t size = 0;
+	unsigned long size_l = 0;
 	struct strbuf new_commit = STRBUF_INIT;
 	const char *buf;
 	char *cursor;
@@ -1769,7 +1770,8 @@ static void upgrade_manifest(struct commit *commit,
 		                      &track->tree_cache);
 	}
 
-	buf = get_commit_buffer(commit, &size);
+	buf = get_commit_buffer(commit, &size_l);
+	size = size_l;
 	strbuf_add(&new_commit, buf, size);
 	unuse_commit_buffer(commit, buf);
 
