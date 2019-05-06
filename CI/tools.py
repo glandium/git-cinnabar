@@ -306,7 +306,7 @@ class Helper(Task, metaclass=Tool):
                 hash, env.os, env.cpu, prefix('.', variant)),
             expireIn='26 weeks',
             command=Task.checkout(commit=head) + [
-                'make -C repo helper -j $({}) prefix=/usr{}'.format(
+                'make -C repo helper -j $({}) prefix=/usr{} V=1'.format(
                     nproc(env), prefix(' ', ' '.join(make_flags))),
                 'mv repo/{} $ARTIFACTS/'.format(artifact),
             ] + extra_commands,
