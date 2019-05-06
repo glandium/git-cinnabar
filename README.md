@@ -252,8 +252,7 @@ comma-separated list of those features to enable the selected ones, or to
   mercurial python modules. This experimental feature allows to access
   Mercurial repositories without using the mercurial python modules. It then
   relies on git-cinnabar-helper to connect to the repository through the
-  mercurial wire protocol. Please note the mercurial python modules are still
-  needed for mercurial bundle v2 support.
+  mercurial wire protocol.
 
   The feature is automatically enabled when Mercurial is not installed.
 
