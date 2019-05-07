@@ -48,6 +48,9 @@ class Git(object):
     def iter(self, *args, **kwargs):
         start = time.time()
 
+        if args[0] == 'config':
+            self._config = None
+
         proc = GitProcess(*args, **kwargs)
         try:
             for line in proc.stdout or ():
