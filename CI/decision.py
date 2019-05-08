@@ -8,7 +8,7 @@ BASE_DIR = os.path.dirname(__file__)
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '..'))
 
-from distutils.version import LooseVersion
+from distutils.version import StrictVersion
 from itertools import chain
 
 import osx  # noqa: F401
@@ -68,8 +68,12 @@ class TestTask(Task):
         if hg:
             command.extend(Hg.install('{}.{}'.format(task_env, hg)))
             command.append('hg --version')
-            if LooseVersion(hg) < '3.6':
-                kwargs.setdefault('env', {})['NO_CLONEBUNDLES'] = '1'
+            try:
+                if StrictVersion(hg) < '3.6':
+                    kwargs.setdefault('env', {})['NO_CLONEBUNDLES'] = '1'
+            except ValueError:
+                # `hg` is a sha1 for trunk, which means it's >= 3.6
+                pass
         if git:
             command.extend(Git.install('{}.{}'.format(task_env, git)))
             command.append('git --version')
