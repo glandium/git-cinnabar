@@ -143,11 +143,8 @@ class BaseHelper(object):
                     self._version = int(version)
                 else:
                     self._version = self.VERSION
-                if self._version >= 3002:
-                    self._helper.stdin.write('helpercaps\n')
-                    response = self._read_data(self._helper.stdout)
-                else:
-                    response = ''
+                self._helper.stdin.write('helpercaps\n')
+                response = self._read_data(self._helper.stdout)
                 self._caps = {
                     k: v.split(',')
                     for k, _, v in (l.partition('=')
@@ -222,10 +219,6 @@ class BaseHelper(object):
     @classmethod
     def supports(self, feature):
         self._ensure_helper()
-        if self._version < 3002:
-            feature = {
-                ('compression', 'UN'): 3000,
-            }.get(feature, feature)
         if isinstance(feature, int):
             return feature <= self._version
         assert isinstance(feature, tuple) and len(feature) == 2
@@ -234,9 +227,8 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 3000
+    VERSION = 3003
     MODE = 'import'
-    STORE_CHANGEGROUP = 3001
     _helper = False
 
     @classmethod
@@ -546,7 +538,7 @@ class CommitHelper(object):
 
 
 class HgRepoHelper(BaseHelper):
-    VERSION = 3002
+    VERSION = 3003
     MODE = 'wire'
     _helper = False
 

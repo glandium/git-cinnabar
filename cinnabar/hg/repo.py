@@ -688,11 +688,7 @@ def store_changegroup(changegroup):
 
 class BundleApplier(object):
     def __init__(self, bundle):
-        self._bundle = bundle
-        self._use_store_changegroup = False
-        if GitHgHelper.supports(GitHgHelper.STORE_CHANGEGROUP):
-            self._use_store_changegroup = True
-            self._bundle = store_changegroup(bundle)
+        self._bundle = store_changegroup(bundle)
 
     def __call__(self, store):
         changeset_chunks = ChunksCollection(progress_iter(
@@ -701,8 +697,7 @@ class BundleApplier(object):
         for rev_chunk in progress_iter(
                 'Reading and importing {} manifests',
                 next(self._bundle, None)):
-            if not self._use_store_changegroup:
-                GitHgHelper.store('manifest', rev_chunk)
+            pass
 
         def enumerate_files(iter):
             last_name = None
@@ -716,8 +711,7 @@ class BundleApplier(object):
         for rev_chunk in progress_enum(
                 'Reading and importing {} revisions of {} files',
                 enumerate_files(next(self._bundle, None))):
-            if not self._use_store_changegroup:
-                GitHgHelper.store('file', rev_chunk)
+            pass
 
         if next(self._bundle, None) is not None:
             assert False

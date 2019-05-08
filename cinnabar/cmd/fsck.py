@@ -16,6 +16,7 @@ from cinnabar.git import (
     NULL_NODE_ID,
 )
 from cinnabar.util import (
+    interval_expired,
     Progress,
     progress_iter,
 )
@@ -290,6 +291,7 @@ def fsck_quick():
     if fix_changeset_heads:
         status.fix('Fixing changeset heads metadata order.')
         refresh.append('refs/cinnabar/changesets')
+    interval_expired('fsck', 0)
     store.close(refresh=refresh)
     GitHgHelper._helper = False
     metadata_commit = Git.resolve_ref('refs/cinnabar/metadata')
@@ -518,6 +520,7 @@ def fsck(args):
 
     if args.full:
         Git.update_ref('refs/cinnabar/checked', metadata_commit)
+    interval_expired('fsck', 0)
     store.close()
 
     if status('fixed'):

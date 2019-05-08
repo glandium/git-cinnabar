@@ -213,10 +213,10 @@ def old_compatible_python():
 
 def old_helper_head():
     from cinnabar import VERSION
+    from distutils.version import StrictVersion
     version = VERSION
     if version.endswith('a'):
-        from distutils.version import StrictVersion
-        v = StrictVersion(VERSION[:-1]).version + (0, 0, 0)
+        v = StrictVersion(VERSION[:-1]).version
         if v[2] == 0:
             from cinnabar.git import Git
             from cinnabar.helper import (
@@ -229,8 +229,9 @@ def old_helper_head():
                 '-S', '#define CMD_VERSION {}'.format(version),
                 cwd=os.path.join(os.path.dirname(__file__),
                                  '..')))[-1].decode()
-        version = '{}.{}.{}'.format(v[0], v[1], v[2] - 1)
-    return version
+    else:
+        v = StrictVersion(VERSION).version
+    return '{}.{}.{}'.format(v[0], v[1], max(v[2] - 1, 0))
 
 
 def helper_hash(head='HEAD'):
@@ -308,7 +309,7 @@ class Helper(Task, metaclass=Tool):
                 hash, env.os, env.cpu, prefix('.', variant)),
             expireIn='26 weeks',
             command=Task.checkout(commit=head) + [
-                'make -C repo helper -j $({}) prefix=/usr{}'.format(
+                'make -C repo helper -j $({}) prefix=/usr{} V=1'.format(
                     nproc(env), prefix(' ', ' '.join(make_flags))),
                 'mv repo/{} $ARTIFACTS/'.format(artifact),
             ] + extra_commands,
