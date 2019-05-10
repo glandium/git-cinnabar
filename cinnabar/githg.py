@@ -931,7 +931,7 @@ class GitHgStore(object):
             return False
 
         if bundle:
-            proc = GitProcess('index-pack', '--stdin', '-v',
+            proc = GitProcess('index-pack', '--stdin', '-v', '--fix-thin',
                               stdin=subprocess.PIPE,
                               stdout=open(os.devnull, 'wb'))
             shutil.copyfileobj(bundle, proc.stdin)
@@ -968,19 +968,24 @@ class GitHgStore(object):
             for line in Git.ls_tree(commit.tree):
                 mode, typ, sha1, path = line
                 if sha1 in by_sha1:
-                    needed.append('%s:refs/cinnabar/replace/%s' % (
-                        by_sha1[sha1], path))
+                    ref = 'refs/cinnabar/replace/%s' % path
+                    if bundle:
+                        Git.update_ref(ref, sha1)
+                    else:
+                        needed.append(':'.join((by_sha1[sha1], ref)))
                 else:
                     logging.error('Missing commit: %s', sha1)
                     errors = True
             if errors:
                 return False
 
-            proc = GitProcess('fetch', '--no-tags', '--no-recurse-submodules',
-                              git_repo_url, *needed, stdout=sys.stdout)
-            if proc.wait():
-                logging.error('Failed to fetch cinnabar metadata.')
-                return False
+            if not bundle:
+                proc = GitProcess(
+                    'fetch', '--no-tags', '--no-recurse-submodules',
+                    git_repo_url, *needed, stdout=sys.stdout)
+                if proc.wait():
+                    logging.error('Failed to fetch cinnabar metadata.')
+                    return False
 
         Git.update_ref('refs/cinnabar/metadata', commit.sha1)
         self._metadata_sha1 = commit.sha1

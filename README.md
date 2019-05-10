@@ -30,7 +30,7 @@ Please run `git cinnabar fsck` with version 0.3.0 first.
 Requirements:
 -------------
 
-- Git (any version should work)
+- Git (any version should work ; cinnabarclone bundles require 1.4.4)
 - Python 2.7
 - Mercurial version 1.9 or newer
 
