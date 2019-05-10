@@ -12,7 +12,8 @@ static size_t copy_chunk(int adjust, FILE *in, struct writer *out)
 	uint32_t len;
 	size_t ret = 0;
 	//TODO: Check for errors, etc.
-	fread(buf, 1, 4, in);
+	if (fread(buf, 1, 4, in) < 4)
+		return 0;
 	write_to(buf, 1, 4, out);
 	len = get_be32(p);
 	if (len <= adjust)
