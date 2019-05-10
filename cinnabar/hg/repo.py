@@ -949,7 +949,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
 
     pushed = False
     if push_commits:
-        has_root = any(len(p) == 40 for p in push_commits)
+        has_root = any(not p for (c, p) in push_commits)
         force = all(v[1] for v in what.values())
         if has_root and repo_heads:
             if not force:
