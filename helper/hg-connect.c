@@ -275,6 +275,7 @@ void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 	tmpfile = mks_tempfile_ts("hg-bundle-XXXXXX.hg", 3);
 	file = fdopen_tempfile(tmpfile, "w");
 	copy_bundle_to_file(in, file);
+	fflush(file);
 	close_tempfile_gently(tmpfile);
 
 	file = fopen(tmpfile->filename.buf, "r");
