@@ -833,9 +833,27 @@ def do_cinnabarclone(repo, manifest, store):
     for line in manifest.splitlines():
         line = line.strip()
         spec, _, params = line.partition(' ')
+        params = {
+            k: v
+            for k, _, v in (p.partition('=') for p in params.split())
+        }
+        graft = params.pop('graft', None)
         if params:
-            # Future proofing: ignore lines with params.
+            # Future proofing: ignore lines with unknown params, even if we
+            # support some that are present.
             continue
+        if graft:
+            graft = graft.split(',')
+            revs = list(Git.iter('rev-parse', '--revs-only', *graft))
+            if len(revs) != len(graft):
+                continue
+            # We apparently have all the grafted revisions locally, ensure
+            # they're actually reachable.
+            if not any(Git.iter(
+                    'rev-list', '--branches', '--tags', '--remotes',
+                    '--max-count=1', '--ancestry-path', '--stdin',
+                    stdin=('^{}^@'.format(c) for c in graft))):
+                continue
         url, _, branch = spec.partition('#')
         url, branch = (url.split('#', 1) + [None])[:2]
         if url:
