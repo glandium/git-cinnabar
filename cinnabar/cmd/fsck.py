@@ -52,7 +52,7 @@ class FsckStatus(object):
         self.info(message)
 
 
-def fsck_quick():
+def fsck_quick(force=False):
     status = FsckStatus()
     store = GitHgStore()
 
@@ -63,6 +63,20 @@ def fsck_quick():
             'Is this a git-cinnabar clone?'
         )
         return 1
+    broken_metadata = Git.resolve_ref('refs/cinnabar/broken')
+    checked_metadata = Git.resolve_ref('refs/cinnabar/checked')
+    if checked_metadata == broken_metadata:
+        checked_metadata = None
+    if metadata_commit == checked_metadata and not force:
+        status.info(
+            'The git-cinnabar metadata was already checked and is '
+            'presumably clean.\n'
+            'Try `--force` if you want to check anyways.'
+        )
+        return 0
+    elif force:
+        checked_metadata = None
+
     commit = GitCommit(metadata_commit)
     if commit.body != 'files-meta unified-manifests-v2':
         status.info(
@@ -271,7 +285,7 @@ def fsck_quick():
             'Please open an issue, with the information above, on\n'
             'https://github.com/glandium/git-cinnabar/issues')
         Git.update_ref('refs/cinnabar/broken', metadata_commit)
-        if Git.resolve_ref('refs/cinnabar/checked'):
+        if checked_metadata:
             status.info(
                 '\nThen please try to run `git cinnabar rollback --fsck` to '
                 'restore last known state, and to update from the mercurial '
@@ -300,6 +314,8 @@ def fsck_quick():
 
 
 @CLI.subcommand
+@CLI.argument('--force', action='store_true',
+              help='Force check, even when metadata was already checked')
 @CLI.argument('--full', action='store_true',
               help='Check more thoroughly')
 @CLI.argument('commit', nargs='*',
@@ -308,7 +324,7 @@ def fsck(args):
     '''check cinnabar metadata consistency'''
 
     if not args.commit and not args.full:
-        return fsck_quick()
+        return fsck_quick(args.force)
 
     status = FsckStatus()
 
