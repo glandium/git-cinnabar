@@ -104,9 +104,16 @@ def fsck_quick(force=False):
 
     parents = None
     fix_changeset_heads = False
+    checked_commit = None
+    if checked_metadata:
+        checked_commit = Git.resolve_ref('{}^'.format(checked_metadata))
+    if checked_commit:
+        checked_commit = GitCommit(checked_commit)
     # TODO: Check that the recorded heads are actually dag heads.
     for c, changeset_node in progress_iter(
-            'Checking {} changeset heads', izip(commit.parents, heads)):
+            'Checking {} changeset heads',
+            ((c, node) for c, node in izip(commit.parents, heads)
+             if checked_commit and c not in checked_commit.parents)):
         gitsha1 = GitHgHelper.hg2git(changeset_node)
         if gitsha1 == NULL_NODE_ID:
             status.report('Missing hg2git metadata for changeset %s'
