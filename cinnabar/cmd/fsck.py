@@ -104,16 +104,20 @@ def fsck_quick(force=False):
 
     parents = None
     fix_changeset_heads = False
-    checked_commit = None
-    if checked_metadata:
-        checked_commit = Git.resolve_ref('{}^'.format(checked_metadata))
-    if checked_commit:
-        checked_commit = GitCommit(checked_commit)
+
+    def get_checked_metadata(num):
+        if not checked_metadata:
+            return None
+        commit = Git.resolve_ref('{}^{}'.format(checked_metadata, num))
+        if commit:
+            return GitCommit(commit)
+
+    checked_commit = get_checked_metadata(1)
     # TODO: Check that the recorded heads are actually dag heads.
     for c, changeset_node in progress_iter(
             'Checking {} changeset heads',
             ((c, node) for c, node in izip(commit.parents, heads)
-             if checked_commit and c not in checked_commit.parents)):
+             if not checked_commit or c not in checked_commit.parents)):
         gitsha1 = GitHgHelper.hg2git(changeset_node)
         if gitsha1 == NULL_NODE_ID:
             status.report('Missing hg2git metadata for changeset %s'
@@ -174,26 +178,30 @@ def fsck_quick(force=False):
     # it's close to an order of magnitude difference on the "Checking
     # manifests" loop.
     depths = {}
-    roots = []
+    roots = {}
     manifest_queue = []
+    revs = []
+    revs.append('{}^@'.format(manifests))
+    if checked_metadata:
+        revs.append('^{}^2^@'.format(checked_metadata))
     for m, _, parents in progress_iter(
             'Loading {} manifests', GitHgHelper.rev_list(
-                '--topo-order', '--reverse', '--full-history', '%s^@'
-                % manifests)):
+                '--topo-order', '--reverse', '--full-history', *revs)):
         manifest_queue.append((m, parents))
         if parents:
             depth = {}
             for p in parents:
-                for root, num in depths[p].iteritems():
+                for root, num in depths.get(p, {}).iteritems():
                     if root in depth:
                         depth[root] = max(depth[root], num + 1)
                     else:
                         depth[root] = num + 1
-            depths[m] = depth
-            del depth
-        else:
-            depths[m] = {m: 0}
-            roots.append(m)
+            if depth:
+                depths[m] = depth
+                del depth
+                continue
+        depths[m] = {m: 0}
+        roots[m] = parents
 
     if status('broken'):
         return 1
@@ -201,12 +209,14 @@ def fsck_quick(force=False):
     # TODO: check that all manifest_nodes gathered above are available in the
     # manifests dag, and that the dag heads are the recorded heads.
     manifests_commit = GitCommit(manifests)
+    checked_commit = get_checked_metadata(2)
     depths = [
-        [depths[p].get(r, 0) for r in roots]
+        ([depths[p].get(r, 0) for r in roots], p)
         for p in manifests_commit.parents
+        if not checked_commit or p not in checked_commit.parents
     ]
     manifests_commit_parents = [
-        p for _, p in sorted(zip(depths, manifests_commit.parents))
+        p for _, p in sorted(depths)
     ]
     previous = None
     all_interesting = set()
@@ -239,6 +249,21 @@ def fsck_quick(force=False):
 
     if status('broken'):
         return 1
+
+    # Don't check files that were already there in the previously checked
+    # manifests.
+    previous = None
+    for parents in roots.itervalues():
+        for p in parents:
+            if previous:
+                for _, _, before, after, d, path in GitHgHelper.diff_tree(
+                        previous, p):
+                    if d in 'AM' and before != after:
+                        all_interesting.discard((path, after))
+            else:
+                for _, t, sha1, path in GitHgHelper.ls_tree(p, recursive=True):
+                    all_interesting.discard((path, sha1))
+            previous = p
 
     progress = Progress('Checking {} files')
     while all_interesting and manifest_queue:
@@ -322,7 +347,8 @@ def fsck_quick(force=False):
 
 @CLI.subcommand
 @CLI.argument('--force', action='store_true',
-              help='Force check, even when metadata was already checked')
+              help='Force check, even when metadata was already checked. '
+                   'Also disables incremental fsck')
 @CLI.argument('--full', action='store_true',
               help='Check more thoroughly')
 @CLI.argument('commit', nargs='*',
