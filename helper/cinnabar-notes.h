@@ -36,26 +36,26 @@ static inline int notes_dirty(struct notes_tree *notes)
 extern const struct object_id *get_abbrev_note(
 	struct notes_tree *t, const struct object_id *object_oid, size_t len);
 
-extern void init_notes(struct notes_tree *t, const char *notes_ref,
-                       combine_notes_fn combine_notes, int flags);
+void init_notes(struct notes_tree *t, const char *notes_ref,
+                combine_notes_fn combine_notes, int flags);
 
-extern void free_notes(struct notes_tree *t);
+void free_notes(struct notes_tree *t);
 
 extern int add_note(
 	struct notes_tree *t, const struct object_id *object_oid,
 	const struct object_id *note_oid, combine_notes_fn combine_notes);
 
-extern int remove_note(struct notes_tree *t, const unsigned char *object_sha1);
+int remove_note(struct notes_tree *t, const unsigned char *object_sha1);
 
-extern const struct object_id *get_note(struct notes_tree *t,
-                                        const struct object_id *object_oid);
+const struct object_id *get_note(struct notes_tree *t,
+                                 const struct object_id *object_oid);
 
-extern int for_each_note(struct notes_tree *t, int flags, each_note_fn fn,
-                         void *cb_data);
+int for_each_note(struct notes_tree *t, int flags, each_note_fn fn,
+                  void *cb_data);
 
-extern int write_notes_tree(struct notes_tree *t, struct object_id *result,
-                            unsigned int mode);
+int write_notes_tree(struct notes_tree *t, struct object_id *result,
+                     unsigned int mode);
 
-extern void consolidate_notes(struct notes_tree *t);
+void consolidate_notes(struct notes_tree *t);
 
 #endif

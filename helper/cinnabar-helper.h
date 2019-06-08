@@ -25,7 +25,7 @@ extern int cinnabar_check;
 
 extern struct oid_array changeset_heads, manifest_heads;
 
-extern void ensure_heads(struct oid_array *heads);
+void ensure_heads(struct oid_array *heads);
 
 extern struct notes_tree git2hg, hg2git, files_meta;
 
@@ -48,9 +48,9 @@ static inline void ensure_notes(struct notes_tree *notes)
 	}
 }
 
-extern struct strbuf *generate_manifest(const struct object_id *oid);
+struct strbuf *generate_manifest(const struct object_id *oid);
 
-extern int check_manifest(const struct object_id *oid,
-                          struct hg_object_id *hg_oid);
+int check_manifest(const struct object_id *oid,
+                   struct hg_object_id *hg_oid);
 
 #endif

@@ -7,11 +7,11 @@
 #include "hg-data.h"
 #include <stdio.h>
 
-extern void copy_bundle(FILE *in, struct writer *out);
-extern void copy_bundle_to_file(FILE *in, FILE *out);
-extern void copy_bundle_to_strbuf(FILE *in, struct strbuf *out);
+void copy_bundle(FILE *in, struct writer *out);
+void copy_bundle_to_file(FILE *in, FILE *out);
+void copy_bundle_to_strbuf(FILE *in, struct strbuf *out);
 
-extern void read_chunk(FILE *in, struct strbuf *out);
+void read_chunk(FILE *in, struct strbuf *out);
 
 struct rev_chunk {
 	struct strbuf raw;
@@ -32,9 +32,9 @@ struct rev_diff_part {
 	struct rev_chunk *chunk;
 };
 
-extern void rev_chunk_from_memory(struct rev_chunk *result,
-                                  struct strbuf *buf,
-                                  const struct hg_object_id *delta_node);
+void rev_chunk_from_memory(struct rev_chunk *result,
+                           struct strbuf *buf,
+                           const struct hg_object_id *delta_node);
 
 static inline void rev_chunk_release(struct rev_chunk *chunk)
 {
@@ -43,11 +43,11 @@ static inline void rev_chunk_release(struct rev_chunk *chunk)
 	chunk->diff_data = NULL;
 }
 
-extern void rev_diff_start_iter(struct rev_diff_part *iterator,
-                                struct rev_chunk *chunk);
+void rev_diff_start_iter(struct rev_diff_part *iterator,
+                         struct rev_chunk *chunk);
 
-extern int rev_diff_iter_next(struct rev_diff_part *iterator);
+int rev_diff_iter_next(struct rev_diff_part *iterator);
 
-extern void decompress_bundle_writer(struct writer *writer);
+void decompress_bundle_writer(struct writer *writer);
 
 #endif

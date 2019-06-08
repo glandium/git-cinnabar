@@ -46,9 +46,9 @@ static inline void oidcpy2hg(struct hg_object_id *dst,
 	memcpy(dst->hash, src->hash, 20);
 }
 
-extern int is_null_hg_oid(const struct hg_object_id *oid);
+int is_null_hg_oid(const struct hg_object_id *oid);
 
-extern int is_empty_hg_file(const struct hg_object_id *oid);
+int is_empty_hg_file(const struct hg_object_id *oid);
 
 struct hg_file {
 	struct hg_object_id oid;
@@ -59,31 +59,31 @@ struct hg_file {
 	void *content_oe;
 };
 
-extern void hg_file_load(struct hg_file *result, const struct hg_object_id *oid);
+void hg_file_load(struct hg_file *result, const struct hg_object_id *oid);
 
-extern void hg_file_from_memory(struct hg_file *result,
-                                const struct hg_object_id *oid, struct strbuf *buf);
+void hg_file_from_memory(struct hg_file *result,
+                         const struct hg_object_id *oid, struct strbuf *buf);
 
 static inline void hg_file_swap(struct hg_file *a, struct hg_file *b)
 {
         SWAP(*a, *b);
 }
 
-extern void hg_file_init(struct hg_file *file);
+void hg_file_init(struct hg_file *file);
 
-extern void hg_file_release(struct hg_file *file);
+void hg_file_release(struct hg_file *file);
 
-extern void hg_file_store(struct hg_file *file, struct hg_file *reference);
+void hg_file_store(struct hg_file *file, struct hg_file *reference);
 
-extern int add_note_hg(struct notes_tree *notes,
-                       const struct hg_object_id *oid,
-                       const struct object_id *note_oid,
-                       combine_notes_fn combine_notes);
+int add_note_hg(struct notes_tree *notes,
+                const struct hg_object_id *oid,
+                const struct object_id *note_oid,
+                combine_notes_fn combine_notes);
 
-extern int remove_note_hg(struct notes_tree *notes,
-                          const struct hg_object_id *oid);
+int remove_note_hg(struct notes_tree *notes,
+                   const struct hg_object_id *oid);
 
-extern const struct object_id *get_note_hg(struct notes_tree *notes,
-                                           const struct hg_object_id *oid);
+const struct object_id *get_note_hg(struct notes_tree *notes,
+                                    const struct hg_object_id *oid);
 
 #endif

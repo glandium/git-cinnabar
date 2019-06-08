@@ -2259,7 +2259,7 @@ static void init_metadata()
 	}
 }
 
-extern void dump_branches(void);
+void dump_branches(void);
 
 static void do_reload(struct string_list *args)
 {
@@ -2290,7 +2290,7 @@ static void do_reload(struct string_list *args)
 	init_metadata();
 }
 
-extern int configset_add_value(struct config_set *, const char*, const char *);
+int configset_add_value(struct config_set *, const char*, const char *);
 
 static int config_set_callback(const char *key, const char *value, void *data)
 {

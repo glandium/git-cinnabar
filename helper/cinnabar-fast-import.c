@@ -32,7 +32,7 @@ static void cleanup();
 static struct pack_window *pack_win;
 static struct pack_window *prev_win;
 
-extern void hashwrite(struct hashfile *, const void *, unsigned int);
+void hashwrite(struct hashfile *, const void *, unsigned int);
 
 void fast_import_hashwrite(struct hashfile *f, const void *buf,
 			   unsigned int count)
@@ -92,8 +92,8 @@ void fast_import_hashwrite(struct hashfile *f, const void *buf,
 	}
 }
 
-extern off_t real_find_pack_entry_one(const unsigned char *sha1,
-				      struct packed_git *p);
+off_t real_find_pack_entry_one(const unsigned char *sha1,
+                               struct packed_git *p);
 
 off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
 {
