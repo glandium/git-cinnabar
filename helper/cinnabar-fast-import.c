@@ -245,7 +245,7 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 	if (**endptr == ':') {
 		char *path_end = strpbrk(++(*endptr), " \n");
 		if (path_end) {
-			unsigned mode;
+			unsigned short mode;
 			char *path = xstrndup(*endptr, path_end - *endptr);
 			if (!get_tree_entry(note, path, &git_oid, &mode))
 				note = &git_oid;
