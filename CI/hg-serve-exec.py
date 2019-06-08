@@ -87,7 +87,7 @@ def perform_authentication(hgweb, req, op):
             raise common.ErrorResponse(common.HTTP_FORBIDDEN, 'no')
 
 
-def extsetup():
+def extsetup(ui):
     common.permhooks.insert(0, perform_authentication)
 
 
