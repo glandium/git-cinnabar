@@ -1,4 +1,4 @@
-  $ PATH=$TESTDIR/..${VARIANT:+/$VARIANT}:$PATH
+  $ PATH=$TESTDIR/..:$PATH
   $ export COVERAGE_FILE=$TESTDIR/../.coverage
 
   $ n=0
@@ -156,7 +156,7 @@
   23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/fooz
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/qux
 
-  $ hg -R repo bookmark bar -r 7 > /dev/null
+  $ hg -R repo bookmark bar -f -r 7 > /dev/null
 
   $ git -C repo-git ls-remote hg::$REPO
   0000000000000000000000000000000000000000	HEAD

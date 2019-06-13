@@ -99,6 +99,18 @@ class TestTask(Task):
             kwargs['command'] = command + [
                 'make -C repo -f CI/tests.mk',
             ]
+
+        if task_env == 'linux' and not commit and git == GIT_VERSION and \
+                all(k not in kwargs.get('env', {})
+                    for k in ('GIT_CINNABAR_EXPERIMENTS',
+                              'GIT_CINNABAR_OLD_HELPER')) and \
+                'no-mercurial' not in kwargs.get('env', {}) \
+                                            .get('GIT_CINNABAR_CHECK', ''):
+            kwargs['command'].append(
+                'env GIT_CINNABAR_CHECK=no-version-check'
+                ' cram --verbose repo/tests'
+            )
+
         if variant == 'coverage':
             kwargs['command'].extend([
                 'shopt -s nullglob',
@@ -193,18 +205,6 @@ def decision():
             '(cd repo && python3 -m flake8 --ignore E402 '
             '$(git ls-files CI/\\*\\*.py))',
         ],
-    )
-
-    TestTask(
-        description='cram tests',
-        variant='coverage',
-        clone=False,
-        command=[
-            'cram --verbose repo/tests',
-        ],
-        env={
-            'GIT_CINNABAR_CHECK': 'no-version-check',
-        },
     )
 
     for env in ('linux', 'mingw64', 'osx10_10'):
