@@ -100,7 +100,8 @@ class TestTask(Task):
                 'make -C repo -f CI/tests.mk',
             ]
 
-        if task_env == 'linux' and not commit and git == GIT_VERSION and \
+        if task_env == 'linux' and clone and not commit and \
+                git == GIT_VERSION and \
                 all(k not in kwargs.get('env', {})
                     for k in ('GIT_CINNABAR_EXPERIMENTS',
                               'GIT_CINNABAR_OLD_HELPER')) and \
