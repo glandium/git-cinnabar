@@ -7,10 +7,8 @@
 #ifdef NO_CURL
 size_t fwrite_buffer(char *ptr, size_t size, size_t nmemb, void *buffer_)
 {
-	size_t size = size * nmemb;
 	struct strbuf *buffer = buffer_;
-
-	strbuf_add(buffer, ptr, size);
+	strbuf_add(buffer, ptr, size * nmemb);
 	return nmemb;
 }
 #else
