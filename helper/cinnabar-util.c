@@ -11,7 +11,7 @@ size_t fwrite_buffer(char *ptr, size_t size, size_t nmemb, void *buffer_)
 	struct strbuf *buffer = buffer_;
 
 	strbuf_add(buffer, ptr, size);
-	return size;
+	return nmemb;
 }
 #else
 #include "http.h"
@@ -79,7 +79,7 @@ static size_t buffered_write(char *ptr, size_t size, size_t nmemb, void *context
 			create_buffer(context);
 		pthread_mutex_unlock(&context->mutex);
 	} while (in.len);
-	return size * nmemb;
+	return nmemb;
 }
 
 static int buffered_close(void *context_)
@@ -176,7 +176,7 @@ static size_t inflate_to(char *ptr, size_t size, size_t nmemb, void *data)
 		write_to(buf, 1, sizeof(buf) - context->strm.avail_out, &context->out);
 	} while (context->strm.avail_in && ret == Z_OK);
 
-	return size * nmemb;
+	return nmemb;
 }
 
 static int inflate_close(void *data)

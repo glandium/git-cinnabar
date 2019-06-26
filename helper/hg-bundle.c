@@ -185,6 +185,7 @@ static void prepare_zstd(struct writer *writer)
 static size_t decompress_bundle_to(char *ptr, size_t size, size_t nmemb, void *data)
 {
 	struct decompress_bundle_context *context = data;
+	size_t orig_size = size;
 	size_t header_size = 0;
 	void (*prepare_decompress)(struct writer *) = NULL;
 
@@ -192,8 +193,7 @@ static size_t decompress_bundle_to(char *ptr, size_t size, size_t nmemb, void *d
 		write_callback write = context->out.write;
 		data = context->out.context;
 
-		nmemb = nmemb * size - header_size;
-		size = 1;
+		nmemb = nmemb * size;
 
 		if (nmemb < 6)
 			die("Need at least 6 bytes for initial read");
@@ -245,7 +245,7 @@ static size_t decompress_bundle_to(char *ptr, size_t size, size_t nmemb, void *d
 	}
 
 passthrough:
-	return header_size + write_to(ptr, size, nmemb, &context->out);
+	return (header_size + write_to(ptr, 1, nmemb, &context->out)) / orig_size;
 }
 
 static int decompress_bundle_close(void *data)
