@@ -893,6 +893,11 @@ class VersionCheck(Thread):
 
 
 def run(func):
+    if os.environ.pop('GIT_CINNABAR_COVERAGE', None):
+        from coverage.cmdline import main as coverage_main
+        script_path = os.path.abspath(sys.argv[0])
+        sys.exit(coverage_main([
+            'run', '--append', script_path] + sys.argv[1:]))
     init_logging()
     if check_enabled('memory') or check_enabled('cpu'):
         reporter = MemoryCPUReporter(memory=check_enabled('memory'),

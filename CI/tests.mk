@@ -21,7 +21,7 @@ REPO ?= https://hg.mozilla.org/users/mh_glandium.org/jqplot
 HG = hg
 
 ifeq ($(VARIANT),coverage)
-export PATH := $(TOPDIR)/coverage$(PATHSEP)$(PATH)
+export GIT_CINNABAR_COVERAGE := 1
 export COVERAGE_FILE := $(TOPDIR)/.coverage
 endif
 
