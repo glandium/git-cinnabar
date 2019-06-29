@@ -90,6 +90,12 @@ class TestTask(Task):
                 ' refs/heads/branches/default/tip',
             ])
             kwargs.setdefault('env', {})['REPO'] = REPO
+        if variant == 'coverage':
+            command = [
+                'export GIT_CINNABAR_COVERAGE=1',
+                'export COVERAGE_FILE=$PWD/repo/.coverage',
+            ] + command
+
         if 'command' in kwargs:
             kwargs['command'] = command + kwargs['command']
         else:

@@ -19,12 +19,6 @@ export PYTHONDONTWRITEBYTECODE := 1
 REPO ?= https://hg.mozilla.org/users/mh_glandium.org/jqplot
 
 HG = hg
-
-ifeq ($(VARIANT),coverage)
-export GIT_CINNABAR_COVERAGE := 1
-export COVERAGE_FILE := $(TOPDIR)/.coverage
-endif
-
 GIT = git
 
 ifndef GIT_CINNABAR_OLD_HELPER

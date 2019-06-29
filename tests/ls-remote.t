@@ -1,5 +1,4 @@
   $ PATH=$TESTDIR/..:$PATH
-  $ export COVERAGE_FILE=$TESTDIR/../.coverage
 
   $ n=0
   $ create() {
