@@ -156,7 +156,7 @@ $(addprefix ../helper/,$(PATCHES:%.c.patch=%.patched.c)): ../helper/%.patched.c:
 clean-patched:
 	$(RM) $(addprefix ../helper/,$(PATCHES:%.c.patch=%.patched.c))
 
-$(addprefix ../,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c)):
+$(addprefix ../helper/,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c)):
 
 CINNABAR_OBJECTS += $(filter-out fast-import.patched.o,$(PATCHES:%.c.patch=%.patched.o))
 
@@ -180,6 +180,7 @@ git-cinnabar-helper$X: $(CINNABAR_OBJECTS) GIT-LDFLAGS $(GITLIBS)
 		$(CURL_LIBCURL) $(LIBS)
 
 cinnabar-helper.o: EXTRA_CPPFLAGS=-DHELPER_HASH=$(shell python ../git-cinnabar --version=helper 2> /dev/null | awk -F/ '{print $$NF}')
+cinnabar-helper.o: $(addprefix ../helper/,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c))
 
 $(CINNABAR_OBJECTS): %.o: ../helper/%.c GIT-CFLAGS $(missing_dep_dirs)
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
