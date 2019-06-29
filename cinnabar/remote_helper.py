@@ -442,10 +442,10 @@ class GitRemoteHelper(BaseRemoteHelper):
             logging.error(e.message)
             return 1
 
-        pushes = {Git.resolve_ref(s.lstrip('+')): (d, s.startswith('+'))
-                  for s, d in (r.split(':', 1) for r in refspecs)}
+        pushes = list((Git.resolve_ref(s.lstrip('+')), d, s.startswith('+'))
+                      for s, d in (r.split(':', 1) for r in refspecs))
         if not self._repo.capable('unbundle'):
-            for source, (dest, force) in pushes.iteritems():
+            for source, dest, force in pushes:
                 self._helper.write(
                     'error %s Remote does not support the "unbundle" '
                     'capability\n' % dest)
@@ -458,7 +458,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                           self._branchmap.names(), self._dry_run)
 
             status = {}
-            for source, (dest, _) in pushes.iteritems():
+            for source, dest, _ in pushes:
                 if dest.startswith('refs/tags/'):
                     if source:
                         status[dest] = 'Pushing tags is unsupported'
@@ -477,11 +477,12 @@ class GitRemoteHelper(BaseRemoteHelper):
                     continue
                 name = unquote(dest[len(bookmark_prefix):])
                 if source:
-                    source = self._store.hg_changeset(source) or ''
+                    source = self._store.hg_changeset(source)
                 status[dest] = self._repo.pushkey(
-                    'bookmarks', name, self._bookmarks.get(name, ''), source)
+                    'bookmarks', name, self._bookmarks.get(name, ''),
+                    source or '')
 
-            for source, (dest, force) in pushes.iteritems():
+            for source, dest, force in pushes:
                 if status[dest] is True:
                     self._helper.write('ok %s\n' % dest)
                 elif status[dest]:

@@ -550,24 +550,13 @@ Remove the bookmark pushed above.
   deleting remote bookmark qux
   [1]
 
-TODO: this should work
   $ git -C repo-git push origin :bookmarks/qux
-  \r (no-eol) (esc)
-  ERROR must be string or read-only buffer, not None
-  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
-  error: failed to push some refs to 'hg::.*/push-refs.t/repo-from-git' (re)
-  [1]
+  To hg::.*/push-refs.t/repo-from-git (re)
+   - [deleted]         bookmarks/qux
+
   $ git -C repo-git2 push origin :bookmarks/qux
-  \r (no-eol) (esc)
-  ERROR must be string or read-only buffer, not None
-  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
-  error: failed to push some refs to 'hg::.*/push-refs.t/repo-from-git2' (re)
-  [1]
-
-Apply what the above is expected to do.
-
-  $ hg -R $REPO-from-git bookmark -d qux
-  $ hg -R $REPO-from-git2 bookmark -d qux
+  To hg::.*/push-refs.t/repo-from-git2 (re)
+   - [deleted]         bookmarks/qux
 
   $ git -C repo-git ls-remote hg::$REPO-from-hg
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	HEAD
@@ -733,13 +722,10 @@ Remote multiple bookmarks.
   deleting remote bookmark hoge
   [1]
 
-TODO: this should work.
   $ git -C repo-git push origin :bookmarks/fuga :bookmarks/hoge
-  \r (no-eol) (esc)
-  ERROR must be string or read-only buffer, not None
-  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
-  error: failed to push some refs to 'hg::.*/push-refs.t/repo-from-git' (re)
-  [1]
+  To hg::.*/push-refs.t/repo-from-git (re)
+   - [deleted]         bookmarks/fuga
+   - [deleted]         bookmarks/hoge
 
   $ git -C repo-git ls-remote hg::$REPO-from-hg
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
@@ -751,8 +737,6 @@ TODO: this should work.
   $ git -C repo-git ls-remote
   From hg::.*/push-refs.t/repo-from-git (re)
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
-  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/bookmarks/fuga
-  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/hoge
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/bookmarks/qux
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip

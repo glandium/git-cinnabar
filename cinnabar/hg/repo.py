@@ -942,14 +942,14 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
             yield '^%s' % store.changeset_ref(sha1)
 
     def local_bases():
-        h = chain(heads(), (w for w in what if w))
+        h = chain(heads(), (w for w, _, _ in what if w))
         for c, t, p in GitHgHelper.rev_list('--topo-order', '--full-history',
                                             '--boundary', *h):
             if c[0] != '-':
                 continue
             yield store.hg_changeset(c[1:])
 
-        for w in what:
+        for w, _, _ in what:
             rev = store.hg_changeset(w)
             if rev:
                 yield rev
@@ -961,14 +961,14 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
         for sha1 in common:
             yield '^%s' % store.changeset_ref(sha1)
 
-    revs = chain(revs(), (w for w in what if w))
+    revs = chain(revs(), (w for w, _, _ in what if w))
     push_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
         '--topo-order', '--full-history', '--parents', '--reverse', *revs))
 
     pushed = False
     if push_commits:
         has_root = any(not p for (c, p) in push_commits)
-        force = all(v[1] for v in what.values())
+        force = all(v for _, _, v in what)
         if has_root and repo_heads:
             if not force:
                 raise Exception('Cannot push a new root')
