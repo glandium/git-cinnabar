@@ -145,7 +145,7 @@ class OtherServer(object):
 
 @command('serve-and-exec', ())
 def serve_and_exec(ui, repo, *command):
-    other_server = os.environ.get('OTHER_SERVER')
+    other_server = ui.config('serve', 'other', None)
     if other_server:
         other_server = OtherServer(other_server)
         other_server_thread = Thread(target=other_server.run)
