@@ -106,18 +106,6 @@ class TestTask(Task):
                 'make -C repo -f CI/tests.mk',
             ]
 
-        if task_env == 'linux' and clone and not commit and \
-                git == GIT_VERSION and \
-                all(k not in kwargs.get('env', {})
-                    for k in ('GIT_CINNABAR_EXPERIMENTS',
-                              'GIT_CINNABAR_OLD_HELPER')) and \
-                'no-mercurial' not in kwargs.get('env', {}) \
-                                            .get('GIT_CINNABAR_CHECK', ''):
-            kwargs['command'].append(
-                'env GIT_CINNABAR_CHECK=no-version-check'
-                ' cram --verbose repo/tests'
-            )
-
         if variant == 'coverage':
             kwargs['command'].extend([
                 'shopt -s nullglob',
@@ -354,6 +342,19 @@ def decision():
                 'make -C repo -f CI/tests.mk',
             ],
             env=env
+        )
+
+    for variant in ('coverage', 'asan'):
+        TestTask(
+            variant=variant,
+            extra_desc='cram',
+            clone=False,
+            command=[
+                'cram --verbose repo/tests',
+            ],
+            env={
+                'GIT_CINNABAR_CHECK': 'no-version-check',
+            },
         )
 
 
