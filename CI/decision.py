@@ -345,17 +345,19 @@ def decision():
         )
 
     for variant in ('coverage', 'asan'):
-        TestTask(
-            variant=variant,
-            extra_desc='cram',
-            clone=False,
-            command=[
-                'cram --verbose repo/tests',
-            ],
-            env={
-                'GIT_CINNABAR_CHECK': 'no-version-check',
-            },
-        )
+        for check in ([], ['no-mercurial']):
+            TestTask(
+                variant=variant,
+                extra_desc=' '.join(['cram'] + check),
+                clone=False,
+                command=[
+                    'cram --verbose repo/tests',
+                ],
+                env={
+                    'GIT_CINNABAR_CHECK': ','.join(
+                        ['no-version-check'] + check),
+                },
+            )
 
 
 @action('more-hg-versions',
