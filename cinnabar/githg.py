@@ -938,9 +938,11 @@ class GitHgStore(object):
                               stdout=open(os.devnull, 'wb'))
             shutil.copyfileobj(bundle, proc.stdin)
         else:
-            proc = GitProcess(
-                'fetch', '--no-tags', '--no-recurse-submodules', git_repo_url,
-                ref + ':refs/cinnabar/fetch', stdout=sys.stdout)
+            fetch = ['fetch', '--no-tags', '--no-recurse-submodules', '-q']
+            fetch.append('--progress' if util.progress else '--no-progress')
+            fetch.append(git_repo_url)
+            cmd = fetch + [ref + ':refs/cinnabar/fetch']
+            proc = GitProcess(*cmd, stdout=sys.stdout)
         if proc.wait():
             logging.error('Failed to fetch cinnabar metadata.')
             return False
@@ -982,9 +984,8 @@ class GitHgStore(object):
                 return False
 
             if not bundle:
-                proc = GitProcess(
-                    'fetch', '--no-tags', '--no-recurse-submodules',
-                    git_repo_url, *needed, stdout=sys.stdout)
+                cmd = fetch + needed
+                proc = GitProcess(*cmd, stdout=sys.stdout)
                 if proc.wait():
                     logging.error('Failed to fetch cinnabar metadata.')
                     return False
