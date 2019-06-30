@@ -90,7 +90,7 @@ Testing error conditions:
 TODO: Ideally, the error message would say the server could not be connected to.
 
   $ echo git://localhost/foo > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from git://localhost/foo
   \r (no-eol) (esc)
@@ -104,7 +104,7 @@ TODO: Ideally, the error message would say the server could not be connected to.
 - HTTP server does not listen.
 
   $ echo http://localhost:8080/ > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/
   \r (no-eol) (esc)
@@ -119,7 +119,7 @@ TODO: Ideally, the error message would say the server could not be connected to.
 TODO: git errors are repeating and lack newlines.
 
   $ sed -i '/other/s/=.*/= git/' $REPO/.hg/hgrc
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/
   Not a git repository: '.*/cinnabarclone.t'Not a git repository: '.*/cinnabarclone.t'Request not supported: '.*/cinnabarclone.t/'.* (re)
@@ -133,7 +133,7 @@ TODO: git errors are repeating and lack newlines.
 - cinnabarclone points to a non-existing server.
 
   $ echo http://this.cannot.possibly.exist.invalid-tld/ > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://this.cannot.possibly.exist.invalid-tld/
   \r (no-eol) (esc)
@@ -147,7 +147,7 @@ TODO: git errors are repeating and lack newlines.
 - cinnabarclone points to an url with unsupported protocol.
 
   $ echo ftp://this.cannot.possibly.exist.invalid-tld/ > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   \r (no-eol) (esc)
   WARNING Server advertizes cinnabarclone but provided a non http/https git repository. Skipping.
@@ -160,7 +160,7 @@ TODO: git errors are repeating and lack newlines.
 - cinnabarclone points to a file path
 
   $ echo /this/cannot/possibly/exist/invalid-dir/ > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   \r (no-eol) (esc)
   WARNING Server advertizes cinnabarclone but provided a non http/https git repository. Skipping.
@@ -175,7 +175,7 @@ TODO: git errors are repeating and lack newlines.
   $ git init -q non-cinnabar
   $ git -C non-cinnabar fetch -q ../cinnabarclone-incr refs/remotes/origin/*:refs/remotes/origin/*
   $ echo http://localhost:8080/non-cinnabar > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/non-cinnabar
   \r (no-eol) (esc)
@@ -190,7 +190,7 @@ TODO: git errors are repeating and lack newlines.
 
   $ sed -i '/other/s/=.*/= http/' $REPO/.hg/hgrc
   $ echo http://localhost:8080/non-existing.git > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/non-existing.git
   \r (no-eol) (esc)
@@ -205,7 +205,7 @@ TODO: git errors are repeating and lack newlines.
 
   $ echo foo > not-bundle.git
   $ echo http://localhost:8080/not-bundle.git > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/not-bundle.git
   \r (no-eol) (esc)
@@ -220,7 +220,7 @@ TODO: git errors are repeating and lack newlines.
 
   $ dd if=cinnabarclone-full.git of=truncated.git bs=1024 count=1 status=none
   $ echo http://localhost:8080/truncated.git > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/truncated.git
   fatal: early EOF
@@ -242,7 +242,7 @@ First, a full clone.
   $ > $CRAMTMP/accesslog
 
   $ echo http://localhost:8080/cinnabarclone-full.git > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/cinnabarclone-full.git
 
@@ -257,7 +257,7 @@ Then, a partial clone.
   $ > $CRAMTMP/accesslog
 
   $ echo http://localhost:8080/cinnabarclone-incr.git > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/cinnabarclone-incr.git
 
@@ -275,7 +275,7 @@ First, a full clone.
   $ > $CRAMTMP/accesslog
 
   $ echo http://localhost:8080/cinnabarclone-full > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/cinnabarclone-full
 
@@ -290,7 +290,7 @@ Then, a partial clone.
   $ > $CRAMTMP/accesslog
 
   $ echo http://localhost:8080/cinnabarclone-incr > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/cinnabarclone-incr
 
@@ -309,7 +309,7 @@ First, a full clone.
 
   $ echo git://localhost/cinnabarclone-full > $REPO/.hg/cinnabar.manifest
   $ git daemon --export-all --pid-file=git-daemon.pid --detach --base-path=$PWD $PWD
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from git://localhost/cinnabarclone-full
 
@@ -324,7 +324,7 @@ Then, a partial clone.
   $ > $CRAMTMP/accesslog
 
   $ echo git://localhost/cinnabarclone-incr > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from git://localhost/cinnabarclone-incr
 
@@ -343,7 +343,7 @@ Git config takes precedence over whatever the mercurial server might say
 
   $ sed -i '/other/s/=.*/= http/' $REPO/.hg/hgrc
   $ echo http://this.cannot.possibly.exist.invalid-tld/ > $REPO/.hg/cinnabar.manifest
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.clone=http://localhost:8080/cinnabarclone-full.git -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.clone=http://localhost:8080/cinnabarclone-full.git clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/cinnabarclone-full.git
 
@@ -355,7 +355,7 @@ Git config takes precedence over whatever the mercurial server might say
 
 Can disable via git config
 
-  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.clone= -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.clone= clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
 
   $ grep -q cmd=getbundle $CRAMTMP/accesslog

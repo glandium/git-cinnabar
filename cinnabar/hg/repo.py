@@ -884,8 +884,7 @@ def getbundle(repo, store, heads, branch_names):
         if not common:
             if not store._has_metadata and not store._graft:
                 manifest = Git.config('cinnabar.clone')
-                if manifest is None and experiment('git-clone') and \
-                        repo.capable('cinnabarclone'):
+                if manifest is None and repo.capable('cinnabarclone'):
                     manifest = repo._call('cinnabarclone')
                 if manifest:
                     got_partial = do_cinnabarclone(repo, manifest, store)

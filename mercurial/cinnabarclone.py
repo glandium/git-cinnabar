@@ -4,13 +4,14 @@
 """Advertize pre-generated git-cinnabar clones
 
 "cinnabarclone" is a mercurial server-side extension used to advertize the
-existence of pre-generated, externally hosted git repository providing
-git-cinnabar metadata corresponding to the mercurial repository.
+existence of pre-generated, externally hosted git repository or bundle
+providing git-cinnabar metadata corresponding to the mercurial repository.
 Cloning from such a git repository can be faster than cloning from
 mercurial directly.
 
-This extension will look for a `.hg/cinnabar.manifest` file on the server
-side to serve to clients requesting a `cinnabarclone`.
+This extension will look for a `.hg/cinnabar.manifest` file in the
+repository on the server side to serve to clients requesting a
+`cinnabarclone`.
 
 The file contains a list of git repository or bundles urls to be pulled
 from, one after the other. Each line has the format:
@@ -34,6 +35,13 @@ it will try the following branches:
   - server/dir_a/dir_b/repo
   - metadata
 
+To create a git repository or bundle for use with this extension, first
+clone the mercurial repository with git-cinnabar. For a git repository,
+push the `refs/cinnabar/metadata` ref to the git repository, renaming it
+as necessary to match the optional `<branch>` name configured in the
+`cinnabar.manifest` file. For a bundle, use a command like `git bundle
+create <bundle-file> refs/cinnabar/metadata`, and upload the resulting
+bundle-file to a HTTP/HTTPS server.
 """
 
 from __future__ import absolute_import
