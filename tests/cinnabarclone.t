@@ -353,12 +353,12 @@ Git config takes precedence over whatever the mercurial server might say
   $ check_clone repo-git
   $ rm -rf repo-git
 
-TODO: Can disable via git config
+Can disable via git config
 
-#  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.clone= -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
-#  Cloning into 'repo-git'...
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.clone= -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  Cloning into 'repo-git'...
 
-#  $ grep -q cmd=getbundle $CRAMTMP/accesslog
+  $ grep -q cmd=getbundle $CRAMTMP/accesslog
 
-#  $ check_clone repo-git
-#  $ rm -rf repo-git
+  $ check_clone repo-git
+  $ rm -rf repo-git
