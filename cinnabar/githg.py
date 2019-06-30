@@ -50,6 +50,7 @@ from .hg.objects import (
 from .helper import GitHgHelper
 from .util import progress_iter
 from .dag import gitdag
+from cinnabar import util
 
 import logging
 
@@ -931,7 +932,8 @@ class GitHgStore(object):
             return False
 
         if bundle:
-            proc = GitProcess('index-pack', '--stdin', '-v', '--fix-thin',
+            args = ('-v',) if util.progress else ()
+            proc = GitProcess('index-pack', '--stdin', '--fix-thin', *args,
                               stdin=subprocess.PIPE,
                               stdout=open(os.devnull, 'wb'))
             shutil.copyfileobj(bundle, proc.stdin)
