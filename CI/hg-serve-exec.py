@@ -157,7 +157,6 @@ def serve_and_exec(ui, repo, *command):
     repo.baseui.setconfig('web', 'allow_push', '*', 'hgweb')
     app = hgweb.hgweb(repo, baseui=ui)
     service = httpservice(ui, app, {'port': 8000, 'print_url': False})
-    print(command)
     service.init()
     service_thread = Thread(target=service.run)
     service_thread.start()
