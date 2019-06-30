@@ -908,7 +908,8 @@ class GitHgStore(object):
             sha1, ref = line.split(None, 1)
             remote_refs[ref] = sha1
         bundle = None
-        if not remote_refs:
+        if not remote_refs and urlparse(git_repo_url).scheme in ('http',
+                                                                 'https'):
             try:
                 bundle = HTTPReader(git_repo_url)
             except URLError as e:

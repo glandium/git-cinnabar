@@ -84,12 +84,26 @@ Incremental cinnabarclone with git http smart protocol
   > other =
   > EOF
 
-  $ echo http://localhost:8080/ > $REPO/.hg/cinnabar.manifest
-
 Testing error conditions:
 
-- Server does not listen.
+- Git server does not listen.
+TODO: Ideally, the error message would say the server could not be connected to.
 
+  $ echo git://localhost/foo > $REPO/.hg/cinnabar.manifest
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  Cloning into 'repo-git'...
+  Fetching cinnabar metadata from git://localhost/foo
+  \r (no-eol) (esc)
+  ERROR Could not find cinnabar metadata
+  \r (no-eol) (esc)
+  WARNING Falling back to normal clone.
+
+  $ check_clone repo-git
+  $ rm -rf repo-git
+
+- HTTP server does not listen.
+
+  $ echo http://localhost:8080/ > $REPO/.hg/cinnabar.manifest
   $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/
@@ -290,35 +304,38 @@ Same thing again, with a git daemon.
   $ sed -i '/other/s/=.*/=/' $REPO/.hg/hgrc
 
 First, a full clone.
-TODO: this currently does not work (presumably, support for bundles broke it)
-TODO: needs a git daemon setup.
 
   $ > $CRAMTMP/accesslog
 
   $ echo git://localhost/cinnabarclone-full > $REPO/.hg/cinnabar.manifest
-#  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
-#  Cloning into 'repo-git'...
-#  Fetching cinnabar metadata from git://localhost/cinnabarclone-full
+  $ git daemon --export-all --pid-file=git-daemon.pid --detach --base-path=$PWD $PWD
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  Cloning into 'repo-git'...
+  Fetching cinnabar metadata from git://localhost/cinnabarclone-full
 
-#  $ grep -q cmd=getbundle $CRAMTMP/accesslog
-#  [1]
+  $ grep -q cmd=getbundle $CRAMTMP/accesslog
+  [1]
 
-#  $ check_clone repo-git
-#  $ rm -rf repo-git
+  $ check_clone repo-git
+  $ rm -rf repo-git
 
 Then, a partial clone.
 
   $ > $CRAMTMP/accesslog
 
   $ echo git://localhost/cinnabarclone-incr > $REPO/.hg/cinnabar.manifest
-#  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
-#  Cloning into 'repo-git'...
-#  Fetching cinnabar metadata from git://localhost/cinnabarclone-incr
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  Cloning into 'repo-git'...
+  Fetching cinnabar metadata from git://localhost/cinnabarclone-incr
 
-#  $ grep -q cmd=getbundle $CRAMTMP/accesslog
+  $ grep -q cmd=getbundle $CRAMTMP/accesslog
 
-#  $ check_clone repo-git
-#  $ rm -rf repo-git
+  $ check_clone repo-git
+  $ rm -rf repo-git
+
+Kill git daemon.
+
+  $ kill $(cat git-daemon.pid)
 
 Git config takes precedence over whatever the mercurial server might say
 
