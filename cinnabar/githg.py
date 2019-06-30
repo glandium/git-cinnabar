@@ -15,6 +15,7 @@ from collections import (
     Sequence,
     defaultdict,
 )
+from urllib2 import URLError
 from urlparse import urlparse
 from .exceptions import (
     AmbiguousGraftAbort,
@@ -908,7 +909,11 @@ class GitHgStore(object):
             remote_refs[ref] = sha1
         bundle = None
         if not remote_refs:
-            bundle = HTTPReader(git_repo_url)
+            try:
+                bundle = HTTPReader(git_repo_url)
+            except URLError as e:
+                logging.error(e.reason)
+                return False
             BUNDLE_SIGNATURE = '# v2 git bundle\n'
             signature = bundle.read(len(BUNDLE_SIGNATURE))
             if signature != BUNDLE_SIGNATURE:

@@ -88,9 +88,18 @@ Incremental cinnabarclone with git http smart protocol
 
 Testing error conditions:
 
-- TODO: Server does not listen (currently fails to fall back)
+- Server does not listen.
 
-#  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  Cloning into 'repo-git'...
+  Fetching cinnabar metadata from http://localhost:8080/
+  \r (no-eol) (esc)
+  ERROR [Errno 111] Connection refused
+  \r (no-eol) (esc)
+  WARNING Falling back to normal clone.
+
+  $ check_clone repo-git
+  $ rm -rf repo-git
 
 - Server listens but does not serve a repository or bundle
 TODO: git errors are repeating and lack newlines.
@@ -107,19 +116,19 @@ TODO: git errors are repeating and lack newlines.
   $ check_clone repo-git
   $ rm -rf repo-git
 
-- TODO: cinnabarclone points to a non-existing server (currently fails)
+- cinnabarclone points to a non-existing server.
 
   $ echo http://this.cannot.possibly.exist.invalid-tld/ > $REPO/.hg/cinnabar.manifest
-#  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
-#  Cloning into 'repo-git'...
-#  Fetching cinnabar metadata from http://this.cannot.possibly.exist.invalid-tld/
-#  \r (no-eol) (esc)
-#  ERROR Could not find cinnabar metadata
-#  \r (no-eol) (esc)
-#  WARNING Falling back to normal clone.
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  Cloning into 'repo-git'...
+  Fetching cinnabar metadata from http://this.cannot.possibly.exist.invalid-tld/
+  \r (no-eol) (esc)
+  ERROR [Errno -2] Name or service not known
+  \r (no-eol) (esc)
+  WARNING Falling back to normal clone.
 
-#  $ check_clone repo-git
-#  $ rm -rf repo-git
+  $ check_clone repo-git
+  $ rm -rf repo-git
 
 - cinnabarclone points to an url with unsupported protocol.
 
@@ -163,20 +172,20 @@ TODO: git errors are repeating and lack newlines.
   $ check_clone repo-git
   $ rm -rf repo-git
 
-- TODO: Server listens, but serves a 404 (currently fails)
+- Server listens, but serves a 404.
 
   $ sed -i '/other/s/=.*/= http/' $REPO/.hg/hgrc
   $ echo http://localhost:8080/non-existing.git > $REPO/.hg/cinnabar.manifest
-#  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
-#  Cloning into 'repo-git'...
-#  Fetching cinnabar metadata from http://localhost:8080/non-existing.git
-#  \r (no-eol) (esc)
-#  ERROR Could not find cinnabar metadata
-#  \r (no-eol) (esc)
-#  WARNING Falling back to normal clone.
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
+  Cloning into 'repo-git'...
+  Fetching cinnabar metadata from http://localhost:8080/non-existing.git
+  \r (no-eol) (esc)
+  ERROR File not found
+  \r (no-eol) (esc)
+  WARNING Falling back to normal clone.
 
-#  $ check_clone repo-git
-#  $ rm -rf repo-git
+  $ check_clone repo-git
+  $ rm -rf repo-git
 
 - Server listens, but serves a non-bundle file.
 
