@@ -88,7 +88,7 @@ Incremental cinnabarclone with git http smart protocol
 
 Testing error conditions:
 
-- TODO: Server does not listen (currently fails to fall back, and somehow prints a full traceback, which shouldnt be happening)
+- TODO: Server does not listen (currently fails to fall back)
 
 #  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
 
@@ -107,7 +107,7 @@ TODO: git errors are repeating and lack newlines.
   $ check_clone repo-git
   $ rm -rf repo-git
 
-- TODO: cinnabarclone points to a non-existing server (currently fails with a traceback)
+- TODO: cinnabarclone points to a non-existing server (currently fails)
 
   $ echo http://this.cannot.possibly.exist.invalid-tld/ > $REPO/.hg/cinnabar.manifest
 #  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.experiments=git-clone clone -n hg::http://localhost:8000/ repo-git
@@ -163,7 +163,7 @@ TODO: git errors are repeating and lack newlines.
   $ check_clone repo-git
   $ rm -rf repo-git
 
-- TODO: Server listens, but serves a 404 (currently fails with a full traceback)
+- TODO: Server listens, but serves a 404 (currently fails)
 
   $ sed -i '/other/s/=.*/= http/' $REPO/.hg/hgrc
   $ echo http://localhost:8080/non-existing.git > $REPO/.hg/cinnabar.manifest

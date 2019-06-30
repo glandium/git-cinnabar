@@ -913,10 +913,11 @@ def run(func):
     except Exception as e:
         # Catch all exceptions and provide a nice message
         retcode = 70  # Internal software error
-        if check_enabled('traceback') or not getattr(e, 'message', None):
+        message = getattr(e, 'message', None) or getattr(e, 'reason', None)
+        if check_enabled('traceback') or not message:
             traceback.print_exc()
         else:
-            logging.error(e.message)
+            logging.error(message)
 
             sys.stderr.write(
                 'Run the command again with '
