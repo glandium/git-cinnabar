@@ -735,7 +735,10 @@ def get_clonebundle(repo):
         return None
 
     sys.stderr.write('Getting clone bundle from %s\n' % url)
+    return get_bundle(url)
 
+
+def get_bundle(url):
     reader = None
     if not changegroup:
         reader = BundleHelper.connect(url)
