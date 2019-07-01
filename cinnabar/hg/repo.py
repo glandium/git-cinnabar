@@ -36,7 +36,6 @@ from cinnabar.util import (
     HTTPReader,
     check_enabled,
     chunkbuffer,
-    experiment,
     progress_enum,
     progress_iter,
 )
