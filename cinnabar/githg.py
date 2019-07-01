@@ -15,6 +15,7 @@ from collections import (
     Sequence,
     defaultdict,
 )
+from urllib2 import URLError
 from urlparse import urlparse
 from .exceptions import (
     AmbiguousGraftAbort,
@@ -50,6 +51,7 @@ from .hg.objects import (
 from .helper import GitHgHelper
 from .util import progress_iter
 from .dag import gitdag
+from cinnabar import util
 
 import logging
 
@@ -906,8 +908,13 @@ class GitHgStore(object):
             sha1, ref = line.split(None, 1)
             remote_refs[ref] = sha1
         bundle = None
-        if not remote_refs:
-            bundle = HTTPReader(git_repo_url)
+        if not remote_refs and urlparse(git_repo_url).scheme in ('http',
+                                                                 'https'):
+            try:
+                bundle = HTTPReader(git_repo_url)
+            except URLError as e:
+                logging.error(e.reason)
+                return False
             BUNDLE_SIGNATURE = '# v2 git bundle\n'
             signature = bundle.read(len(BUNDLE_SIGNATURE))
             if signature != BUNDLE_SIGNATURE:
@@ -931,14 +938,17 @@ class GitHgStore(object):
             return False
 
         if bundle:
-            proc = GitProcess('index-pack', '--stdin', '-v',
+            args = ('-v',) if util.progress else ()
+            proc = GitProcess('index-pack', '--stdin', '--fix-thin', *args,
                               stdin=subprocess.PIPE,
                               stdout=open(os.devnull, 'wb'))
             shutil.copyfileobj(bundle, proc.stdin)
         else:
-            proc = GitProcess(
-                'fetch', '--no-tags', '--no-recurse-submodules', git_repo_url,
-                ref + ':refs/cinnabar/fetch', stdout=sys.stdout)
+            fetch = ['fetch', '--no-tags', '--no-recurse-submodules', '-q']
+            fetch.append('--progress' if util.progress else '--no-progress')
+            fetch.append(git_repo_url)
+            cmd = fetch + [ref + ':refs/cinnabar/fetch']
+            proc = GitProcess(*cmd, stdout=sys.stdout)
         if proc.wait():
             logging.error('Failed to fetch cinnabar metadata.')
             return False
@@ -968,19 +978,23 @@ class GitHgStore(object):
             for line in Git.ls_tree(commit.tree):
                 mode, typ, sha1, path = line
                 if sha1 in by_sha1:
-                    needed.append('%s:refs/cinnabar/replace/%s' % (
-                        by_sha1[sha1], path))
+                    ref = 'refs/cinnabar/replace/%s' % path
+                    if bundle:
+                        Git.update_ref(ref, sha1)
+                    else:
+                        needed.append(':'.join((by_sha1[sha1], ref)))
                 else:
                     logging.error('Missing commit: %s', sha1)
                     errors = True
             if errors:
                 return False
 
-            proc = GitProcess('fetch', '--no-tags', '--no-recurse-submodules',
-                              git_repo_url, *needed, stdout=sys.stdout)
-            if proc.wait():
-                logging.error('Failed to fetch cinnabar metadata.')
-                return False
+            if not bundle:
+                cmd = fetch + needed
+                proc = GitProcess(*cmd, stdout=sys.stdout)
+                if proc.wait():
+                    logging.error('Failed to fetch cinnabar metadata.')
+                    return False
 
         Git.update_ref('refs/cinnabar/metadata', commit.sha1)
         self._metadata_sha1 = commit.sha1

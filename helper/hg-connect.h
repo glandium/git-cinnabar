@@ -24,6 +24,7 @@ struct hg_connection {
 		struct {
 			struct child_process proc;
 			FILE *out;
+			pthread_t thread;
 			int is_remote;
 		} stdio;
 		struct {
@@ -33,39 +34,39 @@ struct hg_connection {
 	};
 };
 
-extern struct hg_connection *hg_connect(const char *url, int flags);
+struct hg_connection *hg_connect(const char *url, int flags);
 
-extern const char *hg_get_capability(struct hg_connection *conn,
-				     const char *name);
+const char *hg_get_capability(struct hg_connection *conn,
+                              const char *name);
 
-extern int hg_finish_connect(struct hg_connection *conn);
+int hg_finish_connect(struct hg_connection *conn);
 
-extern void hg_get_repo_state(struct hg_connection *conn,
-			      struct strbuf *branchmap, struct strbuf *heads,
-			      struct strbuf *bookmarks);
+void hg_get_repo_state(struct hg_connection *conn,
+                       struct strbuf *branchmap, struct strbuf *heads,
+                       struct strbuf *bookmarks);
 
-extern void hg_known(struct hg_connection *conn, struct strbuf *result,
-		     struct oid_array *nodes);
+void hg_known(struct hg_connection *conn, struct strbuf *result,
+              struct oid_array *nodes);
 
-extern void hg_getbundle(struct hg_connection *conn, FILE *out,
-			 struct oid_array *heads, struct oid_array *common,
-			 const char *bundle2caps);
+void hg_getbundle(struct hg_connection *conn, FILE *out,
+                  struct oid_array *heads, struct oid_array *common,
+                  const char *bundle2caps);
 
-extern void hg_unbundle(struct hg_connection *conn, struct strbuf *response,
-			FILE *in, struct oid_array *heads);
+void hg_unbundle(struct hg_connection *conn, struct strbuf *response,
+                 FILE *in, struct oid_array *heads);
 
-extern void hg_pushkey(struct hg_connection *conn, struct strbuf *response,
-		       const char *namespace, const char *key, const char *old,
-		       const char *new);
+void hg_pushkey(struct hg_connection *conn, struct strbuf *response,
+                const char *namespace, const char *key, const char *old,
+                const char *new);
 
-extern void hg_listkeys(struct hg_connection *conn, struct strbuf *result,
-			const char *namespace);
+void hg_listkeys(struct hg_connection *conn, struct strbuf *result,
+                 const char *namespace);
 
-extern void hg_lookup(struct hg_connection *conn, struct strbuf *result,
-		      const char *key);
+void hg_lookup(struct hg_connection *conn, struct strbuf *result,
+               const char *key);
 
-extern void hg_clonebundles(struct hg_connection *conn, struct strbuf *result);
+void hg_clonebundles(struct hg_connection *conn, struct strbuf *result);
 
-extern void hg_cinnabarclone(struct hg_connection *conn, struct strbuf *result);
+void hg_cinnabarclone(struct hg_connection *conn, struct strbuf *result);
 
 #endif

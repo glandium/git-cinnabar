@@ -32,7 +32,7 @@ static void cleanup();
 static struct pack_window *pack_win;
 static struct pack_window *prev_win;
 
-extern void hashwrite(struct hashfile *, const void *, unsigned int);
+void hashwrite(struct hashfile *, const void *, unsigned int);
 
 void fast_import_hashwrite(struct hashfile *f, const void *buf,
 			   unsigned int count)
@@ -92,8 +92,8 @@ void fast_import_hashwrite(struct hashfile *f, const void *buf,
 	}
 }
 
-extern off_t real_find_pack_entry_one(const unsigned char *sha1,
-				      struct packed_git *p);
+off_t real_find_pack_entry_one(const unsigned char *sha1,
+                               struct packed_git *p);
 
 off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
 {
@@ -245,7 +245,7 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 	if (**endptr == ':') {
 		char *path_end = strpbrk(++(*endptr), " \n");
 		if (path_end) {
-			unsigned mode;
+			unsigned short mode;
 			char *path = xstrndup(*endptr, path_end - *endptr);
 			if (!get_tree_entry(note, path, &git_oid, &mode))
 				note = &git_oid;

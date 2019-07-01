@@ -8,7 +8,7 @@ typedef size_t (*write_callback)(char *ptr, size_t size, size_t nmemb, void *con
 typedef int (*close_callback)(void *context);
 
 #ifdef NO_CURL
-extern size_t fwrite_buffer(char *ptr, size_t size, size_t nmemb, void *strbuf);
+size_t fwrite_buffer(char *ptr, size_t size, size_t nmemb, void *strbuf);
 #endif
 
 struct writer {
@@ -31,12 +31,14 @@ int writer_close(struct writer* writer)
 	return 0;
 }
 
-extern size_t copy_to(FILE *in, size_t len, struct writer *writer);
+size_t copy_to(FILE *in, size_t len, struct writer *writer);
 
-extern void bufferize_writer(struct writer *writer);
+void bufferize_writer(struct writer *writer);
 
-extern void inflate_writer(struct writer *writer);
+void inflate_writer(struct writer *writer);
 
-extern void pipe_writer(struct writer *writer, const char **argv);
+void pipe_writer(struct writer *writer, const char **argv);
+
+void prefix_writer(struct writer *writer, const char *prefix);
 
 #endif

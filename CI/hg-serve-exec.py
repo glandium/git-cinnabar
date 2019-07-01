@@ -14,6 +14,7 @@ except AttributeError:
     from mercurial import registrar as cmdutil
 from mercurial import hgweb
 from mercurial.hgweb import common
+from mercurial.hgweb.server import openlog
 try:
     httpservice = hgweb.httpservice
 except AttributeError:
@@ -87,11 +88,29 @@ def perform_authentication(hgweb, req, op):
             raise common.ErrorResponse(common.HTTP_FORBIDDEN, 'no')
 
 
-def extsetup():
+def extsetup(ui):
     common.permhooks.insert(0, perform_authentication)
 
 
-class GitServer(BaseHTTPRequestHandler):
+def HgLogging(cls):
+    class Logging(cls):
+        # Copied from mercurial's hgweb/server.py.
+        def _log_any(self, fp, format, *args):
+            fp.write('%s - - [%s] %s' % (self.client_address[0],
+                                         self.log_date_time_string(),
+                                         format % args) + '\n')
+            fp.flush()
+
+        def log_error(self, format, *args):
+            self._log_any(self.server.errorlog, format, *args)
+
+        def log_message(self, format, *args):
+            self._log_any(self.server.accesslog, format, *args)
+
+    return Logging
+
+
+class GitServer(HgLogging(BaseHTTPRequestHandler)):
     def do_GET(self):
         self.git_http_backend()
 
@@ -130,14 +149,16 @@ class GitServer(BaseHTTPRequestHandler):
 
 
 class OtherServer(object):
-    def __init__(self, typ):
+    def __init__(self, typ, ui):
         if typ == 'git':
             cls = GitServer
         elif typ == 'http':
-            cls = SimpleHTTPRequestHandler
+            cls = HgLogging(SimpleHTTPRequestHandler)
         else:
             assert False
         self.httpd = HTTPServer(('', 8080), cls)
+        self.httpd.accesslog = openlog(ui.config('web', 'accesslog'), ui.fout)
+        self.httpd.errorlog = openlog(ui.config('web', 'errorlog'), ui.ferr)
 
     def run(self):
         self.httpd.serve_forever()
@@ -145,9 +166,9 @@ class OtherServer(object):
 
 @command('serve-and-exec', ())
 def serve_and_exec(ui, repo, *command):
-    other_server = os.environ.get('OTHER_SERVER')
+    other_server = ui.config('serve', 'other', None)
     if other_server:
-        other_server = OtherServer(other_server)
+        other_server = OtherServer(other_server, ui)
         other_server_thread = Thread(target=other_server.run)
         other_server_thread.start()
     ui.setconfig('web', 'push_ssl', False, 'hgweb')
@@ -157,7 +178,6 @@ def serve_and_exec(ui, repo, *command):
     repo.baseui.setconfig('web', 'allow_push', '*', 'hgweb')
     app = hgweb.hgweb(repo, baseui=ui)
     service = httpservice(ui, app, {'port': 8000, 'print_url': False})
-    print(command)
     service.init()
     service_thread = Thread(target=service.run)
     service_thread.start()

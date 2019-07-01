@@ -30,7 +30,7 @@ Please run `git cinnabar fsck` with version 0.3.0 first.
 Requirements:
 -------------
 
-- Git (any version should work)
+- Git (any version should work ; cinnabarclone bundles require 1.4.4)
 - Python 2.7
 - Mercurial version 1.9 or newer
 
@@ -178,6 +178,19 @@ preference with one of the following values:
 `phase` is the default described above. `always` and `never` are
 self-explanatory.
 
+Cinnabar clone:
+---------------
+
+For large repositories, an initial clone can take a large amount of time.
+A Mercurial server operator can install the extension provided in
+`mercurial/cinnabarclone.py`, and point to a git repository or bundle
+containing pre-generated git-cinnabar metadata. See details in the
+extension file.
+
+Users cloning the repository would automatically get the metadata from
+the git repository or bundle, and then pull the missing changesets from
+the Mercurial repository.
+
 Limitations:
 ------------
 
@@ -266,16 +279,3 @@ comma-separated list of those features to enable the selected ones, or to
   currently doesn’t handle the case where a file was moved on one of the
   branches the same way mercurial would (i.e. the information would be lost to
   mercurial users).
-
-- **git-clone**
-
-  For large repositories, an initial clone can take a large amount of time.
-  This experimental feature allows to get an initial clone (including
-  git-cinnabar metadata) from a git repository. This requires an extension on
-  the mercurial server (see mercurial/cinnabarclone.py), and to push a fresh
-  `refs/cinnabar/metadata` to some git repository.
-
-  It can also be used without the extension on the mercurial server, by setting
-  the `cinnabar.clone` git configuration item to the url of the git cinnabar
-  metadata repository as it would be set up in the mercurial server
-  configuration.
