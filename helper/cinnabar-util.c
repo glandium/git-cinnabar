@@ -7,11 +7,9 @@
 #ifdef NO_CURL
 size_t fwrite_buffer(char *ptr, size_t size, size_t nmemb, void *buffer_)
 {
-	size_t size = size * nmemb;
 	struct strbuf *buffer = buffer_;
-
-	strbuf_add(buffer, ptr, size);
-	return size;
+	strbuf_add(buffer, ptr, size * nmemb);
+	return nmemb;
 }
 #else
 #include "http.h"
@@ -22,8 +20,10 @@ size_t copy_to(FILE *in, size_t len, struct writer *writer)
 	char buf[4096];
 	size_t ret = len;
 	while (len) {
-		uint32_t sz = len > sizeof(buf) ? sizeof(buf) : len;
-		fread(buf, 1, sz, in);
+		size_t sz = len > sizeof(buf) ? sizeof(buf) : len;
+		size_t sz_read = fread(buf, 1, sz, in);
+		if (sz_read < sz)
+			return ret - len + sz_read;
 		len -= write_to(buf, 1, sz, writer);
 	}
 	return ret;
@@ -77,7 +77,7 @@ static size_t buffered_write(char *ptr, size_t size, size_t nmemb, void *context
 			create_buffer(context);
 		pthread_mutex_unlock(&context->mutex);
 	} while (in.len);
-	return size * nmemb;
+	return nmemb;
 }
 
 static int buffered_close(void *context_)
@@ -174,7 +174,7 @@ static size_t inflate_to(char *ptr, size_t size, size_t nmemb, void *data)
 		write_to(buf, 1, sizeof(buf) - context->strm.avail_out, &context->out);
 	} while (context->strm.avail_in && ret == Z_OK);
 
-	return size * nmemb;
+	return nmemb;
 }
 
 static int inflate_close(void *data)
@@ -235,5 +235,54 @@ void pipe_writer(struct writer *writer, const char **argv) {
 	context->pipe = xfdopen(context->proc.in, "w");
 	writer->write = pipe_write;
 	writer->close = pipe_close;
+	writer->context = context;
+}
+
+struct prefix_context {
+	struct writer out;
+	size_t prefix_len;
+	struct strbuf buf;
+};
+
+static size_t prefix_write(char *ptr, size_t size, size_t nmemb, void *data)
+{
+	struct prefix_context *context = data;
+	size_t len = size * nmemb;
+	struct strslice slice = { len, ptr };
+	for (;;) {
+		struct strslice line = strslice_split_once(&slice, '\n');
+		strbuf_addslice(&context->buf, line);
+		if (slice.len != len) {
+			strbuf_addch(&context->buf, '\n');
+			write_to(context->buf.buf, 1, context->buf.len,
+			         &context->out);
+			strbuf_setlen(&context->buf, context->prefix_len);
+			len = slice.len;
+		} else {
+			break;
+		}
+	}
+	strbuf_addslice(&context->buf, slice);
+	return size * nmemb;
+}
+
+static int prefix_close(void *data)
+{
+	struct prefix_context *context = data;
+	if (context->buf.len > context->prefix_len)
+		write_to(context->buf.buf, 1, context->buf.len, &context->out);
+	strbuf_release(&context->buf);
+	return writer_close(&context->out);
+}
+
+void prefix_writer(struct writer *writer, const char *prefix)
+{
+	struct prefix_context *context = xcalloc(1, sizeof(struct prefix_context));
+	context->out = *writer;
+	strbuf_init(&context->buf, 0);
+	strbuf_addstr(&context->buf, prefix);
+	context->prefix_len = context->buf.len;
+	writer->write = prefix_write;
+	writer->close = prefix_close;
 	writer->context = context;
 }

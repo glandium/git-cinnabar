@@ -173,7 +173,29 @@ static int stdio_finish(struct hg_connection *conn)
 	stdio_send_command(conn, "", NULL);
 	close(conn->stdio.proc.in);
 	fclose(conn->stdio.out);
+	pthread_join(conn->stdio.thread, NULL);
 	return finish_command(&conn->stdio.proc);
+}
+
+void *prefix_remote_stderr(void *context)
+{
+	struct hg_connection *conn = context;
+	struct writer writer;
+
+	writer.write = (write_callback)fwrite;
+	writer.close = (close_callback)fflush;
+	writer.context = stderr;
+	prefix_writer(&writer, "remote: ");
+
+	for (;;) {
+		char buf[4096];
+		ssize_t len = xread(conn->stdio.proc.err, buf, 4096);
+		if (len <= 0)
+			break;
+		write_to(buf, 1, len, &writer);
+	}
+	writer_close(&writer);
+	return NULL;
 }
 
 struct hg_connection *hg_connect_stdio(const char *url, int flags)
@@ -190,7 +212,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 
 	child_process_init(proc);
 	proc->env = local_repo_env;
-	proc->in = proc->out = -1;
+	proc->in = proc->out = proc->err = -1;
 
 	remote_path = path;
 
@@ -238,6 +260,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	start_command(proc);
 	conn->stdio.is_remote = (protocol == PROTO_SSH);
 	conn->stdio.out = xfdopen(proc->out, "r");
+	pthread_create(&conn->stdio.thread, NULL, prefix_remote_stderr, conn);
 	// TODO: return earlier in case the command fails somehow.
 
 	free(path);

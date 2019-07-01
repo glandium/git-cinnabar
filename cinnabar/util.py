@@ -139,7 +139,7 @@ check_enabled = ConfigSetFunc(
 
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
-    ('merge', 'git-clone'),
+    ('merge',),
 )
 
 
@@ -893,6 +893,11 @@ class VersionCheck(Thread):
 
 
 def run(func):
+    if os.environ.pop('GIT_CINNABAR_COVERAGE', None):
+        from coverage.cmdline import main as coverage_main
+        script_path = os.path.abspath(sys.argv[0])
+        sys.exit(coverage_main([
+            'run', '--append', script_path] + sys.argv[1:]))
     init_logging()
     if check_enabled('memory') or check_enabled('cpu'):
         reporter = MemoryCPUReporter(memory=check_enabled('memory'),
@@ -908,10 +913,11 @@ def run(func):
     except Exception as e:
         # Catch all exceptions and provide a nice message
         retcode = 70  # Internal software error
-        if check_enabled('traceback') or not getattr(e, 'message', None):
+        message = getattr(e, 'message', None) or getattr(e, 'reason', None)
+        if check_enabled('traceback') or not message:
             traceback.print_exc()
         else:
-            logging.error(e.message)
+            logging.error(message)
 
             sys.stderr.write(
                 'Run the command again with '

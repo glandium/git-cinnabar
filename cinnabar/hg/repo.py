@@ -732,9 +732,27 @@ def do_cinnabarclone(repo, manifest, store):
     for line in manifest.splitlines():
         line = line.strip()
         spec, _, params = line.partition(' ')
+        params = {
+            k: v
+            for k, _, v in (p.partition('=') for p in params.split())
+        }
+        graft = params.pop('graft', None)
         if params:
-            # Future proofing: ignore lines with params.
+            # Future proofing: ignore lines with unknown params, even if we
+            # support some that are present.
             continue
+        if graft:
+            graft = graft.split(',')
+            revs = list(Git.iter('rev-parse', '--revs-only', *graft))
+            if len(revs) != len(graft):
+                continue
+            # We apparently have all the grafted revisions locally, ensure
+            # they're actually reachable.
+            if not any(Git.iter(
+                    'rev-list', '--branches', '--tags', '--remotes',
+                    '--max-count=1', '--ancestry-path', '--stdin',
+                    stdin=('^{}^@'.format(c) for c in graft))):
+                continue
         url, _, branch = spec.partition('#')
         url, branch = (url.split('#', 1) + [None])[:2]
         if url:
@@ -765,8 +783,7 @@ def getbundle(repo, store, heads, branch_names):
         if not common:
             if not store._has_metadata and not store._graft:
                 manifest = Git.config('cinnabar.clone')
-                if not manifest and experiment('git-clone') and \
-                        repo.capable('cinnabarclone'):
+                if manifest is None and repo.capable('cinnabarclone'):
                     manifest = repo._call('cinnabarclone')
                 if manifest:
                     got_partial = do_cinnabarclone(repo, manifest, store)
@@ -822,14 +839,14 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
             yield '^%s' % store.changeset_ref(sha1)
 
     def local_bases():
-        h = chain(heads(), (w for w in what if w))
+        h = chain(heads(), (w for w, _, _ in what if w))
         for c, t, p in GitHgHelper.rev_list('--topo-order', '--full-history',
                                             '--boundary', *h):
             if c[0] != '-':
                 continue
             yield store.hg_changeset(c[1:])
 
-        for w in what:
+        for w, _, _ in what:
             rev = store.hg_changeset(w)
             if rev:
                 yield rev
@@ -841,14 +858,14 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
         for sha1 in common:
             yield '^%s' % store.changeset_ref(sha1)
 
-    revs = chain(revs(), (w for w in what if w))
+    revs = chain(revs(), (w for w, _, _ in what if w))
     push_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
         '--topo-order', '--full-history', '--parents', '--reverse', *revs))
 
     pushed = False
     if push_commits:
-        has_root = any(len(p) == 40 for p in push_commits)
-        force = all(v[1] for v in what.values())
+        has_root = any(not p for (c, p) in push_commits)
+        force = all(v for _, _, v in what)
         if has_root and repo_heads:
             if not force:
                 raise Exception('Cannot push a new root')

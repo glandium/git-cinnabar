@@ -8,7 +8,7 @@ BASE_DIR = os.path.dirname(__file__)
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '..'))
 
-from distutils.version import LooseVersion
+from distutils.version import StrictVersion
 from itertools import chain
 
 import osx  # noqa: F401
@@ -68,8 +68,12 @@ class TestTask(Task):
         if hg:
             command.extend(Hg.install('{}.{}'.format(task_env, hg)))
             command.append('hg --version')
-            if LooseVersion(hg) < '3.6':
-                kwargs.setdefault('env', {})['NO_CLONEBUNDLES'] = '1'
+            try:
+                if StrictVersion(hg) < '3.6':
+                    kwargs.setdefault('env', {})['NO_CLONEBUNDLES'] = '1'
+            except ValueError:
+                # `hg` is a sha1 for trunk, which means it's >= 3.6
+                pass
         if git:
             command.extend(Git.install('{}.{}'.format(task_env, git)))
             command.append('git --version')
@@ -86,6 +90,12 @@ class TestTask(Task):
                 ' refs/heads/branches/default/tip',
             ])
             kwargs.setdefault('env', {})['REPO'] = REPO
+        if variant == 'coverage':
+            command = [
+                'export GIT_CINNABAR_COVERAGE=1',
+                'export COVERAGE_FILE=$PWD/repo/.coverage',
+            ] + command
+
         if 'command' in kwargs:
             kwargs['command'] = command + kwargs['command']
         else:
@@ -95,6 +105,7 @@ class TestTask(Task):
             kwargs['command'] = command + [
                 'make -C repo -f CI/tests.mk',
             ]
+
         if variant == 'coverage':
             kwargs['command'].extend([
                 'shopt -s nullglob',
@@ -189,18 +200,6 @@ def decision():
             '(cd repo && python3 -m flake8 --ignore E402 '
             '$(git ls-files CI/\\*\\*.py))',
         ],
-    )
-
-    TestTask(
-        description='cram tests',
-        variant='coverage',
-        clone=False,
-        command=[
-            'cram --verbose repo/tests',
-        ],
-        env={
-            'GIT_CINNABAR_CHECK': 'no-version-check',
-        },
     )
 
     for env in ('linux', 'mingw64', 'osx10_10'):
@@ -319,6 +318,19 @@ def decision():
             'GRAFT': '1',
         },
     )
+
+    for variant in ('coverage', 'asan'):
+        TestTask(
+            variant=variant,
+            extra_desc='cram',
+            clone=False,
+            command=[
+                'cram --verbose repo/tests',
+            ],
+            env={
+                'GIT_CINNABAR_CHECK': 'no-version-check',
+            },
+        )
 
 
 @action('more-hg-versions',
