@@ -253,6 +253,7 @@ static size_t changegroup_write(char *buffer, size_t size, size_t nmemb, void* d
 				response_data->writer->write = (write_callback)fwrite;
 				response_data->writer->close = (close_callback)fflush;
 				response_data->writer->context = stderr;
+				prefix_writer(response_data->writer, "remote: ");
 			}
 		}
 		bufferize_writer(response_data->writer);
@@ -334,9 +335,14 @@ static void http_push_command(struct hg_connection *conn,
 	if (!strncmp(http_response.buf, "HG20", 4)) {
 		strbuf_addbuf(response, &http_response);
 	} else {
+		struct writer writer;
 		string_list_split_in_place(&list, http_response.buf, '\n', 1);
 		strbuf_addstr(response, list.items[0].string);
-		fwrite(list.items[1].string, 1, strlen(list.items[1].string), stderr);
+		writer.write = (write_callback)fwrite;
+		writer.close = (close_callback)fflush;
+		writer.context = stderr;
+		prefix_writer(&writer, "remote: ");
+		write_to(list.items[1].string, 1, strlen(list.items[1].string), &writer);
 		string_list_clear(&list, 0);
 	}
 }

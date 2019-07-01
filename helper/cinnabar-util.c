@@ -237,3 +237,52 @@ void pipe_writer(struct writer *writer, const char **argv) {
 	writer->close = pipe_close;
 	writer->context = context;
 }
+
+struct prefix_context {
+	struct writer out;
+	size_t prefix_len;
+	struct strbuf buf;
+};
+
+static size_t prefix_write(char *ptr, size_t size, size_t nmemb, void *data)
+{
+	struct prefix_context *context = data;
+	size_t len = size * nmemb;
+	struct strslice slice = { len, ptr };
+	for (;;) {
+		struct strslice line = strslice_split_once(&slice, '\n');
+		strbuf_addslice(&context->buf, line);
+		if (slice.len != len) {
+			strbuf_addch(&context->buf, '\n');
+			write_to(context->buf.buf, 1, context->buf.len,
+			         &context->out);
+			strbuf_setlen(&context->buf, context->prefix_len);
+			len = slice.len;
+		} else {
+			break;
+		}
+	}
+	strbuf_addslice(&context->buf, slice);
+	return size * nmemb;
+}
+
+static int prefix_close(void *data)
+{
+	struct prefix_context *context = data;
+	if (context->buf.len > context->prefix_len)
+		write_to(context->buf.buf, 1, context->buf.len, &context->out);
+	strbuf_release(&context->buf);
+	return writer_close(&context->out);
+}
+
+void prefix_writer(struct writer *writer, const char *prefix)
+{
+	struct prefix_context *context = xcalloc(1, sizeof(struct prefix_context));
+	context->out = *writer;
+	strbuf_init(&context->buf, 0);
+	strbuf_addstr(&context->buf, prefix);
+	context->prefix_len = context->buf.len;
+	writer->write = prefix_write;
+	writer->close = prefix_close;
+	writer->context = context;
+}
