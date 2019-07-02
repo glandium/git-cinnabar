@@ -86,7 +86,20 @@ def unbundle(args):
         bundle = get_clonebundle(repo)
     else:
         bundle = get_bundle(remote.url)
+
     store = GitHgStore()
+    GRAFT = {
+        None: False,
+        'false': False,
+        'true': True,
+    }
+    try:
+        graft = Git.config('cinnabar.graft', values=GRAFT)
+    except InvalidConfig as e:
+        logging.error(e.message)
+        return 1
+    if graft:
+        store.prepare_graft()
     bundle = unbundler(bundle)
     apply_bundle = BundleApplier(bundle)
     del bundle
