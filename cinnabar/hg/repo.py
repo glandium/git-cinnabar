@@ -845,7 +845,10 @@ def do_cinnabarclone(repo, manifest, store):
             # Future proofing: ignore lines with unknown params, even if we
             # support some that are present.
             continue
-        if graft:
+        if store._graft:
+            # When grafting, ignore lines without a graft revision.
+            if not graft:
+                continue
             graft = graft.split(',')
             revs = list(Git.iter('rev-parse', '--revs-only', *graft))
             if len(revs) != len(graft):
@@ -885,7 +888,7 @@ def getbundle(repo, store, heads, branch_names):
         bundle = None
         got_partial = False
         if not common:
-            if not store._has_metadata and not store._graft:
+            if not store._has_metadata:
                 manifest = Git.config('cinnabar.clone')
                 if manifest is None and repo.capable('cinnabarclone'):
                     manifest = repo._call('cinnabarclone')
