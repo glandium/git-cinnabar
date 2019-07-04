@@ -883,7 +883,8 @@ class VersionCheck(Thread):
                     newer_version = v
             if newer_version != version:
                 self.message = (
-                    'New version available: {} (current version: {})'
+                    'New git-cinnabar version available: {} '
+                    '(current version: {})'
                     .format(newer_version, version))
 
     def join(self):
