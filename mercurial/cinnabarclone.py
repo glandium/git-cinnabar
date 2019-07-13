@@ -44,7 +44,7 @@ create <bundle-file> refs/cinnabar/metadata`, and upload the resulting
 bundle-file to a HTTP/HTTPS server.
 """
 
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 import errno
 import os
 
@@ -63,8 +63,8 @@ def add_cinnabar_cap(repo, caps):
     except AttributeError:
         def exists(path):
             return os.path.exists(os.path.join(vfs.base, path))
-    if exists('cinnabar.manifest'):
-        caps.append('cinnabarclone')
+    if exists(b'cinnabar.manifest'):
+        caps.append(b'cinnabarclone')
 
 
 def _capabilities(orig, repo, proto):
@@ -76,20 +76,20 @@ def _capabilities(orig, repo, proto):
 def capabilities(orig, repo, proto):
     caps = orig(repo, proto).split()
     add_cinnabar_cap(repo, caps)
-    return ' '.join(caps)
+    return b' '.join(caps)
 
 
 def cinnabar(repo, proto):
     vfs = get_vfs(repo)
     try:
-        return vfs.tryread('cinnabar.manifest')
+        return vfs.tryread(b'cinnabar.manifest')
     except AttributeError:
         try:
-            return vfs.read('cinnabar.manifest')
+            return vfs.read(b'cinnabar.manifest')
         except IOError as e:
             if e.errno != errno.ENOENT:
                 raise
-    return ''
+    return b''
 
 
 def extsetup(ui):
@@ -100,12 +100,12 @@ def extsetup(ui):
     from mercurial import extensions
 
     try:
-        extensions.wrapfunction(wireproto, '_capabilities', _capabilities)
+        extensions.wrapfunction(wireproto, b'_capabilities', _capabilities)
     except AttributeError:
         extensions.wrapcommand(
-            wireproto.commands, 'capabilities', capabilities)
+            wireproto.commands, b'capabilities', capabilities)
 
-    def wireprotocommand(name, args='', permission='push'):
+    def wireprotocommand(name, args=b'', permission=b'push'):
         if hasattr(wireproto, 'wireprotocommand'):
             try:
                 return wireproto.wireprotocommand(name, args, permission)
@@ -121,4 +121,4 @@ def extsetup(ui):
 
         return register
 
-    wireprotocommand('cinnabarclone', permission='pull')(cinnabar)
+    wireprotocommand(b'cinnabarclone', permission=b'pull')(cinnabar)
