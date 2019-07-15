@@ -6,7 +6,6 @@ from cinnabar.githg import (
     GitCommit,
     GitHgStore,
     GeneratedManifestInfo,
-    ManifestInfo,
     ManifestLine,
     RevChunk,
 )
@@ -563,7 +562,7 @@ def create_bundle(store, commits, bundle2caps={}):
 def get_previous(store, sha1, type):
     if issubclass(type, Changeset):
         return store.changeset(sha1)
-    if issubclass(type, ManifestInfo):
+    if issubclass(type, GeneratedManifestInfo):
         return store.manifest(sha1)
     return store.file(sha1)
 

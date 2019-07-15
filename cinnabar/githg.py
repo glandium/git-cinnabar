@@ -278,42 +278,6 @@ def isplitmanifest(data):
         yield ManifestLine(l[:null], l[null + 1:null + 41], l[null + 41:])
 
 
-class ManifestInfo(RevChunk):
-    __slots__ = ('removed', 'modified')
-
-    def patch_data(self, raw_data, rev_patch):
-        new = bytearray()
-        data = memoryview(raw_data)
-        end = 0
-        before_list = {}
-        after_list = {}
-        for diff in RevDiff(rev_patch):
-            new += data[end:diff.start]
-            new += diff.text_data
-            end = diff.end
-
-            start = raw_data.rfind('\n', 0, diff.start) + 1
-            if diff.end == 0 or data[diff.end - 1] == '\n':
-                finish = diff.end
-            else:
-                finish = raw_data.find('\n', diff.end)
-            if finish != -1:
-                before = data[start:finish]
-            else:
-                before = data[start:]
-            after = before[:diff.start - start].tobytes() + \
-                diff.text_data.tobytes() + \
-                before[diff.end - start:].tobytes()
-            before_list.update({f.name: (f.node, f.attr)
-                                for f in isplitmanifest(before.tobytes())})
-            after_list.update({f.name: (f.node, f.attr)
-                               for f in isplitmanifest(after)})
-        new += data[end:]
-        self.removed = set(before_list.keys()) - set(after_list.keys())
-        self.modified = after_list
-        return new
-
-
 class ChangesetPatcher(str):
     class ChangesetPatch(RawRevChunk):
         __slots__ = ('patch', '_changeset')
@@ -442,8 +406,8 @@ class Changeset(Changeset):
         return changeset
 
 
-class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
-    __slots__ = ('__lines', '_data')
+class GeneratedManifestInfo(GeneratedRevChunk):
+    __slots__ = ('__lines', '_data', 'removed', 'modified')
 
     def __init__(self, node):
         super(GeneratedManifestInfo, self).__init__(node, '')
