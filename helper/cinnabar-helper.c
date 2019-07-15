@@ -100,6 +100,7 @@ struct oidset hg2git_seen = OIDSET_INIT;
 
 int metadata_flags = 0;
 int cinnabar_check = 0;
+int cinnabar_experiments = 0;
 
 static int config(const char *name, struct strbuf *result)
 {
@@ -2193,6 +2194,23 @@ static void init_config()
 				cinnabar_check |= CHECK_HELPER;
 			else if (!strcmp((*c)->buf, "manifests"))
 				cinnabar_check |= CHECK_MANIFESTS;
+		}
+		strbuf_list_free(check);
+	}
+	strbuf_release(&conf);
+
+	if (!config("experiments", &conf)) {
+		struct strbuf **check = strbuf_split(&conf, ',');
+		struct strbuf **c;
+		for (c = check; *c; c++) {
+			// strbuf_split leaves the `,`.
+			if ((*c)->buf[(*c) -> len - 1] == ',')
+				strbuf_setlen(*c, (*c)->len - 1);
+			if (!strcmp((*c)->buf, "true") ||
+			    !strcmp((*c)->buf, "all"))
+				cinnabar_experiments = -1;
+			else if (!strcmp((*c)->buf, "store"))
+				cinnabar_experiments |= EXPERIMENT_STORE;
 		}
 		strbuf_list_free(check);
 	}
