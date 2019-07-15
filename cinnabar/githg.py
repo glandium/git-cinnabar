@@ -124,19 +124,6 @@ class RevChunk(object):
         return ()
 
 
-class GeneratedRevChunk(RevChunk):
-    def __init__(self, node, data):
-        self.node = node
-        self.data = data
-
-    def init(self, previous_chunk):
-        pass
-
-    def set_parents(self, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
-        self.parent1 = parent1
-        self.parent2 = parent2
-
-
 class FileFindParents(object):
     logger = logging.getLogger('generated_file')
 
@@ -406,11 +393,12 @@ class Changeset(Changeset):
         return changeset
 
 
-class GeneratedManifestInfo(GeneratedRevChunk):
+class GeneratedManifestInfo(RevChunk):
     __slots__ = ('__lines', '_data', 'removed', 'modified')
 
     def __init__(self, node):
-        super(GeneratedManifestInfo, self).__init__(node, '')
+        self.node = node
+        self.data = ''
         if node == NULL_NODE_ID:
             self.__lines = []
         else:
@@ -421,6 +409,10 @@ class GeneratedManifestInfo(GeneratedRevChunk):
 
     def init(self, previous_chunk):
         pass
+
+    def set_parents(self, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
+        self.parent1 = parent1
+        self.parent2 = parent2
 
     @property
     def data(self):
