@@ -6,7 +6,6 @@ from cinnabar.githg import (
     GitCommit,
     GitHgStore,
     GeneratedManifestInfo,
-    ManifestLine,
 )
 from cinnabar.helper import GitHgHelper
 from cinnabar.git import (
@@ -158,8 +157,7 @@ class PushStore(GitHgStore):
                 mode, typ, sha1, path = line
                 node = self.create_file(sha1, git_manifest_parents=(),
                                         path=path)
-                manifest.append_line(ManifestLine(path, node, self.ATTR[mode]),
-                                     modified=True)
+                manifest.add(path, node, self.ATTR[mode], modified=True)
                 changeset_files.append(path)
 
             manifest.set_parents(NULL_NODE_ID)
@@ -184,7 +182,7 @@ class PushStore(GitHgStore):
                      Git.ls_tree(commit, recursive=True)]
             manifests = sorted_merge(parent_manifest._lines,
                                      parent2_manifest._lines,
-                                     key=lambda i: i.name, non_key=lambda i: i)
+                                     key=lambda i: i.path, non_key=lambda i: i)
             for line in sorted_merge(files, sorted_merge(changes, manifests)):
                 path, f, (change, (manifest_line_p1, manifest_line_p2)) = line
                 if not f:  # File was removed
@@ -195,19 +193,19 @@ class PushStore(GitHgStore):
                 mode, sha1 = f
                 attr = self.ATTR[mode]
                 if manifest_line_p1 and not manifest_line_p2:
-                    file_parents = (manifest_line_p1.node,)
+                    file_parents = (manifest_line_p1.sha1,)
                 elif manifest_line_p2 and not manifest_line_p1:
-                    file_parents = (manifest_line_p2.node,)
+                    file_parents = (manifest_line_p2.sha1,)
                 elif not manifest_line_p1 and not manifest_line_p2:
                     file_parents = ()
-                elif manifest_line_p1.node == manifest_line_p2.node:
-                    file_parents = (manifest_line_p1.node,)
+                elif manifest_line_p1.sha1 == manifest_line_p2.sha1:
+                    file_parents = (manifest_line_p1.sha1,)
                 else:
                     if self._merge_warn == 1:
                         logging.warning('This may take a while...')
                         self._merge_warn = 2
-                    file_parents = (manifest_line_p1.node,
-                                    manifest_line_p2.node)
+                    file_parents = (manifest_line_p1.sha1,
+                                    manifest_line_p2.sha1)
 
                 assert file_parents is not None
                 f = self._create_file_internal(
@@ -230,8 +228,7 @@ class PushStore(GitHgStore):
 
                 attr_change = (manifest_line_p1 and
                                manifest_line_p1.attr != attr)
-                manifest.append_line(ManifestLine(path, node, attr),
-                                     modified=merged or attr_change)
+                manifest.add(path, node, attr, modified=merged or attr_change)
                 if merged or attr_change:
                     changeset_files.append(path)
             if manifest.data == parent_manifest.data:
@@ -254,13 +251,14 @@ class PushStore(GitHgStore):
         if not git_diff:
             return parent_manifest, []
 
-        parent_lines = OrderedDict((l.name, l)
+        parent_lines = OrderedDict((l.path, l)
                                    for l in parent_manifest._lines)
         for line in sorted_merge(parent_lines.iteritems(), git_diff,
                                  non_key=lambda i: i[1]):
             path, manifest_line, change = line
             if not change:
-                manifest.append_line(manifest_line)
+                manifest.add(manifest_line.path, manifest_line.sha1,
+                             manifest_line.attr)
                 continue
             mode_after, sha1_before, sha1_after, status = change
             path2 = status[1:]
@@ -272,17 +270,17 @@ class PushStore(GitHgStore):
                 continue
             if status in 'MT':
                 if sha1_before == sha1_after:
-                    node = manifest_line.node
+                    node = manifest_line.sha1
                 else:
                     node = self.create_file(
-                        sha1_after, str(manifest_line.node),
+                        sha1_after, manifest_line.sha1,
                         git_manifest_parents=(
                             self.manifest_ref(parent_node),),
                         path=path)
             elif status in 'RC':
                 if sha1_after != EMPTY_BLOB:
                     node = self.create_copy(
-                        (path2, parent_lines[path2].node), sha1_after,
+                        (path2, parent_lines[path2].sha1), sha1_after,
                         git_manifest_parents=(
                             self.manifest_ref(parent_node),),
                         path=path)
@@ -299,8 +297,7 @@ class PushStore(GitHgStore):
                     git_manifest_parents=(
                         self.manifest_ref(parent_node),),
                     path=path)
-            manifest.append_line(ManifestLine(path, node, attr),
-                                 modified=True)
+            manifest.add(path, node, attr, modified=True)
             changeset_files.append(path)
         manifest.set_parents(parent_node)
         manifest.delta_node = parent_node
@@ -320,7 +317,7 @@ class PushStore(GitHgStore):
                     for path, created, real in sorted_merge(
                             manifest._lines,
                             self.manifest(real_changeset.manifest)._lines,
-                            key=lambda i: i.name, non_key=lambda i: i):
+                            key=lambda i: i.path, non_key=lambda i: i):
                         if str(created) != str(real):
                             logging.error('%r != %r', str(created), str(real))
             self._pushed.add(manifest.node)

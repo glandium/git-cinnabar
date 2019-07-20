@@ -46,6 +46,7 @@ from .hg.objects import (
     Authorship,
     Changeset,
     File,
+    Manifest,
     textdiff,
 )
 from .helper import GitHgHelper
@@ -178,32 +179,6 @@ class FileFindParents(object):
     def _try_parents(file, *parents):
         file.parents = parents
         return file.node == file.sha1
-
-
-class ManifestLine(object):
-    __slots__ = ('name', 'node', 'attr', '_str', '_len')
-
-    def __init__(self, name, node, attr):
-        self.name = name
-        self.node = node
-        self.attr = attr
-        assert len(self.node) == 40
-        self._str = '%s\0%s%s\n' % (self.name, self.node, self.attr)
-        self._len = len(self.name) + len(self.attr) + 41
-
-    def __str__(self):
-        return self._str
-
-    def __len__(self):
-        return self._len
-
-
-def isplitmanifest(data):
-    for l in data.splitlines():
-        null = l.find('\0')
-        if null == -1:
-            return
-        yield ManifestLine(l[:null], l[null + 1:null + 41], l[null + 41:])
 
 
 class ChangesetPatcher(str):
@@ -405,7 +380,7 @@ class GeneratedManifestInfo(object):
         if self._data is None:
             # Normally, it'd be better to use str(l), but it turns out to make
             # things significantly slower. Sigh python.
-            self._data = ''.join(l._str for l in self._lines)
+            self._data = '\n'.join(self._lines) + '\n'
         return self._data
 
     @data.setter
@@ -416,7 +391,12 @@ class GeneratedManifestInfo(object):
     @property
     def _lines(self):
         if self.__lines is None:
-            self.__lines = list(isplitmanifest(self.data or ''))
+            data = self.data or ''
+            if data:
+                self.__lines = list(Manifest.ManifestItem(l)
+                                    for l in data.splitlines())
+            else:
+                self.__lines = []
         return iter(self.__lines)
 
     @_lines.setter
@@ -424,10 +404,10 @@ class GeneratedManifestInfo(object):
         self.__lines = value
         self._data = None
 
-    def append_line(self, line, modified=False):
-        self.__lines.append(line)
+    def add(self, path, sha1=None, attr='', modified=False):
+        self.__lines.append(Manifest.ManifestItem.from_info(path, sha1, attr))
         if modified:
-            self.modified[line.name] = (line.node, line.attr)
+            self.modified[path] = (sha1, attr)
         self._data = None
 
 
@@ -1263,7 +1243,7 @@ class GitHgStore(object):
                 modified = instance.modified.items()
             else:
                 # slow
-                modified = ((line.name, (line.node, line.attr))
+                modified = ((line.path, (line.sha1, line.attr))
                             for line in instance._lines)
             for name, (node, attr) in modified:
                 node = str(node)
