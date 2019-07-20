@@ -65,65 +65,6 @@ HG_EMPTY_FILE = 'b80de5d138758541c5f05265ad144ab9fa86d1db'
 revchunk_log = logging.getLogger('revchunks')
 
 
-class RevChunk(object):
-    __slots__ = ('node', 'parent1', 'parent2', 'changeset', 'data',
-                 'delta_node', '_rev_data')
-
-    def __init__(self, chunk):
-        self.node, self.parent1, self.parent2, self.changeset = (
-            chunk.node, chunk.parent1, chunk.parent2, chunk.changeset)
-        self.delta_node = chunk.delta_node
-        self._rev_data = chunk.data
-        revchunk_log.debug('%s %s %s %s', self.node, self.parent1,
-                           self.parent2, self.changeset)
-        revchunk_log.debug('%r', self._rev_data)
-
-    def __repr__(self):
-        return '<%s %s>' % (self.__class__.__name__, self.node)
-
-    def init(self, previous_chunk):
-        assert self.delta_node == NULL_NODE_ID or previous_chunk
-        self.data = self.patch_data(previous_chunk.data if previous_chunk
-                                    else '', self._rev_data)
-
-    def patch_data(self, data, rev_patch):
-        return RevDiff(rev_patch).apply(data)
-
-    @property
-    def sha1(self):
-        p1 = unhexlify(self.parent1)
-        p2 = unhexlify(self.parent2)
-        return hashlib.sha1(
-            min(p1, p2) +
-            max(p1, p2) +
-            self.data
-        ).hexdigest()
-
-    def diff(self, other):
-        return textdiff(other.data if other else '', self.data)
-
-    def serialize(self, other, type):
-        result = type()
-        result.node = self.node
-        result.parent1 = self.parent1
-        result.parent2 = self.parent2
-        if other:
-            result.delta_node = other.node
-        result.changeset = self.changeset
-        result.data = self.diff(other)
-        return result
-
-    @property
-    def parents(self):
-        if self.parent1 != NULL_NODE_ID:
-            if self.parent2 != NULL_NODE_ID:
-                return (self.parent1, self.parent2)
-            return (self.parent1,)
-        if self.parent2 != NULL_NODE_ID:
-            return (self.parent2,)
-        return ()
-
-
 class FileFindParents(object):
     logger = logging.getLogger('generated_file')
 
@@ -393,8 +334,10 @@ class Changeset(Changeset):
         return changeset
 
 
-class GeneratedManifestInfo(RevChunk):
-    __slots__ = ('__lines', '_data', 'removed', 'modified')
+class GeneratedManifestInfo(object):
+    __slots__ = ('node', 'parent1', 'parent2', 'changeset', 'data',
+                 'delta_node', '_rev_data', '__lines', '_data',
+                 'removed', 'modified')
 
     def __init__(self, node):
         self.node = node
@@ -409,6 +352,46 @@ class GeneratedManifestInfo(RevChunk):
 
     def init(self, previous_chunk):
         pass
+
+    def __repr__(self):
+        return '<%s %s>' % (self.__class__.__name__, self.node)
+
+    def patch_data(self, data, rev_patch):
+        return RevDiff(rev_patch).apply(data)
+
+    @property
+    def sha1(self):
+        p1 = unhexlify(self.parent1)
+        p2 = unhexlify(self.parent2)
+        return hashlib.sha1(
+            min(p1, p2) +
+            max(p1, p2) +
+            self.data
+        ).hexdigest()
+
+    def diff(self, other):
+        return textdiff(other.data if other else '', self.data)
+
+    def serialize(self, other, type):
+        result = type()
+        result.node = self.node
+        result.parent1 = self.parent1
+        result.parent2 = self.parent2
+        if other:
+            result.delta_node = other.node
+        result.changeset = self.changeset
+        result.data = self.diff(other)
+        return result
+
+    @property
+    def parents(self):
+        if self.parent1 != NULL_NODE_ID:
+            if self.parent2 != NULL_NODE_ID:
+                return (self.parent1, self.parent2)
+            return (self.parent1,)
+        if self.parent2 != NULL_NODE_ID:
+            return (self.parent2,)
+        return ()
 
     def set_parents(self, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
         self.parent1 = parent1

@@ -7,7 +7,6 @@ from cinnabar.githg import (
     GitHgStore,
     GeneratedManifestInfo,
     ManifestLine,
-    RevChunk,
 )
 from cinnabar.helper import GitHgHelper
 from cinnabar.git import (
@@ -602,7 +601,7 @@ def prepare_chunk(store, chunk, previous, chunk_type):
 def create_changegroup(store, bundle_data, type=RawRevChunk01):
     previous = None
     for chunk in bundle_data:
-        if isinstance(chunk, (RevChunk, HgObject)):
+        if isinstance(chunk, (GeneratedManifestInfo, HgObject)):
             data = prepare_chunk(store, chunk, previous, type)
         else:
             data = chunk
@@ -610,7 +609,8 @@ def create_changegroup(store, bundle_data, type=RawRevChunk01):
         yield struct.pack(">l", size)
         if data:
             yield str(data)
-        if isinstance(chunk, (RevChunk, HgObject, types.NoneType)):
+        if isinstance(chunk, (GeneratedManifestInfo, HgObject,
+                              types.NoneType)):
             previous = chunk
 
 
