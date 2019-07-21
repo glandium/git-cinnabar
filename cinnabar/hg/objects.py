@@ -348,11 +348,12 @@ class Changeset(HgObject):
 
 
 class Manifest(HgObject):
-    __slots__ = ('__weakref__',)
+    __slots__ = ('__weakref__', '_raw_data')
 
     def __init__(self, *args, **kwargs):
         super(Manifest, self).__init__(*args, **kwargs)
-        self.items = {}
+        self._items = {}
+        self._raw_data = None
 
     class ManifestItem(str):
         @classmethod
@@ -392,7 +393,17 @@ class Manifest(HgObject):
             super(Manifest.ManifestDict, self).__setitem__(key, value)
             self._last = key
 
-    items = TypedProperty(ManifestDict)
+    _items = TypedProperty(ManifestDict)
+
+    @property
+    def items(self):
+        if self._raw_data is not None:
+            self._items.clear()
+            for line in self._raw_data.splitlines():
+                item = self.ManifestItem(line)
+                self._items[item.path] = item
+            self._raw_data = None
+        return self._items
 
     def add(self, path, sha1=None, attr=''):
         item = Manifest.ManifestItem.from_info(path, sha1, attr)
@@ -417,24 +428,27 @@ class Manifest(HgObject):
                 item = next(items, None)
                 if item is None:
                     break
-                this.items[item.path] = item
+                this._items[item.path] = item
                 offset += len(item) + 1
             assert offset == part.start
             for item in part.text_data.tobytes().splitlines():
                 item = this.ManifestItem(item)
-                this.items[item.path] = item
+                this._items[item.path] = item
             while offset < part.end:
                 item = next(items, None)
                 if item is None:
                     break
                 offset += len(item) + 1
         for item in items:
-            this.items[item.path] = item
+            this._items[item.path] = item
         return this
 
-    @HgObject.raw_data.setter
+    @property
+    def raw_data(self):
+        if self._raw_data is not None:
+            return self._raw_data
+        return super(Manifest, self).raw_data
+
+    @raw_data.setter
     def raw_data(self, data):
-        self.items.clear()
-        for line in data.splitlines():
-            item = self.ManifestItem(line)
-            self.items[item.path] = item
+        self._raw_data = str(data)
