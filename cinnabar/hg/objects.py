@@ -352,7 +352,7 @@ class Manifest(HgObject):
 
     def __init__(self, *args, **kwargs):
         super(Manifest, self).__init__(*args, **kwargs)
-        self._items = {}
+        self._items = []
         self._raw_data = None
 
     class ManifestItem(str):
@@ -381,36 +381,35 @@ class Manifest(HgObject):
                 return self[-40 - attr_len:-attr_len]
             return self[-40 - attr_len:]
 
-    class ManifestDict(OrderedDict):
+    class ManifestList(list):
         def __init__(self, *args, **kwargs):
-            super(Manifest.ManifestDict, self).__init__(*args, **kwargs)
+            super(Manifest.ManifestList, self).__init__(*args, **kwargs)
             self._last = None
 
-        def __setitem__(self, key, value):
-            assert self._last is None or key > self._last
+        def append(self, value):
             assert isinstance(value, Manifest.ManifestItem)
-            assert key == value.path
-            super(Manifest.ManifestDict, self).__setitem__(key, value)
-            self._last = key
+            assert self._last is None or value > self._last
+            super(Manifest.ManifestList, self).append(value)
+            self._last = value
 
-    _items = TypedProperty(ManifestDict)
+    _items = TypedProperty(ManifestList)
 
     @property
     def items(self):
         if self._raw_data is not None:
-            self._items.clear()
+            self._items[:] = []
             for line in self._raw_data.splitlines():
                 item = self.ManifestItem(line)
-                self._items[item.path] = item
+                self._items.append(item)
             self._raw_data = None
         return self._items
 
     def add(self, path, sha1=None, attr=''):
         item = Manifest.ManifestItem.from_info(path, sha1, attr)
-        self.items[item.path] = item
+        self.items.append(item)
 
     def __iter__(self):
-        return self.items.itervalues()
+        return iter(self.items)
 
     def _data_iter(self):
         for item in self:
@@ -428,19 +427,19 @@ class Manifest(HgObject):
                 item = next(items, None)
                 if item is None:
                     break
-                this._items[item.path] = item
+                this._items.append(item)
                 offset += len(item) + 1
             assert offset == part.start
             for item in part.text_data.tobytes().splitlines():
                 item = this.ManifestItem(item)
-                this._items[item.path] = item
+                this._items.append(item)
             while offset < part.end:
                 item = next(items, None)
                 if item is None:
                     break
                 offset += len(item) + 1
         for item in items:
-            this._items[item.path] = item
+            this._items.append(item)
         return this
 
     @property

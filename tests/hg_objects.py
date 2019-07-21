@@ -432,10 +432,10 @@ class TestManifest(unittest.TestCase):
 
         m.add('hoge', '618faf0766206b33a8e424f93966ff5d99fd8828', 'x')
 
-        self.assertEqual(m.items, {
-            'foo': 'foo\x0049d8cbb15ce257920447006b46978b7af980a979',
-            'hoge': 'hoge\x00618faf0766206b33a8e424f93966ff5d99fd8828x',
-        })
+        self.assertEqual(m.items, [
+            'foo\x0049d8cbb15ce257920447006b46978b7af980a979',
+            'hoge\x00618faf0766206b33a8e424f93966ff5d99fd8828x',
+        ])
 
         self.assertEqual(
             m.raw_data,
@@ -470,10 +470,10 @@ class TestManifest(unittest.TestCase):
             'hoge\x00618faf0766206b33a8e424f93966ff5d99fd8828x\n'
         )
 
-        self.assertEqual(m.items, {
-            'foo': 'foo\x0049d8cbb15ce257920447006b46978b7af980a979',
-            'hoge': 'hoge\x00618faf0766206b33a8e424f93966ff5d99fd8828x',
-        })
+        self.assertEqual(m.items, [
+            'foo\x0049d8cbb15ce257920447006b46978b7af980a979',
+            'hoge\x00618faf0766206b33a8e424f93966ff5d99fd8828x',
+        ])
 
         m2 = Manifest()
         for i in m:
