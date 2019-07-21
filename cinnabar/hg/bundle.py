@@ -251,12 +251,12 @@ class PushStore(GitHgStore):
             return parent_manifest, []
 
         parent_lines = OrderedDict((l.path, l) for l in parent_manifest)
+        items = manifest.items
         for line in sorted_merge(parent_lines.iteritems(), git_diff,
                                  non_key=lambda i: i[1]):
             path, manifest_line, change = line
             if not change:
-                manifest.add(manifest_line.path, manifest_line.sha1,
-                             manifest_line.attr)
+                items.append(manifest_line)
                 continue
             mode_after, sha1_before, sha1_after, status = change
             path2 = status[1:]
