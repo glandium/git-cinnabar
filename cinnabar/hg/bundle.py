@@ -564,9 +564,7 @@ def prepare_chunk(store, chunk, previous, chunk_type):
     if chunk_type == RawRevChunk01:
         if previous is None and chunk.parent1 != NULL_NODE_ID:
             previous = get_previous(store, chunk.parent1, type(chunk))
-        if isinstance(chunk, HgObject):
-            return chunk.to_chunk(chunk_type, previous)
-        return chunk.serialize(previous, chunk_type)
+        return chunk.to_chunk(chunk_type, previous)
     elif chunk_type == RawRevChunk02:
         if isinstance(chunk, Changeset):
             parents = (previous if previous
@@ -576,18 +574,11 @@ def prepare_chunk(store, chunk, previous, chunk_type):
             parents = (previous if previous and p == previous.node
                        else get_previous(store, p, type(chunk))
                        for p in chunk.parents)
-        if isinstance(chunk, HgObject):
-            deltas = sorted((chunk.to_chunk(chunk_type, p) for p in parents),
-                            key=len)
-        else:
-            deltas = sorted((chunk.serialize(p, chunk_type) for p in parents),
-                            key=len)
+        deltas = sorted((chunk.to_chunk(chunk_type, p) for p in parents),
+                        key=len)
         if len(deltas):
             return deltas[0]
-        elif isinstance(chunk, HgObject):
-            return chunk.to_chunk(chunk_type)
-        else:
-            return chunk.serialize(None, chunk_type)
+        return chunk.to_chunk(chunk_type)
     else:
         assert False
 
@@ -595,7 +586,7 @@ def prepare_chunk(store, chunk, previous, chunk_type):
 def create_changegroup(store, bundle_data, type=RawRevChunk01):
     previous = None
     for chunk in bundle_data:
-        if isinstance(chunk, (GeneratedManifestInfo, HgObject)):
+        if isinstance(chunk, HgObject):
             data = prepare_chunk(store, chunk, previous, type)
         else:
             data = chunk
@@ -603,8 +594,7 @@ def create_changegroup(store, bundle_data, type=RawRevChunk01):
         yield struct.pack(">l", size)
         if data:
             yield str(data)
-        if isinstance(chunk, (GeneratedManifestInfo, HgObject,
-                              types.NoneType)):
+        if isinstance(chunk, (HgObject, types.NoneType)):
             previous = chunk
 
 
