@@ -3,7 +3,6 @@
 from __future__ import division
 from binascii import hexlify, unhexlify
 from itertools import izip
-import hashlib
 import io
 import os
 import shutil
@@ -47,7 +46,6 @@ from .hg.objects import (
     Changeset,
     File,
     Manifest,
-    textdiff,
 )
 from .helper import GitHgHelper
 from .util import progress_iter
@@ -309,106 +307,18 @@ class Changeset(Changeset):
         return changeset
 
 
-class GeneratedManifestInfo(object):
-    __slots__ = ('node', 'parent1', 'parent2', 'changeset', 'data',
-                 'delta_node', '_rev_data', '__lines', '_data',
-                 'removed', 'modified')
+class GeneratedManifestInfo(Manifest):
+    __slots__ = ('delta_node', 'removed', 'modified')
 
     def __init__(self, node):
-        self.node = node
-        self.data = ''
-        if node == NULL_NODE_ID:
-            self.__lines = []
-        else:
-            self.__lines = None
-        self._data = None
+        super(GeneratedManifestInfo, self).__init__(node)
         self.removed = set()
         self.modified = {}
 
-    def init(self, previous_chunk):
-        pass
-
-    def __repr__(self):
-        return '<%s %s>' % (self.__class__.__name__, self.node)
-
-    def patch_data(self, data, rev_patch):
-        return RevDiff(rev_patch).apply(data)
-
-    @property
-    def sha1(self):
-        p1 = unhexlify(self.parent1)
-        p2 = unhexlify(self.parent2)
-        return hashlib.sha1(
-            min(p1, p2) +
-            max(p1, p2) +
-            self.data
-        ).hexdigest()
-
-    def diff(self, other):
-        return textdiff(other.data if other else '', self.data)
-
-    def serialize(self, other, type):
-        result = type()
-        result.node = self.node
-        result.parent1 = self.parent1
-        result.parent2 = self.parent2
-        if other:
-            result.delta_node = other.node
-        result.changeset = self.changeset
-        result.data = self.diff(other)
-        return result
-
-    @property
-    def parents(self):
-        if self.parent1 != NULL_NODE_ID:
-            if self.parent2 != NULL_NODE_ID:
-                return (self.parent1, self.parent2)
-            return (self.parent1,)
-        if self.parent2 != NULL_NODE_ID:
-            return (self.parent2,)
-        return ()
-
-    def set_parents(self, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
-        self.parent1 = parent1
-        self.parent2 = parent2
-
-    @property
-    def data(self):
-        if self._data is None and self.__lines is None:
-            self._data = GitHgHelper.manifest(self.node)
-
-        if self._data is None:
-            # Normally, it'd be better to use str(l), but it turns out to make
-            # things significantly slower. Sigh python.
-            self._data = '\n'.join(self._lines) + '\n'
-        return self._data
-
-    @data.setter
-    def data(self, value):
-        self._data = value
-        self.__lines = None
-
-    @property
-    def _lines(self):
-        if self.__lines is None:
-            data = self.data or ''
-            if data:
-                self.__lines = list(Manifest.ManifestItem(l)
-                                    for l in data.splitlines())
-            else:
-                self.__lines = []
-        return iter(self.__lines)
-
-    @_lines.setter
-    def _lines(self, value):
-        self.__lines = value
-        self._data = None
-
     def add(self, path, sha1=None, attr='', modified=False):
-        self.__lines.append(Manifest.ManifestItem.from_info(path, sha1, attr))
+        super(GeneratedManifestInfo, self).add(path, sha1, attr)
         if modified:
             self.modified[path] = (sha1, attr)
-        self._data = None
 
 
 class TagSet(object):
@@ -1090,12 +1000,12 @@ class GitHgStore(object):
 
     def manifest(self, sha1, include_parents=False):
         manifest = GeneratedManifestInfo(sha1)
-        manifest.data = GitHgHelper.manifest(sha1)
+        manifest.raw_data = GitHgHelper.manifest(sha1)
         if include_parents:
             git_sha1 = self.manifest_ref(sha1)
             commit = GitCommit(git_sha1)
             parents = (self.hg_manifest(p) for p in commit.parents)
-            manifest.set_parents(*parents)
+            manifest.parents = tuple(parents)
         return manifest
 
     def manifest_ref(self, sha1):
@@ -1244,7 +1154,7 @@ class GitHgStore(object):
             else:
                 # slow
                 modified = ((line.path, (line.sha1, line.attr))
-                            for line in instance._lines)
+                            for line in instance)
             for name, (node, attr) in modified:
                 node = str(node)
                 commit.filemodify(self.manifest_metadata_path(name), node,

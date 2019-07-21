@@ -160,7 +160,7 @@ class PushStore(GitHgStore):
                 manifest.add(path, node, self.ATTR[mode], modified=True)
                 changeset_files.append(path)
 
-            manifest.set_parents(NULL_NODE_ID)
+            manifest.parents = []
             manifest.delta_node = NULL_NODE_ID
             return manifest, changeset_files
 
@@ -180,8 +180,7 @@ class PushStore(GitHgStore):
 
             files = [(path, mode, sha1) for mode, _, sha1, path in
                      Git.ls_tree(commit, recursive=True)]
-            manifests = sorted_merge(parent_manifest._lines,
-                                     parent2_manifest._lines,
+            manifests = sorted_merge(parent_manifest, parent2_manifest,
                                      key=lambda i: i.path, non_key=lambda i: i)
             for line in sorted_merge(files, sorted_merge(changes, manifests)):
                 path, f, (change, (manifest_line_p1, manifest_line_p2)) = line
@@ -231,9 +230,9 @@ class PushStore(GitHgStore):
                 manifest.add(path, node, attr, modified=merged or attr_change)
                 if merged or attr_change:
                     changeset_files.append(path)
-            if manifest.data == parent_manifest.data:
+            if manifest.raw_data == parent_manifest.raw_data:
                 return parent_manifest, []
-            manifest.set_parents(parent_node, parent2_node)
+            manifest.parents = (parent_node, parent2_node)
             return manifest, changeset_files
 
         def process_diff(diff):
@@ -251,8 +250,7 @@ class PushStore(GitHgStore):
         if not git_diff:
             return parent_manifest, []
 
-        parent_lines = OrderedDict((l.path, l)
-                                   for l in parent_manifest._lines)
+        parent_lines = OrderedDict((l.path, l) for l in parent_manifest)
         for line in sorted_merge(parent_lines.iteritems(), git_diff,
                                  non_key=lambda i: i[1]):
             path, manifest_line, change = line
@@ -299,7 +297,7 @@ class PushStore(GitHgStore):
                     path=path)
             manifest.add(path, node, attr, modified=True)
             changeset_files.append(path)
-        manifest.set_parents(parent_node)
+        manifest.parents = (parent_node,)
         manifest.delta_node = parent_node
         return manifest, changeset_files
 
@@ -315,8 +313,7 @@ class PushStore(GitHgStore):
                 if real_changeset and (
                         manifest.node != real_changeset.manifest):
                     for path, created, real in sorted_merge(
-                            manifest._lines,
-                            self.manifest(real_changeset.manifest)._lines,
+                            manifest, self.manifest(real_changeset.manifest),
                             key=lambda i: i.path, non_key=lambda i: i):
                         if str(created) != str(real):
                             logging.error('%r != %r', str(created), str(real))
