@@ -1180,6 +1180,13 @@ static void do_helpercaps(struct string_list *args)
 			strbuf_addstr(&caps, ",ZS");
 		}
 	}
+
+	if (cinnabar_experiments & EXPERIMENT_STORE) {
+		if (caps.len)
+			strbuf_addch(&caps, '\n');
+		strbuf_addstr(&caps, "store=new");
+	}
+
 	send_buffer(&caps);
 	strbuf_release(&caps);
 }
@@ -2381,6 +2388,7 @@ int cmd_main(int argc, const char *argv[])
 
 	init_git_config();
 	git_config(git_default_config, NULL);
+	init_config();
 	ignore_case = 0;
 	save_commit_buffer = 0;
 	warn_on_object_refname_ambiguity = 0;
@@ -2409,7 +2417,6 @@ int cmd_main(int argc, const char *argv[])
 			setup_git_directory();
 			git_config(git_diff_basic_config, NULL);
 			ignore_case = 0;
-			init_config();
 			init_metadata();
 			initialized = 1;
 			hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
