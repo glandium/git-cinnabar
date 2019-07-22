@@ -78,7 +78,9 @@ class ReadWriter(object):
         self._reader = reader
         self._writer = writer
 
-    def read(self, size=0):
+    def read(self, size=None):
+        if size is None:
+            return self._reader.read()
         return self._reader.read(size)
 
     def readline(self):

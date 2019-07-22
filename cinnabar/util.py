@@ -219,8 +219,11 @@ class IOLogger(object):
         self._logger = logger
         self._prefix = (prefix + ' ') if prefix else ''
 
-    def read(self, length=0, level=logging.INFO):
-        ret = self._reader.read(length)
+    def read(self, length=None, level=logging.INFO):
+        if length is None:
+            ret = self._reader.read()
+        else:
+            ret = self._reader.read(length)
         if not isinstance(self._reader, IOLogger):
             self._logger.log(level, '%s<= %r', self._prefix, ret)
         return ret
