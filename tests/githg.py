@@ -6,6 +6,7 @@ from cinnabar.githg import (
     GitCommit,
     GitHgStore,
 )
+from cinnabar.helper import GitHgHelper
 
 
 class FakeGitCommit(GitCommit):
@@ -258,6 +259,10 @@ class TestChangesetPatcher(unittest.TestCase):
 
 
 class TestMergeBranches(unittest.TestCase):
+    def tearDown(self):
+        GitHgHelper.close(rollback=True)
+        GitHgHelper._helper = False
+
     def test_merge_branches(self):
         self.assertEqual(GitHgStore._try_merge_branches(
             'https://server/'), [
