@@ -107,6 +107,9 @@ class BaseHelper(object):
             env = {
                 'GIT_REPLACE_REF_BASE': 'refs/cinnabar/replace/',
             }
+            for k in os.environ:
+                if k.startswith('GIT_CINNABAR_'):
+                    env[k] = os.environ[k]
             if helper_path and os.path.exists(helper_path):
                 command = [helper_path]
             else:
