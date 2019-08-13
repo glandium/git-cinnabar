@@ -129,7 +129,8 @@ def download(args):
         try:
             reader = HTTPReader(url)
         except HTTPError as e:
-            print('Download failed with status code %d\n' % e.code, file=sys.stderr)
+            print('Download failed with status code %d\n' % e.code,
+                  file=sys.stderr)
             print('Error body was:\n\n%s' % e.read(), file=sys.stderr)
             return 1
 

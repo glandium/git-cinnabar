@@ -37,8 +37,9 @@ def fetch(args):
             if repo.capable('lookup'):
                 rev = hexlify(repo.lookup(rev))
             else:
-                print('Remote repository does not support the "lookup" command. '
-                      'Please use a non-abbreviated mercurial revision.',
+                print('Remote repository does not support the "lookup" '
+                      'command. Please use a non-abbreviated mercurial '
+                      'revision.',
                       file=sys.stderr)
                 return 1
         full_revs.append(rev)
