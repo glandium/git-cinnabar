@@ -1,3 +1,4 @@
+from __future__ import print_function
 from cinnabar.cmd.util import CLI
 from cinnabar.git import (
     Git,
@@ -26,5 +27,5 @@ def reclone(args):
             Git.run('remote', 'update', '--prune', name, config=git_config)
             git_config = {}
 
-    print 'Please note that reclone left your local branches untouched.'
-    print 'They may be based on entirely different commits.'
+    print('Please note that reclone left your local branches untouched.')
+    print('They may be based on entirely different commits.')

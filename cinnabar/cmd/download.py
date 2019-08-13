@@ -1,3 +1,4 @@
+from __future__ import print_function
 import os
 import sys
 import argparse
@@ -62,12 +63,12 @@ def download(args):
 
     if args.list:
         for system, machine in available:
-            print "%s/%s" % (system, machine)
+            print("%s/%s" % (system, machine))
         return 0
 
     if (system, machine) not in available:
-        print >>sys.stderr, 'No download available for %s/%s' % (system,
-                                                                 machine)
+        print('No download available for %s/%s' % (system, machine),
+              file=sys.stderr)
         return 1
 
     if args.dev is False:
@@ -81,9 +82,9 @@ def download(args):
     if args.dev is not False:
         sha1 = helper_hash()
         if sha1 is None:
-            print >>sys.stderr, (
-                'Cannot find the right development helper for this '
-                'version of git cinnabar.')
+            print('Cannot find the right development helper for this '
+                  'version of git cinnabar.',
+                  file=sys.stderr)
             return 1
         url = 'https://index.taskcluster.net/v1/task/github'
         url += '.glandium.git-cinnabar.helper.'
@@ -102,7 +103,7 @@ def download(args):
             REPO_BASE, version, system.lower(), machine.lower(), ext)
 
     if args.url:
-        print url
+        print(url)
         return 0
 
     if args.output:
@@ -116,11 +117,11 @@ def download(args):
             except Exception:
                 pass
             if not os.path.isdir(d):
-                print >>sys.stderr, (
-                    'Cannot write to either %s or %s.' % (d, script_path))
+                print('Cannot write to either %s or %s.' % (d, script_path),
+                      file=sys.stderr)
                 return 1
 
-    print 'Downloading from %s...' % url
+    print('Downloading from %s...' % url)
     try:
         reader = HTTPReader(url)
     except HTTPError:
@@ -128,9 +129,9 @@ def download(args):
         try:
             reader = HTTPReader(url)
         except HTTPError as e:
-            print >>sys.stderr, (
-                'Download failed with status code %d\n' % e.code)
-            print >>sys.stderr, 'Error body was:\n\n%s' % e.read()
+            print('Download failed with status code %d\n' % e.code,
+                  file=sys.stderr)
+            print('Error body was:\n\n%s' % e.read(), file=sys.stderr)
             return 1
 
     class ReaderProgress(object):
@@ -202,7 +203,7 @@ def download(args):
             helper_content.finish()
         content.seek(0)
 
-        print 'Extracting %s...' % helper
+        print('Extracting %s...' % helper)
         if ext == 'zip':
             zip = zipfile.ZipFile(content, 'r')
             info = zip.getinfo('git-cinnabar/%s' % helper)
