@@ -1,3 +1,4 @@
+from __future__ import print_function
 import logging
 import re
 import sys
@@ -41,7 +42,7 @@ class FsckStatus(object):
 
     def info(self, message):
         sys.stderr.write('\r')
-        print message
+        print(message)
 
     def fix(self, message):
         self.status = 'fixed'

@@ -1,3 +1,4 @@
+from __future__ import print_function
 import argparse
 import os
 import sys
@@ -104,20 +105,20 @@ class Version(argparse.Action):
 
     def __call__(self, parser, namespace, values, option_string=None):
         if values == 'cinnabar' or not values:
-            print self.cinnabar_version()
+            print(self.cinnabar_version())
         if values == 'module' or not values:
             sha1 = self.module_version()
             if not values:
-                print 'module-hash:', sha1
+                print('module-hash:', sha1)
             else:
-                print sha1
+                print(sha1)
         if values == 'helper' or not values:
             version, sha1 = self.helper_version()
             if version != sha1:
                 sha1 = '%s/%s' % (version, sha1)
             if not values:
-                print 'helper-hash:', sha1
+                print('helper-hash:', sha1)
             else:
-                print sha1
+                print(sha1)
 
         parser.exit()

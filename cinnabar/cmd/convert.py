@@ -1,3 +1,4 @@
+from __future__ import print_function
 import argparse
 from cinnabar.cmd.util import CLI
 from cinnabar.git import (
@@ -51,7 +52,7 @@ def hg2git(args):
     '''convert mercurial sha1 to corresponding git sha1'''
 
     for arg in args.sha1:
-        print GitHgHelper.hg2git(arg)[:args.abbrev]
+        print(GitHgHelper.hg2git(arg)[:args.abbrev])
 
 
 @CLI.subcommand
@@ -66,6 +67,6 @@ def git2hg(args):
         data = GitHgHelper.git2hg(arg)
         if data:
             assert data.startswith('changeset ')
-            print data[10:10 + args.abbrev]
+            print(data[10:10 + args.abbrev])
         else:
-            print NULL_NODE_ID[:args.abbrev]
+            print(NULL_NODE_ID[:args.abbrev])
