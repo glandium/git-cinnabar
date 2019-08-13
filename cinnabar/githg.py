@@ -18,9 +18,9 @@ from collections import (
     defaultdict,
 )
 try:
-    from urllib2 import HTTPError
+    from urllib2 import URLError
 except ImportError:
-    from urllib.error import HTTPError
+    from urllib.error import URLError
 try:
     from urlparse import urlparse
 except ImportError:
@@ -1220,7 +1220,7 @@ class GitHgStore(object):
                 'refs/cinnabar/changesets' in refresh):
             heads = sorted((self._hgheads[h], h, g)
                            for h, g in zip(hg_changeset_heads,
-                                            changeset_heads))
+                                           changeset_heads))
             with GitHgHelper.commit(
                 ref='refs/cinnabar/changesets',
                 parents=list(h for _, __, h in heads),
