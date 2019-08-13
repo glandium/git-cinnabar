@@ -3,7 +3,10 @@ import os
 import ssl
 import sys
 import urllib
-import urllib2
+try:
+    from urllib2 import HTTPError
+except ImportError:
+    from urllib.error import HTTPError
 from cinnabar.exceptions import NothingToGraftException
 from cinnabar.githg import Changeset
 from cinnabar.helper import (
@@ -15,16 +18,24 @@ from binascii import (
     hexlify,
     unhexlify,
 )
-from itertools import (
-    chain,
-    izip,
-)
+from itertools import chain
+try:
+    from itertools import izip as zip
+except ImportError:
+    pass
 from io import BytesIO
-from urlparse import (
-    ParseResult,
-    urlparse,
-    urlunparse,
-)
+try:
+    from urlparse import (
+        ParseResult,
+        urlparse,
+        urlunparse,
+    )
+except ImportError:
+    from urllib.parse import (
+        ParseResult,
+        urlparse,
+        urlunparse,
+    )
 import logging
 import struct
 import random
@@ -55,6 +66,7 @@ from .changegroup import (
     RawRevChunk02,
 )
 from cStringIO import StringIO
+
 
 try:
     if check_enabled('no-mercurial'):
@@ -316,7 +328,7 @@ def findcommon(repo, store, hgheads):
     sample = _sample(hgheads, sample_size)
     requests = 1
     known = repo.known(unhexlify(h) for h in sample)
-    known = set(h for h, k in izip(sample, known) if k)
+    known = set(h for h, k in zip(sample, known) if k)
 
     logger.debug('initial sample size: %d', len(sample))
 
@@ -372,8 +384,8 @@ def findcommon(repo, store, hgheads):
         hg_sample = [store.hg_changeset(h) for h in sample]
         requests += 1
         known = repo.known(unhexlify(h) for h in hg_sample)
-        unknown = set(h for h, k in izip(sample, known) if not k)
-        known = set(h for h, k in izip(sample, known) if k)
+        unknown = set(h for h, k in zip(sample, known) if not k)
+        known = set(h for h, k in zip(sample, known) if k)
         logger.debug('next sample size: %d', len(sample))
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug('known (sub)set: (%d) %s', len(known), sorted(known))
@@ -1163,7 +1175,7 @@ def get_repo(remote):
     else:
         try:
             repo = hg.peer(ui, {}, remote.url)
-        except (error.RepoError, urllib2.HTTPError, IOError):
+        except (error.RepoError, HTTPError, IOError):
             return bundlerepo(remote.url, HTTPReader(remote.url))
 
     assert repo.capable('getbundle')

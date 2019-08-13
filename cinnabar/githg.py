@@ -2,7 +2,10 @@
 
 from __future__ import division
 from binascii import hexlify, unhexlify
-from itertools import izip
+try:
+    from itertools import izip as zip
+except ImportError:
+    pass
 import io
 import os
 import shutil
@@ -14,8 +17,14 @@ from collections import (
     Sequence,
     defaultdict,
 )
-from urllib2 import URLError
-from urlparse import urlparse
+try:
+    from urllib2 import HTTPError
+except ImportError:
+    from urllib.error import HTTPError
+try:
+    from urlparse import urlparse
+except ImportError:
+    from urllib.parse import urlparse
 from .exceptions import (
     AmbiguousGraftAbort,
     NothingToGraftException,
@@ -1210,7 +1219,7 @@ class GitHgStore(object):
         if (any(self._hgheads.iterchanges()) or
                 'refs/cinnabar/changesets' in refresh):
             heads = sorted((self._hgheads[h], h, g)
-                           for h, g in izip(hg_changeset_heads,
+                           for h, g in zip(hg_changeset_heads,
                                             changeset_heads))
             with GitHgHelper.commit(
                 ref='refs/cinnabar/changesets',

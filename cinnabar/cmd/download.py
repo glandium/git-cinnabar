@@ -19,7 +19,10 @@ from cinnabar.util import (
 )
 from gzip import GzipFile
 from shutil import copyfileobj
-from urllib2 import HTTPError
+try:
+    from urllib2 import HTTPError
+except ImportError:
+    from urllib.error import HTTPError
 
 
 @CLI.subcommand
