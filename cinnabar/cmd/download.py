@@ -83,7 +83,7 @@ def download(args):
         sha1 = helper_hash()
         if sha1 is None:
             print('Cannot find the right development helper for this '
-                  'version of git cinnabar.'
+                  'version of git cinnabar.',
                   file=sys.stderr)
             return 1
         url = 'https://index.taskcluster.net/v1/task/github'
