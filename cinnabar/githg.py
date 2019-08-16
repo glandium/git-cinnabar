@@ -1171,9 +1171,6 @@ class GitHgStore(object):
 
         GitHgHelper.set('manifest', instance.node, ':1')
 
-        self.check_manifest(instance)
-
-    def check_manifest(self, instance):
         if check_enabled('manifests'):
             if not GitHgHelper.check_manifest(instance.node):
                 raise Exception(
