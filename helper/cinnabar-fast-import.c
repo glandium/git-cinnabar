@@ -680,7 +680,7 @@ static void manifest_metadata_path(struct strbuf *out, struct strslice *in)
 	strbuf_addslice(out, *in);
 }
 
-static void store_manifest(struct rev_chunk *chunk)
+static void old_store_manifest(struct rev_chunk *chunk)
 {
 	static struct hg_object_id last_manifest_oid;
 	static struct branch *last_manifest;
@@ -838,6 +838,174 @@ static void store_manifest(struct rev_chunk *chunk)
 
 malformed:
 	die("Malformed manifest chunk for %s", sha1_to_hex(chunk->node->hash));
+}
+
+static void new_store_manifest(struct rev_chunk *chunk)
+{
+	static struct hg_object_id last_manifest_oid;
+	static struct branch *last_manifest;
+	static struct strbuf last_manifest_content = STRBUF_INIT;
+	struct strbuf data = STRBUF_INIT;
+	struct strbuf path = STRBUF_INIT;
+	struct rev_diff_part diff;
+	size_t last_end = 0;
+	struct strslice slice;
+	struct manifest_line line;
+
+	if (!last_manifest) {
+		last_manifest = new_branch("refs/cinnabar/manifests");
+	}
+	if (!is_null_hg_oid(chunk->delta_node) &&
+	    !hg_oideq(chunk->delta_node, &last_manifest_oid)) {
+		const struct object_id *note;
+		note = get_note_hg(&hg2git, chunk->delta_node);
+		if (!note)
+			die("Cannot find delta node %s for %s",
+			    sha1_to_hex(chunk->delta_node->hash),
+			    sha1_to_hex(chunk->node->hash));
+
+		// TODO: this could be smarter, avoiding to throw everything
+		// away. But this is what the equivalent fast-import commands
+		// would do so for now, this is good enough.
+		if (last_manifest->branch_tree.tree) {
+			release_tree_content_recursive(
+				last_manifest->branch_tree.tree);
+			last_manifest->branch_tree.tree = NULL;
+		}
+		hg_oidcpy(&last_manifest_oid, chunk->delta_node);
+		oidcpy(&last_manifest->oid, note);
+		parse_from_existing(last_manifest);
+		load_tree(&last_manifest->branch_tree);
+		strbuf_reset(&last_manifest_content);
+		strbuf_addbuf(&last_manifest_content, generate_manifest(note));
+	}
+
+	// Start with the same allocation size as last manifest. (-1 before
+	// strbuf_grow always adds 1 for a final '\0')
+	if (last_manifest_content.alloc)
+		strbuf_grow(&data, last_manifest_content.alloc - 1);
+	// While not exact, the total length of the previous manifest and the
+	// chunk will be an upper bound on the size of the new manifest, so
+	// ensure we'll have enough room for that.
+	strbuf_grow(&data, last_manifest_content.len + chunk->raw.len);
+	rev_diff_start_iter(&diff, chunk);
+	while (rev_diff_iter_next(&diff)) {
+		if (diff.start > last_manifest_content.len ||
+		    diff.start < last_end || diff.start > diff.end)
+			goto malformed;
+		strbuf_add(&data, last_manifest_content.buf + last_end,
+		           diff.start - last_end);
+		strbuf_addbuf(&data, &diff.data);
+
+		last_end = diff.end;
+
+		// We assume manifest diffs are line-based.
+		if (diff.start > 0 &&
+		    last_manifest_content.buf[diff.start - 1] != '\n')
+			goto malformed;
+		if (diff.end > 0 &&
+		    last_manifest_content.buf[diff.end - 1] != '\n')
+			goto malformed;
+
+		// TODO: Avoid a remove+add cycle for same-file modifications.
+
+		// Process removed files.
+		slice = strbuf_slice(&last_manifest_content, diff.start,
+                                     diff.end - diff.start);
+		while (split_manifest_line(&slice, &line) == 0) {
+			manifest_metadata_path(&path, &line.path);
+			tree_content_remove(&last_manifest->branch_tree,
+			                    path.buf, NULL, 1);
+			strbuf_reset(&path);
+		}
+
+		// Some manifest chunks can have diffs like:
+		//   - start: off, end: off, data: string of length len
+		//   - start: off, end: off + len, data: ""
+		// which is valid, albeit wasteful.
+		// (example: 13b23929aeb7d1f1f21458dfcb32b8efe9aad39d in the
+		// mercurial mercurial repository, as of writing)
+		// What that means, however, is that we can't
+		// tree_content_set for additions until the end because a
+		// subsequent iteration might be removing what we just
+		// added. So we don't do them now, we'll re-iterate the diff
+		// later.
+	}
+
+	rev_diff_start_iter(&diff, chunk);
+	while (rev_diff_iter_next(&diff)) {
+		// Process added files.
+		slice = strbuf_slice(&diff.data, 0, diff.data.len);
+		while (split_manifest_line(&slice, &line) == 0) {
+			uint16_t mode;
+			struct object_id file_node;
+			hg_oidcpy2git(&file_node, &line.oid);
+
+			if (line.attr == '\0')
+				mode = 0160644;
+			else if (line.attr == 'x')
+				mode = 0160755;
+			else if (line.attr == 'l')
+				mode = 0160000;
+			else
+				goto malformed;
+
+			manifest_metadata_path(&path, &line.path);
+			tree_content_set(&last_manifest->branch_tree,
+			                 path.buf, &file_node, mode, NULL);
+			strbuf_reset(&path);
+		}
+	}
+
+	strbuf_release(&path);
+
+	if (last_manifest_content.len < last_end)
+		goto malformed;
+
+	strbuf_add(&data, last_manifest_content.buf + last_end,
+		   last_manifest_content.len - last_end);
+
+	strbuf_swap(&last_manifest_content, &data);
+	strbuf_release(&data);
+
+	store_tree(&last_manifest->branch_tree);
+	oidcpy(&last_manifest->branch_tree.versions[0].oid,
+	       &last_manifest->branch_tree.versions[1].oid);
+
+	strbuf_addf(&data, "tree %s\n",
+	            oid_to_hex(&last_manifest->branch_tree.versions[1].oid));
+
+	if ((add_parent(&data, &last_manifest_oid, last_manifest,
+	                chunk->parent1) == -1) ||
+	    (add_parent(&data, &last_manifest_oid, last_manifest,
+	                chunk->parent2) == -1))
+		goto malformed;
+
+	hg_oidcpy(&last_manifest_oid, chunk->node);
+	strbuf_addstr(&data, "author  <cinnabar@git> 0 +0000\n"
+	                     "committer  <cinnabar@git> 0 +0000\n"
+	                     "\n");
+	strbuf_addstr(&data, sha1_to_hex(last_manifest_oid.hash));
+	store_object(OBJ_COMMIT, &data, NULL, &last_manifest->oid, 0);
+	strbuf_release(&data);
+	ensure_notes(&hg2git);
+	add_note_hg(&hg2git, &last_manifest_oid, &last_manifest->oid, NULL);
+	add_head(&manifest_heads, &last_manifest->oid);
+	if ((cinnabar_check & CHECK_MANIFESTS) &&
+	    !check_manifest(&last_manifest->oid, NULL))
+		die("sha1 mismatch for node %s", sha1_to_hex(chunk->node->hash));
+	return;
+
+malformed:
+	die("Malformed manifest chunk for %s", sha1_to_hex(chunk->node->hash));
+}
+
+static void store_manifest(struct rev_chunk *chunk)
+{
+	if (cinnabar_experiments & EXPERIMENT_STORE)
+		new_store_manifest(chunk);
+	else
+		old_store_manifest(chunk);
 }
 
 static void for_each_changegroup_chunk(FILE *in, int version,
