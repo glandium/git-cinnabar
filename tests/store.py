@@ -249,6 +249,17 @@ class TestStoreCG01(unittest.TestCase):
         git_m = GitHgHelper.hg2git(chunk.node)
         self.assertEqual(GitCommit(git_m).tree, self.manifest_tree(m7))
 
+        m8 = Manifest()
+        for item in chain(m3.items[:3], m3.items[7:]):
+            m8.items.append(item)
+        m8.node = m8.sha1
+
+        chunk = m8.to_chunk(self.RevChunk, m7)
+        GitHgHelper.store('manifest', chunk)
+
+        git_m = GitHgHelper.hg2git(chunk.node)
+        self.assertEqual(GitCommit(git_m).tree, self.manifest_tree(m8))
+
 
 class TestStoreCG02(TestStoreCG01):
     RevChunk = RawRevChunk02
