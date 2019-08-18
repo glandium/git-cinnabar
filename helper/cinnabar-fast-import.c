@@ -841,11 +841,175 @@ malformed:
 	die("Malformed manifest chunk for %s", sha1_to_hex(chunk->node->hash));
 }
 
+struct tree_iter {
+	// fast-import tree that is iterated.
+	struct tree_content *tree;
+	// Index of the next entry tree_next_entry() will return.
+	size_t next_entry;
+	// Number of entries that have been seen and weren't removed.
+	size_t remaining_entry_count;
+	// Whether the tree was altered.
+	int modified;
+};
+
+static void tree_start_iter(struct tree_iter *iter, struct tree_content *tree)
+{
+	iter->tree = tree;
+	iter->next_entry = iter->remaining_entry_count = 0;
+	iter->modified = 0;
+}
+
+static struct tree_entry *tree_next_entry(struct tree_iter *iter)
+{
+	if (!iter->tree || iter->next_entry >= iter->tree->entry_count)
+		return NULL;
+
+	return iter->tree->entries[iter->next_entry++];
+}
+
+// Returns the last entry that tree_next_entry() returned.
+static struct tree_entry *tree_current_entry(struct tree_iter *iter)
+{
+	size_t next_entry = iter->next_entry;
+	assert(next_entry > 0);
+	return iter->tree->entries[next_entry - 1];
+}
+
+// Representation of a manifest as a fast-import tree, used to apply
+// removals from application of incoming mercurial revdiffs.
+struct manifest_tree {
+	// Tree root for the entire manifest.
+	struct tree_entry *root;
+	// Stack of tree iterators for all the parent directories.
+	struct tree_iter *stack;
+	size_t nr;
+	size_t alloc;
+	// Length of the path prefix for the current directory.
+	size_t prefix_len;
+	// Iterator for the current directory.
+	struct tree_iter iter;
+};
+
+static void manifest_tree_enter_dir(struct manifest_tree *tree,
+                                    struct tree_entry *e)
+{
+	assert(e == tree_current_entry(&tree->iter));
+	assert(S_ISDIR(e->versions[1].mode));
+
+	ALLOC_GROW(tree->stack, tree->nr + 1, tree->alloc);
+	tree->stack[tree->nr++] = tree->iter;
+	// Conveniently, because file names are prefixed with _, their length
+	// corresponds to the non-prefixed length followed by a forward slash.
+	tree->prefix_len += e->name->str_len;
+	if (!e->tree)
+		load_tree(e);
+	tree_start_iter(&tree->iter, e->tree);
+}
+
+static int manifest_tree_leave_dir(struct manifest_tree *tree)
+{
+	if (tree->nr == 0) {
+		if (tree->iter.modified)
+			oidclr(&tree->root->versions[1].oid);
+		return 0;
+	} else {
+		struct tree_entry *e;
+		struct tree_iter iter = tree->iter;
+		tree->iter = tree->stack[--tree->nr];
+		memset(&tree->stack[tree->nr], 0, sizeof(iter));
+
+		assert(iter.next_entry == iter.tree->entry_count);
+		e = tree_current_entry(&tree->iter);
+		tree->prefix_len -= e->name->str_len;
+
+		if (iter.modified) {
+			oidclr(&e->versions[1].oid);
+			if (!iter.remaining_entry_count)
+				e->versions[1].mode = 0;
+			tree->iter.modified = 1;
+		}
+		if (iter.remaining_entry_count)
+			tree->iter.remaining_entry_count++;
+	}
+	return 1;
+}
+
+static void manifest_tree_init(struct manifest_tree *tree,
+                                struct tree_entry *root)
+{
+	tree->root = root;
+	tree->stack = NULL;
+	tree->nr = tree->alloc = tree->prefix_len = 0;
+        tree->iter.remaining_entry_count = tree->iter.modified = 0;
+	tree_start_iter(&tree->iter, root->tree);
+}
+
+#define NO_DELETE 0
+#define DELETE 1
+
+// Iterate the manifest tree, recursively if necessary, for as many items
+// as necessary to generate `length` bytes of corresponding raw manifest
+// data. The `delete` argument indicates whether to delete the iterated files
+// or not while iterating.
+static int manifest_tree_advance(struct manifest_tree *tree, size_t length,
+                                  int delete)
+{
+	struct tree_entry *e;
+	size_t line_len = 0;
+	while (length) {
+		e = tree_next_entry(&tree->iter);
+		if (!e) {
+			if (!manifest_tree_leave_dir(tree))
+				return 0;
+			continue;
+		}
+		if (S_ISDIR(e->versions[1].mode)) {
+			manifest_tree_enter_dir(tree, e);
+			continue;
+		}
+		// Because the file name is prefixed with _, counting its
+		// length including the prefix accounts for the terminal
+		// nul character in the real path name.
+		line_len = tree->prefix_len + e->name->str_len;
+		// sha1
+		line_len += 40;
+		// manifest line attribute is empty for regular files, and
+		// has a length of 1 for other types.
+		if ((e->versions[1].mode & 0777) != 0644)
+			line_len++;
+		// newline
+		line_len++;
+		if (length < line_len)
+			return 0;
+		if (delete) {
+			e->versions[1].mode = 0;
+			oidclr(&e->versions[1].oid);
+			tree->iter.modified = 1;
+		} else
+			tree->iter.remaining_entry_count++;
+		length -= line_len;
+	}
+	return length == 0;
+}
+
+static void manifest_tree_finish(struct manifest_tree *tree)
+{
+	do {
+		if (tree->iter.tree) {
+			tree->iter.remaining_entry_count +=
+				tree->iter.tree->entry_count
+				- tree->iter.next_entry;
+			tree->iter.next_entry =
+				tree->iter.tree->entry_count;
+		}
+	} while (manifest_tree_leave_dir(tree));
+}
+
 static void new_store_manifest(struct rev_chunk *chunk)
 {
 	static struct hg_object_id last_manifest_oid;
 	static struct branch *last_manifest;
-	static struct strbuf last_manifest_content = STRBUF_INIT;
+	struct manifest_tree manifest_tree;
 	struct strbuf data = STRBUF_INIT;
 	struct strbuf path = STRBUF_INIT;
 	struct rev_diff_part diff;
@@ -877,48 +1041,29 @@ static void new_store_manifest(struct rev_chunk *chunk)
 		oidcpy(&last_manifest->oid, note);
 		parse_from_existing(last_manifest);
 		load_tree(&last_manifest->branch_tree);
-		strbuf_reset(&last_manifest_content);
-		strbuf_addbuf(&last_manifest_content, generate_manifest(note));
 	}
 
-	// Start with the same allocation size as last manifest. (-1 before
-	// strbuf_grow always adds 1 for a final '\0')
-	if (last_manifest_content.alloc)
-		strbuf_grow(&data, last_manifest_content.alloc - 1);
-	// While not exact, the total length of the previous manifest and the
-	// chunk will be an upper bound on the size of the new manifest, so
-	// ensure we'll have enough room for that.
-	strbuf_grow(&data, last_manifest_content.len + chunk->raw.len);
+	manifest_tree_init(&manifest_tree, &last_manifest->branch_tree);
+
 	rev_diff_start_iter(&diff, chunk);
 	while (rev_diff_iter_next(&diff)) {
-		if (diff.start > last_manifest_content.len ||
-		    diff.start < last_end || diff.start > diff.end)
+		if (diff.start < last_end || diff.start > diff.end)
 			goto malformed;
-		strbuf_add(&data, last_manifest_content.buf + last_end,
-		           diff.start - last_end);
-		strbuf_addbuf(&data, &diff.data);
+
+		if (!manifest_tree_advance(
+				&manifest_tree, diff.start - last_end,
+				NO_DELETE))
+			goto malformed;
 
 		last_end = diff.end;
-
-		// We assume manifest diffs are line-based.
-		if (diff.start > 0 &&
-		    last_manifest_content.buf[diff.start - 1] != '\n')
-			goto malformed;
-		if (diff.end > 0 &&
-		    last_manifest_content.buf[diff.end - 1] != '\n')
-			goto malformed;
 
 		// TODO: Avoid a remove+add cycle for same-file modifications.
 
 		// Process removed files.
-		slice = strbuf_slice(&last_manifest_content, diff.start,
-                                     diff.end - diff.start);
-		while (split_manifest_line(&slice, &line) == 0) {
-			manifest_metadata_path(&path, &line.path);
-			tree_content_remove(&last_manifest->branch_tree,
-			                    path.buf, NULL, 1);
-			strbuf_reset(&path);
-		}
+		if (!manifest_tree_advance(
+				&manifest_tree, diff.end - diff.start,
+				DELETE))
+			goto malformed;
 
 		// Some manifest chunks can have diffs like:
 		//   - start: off, end: off, data: string of length len
@@ -932,6 +1077,8 @@ static void new_store_manifest(struct rev_chunk *chunk)
 		// added. So we don't do them now, we'll re-iterate the diff
 		// later.
 	}
+
+	manifest_tree_finish(&manifest_tree);
 
 	rev_diff_start_iter(&diff, chunk);
 	while (rev_diff_iter_next(&diff)) {
@@ -959,15 +1106,6 @@ static void new_store_manifest(struct rev_chunk *chunk)
 	}
 
 	strbuf_release(&path);
-
-	if (last_manifest_content.len < last_end)
-		goto malformed;
-
-	strbuf_add(&data, last_manifest_content.buf + last_end,
-		   last_manifest_content.len - last_end);
-
-	strbuf_swap(&last_manifest_content, &data);
-	strbuf_release(&data);
 
 	store_tree(&last_manifest->branch_tree);
 	oidcpy(&last_manifest->branch_tree.versions[0].oid,
