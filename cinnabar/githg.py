@@ -218,12 +218,6 @@ class ChangesetPatcher(str):
                     ','.join((str(start), str(end), urllib.quote(text_data)))
                     for start, end, text_data in items))
 
-            @classmethod
-            def from_obj(cls, obj):
-                if isinstance(obj, (tuple, list)):
-                    return cls.from_items(obj)
-                return cls(obj)
-
         def __init__(self, changeset, patch_data):
             self._changeset = changeset
             self.patch = self.Patch(patch_data)
