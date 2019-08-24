@@ -2352,10 +2352,10 @@ static void init_git_config()
 	/* If we couldn't get a path, then so be it. We may just not have
 	 * a complete configuration. */
 	if (!path.len)
-		return;
+		goto cleanup;
 
 	if (!git_config_system() || access_or_die(path.buf, R_OK, 0))
-		return;
+		goto cleanup;
 
 	if (the_repository->config)
 		// This shouldn't happen, but just in case...
@@ -2369,6 +2369,9 @@ static void init_git_config()
 	// wrong system gitconfig).
 	putenv("GIT_CONFIG_NOSYSTEM=1");
 	read_early_config(config_set_callback, the_repository->config);
+
+cleanup:
+	strbuf_release(&path);
 }
 
 int cmd_main(int argc, const char *argv[])
