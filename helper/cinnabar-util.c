@@ -269,10 +269,13 @@ static size_t prefix_write(char *ptr, size_t size, size_t nmemb, void *data)
 static int prefix_close(void *data)
 {
 	struct prefix_context *context = data;
+	int ret;
 	if (context->buf.len > context->prefix_len)
 		write_to(context->buf.buf, 1, context->buf.len, &context->out);
 	strbuf_release(&context->buf);
-	return writer_close(&context->out);
+	ret = writer_close(&context->out);
+	free(context);
+	return ret;
 }
 
 void prefix_writer(struct writer *writer, const char *prefix)
