@@ -39,7 +39,7 @@ DOCKER_IMAGES = {
          unzip\\
          xz-utils\\
          && apt-get clean
-        RUN pip install pip==10.0.1 --upgrade --ignore-installed
+        RUN pip install pip==19.2.2 --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
             '20180502T162513Z', (
                 ('debian', 'jessie'),

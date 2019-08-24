@@ -145,10 +145,14 @@ class Hg(Task, metaclass=Tool):
         else:
             desc = '{} {} {}'.format(desc, env.os, env.cpu)
             if os.startswith('osx'):
-                artifact = ('mercurial-{{}}-cp27-cp27m-macosx_{}_intel.whl'
-                            .format(os[3:]))
+                if os != 'osx10_10':
+                    wheel_cpu = 'x86_64'
+                else:
+                    wheel_cpu = 'intel'
+                artifact = ('mercurial-{{}}-cp27-cp27m-macosx_{}_{}.whl'
+                            .format(os[3:], wheel_cpu))
                 kwargs.setdefault('env', {})['MACOSX_DEPLOYMENT_TARGET'] = \
-                    '10.10'
+                    os[len('osx'):].replace('_', '.')
             else:
                 artifact = 'mercurial-{}-cp27-cp27m-mingw.whl'
 
@@ -168,11 +172,14 @@ class Hg(Task, metaclass=Tool):
         else:
             source = 'https://mercurial-scm.org/release/mercurial-{}.tar.gz'
 
+        h = hashlib.sha1(env.hexdigest.encode())
+        h.update(artifact.encode())
+
         Task.__init__(
             self,
             task_env=env,
             description=desc,
-            index='{}.hg.{}'.format(env.hexdigest, pretty_version),
+            index='{}.hg.{}'.format(h.hexdigest(), pretty_version),
             expireIn=expire,
             command=pre_command + [
                 'python -m pip wheel -v --build-option -b --build-option'
