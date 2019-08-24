@@ -357,10 +357,6 @@ def decision():
                 env={
                     'GIT_CINNABAR_CHECK': ','.join(
                         ['no-version-check'] + check),
-                    # Disable leak detection for now, as previous versions of
-                    # ASAN didn't detect those that are now detected and break
-                    # the cram tests.
-                    'ASAN_OPTIONS': 'detect_leaks=0',
                 },
             )
 
