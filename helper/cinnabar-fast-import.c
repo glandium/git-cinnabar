@@ -1003,6 +1003,7 @@ static void manifest_tree_finish(struct manifest_tree *tree)
 				tree->iter.tree->entry_count;
 		}
 	} while (manifest_tree_leave_dir(tree));
+	free(tree->stack);
 }
 
 static void new_store_manifest(struct rev_chunk *chunk)
