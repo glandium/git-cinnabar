@@ -397,7 +397,7 @@ except AttributeError:
 
 func()
 
-upload_coverage = []
+merge_coverage = []
 
 if TestTask.coverage and TC_IS_PUSH and TC_BRANCH:
     download_coverage = [
@@ -408,20 +408,34 @@ if TestTask.coverage and TC_IS_PUSH and TC_BRANCH:
     download_coverage.append(
         'curl -o gcda-helper.tar.xz -L {{{}.artifacts[1]}}'.format(task))
 
-    upload_coverage.extend([
+    merge_coverage.append(
         '(' + '& '.join(download_coverage) + '& wait)',
-        'tar -Jxf gcda-helper.tar.xz',
-    ])
-    for task in TestTask.coverage:
-        upload_coverage.extend([
-            'tar -Jxf cov-{{{}.id}}.tar.xz'.format(task),
-            'codecov --name "{}" --commit {} --branch {}'.format(
-                task.task['metadata']['name'], TC_COMMIT, TC_BRANCH),
-            ('find . \\( -name .coverage -o -name coverage.xml '
-             '-o -name \\*.gcda -o -name \\*.gcov \\) -delete'),
-        ])
+    )
 
-if upload_coverage:
+    for n, task in enumerate(TestTask.coverage):
+        merge_coverage.extend([
+            'mkdir cov{}'.format(n),
+            'tar -C cov{} -Jxf cov-{{{}.id}}.tar.xz'.format(n, task),
+        ])
+        if n >= 1:
+            merge_coverage.append(
+                'gcov-tool merge -o merge{} {}{} cov{}'.format(
+                    n, 'cov' if n == 1 else 'merge', n - 1, n)
+            )
+
+    last = '{}{}'.format('cov' if n == 0 else 'merge', n)
+
+    merge_coverage.extend([
+        'cd repo',
+        'coverage combine --append {}'.format(' '.join(
+            '../cov{}/.coverage'.format(n)
+            for n in range(len(TestTask.coverage)))),
+        'cd ..',
+        'tar -cf - -C {} . | tar -xf - -C repo'.format(last),
+        'tar -C repo -Jxf gcda-helper.tar.xz',
+    ])
+
+if merge_coverage:
     Task(
         task_env=TaskEnvironment.by_name('linux.codecov'),
         description='upload coverage',
@@ -435,9 +449,13 @@ if upload_coverage:
                  'python -c "import json, sys; print(json.load(sys.stdin)'
                  '[\\"secret\\"][\\"token\\"])")'),
                 'set -x',
-                'cd repo',
             ],
-            upload_coverage,
+            merge_coverage,
+            [
+                'cd repo',
+                'codecov --name "taskcluster" --commit {} --branch {}'.format(
+                    TC_COMMIT, TC_BRANCH),
+            ],
         )),
     )
 
