@@ -141,7 +141,7 @@ class Hg(Task, metaclass=Tool):
             expire = '26 weeks'
         desc = 'hg {}'.format(pretty_version)
         if os == 'linux':
-            artifact = 'mercurial-{}-cp27-none-linux_x86_64.whl'
+            artifact = 'mercurial-{}-cp27-cp27mu-linux_x86_64.whl'
         else:
             desc = '{} {} {}'.format(desc, env.os, env.cpu)
             if os.startswith('osx'):

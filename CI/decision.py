@@ -195,10 +195,11 @@ def decision():
         command=[
             '(cd repo &&'
             ' nosetests --all-modules --with-coverage --cover-tests tests)',
-            '(cd repo && flake8 --ignore E402 $(git ls-files \\*\\*.py'
-            ' git-cinnabar git-remote-hg | grep -v ^CI/))',
-            '(cd repo && python3 -m flake8 --ignore E402 '
-            '$(git ls-files CI/\\*\\*.py))',
+            '(cd repo && python -m flake8 --ignore E402,F405'
+            ' $(git ls-files \\*\\*.py git-cinnabar git-remote-hg'
+            ' | grep -v ^CI/))',
+            '(cd repo && flake8 --ignore E402,F405'
+            ' $(git ls-files CI/\\*\\*.py))',
         ],
     )
 
@@ -356,6 +357,10 @@ def decision():
                 env={
                     'GIT_CINNABAR_CHECK': ','.join(
                         ['no-version-check'] + check),
+                    # Disable leak detection for now, as previous versions of
+                    # ASAN didn't detect those that are now detected and break
+                    # the cram tests.
+                    'ASAN_OPTIONS': 'detect_leaks=0',
                 },
             )
 
