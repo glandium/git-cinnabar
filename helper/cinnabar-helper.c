@@ -145,6 +145,9 @@ static void rev_info_release(struct rev_info *revs)
 	for (i = 0; i < revs->cmdline.nr; i++)
 		free((void *)revs->cmdline.rev[i].name);
 	free(revs->cmdline.rev);
+	clear_pathspec(&revs->prune_data);
+	clear_pathspec(&revs->pruning.pathspec);
+	clear_pathspec(&revs->diffopt.pathspec);
 	revs->cmdline.rev = NULL;
 }
 
