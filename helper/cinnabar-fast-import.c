@@ -267,17 +267,15 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 	return 2;
 }
 
-/* Fill fast-import.c's command_buf */
-static void fill_command_buf(const char *command, struct string_list *args)
+/* Fill fast-import.c's command_buf with what was last recorded with
+ * record_command. */
+static void fill_command_buf()
 {
-	struct string_list_item *arg;
-
-	strbuf_detach(&command_buf, NULL);
-	strbuf_addstr(&command_buf, command);
-	for_each_string_list_item(arg, args) {
-		strbuf_addch(&command_buf, ' ');
-		strbuf_addstr(&command_buf, arg->string);
-	}
+	// command_buf.buf is never free()d directly, only via cmd_list,
+	// which has ownership.
+	command_buf.buf = cmd_tail->buf;
+	command_buf.len = strlen(cmd_tail->buf);
+	command_buf.alloc = command_buf.len + 1;
 }
 
 void maybe_reset_notes(const char *branch)
@@ -1306,7 +1304,7 @@ int maybe_handle_command(const char *command, struct string_list *args)
 {
 #define COMMON_HANDLING() do { \
 	ENSURE_INIT(); \
-	fill_command_buf(command, args); \
+	fill_command_buf(); \
 } while (0)
 
 	if (!strcmp(command, "done")) {
