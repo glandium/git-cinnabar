@@ -253,6 +253,11 @@ def decision():
         TestTask(
             task_env=env,
             variant='asan',
+        )
+        TestTask(
+            task_env=env,
+            variant='asan',
+            extra_desc='experiments',
             env={
                 'GIT_CINNABAR_EXPERIMENTS': 'true',
             },
