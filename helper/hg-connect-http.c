@@ -346,6 +346,7 @@ static void http_push_command(struct hg_connection *conn,
 		string_list_clear(&list, 0);
 		writer_close(&writer);
 	}
+	strbuf_release(&http_response);
 }
 
 /* The first request we send is a "capabilities" request. This sends to
