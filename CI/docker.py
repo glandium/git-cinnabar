@@ -27,24 +27,25 @@ def sources_list(snapshot, sections):
 
 DOCKER_IMAGES = {
     'base': '''\
-        FROM debian:jessie-20180426
+        FROM debian:stretch-20190812
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
          bzip2\\
          ca-certificates\\
          curl\\
+         python-setuptools\\
          python-pip\\
          python-wheel\\
          unzip\\
          xz-utils\\
          && apt-get clean
-        RUN pip install pip==10.0.1 --upgrade --ignore-installed
+        RUN pip install pip==19.2.2 --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
-            '20180502T162513Z', (
-                ('debian', 'jessie'),
-                ('debian', 'jessie-updates'),
-                ('debian-security', 'jessie/updates'),
+            '20190812T140702Z', (
+                ('debian', 'stretch'),
+                ('debian', 'stretch-updates'),
+                ('debian-security', 'stretch/updates'),
             )))),
 
     'build': '''\
@@ -75,6 +76,7 @@ DOCKER_IMAGES = {
     'test': '''\
         FROM base
         RUN apt-get install -y --no-install-recommends\\
+         flake8\\
          make\\
          python-coverage\\
          python-flake8\\

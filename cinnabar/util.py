@@ -139,7 +139,7 @@ check_enabled = ConfigSetFunc(
 
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
-    ('merge',),
+    ('merge', 'store'),
 )
 
 
@@ -219,8 +219,11 @@ class IOLogger(object):
         self._logger = logger
         self._prefix = (prefix + ' ') if prefix else ''
 
-    def read(self, length=0, level=logging.INFO):
-        ret = self._reader.read(length)
+    def read(self, length=None, level=logging.INFO):
+        if length is None:
+            ret = self._reader.read()
+        else:
+            ret = self._reader.read(length)
         if not isinstance(self._reader, IOLogger):
             self._logger.log(level, '%s<= %r', self._prefix, ret)
         return ret
@@ -883,7 +886,8 @@ class VersionCheck(Thread):
                     newer_version = v
             if newer_version != version:
                 self.message = (
-                    'New version available: {} (current version: {})'
+                    'New git-cinnabar version available: {} '
+                    '(current version: {})'
                     .format(newer_version, version))
 
     def join(self):

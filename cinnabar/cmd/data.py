@@ -1,3 +1,4 @@
+from __future__ import print_function
 import sys
 from cinnabar.cmd.util import CLI
 from cinnabar.githg import GitHgStore
@@ -14,7 +15,7 @@ def data(args):
 
     store = GitHgStore()
     if args.changeset and args.manifest:
-        print >>sys.stderr, 'Cannot use both -c and -m.'
+        print('Cannot use both -c and -m.', file=sys.stderr)
         return 1
     if args.changeset:
         sys.stdout.write(store.changeset(args.rev).raw_data)

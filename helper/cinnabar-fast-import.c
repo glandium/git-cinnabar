@@ -247,7 +247,8 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 		if (path_end) {
 			unsigned short mode;
 			char *path = xstrndup(*endptr, path_end - *endptr);
-			if (!get_tree_entry(note, path, &git_oid, &mode))
+			if (!get_tree_entry(the_repository, note, path,
+			                    &git_oid, &mode))
 				note = &git_oid;
 			else
 				note = &empty_tree;
@@ -266,17 +267,15 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 	return 2;
 }
 
-/* Fill fast-import.c's command_buf */
-static void fill_command_buf(const char *command, struct string_list *args)
+/* Fill fast-import.c's command_buf with what was last recorded with
+ * record_command. */
+static void fill_command_buf()
 {
-	struct string_list_item *arg;
-
-	strbuf_detach(&command_buf, NULL);
-	strbuf_addstr(&command_buf, command);
-	for_each_string_list_item(arg, args) {
-		strbuf_addch(&command_buf, ' ');
-		strbuf_addstr(&command_buf, arg->string);
-	}
+	// command_buf.buf is never free()d directly, only via cmd_list,
+	// which has ownership.
+	command_buf.buf = cmd_tail->buf;
+	command_buf.len = strlen(cmd_tail->buf);
+	command_buf.alloc = command_buf.len + 1;
 }
 
 void maybe_reset_notes(const char *branch)
@@ -680,7 +679,7 @@ static void manifest_metadata_path(struct strbuf *out, struct strslice *in)
 	strbuf_addslice(out, *in);
 }
 
-static void store_manifest(struct rev_chunk *chunk)
+static void old_store_manifest(struct rev_chunk *chunk)
 {
 	static struct hg_object_id last_manifest_oid;
 	static struct branch *last_manifest;
@@ -838,6 +837,313 @@ static void store_manifest(struct rev_chunk *chunk)
 
 malformed:
 	die("Malformed manifest chunk for %s", sha1_to_hex(chunk->node->hash));
+}
+
+struct tree_iter {
+	// fast-import tree that is iterated.
+	struct tree_content *tree;
+	// Index of the next entry tree_next_entry() will return.
+	size_t next_entry;
+	// Number of entries that have been seen and weren't removed.
+	size_t remaining_entry_count;
+	// Whether the tree was altered.
+	int modified;
+};
+
+static void tree_start_iter(struct tree_iter *iter, struct tree_content *tree)
+{
+	iter->tree = tree;
+	iter->next_entry = iter->remaining_entry_count = 0;
+	iter->modified = 0;
+}
+
+static struct tree_entry *tree_next_entry(struct tree_iter *iter)
+{
+	if (!iter->tree || iter->next_entry >= iter->tree->entry_count)
+		return NULL;
+
+	return iter->tree->entries[iter->next_entry++];
+}
+
+// Returns the last entry that tree_next_entry() returned.
+static struct tree_entry *tree_current_entry(struct tree_iter *iter)
+{
+	size_t next_entry = iter->next_entry;
+	assert(next_entry > 0);
+	return iter->tree->entries[next_entry - 1];
+}
+
+// Representation of a manifest as a fast-import tree, used to apply
+// removals from application of incoming mercurial revdiffs.
+struct manifest_tree {
+	// Tree root for the entire manifest.
+	struct tree_entry *root;
+	// Stack of tree iterators for all the parent directories.
+	struct tree_iter *stack;
+	size_t nr;
+	size_t alloc;
+	// Length of the path prefix for the current directory.
+	size_t prefix_len;
+	// Iterator for the current directory.
+	struct tree_iter iter;
+};
+
+static void manifest_tree_enter_dir(struct manifest_tree *tree,
+                                    struct tree_entry *e)
+{
+	assert(e == tree_current_entry(&tree->iter));
+	assert(S_ISDIR(e->versions[1].mode));
+
+	ALLOC_GROW(tree->stack, tree->nr + 1, tree->alloc);
+	tree->stack[tree->nr++] = tree->iter;
+	// Conveniently, because file names are prefixed with _, their length
+	// corresponds to the non-prefixed length followed by a forward slash.
+	tree->prefix_len += e->name->str_len;
+	if (!e->tree)
+		load_tree(e);
+	tree_start_iter(&tree->iter, e->tree);
+}
+
+static int manifest_tree_leave_dir(struct manifest_tree *tree)
+{
+	if (tree->nr == 0) {
+		if (tree->iter.modified)
+			oidclr(&tree->root->versions[1].oid);
+		return 0;
+	} else {
+		struct tree_entry *e;
+		struct tree_iter iter = tree->iter;
+		tree->iter = tree->stack[--tree->nr];
+		memset(&tree->stack[tree->nr], 0, sizeof(iter));
+
+		assert(iter.next_entry == iter.tree->entry_count);
+		e = tree_current_entry(&tree->iter);
+		tree->prefix_len -= e->name->str_len;
+
+		if (iter.modified) {
+			oidclr(&e->versions[1].oid);
+			if (!iter.remaining_entry_count)
+				e->versions[1].mode = 0;
+			tree->iter.modified = 1;
+		}
+		if (iter.remaining_entry_count)
+			tree->iter.remaining_entry_count++;
+	}
+	return 1;
+}
+
+static void manifest_tree_init(struct manifest_tree *tree,
+                                struct tree_entry *root)
+{
+	tree->root = root;
+	tree->stack = NULL;
+	tree->nr = tree->alloc = tree->prefix_len = 0;
+        tree->iter.remaining_entry_count = tree->iter.modified = 0;
+	tree_start_iter(&tree->iter, root->tree);
+}
+
+#define NO_DELETE 0
+#define DELETE 1
+
+// Iterate the manifest tree, recursively if necessary, for as many items
+// as necessary to generate `length` bytes of corresponding raw manifest
+// data. The `delete` argument indicates whether to delete the iterated files
+// or not while iterating.
+static int manifest_tree_advance(struct manifest_tree *tree, size_t length,
+                                  int delete)
+{
+	struct tree_entry *e;
+	size_t line_len = 0;
+	while (length) {
+		e = tree_next_entry(&tree->iter);
+		if (!e) {
+			if (!manifest_tree_leave_dir(tree))
+				return 0;
+			continue;
+		}
+		if (S_ISDIR(e->versions[1].mode)) {
+			manifest_tree_enter_dir(tree, e);
+			continue;
+		}
+		// Because the file name is prefixed with _, counting its
+		// length including the prefix accounts for the terminal
+		// nul character in the real path name.
+		line_len = tree->prefix_len + e->name->str_len;
+		// sha1
+		line_len += 40;
+		// manifest line attribute is empty for regular files, and
+		// has a length of 1 for other types.
+		if ((e->versions[1].mode & 0777) != 0644)
+			line_len++;
+		// newline
+		line_len++;
+		if (length < line_len)
+			return 0;
+		if (delete) {
+			e->versions[1].mode = 0;
+			oidclr(&e->versions[1].oid);
+			tree->iter.modified = 1;
+		} else
+			tree->iter.remaining_entry_count++;
+		length -= line_len;
+	}
+	return length == 0;
+}
+
+static void manifest_tree_finish(struct manifest_tree *tree)
+{
+	do {
+		if (tree->iter.tree) {
+			tree->iter.remaining_entry_count +=
+				tree->iter.tree->entry_count
+				- tree->iter.next_entry;
+			tree->iter.next_entry =
+				tree->iter.tree->entry_count;
+		}
+	} while (manifest_tree_leave_dir(tree));
+	free(tree->stack);
+}
+
+static void new_store_manifest(struct rev_chunk *chunk)
+{
+	static struct hg_object_id last_manifest_oid;
+	static struct branch *last_manifest;
+	struct manifest_tree manifest_tree;
+	struct strbuf data = STRBUF_INIT;
+	struct strbuf path = STRBUF_INIT;
+	struct rev_diff_part diff;
+	size_t last_end = 0;
+	struct strslice slice;
+	struct manifest_line line;
+
+	if (!last_manifest) {
+		last_manifest = new_branch("refs/cinnabar/manifests");
+	}
+	if (!is_null_hg_oid(chunk->delta_node) &&
+	    !hg_oideq(chunk->delta_node, &last_manifest_oid)) {
+		const struct object_id *note;
+		note = get_note_hg(&hg2git, chunk->delta_node);
+		if (!note)
+			die("Cannot find delta node %s for %s",
+			    sha1_to_hex(chunk->delta_node->hash),
+			    sha1_to_hex(chunk->node->hash));
+
+		// TODO: this could be smarter, avoiding to throw everything
+		// away. But this is what the equivalent fast-import commands
+		// would do so for now, this is good enough.
+		if (last_manifest->branch_tree.tree) {
+			release_tree_content_recursive(
+				last_manifest->branch_tree.tree);
+			last_manifest->branch_tree.tree = NULL;
+		}
+		hg_oidcpy(&last_manifest_oid, chunk->delta_node);
+		oidcpy(&last_manifest->oid, note);
+		parse_from_existing(last_manifest);
+		load_tree(&last_manifest->branch_tree);
+	}
+
+	manifest_tree_init(&manifest_tree, &last_manifest->branch_tree);
+
+	rev_diff_start_iter(&diff, chunk);
+	while (rev_diff_iter_next(&diff)) {
+		if (diff.start < last_end || diff.start > diff.end)
+			goto malformed;
+
+		if (!manifest_tree_advance(
+				&manifest_tree, diff.start - last_end,
+				NO_DELETE))
+			goto malformed;
+
+		last_end = diff.end;
+
+		// TODO: Avoid a remove+add cycle for same-file modifications.
+
+		// Process removed files.
+		if (!manifest_tree_advance(
+				&manifest_tree, diff.end - diff.start,
+				DELETE))
+			goto malformed;
+
+		// Some manifest chunks can have diffs like:
+		//   - start: off, end: off, data: string of length len
+		//   - start: off, end: off + len, data: ""
+		// which is valid, albeit wasteful.
+		// (example: 13b23929aeb7d1f1f21458dfcb32b8efe9aad39d in the
+		// mercurial mercurial repository, as of writing)
+		// What that means, however, is that we can't
+		// tree_content_set for additions until the end because a
+		// subsequent iteration might be removing what we just
+		// added. So we don't do them now, we'll re-iterate the diff
+		// later.
+	}
+
+	manifest_tree_finish(&manifest_tree);
+
+	rev_diff_start_iter(&diff, chunk);
+	while (rev_diff_iter_next(&diff)) {
+		// Process added files.
+		slice = strbuf_slice(&diff.data, 0, diff.data.len);
+		while (split_manifest_line(&slice, &line) == 0) {
+			uint16_t mode;
+			struct object_id file_node;
+			hg_oidcpy2git(&file_node, &line.oid);
+
+			if (line.attr == '\0')
+				mode = 0160644;
+			else if (line.attr == 'x')
+				mode = 0160755;
+			else if (line.attr == 'l')
+				mode = 0160000;
+			else
+				goto malformed;
+
+			manifest_metadata_path(&path, &line.path);
+			tree_content_set(&last_manifest->branch_tree,
+			                 path.buf, &file_node, mode, NULL);
+			strbuf_reset(&path);
+		}
+	}
+
+	strbuf_release(&path);
+
+	store_tree(&last_manifest->branch_tree);
+	oidcpy(&last_manifest->branch_tree.versions[0].oid,
+	       &last_manifest->branch_tree.versions[1].oid);
+
+	strbuf_addf(&data, "tree %s\n",
+	            oid_to_hex(&last_manifest->branch_tree.versions[1].oid));
+
+	if ((add_parent(&data, &last_manifest_oid, last_manifest,
+	                chunk->parent1) == -1) ||
+	    (add_parent(&data, &last_manifest_oid, last_manifest,
+	                chunk->parent2) == -1))
+		goto malformed;
+
+	hg_oidcpy(&last_manifest_oid, chunk->node);
+	strbuf_addstr(&data, "author  <cinnabar@git> 0 +0000\n"
+	                     "committer  <cinnabar@git> 0 +0000\n"
+	                     "\n");
+	strbuf_addstr(&data, sha1_to_hex(last_manifest_oid.hash));
+	store_object(OBJ_COMMIT, &data, NULL, &last_manifest->oid, 0);
+	strbuf_release(&data);
+	ensure_notes(&hg2git);
+	add_note_hg(&hg2git, &last_manifest_oid, &last_manifest->oid, NULL);
+	add_head(&manifest_heads, &last_manifest->oid);
+	if ((cinnabar_check & CHECK_MANIFESTS) &&
+	    !check_manifest(&last_manifest->oid, NULL))
+		die("sha1 mismatch for node %s", sha1_to_hex(chunk->node->hash));
+	return;
+
+malformed:
+	die("Malformed manifest chunk for %s", sha1_to_hex(chunk->node->hash));
+}
+
+static void store_manifest(struct rev_chunk *chunk)
+{
+	if (cinnabar_experiments & EXPERIMENT_STORE)
+		new_store_manifest(chunk);
+	else
+		old_store_manifest(chunk);
 }
 
 static void for_each_changegroup_chunk(FILE *in, int version,
@@ -998,7 +1304,7 @@ int maybe_handle_command(const char *command, struct string_list *args)
 {
 #define COMMON_HANDLING() do { \
 	ENSURE_INIT(); \
-	fill_command_buf(command, args); \
+	fill_command_buf(); \
 } while (0)
 
 	if (!strcmp(command, "done")) {

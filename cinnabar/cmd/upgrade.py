@@ -1,3 +1,4 @@
+from __future__ import print_function
 from cinnabar.cmd.util import CLI
 from cinnabar.exceptions import (
     OldUpgradeAbort,
@@ -18,7 +19,7 @@ def upgrade(args):
 
     try:
         store = GitHgStore()
-        print 'No metadata to upgrade'
+        print('No metadata to upgrade')
         return 2
     except OldUpgradeAbort:
         raise
@@ -26,12 +27,12 @@ def upgrade(args):
         store = UpgradeGitHgStore()
 
     if not GitHgHelper.upgrade():
-        print 'Cannot finish upgrading... You may need to reclone.'
+        print('Cannot finish upgrading... You may need to reclone.')
         return 1
 
-    print 'Finalizing upgrade...'
+    print('Finalizing upgrade...')
     store.close(refresh=store.METADATA_REFS)
-    print (
+    print(
         'You may want to run `git cinnabar fsck` to ensure the upgrade '
         'went well.\n'
     )

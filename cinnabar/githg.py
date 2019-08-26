@@ -2,8 +2,10 @@
 
 from __future__ import division
 from binascii import hexlify, unhexlify
-from itertools import izip
-import hashlib
+try:
+    from itertools import izip as zip
+except ImportError:
+    pass
 import io
 import os
 import shutil
@@ -15,8 +17,14 @@ from collections import (
     Sequence,
     defaultdict,
 )
-from urllib2 import URLError
-from urlparse import urlparse
+try:
+    from urllib2 import URLError
+except ImportError:
+    from urllib.error import URLError
+try:
+    from urlparse import urlparse
+except ImportError:
+    from urllib.parse import urlparse
 from .exceptions import (
     AmbiguousGraftAbort,
     NothingToGraftException,
@@ -46,7 +54,7 @@ from .hg.objects import (
     Authorship,
     Changeset,
     File,
-    textdiff,
+    Manifest,
 )
 from .helper import GitHgHelper
 from .util import progress_iter
@@ -63,78 +71,6 @@ HG_EMPTY_FILE = 'b80de5d138758541c5f05265ad144ab9fa86d1db'
 
 
 revchunk_log = logging.getLogger('revchunks')
-
-
-class RevChunk(object):
-    __slots__ = ('node', 'parent1', 'parent2', 'changeset', 'data',
-                 'delta_node', '_rev_data')
-
-    def __init__(self, chunk):
-        self.node, self.parent1, self.parent2, self.changeset = (
-            chunk.node, chunk.parent1, chunk.parent2, chunk.changeset)
-        self.delta_node = chunk.delta_node
-        self._rev_data = chunk.data
-        revchunk_log.debug('%s %s %s %s', self.node, self.parent1,
-                           self.parent2, self.changeset)
-        revchunk_log.debug('%r', self._rev_data)
-
-    def __repr__(self):
-        return '<%s %s>' % (self.__class__.__name__, self.node)
-
-    def init(self, previous_chunk):
-        assert self.delta_node == NULL_NODE_ID or previous_chunk
-        self.data = self.patch_data(previous_chunk.data if previous_chunk
-                                    else '', self._rev_data)
-
-    def patch_data(self, data, rev_patch):
-        return RevDiff(rev_patch).apply(data)
-
-    @property
-    def sha1(self):
-        p1 = unhexlify(self.parent1)
-        p2 = unhexlify(self.parent2)
-        return hashlib.sha1(
-            min(p1, p2) +
-            max(p1, p2) +
-            self.data
-        ).hexdigest()
-
-    def diff(self, other):
-        return textdiff(other.data if other else '', self.data)
-
-    def serialize(self, other, type):
-        result = type()
-        result.node = self.node
-        result.parent1 = self.parent1
-        result.parent2 = self.parent2
-        if other:
-            result.delta_node = other.node
-        result.changeset = self.changeset
-        result.data = self.diff(other)
-        return result
-
-    @property
-    def parents(self):
-        if self.parent1 != NULL_NODE_ID:
-            if self.parent2 != NULL_NODE_ID:
-                return (self.parent1, self.parent2)
-            return (self.parent1,)
-        if self.parent2 != NULL_NODE_ID:
-            return (self.parent2,)
-        return ()
-
-
-class GeneratedRevChunk(RevChunk):
-    def __init__(self, node, data):
-        self.node = node
-        self.data = data
-
-    def init(self, previous_chunk):
-        pass
-
-    def set_parents(self, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
-        self.parent1 = parent1
-        self.parent2 = parent2
 
 
 class FileFindParents(object):
@@ -252,68 +188,6 @@ class FileFindParents(object):
         return file.node == file.sha1
 
 
-class ManifestLine(object):
-    __slots__ = ('name', 'node', 'attr', '_str', '_len')
-
-    def __init__(self, name, node, attr):
-        self.name = name
-        self.node = node
-        self.attr = attr
-        assert len(self.node) == 40
-        self._str = '%s\0%s%s\n' % (self.name, self.node, self.attr)
-        self._len = len(self.name) + len(self.attr) + 41
-
-    def __str__(self):
-        return self._str
-
-    def __len__(self):
-        return self._len
-
-
-def isplitmanifest(data):
-    for l in data.splitlines():
-        null = l.find('\0')
-        if null == -1:
-            return
-        yield ManifestLine(l[:null], l[null + 1:null + 41], l[null + 41:])
-
-
-class ManifestInfo(RevChunk):
-    __slots__ = ('removed', 'modified')
-
-    def patch_data(self, raw_data, rev_patch):
-        new = bytearray()
-        data = memoryview(raw_data)
-        end = 0
-        before_list = {}
-        after_list = {}
-        for diff in RevDiff(rev_patch):
-            new += data[end:diff.start]
-            new += diff.text_data
-            end = diff.end
-
-            start = raw_data.rfind('\n', 0, diff.start) + 1
-            if diff.end == 0 or data[diff.end - 1] == '\n':
-                finish = diff.end
-            else:
-                finish = raw_data.find('\n', diff.end)
-            if finish != -1:
-                before = data[start:finish]
-            else:
-                before = data[start:]
-            after = before[:diff.start - start].tobytes() + \
-                diff.text_data.tobytes() + \
-                before[diff.end - start:].tobytes()
-            before_list.update({f.name: (f.node, f.attr)
-                                for f in isplitmanifest(before.tobytes())})
-            after_list.update({f.name: (f.node, f.attr)
-                               for f in isplitmanifest(after)})
-        new += data[end:]
-        self.removed = set(before_list.keys()) - set(after_list.keys())
-        self.modified = after_list
-        return new
-
-
 class ChangesetPatcher(str):
     class ChangesetPatch(RawRevChunk):
         __slots__ = ('patch', '_changeset')
@@ -343,12 +217,6 @@ class ChangesetPatcher(str):
                 return cls('\0'.join(
                     ','.join((str(start), str(end), urllib.quote(text_data)))
                     for start, end, text_data in items))
-
-            @classmethod
-            def from_obj(cls, obj):
-                if isinstance(obj, (tuple, list)):
-                    return cls.from_items(obj)
-                return cls(obj)
 
         def __init__(self, changeset, patch_data):
             self._changeset = changeset
@@ -442,54 +310,18 @@ class Changeset(Changeset):
         return changeset
 
 
-class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
-    __slots__ = ('__lines', '_data')
+class GeneratedManifestInfo(Manifest):
+    __slots__ = ('delta_node', 'removed', 'modified')
 
     def __init__(self, node):
-        super(GeneratedManifestInfo, self).__init__(node, '')
-        if node == NULL_NODE_ID:
-            self.__lines = []
-        else:
-            self.__lines = None
-        self._data = None
+        super(GeneratedManifestInfo, self).__init__(node)
         self.removed = set()
         self.modified = {}
 
-    def init(self, previous_chunk):
-        pass
-
-    @property
-    def data(self):
-        if self._data is None and self.__lines is None:
-            self._data = GitHgHelper.manifest(self.node)
-
-        if self._data is None:
-            # Normally, it'd be better to use str(l), but it turns out to make
-            # things significantly slower. Sigh python.
-            self._data = ''.join(l._str for l in self._lines)
-        return self._data
-
-    @data.setter
-    def data(self, value):
-        self._data = value
-        self.__lines = None
-
-    @property
-    def _lines(self):
-        if self.__lines is None:
-            self.__lines = list(isplitmanifest(self.data or ''))
-        return iter(self.__lines)
-
-    @_lines.setter
-    def _lines(self, value):
-        self.__lines = value
-        self._data = None
-
-    def append_line(self, line, modified=False):
-        self.__lines.append(line)
+    def add(self, path, sha1=None, attr='', modified=False):
+        super(GeneratedManifestInfo, self).add(path, sha1, attr)
         if modified:
-            self.modified[line.name] = (line.node, line.attr)
-        self._data = None
+            self.modified[path] = (sha1, attr)
 
 
 class TagSet(object):
@@ -1175,12 +1007,12 @@ class GitHgStore(object):
 
     def manifest(self, sha1, include_parents=False):
         manifest = GeneratedManifestInfo(sha1)
-        manifest.data = GitHgHelper.manifest(sha1)
+        manifest.raw_data = GitHgHelper.manifest(sha1)
         if include_parents:
             git_sha1 = self.manifest_ref(sha1)
             commit = GitCommit(git_sha1)
             parents = (self.hg_manifest(p) for p in commit.parents)
-            manifest.set_parents(*parents)
+            manifest.parents = tuple(parents)
         return manifest
 
     def manifest_ref(self, sha1):
@@ -1328,8 +1160,8 @@ class GitHgStore(object):
                 modified = instance.modified.items()
             else:
                 # slow
-                modified = ((line.name, (line.node, line.attr))
-                            for line in instance._lines)
+                modified = ((line.path, (line.sha1, line.attr))
+                            for line in instance)
             for name, (node, attr) in modified:
                 node = str(node)
                 commit.filemodify(self.manifest_metadata_path(name), node,
@@ -1337,9 +1169,6 @@ class GitHgStore(object):
 
         GitHgHelper.set('manifest', instance.node, ':1')
 
-        self.check_manifest(instance)
-
-    def check_manifest(self, instance):
         if check_enabled('manifests'):
             if not GitHgHelper.check_manifest(instance.node):
                 raise Exception(
@@ -1385,8 +1214,8 @@ class GitHgStore(object):
         if (any(self._hgheads.iterchanges()) or
                 'refs/cinnabar/changesets' in refresh):
             heads = sorted((self._hgheads[h], h, g)
-                           for h, g in izip(hg_changeset_heads,
-                                            changeset_heads))
+                           for h, g in zip(hg_changeset_heads,
+                                           changeset_heads))
             with GitHgHelper.commit(
                 ref='refs/cinnabar/changesets',
                 parents=list(h for _, __, h in heads),

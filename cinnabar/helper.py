@@ -78,7 +78,9 @@ class ReadWriter(object):
         self._reader = reader
         self._writer = writer
 
-    def read(self, size=0):
+    def read(self, size=None):
+        if size is None:
+            return self._reader.read()
         return self._reader.read(size)
 
     def readline(self):
@@ -107,6 +109,9 @@ class BaseHelper(object):
             env = {
                 'GIT_REPLACE_REF_BASE': 'refs/cinnabar/replace/',
             }
+            for k in os.environ:
+                if k.startswith('GIT_CINNABAR_'):
+                    env[k] = os.environ[k]
             if helper_path and os.path.exists(helper_path):
                 command = [helper_path]
             else:

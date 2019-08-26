@@ -173,7 +173,9 @@ $(CINNABAR_OBJECTS): $(LIB_H)
 endif
 
 ifndef NO_CURL
+ifeq (,$(filter http.c.patch,$(PATCHES)))
 git-cinnabar-helper$X: http.o
+endif
 endif
 git-cinnabar-helper$X: $(CINNABAR_OBJECTS) GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \

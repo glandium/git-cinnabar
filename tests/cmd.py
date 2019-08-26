@@ -1,3 +1,4 @@
+from __future__ import print_function
 import os
 import unittest
 from cinnabar.cmd.util import Version as CmdVersion
@@ -11,7 +12,7 @@ from distutils.version import StrictVersion
 
 class Version(StrictVersion):
     def __init__(self, v):
-        print v
+        print(v)
         if v.endswith('a'):
             v += '0'
         StrictVersion.__init__(self, v)

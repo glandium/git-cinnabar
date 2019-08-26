@@ -1,3 +1,4 @@
+from __future__ import print_function
 import logging
 import re
 import sys
@@ -26,7 +27,10 @@ from collections import (
     defaultdict,
     OrderedDict,
 )
-from itertools import izip
+try:
+    from itertools import izip as zip
+except ImportError:
+    pass
 
 
 SHA1_RE = re.compile('[0-9a-f]{40}$')
@@ -41,7 +45,7 @@ class FsckStatus(object):
 
     def info(self, message):
         sys.stderr.write('\r')
-        print message
+        print(message)
 
     def fix(self, message):
         self.status = 'fixed'
@@ -116,7 +120,7 @@ def fsck_quick(force=False):
     # TODO: Check that the recorded heads are actually dag heads.
     for c, changeset_node in progress_iter(
             'Checking {} changeset heads',
-            ((c, node) for c, node in izip(commit.parents, heads)
+            ((c, node) for c, node in zip(commit.parents, heads)
              if not checked_commit or c not in checked_commit.parents)):
         gitsha1 = GitHgHelper.hg2git(changeset_node)
         if gitsha1 == NULL_NODE_ID:

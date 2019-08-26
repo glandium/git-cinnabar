@@ -73,6 +73,7 @@ void copy_bundle_to_file(FILE *in, FILE *out)
 	writer.close = (close_callback)fflush;
 	writer.context = out;
 	copy_bundle(in, &writer);
+	writer_close(&writer);
 }
 
 void copy_bundle_to_strbuf(FILE *in, struct strbuf *out)
@@ -82,6 +83,7 @@ void copy_bundle_to_strbuf(FILE *in, struct strbuf *out)
 	writer.close = NULL;
 	writer.context = out;
 	copy_bundle(in, &writer);
+	writer_close(&writer);
 }
 
 void read_chunk(FILE *in, struct strbuf *out)

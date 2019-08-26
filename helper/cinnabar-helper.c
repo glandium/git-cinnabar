@@ -88,10 +88,10 @@
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
-static int mode = 0xff; // Enable everything by default
-
 #define MODE_IMPORT 0x01
 #define MODE_WIRE 0x02
+
+static int mode = 0xff; // Enable everything by default
 
 struct notes_tree git2hg, hg2git, files_meta;
 
@@ -100,6 +100,7 @@ struct oidset hg2git_seen = OIDSET_INIT;
 
 int metadata_flags = 0;
 int cinnabar_check = 0;
+int cinnabar_experiments = 0;
 
 static int config(const char *name, struct strbuf *result)
 {
@@ -144,7 +145,14 @@ static void rev_info_release(struct rev_info *revs)
 	for (i = 0; i < revs->cmdline.nr; i++)
 		free((void *)revs->cmdline.rev[i].name);
 	free(revs->cmdline.rev);
+	clear_pathspec(&revs->prune_data);
+	clear_pathspec(&revs->pruning.pathspec);
+	clear_pathspec(&revs->diffopt.pathspec);
 	revs->cmdline.rev = NULL;
+	for (i = 0; i < revs->treesame.size; i++)
+		if (revs->treesame.entries[i].base)
+			free(revs->treesame.entries[i].decoration);
+	free(revs->treesame.entries);
 }
 
 static void split_command(char *line, const char **command,
@@ -1068,6 +1076,13 @@ static void do_helpercaps(struct string_list *args)
 			strbuf_addstr(&caps, ",ZS");
 		}
 	}
+
+	if (cinnabar_experiments & EXPERIMENT_STORE) {
+		if (caps.len)
+			strbuf_addch(&caps, '\n');
+		strbuf_addstr(&caps, "store=new");
+	}
+
 	send_buffer(&caps);
 	strbuf_release(&caps);
 }
@@ -1422,7 +1437,7 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 {
 	struct oid_map_entry k, *cache_entry;
 
-	hashmap_entry_init(&k.ent, sha1hash(tree_id->hash));
+	hashmap_entry_init(&k.ent, oidhash(tree_id));
 	oidcpy(&k.old_oid, tree_id);
 	cache_entry = hashmap_get(cache, &k, NULL);
 	if (!cache_entry) {
@@ -1669,6 +1684,23 @@ static void init_config()
 		strbuf_list_free(check);
 	}
 	strbuf_release(&conf);
+
+	if (!config("experiments", &conf)) {
+		struct strbuf **check = strbuf_split(&conf, ',');
+		struct strbuf **c;
+		for (c = check; *c; c++) {
+			// strbuf_split leaves the `,`.
+			if ((*c)->buf[(*c) -> len - 1] == ',')
+				strbuf_setlen(*c, (*c)->len - 1);
+			if (!strcmp((*c)->buf, "true") ||
+			    !strcmp((*c)->buf, "all"))
+				cinnabar_experiments = -1;
+			else if (!strcmp((*c)->buf, "store"))
+				cinnabar_experiments |= EXPERIMENT_STORE;
+		}
+		strbuf_list_free(check);
+	}
+	strbuf_release(&conf);
 }
 
 static void reset_replace_map()
@@ -1799,10 +1831,10 @@ static void init_git_config()
 	/* If we couldn't get a path, then so be it. We may just not have
 	 * a complete configuration. */
 	if (!path.len)
-		return;
+		goto cleanup;
 
 	if (!git_config_system() || access_or_die(path.buf, R_OK, 0))
-		return;
+		goto cleanup;
 
 	if (the_repository->config)
 		// This shouldn't happen, but just in case...
@@ -1816,6 +1848,9 @@ static void init_git_config()
 	// wrong system gitconfig).
 	putenv("GIT_CONFIG_NOSYSTEM=1");
 	read_early_config(config_set_callback, the_repository->config);
+
+cleanup:
+	strbuf_release(&path);
 }
 
 int cmd_main(int argc, const char *argv[])
@@ -1835,6 +1870,7 @@ int cmd_main(int argc, const char *argv[])
 
 	init_git_config();
 	git_config(git_default_config, NULL);
+	init_config();
 	ignore_case = 0;
 	save_commit_buffer = 0;
 	warn_on_object_refname_ambiguity = 0;
@@ -1863,7 +1899,6 @@ int cmd_main(int argc, const char *argv[])
 			setup_git_directory();
 			git_config(git_diff_basic_config, NULL);
 			ignore_case = 0;
-			init_config();
 			init_metadata();
 			initialized = 1;
 			hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);

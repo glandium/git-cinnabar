@@ -14,16 +14,24 @@ from binascii import (
     hexlify,
     unhexlify,
 )
-from itertools import (
-    chain,
-    izip,
-)
+from itertools import chain
+try:
+    from itertools import izip as zip
+except ImportError:
+    pass
 from io import BytesIO
-from urlparse import (
-    ParseResult,
-    urlparse,
-    urlunparse,
-)
+try:
+    from urlparse import (
+        ParseResult,
+        urlparse,
+        urlunparse,
+    )
+except ImportError:
+    from urllib.parse import (
+        ParseResult,
+        urlparse,
+        urlunparse,
+    )
 import logging
 import struct
 import random
@@ -247,7 +255,7 @@ def findcommon(repo, store, hgheads):
     sample = _sample(hgheads, sample_size)
     requests = 1
     known = repo.known(unhexlify(h) for h in sample)
-    known = set(h for h, k in izip(sample, known) if k)
+    known = set(h for h, k in zip(sample, known) if k)
 
     logger.debug('initial sample size: %d', len(sample))
 
@@ -303,8 +311,8 @@ def findcommon(repo, store, hgheads):
         hg_sample = [store.hg_changeset(h) for h in sample]
         requests += 1
         known = repo.known(unhexlify(h) for h in hg_sample)
-        unknown = set(h for h, k in izip(sample, known) if not k)
-        known = set(h for h, k in izip(sample, known) if k)
+        unknown = set(h for h, k in zip(sample, known) if not k)
+        known = set(h for h, k in zip(sample, known) if k)
         logger.debug('next sample size: %d', len(sample))
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug('known (sub)set: (%d) %s', len(known), sorted(known))
@@ -635,7 +643,10 @@ def get_clonebundle(repo):
         return None
 
     sys.stderr.write('Getting clone bundle from %s\n' % url)
+    return get_bundle(url)
 
+
+def get_bundle(url):
     reader = BundleHelper.connect(url)
     if not reader:
         BundleHelper.close()
@@ -740,7 +751,10 @@ def do_cinnabarclone(repo, manifest, store):
             # Future proofing: ignore lines with unknown params, even if we
             # support some that are present.
             continue
-        if graft:
+        if store._graft:
+            # When grafting, ignore lines without a graft revision.
+            if not graft:
+                continue
             graft = graft.split(',')
             revs = list(Git.iter('rev-parse', '--revs-only', *graft))
             if len(revs) != len(graft):
@@ -780,7 +794,7 @@ def getbundle(repo, store, heads, branch_names):
         bundle = None
         got_partial = False
         if not common:
-            if not store._has_metadata and not store._graft:
+            if not store._has_metadata:
                 manifest = Git.config('cinnabar.clone')
                 if manifest is None and repo.capable('cinnabarclone'):
                     manifest = repo._call('cinnabarclone')
