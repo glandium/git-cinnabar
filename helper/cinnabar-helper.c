@@ -149,6 +149,10 @@ static void rev_info_release(struct rev_info *revs)
 	clear_pathspec(&revs->pruning.pathspec);
 	clear_pathspec(&revs->diffopt.pathspec);
 	revs->cmdline.rev = NULL;
+	for (i = 0; i < revs->treesame.size; i++)
+		if (revs->treesame.entries[i].base)
+			free(revs->treesame.entries[i].decoration);
+	free(revs->treesame.entries);
 }
 
 static void split_command(char *line, const char **command,
