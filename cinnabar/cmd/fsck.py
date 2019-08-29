@@ -56,6 +56,12 @@ class FsckStatus(object):
         self.info(message)
 
 
+def check_replace(store):
+    self_refs = [r for r, s in store._replace.iteritems() if r == s]
+    for r in progress_iter('Removing {} self-referencing grafts', self_refs):
+        del store._replace[r]
+
+
 def fsck_quick(force=False):
     status = FsckStatus()
     store = GitHgStore()
@@ -315,6 +321,8 @@ def fsck_quick(force=False):
             'https://github.com/glandium/git-cinnabar/issues')
         return 1
 
+    check_replace(store)
+
     if status('broken'):
         status.info(
             'Your git-cinnabar repository appears to be corrupted.\n'
@@ -537,6 +545,8 @@ def fsck(args):
     for c in dangling:
         status.fix('Removing dangling note for commit ' + c)
         GitHgHelper.set('changeset-metadata', c, NULL_NODE_ID)
+
+    check_replace(store)
 
     if status('broken'):
         status.info(

@@ -2274,16 +2274,22 @@ static void init_metadata()
 	parse_tree(tree);
 	init_tree_desc(&desc, tree->buffer, tree->size);
 	while (tree_entry(&desc, &entry)) {
-		replace = xmalloc(sizeof(*replace));
+		struct object_id original_oid;
 		if (entry.pathlen != 40 ||
-		    get_oid_hex(entry.path, &replace->original.oid)) {
+		    get_oid_hex(entry.path, &original_oid)) {
 			struct strbuf buf = STRBUF_INIT;
-			free(replace);
 			strbuf_add(&buf, entry.path, entry.pathlen);
 			warning(_("bad replace name: %s"), buf.buf);
 			strbuf_release(&buf);
 			continue;
 		}
+		if (oideq(&entry.oid, &original_oid)) {
+			warning(_("self-referencing graft: %s"),
+				oid_to_hex(&original_oid));
+			continue;
+		}
+		replace = xmalloc(sizeof(*replace));
+		oidcpy(&replace->original.oid, &original_oid);
 		oidcpy(&replace->replacement, &entry.oid);
 		if (oidmap_put(the_repository->objects->replace_map, replace))
 			die(_("duplicate replace: %s"),
