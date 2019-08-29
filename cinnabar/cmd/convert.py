@@ -1,10 +1,7 @@
 from __future__ import print_function
 import argparse
 from cinnabar.cmd.util import CLI
-from cinnabar.git import (
-    Git,
-    NULL_NODE_ID,
-)
+from cinnabar.git import NULL_NODE_ID
 from cinnabar.helper import GitHgHelper
 
 
@@ -61,8 +58,6 @@ def hg2git(args):
 def git2hg(args):
     '''convert git sha1 to corresponding mercurial sha1'''
 
-    for sha1, ref in Git.for_each_ref('refs/cinnabar/replace'):
-        Git._replace[ref[22:]] = sha1
     for arg in args.sha1:
         data = GitHgHelper.git2hg(arg)
         if data:
