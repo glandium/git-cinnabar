@@ -88,6 +88,7 @@ check-graft: hg.cinnabarclone-graft.git
 check-graft: hg.cinnabarclone-graft-replace.git
 ifndef GIT_CINNABAR_OLD
 check-graft: hg.cinnabarclone-graft-bundle.git
+check-graft: hg.graft.cinnabar.git
 endif
 
 hg.hg hg.hg.nobundle2: hg.upgraded.git
@@ -245,6 +246,12 @@ hg.graft.replace.git: hg.graft.git hg.upgraded.git
 	$(call COMPARE_REFS, $(word 2,$^), $@, XARGS_GIT2HG)
 	$(call COMPARE_COMMANDS,$(call GET_ROOTS,$(word 2,$^),--remotes),$(call GET_ROOTS,$@,--glob=refs/cinnabar/replace))
 	$(GIT) -C $@ cinnabar fsck --full
+
+hg.graft.cinnabar.git: hg.upgraded.git
+	cp -r $< $@
+	$(GIT) -C $@ -c cinnabar.graft=true cinnabar reclone
+	$(call COMPARE_REFS, $<, $@, XARGS_GIT2HG)
+	test $$($(GIT) -C $@ for-each-ref refs/cinnabar/replace | wc -l) -eq 0
 
 hg.cant.graft.git: hg.graft.replace.git
 	cp -r $< $@

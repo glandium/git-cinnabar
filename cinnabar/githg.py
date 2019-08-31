@@ -568,7 +568,7 @@ class Grafter(object):
         store.store_changeset(changeset, commit or False)
         commit = store.changeset_ref(changeset.node)
         if is_early_history:
-            if result:
+            if result and result.sha1 != commit:
                 store._replace[result.sha1] = commit
             else:
                 self._early_history.add(commit)
