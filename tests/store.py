@@ -1,8 +1,11 @@
 import os
+import shutil
+import tempfile
 import unittest
 from binascii import unhexlify
 from collections import OrderedDict
 from itertools import chain
+from cinnabar.git import Git
 from cinnabar.githg import (
     GitCommit,
     GitHgStore,
@@ -26,6 +29,10 @@ class TestStoreCG01(unittest.TestCase):
     NEW_STORE = False
 
     def setUp(self):
+        self.git_dir = os.environ.get('GIT_DIR')
+        tmpdir = tempfile.mkdtemp()
+        Git.run('init', '--bare', tmpdir, stdout=open(os.devnull, 'w'))
+        os.environ['GIT_DIR'] = tmpdir
         os.environ['GIT_CINNABAR_EXPERIMENTS'] = \
             'store' if self.NEW_STORE else ''
         self.assertEquals(
@@ -34,6 +41,11 @@ class TestStoreCG01(unittest.TestCase):
     def tearDown(self):
         GitHgHelper.close(rollback=True)
         GitHgHelper._helper = False
+        shutil.rmtree(os.environ['GIT_DIR'])
+        if self.git_dir is None:
+            del os.environ['GIT_DIR']
+        else:
+            os.environ['GIT_DIR'] = self.git_dir
 
     def test_store_file(self):
         f = File()

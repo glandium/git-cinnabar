@@ -64,7 +64,8 @@ class Git(object):
 
     @classmethod
     def run(self, *args, **kwargs):
-        return tuple(self.iter(*args, stdout=None, **kwargs))
+        stdout = kwargs.pop('stdout', None)
+        return tuple(self.iter(*args, stdout=stdout, **kwargs))
 
     @classmethod
     def for_each_ref(self, *patterns):
