@@ -60,7 +60,7 @@ static struct leaf_node *note_tree_abbrev_find(struct notes_tree *t,
 	unsigned char i, j;
 	void *p;
 
-	if (n > len) {
+	if (n >= len) {
 		for (i = 17, j = 0; j < 16; j++) {
 			if (tree->a[j])
 				i = (i < 17) ? 16 : j;
