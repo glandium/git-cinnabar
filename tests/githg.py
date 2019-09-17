@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import unittest
 from cinnabar.git import NULL_NODE_ID
 from cinnabar.githg import (

@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 

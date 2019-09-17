@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import logging
 from cinnabar.cmd.util import CLI
 from cinnabar.githg import GitCommit

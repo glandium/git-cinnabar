@@ -1,4 +1,4 @@
-from __future__ import division
+from __future__ import absolute_import, division
 import hashlib
 import re
 from binascii import unhexlify
