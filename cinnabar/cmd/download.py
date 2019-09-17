@@ -1,4 +1,4 @@
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import, division, print_function
 import os
 import sys
 import argparse
@@ -166,7 +166,7 @@ def download(args):
 
         def progress(self):
             if self._length:
-                count = self._read * 100 / self._length
+                count = self._read * 100 // self._length
             else:
                 count = self._read
             self._progress.progress(count)
