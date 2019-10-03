@@ -83,7 +83,8 @@ branches and bookmarks. Mercurial branches are permanent markers on each
 changeset that belongs to them, and bookmarks are similar to git branches.
 
 You may choose how to interact with those with the `cinnabar.refs`
-configuration. The following values are supported:
+configuration. The following values are supported, either individually or
+combined in a comma-separated list:
 
 - `bookmarks`: in this mode, the mercurial repository's bookmarks are exposed
   as `refs/heads/$bookmark`. Practically speaking, this means the mercurial
@@ -97,12 +98,28 @@ configuration. The following values are supported:
   `refs/heads/$branch/$head`, where `$branch` is the mercurial branch name
   and `$head` is the full changeset sha1 of that head.
 
-- `all` (default): in this mode:
-  - bookmarks are exposed as `refs/heads/bookmarks/$bookmark`,
-  - branch heads are exposed as `refs/heads/branches/$branch/$head` (where
-    `$head` is the full changeset sha1 of the head),
-  - except the branch tip, which is exposed as
-    `refs/heads/branches/$branch/tip`.
+When these values are used in combinations, the branch mappings are varied
+accordingly to make the type of each remote ref explicit and to avoid name
+collisions.
+
+- When combining `bookmarks` and `heads`, bookmarks are exposed as
+  `refs/heads/bookmarks/$bookmark` and branch heads are exposed as
+  `refs/heads/branches/$branch/$head` (where `$head` is the full changeset
+  sha1 of the head).
+
+- When combining `bookmarks` and `tips`, bookmarks are exposed as
+  `refs/heads/bookmarks/$bookmark` and branch tips are exposed as
+  `refs/heads/branches/$branch`. Any other heads of the same branch are not
+  exposed.
+
+- When combining all of `bookmarks`, `heads`, and `tips`, bookmarks are
+  exposed as `refs/heads/bookmarks/$bookmark`, branch heads are exposed as
+  `refs/heads/branches/$branch/$head` (where `$head` is the full changeset
+  sha1 of the head), except for the branch tips, which are exposed as
+  `refs/heads/branches/$branch/tip`.
+
+The shorthand `all` (also the default), is the combination of `bookmarks`,
+`heads`, and `tips`.
 
 The refs style can also be configured per remote with the
 `remote.$remote.cinnabar-refs` configuration. It is also possible to use
