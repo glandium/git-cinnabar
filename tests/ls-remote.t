@@ -44,6 +44,23 @@
 
   $ git -c cinnabar.refs=bookmarks ls-remote hg::$REPO
 
+  $ git -c cinnabar.refs=bookmarks,tips ls-remote hg::$REPO
+  0000000000000000000000000000000000000000	HEAD
+  0000000000000000000000000000000000000000	refs/heads/branches/default
+  0000000000000000000000000000000000000000	refs/heads/branches/foo
+
+  $ git -c cinnabar.refs=bookmarks,heads ls-remote hg::$REPO
+  0000000000000000000000000000000000000000	HEAD
+  0000000000000000000000000000000000000000	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
+  0000000000000000000000000000000000000000	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
+  0000000000000000000000000000000000000000	refs/heads/branches/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
+  $ git -c cinnabar.refs=bookmarks,heads,tips ls-remote hg::$REPO
+  0000000000000000000000000000000000000000	HEAD
+  0000000000000000000000000000000000000000	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
+  0000000000000000000000000000000000000000	refs/heads/branches/default/tip
+  0000000000000000000000000000000000000000	refs/heads/branches/foo/tip
+
   $ git clone -q hg::$REPO repo-git
   It is recommended that you set "remote.origin.prune" or "fetch.prune" to "true".
     git config remote.origin.prune true
@@ -68,6 +85,23 @@
   23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
 
   $ git -c cinnabar.refs=bookmarks -C repo-git ls-remote hg::$REPO
+
+  $ git -c cinnabar.refs=bookmarks,tips -C repo-git ls-remote hg::$REPO
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo
+
+  $ git -c cinnabar.refs=bookmarks,heads -C repo-git ls-remote hg::$REPO
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
+  $ git -c cinnabar.refs=bookmarks,heads,tips -C repo-git ls-remote hg::$REPO
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
 
   $ cd repo
   $ hg bookmark bar -r 1
@@ -100,6 +134,32 @@
   0000000000000000000000000000000000000000	refs/heads/fooz
   0000000000000000000000000000000000000000	refs/heads/qux
 
+  $ git -c cinnabar.refs=bookmarks,tips ls-remote hg::$REPO
+  0000000000000000000000000000000000000000	HEAD
+  0000000000000000000000000000000000000000	refs/heads/bookmarks/bar
+  0000000000000000000000000000000000000000	refs/heads/bookmarks/fooz
+  0000000000000000000000000000000000000000	refs/heads/bookmarks/qux
+  0000000000000000000000000000000000000000	refs/heads/branches/default
+  0000000000000000000000000000000000000000	refs/heads/branches/foo
+
+  $ git -c cinnabar.refs=bookmarks,heads ls-remote hg::$REPO
+  0000000000000000000000000000000000000000	HEAD
+  0000000000000000000000000000000000000000	refs/heads/bookmarks/bar
+  0000000000000000000000000000000000000000	refs/heads/bookmarks/fooz
+  0000000000000000000000000000000000000000	refs/heads/bookmarks/qux
+  0000000000000000000000000000000000000000	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
+  0000000000000000000000000000000000000000	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
+  0000000000000000000000000000000000000000	refs/heads/branches/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
+  $ git -c cinnabar.refs=bookmarks,heads,tips ls-remote hg::$REPO
+  0000000000000000000000000000000000000000	HEAD
+  0000000000000000000000000000000000000000	refs/heads/bookmarks/bar
+  0000000000000000000000000000000000000000	refs/heads/bookmarks/fooz
+  0000000000000000000000000000000000000000	refs/heads/bookmarks/qux
+  0000000000000000000000000000000000000000	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
+  0000000000000000000000000000000000000000	refs/heads/branches/default/tip
+  0000000000000000000000000000000000000000	refs/heads/branches/foo/tip
+
   $ git -C repo-git ls-remote hg::$REPO
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/bookmarks/bar
@@ -124,6 +184,32 @@
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/bar
   23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/fooz
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/qux
+
+  $ git -c cinnabar.refs=bookmarks,tips -C repo-git ls-remote hg::$REPO
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo
+
+  $ git -c cinnabar.refs=bookmarks,heads -C repo-git ls-remote hg::$REPO
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
+  $ git -c cinnabar.refs=bookmarks,heads,tips -C repo-git ls-remote hg::$REPO
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
 
   $ cd repo
   $ hg update -r 1 > /dev/null
@@ -155,6 +241,32 @@
   23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/fooz
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/qux
 
+  $ git -c cinnabar.refs=bookmarks,tips -C repo-git ls-remote hg::$REPO
+  0000000000000000000000000000000000000000	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  0000000000000000000000000000000000000000	refs/heads/branches/default
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo
+
+  $ git -c cinnabar.refs=bookmarks,heads -C repo-git ls-remote hg::$REPO
+  0000000000000000000000000000000000000000	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
+  0000000000000000000000000000000000000000	refs/heads/branches/default/8bb4ccecc30b8db9a6f524f40be0d4c2dbc78a07
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
+  $ git -c cinnabar.refs=bookmarks,heads,tips -C repo-git ls-remote hg::$REPO
+  0000000000000000000000000000000000000000	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
+  0000000000000000000000000000000000000000	refs/heads/branches/default/tip
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
+
   $ hg -R repo bookmark bar -f -r 7 > /dev/null
 
   $ git -C repo-git ls-remote hg::$REPO
@@ -181,6 +293,32 @@
   0000000000000000000000000000000000000000	refs/heads/bar
   23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/fooz
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/qux
+
+  $ git -c cinnabar.refs=bookmarks,tips -C repo-git ls-remote hg::$REPO
+  0000000000000000000000000000000000000000	HEAD
+  0000000000000000000000000000000000000000	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  0000000000000000000000000000000000000000	refs/heads/branches/default
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo
+
+  $ git -c cinnabar.refs=bookmarks,heads -C repo-git ls-remote hg::$REPO
+  0000000000000000000000000000000000000000	HEAD
+  0000000000000000000000000000000000000000	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
+  0000000000000000000000000000000000000000	refs/heads/branches/default/8bb4ccecc30b8db9a6f524f40be0d4c2dbc78a07
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
+  $ git -c cinnabar.refs=bookmarks,heads,tips -C repo-git ls-remote hg::$REPO
+  0000000000000000000000000000000000000000	HEAD
+  0000000000000000000000000000000000000000	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
+  0000000000000000000000000000000000000000	refs/heads/branches/default/tip
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
 
   $ git -c fetch.prune=true -C repo-git remote update
   Fetching origin
@@ -217,6 +355,32 @@
   23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/fooz
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/qux
 
+  $ git -c cinnabar.refs=bookmarks,tips -C repo-git ls-remote hg::$REPO
+  445bd26f53d0d2b946eda781eae0e11cf665493d	HEAD
+  445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/branches/default
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo
+
+  $ git -c cinnabar.refs=bookmarks,heads -C repo-git ls-remote hg::$REPO
+  445bd26f53d0d2b946eda781eae0e11cf665493d	HEAD
+  445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
+  445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/branches/default/8bb4ccecc30b8db9a6f524f40be0d4c2dbc78a07
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
+  $ git -c cinnabar.refs=bookmarks,heads,tips -C repo-git ls-remote hg::$REPO
+  445bd26f53d0d2b946eda781eae0e11cf665493d	HEAD
+  445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
+  445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/branches/default/tip
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
+
   $ hg -R repo bookmark @ -r 3
 
   $ git -C repo-git ls-remote hg::$REPO
@@ -246,3 +410,32 @@
   445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/bar
   23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/fooz
   7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/qux
+
+  $ git -c cinnabar.refs=bookmarks,tips -C repo-git ls-remote hg::$REPO
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/bookmarks/@
+  445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/branches/default
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo
+
+  $ git -c cinnabar.refs=bookmarks,heads -C repo-git ls-remote hg::$REPO
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/bookmarks/@
+  445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
+  445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/branches/default/8bb4ccecc30b8db9a6f524f40be0d4c2dbc78a07
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
+  $ git -c cinnabar.refs=bookmarks,heads,tips -C repo-git ls-remote hg::$REPO
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/bookmarks/@
+  445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/bookmarks/bar
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
+  445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/branches/default/tip
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
