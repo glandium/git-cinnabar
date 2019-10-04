@@ -20,7 +20,7 @@ def data(args):
     if args.changeset:
         sys.stdout.write(store.changeset(args.rev).raw_data)
     elif args.manifest:
-        sys.stdout.write(store.manifest(args.rev).data)
+        sys.stdout.write(store.manifest(args.rev).raw_data)
     else:
         sys.stdout.write(store.file(args.rev).raw_data)
     store.close()
