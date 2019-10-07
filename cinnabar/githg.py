@@ -420,15 +420,15 @@ class BranchMap(object):
                     continue
                 assert head not in self._git_sha1s
                 self._git_sha1s[head] = sha1
-            # Use last non-closed head as tip. Caveat: we don't know a
-            # head is closed until we've pulled it.
+            # Use last non-closed head as tip if there's more than one head.
+            # Caveat: we don't know a head is closed until we've pulled it.
             if branch and heads and sequenced:
                 for head in reversed(branch_heads):
+                    self._tips[branch] = head
                     if head in self._git_sha1s:
                         changeset = store.changeset(head)
                         if changeset.close:
                             continue
-                    self._tips[branch] = head
                     break
             if branch:
                 self._heads[branch] = tuple(branch_heads)

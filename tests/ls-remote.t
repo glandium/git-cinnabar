@@ -439,3 +439,23 @@
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/7937e1a594596ae25c637d317503d775767671b5
   445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/branches/default/tip
   23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
+
+  $ cd repo
+  $ hg update -r foo > /dev/null
+  $ hg commit --close-branch -m close -u nobody -d "$n 0" > /dev/null
+  $ hg update -r default > /dev/null
+  $ hg commit --close-branch -m close -u nobody -d "$n 0" > /dev/null
+  $ cd ..
+
+  $ git -c fetch.prune=true -C repo-git remote update
+  Fetching origin
+  From hg::.*/ls-remote.t/repo (re)
+     445bd26..66e3a05  branches/default/tip -> origin/branches/default/tip
+   * [new branch]      bookmarks/@          -> origin/bookmarks/@
+     23bcc26..98c3f74  branches/foo/tip     -> origin/branches/foo/tip
+
+  $ git -c cinnabar.refs=heads,tips -C repo-git ls-remote hg::$REPO
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  66e3a05b3f4cc64ecdd41a4a2c4ac3913ca905bd	refs/heads/branches/default/3af330d6b3b174311a550ed9246a104ceeda8c28
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
+  98c3f7495c17d6fcae8cfaa894c8af0da9668863	refs/heads/branches/foo/tip
