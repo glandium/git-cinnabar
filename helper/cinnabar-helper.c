@@ -814,9 +814,9 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
 		} else if (!cur_entry_path.len) {
 			cmp = -1;
 		} else {
-			cmp = name_compare(
-				ref_entry_path.buf, ref_entry_path.len,
-				cur_entry_path.buf, cur_entry_path.len);
+			cmp = base_name_compare(
+				ref_entry_path.buf, ref_entry_path.len, ref_entry.mode,
+				cur_entry_path.buf, cur_entry_path.len, cur_entry.mode);
 		}
 		if (cmp <= 0) {
 			size_t len = base.len + ref_entry_path.len + 40;
