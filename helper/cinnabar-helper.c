@@ -643,6 +643,74 @@ static int manifest_tree_state_init(const struct object_id *tree_id,
 	return 0;
 }
 
+struct merge_manifest_tree_state {
+	struct manifest_tree_state state_a, state_b;
+	struct name_entry entry_a, entry_b;
+	struct strslice entry_a_path, entry_b_path;
+	int cmp;
+};
+
+struct merge_name_entry {
+	struct name_entry *entry_a, *entry_b;
+	struct strslice path;
+};
+
+static int merge_manifest_tree_state_init(const struct object_id *tree_id_a,
+                                          const struct object_id *tree_id_b,
+                                          struct merge_manifest_tree_state *result,
+                                          struct object_list **tree_list)
+{
+	int ret = manifest_tree_state_init(tree_id_a, &result->state_a, tree_list);
+	if (ret)
+		return ret;
+	result->cmp = 0;
+
+	return manifest_tree_state_init(tree_id_b, &result->state_b, tree_list);
+}
+
+static int merge_tree_entry(struct merge_manifest_tree_state *state,
+                            struct merge_name_entry *entries)
+{
+	if (state->cmp <= 0) {
+		if (tree_entry(&state->state_a.desc, &state->entry_a)) {
+			state->entry_a_path = strslice_from_str(state->entry_a.path);
+		} else {
+			state->entry_a_path = empty_strslice();
+		}
+	}
+	if (state->cmp >= 0) {
+		if (tree_entry(&state->state_b.desc, &state->entry_b)) {
+			state->entry_b_path = strslice_from_str(state->entry_b.path);
+		} else {
+			state->entry_b_path = empty_strslice();
+		}
+	}
+	if (!state->entry_a_path.len) {
+		if (!state->entry_b_path.len)
+			return 0;
+		state->cmp = 1;
+	} else if (!state->entry_b_path.len) {
+		state->cmp = -1;
+	} else {
+		state->cmp = base_name_compare(
+			state->entry_a_path.buf, state->entry_a_path.len, state->entry_a.mode,
+			state->entry_b_path.buf, state->entry_b_path.len, state->entry_b.mode);
+	}
+	if (state->cmp <= 0) {
+		entries->entry_a = &state->entry_a;
+		entries->path = state->entry_a_path;
+	} else {
+		entries->entry_a = NULL;
+	}
+	if (state->cmp >= 0) {
+		entries->entry_b = &state->entry_b;
+		entries->path = state->entry_b_path;
+	} else {
+		entries->entry_b = NULL;
+	}
+	return 1;
+}
+
 static int old_manifest_tree_state_init(const struct old_manifest_tree *tree,
                                         struct old_manifest_tree_state *result,
                                         struct object_list **tree_list)
@@ -768,97 +836,60 @@ static void recurse_manifest2(const struct object_id *ref_tree_id,
                               struct strbuf *manifest, struct strslice base,
                               struct object_list **tree_list)
 {
-	struct manifest_tree_state ref, cur;
-	struct name_entry ref_entry, cur_entry;
-	struct strslice ref_entry_path, cur_entry_path;
-	struct strslice next = ref_manifest;
+	struct merge_manifest_tree_state state;
+	struct merge_name_entry entries;
+	struct strslice cursor;
 	struct strslice underscore = { 1, "_" };
 	struct strbuf dir = STRBUF_INIT;
-	int cmp = 0;
 
-	if (manifest_tree_state_init(ref_tree_id, &ref, tree_list))
+	if (merge_manifest_tree_state_init(ref_tree_id, tree_id, &state, tree_list))
 		goto corrupted;
 
-	if (manifest_tree_state_init(tree_id, &cur, tree_list))
-		goto corrupted;
-
-	for (;;) {
-		if (cmp >= 0) {
-			if (tree_entry(&cur.desc, &cur_entry)) {
-				cur_entry_path =
-					strslice_from_str(cur_entry.path);
-				if (!strslice_startswith(cur_entry_path, underscore))
-					goto corrupted;
-			} else {
-				cur_entry_path.len = 0;
-			}
-		}
-		if (cmp <= 0) {
-			if (tree_entry(&ref.desc, &ref_entry)) {
-				ref_entry_path =
-					strslice_from_str(ref_entry.path);
-				if (!strslice_startswith(ref_entry_path, underscore))
-					goto corrupted;
-			} else {
-				ref_entry_path.len = 0;
-			}
-			ref_manifest = next;
-			assert(!ref_entry_path.len ||
-			       path_match(base, strslice_slice(
-					ref_entry_path, 1, SIZE_MAX), next));
-		}
-		if (!ref_entry_path.len) {
-			if (!cur_entry_path.len)
-				break;
-			cmp = 1;
-		} else if (!cur_entry_path.len) {
-			cmp = -1;
-		} else {
-			cmp = base_name_compare(
-				ref_entry_path.buf, ref_entry_path.len, ref_entry.mode,
-				cur_entry_path.buf, cur_entry_path.len, cur_entry.mode);
-		}
-		if (cmp <= 0) {
-			size_t len = base.len + ref_entry_path.len + 40;
+	while (merge_tree_entry(&state, &entries)) {
+		if (!strslice_startswith(entries.path, underscore))
+			goto corrupted;
+		cursor = ref_manifest;
+		if (entries.entry_a) {
+			size_t len = base.len + entries.path.len + 40;
 			do {
-				strslice_split_once(&next, '\n');
-			} while (S_ISDIR(ref_entry.mode) &&
-			         (next.len > len) &&
+				strslice_split_once(&ref_manifest, '\n');
+			} while (S_ISDIR(entries.entry_a->mode) &&
+			         (ref_manifest.len > len) &&
 			         path_match(base, strslice_slice(
-					ref_entry_path, 1, SIZE_MAX), next));
+					entries.path, 1, SIZE_MAX), ref_manifest));
 		}
 		/* File/directory was removed, nothing to do */
-		if (cmp < 0)
+		if (!entries.entry_b)
 			continue;
 		/* File/directory didn't change, copy from the reference
 		 * manifest. */
-		if (cmp == 0 && manifest_entry_equal(&ref_entry, &cur_entry)) {
-			strbuf_add(manifest, ref_manifest.buf,
-			           ref_manifest.len - next.len);
+		if (entries.entry_a && entries.entry_b &&
+		    manifest_entry_equal(entries.entry_a, entries.entry_b)) {
+			strbuf_add(manifest, cursor.buf,
+			           cursor.len - ref_manifest.len);
 			continue;
 		}
-		if (!S_ISDIR(cur_entry.mode)) {
-			if (cur_entry_path.len == 0)
-				goto corrupted;
+		if (entries.entry_b && !S_ISDIR(entries.entry_b->mode)) {
 			strbuf_addslice(manifest, base);
 			strbuf_addslice(manifest, strslice_slice(
-				cur_entry_path, 1, SIZE_MAX));
+				entries.path, 1, SIZE_MAX));
 			strbuf_addf(manifest, "%c%s%s\n", '\0',
-			            oid_to_hex(&cur_entry.oid),
-			            hgattr(cur_entry.mode));
+			            oid_to_hex(&entries.entry_b->oid),
+			            hgattr(entries.entry_b->mode));
 			continue;
 		}
 
 		strbuf_addslice(&dir, base);
 		strbuf_addslice(&dir, strslice_slice(
-			cur_entry_path, 1, SIZE_MAX));
+			entries.path, 1, SIZE_MAX));
 		strbuf_addch(&dir, '/');
-		if (cmp == 0 && S_ISDIR(ref_entry.mode)) {
-			recurse_manifest2(&ref_entry.oid, ref_manifest,
-				          &cur_entry.oid, manifest,
+		if (entries.entry_a && entries.entry_b &&
+                    S_ISDIR(entries.entry_a->mode)) {
+			recurse_manifest2(&entries.entry_a->oid, cursor,
+				          &entries.entry_b->oid, manifest,
 			                  strbuf_as_slice(&dir), tree_list);
 		} else
-			recurse_manifest(&cur_entry.oid, manifest,
+			recurse_manifest(&entries.entry_b->oid, manifest,
 			                 strbuf_as_slice(&dir), tree_list);
 		strbuf_release(&dir);
 	}
