@@ -661,6 +661,7 @@ static int merge_manifest_tree_state_init(const struct object_id *tree_id_a,
                                           struct object_list **tree_list)
 {
 	int ret;
+	memset(result, 0, sizeof(*result));
 	result->cmp = 0;
 
 	if (tree_id_a) {
@@ -1975,30 +1976,30 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 	oidcpy(&k.old_oid, tree_id);
 	cache_entry = hashmap_get(cache, &k, NULL);
 	if (!cache_entry) {
-		struct manifest_tree_state state;
+		struct merge_manifest_tree_state state;
 		struct manifest_tree_state ref_state = { NULL, };
-		struct name_entry entry;
+		struct merge_name_entry entries;
 		struct strbuf tree_buf_ = STRBUF_INIT;
 		if (!tree_buf)
 			tree_buf = &tree_buf_;
 
-		if (manifest_tree_state_init(tree_id, &state, NULL))
+		if (merge_manifest_tree_state_init(tree_id, NULL, &state, NULL))
 			goto corrupted;
 
-		while (tree_entry(&state.desc, &entry)) {
+		while (merge_tree_entry(&state, &entries)) {
 			struct object_id oid;
-			unsigned mode = entry.mode;
+			struct name_entry *entry = entries.entry_a;
+			unsigned mode = entry->mode;
 			struct strslice entry_path;
 			struct strslice underscore = { 1, "_" };
-			entry_path = strslice_from_str(entry.path);
-			if (!strslice_startswith(entry_path, underscore))
+			if (!strslice_startswith(entries.path, underscore))
 				goto corrupted;
-			entry_path = strslice_slice(entry_path, 1, SIZE_MAX);
+			entry_path = strslice_slice(entries.path, 1, SIZE_MAX);
 			if (entry_path.len == 0) {
 				if (!S_ISDIR(mode))
 					goto corrupted;
 				recurse_create_git_tree(
-					&entry.oid, NULL, tree_buf, NULL,
+					&entry->oid, NULL, tree_buf, NULL,
 					cache);
 				continue;
 			} else if (S_ISDIR(mode)) {
@@ -2006,13 +2007,13 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 				ref_entry = lazy_tree_entry_by_name(
 					&ref_state, reference, entry_path.buf);
 				recurse_create_git_tree(
-					&entry.oid,
+					&entry->oid,
 					ref_entry ? &ref_entry->oid : NULL,
 					NULL, &oid, cache);
 			} else {
 				const struct object_id *file_oid;
 				struct hg_object_id hg_oid;
-				oidcpy2hg(&hg_oid, &entry.oid);
+				oidcpy2hg(&hg_oid, &entry->oid);
 				if (is_empty_hg_file(&hg_oid))
 					file_oid = ensure_empty_blob();
 				else
@@ -2041,8 +2042,8 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 			hashmap_add(cache, cache_entry);
 		}
 
-		if (state.tree)
-			free_tree_buffer(state.tree);
+		if (state.state_a.tree)
+			free_tree_buffer(state.state_a.tree);
 		if (ref_state.tree)
 			free_tree_buffer(ref_state.tree);
 	}
