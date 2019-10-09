@@ -1966,42 +1966,58 @@ static void do_upgrade(struct string_list *args)
 
 static void recurse_create_git_tree(const struct object_id *tree_id,
                                     const struct object_id *reference,
-                                    struct strbuf *tree_buf,
+                                    const struct object_id *merge_tree_id,
                                     struct object_id *result,
 				    struct hashmap *cache)
 {
-	struct oid_map_entry k, *cache_entry;
+	struct oid_map_entry k, *cache_entry = NULL;
 
-	hashmap_entry_init(&k.ent, oidhash(tree_id));
-	oidcpy(&k.old_oid, tree_id);
-	cache_entry = hashmap_get(cache, &k, NULL);
+	if (!merge_tree_id) {
+		hashmap_entry_init(&k.ent, oidhash(tree_id));
+		oidcpy(&k.old_oid, tree_id);
+		cache_entry = hashmap_get(cache, &k, NULL);
+	}
 	if (!cache_entry) {
 		struct merge_manifest_tree_state state;
 		struct manifest_tree_state ref_state = { NULL, };
 		struct merge_name_entry entries;
-		struct strbuf tree_buf_ = STRBUF_INIT;
-		if (!tree_buf)
-			tree_buf = &tree_buf_;
+		struct strbuf tree_buf = STRBUF_INIT;
 
-		if (merge_manifest_tree_state_init(tree_id, NULL, &state, NULL))
+		if (merge_manifest_tree_state_init(tree_id, merge_tree_id, &state, NULL))
 			goto corrupted;
 
 		while (merge_tree_entry(&state, &entries)) {
 			struct object_id oid;
-			struct name_entry *entry = entries.entry_a;
+			struct name_entry *entry = entries.entry_a ? entries.entry_a : entries.entry_b;
 			unsigned mode = entry->mode;
 			struct strslice entry_path;
 			struct strslice underscore = { 1, "_" };
 			if (!strslice_startswith(entries.path, underscore))
 				goto corrupted;
 			entry_path = strslice_slice(entries.path, 1, SIZE_MAX);
+			// In some edge cases, presumably all related to the use of
+			// `hg convert` before Mercurial 2.0.1, manifest trees have
+			// double slashes, which end up as "_" directories in the
+			// corresponding git cinnabar metadata.
+			// With further changes in the subsequent Mercurial manifests,
+			// those entries with double slashes are superseded with entries
+			// with single slash, while still being there. So to create
+			// the corresponding git commit, we need to merge both in some
+			// manner.
+			// Mercurial doesn't actually guarantee which of the paths would
+			// actually be checked out when checking out such manifests,
+			// but we always choose the single slash path. Most of the time,
+			// though, both will have the same contents. At least for files.
+			// Sub-directories may differ in what paths they contain, but
+			// again, the files they contain are usually identical.
 			if (entry_path.len == 0) {
 				if (!S_ISDIR(mode))
 					goto corrupted;
+				if (merge_tree_id)
+					continue;
 				recurse_create_git_tree(
-					&entry->oid, NULL, tree_buf, NULL,
-					cache);
-				continue;
+					tree_id, reference, &entry->oid, result, cache);
+				goto cleanup;
 			} else if (S_ISDIR(mode)) {
 				struct name_entry *ref_entry;
 				ref_entry = lazy_tree_entry_by_name(
@@ -2009,7 +2025,9 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 				recurse_create_git_tree(
 					&entry->oid,
 					ref_entry ? &ref_entry->oid : NULL,
-					NULL, &oid, cache);
+					(entries.entry_b && S_ISDIR(entries.entry_b->mode))
+						? &entries.entry_b->oid : NULL,
+					&oid, cache);
 			} else {
 				const struct object_id *file_oid;
 				struct hg_object_id hg_oid;
@@ -2027,23 +2045,28 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 				else
 					mode = S_IFREG | mode;
 			}
-			strbuf_addf(tree_buf, "%o ", canon_mode(mode));
-			strbuf_addslice(tree_buf, entry_path);
-			strbuf_addch(tree_buf, '\0');
-			strbuf_add(tree_buf, oid.hash, 20);
+			strbuf_addf(&tree_buf, "%o ", canon_mode(mode));
+			strbuf_addslice(&tree_buf, entry_path);
+			strbuf_addch(&tree_buf, '\0');
+			strbuf_add(&tree_buf, oid.hash, 20);
 		}
 
-		if (tree_buf == &tree_buf_) {
+		if (!merge_tree_id) {
 			cache_entry = xmalloc(sizeof(k));
 			cache_entry->ent = k.ent;
 			cache_entry->old_oid = k.old_oid;
-			store_git_tree(tree_buf, reference, &cache_entry->new_oid);
-			strbuf_release(&tree_buf_);
+		}
+		store_git_tree(&tree_buf, reference, cache_entry ? &cache_entry->new_oid : result);
+		strbuf_release(&tree_buf);
+		if (!merge_tree_id) {
 			hashmap_add(cache, cache_entry);
 		}
 
+cleanup:
 		if (state.state_a.tree)
 			free_tree_buffer(state.state_a.tree);
+		if (state.state_b.tree)
+			free_tree_buffer(state.state_b.tree);
 		if (ref_state.tree)
 			free_tree_buffer(ref_state.tree);
 	}

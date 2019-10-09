@@ -16,6 +16,7 @@ from cinnabar.hg.changegroup import (
     RawRevChunk02,
 )
 from cinnabar.hg.objects import (
+    Changeset,
     File,
     Manifest,
 )
@@ -23,6 +24,7 @@ from cinnabar.helper import (
     GitHgHelper,
     git_hash,
 )
+from cinnabar.util import one
 
 
 class TestStoreCG01(unittest.TestCase):
@@ -272,6 +274,123 @@ class TestStoreCG01(unittest.TestCase):
 
         git_m = GitHgHelper.hg2git(chunk.node)
         self.assertEqual(GitCommit(git_m).tree, self.manifest_tree(m8))
+
+    @staticmethod
+    def commit_tree(m, files):
+        tree = OrderedDict()
+        attrs = {v: k for k, v in GitHgStore.ATTR.items()}
+        for item in m:
+            t = tree
+            path = item.path.split('/')
+            for p in path[:-1]:
+                t = t.setdefault(p, OrderedDict())
+            t[path[-1]] = (attrs[item.attr], files[item.sha1])
+
+        def recurse(t):
+            tree = ''
+            for p, v in t.iteritems():
+                if isinstance(v, OrderedDict):
+                    mode = '40000'
+                    sha1 = recurse(v)
+                else:
+                    mode, sha1 = v
+                tree += '%s %s\0%s' % (mode, p, unhexlify(sha1))
+            return git_hash('tree', tree)
+
+        return recurse(tree)
+
+    def test_store_changeset(self):
+        files = {}
+        f = File()
+        f.content = 'foo\n'
+        f.node = f.sha1
+
+        chunk = f.to_chunk(self.RevChunk)
+        GitHgHelper.store('file', chunk)
+        files[f.node] = GitHgHelper.hg2git(chunk.node)
+
+        f2 = File()
+        f2.content = 'bar\n'
+        f2.node = f2.sha1
+
+        chunk = f2.to_chunk(self.RevChunk)
+        GitHgHelper.store('file', chunk)
+        files[f2.node] = GitHgHelper.hg2git(chunk.node)
+
+        m = Manifest()
+        m.add('bar', f.node)
+        m.add('foo/.bar', f.node)
+        m.add('foo/.foo', f.node)
+        m.add('foo/bar/baz', f.node)
+        m.add('foo/bar/foo', f.node)
+        m.add('foo/bar/qux', f.node)
+        m.add('foo/foo', f.node)
+        m.add('foo/hoge', f.node)
+        m.add('foo/qux', f.node)
+        m.add('qux', f.node)
+        m.node = m.sha1
+
+        chunk = m.to_chunk(self.RevChunk)
+        GitHgHelper.store('manifest', chunk)
+
+        store = GitHgStore()
+
+        c = Changeset()
+        c.manifest = m.node
+        c.author = 'Cinnabar test <cinnabar@test>'
+        c.timestamp = '0'
+        c.utcoffset = '0000'
+        c.files = [i.path for i in m]
+        c.body = 'Test commit'
+        c.node = c.sha1
+
+        store.store_changeset(c)
+        c_gen = store.changeset(c.node)
+        self.assertEqual(c.raw_data, c_gen.raw_data)
+
+        commit = GitCommit(GitHgHelper.hg2git(c.node))
+        self.assertEqual(commit.body, c.body)
+        ct = self.commit_tree(m, files)
+        self.assertEqual(commit.tree, ct)
+
+        # Weird case as seen in the GNU octave repo.
+        # The bar subdirectory is supposed to be transposed to the same
+        # content as the git tree for the manifest above.
+        m2 = Manifest()
+        m2.add('bar/bar', f.node)
+        m2.add('bar/foo/.foo', f.node)
+        m2.add('bar/foo//.bar', f.node)
+        m2.add('bar/foo//.foo', f2.node)
+        m2.add('bar/foo//bar/baz', f2.node)
+        m2.add('bar/foo//bar/foo', f.node)
+        m2.add('bar/foo//hoge', f.node)
+        m2.add('bar/foo/bar/baz', f.node)
+        m2.add('bar/foo/bar/qux', f.node)
+        m2.add('bar/foo/foo', f.node)
+        m2.add('bar/foo/qux', f.node)
+        m2.add('bar/qux', f.node)
+        m2.node = m2.sha1
+
+        chunk = m2.to_chunk(self.RevChunk, m)
+        GitHgHelper.store('manifest', chunk)
+
+        c2 = Changeset()
+        c2.parent1 = c.node
+        c2.manifest = m2.node
+        c2.author = 'Cinnabar test <cinnabar@test>'
+        c2.timestamp = '0'
+        c2.utcoffset = '0000'
+        c2.files = [i.path for i in m2]
+        c2.body = 'Test commit'
+        c2.node = c2.sha1
+
+        store.store_changeset(c2)
+        c2_gen = store.changeset(c2.node)
+        self.assertEqual(c2.raw_data, c2_gen.raw_data)
+
+        commit = GitCommit(GitHgHelper.hg2git(c2.node))
+        self.assertEqual(commit.body, c2.body)
+        self.assertEqual(ct, one(Git.ls_tree(commit.tree, 'bar'))[2])
 
 
 class TestStoreCG02(TestStoreCG01):
