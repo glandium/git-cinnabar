@@ -34,11 +34,11 @@ class TestVersion(unittest.TestCase):
             'ls-tree', 'HEAD', 'cinnabar',
             cwd=os.path.join(os.path.dirname(__file__), '..')))
         self.assertEqual(CmdVersion.module_version(),
-                         split_ls_tree(module)[2])
+                         split_ls_tree(module)[2].decode('ascii'))
 
     def test_helper_version(self):
         helper = one(Git.iter(
             'ls-tree', 'HEAD', 'helper',
             cwd=os.path.join(os.path.dirname(__file__), '..')))
         self.assertEqual(CmdVersion.helper_version()[1],
-                         split_ls_tree(helper)[2])
+                         split_ls_tree(helper)[2].decode('ascii'))

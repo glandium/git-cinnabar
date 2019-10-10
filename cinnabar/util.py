@@ -81,14 +81,15 @@ def init_logging():
     handler = StreamHandler()
     handler.setFormatter(Formatter())
     logger.addHandler(handler)
-    log_conf = Git.config('cinnabar.log') or ''
+    log_conf = Git.config('cinnabar.log') or b''
     if not log_conf and not check_enabled('memory') and \
             not check_enabled('cpu'):
         return
-    for assignment in log_conf.split(','):
+    for assignment in log_conf.split(b','):
         try:
-            name, value = assignment.split(':', 1)
+            name, value = assignment.split(b':', 1)
             value = int(value)
+            name = name.decode('ascii')
             if name == '*':
                 name = ''
             logging.getLogger(name).setLevel(

@@ -1,4 +1,4 @@
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import, print_function, unicode_literals
 import argparse
 import os
 import sys
@@ -41,6 +41,11 @@ class CLI(object):
         CLI.parser.add_argument('--version', action=Version)
 
         args, leftovers = CLI.parser.parse_known_args(argv)
+
+        if not hasattr(args, 'callback'):
+            CLI.parser.print_help()
+            CLI.parser.exit()
+
         if hasattr(args.callback, 'cli_remainder'):
             args = argparse.Namespace(**{
                 'callback': args.callback,
@@ -58,6 +63,8 @@ def iter_modules_in_path(path):
             continue
 
         path = module.__file__
+        if not path:
+            continue
 
         if path.endswith('.pyc'):
             path = path[:-1]
@@ -89,18 +96,19 @@ class Version(argparse.Action):
         # not installed
         import cinnabar.bdiff
         cinnabar_path = os.path.dirname(cinnabar.__file__)
-        return tree_hash(iter_modules_in_path(cinnabar_path), cinnabar_path)
+        v = tree_hash(iter_modules_in_path(cinnabar_path), cinnabar_path)
+        return v.decode('ascii')
 
     @staticmethod
     def helper_version():
         from cinnabar.helper import GitHgHelper
         try:
-            with GitHgHelper.query('revision') as out:
-                version = out.read(40)
+            with GitHgHelper.query(b'revision') as out:
+                version = out.read(40).decode('ascii')
         except Exception:
             version = 'unknown'
 
-        sha1 = helper_hash() or 'unknown'
+        sha1 = helper_hash().decode('ascii') or 'unknown'
         return version, sha1
 
     def __call__(self, parser, namespace, values, option_string=None):
