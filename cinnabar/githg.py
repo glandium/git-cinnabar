@@ -11,7 +11,11 @@ import os
 import shutil
 import subprocess
 import sys
-import urllib
+try:
+    from urllib.parse import quote_from_bytes, unquote_to_bytes
+except ImportError:
+    from urllib import quote as quote_from_bytes
+    from urllib import unquote as unquote_to_bytes
 from collections import (
     OrderedDict,
     Sequence,
@@ -188,7 +192,7 @@ class FileFindParents(object):
         return file.node == file.sha1
 
 
-class ChangesetPatcher(str):
+class ChangesetPatcher(bytes):
     class ChangesetPatch(RawRevChunk):
         __slots__ = ('patch', '_changeset')
 
@@ -200,22 +204,26 @@ class ChangesetPatcher(str):
                 self._buf = buf
 
             def __str__(self):
+                raise RuntimeError('Use to_str()')
+
+            def to_str(self):
                 return self._buf
 
             def __iter__(self):
-                for line in self._buf.split('\0'):
+                for line in self._buf.split(b'\0'):
                     if line:
                         part = self.Part()
-                        start, end, text_data = line.split(',')
+                        start, end, text_data = line.split(b',')
                         part.start = int(start)
                         part.end = int(end)
-                        part.text_data = urllib.unquote(text_data)
+                        part.text_data = unquote_to_bytes(text_data)
                         yield part
 
             @classmethod
             def from_items(cls, items):
-                return cls('\0'.join(
-                    ','.join((str(start), str(end), urllib.quote(text_data)))
+                return cls(b'\0'.join(
+                    b','.join((b'%d,%d' % (start, end),
+                               quote_from_bytes(text_data).encode('ascii')))
                     for start, end, text_data in items))
 
         def __init__(self, changeset, patch_data):
@@ -229,33 +237,33 @@ class ChangesetPatcher(str):
 
     def apply(self, changeset):
         # Sneaky way to create a copy of the changeset
-        chunk = self.ChangesetPatch(changeset, '')
+        chunk = self.ChangesetPatch(changeset, b'')
         changeset = Changeset.from_chunk(chunk, changeset)
 
-        for k, v in (l.split(' ', 1) for l in self.splitlines()):
-            if k == 'changeset':
+        for k, v in (l.split(b' ', 1) for l in self.splitlines()):
+            if k == b'changeset':
                 changeset.node = v
-            elif k == 'manifest':
+            elif k == b'manifest':
                 changeset.manifest = v
-            elif k == 'author':
+            elif k == b'author':
                 changeset.author = v
-            elif k == 'extra':
+            elif k == b'extra':
                 extra = changeset.extra
                 changeset.extra = v
                 if extra is not None:
                     changeset.extra.update(
-                        (k, v) for k, v in extra.iteritems()
+                        (k, v) for k, v in extra.items()
                         if k not in changeset.extra)
-            elif k == 'files':
-                changeset.files = v.split('\0')
-            elif k == 'patch':
+            elif k == b'files':
+                changeset.files = v.split(b'\0')
+            elif k == b'patch':
                 chunk = self.ChangesetPatch(changeset, v)
                 changeset = Changeset.from_chunk(chunk, changeset)
 
         # This should not occur in normal changeset bodies. If it occurs,
         # it likely comes from our handling of conflicting commits.
         # So in that case, adjust until we have the right sha1.
-        while changeset.body.endswith('\0') and \
+        while changeset.body.endswith(b'\0') and \
                 changeset.sha1 != changeset.node:
             changeset.body = changeset.body[:-1]
 
@@ -265,27 +273,27 @@ class ChangesetPatcher(str):
     def from_diff(cls, changeset1, changeset2):
         items = []
         if changeset1.node != changeset2.node:
-            items.append('changeset %s' % changeset2.node)
+            items.append(b'changeset %s' % changeset2.node)
         if changeset1.manifest != changeset2.manifest:
-            items.append('manifest %s' % changeset2.manifest)
+            items.append(b'manifest %s' % changeset2.manifest)
         if changeset1.author != changeset2.author:
-            items.append('author %s' % changeset2.author)
+            items.append(b'author %s' % changeset2.author)
         if changeset1.extra != changeset2.extra:
             if changeset2.extra is not None:
-                items.append('extra %s' % Changeset.ExtraData({
+                items.append(b'extra %s' % Changeset.ExtraData({
                     k: v
-                    for k, v in changeset2.extra.iteritems()
+                    for k, v in changeset2.extra.items()
                     if not changeset1.extra or changeset1.extra.get(k) != v
                 }).to_str())
         if changeset1.files != changeset2.files:
-            items.append('files %s' % '\0'.join(changeset2.files))
+            items.append(b'files %s' % b'\0'.join(changeset2.files))
 
-        this = cls('\n'.join(items))
+        this = cls(b'\n'.join(items))
         new = this.apply(changeset1)
         if new.raw_data != changeset2.raw_data:
-            items.append('patch %s' % cls.ChangesetPatch.Patch.from_items(
-                byte_diff(new.raw_data, changeset2.raw_data)))
-            this = cls('\n'.join(items))
+            items.append(b'patch %s' % cls.ChangesetPatch.Patch.from_items(
+                byte_diff(new.raw_data, changeset2.raw_data)).to_str())
+            this = cls(b'\n'.join(items))
 
         return this
 
@@ -370,13 +378,14 @@ class GitCommit(object):
 
     def __init__(self, sha1):
         self.sha1 = sha1
-        commit = GitHgHelper.cat_file('commit', sha1)
-        header, self.body = commit.split('\n\n', 1)
+        commit = GitHgHelper.cat_file(b'commit', sha1)
+        header, self.body = commit.split(b'\n\n', 1)
         parents = []
         for line in header.splitlines():
             if line == '\n':
                 break
-            typ, data = line.split(' ', 1)
+            typ, data = line.split(b' ', 1)
+            typ = typ.decode('ascii')
             if typ == 'parent':
                 parents.append(data.strip())
             elif typ in self.__slots__:
@@ -937,7 +946,7 @@ class GitHgStore(object):
         self._hgheads[head] = branch
 
     def read_changeset_data(self, obj):
-        obj = str(obj)
+        obj = bytes(obj)
         data = GitHgHelper.git2hg(obj)
         if data is None:
             return None
@@ -988,9 +997,9 @@ class GitHgStore(object):
         return changeset
 
     ATTR = {
-        '100644': '',
-        '100755': 'x',
-        '120000': 'l',
+        b'100644': b'',
+        b'100755': b'x',
+        b'120000': b'l',
     }
 
     @staticmethod
@@ -1076,9 +1085,9 @@ class GitHgStore(object):
             author = Authorship.from_hg(instance.author, instance.timestamp,
                                         instance.utcoffset)
             extra = instance.extra
-            if extra and extra.get('committer'):
-                committer = extra['committer']
-                if committer[-1] == '>':
+            if extra and extra.get(b'committer'):
+                committer = extra[b'committer']
+                if committer[-1:] == b'>':
                     committer = Authorship.from_hg(
                         committer, instance.timestamp, instance.utcoffset)
                 else:
@@ -1086,13 +1095,13 @@ class GitHgStore(object):
                         committer, maybe_git_utcoffset=True)
                     if committer.to_hg() == committer:
                         extra = dict(instance.extra)
-                        del extra['committer']
+                        del extra[b'committer']
                         if not extra:
                             extra = None
             else:
                 committer = author
 
-            parents = tuple(':h%s' % p for p in instance.parents)
+            parents = tuple(b':h%s' % p for p in instance.parents)
 
             body = instance.body
 
@@ -1106,35 +1115,35 @@ class GitHgStore(object):
             committer = committer.to_git_str()
             author = author.to_git_str()
             with GitHgHelper.commit(
-                ref='refs/cinnabar/tip',
+                ref=b'refs/cinnabar/tip',
                 message=body,
                 committer=committer,
                 author=author,
                 parents=parents,
-                pseudo_mark=':h%s' % instance.node,
+                pseudo_mark=b':h%s' % instance.node,
             ) as c:
-                c.filemodify('', self.git_tree(instance.manifest,
-                                               *instance.parents[:1]),
-                             typ='tree')
+                c.filemodify(b'', self.git_tree(instance.manifest,
+                                                *instance.parents[:1]),
+                             typ=b'tree')
 
-            commit = PseudoGitCommit(':1')
+            commit = PseudoGitCommit(b':1')
             commit.author = author
             commit.committer = committer
             commit.body = body
 
-        GitHgHelper.set('changeset', instance.node, commit.sha1)
+        GitHgHelper.set(b'changeset', instance.node, commit.sha1)
         changeset = Changeset.from_git_commit(commit)
         GitHgHelper.put_blob(
             ChangesetPatcher.from_diff(changeset, instance), want_sha1=False)
-        GitHgHelper.set('changeset-metadata', instance.node, ':1')
+        GitHgHelper.set(b'changeset-metadata', instance.node, b':1')
 
         self._branches[instance.node] = instance.branch or 'default'
         self.add_head(instance.node, instance.parent1, instance.parent2)
 
     MODE = {
-        '': '160644',
-        'l': '160000',
-        'x': '160755',
+        b'': b'160644',
+        b'l': b'160000',
+        b'x': b'160755',
     }
 
     def store_manifest(self, instance):

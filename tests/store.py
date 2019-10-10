@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 import os
 import shutil
 import tempfile
@@ -39,7 +39,7 @@ class TestStoreCG01(unittest.TestCase):
         os.environ['GIT_CINNABAR_EXPERIMENTS'] = \
             'store' if self.NEW_STORE else ''
         self.assertEquals(
-            GitHgHelper.supports(('store', 'new')), self.NEW_STORE)
+            GitHgHelper.supports((b'store', b'new')), self.NEW_STORE)
 
     def tearDown(self):
         GitHgHelper.close(rollback=True)
@@ -52,33 +52,33 @@ class TestStoreCG01(unittest.TestCase):
 
     def test_store_file(self):
         f = File()
-        f.content = 'foo\n'
+        f.content = b'foo\n'
         f.node = f.sha1
 
         chunk = f.to_chunk(self.RevChunk)
-        GitHgHelper.store('file', chunk)
+        GitHgHelper.store(b'file', chunk)
 
         self.assertEqual(
             GitHgHelper.hg2git(chunk.node),
-            git_hash('blob', f.content))
+            git_hash(b'blob', f.content))
         self.assertEqual(GitHgHelper.file_meta(chunk.node), None)
 
         f2 = File()
         f2.parent1 = f.node
-        f2.content = f.content + 'bar\n'
+        f2.content = f.content + b'bar\n'
         f2.node = f2.sha1
 
         chunk = f2.to_chunk(self.RevChunk, f)
-        GitHgHelper.store('file', chunk)
+        GitHgHelper.store(b'file', chunk)
 
         self.assertEqual(
             GitHgHelper.hg2git(chunk.node),
-            git_hash('blob', f2.content))
+            git_hash(b'blob', f2.content))
         self.assertEqual(GitHgHelper.file_meta(chunk.node), None)
 
         f3 = File()
         f3.parent1 = f.node
-        f3.content = f.content + 'baz\n'
+        f3.content = f.content + b'baz\n'
         f3.node = f3.sha1
 
         if self.RevChunk == RawRevChunk01:
@@ -86,16 +86,16 @@ class TestStoreCG01(unittest.TestCase):
         else:
             delta_node = f
         chunk = f3.to_chunk(self.RevChunk, delta_node)
-        GitHgHelper.store('file', chunk)
+        GitHgHelper.store(b'file', chunk)
 
         self.assertEqual(
             GitHgHelper.hg2git(chunk.node),
-            git_hash('blob', f3.content))
+            git_hash(b'blob', f3.content))
         self.assertEqual(GitHgHelper.file_meta(chunk.node), None)
 
         f4 = File()
         f4.parents = (f2.node, f3.node)
-        f4.content = f2.content + 'baz\n'
+        f4.content = f2.content + b'baz\n'
         f4.node = f4.sha1
 
         if self.RevChunk == RawRevChunk01:
@@ -103,43 +103,43 @@ class TestStoreCG01(unittest.TestCase):
         else:
             delta_node = f2
         chunk = f4.to_chunk(self.RevChunk, delta_node)
-        GitHgHelper.store('file', chunk)
+        GitHgHelper.store(b'file', chunk)
 
         self.assertEqual(
             GitHgHelper.hg2git(chunk.node),
-            git_hash('blob', f4.content))
+            git_hash(b'blob', f4.content))
         self.assertEqual(GitHgHelper.file_meta(chunk.node), None)
 
         f5 = File()
         f5.content = f4.content
         f5.metadata = {
-            'copy': 'foo',
-            'copyrev': f4.node,
+            b'copy': b'foo',
+            b'copyrev': f4.node,
         }
         f5.node = f5.sha1
 
         chunk = f5.to_chunk(self.RevChunk)
-        GitHgHelper.store('file', chunk)
+        GitHgHelper.store(b'file', chunk)
 
         self.assertEqual(
             GitHgHelper.hg2git(chunk.node),
-            git_hash('blob', f5.content))
+            git_hash(b'blob', f5.content))
 
         self.assertEqual(
             GitHgHelper.file_meta(chunk.node),
-            'copy: foo\ncopyrev: {}\n'.format(f4.node))
+            b'copy: foo\ncopyrev: %s\n' % f4.node)
 
         f6 = File()
         f6.parent1 = f5.node
-        f6.content = f5.content + 'qux\n'
+        f6.content = f5.content + b'qux\n'
         f6.node = f6.sha1
 
         chunk = f6.to_chunk(self.RevChunk, f5)
-        GitHgHelper.store('file', chunk)
+        GitHgHelper.store(b'file', chunk)
 
         self.assertEqual(
             GitHgHelper.hg2git(chunk.node),
-            git_hash('blob', f6.content))
+            git_hash(b'blob', f6.content))
         self.assertEqual(GitHgHelper.file_meta(chunk.node), None)
 
     @staticmethod
@@ -147,32 +147,32 @@ class TestStoreCG01(unittest.TestCase):
         tree = OrderedDict()
         for item in m:
             t = tree
-            path = item.path.split('/')
+            path = item.path.split(b'/')
             for p in path[:-1]:
                 t = t.setdefault(p, OrderedDict())
             t[path[-1]] = (GitHgStore.MODE[item.attr], item.sha1)
 
         def recurse(t):
-            tree = ''
-            for p, v in t.iteritems():
+            tree = b''
+            for p, v in t.items():
                 if isinstance(v, OrderedDict):
-                    mode = '40000'
+                    mode = b'40000'
                     sha1 = recurse(v)
                 else:
                     mode, sha1 = v
-                tree += '%s _%s\0%s' % (mode, p, unhexlify(sha1))
-            return git_hash('tree', tree)
+                tree += b'%s _%s\0%s' % (mode, p, unhexlify(sha1))
+            return git_hash(b'tree', tree)
 
         return recurse(tree)
 
     def test_store_manifest(self):
         m = Manifest()
-        m.add('foo', '1' * 40)
-        m.add('hoge', '2' * 40)
+        m.add(b'foo', b'1' * 40)
+        m.add(b'hoge', b'2' * 40)
         m.node = m.sha1
 
         chunk = m.to_chunk(self.RevChunk)
-        GitHgHelper.store('manifest', chunk)
+        GitHgHelper.store(b'manifest', chunk)
 
         git_m = GitHgHelper.hg2git(chunk.node)
         self.assertEqual(GitCommit(git_m).tree, self.manifest_tree(m))
@@ -180,12 +180,12 @@ class TestStoreCG01(unittest.TestCase):
         m2 = Manifest()
         m2.parent1 = m.node
         m2.items.append(m.items[0])
-        m2.add('fuga', '3' * 40)
+        m2.add(b'fuga', b'3' * 40)
         m2.items.append(m.items[1])
         m2.node = m2.sha1
 
         chunk = m2.to_chunk(self.RevChunk, m)
-        GitHgHelper.store('manifest', chunk)
+        GitHgHelper.store(b'manifest', chunk)
 
         git_m = GitHgHelper.hg2git(chunk.node)
         self.assertEqual(GitCommit(git_m).tree, self.manifest_tree(m2))
@@ -193,13 +193,13 @@ class TestStoreCG01(unittest.TestCase):
         m3 = Manifest()
         m3.parent1 = m.node
         m3.items.append(m.items[0])
-        m3.add('fuga/bar/foo', '3' * 40)
-        m3.add('fuga/bar/qux', '4' * 40)
-        m3.add('fuga/foo', '5' * 40, 'x')
-        m3.add('fuga/fuga/bar', '6' * 40)
-        m3.add('fuga/fuga/baz', '7' * 40, 'l')
-        m3.add('fuga/fuga/qux', '8' * 40)
-        m3.add('hoge', '9' * 40)
+        m3.add(b'fuga/bar/foo', b'3' * 40)
+        m3.add(b'fuga/bar/qux', b'4' * 40)
+        m3.add(b'fuga/foo', b'5' * 40, b'x')
+        m3.add(b'fuga/fuga/bar', b'6' * 40)
+        m3.add(b'fuga/fuga/baz', b'7' * 40, b'l')
+        m3.add(b'fuga/fuga/qux', b'8' * 40)
+        m3.add(b'hoge', b'9' * 40)
         m3.node = m3.sha1
 
         if self.RevChunk == RawRevChunk01:
@@ -207,7 +207,7 @@ class TestStoreCG01(unittest.TestCase):
         else:
             delta_node = m
         chunk = m3.to_chunk(self.RevChunk, delta_node)
-        GitHgHelper.store('manifest', chunk)
+        GitHgHelper.store(b'manifest', chunk)
 
         git_m = GitHgHelper.hg2git(chunk.node)
         self.assertEqual(GitCommit(git_m).tree, self.manifest_tree(m3))
@@ -223,7 +223,7 @@ class TestStoreCG01(unittest.TestCase):
         else:
             delta_node = m2
         chunk = m4.to_chunk(self.RevChunk, delta_node)
-        GitHgHelper.store('manifest', chunk)
+        GitHgHelper.store(b'manifest', chunk)
 
         git_m = GitHgHelper.hg2git(chunk.node)
         self.assertEqual(GitCommit(git_m).tree, self.manifest_tree(m4))
@@ -235,7 +235,7 @@ class TestStoreCG01(unittest.TestCase):
         m5.node = m5.sha1
 
         chunk = m5.to_chunk(self.RevChunk, m4)
-        GitHgHelper.store('manifest', chunk)
+        GitHgHelper.store(b'manifest', chunk)
 
         git_m = GitHgHelper.hg2git(chunk.node)
         self.assertEqual(GitCommit(git_m).tree, self.manifest_tree(m5))
@@ -248,7 +248,7 @@ class TestStoreCG01(unittest.TestCase):
         self.assertEqual(m4.raw_data, m6.raw_data)
 
         chunk = m6.to_chunk(self.RevChunk, m5)
-        GitHgHelper.store('manifest', chunk)
+        GitHgHelper.store(b'manifest', chunk)
 
         git_m = GitHgHelper.hg2git(chunk.node)
         self.assertEqual(GitCommit(git_m).tree, self.manifest_tree(m6))
@@ -259,7 +259,7 @@ class TestStoreCG01(unittest.TestCase):
         m7.node = m7.sha1
 
         chunk = m7.to_chunk(self.RevChunk)
-        GitHgHelper.store('manifest', chunk)
+        GitHgHelper.store(b'manifest', chunk)
 
         git_m = GitHgHelper.hg2git(chunk.node)
         self.assertEqual(GitCommit(git_m).tree, self.manifest_tree(m7))
@@ -270,7 +270,7 @@ class TestStoreCG01(unittest.TestCase):
         m8.node = m8.sha1
 
         chunk = m8.to_chunk(self.RevChunk, m7)
-        GitHgHelper.store('manifest', chunk)
+        GitHgHelper.store(b'manifest', chunk)
 
         git_m = GitHgHelper.hg2git(chunk.node)
         self.assertEqual(GitCommit(git_m).tree, self.manifest_tree(m8))
@@ -281,67 +281,67 @@ class TestStoreCG01(unittest.TestCase):
         attrs = {v: k for k, v in GitHgStore.ATTR.items()}
         for item in m:
             t = tree
-            path = item.path.split('/')
+            path = item.path.split(b'/')
             for p in path[:-1]:
                 t = t.setdefault(p, OrderedDict())
             t[path[-1]] = (attrs[item.attr], files[item.sha1])
 
         def recurse(t):
-            tree = ''
-            for p, v in t.iteritems():
+            tree = b''
+            for p, v in t.items():
                 if isinstance(v, OrderedDict):
-                    mode = '40000'
+                    mode = b'40000'
                     sha1 = recurse(v)
                 else:
                     mode, sha1 = v
-                tree += '%s %s\0%s' % (mode, p, unhexlify(sha1))
-            return git_hash('tree', tree)
+                tree += b'%s %s\0%s' % (mode, p, unhexlify(sha1))
+            return git_hash(b'tree', tree)
 
         return recurse(tree)
 
     def test_store_changeset(self):
         files = {}
         f = File()
-        f.content = 'foo\n'
+        f.content = b'foo\n'
         f.node = f.sha1
 
         chunk = f.to_chunk(self.RevChunk)
-        GitHgHelper.store('file', chunk)
+        GitHgHelper.store(b'file', chunk)
         files[f.node] = GitHgHelper.hg2git(chunk.node)
 
         f2 = File()
-        f2.content = 'bar\n'
+        f2.content = b'bar\n'
         f2.node = f2.sha1
 
         chunk = f2.to_chunk(self.RevChunk)
-        GitHgHelper.store('file', chunk)
+        GitHgHelper.store(b'file', chunk)
         files[f2.node] = GitHgHelper.hg2git(chunk.node)
 
         m = Manifest()
-        m.add('bar', f.node)
-        m.add('foo/.bar', f.node)
-        m.add('foo/.foo', f.node)
-        m.add('foo/bar/baz', f.node)
-        m.add('foo/bar/foo', f.node)
-        m.add('foo/bar/qux', f.node)
-        m.add('foo/foo', f.node)
-        m.add('foo/hoge', f.node)
-        m.add('foo/qux', f.node)
-        m.add('qux', f.node)
+        m.add(b'bar', f.node)
+        m.add(b'foo/.bar', f.node)
+        m.add(b'foo/.foo', f.node)
+        m.add(b'foo/bar/baz', f.node)
+        m.add(b'foo/bar/foo', f.node)
+        m.add(b'foo/bar/qux', f.node)
+        m.add(b'foo/foo', f.node)
+        m.add(b'foo/hoge', f.node)
+        m.add(b'foo/qux', f.node)
+        m.add(b'qux', f.node)
         m.node = m.sha1
 
         chunk = m.to_chunk(self.RevChunk)
-        GitHgHelper.store('manifest', chunk)
+        GitHgHelper.store(b'manifest', chunk)
 
         store = GitHgStore()
 
         c = Changeset()
         c.manifest = m.node
-        c.author = 'Cinnabar test <cinnabar@test>'
-        c.timestamp = '0'
-        c.utcoffset = '0000'
+        c.author = b'Cinnabar test <cinnabar@test>'
+        c.timestamp = b'0'
+        c.utcoffset = b'0000'
         c.files = [i.path for i in m]
-        c.body = 'Test commit'
+        c.body = b'Test commit'
         c.node = c.sha1
 
         store.store_changeset(c)
@@ -357,31 +357,31 @@ class TestStoreCG01(unittest.TestCase):
         # The bar subdirectory is supposed to be transposed to the same
         # content as the git tree for the manifest above.
         m2 = Manifest()
-        m2.add('bar/bar', f.node)
-        m2.add('bar/foo/.foo', f.node)
-        m2.add('bar/foo//.bar', f.node)
-        m2.add('bar/foo//.foo', f2.node)
-        m2.add('bar/foo//bar/baz', f2.node)
-        m2.add('bar/foo//bar/foo', f.node)
-        m2.add('bar/foo//hoge', f.node)
-        m2.add('bar/foo/bar/baz', f.node)
-        m2.add('bar/foo/bar/qux', f.node)
-        m2.add('bar/foo/foo', f.node)
-        m2.add('bar/foo/qux', f.node)
-        m2.add('bar/qux', f.node)
+        m2.add(b'bar/bar', f.node)
+        m2.add(b'bar/foo/.foo', f.node)
+        m2.add(b'bar/foo//.bar', f.node)
+        m2.add(b'bar/foo//.foo', f2.node)
+        m2.add(b'bar/foo//bar/baz', f2.node)
+        m2.add(b'bar/foo//bar/foo', f.node)
+        m2.add(b'bar/foo//hoge', f.node)
+        m2.add(b'bar/foo/bar/baz', f.node)
+        m2.add(b'bar/foo/bar/qux', f.node)
+        m2.add(b'bar/foo/foo', f.node)
+        m2.add(b'bar/foo/qux', f.node)
+        m2.add(b'bar/qux', f.node)
         m2.node = m2.sha1
 
         chunk = m2.to_chunk(self.RevChunk, m)
-        GitHgHelper.store('manifest', chunk)
+        GitHgHelper.store(b'manifest', chunk)
 
         c2 = Changeset()
         c2.parent1 = c.node
         c2.manifest = m2.node
-        c2.author = 'Cinnabar test <cinnabar@test>'
-        c2.timestamp = '0'
-        c2.utcoffset = '0000'
+        c2.author = b'Cinnabar test <cinnabar@test>'
+        c2.timestamp = b'0'
+        c2.utcoffset = b'0000'
         c2.files = [i.path for i in m2]
-        c2.body = 'Test commit'
+        c2.body = b'Test commit'
         c2.node = c2.sha1
 
         store.store_changeset(c2)
@@ -390,7 +390,7 @@ class TestStoreCG01(unittest.TestCase):
 
         commit = GitCommit(GitHgHelper.hg2git(c2.node))
         self.assertEqual(commit.body, c2.body)
-        self.assertEqual(ct, one(Git.ls_tree(commit.tree, 'bar'))[2])
+        self.assertEqual(ct, one(Git.ls_tree(commit.tree, b'bar'))[2])
 
 
 class TestStoreCG02(TestStoreCG01):

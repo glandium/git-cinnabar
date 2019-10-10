@@ -87,11 +87,11 @@ class Git(object):
     @classmethod
     def ls_tree(self, treeish, path='', recursive=False):
         from .helper import GitHgHelper
-        assert not treeish.startswith('refs/')
+        assert not treeish.startswith(b'refs/')
 
-        if path.endswith('/') or recursive or path == '':
-            path = path.rstrip('/')
-            for line in GitHgHelper.ls_tree('%s:%s' % (treeish, path),
+        if path.endswith(b'/') or recursive or path == b'':
+            path = path.rstrip(b'/')
+            for line in GitHgHelper.ls_tree(b'%s:%s' % (treeish, path),
                                             recursive):
                 mode, typ, sha1, p = line
                 if path:
@@ -99,9 +99,9 @@ class Git(object):
                 else:
                     yield mode, typ, sha1, p
         else:
-            with GitHgHelper.query('ls', treeish, path) as stdout:
+            with GitHgHelper.query(b'ls', treeish, path) as stdout:
                 line = stdout.readline()
-                if not line.startswith('missing '):
+                if not line.startswith(b'missing '):
                     yield split_ls_tree(line[:-1])
 
     @classmethod
