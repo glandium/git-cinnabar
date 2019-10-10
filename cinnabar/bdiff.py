@@ -42,7 +42,7 @@ def bdiff(a, b):
     b = b.splitlines(True)
 
     if not a:
-        s = "".join(b)
+        s = b"".join(b)
         return s and (struct.pack(">lll", 0, 0, len(s)) + s)
 
     bin = []
@@ -55,10 +55,10 @@ def bdiff(a, b):
     la = 0
     lb = 0
     for am, bm, size in d:
-        s = "".join(b[lb:bm])
+        s = b"".join(b[lb:bm])
         if am > la or s:
             bin.append(struct.pack(">lll", p[la], p[am], len(s)) + s)
         la = am + size
         lb = bm + size
 
-    return "".join(bin)
+    return b"".join(bin)

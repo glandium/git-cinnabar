@@ -194,12 +194,14 @@ def decision():
         clone=False,
         command=[
             '(cd repo &&'
-            ' nosetests --all-modules --with-coverage --cover-tests tests)',
+            ' nosetests --all-modules --with-coverage --cover-tests tests &&'
+            ' nosetests3 $(git grep -l unicode_literals tests))',
             '(cd repo && python -m flake8 --ignore E402,F405'
             ' $(git ls-files \\*\\*.py git-cinnabar git-remote-hg'
             ' | grep -v ^CI/))',
             '(cd repo && flake8 --ignore E402,F405'
-            ' $(git ls-files CI/\\*\\*.py))',
+            ' $(git ls-files CI/\\*\\*.py)'
+            ' $(git grep -l unicode_literals))',
         ],
     )
 

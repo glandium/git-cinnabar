@@ -82,6 +82,7 @@ DOCKER_IMAGES = {
          python-flake8\\
          python3-flake8\\
          python-nose\\
+         python3-nose\\
          python-requests\\
          python-virtualenv\\
          && apt-get clean\\

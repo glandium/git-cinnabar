@@ -276,7 +276,7 @@ class ChangesetPatcher(str):
                     k: v
                     for k, v in changeset2.extra.iteritems()
                     if not changeset1.extra or changeset1.extra.get(k) != v
-                }))
+                }).to_str())
         if changeset1.files != changeset2.files:
             items.append('files %s' % '\0'.join(changeset2.files))
 
