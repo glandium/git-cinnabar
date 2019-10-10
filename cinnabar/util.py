@@ -943,3 +943,12 @@ def run(func):
             sys.stderr.write('Mercurial libraries were loaded!')
             retcode = 70
     sys.exit(retcode)
+
+
+# Python3 compat
+if sys.version_info[0] == 3:
+    def iteritems(d):
+        return iter(d.items())
+else:
+    def iteritems(d):
+        return d.iteritems()
