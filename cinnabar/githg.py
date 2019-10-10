@@ -710,22 +710,22 @@ class GitHgStore(object):
     def _try_merge_branches(repo_url):
         parsed_url = urlparse(repo_url)
         branches = []
-        path = parsed_url.path.lstrip('/').rstrip('/')
+        path = parsed_url.path.lstrip(b'/').rstrip(b'/')
         if path:
-            parts = list(reversed(path.split('/')))
+            parts = list(reversed(path.split(b'/')))
         else:
             parts = []
-        host = parsed_url.netloc.split(':', 1)[0]
+        host = parsed_url.netloc.split(b':', 1)[0]
         if host:
             parts.append(host)
-        last_path = ''
+        last_path = b''
         for part in parts:
             if last_path:
-                last_path = '%s/%s' % (part, last_path)
+                last_path = b'%s/%s' % (part, last_path)
             else:
                 last_path = part
             branches.append(last_path)
-        branches.append('metadata')
+        branches.append(b'metadata')
         return branches
 
     @staticmethod
