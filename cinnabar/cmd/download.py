@@ -8,7 +8,6 @@ import tempfile
 import threading
 import zipfile
 import errno
-from StringIO import StringIO
 from cinnabar import VERSION
 from cinnabar.cmd.util import CLI
 from cinnabar.git import Git
@@ -18,6 +17,7 @@ from cinnabar.util import (
     Progress,
 )
 from gzip import GzipFile
+from io import BytesIO
 from shutil import copyfileobj
 try:
     from urllib2 import HTTPError
@@ -200,7 +200,7 @@ def download(args):
         helper_content = WrapGzipFile(mode='rb', fileobj=helper_content)
 
     if args.dev is False:
-        content = StringIO()
+        content = BytesIO()
         copyfileobj(helper_content, content)
         if hasattr(helper_content, 'finish'):
             helper_content.finish()
@@ -264,7 +264,7 @@ def download(args):
                 pass
             os.rename(path, helper_path)
             # Add executable bits wherever read bits are set
-            mode = mode | ((mode & 0444) >> 2)
+            mode = mode | ((mode & 0o0444) >> 2)
             os.chmod(helper_path, mode)
 
             if not args.no_config:

@@ -114,7 +114,7 @@ class ConfigSetFunc(object):
             else:
                 config = Git.config(self._key) or self._default
             if config:
-                config = config.split(',')
+                config = config.decode('ascii').split(',')
             self._config = set()
             for c in config:
                 if c in ('true', 'all'):
@@ -122,7 +122,7 @@ class ConfigSetFunc(object):
                 elif c.startswith('-'):
                     c = c[1:]
                     try:
-                        self._config.remove(c)
+                        self._config.remove(c.decode('ascii'))
                     except KeyError:
                         logging.getLogger('config').warn(
                             '%s: %s is not one of (%s)',

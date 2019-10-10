@@ -65,7 +65,6 @@ from .changegroup import (
     RawRevChunk01,
     RawRevChunk02,
 )
-from cStringIO import StringIO
 
 
 try:
@@ -507,7 +506,7 @@ class HelperRepo(object):
         data = HgRepoHelper.unbundle(cg, (hexlify(h) if h != 'force' else h
                                           for h in heads))
         if isinstance(data, str) and data.startswith('HG20'):
-            data = unbundle20(self.ui, StringIO(data[4:]))
+            data = unbundle20(self.ui, BytesIO(data[4:]))
         return data
 
     def local(self):

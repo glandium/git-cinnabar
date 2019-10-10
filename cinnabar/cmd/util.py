@@ -64,7 +64,7 @@ def iter_modules_in_path(path):
         path = os.path.abspath(os.path.normcase(path))
 
         if path.startswith(base):
-            yield os.path.relpath(path, base)
+            yield os.path.relpath(path, base).encode('ascii')
 
 
 class Version(argparse.Action):

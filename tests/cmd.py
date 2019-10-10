@@ -1,4 +1,4 @@
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import, unicode_literals
 import os
 import unittest
 from cinnabar.cmd.util import Version as CmdVersion
@@ -12,7 +12,8 @@ from distutils.version import StrictVersion
 
 class Version(StrictVersion):
     def __init__(self, v):
-        print(v)
+        if isinstance(v, bytes):
+            v = v.decode('ascii')
         if v.endswith('a'):
             v += '0'
         StrictVersion.__init__(self, v)
@@ -22,8 +23,8 @@ class TestVersion(unittest.TestCase):
     def test_cinnabar_version(self):
         desc = one(Git.iter('describe', '--tags', 'HEAD'))
         version = Version(CmdVersion.cinnabar_version())
-        if '-' in desc:
-            last_tag, n, sha1 = desc.rsplit('-', 2)
+        if b'-' in desc:
+            last_tag, n, sha1 = desc.rsplit(b'-', 2)
             self.assertGreater(version, Version(last_tag))
         else:
             self.assertEqual(version, Version(desc))

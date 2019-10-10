@@ -195,7 +195,7 @@ def decision():
         command=[
             '(cd repo &&'
             ' nosetests --all-modules --with-coverage --cover-tests tests &&'
-            ' nosetests3 $(git grep -l unicode_literals tests))',
+            ' nosetests3 --all-modules tests)',
             '(cd repo && python -m flake8 --ignore E402,F405'
             ' $(git ls-files \\*\\*.py git-cinnabar git-remote-hg'
             ' | grep -v ^CI/))',

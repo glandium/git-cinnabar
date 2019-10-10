@@ -31,7 +31,10 @@ from cinnabar.util import (
     VersionedDict,
 )
 import cinnabar.util
-from urllib import unquote
+try:
+    from urllib import unquote
+except ImportError:
+    from urllib.parse import unquote
 
 
 def sanitize_branch_name(name):
