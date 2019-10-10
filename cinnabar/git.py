@@ -2,6 +2,7 @@ from __future__ import absolute_import, division
 import logging
 import os
 import posixpath
+import sys
 import time
 from .util import (
     one,
@@ -132,15 +133,19 @@ class Git(object):
         value = None
         if name.startswith('cinnabar.'):
             var = 'GIT_%s' % name.replace('.', '_').upper()
-            value = os.environ.get(var)
+            if sys.version_info[0] == 3:
+                value = os.environb.get(var.encode('ascii'))
+            else:
+                value = os.environ.get(var)
             if value is None and remote:
-                var = 'remote.%s.%s' % (remote, name.replace('.', '-'))
+                var = b'remote.%s.%s' % (
+                    remote, name.replace('.', '-').encode('ascii'))
                 value = self._config.get(var.lower())
         elif name == 'fetch.prune' and remote:
-            var = 'remote.%s.prune' % remote
+            var = b'remote.%s.prune' % remote
             value = self._config.get(var.lower())
         if value is None:
-            var = name
+            var = name.encode('ascii')
             value = self._config.get(var.lower())
         if value:
             value = value.split(b'\0')

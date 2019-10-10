@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 import os
 import shutil
 import tempfile
@@ -30,30 +30,31 @@ class TestNotes(unittest.TestCase):
             os.environ['GIT_DIR'] = self.git_dir
 
     def test_notes(self):
-        HEX = '0123456789abcdef'
-        self.assertEqual(GitHgHelper.put_blob(''), EMPTY_BLOB)
+        HEX = [b'%c' % c for c in b'0123456789abcdef']
+        self.assertEqual(GitHgHelper.put_blob(b''), EMPTY_BLOB)
         for prefix_len in range(20):
-            prefix = '0' * prefix_len
+            prefix = b'0' * prefix_len
             for n in HEX:
                 GitHgHelper.set(
-                    'file', (prefix + '0' + n + NULL_NODE_ID)[:40], EMPTY_BLOB)
+                    b'file', (prefix + b'0' + n + NULL_NODE_ID)[:40],
+                    EMPTY_BLOB)
                 for o in HEX:
                     GitHgHelper.set(
-                        'file', (prefix + '1' + n + o + NULL_NODE_ID)[:40],
+                        b'file', (prefix + b'1' + n + o + NULL_NODE_ID)[:40],
                         EMPTY_BLOB)
             for n in HEX:
                 self.assertEqual(
-                    GitHgHelper.hg2git(prefix + '0' + n), EMPTY_BLOB)
+                    GitHgHelper.hg2git(prefix + b'0' + n), EMPTY_BLOB)
             for l in range(prefix_len + 1):
                 self.assertEqual(
-                    GitHgHelper.hg2git((prefix + '0')[:l + 1]), NULL_NODE_ID)
+                    GitHgHelper.hg2git((prefix + b'0')[:l + 1]), NULL_NODE_ID)
                 self.assertEqual(
-                    GitHgHelper.hg2git((prefix + '1')[:l + 1]), NULL_NODE_ID)
+                    GitHgHelper.hg2git((prefix + b'1')[:l + 1]), NULL_NODE_ID)
             for n in HEX:
                 for l in range(prefix_len + 2):
                     self.assertEqual(
-                        GitHgHelper.hg2git((prefix + '1' + n)[:l + 1]),
+                        GitHgHelper.hg2git((prefix + b'1' + n)[:l + 1]),
                         NULL_NODE_ID)
                 for o in HEX:
                     self.assertEqual(
-                        GitHgHelper.hg2git(prefix + '1' + n + o), EMPTY_BLOB)
+                        GitHgHelper.hg2git(prefix + b'1' + n + o), EMPTY_BLOB)

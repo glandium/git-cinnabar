@@ -371,7 +371,7 @@ class Manifest(HgObject):
         @property
         def path(self):
             attr_len = len(self.attr)
-            assert self[-41 - attr_len] == 0
+            assert self[-41 - attr_len:-40 - attr_len] == b'\0'
             return self[:-41 - attr_len]
 
         @property
