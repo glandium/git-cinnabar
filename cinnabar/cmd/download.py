@@ -1,4 +1,9 @@
-from __future__ import absolute_import, division, print_function
+from __future__ import (
+    absolute_import,
+    division,
+    print_function,
+    unicode_literals,
+)
 import os
 import sys
 import argparse
@@ -92,7 +97,7 @@ def download(args):
         url = 'https://index.taskcluster.net/v1/task/github'
         url += '.glandium.git-cinnabar.helper.'
         url += '{}.{}.{}.{}'.format(
-            sha1, system.lower(), machine,
+            sha1.decode('ascii'), system.lower(), machine,
             args.dev.lower() if args.dev else '').rstrip('.')
         url += '/artifacts/public/{}'.format(helper)
 
