@@ -2,7 +2,7 @@
 # mercurial source code.
 # Copyright 2009 Matt Mackall <mpm@selenic.com> and others
 
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 import difflib
 import struct
 
