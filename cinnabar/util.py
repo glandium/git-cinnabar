@@ -950,6 +950,12 @@ def run(func):
 if sys.version_info[0] == 3:
     def iteritems(d):
         return iter(d.items())
+
 else:
     def iteritems(d):
         return d.iteritems()
+
+if hasattr(sys.stdout, 'buffer'):
+    bytes_stdout = sys.stdout.buffer
+else:
+    bytes_stdout = sys.stdout
