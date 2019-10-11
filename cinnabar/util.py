@@ -951,9 +951,14 @@ if sys.version_info[0] == 3:
     def iteritems(d):
         return iter(d.items())
 
+    def itervalues(d):
+        return iter(d.values())
 else:
     def iteritems(d):
         return d.iteritems()
+
+    def itervalues(d):
+        return d.itervalues()
 
 if hasattr(sys.stdout, 'buffer'):
     bytes_stdout = sys.stdout.buffer

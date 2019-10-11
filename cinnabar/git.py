@@ -85,7 +85,7 @@ class Git(object):
                             stderr=open(os.devnull, 'wb')))
 
     @classmethod
-    def ls_tree(self, treeish, path='', recursive=False):
+    def ls_tree(self, treeish, path=b'', recursive=False):
         from .helper import GitHgHelper
         assert not treeish.startswith(b'refs/')
 
@@ -106,13 +106,13 @@ class Git(object):
 
     @classmethod
     def update_ref(self, ref, newvalue):
-        assert not newvalue.startswith('refs/')
+        assert not newvalue.startswith(b'refs/')
         from .helper import GitHgHelper
         GitHgHelper.update_ref(ref, newvalue)
 
     @classmethod
     def delete_ref(self, ref):
-        self.update_ref(ref, '0' * 40)
+        self.update_ref(ref, NULL_NODE_ID)
 
     @classmethod
     def config(self, name, remote=None, values={}, multiple=False):
