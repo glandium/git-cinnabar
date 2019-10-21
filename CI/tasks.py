@@ -379,7 +379,10 @@ class Task(object):
             res.raise_for_status()
         except Exception:
             print(res.headers)
-            print(res.content)
+            try:
+                print(res.json()['message'])
+            except Exception:
+                print(res.content)
             raise
         print(res.json())
 
