@@ -442,13 +442,14 @@ if merge_coverage:
     Task(
         task_env=TaskEnvironment.by_name('linux.codecov'),
         description='upload coverage',
-        scopes=['secrets:get:repo:github.com/glandium.git-cinnabar:codecov'],
+        scopes=['secrets:get:project/git-cinnabar/codecov'],
         command=list(chain(
             Task.checkout(),
             [
                 'set +x',
-                ('export CODECOV_TOKEN=$(curl -sL http://taskcluster/secrets'
-                 '/v1/secret/repo:github.com/glandium.git-cinnabar:codecov | '
+                ('export CODECOV_TOKEN=$(curl -sL '
+                 'http://taskcluster/api/secrets/v1/secret/project/git-'
+                 'cinnabar/codecov | '
                  'python -c "import json, sys; print(json.load(sys.stdin)'
                  '[\\"secret\\"][\\"token\\"])")'),
                 'set -x',

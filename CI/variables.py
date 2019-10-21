@@ -1,12 +1,16 @@
 import json
 import os
 
+rootUrl = os.environ.get(
+    'TASKCLUSTER_ROOT_URL',
+    'https://community-tc.services.mozilla.com')
 
 if 'TC_PROXY' in os.environ:
-    PROXY_INDEX_URL = 'http://taskcluster/index/v1/task/{}'
+    PROXY_INDEX_URL = 'http://taskcluster/api/index/v1/task/{}'
 else:
-    PROXY_INDEX_URL = 'https://index.taskcluster.net/v1/task/{}'
-ARTIFACT_URL = 'https://queue.taskcluster.net/v1/task/{}/artifacts/{}'
+    PROXY_INDEX_URL = rootUrl + '/api/queue/v1/task/{}'
+ARTIFACT_URL = rootUrl + '/api/queue/v1/task/{}/artifacts/{}'
+
 
 DEFAULT_DATA = {
     'repo_name': 'git-cinnabar',

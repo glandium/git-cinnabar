@@ -27,7 +27,7 @@ cat > worker.config <<EOF
   "requiredDiskSpaceMegabytes": 512,
   "signingKeyLocation": "worker.key",
   "tasksDir": "tasks",
-  "rootURL": "https://taskcluster.net",
+  "rootURL": "https://community-tc.services.mozilla.com",
   "workerGroup": "proj-git-cinnabar",
   "workerId": "travis-$TRAVIS_BUILD_ID",
   "workerType": "$workerType"
