@@ -94,8 +94,8 @@ def download(args):
                   'version of git cinnabar.',
                   file=sys.stderr)
             return 1
-        url = 'https://index.taskcluster.net/v1/task/github'
-        url += '.glandium.git-cinnabar.helper.'
+        url = 'https://community-tc.services.mozilla.com/api/index/v1/task/'
+        url += 'project.git-cinnabar.helper.'
         url += '{}.{}.{}.{}'.format(
             sha1.decode('ascii'), system.lower(), machine,
             args.dev.lower() if args.dev else '').rstrip('.')

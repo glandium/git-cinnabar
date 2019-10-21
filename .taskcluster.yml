@@ -35,20 +35,20 @@ tasks:
         taskId: ${taskGroupId}
         taskGroupId: ${taskGroupId}
         schedulerId: taskcluster-github
-        provisionerId: aws-provisioner-v1
-        workerType: github-worker
+        provisionerId: proj-git-cinnabar
+        workerType: ci
         retries: 5
         scopes:
           $flatten:
             - assume:repo:github.com/${e.base_login}/${e.base_repo_name}:decision-task
             - $if: 'tasks_for == "github-push"'
               then:
-              - 'queue:route:index.github.${e.base_login}.${e.base_repo_name}.*'
-              - secrets:get:repo:github.com/${e.base_login}.${e.base_repo_name}:codecov
+              - 'queue:route:index.project.git-cinnabar.*'
+              - secrets:get:project/git-cinnabar/codecov
         routes:
           $if: 'e.decision_id'
           then:
-            - 'index.github.${e.login}.${e.repo_name}.decision.${e.decision_id}'
+            - 'index.project.git-cinnabar.decision.${e.decision_id}'
         payload:
           maxRunTime: 3600
           image: python:3.7
