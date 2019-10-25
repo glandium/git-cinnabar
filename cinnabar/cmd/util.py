@@ -108,7 +108,7 @@ class Version(argparse.Action):
         except Exception:
             version = 'unknown'
 
-        sha1 = helper_hash().decode('ascii') or 'unknown'
+        sha1 = (helper_hash() or 'unknown').decode('ascii')
         return version, sha1
 
     def __call__(self, parser, namespace, values, option_string=None):
