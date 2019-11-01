@@ -106,6 +106,9 @@ if changegroup:
     try:
         if check_enabled('no-bundle2'):
             raise ImportError('Do not use bundlev2')
+        from mercurial.bundle2 import capabilities
+        if 'HG20' not in capabilities:
+            raise ImportError('Mercurial may have unbundle20 but insufficient')
         from mercurial.bundle2 import unbundle20
     except ImportError:
         unbundle20 = False
