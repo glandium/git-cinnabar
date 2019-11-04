@@ -12,7 +12,7 @@ import msys
 
 
 MERCURIAL_VERSION = '5.1.2'
-GIT_VERSION = '2.23.0'
+GIT_VERSION = '2.24.0'
 
 ALL_MERCURIAL_VERSIONS = (
     '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',

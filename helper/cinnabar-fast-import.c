@@ -271,11 +271,8 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
  * record_command. */
 static void fill_command_buf()
 {
-	// command_buf.buf is never free()d directly, only via cmd_list,
-	// which has ownership.
-	command_buf.buf = cmd_tail->buf;
-	command_buf.len = strlen(cmd_tail->buf);
-	command_buf.alloc = command_buf.len + 1;
+	strbuf_reset(&command_buf);
+	strbuf_addstr(&command_buf, cmd_tail->buf);
 }
 
 void maybe_reset_notes(const char *branch)
