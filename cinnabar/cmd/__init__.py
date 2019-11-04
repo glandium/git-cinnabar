@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from .data import data  # noqa: F401
 from .fsck import fsck  # noqa: F401
 from .upgrade import upgrade  # noqa: F401

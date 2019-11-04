@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import logging
 from cinnabar.cmd.util import CLI
 from cinnabar.git import (
@@ -69,6 +70,7 @@ def bundle(args):
               help='get clone bundle from given repository')
 @CLI.argument('url', help='url of the bundle')
 def unbundle(args):
+    '''apply a mercurial bundle to the repository'''
     # Make git emit its error when the current directory is not in a git repo.
     proc = GitProcess('rev-parse')
     ret = proc.wait()

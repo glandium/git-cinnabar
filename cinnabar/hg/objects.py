@@ -1,9 +1,8 @@
-from __future__ import division
+from __future__ import absolute_import, division, unicode_literals
 import hashlib
 import re
 from binascii import unhexlify
 from collections import OrderedDict
-from types import StringTypes
 from .changegroup import (
     ParentsTrait,
     RawRevChunk,
@@ -17,11 +16,11 @@ from ..bdiff import bdiff as textdiff
 class Authorship(object):
     __slots__ = ('name', 'email', 'timestamp', 'utcoffset')
 
-    WHO_RE = re.compile(r'^(?P<name>.*?) ?(?:\<(?P<email>.*?)\>)')
+    WHO_RE = re.compile(b'^(?P<name>.*?) ?(?:\\<(?P<email>.*?)\\>)')
 
     @classmethod
     def from_hg_str(cls, s, maybe_git_utcoffset=False):
-        return cls.from_hg(*s.rsplit(' ', 2),
+        return cls.from_hg(*s.rsplit(b' ', 2),
                            maybe_git_utcoffset=maybe_git_utcoffset)
 
     @classmethod
@@ -29,17 +28,17 @@ class Authorship(object):
         match = cls.WHO_RE.match(who)
 
         def cleanup(x):
-            return x.replace('<', '').replace('>', '')
+            return x.replace(b'<', b'').replace(b'>', b'')
 
         if match:
             name = cleanup(match.group('name'))
             email = cleanup(match.group('email'))
-        elif '@' in who:
-            name = ''
+        elif b'@' in who:
+            name = b''
             email = cleanup(who)
         else:
             name = cleanup(who)
-            email = ''
+            email = b''
 
         # The UTC offset in mercurial author info is in seconds, formatted as
         # %d. It also has an opposite sign compared to traditional UTC offsets.
@@ -56,17 +55,17 @@ class Authorship(object):
         # there exist a few 15-minutes aligned time zones, but they don't match
         # anything that could match here anyways, but just in case someone one
         # day creates one, assume it won't be finer grained)
-        if maybe_git_utcoffset and isinstance(utcoffset, StringTypes):
+        if maybe_git_utcoffset and isinstance(utcoffset, bytes):
             is_git = False
-            if utcoffset.startswith(('+', '-0')):
+            if utcoffset.startswith((b'+', b'-0')):
                 is_git = True
-            elif utcoffset.startswith('-1'):
+            elif utcoffset.startswith(b'-1'):
                 utcoffset = int(utcoffset)
                 if (utcoffset > -1800 and utcoffset % 900 != 0 and
                         (utcoffset % 100) % 15 == 0):
                     is_git = True
             if is_git:
-                return cls.from_git('%s <%s>' % (name, email),
+                return cls.from_git(b'%s <%s>' % (name, email),
                                     timestamp, utcoffset)
 
         result = cls()
@@ -78,7 +77,7 @@ class Authorship(object):
 
     @classmethod
     def from_git_str(cls, s):
-        return cls.from_git(*s.rsplit(' ', 2))
+        return cls.from_git(*s.rsplit(b' ', 2))
 
     @classmethod
     def from_git(cls, who, timestamp, utcoffset):
@@ -91,31 +90,31 @@ class Authorship(object):
         result.email = match.group('email')
         result.timestamp = int(timestamp)
         utcoffset = int(utcoffset)
-        sign = -cmp(utcoffset, 0)
+        sign = (utcoffset < 0) - (utcoffset > 0)
         utcoffset = abs(utcoffset)
         utcoffset = (utcoffset // 100) * 60 + (utcoffset % 100)
         result.utcoffset = sign * utcoffset * 60
         return result
 
     def to_git(self):
-        sign = '+' if self.utcoffset <= 0 else '-'
+        sign = b'+' if self.utcoffset <= 0 else b'-'
         utcoffset = abs(self.utcoffset) // 60
-        utcoffset = '%c%02d%02d' % (sign, utcoffset // 60, utcoffset % 60)
-        who = '%s <%s>' % (self.name, self.email)
-        return who, str(self.timestamp), utcoffset
+        utcoffset = b'%c%02d%02d' % (sign, utcoffset // 60, utcoffset % 60)
+        who = b'%s <%s>' % (self.name, self.email)
+        return who, (b'%d' % self.timestamp), utcoffset
 
     def to_git_str(self):
-        return ' '.join(self.to_git())
+        return b' '.join(self.to_git())
 
     def to_hg(self):
         if self.name and self.email:
-            who = '%s <%s>' % (self.name, self.email)
+            who = b'%s <%s>' % (self.name, self.email)
         else:
-            who = self.name or '<%s>' % self.email
-        return who, str(self.timestamp), str(self.utcoffset)
+            who = self.name or b'<%s>' % self.email
+        return who, (b'%d' % self.timestamp), (b'%d' % self.utcoffset)
 
     def to_hg_str(self):
-        return ' '.join(self.to_hg())
+        return b' '.join(self.to_hg())
 
 
 class HgObject(ParentsTrait):
@@ -151,9 +150,10 @@ class HgObject(ParentsTrait):
 
     def diff(self, delta_object):
         def flatten(s):
-            return s if isinstance(s, str) else str(s)
-        return textdiff(flatten(delta_object.raw_data) if delta_object else '',
-                        flatten(self.raw_data))
+            return s if isinstance(s, bytes) else bytes(s)
+        return textdiff(
+            flatten(delta_object.raw_data) if delta_object else b'',
+            flatten(self.raw_data))
 
     @property
     def sha1(self):
@@ -161,11 +161,11 @@ class HgObject(ParentsTrait):
         p2 = unhexlify(self.parent2)
         h = hashlib.sha1(min(p1, p2) + max(p1, p2))
         h.update(self.raw_data)
-        return h.hexdigest()
+        return h.hexdigest().encode('ascii')
 
     @property
     def raw_data(self):
-        return ''.join(self._data_iter())
+        return b''.join(self._data_iter())
 
     @raw_data.setter
     def raw_data(self, data):
@@ -182,20 +182,20 @@ class File(HgObject):
 
     def __init__(self, *args, **kwargs):
         super(File, self).__init__(*args, **kwargs)
-        self.content = ''
+        self.content = b''
         self.metadata = {}
 
     @classmethod
     def from_chunk(cls, raw_chunk, delta_file=None):
         this = super(File, cls).from_chunk(raw_chunk, delta_file)
         this.raw_data = raw_chunk.patch.apply(
-            delta_file.raw_data if delta_file else '')
+            delta_file.raw_data if delta_file else b'')
         return this
 
     @HgObject.raw_data.setter
     def raw_data(self, data):
-        if data.startswith('\1\n'):
-            _, self.metadata, self.content = data.split('\1\n', 2)
+        if data.startswith(b'\1\n'):
+            _, self.metadata, self.content = data.split(b'\1\n', 2)
         else:
             self.content = data
 
@@ -203,7 +203,7 @@ class File(HgObject):
         @classmethod
         def from_str(cls, s):
             return cls(
-                l.split(': ', 1)
+                l.split(b': ', 1)
                 for l in s.splitlines()
             )
 
@@ -211,7 +211,7 @@ class File(HgObject):
         def from_dict(cls, d):
             if isinstance(d, OrderedDict):
                 return cls(d)
-            return cls(sorted(d.iteritems()))
+            return cls(sorted(d.items()))
 
         @classmethod
         def from_obj(cls, obj):
@@ -220,14 +220,17 @@ class File(HgObject):
             return cls.from_str(obj)
 
         def __str__(self):
-            return ''.join('%s: %s\n' % i for i in self.iteritems())
+            raise RuntimeError('Use to_str()')
+
+        def to_str(self):
+            return b''.join(b'%s: %s\n' % i for i in self.items())
 
     metadata = TypedProperty(Metadata)
 
     def _data_iter(self):
-        metadata = str(self.metadata)
-        if metadata or self.content.startswith('\1\n'):
-            metadata = '\1\n%s\1\n' % metadata
+        metadata = self.metadata.to_str()
+        if metadata or self.content.startswith(b'\1\n'):
+            metadata = b'\1\n%s\1\n' % metadata
         if metadata:
             yield metadata
         if self.content:
@@ -241,25 +244,25 @@ class Changeset(HgObject):
     def __init__(self, *args, **kwargs):
         super(Changeset, self).__init__(*args, **kwargs)
         self.manifest = NULL_NODE_ID
-        self.author = ''
-        self.timestamp = ''
-        self.utcoffset = ''
+        self.author = b''
+        self.timestamp = b''
+        self.utcoffset = b''
         self.files = []
-        self.body = ''
+        self.body = b''
 
     @classmethod
     def from_chunk(cls, raw_chunk, delta_cs=None):
         this = super(Changeset, cls).from_chunk(raw_chunk, delta_cs)
         this.raw_data = raw_chunk.patch.apply(
-            delta_cs.raw_data if delta_cs else '')
+            delta_cs.raw_data if delta_cs else b'')
         return this
 
     @HgObject.raw_data.setter
     def raw_data(self, data):
-        metadata, self.body = data.split('\n\n', 1)
+        metadata, self.body = data.split(b'\n\n', 1)
         lines = metadata.splitlines()
         self.manifest, self.author, date = lines[:3]
-        date = date.split(' ', 2)
+        date = date.split(b' ', 2)
         self.timestamp = date[0]
         self.utcoffset = date[1]
         if len(date) == 3:
@@ -271,7 +274,7 @@ class Changeset(HgObject):
     class ExtraData(dict):
         @classmethod
         def from_str(cls, s):
-            return cls(i.split(':', 1) for i in s.split('\0') if i)
+            return cls(i.split(b':', 1) for i in s.split(b'\0') if i)
 
         @classmethod
         def from_obj(cls, obj):
@@ -282,25 +285,28 @@ class Changeset(HgObject):
             return cls.from_str(obj)
 
         def __str__(self):
-            return '\0'.join(':'.join(i) for i in sorted(self.iteritems()))
+            raise RuntimeError('Use to_str()')
+
+        def to_str(self):
+            return b'\0'.join(b':'.join(i) for i in sorted(self.items()))
 
     extra = TypedProperty(ExtraData)
 
     def _data_iter(self):
         yield self.manifest
-        yield '\n'
+        yield b'\n'
         yield self.author
-        yield '\n'
+        yield b'\n'
         yield self.timestamp
-        yield ' '
+        yield b' '
         yield self.utcoffset
         if self.extra is not None:
-            yield ' '
-            yield str(self.extra)
+            yield b' '
+            yield self.extra.to_str()
         if self.files:
-            yield '\n'
-            yield '\n'.join(sorted(self.files))
-        yield '\n\n'
+            yield b'\n'
+            yield b'\n'.join(sorted(self.files))
+        yield b'\n\n'
         yield self.body
 
     @property
@@ -313,7 +319,7 @@ class Changeset(HgObject):
 
     class ExtraProperty(object):
         def __init__(self, name):
-            self._name = name
+            self._name = name.encode('ascii')
 
         def __get__(self, obj, type=None):
             if obj.extra is None:
@@ -347,24 +353,24 @@ class Manifest(HgObject):
         self._items = []
         self._raw_data = None
 
-    class ManifestItem(str):
+    class ManifestItem(bytes):
         @classmethod
-        def from_info(cls, path, sha1=None, attr=''):
+        def from_info(cls, path, sha1=None, attr=b''):
             if isinstance(path, cls):
                 return path
-            return cls('%s\0%s%s' % (path, sha1, attr))
+            return cls(b'%s\0%s%s' % (path, sha1, attr))
 
         @property
         def path(self):
             attr_len = len(self.attr)
-            assert self[-41 - attr_len] == '\0'
+            assert self[-41 - attr_len:-40 - attr_len] == b'\0'
             return self[:-41 - attr_len]
 
         @property
         def attr(self):
-            if self[-1] in 'lx':
-                return self[-1]
-            return ''
+            if self[-1] in b'lx':
+                return self[-1:]
+            return b''
 
         @property
         def sha1(self):
@@ -396,7 +402,7 @@ class Manifest(HgObject):
             self._raw_data = None
         return self._items
 
-    def add(self, path, sha1=None, attr=''):
+    def add(self, path, sha1=None, attr=b''):
         item = Manifest.ManifestItem.from_info(path, sha1, attr)
         self.items.append(item)
 
@@ -406,14 +412,14 @@ class Manifest(HgObject):
     def _data_iter(self):
         for item in self:
             yield item
-            yield '\n'
+            yield b'\n'
 
     @classmethod
     def from_chunk(cls, raw_chunk, delta_mn=None):
         this = super(Manifest, cls).from_chunk(raw_chunk, delta_mn)
         items = iter(delta_mn)
         offset = 0
-        item = ''
+        item = b''
         for part in raw_chunk.patch:
             while offset < part.start:
                 item = next(items, None)
@@ -442,4 +448,4 @@ class Manifest(HgObject):
 
     @raw_data.setter
     def raw_data(self, data):
-        self._raw_data = str(data)
+        self._raw_data = bytes(data)

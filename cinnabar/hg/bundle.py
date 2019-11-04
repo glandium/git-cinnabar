@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import urllib
 import types
 from cinnabar.githg import (
@@ -390,7 +391,7 @@ class PushStore(GitHgStore):
         hg_file.content = GitHgHelper.cat_file('blob', sha1)
         node = hg_file.node = hg_file.sha1
         self._pushed.add(node)
-        GitHgHelper.put_blob(str(hg_file.metadata), want_sha1=False)
+        GitHgHelper.put_blob(hg_file.metadata.to_str(), want_sha1=False)
         GitHgHelper.set('file-meta', node, ':1')
         GitHgHelper.set('file', node, sha1)
         return node

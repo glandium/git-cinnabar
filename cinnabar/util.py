@@ -1,3 +1,4 @@
+from __future__ import absolute_import, unicode_literals
 import logging
 import os
 import socket
@@ -80,14 +81,15 @@ def init_logging():
     handler = StreamHandler()
     handler.setFormatter(Formatter())
     logger.addHandler(handler)
-    log_conf = Git.config('cinnabar.log') or ''
+    log_conf = Git.config('cinnabar.log') or b''
     if not log_conf and not check_enabled('memory') and \
             not check_enabled('cpu'):
         return
-    for assignment in log_conf.split(','):
+    for assignment in log_conf.split(b','):
         try:
-            name, value = assignment.split(':', 1)
+            name, value = assignment.split(b':', 1)
             value = int(value)
+            name = name.decode('ascii')
             if name == '*':
                 name = ''
             logging.getLogger(name).setLevel(
@@ -97,18 +99,23 @@ def init_logging():
 
 
 class ConfigSetFunc(object):
-    def __init__(self, key, values, extra_values=()):
+    def __init__(self, key, values, extra_values=(), default='', remote=None):
         self._config = None
         self._key = key
         self._values = values
         self._extra_values = extra_values
+        self._default = default
+        self._remote = remote
 
     def __call__(self, name):
         if self._config is None:
             from .git import Git
-            config = Git.config(self._key) or ''
+            if self._remote:
+                config = Git.config(self._key, self._remote) or self._default
+            else:
+                config = Git.config(self._key) or self._default
             if config:
-                config = config.split(',')
+                config = config.decode('ascii').split(',')
             self._config = set()
             for c in config:
                 if c in ('true', 'all'):
@@ -116,7 +123,7 @@ class ConfigSetFunc(object):
                 elif c.startswith('-'):
                     c = c[1:]
                     try:
-                        self._config.remove(c)
+                        self._config.remove(c.decode('ascii'))
                     except KeyError:
                         logging.getLogger('config').warn(
                             '%s: %s is not one of (%s)',
@@ -419,8 +426,8 @@ def byte_diff(a, b):
     offset = 0
     last = 0
     for start_a, end_a, start_b, end_b in _iter_diff_blocks(a, b):
-        a2 = ''.join(a[start_a:end_a])
-        b2 = ''.join(b[start_b:end_b])
+        a2 = b''.join(a[start_a:end_a])
+        b2 = b''.join(b[start_b:end_b])
         offset += sum(len(i) for i in a[last:start_a])
         last = start_a
         for start2_a, end2_a, start2_b, end2_b in _iter_diff_blocks(a2, b2):
@@ -568,7 +575,7 @@ class chunkbuffer(object):
 
         If size parameter is omitted, read everything"""
         if l is None:
-            return ''.join(self.iter)
+            return b''.join(self.iter)
 
         left = l
         buf = []
@@ -620,7 +627,7 @@ class chunkbuffer(object):
                 self._chunkoffset += left
                 left -= chunkremaining
 
-        return ''.join(buf)
+        return b''.join(buf)
 
 
 class HTTPReader(object):
@@ -632,7 +639,7 @@ class HTTPReader(object):
         except (ValueError, KeyError):
             self.length = None
         self.can_recover = \
-            self.fh.headers.getheader('Accept-Ranges') == 'bytes'
+            self.fh.headers.get('Accept-Ranges') == 'bytes'
         self.offset = 0
         self.closed = False
 
@@ -657,7 +664,7 @@ class HTTPReader(object):
             length += len(buf)
             self.offset += len(buf)
             result.append(buf)
-        return ''.join(result)
+        return b''.join(result)
 
     def _reopen(self):
         # This reopens the network connection with a HTTP Range request
@@ -667,7 +674,7 @@ class HTTPReader(object):
         fh = urlopen(req)
         if fh.getcode() != 206:
             return self.fh
-        range = fh.headers.getheader('Content-Range') or ''
+        range = fh.headers.get('Content-Range') or ''
         unit, _, range = range.partition(' ')
         if unit != 'bytes':
             return self.fh
@@ -932,3 +939,23 @@ def run(func):
             reporter.shutdown()
         version_check.join()
     sys.exit(retcode)
+
+
+# Python3 compat
+if sys.version_info[0] == 3:
+    def iteritems(d):
+        return iter(d.items())
+
+    def itervalues(d):
+        return iter(d.values())
+else:
+    def iteritems(d):
+        return d.iteritems()
+
+    def itervalues(d):
+        return d.itervalues()
+
+if hasattr(sys.stdout, 'buffer'):
+    bytes_stdout = sys.stdout.buffer
+else:
+    bytes_stdout = sys.stdout

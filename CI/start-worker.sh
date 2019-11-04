@@ -27,13 +27,14 @@ cat > worker.config <<EOF
   "requiredDiskSpaceMegabytes": 512,
   "signingKeyLocation": "worker.key",
   "tasksDir": "tasks",
+  "rootURL": "https://community-tc.services.mozilla.com",
   "workerGroup": "proj-git-cinnabar",
   "workerId": "travis-$TRAVIS_BUILD_ID",
   "workerType": "$workerType"
 }
 EOF
 
-curl -OL https://github.com/taskcluster/generic-worker/releases/download/v10.11.0/generic-worker-darwin-amd64
+curl -OL https://github.com/taskcluster/generic-worker/releases/download/v11.1.1/generic-worker-darwin-amd64
 chmod +x generic-worker-darwin-amd64
 mkdir tasks
 ./generic-worker-darwin-amd64 run --config worker.config

@@ -194,12 +194,14 @@ def decision():
         clone=False,
         command=[
             '(cd repo &&'
-            ' nosetests --all-modules --with-coverage --cover-tests tests)',
+            ' nosetests --all-modules --with-coverage --cover-tests tests &&'
+            ' nosetests3 --all-modules tests)',
             '(cd repo && python -m flake8 --ignore E402,F405'
             ' $(git ls-files \\*\\*.py git-cinnabar git-remote-hg'
             ' | grep -v ^CI/))',
             '(cd repo && flake8 --ignore E402,F405'
-            ' $(git ls-files CI/\\*\\*.py))',
+            ' $(git ls-files CI/\\*\\*.py)'
+            ' $(git grep -l unicode_literals))',
         ],
     )
 
@@ -413,13 +415,14 @@ if merge_coverage:
     Task(
         task_env=TaskEnvironment.by_name('linux.codecov'),
         description='upload coverage',
-        scopes=['secrets:get:repo:github.com/glandium.git-cinnabar:codecov'],
+        scopes=['secrets:get:project/git-cinnabar/codecov'],
         command=list(chain(
             Task.checkout(),
             [
                 'set +x',
-                ('export CODECOV_TOKEN=$(curl -sL http://taskcluster/secrets'
-                 '/v1/secret/repo:github.com/glandium.git-cinnabar:codecov | '
+                ('export CODECOV_TOKEN=$(curl -sL '
+                 'http://taskcluster/api/secrets/v1/secret/project/git-'
+                 'cinnabar/codecov | '
                  'python -c "import json, sys; print(json.load(sys.stdin)'
                  '[\\"secret\\"][\\"token\\"])")'),
                 'set -x',

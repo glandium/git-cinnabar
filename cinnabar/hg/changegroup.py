@@ -1,9 +1,9 @@
+from __future__ import absolute_import, unicode_literals
 from binascii import (
     hexlify,
     unhexlify,
 )
 import struct
-from weakref import WeakKeyDictionary
 from cinnabar.git import NULL_NODE_ID
 
 
@@ -64,17 +64,17 @@ class RevDiff(object):
             new += orig[end:diff.start]
             new += diff.text_data
             end = diff.end
-        if new == '' and end == 0:
+        if new == b'' and end == 0:
             return raw_orig
         new += orig[end:]
-        return str(new)
+        return bytes(new)
 
 
 class RawRevChunk(bytearray, ParentsTrait):
     __slots__ = ()
 
     @staticmethod
-    def _field(offset, size=None, filter=str):
+    def _field(offset, size=None, filter=bytes):
         unfilter = unhexlify if filter == hexlify else None
         end = offset + size if size else None
 
@@ -90,7 +90,7 @@ class RawRevChunk(bytearray, ParentsTrait):
 
             def ensure(self, obj, length):
                 if length > len(obj):
-                    obj.extend('\0' * (length - len(obj)))
+                    obj.extend(b'\0' * (length - len(obj)))
 
         return descriptor()
 
@@ -107,15 +107,15 @@ class RawRevChunk01(RawRevChunk):
 
     # Because we keep so many instances of this class on hold, the overhead
     # of having a __dict__ per instance is a deal breaker.
-    _delta_nodes = WeakKeyDictionary()
+    _delta_nodes = {}
 
     @property
     def delta_node(self):
-        return self._delta_nodes.get(self, NULL_NODE_ID)
+        return self._delta_nodes.get(self.node, NULL_NODE_ID)
 
     @delta_node.setter
     def delta_node(self, value):
-        self._delta_nodes[self] = value
+        self._delta_nodes[self.node] = value
 
 
 class RawRevChunk02(RawRevChunk):

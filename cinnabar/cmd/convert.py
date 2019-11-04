@@ -1,11 +1,9 @@
-from __future__ import print_function
+from __future__ import absolute_import, print_function
 import argparse
 from cinnabar.cmd.util import CLI
-from cinnabar.git import (
-    Git,
-    NULL_NODE_ID,
-)
+from cinnabar.git import NULL_NODE_ID
 from cinnabar.helper import GitHgHelper
+from cinnabar.util import bytes_stdout
 
 
 class AbbrevAction(argparse.Action):
@@ -52,7 +50,9 @@ def hg2git(args):
     '''convert mercurial sha1 to corresponding git sha1'''
 
     for arg in args.sha1:
-        print(GitHgHelper.hg2git(arg)[:args.abbrev])
+        bytes_stdout.write(
+            GitHgHelper.hg2git(arg.encode('ascii'))[:args.abbrev])
+        bytes_stdout.write(b'\n')
 
 
 @CLI.subcommand
@@ -61,12 +61,11 @@ def hg2git(args):
 def git2hg(args):
     '''convert git sha1 to corresponding mercurial sha1'''
 
-    for sha1, ref in Git.for_each_ref('refs/cinnabar/replace'):
-        Git._replace[ref[22:]] = sha1
     for arg in args.sha1:
-        data = GitHgHelper.git2hg(arg)
+        data = GitHgHelper.git2hg(arg.encode('ascii'))
         if data:
             assert data.startswith('changeset ')
-            print(data[10:10 + args.abbrev])
+            bytes_stdout.write(data[10:10 + args.abbrev])
         else:
-            print(NULL_NODE_ID[:args.abbrev])
+            bytes_stdout.write(NULL_NODE_ID[:args.abbrev])
+        bytes_stdout.write(b'\n')

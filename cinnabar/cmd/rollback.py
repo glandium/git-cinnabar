@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import logging
 from cinnabar.cmd.util import CLI
 from cinnabar.githg import GitCommit
@@ -50,7 +51,8 @@ def do_rollback(ref):
                                             'refs/notes/cinnabar')
     )
     for ref in refs:
-        if ref not in ('refs/cinnabar/checked', 'refs/cinnabar/broken'):
+        if sha1 == NULL_NODE_ID or ref not in ('refs/cinnabar/checked',
+                                               'refs/cinnabar/broken'):
             del refs[ref]
     if sha1 != NULL_NODE_ID:
         refs['refs/cinnabar/metadata'] = sha1

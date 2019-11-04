@@ -1,6 +1,6 @@
 #!/usr/bin/env python2.7
 
-from __future__ import division
+from __future__ import absolute_import, division
 from binascii import unhexlify
 import sys
 
@@ -25,12 +25,16 @@ from cinnabar.git import (
     NULL_NODE_ID,
 )
 from cinnabar.util import (
+    ConfigSetFunc,
     IOLogger,
     strip_suffix,
     VersionedDict,
 )
 import cinnabar.util
-from urllib import unquote
+try:
+    from urllib import unquote
+except ImportError:
+    from urllib.parse import unquote
 
 
 def sanitize_branch_name(name):
@@ -268,51 +272,45 @@ class GitRemoteHelper(BaseRemoteHelper):
                     self._store, new_branchmap, list(new_heads))
 
         refs_style = None
+        refs_styles = ('bookmarks', 'heads', 'tips')
         if not fetch and branchmap.heads():
-            refs_styles = [
-                None,
-                '',
-                'all',
-                'bookmarks',
-                'heads',
-                'tips',
-            ]
-
-            refs_configs = ['cinnabar.refs']
+            refs_config = 'cinnabar.refs'
             if arg == 'for-push':
-                refs_configs.insert(0, 'cinnabar.pushrefs')
+                if Git.config('cinnabar.pushrefs', remote=self._remote.name):
+                    refs_config = 'cinnabar.pushrefs'
 
-            for refs_config in refs_configs:
-                refs_style = Git.config(refs_config, remote=self._remote.name,
-                                        values=refs_styles)
-                if refs_style:
-                    break
+            refs_style = ConfigSetFunc(refs_config, refs_styles,
+                                       remote=self._remote.name, default='all')
 
-        refs_style = refs_style or 'all'
+        refs_style = refs_style or (lambda x: True)
         self._refs_style = refs_style
 
         refs = {}
-        if refs_style in ('all', 'heads', 'tips'):
-            if refs_style == 'all':
+        if refs_style('heads') or refs_style('tips'):
+            if refs_style('heads') and refs_style('tips'):
                 self._head_template = 'refs/heads/branches/{}/{}'
                 self._tip_template = 'refs/heads/branches/{}/tip'
-            elif refs_style == 'heads':
+            elif refs_style('heads') and refs_style('bookmarks'):
+                self._head_template = 'refs/heads/branches/{}/{}'
+            elif refs_style('heads'):
                 self._head_template = 'refs/heads/{}/{}'
-            elif refs_style == 'tips':
+            elif refs_style('tips') and refs_style('bookmarks'):
+                self._tip_template = 'refs/heads/branches/{}'
+            elif refs_style('tips'):
                 self._tip_template = 'refs/heads/{}'
 
             for branch in sorted(branchmap.names()):
                 branch_tip = branchmap.tip(branch)
-                if refs_style != 'tips':
+                if refs_style('heads'):
                     for head in sorted(branchmap.heads(branch)):
-                        if head == branch_tip and refs_style == 'all':
+                        if head == branch_tip and refs_style('tips'):
                             continue
                         refs[self._head_template.format(branch, head)] = head
-                if branch_tip and refs_style != 'heads':
+                if branch_tip and refs_style('tips'):
                     refs[self._tip_template.format(branch)] = branch_tip
 
-        if refs_style in ('all', 'bookmarks'):
-            if refs_style == 'all':
+        if refs_style('bookmarks'):
+            if refs_style('heads') or refs_style('tips'):
                 self._bookmark_template = 'refs/heads/bookmarks/{}'
             else:
                 self._bookmark_template = 'refs/heads/{}'
@@ -328,11 +326,11 @@ class GitRemoteHelper(BaseRemoteHelper):
             refs['hg/revs/%s' % f] = f
 
         head_ref = None
-        if refs_style in ('all', 'bookmarks') and '@' in bookmarks:
+        if refs_style('bookmarks') and '@' in bookmarks:
             head_ref = self._bookmark_template.format('@')
-        elif refs_style in ('all', 'tips'):
+        elif refs_style('tips'):
             head_ref = self._tip_template.format('default')
-        elif refs_style == 'heads':
+        elif refs_style('heads'):
             head_ref = self._head_template.format(
                 'default', branchmap.tip('default'))
 
@@ -409,7 +407,7 @@ class GitRemoteHelper(BaseRemoteHelper):
         self._helper.write('done\n')
         self._helper.flush()
 
-        if self._remote.name and self._refs_style in ('all', 'heads'):
+        if self._remote.name and self._refs_style('heads'):
             if Git.config('fetch.prune', self._remote.name) != 'true':
                 prune = 'remote.%s.prune' % self._remote.name
                 sys.stderr.write(
