@@ -2436,6 +2436,7 @@ int cmd_main(int argc, const char *argv[])
 		}
 	}
 
+	disable_commit_graph(the_repository);
 	init_git_config();
 	git_config(git_default_config, NULL);
 	init_config();
