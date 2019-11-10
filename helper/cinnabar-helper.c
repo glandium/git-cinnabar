@@ -363,7 +363,7 @@ static void do_rev_list(struct string_list *args)
 
 	// More extensive than reset_revision_walk(). Otherwise --boundary
 	// and pathspecs don't work properly.
-	clear_object_flags(ALL_REV_FLAGS);
+	clear_object_flags(ALL_REV_FLAGS | TOPO_WALK_EXPLORED | TOPO_WALK_INDEGREE);
 	send_buffer(&buf);
 	strbuf_release(&buf);
 	rev_info_release(&revs);
@@ -2436,7 +2436,6 @@ int cmd_main(int argc, const char *argv[])
 		}
 	}
 
-	disable_commit_graph(the_repository);
 	init_git_config();
 	git_config(git_default_config, NULL);
 	init_config();
