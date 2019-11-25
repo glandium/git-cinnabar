@@ -1,5 +1,6 @@
 from __future__ import absolute_import, print_function
 import argparse
+import re
 from cinnabar.cmd.util import CLI
 from cinnabar.git import NULL_NODE_ID
 from cinnabar.helper import GitHgHelper
@@ -43,15 +44,25 @@ class SHA1Action(argparse.Action):
         namespace.sha1.extend(values)
 
 
+SHA1_RE = re.compile(r'[0-9a-fA-F]{1,40}$')
+
+
+def sha1_value(value):
+    if not SHA1_RE.match(value):
+        raise argparse.ArgumentTypeError("must be a sha1")
+    return value.encode('ascii')
+
+
 @CLI.subcommand
 @CLI.argument('--abbrev', action=AbbrevAction)
-@CLI.argument('sha1', action=SHA1Action, nargs='*', help='mercurial sha1')
+@CLI.argument('sha1', action=SHA1Action, nargs='*', type=sha1_value,
+              help='mercurial sha1')
 def hg2git(args):
     '''convert mercurial sha1 to corresponding git sha1'''
 
     for arg in args.sha1:
         bytes_stdout.write(
-            GitHgHelper.hg2git(arg.encode('ascii'))[:args.abbrev])
+            GitHgHelper.hg2git(arg)[:args.abbrev])
         bytes_stdout.write(b'\n')
 
 
