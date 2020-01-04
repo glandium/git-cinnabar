@@ -10,6 +10,11 @@ struct hg_object_id {
 
 extern const struct hg_object_id hg_null_oid;
 
+static inline char *hg_oid_to_hex(const struct hg_object_id *oid)
+{
+	return sha1_to_hex(oid->hash);
+}
+
 static inline int hg_oidcmp(const struct hg_object_id *oid1,
                             const struct hg_object_id *oid2)
 {
