@@ -12,7 +12,7 @@ extern const struct hg_object_id hg_null_oid;
 
 static inline char *hg_oid_to_hex(const struct hg_object_id *oid)
 {
-	return sha1_to_hex(oid->hash);
+	return hash_to_hex_algop(oid->hash, &hash_algos[GIT_HASH_SHA1]);
 }
 
 static inline int hg_oidcmp(const struct hg_object_id *oid1,

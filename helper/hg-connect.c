@@ -263,7 +263,8 @@ void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 			/* XXX: should use hg_object_id-specific function */
 			oid_array_for_each_unique(heads, unbundlehash, &ctx);
 			git_SHA1_Final(sha1, &ctx);
-			sha1_to_hex_r(&heads_str[13], sha1);
+			hash_to_hex_algop_r(&heads_str[13], sha1,
+			                    &hash_algos[GIT_HASH_SHA1]);
 		} else
 			heads_str = join_oid_array_hex(heads, ' ');
 	} else
