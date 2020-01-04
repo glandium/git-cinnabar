@@ -311,6 +311,13 @@ def decision():
     )
 
     TestTask(
+        extra_desc='python3',
+        env={
+            'GIT_CINNABAR_EXPERIMENTS': 'python3',
+        },
+    )
+
+    TestTask(
         variant='coverage',
         extra_desc='experiments',
         env={

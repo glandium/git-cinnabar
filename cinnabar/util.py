@@ -147,6 +147,7 @@ check_enabled = ConfigSetFunc(
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
     ('wire', 'merge', 'store'),
+    ('python3',),
 )
 
 
@@ -903,11 +904,18 @@ class VersionCheck(Thread):
             sys.stderr.write('\n' + self.message + '\n')
 
 
-def run(func):
+def run(func, args, maybe_python3=False):
+    reexec = None
+    if maybe_python3 and experiment('python3') and sys.version_info[0] == 2:
+        reexec = ['python3']
     if os.environ.pop('GIT_CINNABAR_COVERAGE', None):
-        script_path = os.path.abspath(sys.argv[0])
-        os.execlp(sys.executable, sys.executable, '-m', 'coverage',
-                  'run', '--append', script_path, *sys.argv[1:])
+        if not reexec:
+            reexec = [sys.executable]
+        reexec.extend(['-m', 'coverage', 'run', '--append'])
+    if reexec:
+        reexec.append(os.path.abspath(sys.argv[0]))
+        reexec.extend(sys.argv[1:])
+        os.execlp(reexec[0], *reexec)
         assert False
     init_logging()
     if check_enabled('memory') or check_enabled('cpu'):
@@ -916,7 +924,7 @@ def run(func):
 
     version_check = VersionCheck()
     try:
-        retcode = func(sys.argv[1:])
+        retcode = func(args)
     except Abort as e:
         # These exceptions are normal abort and require no traceback
         retcode = 1
