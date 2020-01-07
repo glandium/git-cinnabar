@@ -54,6 +54,7 @@ def sha1_value(value):
 
 
 @CLI.subcommand
+@CLI.python3_ready
 @CLI.argument('--abbrev', action=AbbrevAction)
 @CLI.argument('sha1', action=SHA1Action, nargs='*', type=sha1_value,
               help='mercurial sha1')
@@ -67,6 +68,7 @@ def hg2git(args):
 
 
 @CLI.subcommand
+@CLI.python3_ready
 @CLI.argument('--abbrev', action=AbbrevAction)
 @CLI.argument('sha1', action=SHA1Action, nargs='*', help='git sha1')
 def git2hg(args):
