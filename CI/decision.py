@@ -230,6 +230,7 @@ def decision():
             ],
             env={
                 'GIT_CINNABAR_EXPERIMENTS': 'python3',
+                'GIT_CINNABAR_LOG': 'reexec:3',
             } if env == 'linux' else {},
         )
 

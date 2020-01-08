@@ -912,12 +912,15 @@ def run(func, args, maybe_python3=False):
         if not reexec:
             reexec = [sys.executable]
         reexec.extend(['-m', 'coverage', 'run', '--append'])
+    init_logging()
     if reexec:
         reexec.append(os.path.abspath(sys.argv[0]))
         reexec.extend(sys.argv[1:])
+        if reexec[0] == 'python3':
+            logging.getLogger('reexec').info(
+                'Re-executing with %s', ' '.join(reexec))
         os.execlp(reexec[0], *reexec)
         assert False
-    init_logging()
     if check_enabled('memory') or check_enabled('cpu'):
         reporter = MemoryCPUReporter(memory=check_enabled('memory'),
                                      cpu=check_enabled('cpu'))
