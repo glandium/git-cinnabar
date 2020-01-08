@@ -1,4 +1,4 @@
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import, print_function, unicode_literals
 import argparse
 import re
 from cinnabar.cmd.util import CLI
@@ -77,7 +77,7 @@ def git2hg(args):
     for arg in args.sha1:
         data = GitHgHelper.git2hg(arg.encode('ascii'))
         if data:
-            assert data.startswith('changeset ')
+            assert data.startswith(b'changeset ')
             bytes_stdout.write(data[10:10 + args.abbrev])
         else:
             bytes_stdout.write(NULL_NODE_ID[:args.abbrev])

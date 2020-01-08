@@ -1,4 +1,4 @@
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import, print_function, unicode_literals
 import sys
 from cinnabar.cmd.convert import sha1_value
 from cinnabar.cmd.util import CLI
