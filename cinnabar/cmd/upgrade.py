@@ -1,4 +1,4 @@
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import, print_function, unicode_literals
 from cinnabar.cmd.util import CLI
 from cinnabar.exceptions import UpgradeAbort
 from cinnabar.githg import GitHgStore
@@ -11,6 +11,7 @@ class UpgradeGitHgStore(GitHgStore):
 
 
 @CLI.subcommand
+@CLI.python3_ready
 def upgrade(args):
     '''upgrade cinnabar metadata'''
 
