@@ -228,6 +228,9 @@ def decision():
             dependencies=[
                 Helper.by_name(env),
             ],
+            env={
+                'GIT_CINNABAR_EXPERIMENTS': 'python3',
+            } if env == 'linux' else {},
         )
 
     # Because nothing is using the x86 windows helper, we need to manually
