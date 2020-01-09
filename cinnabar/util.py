@@ -964,12 +964,21 @@ if sys.version_info[0] == 3:
 
     def itervalues(d):
         return iter(d.values())
+
+    fsencode = os.fsencode
+    fsdecode = os.fsdecode
 else:
     def iteritems(d):
         return d.iteritems()
 
     def itervalues(d):
         return d.itervalues()
+
+    def fsencode(s):
+        return s
+
+    def fsdecode(s):
+        return s
 
 if hasattr(sys.stdout, 'buffer'):
     bytes_stdout = sys.stdout.buffer

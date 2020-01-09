@@ -19,6 +19,7 @@ from .hg.changegroup import (
     RawRevChunk02,
 )
 from .util import (
+    fsdecode,
     IOLogger,
     lrucache,
     Process,
@@ -114,8 +115,8 @@ class BaseHelper(object):
             for k in os.environ:
                 if k.startswith('GIT_CINNABAR_'):
                     env[k] = os.environ[k]
-            if helper_path and hasattr(os, 'fsdecode'):
-                helper_path = os.fsdecode(helper_path)
+            if helper_path:
+                helper_path = fsdecode(helper_path)
             if helper_path and os.path.exists(helper_path):
                 command = [helper_path]
             else:

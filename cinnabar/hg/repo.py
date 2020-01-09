@@ -1093,13 +1093,13 @@ def munge_url(url):
 
 class Remote(object):
     def __init__(self, remote, url):
-        if remote.startswith(('hg::', 'hg://')):
+        if remote.startswith((b'hg::', b'hg://')):
             self.name = None
         else:
             self.name = remote
         self.parsed_url = munge_url(url)
         self.url = urlunparse(self.parsed_url)
-        self.git_url = url if url.startswith('hg://') else 'hg::%s' % url
+        self.git_url = url if url.startswith(b'hg://') else b'hg::%s' % url
 
 
 if changegroup:
