@@ -148,7 +148,7 @@ if not unbundle20 and not check_enabled('no-bundle2'):
         def __init__(self, ui, fh):
             self.fh = fh
             params_len = readexactly(fh, 4)
-            assert params_len == '\0\0\0\0'
+            assert params_len == b'\0\0\0\0'
 
         def iterparts(self):
             while True:
@@ -163,7 +163,7 @@ if not unbundle20 and not check_enabled('no-bundle2'):
     class Part(object):
         def __init__(self, rawheader, fh):
             rawheader = memoryview(rawheader)
-            part_type_len = struct.unpack('>B', rawheader[0])[0]
+            part_type_len = struct.unpack('>B', rawheader[:1])[0]
             self.type = rawheader[1:part_type_len + 1].tobytes().lower()
             rawheader = rawheader[part_type_len + 5:]
             params_count1, params_count2 = struct.unpack('>BB', rawheader[:2])
@@ -187,7 +187,7 @@ if not unbundle20 and not check_enabled('no-bundle2'):
             self.consumed = False
 
         def read(self, size):
-            ret = ''
+            ret = b''
             while size and not self.consumed:
                 if self.chunk_size == self.chunk_offset:
                     d = readexactly(self.fh, 4)
@@ -525,12 +525,12 @@ class HelperRepo(object):
 def unbundle_fh(fh, path):
     header = readexactly(fh, 4)
     magic, version = header[0:2], header[2:4]
-    if magic != 'HG':
+    if magic != b'HG':
         raise Exception('%s: not a Mercurial bundle' % path)
-    if version == '10':
+    if version == b'10':
         alg = readexactly(fh, 2)
         return cg1unpacker(fh, alg)
-    elif unbundle20 and version.startswith('2'):
+    elif unbundle20 and version.startswith(b'2'):
         return unbundle20(get_ui(), fh)
     else:
         raise Exception('%s: unsupported bundle version %s' % (path,
@@ -622,16 +622,16 @@ def unbundler(bundle):
     if unbundle20 and isinstance(bundle, unbundle20):
         parts = iter(bundle.iterparts())
         for part in parts:
-            if part.type != 'changegroup':
+            if part.type != b'changegroup':
                 logging.getLogger('bundle2').warning(
                     'ignoring bundle2 part: %s', part.type)
                 continue
             logging.getLogger('bundle2').debug('part: %s', part.type)
             logging.getLogger('bundle2').debug('params: %r', part.params)
-            version = part.params.get('version', '01')
-            if version == '01':
+            version = part.params.get(b'version', b'01')
+            if version == b'01':
                 chunk_type = RawRevChunk01
-            elif version == '02':
+            elif version == b'02':
                 chunk_type = RawRevChunk02
             else:
                 raise Exception('Unknown changegroup version %s' % version)
@@ -1062,31 +1062,31 @@ def munge_url(url):
             sys.platform == 'win32' and not parsed_url.netloc and
             len(parsed_url.scheme) == 1):
         if parsed_url.scheme:
-            path = '{}:{}'.format(parsed_url.scheme, parsed_url.path)
+            path = b'%s:%s' % (parsed_url.scheme, parsed_url.path)
         else:
             path = parsed_url.path
         return ParseResult(
-            'file',
-            '',
+            b'file',
+            b'',
             path,
             parsed_url.params,
             parsed_url.query,
             parsed_url.fragment)
 
-    if parsed_url.scheme != 'hg':
+    if parsed_url.scheme != b'hg':
         return parsed_url
 
-    proto = 'https'
+    proto = b'https'
     host = parsed_url.netloc
-    if ':' in host:
-        host, port = host.rsplit(':', 1)
-        if '.' in port:
-            port, proto = port.split('.', 1)
+    if b':' in host:
+        host, port = host.rsplit(b':', 1)
+        if b'.' in port:
+            port, proto = port.split(b'.', 1)
         if not port.isdigit():
             proto = port
             port = None
         if port:
-            host = host + ':' + port
+            host = host + b':' + port
     return ParseResult(proto, host, parsed_url.path, parsed_url.params,
                        parsed_url.query, parsed_url.fragment)
 

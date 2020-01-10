@@ -651,7 +651,7 @@ class HTTPReader(object):
             try:
                 buf = self.fh.read(size - length)
             except socket.error:
-                buf = ''
+                buf = b''
             if not buf:
                 # When self.length is None, self.offset < self.length is always
                 # false.

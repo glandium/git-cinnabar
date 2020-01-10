@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 import logging
 from cinnabar.cmd.util import CLI
 from cinnabar.git import (
@@ -21,9 +21,11 @@ from cinnabar.hg.repo import (
     unbundle20,
     unbundler,
 )
+from cinnabar.util import fsencode
 
 
 @CLI.subcommand
+@CLI.python3_ready
 @CLI.argument('--version', choices=(1, 2), type=int,
               default=2 if unbundle20 else 1,
               help='bundle version')
@@ -34,15 +36,16 @@ from cinnabar.hg.repo import (
 def bundle(args):
     '''create a mercurial bundle'''
 
+    revs = [fsencode(r) for r in args.rev]
     bundle_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
-        '--topo-order', '--full-history', '--parents', '--reverse', *args.rev))
+        b'--topo-order', b'--full-history', b'--parents', b'--reverse', *revs))
     if bundle_commits:
         # TODO: better UX. For instance, this will fail with an exception when
         # the parent commit doesn't have mercurial metadata.
         GRAFT = {
             None: False,
-            'false': False,
-            'true': True,
+            b'false': False,
+            b'true': True,
         }
         try:
             graft = Git.config('cinnabar.graft', values=GRAFT)
@@ -54,18 +57,19 @@ def bundle(args):
             b2caps = {}
         elif args.version == 2:
             b2caps = {
-                'HG20': (),
-                'changegroup': ('01', '02'),
+                b'HG20': (),
+                b'changegroup': (b'01', b'02'),
             }
         with open(args.path, 'wb') as fh:
             if not b2caps:
-                fh.write('HG10UN')
+                fh.write(b'HG10UN')
             for data in create_bundle(store, bundle_commits, b2caps):
                 fh.write(data)
         store.close(rollback=True)
 
 
 @CLI.subcommand
+@CLI.python3_ready
 @CLI.argument('--clonebundle', action='store_true',
               help='get clone bundle from given repository')
 @CLI.argument('url', help='url of the bundle')
@@ -76,13 +80,13 @@ def unbundle(args):
     ret = proc.wait()
     if ret:
         return ret
-    remote = Remote('', args.url)
-    if remote.parsed_url.scheme not in ('file', 'http', 'https'):
+    remote = Remote(b'', fsencode(args.url))
+    if remote.parsed_url.scheme not in (b'file', b'http', b'https'):
         logging.error('%s urls are not supported.' % remote.parsed_url.scheme)
         return 1
     if args.clonebundle:
         repo = get_repo(remote)
-        if not repo.capable('clonebundles'):
+        if not repo.capable(b'clonebundles'):
             logging.error('Repository does not support clonebundles')
             return 1
         bundle = get_clonebundle(repo)
@@ -92,8 +96,8 @@ def unbundle(args):
     store = GitHgStore()
     GRAFT = {
         None: False,
-        'false': False,
-        'true': True,
+        b'false': False,
+        b'true': True,
     }
     try:
         graft = Git.config('cinnabar.graft', values=GRAFT)

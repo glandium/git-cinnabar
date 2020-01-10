@@ -1,6 +1,5 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 import urllib
-import types
 from cinnabar.githg import (
     Changeset,
     FileFindParents,
@@ -240,9 +239,9 @@ class PushStore(GitHgStore):
         def process_diff(diff):
             for (mode_before, mode_after, sha1_before, sha1_after, status,
                  path) in diff:
-                if status[0] == 'R':
+                if status[0] == b'R':
                     yield status[1:], (
-                        '000000', sha1_before, NULL_NODE_ID, 'D')
+                        b'000000', sha1_before, NULL_NODE_ID, b'D')
                 yield path, (mode_after, sha1_before, sha1_after,
                              status)
         git_diff = sorted(
@@ -264,11 +263,11 @@ class PushStore(GitHgStore):
             path2 = status[1:]
             status = status[0]
             attr = self.ATTR.get(mode_after)
-            if status == 'D':
+            if status == b'D':
                 manifest.removed.add(path)
                 changeset_files.append(path)
                 continue
-            if status in 'MT':
+            if status in b'MT':
                 if sha1_before == sha1_after:
                     node = manifest_line.sha1
                 else:
@@ -277,7 +276,7 @@ class PushStore(GitHgStore):
                         git_manifest_parents=(
                             self.manifest_ref(parent_node),),
                         path=path)
-            elif status in 'RC':
+            elif status in b'RC':
                 if sha1_after != EMPTY_BLOB:
                     node = self.create_copy(
                         (path2, parent_lines[path2].sha1), sha1_after,
@@ -291,7 +290,7 @@ class PushStore(GitHgStore):
                             self.manifest_ref(parent_node),),
                         path=path)
             else:
-                assert status == 'A'
+                assert status == b'A'
                 node = self.create_file(
                     sha1_after,
                     git_manifest_parents=(
@@ -317,8 +316,9 @@ class PushStore(GitHgStore):
                     for path, created, real in sorted_merge(
                             manifest, self.manifest(real_changeset.manifest),
                             key=lambda i: i.path, non_key=lambda i: i):
-                        if str(created) != str(real):
-                            logging.error('%r != %r', str(created), str(real))
+                        if bytes(created) != bytes(real):
+                            logging.error(
+                                '%r != %r', bytes(created), bytes(real))
             self._pushed.add(manifest.node)
             self.store_manifest(manifest)
             self._manifest_git_tree[manifest.node] = commit_data.tree
@@ -333,13 +333,13 @@ class PushStore(GitHgStore):
             if parent_changeset.branch:
                 changeset.branch = parent_changeset.branch
 
-        if self._graft is True and parents and changeset.body[-1] == '\n':
+        if self._graft is True and parents and changeset.body[-1] == b'\n':
             parent_commit = GitCommit(parents[0])
-            if (parent_commit.body[-1] == '\n' and
+            if (parent_commit.body[-1] == b'\n' and
                     parent_commit.body[-2] == parent_changeset.body[-1]):
                 self._graft = 'true'
 
-        if self._graft == 'true' and changeset.body[-1] == '\n':
+        if self._graft == 'true' and changeset.body[-1] == b'\n':
             changeset.body = changeset.body[:-1]
 
         changeset.node = changeset.sha1
@@ -386,14 +386,14 @@ class PushStore(GitHgStore):
         path, rev = hg_source
         hg_file = File()
         hg_file.metadata = {
-            'copy': path,
-            'copyrev': rev,
+            b'copy': path,
+            b'copyrev': rev,
         }
         hg_file.content = GitHgHelper.cat_file('blob', sha1)
         node = hg_file.node = hg_file.sha1
         self._pushed.add(node)
         GitHgHelper.put_blob(hg_file.metadata.to_str(), want_sha1=False)
-        GitHgHelper.set('file-meta', node, ':1')
+        GitHgHelper.set('file-meta', node, b':1')
         GitHgHelper.set('file', node, sha1)
         return node
 
@@ -514,7 +514,7 @@ def bundlepart_header(name, advisoryparams=()):
 
 
 def bundlepart(name, advisoryparams=(), data=None):
-    header = ''.join(bundlepart_header(name, advisoryparams))
+    header = b''.join(bundlepart_header(name, advisoryparams))
     yield struct.pack('>i', len(header))
     yield header
     while data:
@@ -524,31 +524,31 @@ def bundlepart(name, advisoryparams=(), data=None):
             yield chunk
         else:
             break
-    yield '\0' * 4  # Empty chunk ending the part
+    yield b'\0' * 4  # Empty chunk ending the part
 
 
 def create_bundle(store, commits, bundle2caps={}):
-    version = '01'
+    version = b'01'
     chunk_type = RawRevChunk01
     if bundle2caps:
-        versions = bundle2caps.get('changegroup')
+        versions = bundle2caps.get(b'changegroup')
         if versions:
-            if '02' in versions:
+            if b'02' in versions:
                 chunk_type = RawRevChunk02
-                version = '02'
+                version = b'02'
     cg = create_changegroup(store, bundle_data(store, commits), chunk_type)
     if bundle2caps:
-        yield 'HG20'
-        yield '\0' * 4  # bundle parameters length: no params
-        replycaps = bundle2caps.get('replycaps')
+        yield b'HG20'
+        yield b'\0' * 4  # bundle parameters length: no params
+        replycaps = bundle2caps.get(b'replycaps')
         if replycaps:
-            for chunk in bundlepart('REPLYCAPS', data=chunkbuffer(replycaps)):
+            for chunk in bundlepart(b'REPLYCAPS', data=chunkbuffer(replycaps)):
                 yield chunk
-        for chunk in bundlepart('CHANGEGROUP',
-                                advisoryparams=(('version', version),),
+        for chunk in bundlepart(b'CHANGEGROUP',
+                                advisoryparams=((b'version', version),),
                                 data=chunkbuffer(cg)):
             yield chunk
-        yield '\0' * 4  # End of bundle
+        yield b'\0' * 4  # End of bundle
     else:
         for chunk in cg:
             yield chunk
@@ -595,14 +595,15 @@ def create_changegroup(store, bundle_data, type=RawRevChunk01):
         size = 0 if data is None else len(data) + 4
         yield struct.pack(">l", size)
         if data:
-            yield str(data)
-        if isinstance(chunk, (HgObject, types.NoneType)):
+            yield bytes(data)
+        if isinstance(chunk, HgObject) or chunk is None:
             previous = chunk
 
 
 def encodecaps(caps):
-    return '\n'.join(
-        '%s=%s' % (urllib.quote(k), ','.join(urllib.quote(v) for v in values))
+    return b'\n'.join(
+        b'%s=%s' % (
+            urllib.quote(k), b','.join(urllib.quote(v) for v in values))
         if values else urllib.quote(k)
         for k, values in sorted(caps.items())
     )
@@ -611,6 +612,6 @@ def encodecaps(caps):
 def decodecaps(caps):
     return {
         urllib.unquote(key): [urllib.unquote(v)
-                              for v in val.split(',')] if val else []
-        for key, eq, val in (l.partition('=') for l in caps.splitlines())
+                              for v in val.split(b',')] if val else []
+        for key, eq, val in (l.partition(b'=') for l in caps.splitlines())
     }

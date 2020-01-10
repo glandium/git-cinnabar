@@ -99,7 +99,7 @@ class FileFindParents(object):
         # On merges, a file with copy metadata has either no parent, or only
         # one. In that latter case, the parent is always set as second parent.
         # On non-merges, a file with copy metadata doesn't have a parent.
-        if file.metadata or file.content.startswith('\1\n'):
+        if file.metadata or file.content.startswith(b'\1\n'):
             if len(parents) == 2:
                 FileFindParents._invalid_if_new(file)
             elif len(parents) == 1:
@@ -882,7 +882,7 @@ class GitHgStore(object):
     def _get_hgtags(self, head):
         tags = TagSet()
         if not self._tagcache.get(head):
-            ls = one(Git.ls_tree(head, '.hgtags'))
+            ls = one(Git.ls_tree(head, b'.hgtags'))
             if not ls:
                 self._tagcache[head] = NULL_NODE_ID
                 return tags
@@ -892,17 +892,17 @@ class GitHgStore(object):
             if tagfile in self._tagfiles:
                 data = GitHgHelper.cat_file('blob', self._tagfiles[tagfile])
                 for line in data.splitlines():
-                    tag, nodes = line.split('\0', 1)
+                    tag, nodes = line.split(b'\0', 1)
                     nodes = nodes.split(' ')
                     for node in reversed(nodes):
                         tags[tag] = node
             else:
-                data = GitHgHelper.cat_file('blob', tagfile) or ''
+                data = GitHgHelper.cat_file('blob', tagfile) or b''
                 for line in data.splitlines():
                     if not line:
                         continue
                     try:
-                        node, tag = line.split(' ', 1)
+                        node, tag = line.split(b' ', 1)
                     except ValueError:
                         continue
                     tag = tag.strip()
@@ -928,7 +928,7 @@ class GitHgStore(object):
             return self._hgheads[head], head
         if head in self._branches:
             return self._branches[head], head
-        branch = self.changeset(head).branch or 'default'
+        branch = self.changeset(head).branch or b'default'
         self._branches[head] = branch
         return branch, head
 
@@ -956,7 +956,7 @@ class GitHgStore(object):
     def hg_changeset(self, sha1):
         data = self.read_changeset_data(sha1)
         if data:
-            assert data.startswith('changeset ')
+            assert data.startswith(b'changeset ')
             return data[10:50]
         return None
 
@@ -1004,11 +1004,11 @@ class GitHgStore(object):
 
     @staticmethod
     def manifest_metadata_path(path):
-        return '_' + path.replace('/', '/_')
+        return b'_' + path.replace(b'/', b'/_')
 
     @staticmethod
     def manifest_path(path):
-        return path[1:].replace('/_', '/')
+        return path[1:].replace(b'/_', b'/')
 
     def manifest(self, sha1, include_parents=False):
         manifest = GeneratedManifestInfo(sha1)
@@ -1039,7 +1039,7 @@ class GitHgStore(object):
     def file(self, sha1, file_parents=None, git_manifest_parents=None,
              path=None):
         if sha1 == HG_EMPTY_FILE:
-            content = ''
+            content = b''
         else:
             content = GitHgHelper.cat_blob(b':h%s' % sha1)
 
@@ -1137,7 +1137,7 @@ class GitHgStore(object):
             ChangesetPatcher.from_diff(changeset, instance), want_sha1=False)
         GitHgHelper.set(b'changeset-metadata', instance.node, b':1')
 
-        self._branches[instance.node] = instance.branch or 'default'
+        self._branches[instance.node] = instance.branch or b'default'
         self.add_head(instance.node, instance.parent1, instance.parent2)
 
     MODE = {
