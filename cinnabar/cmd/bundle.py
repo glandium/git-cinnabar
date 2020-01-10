@@ -25,7 +25,6 @@ from cinnabar.util import fsencode
 
 
 @CLI.subcommand
-@CLI.python3_ready
 @CLI.argument('--version', choices=(1, 2), type=int,
               default=2 if unbundle20 else 1,
               help='bundle version')
@@ -69,7 +68,6 @@ def bundle(args):
 
 
 @CLI.subcommand
-@CLI.python3_ready
 @CLI.argument('--clonebundle', action='store_true',
               help='get clone bundle from given repository')
 @CLI.argument('url', help='url of the bundle')

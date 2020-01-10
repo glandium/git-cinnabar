@@ -73,7 +73,6 @@ def do_rollback(ref):
 
 
 @CLI.subcommand
-@CLI.python3_ready
 @CLI.argument('--fsck', action='store_true',
               help='rollback to the last successful fsck state')
 @CLI.argument('committish', nargs='?',

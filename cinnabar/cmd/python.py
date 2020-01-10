@@ -6,7 +6,6 @@ from cinnabar.cmd.util import CLI
 
 
 @CLI.subcommand
-@CLI.python3_ready
 @CLI.argument('flags', nargs=argparse.REMAINDER,
               help='flags to pass down to python')
 def python(args):

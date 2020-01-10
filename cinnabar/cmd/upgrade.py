@@ -11,7 +11,6 @@ class UpgradeGitHgStore(GitHgStore):
 
 
 @CLI.subcommand
-@CLI.python3_ready
 def upgrade(args):
     '''upgrade cinnabar metadata'''
 

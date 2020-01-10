@@ -37,8 +37,8 @@ class CLI(object):
         subparser.set_defaults(callback=func)
 
     @staticmethod
-    def python3_ready(func):
-        func.python3 = True
+    def python2_only(func):
+        func.python3 = False
         return func
 
     @staticmethod

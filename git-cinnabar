@@ -11,4 +11,4 @@ from cinnabar.util import run
 
 if __name__ == '__main__':
     func, args = CLI.prepare(sys.argv[1:])
-    run(func, args, getattr(func, 'python3', False))
+    run(func, args, getattr(func, 'python3', True))

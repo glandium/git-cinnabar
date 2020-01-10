@@ -358,6 +358,7 @@ def fsck_quick(force=False):
 
 
 @CLI.subcommand
+@CLI.python2_only
 @CLI.argument('--force', action='store_true',
               help='Force check, even when metadata was already checked. '
                    'Also disables incremental fsck')

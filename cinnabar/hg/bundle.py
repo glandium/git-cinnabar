@@ -239,7 +239,7 @@ class PushStore(GitHgStore):
         def process_diff(diff):
             for (mode_before, mode_after, sha1_before, sha1_after, status,
                  path) in diff:
-                if status[0] == b'R':
+                if status[:1] == b'R':
                     yield status[1:], (
                         b'000000', sha1_before, NULL_NODE_ID, b'D')
                 yield path, (mode_after, sha1_before, sha1_after,
@@ -333,13 +333,13 @@ class PushStore(GitHgStore):
             if parent_changeset.branch:
                 changeset.branch = parent_changeset.branch
 
-        if self._graft is True and parents and changeset.body[-1] == b'\n':
+        if self._graft is True and parents and changeset.body[-1:] == b'\n':
             parent_commit = GitCommit(parents[0])
-            if (parent_commit.body[-1] == b'\n' and
+            if (parent_commit.body[-1:] == b'\n' and
                     parent_commit.body[-2] == parent_changeset.body[-1]):
                 self._graft = 'true'
 
-        if self._graft == 'true' and changeset.body[-1] == b'\n':
+        if self._graft == 'true' and changeset.body[-1:] == b'\n':
             changeset.body = changeset.body[:-1]
 
         changeset.node = changeset.sha1

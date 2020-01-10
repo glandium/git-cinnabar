@@ -480,7 +480,7 @@ class Grafter(object):
 
     def _is_cinnabar_commit(self, commit):
         data = self._store.read_changeset_data(commit)
-        return '\npatch' not in data if data else False
+        return b'\npatch' not in data if data else False
 
     def _graft(self, changeset, parents):
         store = self._store
@@ -514,10 +514,10 @@ class Grafter(object):
             # following is enough to graft github.com/mozilla/gecko-dev
             # to mozilla-central and related repositories.
             # Try with commits with the same subject line
-            subject = changeset.body.split('\n', 1)[0]
+            subject = changeset.body.split(b'\n', 1)[0]
             possible_nodes = tuple(
                 n for n in nodes
-                if commits[n].body.split('\n', 1)[0] == subject
+                if commits[n].body.split(b'\n', 1)[0] == subject
             )
             if len(possible_nodes) > 1:
                 # Try with commits with the same author ; this is attempted
@@ -541,7 +541,7 @@ class Grafter(object):
                 commit = commits[node]
                 cs = Changeset.from_git_commit(commit)
                 patcher = ChangesetPatcher.from_diff(cs, changeset)
-                if '\npatch' in patcher:
+                if b'\npatch' in patcher:
                     possible_nodes.append(node)
             nodes = possible_nodes
 

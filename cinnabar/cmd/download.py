@@ -31,7 +31,6 @@ except ImportError:
 
 
 @CLI.subcommand
-@CLI.python3_ready
 @CLI.argument('--url', action='store_true',
               help='only print the download url')
 @CLI.argument('--dev', nargs='?', metavar='VARIANT',

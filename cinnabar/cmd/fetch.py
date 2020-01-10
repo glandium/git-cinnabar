@@ -15,7 +15,6 @@ from cinnabar.util import fsencode
 
 
 @CLI.subcommand
-@CLI.python3_ready
 @CLI.argument('remote', help='mercurial remote name or url')
 @CLI.argument('revs', nargs='+', help='mercurial changeset to fetch')
 def fetch(args):

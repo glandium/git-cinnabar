@@ -7,7 +7,6 @@ from cinnabar.util import bytes_stdout
 
 
 @CLI.subcommand
-@CLI.python3_ready
 @CLI.argument('-c', '--changeset', action='store_true',
               help='open changelog')
 @CLI.argument('-m', '--manifest', action='store_true',

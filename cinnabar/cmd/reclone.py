@@ -8,7 +8,6 @@ from cinnabar.util import fsdecode
 
 
 @CLI.subcommand
-@CLI.python3_ready
 def reclone(args):
     '''reclone all mercurial remotes'''
 
