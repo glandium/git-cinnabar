@@ -323,7 +323,15 @@ def decision():
     )
 
     TestTask(
-        variant='coverage',
+        extra_desc='python3 graft',
+        env={
+            'GIT_CINNABAR_EXPERIMENTS': 'python3',
+            'GIT_CINNABAR_LOG': 'reexec:3',
+            'GRAFT': '1',
+        },
+    )
+
+    TestTask(
         extra_desc='experiments',
         env={
             'GIT_CINNABAR_EXPERIMENTS': 'true',
