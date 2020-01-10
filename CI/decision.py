@@ -318,6 +318,7 @@ def decision():
         extra_desc='python3',
         env={
             'GIT_CINNABAR_EXPERIMENTS': 'python3',
+            'GIT_CINNABAR_LOG': 'reexec:3',
         },
     )
 
