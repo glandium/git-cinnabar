@@ -1168,7 +1168,7 @@ class GitHgStore(object):
                 modified = ((line.path, (line.sha1, line.attr))
                             for line in instance)
             for name, (node, attr) in modified:
-                node = str(node)
+                node = bytes(node)
                 commit.filemodify(self.manifest_metadata_path(name), node,
                                   self.MODE[attr])
 
