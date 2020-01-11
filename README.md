@@ -1,8 +1,6 @@
 git-cinnabar 0.5
 ================
 
-When you update, please read this file again, it may contain important notes.
-
 *cinnabar is the common natural form in which mercury can be found on Earth.
 It contains mercury sulfide and its powder is used to make the vermillion
 pigment.*
