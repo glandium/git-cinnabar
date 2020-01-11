@@ -264,7 +264,7 @@ hg.cant.graft.git: hg.graft.replace.git
 hg.graft.new.bundle: hg.graft2.git
 	cp -r $< $@.git
 	$(GIT) -C $@.git checkout refs/remotes/new/HEAD
-	$(GIT) -C $@.git -c user.email=git@cinnabar -c user.name=cinnabar commit --allow-empty -m 'New commit'
+	GIT_AUTHOR_DATE="1970-01-01T00:00:00 +0000" GIT_COMMITTER_DATE="1970-01-01T00:00:00 +0000" $(GIT) -C $@.git -c user.email=git@cinnabar -c user.name=cinnabar commit --allow-empty -m 'New commit'
 	$(GIT) -C $@.git -c cinnabar.graft=true cinnabar bundle $(CURDIR)/$@ HEAD^!
 	$(GIT) -C $@.git -c cinnabar.graft=true fetch hg::$(PATH_URL)/$@
 	test "$$($(GIT) -C $@.git cinnabar data -c $$($(GIT) -C $@.git cinnabar git2hg FETCH_HEAD) | tail -c 1)" = t
