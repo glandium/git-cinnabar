@@ -37,11 +37,6 @@ class CLI(object):
         subparser.set_defaults(callback=func)
 
     @staticmethod
-    def python2_only(func):
-        func.python3 = False
-        return func
-
-    @staticmethod
     def prepare(argv):
         CLI.parser.add_argument('--version', action=Version)
 
