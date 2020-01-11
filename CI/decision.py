@@ -332,6 +332,15 @@ def decision():
     )
 
     TestTask(
+        extra_desc='python3',
+        env={
+            'GIT_CINNABAR_EXPERIMENTS': 'python3',
+            'GIT_CINNABAR_LOG': 'reexec:3',
+        },
+        hg='{}.py3'.format(MERCURIAL_VERSION),
+    )
+
+    TestTask(
         extra_desc='experiments',
         env={
             'GIT_CINNABAR_EXPERIMENTS': 'true',

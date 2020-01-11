@@ -127,21 +127,29 @@ class Hg(Task, metaclass=Tool):
 
     def __init__(self, os_and_version):
         (os, version) = os_and_version.split('.', 1)
+        (version, suffix, _) = version.partition('.py3')
+        if suffix:
+            python = 'python3'
+        else:
+            python = 'python'
         env = TaskEnvironment.by_name('{}.build'.format(os))
         kwargs = {}
 
         if len(version) == 40:
             # Assume it's a sha1
-            pretty_version = 'r{}'.format(version)
+            pretty_version = 'r{}{}'.format(version, suffix)
             artifact_version = 'unknown'
             expire = '2 weeks'
         else:
-            pretty_version = 'v{}'.format(version)
+            pretty_version = 'v{}{}'.format(version, suffix)
             artifact_version = version
             expire = '26 weeks'
         desc = 'hg {}'.format(pretty_version)
         if os == 'linux':
-            artifact = 'mercurial-{}-cp27-cp27mu-linux_x86_64.whl'
+            if python == 'python3':
+                artifact = 'mercurial-{}-cp35-cp35m-linux_x86_64.whl'
+            else:
+                artifact = 'mercurial-{}-cp27-cp27mu-linux_x86_64.whl'
         else:
             desc = '{} {} {}'.format(desc, env.os, env.cpu)
             if os.startswith('osx'):
@@ -182,8 +190,10 @@ class Hg(Task, metaclass=Tool):
             index='{}.hg.{}'.format(h.hexdigest(), pretty_version),
             expireIn=expire,
             command=pre_command + [
-                'python -m pip wheel -v --build-option -b --build-option'
-                ' $PWD/wheel -w $ARTIFACTS {}'.format(source.format(version)),
+                '{} -m pip wheel -v --build-option -b --build-option'
+                ' $PWD/wheel -w $ARTIFACTS {}'.format(
+                    python,
+                    source.format(version)),
             ],
             artifact=artifact.format(artifact_version),
             **kwargs
@@ -192,10 +202,14 @@ class Hg(Task, metaclass=Tool):
     @classmethod
     def install(cls, name):
         hg = cls.by_name(name)
+        if name.endswith('.py3'):
+            python = 'python3'
+        else:
+            python = 'python'
         filename = os.path.basename(hg.artifacts[0])
         return [
             'curl -L {{{}.artifact}} -o {}'.format(hg, filename),
-            'python -m pip install {}'.format(filename)
+            '{} -m pip install {}'.format(python, filename)
         ]
 
 
