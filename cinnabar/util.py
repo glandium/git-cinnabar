@@ -104,7 +104,7 @@ class ConfigSetFunc(object):
         self._key = key
         self._values = values
         self._extra_values = extra_values
-        self._default = default
+        self._default = default.encode('ascii')
         self._remote = remote
 
     def __call__(self, name):
@@ -633,8 +633,8 @@ class chunkbuffer(object):
 
 class HTTPReader(object):
     def __init__(self, url):
-        self.fh = urlopen(url)
-        self.url = url
+        self.url = fsdecode(url)
+        self.fh = urlopen(self.url)
         try:
             self.length = int(self.fh.headers['content-length'])
         except (ValueError, KeyError):
@@ -904,9 +904,9 @@ class VersionCheck(Thread):
             sys.stderr.write('\n' + self.message + '\n')
 
 
-def run(func, args, maybe_python3=False):
+def run(func, args):
     reexec = None
-    if maybe_python3 and experiment('python3') and sys.version_info[0] == 2:
+    if experiment('python3') and sys.version_info[0] == 2:
         reexec = ['python3']
     if os.environ.pop('GIT_CINNABAR_COVERAGE', None):
         if not reexec:
@@ -982,5 +982,7 @@ else:
 
 if hasattr(sys.stdout, 'buffer'):
     bytes_stdout = sys.stdout.buffer
+    bytes_stdin = sys.stdin.buffer
 else:
     bytes_stdout = sys.stdout
+    bytes_stdin = sys.stdin

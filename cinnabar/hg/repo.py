@@ -1,8 +1,12 @@
-from __future__ import absolute_import, division
+from __future__ import absolute_import, division, unicode_literals
 import os
 import ssl
 import sys
-import urllib
+try:
+    from urllib.parse import quote_from_bytes, unquote_to_bytes
+except ImportError:
+    from urllib import quote as quote_from_bytes
+    from urllib import unquote as unquote_to_bytes
 try:
     from urllib2 import HTTPError
 except ImportError:
@@ -49,6 +53,7 @@ from cinnabar.util import (
     check_enabled,
     chunkbuffer,
     experiment,
+    fsdecode,
     progress_enum,
     progress_iter,
 )
@@ -107,7 +112,7 @@ if changegroup:
         if check_enabled('no-bundle2'):
             raise ImportError('Do not use bundlev2')
         from mercurial.bundle2 import capabilities
-        if 'HG20' not in capabilities:
+        if b'HG20' not in capabilities:
             raise ImportError('Mercurial may have unbundle20 but insufficient')
         from mercurial.bundle2 import unbundle20
     except ImportError:
@@ -126,12 +131,12 @@ if changegroup:
                 # information is missing and mercurial would want to get it
                 # from user input, but can't because the ui isn't interactive.
                 credentials = dict(
-                    line.split('=', 1)
+                    line.split(b'=', 1)
                     for line in Git.iter('credential', 'fill',
-                                         stdin='url=%s' % authuri)
+                                         stdin=b'url=%s' % authuri)
                 )
-                username = credentials.get('username')
-                password = credentials.get('password')
+                username = credentials.get(b'username')
+                password = credentials.get(b'password')
                 if not username or not password:
                     raise
                 return username, password
@@ -139,7 +144,7 @@ if changegroup:
     url.passwordmgr = passwordmgr
 else:
     def cg1unpacker(fh, alg):
-        assert alg == 'UN'
+        assert alg == b'UN'
         return fh
 
 
@@ -345,11 +350,11 @@ def findcommon(repo, store, hgheads):
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug('known (sub)set: (%d) %s', len(known), sorted(git_known))
 
-    args = ['--topo-order', '--full-history', '--parents']
+    args = [b'--topo-order', b'--full-history', b'--parents']
 
     def revs():
         for h in git_known:
-            yield '^%s' % h
+            yield b'^%s' % h
         for h in git_heads:
             if h not in git_known:
                 yield h
@@ -422,13 +427,13 @@ class HelperRepo(object):
     def init_state(self):
         state = HgRepoHelper.state()
         self._branchmap = {
-            urllib.unquote(branch): [unhexlify(h)
-                                     for h in heads.split(' ')]
+            unquote_to_bytes(branch): [unhexlify(h)
+                                       for h in heads.split(b' ')]
             for line in state['branchmap'].splitlines()
-            for branch, heads in (line.split(' ', 1),)
+            for branch, heads in (line.split(b' ', 1),)
         }
         self._heads = [unhexlify(h)
-                       for h in state['heads'][:-1].split(' ')]
+                       for h in state['heads'][:-1].split(b' ')]
         self._bookmarks = self._decode_keys(state['bookmarks'])
 
     def url(self):
@@ -436,23 +441,24 @@ class HelperRepo(object):
 
     def _decode_keys(self, data):
         return dict(
-            line.split('\t', 1)
+            line.split(b'\t', 1)
             for line in data.splitlines()
         )
 
     def _call(self, command, *args):
-        if command == 'clonebundles':
+        if command == b'clonebundles':
             return HgRepoHelper.clonebundles()
-        if command == 'cinnabarclone':
+        if command == b'cinnabarclone':
             return HgRepoHelper.cinnabarclone()
         raise NotImplementedError()
 
     def capable(self, capability):
-        if capability == 'bundle2':
-            return urllib.quote(HgRepoHelper.capable('bundle2') or '')
-        if capability in ('clonebundles', 'cinnabarclone'):
+        if capability == b'bundle2':
+            return quote_from_bytes(
+                HgRepoHelper.capable(b'bundle2') or b'').encode('ascii')
+        if capability in (b'clonebundles', b'cinnabarclone'):
             return HgRepoHelper.capable(capability) is not None
-        return capability in ('getbundle', 'unbundle', 'lookup')
+        return capability in (b'getbundle', b'unbundle', b'lookup')
 
     def batch(self):
         raise NotImplementedError()
@@ -468,7 +474,7 @@ class HelperRepo(object):
         return self._branchmap
 
     def listkeys(self, namespace):
-        if namespace == 'bookmarks':
+        if namespace == b'bookmarks':
             if self._bookmarks is None:
                 self.init_state()
             return self._bookmarks
@@ -476,14 +482,14 @@ class HelperRepo(object):
 
     def known(self, nodes):
         result = HgRepoHelper.known(hexlify(n) for n in nodes)
-        return [bool(int(b)) for b in result]
+        return [b == b'1'[0] for b in result]
 
     def getbundle(self, name, heads, common, *args, **kwargs):
         data = HgRepoHelper.getbundle((hexlify(h) for h in heads),
                                       (hexlify(c) for c in common),
-                                      ','.join(kwargs.get('bundlecaps', ())))
+                                      b','.join(kwargs.get(b'bundlecaps', ())))
         header = readexactly(data, 4)
-        if header == 'HG20':
+        if header == b'HG20':
             return unbundle20(self.ui, data)
 
         class Reader(object):
@@ -498,17 +504,17 @@ class HelperRepo(object):
                     result += self.data.read(length - len(result))
                 return result
 
-        if header == 'err\n':
-            return Reader('', BytesIO())
+        if header == b'err\n':
+            return Reader(b'', BytesIO())
         return Reader(header, data)
 
     def pushkey(self, namespace, key, old, new):
         return HgRepoHelper.pushkey(namespace, key, old, new)
 
     def unbundle(self, cg, heads, *args, **kwargs):
-        data = HgRepoHelper.unbundle(cg, (hexlify(h) if h != 'force' else h
+        data = HgRepoHelper.unbundle(cg, (hexlify(h) if h != b'force' else h
                                           for h in heads))
-        if isinstance(data, str) and data.startswith('HG20'):
+        if isinstance(data, str) and data.startswith(b'HG20'):
             data = unbundle20(self.ui, BytesIO(data[4:]))
         return data
 
@@ -572,14 +578,14 @@ class bundlerepo(object):
                 yield item
 
         changeset_chunks = ChunksCollection(progress_iter(
-            'Analyzing {} changesets from ' + self._file,
+            'Analyzing {} changesets from ' + fsdecode(self._file),
             iter_and_store(next(raw_unbundler, None))))
 
         for chunk in changeset_chunks.iter_initialized(lambda x: x,
                                                        store.changeset,
                                                        Changeset.from_chunk):
             extra = chunk.extra or {}
-            branch = extra.get('branch', 'default')
+            branch = extra.get(b'branch', b'default')
             branches.add(branch)
             self._dag.add(chunk.node,
                           tuple(p for p in (chunk.parent1, chunk.parent2)
@@ -654,7 +660,7 @@ def unbundler(bundle):
 
 
 def get_clonebundle_url(repo):
-    bundles = repo._call('clonebundles')
+    bundles = repo._call(b'clonebundles')
 
     try:
         if check_enabled('no-mercurial'):
@@ -683,16 +689,16 @@ def get_clonebundle_url(repo):
         if not entries:
             return None
 
-        return entries[0].get('URL')
+        return entries[0].get(b'URL')
 
-    supported_bundles = ('v1', 'v2')
+    supported_bundles = (b'v1', b'v2')
     supported_compressions = tuple(
         k for k, v in (
-            ('none', 'UN'),
-            ('gzip', 'GZ'),
-            ('bzip2', 'BZ'),
-            ('zstd', 'ZS'),
-        ) if HgRepoHelper.supports(('compression', v))
+            (b'none', b'UN'),
+            (b'gzip', b'GZ'),
+            (b'bzip2', b'BZ'),
+            (b'zstd', b'ZS'),
+        ) if HgRepoHelper.supports((b'compression', v))
     )
 
     has_sni = getattr(ssl, 'HAS_SNI', False)
@@ -706,21 +712,21 @@ def get_clonebundle_url(repo):
         url = attrs.pop(0)
         logger.debug(url)
         attrs = {
-            urllib.unquote(k): urllib.unquote(v)
-            for k, _, v in (a.partition('=') for a in attrs)
+            unquote_to_bytes(k): unquote_to_bytes(v)
+            for k, _, v in (a.partition(b'=') for a in attrs)
         }
         logger.debug(attrs)
-        if 'REQUIRESNI' in attrs and not has_sni:
+        if b'REQUIRESNI' in attrs and not has_sni:
             logger.debug('Skip because of REQUIRESNI, but SNI unsupported')
             continue
 
-        spec = attrs.get('BUNDLESPEC')
+        spec = attrs.get(b'BUNDLESPEC')
         if not spec:
             logger.debug('Skip because missing BUNDLESPEC')
             continue
 
-        typ, _, params = spec.partition(';')
-        compression, _, version = typ.partition('-')
+        typ, _, params = spec.partition(b';')
+        compression, _, version = typ.partition(b'-')
 
         if compression not in supported_compressions:
             logger.debug('Skip because unsupported compression (%s)',
@@ -743,7 +749,7 @@ def get_clonebundle(repo):
         return None
 
     parsed_url = urlparse(url)
-    if parsed_url.scheme not in ('http', 'https'):
+    if parsed_url.scheme not in (b'http', b'https'):
         logging.warn('Server advertizes clone bundle but provided a non '
                      'http/https url. Skipping.')
         return None
@@ -849,12 +855,12 @@ def do_cinnabarclone(repo, manifest, store):
     url = None
     for line in manifest.splitlines():
         line = line.strip()
-        spec, _, params = line.partition(' ')
+        spec, _, params = line.partition(b' ')
         params = {
             k: v
-            for k, _, v in (p.partition('=') for p in params.split())
+            for k, _, v in (p.partition(b'=') for p in params.split())
         }
-        graft = params.pop('graft', None)
+        graft = params.pop(b'graft', None)
         if params:
             # Future proofing: ignore lines with unknown params, even if we
             # support some that are present.
@@ -863,7 +869,7 @@ def do_cinnabarclone(repo, manifest, store):
             # When grafting, ignore lines without a graft revision.
             if not graft:
                 continue
-            graft = graft.split(',')
+            graft = graft.split(b',')
             revs = list(Git.iter('rev-parse', '--revs-only', *graft))
             if len(revs) != len(graft):
                 continue
@@ -874,8 +880,8 @@ def do_cinnabarclone(repo, manifest, store):
                     '--max-count=1', '--ancestry-path', '--stdin',
                     stdin=('^{}^@'.format(c) for c in graft))):
                 continue
-        url, _, branch = spec.partition('#')
-        url, branch = (url.split('#', 1) + [None])[:2]
+        url, _, branch = spec.partition(b'#')
+        url, branch = (url.split(b'#', 1) + [None])[:2]
         if url:
             break
 
@@ -885,7 +891,7 @@ def do_cinnabarclone(repo, manifest, store):
         return False
 
     parsed_url = urlparse(url)
-    if parsed_url.scheme not in ('http', 'https', 'git'):
+    if parsed_url.scheme not in (b'http', b'https', b'git'):
         logging.warn('Server advertizes cinnabarclone but provided a non '
                      'http/https git repository. Skipping.')
         return False
@@ -904,15 +910,15 @@ def getbundle(repo, store, heads, branch_names):
         if not common:
             if not store._has_metadata:
                 manifest = Git.config('cinnabar.clone')
-                if manifest is None and repo.capable('cinnabarclone'):
-                    manifest = repo._call('cinnabarclone')
+                if manifest is None and repo.capable(b'cinnabarclone'):
+                    manifest = repo._call(b'cinnabarclone')
                 if manifest:
                     got_partial = do_cinnabarclone(repo, manifest, store)
                     if not got_partial:
                         if check_enabled('cinnabarclone'):
                             raise Exception('cinnabarclone failed.')
                         logging.warn('Falling back to normal clone.')
-            if not got_partial and repo.capable('clonebundles'):
+            if not got_partial and repo.capable(b'clonebundles'):
                 bundle = get_clonebundle(repo)
                 got_partial = bool(bundle)
                 if not got_partial and check_enabled('clonebundles'):
@@ -935,15 +941,17 @@ def getbundle(repo, store, heads, branch_names):
             logging.info('common: %s', common)
 
         kwargs = {}
-        if unbundle20 and repo.capable('bundle2'):
+        if unbundle20 and repo.capable(b'bundle2'):
             bundle2caps = {
-                'HG20': (),
-                'changegroup': ('01', '02'),
+                b'HG20': (),
+                b'changegroup': (b'01', b'02'),
             }
             kwargs['bundlecaps'] = set((
-                'HG20', 'bundle2=%s' % urllib.quote(encodecaps(bundle2caps))))
+                b'HG20',
+                b'bundle2=%s' % quote_from_bytes(
+                    encodecaps(bundle2caps)).encode('ascii')))
 
-        bundle = repo.getbundle('bundle', heads=[unhexlify(h) for h in heads],
+        bundle = repo.getbundle(b'bundle', heads=[unhexlify(h) for h in heads],
                                 common=[unhexlify(h) for h in common],
                                 **kwargs)
 
@@ -958,13 +966,13 @@ def getbundle(repo, store, heads, branch_names):
 def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
     def heads():
         for sha1 in store.heads(repo_branches):
-            yield '^%s' % store.changeset_ref(sha1)
+            yield b'^%s' % store.changeset_ref(sha1)
 
     def local_bases():
         h = chain(heads(), (w for w, _, _ in what if w))
-        for c, t, p in GitHgHelper.rev_list('--topo-order', '--full-history',
-                                            '--boundary', *h):
-            if c[0] != '-':
+        for c, t, p in GitHgHelper.rev_list(b'--topo-order', b'--full-history',
+                                            b'--boundary', *h):
+            if c[:1] != b'-':
                 continue
             yield store.hg_changeset(c[1:])
 
@@ -979,11 +987,11 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
 
     def revs():
         for sha1 in common:
-            yield '^%s' % store.changeset_ref(sha1)
+            yield b'^%s' % store.changeset_ref(sha1)
 
     revs = chain(revs(), (w for w, _, _ in what if w))
     push_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
-        '--topo-order', '--full-history', '--parents', '--reverse', *revs))
+        b'--topo-order', b'--full-history', b'--parents', b'--reverse', *revs))
 
     pushed = False
     if push_commits:
@@ -995,44 +1003,44 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
             else:
                 logging.warn('Pushing a new root')
         if force:
-            repo_heads = ['force']
+            repo_heads = [b'force']
         else:
             if not repo_heads:
                 repo_heads = [NULL_NODE_ID]
             repo_heads = [unhexlify(h) for h in repo_heads]
     if push_commits and not dry_run:
         if repo.local():
-            repo.local().ui.setconfig('server', 'validate', True)
+            repo.local().ui.setconfig(b'server', b'validate', True)
         if unbundle20:
-            b2caps = repo.capable('bundle2') or {}
+            b2caps = repo.capable(b'bundle2') or {}
         else:
             b2caps = {}
         if b2caps:
-            b2caps = decodecaps(urllib.unquote(b2caps))
+            b2caps = decodecaps(unquote_to_bytes(b2caps))
         logging.getLogger('bundle2').debug('%r', b2caps)
         if b2caps:
-            b2caps['replycaps'] = encodecaps({'error': ['abort']})
+            b2caps[b'replycaps'] = encodecaps({b'error': [b'abort']})
         cg = create_bundle(store, push_commits, b2caps)
         if not isinstance(repo, HelperRepo):
             cg = chunkbuffer(cg)
             if not b2caps:
-                cg = cg1unpacker(cg, 'UN')
-        reply = repo.unbundle(cg, repo_heads, '')
+                cg = cg1unpacker(cg, b'UN')
+        reply = repo.unbundle(cg, repo_heads, b'')
         if unbundle20 and isinstance(reply, unbundle20):
             parts = iter(reply.iterparts())
             for part in parts:
                 logging.getLogger('bundle2').debug('part: %s', part.type)
                 logging.getLogger('bundle2').debug('params: %r', part.params)
-                if part.type == 'output':
-                    sys.stderr.write(part.read())
-                elif part.type == 'reply:changegroup':
+                if part.type == b'output':
+                    sys.stderr.write(fsdecode(part.read()))
+                elif part.type == b'reply:changegroup':
                     # TODO: should check params['in-reply-to']
-                    reply = int(part.params['return'])
-                elif part.type == 'error:abort':
-                    raise error.Abort(part.params['message'],
-                                      hint=part.params.get('hint'))
+                    reply = int(part.params[b'return'])
+                elif part.type == b'error:abort':
+                    raise error.Abort(part.params[b'message'],
+                                      hint=part.params.get(b'hint'))
                 else:
-                    logging.getLogger('bundle2').warning(
+                    logging.getLogger(b'bundle2').warning(
                         'ignoring bundle2 part: %s', part.type)
         pushed = reply != 0
     return gitdag(push_commits) if pushed or dry_run else ()
@@ -1043,15 +1051,15 @@ def get_ui():
         return None
     ui_ = ui.ui()
     ui_.fout = ui_.ferr
-    ui_.setconfig('ui', 'interactive', False)
-    ui_.setconfig('progress', 'disable', True)
+    ui_.setconfig(b'ui', b'interactive', False)
+    ui_.setconfig(b'progress', b'disable', True)
     ssh = os.environ.get('GIT_SSH_COMMAND')
     if not ssh:
         ssh = os.environ.get('GIT_SSH')
         if ssh:
             ssh = procutil.shellquote(ssh)
     if ssh:
-        ui_.setconfig('ui', 'ssh', ssh)
+        ui_.setconfig(b'ui', b'ssh', ssh)
     return ui_
 
 
@@ -1105,7 +1113,7 @@ class Remote(object):
 
 if changegroup:
     def localpeer(ui, path):
-        ui.setconfig('ui', 'ssh', '')
+        ui.setconfig(b'ui', b'ssh', b'')
 
         has_checksafessh = hasattr(util, 'checksafessh')
 
@@ -1116,7 +1124,7 @@ if changegroup:
         if has_checksafessh:
             checksafessh = util.checksafessh
 
-        procutil.sshargs = lambda *a: ''
+        procutil.sshargs = lambda *a: b''
         procutil.shellquote = lambda x: x
         if has_checksafessh:
             util.checksafessh = lambda x: None
@@ -1126,18 +1134,18 @@ if changegroup:
         # quotecommand.
         def override_quotecommand(cmd):
             cmd = cmd.lstrip()
-            if cmd.startswith('"'):
+            if cmd.startswith(b'"'):
                 cmd = cmd[1:-1]
             return quotecommand(cmd)
         procutil.quotecommand = override_quotecommand
 
         class override_url(object):
             def __init__(self, *args, **kwargs):
-                self.scheme = 'ssh'
-                self.host = 'localhost'
+                self.scheme = b'ssh'
+                self.host = b'localhost'
                 self.port = None
                 self.path = path
-                self.user = 'user'
+                self.user = b'user'
                 self.passwd = None
         util.url = override_url
 
@@ -1164,16 +1172,16 @@ def get_repo(remote):
             return bundlerepo(remote.url, stream)
         return HelperRepo(remote.url)
 
-    if remote.parsed_url.scheme == 'file':
+    if remote.parsed_url.scheme == b'file':
         # Make file://c:/... paths work by taking the netloc
         path = remote.parsed_url.netloc + remote.parsed_url.path
         if sys.platform == 'win32':
             # TODO: This probably needs more thought.
-            path = path.lstrip('/')
+            path = path.lstrip(b'/')
         if not os.path.isdir(path):
             return bundlerepo(path)
     ui = get_ui()
-    if changegroup and remote.parsed_url.scheme == 'file':
+    if changegroup and remote.parsed_url.scheme == b'file':
         repo = localpeer(ui, path)
     else:
         try:
@@ -1181,6 +1189,6 @@ def get_repo(remote):
         except (error.RepoError, HTTPError, IOError):
             return bundlerepo(remote.url, HTTPReader(remote.url))
 
-    assert repo.capable('getbundle')
+    assert repo.capable(b'getbundle')
 
     return repo

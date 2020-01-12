@@ -35,7 +35,7 @@ def fetch(args):
             if url.startswith(b'hg::'):
                 url = url[4:]
             repo = get_repo(Remote(fsencode(remote), url))
-            if repo.capable('lookup'):
+            if repo.capable(b'lookup'):
                 rev = hexlify(repo.lookup(fsencode(rev)))
             else:
                 print('Remote repository does not support the "lookup" '

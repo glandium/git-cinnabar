@@ -1,5 +1,9 @@
 from __future__ import absolute_import, unicode_literals
-import urllib
+try:
+    from urllib.parse import quote_from_bytes, unquote_to_bytes
+except ImportError:
+    from urllib import quote as quote_from_bytes
+    from urllib import unquote as unquote_to_bytes
 from cinnabar.githg import (
     Changeset,
     FileFindParents,
@@ -42,7 +46,7 @@ import struct
 # that was used to distinguish between mercurial sha1s that were already
 # known or not. git-mozreview relies on previously unknown mercurial sha1s
 # not being exactly of str type, so use a subclass to make it happy.
-class PseudoString(str):
+class PseudoString(bytes):
     pass
 
 
@@ -261,7 +265,7 @@ class PushStore(GitHgStore):
                 continue
             mode_after, sha1_before, sha1_after, status = change
             path2 = status[1:]
-            status = status[0]
+            status = status[:1]
             attr = self.ATTR.get(mode_after)
             if status == b'D':
                 manifest.removed.add(path)
@@ -361,13 +365,13 @@ class PushStore(GitHgStore):
                               parent2=NULL_NODE_ID,
                               git_manifest_parents=None, path=None):
         hg_file = File()
-        hg_file.content = GitHgHelper.cat_file('blob', sha1)
+        hg_file.content = GitHgHelper.cat_file(b'blob', sha1)
         FileFindParents.set_parents(
             hg_file, parent1, parent2,
             git_manifest_parents=git_manifest_parents,
             path=path)
         node = hg_file.node = hg_file.sha1
-        GitHgHelper.set('file', node, sha1)
+        GitHgHelper.set(b'file', node, sha1)
         return hg_file
 
     def _store_file_internal(self, hg_file):
@@ -389,12 +393,12 @@ class PushStore(GitHgStore):
             b'copy': path,
             b'copyrev': rev,
         }
-        hg_file.content = GitHgHelper.cat_file('blob', sha1)
+        hg_file.content = GitHgHelper.cat_file(b'blob', sha1)
         node = hg_file.node = hg_file.sha1
         self._pushed.add(node)
         GitHgHelper.put_blob(hg_file.metadata.to_str(), want_sha1=False)
-        GitHgHelper.set('file-meta', node, b':1')
-        GitHgHelper.set('file', node, sha1)
+        GitHgHelper.set(b'file-meta', node, b':1')
+        GitHgHelper.set(b'file', node, sha1)
         return node
 
     def manifest(self, sha1, include_parents=False):
@@ -542,7 +546,8 @@ def create_bundle(store, commits, bundle2caps={}):
         yield b'\0' * 4  # bundle parameters length: no params
         replycaps = bundle2caps.get(b'replycaps')
         if replycaps:
-            for chunk in bundlepart(b'REPLYCAPS', data=chunkbuffer(replycaps)):
+            for chunk in bundlepart(b'REPLYCAPS',
+                                    data=chunkbuffer([replycaps])):
                 yield chunk
         for chunk in bundlepart(b'CHANGEGROUP',
                                 advisoryparams=((b'version', version),),
@@ -603,15 +608,16 @@ def create_changegroup(store, bundle_data, type=RawRevChunk01):
 def encodecaps(caps):
     return b'\n'.join(
         b'%s=%s' % (
-            urllib.quote(k), b','.join(urllib.quote(v) for v in values))
-        if values else urllib.quote(k)
+            quote_from_bytes(k).encode('ascii'),
+            b','.join(quote_from_bytes(v).encode('ascii') for v in values))
+        if values else quote_from_bytes(k).encode('ascii')
         for k, values in sorted(caps.items())
     )
 
 
 def decodecaps(caps):
     return {
-        urllib.unquote(key): [urllib.unquote(v)
-                              for v in val.split(b',')] if val else []
+        unquote_to_bytes(key): [unquote_to_bytes(v)
+                                for v in val.split(b',')] if val else []
         for key, eq, val in (l.partition(b'=') for l in caps.splitlines())
     }
