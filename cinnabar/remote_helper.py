@@ -414,7 +414,7 @@ class GitRemoteHelper(BaseRemoteHelper):
 
         if self._remote.name and self._refs_style('heads'):
             if Git.config('fetch.prune', self._remote.name) != b'true':
-                prune = 'remote.%s.prune' % self._remote.name
+                prune = 'remote.%s.prune' % fsdecode(self._remote.name)
                 sys.stderr.write(
                     'It is recommended that you set "%(conf)s" or '
                     '"fetch.prune" to "true".\n'

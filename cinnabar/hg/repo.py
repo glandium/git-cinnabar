@@ -895,7 +895,8 @@ def do_cinnabarclone(repo, manifest, store):
         logging.warn('Server advertizes cinnabarclone but provided a non '
                      'http/https git repository. Skipping.')
         return False
-    sys.stderr.write('Fetching cinnabar metadata from %s\n' % url)
+    sys.stderr.write('Fetching cinnabar metadata from %s\n' % fsdecode(url))
+    sys.stderr.flush()
     return store.merge(url, repo.url(), branch)
 
 

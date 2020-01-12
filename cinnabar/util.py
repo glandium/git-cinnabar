@@ -636,7 +636,8 @@ class HTTPReader(object):
         self.url = fsdecode(url)
         self.fh = urlopen(self.url)
         try:
-            self.length = int(self.fh.headers['content-length'])
+            length = self.fh.headers['content-length']
+            self.length = None if length is None else int(length)
         except (ValueError, KeyError):
             self.length = None
         self.can_recover = \
