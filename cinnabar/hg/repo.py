@@ -969,9 +969,10 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
             yield store.hg_changeset(c[1:])
 
         for w, _, _ in what:
-            rev = store.hg_changeset(w)
-            if rev:
-                yield rev
+            if w:
+                rev = store.hg_changeset(w)
+                if rev:
+                    yield rev
 
     common = findcommon(repo, store, set(local_bases()))
     logging.info('common: %s', common)

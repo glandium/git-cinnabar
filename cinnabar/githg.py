@@ -946,6 +946,7 @@ class GitHgStore(object):
         self._hgheads[head] = branch
 
     def read_changeset_data(self, obj):
+        assert obj is not None
         obj = bytes(obj)
         data = GitHgHelper.git2hg(obj)
         if data is None:
