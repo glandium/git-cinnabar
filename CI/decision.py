@@ -414,6 +414,21 @@ def decision():
                 },
             )
 
+    for check in ([], ['no-mercurial']):
+        TestTask(
+            extra_desc=' '.join(['cram'] + check),
+            clone=False,
+            command=[
+                'cram --verbose repo/tests',
+            ],
+            env={
+                'GIT_CINNABAR_CHECK': ','.join(
+                    ['no-version-check'] + check),
+                'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
+            },
+            hg='{}.py3'.format(MERCURIAL_VERSION),
+        )
+
 
 @action('more-hg-versions',
         title='More hg versions',
