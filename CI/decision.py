@@ -230,7 +230,6 @@ def decision():
             ],
             env={
                 'GIT_CINNABAR_EXPERIMENTS': 'python3',
-                'GIT_CINNABAR_LOG': 'reexec:3',
             } if env == 'linux' else {},
         )
 
@@ -246,6 +245,16 @@ def decision():
             env={
                 'UPGRADE_FROM': upgrade,
             },
+        )
+        TestTask(
+            extra_desc='upgrade-from-{}'.format(upgrade),
+            clone=upgrade,
+            env={
+                'GIT_CINNABAR_EXPERIMENTS': 'python3',
+                'GIT_CINNABAR_LOG': 'reexec:3',
+                'UPGRADE_FROM': upgrade,
+            },
+            hg='{}.py3'.format(MERCURIAL_VERSION),
         )
 
     for git in ('1.8.5', '2.7.4'):
@@ -315,27 +324,17 @@ def decision():
     )
 
     TestTask(
-        extra_desc='python3',
         env={
             'GIT_CINNABAR_EXPERIMENTS': 'python3',
-            'GIT_CINNABAR_LOG': 'reexec:3',
         },
+        hg='{}.py3'.format(MERCURIAL_VERSION),
     )
 
     TestTask(
-        extra_desc='python3 graft',
+        extra_desc='graft',
         env={
             'GIT_CINNABAR_EXPERIMENTS': 'python3',
-            'GIT_CINNABAR_LOG': 'reexec:3',
             'GRAFT': '1',
-        },
-    )
-
-    TestTask(
-        extra_desc='python3',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'python3',
-            'GIT_CINNABAR_LOG': 'reexec:3',
         },
         hg='{}.py3'.format(MERCURIAL_VERSION),
     )
@@ -354,6 +353,25 @@ def decision():
             'GIT_CINNABAR_EXPERIMENTS': 'true',
             'GRAFT': '1',
         },
+    )
+
+    TestTask(
+        extra_desc='experiments',
+        env={
+            'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
+            'GIT_CINNABAR_LOG': 'reexec:3',
+        },
+        hg='{}.py3'.format(MERCURIAL_VERSION),
+    )
+
+    TestTask(
+        extra_desc='experiments graft',
+        env={
+            'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
+            'GIT_CINNABAR_LOG': 'reexec:3',
+            'GRAFT': '1',
+        },
+        hg='{}.py3'.format(MERCURIAL_VERSION),
     )
 
     for variant in ('coverage', 'old'):
