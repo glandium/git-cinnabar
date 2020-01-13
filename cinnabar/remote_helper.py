@@ -155,7 +155,7 @@ class GitRemoteHelper(BaseRemoteHelper):
             self._graft = Git.config('cinnabar.graft', remote=remote.name,
                                      values=GRAFT)
         except InvalidConfig as e:
-            logging.error(e.message)
+            logging.error(str(e))
             return 1
         if Git.config('cinnabar.graft-refs') is not None:
             logging.warn(
@@ -442,7 +442,7 @@ class GitRemoteHelper(BaseRemoteHelper):
             data = Git.config('cinnabar.data', self._remote.name,
                               values=values)
         except InvalidConfig as e:
-            logging.error(e.message)
+            logging.error(str(e))
             return 1
 
         pushes = list((Git.resolve_ref(fsdecode(s.lstrip(b'+'))), d,

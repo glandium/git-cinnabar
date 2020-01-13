@@ -49,7 +49,7 @@ def bundle(args):
         try:
             graft = Git.config('cinnabar.graft', values=GRAFT)
         except InvalidConfig as e:
-            logging.error(e.message)
+            logging.error(str(e))
             return 1
         store = PushStore(graft=graft)
         if args.version == 1:
@@ -100,7 +100,7 @@ def unbundle(args):
     try:
         graft = Git.config('cinnabar.graft', values=GRAFT)
     except InvalidConfig as e:
-        logging.error(e.message)
+        logging.error(str(e))
         return 1
     if graft:
         store.prepare_graft()

@@ -5,6 +5,7 @@ import posixpath
 import sys
 import time
 from .util import (
+    fsdecode,
     one,
     Process,
 )
@@ -129,12 +130,12 @@ class Git(object):
                         self._config[k] += b'\0' + v
                     else:
                         self._config[k] = v
-        var = name
+        var = name.encode('ascii')
         value = None
         if name.startswith('cinnabar.'):
-            var = 'GIT_%s' % name.replace('.', '_').upper()
+            var = ('GIT_%s' % name.replace('.', '_').upper()).encode('ascii')
             if sys.version_info[0] == 3:
-                value = os.environb.get(var.encode('ascii'))
+                value = os.environb.get(var)
             else:
                 value = os.environ.get(var)
             if value is None and remote:
@@ -157,13 +158,15 @@ class Git(object):
                 if isinstance(values, dict):
                     value = values[value]
             else:
-                values = ', '.join(repr(v) for v in sorted(values)
-                                   if v is not None)
+                values = ', '.join(sorted('"%s"' % v.decode('ascii')
+                                          for v in values
+                                          if v is not None))
                 if value is None:
                     raise InvalidConfig(
-                        '%s must be set to one of %s' % (var, values))
+                        '%s must be set to one of %s' % (
+                            var.decode('ascii'), values))
                 else:
                     raise InvalidConfig(
-                        'Invalid value for %s: %s. Valid values: %s' % (
-                            var, repr(value), values))
+                        'Invalid value for %s: "%s". Valid values: %s' % (
+                            var.decode('ascii'), fsdecode(value), values))
         return value
