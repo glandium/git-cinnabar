@@ -336,7 +336,7 @@ class GeneratedManifestInfo(Manifest):
 
 class TagSet(object):
     def __init__(self):
-        self._tags = {}
+        self._tags = OrderedDict()
         self._taghist = defaultdict(set)
 
     def __setitem__(self, key, value):
@@ -372,7 +372,7 @@ class TagSet(object):
         return util.iteritems(self._tags)
 
     def hist(self, key):
-        return set(self._taghist[key])
+        return iter(sorted(self._taghist[key]))
 
 
 class GitCommit(object):
@@ -1302,7 +1302,7 @@ class GitHgStore(object):
         def tagset_lines(tags):
             for tag, value in tags:
                 yield b'%s\0%s %s\n' % (tag, value,
-                                        b' '.join(sorted(tags.hist(tag))))
+                                        b' '.join(tags.hist(tag)))
 
         for f, tags in util.iteritems(self._tags):
             if f not in self._tagfiles and f != NULL_NODE_ID:
