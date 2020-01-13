@@ -754,7 +754,7 @@ def get_clonebundle(repo):
                      'http/https url. Skipping.')
         return None
 
-    sys.stderr.write('Getting clone bundle from %s\n' % url)
+    sys.stderr.write('Getting clone bundle from %s\n' % fsdecode(url))
     return get_bundle(url)
 
 
