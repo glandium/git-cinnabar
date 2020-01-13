@@ -565,7 +565,7 @@ class HgRepoHelper(BaseHelper):
             if resp == b'bundle':
                 return stdout
             if resp != b'ok':
-                raise Exception(resp)
+                raise Exception(resp.decode('ascii'))
 
     @classmethod
     def state(self):

@@ -550,7 +550,8 @@ class Grafter(object):
         if len(nodes) > 1:
             raise AmbiguousGraftAbort(
                 'Cannot graft changeset %s. Candidates: %s'
-                % (changeset.node, ', '.join(nodes)))
+                % (changeset.node.decode('ascii'),
+                   ', '.join(n.decode('ascii') for n in nodes)))
 
         if nodes:
             node = nodes[0]
@@ -1183,8 +1184,10 @@ class GitHgStore(object):
                 raise Exception(
                     'sha1 mismatch for node %s with parents %s %s and '
                     'previous %s' %
-                    (instance.node, instance.parent1, instance.parent2,
-                     instance.delta_node)
+                    (instance.node.decode('ascii'),
+                     instance.parent1.decode('ascii'),
+                     instance.parent2.decode('ascii'),
+                     instance.delta_node.decode('ascii'))
                 )
 
     def close(self, refresh=()):

@@ -290,8 +290,10 @@ def iter_initialized(get_missing, iterable, init=None):
             raise Exception(
                 'sha1 mismatch for node %s with parents %s %s and '
                 'previous %s' %
-                (instance.node, instance.parent1, instance.parent2,
-                 instance.delta_node)
+                (instance.node.decode('ascii'),
+                 instance.parent1.decode('ascii'),
+                 instance.parent2.decode('ascii'),
+                 instance.delta_node.decode('ascii'))
             )
         yield instance
         previous = instance
@@ -525,22 +527,22 @@ class HelperRepo(object):
         data = HgRepoHelper.lookup(key)
         if data:
             return unhexlify(data)
-        raise Exception('Unknown revision %s' % key)
+        raise Exception('Unknown revision %s' % fsdecode(key))
 
 
 def unbundle_fh(fh, path):
     header = readexactly(fh, 4)
     magic, version = header[0:2], header[2:4]
     if magic != b'HG':
-        raise Exception('%s: not a Mercurial bundle' % path)
+        raise Exception('%s: not a Mercurial bundle' % fsdecode(path))
     if version == b'10':
         alg = readexactly(fh, 2)
         return cg1unpacker(fh, alg)
     elif unbundle20 and version.startswith(b'2'):
         return unbundle20(get_ui(), fh)
     else:
-        raise Exception('%s: unsupported bundle version %s' % (path,
-                        version))
+        raise Exception('%s: unsupported bundle version %s' % (fsdecode(path),
+                        version.decode('ascii')))
 
 
 # Mercurial's bundlerepo completely unwraps bundles in $TMPDIR but we can be
@@ -640,7 +642,8 @@ def unbundler(bundle):
             elif version == b'02':
                 chunk_type = RawRevChunk02
             else:
-                raise Exception('Unknown changegroup version %s' % version)
+                raise Exception('Unknown changegroup version %s'
+                                % version.decode('ascii'))
             cg = part
             break
         else:
@@ -1038,8 +1041,11 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                     # TODO: should check params['in-reply-to']
                     reply = int(part.params[b'return'])
                 elif part.type == b'error:abort':
-                    raise error.Abort(part.params[b'message'],
-                                      hint=part.params.get(b'hint'))
+                    message = part.params[b'message'].decode('utf-8')
+                    hint = part.params.get(b'hint')
+                    if hint:
+                        message += '\n\n' + hint.decode('utf-8')
+                    raise Exception(message)
                 else:
                     logging.getLogger(b'bundle2').warning(
                         'ignoring bundle2 part: %s', part.type)
