@@ -2524,7 +2524,6 @@ int cmd_main(int argc, const char *argv[])
 		free_notes(&files_meta);
 
 	oidset_clear(&hg2git_seen);
-
 	hashmap_free_entries(&git_tree_cache, struct oid_map_entry, ent);
 
 	return 0;
