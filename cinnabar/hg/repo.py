@@ -489,7 +489,7 @@ class HelperRepo(object):
     def getbundle(self, name, heads, common, *args, **kwargs):
         data = HgRepoHelper.getbundle((hexlify(h) for h in heads),
                                       (hexlify(c) for c in common),
-                                      b','.join(kwargs.get(b'bundlecaps', ())))
+                                      b','.join(kwargs.get('bundlecaps', ())))
         header = readexactly(data, 4)
         if header == b'HG20':
             return unbundle20(self.ui, data)
