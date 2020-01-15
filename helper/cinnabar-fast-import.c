@@ -208,6 +208,9 @@ static void end_packfile()
 				prev->next = pack->next;
 			else
 				the_repository->objects->packed_git = pack->next;
+			hashmap_remove(&the_repository->objects->pack_map,
+			               &pack_data->packmap_ent,
+			               pack_data->pack_name);
 			break;
 		}
 		list_del_init(&pack_data->mru);
