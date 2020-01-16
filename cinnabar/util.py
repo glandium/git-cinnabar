@@ -104,7 +104,7 @@ class ConfigSetFunc(object):
         self._key = key
         self._values = values
         self._extra_values = extra_values
-        self._default = default
+        self._default = default.encode('ascii')
         self._remote = remote
 
     def __call__(self, name):
@@ -147,6 +147,7 @@ check_enabled = ConfigSetFunc(
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
     ('merge', 'store'),
+    ('python3',),
 )
 
 
@@ -632,10 +633,11 @@ class chunkbuffer(object):
 
 class HTTPReader(object):
     def __init__(self, url):
-        self.fh = urlopen(url)
-        self.url = url
+        self.url = fsdecode(url)
+        self.fh = urlopen(self.url)
         try:
-            self.length = int(self.fh.headers['content-length'])
+            length = self.fh.headers['content-length']
+            self.length = None if length is None else int(length)
         except (ValueError, KeyError):
             self.length = None
         self.can_recover = \
@@ -650,7 +652,7 @@ class HTTPReader(object):
             try:
                 buf = self.fh.read(size - length)
             except socket.error:
-                buf = ''
+                buf = b''
             if not buf:
                 # When self.length is None, self.offset < self.length is always
                 # false.
@@ -903,20 +905,30 @@ class VersionCheck(Thread):
             sys.stderr.write('\n' + self.message + '\n')
 
 
-def run(func):
+def run(func, args):
+    reexec = None
+    if experiment('python3') and sys.version_info[0] == 2:
+        reexec = ['python3']
     if os.environ.pop('GIT_CINNABAR_COVERAGE', None):
-        from coverage.cmdline import main as coverage_main
-        script_path = os.path.abspath(sys.argv[0])
-        sys.exit(coverage_main([
-            'run', '--append', script_path] + sys.argv[1:]))
+        if not reexec:
+            reexec = [sys.executable]
+        reexec.extend(['-m', 'coverage', 'run', '--append'])
     init_logging()
+    if reexec:
+        reexec.append(os.path.abspath(sys.argv[0]))
+        reexec.extend(sys.argv[1:])
+        if reexec[0] == 'python3':
+            logging.getLogger('reexec').info(
+                'Re-executing with %s', ' '.join(reexec))
+        os.execlp(reexec[0], *reexec)
+        assert False
     if check_enabled('memory') or check_enabled('cpu'):
         reporter = MemoryCPUReporter(memory=check_enabled('memory'),
                                      cpu=check_enabled('cpu'))
 
     version_check = VersionCheck()
     try:
-        retcode = func(sys.argv[1:])
+        retcode = func(args)
     except Abort as e:
         # These exceptions are normal abort and require no traceback
         retcode = 1
@@ -948,6 +960,9 @@ if sys.version_info[0] == 3:
 
     def itervalues(d):
         return iter(d.values())
+
+    fsencode = os.fsencode
+    fsdecode = os.fsdecode
 else:
     def iteritems(d):
         return d.iteritems()
@@ -955,7 +970,15 @@ else:
     def itervalues(d):
         return d.itervalues()
 
+    def fsencode(s):
+        return s
+
+    def fsdecode(s):
+        return s
+
 if hasattr(sys.stdout, 'buffer'):
     bytes_stdout = sys.stdout.buffer
+    bytes_stdin = sys.stdin.buffer
 else:
     bytes_stdout = sys.stdout
+    bytes_stdin = sys.stdin

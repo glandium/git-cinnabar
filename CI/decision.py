@@ -228,6 +228,9 @@ def decision():
             dependencies=[
                 Helper.by_name(env),
             ],
+            env={
+                'GIT_CINNABAR_EXPERIMENTS': 'python3',
+            } if env == 'linux' else {},
         )
 
     # Because nothing is using the x86 windows helper, we need to manually
@@ -242,6 +245,16 @@ def decision():
             env={
                 'UPGRADE_FROM': upgrade,
             },
+        )
+        TestTask(
+            extra_desc='upgrade-from-{}'.format(upgrade),
+            clone=upgrade,
+            env={
+                'GIT_CINNABAR_EXPERIMENTS': 'python3',
+                'GIT_CINNABAR_LOG': 'reexec:3',
+                'UPGRADE_FROM': upgrade,
+            },
+            hg='{}.py3'.format(MERCURIAL_VERSION),
         )
 
     for git in ('1.8.5', '2.7.4'):
@@ -311,7 +324,22 @@ def decision():
     )
 
     TestTask(
-        variant='coverage',
+        env={
+            'GIT_CINNABAR_EXPERIMENTS': 'python3',
+        },
+        hg='{}.py3'.format(MERCURIAL_VERSION),
+    )
+
+    TestTask(
+        extra_desc='graft',
+        env={
+            'GIT_CINNABAR_EXPERIMENTS': 'python3',
+            'GRAFT': '1',
+        },
+        hg='{}.py3'.format(MERCURIAL_VERSION),
+    )
+
+    TestTask(
         extra_desc='experiments',
         env={
             'GIT_CINNABAR_EXPERIMENTS': 'true',
@@ -327,6 +355,25 @@ def decision():
         },
     )
 
+    TestTask(
+        extra_desc='experiments',
+        env={
+            'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
+            'GIT_CINNABAR_LOG': 'reexec:3',
+        },
+        hg='{}.py3'.format(MERCURIAL_VERSION),
+    )
+
+    TestTask(
+        extra_desc='experiments graft',
+        env={
+            'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
+            'GIT_CINNABAR_LOG': 'reexec:3',
+            'GRAFT': '1',
+        },
+        hg='{}.py3'.format(MERCURIAL_VERSION),
+    )
+
     for variant in ('coverage', 'asan'):
         TestTask(
             variant=variant,
@@ -339,6 +386,19 @@ def decision():
                 'GIT_CINNABAR_CHECK': 'no-version-check',
             },
         )
+
+    TestTask(
+        extra_desc='cram',
+        clone=False,
+        command=[
+            'cram --verbose repo/tests',
+        ],
+        env={
+            'GIT_CINNABAR_CHECK': 'no-version-check',
+            'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
+        },
+        hg='{}.py3'.format(MERCURIAL_VERSION),
+    )
 
 
 @action('more-hg-versions',
@@ -366,98 +426,104 @@ def hg_trunk():
     TestTask(hg=trunk)
 
 
-try:
-    func = action.by_name[TC_ACTION or 'decision'].func
-except AttributeError:
-    raise Exception('Unsupported action: %s', TC_ACTION or 'decision')
+def main():
+    try:
+        func = action.by_name[TC_ACTION or 'decision'].func
+    except AttributeError:
+        raise Exception('Unsupported action: %s', TC_ACTION or 'decision')
 
-func()
+    func()
 
-merge_coverage = []
+    merge_coverage = []
 
-if TestTask.coverage and TC_IS_PUSH and TC_BRANCH:
-    download_coverage = [
-        'curl -o cov-{{{}.id}}.tar.xz -L {{{}.artifact}}'.format(task, task)
-        for task in TestTask.coverage
-    ]
-    task = Helper.by_name('linux.coverage')
-    download_coverage.append(
-        'curl -o gcda-helper.tar.xz -L {{{}.artifacts[1]}}'.format(task))
+    if TestTask.coverage and TC_IS_PUSH and TC_BRANCH:
+        download_coverage = [
+            'curl -o cov-{{{}.id}}.tar.xz -L {{{}.artifact}}'.format(
+                task, task)
+            for task in TestTask.coverage
+        ]
+        task = Helper.by_name('linux.coverage')
+        download_coverage.append(
+            'curl -o gcda-helper.tar.xz -L {{{}.artifacts[1]}}'.format(task))
 
-    merge_coverage.append(
-        '(' + '& '.join(download_coverage) + '& wait)',
-    )
+        merge_coverage.append(
+            '(' + '& '.join(download_coverage) + '& wait)',
+        )
 
-    for n, task in enumerate(TestTask.coverage):
+        for n, task in enumerate(TestTask.coverage):
+            merge_coverage.extend([
+                'mkdir cov{}'.format(n),
+                'tar -C cov{} -Jxf cov-{{{}.id}}.tar.xz'.format(n, task),
+            ])
+            if n >= 1:
+                merge_coverage.append(
+                    'gcov-tool merge -o merge{} {}{} cov{}'.format(
+                        n, 'cov' if n == 1 else 'merge', n - 1, n)
+                )
+
+        last = '{}{}'.format('cov' if n == 0 else 'merge', n)
+
         merge_coverage.extend([
-            'mkdir cov{}'.format(n),
-            'tar -C cov{} -Jxf cov-{{{}.id}}.tar.xz'.format(n, task),
+            'cd repo',
+            'coverage combine --append {}'.format(' '.join(
+                '../cov{}/.coverage'.format(n)
+                for n in range(len(TestTask.coverage)))),
+            'cd ..',
+            'tar -cf - -C {} . | tar -xf - -C repo'.format(last),
+            'tar -C repo -Jxf gcda-helper.tar.xz',
         ])
-        if n >= 1:
-            merge_coverage.append(
-                'gcov-tool merge -o merge{} {}{} cov{}'.format(
-                    n, 'cov' if n == 1 else 'merge', n - 1, n)
-            )
 
-    last = '{}{}'.format('cov' if n == 0 else 'merge', n)
+    if merge_coverage:
+        Task(
+            task_env=TaskEnvironment.by_name('linux.codecov'),
+            description='upload coverage',
+            scopes=['secrets:get:project/git-cinnabar/codecov'],
+            command=list(chain(
+                Task.checkout(),
+                [
+                    'set +x',
+                    ('export CODECOV_TOKEN=$(curl -sL '
+                     'http://taskcluster/api/secrets/v1/secret/project/git-'
+                     'cinnabar/codecov | '
+                     'python -c "import json, sys; print(json.load(sys.stdin)'
+                     '[\\"secret\\"][\\"token\\"])")'),
+                    'set -x',
+                ],
+                merge_coverage,
+                [
+                    'cd repo',
+                    'codecov --name "taskcluster" --commit {} --branch {}'
+                    .format(TC_COMMIT, TC_BRANCH),
+                ],
+            )),
+        )
 
-    merge_coverage.extend([
-        'cd repo',
-        'coverage combine --append {}'.format(' '.join(
-            '../cov{}/.coverage'.format(n)
-            for n in range(len(TestTask.coverage)))),
-        'cd ..',
-        'tar -cf - -C {} . | tar -xf - -C repo'.format(last),
-        'tar -C repo -Jxf gcda-helper.tar.xz',
-    ])
+    for t in Task.by_id.values():
+        t.submit()
 
-if merge_coverage:
-    Task(
-        task_env=TaskEnvironment.by_name('linux.codecov'),
-        description='upload coverage',
-        scopes=['secrets:get:project/git-cinnabar/codecov'],
-        command=list(chain(
-            Task.checkout(),
-            [
-                'set +x',
-                ('export CODECOV_TOKEN=$(curl -sL '
-                 'http://taskcluster/api/secrets/v1/secret/project/git-'
-                 'cinnabar/codecov | '
-                 'python -c "import json, sys; print(json.load(sys.stdin)'
-                 '[\\"secret\\"][\\"token\\"])")'),
-                'set -x',
-            ],
-            merge_coverage,
-            [
-                'cd repo',
-                'codecov --name "taskcluster" --commit {} --branch {}'.format(
-                    TC_COMMIT, TC_BRANCH),
-            ],
-        )),
-    )
+    if not TC_ACTION and 'TC_GROUP_ID' in os.environ:
+        actions = {
+            'version': 1,
+            'actions': [],
+            'variables': {
+                'e': dict(TC_DATA, decision_id=''),
+                'tasks_for': 'action',
+            },
+        }
+        for name, a in action.by_name.items():
+            if name != 'decision':
+                actions['actions'].append({
+                    'kind': 'task',
+                    'name': a.name,
+                    'title': a.title,
+                    'description': a.description,
+                    'context': [],
+                    'task': a.task,
+                })
 
-for t in Task.by_id.values():
-    t.submit()
+        with open('actions.json', 'w') as out:
+            out.write(json.dumps(actions, indent=True))
 
-if not TC_ACTION and 'TC_GROUP_ID' in os.environ:
-    actions = {
-        'version': 1,
-        'actions': [],
-        'variables': {
-            'e': dict(TC_DATA, decision_id=''),
-            'tasks_for': 'action',
-        },
-    }
-    for name, a in action.by_name.items():
-        if name != 'decision':
-            actions['actions'].append({
-                'kind': 'task',
-                'name': a.name,
-                'title': a.title,
-                'description': a.description,
-                'context': [],
-                'task': a.task,
-            })
 
-    with open('actions.json', 'w') as out:
-        out.write(json.dumps(actions, indent=True))
+if __name__ == '__main__':
+    main()

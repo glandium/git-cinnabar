@@ -3,8 +3,12 @@ import base64
 import os
 import shutil
 import subprocess
-from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
-from SimpleHTTPServer import SimpleHTTPRequestHandler
+try:
+    from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+    from SimpleHTTPServer import SimpleHTTPRequestHandler
+except ImportError:
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from http.server import SimpleHTTPRequestHandler
 from threading import Thread
 
 try:
@@ -96,9 +100,12 @@ def HgLogging(cls):
     class Logging(cls):
         # Copied from mercurial's hgweb/server.py.
         def _log_any(self, fp, format, *args):
-            fp.write('%s - - [%s] %s' % (self.client_address[0],
-                                         self.log_date_time_string(),
-                                         format % args) + '\n')
+            message = '%s - - [%s] %s' % (self.client_address[0],
+                                          self.log_date_time_string(),
+                                          format % args) + '\n'
+            if not isinstance(message, bytes):
+                message = message.encode('utf-8')
+            fp.write(message)
             fp.flush()
 
         def log_error(self, format, *args):
@@ -126,10 +133,12 @@ class GitServer(HgLogging(BaseHTTPRequestHandler)):
         env['PATH_INFO'] = path
         env['QUERY_STRING'] = query
         self.send_response(200, "Script output follows")
+        if hasattr(self, 'flush_headers'):
+            self.flush_headers()
         if self.command == 'POST':
-            length = self.headers.getheader('Content-Length')
+            length = self.headers.get('Content-Length')
             env['CONTENT_LENGTH'] = length
-            env['CONTENT_TYPE'] = self.headers.getheader('Content-Type')
+            env['CONTENT_TYPE'] = self.headers.get('Content-Type')
             try:
                 length = int(length)
             except (TypeError, ValueError):
@@ -150,34 +159,35 @@ class GitServer(HgLogging(BaseHTTPRequestHandler)):
 
 class OtherServer(object):
     def __init__(self, typ, ui):
-        if typ == 'git':
+        if typ == b'git':
             cls = GitServer
-        elif typ == 'http':
+        elif typ == b'http':
             cls = HgLogging(SimpleHTTPRequestHandler)
         else:
             assert False
         self.httpd = HTTPServer(('', 8080), cls)
-        self.httpd.accesslog = openlog(ui.config('web', 'accesslog'), ui.fout)
-        self.httpd.errorlog = openlog(ui.config('web', 'errorlog'), ui.ferr)
+        self.httpd.accesslog = openlog(
+            ui.config(b'web', b'accesslog'), ui.fout)
+        self.httpd.errorlog = openlog(ui.config(b'web', b'errorlog'), ui.ferr)
 
     def run(self):
         self.httpd.serve_forever()
 
 
-@command('serve-and-exec', ())
+@command(b'serve-and-exec', ())
 def serve_and_exec(ui, repo, *command):
-    other_server = ui.config('serve', 'other', None)
+    other_server = ui.config(b'serve', b'other', None)
     if other_server:
         other_server = OtherServer(other_server, ui)
         other_server_thread = Thread(target=other_server.run)
         other_server_thread.start()
-    ui.setconfig('web', 'push_ssl', False, 'hgweb')
-    ui.setconfig('web', 'allow_push', '*', 'hgweb')
+    ui.setconfig(b'web', b'push_ssl', False, b'hgweb')
+    ui.setconfig(b'web', b'allow_push', b'*', b'hgweb')
     # For older versions of mercurial
-    repo.baseui.setconfig('web', 'push_ssl', False, 'hgweb')
-    repo.baseui.setconfig('web', 'allow_push', '*', 'hgweb')
+    repo.baseui.setconfig(b'web', b'push_ssl', False, b'hgweb')
+    repo.baseui.setconfig(b'web', b'allow_push', b'*', b'hgweb')
     app = hgweb.hgweb(repo, baseui=ui)
-    service = httpservice(ui, app, {'port': 8000, 'print_url': False})
+    service = httpservice(ui, app, {b'port': 8000, b'print_url': False})
     service.init()
     service_thread = Thread(target=service.run)
     service_thread.start()

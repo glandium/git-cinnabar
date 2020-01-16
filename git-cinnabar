@@ -10,4 +10,5 @@ from cinnabar.util import run
 
 
 if __name__ == '__main__':
-    run(CLI.run)
+    func, args = CLI.prepare(sys.argv[1:])
+    run(func, args)

@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, unicode_literals
 import logging
 from cinnabar.cmd.util import CLI
 from cinnabar.githg import GitCommit
@@ -12,8 +12,8 @@ from cinnabar.util import VersionedDict
 
 def get_previous_metadata(metadata):
     commit = GitCommit(metadata)
-    flags = commit.body.split(' ')
-    if len(commit.parents) == 5 + ('files-meta' in flags):
+    flags = commit.body.split(b' ')
+    if len(commit.parents) == 5 + (b'files-meta' in flags):
         return commit.parents[-1]
 
 
@@ -51,16 +51,16 @@ def do_rollback(ref):
                                             'refs/notes/cinnabar')
     )
     for ref in refs:
-        if sha1 == NULL_NODE_ID or ref not in ('refs/cinnabar/checked',
-                                               'refs/cinnabar/broken'):
+        if sha1 == NULL_NODE_ID or ref not in (b'refs/cinnabar/checked',
+                                               b'refs/cinnabar/broken'):
             del refs[ref]
     if sha1 != NULL_NODE_ID:
-        refs['refs/cinnabar/metadata'] = sha1
+        refs[b'refs/cinnabar/metadata'] = sha1
         if checked:
-            refs['refs/cinnabar/checked'] = checked
+            refs[b'refs/cinnabar/checked'] = checked
         for line in Git.ls_tree(sha1):
             mode, typ, commit, path = line
-            refs['refs/cinnabar/replace/%s' % path] = commit
+            refs[b'refs/cinnabar/replace/%s' % path] = commit
 
     for status, ref, commit in refs.iterchanges():
         if status == VersionedDict.REMOVED:

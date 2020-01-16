@@ -29,24 +29,6 @@ index b44d6a467e..201b75a75f 100644
  {
  	unsigned int i;
  	struct branch *b;
-@@ -1763,7 +1763,7 @@ static int read_next_command(void)
- 		} else {
- 			struct recent_command *rc;
- 
--			strbuf_detach(&command_buf, NULL);
-+			strbuf_init(&command_buf, 0);
- 			stdin_eof = strbuf_getline_lf(&command_buf, stdin);
- 			if (stdin_eof)
- 				return EOF;
-@@ -1833,7 +1833,7 @@ static int parse_data(struct strbuf *sb, uintmax_t limit, uintmax_t *len_res)
- 		char *term = xstrdup(data);
- 		size_t term_len = command_buf.len - (data - command_buf.buf);
- 
--		strbuf_detach(&command_buf, NULL);
-+		strbuf_init(&command_buf, 0);
- 		for (;;) {
- 			if (strbuf_getline_lf(&command_buf, stdin) == EOF)
- 				die("EOF in data (terminator '%s' not found)", term);
 @@ -2139,7 +2139,9 @@ static uintmax_t change_note_fanout(struct tree_entry *root,
   * Complain if the following character is not what is expected,
   * either a space or end of the string.

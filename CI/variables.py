@@ -8,7 +8,7 @@ rootUrl = os.environ.get(
 if 'TC_PROXY' in os.environ:
     PROXY_INDEX_URL = 'http://taskcluster/api/index/v1/task/{}'
 else:
-    PROXY_INDEX_URL = rootUrl + '/api/queue/v1/task/{}'
+    PROXY_INDEX_URL = rootUrl + '/api/index/v1/task/{}'
 ARTIFACT_URL = rootUrl + '/api/queue/v1/task/{}/artifacts/{}'
 
 

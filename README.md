@@ -1,8 +1,6 @@
 git-cinnabar 0.6
 ================
 
-When you update, please read this file again, it may contain important notes.
-
 *cinnabar is the common natural form in which mercury can be found on Earth.
 It contains mercury sulfide and its powder is used to make the vermillion
 pigment.*
@@ -31,7 +29,7 @@ Requirements:
 -------------
 
 - Git (any version should work ; cinnabarclone bundles require 1.4.4)
-- Python 2.7
+- Python 2.7 and/or, experimentally, 3.x.
 
 Setup:
 ------
@@ -59,6 +57,19 @@ Setup:
   `--with-python=/path/to/python` to the configure script or set the
   `PYTHON_PATH` environment variable to your Python installation path when
   using make to build the helper.
+
+Experimental support for python 3.x:
+------------------------------------
+
+Experimental support for python 3.x can be enabled by one of the following:
+
+- set the `GIT_CINNABAR_EXPERIMENTS` environment variable to `python3`.
+- `git config cinnabar.experiments python3`.
+- Edit the first line of the `git-cinnabar` and `git-remote-hg` scripts
+  to replace `python2.7` with `python3`.
+
+It has been tested mainly with python 3.5 and 3.7. Corner cases may not work
+properly. Error messages and logging are probably semi-broken.
 
 Usage:
 ------

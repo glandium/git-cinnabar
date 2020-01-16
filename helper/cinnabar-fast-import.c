@@ -208,6 +208,9 @@ static void end_packfile()
 				prev->next = pack->next;
 			else
 				the_repository->objects->packed_git = pack->next;
+			hashmap_remove(&the_repository->objects->pack_map,
+			               &pack_data->packmap_ent,
+			               pack_data->pack_name);
 			break;
 		}
 		list_del_init(&pack_data->mru);
@@ -271,11 +274,8 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
  * record_command. */
 static void fill_command_buf()
 {
-	// command_buf.buf is never free()d directly, only via cmd_list,
-	// which has ownership.
-	command_buf.buf = cmd_tail->buf;
-	command_buf.len = strlen(cmd_tail->buf);
-	command_buf.alloc = command_buf.len + 1;
+	strbuf_reset(&command_buf);
+	strbuf_addstr(&command_buf, cmd_tail->buf);
 }
 
 void maybe_reset_notes(const char *branch)
@@ -586,7 +586,7 @@ static void store_file(struct rev_chunk *chunk)
 	while (rev_diff_iter_next(&diff)) {
 		if (diff.start > last_file.file.len || diff.start < last_end)
 			die("Malformed file chunk for %s",
-			    sha1_to_hex(chunk->node->hash));
+			    hg_oid_to_hex(chunk->node));
 		strbuf_add(&data, last_file.file.buf + last_end,
 		           diff.start - last_end);
 		strbuf_addbuf(&data, &diff.data);
@@ -595,8 +595,7 @@ static void store_file(struct rev_chunk *chunk)
 	}
 
 	if (last_file.file.len < last_end)
-		die("Malformed file chunk for %s",
-		    sha1_to_hex(chunk->node->hash));
+		die("Malformed file chunk for %s", hg_oid_to_hex(chunk->node));
 
 	strbuf_add(&data, last_file.file.buf + last_end,
 		   last_file.file.len - last_end);
@@ -700,8 +699,8 @@ static void old_store_manifest(struct rev_chunk *chunk)
 		note = get_note_hg(&hg2git, chunk->delta_node);
 		if (!note)
 			die("Cannot find delta node %s for %s",
-			    sha1_to_hex(chunk->delta_node->hash),
-			    sha1_to_hex(chunk->node->hash));
+			    hg_oid_to_hex(chunk->delta_node),
+			    hg_oid_to_hex(chunk->node));
 
 		// TODO: this could be smarter, avoiding to throw everything
 		// away. But this is what the equivalent fast-import commands
@@ -824,7 +823,7 @@ static void old_store_manifest(struct rev_chunk *chunk)
 	strbuf_addstr(&data, "author  <cinnabar@git> 0 +0000\n"
 	                     "committer  <cinnabar@git> 0 +0000\n"
 	                     "\n");
-	strbuf_addstr(&data, sha1_to_hex(last_manifest_oid.hash));
+	strbuf_addstr(&data, hg_oid_to_hex(&last_manifest_oid));
 	store_object(OBJ_COMMIT, &data, NULL, &last_manifest->oid, 0);
 	strbuf_release(&data);
 	ensure_notes(&hg2git);
@@ -832,11 +831,11 @@ static void old_store_manifest(struct rev_chunk *chunk)
 	add_head(&manifest_heads, &last_manifest->oid);
 	if ((cinnabar_check & CHECK_MANIFESTS) &&
 	    !check_manifest(&last_manifest->oid, NULL))
-		die("sha1 mismatch for node %s", sha1_to_hex(chunk->node->hash));
+		die("sha1 mismatch for node %s", hg_oid_to_hex(chunk->node));
 	return;
 
 malformed:
-	die("Malformed manifest chunk for %s", sha1_to_hex(chunk->node->hash));
+	die("Malformed manifest chunk for %s", hg_oid_to_hex(chunk->node));
 }
 
 struct tree_iter {
@@ -1025,8 +1024,8 @@ static void new_store_manifest(struct rev_chunk *chunk)
 		note = get_note_hg(&hg2git, chunk->delta_node);
 		if (!note)
 			die("Cannot find delta node %s for %s",
-			    sha1_to_hex(chunk->delta_node->hash),
-			    sha1_to_hex(chunk->node->hash));
+			    hg_oid_to_hex(chunk->delta_node),
+			    hg_oid_to_hex(chunk->node));
 
 		// TODO: this could be smarter, avoiding to throw everything
 		// away. But this is what the equivalent fast-import commands
@@ -1123,7 +1122,7 @@ static void new_store_manifest(struct rev_chunk *chunk)
 	strbuf_addstr(&data, "author  <cinnabar@git> 0 +0000\n"
 	                     "committer  <cinnabar@git> 0 +0000\n"
 	                     "\n");
-	strbuf_addstr(&data, sha1_to_hex(last_manifest_oid.hash));
+	strbuf_addstr(&data, hg_oid_to_hex(&last_manifest_oid));
 	store_object(OBJ_COMMIT, &data, NULL, &last_manifest->oid, 0);
 	strbuf_release(&data);
 	ensure_notes(&hg2git);
@@ -1131,11 +1130,11 @@ static void new_store_manifest(struct rev_chunk *chunk)
 	add_head(&manifest_heads, &last_manifest->oid);
 	if ((cinnabar_check & CHECK_MANIFESTS) &&
 	    !check_manifest(&last_manifest->oid, NULL))
-		die("sha1 mismatch for node %s", sha1_to_hex(chunk->node->hash));
+		die("sha1 mismatch for node %s", hg_oid_to_hex(chunk->node));
 	return;
 
 malformed:
-	die("Malformed manifest chunk for %s", sha1_to_hex(chunk->node->hash));
+	die("Malformed manifest chunk for %s", hg_oid_to_hex(chunk->node));
 }
 
 static void store_manifest(struct rev_chunk *chunk)

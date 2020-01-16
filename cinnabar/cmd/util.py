@@ -37,7 +37,7 @@ class CLI(object):
         subparser.set_defaults(callback=func)
 
     @staticmethod
-    def run(argv):
+    def prepare(argv):
         CLI.parser.add_argument('--version', action=Version)
 
         args, leftovers = CLI.parser.parse_known_args(argv)
@@ -53,7 +53,7 @@ class CLI(object):
             })
         else:
             args = CLI.parser.parse_args(argv)
-        return args.callback(args)
+        return (args.callback, args)
 
 
 def iter_modules_in_path(path):

@@ -363,7 +363,7 @@ static void do_rev_list(struct string_list *args)
 
 	// More extensive than reset_revision_walk(). Otherwise --boundary
 	// and pathspecs don't work properly.
-	clear_object_flags(ALL_REV_FLAGS);
+	clear_object_flags(ALL_REV_FLAGS | TOPO_WALK_EXPLORED | TOPO_WALK_INDEGREE);
 	send_buffer(&buf);
 	strbuf_release(&buf);
 	rev_info_release(&revs);
@@ -1415,11 +1415,13 @@ struct oid_map_entry {
 	struct object_id new_oid;
 };
 
-static int oid_map_entry_cmp(const void *cmpdata, const void *e1,
-                             const void *e2, const void *keydata)
+static int oid_map_entry_cmp(const void *cmpdata, const struct hashmap_entry *e1,
+                             const struct hashmap_entry *e2, const void *keydata)
 {
-	const struct oid_map_entry *entry1 = e1;
-	const struct oid_map_entry *entry2 = e2;
+	const struct oid_map_entry *entry1 =
+		container_of(e1, const struct oid_map_entry, ent);
+	const struct oid_map_entry *entry2 =
+		container_of(e2, const struct oid_map_entry, ent);
 
 	return oidcmp(&entry1->old_oid, &entry2->old_oid);
 }
@@ -1447,7 +1449,7 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 	if (!merge_tree_id) {
 		hashmap_entry_init(&k.ent, oidhash(tree_id));
 		oidcpy(&k.old_oid, tree_id);
-		cache_entry = hashmap_get(cache, &k, NULL);
+		cache_entry = hashmap_get_entry(cache, &k, ent, NULL);
 	}
 	if (!cache_entry) {
 		struct merge_manifest_tree_state state;
@@ -1531,7 +1533,7 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 		store_git_tree(&tree_buf, reference, cache_entry ? &cache_entry->new_oid : result);
 		strbuf_release(&tree_buf);
 		if (!merge_tree_id) {
-			hashmap_add(cache, cache_entry);
+			hashmap_add(cache, &cache_entry->ent);
 		}
 
 cleanup:
@@ -1817,7 +1819,7 @@ static void do_reload(struct string_list *args)
 
 	oidset_clear(&hg2git_seen);
 
-	hashmap_free(&git_tree_cache, 1);
+	hashmap_free_entries(&git_tree_cache, struct oid_map_entry, ent);
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
 
 	oid_array_clear(&manifest_heads);
@@ -1993,7 +1995,7 @@ int cmd_main(int argc, const char *argv[])
 
 	oidset_clear(&hg2git_seen);
 
-	hashmap_free(&git_tree_cache, 1);
+	hashmap_free_entries(&git_tree_cache, struct oid_map_entry, ent);
 
 	return 0;
 }

@@ -12,7 +12,10 @@ from cinnabar.remote_helper import (
     GitRemoteHelper,
     TagsRemoteHelper,
 )
-from cinnabar.util import run
+from cinnabar.util import (
+    fsencode,
+    run,
+)
 
 
 def main(args):
@@ -22,7 +25,7 @@ def main(args):
         import msvcrt
         msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
     assert len(args) == 2
-    remote = Remote(*args)
+    remote = Remote(*(fsencode(a) for a in args))
 
     store = GitHgStore()
 
@@ -36,4 +39,4 @@ def main(args):
 
 
 if __name__ == '__main__':
-    run(main)
+    run(main, sys.argv[1:])

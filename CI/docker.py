@@ -37,6 +37,9 @@ DOCKER_IMAGES = {
          python-setuptools\\
          python-pip\\
          python-wheel\\
+         python3-setuptools\\
+         python3-pip\\
+         python3-wheel\\
          unzip\\
          xz-utils\\
          && apt-get clean
@@ -58,6 +61,7 @@ DOCKER_IMAGES = {
          make\\
          patch\\
          python-dev\\
+         python3-dev\\
          zlib1g-dev\\
          && apt-get clean
         ''',

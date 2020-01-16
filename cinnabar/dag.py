@@ -7,6 +7,7 @@ from collections import (
 )
 from .util import (
     iteritems,
+    itervalues,
     OrderedDefaultDict,
 )
 
@@ -93,4 +94,4 @@ class gitdag(object):
         return node in self._parents
 
     def tags(self):
-        return set(self._tags.itervalues())
+        return set(itervalues(self._tags))

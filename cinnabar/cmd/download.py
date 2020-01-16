@@ -139,7 +139,9 @@ def download(args):
         except HTTPError as e:
             print('Download failed with status code %d\n' % e.code,
                   file=sys.stderr)
-            print('Error body was:\n\n%s' % e.read(), file=sys.stderr)
+            print(
+                'Error body was:\n\n%s' % e.read().decode('utf-8', 'replace'),
+                file=sys.stderr)
             return 1
 
     class ReaderProgress(object):

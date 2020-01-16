@@ -19,6 +19,7 @@ from .hg.changegroup import (
     RawRevChunk02,
 )
 from .util import (
+    fsdecode,
     IOLogger,
     lrucache,
     Process,
@@ -114,8 +115,8 @@ class BaseHelper(object):
             for k in os.environ:
                 if k.startswith('GIT_CINNABAR_'):
                     env[k] = os.environ[k]
-            if helper_path and hasattr(os, 'fsdecode'):
-                helper_path = os.fsdecode(helper_path)
+            if helper_path:
+                helper_path = fsdecode(helper_path)
             if helper_path and os.path.exists(helper_path):
                 command = [helper_path]
             else:
@@ -331,9 +332,9 @@ class GitHgHelper(BaseHelper):
                 assert tab != -1
                 (mode_before, mode_after, sha1_before, sha1_after,
                  status) = data[off:tab].split(b' ')
-                if detect_copy and status[0] in b'RC':
+                if detect_copy and status[:1] in b'RC':
                     orig = data.find(b'\0', tab + 1)
-                    status = status[0] + data[tab + 1:orig]
+                    status = status[:1] + data[tab + 1:orig]
                     tab = orig
                 end = data.find(b'\0', tab + 1)
                 path = data[tab + 1:end]
@@ -564,7 +565,7 @@ class HgRepoHelper(BaseHelper):
             if resp == b'bundle':
                 return stdout
             if resp != b'ok':
-                raise Exception(resp)
+                raise Exception(resp.decode('ascii'))
 
     @classmethod
     def state(self):
@@ -601,6 +602,7 @@ class HgRepoHelper(BaseHelper):
         with self.query(b'unbundle', *heads) as stdout:
             for data in input_iterator:
                 self._helper.stdin.write(data)
+            self._helper.stdin.flush()
             ret = self._read_data(stdout)
             try:
                 return int(ret)

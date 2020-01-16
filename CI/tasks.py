@@ -199,9 +199,10 @@ class Task(object):
         else:
             self.id = slugid()
 
+        maxRunTime = kwargs.pop('maxRunTime', 1800)
         task = {
             'created': now.format(),
-            'deadline': (now + 3600).format(),
+            'deadline': (now + maxRunTime * 5 + 1800).format(),
             'retries': 5,
             'provisionerId': 'proj-git-cinnabar',
             'workerType': 'ci',
@@ -212,7 +213,7 @@ class Task(object):
                 'source': TC_REPO_URL,
             },
             'payload': {
-                'maxRunTime': 1800,
+                'maxRunTime': maxRunTime,
             },
         }
         kwargs.setdefault('expireIn', '4 weeks')
