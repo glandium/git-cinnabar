@@ -907,8 +907,7 @@ class VersionCheck(Thread):
 
 def run(func, args):
     reexec = None
-    if experiment('python3') and sys.version_info[0] == 2:
-        reexec = ['python3']
+    assert not experiment('python3') or sys.version_info[0] != 2
     if os.environ.pop('GIT_CINNABAR_COVERAGE', None):
         if not reexec:
             reexec = [sys.executable]
@@ -917,9 +916,6 @@ def run(func, args):
     if reexec:
         reexec.append(os.path.abspath(sys.argv[0]))
         reexec.extend(sys.argv[1:])
-        if reexec[0] == 'python3':
-            logging.getLogger('reexec').info(
-                'Re-executing with %s', ' '.join(reexec))
         os.execlp(reexec[0], *reexec)
         assert False
     if check_enabled('memory') or check_enabled('cpu'):
