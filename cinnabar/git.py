@@ -1,19 +1,21 @@
-from __future__ import division
+from __future__ import absolute_import, division, unicode_literals
 import logging
 import os
 import posixpath
+import sys
 import time
 from .util import (
+    fsdecode,
     one,
     Process,
 )
 from itertools import chain
 
-NULL_NODE_ID = '0' * 40
+NULL_NODE_ID = b'0' * 40
 # An empty git tree has a fixed sha1 which is that of "tree 0\0"
-EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+EMPTY_TREE = b'4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 # An empty git blob has a fixed sha1 which is that of "blob 0\0"
-EMPTY_BLOB = 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
+EMPTY_BLOB = b'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
 
 
 class InvalidConfig(Exception):
@@ -64,7 +66,8 @@ class Git(object):
 
     @classmethod
     def run(self, *args, **kwargs):
-        return tuple(self.iter(*args, stdout=None, **kwargs))
+        stdout = kwargs.pop('stdout', None)
+        return tuple(self.iter(*args, stdout=stdout, **kwargs))
 
     @classmethod
     def for_each_ref(self, *patterns):
@@ -83,13 +86,13 @@ class Git(object):
                             stderr=open(os.devnull, 'wb')))
 
     @classmethod
-    def ls_tree(self, treeish, path='', recursive=False):
+    def ls_tree(self, treeish, path=b'', recursive=False):
         from .helper import GitHgHelper
-        assert not treeish.startswith('refs/')
+        assert not treeish.startswith(b'refs/')
 
-        if path.endswith('/') or recursive or path == '':
-            path = path.rstrip('/')
-            for line in GitHgHelper.ls_tree('%s:%s' % (treeish, path),
+        if path.endswith(b'/') or recursive or path == b'':
+            path = path.rstrip(b'/')
+            for line in GitHgHelper.ls_tree(b'%s:%s' % (treeish, path),
                                             recursive):
                 mode, typ, sha1, p = line
                 if path:
@@ -97,20 +100,20 @@ class Git(object):
                 else:
                     yield mode, typ, sha1, p
         else:
-            with GitHgHelper.query('ls', treeish, path) as stdout:
+            with GitHgHelper.query(b'ls', treeish, path) as stdout:
                 line = stdout.readline()
-                if not line.startswith('missing '):
+                if not line.startswith(b'missing '):
                     yield split_ls_tree(line[:-1])
 
     @classmethod
     def update_ref(self, ref, newvalue):
-        assert not newvalue.startswith('refs/')
+        assert not newvalue.startswith(b'refs/')
         from .helper import GitHgHelper
         GitHgHelper.update_ref(ref, newvalue)
 
     @classmethod
     def delete_ref(self, ref):
-        self.update_ref(ref, '0' * 40)
+        self.update_ref(ref, NULL_NODE_ID)
 
     @classmethod
     def config(self, name, remote=None, values={}, multiple=False):
@@ -127,19 +130,23 @@ class Git(object):
                         self._config[k] += b'\0' + v
                     else:
                         self._config[k] = v
-        var = name
+        var = name.encode('ascii')
         value = None
         if name.startswith('cinnabar.'):
-            var = 'GIT_%s' % name.replace('.', '_').upper()
-            value = os.environ.get(var)
+            var = ('GIT_%s' % name.replace('.', '_').upper()).encode('ascii')
+            if sys.version_info[0] == 3:
+                value = os.environb.get(var)
+            else:
+                value = os.environ.get(var)
             if value is None and remote:
-                var = 'remote.%s.%s' % (remote, name.replace('.', '-'))
+                var = b'remote.%s.%s' % (
+                    remote, name.replace('.', '-').encode('ascii'))
                 value = self._config.get(var.lower())
         elif name == 'fetch.prune' and remote:
-            var = 'remote.%s.prune' % remote
+            var = b'remote.%s.prune' % remote
             value = self._config.get(var.lower())
         if value is None:
-            var = name
+            var = name.encode('ascii')
             value = self._config.get(var.lower())
         if value:
             value = value.split(b'\0')
@@ -151,13 +158,15 @@ class Git(object):
                 if isinstance(values, dict):
                     value = values[value]
             else:
-                values = ', '.join(repr(v) for v in sorted(values)
-                                   if v is not None)
+                values = ', '.join(sorted('"%s"' % v.decode('ascii')
+                                          for v in values
+                                          if v is not None))
                 if value is None:
                     raise InvalidConfig(
-                        '%s must be set to one of %s' % (var, values))
+                        '%s must be set to one of %s' % (
+                            var.decode('ascii'), values))
                 else:
                     raise InvalidConfig(
-                        'Invalid value for %s: %s. Valid values: %s' % (
-                            var, repr(value), values))
+                        'Invalid value for %s: "%s". Valid values: %s' % (
+                            var.decode('ascii'), fsdecode(value), values))
         return value

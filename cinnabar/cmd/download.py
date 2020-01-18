@@ -1,3 +1,9 @@
+from __future__ import (
+    absolute_import,
+    division,
+    print_function,
+    unicode_literals,
+)
 import os
 import sys
 import argparse
@@ -7,7 +13,6 @@ import tempfile
 import threading
 import zipfile
 import errno
-from StringIO import StringIO
 from cinnabar import VERSION
 from cinnabar.cmd.util import CLI
 from cinnabar.git import Git
@@ -17,8 +22,12 @@ from cinnabar.util import (
     Progress,
 )
 from gzip import GzipFile
+from io import BytesIO
 from shutil import copyfileobj
-from urllib2 import HTTPError
+try:
+    from urllib2 import HTTPError
+except ImportError:
+    from urllib.error import HTTPError
 
 
 @CLI.subcommand
@@ -62,12 +71,12 @@ def download(args):
 
     if args.list:
         for system, machine in available:
-            print "%s/%s" % (system, machine)
+            print("%s/%s" % (system, machine))
         return 0
 
     if (system, machine) not in available:
-        print >>sys.stderr, 'No download available for %s/%s' % (system,
-                                                                 machine)
+        print('No download available for %s/%s' % (system, machine),
+              file=sys.stderr)
         return 1
 
     if args.dev is False:
@@ -81,14 +90,14 @@ def download(args):
     if args.dev is not False:
         sha1 = helper_hash()
         if sha1 is None:
-            print >>sys.stderr, (
-                'Cannot find the right development helper for this '
-                'version of git cinnabar.')
+            print('Cannot find the right development helper for this '
+                  'version of git cinnabar.',
+                  file=sys.stderr)
             return 1
-        url = 'https://index.taskcluster.net/v1/task/github'
-        url += '.glandium.git-cinnabar.helper.'
+        url = 'https://community-tc.services.mozilla.com/api/index/v1/task/'
+        url += 'project.git-cinnabar.helper.'
         url += '{}.{}.{}.{}'.format(
-            sha1, system.lower(), machine,
+            sha1.decode('ascii'), system.lower(), machine,
             args.dev.lower() if args.dev else '').rstrip('.')
         url += '/artifacts/public/{}'.format(helper)
 
@@ -102,7 +111,7 @@ def download(args):
             REPO_BASE, version, system.lower(), machine.lower(), ext)
 
     if args.url:
-        print url
+        print(url)
         return 0
 
     if args.output:
@@ -116,11 +125,11 @@ def download(args):
             except Exception:
                 pass
             if not os.path.isdir(d):
-                print >>sys.stderr, (
-                    'Cannot write to either %s or %s.' % (d, script_path))
+                print('Cannot write to either %s or %s.' % (d, script_path),
+                      file=sys.stderr)
                 return 1
 
-    print 'Downloading from %s...' % url
+    print('Downloading from %s...' % url)
     try:
         reader = HTTPReader(url)
     except HTTPError:
@@ -128,9 +137,11 @@ def download(args):
         try:
             reader = HTTPReader(url)
         except HTTPError as e:
-            print >>sys.stderr, (
-                'Download failed with status code %d\n' % e.code)
-            print >>sys.stderr, 'Error body was:\n\n%s' % e.read()
+            print('Download failed with status code %d\n' % e.code,
+                  file=sys.stderr)
+            print(
+                'Error body was:\n\n%s' % e.read().decode('utf-8', 'replace'),
+                file=sys.stderr)
             return 1
 
     class ReaderProgress(object):
@@ -162,7 +173,7 @@ def download(args):
 
         def progress(self):
             if self._length:
-                count = self._read * 100 / self._length
+                count = self._read * 100 // self._length
             else:
                 count = self._read
             self._progress.progress(count)
@@ -196,13 +207,13 @@ def download(args):
         helper_content = WrapGzipFile(mode='rb', fileobj=helper_content)
 
     if args.dev is False:
-        content = StringIO()
+        content = BytesIO()
         copyfileobj(helper_content, content)
         if hasattr(helper_content, 'finish'):
             helper_content.finish()
         content.seek(0)
 
-        print 'Extracting %s...' % helper
+        print('Extracting %s...' % helper)
         if ext == 'zip':
             zip = zipfile.ZipFile(content, 'r')
             info = zip.getinfo('git-cinnabar/%s' % helper)
@@ -260,7 +271,7 @@ def download(args):
                 pass
             os.rename(path, helper_path)
             # Add executable bits wherever read bits are set
-            mode = mode | ((mode & 0444) >> 2)
+            mode = mode | ((mode & 0o0444) >> 2)
             os.chmod(helper_path, mode)
 
             if not args.no_config:

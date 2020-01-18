@@ -11,15 +11,15 @@ from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '5.0'
-GIT_VERSION = '2.22.0'
+MERCURIAL_VERSION = '5.2.2'
+GIT_VERSION = '2.25.0'
 
 ALL_MERCURIAL_VERSIONS = (
     '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
     '2.6.3', '2.7.2', '2.8.2', '2.9.1', '3.0.1', '3.1.2', '3.2.4',
     '3.3.3', '3.4.2', '3.5.2', '3.6.3', '3.7.3', '3.8.4', '3.9.2',
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
-    '4.7.2', '4.8.2', '4.9.1', '5.0'
+    '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2',
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -127,28 +127,40 @@ class Hg(Task, metaclass=Tool):
 
     def __init__(self, os_and_version):
         (os, version) = os_and_version.split('.', 1)
+        (version, suffix, _) = version.partition('.py3')
+        if suffix:
+            python = 'python3'
+        else:
+            python = 'python'
         env = TaskEnvironment.by_name('{}.build'.format(os))
         kwargs = {}
 
         if len(version) == 40:
             # Assume it's a sha1
-            pretty_version = 'r{}'.format(version)
+            pretty_version = 'r{}{}'.format(version, suffix)
             artifact_version = 'unknown'
             expire = '2 weeks'
         else:
-            pretty_version = 'v{}'.format(version)
+            pretty_version = 'v{}{}'.format(version, suffix)
             artifact_version = version
             expire = '26 weeks'
         desc = 'hg {}'.format(pretty_version)
         if os == 'linux':
-            artifact = 'mercurial-{}-cp27-none-linux_x86_64.whl'
+            if python == 'python3':
+                artifact = 'mercurial-{}-cp35-cp35m-linux_x86_64.whl'
+            else:
+                artifact = 'mercurial-{}-cp27-cp27mu-linux_x86_64.whl'
         else:
             desc = '{} {} {}'.format(desc, env.os, env.cpu)
             if os.startswith('osx'):
-                artifact = ('mercurial-{{}}-cp27-cp27m-macosx_{}_intel.whl'
-                            .format(os[3:]))
+                if os != 'osx10_10':
+                    wheel_cpu = 'x86_64'
+                else:
+                    wheel_cpu = 'intel'
+                artifact = ('mercurial-{{}}-cp27-cp27m-macosx_{}_{}.whl'
+                            .format(os[3:], wheel_cpu))
                 kwargs.setdefault('env', {})['MACOSX_DEPLOYMENT_TARGET'] = \
-                    '10.10'
+                    os[len('osx'):].replace('_', '.')
             else:
                 artifact = 'mercurial-{}-cp27-cp27m-mingw.whl'
 
@@ -168,15 +180,20 @@ class Hg(Task, metaclass=Tool):
         else:
             source = 'https://mercurial-scm.org/release/mercurial-{}.tar.gz'
 
+        h = hashlib.sha1(env.hexdigest.encode())
+        h.update(artifact.encode())
+
         Task.__init__(
             self,
             task_env=env,
             description=desc,
-            index='{}.hg.{}'.format(env.hexdigest, pretty_version),
+            index='{}.hg.{}'.format(h.hexdigest(), pretty_version),
             expireIn=expire,
             command=pre_command + [
-                'python -m pip wheel -v --build-option -b --build-option'
-                ' $PWD/wheel -w $ARTIFACTS {}'.format(source.format(version)),
+                '{} -m pip wheel -v --build-option -b --build-option'
+                ' $PWD/wheel -w $ARTIFACTS {}'.format(
+                    python,
+                    source.format(version)),
             ],
             artifact=artifact.format(artifact_version),
             **kwargs
@@ -185,10 +202,14 @@ class Hg(Task, metaclass=Tool):
     @classmethod
     def install(cls, name):
         hg = cls.by_name(name)
+        if name.endswith('.py3'):
+            python = 'python3'
+        else:
+            python = 'python'
         filename = os.path.basename(hg.artifacts[0])
         return [
             'curl -L {{{}.artifact}} -o {}'.format(hg, filename),
-            'python -m pip install {}'.format(filename)
+            '{} -m pip install {}'.format(python, filename)
         ]
 
 
@@ -293,7 +314,9 @@ class Helper(Task, metaclass=Tool):
         elif not os.startswith('osx'):
             make_flags.append('USE_LIBPCRE1=YesPlease')
             make_flags.append('USE_LIBPCRE2=')
-            make_flags.append('CFLAGS+=-DCURLOPT_PROXY_CAINFO=246')
+            make_flags.append(
+                'CFLAGS+="-DCURLOPT_PROXY_CAINFO=246 -DCURL_STATICLIB"')
+            make_flags.append('CURL_LDFLAGS="$(curl-config --static-libs)"')
 
         hash = hash or helper_hash()
 

@@ -1,3 +1,4 @@
+from __future__ import absolute_import, print_function, unicode_literals
 import argparse
 import os
 import sys
@@ -36,10 +37,15 @@ class CLI(object):
         subparser.set_defaults(callback=func)
 
     @staticmethod
-    def run(argv):
+    def prepare(argv):
         CLI.parser.add_argument('--version', action=Version)
 
         args, leftovers = CLI.parser.parse_known_args(argv)
+
+        if not hasattr(args, 'callback'):
+            CLI.parser.print_help()
+            CLI.parser.exit()
+
         if hasattr(args.callback, 'cli_remainder'):
             args = argparse.Namespace(**{
                 'callback': args.callback,
@@ -47,7 +53,7 @@ class CLI(object):
             })
         else:
             args = CLI.parser.parse_args(argv)
-        return args.callback(args)
+        return (args.callback, args)
 
 
 def iter_modules_in_path(path):
@@ -57,13 +63,15 @@ def iter_modules_in_path(path):
             continue
 
         path = module.__file__
+        if not path:
+            continue
 
         if path.endswith('.pyc'):
             path = path[:-1]
         path = os.path.abspath(os.path.normcase(path))
 
         if path.startswith(base):
-            yield os.path.relpath(path, base)
+            yield os.path.relpath(path, base).encode('ascii')
 
 
 class Version(argparse.Action):
@@ -88,36 +96,37 @@ class Version(argparse.Action):
         # not installed
         import cinnabar.bdiff
         cinnabar_path = os.path.dirname(cinnabar.__file__)
-        return tree_hash(iter_modules_in_path(cinnabar_path), cinnabar_path)
+        v = tree_hash(iter_modules_in_path(cinnabar_path), cinnabar_path)
+        return v.decode('ascii')
 
     @staticmethod
     def helper_version():
         from cinnabar.helper import GitHgHelper
         try:
-            with GitHgHelper.query('revision') as out:
-                version = out.read(40)
+            with GitHgHelper.query(b'revision') as out:
+                version = out.read(40).decode('ascii')
         except Exception:
             version = 'unknown'
 
-        sha1 = helper_hash() or 'unknown'
+        sha1 = (helper_hash() or 'unknown').decode('ascii')
         return version, sha1
 
     def __call__(self, parser, namespace, values, option_string=None):
         if values == 'cinnabar' or not values:
-            print self.cinnabar_version()
+            print(self.cinnabar_version())
         if values == 'module' or not values:
             sha1 = self.module_version()
             if not values:
-                print 'module-hash:', sha1
+                print('module-hash:', sha1)
             else:
-                print sha1
+                print(sha1)
         if values == 'helper' or not values:
             version, sha1 = self.helper_version()
             if version != sha1:
                 sha1 = '%s/%s' % (version, sha1)
             if not values:
-                print 'helper-hash:', sha1
+                print('helper-hash:', sha1)
             else:
-                print sha1
+                print(sha1)
 
         parser.exit()

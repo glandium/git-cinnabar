@@ -1,4 +1,8 @@
-from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from __future__ import absolute_import, unicode_literals
+try:
+    from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+except ImportError:
+    from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 
 import unittest
@@ -15,12 +19,12 @@ class TestVersionedDict(unittest.TestCase):
     def check_state(self, v, d):
         self.assertEquals(sorted(v.keys()), sorted(d.keys()))
         self.assertEquals(sorted(k for k in v), sorted(k for k in d))
-        self.assertEquals(sorted(i for i in v.iteritems()),
-                          sorted(i for i in d.iteritems()))
+        self.assertEquals(sorted(i for i in v.items()),
+                          sorted(i for i in d.items()))
         self.assertEquals(sorted(v.values()), sorted(d.values()))
         self.assertEquals(bool(d), bool(v))
         self.assertEquals(len(d), len(v))
-        for k, val in d.iteritems():
+        for k, val in d.items():
             self.assertTrue(k in v)
             self.assertEquals(v[k], val)
 
@@ -136,7 +140,7 @@ class TestVersionedDict(unittest.TestCase):
                             (v.CREATED, 'bar', 'qux'),
                         ])
 
-                for k in v.keys():
+                for k in list(v.keys()):
                     del v[k]
                     del d[k]
                     self.check_state(v, d)
@@ -151,7 +155,7 @@ class TestVersionedDict(unittest.TestCase):
         self.assertIsNot(d1._previous, d)
         self.assertEquals(d1._previous, d)
 
-        d1 = VersionedDict(d.iteritems())
+        d1 = VersionedDict(d.items())
         self.assertIsInstance(d1._previous, dict)
         self.assertIsNot(d1._previous, d)
         self.assertEquals(d1._previous, d)
@@ -247,10 +251,10 @@ class TestVersionedDict(unittest.TestCase):
 
 class TestByteDiff(unittest.TestCase):
     TEST_STRING = (
-        'first line\n'
-        'second line\n'
-        'third line\n'
-        'fourth line\n'
+        b'first line\n'
+        b'second line\n'
+        b'third line\n'
+        b'fourth line\n'
     )
 
     def assertDiffEqual(self, a, b, diff):
@@ -261,8 +265,8 @@ class TestByteDiff(unittest.TestCase):
         self.assertDiffEqual(self.TEST_STRING, self.TEST_STRING, ())
 
     def test_a(self):
-        for extra in ('fifth line\n', 'line with no ending',
-                      'more\nthan\none\nline'):
+        for extra in (b'fifth line\n', b'line with no ending',
+                      b'more\nthan\none\nline'):
             self.assertDiffEqual(
                 self.TEST_STRING,
                 self.TEST_STRING + extra,
@@ -272,11 +276,11 @@ class TestByteDiff(unittest.TestCase):
             self.assertDiffEqual(
                 self.TEST_STRING + extra,
                 self.TEST_STRING,
-                ((len(self.TEST_STRING), len(self.TEST_STRING + extra), ''),)
+                ((len(self.TEST_STRING), len(self.TEST_STRING + extra), b''),)
             )
 
     def test_b(self):
-        for extra in ('zeroth line\n', 'more\nthan\none\nline\n'):
+        for extra in (b'zeroth line\n', b'more\nthan\none\nline\n'):
             self.assertDiffEqual(
                 self.TEST_STRING,
                 extra + self.TEST_STRING,
@@ -286,12 +290,12 @@ class TestByteDiff(unittest.TestCase):
             self.assertDiffEqual(
                 extra + self.TEST_STRING,
                 self.TEST_STRING,
-                ((0, len(extra), ''),)
+                ((0, len(extra), b''),)
             )
 
     def test_c(self):
-        extra = 'extra\nstuff'
-        extra2 = '\nother\nextra\n'
+        extra = b'extra\nstuff'
+        extra2 = b'\nother\nextra\n'
         self.assertDiffEqual(
             self.TEST_STRING,
             self.TEST_STRING[:15] + extra + self.TEST_STRING[15:18] +
@@ -304,8 +308,8 @@ class TestByteDiff(unittest.TestCase):
             self.TEST_STRING[:15] + extra + self.TEST_STRING[15:18] +
             extra2 + self.TEST_STRING[18:],
             self.TEST_STRING,
-            ((15, 15 + len(extra), ''),
-             (18 + len(extra), 18 + len(extra + extra2), ''))
+            ((15, 15 + len(extra), b''),
+             (18 + len(extra), 18 + len(extra + extra2), b''))
         )
 
         self.assertDiffEqual(
@@ -448,7 +452,7 @@ class TestHTTPReader(unittest.TestCase):
         # where it left, up to the end of the file.
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
-                range_def = self.headers.getheader('Range')
+                range_def = self.headers.get('Range')
                 if range_def:
                     start, end = range_def.partition('bytes=')[2].split('-')
                     start = int(start) if start else 0
@@ -466,7 +470,7 @@ class TestHTTPReader(unittest.TestCase):
                 self.send_header('Accept-Ranges', 'bytes')
                 self.end_headers()
 
-                buf = '-' * 4096
+                buf = b'-' * 4096
                 left = sizes[start]
                 while left:
                     if left < len(buf):

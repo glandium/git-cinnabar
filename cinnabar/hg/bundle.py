@@ -1,14 +1,15 @@
-import urllib
-import types
+from __future__ import absolute_import, unicode_literals
+try:
+    from urllib.parse import quote_from_bytes, unquote_to_bytes
+except ImportError:
+    from urllib import quote as quote_from_bytes
+    from urllib import unquote as unquote_to_bytes
 from cinnabar.githg import (
     Changeset,
     FileFindParents,
     GitCommit,
     GitHgStore,
     GeneratedManifestInfo,
-    ManifestInfo,
-    ManifestLine,
-    RevChunk,
 )
 from cinnabar.helper import GitHgHelper
 from cinnabar.git import (
@@ -20,6 +21,7 @@ from cinnabar.util import (
     check_enabled,
     chunkbuffer,
     experiment,
+    iteritems,
     progress_enum,
     progress_iter,
     sorted_merge,
@@ -44,7 +46,7 @@ import struct
 # that was used to distinguish between mercurial sha1s that were already
 # known or not. git-mozreview relies on previously unknown mercurial sha1s
 # not being exactly of str type, so use a subclass to make it happy.
-class PseudoString(str):
+class PseudoString(bytes):
     pass
 
 
@@ -160,11 +162,10 @@ class PushStore(GitHgStore):
                 mode, typ, sha1, path = line
                 node = self.create_file(sha1, git_manifest_parents=(),
                                         path=path)
-                manifest.append_line(ManifestLine(path, node, self.ATTR[mode]),
-                                     modified=True)
+                manifest.add(path, node, self.ATTR[mode], modified=True)
                 changeset_files.append(path)
 
-            manifest.set_parents(NULL_NODE_ID)
+            manifest.parents = []
             manifest.delta_node = NULL_NODE_ID
             return manifest, changeset_files
 
@@ -184,9 +185,8 @@ class PushStore(GitHgStore):
 
             files = [(path, mode, sha1) for mode, _, sha1, path in
                      Git.ls_tree(commit, recursive=True)]
-            manifests = sorted_merge(parent_manifest._lines,
-                                     parent2_manifest._lines,
-                                     key=lambda i: i.name, non_key=lambda i: i)
+            manifests = sorted_merge(parent_manifest, parent2_manifest,
+                                     key=lambda i: i.path, non_key=lambda i: i)
             for line in sorted_merge(files, sorted_merge(changes, manifests)):
                 path, f, (change, (manifest_line_p1, manifest_line_p2)) = line
                 if not f:  # File was removed
@@ -197,19 +197,19 @@ class PushStore(GitHgStore):
                 mode, sha1 = f
                 attr = self.ATTR[mode]
                 if manifest_line_p1 and not manifest_line_p2:
-                    file_parents = (manifest_line_p1.node,)
+                    file_parents = (manifest_line_p1.sha1,)
                 elif manifest_line_p2 and not manifest_line_p1:
-                    file_parents = (manifest_line_p2.node,)
+                    file_parents = (manifest_line_p2.sha1,)
                 elif not manifest_line_p1 and not manifest_line_p2:
                     file_parents = ()
-                elif manifest_line_p1.node == manifest_line_p2.node:
-                    file_parents = (manifest_line_p1.node,)
+                elif manifest_line_p1.sha1 == manifest_line_p2.sha1:
+                    file_parents = (manifest_line_p1.sha1,)
                 else:
                     if self._merge_warn == 1:
                         logging.warning('This may take a while...')
                         self._merge_warn = 2
-                    file_parents = (manifest_line_p1.node,
-                                    manifest_line_p2.node)
+                    file_parents = (manifest_line_p1.sha1,
+                                    manifest_line_p2.sha1)
 
                 assert file_parents is not None
                 f = self._create_file_internal(
@@ -232,21 +232,20 @@ class PushStore(GitHgStore):
 
                 attr_change = (manifest_line_p1 and
                                manifest_line_p1.attr != attr)
-                manifest.append_line(ManifestLine(path, node, attr),
-                                     modified=merged or attr_change)
+                manifest.add(path, node, attr, modified=merged or attr_change)
                 if merged or attr_change:
                     changeset_files.append(path)
-            if manifest.data == parent_manifest.data:
+            if manifest.raw_data == parent_manifest.raw_data:
                 return parent_manifest, []
-            manifest.set_parents(parent_node, parent2_node)
+            manifest.parents = (parent_node, parent2_node)
             return manifest, changeset_files
 
         def process_diff(diff):
             for (mode_before, mode_after, sha1_before, sha1_after, status,
                  path) in diff:
-                if status[0] == 'R':
+                if status[:1] == b'R':
                     yield status[1:], (
-                        '000000', sha1_before, NULL_NODE_ID, 'D')
+                        b'000000', sha1_before, NULL_NODE_ID, b'D')
                 yield path, (mode_after, sha1_before, sha1_after,
                              status)
         git_diff = sorted(
@@ -256,35 +255,35 @@ class PushStore(GitHgStore):
         if not git_diff:
             return parent_manifest, []
 
-        parent_lines = OrderedDict((l.name, l)
-                                   for l in parent_manifest._lines)
-        for line in sorted_merge(parent_lines.iteritems(), git_diff,
+        parent_lines = OrderedDict((l.path, l) for l in parent_manifest)
+        items = manifest.items
+        for line in sorted_merge(iteritems(parent_lines), git_diff,
                                  non_key=lambda i: i[1]):
             path, manifest_line, change = line
             if not change:
-                manifest.append_line(manifest_line)
+                items.append(manifest_line)
                 continue
             mode_after, sha1_before, sha1_after, status = change
             path2 = status[1:]
-            status = status[0]
+            status = status[:1]
             attr = self.ATTR.get(mode_after)
-            if status == 'D':
+            if status == b'D':
                 manifest.removed.add(path)
                 changeset_files.append(path)
                 continue
-            if status in 'MT':
+            if status in b'MT':
                 if sha1_before == sha1_after:
-                    node = manifest_line.node
+                    node = manifest_line.sha1
                 else:
                     node = self.create_file(
-                        sha1_after, str(manifest_line.node),
+                        sha1_after, manifest_line.sha1,
                         git_manifest_parents=(
                             self.manifest_ref(parent_node),),
                         path=path)
-            elif status in 'RC':
+            elif status in b'RC':
                 if sha1_after != EMPTY_BLOB:
                     node = self.create_copy(
-                        (path2, parent_lines[path2].node), sha1_after,
+                        (path2, parent_lines[path2].sha1), sha1_after,
                         git_manifest_parents=(
                             self.manifest_ref(parent_node),),
                         path=path)
@@ -295,16 +294,15 @@ class PushStore(GitHgStore):
                             self.manifest_ref(parent_node),),
                         path=path)
             else:
-                assert status == 'A'
+                assert status == b'A'
                 node = self.create_file(
                     sha1_after,
                     git_manifest_parents=(
                         self.manifest_ref(parent_node),),
                     path=path)
-            manifest.append_line(ManifestLine(path, node, attr),
-                                 modified=True)
+            manifest.add(path, node, attr, modified=True)
             changeset_files.append(path)
-        manifest.set_parents(parent_node)
+        manifest.parents = (parent_node,)
         manifest.delta_node = parent_node
         return manifest, changeset_files
 
@@ -320,11 +318,11 @@ class PushStore(GitHgStore):
                 if real_changeset and (
                         manifest.node != real_changeset.manifest):
                     for path, created, real in sorted_merge(
-                            manifest._lines,
-                            self.manifest(real_changeset.manifest)._lines,
-                            key=lambda i: i.name, non_key=lambda i: i):
-                        if str(created) != str(real):
-                            logging.error('%r != %r', str(created), str(real))
+                            manifest, self.manifest(real_changeset.manifest),
+                            key=lambda i: i.path, non_key=lambda i: i):
+                        if bytes(created) != bytes(real):
+                            logging.error(
+                                '%r != %r', bytes(created), bytes(real))
             self._pushed.add(manifest.node)
             self.store_manifest(manifest)
             self._manifest_git_tree[manifest.node] = commit_data.tree
@@ -339,13 +337,13 @@ class PushStore(GitHgStore):
             if parent_changeset.branch:
                 changeset.branch = parent_changeset.branch
 
-        if self._graft is True and parents and changeset.body[-1] == '\n':
+        if self._graft is True and parents and changeset.body[-1:] == b'\n':
             parent_commit = GitCommit(parents[0])
-            if (parent_commit.body[-1] == '\n' and
+            if (parent_commit.body[-1:] == b'\n' and
                     parent_commit.body[-2] == parent_changeset.body[-1]):
                 self._graft = 'true'
 
-        if self._graft == 'true' and changeset.body[-1] == '\n':
+        if self._graft == 'true' and changeset.body[-1:] == b'\n':
             changeset.body = changeset.body[:-1]
 
         changeset.node = changeset.sha1
@@ -367,13 +365,13 @@ class PushStore(GitHgStore):
                               parent2=NULL_NODE_ID,
                               git_manifest_parents=None, path=None):
         hg_file = File()
-        hg_file.content = GitHgHelper.cat_file('blob', sha1)
+        hg_file.content = GitHgHelper.cat_file(b'blob', sha1)
         FileFindParents.set_parents(
             hg_file, parent1, parent2,
             git_manifest_parents=git_manifest_parents,
             path=path)
         node = hg_file.node = hg_file.sha1
-        GitHgHelper.set('file', node, sha1)
+        GitHgHelper.set(b'file', node, sha1)
         return hg_file
 
     def _store_file_internal(self, hg_file):
@@ -392,15 +390,15 @@ class PushStore(GitHgStore):
         path, rev = hg_source
         hg_file = File()
         hg_file.metadata = {
-            'copy': path,
-            'copyrev': rev,
+            b'copy': path,
+            b'copyrev': rev,
         }
-        hg_file.content = GitHgHelper.cat_file('blob', sha1)
+        hg_file.content = GitHgHelper.cat_file(b'blob', sha1)
         node = hg_file.node = hg_file.sha1
         self._pushed.add(node)
-        GitHgHelper.put_blob(str(hg_file.metadata), want_sha1=False)
-        GitHgHelper.set('file-meta', node, ':1')
-        GitHgHelper.set('file', node, sha1)
+        GitHgHelper.put_blob(hg_file.metadata.to_str(), want_sha1=False)
+        GitHgHelper.set(b'file-meta', node, b':1')
+        GitHgHelper.set(b'file', node, sha1)
         return node
 
     def manifest(self, sha1, include_parents=False):
@@ -409,7 +407,8 @@ class PushStore(GitHgStore):
         result = super(PushStore, self).manifest(sha1, include_parents)
         # Validate manifests we derive from when bundling are not corrupted.
         if sha1 not in self._pushed and result.sha1 != sha1:
-            raise Exception('Sha1 mismatch for manifest %s' % sha1)
+            raise Exception('Sha1 mismatch for manifest %s'
+                            % sha1.decode('ascii'))
         return result
 
     def changeset(self, sha1, include_parents=True):
@@ -418,7 +417,8 @@ class PushStore(GitHgStore):
         result = super(PushStore, self).changeset(sha1, include_parents)
         # Validate changesets we derive from when bundling are not corrupted.
         if sha1 not in self._pushed and result.sha1 != sha1:
-            raise Exception('Sha1 mismatch for changeset %s' % sha1)
+            raise Exception('Sha1 mismatch for changeset %s'
+                            % sha1.decode('ascii'))
         return result
 
     def changeset_ref(self, sha1):
@@ -464,7 +464,7 @@ def bundle_data(store, commits):
     yield None
 
     for manifest, changeset in progress_iter('Bundling {} manifests',
-                                             manifests.iteritems()):
+                                             iteritems(manifests)):
         hg_manifest = store.manifest(manifest, include_parents=True)
         hg_manifest.changeset = changeset
         yield hg_manifest
@@ -520,7 +520,7 @@ def bundlepart_header(name, advisoryparams=()):
 
 
 def bundlepart(name, advisoryparams=(), data=None):
-    header = ''.join(bundlepart_header(name, advisoryparams))
+    header = b''.join(bundlepart_header(name, advisoryparams))
     yield struct.pack('>i', len(header))
     yield header
     while data:
@@ -530,31 +530,32 @@ def bundlepart(name, advisoryparams=(), data=None):
             yield chunk
         else:
             break
-    yield '\0' * 4  # Empty chunk ending the part
+    yield b'\0' * 4  # Empty chunk ending the part
 
 
 def create_bundle(store, commits, bundle2caps={}):
-    version = '01'
+    version = b'01'
     chunk_type = RawRevChunk01
     if bundle2caps:
-        versions = bundle2caps.get('changegroup')
+        versions = bundle2caps.get(b'changegroup')
         if versions:
-            if '02' in versions:
+            if b'02' in versions:
                 chunk_type = RawRevChunk02
-                version = '02'
+                version = b'02'
     cg = create_changegroup(store, bundle_data(store, commits), chunk_type)
     if bundle2caps:
-        yield 'HG20'
-        yield '\0' * 4  # bundle parameters length: no params
-        replycaps = bundle2caps.get('replycaps')
+        yield b'HG20'
+        yield b'\0' * 4  # bundle parameters length: no params
+        replycaps = bundle2caps.get(b'replycaps')
         if replycaps:
-            for chunk in bundlepart('REPLYCAPS', data=chunkbuffer(replycaps)):
+            for chunk in bundlepart(b'REPLYCAPS',
+                                    data=chunkbuffer([replycaps])):
                 yield chunk
-        for chunk in bundlepart('CHANGEGROUP',
-                                advisoryparams=(('version', version),),
+        for chunk in bundlepart(b'CHANGEGROUP',
+                                advisoryparams=((b'version', version),),
                                 data=chunkbuffer(cg)):
             yield chunk
-        yield '\0' * 4  # End of bundle
+        yield b'\0' * 4  # End of bundle
     else:
         for chunk in cg:
             yield chunk
@@ -563,7 +564,7 @@ def create_bundle(store, commits, bundle2caps={}):
 def get_previous(store, sha1, type):
     if issubclass(type, Changeset):
         return store.changeset(sha1)
-    if issubclass(type, ManifestInfo):
+    if issubclass(type, GeneratedManifestInfo):
         return store.manifest(sha1)
     return store.file(sha1)
 
@@ -572,9 +573,7 @@ def prepare_chunk(store, chunk, previous, chunk_type):
     if chunk_type == RawRevChunk01:
         if previous is None and chunk.parent1 != NULL_NODE_ID:
             previous = get_previous(store, chunk.parent1, type(chunk))
-        if isinstance(chunk, HgObject):
-            return chunk.to_chunk(chunk_type, previous)
-        return chunk.serialize(previous, chunk_type)
+        return chunk.to_chunk(chunk_type, previous)
     elif chunk_type == RawRevChunk02:
         if isinstance(chunk, Changeset):
             parents = (previous if previous
@@ -584,18 +583,11 @@ def prepare_chunk(store, chunk, previous, chunk_type):
             parents = (previous if previous and p == previous.node
                        else get_previous(store, p, type(chunk))
                        for p in chunk.parents)
-        if isinstance(chunk, HgObject):
-            deltas = sorted((chunk.to_chunk(chunk_type, p) for p in parents),
-                            key=len)
-        else:
-            deltas = sorted((chunk.serialize(p, chunk_type) for p in parents),
-                            key=len)
+        deltas = sorted((chunk.to_chunk(chunk_type, p) for p in parents),
+                        key=len)
         if len(deltas):
             return deltas[0]
-        elif isinstance(chunk, HgObject):
-            return chunk.to_chunk(chunk_type)
-        else:
-            return chunk.serialize(None, chunk_type)
+        return chunk.to_chunk(chunk_type)
     else:
         assert False
 
@@ -603,29 +595,31 @@ def prepare_chunk(store, chunk, previous, chunk_type):
 def create_changegroup(store, bundle_data, type=RawRevChunk01):
     previous = None
     for chunk in bundle_data:
-        if isinstance(chunk, (RevChunk, HgObject)):
+        if isinstance(chunk, HgObject):
             data = prepare_chunk(store, chunk, previous, type)
         else:
             data = chunk
         size = 0 if data is None else len(data) + 4
         yield struct.pack(">l", size)
         if data:
-            yield str(data)
-        if isinstance(chunk, (RevChunk, HgObject, types.NoneType)):
+            yield bytes(data)
+        if isinstance(chunk, HgObject) or chunk is None:
             previous = chunk
 
 
 def encodecaps(caps):
-    return '\n'.join(
-        '%s=%s' % (urllib.quote(k), ','.join(urllib.quote(v) for v in values))
-        if values else urllib.quote(k)
+    return b'\n'.join(
+        b'%s=%s' % (
+            quote_from_bytes(k).encode('ascii'),
+            b','.join(quote_from_bytes(v).encode('ascii') for v in values))
+        if values else quote_from_bytes(k).encode('ascii')
         for k, values in sorted(caps.items())
     )
 
 
 def decodecaps(caps):
     return {
-        urllib.unquote(key): [urllib.unquote(v)
-                              for v in val.split(',')] if val else []
-        for key, eq, val in (l.partition('=') for l in caps.splitlines())
+        unquote_to_bytes(key): [unquote_to_bytes(v)
+                                for v in val.split(b',')] if val else []
+        for key, eq, val in (l.partition(b'=') for l in caps.splitlines())
     }

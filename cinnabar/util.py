@@ -1,3 +1,4 @@
+from __future__ import absolute_import, unicode_literals
 import logging
 import os
 import socket
@@ -80,14 +81,15 @@ def init_logging():
     handler = StreamHandler()
     handler.setFormatter(Formatter())
     logger.addHandler(handler)
-    log_conf = Git.config('cinnabar.log') or ''
+    log_conf = Git.config('cinnabar.log') or b''
     if not log_conf and not check_enabled('memory') and \
             not check_enabled('cpu'):
         return
-    for assignment in log_conf.split(','):
+    for assignment in log_conf.split(b','):
         try:
-            name, value = assignment.split(':', 1)
+            name, value = assignment.split(b':', 1)
             value = int(value)
+            name = name.decode('ascii')
             if name == '*':
                 name = ''
             logging.getLogger(name).setLevel(
@@ -97,18 +99,23 @@ def init_logging():
 
 
 class ConfigSetFunc(object):
-    def __init__(self, key, values, extra_values=()):
+    def __init__(self, key, values, extra_values=(), default='', remote=None):
         self._config = None
         self._key = key
         self._values = values
         self._extra_values = extra_values
+        self._default = default.encode('ascii')
+        self._remote = remote
 
     def __call__(self, name):
         if self._config is None:
             from .git import Git
-            config = Git.config(self._key) or ''
+            if self._remote:
+                config = Git.config(self._key, self._remote) or self._default
+            else:
+                config = Git.config(self._key) or self._default
             if config:
-                config = config.split(',')
+                config = config.decode('ascii').split(',')
             self._config = set()
             for c in config:
                 if c in ('true', 'all'):
@@ -116,7 +123,7 @@ class ConfigSetFunc(object):
                 elif c.startswith('-'):
                     c = c[1:]
                     try:
-                        self._config.remove(c)
+                        self._config.remove(c.decode('ascii'))
                     except KeyError:
                         logging.getLogger('config').warn(
                             '%s: %s is not one of (%s)',
@@ -139,7 +146,8 @@ check_enabled = ConfigSetFunc(
 
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
-    ('wire', 'merge'),
+    ('wire', 'merge', 'store'),
+    ('python3',),
 )
 
 
@@ -219,8 +227,11 @@ class IOLogger(object):
         self._logger = logger
         self._prefix = (prefix + ' ') if prefix else ''
 
-    def read(self, length=0, level=logging.INFO):
-        ret = self._reader.read(length)
+    def read(self, length=None, level=logging.INFO):
+        if length is None:
+            ret = self._reader.read()
+        else:
+            ret = self._reader.read(length)
         if not isinstance(self._reader, IOLogger):
             self._logger.log(level, '%s<= %r', self._prefix, ret)
         return ret
@@ -416,8 +427,8 @@ def byte_diff(a, b):
     offset = 0
     last = 0
     for start_a, end_a, start_b, end_b in _iter_diff_blocks(a, b):
-        a2 = ''.join(a[start_a:end_a])
-        b2 = ''.join(b[start_b:end_b])
+        a2 = b''.join(a[start_a:end_a])
+        b2 = b''.join(b[start_b:end_b])
         offset += sum(len(i) for i in a[last:start_a])
         last = start_a
         for start2_a, end2_a, start2_b, end2_b in _iter_diff_blocks(a2, b2):
@@ -565,7 +576,7 @@ class chunkbuffer(object):
 
         If size parameter is omitted, read everything"""
         if l is None:
-            return ''.join(self.iter)
+            return b''.join(self.iter)
 
         left = l
         buf = []
@@ -617,19 +628,20 @@ class chunkbuffer(object):
                 self._chunkoffset += left
                 left -= chunkremaining
 
-        return ''.join(buf)
+        return b''.join(buf)
 
 
 class HTTPReader(object):
     def __init__(self, url):
-        self.fh = urlopen(url)
-        self.url = url
+        self.url = fsdecode(url)
+        self.fh = urlopen(self.url)
         try:
-            self.length = int(self.fh.headers['content-length'])
+            length = self.fh.headers['content-length']
+            self.length = None if length is None else int(length)
         except (ValueError, KeyError):
             self.length = None
         self.can_recover = \
-            self.fh.headers.getheader('Accept-Ranges') == 'bytes'
+            self.fh.headers.get('Accept-Ranges') == 'bytes'
         self.offset = 0
         self.closed = False
 
@@ -640,7 +652,7 @@ class HTTPReader(object):
             try:
                 buf = self.fh.read(size - length)
             except socket.error:
-                buf = ''
+                buf = b''
             if not buf:
                 # When self.length is None, self.offset < self.length is always
                 # false.
@@ -654,7 +666,7 @@ class HTTPReader(object):
             length += len(buf)
             self.offset += len(buf)
             result.append(buf)
-        return ''.join(result)
+        return b''.join(result)
 
     def _reopen(self):
         # This reopens the network connection with a HTTP Range request
@@ -664,7 +676,7 @@ class HTTPReader(object):
         fh = urlopen(req)
         if fh.getcode() != 206:
             return self.fh
-        range = fh.headers.getheader('Content-Range') or ''
+        range = fh.headers.get('Content-Range') or ''
         unit, _, range = range.partition(' ')
         if unit != 'bytes':
             return self.fh
@@ -883,7 +895,8 @@ class VersionCheck(Thread):
                     newer_version = v
             if newer_version != version:
                 self.message = (
-                    'New version available: {} (current version: {})'
+                    'New git-cinnabar version available: {} '
+                    '(current version: {})'
                     .format(newer_version, version))
 
     def join(self):
@@ -892,20 +905,26 @@ class VersionCheck(Thread):
             sys.stderr.write('\n' + self.message + '\n')
 
 
-def run(func):
+def run(func, args):
+    reexec = None
+    assert not experiment('python3') or sys.version_info[0] != 2
     if os.environ.pop('GIT_CINNABAR_COVERAGE', None):
-        from coverage.cmdline import main as coverage_main
-        script_path = os.path.abspath(sys.argv[0])
-        sys.exit(coverage_main([
-            'run', '--append', script_path] + sys.argv[1:]))
+        if not reexec:
+            reexec = [sys.executable]
+        reexec.extend(['-m', 'coverage', 'run', '--append'])
     init_logging()
+    if reexec:
+        reexec.append(os.path.abspath(sys.argv[0]))
+        reexec.extend(sys.argv[1:])
+        os.execlp(reexec[0], *reexec)
+        assert False
     if check_enabled('memory') or check_enabled('cpu'):
         reporter = MemoryCPUReporter(memory=check_enabled('memory'),
                                      cpu=check_enabled('cpu'))
 
     version_check = VersionCheck()
     try:
-        retcode = func(sys.argv[1:])
+        retcode = func(args)
     except Abort as e:
         # These exceptions are normal abort and require no traceback
         retcode = 1
@@ -933,3 +952,34 @@ def run(func):
             sys.stderr.write('Mercurial libraries were loaded!')
             retcode = 70
     sys.exit(retcode)
+
+
+# Python3 compat
+if sys.version_info[0] == 3:
+    def iteritems(d):
+        return iter(d.items())
+
+    def itervalues(d):
+        return iter(d.values())
+
+    fsencode = os.fsencode
+    fsdecode = os.fsdecode
+else:
+    def iteritems(d):
+        return d.iteritems()
+
+    def itervalues(d):
+        return d.itervalues()
+
+    def fsencode(s):
+        return s
+
+    def fsdecode(s):
+        return s
+
+if hasattr(sys.stdout, 'buffer'):
+    bytes_stdout = sys.stdout.buffer
+    bytes_stdin = sys.stdin.buffer
+else:
+    bytes_stdout = sys.stdout
+    bytes_stdin = sys.stdin

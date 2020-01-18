@@ -1,6 +1,6 @@
-PYTHON_SCRIPTS := \
-	git-remote-hg.py \
-	git-cinnabar.py \
+SHELL_SCRIPTS := \
+	git-remote-hg \
+	git-cinnabar \
 
 PYTHON_LIBS := \
 	cinnabar/__init__.py \
@@ -79,7 +79,7 @@ git: TARGET=all
 git-install: TARGET=install
 
 %:
-	$(MAKE) -C $(CURDIR)/git-core -f $(CURDIR)/Makefile $(TARGET) SCRIPT_PYTHON="git-p4.py $(PYTHON_SCRIPTS)" CINNABAR_RECURSE=1
+	$(MAKE) -C $(CURDIR)/git-core -f $(CURDIR)/Makefile $(TARGET) CINNABAR_RECURSE=1
 
 install:
 	$(error Not a supported target)
@@ -99,22 +99,22 @@ include $(CURDIR)/Makefile
 
 vpath cinnabar/% ..
 
-all:: $(addprefix pythonlib/,$(PYTHON_LIBS))
+all:: $(addprefix pythonlib/,$(PYTHON_LIBS)) $(SHELL_SCRIPTS)
 
 $(addprefix pythonlib/,$(PYTHON_LIBS)): pythonlib/%: %
 	$(INSTALL) -d ${@D}
 	$(INSTALL) -m 644 $^ $@
 
-install: install-pythonlib
-clean: clean-pythonlib clean-pythonscripts clean-patched
-
-clean-pythonscripts:
-	$(RM) $(PYTHON_SCRIPTS)
+install: install-pythonlib install-cinnabarscripts
+clean: clean-pythonlib clean-cinnabarscripts clean-patched
 
 PYTHON_LIBS_DIRS := $(sort $(dir $(PYTHON_LIBS)))
 
-$(PYTHON_SCRIPTS): %.py:
-	ln -s ../$* $@
+$(SHELL_SCRIPTS):
+	ln -s ../$@ $@
+
+install-cinnabarscripts:
+	$(INSTALL) $(SHELL_SCRIPTS) '$(DESTDIR_SQ)$(gitexec_instdir_SQ)'
 
 define _
 $1
@@ -173,7 +173,9 @@ $(CINNABAR_OBJECTS): $(LIB_H)
 endif
 
 ifndef NO_CURL
+ifeq (,$(filter http.c.patch,$(PATCHES)))
 git-cinnabar-helper$X: http.o
+endif
 endif
 git-cinnabar-helper$X: $(CINNABAR_OBJECTS) GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \

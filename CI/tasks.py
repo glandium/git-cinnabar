@@ -67,8 +67,7 @@ class Index(dict):
         elif hint is not None:  # empty environment variable
             pass
         else:
-            result = self._try_key('github.{}.{}.{}'.format(
-                TC_BASE_LOGIN, TC_BASE_REPO_NAME, key))
+            result = self._try_key('project.git-cinnabar.{}'.format(key))
         if not result:
             result = slugid()
         self[key] = result
@@ -200,12 +199,13 @@ class Task(object):
         else:
             self.id = slugid()
 
+        maxRunTime = kwargs.pop('maxRunTime', 1800)
         task = {
             'created': now.format(),
-            'deadline': (now + 3600).format(),
+            'deadline': (now + maxRunTime * 5 + 1800).format(),
             'retries': 5,
-            'provisionerId': 'aws-provisioner-v1',
-            'workerType': 'github-worker',
+            'provisionerId': 'proj-git-cinnabar',
+            'workerType': 'ci',
             'schedulerId': 'taskcluster-github',
             'taskGroupId': task_group_id,
             'metadata': {
@@ -213,7 +213,7 @@ class Task(object):
                 'source': TC_REPO_URL,
             },
             'payload': {
-                'maxRunTime': 1800,
+                'maxRunTime': maxRunTime,
             },
         }
         kwargs.setdefault('expireIn', '4 weeks')
@@ -227,8 +227,8 @@ class Task(object):
                 task['metadata'][k] = task['metadata']['name'] = v
             elif k == 'index':
                 if TC_IS_PUSH:
-                    task['routes'] = ['index.github.{}.{}.{}'.format(
-                        TC_LOGIN, TC_REPO_NAME, v)]
+                    task['routes'] = [
+                        'index.project.git-cinnabar.{}'.format(v)]
             elif k == 'expireIn':
                 value = v.split()
                 if len(value) == 1:
@@ -373,13 +373,16 @@ class Task(object):
         print(json.dumps(self.task, indent=4, sort_keys=True))
         if 'TC_PROXY' not in os.environ:
             return
-        url = 'http://taskcluster/queue/v1/task/{}'.format(self.id)
+        url = 'http://taskcluster/api/queue/v1/task/{}'.format(self.id)
         res = session.put(url, data=json.dumps(self.task))
         try:
             res.raise_for_status()
         except Exception:
             print(res.headers)
-            print(res.content)
+            try:
+                print(res.json()['message'])
+            except Exception:
+                print(res.content)
             raise
         print(res.json())
 
@@ -403,7 +406,7 @@ class action(object):
         if self.template is None:
             import yaml
             with open(os.path.join(os.path.dirname(__file__), '..',
-                      '.taskcluster.yml')) as fh:
+                                   '.taskcluster.yml')) as fh:
                 contents = yaml.safe_load(fh)
             task = contents['tasks'][0]['then']['in']
             del task['taskId']

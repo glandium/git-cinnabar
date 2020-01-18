@@ -1,22 +1,34 @@
 #!/usr/bin/env python2.7
 
-from __future__ import division
+from __future__ import absolute_import, division, unicode_literals
 from binascii import hexlify, unhexlify
-from itertools import izip
-import hashlib
+try:
+    from itertools import izip as zip
+except ImportError:
+    pass
 import io
 import os
 import shutil
 import subprocess
 import sys
-import urllib
+try:
+    from urllib.parse import quote_from_bytes, unquote_to_bytes
+except ImportError:
+    from urllib import quote as quote_from_bytes
+    from urllib import unquote as unquote_to_bytes
 from collections import (
     OrderedDict,
     Sequence,
     defaultdict,
 )
-from urllib2 import URLError
-from urlparse import urlparse
+try:
+    from urllib2 import URLError
+except ImportError:
+    from urllib.error import URLError
+try:
+    from urlparse import urlparse
+except ImportError:
+    from urllib.parse import urlparse
 from .exceptions import (
     AmbiguousGraftAbort,
     NothingToGraftException,
@@ -46,12 +58,13 @@ from .hg.objects import (
     Authorship,
     Changeset,
     File,
-    textdiff,
+    Manifest,
 )
 from .helper import GitHgHelper
 from .util import progress_iter
 from .dag import gitdag
 from cinnabar import util
+from cinnabar.util import fsdecode
 
 import logging
 
@@ -59,82 +72,10 @@ import logging
 # An empty mercurial file with no parent has a fixed sha1 which is that of
 # "\0" * 40 (incidentally, this is the same as for an empty manifest with
 # no parent.
-HG_EMPTY_FILE = 'b80de5d138758541c5f05265ad144ab9fa86d1db'
+HG_EMPTY_FILE = b'b80de5d138758541c5f05265ad144ab9fa86d1db'
 
 
 revchunk_log = logging.getLogger('revchunks')
-
-
-class RevChunk(object):
-    __slots__ = ('node', 'parent1', 'parent2', 'changeset', 'data',
-                 'delta_node', '_rev_data')
-
-    def __init__(self, chunk):
-        self.node, self.parent1, self.parent2, self.changeset = (
-            chunk.node, chunk.parent1, chunk.parent2, chunk.changeset)
-        self.delta_node = chunk.delta_node
-        self._rev_data = chunk.data
-        revchunk_log.debug('%s %s %s %s', self.node, self.parent1,
-                           self.parent2, self.changeset)
-        revchunk_log.debug('%r', self._rev_data)
-
-    def __repr__(self):
-        return '<%s %s>' % (self.__class__.__name__, self.node)
-
-    def init(self, previous_chunk):
-        assert self.delta_node == NULL_NODE_ID or previous_chunk
-        self.data = self.patch_data(previous_chunk.data if previous_chunk
-                                    else '', self._rev_data)
-
-    def patch_data(self, data, rev_patch):
-        return RevDiff(rev_patch).apply(data)
-
-    @property
-    def sha1(self):
-        p1 = unhexlify(self.parent1)
-        p2 = unhexlify(self.parent2)
-        return hashlib.sha1(
-            min(p1, p2) +
-            max(p1, p2) +
-            self.data
-        ).hexdigest()
-
-    def diff(self, other):
-        return textdiff(other.data if other else '', self.data)
-
-    def serialize(self, other, type):
-        result = type()
-        result.node = self.node
-        result.parent1 = self.parent1
-        result.parent2 = self.parent2
-        if other:
-            result.delta_node = other.node
-        result.changeset = self.changeset
-        result.data = self.diff(other)
-        return result
-
-    @property
-    def parents(self):
-        if self.parent1 != NULL_NODE_ID:
-            if self.parent2 != NULL_NODE_ID:
-                return (self.parent1, self.parent2)
-            return (self.parent1,)
-        if self.parent2 != NULL_NODE_ID:
-            return (self.parent2,)
-        return ()
-
-
-class GeneratedRevChunk(RevChunk):
-    def __init__(self, node, data):
-        self.node = node
-        self.data = data
-
-    def init(self, previous_chunk):
-        pass
-
-    def set_parents(self, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
-        self.parent1 = parent1
-        self.parent2 = parent2
 
 
 class FileFindParents(object):
@@ -159,7 +100,7 @@ class FileFindParents(object):
         # On merges, a file with copy metadata has either no parent, or only
         # one. In that latter case, the parent is always set as second parent.
         # On non-merges, a file with copy metadata doesn't have a parent.
-        if file.metadata or file.content.startswith('\1\n'):
+        if file.metadata or file.content.startswith(b'\1\n'):
             if len(parents) == 2:
                 FileFindParents._invalid_if_new(file)
             elif len(parents) == 1:
@@ -184,9 +125,10 @@ class FileFindParents(object):
                 file_dag = gitdag()
                 mapping = {}
                 for sha1, tree, fparents in GitHgHelper.rev_list(
-                        '--parents', '--boundary', '--topo-order', '--reverse',
-                        '%s...%s' % git_manifest_parents, '--', path):
-                    if sha1.startswith('-'):
+                        b'--parents', b'--boundary', b'--topo-order',
+                        b'--reverse', b'%s...%s' % git_manifest_parents, b'--',
+                        path):
+                    if sha1.startswith(b'-'):
                         sha1 = sha1[1:]
                     node = [
                         s
@@ -252,69 +194,7 @@ class FileFindParents(object):
         return file.node == file.sha1
 
 
-class ManifestLine(object):
-    __slots__ = ('name', 'node', 'attr', '_str', '_len')
-
-    def __init__(self, name, node, attr):
-        self.name = name
-        self.node = node
-        self.attr = attr
-        assert len(self.node) == 40
-        self._str = '%s\0%s%s\n' % (self.name, self.node, self.attr)
-        self._len = len(self.name) + len(self.attr) + 41
-
-    def __str__(self):
-        return self._str
-
-    def __len__(self):
-        return self._len
-
-
-def isplitmanifest(data):
-    for l in data.splitlines():
-        null = l.find('\0')
-        if null == -1:
-            return
-        yield ManifestLine(l[:null], l[null + 1:null + 41], l[null + 41:])
-
-
-class ManifestInfo(RevChunk):
-    __slots__ = ('removed', 'modified')
-
-    def patch_data(self, raw_data, rev_patch):
-        new = bytearray()
-        data = memoryview(raw_data)
-        end = 0
-        before_list = {}
-        after_list = {}
-        for diff in RevDiff(rev_patch):
-            new += data[end:diff.start]
-            new += diff.text_data
-            end = diff.end
-
-            start = raw_data.rfind('\n', 0, diff.start) + 1
-            if diff.end == 0 or data[diff.end - 1] == '\n':
-                finish = diff.end
-            else:
-                finish = raw_data.find('\n', diff.end)
-            if finish != -1:
-                before = data[start:finish]
-            else:
-                before = data[start:]
-            after = before[:diff.start - start].tobytes() + \
-                diff.text_data.tobytes() + \
-                before[diff.end - start:].tobytes()
-            before_list.update({f.name: (f.node, f.attr)
-                                for f in isplitmanifest(before.tobytes())})
-            after_list.update({f.name: (f.node, f.attr)
-                               for f in isplitmanifest(after)})
-        new += data[end:]
-        self.removed = set(before_list.keys()) - set(after_list.keys())
-        self.modified = after_list
-        return new
-
-
-class ChangesetPatcher(str):
+class ChangesetPatcher(bytes):
     class ChangesetPatch(RawRevChunk):
         __slots__ = ('patch', '_changeset')
 
@@ -326,29 +206,27 @@ class ChangesetPatcher(str):
                 self._buf = buf
 
             def __str__(self):
+                raise RuntimeError('Use to_str()')
+
+            def to_str(self):
                 return self._buf
 
             def __iter__(self):
-                for line in self._buf.split('\0'):
+                for line in self._buf.split(b'\0'):
                     if line:
                         part = self.Part()
-                        start, end, text_data = line.split(',')
+                        start, end, text_data = line.split(b',')
                         part.start = int(start)
                         part.end = int(end)
-                        part.text_data = urllib.unquote(text_data)
+                        part.text_data = unquote_to_bytes(text_data)
                         yield part
 
             @classmethod
             def from_items(cls, items):
-                return cls('\0'.join(
-                    ','.join((str(start), str(end), urllib.quote(text_data)))
+                return cls(b'\0'.join(
+                    b','.join((b'%d,%d' % (start, end),
+                               quote_from_bytes(text_data).encode('ascii')))
                     for start, end, text_data in items))
-
-            @classmethod
-            def from_obj(cls, obj):
-                if isinstance(obj, (tuple, list)):
-                    return cls.from_items(obj)
-                return cls(obj)
 
         def __init__(self, changeset, patch_data):
             self._changeset = changeset
@@ -361,33 +239,33 @@ class ChangesetPatcher(str):
 
     def apply(self, changeset):
         # Sneaky way to create a copy of the changeset
-        chunk = self.ChangesetPatch(changeset, '')
+        chunk = self.ChangesetPatch(changeset, b'')
         changeset = Changeset.from_chunk(chunk, changeset)
 
-        for k, v in (l.split(' ', 1) for l in self.splitlines()):
-            if k == 'changeset':
+        for k, v in (l.split(b' ', 1) for l in self.splitlines()):
+            if k == b'changeset':
                 changeset.node = v
-            elif k == 'manifest':
+            elif k == b'manifest':
                 changeset.manifest = v
-            elif k == 'author':
+            elif k == b'author':
                 changeset.author = v
-            elif k == 'extra':
+            elif k == b'extra':
                 extra = changeset.extra
                 changeset.extra = v
                 if extra is not None:
                     changeset.extra.update(
-                        (k, v) for k, v in extra.iteritems()
+                        (k, v) for k, v in extra.items()
                         if k not in changeset.extra)
-            elif k == 'files':
-                changeset.files = v.split('\0')
-            elif k == 'patch':
+            elif k == b'files':
+                changeset.files = v.split(b'\0')
+            elif k == b'patch':
                 chunk = self.ChangesetPatch(changeset, v)
                 changeset = Changeset.from_chunk(chunk, changeset)
 
         # This should not occur in normal changeset bodies. If it occurs,
         # it likely comes from our handling of conflicting commits.
         # So in that case, adjust until we have the right sha1.
-        while changeset.body.endswith('\0') and \
+        while changeset.body.endswith(b'\0') and \
                 changeset.sha1 != changeset.node:
             changeset.body = changeset.body[:-1]
 
@@ -397,27 +275,27 @@ class ChangesetPatcher(str):
     def from_diff(cls, changeset1, changeset2):
         items = []
         if changeset1.node != changeset2.node:
-            items.append('changeset %s' % changeset2.node)
+            items.append(b'changeset %s' % changeset2.node)
         if changeset1.manifest != changeset2.manifest:
-            items.append('manifest %s' % changeset2.manifest)
+            items.append(b'manifest %s' % changeset2.manifest)
         if changeset1.author != changeset2.author:
-            items.append('author %s' % changeset2.author)
+            items.append(b'author %s' % changeset2.author)
         if changeset1.extra != changeset2.extra:
             if changeset2.extra is not None:
-                items.append('extra %s' % Changeset.ExtraData({
+                items.append(b'extra %s' % Changeset.ExtraData({
                     k: v
-                    for k, v in changeset2.extra.iteritems()
+                    for k, v in changeset2.extra.items()
                     if not changeset1.extra or changeset1.extra.get(k) != v
-                }))
+                }).to_str())
         if changeset1.files != changeset2.files:
-            items.append('files %s' % '\0'.join(changeset2.files))
+            items.append(b'files %s' % b'\0'.join(changeset2.files))
 
-        this = cls('\n'.join(items))
+        this = cls(b'\n'.join(items))
         new = this.apply(changeset1)
         if new.raw_data != changeset2.raw_data:
-            items.append('patch %s' % cls.ChangesetPatch.Patch.from_items(
-                byte_diff(new.raw_data, changeset2.raw_data)))
-            this = cls('\n'.join(items))
+            items.append(b'patch %s' % cls.ChangesetPatch.Patch.from_items(
+                byte_diff(new.raw_data, changeset2.raw_data)).to_str())
+            this = cls(b'\n'.join(items))
 
         return this
 
@@ -442,59 +320,23 @@ class Changeset(Changeset):
         return changeset
 
 
-class GeneratedManifestInfo(GeneratedRevChunk, ManifestInfo):
-    __slots__ = ('__lines', '_data')
+class GeneratedManifestInfo(Manifest):
+    __slots__ = ('delta_node', 'removed', 'modified')
 
     def __init__(self, node):
-        super(GeneratedManifestInfo, self).__init__(node, '')
-        if node == NULL_NODE_ID:
-            self.__lines = []
-        else:
-            self.__lines = None
-        self._data = None
+        super(GeneratedManifestInfo, self).__init__(node)
         self.removed = set()
         self.modified = {}
 
-    def init(self, previous_chunk):
-        pass
-
-    @property
-    def data(self):
-        if self._data is None and self.__lines is None:
-            self._data = GitHgHelper.manifest(self.node)
-
-        if self._data is None:
-            # Normally, it'd be better to use str(l), but it turns out to make
-            # things significantly slower. Sigh python.
-            self._data = ''.join(l._str for l in self._lines)
-        return self._data
-
-    @data.setter
-    def data(self, value):
-        self._data = value
-        self.__lines = None
-
-    @property
-    def _lines(self):
-        if self.__lines is None:
-            self.__lines = list(isplitmanifest(self.data or ''))
-        return iter(self.__lines)
-
-    @_lines.setter
-    def _lines(self, value):
-        self.__lines = value
-        self._data = None
-
-    def append_line(self, line, modified=False):
-        self.__lines.append(line)
+    def add(self, path, sha1=None, attr=b'', modified=False):
+        super(GeneratedManifestInfo, self).add(path, sha1, attr)
         if modified:
-            self.modified[line.name] = (line.node, line.attr)
-        self._data = None
+            self.modified[path] = (sha1, attr)
 
 
 class TagSet(object):
     def __init__(self):
-        self._tags = {}
+        self._tags = OrderedDict()
         self._taghist = defaultdict(set)
 
     def __setitem__(self, key, value):
@@ -510,7 +352,7 @@ class TagSet(object):
         if not other:
             return
         assert isinstance(other, TagSet)
-        for key, anode in other._tags.iteritems():
+        for key, anode in util.iteritems(other._tags):
             # derived from mercurial's _updatetags
             ahist = other._taghist[key]
             if key not in self._tags:
@@ -527,10 +369,10 @@ class TagSet(object):
                 n for n in bhist if n not in ahist)
 
     def __iter__(self):
-        return self._tags.iteritems()
+        return util.iteritems(self._tags)
 
     def hist(self, key):
-        return set(self._taghist[key])
+        return iter(sorted(self._taghist[key]))
 
 
 class GitCommit(object):
@@ -538,13 +380,14 @@ class GitCommit(object):
 
     def __init__(self, sha1):
         self.sha1 = sha1
-        commit = GitHgHelper.cat_file('commit', sha1)
-        header, self.body = commit.split('\n\n', 1)
+        commit = GitHgHelper.cat_file(b'commit', sha1)
+        header, self.body = commit.split(b'\n\n', 1)
         parents = []
         for line in header.splitlines():
-            if line == '\n':
+            if line == b'\n':
                 break
-            typ, data = line.split(' ', 1)
+            typ, data = line.split(b' ', 1)
+            typ = typ.decode('ascii')
             if typ == 'parent':
                 parents.append(data.strip())
             elif typ in self.__slots__:
@@ -575,7 +418,7 @@ class BranchMap(object):
         self._tips = {}
         self._git_sha1s = {}
         self._unknown_heads = set()
-        for branch, heads in remote_branchmap.iteritems():
+        for branch, heads in util.iteritems(remote_branchmap):
             # We can't keep track of tips if the list of heads is not sequenced
             sequenced = isinstance(heads, Sequence) or len(heads) == 1
             branch_heads = []
@@ -588,15 +431,15 @@ class BranchMap(object):
                     continue
                 assert head not in self._git_sha1s
                 self._git_sha1s[head] = sha1
-            # Use last non-closed head as tip. Caveat: we don't know a
-            # head is closed until we've pulled it.
+            # Use last non-closed head as tip if there's more than one head.
+            # Caveat: we don't know a head is closed until we've pulled it.
             if branch and heads and sequenced:
                 for head in reversed(branch_heads):
+                    self._tips[branch] = head
                     if head in self._git_sha1s:
                         changeset = store.changeset(head)
                         if changeset.close:
                             continue
-                    self._tips[branch] = head
                     break
             if branch:
                 self._heads[branch] = tuple(branch_heads)
@@ -613,7 +456,7 @@ class BranchMap(object):
         return self._unknown_heads
 
     def git_sha1(self, head):
-        return self._git_sha1s.get(head, '?')
+        return self._git_sha1s.get(head, b'?')
 
     def tip(self, branch):
         return self._tips.get(branch, None)
@@ -627,19 +470,19 @@ class Grafter(object):
         self._early_history = set()
         self._graft_trees = defaultdict(list)
         self._grafted = False
-        refs = ['--exclude=refs/cinnabar/*', '--all']
+        refs = [b'--exclude=refs/cinnabar/*', b'--all']
         if store._has_metadata:
-            refs += ['--not', 'refs/cinnabar/metadata^']
+            refs += [b'--not', b'refs/cinnabar/metadata^']
         for node, tree, parents in progress_iter(
                 'Reading {} graft candidates',
-                GitHgHelper.rev_list('--full-history', *refs)):
+                GitHgHelper.rev_list(b'--full-history', *refs)):
             self._graft_trees[tree].append(node)
         if not self._graft_trees:
             raise NothingToGraftException()
 
     def _is_cinnabar_commit(self, commit):
         data = self._store.read_changeset_data(commit)
-        return '\npatch' not in data if data else False
+        return b'\npatch' not in data if data else False
 
     def _graft(self, changeset, parents):
         store = self._store
@@ -673,10 +516,10 @@ class Grafter(object):
             # following is enough to graft github.com/mozilla/gecko-dev
             # to mozilla-central and related repositories.
             # Try with commits with the same subject line
-            subject = changeset.body.split('\n', 1)[0]
+            subject = changeset.body.split(b'\n', 1)[0]
             possible_nodes = tuple(
                 n for n in nodes
-                if commits[n].body.split('\n', 1)[0] == subject
+                if commits[n].body.split(b'\n', 1)[0] == subject
             )
             if len(possible_nodes) > 1:
                 # Try with commits with the same author ; this is attempted
@@ -700,14 +543,15 @@ class Grafter(object):
                 commit = commits[node]
                 cs = Changeset.from_git_commit(commit)
                 patcher = ChangesetPatcher.from_diff(cs, changeset)
-                if '\npatch' in patcher:
+                if b'\npatch' in patcher:
                     possible_nodes.append(node)
             nodes = possible_nodes
 
         if len(nodes) > 1:
             raise AmbiguousGraftAbort(
                 'Cannot graft changeset %s. Candidates: %s'
-                % (changeset.node, ', '.join(nodes)))
+                % (changeset.node.decode('ascii'),
+                   ', '.join(n.decode('ascii') for n in nodes)))
 
         if nodes:
             node = nodes[0]
@@ -736,7 +580,7 @@ class Grafter(object):
         store.store_changeset(changeset, commit or False)
         commit = store.changeset_ref(changeset.node)
         if is_early_history:
-            if result:
+            if result and result.sha1 != commit:
                 store._replace[result.sha1] = commit
             else:
                 self._early_history.add(commit)
@@ -756,16 +600,16 @@ class Grafter(object):
 
 class GitHgStore(object):
     FLAGS = [
-        'files-meta',
-        'unified-manifests-v2',
+        b'files-meta',
+        b'unified-manifests-v2',
     ]
 
     METADATA_REFS = (
-        'refs/cinnabar/changesets',
-        'refs/cinnabar/manifests',
-        'refs/cinnabar/hg2git',
-        'refs/notes/cinnabar',
-        'refs/cinnabar/files-meta',
+        b'refs/cinnabar/changesets',
+        b'refs/cinnabar/manifests',
+        b'refs/cinnabar/hg2git',
+        b'refs/notes/cinnabar',
+        b'refs/cinnabar/files-meta',
     )
 
     def _metadata(self):
@@ -773,9 +617,9 @@ class GitHgStore(object):
             metadata = GitCommit(self._metadata_sha1)
             self._flags = set(metadata.body.split())
             refs = self.METADATA_REFS
-            if 'files-meta' not in self._flags:
+            if b'files-meta' not in self._flags:
                 refs = list(refs)
-                refs.remove('refs/cinnabar/files-meta')
+                refs.remove(b'refs/cinnabar/files-meta')
             return metadata, dict(zip(refs, metadata.parents))
 
     def metadata(self):
@@ -804,13 +648,13 @@ class GitHgStore(object):
         # cache.
         for sha1, ref in Git.for_each_ref('refs/cinnabar',
                                           'refs/notes/cinnabar'):
-            if ref.startswith('refs/cinnabar/replace/'):
+            if ref.startswith(b'refs/cinnabar/replace/'):
                 self._replace[ref[22:]] = sha1
-            elif ref.startswith('refs/cinnabar/branches/'):
+            elif ref.startswith(b'refs/cinnabar/branches/'):
                 raise OldUpgradeAbort()
-            elif ref == 'refs/cinnabar/metadata':
+            elif ref == b'refs/cinnabar/metadata':
                 self._metadata_sha1 = sha1
-            elif ref == 'refs/cinnabar/tag_cache':
+            elif ref == b'refs/cinnabar/tag_cache':
                 self._tagcache_ref = sha1
         self._replace = VersionedDict(self._replace)
 
@@ -822,12 +666,12 @@ class GitHgStore(object):
         if self._tagcache_ref:
             for line in Git.ls_tree(self._tagcache_ref):
                 mode, typ, sha1, path = line
-                if typ == 'blob':
-                    if self.ATTR[mode] == 'x':
+                if typ == b'blob':
+                    if self.ATTR[mode] == b'x':
                         self._tagfiles[path] = sha1
                     else:
                         self._tagcache[path] = sha1
-                elif typ == 'commit':
+                elif typ == b'commit':
                     assert sha1 == NULL_NODE_ID
                     self._tagcache[path] = sha1
                 self._tagcache_items.add(path)
@@ -842,14 +686,14 @@ class GitHgStore(object):
         self._manifest_heads_orig = set()
         if metadata:
             changesets_ref = self._metadata_refs.get(
-                'refs/cinnabar/changesets')
+                b'refs/cinnabar/changesets')
             if changesets_ref:
                 commit = GitCommit(changesets_ref)
                 for head in commit.body.splitlines():
-                    hghead, branch = head.split(' ', 1)
+                    hghead, branch = head.split(b' ', 1)
                     self._hgheads._previous[hghead] = branch
 
-            self._manifest_heads_orig = set(GitHgHelper.heads('manifests'))
+            self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
 
             replace = {}
             for line in Git.ls_tree(metadata.tree):
@@ -860,7 +704,7 @@ class GitHgStore(object):
                 raise OldUpgradeAbort()
 
             # Delete old tag-cache, which may contain incomplete data.
-            Git.delete_ref('refs/cinnabar/tag-cache')
+            Git.delete_ref(b'refs/cinnabar/tag-cache')
 
     def prepare_graft(self):
         self._graft = Grafter(self)
@@ -869,22 +713,22 @@ class GitHgStore(object):
     def _try_merge_branches(repo_url):
         parsed_url = urlparse(repo_url)
         branches = []
-        path = parsed_url.path.lstrip('/').rstrip('/')
+        path = parsed_url.path.lstrip(b'/').rstrip(b'/')
         if path:
-            parts = list(reversed(path.split('/')))
+            parts = list(reversed(path.split(b'/')))
         else:
             parts = []
-        host = parsed_url.netloc.split(':', 1)[0]
+        host = parsed_url.netloc.split(b':', 1)[0]
         if host:
             parts.append(host)
-        last_path = ''
+        last_path = b''
         for part in parts:
             if last_path:
-                last_path = '%s/%s' % (part, last_path)
+                last_path = b'%s/%s' % (part, last_path)
             else:
                 last_path = part
             branches.append(last_path)
-        branches.append('metadata')
+        branches.append(b'metadata')
         return branches
 
     @staticmethod
@@ -892,10 +736,10 @@ class GitHgStore(object):
         for branch in branches:
             if branch in remote_refs:
                 return branch
-            if 'refs/cinnabar/%s' % branch in remote_refs:
-                return 'refs/cinnabar/%s' % branch
-            if 'refs/heads/%s' % branch in remote_refs:
-                return 'refs/heads/%s' % branch
+            if b'refs/cinnabar/%s' % branch in remote_refs:
+                return b'refs/cinnabar/%s' % branch
+            if b'refs/heads/%s' % branch in remote_refs:
+                return b'refs/heads/%s' % branch
 
     def merge(self, git_repo_url, hg_repo_url, branch=None):
         # Eventually we'll want to handle a full merge, but for now, we only
@@ -903,19 +747,19 @@ class GitHgStore(object):
         # The caller should avoid calling this function otherwise.
         assert not self._has_metadata
         remote_refs = OrderedDict()
-        for line in Git.iter('ls-remote', git_repo_url,
+        for line in Git.iter('ls-remote', fsdecode(git_repo_url),
                              stderr=open(os.devnull, 'wb')):
             sha1, ref = line.split(None, 1)
             remote_refs[ref] = sha1
         bundle = None
-        if not remote_refs and urlparse(git_repo_url).scheme in ('http',
-                                                                 'https'):
+        if not remote_refs and urlparse(git_repo_url).scheme in (b'http',
+                                                                 b'https'):
             try:
                 bundle = HTTPReader(git_repo_url)
             except URLError as e:
                 logging.error(e.reason)
                 return False
-            BUNDLE_SIGNATURE = '# v2 git bundle\n'
+            BUNDLE_SIGNATURE = b'# v2 git bundle\n'
             signature = bundle.read(len(BUNDLE_SIGNATURE))
             if signature != BUNDLE_SIGNATURE:
                 logging.error('Could not find cinnabar metadata')
@@ -925,7 +769,7 @@ class GitHgStore(object):
                 line = bundle.readline().rstrip()
                 if not line:
                     break
-                sha1, ref = line.split(' ', 1)
+                sha1, ref = line.split(b' ', 1)
                 remote_refs[ref] = sha1
         if branch:
             branches = [branch]
@@ -946,8 +790,8 @@ class GitHgStore(object):
         else:
             fetch = ['fetch', '--no-tags', '--no-recurse-submodules', '-q']
             fetch.append('--progress' if util.progress else '--no-progress')
-            fetch.append(git_repo_url)
-            cmd = fetch + [ref + ':refs/cinnabar/fetch']
+            fetch.append(fsdecode(git_repo_url))
+            cmd = fetch + [fsdecode(ref) + ':refs/cinnabar/fetch']
             proc = GitProcess(*cmd, stdout=sys.stdout)
         if proc.wait():
             logging.error('Failed to fetch cinnabar metadata.')
@@ -955,12 +799,12 @@ class GitHgStore(object):
 
         # Do some basic validation on the metadata we just got.
         commit = GitCommit(remote_refs[ref])
-        if 'cinnabar@git' not in commit.author:
+        if b'cinnabar@git' not in commit.author:
             logging.error('Invalid cinnabar metadata.')
             return False
 
         flags = set(commit.body.split())
-        if 'files-meta' not in flags or 'unified-manifests-v2' not in flags \
+        if b'files-meta' not in flags or b'unified-manifests-v2' not in flags \
                 or len(commit.parents) != len(self.METADATA_REFS):
             logging.error('Invalid cinnabar metadata.')
             return False
@@ -971,18 +815,19 @@ class GitHgStore(object):
         if commit.tree != EMPTY_TREE:
             errors = False
             by_sha1 = {}
-            for k, v in remote_refs.iteritems():
+            for k, v in util.iteritems(remote_refs):
                 if v not in by_sha1:
                     by_sha1[v] = k
             needed = []
             for line in Git.ls_tree(commit.tree):
                 mode, typ, sha1, path = line
                 if sha1 in by_sha1:
-                    ref = 'refs/cinnabar/replace/%s' % path
+                    ref = b'refs/cinnabar/replace/%s' % path
                     if bundle:
                         Git.update_ref(ref, sha1)
                     else:
-                        needed.append(':'.join((by_sha1[sha1], ref)))
+                        needed.append(
+                            fsdecode(b':'.join((by_sha1[sha1], ref))))
                 else:
                     logging.error('Missing commit: %s', sha1)
                     errors = True
@@ -996,10 +841,10 @@ class GitHgStore(object):
                     logging.error('Failed to fetch cinnabar metadata.')
                     return False
 
-        Git.update_ref('refs/cinnabar/metadata', commit.sha1)
+        Git.update_ref(b'refs/cinnabar/metadata', commit.sha1)
         self._metadata_sha1 = commit.sha1
         GitHgHelper.reload()
-        Git.delete_ref('refs/cinnabar/fetch')
+        Git.delete_ref(b'refs/cinnabar/fetch')
 
         # TODO: avoid the duplication of code with __init__
         metadata = self.metadata()
@@ -1007,21 +852,21 @@ class GitHgStore(object):
         if not metadata:
             # This should never happen, but just in case.
             logging.warn('Could not find cinnabar metadata')
-            Git.delete_ref('refs/cinnabar/metadata')
+            Git.delete_ref(b'refs/cinnabar/metadata')
             GitHgHelper.reload()
             return False
 
         metadata, refs = metadata
         self._has_metadata = True
         self._metadata_refs = refs if metadata else {}
-        changesets_ref = self._metadata_refs.get('refs/cinnabar/changesets')
+        changesets_ref = self._metadata_refs.get(b'refs/cinnabar/changesets')
         if changesets_ref:
             commit = GitCommit(changesets_ref)
             for head in commit.body.splitlines():
-                hghead, branch = head.split(' ', 1)
+                hghead, branch = head.split(b' ', 1)
                 self._hgheads._previous[hghead] = branch
 
-        self._manifest_heads_orig = set(GitHgHelper.heads('manifests'))
+        self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
 
         for line in Git.ls_tree(metadata.tree):
             mode, typ, sha1, path = line
@@ -1041,7 +886,7 @@ class GitHgStore(object):
     def _get_hgtags(self, head):
         tags = TagSet()
         if not self._tagcache.get(head):
-            ls = one(Git.ls_tree(head, '.hgtags'))
+            ls = one(Git.ls_tree(head, b'.hgtags'))
             if not ls:
                 self._tagcache[head] = NULL_NODE_ID
                 return tags
@@ -1049,19 +894,19 @@ class GitHgStore(object):
         tagfile = self._tagcache[head]
         if tagfile not in self._tags:
             if tagfile in self._tagfiles:
-                data = GitHgHelper.cat_file('blob', self._tagfiles[tagfile])
+                data = GitHgHelper.cat_file(b'blob', self._tagfiles[tagfile])
                 for line in data.splitlines():
-                    tag, nodes = line.split('\0', 1)
-                    nodes = nodes.split(' ')
+                    tag, nodes = line.split(b'\0', 1)
+                    nodes = nodes.split(b' ')
                     for node in reversed(nodes):
                         tags[tag] = node
             else:
-                data = GitHgHelper.cat_file('blob', tagfile) or ''
+                data = GitHgHelper.cat_file(b'blob', tagfile) or b''
                 for line in data.splitlines():
                     if not line:
                         continue
                     try:
-                        node, tag = line.split(' ', 1)
+                        node, tag = line.split(b' ', 1)
                     except ValueError:
                         continue
                     tag = tag.strip()
@@ -1079,7 +924,7 @@ class GitHgStore(object):
     def heads(self, branches={}):
         if not isinstance(branches, (dict, set)):
             branches = set(branches)
-        return set(h for h, b in self._hgheads.iteritems()
+        return set(h for h, b in util.iteritems(self._hgheads)
                    if not branches or b in branches)
 
     def _head_branch(self, head):
@@ -1087,7 +932,7 @@ class GitHgStore(object):
             return self._hgheads[head], head
         if head in self._branches:
             return self._branches[head], head
-        branch = self.changeset(head).branch or 'default'
+        branch = self.changeset(head).branch or b'default'
         self._branches[head] = branch
         return branch, head
 
@@ -1105,7 +950,8 @@ class GitHgStore(object):
         self._hgheads[head] = branch
 
     def read_changeset_data(self, obj):
-        obj = str(obj)
+        assert obj is not None
+        obj = bytes(obj)
         data = GitHgHelper.git2hg(obj)
         if data is None:
             return None
@@ -1115,7 +961,7 @@ class GitHgStore(object):
     def hg_changeset(self, sha1):
         data = self.read_changeset_data(sha1)
         if data:
-            assert data.startswith('changeset ')
+            assert data.startswith(b'changeset ')
             return data[10:50]
         return None
 
@@ -1156,27 +1002,27 @@ class GitHgStore(object):
         return changeset
 
     ATTR = {
-        '100644': '',
-        '100755': 'x',
-        '120000': 'l',
+        b'100644': b'',
+        b'100755': b'x',
+        b'120000': b'l',
     }
 
     @staticmethod
     def manifest_metadata_path(path):
-        return '_' + path.replace('/', '/_')
+        return b'_' + path.replace(b'/', b'/_')
 
     @staticmethod
     def manifest_path(path):
-        return path[1:].replace('/_', '/')
+        return path[1:].replace(b'/_', b'/')
 
     def manifest(self, sha1, include_parents=False):
         manifest = GeneratedManifestInfo(sha1)
-        manifest.data = GitHgHelper.manifest(sha1)
+        manifest.raw_data = GitHgHelper.manifest(sha1)
         if include_parents:
             git_sha1 = self.manifest_ref(sha1)
             commit = GitCommit(git_sha1)
             parents = (self.hg_manifest(p) for p in commit.parents)
-            manifest.set_parents(*parents)
+            manifest.parents = tuple(parents)
         return manifest
 
     def manifest_ref(self, sha1):
@@ -1198,9 +1044,9 @@ class GitHgStore(object):
     def file(self, sha1, file_parents=None, git_manifest_parents=None,
              path=None):
         if sha1 == HG_EMPTY_FILE:
-            content = ''
+            content = b''
         else:
-            content = GitHgHelper.cat_blob(':h%s' % sha1)
+            content = GitHgHelper.cat_blob(b':h%s' % sha1)
 
         file = File(sha1)
         meta = self.file_meta(sha1)
@@ -1244,9 +1090,9 @@ class GitHgStore(object):
             author = Authorship.from_hg(instance.author, instance.timestamp,
                                         instance.utcoffset)
             extra = instance.extra
-            if extra and extra.get('committer'):
-                committer = extra['committer']
-                if committer[-1] == '>':
+            if extra and extra.get(b'committer'):
+                committer = extra[b'committer']
+                if committer[-1:] == b'>':
                     committer = Authorship.from_hg(
                         committer, instance.timestamp, instance.utcoffset)
                 else:
@@ -1254,13 +1100,13 @@ class GitHgStore(object):
                         committer, maybe_git_utcoffset=True)
                     if committer.to_hg() == committer:
                         extra = dict(instance.extra)
-                        del extra['committer']
+                        del extra[b'committer']
                         if not extra:
                             extra = None
             else:
                 committer = author
 
-            parents = tuple(':h%s' % p for p in instance.parents)
+            parents = tuple(b':h%s' % p for p in instance.parents)
 
             body = instance.body
 
@@ -1274,49 +1120,49 @@ class GitHgStore(object):
             committer = committer.to_git_str()
             author = author.to_git_str()
             with GitHgHelper.commit(
-                ref='refs/cinnabar/tip',
+                ref=b'refs/cinnabar/tip',
                 message=body,
                 committer=committer,
                 author=author,
                 parents=parents,
-                pseudo_mark=':h%s' % instance.node,
+                pseudo_mark=b':h%s' % instance.node,
             ) as c:
-                c.filemodify('', self.git_tree(instance.manifest,
-                                               *instance.parents[:1]),
-                             typ='tree')
+                c.filemodify(b'', self.git_tree(instance.manifest,
+                                                *instance.parents[:1]),
+                             typ=b'tree')
 
-            commit = PseudoGitCommit(':1')
+            commit = PseudoGitCommit(b':1')
             commit.author = author
             commit.committer = committer
             commit.body = body
 
-        GitHgHelper.set('changeset', instance.node, commit.sha1)
+        GitHgHelper.set(b'changeset', instance.node, commit.sha1)
         changeset = Changeset.from_git_commit(commit)
         GitHgHelper.put_blob(
             ChangesetPatcher.from_diff(changeset, instance), want_sha1=False)
-        GitHgHelper.set('changeset-metadata', instance.node, ':1')
+        GitHgHelper.set(b'changeset-metadata', instance.node, b':1')
 
-        self._branches[instance.node] = instance.branch or 'default'
+        self._branches[instance.node] = instance.branch or b'default'
         self.add_head(instance.node, instance.parent1, instance.parent2)
 
     MODE = {
-        '': '160644',
-        'l': '160000',
-        'x': '160755',
+        b'': b'160644',
+        b'l': b'160000',
+        b'x': b'160755',
     }
 
     def store_manifest(self, instance):
         if getattr(instance, 'delta_node', NULL_NODE_ID) != NULL_NODE_ID:
-            previous = ':h%s' % instance.delta_node
+            previous = b':h%s' % instance.delta_node
         else:
             previous = None
-        parents = tuple(':h%s' % p for p in instance.parents)
+        parents = tuple(b':h%s' % p for p in instance.parents)
         with GitHgHelper.commit(
-            ref='refs/cinnabar/manifests',
+            ref=b'refs/cinnabar/manifests',
             from_commit=previous,
             parents=parents,
             message=instance.node,
-            pseudo_mark=':h%s' % instance.node,
+            pseudo_mark=b':h%s' % instance.node,
         ) as commit:
             if hasattr(instance, 'delta_node'):
                 for name in instance.removed:
@@ -1324,25 +1170,24 @@ class GitHgStore(object):
                 modified = instance.modified.items()
             else:
                 # slow
-                modified = ((line.name, (line.node, line.attr))
-                            for line in instance._lines)
+                modified = ((line.path, (line.sha1, line.attr))
+                            for line in instance)
             for name, (node, attr) in modified:
-                node = str(node)
+                node = bytes(node)
                 commit.filemodify(self.manifest_metadata_path(name), node,
                                   self.MODE[attr])
 
-        GitHgHelper.set('manifest', instance.node, ':1')
+        GitHgHelper.set(b'manifest', instance.node, b':1')
 
-        self.check_manifest(instance)
-
-    def check_manifest(self, instance):
         if check_enabled('manifests'):
             if not GitHgHelper.check_manifest(instance.node):
                 raise Exception(
                     'sha1 mismatch for node %s with parents %s %s and '
                     'previous %s' %
-                    (instance.node, instance.parent1, instance.parent2,
-                     instance.delta_node)
+                    (instance.node.decode('ascii'),
+                     instance.parent1.decode('ascii'),
+                     instance.parent2.decode('ascii'),
+                     instance.delta_node.decode('ascii'))
                 )
 
     def close(self, refresh=()):
@@ -1355,72 +1200,72 @@ class GitHgStore(object):
         if not GitHgHelper._helper:
             return
         update_metadata = {}
-        tree = GitHgHelper.store('metadata', 'hg2git')
+        tree = GitHgHelper.store(b'metadata', b'hg2git')
         if tree != NULL_NODE_ID:
-            hg2git = self._metadata_refs.get('refs/cinnabar/hg2git')
+            hg2git = self._metadata_refs.get(b'refs/cinnabar/hg2git')
             with GitHgHelper.commit(
-                ref='refs/cinnabar/hg2git',
+                ref=b'refs/cinnabar/hg2git',
             ) as commit:
-                commit.write('M 040000 %s \n' % tree)
+                commit.write(b'M 040000 %s \n' % tree)
             if commit.sha1 != hg2git:
-                update_metadata['refs/cinnabar/hg2git'] = commit.sha1
+                update_metadata[b'refs/cinnabar/hg2git'] = commit.sha1
 
-        tree = GitHgHelper.store('metadata', 'git2hg')
+        tree = GitHgHelper.store(b'metadata', b'git2hg')
         if tree != NULL_NODE_ID:
-            notes = self._metadata_refs.get('refs/notes/cinnabar')
+            notes = self._metadata_refs.get(b'refs/notes/cinnabar')
             with GitHgHelper.commit(
-                ref='refs/notes/cinnabar',
+                ref=b'refs/notes/cinnabar',
             ) as commit:
-                commit.write('M 040000 %s \n' % tree)
+                commit.write(b'M 040000 %s \n' % tree)
             if commit.sha1 != notes:
-                update_metadata['refs/notes/cinnabar'] = commit.sha1
+                update_metadata[b'refs/notes/cinnabar'] = commit.sha1
 
         hg_changeset_heads = list(self._hgheads)
         changeset_heads = list(self.changeset_ref(h)
                                for h in hg_changeset_heads)
         if (any(self._hgheads.iterchanges()) or
-                'refs/cinnabar/changesets' in refresh):
+                b'refs/cinnabar/changesets' in refresh):
             heads = sorted((self._hgheads[h], h, g)
-                           for h, g in izip(hg_changeset_heads,
-                                            changeset_heads))
+                           for h, g in zip(hg_changeset_heads,
+                                           changeset_heads))
             with GitHgHelper.commit(
-                ref='refs/cinnabar/changesets',
+                ref=b'refs/cinnabar/changesets',
                 parents=list(h for _, __, h in heads),
-                message='\n'.join('%s %s' % (h, b) for b, h, _ in heads),
+                message=b'\n'.join(b'%s %s' % (h, b) for b, h, _ in heads),
             ) as commit:
                 pass
-            update_metadata['refs/cinnabar/changesets'] = commit.sha1
+            update_metadata[b'refs/cinnabar/changesets'] = commit.sha1
 
         changeset_heads = set(changeset_heads)
 
-        manifest_heads = GitHgHelper.heads('manifests')
+        manifest_heads = GitHgHelper.heads(b'manifests')
         if (set(manifest_heads) != self._manifest_heads_orig or
-                ('refs/cinnabar/changesets' in update_metadata and
-                 not manifest_heads) or 'refs/cinnabar/manifests' in refresh):
+                (b'refs/cinnabar/changesets' in update_metadata and
+                 not manifest_heads) or b'refs/cinnabar/manifests' in refresh):
             with GitHgHelper.commit(
-                ref='refs/cinnabar/manifests',
+                ref=b'refs/cinnabar/manifests',
                 parents=sorted(manifest_heads),
             ) as commit:
                 pass
-            update_metadata['refs/cinnabar/manifests'] = commit.sha1
+            update_metadata[b'refs/cinnabar/manifests'] = commit.sha1
 
-        tree = GitHgHelper.store('metadata', 'files-meta')
-        files_meta_ref = self._metadata_refs.get('refs/cinnabar/files-meta')
+        tree = GitHgHelper.store(b'metadata', b'files-meta')
+        files_meta_ref = self._metadata_refs.get(b'refs/cinnabar/files-meta')
         if update_metadata and (tree != NULL_NODE_ID or not files_meta_ref):
             with GitHgHelper.commit(
-                ref='refs/cinnabar/files-meta',
+                ref=b'refs/cinnabar/files-meta',
             ) as commit:
                 if tree != NULL_NODE_ID:
-                    commit.write('M 040000 %s \n' % tree)
+                    commit.write(b'M 040000 %s \n' % tree)
             if commit.sha1 != files_meta_ref:
-                update_metadata['refs/cinnabar/files-meta'] = commit.sha1
+                update_metadata[b'refs/cinnabar/files-meta'] = commit.sha1
 
         replace_changed = False
         for status, ref, sha1 in self._replace.iterchanges():
             if status == VersionedDict.REMOVED:
-                Git.delete_ref('refs/cinnabar/replace/%s' % ref)
+                Git.delete_ref(b'refs/cinnabar/replace/%s' % ref)
             else:
-                Git.update_ref('refs/cinnabar/replace/%s' % ref, sha1)
+                Git.update_ref(b'refs/cinnabar/replace/%s' % ref, sha1)
             replace_changed = True
 
         if update_metadata or replace_changed:
@@ -1431,12 +1276,12 @@ class GitHgStore(object):
             if metadata_sha1:
                 parents.append(metadata_sha1)
             with GitHgHelper.commit(
-                ref='refs/cinnabar/metadata',
+                ref=b'refs/cinnabar/metadata',
                 parents=parents,
-                message=' '.join(sorted(self.FLAGS)),
+                message=b' '.join(sorted(self.FLAGS)),
             ) as commit:
-                for sha1, target in self._replace.iteritems():
-                    commit.filemodify(sha1, target, 'commit')
+                for sha1, target in util.iteritems(self._replace):
+                    commit.filemodify(sha1, target, b'commit')
 
         for c in self._tagcache:
             if c not in changeset_heads:
@@ -1446,7 +1291,7 @@ class GitHgStore(object):
             if c not in self._tagcache:
                 tags = self._get_hgtags(c)
 
-        files = set(self._tagcache.itervalues())
+        files = set(util.itervalues(self._tagcache))
         deleted = set()
         created = {}
         for f in self._tagcache_items:
@@ -1456,41 +1301,41 @@ class GitHgStore(object):
 
         def tagset_lines(tags):
             for tag, value in tags:
-                yield '%s\0%s %s\n' % (tag, value,
-                                       ' '.join(sorted(tags.hist(tag))))
+                yield b'%s\0%s %s\n' % (tag, value,
+                                        b' '.join(tags.hist(tag)))
 
-        for f, tags in self._tags.iteritems():
+        for f, tags in util.iteritems(self._tags):
             if f not in self._tagfiles and f != NULL_NODE_ID:
-                data = ''.join(tagset_lines(tags))
+                data = b''.join(tagset_lines(tags))
                 mark = GitHgHelper.put_blob(data=data)
-                created[f] = (mark, 'exec')
+                created[f] = (mark, b'exec')
 
         if created or deleted:
             self.tag_changes = True
 
-        for c, f in self._tagcache.iteritems():
+        for c, f in util.iteritems(self._tagcache):
             if (f and c not in self._tagcache_items):
                 if f == NULL_NODE_ID:
-                    created[c] = (f, 'commit')
+                    created[c] = (f, b'commit')
                 else:
-                    created[c] = (f, 'regular')
+                    created[c] = (f, b'regular')
             elif f is False and c in self._tagcache_items:
                 deleted.add(c)
 
         if created or deleted:
             with GitHgHelper.commit(
-                ref='refs/cinnabar/tag_cache',
+                ref=b'refs/cinnabar/tag_cache',
                 from_commit=self._tagcache_ref,
             ) as commit:
                 for f in deleted:
                     commit.filedelete(f)
 
-                for f, (filesha1, typ) in created.iteritems():
+                for f, (filesha1, typ) in util.iteritems(created):
                     commit.filemodify(f, filesha1, typ)
 
         # refs/notes/cinnabar is kept for convenience
         for ref in update_metadata:
-            if ref not in ('refs/notes/cinnabar',):
+            if ref not in (b'refs/notes/cinnabar',):
                 Git.delete_ref(ref)
 
         if self._metadata_sha1 and update_metadata and not refresh and \

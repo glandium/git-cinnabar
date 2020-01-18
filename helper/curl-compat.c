@@ -6,6 +6,7 @@ void curl_easy_setopt() {}
 void curl_easy_strerror() {}
 void curl_global_cleanup() {}
 void curl_global_init() {}
+void curl_global_init_mem() {}
 void curl_multi_add_handle() {}
 void curl_multi_cleanup() {}
 void curl_multi_fdset() {}

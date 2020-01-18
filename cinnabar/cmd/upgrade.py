@@ -1,3 +1,4 @@
+from __future__ import absolute_import, print_function, unicode_literals
 from cinnabar.cmd.util import CLI
 from cinnabar.exceptions import UpgradeAbort
 from cinnabar.githg import GitHgStore
@@ -15,18 +16,18 @@ def upgrade(args):
 
     try:
         store = GitHgStore()
-        print 'No metadata to upgrade'
+        print('No metadata to upgrade')
         return 2
     except UpgradeAbort:
         store = UpgradeGitHgStore()
 
     if not GitHgHelper.upgrade():
-        print 'Cannot finish upgrading... You may need to reclone.'
+        print('Cannot finish upgrading... You may need to reclone.')
         return 1
 
-    print 'Finalizing upgrade...'
+    print('Finalizing upgrade...')
     store.close(refresh=store.METADATA_REFS)
-    print (
+    print(
         'You may want to run `git cinnabar fsck` to ensure the upgrade '
         'went well.\n'
     )

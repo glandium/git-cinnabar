@@ -1,11 +1,15 @@
 #!/usr/bin/env python2.7
 
-from __future__ import division
+from __future__ import absolute_import, division, unicode_literals
 from collections import (
     deque,
     defaultdict
 )
-from .util import OrderedDefaultDict
+from .util import (
+    iteritems,
+    itervalues,
+    OrderedDefaultDict,
+)
 
 
 # TODO: this class sucks and is probably wrong
@@ -29,7 +33,7 @@ class gitdag(object):
             self._tags[node] = tag
 
     def roots(self, tag=None):
-        for node, parents in self._parents.iteritems():
+        for node, parents in iteritems(self._parents):
             if self._tags.get(node) == tag:
                 if all(p not in self._parents or self._tags.get(p) != tag
                        for p in parents):
@@ -79,7 +83,7 @@ class gitdag(object):
                 if n not in self._tags:
                     yield n
         else:
-            for n, t in self._tags.iteritems():
+            for n, t in iteritems(self._tags):
                 if t == tag:
                     yield n
 
@@ -90,4 +94,4 @@ class gitdag(object):
         return node in self._parents
 
     def tags(self):
-        return set(self._tags.itervalues())
+        return set(itervalues(self._tags))

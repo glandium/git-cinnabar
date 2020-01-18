@@ -88,10 +88,10 @@
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
-static int mode = 0xff; // Enable everything by default
-
 #define MODE_IMPORT 0x01
 #define MODE_WIRE 0x02
+
+static int mode = 0xff; // Enable everything by default
 
 struct notes_tree git2hg, hg2git, files_meta;
 
@@ -100,6 +100,7 @@ struct oidset hg2git_seen = OIDSET_INIT;
 
 int metadata_flags = 0;
 int cinnabar_check = 0;
+int cinnabar_experiments = 0;
 
 static int config(const char *name, struct strbuf *result)
 {
@@ -144,7 +145,14 @@ static void rev_info_release(struct rev_info *revs)
 	for (i = 0; i < revs->cmdline.nr; i++)
 		free((void *)revs->cmdline.rev[i].name);
 	free(revs->cmdline.rev);
+	clear_pathspec(&revs->prune_data);
+	clear_pathspec(&revs->pruning.pathspec);
+	clear_pathspec(&revs->diffopt.pathspec);
 	revs->cmdline.rev = NULL;
+	for (i = 0; i < revs->treesame.size; i++)
+		if (revs->treesame.entries[i].base)
+			free(revs->treesame.entries[i].decoration);
+	free(revs->treesame.entries);
 }
 
 static void split_command(char *line, const char **command,
@@ -355,7 +363,7 @@ static void do_rev_list(struct string_list *args)
 
 	// More extensive than reset_revision_walk(). Otherwise --boundary
 	// and pathspecs don't work properly.
-	clear_object_flags(ALL_REV_FLAGS);
+	clear_object_flags(ALL_REV_FLAGS | TOPO_WALK_EXPLORED | TOPO_WALK_INDEGREE);
 	send_buffer(&buf);
 	strbuf_release(&buf);
 	rev_info_release(&revs);
@@ -635,6 +643,88 @@ static int manifest_tree_state_init(const struct object_id *tree_id,
 	return 0;
 }
 
+struct merge_manifest_tree_state {
+	struct manifest_tree_state state_a, state_b;
+	struct name_entry entry_a, entry_b;
+	struct strslice entry_a_path, entry_b_path;
+	int cmp;
+};
+
+struct merge_name_entry {
+	struct name_entry *entry_a, *entry_b;
+	struct strslice path;
+};
+
+static int merge_manifest_tree_state_init(const struct object_id *tree_id_a,
+                                          const struct object_id *tree_id_b,
+                                          struct merge_manifest_tree_state *result,
+                                          struct object_list **tree_list)
+{
+	int ret;
+	memset(result, 0, sizeof(*result));
+	result->cmp = 0;
+
+	if (tree_id_a) {
+		ret = manifest_tree_state_init(tree_id_a, &result->state_a, tree_list);
+		if (ret)
+			return ret;
+	} else {
+		result->entry_a_path = empty_strslice();
+		result->cmp = 1;
+	}
+	if (tree_id_b) {
+		return manifest_tree_state_init(tree_id_b, &result->state_b, tree_list);
+	} else if (result->cmp == 0) {
+		result->entry_b_path = empty_strslice();
+		result->cmp = -1;
+		return 0;
+	}
+	return 1;
+}
+
+static int merge_tree_entry(struct merge_manifest_tree_state *state,
+                            struct merge_name_entry *entries)
+{
+	if (state->cmp <= 0) {
+		if (tree_entry(&state->state_a.desc, &state->entry_a)) {
+			state->entry_a_path = strslice_from_str(state->entry_a.path);
+		} else {
+			state->entry_a_path = empty_strslice();
+		}
+	}
+	if (state->cmp >= 0) {
+		if (tree_entry(&state->state_b.desc, &state->entry_b)) {
+			state->entry_b_path = strslice_from_str(state->entry_b.path);
+		} else {
+			state->entry_b_path = empty_strslice();
+		}
+	}
+	if (!state->entry_a_path.len) {
+		if (!state->entry_b_path.len)
+			return 0;
+		state->cmp = 1;
+	} else if (!state->entry_b_path.len) {
+		state->cmp = -1;
+	} else {
+		state->cmp = base_name_compare(
+			state->entry_a_path.buf, state->entry_a_path.len, state->entry_a.mode,
+			state->entry_b_path.buf, state->entry_b_path.len, state->entry_b.mode);
+	}
+	if (state->cmp <= 0) {
+		entries->entry_a = &state->entry_a;
+		entries->path = state->entry_a_path;
+	} else {
+		entries->entry_a = NULL;
+	}
+	if (state->cmp >= 0) {
+		entries->entry_b = &state->entry_b;
+		entries->path = state->entry_b_path;
+	} else {
+		entries->entry_b = NULL;
+	}
+	return 1;
+}
+
 static int old_manifest_tree_state_init(const struct old_manifest_tree *tree,
                                         struct old_manifest_tree_state *result,
                                         struct object_list **tree_list)
@@ -692,46 +782,6 @@ corrupted:
 	die("Corrupted metadata");
 }
 
-static void recurse_manifest(const struct object_id *tree_id,
-                             struct strbuf *manifest, struct strslice base,
-                             struct object_list **tree_list)
-{
-	struct manifest_tree_state state;
-	struct name_entry entry;
-
-	if (manifest_tree_state_init(tree_id, &state, tree_list))
-		goto corrupted;
-
-	while (tree_entry(&state.desc, &entry)) {
-		struct strslice entry_path;
-		struct strslice underscore = { 1, "_" };
-		entry_path = strslice_from_str(entry.path);
-		if (!strslice_startswith(entry_path, underscore))
-			goto corrupted;
-		entry_path = strslice_slice(entry_path, 1, SIZE_MAX);
-		if (S_ISDIR(entry.mode)) {
-			struct strbuf dir = STRBUF_INIT;
-			strbuf_addslice(&dir, base);
-			strbuf_addslice(&dir, entry_path);
-			strbuf_addch(&dir, '/');
-			recurse_manifest(&entry.oid, manifest,
-			                 strbuf_as_slice(&dir), tree_list);
-			strbuf_release(&dir);
-			continue;
-		} else if (entry_path.len == 0)
-			goto corrupted;
-		strbuf_addslice(manifest, base);
-		strbuf_addslice(manifest, entry_path);
-		strbuf_addf(manifest, "%c%s%s\n", '\0',
-		            oid_to_hex(&entry.oid), hgattr(entry.mode));
-	}
-
-	return;
-corrupted:
-	die("Corrupted metadata");
-
-}
-
 /* Return whether two entries have matching sha1s and modes */
 static int manifest_entry_equal(const struct name_entry *e1,
                                 const struct name_entry *e2)
@@ -754,103 +804,67 @@ static int path_match(struct strslice base, struct strslice name,
 	return slice.len == 1 && (slice.buf[0] == '\0' || slice.buf[0] == '/');
 }
 
-static void recurse_manifest2(const struct object_id *ref_tree_id,
-                              struct strslice ref_manifest,
-                              const struct object_id *tree_id,
-                              struct strbuf *manifest, struct strslice base,
-                              struct object_list **tree_list)
+static void recurse_manifest(const struct object_id *ref_tree_id,
+                             struct strslice ref_manifest,
+                             const struct object_id *tree_id,
+                             struct strbuf *manifest, struct strslice base,
+                             struct object_list **tree_list)
 {
-	struct manifest_tree_state ref, cur;
-	struct name_entry ref_entry, cur_entry;
-	struct strslice ref_entry_path, cur_entry_path;
-	struct strslice next = ref_manifest;
+	struct merge_manifest_tree_state state;
+	struct merge_name_entry entries;
+	struct strslice cursor;
 	struct strslice underscore = { 1, "_" };
 	struct strbuf dir = STRBUF_INIT;
-	int cmp = 0;
 
-	if (manifest_tree_state_init(ref_tree_id, &ref, tree_list))
+	if (merge_manifest_tree_state_init(ref_tree_id, tree_id, &state, tree_list))
 		goto corrupted;
 
-	if (manifest_tree_state_init(tree_id, &cur, tree_list))
-		goto corrupted;
-
-	for (;;) {
-		if (cmp >= 0) {
-			if (tree_entry(&cur.desc, &cur_entry)) {
-				cur_entry_path =
-					strslice_from_str(cur_entry.path);
-				if (!strslice_startswith(cur_entry_path, underscore))
-					goto corrupted;
-			} else {
-				cur_entry_path.len = 0;
-			}
-		}
-		if (cmp <= 0) {
-			if (tree_entry(&ref.desc, &ref_entry)) {
-				ref_entry_path =
-					strslice_from_str(ref_entry.path);
-				if (!strslice_startswith(ref_entry_path, underscore))
-					goto corrupted;
-			} else {
-				ref_entry_path.len = 0;
-			}
-			ref_manifest = next;
-			assert(!ref_entry_path.len ||
-			       path_match(base, strslice_slice(
-					ref_entry_path, 1, SIZE_MAX), next));
-		}
-		if (!ref_entry_path.len) {
-			if (!cur_entry_path.len)
-				break;
-			cmp = 1;
-		} else if (!cur_entry_path.len) {
-			cmp = -1;
-		} else {
-			cmp = name_compare(
-				ref_entry_path.buf, ref_entry_path.len,
-				cur_entry_path.buf, cur_entry_path.len);
-		}
-		if (cmp <= 0) {
-			size_t len = base.len + ref_entry_path.len + 40;
+	while (merge_tree_entry(&state, &entries)) {
+		if (!strslice_startswith(entries.path, underscore))
+			goto corrupted;
+		cursor = ref_manifest;
+		if (entries.entry_a) {
+			size_t len = base.len + entries.path.len + 40;
 			do {
-				strslice_split_once(&next, '\n');
-			} while (S_ISDIR(ref_entry.mode) &&
-			         (next.len > len) &&
+				strslice_split_once(&ref_manifest, '\n');
+			} while (S_ISDIR(entries.entry_a->mode) &&
+			         (ref_manifest.len > len) &&
 			         path_match(base, strslice_slice(
-					ref_entry_path, 1, SIZE_MAX), next));
+					entries.path, 1, SIZE_MAX), ref_manifest));
 		}
 		/* File/directory was removed, nothing to do */
-		if (cmp < 0)
+		if (!entries.entry_b)
 			continue;
 		/* File/directory didn't change, copy from the reference
 		 * manifest. */
-		if (cmp == 0 && manifest_entry_equal(&ref_entry, &cur_entry)) {
-			strbuf_add(manifest, ref_manifest.buf,
-			           ref_manifest.len - next.len);
+		if (entries.entry_a && entries.entry_b &&
+		    manifest_entry_equal(entries.entry_a, entries.entry_b)) {
+			strbuf_add(manifest, cursor.buf,
+			           cursor.len - ref_manifest.len);
 			continue;
 		}
-		if (!S_ISDIR(cur_entry.mode)) {
-			if (cur_entry_path.len == 0)
-				goto corrupted;
+		if (entries.entry_b && !S_ISDIR(entries.entry_b->mode)) {
 			strbuf_addslice(manifest, base);
 			strbuf_addslice(manifest, strslice_slice(
-				cur_entry_path, 1, SIZE_MAX));
+				entries.path, 1, SIZE_MAX));
 			strbuf_addf(manifest, "%c%s%s\n", '\0',
-			            oid_to_hex(&cur_entry.oid),
-			            hgattr(cur_entry.mode));
+			            oid_to_hex(&entries.entry_b->oid),
+			            hgattr(entries.entry_b->mode));
 			continue;
 		}
 
 		strbuf_addslice(&dir, base);
 		strbuf_addslice(&dir, strslice_slice(
-			cur_entry_path, 1, SIZE_MAX));
+			entries.path, 1, SIZE_MAX));
 		strbuf_addch(&dir, '/');
-		if (cmp == 0 && S_ISDIR(ref_entry.mode)) {
-			recurse_manifest2(&ref_entry.oid, ref_manifest,
-				          &cur_entry.oid, manifest,
-			                  strbuf_as_slice(&dir), tree_list);
+		if (entries.entry_a && entries.entry_b &&
+                    S_ISDIR(entries.entry_a->mode)) {
+			recurse_manifest(&entries.entry_a->oid, cursor,
+				         &entries.entry_b->oid, manifest,
+			                 strbuf_as_slice(&dir), tree_list);
 		} else
-			recurse_manifest(&cur_entry.oid, manifest,
+			recurse_manifest(NULL, empty_strslice(),
+			                 &entries.entry_b->oid, manifest,
 			                 strbuf_as_slice(&dir), tree_list);
 		strbuf_release(&dir);
 	}
@@ -904,10 +918,11 @@ struct strbuf *generate_manifest(const struct object_id *oid)
 		struct strslice gm;
 		gm = strbuf_slice(&generated_manifest.content, 0, SIZE_MAX);
 		strbuf_grow(&content, generated_manifest.content.alloc - 1);
-		recurse_manifest2(&generated_manifest.tree_id, gm,
-		                  oid, &content, empty_strslice(), &tree_list);
+		recurse_manifest(&generated_manifest.tree_id, gm,
+		                 oid, &content, empty_strslice(), &tree_list);
 	} else {
-		recurse_manifest(oid, &content, empty_strslice(), &tree_list);
+		recurse_manifest(NULL, empty_strslice(), oid, &content,
+		                 empty_strslice(), &tree_list);
 	}
 
 	oidcpy(&generated_manifest.tree_id, oid);
@@ -1179,6 +1194,13 @@ static void do_helpercaps(struct string_list *args)
 			strbuf_addstr(&caps, ",ZS");
 		}
 	}
+
+	if (cinnabar_experiments & EXPERIMENT_STORE) {
+		if (caps.len)
+			strbuf_addch(&caps, '\n');
+		strbuf_addstr(&caps, "store=new");
+	}
+
 	send_buffer(&caps);
 	strbuf_release(&caps);
 }
@@ -1578,21 +1600,25 @@ struct oid_map_entry {
 	struct object_id new_oid;
 };
 
-static int old2new_manifest_tree_cmp(const void *cmpdata, const void *e1,
-                                     const void *e2, const void *keydata)
+static int old2new_manifest_tree_cmp(const void *cmpdata, const struct hashmap_entry *e1,
+                                     const struct hashmap_entry *e2, const void *keydata)
 {
-	const struct old2new_manifest_tree *entry1 = e1;
-	const struct old2new_manifest_tree *entry2 = e2;
+	const struct old2new_manifest_tree *entry1 =
+		container_of(e1, const struct old2new_manifest_tree, ent);
+	const struct old2new_manifest_tree *entry2 =
+		container_of(e2, const struct old2new_manifest_tree, ent);
 
 	return memcmp(&entry1->old_tree, &entry2->old_tree,
 	              sizeof(struct old_manifest_tree));
 }
 
-static int oid_map_entry_cmp(const void *cmpdata, const void *e1,
-                             const void *e2, const void *keydata)
+static int oid_map_entry_cmp(const void *cmpdata, const struct hashmap_entry *e1,
+                             const struct hashmap_entry *e2, const void *keydata)
 {
-	const struct oid_map_entry *entry1 = e1;
-	const struct oid_map_entry *entry2 = e2;
+	const struct oid_map_entry *entry1 =
+		container_of(e1, const struct oid_map_entry, ent);
+	const struct oid_map_entry *entry2 =
+		container_of(e2, const struct oid_map_entry, ent);
 
 	return oidcmp(&entry1->old_oid, &entry2->old_oid);
 }
@@ -1605,8 +1631,8 @@ static void upgrade_manifest_tree_v1(const struct object_id *tree_id,
 	struct oid_map_entry k, *old2new;
 
 	oidcpy(&k.old_oid, tree_id);
-	hashmap_entry_init(&k.ent, sha1hash(k.old_oid.hash));
-	old2new = hashmap_get(cache, &k, NULL);
+	hashmap_entry_init(&k.ent, oidhash(&k.old_oid));
+	old2new = hashmap_get_entry(cache, &k, ent, NULL);
 	if (!old2new) {
 		struct strbuf tree_buf = STRBUF_INIT;
 		struct strbuf entry_buf = STRBUF_INIT;
@@ -1649,7 +1675,7 @@ static void upgrade_manifest_tree_v1(const struct object_id *tree_id,
 		store_git_tree(&tree_buf, reference, &old2new->new_oid);
 		strbuf_release(&tree_buf);
 		strbuf_release(&entry_buf);
-		hashmap_add(cache, old2new);
+		hashmap_add(cache, &old2new->ent);
 
 		free_tree_buffer(tree);
 		if (ref_state.tree)
@@ -1667,7 +1693,7 @@ static void upgrade_manifest_tree(struct old_manifest_tree *tree,
 
 	hashmap_entry_init(&k.ent, memhash(tree, sizeof(*tree)));
 	k.old_tree = *tree;
-	old2new = hashmap_get(cache, &k, NULL);
+	old2new = hashmap_get_entry(cache, &k, ent, NULL);
 	if (!old2new) {
 		struct old_manifest_tree_state state;
 		struct old_manifest_entry entry;
@@ -1712,7 +1738,7 @@ static void upgrade_manifest_tree(struct old_manifest_tree *tree,
 		store_git_tree(&tree_buf, reference, &old2new->new_tree);
 		strbuf_release(&tree_buf);
 		strbuf_release(&entry_buf);
-		hashmap_add(cache, old2new);
+		hashmap_add(cache, &old2new->ent);
 
 		free_tree_buffer(state.tree_git);
 		free_tree_buffer(state.tree_hg);
@@ -1748,8 +1774,8 @@ static void upgrade_manifest(struct commit *commit,
 		struct oid_map_entry k;
 		struct commit *p;
 		oidcpy(&k.old_oid, &commit->parents->item->object.oid);
-		hashmap_entry_init(&k.ent, sha1hash(k.old_oid.hash));
-		entry = hashmap_get(&track->commit_cache, &k, NULL);
+		hashmap_entry_init(&k.ent, oidhash(&k.old_oid));
+		entry = hashmap_get_entry(&track->commit_cache, &k, ent, NULL);
 		if (!entry)
 			die("Something went wrong");
 		p = lookup_commit(the_repository, &entry->new_oid);
@@ -1784,8 +1810,8 @@ static void upgrade_manifest(struct commit *commit,
 		struct oid_map_entry k;
 		if (get_oid_hex(cursor, &k.old_oid))
 			die("Invalid sha1");
-		hashmap_entry_init(&k.ent, sha1hash(k.old_oid.hash));
-		entry = hashmap_get(&track->commit_cache, &k, NULL);
+		hashmap_entry_init(&k.ent, oidhash(&k.old_oid));
+		entry = hashmap_get_entry(&track->commit_cache, &k, ent, NULL);
 		if (!entry)
 			die("Something went wrong");
 		oid_to_hex_r(cursor, &entry->new_oid);
@@ -1794,10 +1820,10 @@ static void upgrade_manifest(struct commit *commit,
 	}
 
 	entry = xmalloc(sizeof(*entry));
-	hashmap_entry_init(&entry->ent, sha1hash(commit->object.oid.hash));
+	hashmap_entry_init(&entry->ent, oidhash(&commit->object.oid));
 	oidcpy(&entry->old_oid, &commit->object.oid);
 	store_git_commit(&new_commit, &entry->new_oid);
-	hashmap_add(&track->commit_cache, entry);
+	hashmap_add(&track->commit_cache, &entry->ent);
 	oidset_insert(&track->manifests, &entry->new_oid);
 
 	get_manifest_oid(commit, &oid);
@@ -1932,8 +1958,8 @@ static void do_upgrade(struct string_list *args)
 				free_tree_buffer(get_commit_tree(manifest_commit));
 			}
 		}
-		hashmap_free(&track.commit_cache, 1);
-		hashmap_free(&track.tree_cache, 1);
+		hashmap_free_entries(&track.commit_cache, struct oid_map_entry, ent);
+		hashmap_free_entries(&track.tree_cache, struct oid_map_entry, ent);
 		oidset_clear(&track.manifests);
 		stop_progress(&track.progress);
 	}
@@ -1944,54 +1970,72 @@ static void do_upgrade(struct string_list *args)
 
 static void recurse_create_git_tree(const struct object_id *tree_id,
                                     const struct object_id *reference,
-                                    struct strbuf *tree_buf,
+                                    const struct object_id *merge_tree_id,
                                     struct object_id *result,
 				    struct hashmap *cache)
 {
-	struct oid_map_entry k, *cache_entry;
+	struct oid_map_entry k, *cache_entry = NULL;
 
-	hashmap_entry_init(&k.ent, sha1hash(tree_id->hash));
-	oidcpy(&k.old_oid, tree_id);
-	cache_entry = hashmap_get(cache, &k, NULL);
+	if (!merge_tree_id) {
+		hashmap_entry_init(&k.ent, oidhash(tree_id));
+		oidcpy(&k.old_oid, tree_id);
+		cache_entry = hashmap_get_entry(cache, &k, ent, NULL);
+	}
 	if (!cache_entry) {
-		struct manifest_tree_state state;
+		struct merge_manifest_tree_state state;
 		struct manifest_tree_state ref_state = { NULL, };
-		struct name_entry entry;
-		struct strbuf tree_buf_ = STRBUF_INIT;
-		if (!tree_buf)
-			tree_buf = &tree_buf_;
+		struct merge_name_entry entries;
+		struct strbuf tree_buf = STRBUF_INIT;
 
-		if (manifest_tree_state_init(tree_id, &state, NULL))
+		if (merge_manifest_tree_state_init(tree_id, merge_tree_id, &state, NULL))
 			goto corrupted;
 
-		while (tree_entry(&state.desc, &entry)) {
+		while (merge_tree_entry(&state, &entries)) {
 			struct object_id oid;
-			unsigned mode = entry.mode;
+			struct name_entry *entry = entries.entry_a ? entries.entry_a : entries.entry_b;
+			unsigned mode = entry->mode;
 			struct strslice entry_path;
 			struct strslice underscore = { 1, "_" };
-			entry_path = strslice_from_str(entry.path);
-			if (!strslice_startswith(entry_path, underscore))
+			if (!strslice_startswith(entries.path, underscore))
 				goto corrupted;
-			entry_path = strslice_slice(entry_path, 1, SIZE_MAX);
+			entry_path = strslice_slice(entries.path, 1, SIZE_MAX);
+			// In some edge cases, presumably all related to the use of
+			// `hg convert` before Mercurial 2.0.1, manifest trees have
+			// double slashes, which end up as "_" directories in the
+			// corresponding git cinnabar metadata.
+			// With further changes in the subsequent Mercurial manifests,
+			// those entries with double slashes are superseded with entries
+			// with single slash, while still being there. So to create
+			// the corresponding git commit, we need to merge both in some
+			// manner.
+			// Mercurial doesn't actually guarantee which of the paths would
+			// actually be checked out when checking out such manifests,
+			// but we always choose the single slash path. Most of the time,
+			// though, both will have the same contents. At least for files.
+			// Sub-directories may differ in what paths they contain, but
+			// again, the files they contain are usually identical.
 			if (entry_path.len == 0) {
 				if (!S_ISDIR(mode))
 					goto corrupted;
+				if (merge_tree_id)
+					continue;
 				recurse_create_git_tree(
-					&entry.oid, NULL, tree_buf, NULL,
-					cache);
-				continue;
+					tree_id, reference, &entry->oid, result, cache);
+				goto cleanup;
 			} else if (S_ISDIR(mode)) {
 				struct name_entry *ref_entry;
 				ref_entry = lazy_tree_entry_by_name(
 					&ref_state, reference, entry_path.buf);
 				recurse_create_git_tree(
-					&entry.oid,
+					&entry->oid,
 					ref_entry ? &ref_entry->oid : NULL,
-					NULL, &oid, cache);
+					(entries.entry_b && S_ISDIR(entries.entry_b->mode))
+						? &entries.entry_b->oid : NULL,
+					&oid, cache);
 			} else {
 				const struct object_id *file_oid;
 				struct hg_object_id hg_oid;
-				oidcpy2hg(&hg_oid, &entry.oid);
+				oidcpy2hg(&hg_oid, &entry->oid);
 				if (is_empty_hg_file(&hg_oid))
 					file_oid = ensure_empty_blob();
 				else
@@ -2005,23 +2049,28 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 				else
 					mode = S_IFREG | mode;
 			}
-			strbuf_addf(tree_buf, "%o ", canon_mode(mode));
-			strbuf_addslice(tree_buf, entry_path);
-			strbuf_addch(tree_buf, '\0');
-			strbuf_add(tree_buf, oid.hash, 20);
+			strbuf_addf(&tree_buf, "%o ", canon_mode(mode));
+			strbuf_addslice(&tree_buf, entry_path);
+			strbuf_addch(&tree_buf, '\0');
+			strbuf_add(&tree_buf, oid.hash, 20);
 		}
 
-		if (tree_buf == &tree_buf_) {
+		if (!merge_tree_id) {
 			cache_entry = xmalloc(sizeof(k));
 			cache_entry->ent = k.ent;
 			cache_entry->old_oid = k.old_oid;
-			store_git_tree(tree_buf, reference, &cache_entry->new_oid);
-			strbuf_release(&tree_buf_);
-			hashmap_add(cache, cache_entry);
+		}
+		store_git_tree(&tree_buf, reference, cache_entry ? &cache_entry->new_oid : result);
+		strbuf_release(&tree_buf);
+		if (!merge_tree_id) {
+			hashmap_add(cache, &cache_entry->ent);
 		}
 
-		if (state.tree)
-			free_tree_buffer(state.tree);
+cleanup:
+		if (state.state_a.tree)
+			free_tree_buffer(state.state_a.tree);
+		if (state.state_b.tree)
+			free_tree_buffer(state.state_b.tree);
 		if (ref_state.tree)
 			free_tree_buffer(ref_state.tree);
 	}
@@ -2197,6 +2246,23 @@ static void init_config()
 		strbuf_list_free(check);
 	}
 	strbuf_release(&conf);
+
+	if (!config("experiments", &conf)) {
+		struct strbuf **check = strbuf_split(&conf, ',');
+		struct strbuf **c;
+		for (c = check; *c; c++) {
+			// strbuf_split leaves the `,`.
+			if ((*c)->buf[(*c) -> len - 1] == ',')
+				strbuf_setlen(*c, (*c)->len - 1);
+			if (!strcmp((*c)->buf, "true") ||
+			    !strcmp((*c)->buf, "all"))
+				cinnabar_experiments = -1;
+			else if (!strcmp((*c)->buf, "store"))
+				cinnabar_experiments |= EXPERIMENT_STORE;
+		}
+		strbuf_list_free(check);
+	}
+	strbuf_release(&conf);
 }
 
 static void reset_replace_map()
@@ -2242,16 +2308,22 @@ static void init_metadata()
 	parse_tree(tree);
 	init_tree_desc(&desc, tree->buffer, tree->size);
 	while (tree_entry(&desc, &entry)) {
-		replace = xmalloc(sizeof(*replace));
+		struct object_id original_oid;
 		if (entry.pathlen != 40 ||
-		    get_oid_hex(entry.path, &replace->original.oid)) {
+		    get_oid_hex(entry.path, &original_oid)) {
 			struct strbuf buf = STRBUF_INIT;
-			free(replace);
 			strbuf_add(&buf, entry.path, entry.pathlen);
 			warning(_("bad replace name: %s"), buf.buf);
 			strbuf_release(&buf);
 			continue;
 		}
+		if (oideq(&entry.oid, &original_oid)) {
+			warning(_("self-referencing graft: %s"),
+				oid_to_hex(&original_oid));
+			continue;
+		}
+		replace = xmalloc(sizeof(*replace));
+		oidcpy(&replace->original.oid, &original_oid);
 		oidcpy(&replace->replacement, &entry.oid);
 		if (oidmap_put(the_repository->objects->replace_map, replace))
 			die(_("duplicate replace: %s"),
@@ -2277,7 +2349,7 @@ static void do_reload(struct string_list *args)
 
 	oidset_clear(&hg2git_seen);
 
-	hashmap_free(&git_tree_cache, 1);
+	hashmap_free_entries(&git_tree_cache, struct oid_map_entry, ent);
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
 
 	oid_array_clear(&manifest_heads);
@@ -2327,10 +2399,10 @@ static void init_git_config()
 	/* If we couldn't get a path, then so be it. We may just not have
 	 * a complete configuration. */
 	if (!path.len)
-		return;
+		goto cleanup;
 
 	if (!git_config_system() || access_or_die(path.buf, R_OK, 0))
-		return;
+		goto cleanup;
 
 	if (the_repository->config)
 		// This shouldn't happen, but just in case...
@@ -2344,6 +2416,9 @@ static void init_git_config()
 	// wrong system gitconfig).
 	putenv("GIT_CONFIG_NOSYSTEM=1");
 	read_early_config(config_set_callback, the_repository->config);
+
+cleanup:
+	strbuf_release(&path);
 }
 
 int cmd_main(int argc, const char *argv[])
@@ -2363,6 +2438,7 @@ int cmd_main(int argc, const char *argv[])
 
 	init_git_config();
 	git_config(git_default_config, NULL);
+	init_config();
 	ignore_case = 0;
 	save_commit_buffer = 0;
 	warn_on_object_refname_ambiguity = 0;
@@ -2391,7 +2467,6 @@ int cmd_main(int argc, const char *argv[])
 			setup_git_directory();
 			git_config(git_diff_basic_config, NULL);
 			ignore_case = 0;
-			init_config();
 			init_metadata();
 			initialized = 1;
 			hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
@@ -2449,8 +2524,7 @@ int cmd_main(int argc, const char *argv[])
 		free_notes(&files_meta);
 
 	oidset_clear(&hg2git_seen);
-
-	hashmap_free(&git_tree_cache, 1);
+	hashmap_free_entries(&git_tree_cache, struct oid_map_entry, ent);
 
 	return 0;
 }
