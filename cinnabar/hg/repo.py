@@ -883,6 +883,9 @@ def do_cinnabarclone(repo, manifest, store):
                     '--max-count=1', '--ancestry-path', '--stdin',
                     stdin=('^{}^@'.format(c) for c in graft))):
                 continue
+        elif graft:
+            # When not grafting, ignore lines with a graft revision.
+            continue
         url, _, branch = spec.partition(b'#')
         url, branch = (url.split(b'#', 1) + [None])[:2]
         if url:
