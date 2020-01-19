@@ -742,7 +742,7 @@ class Process(object):
                 self._stdin.write(stdin)
             elif isinstance(stdin, Iterable):
                 for line in stdin:
-                    self._stdin.write('%s\n' % line)
+                    self._stdin.write(b'%s\n' % line)
             if proc_stdin != stdin:
                 self._proc.stdin.close()
 

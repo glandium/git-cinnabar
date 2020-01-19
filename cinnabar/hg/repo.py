@@ -1,5 +1,6 @@
 from __future__ import absolute_import, division, unicode_literals
 import os
+import re
 import ssl
 import sys
 try:
@@ -854,6 +855,9 @@ class BundleApplier(object):
                 logging.warn('Cannot graft %s, not importing.', cs.node)
 
 
+SHA1_RE = re.compile(b'[0-9a-fA-F]{1,40}$')
+
+
 def do_cinnabarclone(repo, manifest, store):
     url = None
     for line in manifest.splitlines():
@@ -873,7 +877,13 @@ def do_cinnabarclone(repo, manifest, store):
             if not graft:
                 continue
             graft = graft.split(b',')
-            revs = list(Git.iter('rev-parse', '--revs-only', *graft))
+            graft_u = []
+            for g in graft:
+                if SHA1_RE.match(g):
+                    graft_u.append(g.decode('ascii'))
+            if len(graft) != len(graft_u):
+                continue
+            revs = list(Git.iter('rev-parse', '--revs-only', *graft_u))
             if len(revs) != len(graft):
                 continue
             # We apparently have all the grafted revisions locally, ensure
@@ -881,7 +891,7 @@ def do_cinnabarclone(repo, manifest, store):
             if not any(Git.iter(
                     'rev-list', '--branches', '--tags', '--remotes',
                     '--max-count=1', '--ancestry-path', '--stdin',
-                    stdin=('^{}^@'.format(c) for c in graft))):
+                    stdin=(b'^%s^@' % c for c in graft))):
                 continue
         elif graft:
             # When not grafting, ignore lines with a graft revision.
