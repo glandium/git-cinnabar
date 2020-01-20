@@ -113,6 +113,9 @@ PYTHON_LIBS_DIRS := $(sort $(dir $(PYTHON_LIBS)))
 $(SHELL_SCRIPTS):
 	ln -s ../$@ $@
 
+clean-cinnabarscripts:
+	rm $(SHELL_SCRIPTS)
+
 install-cinnabarscripts:
 	$(INSTALL) $(SHELL_SCRIPTS) '$(DESTDIR_SQ)$(gitexec_instdir_SQ)'
 
