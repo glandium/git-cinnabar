@@ -180,7 +180,7 @@ ifeq (,$(filter http.c.patch,$(PATCHES)))
 libcinnabar.a: http.o
 endif
 endif
-libcinnabar.a: $(CINNABAR_OBJECTS) $(filter-out %.a,$(GITLIBS)) $(filter-out $(PATCHES:%.c.patch=%.o) run-command.o compat/mingw.o,$(LIB_OBJS)) $(XDIFF_OBJS)
+libcinnabar.a: $(CINNABAR_OBJECTS) $(filter-out $(PATCHES:%.c.patch=%.o) run-command.o compat/mingw.o,$(LIB_OBJS)) $(XDIFF_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
 
 git-cinnabar-helper$X: libcinnabar.a GIT-LDFLAGS
