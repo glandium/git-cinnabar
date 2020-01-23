@@ -320,6 +320,30 @@ class Helper(Task, metaclass=Tool):
             make_flags.append('USE_LIBPCRE2=')
             make_flags.append('CFLAGS+=-DCURLOPT_PROXY_CAINFO=246')
 
+        rustup_opts = '-y --default-toolchain none'
+        rustup = '$HOME/.cargo/bin/rustup'
+        if os.startswith('mingw'):
+            cpu = msys.msys_cpu(env.cpu)
+            rust_install = [
+                'curl -o rustup-init.exe https://win.rustup.rs/{cpu}',
+                './rustup-init.exe {rustup_opts}',
+                '{rustup} set default-host {cpu}-pc-windows-gnu',
+            ]
+        else:
+            rust_install = [
+                'curl -o rustup.sh https://sh.rustup.rs',
+                'sh rustup.sh {rustup_opts}',
+            ]
+        if variant in ('coverage', 'asan'):
+            rust_version = 'nightly-2020-02-02'
+        else:
+            rust_version = '1.41.0'
+        rust_install += [
+            '{rustup} install {rust_version} --profile minimal',
+        ]
+        l = locals()
+        rust_install = [r.format(**l) for r in rust_install]
+
         hash = hash or helper_hash()
 
         Task.__init__(
@@ -330,7 +354,7 @@ class Helper(Task, metaclass=Tool):
             index='helper.{}.{}.{}{}'.format(
                 hash, env.os, env.cpu, prefix('.', variant)),
             expireIn='26 weeks',
-            command=Task.checkout(commit=head) + [
+            command=Task.checkout(commit=head) + rust_install + [
                 'make -C repo helper -j $({}) prefix=/usr{} V=1'.format(
                     nproc(env), prefix(' ', ' '.join(make_flags))),
                 'mv repo/{} $ARTIFACTS/'.format(artifact),
