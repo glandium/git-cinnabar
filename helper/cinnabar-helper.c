@@ -1902,7 +1902,7 @@ static void restore_sigpipe_to_default(void)
 	signal(SIGPIPE, SIG_DFL);
 }
 
-int main(int argc, const char *argv[])
+int helper_main(int argc, const char *argv[])
 {
 	int initialized = 0;
 	struct strbuf buf = STRBUF_INIT;

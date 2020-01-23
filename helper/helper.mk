@@ -137,9 +137,8 @@ EXCLUDE_OBJS += serve.o
 libcinnabar.a: $(CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(XDIFF_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
 
-git-cinnabar-helper$X: libcinnabar.a GIT-LDFLAGS
-	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) libcinnabar.a \
-		$(CURL_LIBCURL) $(EXTLIBS)
+linker-flags: GIT-LDFLAGS FORCE
+	@echo $(ALL_LDFLAGS) $(CURL_LIBCURL) $(EXTLIBS)
 
 cinnabar-helper.o: EXTRA_CPPFLAGS=-DHELPER_HASH=$(shell python $(SOURCE_DIR)git-cinnabar --version=helper 2> /dev/null | awk -F/ '{print $$NF}')
 cinnabar-helper.o: $(addprefix $(SOURCE_DIR)helper/,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c))
@@ -148,8 +147,8 @@ $(CINNABAR_OBJECTS): %.o: $(SOURCE_DIR)helper/%.c GIT-CFLAGS $(missing_dep_dirs)
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
 
 ifdef CURL_COMPAT
-git-cinnabar-helper$X: CURL_LIBCURL=$(CURDIR)/libcurl.so
-git-cinnabar-helper$X: libcurl.so
+linker-flags: CURL_LIBCURL=-L$(CURDIR) -lcurl
+libcinnabar.a: libcurl.so
 
 libcurl.so: $(SOURCE_DIR)helper/curl-compat.c
 	$(CC) -shared -Wl,-soname,libcurl.so.4 -o $@ $<

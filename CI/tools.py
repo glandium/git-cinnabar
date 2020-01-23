@@ -285,6 +285,7 @@ class Helper(Task, metaclass=Tool):
         head = None
         desc_variant = variant
         extra_commands = []
+        environ = {}
         if variant == 'asan':
             if os.startswith('osx'):
                 opt = '-O2'
@@ -292,17 +293,31 @@ class Helper(Task, metaclass=Tool):
                 opt = '-Og'
                 make_flags.append('CC=clang-4.0')
             make_flags.append(
-                'CFLAGS="{} -g -fsanitize=address -fno-omit-frame-pointer"'
-                .format(opt))
+                'CFLAGS="{} -g -fsanitize=address -fno-omit-frame-pointer '
+                '-fPIC"'.format(opt))
+            environ['RUSTFLAGS'] = ' '.join([
+                '-Zsanitizer=address',
+                '-Copt-level=1',
+                '-Cforce-frame-pointers=yes',
+            ])
         elif variant == 'coverage':
             make_flags.append('CC=clang-4.0')
-            make_flags.append('CFLAGS="-coverage"')
+            make_flags.append('CFLAGS="-coverage -fPIC"')
             artifacts += ['coverage.zip']
             extra_commands = [
                 'mv repo/git-core/{{cinnabar,connect,hg}}*.gcno repo/helper',
                 '(cd repo && zip $ARTIFACTS/coverage.zip'
-                ' helper/{{cinnabar,connect,hg}}*.gcno)',
+                ' $(find helper -name "*.gcno" -not -name "build_script*"))',
             ]
+            environ['RUSTFLAGS'] = ' '.join([
+                '-Zprofile',
+                '-Ccodegen-units=1',
+                '-Cinline-threshold=0',
+                '-Zno-landing-pads',
+            ])
+            # Build without --release
+            environ['CARGO_BUILD_FLAGS'] = ''
+            environ['CARGO_INCREMENTAL'] = '0'
         elif variant == 'old' or variant.startswith('old:'):
             if len(variant) > 3:
                 head = variant[4:]
@@ -318,10 +333,12 @@ class Helper(Task, metaclass=Tool):
         elif not os.startswith('osx'):
             make_flags.append('USE_LIBPCRE1=YesPlease')
             make_flags.append('USE_LIBPCRE2=')
-            make_flags.append('CFLAGS+=-DCURLOPT_PROXY_CAINFO=246')
+            make_flags.append('CFLAGS="-DCURLOPT_PROXY_CAINFO=246"')
+            make_flags.append('LDFLAGS="-lssp_nonshared -lssp"')
 
         rustup_opts = '-y --default-toolchain none'
-        rustup = '$HOME/.cargo/bin/rustup'
+        cargo_dir = '$HOME/.cargo/bin/'
+        rustup = cargo_dir + 'rustup'
         if os.startswith('mingw'):
             cpu = msys.msys_cpu(env.cpu)
             rust_install = [
@@ -329,18 +346,28 @@ class Helper(Task, metaclass=Tool):
                 './rustup-init.exe {rustup_opts}',
                 '{rustup} set default-host {cpu}-pc-windows-gnu',
             ]
+            environ['CARGO_TARGET'] = '{}-pc-windows-gnu'.format(cpu)
         else:
             rust_install = [
                 'curl -o rustup.sh https://sh.rustup.rs',
                 'sh rustup.sh {rustup_opts}',
             ]
+            if os.startswith('osx'):
+                environ['CARGO_TARGET'] = 'x86_64-apple-darwin'
+            elif os == 'linux':
+                environ['CARGO_TARGET'] = 'x86_64-unknown-linux-gnu'
         if variant in ('coverage', 'asan'):
             rust_version = 'nightly-2020-02-02'
         else:
             rust_version = '1.41.0'
         rust_install += [
             '{rustup} install {rust_version} --profile minimal',
+            'PATH={cargo_dir}:$PATH',
         ]
+        if os.startswith('mingw'):
+            rust_install += [
+                '{rustup} component remove rust-mingw',
+            ]
         l = locals()
         rust_install = [r.format(**l) for r in rust_install]
 
@@ -360,6 +387,7 @@ class Helper(Task, metaclass=Tool):
                 'mv repo/{} $ARTIFACTS/'.format(artifact),
             ] + extra_commands,
             artifacts=artifacts,
+            env=environ,
         )
 
     @classmethod

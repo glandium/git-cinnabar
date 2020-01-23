@@ -66,9 +66,10 @@ def helper_hash():
     files = (os.listdir(d) if os.path.exists(d) else ())
 
     def match(f):
-        return (f.endswith(('.h', '.c', '.c.patch')) and
+        return (f.endswith(('.h', '.c', '.c.patch', '.rs')) and
                 'patched' not in f) or \
-            f in ('GIT-VERSION.mk', 'helper.mk')
+            f in ('GIT-VERSION.mk', 'Cargo.toml', 'Cargo.lock', 'MPL-2.0',
+                  'helper.mk')
     files = list(f.encode('ascii') for f in files if match(f))
 
     if b'cinnabar-helper.c' not in files:

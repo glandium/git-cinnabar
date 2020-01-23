@@ -1,0 +1,33 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+[package]
+name = "git-cinnabar"
+version = "0.6.0-a"
+authors = ["Mike Hommey <mh@glandium.org>"]
+edition = "2018"
+license = "MPL-2.0"
+repository = "https://github.com/glandium/git-cinnabar"
+publish = false
+build = "build.rs"
+
+[[bin]]
+name = "git-cinnabar-helper"
+path = "main.rs"
+
+[dependencies]
+
+[build-dependencies]
+itertools = "0.8"
+make-cmd = "0.1"
+target = "1.0"
+
+[profile.release]
+codegen-units = 1
+debug = true
+panic = "abort"
+
+[profile.dev]
+opt-level = 1
+panic = "abort"

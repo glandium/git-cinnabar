@@ -114,7 +114,7 @@ class TestTask(Task):
                 'done',
                 'cd repo',
                 'zip $ARTIFACTS/coverage.zip .coverage'
-                ' helper/{{cinnabar,connect,hg}}*.gcda',
+                ' $(find helper -name "*.gcda")',
                 'cd ..',
                 'shopt -u nullglob',
             ])

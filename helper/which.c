@@ -1,6 +1,8 @@
 #include "run-command.c"
 
 #ifdef _WIN32
+#define main helper_main
+extern int helper_main(int argc, const char *argv[]);
 #include "compat/mingw.c"
 
 char *which(const char *file) {

@@ -1,3 +1,6 @@
+CARGO ?= cargo
+CARGO_BUILD_FLAGS ?= --release
+
 SYSTEM = $(shell python2.7 -c 'import platform; print platform.system()')
 include helper/GIT-VERSION.mk
 ifeq ($(SYSTEM),Windows)
@@ -54,4 +57,10 @@ include git-core/config.mak.uname
 git-cinnabar-helper$X git git-install: FORCE
 
 helper: git-cinnabar-helper$X
-	mv git-core/$^ $^
+
+export CINNABAR_MAKE_FLAGS
+
+git-cinnabar-helper$X: CINNABAR_MAKE_FLAGS := $(filter %,$(foreach v,$(.VARIABLES),$(if $(filter command line,$(origin $(v))),$(v)='$(if $(findstring ',$($(v))),$(error $(v) contains a single quote))$($(v))')))
+git-cinnabar-helper$X:
+	+cd $(CURDIR)/helper && $(CARGO) build -vv $(addprefix --target=,$(CARGO_TARGET)) $(CARGO_BUILD_FLAGS)
+	cp $(CURDIR)/helper/target/$(if $(CARGO_TARGET),$(CARGO_TARGET)/)$(if $(filter --release,$(CARGO_BUILD_FLAGS)),release,debug)/$@ $@
