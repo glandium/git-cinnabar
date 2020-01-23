@@ -2554,6 +2554,5 @@ int main(int argc, const char *argv[])
 
 	oidset_clear(&hg2git_seen);
 	hashmap_free_entries(&git_tree_cache, struct oid_map_entry, ent);
-
 	return 0;
 }

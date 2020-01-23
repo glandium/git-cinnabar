@@ -314,9 +314,7 @@ class Helper(Task, metaclass=Tool):
         elif not os.startswith('osx'):
             make_flags.append('USE_LIBPCRE1=YesPlease')
             make_flags.append('USE_LIBPCRE2=')
-            make_flags.append(
-                'CFLAGS+="-DCURLOPT_PROXY_CAINFO=246 -DCURL_STATICLIB"')
-            make_flags.append('CURL_LDFLAGS="$(curl-config --static-libs)"')
+            make_flags.append('CFLAGS+=-DCURLOPT_PROXY_CAINFO=246')
 
         hash = hash or helper_hash()
 
