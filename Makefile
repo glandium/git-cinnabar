@@ -113,6 +113,9 @@ PYTHON_LIBS_DIRS := $(sort $(dir $(PYTHON_LIBS)))
 $(SHELL_SCRIPTS):
 	ln -s ../$@ $@
 
+clean-cinnabarscripts:
+	rm $(SHELL_SCRIPTS)
+
 install-cinnabarscripts:
 	$(INSTALL) $(SHELL_SCRIPTS) '$(DESTDIR_SQ)$(gitexec_instdir_SQ)'
 
@@ -174,12 +177,15 @@ endif
 
 ifndef NO_CURL
 ifeq (,$(filter http.c.patch,$(PATCHES)))
-git-cinnabar-helper$X: http.o
+libcinnabar.a: http.o
 endif
 endif
-git-cinnabar-helper$X: $(CINNABAR_OBJECTS) GIT-LDFLAGS $(GITLIBS)
-	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
-		$(CURL_LIBCURL) $(LIBS)
+libcinnabar.a: $(CINNABAR_OBJECTS) $(filter-out $(PATCHES:%.c.patch=%.o) run-command.o compat/mingw.o,$(LIB_OBJS)) $(XDIFF_OBJS)
+	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
+
+git-cinnabar-helper$X: libcinnabar.a GIT-LDFLAGS
+	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) libcinnabar.a \
+		$(CURL_LIBCURL) $(EXTLIBS)
 
 cinnabar-helper.o: EXTRA_CPPFLAGS=-DHELPER_HASH=$(shell python ../git-cinnabar --version=helper 2> /dev/null | awk -F/ '{print $$NF}')
 cinnabar-helper.o: $(addprefix ../helper/,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c))

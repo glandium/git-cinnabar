@@ -20,7 +20,6 @@ from cinnabar.util import (
     fsdecode,
     interval_expired,
     iteritems,
-    itervalues,
     Progress,
     progress_iter,
 )
@@ -200,7 +199,7 @@ def fsck_quick(force=False):
     # it's close to an order of magnitude difference on the "Checking
     # manifests" loop.
     depths = {}
-    roots = {}
+    roots = set()
     manifest_queue = []
     revs = []
     revs.append(b'%s^@' % manifests)
@@ -210,20 +209,10 @@ def fsck_quick(force=False):
             'Loading {} manifests', GitHgHelper.rev_list(
                 b'--topo-order', b'--reverse', b'--full-history', *revs)):
         manifest_queue.append((m, parents))
-        if parents:
-            depth = {}
-            for p in parents:
-                for root, num in iteritems(depths.get(p, {})):
-                    if root in depth:
-                        depth[root] = max(depth[root], num + 1)
-                    else:
-                        depth[root] = num + 1
-            if depth:
-                depths[m] = depth
-                del depth
-                continue
-        depths[m] = {m: 0}
-        roots[m] = parents
+        for p in parents:
+            if p not in depths:
+                roots.add(p)
+            depths[m] = max(depths.get(p, 0) + 1, depths.get(m, 0))
 
     if status('broken'):
         return 1
@@ -233,7 +222,7 @@ def fsck_quick(force=False):
     manifests_commit = GitCommit(manifests)
     checked_commit = get_checked_metadata(2)
     depths = [
-        ([depths[p].get(r, 0) for r in roots], p)
+        (depths.get(p, 0), p)
         for p in manifests_commit.parents
         if not checked_commit or p not in checked_commit.parents
     ]
@@ -278,17 +267,16 @@ def fsck_quick(force=False):
     # Don't check files that were already there in the previously checked
     # manifests.
     previous = None
-    for parents in itervalues(roots):
-        for p in parents:
-            if previous:
-                for _, _, before, after, d, path in GitHgHelper.diff_tree(
-                        previous, p):
-                    if d in b'AM' and before != after:
-                        all_interesting.discard((path, after))
-            else:
-                for _, t, sha1, path in GitHgHelper.ls_tree(p, recursive=True):
-                    all_interesting.discard((path, sha1))
-            previous = p
+    for r in roots:
+        if previous:
+            for _, _, before, after, d, path in GitHgHelper.diff_tree(
+                    previous, r):
+                if d in b'AM' and before != after:
+                    all_interesting.discard((path, after))
+        else:
+            for _, t, sha1, path in GitHgHelper.ls_tree(r, recursive=True):
+                all_interesting.discard((path, sha1))
+        previous = r
 
     progress = Progress('Checking {} files')
     while all_interesting and manifest_queue:

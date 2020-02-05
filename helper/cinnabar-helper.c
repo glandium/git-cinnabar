@@ -49,6 +49,7 @@
 #include <string.h>
 
 #include "cache.h"
+#include "attr.h"
 #include "blob.h"
 #include "commit.h"
 #include "config.h"
@@ -84,7 +85,7 @@
 #endif
 
 #define CMD_VERSION 3003
-#define MIN_CMD_VERSION 3000
+#define MIN_CMD_VERSION 3003
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -2421,10 +2422,38 @@ cleanup:
 	strbuf_release(&path);
 }
 
-int cmd_main(int argc, const char *argv[])
+static void restore_sigpipe_to_default(void)
+{
+	sigset_t unblock;
+
+	sigemptyset(&unblock);
+	sigaddset(&unblock, SIGPIPE);
+	sigprocmask(SIG_UNBLOCK, &unblock, NULL);
+	signal(SIGPIPE, SIG_DFL);
+}
+
+int main(int argc, const char *argv[])
 {
 	int initialized = 0;
 	struct strbuf buf = STRBUF_INIT;
+
+	// Initialization from common-main.c.
+	trace2_initialize_clock();
+
+	sanitize_stdfds();
+	restore_sigpipe_to_default();
+
+	git_resolve_executable_dir(argv[0]);
+
+	git_setup_gettext();
+
+	initialize_the_repository();
+
+	attr_start();
+
+	trace2_initialize();
+	trace2_cmd_start(argv);
+	trace2_collect_process_info(TRACE2_PROCESS_INFO_STARTUP);
 
 	if (argc > 1) {
 		if (argc > 2)
@@ -2525,6 +2554,5 @@ int cmd_main(int argc, const char *argv[])
 
 	oidset_clear(&hg2git_seen);
 	hashmap_free_entries(&git_tree_cache, struct oid_map_entry, ent);
-
 	return 0;
 }
