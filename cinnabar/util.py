@@ -151,7 +151,7 @@ experiment = ConfigSetFunc(
 )
 
 
-def interval_expired(config_key, interval):
+def interval_expired(config_key, interval, globl=False):
     from .git import Git
     config_key = 'cinnabar.{}'.format(config_key)
     try:
@@ -162,7 +162,12 @@ def interval_expired(config_key, interval):
     if last:
         if last + interval > now:
             return False
-    Git.run('config', '--global', config_key, str(int(now)))
+    # cinnabar.fsck used to be global and is now local.
+    # Remove the global value.
+    if globl is not True and config_key == 'cinnabar.fsck':
+        Git.run('config', '--global', '--unset', config_key)
+    Git.run('config', '--global' if globl else '--local',
+            config_key, str(int(now)))
     return bool(last)
 
 
@@ -858,7 +863,7 @@ class VersionCheck(Thread):
         parent_dir = os.path.dirname(os.path.dirname(__file__))
         if not os.path.exists(os.path.join(parent_dir, '.git')) or \
                 check_enabled('no-version-check') or \
-                not interval_expired('version-check', 86400):
+                not interval_expired('version-check', 86400, globl=True):
             return
         REPO = 'https://github.com/glandium/git-cinnabar'
         devnull = open(os.devnull, 'wb')
