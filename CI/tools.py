@@ -290,11 +290,12 @@ class Helper(Task, metaclass=Tool):
                 opt = '-O2'
             else:
                 opt = '-Og'
-                make_flags.append('LDFLAGS=-static-libasan')
+                make_flags.append('CC=clang-4.0')
             make_flags.append(
                 'CFLAGS="{} -g -fsanitize=address -fno-omit-frame-pointer"'
                 .format(opt))
         elif variant == 'coverage':
+            make_flags.append('CC=clang-4.0')
             make_flags.append('CFLAGS="-coverage"')
             artifacts += ['coverage.zip']
             extra_commands = [

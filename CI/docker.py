@@ -55,6 +55,7 @@ DOCKER_IMAGES = {
     'build': '''\
         FROM base
         RUN apt-get install -y --no-install-recommends\\
+         clang-4.0\\
          gcc\\
          git\\
          libc6-dev\\
@@ -86,6 +87,7 @@ DOCKER_IMAGES = {
         FROM base
         RUN apt-get install -y --no-install-recommends\\
          flake8\\
+         llvm-4.0\\
          make\\
          python-coverage\\
          python-flake8\\
@@ -95,7 +97,8 @@ DOCKER_IMAGES = {
          python-requests\\
          python-virtualenv\\
          && apt-get clean\\
-         && pip install cram==0.7
+         && pip install cram==0.7\\
+         && ln -s llvm-symbolizer-4.0 /usr/bin/llvm-symbolizer
         ''',
 }
 
