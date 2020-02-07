@@ -97,7 +97,9 @@ else
 
 include $(CURDIR)/Makefile
 
-vpath cinnabar/% ..
+SOURCE_DIR := $(dir $(CURDIR))
+
+vpath cinnabar/% $(SOURCE_DIR)
 
 all:: $(addprefix pythonlib/,$(PYTHON_LIBS)) $(SHELL_SCRIPTS)
 
@@ -149,21 +151,19 @@ CINNABAR_OBJECTS += hg-connect-stdio.o
 CINNABAR_OBJECTS += hg-data.o
 CINNABAR_OBJECTS += which.o
 
-PATCHES = $(notdir $(wildcard ../helper/*.patch))
+PATCHES = $(notdir $(wildcard $(SOURCE_DIR)helper/*.patch))
 
-$(addprefix ../helper/,$(PATCHES:%.c.patch=%.patched.c)): ../helper/%.patched.c: ../helper/%.c.patch %.c
-# Funny thing... GNU patch doesn't like -o ../file, and BSD patch doesn't like sending
-# the output to stdout.
-	(cd .. && patch -p1 -F0 -o $(subst ../,,$@) $(CURDIR)/$(notdir $(lastword $^))) < $<
+$(addprefix $(SOURCE_DIR)helper/,$(PATCHES:%.c.patch=%.patched.c)): $(SOURCE_DIR)helper/%.patched.c: $(SOURCE_DIR)helper/%.c.patch %.c
+	patch -p1 -F0 -o $@ $(CURDIR)/$(notdir $(lastword $^)) < $<
 
 clean-patched:
-	$(RM) $(addprefix ../helper/,$(PATCHES:%.c.patch=%.patched.c))
+	$(RM) $(addprefix $(SOURCE_DIR)helper/,$(PATCHES:%.c.patch=%.patched.c))
 
-$(addprefix ../helper/,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c)):
+$(addprefix $(SOURCE_DIR)helper/,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c)):
 
 CINNABAR_OBJECTS += $(filter-out fast-import.patched.o,$(PATCHES:%.c.patch=%.patched.o))
 
-cinnabar-fast-import.o: ../helper/fast-import.patched.c
+cinnabar-fast-import.o: $(SOURCE_DIR)helper/fast-import.patched.c
 
 ifdef USE_COMPUTED_HEADER_DEPENDENCIES
 dep_files := $(foreach f,$(CINNABAR_OBJECTS),$(dir $f).depend/$(notdir $f).d)
@@ -187,17 +187,17 @@ git-cinnabar-helper$X: libcinnabar.a GIT-LDFLAGS
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) libcinnabar.a \
 		$(CURL_LIBCURL) $(EXTLIBS)
 
-cinnabar-helper.o: EXTRA_CPPFLAGS=-DHELPER_HASH=$(shell python ../git-cinnabar --version=helper 2> /dev/null | awk -F/ '{print $$NF}')
-cinnabar-helper.o: $(addprefix ../helper/,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c))
+cinnabar-helper.o: EXTRA_CPPFLAGS=-DHELPER_HASH=$(shell python $(SOURCE_DIR)git-cinnabar --version=helper 2> /dev/null | awk -F/ '{print $$NF}')
+cinnabar-helper.o: $(addprefix $(SOURCE_DIR)helper/,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c))
 
-$(CINNABAR_OBJECTS): %.o: ../helper/%.c GIT-CFLAGS $(missing_dep_dirs)
+$(CINNABAR_OBJECTS): %.o: $(SOURCE_DIR)helper/%.c GIT-CFLAGS $(missing_dep_dirs)
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
 
 ifdef CURL_COMPAT
 git-cinnabar-helper$X: CURL_LIBCURL=$(CURDIR)/libcurl.so
 git-cinnabar-helper$X: libcurl.so
 
-libcurl.so: ../helper/curl-compat.c
+libcurl.so: $(SOURCE_DIR)helper/curl-compat.c
 	$(CC) -shared -Wl,-soname,libcurl.so.4 -o $@ $<
 endif
 

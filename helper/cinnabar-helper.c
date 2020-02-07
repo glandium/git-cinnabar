@@ -77,8 +77,8 @@
 #include "cinnabar-notes.h"
 #include "which.h"
 
-#define STRINGIFY(s) _STRINGIFY(s)
 #define _STRINGIFY(s) # s
+#define STRINGIFY(s) _STRINGIFY(s)
 
 #ifndef HELPER_HASH
 #define HELPER_HASH unknown
