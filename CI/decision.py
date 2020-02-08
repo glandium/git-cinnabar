@@ -486,7 +486,7 @@ def main():
             ])
 
         merge_coverage.extend([
-            'grcov -s repo -t lcov -o repo/coverage.lcov gcno-helper.zip' +
+            'grcov -s repo -t lcov -o repo/coverage.lcov gcno-helper.zip ' +
             ' '.join(
                 'cov-{{{}.id}}.zip'.format(task)
                 for task in TestTask.coverage),
