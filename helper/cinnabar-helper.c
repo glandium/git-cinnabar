@@ -85,11 +85,13 @@
 #endif
 
 #define CMD_VERSION 3003
+
 #define MIN_CMD_VERSION 3003
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
 #define MODE_IMPORT 0x01
+
 #define MODE_WIRE 0x02
 
 static int mode = 0xff; // Enable everything by default

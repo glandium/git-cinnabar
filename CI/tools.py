@@ -293,10 +293,10 @@ class Helper(Task, metaclass=Tool):
                 .format(opt))
         elif variant == 'coverage':
             make_flags.append('CFLAGS="-coverage"')
-            artifacts += ['coverage.tar.xz']
+            artifacts += ['coverage.zip']
             extra_commands = [
                 'mv repo/git-core/{{cinnabar,connect,hg}}*.gcno repo/helper',
-                '(cd repo && tar -Jcf $ARTIFACTS/coverage.tar.xz'
+                '(cd repo && zip $ARTIFACTS/coverage.zip'
                 ' helper/{{cinnabar,connect,hg}}*.gcno)',
             ]
         elif variant == 'old' or variant.startswith('old:'):

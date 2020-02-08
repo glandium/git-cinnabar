@@ -113,7 +113,7 @@ class TestTask(Task):
                 'do mv $f repo/helper',
                 'done',
                 'cd repo',
-                'tar -Jcf $ARTIFACTS/coverage.tar.xz .coverage'
+                'zip $ARTIFACTS/coverage.zip .coverage'
                 ' helper/{{cinnabar,connect,hg}}*.gcda',
                 'cd ..',
                 'shopt -u nullglob',
@@ -123,7 +123,7 @@ class TestTask(Task):
             assert not(artifacts and artifact)
             if artifact:
                 artifacts.push(artifact)
-            artifacts.append('coverage.tar.xz')
+            artifacts.append('coverage.zip')
             self.coverage.append(self)
         if not desc:
             desc = 'test w/ git-{} hg-{}'.format(
@@ -467,13 +467,13 @@ def main():
 
     if TestTask.coverage and TC_IS_PUSH and TC_BRANCH:
         download_coverage = [
-            'curl -o cov-{{{}.id}}.tar.xz -L {{{}.artifact}}'.format(
+            'curl -o cov-{{{}.id}}.zip -L {{{}.artifact}}'.format(
                 task, task)
             for task in TestTask.coverage
         ]
         task = Helper.by_name('linux.coverage')
         download_coverage.append(
-            'curl -o gcda-helper.tar.xz -L {{{}.artifacts[1]}}'.format(task))
+            'curl -o gcno-helper.zip -L {{{}.artifacts[1]}}'.format(task))
 
         merge_coverage.append(
             '(' + '& '.join(download_coverage) + '& wait)',
@@ -482,7 +482,7 @@ def main():
         for n, task in enumerate(TestTask.coverage):
             merge_coverage.extend([
                 'mkdir cov{}'.format(n),
-                'tar -C cov{} -Jxf cov-{{{}.id}}.tar.xz'.format(n, task),
+                'unzip -d cov{}  cov-{{{}.id}}.zip'.format(n, task),
             ])
             if n >= 1:
                 merge_coverage.append(
@@ -499,7 +499,7 @@ def main():
                 for n in range(len(TestTask.coverage)))),
             'cd ..',
             'tar -cf - -C {} . | tar -xf - -C repo'.format(last),
-            'tar -C repo -Jxf gcda-helper.tar.xz',
+            'unzip -d repo gcno-helper.zip',
         ])
 
     if merge_coverage:

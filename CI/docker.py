@@ -42,6 +42,7 @@ DOCKER_IMAGES = {
          python3-wheel\\
          unzip\\
          xz-utils\\
+         zip\\
          && apt-get clean
         RUN pip install pip==19.2.2 --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
