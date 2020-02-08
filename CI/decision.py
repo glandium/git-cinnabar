@@ -479,27 +479,22 @@ def main():
             '(' + '& '.join(download_coverage) + '& wait)',
         )
 
-        for n, task in enumerate(TestTask.coverage):
+        for task in TestTask.coverage:
             merge_coverage.extend([
-                'mkdir cov{}'.format(n),
-                'unzip -d cov{}  cov-{{{}.id}}.zip'.format(n, task),
+                'unzip -d cov-{{{}.id}} cov-{{{}.id}}.zip .coverage'.format(
+                    task, task),
             ])
-            if n >= 1:
-                merge_coverage.append(
-                    'gcov-tool merge -o merge{} {}{} cov{}'.format(
-                        n, 'cov' if n == 1 else 'merge', n - 1, n)
-                )
-
-        last = '{}{}'.format('cov' if n == 0 else 'merge', n)
 
         merge_coverage.extend([
+            'grcov -s repo -t lcov -o repo/coverage.lcov gcno-helper.zip' +
+            ' '.join(
+                'cov-{{{}.id}}.zip'.format(task)
+                for task in TestTask.coverage),
             'cd repo',
             'coverage combine --append {}'.format(' '.join(
-                '../cov{}/.coverage'.format(n)
-                for n in range(len(TestTask.coverage)))),
+                '../cov-{{{}.id}}/.coverage'.format(task)
+                for task in TestTask.coverage)),
             'cd ..',
-            'tar -cf - -C {} . | tar -xf - -C repo'.format(last),
-            'unzip -d repo gcno-helper.zip',
         ])
 
     if merge_coverage:
