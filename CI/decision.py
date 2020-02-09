@@ -404,6 +404,7 @@ def decision():
                 extra_desc=' '.join(['cram'] + check),
                 clone=False,
                 command=[
+                    'repo/git-cinnabar --version',
                     'cram --verbose repo/tests',
                 ],
                 env={
@@ -417,6 +418,7 @@ def decision():
             extra_desc=' '.join(['cram'] + check),
             clone=False,
             command=[
+                'repo/git-cinnabar --version',
                 'cram --verbose repo/tests',
             ],
             env={
