@@ -120,6 +120,7 @@ endif
 endif
 EXCLUDE_OBJS = $(PATCHES:%.c.patch=%.o)
 EXCLUDE_OBJS += add-interactive.o
+EXCLUDE_OBJS += add-patch.o
 EXCLUDE_OBJS += archive.o
 EXCLUDE_OBJS += archive-tar.o
 EXCLUDE_OBJS += archive-zip.o
