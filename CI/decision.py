@@ -208,7 +208,6 @@ def decision():
     for env in ('linux', 'mingw64', 'osx10_10'):
         TestTask(task_env=env)
 
-    for env in ('linux', 'mingw64', 'osx10_11'):
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
         Task(
             task_env=task_env,
@@ -264,19 +263,18 @@ def decision():
         if hg != MERCURIAL_VERSION:
             TestTask(hg=hg)
 
-    for env in ('linux', 'osx10_11'):
-        TestTask(
-            task_env=env,
-            variant='asan',
-        )
-        TestTask(
-            task_env=env,
-            variant='asan',
-            extra_desc='experiments',
-            env={
-                'GIT_CINNABAR_EXPERIMENTS': 'true',
-            },
-        )
+    TestTask(
+        task_env='linux',
+        variant='asan',
+    )
+    TestTask(
+        task_env='linux',
+        variant='asan',
+        extra_desc='experiments',
+        env={
+            'GIT_CINNABAR_EXPERIMENTS': 'true',
+        },
+    )
 
     TestTask(
         variant='coverage',

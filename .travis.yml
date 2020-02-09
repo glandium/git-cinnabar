@@ -10,9 +10,6 @@ matrix:
     - osx_image: xcode6.4
       env:
       - TC_WORKER_TYPE: osx-10-10
-    - osx_image: xcode8
-      env:
-      - TC_WORKER_TYPE: osx-10-11
 
 env:
   global:
