@@ -192,13 +192,6 @@ void hg_known(struct hg_connection *conn, struct strbuf *result,
 	free(nodes_str);
 }
 
-void hg_listkeys(struct hg_connection *conn, struct strbuf *result,
-		 const char *namespace)
-{
-	conn->simple_command(conn, result, "listkeys",
-			     "namespace", namespace, NULL);
-}
-
 void hg_getbundle(struct hg_connection *conn, FILE *out,
 		  struct oid_array *heads, struct oid_array *common,
 		  const char *bundle2caps)
@@ -286,35 +279,6 @@ void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
 	delete_tempfile(&tmpfile);
 	if (heads->nr)
 		free(heads_str);
-}
-
-void hg_pushkey(struct hg_connection *conn, struct strbuf *response,
-		const char *namespace, const char *key, const char *old,
-		const char *new)
-{
-	//TODO: handle the response being a mix of return code and output
-	conn->simple_command(conn, response, "pushkey",
-			     "namespace", namespace,
-			     "key", key,
-			     "old", old,
-			     "new", new,
-			     NULL);
-}
-
-void hg_lookup(struct hg_connection *conn, struct strbuf *result,
-	       const char *key)
-{
-	conn->simple_command(conn, result, "lookup", "key", key, NULL);
-}
-
-void hg_clonebundles(struct hg_connection *conn, struct strbuf *result)
-{
-	conn->simple_command(conn, result, "clonebundles", NULL);
-}
-
-void hg_cinnabarclone(struct hg_connection *conn, struct strbuf *result)
-{
-	conn->simple_command(conn, result, "cinnabarclone", NULL);
 }
 
 int hg_finish_connect(struct hg_connection *conn)

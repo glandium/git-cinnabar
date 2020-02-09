@@ -7,8 +7,6 @@
 #include "string-list.h"
 
 struct hg_connection {
-	struct string_list capabilities;
-
 	void (*simple_command)(struct hg_connection *, struct strbuf *response,
 			       const char *command, ...);
 
@@ -19,6 +17,8 @@ struct hg_connection {
 			     FILE *in, off_t len, const char *command, ...);
 
 	int (*finish)(struct hg_connection *);
+
+	struct string_list capabilities;
 
 	union {
 		struct {

@@ -8,6 +8,11 @@
 #[cfg(windows)]
 extern crate curl_sys;
 
+#[macro_use]
+extern crate cstr;
+
+pub mod hg_connect;
+
 use std::convert::TryInto;
 use std::ffi::OsString;
 use std::os::raw::c_int;
