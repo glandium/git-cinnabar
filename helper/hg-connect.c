@@ -182,16 +182,6 @@ void hg_get_repo_state(struct hg_connection *conn, struct strbuf *branchmap,
 	}
 }
 
-void hg_known(struct hg_connection *conn, struct strbuf *result,
-	      struct oid_array *nodes)
-{
-	char *nodes_str = join_oid_array_hex(nodes, ' ');
-	conn->simple_command(conn, result, "known",
-			     "nodes", nodes_str,
-			     "*", NULL, NULL);
-	free(nodes_str);
-}
-
 void hg_getbundle(struct hg_connection *conn, FILE *out,
 		  struct oid_array *heads, struct oid_array *common,
 		  const char *bundle2caps)
