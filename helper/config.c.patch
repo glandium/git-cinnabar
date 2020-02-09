@@ -1,8 +1,8 @@
 diff --git a/config.c b/config.c
-index 24ad1a9854..2be637e09d 100644
+index d75f88ca0c..7a417eb17f 100644
 --- a/config.c
 +++ b/config.c
-@@ -1811,7 +1811,7 @@ static struct config_set_element *configset_find_element(struct config_set *cs,
+@@ -1868,7 +1868,7 @@ static struct config_set_element *configset_find_element(struct config_set *cs,
  	return found_entry;
  }
  

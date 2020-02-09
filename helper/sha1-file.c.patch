@@ -1,8 +1,8 @@
 diff --git a/sha1-file.c b/sha1-file.c
-index 695e5c6276..b542d296c5 100644
+index 188de57634..7b06e56727 100644
 --- a/sha1-file.c
 +++ b/sha1-file.c
-@@ -1706,7 +1706,7 @@ static int freshen_packed_object(const struct object_id *oid)
+@@ -1868,7 +1868,7 @@ static int freshen_packed_object(const struct object_id *oid)
  	return 1;
  }
  
