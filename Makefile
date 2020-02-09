@@ -180,7 +180,22 @@ ifeq (,$(filter http.c.patch,$(PATCHES)))
 libcinnabar.a: http.o
 endif
 endif
-libcinnabar.a: $(CINNABAR_OBJECTS) $(filter-out $(PATCHES:%.c.patch=%.o) run-command.o compat/mingw.o,$(LIB_OBJS)) $(XDIFF_OBJS)
+EXCLUDE_OBJS = $(PATCHES:%.c.patch=%.o)
+EXCLUDE_OBJS += add-interactive.o
+EXCLUDE_OBJS += archive.o
+EXCLUDE_OBJS += archive-tar.o
+EXCLUDE_OBJS += archive-zip.o
+EXCLUDE_OBJS += bitmap.o
+EXCLUDE_OBJS += blame.o
+EXCLUDE_OBJS += checkout.o
+EXCLUDE_OBJS += compat/mingw.o
+EXCLUDE_OBJS += default.o
+EXCLUDE_OBJS += help.o
+EXCLUDE_OBJS += iterator.o
+EXCLUDE_OBJS += reachable.o
+EXCLUDE_OBJS += run-command.o
+EXCLUDE_OBJS += serve.o
+libcinnabar.a: $(CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(XDIFF_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
 
 git-cinnabar-helper$X: libcinnabar.a GIT-LDFLAGS
