@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::ffi::{c_void, CString};
+use std::ffi::{c_void, CStr, CString};
 use std::fmt::{self, Display, Formatter};
 use std::os::raw::{c_char, c_int};
 use std::ptr;
@@ -90,8 +90,16 @@ impl Display for object_id {
 struct strbuf(c_void);
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
-struct writer(c_void);
+#[repr(C)]
+struct writer {
+    write: *const c_void,
+    close: *const c_void,
+    context: *mut c_void,
+}
+
+extern "C" {
+    fn writer_close(w: *mut writer);
+}
 
 #[no_mangle]
 unsafe extern "C" fn hg_known(
@@ -129,6 +137,82 @@ unsafe extern "C" fn hg_listkeys(
         namespace,
         ptr::null::<c_void>(),
     );
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+union param_value {
+    size: usize,
+    value: *const c_char,
+}
+
+#[no_mangle]
+unsafe extern "C" fn command_add_asterisk(
+    data: *mut c_void,
+    command_add_param: unsafe extern "C" fn(
+        data: *mut c_void,
+        name: *const c_char,
+        value: param_value,
+    ),
+    params: *const Vec<(&CStr, CString)>,
+) {
+    let params = params.as_ref();
+    let num = param_value {
+        size: params.map(Vec::len).unwrap_or(0),
+    };
+    (command_add_param)(data, cstr!("*").as_ptr(), num);
+    if let Some(params) = params {
+        for (name, value) in params {
+            let value = param_value {
+                value: value.as_ptr(),
+            };
+            (command_add_param)(data, name.as_ptr(), value);
+        }
+    }
+}
+
+#[no_mangle]
+unsafe extern "C" fn hg_getbundle(
+    conn: *mut hg_connection,
+    out: *mut FILE,
+    heads: *const oid_array,
+    common: *const oid_array,
+    bundle2caps: *const c_char,
+) {
+    let conn = conn.as_mut().unwrap();
+    let mut args = Vec::new();
+    if let Some(heads) = heads.as_ref() {
+        args.push((
+            cstr!("heads"),
+            CString::new(heads.iter().join(" ")).unwrap(),
+        ));
+    }
+    if let Some(common) = common.as_ref() {
+        args.push((
+            cstr!("common"),
+            CString::new(common.iter().join(" ")).unwrap(),
+        ));
+    }
+    let bundle2caps = bundle2caps.as_ref().map(|p| CStr::from_ptr(p).to_owned());
+    if let Some(bundle2caps) = bundle2caps {
+        if !bundle2caps.to_bytes().is_empty() {
+            args.push((cstr!("bundlecaps"), bundle2caps));
+        }
+    }
+    let mut writer = writer {
+        write: libc::fwrite as _,
+        close: libc::fflush as _,
+        context: out as *mut _,
+    };
+    (conn.changegroup_command)(
+        conn,
+        &mut writer,
+        cstr!("getbundle").as_ptr(),
+        cstr!("*").as_ptr(),
+        &args,
+        ptr::null::<c_void>(),
+    );
+    writer_close(&mut writer);
 }
 
 #[no_mangle]

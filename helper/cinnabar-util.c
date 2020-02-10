@@ -5,6 +5,13 @@
 #include "http.h"
 #include "cinnabar-util.h"
 
+int writer_close(struct writer* writer)
+{
+	if (writer->close)
+		return writer->close(writer->context);
+	return 0;
+}
+
 size_t copy_to(FILE *in, size_t len, struct writer *writer)
 {
 	char buf[4096];

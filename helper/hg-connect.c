@@ -56,22 +56,9 @@ const char *hg_get_capability(struct hg_connection *conn, const char *name)
 
 /* Generic helpers to handle passing parameters through the mercurial
  * wire protocol. */
-static void command_add_asterisk(void *data,
+extern void command_add_asterisk(void *data,
 				 command_add_param_t command_add_param,
-				 const struct string_list *params)
-{
-	const struct string_list_item *item;
-	union param_value num;
-	num.size = params ? params->nr : 0;
-	command_add_param(data, "*", num);
-	if (params)
-		for_each_string_list_item(item, params) {
-			const char *name = item->string;
-			union param_value value;
-			value.value = item->util;
-			command_add_param(data, name, value);
-		}
-}
+				 const void *params);
 
 void prepare_command(void *data, command_add_param_t command_add_param,
 		     va_list ap)
@@ -86,7 +73,7 @@ void prepare_command(void *data, command_add_param_t command_add_param,
 		} else
 			command_add_asterisk(
 				data, command_add_param,
-				va_arg(ap, const struct string_list *));
+				va_arg(ap, const void *));
 	}
 }
 
@@ -180,35 +167,6 @@ void hg_get_repo_state(struct hg_connection *conn, struct strbuf *branchmap,
 		conn->simple_command(conn, heads, "heads", NULL);
 		hg_listkeys(conn, bookmarks, "bookmarks");
 	}
-}
-
-void hg_getbundle(struct hg_connection *conn, FILE *out,
-		  struct oid_array *heads, struct oid_array *common,
-		  const char *bundle2caps)
-{
-	struct string_list args = STRING_LIST_INIT_NODUP;
-	struct string_list_item *item;
-	struct writer writer;
-
-	if (heads && heads->nr) {
-		item = string_list_append(&args, "heads");
-		item->util = join_oid_array_hex(heads, ' ');
-	}
-	if (common && common->nr) {
-		item = string_list_append(&args, "common");
-		item->util = join_oid_array_hex(common, ' ');
-	}
-	if (bundle2caps && *bundle2caps) {
-		item = string_list_append(&args, "bundlecaps");
-		item->util = strdup(bundle2caps);
-	}
-	writer.write = (write_callback)fwrite;
-	writer.close = (close_callback)fflush;
-	writer.context = out;
-	conn->changegroup_command(conn, &writer, "getbundle", "*", &args, NULL);
-	string_list_clear(&args, 1);
-
-	writer_close(&writer);
 }
 
 static int unbundlehash(const struct object_id *oid, void *data)

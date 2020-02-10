@@ -19,13 +19,7 @@ size_t write_to(char *buf, size_t size, size_t nmemb, struct writer *writer)
 	return writer->write(buf, size, nmemb, writer->context);
 }
 
-static inline
-int writer_close(struct writer* writer)
-{
-	if (writer->close)
-		return writer->close(writer->context);
-	return 0;
-}
+int writer_close(struct writer* writer);
 
 size_t copy_to(FILE *in, size_t len, struct writer *writer);
 
