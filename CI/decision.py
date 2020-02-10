@@ -206,7 +206,10 @@ def decision():
     )
 
     for env in ('linux', 'mingw64', 'osx10_10'):
-        TestTask(task_env=env)
+        TestTask(
+            task_env=env,
+            variant='coverage' if env == 'linux' else None,
+        )
 
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
         Task(
