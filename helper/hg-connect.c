@@ -95,10 +95,10 @@ struct hg_connection *hg_connect(const char *url, int flags)
 /* Batched output concatenates all responses, separating them with ';'
  * The output also has four characters escaped: '=', ';', ',' and ':',
  * as, resp., ":e", ":s", ":o", and ":c". */
-static void split_batched_repo_state(struct strbuf *state,
-				     struct strbuf *branchmap,
-				     struct strbuf *heads,
-				     struct strbuf *bookmarks)
+void split_batched_repo_state(struct strbuf *state,
+			      struct strbuf *branchmap,
+			      struct strbuf *heads,
+			      struct strbuf *bookmarks)
 {
 	struct strbuf *all[] = { branchmap, heads, bookmarks, NULL };
 	struct strbuf **current;
@@ -129,28 +129,6 @@ static void split_batched_repo_state(struct strbuf *state,
 		}
 		if (*buf == ';')
 			buf++;
-	}
-}
-
-void hg_get_repo_state(struct hg_connection *conn, struct strbuf *branchmap,
-		       struct strbuf *heads, struct strbuf *bookmarks)
-{
-	if (hg_get_capability(conn, "batch")) {
-		struct strbuf out = STRBUF_INIT;
-		conn->simple_command(
-			conn, &out, "batch", "cmds",
-			"branchmap ;heads ;listkeys namespace=bookmarks",
-			"*", NULL, NULL);
-		if (!out.buf)
-			return;
-		split_batched_repo_state(&out, branchmap, heads, bookmarks);
-		strbuf_release(&out);
-	} else {
-		// TODO: when not batching, check for coherency
-		// (see the cinnabar.remote_helper python module)
-		conn->simple_command(conn, branchmap, "branchmap", NULL);
-		conn->simple_command(conn, heads, "heads", NULL);
-		hg_listkeys(conn, bookmarks, "bookmarks");
 	}
 }
 

@@ -142,8 +142,35 @@ impl object_id_creator {
 }
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
-struct strbuf(c_void);
+#[repr(C)]
+struct strbuf {
+    alloc: usize,
+    len: usize,
+    buf: *mut c_char,
+}
+
+extern "C" {
+    static strbuf_slopbuf: *const c_char;
+    fn strbuf_release(buf: *mut strbuf);
+}
+
+impl strbuf {
+    fn new() -> Self {
+        strbuf {
+            alloc: 0,
+            len: 0,
+            buf: unsafe { strbuf_slopbuf as *mut _ },
+        }
+    }
+}
+
+impl Drop for strbuf {
+    fn drop(&mut self) {
+        unsafe {
+            strbuf_release(self);
+        }
+    }
+}
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -155,6 +182,52 @@ struct writer {
 
 extern "C" {
     fn writer_close(w: *mut writer);
+    fn split_batched_repo_state(
+        state: *mut strbuf,
+        branchmap: *mut strbuf,
+        heads: *mut strbuf,
+        bookmarks: *mut strbuf,
+    );
+}
+
+#[no_mangle]
+unsafe extern "C" fn hg_get_repo_state(
+    conn: *mut hg_connection,
+    branchmap: *mut strbuf,
+    heads: *mut strbuf,
+    bookmarks: *mut strbuf,
+) {
+    let conn = conn.as_mut().unwrap();
+    let branchmap = branchmap.as_mut().unwrap();
+    let heads = heads.as_mut().unwrap();
+    let bookmarks = bookmarks.as_mut().unwrap();
+    if hg_get_capability(conn, cstr!("batch").as_ptr()).is_null() {
+        // TODO: when not batching, check for coherency
+        // (see the cinnabar.remote_helper python module)
+        (conn.simple_command)(
+            conn,
+            branchmap,
+            cstr!("branchmap").as_ptr(),
+            ptr::null::<c_void>(),
+        );
+        (conn.simple_command)(conn, heads, cstr!("heads").as_ptr(), ptr::null::<c_void>());
+        hg_listkeys(conn, bookmarks, cstr!("bookmarks").as_ptr());
+    } else {
+        let mut out = strbuf::new();
+        (conn.simple_command)(
+            conn,
+            &mut out,
+            cstr!("batch").as_ptr(),
+            cstr!("cmds").as_ptr(),
+            cstr!("branchmap ;heads ;listkeys namespace=bookmarks").as_ptr(),
+            cstr!("*").as_ptr(),
+            ptr::null::<c_void>(),
+            ptr::null::<c_void>(),
+        );
+        if !out.buf.is_null() {
+            split_batched_repo_state(&mut out, branchmap, heads, bookmarks);
+        }
+    }
 }
 
 #[no_mangle]
