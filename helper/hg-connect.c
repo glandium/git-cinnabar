@@ -6,21 +6,6 @@
 #include "tempfile.h"
 #include "url.h"
 
-/* Copied from bisect.c */
-static char *join_oid_array_hex(struct oid_array *array, char delim)
-{
-	struct strbuf joined_hexs = STRBUF_INIT;
-	int i;
-
-	for (i = 0; i < array->nr; i++) {
-		strbuf_addstr(&joined_hexs, oid_to_hex(&array->oid[i]));
-		if (i + 1 < array->nr)
-			strbuf_addch(&joined_hexs, delim);
-	}
-
-	return strbuf_detach(&joined_hexs, NULL);
-}
-
 /* Split the list of capabilities a mercurial server returned. Also url-decode
  * the bundle2 value in place.
  * The resulting string_list contains capability names in item->string, and
@@ -167,66 +152,6 @@ void hg_get_repo_state(struct hg_connection *conn, struct strbuf *branchmap,
 		conn->simple_command(conn, heads, "heads", NULL);
 		hg_listkeys(conn, bookmarks, "bookmarks");
 	}
-}
-
-static int unbundlehash(const struct object_id *oid, void *data)
-{
-	git_SHA_CTX *ctx = (git_SHA_CTX *) data;
-
-	git_SHA1_Update(ctx, oid->hash, 20);
-
-	return 0;
-}
-
-void hg_unbundle(struct hg_connection *conn, struct strbuf *response, FILE *in,
-		 struct oid_array *heads)
-{
-	struct tempfile *tmpfile;
-	struct stat st;
-	FILE *file;
-	/* When the heads list is empty, we send "force", which needs to be
-	 * sent as hex. */
-	char *heads_str;
-	if (heads->nr) {
-		if (hg_get_capability(conn, "unbundlehash")) {
-			git_SHA_CTX ctx;
-			unsigned char sha1[20];
-
-			/* The unbundlehash format is "hashed" as hex,
-			 * followed by a whitespace, then the sha1 of all
-			 * heads, sorted */
-			heads_str = malloc(54);
-			memcpy(heads_str, "686173686564 ", 13);
-			git_SHA1_Init(&ctx);
-			/* oid_array_for_each_unique sorts the sha1 list */
-			/* XXX: should use hg_object_id-specific function */
-			oid_array_for_each_unique(heads, unbundlehash, &ctx);
-			git_SHA1_Final(sha1, &ctx);
-			hash_to_hex_algop_r(&heads_str[13], sha1,
-			                    &hash_algos[GIT_HASH_SHA1]);
-		} else
-			heads_str = join_oid_array_hex(heads, ' ');
-	} else
-		heads_str = "666f726365";
-
-	/* Neither the stdio nor the HTTP protocols can handle a stream for
-	 * push commands, so store the data as a temporary file. */
-	//TODO: error checking
-	tmpfile = mks_tempfile_ts("hg-bundle-XXXXXX.hg", 3);
-	file = fdopen_tempfile(tmpfile, "w");
-	copy_bundle_to_file(in, file);
-	fflush(file);
-	close_tempfile_gently(tmpfile);
-
-	file = fopen(tmpfile->filename.buf, "r");
-	fstat(fileno(file), &st);
-	conn->push_command(conn, response, file, st.st_size, "unbundle",
-			   "heads", heads_str, NULL);
-	fclose(file);
-
-	delete_tempfile(&tmpfile);
-	if (heads->nr)
-		free(heads_str);
 }
 
 int hg_finish_connect(struct hg_connection *conn)

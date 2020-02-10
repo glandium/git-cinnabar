@@ -2,13 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::cmp::Ordering;
+use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString};
 use std::fmt::{self, Display, Formatter};
+use std::fs::File;
 use std::os::raw::{c_char, c_int};
+#[cfg(unix)]
+use std::os::unix::io::IntoRawFd;
+#[cfg(windows)]
+use std::os::windows::io::IntoRawHandle;
 use std::ptr;
 
 use itertools::Itertools;
 use libc::{off_t, FILE};
+use sha1::{Digest, Sha1};
 
 #[repr(C)]
 struct hg_connection {
@@ -51,6 +59,10 @@ struct oid_array_iter<'a> {
 }
 
 impl oid_array {
+    fn is_empty(&self) -> bool {
+        self.nr == 0
+    }
+
     fn iter(&self) -> oid_array_iter {
         oid_array_iter {
             array: self,
@@ -74,14 +86,58 @@ const GIT_MAX_RAWSZ: usize = 32;
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
+#[derive(Eq)]
 struct object_id([u8; GIT_MAX_RAWSZ]);
 
 impl Display for object_id {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        for x in &self.0[..GIT_SHA1_RAWSZ] {
+        for x in self.raw() {
             write!(f, "{:02x}", x)?;
         }
         Ok(())
+    }
+}
+
+impl object_id {
+    fn create() -> object_id_creator {
+        object_id_creator(Sha1::new())
+    }
+
+    fn raw(&self) -> &[u8] {
+        &self.0[..GIT_SHA1_RAWSZ]
+    }
+}
+
+impl PartialEq for object_id {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw() == other.raw()
+    }
+}
+
+impl PartialOrd for object_id {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.raw().cmp(other.raw()))
+    }
+}
+
+impl Ord for object_id {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.raw().cmp(other.raw())
+    }
+}
+
+#[allow(non_camel_case_types)]
+struct object_id_creator(Sha1);
+
+impl object_id_creator {
+    fn result(self) -> object_id {
+        let mut result = object_id([0; GIT_MAX_RAWSZ]);
+        result.0[..GIT_SHA1_RAWSZ].copy_from_slice(self.0.result().as_slice());
+        result
+    }
+
+    fn input(&mut self, data: &[u8]) {
+        self.0.input(data)
     }
 }
 
@@ -213,6 +269,75 @@ unsafe extern "C" fn hg_getbundle(
         ptr::null::<c_void>(),
     );
     writer_close(&mut writer);
+}
+
+extern "C" {
+    fn hg_get_capability(conn: *mut hg_connection, name: *const c_char) -> *const c_char;
+
+    fn copy_bundle_to_file(input: *mut FILE, file: *mut FILE);
+}
+
+#[no_mangle]
+unsafe extern "C" fn hg_unbundle(
+    conn: *mut hg_connection,
+    response: *mut strbuf,
+    input: *mut FILE,
+    heads: *const oid_array,
+) {
+    let conn = conn.as_mut().unwrap();
+    let heads = heads.as_ref().unwrap();
+    let heads_str = CString::new(if heads.is_empty() {
+        hex::encode("force")
+    } else if hg_get_capability(conn, cstr!("unbundlehash").as_ptr()).is_null() {
+        heads.iter().join(" ")
+    } else {
+        let mut hash = object_id::create();
+        for h in heads.iter().sorted().dedup() {
+            hash.input(h.raw());
+        }
+        format!("{} {}", hex::encode("hashed"), hash.result())
+    })
+    .unwrap();
+
+    /* Neither the stdio nor the HTTP protocols can handle a stream for
+     * push commands, so store the data as a temporary file. */
+    //TODO: error checking
+    let tempfile = tempfile::Builder::new()
+        .prefix("hg-bundle-")
+        .suffix(".hg")
+        .rand_bytes(6)
+        .tempfile()
+        .unwrap();
+    let (f, path) = tempfile.into_parts();
+    let fh = into_raw_fd(f, "w");
+    copy_bundle_to_file(input, fh);
+    libc::fflush(fh);
+    libc::fclose(fh);
+
+    let file = File::open(path).unwrap();
+    let len = file.metadata().unwrap().len();
+    let fh = into_raw_fd(file, "r");
+    (conn.push_command)(
+        conn,
+        response,
+        fh,
+        len.try_into().unwrap(),
+        cstr!("unbundle").as_ptr(),
+        cstr!("heads").as_ptr(),
+        heads_str.as_ptr(),
+        ptr::null::<c_void>(),
+    );
+    libc::fclose(fh);
+}
+
+unsafe fn into_raw_fd(file: File, mode: &str) -> *mut FILE {
+    #[cfg(unix)]
+    let fd = file.into_raw_fd();
+    #[cfg(windows)]
+    let fd = libc::open_osfhandle(file.into_raw_handle() as _, 0);
+
+    let mode = CString::new(mode).unwrap();
+    libc::fdopen(fd, mode.as_ptr())
 }
 
 #[no_mangle]

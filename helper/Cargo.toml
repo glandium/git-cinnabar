@@ -18,8 +18,11 @@ path = "main.rs"
 
 [dependencies]
 cstr = "0.1"
+hex = "0.4"
 itertools = "0.8"
 libc = "0.2"
+sha-1 = "0.8"
+tempfile = "3"
 
 [target.'cfg(windows)'.dependencies.curl-sys]
 version = "0.4"
