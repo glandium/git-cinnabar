@@ -17,6 +17,7 @@ name = "git-cinnabar-helper"
 path = "main.rs"
 
 [dependencies]
+bstr = "0.2"
 cstr = "0.1"
 hex = "0.4"
 itertools = "0.8"

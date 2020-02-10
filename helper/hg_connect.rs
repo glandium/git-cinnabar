@@ -14,6 +14,7 @@ use std::os::unix::io::IntoRawFd;
 use std::os::windows::io::IntoRawHandle;
 use std::ptr;
 
+use bstr::ByteSlice;
 use itertools::Itertools;
 use libc::{off_t, FILE};
 use sha1::{Digest, Sha1};
@@ -151,6 +152,7 @@ struct strbuf {
 
 extern "C" {
     static strbuf_slopbuf: *const c_char;
+    fn strbuf_add(buf: *mut strbuf, data: *const c_void, len: usize);
     fn strbuf_release(buf: *mut strbuf);
 }
 
@@ -161,6 +163,14 @@ impl strbuf {
             len: 0,
             buf: unsafe { strbuf_slopbuf as *mut _ },
         }
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.buf as *const u8, self.len) }
+    }
+
+    fn extend_from_slice(&mut self, s: &[u8]) {
+        unsafe { strbuf_add(self, s.as_ptr() as *const c_void, s.len()) }
     }
 }
 
@@ -182,12 +192,6 @@ struct writer {
 
 extern "C" {
     fn writer_close(w: *mut writer);
-    fn split_batched_repo_state(
-        state: *mut strbuf,
-        branchmap: *mut strbuf,
-        heads: *mut strbuf,
-        bookmarks: *mut strbuf,
-    );
 }
 
 #[no_mangle]
@@ -225,9 +229,80 @@ unsafe extern "C" fn hg_get_repo_state(
             ptr::null::<c_void>(),
         );
         if !out.buf.is_null() {
-            split_batched_repo_state(&mut out, branchmap, heads, bookmarks);
+            let split = out.as_bytes().split(|&b| b == b';');
+            for (out, buf) in Iterator::zip(
+                split,
+                &mut [Some(branchmap), Some(heads), Some(bookmarks), None],
+            ) {
+                let buf = buf.as_mut().unwrap();
+                unescape_batched_output(out, buf);
+            }
         }
     }
+}
+
+fn unescape_batched_output(out: &[u8], buf: &mut strbuf) {
+    // This will fail if `split` has more than 3 items.
+    let mut start = 0;
+    let mut out = out;
+    loop {
+        if let Some(colon) = out[start..].find_byte(b':') {
+            let (before, after) = out.split_at(start + colon);
+            let replace = match after.get(..2) {
+                Some(b":e") => Some(b"="),
+                Some(b":s") => Some(b";"),
+                Some(b":o") => Some(b","),
+                Some(b":c") => Some(b":"),
+                // This is not supposed to happen, but just in case:
+                // XXX: throw an error?
+                _ => None,
+            };
+            if let Some(replace) = replace {
+                buf.extend_from_slice(before);
+                buf.extend_from_slice(replace);
+                out = &after[2..];
+                if out.is_empty() {
+                    break;
+                }
+            } else {
+                start += colon + 1;
+            }
+        } else {
+            buf.extend_from_slice(out);
+            break;
+        }
+    }
+}
+
+#[test]
+fn test_unescape_batched_output() {
+    let mut buf = strbuf::new();
+    unescape_batched_output(b"", &mut buf);
+    assert_eq!(buf.as_bytes().as_bstr(), b"".as_bstr());
+
+    let mut buf = strbuf::new();
+    unescape_batched_output(b"abc", &mut buf);
+    assert_eq!(buf.as_bytes().as_bstr(), b"abc".as_bstr());
+
+    let mut buf = strbuf::new();
+    unescape_batched_output(b"abc:def", &mut buf);
+    assert_eq!(buf.as_bytes().as_bstr(), b"abc:def".as_bstr());
+
+    let mut buf = strbuf::new();
+    unescape_batched_output(b"abc:def:", &mut buf);
+    assert_eq!(buf.as_bytes().as_bstr(), b"abc:def:".as_bstr());
+
+    let mut buf = strbuf::new();
+    unescape_batched_output(b"abc:edef:", &mut buf);
+    assert_eq!(buf.as_bytes().as_bstr(), b"abc=def:".as_bstr());
+
+    let mut buf = strbuf::new();
+    unescape_batched_output(b"abc:edef:c", &mut buf);
+    assert_eq!(buf.as_bytes().as_bstr(), b"abc=def:".as_bstr());
+
+    let mut buf = strbuf::new();
+    unescape_batched_output(b"abc:edef:c:s:e:oz", &mut buf);
+    assert_eq!(buf.as_bytes().as_bstr(), b"abc=def:;=,z".as_bstr());
 }
 
 #[no_mangle]

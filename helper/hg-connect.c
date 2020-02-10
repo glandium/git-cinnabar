@@ -92,46 +92,6 @@ struct hg_connection *hg_connect(const char *url, int flags)
 	return conn;
 }
 
-/* Batched output concatenates all responses, separating them with ';'
- * The output also has four characters escaped: '=', ';', ',' and ':',
- * as, resp., ":e", ":s", ":o", and ":c". */
-void split_batched_repo_state(struct strbuf *state,
-			      struct strbuf *branchmap,
-			      struct strbuf *heads,
-			      struct strbuf *bookmarks)
-{
-	struct strbuf *all[] = { branchmap, heads, bookmarks, NULL };
-	struct strbuf **current;
-	const char *buf, *state_end;
-
-	state_end = state->buf + state->len;
-	buf = state->buf;
-	for (current = all; *current; current++) {
-		for (; *buf != ';' && buf != state_end; buf++) {
-			if (*buf != ':' || buf + 1 == state_end) {
-				strbuf_addch(*current, *buf);
-				continue;
-			}
-			if (buf[1] == 'e') {
-				strbuf_addstr(*current, "=");
-				buf++;
-			} else if (buf[1] == 's') {
-				strbuf_addstr(*current, ";");
-				buf++;
-			} else if (buf[1] == 'o') {
-				strbuf_addstr(*current, ",");
-				buf++;
-			} else if (buf[1] == 'c') {
-				strbuf_addstr(*current, ":");
-				buf++;
-			} else
-				strbuf_addch(*current, *buf);
-		}
-		if (*buf == ';')
-			buf++;
-	}
-}
-
 int hg_finish_connect(struct hg_connection *conn)
 {
 	int code = conn->finish(conn);
