@@ -14,9 +14,10 @@ use std::os::unix::io::IntoRawFd;
 use std::os::windows::io::IntoRawHandle;
 use std::ptr;
 
-use bstr::ByteSlice;
+use bstr::{BString, ByteSlice};
 use itertools::Itertools;
 use libc::{off_t, FILE};
+use percent_encoding::percent_decode;
 use sha1::{Digest, Sha1};
 
 #[repr(C)]
@@ -42,6 +43,13 @@ struct hg_connection {
         ...
     ),
     finish: unsafe extern "C" fn(conn: *mut hg_connection) -> c_int,
+    capabilities: Option<Box<Vec<(BString, CString)>>>,
+}
+
+#[no_mangle]
+unsafe extern "C" fn drop_capabilities(conn: *mut hg_connection) {
+    let conn = conn.as_mut().unwrap();
+    conn.capabilities.take();
 }
 
 #[allow(non_camel_case_types)]
@@ -180,6 +188,50 @@ impl Drop for strbuf {
             strbuf_release(self);
         }
     }
+}
+
+/* Split the list of capabilities a mercurial server returned. Also url-decode
+ * the bundle2 value (TODO: in place). */
+#[no_mangle]
+unsafe extern "C" fn split_capabilities(conn: *mut hg_connection, buf: *const c_char) {
+    let conn = conn.as_mut().unwrap();
+    let buf = CStr::from_ptr(buf).to_bytes();
+    let mut capabilities = Vec::new();
+    for item in buf.split(|&b| b == b' ') {
+        let (name, value) = match item.find_byte(b'=') {
+            Some(off) => {
+                let (name, value) = item.split_at(off);
+                (name, &value[1..])
+            }
+            None => (item, &b""[..]),
+        };
+        capabilities.push((
+            BString::from(name.to_owned()),
+            if name == b"bundle2" {
+                CString::new(percent_decode(value).collect::<Vec<_>>()).unwrap()
+            } else {
+                CString::new(value.to_owned()).unwrap()
+            },
+        ));
+    }
+    conn.capabilities.replace(Box::new(capabilities));
+}
+
+#[no_mangle]
+unsafe extern "C" fn hg_get_capability(
+    conn: *mut hg_connection,
+    name: *const c_char,
+) -> *const c_char {
+    let conn = conn.as_mut().unwrap();
+    let needle = CStr::from_ptr(name).to_bytes();
+    if let Some(capabilities) = conn.capabilities.as_ref() {
+        for (name, value) in capabilities.iter() {
+            if name == needle {
+                return value.as_ptr();
+            }
+        }
+    }
+    ptr::null()
 }
 
 #[allow(non_camel_case_types)]
@@ -420,8 +472,6 @@ unsafe extern "C" fn hg_getbundle(
 }
 
 extern "C" {
-    fn hg_get_capability(conn: *mut hg_connection, name: *const c_char) -> *const c_char;
-
     fn copy_bundle_to_file(input: *mut FILE, file: *mut FILE);
 }
 

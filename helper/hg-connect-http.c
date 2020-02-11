@@ -408,7 +408,7 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 	struct hg_connection *conn = xmalloc(sizeof(*conn));
 	struct strbuf caps = STRBUF_INIT;
 	struct writer writer;
-	string_list_init(&conn->capabilities, 1);
+	conn->capabilities = NULL;
 
 	conn->http.url = xstrdup(url);
 	conn->http.initial_request = 1;
@@ -427,7 +427,7 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 		free(conn);
 		return NULL;
 	}
-	split_capabilities(&conn->capabilities, caps.buf);
+	split_capabilities(conn, caps.buf);
 	strbuf_release(&caps);
 
 	conn->simple_command = http_simple_command;

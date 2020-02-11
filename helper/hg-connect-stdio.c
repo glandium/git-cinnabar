@@ -206,7 +206,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	struct strbuf buf = STRBUF_INIT;
 	struct hg_connection *conn = xmalloc(sizeof(*conn));
 	struct child_process *proc = &conn->stdio.proc;
-	string_list_init(&conn->capabilities, 1);
+	conn->capabilities = NULL;
 
 	protocol = parse_connect_url(url, &hostandport, &path);
 
@@ -242,7 +242,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 			struct writer writer;
 			free(hostandport);
 			child_process_clear(proc);
-			string_list_clear(&conn->capabilities, 0);
+			drop_capabilities(conn);
 			free(conn);
 			// TODO: Eventually we want to have a hg_connection
 			// for bundles, but for now, just send the stream to
@@ -294,7 +294,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 
 	stdio_read_response(conn, &buf);
 	if (!(buf.len == 1 && buf.buf[0] == '\n')) {
-		split_capabilities(&conn->capabilities, buf.buf);
+		split_capabilities(conn, buf.buf);
 		/* Now read the response for the "between" command. */
 		stdio_read_response(conn, &buf);
 	}

@@ -6,39 +6,6 @@
 #include "tempfile.h"
 #include "url.h"
 
-/* Split the list of capabilities a mercurial server returned. Also url-decode
- * the bundle2 value in place.
- * The resulting string_list contains capability names in item->string, and
- * their corresponding value in item->util. */
-void split_capabilities(struct string_list *list, const char *buf)
-{
-	struct string_list_item *item;
-	string_list_split(list, buf, ' ', -1);
-	for_each_string_list_item(item, list) {
-		char *value = strchr(item->string, '=');
-		if (value) {
-			*(value++) = '\0';
-			item->util = value;
-			if (!strcmp(item->string, "bundle2")) {
-				char *decoded = url_decode(value);
-				/* url decoded is always smaller. */
-				xsnprintf(value, strlen(value), "%s", decoded);
-				free(decoded);
-			}
-		}
-	}
-}
-
-const char *hg_get_capability(struct hg_connection *conn, const char *name)
-{
-	struct string_list_item *item;
-
-	item = unsorted_string_list_lookup(&conn->capabilities, name);
-	if (item)
-		return item->util ? item->util : "";
-	return NULL;
-}
-
 /* Generic helpers to handle passing parameters through the mercurial
  * wire protocol. */
 extern void command_add_asterisk(void *data,
@@ -95,7 +62,7 @@ struct hg_connection *hg_connect(const char *url, int flags)
 int hg_finish_connect(struct hg_connection *conn)
 {
 	int code = conn->finish(conn);
-	string_list_clear(&conn->capabilities, 0);
+	drop_capabilities(conn);
 	free(conn);
 	return code;
 }

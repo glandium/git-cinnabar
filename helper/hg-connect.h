@@ -18,7 +18,7 @@ struct hg_connection {
 
 	int (*finish)(struct hg_connection *);
 
-	struct string_list capabilities;
+	void *capabilities;
 
 	union {
 		struct {
