@@ -18,6 +18,10 @@ path = "main.rs"
 
 [dependencies]
 
+[target.'cfg(windows)'.dependencies.curl-sys]
+version = "0.4"
+features = ["static-curl", "static-ssl"]
+
 [build-dependencies]
 itertools = "0.8"
 make-cmd = "0.1"

@@ -35,6 +35,10 @@ NO_OPENSSL ?= 1
 
 include $(CURDIR)/Makefile
 
+SYSTEM = $(shell python2.7 -c 'import platform; print platform.system()')
+ifeq ($(SYSTEM),Windows)
+CFLAGS += -DCURL_STATICLIB
+endif
 SOURCE_DIR := $(dir $(CURDIR))
 
 vpath cinnabar/% $(SOURCE_DIR)
@@ -138,7 +142,7 @@ libcinnabar.a: $(CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(X
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
 
 linker-flags: GIT-LDFLAGS FORCE
-	@echo $(ALL_LDFLAGS) $(CURL_LIBCURL) $(EXTLIBS)
+	@echo $(ALL_LDFLAGS) $(if $(filter $(SYSTEM),Windows),,$(CURL_LIBCURL)) $(EXTLIBS)
 
 cinnabar-helper.o: EXTRA_CPPFLAGS=-DHELPER_HASH=$(shell python $(SOURCE_DIR)git-cinnabar --version=helper 2> /dev/null | awk -F/ '{print $$NF}')
 cinnabar-helper.o: $(addprefix $(SOURCE_DIR)helper/,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c))

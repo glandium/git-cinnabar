@@ -333,7 +333,6 @@ class Helper(Task, metaclass=Tool):
         elif not os.startswith('osx'):
             make_flags.append('USE_LIBPCRE1=YesPlease')
             make_flags.append('USE_LIBPCRE2=')
-            make_flags.append('CFLAGS="-DCURLOPT_PROXY_CAINFO=246"')
             make_flags.append('LDFLAGS="-lssp_nonshared -lssp"')
 
         rustup_opts = '-y --default-toolchain none'

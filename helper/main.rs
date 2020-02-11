@@ -2,6 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// Statically link libcurl on Windows even though we don't use it.
+// This leaves it to curl-sys build scripts to deal with building libcurl,
+// instead of us.
+#[cfg(windows)]
+extern crate curl_sys;
+
 use std::convert::TryInto;
 use std::ffi::OsString;
 use std::os::raw::c_int;
