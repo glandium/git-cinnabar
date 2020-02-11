@@ -69,6 +69,10 @@ impl<'a> args_slice<'a> {
             marker: PhantomData,
         }
     }
+
+    fn as_slice(&'a self) -> &'a [*const c_void] {
+        unsafe { std::slice::from_raw_parts(self.data, self.len) }
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -442,6 +446,30 @@ unsafe extern "C" fn command_add_asterisk(
                 value: value.as_ptr(),
             };
             (command_add_param)(data, name.as_ptr(), value);
+        }
+    }
+}
+
+#[no_mangle]
+unsafe extern "C" fn prepare_command(
+    data: *mut c_void,
+    command_add_param: unsafe extern "C" fn(
+        data: *mut c_void,
+        name: *const c_char,
+        value: param_value,
+    ),
+    args: args_slice,
+) {
+    for item in args.as_slice().chunks(2) {
+        if let [name, value] = *item {
+            let name = CStr::from_ptr(name as *const c_char);
+            if name.to_bytes() == b"*" {
+                command_add_asterisk(data, command_add_param, value as _);
+            } else {
+                (command_add_param)(data, name.as_ptr(), param_value { value: value as _ });
+            }
+        } else {
+            unreachable!();
         }
     }
 }

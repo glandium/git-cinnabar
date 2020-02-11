@@ -6,30 +6,6 @@
 #include "tempfile.h"
 #include "url.h"
 
-/* Generic helpers to handle passing parameters through the mercurial
- * wire protocol. */
-extern void command_add_asterisk(void *data,
-				 command_add_param_t command_add_param,
-				 const void *params);
-
-void prepare_command(void *data, command_add_param_t command_add_param,
-		     struct args_slice args)
-{
-	const char *name;
-
-	for (size_t i = 0; i < args.len; i++) {
-		name = (const char *) args.data[i];
-		if (strcmp(name, "*")) {
-			union param_value value;
-			value.value = (const char *) args.data[++i];
-			command_add_param(data, name, value);
-		} else
-			command_add_asterisk(
-				data, command_add_param,
-				(const void *) args.data[++i]);
-	}
-}
-
 struct hg_connection *hg_connect(const char *url, int flags)
 {
 	struct hg_connection *conn;
