@@ -56,25 +56,16 @@ static void stdio_command_add_param(void *data, const char *name,
 		strbuf_add(cmd, value.value, len);
 }
 
-static void stdio_send_command_v(struct hg_connection *conn,
-				 const char *command, va_list ap)
+static void stdio_send_command(struct hg_connection *conn,
+			       const char *command, struct args_slice args)
 {
 	struct strbuf cmd = STRBUF_INIT;
 	strbuf_addstr(&cmd, command);
 	strbuf_addch(&cmd, '\n');
-	prepare_command(&cmd, stdio_command_add_param, ap);
+	prepare_command(&cmd, stdio_command_add_param, args);
 
 	xwrite(conn->stdio.proc.in, cmd.buf, cmd.len);
 	strbuf_release(&cmd);
-}
-
-static void stdio_send_command(struct hg_connection *conn,
-			       const char *command, ...)
-{
-	va_list ap;
-	va_start(ap, command);
-	stdio_send_command_v(conn, command, ap);
-	va_end(ap);
 }
 
 static void stdio_read_response(struct hg_connection *conn,
@@ -93,22 +84,17 @@ static void stdio_read_response(struct hg_connection *conn,
 
 static void stdio_simple_command(struct hg_connection *conn,
 				 struct strbuf *response,
-				 const char *command, ...)
+				 const char *command, struct args_slice args)
 {
-	va_list ap;
-	va_start(ap, command);
-	stdio_send_command_v(conn, command, ap);
+	stdio_send_command(conn, command, args);
 	stdio_read_response(conn, response);
-	va_end(ap);
 }
 
 static void stdio_changegroup_command(struct hg_connection *conn,
                                       struct writer *out,
-				      const char *command, ...)
+				      const char *command, struct args_slice args)
 {
-	va_list ap;
-	va_start(ap, command);
-	stdio_send_command_v(conn, command, ap);
+	stdio_send_command(conn, command, args);
 
 	/* We're going to receive a stream, but we don't know how big it is
 	 * going to be in advance, so we have to read it according to its
@@ -117,25 +103,21 @@ static void stdio_changegroup_command(struct hg_connection *conn,
 	if (conn->stdio.is_remote)
 		bufferize_writer(out);
 	copy_bundle(conn->stdio.out, out);
-	va_end(ap);
 }
 
 static void stdio_push_command(struct hg_connection *conn,
 			       struct strbuf *response, FILE *in, off_t len,
-			       const char *command, ...)
+			       const char *command, struct args_slice args)
 {
 	int is_bundle2 = 0;
 	char buf[4096];
 	struct strbuf header = STRBUF_INIT;
-	va_list ap;
-	va_start(ap, command);
-	stdio_send_command_v(conn, command, ap);
+	stdio_send_command(conn, command, args);
 	/* The server normally sends an empty response before reading the data
 	 * it's sent if not, it's an error (typically, the remote will
 	 * complain here if there was a lost push race). */
 	//TODO: handle that error.
 	stdio_read_response(conn, &header);
-	va_end(ap);
 
 	//TODO: chunk in smaller pieces.
 	strbuf_addf(&header, "%"PRIdMAX"\n", (intmax_t)len);
@@ -170,7 +152,9 @@ static void stdio_push_command(struct hg_connection *conn,
 
 static int stdio_finish(struct hg_connection *conn)
 {
-	stdio_send_command(conn, "", NULL);
+	void *raw_args[] = {};
+	struct args_slice args = { .data = raw_args, .len = 0 };
+	stdio_send_command(conn, "", args);
 	close(conn->stdio.proc.in);
 	fclose(conn->stdio.out);
 	pthread_join(conn->stdio.thread, NULL);
@@ -287,10 +271,16 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
          * least mercurial 1.9 anyways. Server versions between 0.9 and 1.7
          * will return an empty result for the "capabilities" command, as
          * opposed to no result at all with older servers. */
-	stdio_send_command(conn, "capabilities", NULL);
-	stdio_send_command(conn, "between", "pairs",
-			   "0000000000000000000000000000000000000000-"
-			   "0000000000000000000000000000000000000000", NULL);
+	void *raw_args[] = {};
+	struct args_slice args = { .data = raw_args, .len = 0 };
+	stdio_send_command(conn, "capabilities", args);
+	void *raw_between_args[] = {
+		"pairs",
+		"0000000000000000000000000000000000000000-"
+		"0000000000000000000000000000000000000000"
+	};
+	struct args_slice between_args = { .data = raw_between_args, .len = 2 };
+	stdio_send_command(conn, "between", between_args);
 
 	stdio_read_response(conn, &buf);
 	if (!(buf.len == 1 && buf.buf[0] == '\n')) {

@@ -6,15 +6,21 @@
 #include "sha1-array.h"
 #include "string-list.h"
 
+struct args_slice {
+	void **data;
+	size_t len;
+};
+
 struct hg_connection {
 	void (*simple_command)(struct hg_connection *, struct strbuf *response,
-			       const char *command, ...);
+			       const char *command, struct args_slice args);
 
 	void (*changegroup_command)(struct hg_connection *, struct writer *out,
-				    const char *command, ...);
+				    const char *command, struct args_slice args);
 
 	void (*push_command)(struct hg_connection *, struct strbuf *response,
-			     FILE *in, off_t len, const char *command, ...);
+			     FILE *in, off_t len, const char *command,
+			     struct args_slice args);
 
 	int (*finish)(struct hg_connection *);
 

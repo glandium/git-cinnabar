@@ -197,7 +197,7 @@ static void prepare_command_request(CURL *curl, struct curl_slist *headers,
 
 static void http_command(struct hg_connection *conn,
 			 prepare_request_cb_t prepare_request_cb, void *data,
-			 const char *command, va_list ap)
+			 const char *command, struct args_slice args)
 {
 	struct command_request_data request_data = {
 		conn,
@@ -206,7 +206,7 @@ static void http_command(struct hg_connection *conn,
 		command,
 		STRBUF_INIT,
 	};
-	prepare_command(&request_data.args, http_query_add_param, ap);
+	prepare_command(&request_data.args, http_query_add_param, args);
 	// TODO: better handle errors
 	switch (http_request_reauth(prepare_command_request, &request_data)) {
 	case HTTP_OK:
@@ -219,17 +219,14 @@ static void http_command(struct hg_connection *conn,
 
 static void http_simple_command(struct hg_connection *conn,
 				struct strbuf *response,
-				const char *command, ...)
+				const char *command, struct args_slice args)
 {
-	va_list ap;
-	va_start(ap, command);
 	if (strcmp(command, "pushkey"))
 		http_command(conn, prepare_simple_request, response, command,
-		             ap);
+		             args);
 	else
 		http_command(conn, prepare_pushkey_request, response, command,
-		             ap);
-	va_end(ap);
+		             args);
 }
 
 struct changegroup_response_data {
@@ -279,17 +276,14 @@ static void prepare_changegroup_request(CURL *curl, struct curl_slist *headers,
  * zlib stream when called over HTTP. */
 static void http_changegroup_command(struct hg_connection *conn,
                                      struct writer *out,
-                                     const char *command, ...)
+                                     const char *command, struct args_slice args)
 {
-	va_list ap;
 	struct changegroup_response_data response_data;
 
 	response_data.curl = NULL;
 	response_data.writer = out;
 
-	va_start(ap, command);
-	http_command(conn, prepare_changegroup_request, &response_data, command, ap);
-	va_end(ap);
+	http_command(conn, prepare_changegroup_request, &response_data, command, args);
 }
 
 struct push_request_info {
@@ -318,19 +312,16 @@ static void prepare_push_request(CURL *curl, struct curl_slist *headers,
 
 static void http_push_command(struct hg_connection *conn,
 			      struct strbuf *response, FILE *in, off_t len,
-			      const char *command, ...)
+			      const char *command, struct args_slice args)
 {
-	va_list ap;
 	struct push_request_info info;
 	struct strbuf http_response = STRBUF_INIT;
 	struct string_list list = STRING_LIST_INIT_NODUP;
-	va_start(ap, command);
 	info.response = &http_response;
 	info.in = in;
 	info.len = len;
 	//TODO: handle errors
-	http_command(conn, prepare_push_request, &info, command, ap);
-	va_end(ap);
+	http_command(conn, prepare_push_request, &info, command, args);
 
 	if (!strncmp(http_response.buf, "HG20", 4)) {
 		strbuf_addbuf(response, &http_response);
@@ -388,12 +379,9 @@ static void prepare_caps_request(CURL *curl, struct curl_slist *headers,
 }
 
 static void http_capabilities_command(struct hg_connection *conn,
-				      struct writer *writer, ...)
+				      struct writer *writer, struct args_slice args)
 {
-	va_list ap;
-	va_start(ap, writer);
-	http_command(conn, prepare_caps_request, writer, "capabilities", ap);
-	va_end(ap);
+	http_command(conn, prepare_caps_request, writer, "capabilities", args);
 }
 
 static int http_finish(struct hg_connection *conn)
@@ -418,7 +406,9 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 	writer.write = fwrite_buffer;
 	writer.close = NULL;
 	writer.context = &caps;
-	http_capabilities_command(conn, &writer, NULL);
+	void *raw_args[] = {};
+	struct args_slice args = { .data = raw_args, .len = 0 };
+	http_capabilities_command(conn, &writer, args);
 	/* Cf. comment above caps_request_write. If the bundle stream was
 	 * sent to stdout, the writer was switched to fwrite. */
 	if (writer.write != fwrite_buffer) {

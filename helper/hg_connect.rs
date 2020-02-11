@@ -7,6 +7,7 @@ use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString};
 use std::fmt::{self, Display, Formatter};
 use std::fs::File;
+use std::marker::PhantomData;
 use std::os::raw::{c_char, c_int};
 #[cfg(unix)]
 use std::os::unix::io::IntoRawFd;
@@ -26,13 +27,13 @@ struct hg_connection {
         conn: *mut hg_connection,
         response: *mut strbuf,
         command: *const c_char,
-        ...
+        args: args_slice,
     ),
     changegroup_command: unsafe extern "C" fn(
         conn: *mut hg_connection,
         out: *mut writer,
         command: *const c_char,
-        ...
+        args: args_slice,
     ),
     push_command: unsafe extern "C" fn(
         conn: *mut hg_connection,
@@ -40,7 +41,7 @@ struct hg_connection {
         input: *mut FILE,
         len: off_t,
         command: *const c_char,
-        ...
+        args: args_slice,
     ),
     finish: unsafe extern "C" fn(conn: *mut hg_connection) -> c_int,
     capabilities: Option<Box<Vec<(BString, CString)>>>,
@@ -50,6 +51,24 @@ struct hg_connection {
 unsafe extern "C" fn drop_capabilities(conn: *mut hg_connection) {
     let conn = conn.as_mut().unwrap();
     conn.capabilities.take();
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+struct args_slice<'a> {
+    data: *const *const c_void,
+    len: usize,
+    marker: PhantomData<&'a ()>,
+}
+
+impl<'a> args_slice<'a> {
+    fn new(args: &'a [*const c_void]) -> args_slice<'a> {
+        args_slice {
+            data: args.as_ptr(),
+            len: args.len(),
+            marker: PhantomData,
+        }
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -264,9 +283,9 @@ unsafe extern "C" fn hg_get_repo_state(
             conn,
             branchmap,
             cstr!("branchmap").as_ptr(),
-            ptr::null::<c_void>(),
+            args_slice::new(&[]),
         );
-        (conn.simple_command)(conn, heads, cstr!("heads").as_ptr(), ptr::null::<c_void>());
+        (conn.simple_command)(conn, heads, cstr!("heads").as_ptr(), args_slice::new(&[]));
         hg_listkeys(conn, bookmarks, cstr!("bookmarks").as_ptr());
     } else {
         let mut out = strbuf::new();
@@ -274,11 +293,12 @@ unsafe extern "C" fn hg_get_repo_state(
             conn,
             &mut out,
             cstr!("batch").as_ptr(),
-            cstr!("cmds").as_ptr(),
-            cstr!("branchmap ;heads ;listkeys namespace=bookmarks").as_ptr(),
-            cstr!("*").as_ptr(),
-            ptr::null::<c_void>(),
-            ptr::null::<c_void>(),
+            args_slice::new(&[
+                cstr!("cmds").as_ptr() as _,
+                cstr!("branchmap ;heads ;listkeys namespace=bookmarks").as_ptr() as _,
+                cstr!("*").as_ptr() as _,
+                ptr::null::<c_void>(),
+            ]),
         );
         if !out.buf.is_null() {
             let split = out.as_bytes().split(|&b| b == b';');
@@ -370,11 +390,12 @@ unsafe extern "C" fn hg_known(
         conn,
         result,
         cstr!("known").as_ptr(),
-        cstr!("nodes").as_ptr(),
-        nodes_str.as_ptr(),
-        cstr!("*").as_ptr(),
-        ptr::null::<c_void>(),
-        ptr::null::<c_void>(),
+        args_slice::new(&[
+            cstr!("nodes").as_ptr() as _,
+            nodes_str.as_ptr() as _,
+            cstr!("*").as_ptr() as _,
+            ptr::null::<c_void>(),
+        ]),
     );
 }
 
@@ -389,9 +410,7 @@ unsafe extern "C" fn hg_listkeys(
         conn,
         result,
         cstr!("listkeys").as_ptr(),
-        cstr!("namespace").as_ptr(),
-        namespace,
-        ptr::null::<c_void>(),
+        args_slice::new(&[cstr!("namespace").as_ptr() as _, namespace as _]),
     );
 }
 
@@ -464,9 +483,7 @@ unsafe extern "C" fn hg_getbundle(
         conn,
         &mut writer,
         cstr!("getbundle").as_ptr(),
-        cstr!("*").as_ptr(),
-        &args,
-        ptr::null::<c_void>(),
+        args_slice::new(&[cstr!("*").as_ptr() as _, &args as *const _ as _]),
     );
     writer_close(&mut writer);
 }
@@ -521,9 +538,7 @@ unsafe extern "C" fn hg_unbundle(
         fh,
         len.try_into().unwrap(),
         cstr!("unbundle").as_ptr(),
-        cstr!("heads").as_ptr(),
-        heads_str.as_ptr(),
-        ptr::null::<c_void>(),
+        args_slice::new(&[cstr!("heads").as_ptr() as _, heads_str.as_ptr() as _]),
     );
     libc::fclose(fh);
 }
@@ -553,15 +568,16 @@ unsafe extern "C" fn hg_pushkey(
         conn,
         response,
         cstr!("pushkey").as_ptr(),
-        cstr!("namespace").as_ptr(),
-        namespace,
-        cstr!("key").as_ptr(),
-        key,
-        cstr!("old").as_ptr(),
-        old,
-        cstr!("new").as_ptr(),
-        new,
-        ptr::null::<c_void>(),
+        args_slice::new(&[
+            cstr!("namespace").as_ptr() as _,
+            namespace as _,
+            cstr!("key").as_ptr() as _,
+            key as _,
+            cstr!("old").as_ptr() as _,
+            old as _,
+            cstr!("new").as_ptr() as _,
+            new as _,
+        ]),
     );
 }
 
@@ -572,9 +588,7 @@ unsafe extern "C" fn hg_lookup(conn: *mut hg_connection, result: *mut strbuf, ke
         conn,
         result,
         cstr!("lookup").as_ptr(),
-        cstr!("key").as_ptr(),
-        key,
-        ptr::null::<c_void>(),
+        args_slice::new(&[cstr!("key").as_ptr() as _, key as _]),
     );
 }
 
@@ -585,7 +599,7 @@ unsafe extern "C" fn hg_clonebundles(conn: *mut hg_connection, result: *mut strb
         conn,
         result,
         cstr!("clonebundles").as_ptr(),
-        ptr::null::<c_void>(),
+        args_slice::new(&[]),
     );
 }
 
@@ -596,6 +610,6 @@ unsafe extern "C" fn hg_cinnabarclone(conn: *mut hg_connection, result: *mut str
         conn,
         result,
         cstr!("cinnabarclone").as_ptr(),
-        ptr::null::<c_void>(),
+        args_slice::new(&[]),
     );
 }

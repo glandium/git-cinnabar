@@ -13,19 +13,20 @@ extern void command_add_asterisk(void *data,
 				 const void *params);
 
 void prepare_command(void *data, command_add_param_t command_add_param,
-		     va_list ap)
+		     struct args_slice args)
 {
 	const char *name;
 
-	while ((name = va_arg(ap, const char *))) {
+	for (size_t i = 0; i < args.len; i++) {
+		name = (const char *) args.data[i];
 		if (strcmp(name, "*")) {
 			union param_value value;
-			value.value = va_arg(ap, const char *);
+			value.value = (const char *) args.data[++i];
 			command_add_param(data, name, value);
 		} else
 			command_add_asterisk(
 				data, command_add_param,
-				va_arg(ap, const void *));
+				(const void *) args.data[++i]);
 	}
 }
 

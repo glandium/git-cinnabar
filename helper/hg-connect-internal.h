@@ -21,7 +21,7 @@ typedef void (*command_add_param_t)(void *data, const char *name,
 				    union param_value value);
 
 void prepare_command(void *data, command_add_param_t command_add_param,
-                     va_list ap);
+                     struct args_slice args);
 
 void drop_capabilities(struct hg_connection *conn);
 
