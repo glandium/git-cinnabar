@@ -158,3 +158,7 @@ endif
 config.patched.sp config.patched.s config.patched.o: GIT-PREFIX
 config.patched.sp config.patched.s config.patched.o: EXTRA_CPPFLAGS = \
 	-DETC_GITCONFIG='"$(ETC_GITCONFIG_SQ)"'
+
+# Bump when CI changes need a new helper build but the helper code itself
+# hasn't changed.
+DUMMY = 1

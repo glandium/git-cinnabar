@@ -268,8 +268,8 @@ class Helper(Task, metaclass=Tool):
 
     def __init__(self, os_and_variant):
         os, variant = (os_and_variant.split('.', 2) + [''])[:2]
-        if variant == 'asan' and os == 'osx10_10':
-            os = 'osx10_11'
+        if os.startswith('osx'):
+            os = 'osx'
         env = TaskEnvironment.by_name('{}.build'.format(os))
 
         artifact = 'git-cinnabar-helper'
