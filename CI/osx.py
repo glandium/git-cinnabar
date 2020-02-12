@@ -17,7 +17,7 @@ class OsxCommon(object):
     def prepare_params(self, params):
         assert 'workerType' not in params
         params['provisionerId'] = 'proj-git-cinnabar'
-        params['workerType'] = 'osx-{}'.format(self.version).replace('.', '-')
+        params['workerType'] = 'osx{}'.format(self.worker_suffix)
         command = []
         command.append('export PWD=$(pwd)')
         command.append('export ARTIFACTS=$PWD')
@@ -27,16 +27,16 @@ class OsxCommon(object):
         params['command'] = bash_command(*command)
         if self.name == 'build':
             env = params.setdefault('env', {})
-            env.setdefault('MACOSX_DEPLOYMENT_TARGET', '10.6')
+            env.setdefault('MACOSX_DEPLOYMENT_TARGET', '10.7')
             env.setdefault('CC', 'clang')
         return params
 
 
 class Osx10_10(OsxCommon, metaclass=TaskEnvironment):
     PREFIX = 'osx10_10'
-    version = '10.10'
+    worker_suffix = '-10-10'
 
 
-class Osx10_11(OsxCommon, metaclass=TaskEnvironment):
-    PREFIX = 'osx10_11'
-    version = '10.11'
+class Osx(OsxCommon, metaclass=TaskEnvironment):
+    PREFIX = 'osx'
+    worker_suffix = ''
