@@ -16,9 +16,9 @@ env:
     secure: "3K2pjJWD90X9BpuFPlXSZyE9cEtg5GIj8V1idLHsQkM5GQJWEGV/2uXwc2e7ZOLdfYrBK8kVMi9AF4H/ShJIHCHbWkZKCXPIL96kOGBM9OmSg4rl4spvq6qIoluqxAxbHXc+vRet2rxvNpNR2cOdQlaYqs3Ea3RZNZxeIClM8vv7JWlt80N1WumpVwTEMG14QMBFCFgPJ9QxUgxsZW7Zy3HJHkGv8/YD0fqNGWu/HjYv5zzNvYEZQ+yjXBoa1UxKV8M3+yJKfRIoXM4zGdUqIUmBoOL1V/TWWm3v4Rq/TQMirOeDNrqZDIstwqpvVDLhozZ18iVNTpK2iEb/lobtu4Ka7vL10ML1bUzs3tH9bcT0LtZeXDaxIJVrAwfS8qhwz7jbNM+WtRBnJ3TZ3MtxKVcdCq7zk+r/qBWR9uwyuY31h+RwKgIHe+4rlwE8IwtYHG1e6iQw06JuV88v50EebRu5ZU0iYpO+EE12gwMxPgG1DL6ym7MlzlOCD5MnOskQOrWbOO2hkA4M+dqJaFwDwVUtiKi5MG8QihxeR8tgEnrYlQkLlxdtn4TFbmWqQTd4TcHLJ7C1Z6C1SKcVdReyPFHv2MPDpEQymTfmPSaGaj/Qexwoxtp67Ij8Q9nr9B2YdlrmpHOe6tdBvyeM1obsKWdwMxhrEg1DEr6WGW+DxhI="
 
 before_script:
-  - curl -OL https://bootstrap.pypa.io/get-pip.py
+  - curl -OL https://bootstrap.pypa.io/2.6/get-pip.py
   - sudo python get-pip.py
-  - sudo pip install virtualenv
+  - sudo pip install virtualenv==16.7.9
 
 script:
   - CI/start-worker.sh worker-$TC_WORKER_TYPE $TC_WORKER_TYPE
