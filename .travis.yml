@@ -17,8 +17,8 @@ env:
 
 before_script:
   - curl -OL https://bootstrap.pypa.io/2.6/get-pip.py
-  - sudo python get-pip.py
-  - sudo pip install virtualenv==16.7.9
+  - sudo -H python get-pip.py
+  - sudo -H pip install virtualenv==16.7.9
 
 script:
   - CI/start-worker.sh worker-$TC_WORKER_TYPE $TC_WORKER_TYPE
