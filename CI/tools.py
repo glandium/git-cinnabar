@@ -222,7 +222,7 @@ def old_compatible_python():
         min_version = None
         for l in fh:
             if l.startswith('#define MIN_CMD_VERSION'):
-                min_version = l.rstrip().split()[-1][:2]
+                min_version = l.rstrip().split()[-1]
                 break
         if not min_version:
             raise Exception('Cannot find MIN_CMD_VERSION')
@@ -296,10 +296,10 @@ class Helper(Task, metaclass=Tool):
                 .format(opt))
         elif variant == 'coverage':
             make_flags.append('CFLAGS="-coverage"')
-            artifacts += ['coverage.tar.xz']
+            artifacts += ['coverage.zip']
             extra_commands = [
                 'mv repo/git-core/{{cinnabar,connect,hg}}*.gcno repo/helper',
-                '(cd repo && tar -Jcf $ARTIFACTS/coverage.tar.xz'
+                '(cd repo && zip $ARTIFACTS/coverage.zip'
                 ' helper/{{cinnabar,connect,hg}}*.gcno)',
             ]
         elif variant == 'old' or variant.startswith('old:'):
@@ -317,9 +317,7 @@ class Helper(Task, metaclass=Tool):
         elif not os.startswith('osx'):
             make_flags.append('USE_LIBPCRE1=YesPlease')
             make_flags.append('USE_LIBPCRE2=')
-            make_flags.append(
-                'CFLAGS+="-DCURLOPT_PROXY_CAINFO=246 -DCURL_STATICLIB"')
-            make_flags.append('CURL_LDFLAGS="$(curl-config --static-libs)"')
+            make_flags.append('CFLAGS+=-DCURLOPT_PROXY_CAINFO=246')
 
         hash = hash or helper_hash()
 

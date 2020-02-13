@@ -113,7 +113,7 @@ class TestTask(Task):
                 'do mv $f repo/helper',
                 'done',
                 'cd repo',
-                'tar -Jcf $ARTIFACTS/coverage.tar.xz .coverage'
+                'zip $ARTIFACTS/coverage.zip .coverage'
                 ' helper/{{cinnabar,connect,hg}}*.gcda',
                 'cd ..',
                 'shopt -u nullglob',
@@ -123,7 +123,7 @@ class TestTask(Task):
             assert not(artifacts and artifact)
             if artifact:
                 artifacts.push(artifact)
-            artifacts.append('coverage.tar.xz')
+            artifacts.append('coverage.zip')
             self.coverage.append(self)
         if not desc:
             desc = 'test w/ git-{} hg-{}'.format(
@@ -208,7 +208,6 @@ def decision():
     for env in ('linux', 'mingw64', 'osx10_10'):
         TestTask(task_env=env)
 
-    for env in ('linux', 'mingw64', 'osx10_11'):
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
         Task(
             task_env=task_env,
@@ -264,19 +263,18 @@ def decision():
         if hg != MERCURIAL_VERSION:
             TestTask(hg=hg)
 
-    for env in ('linux', 'osx10_11'):
-        TestTask(
-            task_env=env,
-            variant='asan',
-        )
-        TestTask(
-            task_env=env,
-            variant='asan',
-            extra_desc='experiments',
-            env={
-                'GIT_CINNABAR_EXPERIMENTS': 'true',
-            },
-        )
+    TestTask(
+        task_env='linux',
+        variant='asan',
+    )
+    TestTask(
+        task_env='linux',
+        variant='asan',
+        extra_desc='experiments',
+        env={
+            'GIT_CINNABAR_EXPERIMENTS': 'true',
+        },
+    )
 
     TestTask(
         variant='coverage',
@@ -380,6 +378,7 @@ def decision():
             extra_desc='cram',
             clone=False,
             command=[
+                'repo/git-cinnabar --version',
                 'cram --verbose repo/tests',
             ],
             env={
@@ -391,6 +390,7 @@ def decision():
         extra_desc='cram',
         clone=False,
         command=[
+            'repo/git-cinnabar --version',
             'cram --verbose repo/tests',
         ],
         env={
@@ -438,39 +438,34 @@ def main():
 
     if TestTask.coverage and TC_IS_PUSH and TC_BRANCH:
         download_coverage = [
-            'curl -o cov-{{{}.id}}.tar.xz -L {{{}.artifact}}'.format(
+            'curl -o cov-{{{}.id}}.zip -L {{{}.artifact}}'.format(
                 task, task)
             for task in TestTask.coverage
         ]
         task = Helper.by_name('linux.coverage')
         download_coverage.append(
-            'curl -o gcda-helper.tar.xz -L {{{}.artifacts[1]}}'.format(task))
+            'curl -o gcno-helper.zip -L {{{}.artifacts[1]}}'.format(task))
 
         merge_coverage.append(
             '(' + '& '.join(download_coverage) + '& wait)',
         )
 
-        for n, task in enumerate(TestTask.coverage):
+        for task in TestTask.coverage:
             merge_coverage.extend([
-                'mkdir cov{}'.format(n),
-                'tar -C cov{} -Jxf cov-{{{}.id}}.tar.xz'.format(n, task),
+                'unzip -d cov-{{{}.id}} cov-{{{}.id}}.zip .coverage'.format(
+                    task, task),
             ])
-            if n >= 1:
-                merge_coverage.append(
-                    'gcov-tool merge -o merge{} {}{} cov{}'.format(
-                        n, 'cov' if n == 1 else 'merge', n - 1, n)
-                )
-
-        last = '{}{}'.format('cov' if n == 0 else 'merge', n)
 
         merge_coverage.extend([
+            'grcov -s repo -t lcov -o repo/coverage.lcov gcno-helper.zip ' +
+            ' '.join(
+                'cov-{{{}.id}}.zip'.format(task)
+                for task in TestTask.coverage),
             'cd repo',
             'coverage combine --append {}'.format(' '.join(
-                '../cov{}/.coverage'.format(n)
-                for n in range(len(TestTask.coverage)))),
+                '../cov-{{{}.id}}/.coverage'.format(task)
+                for task in TestTask.coverage)),
             'cd ..',
-            'tar -cf - -C {} . | tar -xf - -C repo'.format(last),
-            'tar -C repo -Jxf gcda-helper.tar.xz',
         ])
 
     if merge_coverage:

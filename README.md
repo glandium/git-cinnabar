@@ -29,7 +29,7 @@ Requirements:
 -------------
 
 - Git (any version should work ; cinnabarclone bundles require 1.4.4)
-- Python 2.7 and/or, experimentally, 3.x.
+- Python 2.7 and/or, experimentally, 3.5 or more.
 
 Setup:
 ------
@@ -52,24 +52,17 @@ Setup:
 
   If you want to build git along the helper, you can run `make git`.
 
-  If you have a non-standard Python installation location (for example if you
-  are on macOS and have installed it using homebrew) you need to pass
-  `--with-python=/path/to/python` to the configure script or set the
-  `PYTHON_PATH` environment variable to your Python installation path when
-  using make to build the helper.
-
 Experimental support for python 3.x:
 ------------------------------------
 
-Experimental support for python 3.x can be enabled by one of the following:
+Experimental support for python 3.5 or more can be enabled by one of the
+following:
 
 - set the `GIT_CINNABAR_EXPERIMENTS` environment variable to `python3`.
 - `git config cinnabar.experiments python3`.
-- Edit the first line of the `git-cinnabar` and `git-remote-hg` scripts
-  to replace `python2.7` with `python3`.
 
 It has been tested mainly with python 3.5 and 3.7. Corner cases may not work
-properly. Error messages and logging are probably semi-broken.
+properly.
 
 Usage:
 ------

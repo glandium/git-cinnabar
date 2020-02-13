@@ -1,4 +1,17 @@
-#!/usr/bin/env python2.7
+#!/bin/sh
+''':'
+experiments=${GIT_CINNABAR_EXPERIMENTS-$(git config cinnabar.experiments)}
+case ",$experiments," in
+*,python3,*)
+  PYTHON=python3
+  ;;
+*)
+  PYTHON=python2.7
+  ;;
+esac
+exec $PYTHON $0 "$@"
+exit 1
+'''
 
 import os
 import sys

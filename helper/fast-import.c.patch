@@ -1,8 +1,8 @@
 diff --git a/fast-import.c b/fast-import.c
-index b44d6a467e..201b75a75f 100644
+index b8b65a801c..1d276fb229 100644
 --- a/fast-import.c
 +++ b/fast-import.c
-@@ -703,7 +703,7 @@ static struct tree_content *dup_tree_content(struct tree_content *s)
+@@ -704,7 +704,7 @@ static struct tree_content *dup_tree_content(struct tree_content *s)
  	return d;
  }
  
@@ -11,7 +11,7 @@ index b44d6a467e..201b75a75f 100644
  {
  	struct strbuf tmp_file = STRBUF_INIT;
  	struct packed_git *p;
-@@ -810,7 +810,7 @@ static int loosen_small_pack(const struct packed_git *p)
+@@ -811,7 +811,7 @@ static int loosen_small_pack(const struct packed_git *p)
  	return run_command(&unpack);
  }
  
@@ -20,7 +20,7 @@ index b44d6a467e..201b75a75f 100644
  {
  	static int running;
  
-@@ -1611,7 +1611,7 @@ static int update_branch(struct branch *b)
+@@ -1612,7 +1612,7 @@ static int update_branch(struct branch *b)
  	return 0;
  }
  
@@ -29,7 +29,7 @@ index b44d6a467e..201b75a75f 100644
  {
  	unsigned int i;
  	struct branch *b;
-@@ -2139,7 +2139,9 @@ static uintmax_t change_note_fanout(struct tree_entry *root,
+@@ -2144,7 +2144,9 @@ static uintmax_t change_note_fanout(struct tree_entry *root,
   * Complain if the following character is not what is expected,
   * either a space or end of the string.
   */
@@ -40,7 +40,7 @@ index b44d6a467e..201b75a75f 100644
  {
  	uintmax_t mark;
  
-@@ -2203,9 +2205,8 @@ static void file_change_m(const char *p, struct branch *b)
+@@ -2208,9 +2210,8 @@ static void file_change_m(const char *p, struct branch *b)
  	case S_IFDIR:
  	case S_IFGITLINK:
  		/* ok */

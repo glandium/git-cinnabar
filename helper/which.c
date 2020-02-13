@@ -1,3 +1,5 @@
+#include "run-command.c"
+
 #ifdef _WIN32
 #include "compat/mingw.c"
 
@@ -6,7 +8,6 @@ char *which(const char *file) {
 }
 
 #else
-#include "run-command.c"
 
 char *which(const char *file) {
 	return locate_in_PATH(file);
