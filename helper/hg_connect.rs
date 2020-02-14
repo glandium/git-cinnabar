@@ -19,7 +19,7 @@ use std::ptr;
 use bstr::{BString, ByteSlice};
 use itertools::Itertools;
 use libc::{off_t, FILE};
-use percent_encoding::percent_decode;
+use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use sha1::{Digest, Sha1};
 
 #[repr(C)]
@@ -420,7 +420,6 @@ unsafe extern "C" fn hg_listkeys(
 }
 
 #[allow(non_camel_case_types)]
-#[repr(C)]
 union param_value {
     size: usize,
     value: *const c_char,
@@ -703,4 +702,101 @@ unsafe extern "C" fn stdio_send_command(
         args,
     );
     stdio_write(conn, data.as_ptr(), data.len());
+}
+
+#[allow(non_camel_case_types)]
+#[repr(transparent)]
+struct CURL(c_void);
+
+#[allow(non_camel_case_types)]
+#[repr(transparent)]
+struct curl_slist(c_void);
+
+#[allow(non_camel_case_types)]
+type prepare_request_cb_t =
+    unsafe extern "C" fn(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+struct command_request_data {
+    conn: *mut hg_connection,
+    prepare_request_cb: prepare_request_cb_t,
+    data: *mut c_void,
+    command: *const c_char,
+    args: strbuf,
+}
+
+extern "C" {
+    #[allow(improper_ctypes)]
+    fn http_command_error(conn: *mut hg_connection) -> !;
+
+    fn http_request_reauth(prepare_request_cb: prepare_request_cb_t, data: *mut c_void) -> c_int;
+
+    fn prepare_command_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
+}
+
+const HTTP_OK: c_int = 0;
+
+/* The Mercurial HTTP protocol uses HTTP requests for each individual command.
+ * The command name is passed as "cmd" query parameter.
+ * The command arguments can be passed in several different ways, but for now,
+ * only the following is supported:
+ * - each argument is passed as a query parameter.
+ *
+ * The command results are simply the corresponding HTTP responses.
+ */
+const QUERY_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'*')
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b' ');
+
+#[no_mangle]
+unsafe extern "C" fn http_query_add_param(
+    data: *mut c_void,
+    name: *const c_char,
+    value: param_value,
+) {
+    let data = (data as *mut strbuf).as_mut().unwrap();
+    let name = CStr::from_ptr(name).to_bytes();
+    if name != b"*" {
+        let value = percent_encode(CStr::from_ptr(value.value).to_bytes(), QUERY_ENCODE_SET)
+            .to_string()
+            .replace(" ", "+");
+        data.extend_from_slice(b"&");
+        data.extend_from_slice(name);
+        data.extend_from_slice(b"=");
+        data.extend_from_slice(value.as_bytes());
+    }
+}
+
+#[no_mangle]
+unsafe extern "C" fn http_command(
+    conn: *mut hg_connection,
+    prepare_request_cb: prepare_request_cb_t,
+    data: *mut c_void,
+    command: *const c_char,
+    args: args_slice,
+) {
+    let conn = conn.as_mut().unwrap();
+    let mut request_data = command_request_data {
+        conn,
+        prepare_request_cb,
+        data,
+        command,
+        args: strbuf::new(),
+    };
+    prepare_command(
+        &mut request_data.args as *mut strbuf as *mut c_void,
+        http_query_add_param,
+        args,
+    );
+    if http_request_reauth(
+        prepare_command_request,
+        &mut request_data as *mut _ as *mut c_void,
+    ) != HTTP_OK
+    {
+        http_command_error(conn);
+    }
 }

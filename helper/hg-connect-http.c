@@ -56,8 +56,8 @@ static int http_request(prepare_request_cb_t prepare_request_cb, void *data)
 	return ret;
 }
 
-static int http_request_reauth(prepare_request_cb_t prepare_request_cb,
-			       void *data)
+int http_request_reauth(prepare_request_cb_t prepare_request_cb,
+			void *data)
 {
 	struct http_request_info info = { 0, NULL, data };
 	int ret = http_request(prepare_request_cb, &info);
@@ -87,47 +87,6 @@ static int http_request_reauth(prepare_request_cb_t prepare_request_cb,
 	return http_request(prepare_request_cb, &info);
 }
 
-/* The Mercurial HTTP protocol uses HTTP requests for each individual command.
- * The command name is passed as "cmd" query parameter.
- * The command arguments can be passed in several different ways, but for now,
- * only the following is supported:
- * - each argument is passed as a query parameter.
- *
- * The command results are simply the corresponding HTTP responses.
- */
-static char *query_encode(const char *buf)
-{
-	struct strbuf encoded = STRBUF_INIT;
-	const char *p;
-
-	for (p = buf; *p; ++p) {
-		if (isalnum(*p) || *p == '*' || *p == '-' || *p == '.' ||
-		    *p == '_')
-			strbuf_addch(&encoded, *p);
-		else if (*p == ' ')
-			strbuf_addch(&encoded, '+');
-		else
-			strbuf_addf(&encoded, "%%%02x", *p);
-	}
-
-	return strbuf_detach(&encoded, NULL);
-}
-
-static void http_query_add_param(void *data, const char *name,
-				 union param_value value)
-{
-	struct strbuf *command_url = data;
-	char *encoded;
-	if (!strcmp(name, "*"))
-		return;
-
-	/* Theoretically, name should be encoded, too, but we'll assume it's
-         * always going to be alphanumeric characters. */
-	encoded = query_encode(value.value);
-	strbuf_addf(command_url, "&%s=%s", name, encoded);
-	free(encoded);
-}
-
 static void prepare_simple_request(CURL *curl, struct curl_slist *headers,
 				   void *data)
 {
@@ -147,8 +106,8 @@ static void prepare_pushkey_request(CURL *curl, struct curl_slist *headers,
 	headers = curl_slist_append(headers, "Expect:");
 }
 
-static void prepare_command_request(CURL *curl, struct curl_slist *headers,
-				    void *data)
+void prepare_command_request(CURL *curl, struct curl_slist *headers,
+			     void *data)
 {
 	char *end;
 	struct strbuf command_url = STRBUF_INIT;
@@ -195,26 +154,12 @@ static void prepare_command_request(CURL *curl, struct curl_slist *headers,
 	strbuf_release(&command_url);
 }
 
-static void http_command(struct hg_connection *conn,
+extern void http_command(struct hg_connection *conn,
 			 prepare_request_cb_t prepare_request_cb, void *data,
-			 const char *command, struct args_slice args)
-{
-	struct command_request_data request_data = {
-		conn,
-		prepare_request_cb,
-		data,
-		command,
-		STRBUF_INIT,
-	};
-	prepare_command(&request_data.args, http_query_add_param, args);
-	// TODO: better handle errors
-	switch (http_request_reauth(prepare_command_request, &request_data)) {
-	case HTTP_OK:
-		break;
-	default:
-		die("unable to access '%s': %s", conn->http.url, curl_errorstr);
-	}
-	strbuf_release(&request_data.args);
+			 const char *command, struct args_slice args);
+
+void http_command_error(struct hg_connection *conn) {
+	die("unable to access '%s': %s", conn->http.url, curl_errorstr);
 }
 
 static void http_simple_command(struct hg_connection *conn,
