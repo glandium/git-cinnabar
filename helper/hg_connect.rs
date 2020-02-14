@@ -7,6 +7,7 @@ use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString};
 use std::fmt::{self, Display, Formatter};
 use std::fs::File;
+use std::io::Write;
 use std::marker::PhantomData;
 use std::os::raw::{c_char, c_int};
 #[cfg(unix)]
@@ -640,4 +641,66 @@ unsafe extern "C" fn hg_cinnabarclone(conn: *mut hg_connection, result: *mut str
         cstr!("cinnabarclone").as_ptr(),
         args_slice::new(&[]),
     );
+}
+
+/* The mercurial "stdio" protocol is used for both local repositories and
+ * remote ssh repositories.
+ * A mercurial client sends commands in the following form:
+ *   <command> LF
+ *   (<param> SP <length> LF <value>)*
+ *   ('*' SP <num> LF (<param> SP <length> LF <value>){num})
+ *
+ * <value> is <length> bytes long. The number of parameters depends on the
+ * command.
+ *
+ * The '*' special parameter introduces a variable number of extra parameters.
+ * The number following the '*' is the number of extra parameters.
+ *
+ * The server response, for simple commands, is of the following form:
+ *   <length> LF
+ *   <content>
+ *
+ * <content> is <length> bytes long.
+ */
+unsafe extern "C" fn stdio_command_add_param(
+    data: *mut c_void,
+    name: *const c_char,
+    value: param_value,
+) {
+    let data = (data as *mut Vec<u8>).as_mut().unwrap();
+    let name = CStr::from_ptr(name).to_bytes();
+    let is_asterisk = name == b"*";
+    let len = if is_asterisk {
+        value.size
+    } else {
+        CStr::from_ptr(value.value).to_bytes().len()
+    };
+    data.extend(name);
+    writeln!(data, " {}", len).unwrap();
+    if !is_asterisk {
+        data.extend(CStr::from_ptr(value.value).to_bytes());
+    }
+}
+
+extern "C" {
+    #[allow(improper_ctypes)]
+    fn stdio_write(conn: *mut hg_connection, buf: *const u8, len: usize);
+}
+
+#[no_mangle]
+unsafe extern "C" fn stdio_send_command(
+    conn: *mut hg_connection,
+    command: *const c_char,
+    args: args_slice,
+) {
+    let conn = conn.as_mut().unwrap();
+    let mut data = Vec::<u8>::new();
+    data.extend(CStr::from_ptr(command).to_bytes());
+    data.push(b'\n');
+    prepare_command(
+        &mut data as *mut Vec<u8> as *mut c_void,
+        stdio_command_add_param,
+        args,
+    );
+    stdio_write(conn, data.as_ptr(), data.len());
 }

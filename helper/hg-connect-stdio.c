@@ -26,46 +26,11 @@ static void maybe_sq_quote_buf(struct strbuf *buf, const char *src)
 		strbuf_addstr(buf, src);
 }
 
-/* The mercurial "stdio" protocol is used for both local repositories and
- * remote ssh repositories.
- * A mercurial client sends commands in the following form:
- *   <command> LF
- *   (<param> SP <length> LF <value>)*
- *   ('*' SP <num> LF (<param> SP <length> LF <value>){num})
- *
- * <value> is <length> bytes long. The number of parameters depends on the
- * command.
- *
- * The '*' special parameter introduces a variable number of extra parameters.
- * The number following the '*' is the number of extra parameters.
- *
- * The server response, for simple commands, is of the following form:
- *   <length> LF
- *   <content>
- *
- * <content> is <length> bytes long.
- */
-static void stdio_command_add_param(void *data, const char *name,
-				    union param_value value)
-{
-	struct strbuf *cmd = data;
-	int is_asterisk = !strcmp(name, "*");
-	uintmax_t len = is_asterisk ? value.size : strlen(value.value);
-	strbuf_addf(cmd, "%s %"PRIuMAX"\n", name, len);
-	if (!is_asterisk)
-		strbuf_add(cmd, value.value, len);
-}
+extern void stdio_send_command(struct hg_connection *conn,
+			       const char *command, struct args_slice args);
 
-static void stdio_send_command(struct hg_connection *conn,
-			       const char *command, struct args_slice args)
-{
-	struct strbuf cmd = STRBUF_INIT;
-	strbuf_addstr(&cmd, command);
-	strbuf_addch(&cmd, '\n');
-	prepare_command(&cmd, stdio_command_add_param, args);
-
-	xwrite(conn->stdio.proc.in, cmd.buf, cmd.len);
-	strbuf_release(&cmd);
+void stdio_write(struct hg_connection *conn, const uint8_t *buf, size_t len) {
+	xwrite(conn->stdio.proc.in, buf, len);
 }
 
 static void stdio_read_response(struct hg_connection *conn,
