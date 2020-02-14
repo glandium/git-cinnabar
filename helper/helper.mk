@@ -1,6 +1,9 @@
 CARGO ?= cargo
 CARGO_BUILD_FLAGS ?= --release
 
+ifdef NO_CURL
+$(error Cannot build without curl)
+endif
 
 SHELL_SCRIPTS := \
 	git-remote-hg \
@@ -90,9 +93,7 @@ CINNABAR_OBJECTS += cinnabar-notes.o
 CINNABAR_OBJECTS += cinnabar-util.o
 CINNABAR_OBJECTS += hg-bundle.o
 CINNABAR_OBJECTS += hg-connect.o
-ifndef NO_CURL
 CINNABAR_OBJECTS += hg-connect-http.o
-endif
 CINNABAR_OBJECTS += hg-connect-stdio.o
 CINNABAR_OBJECTS += hg-data.o
 CINNABAR_OBJECTS += which.o
@@ -121,10 +122,8 @@ else
 $(CINNABAR_OBJECTS): $(LIB_H)
 endif
 
-ifndef NO_CURL
 ifeq (,$(filter http.c.patch,$(PATCHES)))
 libcinnabar.a: http.o
-endif
 endif
 EXCLUDE_OBJS = $(PATCHES:%.c.patch=%.o)
 EXCLUDE_OBJS += add-interactive.o

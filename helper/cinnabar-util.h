@@ -7,10 +7,6 @@
 typedef size_t (*write_callback)(char *ptr, size_t size, size_t nmemb, void *context);
 typedef int (*close_callback)(void *context);
 
-#ifdef NO_CURL
-size_t fwrite_buffer(char *ptr, size_t size, size_t nmemb, void *strbuf);
-#endif
-
 struct writer {
 	write_callback write;
 	close_callback close;

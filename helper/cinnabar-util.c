@@ -2,18 +2,8 @@
 #include "run-command.h"
 #include "strslice.h"
 #include "thread-utils.h"
-#include "cinnabar-util.h"
-
-#ifdef NO_CURL
-size_t fwrite_buffer(char *ptr, size_t size, size_t nmemb, void *buffer_)
-{
-	struct strbuf *buffer = buffer_;
-	strbuf_add(buffer, ptr, size * nmemb);
-	return nmemb;
-}
-#else
 #include "http.h"
-#endif
+#include "cinnabar-util.h"
 
 size_t copy_to(FILE *in, size_t len, struct writer *writer)
 {
