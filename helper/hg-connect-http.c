@@ -23,12 +23,11 @@ struct command_request_data {
 	struct strbuf args;
 };
 
-static int http_request(prepare_request_cb_t prepare_request_cb, void *data)
+static int http_request(prepare_request_cb_t prepare_request_cb, struct http_request_info *info)
 {
 	struct active_request_slot *slot;
 	struct slot_results results;
 	struct curl_slist *headers = NULL;
-	struct http_request_info *info = data;
 	int ret;
 
 	slot = get_active_slot();
