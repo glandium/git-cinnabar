@@ -151,7 +151,7 @@ linker-flags: GIT-LDFLAGS FORCE
 export CINNABAR_MAKE_FLAGS
 
 git-cinnabar-helper$X: CINNABAR_MAKE_FLAGS := $(filter %,$(foreach v,$(.VARIABLES),$(if $(filter command line,$(origin $(v))),$(v)='$(if $(findstring ',$($(v))),$(error $(v) contains a single quote))$($(v))')))
-git-cinnabar-helper$X:
+git-cinnabar-helper$X: FORCE
 	+cd $(SOURCE_DIR)helper && $(CARGO) build -vv $(addprefix --target=,$(CARGO_TARGET)) $(CARGO_BUILD_FLAGS)
 	cp $(SOURCE_DIR)helper/target/$(if $(CARGO_TARGET),$(CARGO_TARGET)/)$(if $(filter --release,$(CARGO_BUILD_FLAGS)),release,debug)/$@ $@
 
@@ -172,6 +172,8 @@ endif
 config.patched.sp config.patched.s config.patched.o: GIT-PREFIX
 config.patched.sp config.patched.s config.patched.o: EXTRA_CPPFLAGS = \
 	-DETC_GITCONFIG='"$(ETC_GITCONFIG_SQ)"'
+
+.PHONY: FORCE
 
 # Bump when CI changes need a new helper build but the helper code itself
 # hasn't changed.
