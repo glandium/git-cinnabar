@@ -420,9 +420,9 @@ unsafe extern "C" fn hg_listkeys(
 }
 
 #[allow(non_camel_case_types)]
-union param_value {
-    size: usize,
-    value: *const c_char,
+enum param_value<'a> {
+    size(usize),
+    value(&'a [u8]),
 }
 
 #[no_mangle]
@@ -436,15 +436,11 @@ unsafe extern "C" fn command_add_asterisk(
     params: *const Vec<(&CStr, CString)>,
 ) {
     let params = params.as_ref();
-    let num = param_value {
-        size: params.map(Vec::len).unwrap_or(0),
-    };
+    let num = param_value::size(params.map(Vec::len).unwrap_or(0));
     (command_add_param)(data, cstr!("*").as_ptr(), num);
     if let Some(params) = params {
         for (name, value) in params {
-            let value = param_value {
-                value: value.as_ptr(),
-            };
+            let value = param_value::value(value.as_bytes());
             (command_add_param)(data, name.as_ptr(), value);
         }
     }
@@ -466,7 +462,11 @@ unsafe extern "C" fn prepare_command(
             if name.to_bytes() == b"*" {
                 command_add_asterisk(data, command_add_param, value as _);
             } else {
-                (command_add_param)(data, name.as_ptr(), param_value { value: value as _ });
+                (command_add_param)(
+                    data,
+                    name.as_ptr(),
+                    param_value::value(CStr::from_ptr(value as _).to_bytes()),
+                );
             }
         } else {
             unreachable!();
@@ -669,16 +669,25 @@ unsafe extern "C" fn stdio_command_add_param(
     let data = (data as *mut Vec<u8>).as_mut().unwrap();
     let name = CStr::from_ptr(name).to_bytes();
     let is_asterisk = name == b"*";
-    let len = if is_asterisk {
-        value.size
-    } else {
-        CStr::from_ptr(value.value).to_bytes().len()
+    let len = match value {
+        param_value::size(s) => {
+            assert!(is_asterisk);
+            s
+        }
+        param_value::value(v) => {
+            assert!(!is_asterisk);
+            v.len()
+        }
     };
     data.extend(name);
     writeln!(data, " {}", len).unwrap();
-    if !is_asterisk {
-        data.extend(CStr::from_ptr(value.value).to_bytes());
-    }
+    match value {
+        param_value::value(v) => {
+            assert!(!is_asterisk);
+            data.extend(v)
+        }
+        _ => assert!(is_asterisk),
+    };
 }
 
 extern "C" {
@@ -761,9 +770,12 @@ unsafe extern "C" fn http_query_add_param(
     let data = (data as *mut strbuf).as_mut().unwrap();
     let name = CStr::from_ptr(name).to_bytes();
     if name != b"*" {
-        let value = percent_encode(CStr::from_ptr(value.value).to_bytes(), QUERY_ENCODE_SET)
-            .to_string()
-            .replace(" ", "+");
+        let value = match value {
+            param_value::value(v) => percent_encode(v, QUERY_ENCODE_SET)
+                .to_string()
+                .replace(" ", "+"),
+            _ => unreachable!(),
+        };
         data.extend_from_slice(b"&");
         data.extend_from_slice(name);
         data.extend_from_slice(b"=");
