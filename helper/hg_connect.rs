@@ -425,46 +425,36 @@ enum param_value<'a> {
     value(&'a [u8]),
 }
 
-#[no_mangle]
-unsafe extern "C" fn command_add_asterisk(
-    data: *mut c_void,
-    command_add_param: unsafe extern "C" fn(
-        data: *mut c_void,
-        name: *const c_char,
-        value: param_value,
-    ),
-    params: *const Vec<(&CStr, CString)>,
+fn command_add_asterisk<T>(
+    data: &mut T,
+    command_add_param: fn(data: &mut T, name: &str, value: param_value),
+    params: Option<&[(&str, BString)]>,
 ) {
-    let params = params.as_ref();
-    let num = param_value::size(params.map(Vec::len).unwrap_or(0));
-    (command_add_param)(data, cstr!("*").as_ptr(), num);
+    let num = param_value::size(params.map(|p| p.len()).unwrap_or(0));
+    (command_add_param)(data, "*", num);
     if let Some(params) = params {
         for (name, value) in params {
             let value = param_value::value(value.as_bytes());
-            (command_add_param)(data, name.as_ptr(), value);
+            (command_add_param)(data, name, value);
         }
     }
 }
 
-#[no_mangle]
-unsafe extern "C" fn prepare_command(
-    data: *mut c_void,
-    command_add_param: unsafe extern "C" fn(
-        data: *mut c_void,
-        name: *const c_char,
-        value: param_value,
-    ),
+unsafe fn prepare_command<T>(
+    data: &mut T,
+    command_add_param: fn(data: &mut T, name: &str, value: param_value),
     args: args_slice,
 ) {
     for item in args.as_slice().chunks(2) {
         if let [name, value] = *item {
-            let name = CStr::from_ptr(name as *const c_char);
-            if name.to_bytes() == b"*" {
-                command_add_asterisk(data, command_add_param, value as _);
+            let name = CStr::from_ptr(name as *const c_char).to_str().unwrap();
+            if name == "*" {
+                let params = (value as *const Vec<(&str, BString)>).as_ref();
+                command_add_asterisk(data, command_add_param, params.map(|p| &p[..]));
             } else {
                 (command_add_param)(
                     data,
-                    name.as_ptr(),
+                    name,
                     param_value::value(CStr::from_ptr(value as _).to_bytes()),
                 );
             }
@@ -483,23 +473,18 @@ unsafe extern "C" fn hg_getbundle(
     bundle2caps: *const c_char,
 ) {
     let conn = conn.as_mut().unwrap();
-    let mut args = Vec::new();
+    let mut args = Vec::<(&str, BString)>::new();
     if let Some(heads) = heads.as_ref() {
-        args.push((
-            cstr!("heads"),
-            CString::new(heads.iter().join(" ")).unwrap(),
-        ));
+        args.push(("heads", heads.iter().join(" ").into()));
     }
     if let Some(common) = common.as_ref() {
-        args.push((
-            cstr!("common"),
-            CString::new(common.iter().join(" ")).unwrap(),
-        ));
+        args.push(("common", common.iter().join(" ").into()));
     }
-    let bundle2caps = bundle2caps.as_ref().map(|p| CStr::from_ptr(p).to_owned());
+    let bundle2caps = bundle2caps.as_ref();
     if let Some(bundle2caps) = bundle2caps {
-        if !bundle2caps.to_bytes().is_empty() {
-            args.push((cstr!("bundlecaps"), bundle2caps));
+        let bundle2caps = CStr::from_ptr(bundle2caps).to_bytes();
+        if !bundle2caps.is_empty() {
+            args.push(("bundlecaps", bundle2caps.to_owned().into()));
         }
     }
     let mut writer = writer {
@@ -661,14 +646,8 @@ unsafe extern "C" fn hg_cinnabarclone(conn: *mut hg_connection, result: *mut str
  *
  * <content> is <length> bytes long.
  */
-unsafe extern "C" fn stdio_command_add_param(
-    data: *mut c_void,
-    name: *const c_char,
-    value: param_value,
-) {
-    let data = (data as *mut Vec<u8>).as_mut().unwrap();
-    let name = CStr::from_ptr(name).to_bytes();
-    let is_asterisk = name == b"*";
+fn stdio_command_add_param(data: &mut BString, name: &str, value: param_value) {
+    let is_asterisk = name == "*";
     let len = match value {
         param_value::size(s) => {
             assert!(is_asterisk);
@@ -679,7 +658,7 @@ unsafe extern "C" fn stdio_command_add_param(
             v.len()
         }
     };
-    data.extend(name);
+    data.extend(name.as_bytes());
     writeln!(data, " {}", len).unwrap();
     match value {
         param_value::value(v) => {
@@ -702,14 +681,10 @@ unsafe extern "C" fn stdio_send_command(
     args: args_slice,
 ) {
     let conn = conn.as_mut().unwrap();
-    let mut data = Vec::<u8>::new();
+    let mut data = BString::from(Vec::<u8>::new());
     data.extend(CStr::from_ptr(command).to_bytes());
     data.push(b'\n');
-    prepare_command(
-        &mut data as *mut Vec<u8> as *mut c_void,
-        stdio_command_add_param,
-        args,
-    );
+    prepare_command(&mut data, stdio_command_add_param, args);
     stdio_write(conn, data.as_ptr(), data.len());
 }
 
@@ -761,15 +736,8 @@ const QUERY_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b' ');
 
-#[no_mangle]
-unsafe extern "C" fn http_query_add_param(
-    data: *mut c_void,
-    name: *const c_char,
-    value: param_value,
-) {
-    let data = (data as *mut strbuf).as_mut().unwrap();
-    let name = CStr::from_ptr(name).to_bytes();
-    if name != b"*" {
+fn http_query_add_param(data: &mut strbuf, name: &str, value: param_value) {
+    if name != "*" {
         let value = match value {
             param_value::value(v) => percent_encode(v, QUERY_ENCODE_SET)
                 .to_string()
@@ -777,7 +745,7 @@ unsafe extern "C" fn http_query_add_param(
             _ => unreachable!(),
         };
         data.extend_from_slice(b"&");
-        data.extend_from_slice(name);
+        data.extend_from_slice(name.as_bytes());
         data.extend_from_slice(b"=");
         data.extend_from_slice(value.as_bytes());
     }
@@ -799,11 +767,7 @@ unsafe extern "C" fn http_command(
         command,
         args: strbuf::new(),
     };
-    prepare_command(
-        &mut request_data.args as *mut strbuf as *mut c_void,
-        http_query_add_param,
-        args,
-    );
+    prepare_command(&mut request_data.args, http_query_add_param, args);
     if http_request_reauth(
         prepare_command_request,
         &mut request_data as *mut _ as *mut c_void,
