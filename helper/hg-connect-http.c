@@ -9,18 +9,18 @@
 typedef void (*prepare_request_cb_t)(CURL *curl, struct curl_slist *headers,
 				     void *data);
 
-struct http_request_info {
-	long redirects;
-	char *effective_url;
-	void *data;
-};
-
 struct command_request_data {
 	struct hg_connection *conn;
 	prepare_request_cb_t prepare_request_cb;
 	void *data;
 	const char *command;
 	struct strbuf args;
+};
+
+struct http_request_info {
+	long redirects;
+	char *effective_url;
+	struct command_request_data *data;
 };
 
 static int http_request(prepare_request_cb_t prepare_request_cb, struct http_request_info *info)
@@ -56,7 +56,7 @@ static int http_request(prepare_request_cb_t prepare_request_cb, struct http_req
 }
 
 int http_request_reauth(prepare_request_cb_t prepare_request_cb,
-			void *data)
+			struct command_request_data *data)
 {
 	struct http_request_info info = { 0, NULL, data };
 	int ret = http_request(prepare_request_cb, &info);
@@ -67,14 +67,12 @@ int http_request_reauth(prepare_request_cb_t prepare_request_cb,
 	if (info.redirects) {
 		char *query = strstr(info.effective_url, "?cmd=");
 		if (query) {
-			struct command_request_data *request_data =
-				(struct command_request_data *)data;
-			free(request_data->conn->http.url);
-			request_data->conn->http.url =
+			free(data->conn->http.url);
+			data->conn->http.url =
 				xstrndup(info.effective_url,
 				         query - info.effective_url);
 			warning("redirecting to %s",
-			        request_data->conn->http.url);
+			        data->conn->http.url);
 		}
 	}
 

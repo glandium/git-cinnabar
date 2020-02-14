@@ -714,7 +714,11 @@ extern "C" {
     #[allow(improper_ctypes)]
     fn http_command_error(conn: *mut hg_connection) -> !;
 
-    fn http_request_reauth(prepare_request_cb: prepare_request_cb_t, data: *mut c_void) -> c_int;
+    #[allow(improper_ctypes)]
+    fn http_request_reauth(
+        prepare_request_cb: prepare_request_cb_t,
+        data: *mut command_request_data,
+    ) -> c_int;
 
     fn prepare_command_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
 }
@@ -768,11 +772,7 @@ unsafe extern "C" fn http_command(
         args: strbuf::new(),
     };
     prepare_command(&mut request_data.args, http_query_add_param, args);
-    if http_request_reauth(
-        prepare_command_request,
-        &mut request_data as *mut _ as *mut c_void,
-    ) != HTTP_OK
-    {
+    if http_request_reauth(prepare_command_request, &mut request_data) != HTTP_OK {
         http_command_error(conn);
     }
 }
