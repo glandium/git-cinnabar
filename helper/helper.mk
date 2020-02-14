@@ -1,3 +1,7 @@
+CARGO ?= cargo
+CARGO_BUILD_FLAGS ?= --release
+
+
 SHELL_SCRIPTS := \
 	git-remote-hg \
 	git-cinnabar \
@@ -143,6 +147,13 @@ libcinnabar.a: $(CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(X
 
 linker-flags: GIT-LDFLAGS FORCE
 	@echo $(ALL_LDFLAGS) $(if $(filter $(SYSTEM),Windows),,$(CURL_LIBCURL)) $(EXTLIBS)
+
+export CINNABAR_MAKE_FLAGS
+
+git-cinnabar-helper$X: CINNABAR_MAKE_FLAGS := $(filter %,$(foreach v,$(.VARIABLES),$(if $(filter command line,$(origin $(v))),$(v)='$(if $(findstring ',$($(v))),$(error $(v) contains a single quote))$($(v))')))
+git-cinnabar-helper$X:
+	+cd $(SOURCE_DIR)helper && $(CARGO) build -vv $(addprefix --target=,$(CARGO_TARGET)) $(CARGO_BUILD_FLAGS)
+	cp $(SOURCE_DIR)helper/target/$(if $(CARGO_TARGET),$(CARGO_TARGET)/)$(if $(filter --release,$(CARGO_BUILD_FLAGS)),release,debug)/$@ $@
 
 cinnabar-helper.o: EXTRA_CPPFLAGS=-DHELPER_HASH=$(shell python $(SOURCE_DIR)git-cinnabar --version=helper 2> /dev/null | awk -F/ '{print $$NF}')
 cinnabar-helper.o: $(addprefix $(SOURCE_DIR)helper/,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c))
