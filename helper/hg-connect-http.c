@@ -7,14 +7,14 @@
 #include "strbuf.h"
 
 void prepare_simple_request(CURL *curl, struct curl_slist *headers,
-			    void *data)
+			    struct strbuf *data)
 {
 	curl_easy_setopt(curl, CURLOPT_FILE, data);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite_buffer);
 }
 
 void prepare_pushkey_request(CURL *curl, struct curl_slist *headers,
-			     void *data)
+			     struct strbuf *data)
 {
 	prepare_simple_request(curl, headers, data);
 	curl_easy_setopt(curl, CURLOPT_POST, 1);
@@ -65,14 +65,11 @@ static size_t changegroup_write(char *buffer, size_t size, size_t nmemb, void* d
 }
 
 void prepare_changegroup_request(CURL *curl, struct curl_slist *headers,
-			         void *data)
+			         struct changegroup_response_data *data)
 {
-	struct changegroup_response_data *response_data =
-		(struct changegroup_response_data *)data;
+	data->curl = curl;
 
-	response_data->curl = curl;
-
-	curl_easy_setopt(curl, CURLOPT_FILE, response_data);
+	curl_easy_setopt(curl, CURLOPT_FILE, data);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, changegroup_write);
 }
 
@@ -87,9 +84,8 @@ struct push_request_info {
 };
 
 void prepare_push_request(CURL *curl, struct curl_slist *headers,
-			  void *data)
+			  struct push_request_info *info)
 {
-	struct push_request_info *info = data;
 	prepare_simple_request(curl, headers, info->response);
 	curl_easy_setopt(curl, CURLOPT_POST, 1);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, info->len);
@@ -140,9 +136,9 @@ static size_t caps_request_write(char *ptr, size_t size, size_t nmemb,
 }
 
 void prepare_caps_request(CURL *curl, struct curl_slist *headers,
-			  void *data)
+			  struct writer *writer)
 {
-	curl_easy_setopt(curl, CURLOPT_FILE, data);
+	curl_easy_setopt(curl, CURLOPT_FILE, writer);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, caps_request_write);
 }
 

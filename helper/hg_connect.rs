@@ -713,14 +713,9 @@ unsafe extern "C" fn stdio_send_command(
 }
 
 #[allow(non_camel_case_types)]
-type prepare_request_cb_t =
-    unsafe extern "C" fn(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
-
-#[allow(non_camel_case_types)]
 struct command_request_data<'a> {
     conn: &'a mut hg_connection,
-    prepare_request_cb: prepare_request_cb_t,
-    data: *mut c_void,
+    prepare_request_cb: Box<dyn FnMut(*mut CURL, *mut curl_slist)>,
     command: &'a str,
     args: BString,
 }
@@ -884,7 +879,7 @@ extern "C" {
     static http_follow_config: http_follow_config;
 }
 
-unsafe extern "C" fn prepare_command_request(
+unsafe fn prepare_command_request(
     curl: *mut CURL,
     headers: *mut curl_slist,
     data: &mut command_request_data,
@@ -902,7 +897,7 @@ unsafe extern "C" fn prepare_command_request(
         http.initial_request = 0;
     }
 
-    (data.prepare_request_cb)(curl, headers, data.data);
+    (data.prepare_request_cb)(curl, headers);
 
     command_url.extend_from_slice(CStr::from_ptr(http.url).to_bytes());
     command_url.extend_from_slice(b"?cmd=");
@@ -932,15 +927,13 @@ unsafe extern "C" fn prepare_command_request(
 
 unsafe fn http_command(
     conn: &mut hg_connection,
-    prepare_request_cb: prepare_request_cb_t,
-    data: *mut c_void,
+    prepare_request_cb: Box<dyn FnMut(*mut CURL, *mut curl_slist)>,
     command: &str,
     args: args_slice,
 ) {
     let mut request_data = command_request_data {
         conn,
         prepare_request_cb,
-        data,
         command,
         args: Vec::new().into(),
     };
@@ -954,11 +947,19 @@ unsafe fn http_command(
 }
 
 extern "C" {
-    fn prepare_simple_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
-    fn prepare_pushkey_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
-    fn prepare_changegroup_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
-    fn prepare_push_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
-    fn prepare_caps_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
+    fn prepare_simple_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut strbuf);
+    fn prepare_pushkey_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut strbuf);
+    fn prepare_changegroup_request(
+        curl: *mut CURL,
+        headers: *mut curl_slist,
+        data: *mut changegroup_response_data,
+    );
+    fn prepare_push_request(
+        curl: *mut CURL,
+        headers: *mut curl_slist,
+        data: *mut push_request_info,
+    );
+    fn prepare_caps_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut writer);
 }
 
 #[no_mangle]
@@ -971,16 +972,14 @@ unsafe extern "C" fn http_simple_command(
     if CStr::from_ptr(command).to_bytes() == b"pushkey" {
         http_command(
             conn.as_mut().unwrap(),
-            prepare_pushkey_request,
-            response as *mut c_void,
+            Box::new(move |curl, headers| prepare_pushkey_request(curl, headers, response)),
             CStr::from_ptr(command).to_str().unwrap(),
             args,
         )
     } else {
         http_command(
             conn.as_mut().unwrap(),
-            prepare_simple_request,
-            response as *mut c_void,
+            Box::new(move |curl, headers| prepare_simple_request(curl, headers, response)),
             CStr::from_ptr(command).to_str().unwrap(),
             args,
         )
@@ -1010,8 +1009,9 @@ unsafe extern "C" fn http_changegroup_command(
 
     http_command(
         conn.as_mut().unwrap(),
-        prepare_changegroup_request,
-        &mut response_data as *mut _ as *mut c_void,
+        Box::new(move |curl, headers| {
+            prepare_changegroup_request(curl, headers, &mut response_data)
+        }),
         CStr::from_ptr(command).to_str().unwrap(),
         args,
     );
@@ -1049,8 +1049,7 @@ unsafe extern "C" fn http_push_command(
     //TODO: handle errors.
     http_command(
         conn.as_mut().unwrap(),
-        prepare_push_request,
-        &mut info as *mut _ as *mut c_void,
+        Box::new(move |curl, headers| prepare_push_request(curl, headers, &mut info)),
         CStr::from_ptr(command).to_str().unwrap(),
         args,
     );
@@ -1086,8 +1085,7 @@ unsafe extern "C" fn http_push_command(
 unsafe extern "C" fn http_capabilities_command(conn: *mut hg_connection, writer: *mut writer) {
     http_command(
         conn.as_mut().unwrap(),
-        prepare_caps_request,
-        writer as *mut c_void,
+        Box::new(move |curl, headers| prepare_caps_request(curl, headers, writer)),
         "capabilities",
         args_slice::new(&[]),
     );
