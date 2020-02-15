@@ -693,6 +693,9 @@ fn stdio_command_add_param(data: &mut BString, name: &str, value: param_value) {
 extern "C" {
     #[allow(improper_ctypes)]
     fn stdio_write(conn: *mut hg_connection, buf: *const u8, len: usize);
+
+    #[allow(improper_ctypes)]
+    fn stdio_read_response(conn: *mut hg_connection, response: *mut strbuf);
 }
 
 #[no_mangle]
@@ -710,6 +713,17 @@ unsafe extern "C" fn stdio_send_command(
         args,
     );
     stdio_write(conn, data.as_ptr(), data.len());
+}
+
+#[no_mangle]
+unsafe extern "C" fn stdio_simple_command(
+    conn: *mut hg_connection,
+    response: *mut strbuf,
+    command: *const c_char,
+    args: args_slice,
+) {
+    stdio_send_command(conn, command, args);
+    stdio_read_response(conn, response);
 }
 
 #[allow(non_camel_case_types)]

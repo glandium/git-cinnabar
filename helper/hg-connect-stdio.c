@@ -33,8 +33,8 @@ void stdio_write(struct hg_connection *conn, const uint8_t *buf, size_t len) {
 	xwrite(conn->stdio.proc.in, buf, len);
 }
 
-static void stdio_read_response(struct hg_connection *conn,
-				struct strbuf *response)
+void stdio_read_response(struct hg_connection *conn,
+			 struct strbuf *response)
 {
 	struct strbuf length_str = STRBUF_INIT;
 	size_t length;
@@ -47,13 +47,9 @@ static void stdio_read_response(struct hg_connection *conn,
 	strbuf_fread(response, length, conn->stdio.out);
 }
 
-static void stdio_simple_command(struct hg_connection *conn,
+extern void stdio_simple_command(struct hg_connection *conn,
 				 struct strbuf *response,
-				 const char *command, struct args_slice args)
-{
-	stdio_send_command(conn, command, args);
-	stdio_read_response(conn, response);
-}
+				 const char *command, struct args_slice args);
 
 static void stdio_changegroup_command(struct hg_connection *conn,
                                       struct writer *out,
