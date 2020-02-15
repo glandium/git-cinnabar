@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::cmp::Ordering;
+use std::cmp::{self, Ordering};
 use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString};
 use std::fmt::{self, Display, Formatter};
@@ -16,12 +16,14 @@ use std::os::unix::io::IntoRawFd;
 #[cfg(windows)]
 use std::os::windows::io::IntoRawHandle;
 use std::ptr;
+use std::str::FromStr;
 
 use bstr::{BString, ByteSlice};
 use curl_sys::{
     curl_easy_getinfo, curl_easy_setopt, curl_off_t, curl_slist, curl_slist_append,
     curl_slist_free_all, CURLcode, CURL, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT,
-    CURLOPT_FAILONERROR, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY, CURLOPT_USERAGENT,
+    CURLOPT_FAILONERROR, CURLOPT_FOLLOWLOCATION, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER,
+    CURLOPT_NOBODY, CURLOPT_URL, CURLOPT_USERAGENT,
 };
 use itertools::Itertools;
 use libc::{off_t, FILE};
@@ -715,7 +717,6 @@ type prepare_request_cb_t =
     unsafe extern "C" fn(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
 
 #[allow(non_camel_case_types)]
-#[repr(C)]
 struct command_request_data {
     conn: *mut hg_connection,
     prepare_request_cb: prepare_request_cb_t,
@@ -735,8 +736,6 @@ struct http_request_info {
 extern "C" {
     #[allow(improper_ctypes)]
     fn http_command_error(conn: *mut hg_connection) -> !;
-
-    fn prepare_command_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
 
     fn free(ptr: *mut c_void);
 
@@ -876,6 +875,66 @@ fn http_query_add_param(data: &mut strbuf, name: &str, value: param_value) {
         data.extend_from_slice(b"=");
         data.extend_from_slice(value.as_bytes());
     }
+}
+
+#[allow(dead_code, non_camel_case_types)]
+#[repr(C)]
+#[derive(PartialEq)]
+enum http_follow_config {
+    HTTP_FOLLOW_NONE,
+    HTTP_FOLLOW_ALWAYS,
+    HTTP_FOLLOW_INITIAL,
+}
+
+extern "C" {
+    static http_follow_config: http_follow_config;
+}
+
+unsafe extern "C" fn prepare_command_request(
+    curl: *mut CURL,
+    headers: *mut curl_slist,
+    data: *mut c_void,
+) {
+    let request_data = (data as *mut command_request_data).as_mut().unwrap();
+    let mut command_url: BString = Vec::new().into();
+    let httpheader = hg_get_capability(request_data.conn, cstr!("httpheader").as_ptr())
+        .as_ref()
+        .and_then(|c| CStr::from_ptr(c).to_str().ok())
+        .and_then(|s| usize::from_str(s).ok())
+        .unwrap_or(0);
+
+    let http = &mut request_data.conn.as_mut().unwrap().inner.http;
+    if http_follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && http.initial_request > 0 {
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
+        http.initial_request = 0;
+    }
+
+    (request_data.prepare_request_cb)(curl, headers, request_data.data);
+
+    command_url.extend_from_slice(CStr::from_ptr(http.url).to_bytes());
+    command_url.extend_from_slice(b"?cmd=");
+    command_url.extend_from_slice(CStr::from_ptr(request_data.command).to_bytes());
+
+    let args = request_data.args.as_bytes();
+    if httpheader > 0 && !args.is_empty() {
+        let mut args = &args[1..];
+        let mut headers = headers;
+        let mut num = 1;
+        while !args.is_empty() {
+            let mut header = BString::from(format!("X-HgArg-{}: ", num).into_bytes());
+            num += 1;
+            let (chunk, remainder) = args.split_at(cmp::min(args.len(), httpheader - header.len()));
+            header.extend_from_slice(chunk);
+            let header = CString::new(header).unwrap();
+            headers = curl_slist_append(headers, header.as_ptr());
+            args = remainder;
+        }
+    } else {
+        command_url.extend_from_slice(args);
+    }
+
+    let command_url = CString::new(command_url).unwrap();
+    curl_easy_setopt(curl, CURLOPT_URL, command_url.as_ptr());
 }
 
 unsafe fn http_command(

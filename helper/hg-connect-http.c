@@ -6,17 +6,6 @@
 #include "http.h"
 #include "strbuf.h"
 
-typedef void (*prepare_request_cb_t)(CURL *curl, struct curl_slist *headers,
-				     void *data);
-
-struct command_request_data {
-	struct hg_connection *conn;
-	prepare_request_cb_t prepare_request_cb;
-	void *data;
-	const char *command;
-	struct strbuf args;
-};
-
 void prepare_simple_request(CURL *curl, struct curl_slist *headers,
 			    void *data)
 {
@@ -34,54 +23,6 @@ void prepare_pushkey_request(CURL *curl, struct curl_slist *headers,
 	headers = curl_slist_append(headers,
 				    "Content-Type: application/mercurial-0.1");
 	headers = curl_slist_append(headers, "Expect:");
-}
-
-void prepare_command_request(CURL *curl, struct curl_slist *headers,
-			     void *data)
-{
-	char *end;
-	struct strbuf command_url = STRBUF_INIT;
-	struct command_request_data *request_data =
-		(struct command_request_data *) data;
-	const char *httpheader_str =
-		hg_get_capability(request_data->conn, "httpheader");
-	size_t httpheader =
-		httpheader_str ? strtol(httpheader_str, &end, 10) : 0;
-
-	if (httpheader && end[0] != '\0')
-		httpheader = 0;
-
-	if (http_follow_config == HTTP_FOLLOW_INITIAL &&
-	    request_data->conn->http.initial_request) {
-		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
-		request_data->conn->http.initial_request = 0;
-	}
-
-	request_data->prepare_request_cb(curl, headers, request_data->data);
-
-	strbuf_addf(&command_url, "%s?cmd=%s", request_data->conn->http.url,
-		    request_data->command);
-	if (httpheader && request_data->args.len) {
-		const char *args = request_data->args.buf + 1;
-		size_t len = request_data->args.len - 1;
-		int num;
-		for (num = 1; len; num++) {
-			size_t writable_len;
-			struct strbuf header = STRBUF_INIT;
-			strbuf_addf(&header, "X-HgArg-%d: ", num);
-			writable_len = httpheader - header.len;
-			writable_len = writable_len > len ? len : writable_len;
-			strbuf_add(&header, args, writable_len);
-			args += writable_len;
-			len -= writable_len;
-			headers = curl_slist_append(headers, header.buf);
-			strbuf_release(&header);
-		}
-	} else
-		strbuf_addbuf(&command_url, &request_data->args);
-
-	curl_easy_setopt(curl, CURLOPT_URL, command_url.buf);
-	strbuf_release(&command_url);
 }
 
 void http_command_error(struct hg_connection *conn) {
