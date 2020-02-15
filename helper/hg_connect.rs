@@ -457,35 +457,22 @@ enum param_value<'a> {
     value(&'a [u8]),
 }
 
-fn command_add_asterisk<T>(
-    data: &mut T,
-    command_add_param: fn(data: &mut T, name: &str, value: param_value),
-    params: Option<&[(&str, BString)]>,
-) {
-    let num = param_value::size(params.map(|p| p.len()).unwrap_or(0));
-    (command_add_param)(data, "*", num);
-    if let Some(params) = params {
-        for (name, value) in params {
-            let value = param_value::value(value.as_bytes());
-            (command_add_param)(data, name, value);
-        }
-    }
-}
-
-unsafe fn prepare_command<T>(
-    data: &mut T,
-    command_add_param: fn(data: &mut T, name: &str, value: param_value),
-    args: args_slice,
-) {
+unsafe fn prepare_command<F: FnMut(&str, param_value)>(mut command_add_param: F, args: args_slice) {
     for item in args.as_slice().chunks(2) {
         if let [name, value] = *item {
             let name = CStr::from_ptr(name as *const c_char).to_str().unwrap();
             if name == "*" {
                 let params = (value as *const Vec<(&str, BString)>).as_ref();
-                command_add_asterisk(data, command_add_param, params.map(|p| &p[..]));
+                let num = param_value::size(params.map(|p| p.len()).unwrap_or(0));
+                command_add_param("*", num);
+                if let Some(params) = params {
+                    for (name, value) in params {
+                        let value = param_value::value(value.as_bytes());
+                        command_add_param(name, value);
+                    }
+                }
             } else {
-                (command_add_param)(
-                    data,
+                command_add_param(
                     name,
                     param_value::value(CStr::from_ptr(value as _).to_bytes()),
                 );
@@ -716,7 +703,10 @@ unsafe extern "C" fn stdio_send_command(
     let mut data = BString::from(Vec::<u8>::new());
     data.extend(CStr::from_ptr(command).to_bytes());
     data.push(b'\n');
-    prepare_command(&mut data, stdio_command_add_param, args);
+    prepare_command(
+        |name, value| stdio_command_add_param(&mut data, name, value),
+        args,
+    );
     stdio_write(conn, data.as_ptr(), data.len());
 }
 
@@ -903,7 +893,10 @@ unsafe fn http_command(
         command,
         args: strbuf::new(),
     };
-    prepare_command(&mut request_data.args, http_query_add_param, args);
+    prepare_command(
+        |name, value| http_query_add_param(&mut request_data.args, name, value),
+        args,
+    );
     if http_request_reauth(prepare_command_request, &mut request_data) != HTTP_OK {
         http_command_error(conn);
     }
