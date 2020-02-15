@@ -62,7 +62,7 @@ struct hg_connection {
 #[repr(C)]
 union hg_connection_inner {
     http: hg_connection_inner_http,
-    stdio: (),
+    stdio: hg_connection_inner_stdio,
 }
 
 #[allow(non_camel_case_types)]
@@ -71,6 +71,14 @@ union hg_connection_inner {
 struct hg_connection_inner_http {
     url: *const c_char,
     initial_request: c_int,
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct hg_connection_inner_stdio {
+    out: *mut FILE,
+    is_remote: c_int,
 }
 
 #[no_mangle]
@@ -696,6 +704,10 @@ extern "C" {
 
     #[allow(improper_ctypes)]
     fn stdio_read_response(conn: *mut hg_connection, response: *mut strbuf);
+
+    fn bufferize_writer(writer: *mut writer);
+
+    fn copy_bundle(input: *mut FILE, out: *mut writer);
 }
 
 #[no_mangle]
@@ -724,6 +736,26 @@ unsafe extern "C" fn stdio_simple_command(
 ) {
     stdio_send_command(conn, command, args);
     stdio_read_response(conn, response);
+}
+
+#[no_mangle]
+unsafe extern "C" fn stdio_changegroup_command(
+    conn: *mut hg_connection,
+    writer: *mut writer,
+    command: *const c_char,
+    args: args_slice,
+) {
+    let conn = conn.as_mut().unwrap();
+    stdio_send_command(conn, command, args);
+
+    /* We're going to receive a stream, but we don't know how big it is
+     * going to be in advance, so we have to read it according to its
+     * format: changegroup or bundle2.
+     */
+    if conn.inner.stdio.is_remote > 0 {
+        bufferize_writer(writer);
+    }
+    copy_bundle(conn.inner.stdio.out, writer);
 }
 
 #[allow(non_camel_case_types)]

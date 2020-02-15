@@ -28,10 +28,10 @@ struct hg_connection {
 
 	union {
 		struct {
-			struct child_process proc;
 			FILE *out;
-			pthread_t thread;
 			int is_remote;
+			struct child_process proc;
+			pthread_t thread;
 		} stdio;
 		struct {
 			char *url;

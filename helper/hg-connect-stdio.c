@@ -51,20 +51,9 @@ extern void stdio_simple_command(struct hg_connection *conn,
 				 struct strbuf *response,
 				 const char *command, struct args_slice args);
 
-static void stdio_changegroup_command(struct hg_connection *conn,
+extern void stdio_changegroup_command(struct hg_connection *conn,
                                       struct writer *out,
-				      const char *command, struct args_slice args)
-{
-	stdio_send_command(conn, command, args);
-
-	/* We're going to receive a stream, but we don't know how big it is
-	 * going to be in advance, so we have to read it according to its
-	 * format: changegroup or bundle2.
-	 */
-	if (conn->stdio.is_remote)
-		bufferize_writer(out);
-	copy_bundle(conn->stdio.out, out);
-}
+				      const char *command, struct args_slice args);
 
 static void stdio_push_command(struct hg_connection *conn,
 			       struct strbuf *response, FILE *in, off_t len,
