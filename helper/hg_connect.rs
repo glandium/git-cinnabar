@@ -717,11 +717,11 @@ type prepare_request_cb_t =
     unsafe extern "C" fn(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
 
 #[allow(non_camel_case_types)]
-struct command_request_data {
+struct command_request_data<'a> {
     conn: *mut hg_connection,
     prepare_request_cb: prepare_request_cb_t,
     data: *mut c_void,
-    command: *const c_char,
+    command: &'a str,
     args: strbuf,
 }
 
@@ -906,7 +906,7 @@ unsafe extern "C" fn prepare_command_request(
 
     command_url.extend_from_slice(CStr::from_ptr(http.url).to_bytes());
     command_url.extend_from_slice(b"?cmd=");
-    command_url.extend_from_slice(CStr::from_ptr(data.command).to_bytes());
+    command_url.extend_from_slice(data.command.as_bytes());
 
     let args = data.args.as_bytes();
     if httpheader > 0 && !args.is_empty() {
@@ -931,13 +931,12 @@ unsafe extern "C" fn prepare_command_request(
 }
 
 unsafe fn http_command(
-    conn: *mut hg_connection,
+    conn: &mut hg_connection,
     prepare_request_cb: prepare_request_cb_t,
     data: *mut c_void,
-    command: *const c_char,
+    command: &str,
     args: args_slice,
 ) {
-    let conn = conn.as_mut().unwrap();
     let mut request_data = command_request_data {
         conn,
         prepare_request_cb,
@@ -971,18 +970,18 @@ unsafe extern "C" fn http_simple_command(
 ) {
     if CStr::from_ptr(command).to_bytes() == b"pushkey" {
         http_command(
-            conn,
+            conn.as_mut().unwrap(),
             prepare_pushkey_request,
             response as *mut c_void,
-            command,
+            CStr::from_ptr(command).to_str().unwrap(),
             args,
         )
     } else {
         http_command(
-            conn,
+            conn.as_mut().unwrap(),
             prepare_simple_request,
             response as *mut c_void,
-            command,
+            CStr::from_ptr(command).to_str().unwrap(),
             args,
         )
     }
@@ -1010,10 +1009,10 @@ unsafe extern "C" fn http_changegroup_command(
     };
 
     http_command(
-        conn,
+        conn.as_mut().unwrap(),
         prepare_changegroup_request,
         &mut response_data as *mut _ as *mut c_void,
-        command,
+        CStr::from_ptr(command).to_str().unwrap(),
         args,
     );
 }
@@ -1049,10 +1048,10 @@ unsafe extern "C" fn http_push_command(
     };
     //TODO: handle errors.
     http_command(
-        conn,
+        conn.as_mut().unwrap(),
         prepare_push_request,
         &mut info as *mut _ as *mut c_void,
-        command,
+        CStr::from_ptr(command).to_str().unwrap(),
         args,
     );
 
@@ -1086,10 +1085,10 @@ unsafe extern "C" fn http_push_command(
 #[no_mangle]
 unsafe extern "C" fn http_capabilities_command(conn: *mut hg_connection, writer: *mut writer) {
     http_command(
-        conn,
+        conn.as_mut().unwrap(),
         prepare_caps_request,
         writer as *mut c_void,
-        cstr!("capabilities").as_ptr(),
+        "capabilities",
         args_slice::new(&[]),
     );
 }
