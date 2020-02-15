@@ -726,11 +726,9 @@ struct command_request_data {
 }
 
 #[allow(non_camel_case_types)]
-#[repr(C)]
 struct http_request_info {
     redirects: c_long,
     effective_url: *const c_char,
-    data: *mut command_request_data,
 }
 
 extern "C" {
@@ -770,7 +768,7 @@ struct slot_results {
 const HTTP_OK: c_int = 0;
 const HTTP_REAUTH: c_int = 4;
 
-fn http_request(info: &mut http_request_info) -> c_int {
+fn http_request(info: &mut http_request_info, data: &mut command_request_data) -> c_int {
     unsafe {
         let slot = get_active_slot().as_mut().unwrap();
         curl_easy_setopt(slot.curl, CURLOPT_FAILONERROR, 0);
@@ -779,7 +777,7 @@ fn http_request(info: &mut http_request_info) -> c_int {
 
         let mut headers = ptr::null_mut();
         headers = curl_slist_append(headers, cstr!("Accept: application/mercurial-0.1").as_ptr());
-        prepare_command_request(slot.curl, headers, info.data as *mut c_void);
+        prepare_command_request(slot.curl, headers, data);
 
         curl_easy_setopt(slot.curl, CURLOPT_HTTPHEADER, headers);
         /* Strictly speaking, this is not necessary, but bitbucket does
@@ -811,9 +809,8 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
     let mut info = http_request_info {
         redirects: 0,
         effective_url: ptr::null(),
-        data,
     };
-    let ret = http_request(&mut info);
+    let ret = http_request(&mut info, data);
 
     if ret != HTTP_OK && ret != HTTP_REAUTH {
         return ret;
@@ -841,7 +838,7 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
     unsafe {
         credential_fill(&mut http_auth);
     }
-    http_request(&mut info)
+    http_request(&mut info, data)
 }
 
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.
@@ -890,29 +887,28 @@ extern "C" {
 unsafe extern "C" fn prepare_command_request(
     curl: *mut CURL,
     headers: *mut curl_slist,
-    data: *mut c_void,
+    data: &mut command_request_data,
 ) {
-    let request_data = (data as *mut command_request_data).as_mut().unwrap();
     let mut command_url: BString = Vec::new().into();
-    let httpheader = hg_get_capability(request_data.conn, cstr!("httpheader").as_ptr())
+    let httpheader = hg_get_capability(data.conn, cstr!("httpheader").as_ptr())
         .as_ref()
         .and_then(|c| CStr::from_ptr(c).to_str().ok())
         .and_then(|s| usize::from_str(s).ok())
         .unwrap_or(0);
 
-    let http = &mut request_data.conn.as_mut().unwrap().inner.http;
+    let http = &mut data.conn.as_mut().unwrap().inner.http;
     if http_follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && http.initial_request > 0 {
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
         http.initial_request = 0;
     }
 
-    (request_data.prepare_request_cb)(curl, headers, request_data.data);
+    (data.prepare_request_cb)(curl, headers, data.data);
 
     command_url.extend_from_slice(CStr::from_ptr(http.url).to_bytes());
     command_url.extend_from_slice(b"?cmd=");
-    command_url.extend_from_slice(CStr::from_ptr(request_data.command).to_bytes());
+    command_url.extend_from_slice(CStr::from_ptr(data.command).to_bytes());
 
-    let args = request_data.args.as_bytes();
+    let args = data.args.as_bytes();
     if httpheader > 0 && !args.is_empty() {
         let mut args = &args[1..];
         let mut headers = headers;
