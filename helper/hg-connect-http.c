@@ -238,18 +238,15 @@ static size_t caps_request_write(char *ptr, size_t size, size_t nmemb,
 	return write_to(ptr, size, nmemb, writer);
 }
 
-static void prepare_caps_request(CURL *curl, struct curl_slist *headers,
-				 void *data)
+void prepare_caps_request(CURL *curl, struct curl_slist *headers,
+			  void *data)
 {
 	curl_easy_setopt(curl, CURLOPT_FILE, data);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, caps_request_write);
 }
 
-static void http_capabilities_command(struct hg_connection *conn,
-				      struct writer *writer, struct args_slice args)
-{
-	http_command(conn, prepare_caps_request, writer, "capabilities", args);
-}
+extern void http_capabilities_command(struct hg_connection *conn,
+				      struct writer *writer);
 
 static int http_finish(struct hg_connection *conn)
 {
@@ -273,9 +270,7 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 	writer.write = fwrite_buffer;
 	writer.close = NULL;
 	writer.context = &caps;
-	void *raw_args[] = {};
-	struct args_slice args = { .data = raw_args, .len = 0 };
-	http_capabilities_command(conn, &writer, args);
+	http_capabilities_command(conn, &writer);
 	/* Cf. comment above caps_request_write. If the bundle stream was
 	 * sent to stdout, the writer was switched to fwrite. */
 	if (writer.write != fwrite_buffer) {

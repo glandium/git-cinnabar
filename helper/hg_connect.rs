@@ -911,6 +911,7 @@ unsafe extern "C" fn http_command(
 extern "C" {
     fn prepare_simple_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
     fn prepare_pushkey_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
+    fn prepare_caps_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
 }
 
 #[no_mangle]
@@ -937,4 +938,15 @@ unsafe extern "C" fn http_simple_command(
             args,
         )
     }
+}
+
+#[no_mangle]
+unsafe extern "C" fn http_capabilities_command(conn: *mut hg_connection, writer: *mut writer) {
+    http_command(
+        conn,
+        prepare_caps_request,
+        writer as *mut c_void,
+        cstr!("capabilities").as_ptr(),
+        args_slice::new(&[]),
+    );
 }
