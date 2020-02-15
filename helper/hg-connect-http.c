@@ -23,7 +23,7 @@ struct http_request_info {
 	struct command_request_data *data;
 };
 
-static int http_request(prepare_request_cb_t prepare_request_cb, struct http_request_info *info)
+int http_request(prepare_request_cb_t prepare_request_cb, struct http_request_info *info)
 {
 	struct active_request_slot *slot;
 	struct slot_results results;
@@ -53,35 +53,6 @@ static int http_request(prepare_request_cb_t prepare_request_cb, struct http_req
 	curl_easy_getinfo(slot->curl, CURLINFO_EFFECTIVE_URL, &info->effective_url);
 
 	return ret;
-}
-
-int http_request_reauth(prepare_request_cb_t prepare_request_cb,
-			struct command_request_data *data)
-{
-	struct http_request_info info = { 0, NULL, data };
-	int ret = http_request(prepare_request_cb, &info);
-
-	if (ret != HTTP_OK && ret != HTTP_REAUTH)
-		return ret;
-
-	if (info.redirects) {
-		char *query = strstr(info.effective_url, "?cmd=");
-		if (query) {
-			free(data->conn->http.url);
-			data->conn->http.url =
-				xstrndup(info.effective_url,
-				         query - info.effective_url);
-			warning("redirecting to %s",
-			        data->conn->http.url);
-		}
-	}
-
-	if (ret != HTTP_REAUTH)
-		return ret;
-
-	credential_fill(&http_auth);
-
-	return http_request(prepare_request_cb, &info);
 }
 
 static void prepare_simple_request(CURL *curl, struct curl_slist *headers,

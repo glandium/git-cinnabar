@@ -9,7 +9,8 @@ use std::fmt::{self, Display, Formatter};
 use std::fs::File;
 use std::io::Write;
 use std::marker::PhantomData;
-use std::os::raw::{c_char, c_int};
+use std::mem;
+use std::os::raw::{c_char, c_int, c_long};
 #[cfg(unix)]
 use std::os::unix::io::IntoRawFd;
 #[cfg(windows)]
@@ -22,6 +23,7 @@ use libc::{off_t, FILE};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use sha1::{Digest, Sha1};
 
+#[allow(non_camel_case_types)]
 #[repr(C)]
 struct hg_connection {
     simple_command: unsafe extern "C" fn(
@@ -46,6 +48,22 @@ struct hg_connection {
     ),
     finish: unsafe extern "C" fn(conn: *mut hg_connection) -> c_int,
     capabilities: Option<Box<Vec<(BString, CString)>>>,
+    inner: hg_connection_inner,
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+union hg_connection_inner {
+    http: hg_connection_inner_http,
+    stdio: (),
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct hg_connection_inner_http {
+    url: *const c_char,
+    initial_request: c_int,
 }
 
 #[no_mangle]
@@ -186,6 +204,7 @@ extern "C" {
     static strbuf_slopbuf: *const c_char;
     fn strbuf_add(buf: *mut strbuf, data: *const c_void, len: usize);
     fn strbuf_release(buf: *mut strbuf);
+    fn strbuf_detach(buf: *mut strbuf, sz: *mut usize) -> *const c_char;
 }
 
 impl strbuf {
@@ -203,6 +222,12 @@ impl strbuf {
 
     fn extend_from_slice(&mut self, s: &[u8]) {
         unsafe { strbuf_add(self, s.as_ptr() as *const c_void, s.len()) }
+    }
+
+    fn detach(mut self) -> *const c_char {
+        let result = unsafe { strbuf_detach(&mut self, ptr::null_mut()) };
+        mem::forget(self);
+        result
     }
 }
 
@@ -710,20 +735,79 @@ struct command_request_data {
     args: strbuf,
 }
 
+#[allow(non_camel_case_types)]
+#[repr(C)]
+struct http_request_info {
+    redirects: c_long,
+    effective_url: *const c_char,
+    data: *mut command_request_data,
+}
+
 extern "C" {
     #[allow(improper_ctypes)]
     fn http_command_error(conn: *mut hg_connection) -> !;
 
     #[allow(improper_ctypes)]
-    fn http_request_reauth(
+    fn http_request(
         prepare_request_cb: prepare_request_cb_t,
-        data: *mut command_request_data,
+        data: *mut http_request_info,
     ) -> c_int;
 
     fn prepare_command_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
+
+    fn free(ptr: *mut c_void);
+
+    fn credential_fill(auth: *mut credential);
+
+    static mut http_auth: credential;
 }
 
+#[allow(non_camel_case_types)]
+#[repr(transparent)]
+struct credential(c_void);
+
 const HTTP_OK: c_int = 0;
+const HTTP_REAUTH: c_int = 4;
+
+fn http_request_reauth(
+    prepare_request_cb: prepare_request_cb_t,
+    data: &mut command_request_data,
+) -> c_int {
+    let mut info = http_request_info {
+        redirects: 0,
+        effective_url: ptr::null(),
+        data,
+    };
+    let ret = unsafe { http_request(prepare_request_cb, &mut info) };
+
+    if ret != HTTP_OK && ret != HTTP_REAUTH {
+        return ret;
+    }
+
+    if info.redirects > 0 {
+        let effective_url = unsafe { CStr::from_ptr(info.effective_url).to_bytes() };
+        if let Some(query_idx) = effective_url.find("?cmd=") {
+            let http = unsafe { &mut data.conn.as_mut().unwrap().inner.http };
+            let mut new_url_buf = strbuf::new();
+            let new_url = &effective_url[..query_idx];
+            new_url_buf.extend_from_slice(new_url);
+            let old_url = mem::replace(&mut http.url, new_url_buf.detach());
+            unsafe {
+                free(old_url as *mut c_void);
+            }
+            eprintln!("warning: redirecting to {}", new_url.as_bstr());
+        }
+    }
+
+    if ret != HTTP_REAUTH {
+        return ret;
+    }
+
+    unsafe {
+        credential_fill(&mut http_auth);
+        http_request(prepare_request_cb, &mut info)
+    }
+}
 
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.
  * The command name is passed as "cmd" query parameter.
