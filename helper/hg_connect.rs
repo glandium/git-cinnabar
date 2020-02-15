@@ -18,7 +18,11 @@ use std::os::windows::io::IntoRawHandle;
 use std::ptr;
 
 use bstr::{BString, ByteSlice};
-use curl_sys::{curl_slist, CURL};
+use curl_sys::{
+    curl_easy_getinfo, curl_easy_setopt, curl_slist, curl_slist_append, curl_slist_free_all,
+    CURLcode, CURL, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT, CURLOPT_FAILONERROR,
+    CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY, CURLOPT_USERAGENT,
+};
 use itertools::Itertools;
 use libc::{off_t, FILE};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
@@ -740,12 +744,6 @@ extern "C" {
     #[allow(improper_ctypes)]
     fn http_command_error(conn: *mut hg_connection) -> !;
 
-    #[allow(improper_ctypes)]
-    fn http_request(
-        prepare_request_cb: prepare_request_cb_t,
-        data: *mut http_request_info,
-    ) -> c_int;
-
     fn prepare_command_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
 
     fn free(ptr: *mut c_void);
@@ -753,14 +751,70 @@ extern "C" {
     fn credential_fill(auth: *mut credential);
 
     static mut http_auth: credential;
+
+    fn get_active_slot() -> *mut active_request_slot;
+
+    fn run_one_slot(slot: *mut active_request_slot, results: *mut slot_results) -> c_int;
 }
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
 struct credential(c_void);
 
+#[allow(non_camel_case_types)]
+#[repr(C)]
+struct active_request_slot {
+    curl: *mut CURL,
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+struct slot_results {
+    curl_result: CURLcode,
+    http_code: c_long,
+    auth_avail: c_long,
+    http_connectcode: c_long,
+}
+
 const HTTP_OK: c_int = 0;
 const HTTP_REAUTH: c_int = 4;
+
+fn http_request(prepare_request_cb: prepare_request_cb_t, info: &mut http_request_info) -> c_int {
+    unsafe {
+        let slot = get_active_slot().as_mut().unwrap();
+        curl_easy_setopt(slot.curl, CURLOPT_FAILONERROR, 0);
+        curl_easy_setopt(slot.curl, CURLOPT_HTTPGET, 1);
+        curl_easy_setopt(slot.curl, CURLOPT_NOBODY, 0);
+
+        let mut headers = ptr::null_mut();
+        headers = curl_slist_append(headers, cstr!("Accept: application/mercurial-0.1").as_ptr());
+        prepare_request_cb(slot.curl, headers, info.data as *mut c_void);
+
+        curl_easy_setopt(slot.curl, CURLOPT_HTTPHEADER, headers);
+        /* Strictly speaking, this is not necessary, but bitbucket does
+         * user-agent sniffing, and git's user-agent gets 404 on mercurial
+         * urls. */
+        curl_easy_setopt(
+            slot.curl,
+            CURLOPT_USERAGENT,
+            cstr!("mercurial/proto-1.0").as_ptr(),
+        );
+
+        let mut results = slot_results {
+            curl_result: 0,
+            http_code: 0,
+            auth_avail: 0,
+            http_connectcode: 0,
+        };
+        let ret = run_one_slot(slot, &mut results);
+        curl_slist_free_all(headers);
+
+        curl_easy_getinfo(slot.curl, CURLINFO_REDIRECT_COUNT, &mut info.redirects);
+        curl_easy_getinfo(slot.curl, CURLINFO_EFFECTIVE_URL, &mut info.effective_url);
+
+        ret
+    }
+}
 
 fn http_request_reauth(
     prepare_request_cb: prepare_request_cb_t,
@@ -771,7 +825,7 @@ fn http_request_reauth(
         effective_url: ptr::null(),
         data,
     };
-    let ret = unsafe { http_request(prepare_request_cb, &mut info) };
+    let ret = http_request(prepare_request_cb, &mut info);
 
     if ret != HTTP_OK && ret != HTTP_REAUTH {
         return ret;
@@ -798,8 +852,8 @@ fn http_request_reauth(
 
     unsafe {
         credential_fill(&mut http_auth);
-        http_request(prepare_request_cb, &mut info)
     }
+    http_request(prepare_request_cb, &mut info)
 }
 
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.

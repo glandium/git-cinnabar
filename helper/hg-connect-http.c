@@ -17,44 +17,6 @@ struct command_request_data {
 	struct strbuf args;
 };
 
-struct http_request_info {
-	long redirects;
-	char *effective_url;
-	struct command_request_data *data;
-};
-
-int http_request(prepare_request_cb_t prepare_request_cb, struct http_request_info *info)
-{
-	struct active_request_slot *slot;
-	struct slot_results results;
-	struct curl_slist *headers = NULL;
-	int ret;
-
-	slot = get_active_slot();
-	curl_easy_setopt(slot->curl, CURLOPT_FAILONERROR, 0);
-	curl_easy_setopt(slot->curl, CURLOPT_HTTPGET, 1);
-	curl_easy_setopt(slot->curl, CURLOPT_NOBODY, 0);
-
-	headers = curl_slist_append(headers,
-				    "Accept: application/mercurial-0.1");
-	prepare_request_cb(slot->curl, headers, info->data);
-
-	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, headers);
-	/* Strictly speaking, this is not necessary, but bitbucket does
-         * user-agent sniffing, and git's user-agent gets 404 on mercurial
-         * urls. */
-	curl_easy_setopt(slot->curl, CURLOPT_USERAGENT,
-			 "mercurial/proto-1.0");
-
-	ret = run_one_slot(slot, &results);
-	curl_slist_free_all(headers);
-
-	curl_easy_getinfo(slot->curl, CURLINFO_REDIRECT_COUNT, &info->redirects);
-	curl_easy_getinfo(slot->curl, CURLINFO_EFFECTIVE_URL, &info->effective_url);
-
-	return ret;
-}
-
 static void prepare_simple_request(CURL *curl, struct curl_slist *headers,
 				   void *data)
 {
