@@ -1,5 +1,6 @@
 CARGO ?= cargo
 CARGO_BUILD_FLAGS ?= --release
+CARGO_FEATURES ?=
 
 ifdef NO_CURL
 $(error Cannot build without curl)
@@ -146,13 +147,13 @@ libcinnabar.a: $(CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(X
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
 
 linker-flags: GIT-LDFLAGS FORCE
-	@echo $(ALL_LDFLAGS) $(if $(filter $(SYSTEM),Windows),,$(CURL_LIBCURL)) $(EXTLIBS)
+	@echo $(ALL_LDFLAGS) -L$(CURDIR) $(EXTLIBS)
 
 export CINNABAR_MAKE_FLAGS
 
 git-cinnabar-helper$X: CINNABAR_MAKE_FLAGS := $(filter %,$(foreach v,$(.VARIABLES),$(if $(filter command line,$(origin $(v))),$(v)='$(if $(findstring ',$($(v))),$(error $(v) contains a single quote))$($(v))')))
 git-cinnabar-helper$X: FORCE
-	+cd $(SOURCE_DIR)helper && $(CARGO) build -vv $(addprefix --target=,$(CARGO_TARGET)) $(CARGO_BUILD_FLAGS)
+	+cd $(SOURCE_DIR)helper && $(CARGO) build -vv $(addprefix --target=,$(CARGO_TARGET))$(if $(CARGO_FEATURES), --features "$(CARGO_FEATURES)") $(CARGO_BUILD_FLAGS)
 	cp $(SOURCE_DIR)helper/target/$(if $(CARGO_TARGET),$(CARGO_TARGET)/)$(if $(filter --release,$(CARGO_BUILD_FLAGS)),release,debug)/$@ $@
 
 cinnabar-helper.o: EXTRA_CPPFLAGS=-DHELPER_HASH=$(shell python $(SOURCE_DIR)git-cinnabar --version=helper 2> /dev/null | awk -F/ '{print $$NF}')
@@ -162,7 +163,6 @@ $(CINNABAR_OBJECTS): %.o: $(SOURCE_DIR)helper/%.c GIT-CFLAGS $(missing_dep_dirs)
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
 
 ifdef CURL_COMPAT
-linker-flags: CURL_LIBCURL=-L$(CURDIR) -lcurl
 libcinnabar.a: libcurl.so
 
 libcurl.so: $(SOURCE_DIR)helper/curl-compat.c

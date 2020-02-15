@@ -346,6 +346,14 @@ class Helper(Task, metaclass=Tool):
                 '{rustup} set default-host {cpu}-pc-windows-gnu',
             ]
             environ['CARGO_TARGET'] = '{}-pc-windows-gnu'.format(cpu)
+            # Statically link libcurl on Windows.
+            # This leaves it to curl-sys build scripts to deal with building
+            # libcurl, instead of us.
+            environ['CARGO_FEATURES'] = ' '.join((
+                'curl-sys/ssl',
+                'curl-sys/static-curl',
+                'curl-sys/static-ssl',
+            ))
         else:
             rust_install = [
                 'curl -o rustup.sh https://sh.rustup.rs',

@@ -18,6 +18,7 @@ use std::os::windows::io::IntoRawHandle;
 use std::ptr;
 
 use bstr::{BString, ByteSlice};
+use curl_sys::{curl_slist, CURL};
 use itertools::Itertools;
 use libc::{off_t, FILE};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
@@ -712,14 +713,6 @@ unsafe extern "C" fn stdio_send_command(
     prepare_command(&mut data, stdio_command_add_param, args);
     stdio_write(conn, data.as_ptr(), data.len());
 }
-
-#[allow(non_camel_case_types)]
-#[repr(transparent)]
-struct CURL(c_void);
-
-#[allow(non_camel_case_types)]
-#[repr(transparent)]
-struct curl_slist(c_void);
 
 #[allow(non_camel_case_types)]
 type prepare_request_cb_t =

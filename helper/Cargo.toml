@@ -26,9 +26,9 @@ percent-encoding = "2"
 sha-1 = "0.8"
 tempfile = "3"
 
-[target.'cfg(windows)'.dependencies.curl-sys]
+[dependencies.curl-sys]
 version = "0.4"
-features = ["static-curl", "static-ssl"]
+default-features = false
 
 [build-dependencies]
 itertools = "0.8"
