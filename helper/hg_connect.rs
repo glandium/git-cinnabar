@@ -770,7 +770,7 @@ struct slot_results {
 const HTTP_OK: c_int = 0;
 const HTTP_REAUTH: c_int = 4;
 
-fn http_request(prepare_request_cb: prepare_request_cb_t, info: &mut http_request_info) -> c_int {
+fn http_request(info: &mut http_request_info) -> c_int {
     unsafe {
         let slot = get_active_slot().as_mut().unwrap();
         curl_easy_setopt(slot.curl, CURLOPT_FAILONERROR, 0);
@@ -779,7 +779,7 @@ fn http_request(prepare_request_cb: prepare_request_cb_t, info: &mut http_reques
 
         let mut headers = ptr::null_mut();
         headers = curl_slist_append(headers, cstr!("Accept: application/mercurial-0.1").as_ptr());
-        prepare_request_cb(slot.curl, headers, info.data as *mut c_void);
+        prepare_command_request(slot.curl, headers, info.data as *mut c_void);
 
         curl_easy_setopt(slot.curl, CURLOPT_HTTPHEADER, headers);
         /* Strictly speaking, this is not necessary, but bitbucket does
@@ -807,16 +807,13 @@ fn http_request(prepare_request_cb: prepare_request_cb_t, info: &mut http_reques
     }
 }
 
-fn http_request_reauth(
-    prepare_request_cb: prepare_request_cb_t,
-    data: &mut command_request_data,
-) -> c_int {
+fn http_request_reauth(data: &mut command_request_data) -> c_int {
     let mut info = http_request_info {
         redirects: 0,
         effective_url: ptr::null(),
         data,
     };
-    let ret = http_request(prepare_request_cb, &mut info);
+    let ret = http_request(&mut info);
 
     if ret != HTTP_OK && ret != HTTP_REAUTH {
         return ret;
@@ -844,7 +841,7 @@ fn http_request_reauth(
     unsafe {
         credential_fill(&mut http_auth);
     }
-    http_request(prepare_request_cb, &mut info)
+    http_request(&mut info)
 }
 
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.
@@ -956,7 +953,7 @@ unsafe fn http_command(
         |name, value| http_query_add_param(&mut request_data.args, name, value),
         args,
     );
-    if http_request_reauth(prepare_command_request, &mut request_data) != HTTP_OK {
+    if http_request_reauth(&mut request_data) != HTTP_OK {
         http_command_error(conn);
     }
 }
