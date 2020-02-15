@@ -907,3 +907,34 @@ unsafe extern "C" fn http_command(
         http_command_error(conn);
     }
 }
+
+extern "C" {
+    fn prepare_simple_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
+    fn prepare_pushkey_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
+}
+
+#[no_mangle]
+unsafe extern "C" fn http_simple_command(
+    conn: *mut hg_connection,
+    response: *mut strbuf,
+    command: *const c_char,
+    args: args_slice,
+) {
+    if CStr::from_ptr(command).to_bytes() == b"pushkey" {
+        http_command(
+            conn,
+            prepare_pushkey_request,
+            response as *mut c_void,
+            command,
+            args,
+        )
+    } else {
+        http_command(
+            conn,
+            prepare_simple_request,
+            response as *mut c_void,
+            command,
+            args,
+        )
+    }
+}

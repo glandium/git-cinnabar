@@ -17,15 +17,15 @@ struct command_request_data {
 	struct strbuf args;
 };
 
-static void prepare_simple_request(CURL *curl, struct curl_slist *headers,
-				   void *data)
+void prepare_simple_request(CURL *curl, struct curl_slist *headers,
+			    void *data)
 {
 	curl_easy_setopt(curl, CURLOPT_FILE, data);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite_buffer);
 }
 
-static void prepare_pushkey_request(CURL *curl, struct curl_slist *headers,
-				    void *data)
+void prepare_pushkey_request(CURL *curl, struct curl_slist *headers,
+			     void *data)
 {
 	prepare_simple_request(curl, headers, data);
 	curl_easy_setopt(curl, CURLOPT_POST, 1);
@@ -92,17 +92,9 @@ void http_command_error(struct hg_connection *conn) {
 	die("unable to access '%s': %s", conn->http.url, curl_errorstr);
 }
 
-static void http_simple_command(struct hg_connection *conn,
+extern void http_simple_command(struct hg_connection *conn,
 				struct strbuf *response,
-				const char *command, struct args_slice args)
-{
-	if (strcmp(command, "pushkey"))
-		http_command(conn, prepare_simple_request, response, command,
-		             args);
-	else
-		http_command(conn, prepare_pushkey_request, response, command,
-		             args);
-}
+				const char *command, struct args_slice args);
 
 struct changegroup_response_data {
 	CURL *curl;
