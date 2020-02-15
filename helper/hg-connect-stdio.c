@@ -55,50 +55,9 @@ extern void stdio_changegroup_command(struct hg_connection *conn,
                                       struct writer *out,
 				      const char *command, struct args_slice args);
 
-static void stdio_push_command(struct hg_connection *conn,
+extern void stdio_push_command(struct hg_connection *conn,
 			       struct strbuf *response, FILE *in, off_t len,
-			       const char *command, struct args_slice args)
-{
-	int is_bundle2 = 0;
-	char buf[4096];
-	struct strbuf header = STRBUF_INIT;
-	stdio_send_command(conn, command, args);
-	/* The server normally sends an empty response before reading the data
-	 * it's sent if not, it's an error (typically, the remote will
-	 * complain here if there was a lost push race). */
-	//TODO: handle that error.
-	stdio_read_response(conn, &header);
-
-	//TODO: chunk in smaller pieces.
-	strbuf_addf(&header, "%"PRIdMAX"\n", (intmax_t)len);
-	xwrite(conn->stdio.proc.in, header.buf, header.len);
-	strbuf_release(&header);
-
-        if (len > 4) {
-		char header[4] = { 0, };
-		fread(header, 4, 1, in);
-		fseek(in, 0L, SEEK_SET);
-		is_bundle2 = memcmp(header, "HG20", 4) == 0;
-	}
-
-	while (len) {
-		size_t read = sizeof(buf) > len ? len : sizeof(buf);
-		read = fread(buf, 1, read, in);
-		len -= read;
-		xwrite(conn->stdio.proc.in, buf, read);
-	}
-
-	xwrite(conn->stdio.proc.in, "0\n", 2);
-	if (is_bundle2) {
-		copy_bundle_to_strbuf(conn->stdio.out, response);
-	} else {
-		/* There are two responses, one for output, one for actual response. */
-		//TODO: actually handle output here
-		stdio_read_response(conn, &header);
-		strbuf_release(&header);
-		stdio_read_response(conn, response);
-	}
-}
+			       const char *command, struct args_slice args);
 
 static int stdio_finish(struct hg_connection *conn)
 {

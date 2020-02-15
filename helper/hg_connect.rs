@@ -708,6 +708,8 @@ extern "C" {
     fn bufferize_writer(writer: *mut writer);
 
     fn copy_bundle(input: *mut FILE, out: *mut writer);
+
+    fn copy_bundle_to_strbuf(intput: *mut FILE, out: *mut strbuf);
 }
 
 #[no_mangle]
@@ -756,6 +758,61 @@ unsafe extern "C" fn stdio_changegroup_command(
         bufferize_writer(writer);
     }
     copy_bundle(conn.inner.stdio.out, writer);
+}
+
+#[no_mangle]
+unsafe extern "C" fn stdio_push_command(
+    conn: *mut hg_connection,
+    response: *mut strbuf,
+    input: *mut FILE,
+    len: off_t,
+    command: *const c_char,
+    args: args_slice,
+) {
+    let conn = conn.as_mut().unwrap();
+    stdio_send_command(conn, command, args);
+    /* The server normally sends an empty response before reading the data
+     * it's sent if not, it's an error (typically, the remote will
+     * complain here if there was a lost push race). */
+    //TODO: handle that error.
+    let mut header = strbuf::new();
+    stdio_read_response(conn, &mut header);
+
+    //TODO: chunk in smaller pieces.
+    header.extend_from_slice(format!("{}\n", len).as_bytes());
+    stdio_write(conn, header.as_bytes().as_ptr(), header.as_bytes().len());
+    drop(header);
+
+    let is_bundle2 = if len > 4 {
+        let mut header = [0u8; 4];
+        libc::fread(header.as_mut_ptr() as *mut c_void, 4, 1, input);
+        libc::fseek(input, 0, libc::SEEK_SET);
+        &header == b"HG20"
+    } else {
+        false
+    };
+
+    let mut len = len;
+    let mut buf = [0u8; 4096];
+    while len > 0 {
+        let buf_len = buf.len();
+        let mut read = cmp::min(buf_len, len.try_into().unwrap_or(buf_len));
+        read = libc::fread(buf.as_mut_ptr() as *mut c_void, 1, read, input);
+        len -= read as off_t;
+        stdio_write(conn, buf.as_ptr(), read);
+    }
+
+    stdio_write(conn, "0\n".as_ptr(), 2);
+    if is_bundle2 {
+        copy_bundle_to_strbuf(conn.inner.stdio.out, response);
+    } else {
+        /* There are two responses, one for output, one for actual response. */
+        //TODO: actually handle output here
+        let mut header = strbuf::new();
+        stdio_read_response(conn, &mut header);
+        drop(header);
+        stdio_read_response(conn, response);
+    }
 }
 
 #[allow(non_camel_case_types)]
