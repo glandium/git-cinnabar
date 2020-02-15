@@ -718,7 +718,7 @@ type prepare_request_cb_t =
 
 #[allow(non_camel_case_types)]
 struct command_request_data<'a> {
-    conn: *mut hg_connection,
+    conn: &'a mut hg_connection,
     prepare_request_cb: prepare_request_cb_t,
     data: *mut c_void,
     command: &'a str,
@@ -819,7 +819,7 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
     if info.redirects > 0 {
         let effective_url = unsafe { CStr::from_ptr(info.effective_url).to_bytes() };
         if let Some(query_idx) = effective_url.find("?cmd=") {
-            let http = unsafe { &mut data.conn.as_mut().unwrap().inner.http };
+            let http = unsafe { &mut data.conn.inner.http };
             let mut new_url_buf = strbuf::new();
             let new_url = &effective_url[..query_idx];
             new_url_buf.extend_from_slice(new_url);
@@ -896,7 +896,7 @@ unsafe extern "C" fn prepare_command_request(
         .and_then(|s| usize::from_str(s).ok())
         .unwrap_or(0);
 
-    let http = &mut data.conn.as_mut().unwrap().inner.http;
+    let http = &mut data.conn.inner.http;
     if http_follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && http.initial_request > 0 {
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
         http.initial_request = 0;
