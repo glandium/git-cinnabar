@@ -19,9 +19,9 @@ use std::ptr;
 
 use bstr::{BString, ByteSlice};
 use curl_sys::{
-    curl_easy_getinfo, curl_easy_setopt, curl_slist, curl_slist_append, curl_slist_free_all,
-    CURLcode, CURL, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT, CURLOPT_FAILONERROR,
-    CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY, CURLOPT_USERAGENT,
+    curl_easy_getinfo, curl_easy_setopt, curl_off_t, curl_slist, curl_slist_append,
+    curl_slist_free_all, CURLcode, CURL, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT,
+    CURLOPT_FAILONERROR, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY, CURLOPT_USERAGENT,
 };
 use itertools::Itertools;
 use libc::{off_t, FILE};
@@ -297,6 +297,8 @@ struct writer {
 }
 
 extern "C" {
+    fn write_to(buf: *const c_char, size: usize, nmemb: usize, writer: *mut writer) -> usize;
+
     fn writer_close(w: *mut writer);
 }
 
@@ -886,8 +888,7 @@ fn http_query_add_param(data: &mut strbuf, name: &str, value: param_value) {
     }
 }
 
-#[no_mangle]
-unsafe extern "C" fn http_command(
+unsafe fn http_command(
     conn: *mut hg_connection,
     prepare_request_cb: prepare_request_cb_t,
     data: *mut c_void,
@@ -912,6 +913,7 @@ extern "C" {
     fn prepare_simple_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
     fn prepare_pushkey_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
     fn prepare_changegroup_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
+    fn prepare_push_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
     fn prepare_caps_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
 }
 
@@ -969,6 +971,71 @@ unsafe extern "C" fn http_changegroup_command(
         command,
         args,
     );
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+struct push_request_info {
+    response: *mut strbuf,
+    input: *mut FILE,
+    len: curl_off_t,
+}
+
+extern "C" {
+    fn get_stderr() -> *mut FILE;
+
+    fn prefix_writer(writer: *mut writer, prefix: *const c_char);
+}
+
+#[no_mangle]
+unsafe extern "C" fn http_push_command(
+    conn: *mut hg_connection,
+    response: *mut strbuf,
+    input: *mut FILE,
+    len: off_t,
+    command: *const c_char,
+    args: args_slice,
+) {
+    let mut http_response = strbuf::new();
+    let mut info = push_request_info {
+        response: &mut http_response,
+        input,
+        len: len.into(),
+    };
+    //TODO: handle errors.
+    http_command(
+        conn,
+        prepare_push_request,
+        &mut info as *mut _ as *mut c_void,
+        command,
+        args,
+    );
+
+    let http_response = http_response.as_bytes();
+    if http_response.get(..4) == Some(b"HG20") {
+        response.as_mut().unwrap().extend_from_slice(http_response);
+    } else {
+        let mut writer = writer {
+            write: libc::fwrite as _,
+            close: libc::fflush as _,
+            context: get_stderr() as _,
+        };
+        match &http_response.splitn_str(2, "\n").collect::<Vec<_>>()[..] {
+            [stdout_, stderr_] => {
+                response.as_mut().unwrap().extend_from_slice(stdout_);
+                prefix_writer(&mut writer, cstr!("remote: ").as_ptr());
+                write_to(
+                    stderr_.as_ptr() as *const c_char,
+                    1,
+                    stderr_.len(),
+                    &mut writer,
+                );
+                writer_close(&mut writer);
+            }
+            //TODO: better eror handling.
+            _ => panic!("Bad output from server"),
+        }
+    }
 }
 
 #[no_mangle]

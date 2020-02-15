@@ -84,10 +84,6 @@ void prepare_command_request(CURL *curl, struct curl_slist *headers,
 	strbuf_release(&command_url);
 }
 
-extern void http_command(struct hg_connection *conn,
-			 prepare_request_cb_t prepare_request_cb, void *data,
-			 const char *command, struct args_slice args);
-
 void http_command_error(struct hg_connection *conn) {
 	die("unable to access '%s': %s", conn->http.url, curl_errorstr);
 }
@@ -149,8 +145,8 @@ struct push_request_info {
 	curl_off_t len;
 };
 
-static void prepare_push_request(CURL *curl, struct curl_slist *headers,
-				 void *data)
+void prepare_push_request(CURL *curl, struct curl_slist *headers,
+			  void *data)
 {
 	struct push_request_info *info = data;
 	prepare_simple_request(curl, headers, info->response);
@@ -167,35 +163,9 @@ static void prepare_push_request(CURL *curl, struct curl_slist *headers,
 	headers = curl_slist_append(headers, "Expect:");
 }
 
-static void http_push_command(struct hg_connection *conn,
+extern void http_push_command(struct hg_connection *conn,
 			      struct strbuf *response, FILE *in, off_t len,
-			      const char *command, struct args_slice args)
-{
-	struct push_request_info info;
-	struct strbuf http_response = STRBUF_INIT;
-	struct string_list list = STRING_LIST_INIT_NODUP;
-	info.response = &http_response;
-	info.in = in;
-	info.len = len;
-	//TODO: handle errors
-	http_command(conn, prepare_push_request, &info, command, args);
-
-	if (!strncmp(http_response.buf, "HG20", 4)) {
-		strbuf_addbuf(response, &http_response);
-	} else {
-		struct writer writer;
-		string_list_split_in_place(&list, http_response.buf, '\n', 1);
-		strbuf_addstr(response, list.items[0].string);
-		writer.write = (write_callback)fwrite;
-		writer.close = (close_callback)fflush;
-		writer.context = stderr;
-		prefix_writer(&writer, "remote: ");
-		write_to(list.items[1].string, 1, strlen(list.items[1].string), &writer);
-		string_list_clear(&list, 0);
-		writer_close(&writer);
-	}
-	strbuf_release(&http_response);
-}
+			      const char *command, struct args_slice args);
 
 /* The first request we send is a "capabilities" request. This sends to
  * the repo url with a query string "?cmd=capabilities". If the remote

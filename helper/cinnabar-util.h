@@ -13,11 +13,7 @@ struct writer {
 	void *context;
 };
 
-static inline
-size_t write_to(char *buf, size_t size, size_t nmemb, struct writer *writer)
-{
-	return writer->write(buf, size, nmemb, writer->context);
-}
+size_t write_to(char *buf, size_t size, size_t nmemb, struct writer *writer);
 
 int writer_close(struct writer* writer);
 

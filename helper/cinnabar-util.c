@@ -5,6 +5,15 @@
 #include "http.h"
 #include "cinnabar-util.h"
 
+FILE *get_stderr() {
+	return stderr;
+}
+
+size_t write_to(char *buf, size_t size, size_t nmemb, struct writer *writer)
+{
+	return writer->write(buf, size, nmemb, writer->context);
+}
+
 int writer_close(struct writer* writer)
 {
 	if (writer->close)
