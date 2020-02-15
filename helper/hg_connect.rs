@@ -911,6 +911,7 @@ unsafe extern "C" fn http_command(
 extern "C" {
     fn prepare_simple_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
     fn prepare_pushkey_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
+    fn prepare_changegroup_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
     fn prepare_caps_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut c_void);
 }
 
@@ -938,6 +939,36 @@ unsafe extern "C" fn http_simple_command(
             args,
         )
     }
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+struct changegroup_response_data {
+    curl: *mut CURL,
+    writer: *mut writer,
+}
+
+/* The changegroup, changegroupsubset and getbundle commands return a raw
+ *  * zlib stream when called over HTTP. */
+#[no_mangle]
+unsafe extern "C" fn http_changegroup_command(
+    conn: *mut hg_connection,
+    writer: *mut writer,
+    command: *const c_char,
+    args: args_slice,
+) {
+    let mut response_data = changegroup_response_data {
+        curl: ptr::null_mut(),
+        writer,
+    };
+
+    http_command(
+        conn,
+        prepare_changegroup_request,
+        &mut response_data as *mut _ as *mut c_void,
+        command,
+        args,
+    );
 }
 
 #[no_mangle]

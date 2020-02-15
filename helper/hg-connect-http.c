@@ -127,8 +127,8 @@ static size_t changegroup_write(char *buffer, size_t size, size_t nmemb, void* d
 	return write_to(buffer, size, nmemb, response_data->writer);
 }
 
-static void prepare_changegroup_request(CURL *curl, struct curl_slist *headers,
-				        void *data)
+void prepare_changegroup_request(CURL *curl, struct curl_slist *headers,
+			         void *data)
 {
 	struct changegroup_response_data *response_data =
 		(struct changegroup_response_data *)data;
@@ -139,19 +139,9 @@ static void prepare_changegroup_request(CURL *curl, struct curl_slist *headers,
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, changegroup_write);
 }
 
-/* The changegroup, changegroupsubset and getbundle commands return a raw
- * zlib stream when called over HTTP. */
-static void http_changegroup_command(struct hg_connection *conn,
+extern void http_changegroup_command(struct hg_connection *conn,
                                      struct writer *out,
-                                     const char *command, struct args_slice args)
-{
-	struct changegroup_response_data response_data;
-
-	response_data.curl = NULL;
-	response_data.writer = out;
-
-	http_command(conn, prepare_changegroup_request, &response_data, command, args);
-}
+                                     const char *command, struct args_slice args);
 
 struct push_request_info {
 	struct strbuf *response;
