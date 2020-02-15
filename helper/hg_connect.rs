@@ -722,7 +722,7 @@ struct command_request_data<'a> {
     prepare_request_cb: prepare_request_cb_t,
     data: *mut c_void,
     command: &'a str,
-    args: strbuf,
+    args: BString,
 }
 
 #[allow(non_camel_case_types)]
@@ -856,7 +856,7 @@ const QUERY_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b' ');
 
-fn http_query_add_param(data: &mut strbuf, name: &str, value: param_value) {
+fn http_query_add_param(data: &mut BString, name: &str, value: param_value) {
     if name != "*" {
         let value = match value {
             param_value::value(v) => percent_encode(v, QUERY_ENCODE_SET)
@@ -942,7 +942,7 @@ unsafe fn http_command(
         prepare_request_cb,
         data,
         command,
-        args: strbuf::new(),
+        args: Vec::new().into(),
     };
     prepare_command(
         |name, value| http_query_add_param(&mut request_data.args, name, value),
