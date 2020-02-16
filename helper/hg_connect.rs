@@ -770,22 +770,6 @@ unsafe extern "C" fn stdio_send_empty_command(conn: *mut hg_connection_stdio) {
     stdio_send_command(conn, "", args!());
 }
 
-unsafe fn stdio_send_capabilities_command(conn: *mut hg_connection_stdio) {
-    let conn = conn.as_mut().unwrap();
-    stdio_send_command(conn, "capabilities", args!());
-}
-
-unsafe fn stdio_send_between_command(conn: *mut hg_connection_stdio) {
-    let conn = conn.as_mut().unwrap();
-    stdio_send_command(
-        conn,
-        "between",
-        args!(
-            pairs: b"0000000000000000000000000000000000000000-0000000000000000000000000000000000000000"
-        ),
-    );
-}
-
 #[allow(non_camel_case_types)]
 struct command_request_data<'a> {
     conn: &'a mut hg_connection,
@@ -1215,10 +1199,11 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
 
         conn
     } else {
-        let inner = hg_connect_stdio(url, flags);
-        if inner.is_null() {
+        let inner = if let Some(inner) = hg_connect_stdio(url, flags).as_mut() {
+            inner
+        } else {
             return ptr::null_mut();
-        }
+        };
 
         /* Very old versions of the mercurial server (< 0.9) would ignore
          * unknown commands, and didn't know the "capabilities" command we want
@@ -1230,8 +1215,14 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
          * least mercurial 1.9 anyways. Server versions between 0.9 and 1.7
          * will return an empty result for the "capabilities" command, as
          * opposed to no result at all with older servers. */
-        stdio_send_capabilities_command(inner);
-        stdio_send_between_command(inner);
+        stdio_send_command(inner, "capabilities", args!());
+        stdio_send_command(
+            inner,
+            "between",
+            args!(
+                pairs: b"0000000000000000000000000000000000000000-0000000000000000000000000000000000000000"
+            ),
+        );
 
         let mut conn = Box::new(hg_connection {
             simple_command: stdio_simple_command,
