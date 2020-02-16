@@ -815,6 +815,31 @@ unsafe extern "C" fn stdio_push_command(
     }
 }
 
+#[no_mangle]
+unsafe extern "C" fn stdio_send_empty_command(conn: *mut hg_connection) {
+    stdio_send_command(conn, cstr!("").as_ptr(), args_slice::new(&[]));
+}
+
+#[no_mangle]
+unsafe extern "C" fn stdio_send_capabilities_command(conn: *mut hg_connection) {
+    stdio_send_command(conn, cstr!("capabilities").as_ptr(), args_slice::new(&[]));
+}
+
+#[no_mangle]
+unsafe extern "C" fn stdio_send_between_command(conn: *mut hg_connection) {
+    stdio_send_command(
+        conn,
+        cstr!("between").as_ptr(),
+        args_slice::new(&[
+            cstr!("pairs").as_ptr() as _,
+            cstr!(
+                "0000000000000000000000000000000000000000-0000000000000000000000000000000000000000"
+            )
+            .as_ptr() as _,
+        ]),
+    );
+}
+
 #[allow(non_camel_case_types)]
 struct command_request_data<'a> {
     conn: &'a mut hg_connection,

@@ -26,9 +26,6 @@ static void maybe_sq_quote_buf(struct strbuf *buf, const char *src)
 		strbuf_addstr(buf, src);
 }
 
-extern void stdio_send_command(struct hg_connection *conn,
-			       const char *command, struct args_slice args);
-
 void stdio_write(struct hg_connection *conn, const uint8_t *buf, size_t len) {
 	xwrite(conn->stdio.proc.in, buf, len);
 }
@@ -59,11 +56,13 @@ extern void stdio_push_command(struct hg_connection *conn,
 			       struct strbuf *response, FILE *in, off_t len,
 			       const char *command, struct args_slice args);
 
+extern void stdio_send_empty_command(struct hg_connection *conn);
+extern void stdio_send_capabilities_command(struct hg_connection *conn);
+extern void stdio_send_between_command(struct hg_connection *conn);
+
 static int stdio_finish(struct hg_connection *conn)
 {
-	void *raw_args[] = {};
-	struct args_slice args = { .data = raw_args, .len = 0 };
-	stdio_send_command(conn, "", args);
+	stdio_send_empty_command(conn);
 	close(conn->stdio.proc.in);
 	fclose(conn->stdio.out);
 	pthread_join(conn->stdio.thread, NULL);
@@ -180,16 +179,8 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
          * least mercurial 1.9 anyways. Server versions between 0.9 and 1.7
          * will return an empty result for the "capabilities" command, as
          * opposed to no result at all with older servers. */
-	void *raw_args[] = {};
-	struct args_slice args = { .data = raw_args, .len = 0 };
-	stdio_send_command(conn, "capabilities", args);
-	void *raw_between_args[] = {
-		"pairs",
-		"0000000000000000000000000000000000000000-"
-		"0000000000000000000000000000000000000000"
-	};
-	struct args_slice between_args = { .data = raw_between_args, .len = 2 };
-	stdio_send_command(conn, "between", between_args);
+	stdio_send_capabilities_command(conn);
+	stdio_send_between_command(conn);
 
 	stdio_read_response(conn, &buf);
 	if (!(buf.len == 1 && buf.buf[0] == '\n')) {
