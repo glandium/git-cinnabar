@@ -1232,3 +1232,58 @@ unsafe extern "C" fn http_capabilities_command(conn: *mut hg_connection, writer:
         args_slice::new(&[]),
     );
 }
+
+extern "C" {
+    #[allow(improper_ctypes)]
+    fn hg_connect_stdio(url: *const c_char, flags: c_int) -> *mut hg_connection;
+
+    #[allow(improper_ctypes)]
+    fn hg_connect_http(url: *const c_char, flags: c_int) -> *mut hg_connection;
+
+    fn die(fmt: *const c_char, ...) -> !;
+}
+
+#[no_mangle]
+unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_connection {
+    let url_ = CStr::from_ptr(url).to_bytes();
+    let conn = if url_.starts_with(b"http://") || url_.starts_with(b"https://") {
+        hg_connect_http(url, flags)
+    } else {
+        hg_connect_stdio(url, flags)
+    };
+    if conn.is_null() {
+        return conn;
+    }
+
+    const REQUIRED_CAPS: [&str; 5] = [
+        "getbundle",
+        "branchmap",
+        "known",
+        "pushkey",
+        //TODO: defer to when pushing.
+        "unbundle",
+    ];
+
+    for cap in &REQUIRED_CAPS {
+        let cap_ = CString::new(*cap).unwrap();
+        if hg_get_capability(conn, cap_.as_ptr()).is_null() {
+            let s = CString::new(format!(
+                "Mercurial repository doesn't support the required \"{}\" capability.",
+                cap
+            ))
+            .unwrap();
+            die(s.as_ptr());
+        }
+    }
+
+    conn
+}
+
+#[no_mangle]
+unsafe extern "C" fn hg_finish_connect(conn: *mut hg_connection) -> c_int {
+    let conn = conn.as_mut().unwrap();
+    let code = (conn.finish)(conn);
+    drop_capabilities(conn);
+    free(conn as *mut _ as *mut c_void);
+    code
+}

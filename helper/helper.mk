@@ -93,7 +93,6 @@ CINNABAR_OBJECTS += cinnabar-helper.o
 CINNABAR_OBJECTS += cinnabar-notes.o
 CINNABAR_OBJECTS += cinnabar-util.o
 CINNABAR_OBJECTS += hg-bundle.o
-CINNABAR_OBJECTS += hg-connect.o
 CINNABAR_OBJECTS += hg-connect-http.o
 CINNABAR_OBJECTS += hg-connect-stdio.o
 CINNABAR_OBJECTS += hg-data.o
