@@ -134,7 +134,6 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 			struct writer writer;
 			free(hostandport);
 			child_process_clear(proc);
-			drop_capabilities(conn);
 			free(conn);
 			// TODO: Eventually we want to have a hg_connection
 			// for bundles, but for now, just send the stream to
