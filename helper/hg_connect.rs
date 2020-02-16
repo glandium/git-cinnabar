@@ -33,19 +33,19 @@ use sha1::{Digest, Sha1};
 #[allow(non_camel_case_types)]
 #[repr(C)]
 struct hg_connection {
-    simple_command: unsafe extern "C" fn(
+    simple_command: unsafe fn(
         conn: *mut hg_connection,
         response: *mut strbuf,
         command: *const c_char,
         args: args_slice,
     ),
-    changegroup_command: unsafe extern "C" fn(
+    changegroup_command: unsafe fn(
         conn: *mut hg_connection,
         out: *mut writer,
         command: *const c_char,
         args: args_slice,
     ),
-    push_command: unsafe extern "C" fn(
+    push_command: unsafe fn(
         conn: *mut hg_connection,
         response: *mut strbuf,
         input: *mut FILE,
@@ -725,8 +725,7 @@ unsafe fn stdio_send_command(conn: &mut hg_connection_stdio, command: &str, args
     stdio_write(conn, data.as_ptr(), data.len());
 }
 
-#[no_mangle]
-unsafe extern "C" fn stdio_simple_command(
+unsafe fn stdio_simple_command(
     conn: *mut hg_connection,
     response: *mut strbuf,
     command: *const c_char,
@@ -738,8 +737,7 @@ unsafe extern "C" fn stdio_simple_command(
     stdio_read_response(stdio, response);
 }
 
-#[no_mangle]
-unsafe extern "C" fn stdio_changegroup_command(
+unsafe fn stdio_changegroup_command(
     conn: *mut hg_connection,
     writer: *mut writer,
     command: *const c_char,
@@ -759,8 +757,7 @@ unsafe extern "C" fn stdio_changegroup_command(
     copy_bundle(stdio.out, writer);
 }
 
-#[no_mangle]
-unsafe extern "C" fn stdio_push_command(
+unsafe fn stdio_push_command(
     conn: *mut hg_connection,
     response: *mut strbuf,
     input: *mut FILE,
@@ -821,14 +818,12 @@ unsafe extern "C" fn stdio_send_empty_command(conn: *mut hg_connection_stdio) {
     stdio_send_command(conn, "", args_slice::new(&[]));
 }
 
-#[no_mangle]
-unsafe extern "C" fn stdio_send_capabilities_command(conn: *mut hg_connection_stdio) {
+unsafe fn stdio_send_capabilities_command(conn: *mut hg_connection_stdio) {
     let conn = conn.as_mut().unwrap();
     stdio_send_command(conn, "capabilities", args_slice::new(&[]));
 }
 
-#[no_mangle]
-unsafe extern "C" fn stdio_send_between_command(conn: *mut hg_connection_stdio) {
+unsafe fn stdio_send_between_command(conn: *mut hg_connection_stdio) {
     let conn = conn.as_mut().unwrap();
     stdio_send_command(
         conn,
@@ -1098,8 +1093,7 @@ extern "C" {
     fn prepare_caps_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut writer);
 }
 
-#[no_mangle]
-unsafe extern "C" fn http_simple_command(
+unsafe fn http_simple_command(
     conn: *mut hg_connection,
     response: *mut strbuf,
     command: *const c_char,
@@ -1131,8 +1125,7 @@ struct changegroup_response_data {
 
 /* The changegroup, changegroupsubset and getbundle commands return a raw
  *  * zlib stream when called over HTTP. */
-#[no_mangle]
-unsafe extern "C" fn http_changegroup_command(
+unsafe fn http_changegroup_command(
     conn: *mut hg_connection,
     writer: *mut writer,
     command: *const c_char,
@@ -1167,8 +1160,7 @@ extern "C" {
     fn prefix_writer(writer: *mut writer, prefix: *const c_char);
 }
 
-#[no_mangle]
-unsafe extern "C" fn http_push_command(
+unsafe fn http_push_command(
     conn: *mut hg_connection,
     response: *mut strbuf,
     input: *mut FILE,
@@ -1217,8 +1209,7 @@ unsafe extern "C" fn http_push_command(
     }
 }
 
-#[no_mangle]
-unsafe extern "C" fn http_capabilities_command(conn: *mut hg_connection, writer: *mut writer) {
+unsafe fn http_capabilities_command(conn: *mut hg_connection, writer: *mut writer) {
     http_command(
         conn.as_mut().unwrap(),
         Box::new(move |curl, headers| prepare_caps_request(curl, headers, writer)),
