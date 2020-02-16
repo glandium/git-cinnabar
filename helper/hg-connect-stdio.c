@@ -1,6 +1,6 @@
 #include "git-compat-util.h"
 #include "cinnabar-util.h"
-#include "hg-connect-internal.h"
+#include "hg-connect.h"
 #include "hg-bundle.h"
 #include "strbuf.h"
 #include "quote.h"
@@ -44,29 +44,15 @@ void stdio_read_response(struct hg_connection_stdio *conn,
 	strbuf_fread(response, length, conn->out);
 }
 
-extern void stdio_simple_command(struct hg_connection *conn,
-				 struct strbuf *response,
-				 const char *command, struct args_slice args);
-
-extern void stdio_changegroup_command(struct hg_connection *conn,
-                                      struct writer *out,
-				      const char *command, struct args_slice args);
-
-extern void stdio_push_command(struct hg_connection *conn,
-			       struct strbuf *response, FILE *in, off_t len,
-			       const char *command, struct args_slice args);
-
 extern void stdio_send_empty_command(struct hg_connection_stdio *conn);
-extern void stdio_send_capabilities_command(struct hg_connection_stdio *conn);
-extern void stdio_send_between_command(struct hg_connection_stdio *conn);
 
-static int stdio_finish(struct hg_connection *conn)
+int stdio_finish(struct hg_connection_stdio *conn)
 {
-	stdio_send_empty_command(conn->stdio);
-	close(conn->stdio->proc.in);
-	fclose(conn->stdio->out);
-	pthread_join(conn->stdio->thread, NULL);
-	return finish_command(&conn->stdio->proc);
+	stdio_send_empty_command(conn);
+	close(conn->proc.in);
+	fclose(conn->out);
+	pthread_join(conn->thread, NULL);
+	return finish_command(&conn->proc);
 }
 
 void *prefix_remote_stderr(void *context)
@@ -90,17 +76,14 @@ void *prefix_remote_stderr(void *context)
 	return NULL;
 }
 
-struct hg_connection *hg_connect_stdio(const char *url, int flags)
+struct hg_connection_stdio *hg_connect_stdio(const char *url, int flags)
 {
 	char *user, *hostandport, *path;
 	const char *remote_path;
 	enum protocol protocol;
 	struct strbuf buf = STRBUF_INIT;
-	struct hg_connection *conn = xmalloc(sizeof(*conn));
-	struct child_process *proc;
-	conn->stdio = xmalloc(sizeof(*conn->stdio));
-	proc = &conn->stdio->proc;
-	conn->capabilities = NULL;
+	struct hg_connection_stdio *conn = xmalloc(sizeof(*conn));
+	struct child_process *proc = &conn->proc;
 
 	protocol = parse_connect_url(url, &hostandport, &path);
 
@@ -162,38 +145,13 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	strbuf_release(&buf);
 
 	start_command(proc);
-	conn->stdio->is_remote = (protocol == PROTO_SSH);
-	conn->stdio->out = xfdopen(proc->out, "r");
-	pthread_create(&conn->stdio->thread, NULL, prefix_remote_stderr, conn->stdio);
+	conn->is_remote = (protocol == PROTO_SSH);
+	conn->out = xfdopen(proc->out, "r");
+	pthread_create(&conn->thread, NULL, prefix_remote_stderr, conn);
 	// TODO: return earlier in case the command fails somehow.
 
 	free(path);
 	free(hostandport);
 
-	/* Very old versions of the mercurial server (< 0.9) would ignore
-         * unknown commands, and didn't know the "capabilities" command we want
-         * to use to retrieve the server capabilities.
-         * So, we also emit a command that is supported by those old versions,
-         * and will see if we get a response for one or both commands.
-         * Note the "capabilities" command is not supported over the stdio
-         * protocol before mercurial 1.7, but we require features from at
-         * least mercurial 1.9 anyways. Server versions between 0.9 and 1.7
-         * will return an empty result for the "capabilities" command, as
-         * opposed to no result at all with older servers. */
-	stdio_send_capabilities_command(conn->stdio);
-	stdio_send_between_command(conn->stdio);
-
-	stdio_read_response(conn->stdio, &buf);
-	if (!(buf.len == 1 && buf.buf[0] == '\n')) {
-		split_capabilities(conn, buf.buf);
-		/* Now read the response for the "between" command. */
-		stdio_read_response(conn->stdio, &buf);
-	}
-	strbuf_release(&buf);
-
-	conn->simple_command = stdio_simple_command;
-	conn->changegroup_command = stdio_changegroup_command;
-	conn->push_command = stdio_push_command;
-	conn->finish = stdio_finish;
 	return conn;
 }

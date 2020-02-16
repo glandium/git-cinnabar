@@ -53,7 +53,7 @@ struct hg_connection {
         command: *const c_char,
         args: args_slice,
     ),
-    finish: unsafe extern "C" fn(conn: *mut hg_connection) -> c_int,
+    finish: unsafe extern "C" fn(conn: *mut c_void) -> c_int,
     capabilities: Option<Box<Vec<(BString, CString)>>>,
     inner: hg_connection_inner,
 }
@@ -1231,24 +1231,92 @@ unsafe extern "C" fn http_capabilities_command(conn: *mut hg_connection, writer:
 }
 
 extern "C" {
-    #[allow(improper_ctypes)]
-    fn hg_connect_stdio(url: *const c_char, flags: c_int) -> *mut hg_connection;
+    fn hg_connect_stdio(url: *const c_char, flags: c_int) -> *mut hg_connection_stdio;
 
-    #[allow(improper_ctypes)]
-    fn hg_connect_http(url: *const c_char, flags: c_int) -> *mut hg_connection;
+    fn stdio_finish(conn: *mut c_void) -> c_int;
+
+    fn hg_connect_http(url: *const c_char, flags: c_int) -> *mut hg_connection_http;
+
+    fn http_finish(conn: *mut c_void) -> c_int;
+
+    fn fwrite_buffer(ptr: *const c_char, elt: usize, nmemb: usize, strbuf: *mut c_void);
 }
 
 #[no_mangle]
 unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_connection {
     let url_ = CStr::from_ptr(url).to_bytes();
-    let conn = if url_.starts_with(b"http://") || url_.starts_with(b"https://") {
-        hg_connect_http(url, flags)
+    let mut conn = if url_.starts_with(b"http://") || url_.starts_with(b"https://") {
+        let inner = hg_connect_http(url, flags);
+        if inner.is_null() {
+            return ptr::null_mut();
+        }
+
+        let mut conn = Box::new(hg_connection {
+            simple_command: http_simple_command,
+            changegroup_command: http_changegroup_command,
+            push_command: http_push_command,
+            finish: http_finish,
+            capabilities: None,
+            inner: hg_connection_inner { http: inner },
+        });
+
+        let mut caps = strbuf::new();
+        let mut writer = writer {
+            write: fwrite_buffer as _,
+            close: ptr::null(),
+            context: &mut caps as *mut _ as *mut c_void,
+        };
+        http_capabilities_command(&mut *conn, &mut writer);
+        /* Cf. comment above caps_request_write. If the bundle stream was
+         * sent to stdout, the writer was switched to fwrite. */
+        if writer.write != fwrite_buffer as _ {
+            writer_close(&mut writer);
+            http_finish(inner as *mut c_void);
+            return ptr::null_mut();
+        }
+        let caps = CString::new(caps.as_bytes().to_owned()).unwrap();
+        split_capabilities(&mut *conn, caps.as_ptr());
+
+        conn
     } else {
-        hg_connect_stdio(url, flags)
+        let inner = hg_connect_stdio(url, flags);
+        if inner.is_null() {
+            return ptr::null_mut();
+        }
+
+        /* Very old versions of the mercurial server (< 0.9) would ignore
+         * unknown commands, and didn't know the "capabilities" command we want
+         * to use to retrieve the server capabilities.
+         * So, we also emit a command that is supported by those old versions,
+         * and will see if we get a response for one or both commands.
+         * Note the "capabilities" command is not supported over the stdio
+         * protocol before mercurial 1.7, but we require features from at
+         * least mercurial 1.9 anyways. Server versions between 0.9 and 1.7
+         * will return an empty result for the "capabilities" command, as
+         * opposed to no result at all with older servers. */
+        stdio_send_capabilities_command(inner);
+        stdio_send_between_command(inner);
+
+        let mut conn = Box::new(hg_connection {
+            simple_command: stdio_simple_command,
+            changegroup_command: stdio_changegroup_command,
+            push_command: stdio_push_command,
+            finish: stdio_finish,
+            capabilities: None,
+            inner: hg_connection_inner { stdio: inner },
+        });
+
+        let mut buf = strbuf::new();
+        stdio_read_response(inner, &mut buf);
+        if buf.as_bytes() != b"\n" {
+            let b = CString::new(buf.as_bytes().to_owned()).unwrap();
+            split_capabilities(&mut *conn, b.as_ptr());
+            /* Now read the response for the "between" command. */
+            stdio_read_response(inner, &mut buf);
+        }
+
+        conn
     };
-    if conn.is_null() {
-        return conn;
-    }
 
     const REQUIRED_CAPS: [&str; 5] = [
         "getbundle",
@@ -1261,7 +1329,7 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
 
     for cap in &REQUIRED_CAPS {
         let cap_ = CString::new(*cap).unwrap();
-        if hg_get_capability(conn, cap_.as_ptr()).is_null() {
+        if hg_get_capability(&mut *conn, cap_.as_ptr()).is_null() {
             die!(
                 "Mercurial repository doesn't support the required \"{}\" capability.",
                 cap
@@ -1269,15 +1337,13 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
         }
     }
 
-    conn
+    Box::into_raw(conn)
 }
 
 #[no_mangle]
 unsafe extern "C" fn hg_finish_connect(conn: *mut hg_connection) -> c_int {
-    let conn = conn.as_mut().unwrap();
-    let code = (conn.finish)(conn);
-    conn.capabilities.take();
+    let conn = Box::from_raw(conn.as_mut().unwrap());
+    let code = (conn.finish)(conn.inner.http as *mut c_void);
     free(conn.inner.http as *mut c_void);
-    free(conn as *mut _ as *mut c_void);
     code
 }

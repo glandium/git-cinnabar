@@ -23,26 +23,7 @@ struct hg_connection_http {
 	int initial_request;
 } http;
 
-struct hg_connection {
-	void (*simple_command)(struct hg_connection *, struct strbuf *response,
-			       const char *command, struct args_slice args);
-
-	void (*changegroup_command)(struct hg_connection *, struct writer *out,
-				    const char *command, struct args_slice args);
-
-	void (*push_command)(struct hg_connection *, struct strbuf *response,
-			     FILE *in, off_t len, const char *command,
-			     struct args_slice args);
-
-	int (*finish)(struct hg_connection *);
-
-	void *capabilities;
-
-	union {
-		struct hg_connection_stdio *stdio;
-		struct hg_connection_http *http;
-	};
-};
+struct hg_connection;
 
 struct hg_connection *hg_connect(const char *url, int flags);
 

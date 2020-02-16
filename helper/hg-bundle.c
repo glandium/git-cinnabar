@@ -2,7 +2,6 @@
 #include "cinnabar-util.h"
 #include "http.h"
 #include "hg-bundle.h"
-#include "hg-connect-internal.h"
 #include <stdint.h>
 
 static size_t copy_chunk(int adjust, FILE *in, struct writer *out)

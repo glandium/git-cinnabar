@@ -1,6 +1,6 @@
 #include "git-compat-util.h"
 #include "cinnabar-util.h"
-#include "hg-connect-internal.h"
+#include "hg-connect.h"
 #include "hg-bundle.h"
 #include "credential.h"
 #include "http.h"
@@ -24,10 +24,6 @@ void prepare_pushkey_request(CURL *curl, struct curl_slist *headers,
 				    "Content-Type: application/mercurial-0.1");
 	headers = curl_slist_append(headers, "Expect:");
 }
-
-extern void http_simple_command(struct hg_connection *conn,
-				struct strbuf *response,
-				const char *command, struct args_slice args);
 
 struct changegroup_response_data {
 	CURL *curl;
@@ -69,10 +65,6 @@ void prepare_changegroup_request(CURL *curl, struct curl_slist *headers,
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, changegroup_write);
 }
 
-extern void http_changegroup_command(struct hg_connection *conn,
-                                     struct writer *out,
-                                     const char *command, struct args_slice args);
-
 struct push_request_info {
 	struct strbuf *response;
 	FILE *in;
@@ -95,10 +87,6 @@ void prepare_push_request(CURL *curl, struct curl_slist *headers,
 				    "Content-Type: application/mercurial-0.1");
 	headers = curl_slist_append(headers, "Expect:");
 }
-
-extern void http_push_command(struct hg_connection *conn,
-			      struct strbuf *response, FILE *in, off_t len,
-			      const char *command, struct args_slice args);
 
 /* The first request we send is a "capabilities" request. This sends to
  * the repo url with a query string "?cmd=capabilities". If the remote
@@ -138,48 +126,21 @@ void prepare_caps_request(CURL *curl, struct curl_slist *headers,
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, caps_request_write);
 }
 
-extern void http_capabilities_command(struct hg_connection *conn,
-				      struct writer *writer);
-
-static int http_finish(struct hg_connection *conn)
+int http_finish(struct hg_connection_http *conn)
 {
 	http_cleanup();
-	free(conn->http->url);
+	free(conn->url);
 	return 0;
 }
 
-struct hg_connection *hg_connect_http(const char *url, int flags)
+struct hg_connection_http *hg_connect_http(const char *url, int flags)
 {
-	struct hg_connection *conn = xmalloc(sizeof(*conn));
-	struct strbuf caps = STRBUF_INIT;
-	struct writer writer;
-	conn->capabilities = NULL;
-	conn->http = xmalloc(sizeof(*conn->http));
+	struct hg_connection_http *conn = xmalloc(sizeof(*conn));
 
-	conn->http->url = xstrdup(url);
-	conn->http->initial_request = 1;
+	conn->url = xstrdup(url);
+	conn->initial_request = 1;
 
-	http_init(NULL, conn->http->url, 0);
+	http_init(NULL, conn->url, 0);
 
-	writer.write = fwrite_buffer;
-	writer.close = NULL;
-	writer.context = &caps;
-	http_capabilities_command(conn, &writer);
-	/* Cf. comment above caps_request_write. If the bundle stream was
-	 * sent to stdout, the writer was switched to fwrite. */
-	if (writer.write != fwrite_buffer) {
-		writer_close(&writer);
-		free(conn->http->url);
-		free(conn->http);
-		free(conn);
-		return NULL;
-	}
-	split_capabilities(conn, caps.buf);
-	strbuf_release(&caps);
-
-	conn->simple_command = http_simple_command;
-	conn->changegroup_command = http_changegroup_command;
-	conn->push_command = http_push_command;
-	conn->finish = http_finish;
 	return conn;
 }
