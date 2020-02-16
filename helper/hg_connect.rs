@@ -8,7 +8,6 @@ use std::ffi::{c_void, CStr, CString};
 use std::fmt::{self, Display, Formatter};
 use std::fs::File;
 use std::io::Write;
-use std::marker::PhantomData;
 use std::mem;
 use std::os::raw::{c_char, c_int, c_long};
 #[cfg(unix)]
@@ -34,20 +33,45 @@ use sha1::{Digest, Sha1};
 #[repr(C)]
 struct hg_connection {
     simple_command:
-        unsafe fn(conn: &mut hg_connection, response: &mut strbuf, command: &str, args: args_slice),
+        unsafe fn(conn: &mut hg_connection, response: &mut strbuf, command: &str, args: HgArgs),
     changegroup_command:
-        unsafe fn(conn: &mut hg_connection, out: &mut writer, command: &str, args: args_slice),
+        unsafe fn(conn: &mut hg_connection, out: &mut writer, command: &str, args: HgArgs),
     push_command: unsafe fn(
         conn: &mut hg_connection,
         response: &mut strbuf,
         input: *mut FILE,
         len: off_t,
         command: &str,
-        args: args_slice,
+        args: HgArgs,
     ),
     finish: unsafe extern "C" fn(conn: *mut c_void) -> c_int,
     capabilities: Option<Vec<(BString, CString)>>,
     inner: hg_connection_inner,
+}
+
+struct OneHgArg<'a> {
+    name: &'a str,
+    value: &'a [u8],
+}
+
+struct HgArgs<'a> {
+    args: &'a [OneHgArg<'a>],
+    extra_args: Option<&'a [OneHgArg<'a>]>,
+}
+
+macro_rules! args {
+    ($($n:ident : $v:expr,)* $(*: $a:expr)?) => {
+        HgArgs {
+            args: args!(@args $($n:$v),*),
+            extra_args: args!(@extra $($a)?),
+        }
+    };
+    ($($n:ident : $v:expr),*) => { args!($($n:$v,)*) };
+    (@args $($n:ident : $v:expr),*) => {&[
+        $(OneHgArg { name: stringify!($n), value: $v }),*
+    ]};
+    (@extra) => { None };
+    (@extra $a:expr) => { Some($a) };
 }
 
 #[allow(non_camel_case_types)]
@@ -71,28 +95,6 @@ struct hg_connection_http {
 struct hg_connection_stdio {
     out: *mut FILE,
     is_remote: c_int,
-}
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
-struct args_slice<'a> {
-    data: *const *const c_void,
-    len: usize,
-    marker: PhantomData<&'a ()>,
-}
-
-impl<'a> args_slice<'a> {
-    fn new(args: &'a [*const c_void]) -> args_slice<'a> {
-        args_slice {
-            data: args.as_ptr(),
-            len: args.len(),
-            marker: PhantomData,
-        }
-    }
-
-    fn as_slice(&'a self) -> &'a [*const c_void] {
-        unsafe { std::slice::from_raw_parts(self.data, self.len) }
-    }
 }
 
 #[allow(non_camel_case_types)]
@@ -320,8 +322,8 @@ unsafe extern "C" fn hg_get_repo_state(
     if hg_get_capability(conn, cstr!("batch").as_ptr()).is_null() {
         // TODO: when not batching, check for coherency
         // (see the cinnabar.remote_helper python module)
-        (conn.simple_command)(conn, branchmap, "branchmap", args_slice::new(&[]));
-        (conn.simple_command)(conn, heads, "heads", args_slice::new(&[]));
+        (conn.simple_command)(conn, branchmap, "branchmap", args!());
+        (conn.simple_command)(conn, heads, "heads", args!());
         hg_listkeys(conn, bookmarks, cstr!("bookmarks").as_ptr());
     } else {
         let mut out = strbuf::new();
@@ -329,12 +331,10 @@ unsafe extern "C" fn hg_get_repo_state(
             conn,
             &mut out,
             "batch",
-            args_slice::new(&[
-                cstr!("cmds").as_ptr() as _,
-                cstr!("branchmap ;heads ;listkeys namespace=bookmarks").as_ptr() as _,
-                cstr!("*").as_ptr() as _,
-                ptr::null::<c_void>(),
-            ]),
+            args!(
+                cmds: b"branchmap ;heads ;listkeys namespace=bookmarks",
+                *: &[]
+            ),
         );
         if !out.buf.is_null() {
             let split = out.as_bytes().split(|&b| b == b';');
@@ -421,17 +421,15 @@ unsafe extern "C" fn hg_known(
 ) {
     let conn = conn.as_mut().unwrap();
     let nodes = nodes.as_ref().unwrap();
-    let nodes_str = CString::new(nodes.iter().join(" ")).unwrap();
+    let nodes_str = nodes.iter().join(" ");
     (conn.simple_command)(
         conn,
         result.as_mut().unwrap(),
         "known",
-        args_slice::new(&[
-            cstr!("nodes").as_ptr() as _,
-            nodes_str.as_ptr() as _,
-            cstr!("*").as_ptr() as _,
-            ptr::null::<c_void>(),
-        ]),
+        args!(
+            nodes: nodes_str.as_bytes(),
+            *: &[]
+        ),
     );
 }
 
@@ -446,7 +444,7 @@ unsafe extern "C" fn hg_listkeys(
         conn,
         result.as_mut().unwrap(),
         "listkeys",
-        args_slice::new(&[cstr!("namespace").as_ptr() as _, namespace as _]),
+        args!(namespace: CStr::from_ptr(namespace.as_ref().unwrap()).to_bytes()),
     );
 }
 
@@ -456,28 +454,14 @@ enum param_value<'a> {
     value(&'a [u8]),
 }
 
-unsafe fn prepare_command<F: FnMut(&str, param_value)>(mut command_add_param: F, args: args_slice) {
-    for item in args.as_slice().chunks(2) {
-        if let [name, value] = *item {
-            let name = CStr::from_ptr(name as *const c_char).to_str().unwrap();
-            if name == "*" {
-                let params = (value as *const Vec<(&str, BString)>).as_ref();
-                let num = param_value::size(params.map(|p| p.len()).unwrap_or(0));
-                command_add_param("*", num);
-                if let Some(params) = params {
-                    for (name, value) in params {
-                        let value = param_value::value(value.as_bytes());
-                        command_add_param(name, value);
-                    }
-                }
-            } else {
-                command_add_param(
-                    name,
-                    param_value::value(CStr::from_ptr(value as _).to_bytes()),
-                );
-            }
-        } else {
-            unreachable!();
+unsafe fn prepare_command<F: FnMut(&str, param_value)>(mut command_add_param: F, args: HgArgs) {
+    for OneHgArg { name, value } in args.args {
+        command_add_param(name, param_value::value(value));
+    }
+    if let Some(extra_args) = args.extra_args {
+        command_add_param("*", param_value::size(extra_args.len()));
+        for OneHgArg { name, value } in extra_args {
+            command_add_param(name, param_value::value(value));
         }
     }
 }
@@ -510,12 +494,11 @@ unsafe extern "C" fn hg_getbundle(
         close: libc::fflush as _,
         context: out as *mut _,
     };
-    (conn.changegroup_command)(
-        conn,
-        &mut writer,
-        "getbundle",
-        args_slice::new(&[cstr!("*").as_ptr() as _, &args as *const _ as _]),
-    );
+    let args = args
+        .iter()
+        .map(|(n, v)| OneHgArg { name: n, value: v })
+        .collect::<Vec<_>>();
+    (conn.changegroup_command)(conn, &mut writer, "getbundle", args!(*: &args[..]));
     writer_close(&mut writer);
 }
 
@@ -532,7 +515,7 @@ unsafe extern "C" fn hg_unbundle(
 ) {
     let conn = conn.as_mut().unwrap();
     let heads = heads.as_ref().unwrap();
-    let heads_str = CString::new(if heads.is_empty() {
+    let heads_str = if heads.is_empty() {
         hex::encode("force")
     } else if hg_get_capability(conn, cstr!("unbundlehash").as_ptr()).is_null() {
         heads.iter().join(" ")
@@ -542,8 +525,7 @@ unsafe extern "C" fn hg_unbundle(
             hash.input(h.raw());
         }
         format!("{} {}", hex::encode("hashed"), hash.result())
-    })
-    .unwrap();
+    };
 
     /* Neither the stdio nor the HTTP protocols can handle a stream for
      * push commands, so store the data as a temporary file. */
@@ -569,7 +551,7 @@ unsafe extern "C" fn hg_unbundle(
         fh,
         len.try_into().unwrap(),
         "unbundle",
-        args_slice::new(&[cstr!("heads").as_ptr() as _, heads_str.as_ptr() as _]),
+        args!(heads: heads_str.as_bytes()),
     );
     libc::fclose(fh);
 }
@@ -599,16 +581,12 @@ unsafe extern "C" fn hg_pushkey(
         conn,
         response.as_mut().unwrap(),
         "pushkey",
-        args_slice::new(&[
-            cstr!("namespace").as_ptr() as _,
-            namespace as _,
-            cstr!("key").as_ptr() as _,
-            key as _,
-            cstr!("old").as_ptr() as _,
-            old as _,
-            cstr!("new").as_ptr() as _,
-            new as _,
-        ]),
+        args!(
+            namespace: CStr::from_ptr(namespace.as_ref().unwrap()).to_bytes(),
+            key: CStr::from_ptr(key.as_ref().unwrap()).to_bytes(),
+            old: CStr::from_ptr(old.as_ref().unwrap()).to_bytes(),
+            new: CStr::from_ptr(new.as_ref().unwrap()).to_bytes(),
+        ),
     );
 }
 
@@ -619,30 +597,20 @@ unsafe extern "C" fn hg_lookup(conn: *mut hg_connection, result: *mut strbuf, ke
         conn,
         result.as_mut().unwrap(),
         "lookup",
-        args_slice::new(&[cstr!("key").as_ptr() as _, key as _]),
+        args!(key: CStr::from_ptr(key.as_ref().unwrap()).to_bytes()),
     );
 }
 
 #[no_mangle]
 unsafe extern "C" fn hg_clonebundles(conn: *mut hg_connection, result: *mut strbuf) {
     let conn = conn.as_mut().unwrap();
-    (conn.simple_command)(
-        conn,
-        result.as_mut().unwrap(),
-        "clonebundles",
-        args_slice::new(&[]),
-    );
+    (conn.simple_command)(conn, result.as_mut().unwrap(), "clonebundles", args!());
 }
 
 #[no_mangle]
 unsafe extern "C" fn hg_cinnabarclone(conn: *mut hg_connection, result: *mut strbuf) {
     let conn = conn.as_mut().unwrap();
-    (conn.simple_command)(
-        conn,
-        result.as_mut().unwrap(),
-        "cinnabarclone",
-        args_slice::new(&[]),
-    );
+    (conn.simple_command)(conn, result.as_mut().unwrap(), "cinnabarclone", args!());
 }
 
 /* The mercurial "stdio" protocol is used for both local repositories and
@@ -701,7 +669,7 @@ extern "C" {
     fn copy_bundle_to_strbuf(intput: *mut FILE, out: *mut strbuf);
 }
 
-unsafe fn stdio_send_command(conn: &mut hg_connection_stdio, command: &str, args: args_slice) {
+unsafe fn stdio_send_command(conn: &mut hg_connection_stdio, command: &str, args: HgArgs) {
     let mut data = BString::from(Vec::<u8>::new());
     data.extend(command.as_bytes());
     data.push(b'\n');
@@ -716,7 +684,7 @@ unsafe fn stdio_simple_command(
     conn: &mut hg_connection,
     response: &mut strbuf,
     command: &str,
-    args: args_slice,
+    args: HgArgs,
 ) {
     let stdio = conn.inner.stdio.as_mut().unwrap();
     stdio_send_command(stdio, command, args);
@@ -727,7 +695,7 @@ unsafe fn stdio_changegroup_command(
     conn: &mut hg_connection,
     writer: &mut writer,
     command: &str,
-    args: args_slice,
+    args: HgArgs,
 ) {
     let stdio = conn.inner.stdio.as_mut().unwrap();
     stdio_send_command(stdio, command, args);
@@ -748,7 +716,7 @@ unsafe fn stdio_push_command(
     input: *mut FILE,
     len: off_t,
     command: &str,
-    args: args_slice,
+    args: HgArgs,
 ) {
     let stdio = conn.inner.stdio.as_mut().unwrap();
     stdio_send_command(stdio, command, args);
@@ -799,12 +767,12 @@ unsafe fn stdio_push_command(
 #[no_mangle]
 unsafe extern "C" fn stdio_send_empty_command(conn: *mut hg_connection_stdio) {
     let conn = conn.as_mut().unwrap();
-    stdio_send_command(conn, "", args_slice::new(&[]));
+    stdio_send_command(conn, "", args!());
 }
 
 unsafe fn stdio_send_capabilities_command(conn: *mut hg_connection_stdio) {
     let conn = conn.as_mut().unwrap();
-    stdio_send_command(conn, "capabilities", args_slice::new(&[]));
+    stdio_send_command(conn, "capabilities", args!());
 }
 
 unsafe fn stdio_send_between_command(conn: *mut hg_connection_stdio) {
@@ -812,13 +780,9 @@ unsafe fn stdio_send_between_command(conn: *mut hg_connection_stdio) {
     stdio_send_command(
         conn,
         "between",
-        args_slice::new(&[
-            cstr!("pairs").as_ptr() as _,
-            cstr!(
-                "0000000000000000000000000000000000000000-0000000000000000000000000000000000000000"
-            )
-            .as_ptr() as _,
-        ]),
+        args!(
+            pairs: b"0000000000000000000000000000000000000000-0000000000000000000000000000000000000000"
+        ),
     );
 }
 
@@ -1038,7 +1002,7 @@ unsafe fn http_command(
     conn: &mut hg_connection,
     prepare_request_cb: Box<dyn FnMut(*mut CURL, *mut curl_slist)>,
     command: &str,
-    args: args_slice,
+    args: HgArgs,
 ) {
     let mut request_data = command_request_data {
         conn,
@@ -1081,7 +1045,7 @@ unsafe fn http_simple_command(
     conn: &mut hg_connection,
     response: &mut strbuf,
     command: &str,
-    args: args_slice,
+    args: HgArgs,
 ) {
     let response = response as *mut strbuf;
     if command == "pushkey" {
@@ -1114,7 +1078,7 @@ unsafe fn http_changegroup_command(
     conn: &mut hg_connection,
     writer: &mut writer,
     command: &str,
-    args: args_slice,
+    args: HgArgs,
 ) {
     let mut response_data = changegroup_response_data {
         curl: ptr::null_mut(),
@@ -1151,7 +1115,7 @@ unsafe fn http_push_command(
     input: *mut FILE,
     len: off_t,
     command: &str,
-    args: args_slice,
+    args: HgArgs,
 ) {
     let mut http_response = strbuf::new();
     let mut info = push_request_info {
@@ -1199,7 +1163,7 @@ unsafe fn http_capabilities_command(conn: *mut hg_connection, writer: *mut write
         conn.as_mut().unwrap(),
         Box::new(move |curl, headers| prepare_caps_request(curl, headers, writer)),
         "capabilities",
-        args_slice::new(&[]),
+        args!(),
     );
 }
 
