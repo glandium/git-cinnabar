@@ -45,7 +45,7 @@ struct hg_connection {
         args: HgArgs,
     ),
     finish: unsafe extern "C" fn(conn: *mut c_void) -> c_int,
-    capabilities: Option<Vec<(BString, CString)>>,
+    capabilities: Vec<(BString, CString)>,
     inner: hg_connection_inner,
 }
 
@@ -255,7 +255,7 @@ macro_rules! die {
 
 /* Split the list of capabilities a mercurial server returned. Also url-decode
  * the bundle2 value (TODO: in place). */
-fn split_capabilities(conn: &mut hg_connection, buf: &[u8]) {
+fn split_capabilities(buf: &[u8]) -> Vec<(BString, CString)> {
     let mut capabilities = Vec::new();
     for item in buf.split(|&b| b == b' ') {
         let (name, value) = match item.find_byte(b'=') {
@@ -274,7 +274,7 @@ fn split_capabilities(conn: &mut hg_connection, buf: &[u8]) {
             },
         ));
     }
-    conn.capabilities.replace(capabilities);
+    capabilities
 }
 
 #[no_mangle]
@@ -284,11 +284,9 @@ unsafe extern "C" fn hg_get_capability(
 ) -> *const c_char {
     let conn = conn.as_mut().unwrap();
     let needle = CStr::from_ptr(name).to_bytes();
-    if let Some(capabilities) = conn.capabilities.as_ref() {
-        for (name, value) in capabilities.iter() {
-            if name == needle {
-                return value.as_ptr();
-            }
+    for (name, value) in conn.capabilities.iter() {
+        if name == needle {
+            return value.as_ptr();
         }
     }
     ptr::null()
@@ -1175,7 +1173,7 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
             changegroup_command: http_changegroup_command,
             push_command: http_push_command,
             finish: http_finish,
-            capabilities: None,
+            capabilities: Vec::new(),
             inner: hg_connection_inner { http: inner },
         });
 
@@ -1193,7 +1191,10 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
             http_finish(inner as *mut c_void);
             return ptr::null_mut();
         }
-        split_capabilities(&mut conn, caps.as_bytes());
+        mem::swap(
+            &mut conn.capabilities,
+            &mut split_capabilities(caps.as_bytes()),
+        );
 
         conn
     } else {
@@ -1227,14 +1228,17 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
             changegroup_command: stdio_changegroup_command,
             push_command: stdio_push_command,
             finish: stdio_finish,
-            capabilities: None,
+            capabilities: Vec::new(),
             inner: hg_connection_inner { stdio: inner },
         });
 
         let mut buf = strbuf::new();
         stdio_read_response(inner, &mut buf);
         if buf.as_bytes() != b"\n" {
-            split_capabilities(&mut conn, buf.as_bytes());
+            mem::swap(
+                &mut conn.capabilities,
+                &mut split_capabilities(buf.as_bytes()),
+            );
             /* Now read the response for the "between" command. */
             stdio_read_response(inner, &mut buf);
         }
