@@ -54,7 +54,7 @@ struct hg_connection {
         args: args_slice,
     ),
     finish: unsafe extern "C" fn(conn: *mut c_void) -> c_int,
-    capabilities: Option<Box<Vec<(BString, CString)>>>,
+    capabilities: Option<Vec<(BString, CString)>>,
     inner: hg_connection_inner,
 }
 
@@ -261,10 +261,7 @@ macro_rules! die {
 
 /* Split the list of capabilities a mercurial server returned. Also url-decode
  * the bundle2 value (TODO: in place). */
-#[no_mangle]
-unsafe extern "C" fn split_capabilities(conn: *mut hg_connection, buf: *const c_char) {
-    let conn = conn.as_mut().unwrap();
-    let buf = CStr::from_ptr(buf).to_bytes();
+fn split_capabilities(conn: &mut hg_connection, buf: &[u8]) {
     let mut capabilities = Vec::new();
     for item in buf.split(|&b| b == b' ') {
         let (name, value) = match item.find_byte(b'=') {
@@ -283,7 +280,7 @@ unsafe extern "C" fn split_capabilities(conn: *mut hg_connection, buf: *const c_
             },
         ));
     }
-    conn.capabilities.replace(Box::new(capabilities));
+    conn.capabilities.replace(capabilities);
 }
 
 #[no_mangle]
@@ -1274,8 +1271,7 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
             http_finish(inner as *mut c_void);
             return ptr::null_mut();
         }
-        let caps = CString::new(caps.as_bytes().to_owned()).unwrap();
-        split_capabilities(&mut *conn, caps.as_ptr());
+        split_capabilities(&mut conn, caps.as_bytes());
 
         conn
     } else {
@@ -1309,8 +1305,7 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
         let mut buf = strbuf::new();
         stdio_read_response(inner, &mut buf);
         if buf.as_bytes() != b"\n" {
-            let b = CString::new(buf.as_bytes().to_owned()).unwrap();
-            split_capabilities(&mut *conn, b.as_ptr());
+            split_capabilities(&mut conn, buf.as_bytes());
             /* Now read the response for the "between" command. */
             stdio_read_response(inner, &mut buf);
         }
