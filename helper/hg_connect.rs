@@ -1032,21 +1032,19 @@ unsafe fn http_simple_command(
     args: HgArgs,
 ) {
     let response = response as *mut strbuf;
-    if command == "pushkey" {
-        http_command(
-            conn,
-            Box::new(move |curl, headers| prepare_pushkey_request(curl, headers, response)),
-            command,
-            args,
-        )
-    } else {
-        http_command(
-            conn,
-            Box::new(move |curl, headers| prepare_simple_request(curl, headers, response)),
-            command,
-            args,
-        )
-    }
+    let is_pushkey = command == "pushkey";
+    http_command(
+        conn,
+        Box::new(move |curl, headers| {
+            if is_pushkey {
+                prepare_pushkey_request(curl, headers, response)
+            } else {
+                prepare_simple_request(curl, headers, response)
+            }
+        }),
+        command,
+        args,
+    )
 }
 
 #[allow(non_camel_case_types)]
