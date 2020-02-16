@@ -33,24 +33,16 @@ use sha1::{Digest, Sha1};
 #[allow(non_camel_case_types)]
 #[repr(C)]
 struct hg_connection {
-    simple_command: unsafe fn(
-        conn: *mut hg_connection,
-        response: *mut strbuf,
-        command: *const c_char,
-        args: args_slice,
-    ),
-    changegroup_command: unsafe fn(
-        conn: *mut hg_connection,
-        out: *mut writer,
-        command: *const c_char,
-        args: args_slice,
-    ),
+    simple_command:
+        unsafe fn(conn: &mut hg_connection, response: &mut strbuf, command: &str, args: args_slice),
+    changegroup_command:
+        unsafe fn(conn: &mut hg_connection, out: &mut writer, command: &str, args: args_slice),
     push_command: unsafe fn(
-        conn: *mut hg_connection,
-        response: *mut strbuf,
+        conn: &mut hg_connection,
+        response: &mut strbuf,
         input: *mut FILE,
         len: off_t,
-        command: *const c_char,
+        command: &str,
         args: args_slice,
     ),
     finish: unsafe extern "C" fn(conn: *mut c_void) -> c_int,
@@ -328,20 +320,15 @@ unsafe extern "C" fn hg_get_repo_state(
     if hg_get_capability(conn, cstr!("batch").as_ptr()).is_null() {
         // TODO: when not batching, check for coherency
         // (see the cinnabar.remote_helper python module)
-        (conn.simple_command)(
-            conn,
-            branchmap,
-            cstr!("branchmap").as_ptr(),
-            args_slice::new(&[]),
-        );
-        (conn.simple_command)(conn, heads, cstr!("heads").as_ptr(), args_slice::new(&[]));
+        (conn.simple_command)(conn, branchmap, "branchmap", args_slice::new(&[]));
+        (conn.simple_command)(conn, heads, "heads", args_slice::new(&[]));
         hg_listkeys(conn, bookmarks, cstr!("bookmarks").as_ptr());
     } else {
         let mut out = strbuf::new();
         (conn.simple_command)(
             conn,
             &mut out,
-            cstr!("batch").as_ptr(),
+            "batch",
             args_slice::new(&[
                 cstr!("cmds").as_ptr() as _,
                 cstr!("branchmap ;heads ;listkeys namespace=bookmarks").as_ptr() as _,
@@ -437,8 +424,8 @@ unsafe extern "C" fn hg_known(
     let nodes_str = CString::new(nodes.iter().join(" ")).unwrap();
     (conn.simple_command)(
         conn,
-        result,
-        cstr!("known").as_ptr(),
+        result.as_mut().unwrap(),
+        "known",
         args_slice::new(&[
             cstr!("nodes").as_ptr() as _,
             nodes_str.as_ptr() as _,
@@ -457,8 +444,8 @@ unsafe extern "C" fn hg_listkeys(
     let conn = conn.as_mut().unwrap();
     (conn.simple_command)(
         conn,
-        result,
-        cstr!("listkeys").as_ptr(),
+        result.as_mut().unwrap(),
+        "listkeys",
         args_slice::new(&[cstr!("namespace").as_ptr() as _, namespace as _]),
     );
 }
@@ -526,7 +513,7 @@ unsafe extern "C" fn hg_getbundle(
     (conn.changegroup_command)(
         conn,
         &mut writer,
-        cstr!("getbundle").as_ptr(),
+        "getbundle",
         args_slice::new(&[cstr!("*").as_ptr() as _, &args as *const _ as _]),
     );
     writer_close(&mut writer);
@@ -578,10 +565,10 @@ unsafe extern "C" fn hg_unbundle(
     let fh = into_raw_fd(file, "r");
     (conn.push_command)(
         conn,
-        response,
+        response.as_mut().unwrap(),
         fh,
         len.try_into().unwrap(),
-        cstr!("unbundle").as_ptr(),
+        "unbundle",
         args_slice::new(&[cstr!("heads").as_ptr() as _, heads_str.as_ptr() as _]),
     );
     libc::fclose(fh);
@@ -610,8 +597,8 @@ unsafe extern "C" fn hg_pushkey(
     //TODO: handle the response being a mix of return code and output
     (conn.simple_command)(
         conn,
-        response,
-        cstr!("pushkey").as_ptr(),
+        response.as_mut().unwrap(),
+        "pushkey",
         args_slice::new(&[
             cstr!("namespace").as_ptr() as _,
             namespace as _,
@@ -630,8 +617,8 @@ unsafe extern "C" fn hg_lookup(conn: *mut hg_connection, result: *mut strbuf, ke
     let conn = conn.as_mut().unwrap();
     (conn.simple_command)(
         conn,
-        result,
-        cstr!("lookup").as_ptr(),
+        result.as_mut().unwrap(),
+        "lookup",
         args_slice::new(&[cstr!("key").as_ptr() as _, key as _]),
     );
 }
@@ -641,8 +628,8 @@ unsafe extern "C" fn hg_clonebundles(conn: *mut hg_connection, result: *mut strb
     let conn = conn.as_mut().unwrap();
     (conn.simple_command)(
         conn,
-        result,
-        cstr!("clonebundles").as_ptr(),
+        result.as_mut().unwrap(),
+        "clonebundles",
         args_slice::new(&[]),
     );
 }
@@ -652,8 +639,8 @@ unsafe extern "C" fn hg_cinnabarclone(conn: *mut hg_connection, result: *mut str
     let conn = conn.as_mut().unwrap();
     (conn.simple_command)(
         conn,
-        result,
-        cstr!("cinnabarclone").as_ptr(),
+        result.as_mut().unwrap(),
+        "cinnabarclone",
         args_slice::new(&[]),
     );
 }
@@ -726,26 +713,24 @@ unsafe fn stdio_send_command(conn: &mut hg_connection_stdio, command: &str, args
 }
 
 unsafe fn stdio_simple_command(
-    conn: *mut hg_connection,
-    response: *mut strbuf,
-    command: *const c_char,
+    conn: &mut hg_connection,
+    response: &mut strbuf,
+    command: &str,
     args: args_slice,
 ) {
-    let conn = conn.as_mut().unwrap();
     let stdio = conn.inner.stdio.as_mut().unwrap();
-    stdio_send_command(stdio, CStr::from_ptr(command).to_str().unwrap(), args);
+    stdio_send_command(stdio, command, args);
     stdio_read_response(stdio, response);
 }
 
 unsafe fn stdio_changegroup_command(
-    conn: *mut hg_connection,
-    writer: *mut writer,
-    command: *const c_char,
+    conn: &mut hg_connection,
+    writer: &mut writer,
+    command: &str,
     args: args_slice,
 ) {
-    let conn = conn.as_mut().unwrap();
     let stdio = conn.inner.stdio.as_mut().unwrap();
-    stdio_send_command(stdio, CStr::from_ptr(command).to_str().unwrap(), args);
+    stdio_send_command(stdio, command, args);
 
     /* We're going to receive a stream, but we don't know how big it is
      * going to be in advance, so we have to read it according to its
@@ -758,16 +743,15 @@ unsafe fn stdio_changegroup_command(
 }
 
 unsafe fn stdio_push_command(
-    conn: *mut hg_connection,
-    response: *mut strbuf,
+    conn: &mut hg_connection,
+    response: &mut strbuf,
     input: *mut FILE,
     len: off_t,
-    command: *const c_char,
+    command: &str,
     args: args_slice,
 ) {
-    let conn = conn.as_mut().unwrap();
     let stdio = conn.inner.stdio.as_mut().unwrap();
-    stdio_send_command(stdio, CStr::from_ptr(command).to_str().unwrap(), args);
+    stdio_send_command(stdio, command, args);
     /* The server normally sends an empty response before reading the data
      * it's sent if not, it's an error (typically, the remote will
      * complain here if there was a lost push race). */
@@ -1094,23 +1078,24 @@ extern "C" {
 }
 
 unsafe fn http_simple_command(
-    conn: *mut hg_connection,
-    response: *mut strbuf,
-    command: *const c_char,
+    conn: &mut hg_connection,
+    response: &mut strbuf,
+    command: &str,
     args: args_slice,
 ) {
-    if CStr::from_ptr(command).to_bytes() == b"pushkey" {
+    let response = response as *mut strbuf;
+    if command == "pushkey" {
         http_command(
-            conn.as_mut().unwrap(),
+            conn,
             Box::new(move |curl, headers| prepare_pushkey_request(curl, headers, response)),
-            CStr::from_ptr(command).to_str().unwrap(),
+            command,
             args,
         )
     } else {
         http_command(
-            conn.as_mut().unwrap(),
+            conn,
             Box::new(move |curl, headers| prepare_simple_request(curl, headers, response)),
-            CStr::from_ptr(command).to_str().unwrap(),
+            command,
             args,
         )
     }
@@ -1126,9 +1111,9 @@ struct changegroup_response_data {
 /* The changegroup, changegroupsubset and getbundle commands return a raw
  *  * zlib stream when called over HTTP. */
 unsafe fn http_changegroup_command(
-    conn: *mut hg_connection,
-    writer: *mut writer,
-    command: *const c_char,
+    conn: &mut hg_connection,
+    writer: &mut writer,
+    command: &str,
     args: args_slice,
 ) {
     let mut response_data = changegroup_response_data {
@@ -1137,11 +1122,11 @@ unsafe fn http_changegroup_command(
     };
 
     http_command(
-        conn.as_mut().unwrap(),
+        conn,
         Box::new(move |curl, headers| {
             prepare_changegroup_request(curl, headers, &mut response_data)
         }),
-        CStr::from_ptr(command).to_str().unwrap(),
+        command,
         args,
     );
 }
@@ -1161,11 +1146,11 @@ extern "C" {
 }
 
 unsafe fn http_push_command(
-    conn: *mut hg_connection,
-    response: *mut strbuf,
+    conn: &mut hg_connection,
+    response: &mut strbuf,
     input: *mut FILE,
     len: off_t,
-    command: *const c_char,
+    command: &str,
     args: args_slice,
 ) {
     let mut http_response = strbuf::new();
@@ -1176,15 +1161,15 @@ unsafe fn http_push_command(
     };
     //TODO: handle errors.
     http_command(
-        conn.as_mut().unwrap(),
+        conn,
         Box::new(move |curl, headers| prepare_push_request(curl, headers, &mut info)),
-        CStr::from_ptr(command).to_str().unwrap(),
+        command,
         args,
     );
 
     let http_response = http_response.as_bytes();
     if http_response.get(..4) == Some(b"HG20") {
-        response.as_mut().unwrap().extend_from_slice(http_response);
+        response.extend_from_slice(http_response);
     } else {
         let mut writer = writer {
             write: libc::fwrite as _,
@@ -1193,7 +1178,7 @@ unsafe fn http_push_command(
         };
         match &http_response.splitn_str(2, "\n").collect::<Vec<_>>()[..] {
             [stdout_, stderr_] => {
-                response.as_mut().unwrap().extend_from_slice(stdout_);
+                response.extend_from_slice(stdout_);
                 prefix_writer(&mut writer, cstr!("remote: ").as_ptr());
                 write_to(
                     stderr_.as_ptr() as *const c_char,
