@@ -61,14 +61,14 @@ struct hg_connection {
 #[allow(non_camel_case_types)]
 #[repr(C)]
 union hg_connection_inner {
-    http: hg_connection_inner_http,
-    stdio: hg_connection_inner_stdio,
+    http: hg_connection_http,
+    stdio: hg_connection_stdio,
 }
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
 #[derive(Copy, Clone)]
-struct hg_connection_inner_http {
+struct hg_connection_http {
     url: *const c_char,
     initial_request: c_int,
 }
@@ -76,7 +76,7 @@ struct hg_connection_inner_http {
 #[allow(non_camel_case_types)]
 #[repr(C)]
 #[derive(Copy, Clone)]
-struct hg_connection_inner_stdio {
+struct hg_connection_stdio {
     out: *mut FILE,
     is_remote: c_int,
 }
@@ -700,10 +700,10 @@ fn stdio_command_add_param(data: &mut BString, name: &str, value: param_value) {
 
 extern "C" {
     #[allow(improper_ctypes)]
-    fn stdio_write(conn: *mut hg_connection, buf: *const u8, len: usize);
+    fn stdio_write(conn: *mut hg_connection_stdio, buf: *const u8, len: usize);
 
     #[allow(improper_ctypes)]
-    fn stdio_read_response(conn: *mut hg_connection, response: *mut strbuf);
+    fn stdio_read_response(conn: *mut hg_connection_stdio, response: *mut strbuf);
 
     fn bufferize_writer(writer: *mut writer);
 
@@ -712,7 +712,7 @@ extern "C" {
     fn copy_bundle_to_strbuf(intput: *mut FILE, out: *mut strbuf);
 }
 
-unsafe fn stdio_send_command(conn: &mut hg_connection, command: &str, args: args_slice) {
+unsafe fn stdio_send_command(conn: &mut hg_connection_stdio, command: &str, args: args_slice) {
     let mut data = BString::from(Vec::<u8>::new());
     data.extend(command.as_bytes());
     data.push(b'\n');
@@ -731,8 +731,12 @@ unsafe extern "C" fn stdio_simple_command(
     args: args_slice,
 ) {
     let conn = conn.as_mut().unwrap();
-    stdio_send_command(conn, CStr::from_ptr(command).to_str().unwrap(), args);
-    stdio_read_response(conn, response);
+    stdio_send_command(
+        &mut conn.inner.stdio,
+        CStr::from_ptr(command).to_str().unwrap(),
+        args,
+    );
+    stdio_read_response(&mut conn.inner.stdio, response);
 }
 
 #[no_mangle]
@@ -743,7 +747,11 @@ unsafe extern "C" fn stdio_changegroup_command(
     args: args_slice,
 ) {
     let conn = conn.as_mut().unwrap();
-    stdio_send_command(conn, CStr::from_ptr(command).to_str().unwrap(), args);
+    stdio_send_command(
+        &mut conn.inner.stdio,
+        CStr::from_ptr(command).to_str().unwrap(),
+        args,
+    );
 
     /* We're going to receive a stream, but we don't know how big it is
      * going to be in advance, so we have to read it according to its
@@ -765,17 +773,25 @@ unsafe extern "C" fn stdio_push_command(
     args: args_slice,
 ) {
     let conn = conn.as_mut().unwrap();
-    stdio_send_command(conn, CStr::from_ptr(command).to_str().unwrap(), args);
+    stdio_send_command(
+        &mut conn.inner.stdio,
+        CStr::from_ptr(command).to_str().unwrap(),
+        args,
+    );
     /* The server normally sends an empty response before reading the data
      * it's sent if not, it's an error (typically, the remote will
      * complain here if there was a lost push race). */
     //TODO: handle that error.
     let mut header = strbuf::new();
-    stdio_read_response(conn, &mut header);
+    stdio_read_response(&mut conn.inner.stdio, &mut header);
 
     //TODO: chunk in smaller pieces.
     header.extend_from_slice(format!("{}\n", len).as_bytes());
-    stdio_write(conn, header.as_bytes().as_ptr(), header.as_bytes().len());
+    stdio_write(
+        &mut conn.inner.stdio,
+        header.as_bytes().as_ptr(),
+        header.as_bytes().len(),
+    );
     drop(header);
 
     let is_bundle2 = if len > 4 {
@@ -794,36 +810,36 @@ unsafe extern "C" fn stdio_push_command(
         let mut read = cmp::min(buf_len, len.try_into().unwrap_or(buf_len));
         read = libc::fread(buf.as_mut_ptr() as *mut c_void, 1, read, input);
         len -= read as off_t;
-        stdio_write(conn, buf.as_ptr(), read);
+        stdio_write(&mut conn.inner.stdio, buf.as_ptr(), read);
     }
 
-    stdio_write(conn, "0\n".as_ptr(), 2);
+    stdio_write(&mut conn.inner.stdio, "0\n".as_ptr(), 2);
     if is_bundle2 {
         copy_bundle_to_strbuf(conn.inner.stdio.out, response);
     } else {
         /* There are two responses, one for output, one for actual response. */
         //TODO: actually handle output here
         let mut header = strbuf::new();
-        stdio_read_response(conn, &mut header);
+        stdio_read_response(&mut conn.inner.stdio, &mut header);
         drop(header);
-        stdio_read_response(conn, response);
+        stdio_read_response(&mut conn.inner.stdio, response);
     }
 }
 
 #[no_mangle]
-unsafe extern "C" fn stdio_send_empty_command(conn: *mut hg_connection) {
+unsafe extern "C" fn stdio_send_empty_command(conn: *mut hg_connection_stdio) {
     let conn = conn.as_mut().unwrap();
     stdio_send_command(conn, "", args_slice::new(&[]));
 }
 
 #[no_mangle]
-unsafe extern "C" fn stdio_send_capabilities_command(conn: *mut hg_connection) {
+unsafe extern "C" fn stdio_send_capabilities_command(conn: *mut hg_connection_stdio) {
     let conn = conn.as_mut().unwrap();
     stdio_send_command(conn, "capabilities", args_slice::new(&[]));
 }
 
 #[no_mangle]
-unsafe extern "C" fn stdio_send_between_command(conn: *mut hg_connection) {
+unsafe extern "C" fn stdio_send_between_command(conn: *mut hg_connection_stdio) {
     let conn = conn.as_mut().unwrap();
     stdio_send_command(
         conn,
@@ -854,7 +870,7 @@ struct http_request_info {
 
 extern "C" {
     #[allow(improper_ctypes)]
-    fn http_command_error(conn: *mut hg_connection) -> !;
+    fn http_command_error(conn: *mut hg_connection_http) -> !;
 
     fn free(ptr: *mut c_void);
 
@@ -1068,7 +1084,7 @@ unsafe fn http_command(
         args,
     );
     if http_request_reauth(&mut request_data) != HTTP_OK {
-        http_command_error(conn);
+        http_command_error(&mut conn.inner.http);
     }
 }
 

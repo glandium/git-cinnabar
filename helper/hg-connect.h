@@ -11,6 +11,18 @@ struct args_slice {
 	size_t len;
 };
 
+struct hg_connection_stdio {
+	FILE *out;
+	int is_remote;
+	struct child_process proc;
+	pthread_t thread;
+} stdio;
+
+struct hg_connection_http {
+	char *url;
+	int initial_request;
+} http;
+
 struct hg_connection {
 	void (*simple_command)(struct hg_connection *, struct strbuf *response,
 			       const char *command, struct args_slice args);
@@ -27,16 +39,8 @@ struct hg_connection {
 	void *capabilities;
 
 	union {
-		struct {
-			FILE *out;
-			int is_remote;
-			struct child_process proc;
-			pthread_t thread;
-		} stdio;
-		struct {
-			char *url;
-			int initial_request;
-		} http;
+		struct hg_connection_stdio stdio;
+		struct hg_connection_http http;
 	};
 };
 

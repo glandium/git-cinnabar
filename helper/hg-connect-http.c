@@ -25,8 +25,8 @@ void prepare_pushkey_request(CURL *curl, struct curl_slist *headers,
 	headers = curl_slist_append(headers, "Expect:");
 }
 
-void http_command_error(struct hg_connection *conn) {
-	die("unable to access '%s': %s", conn->http.url, curl_errorstr);
+void http_command_error(struct hg_connection_http *conn) {
+	die("unable to access '%s': %s", conn->url, curl_errorstr);
 }
 
 extern void http_simple_command(struct hg_connection *conn,

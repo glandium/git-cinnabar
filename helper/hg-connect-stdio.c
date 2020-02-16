@@ -26,22 +26,22 @@ static void maybe_sq_quote_buf(struct strbuf *buf, const char *src)
 		strbuf_addstr(buf, src);
 }
 
-void stdio_write(struct hg_connection *conn, const uint8_t *buf, size_t len) {
-	xwrite(conn->stdio.proc.in, buf, len);
+void stdio_write(struct hg_connection_stdio *conn, const uint8_t *buf, size_t len) {
+	xwrite(conn->proc.in, buf, len);
 }
 
-void stdio_read_response(struct hg_connection *conn,
+void stdio_read_response(struct hg_connection_stdio *conn,
 			 struct strbuf *response)
 {
 	struct strbuf length_str = STRBUF_INIT;
 	size_t length;
 
 	//TODO: Check for errors, etc.
-	strbuf_getline_lf(&length_str, conn->stdio.out);
+	strbuf_getline_lf(&length_str, conn->out);
 	length = strtol(length_str.buf, NULL, 10);
 	strbuf_release(&length_str);
 
-	strbuf_fread(response, length, conn->stdio.out);
+	strbuf_fread(response, length, conn->out);
 }
 
 extern void stdio_simple_command(struct hg_connection *conn,
@@ -56,13 +56,13 @@ extern void stdio_push_command(struct hg_connection *conn,
 			       struct strbuf *response, FILE *in, off_t len,
 			       const char *command, struct args_slice args);
 
-extern void stdio_send_empty_command(struct hg_connection *conn);
-extern void stdio_send_capabilities_command(struct hg_connection *conn);
-extern void stdio_send_between_command(struct hg_connection *conn);
+extern void stdio_send_empty_command(struct hg_connection_stdio *conn);
+extern void stdio_send_capabilities_command(struct hg_connection_stdio *conn);
+extern void stdio_send_between_command(struct hg_connection_stdio *conn);
 
 static int stdio_finish(struct hg_connection *conn)
 {
-	stdio_send_empty_command(conn);
+	stdio_send_empty_command(&conn->stdio);
 	close(conn->stdio.proc.in);
 	fclose(conn->stdio.out);
 	pthread_join(conn->stdio.thread, NULL);
@@ -71,7 +71,7 @@ static int stdio_finish(struct hg_connection *conn)
 
 void *prefix_remote_stderr(void *context)
 {
-	struct hg_connection *conn = context;
+	struct hg_connection_stdio *conn = context;
 	struct writer writer;
 
 	writer.write = (write_callback)fwrite;
@@ -81,7 +81,7 @@ void *prefix_remote_stderr(void *context)
 
 	for (;;) {
 		char buf[4096];
-		ssize_t len = xread(conn->stdio.proc.err, buf, 4096);
+		ssize_t len = xread(conn->proc.err, buf, 4096);
 		if (len <= 0)
 			break;
 		write_to(buf, 1, len, &writer);
@@ -163,7 +163,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	start_command(proc);
 	conn->stdio.is_remote = (protocol == PROTO_SSH);
 	conn->stdio.out = xfdopen(proc->out, "r");
-	pthread_create(&conn->stdio.thread, NULL, prefix_remote_stderr, conn);
+	pthread_create(&conn->stdio.thread, NULL, prefix_remote_stderr, &conn->stdio);
 	// TODO: return earlier in case the command fails somehow.
 
 	free(path);
@@ -179,14 +179,14 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
          * least mercurial 1.9 anyways. Server versions between 0.9 and 1.7
          * will return an empty result for the "capabilities" command, as
          * opposed to no result at all with older servers. */
-	stdio_send_capabilities_command(conn);
-	stdio_send_between_command(conn);
+	stdio_send_capabilities_command(&conn->stdio);
+	stdio_send_between_command(&conn->stdio);
 
-	stdio_read_response(conn, &buf);
+	stdio_read_response(&conn->stdio, &buf);
 	if (!(buf.len == 1 && buf.buf[0] == '\n')) {
 		split_capabilities(conn, buf.buf);
 		/* Now read the response for the "between" command. */
-		stdio_read_response(conn, &buf);
+		stdio_read_response(&conn->stdio, &buf);
 	}
 	strbuf_release(&buf);
 
