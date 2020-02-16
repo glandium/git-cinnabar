@@ -62,11 +62,11 @@ extern void stdio_send_between_command(struct hg_connection_stdio *conn);
 
 static int stdio_finish(struct hg_connection *conn)
 {
-	stdio_send_empty_command(&conn->stdio);
-	close(conn->stdio.proc.in);
-	fclose(conn->stdio.out);
-	pthread_join(conn->stdio.thread, NULL);
-	return finish_command(&conn->stdio.proc);
+	stdio_send_empty_command(conn->stdio);
+	close(conn->stdio->proc.in);
+	fclose(conn->stdio->out);
+	pthread_join(conn->stdio->thread, NULL);
+	return finish_command(&conn->stdio->proc);
 }
 
 void *prefix_remote_stderr(void *context)
@@ -97,7 +97,9 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	enum protocol protocol;
 	struct strbuf buf = STRBUF_INIT;
 	struct hg_connection *conn = xmalloc(sizeof(*conn));
-	struct child_process *proc = &conn->stdio.proc;
+	struct child_process *proc;
+	conn->stdio = xmalloc(sizeof(*conn->stdio));
+	proc = &conn->stdio->proc;
 	conn->capabilities = NULL;
 
 	protocol = parse_connect_url(url, &hostandport, &path);
@@ -160,9 +162,9 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	strbuf_release(&buf);
 
 	start_command(proc);
-	conn->stdio.is_remote = (protocol == PROTO_SSH);
-	conn->stdio.out = xfdopen(proc->out, "r");
-	pthread_create(&conn->stdio.thread, NULL, prefix_remote_stderr, &conn->stdio);
+	conn->stdio->is_remote = (protocol == PROTO_SSH);
+	conn->stdio->out = xfdopen(proc->out, "r");
+	pthread_create(&conn->stdio->thread, NULL, prefix_remote_stderr, conn->stdio);
 	// TODO: return earlier in case the command fails somehow.
 
 	free(path);
@@ -178,14 +180,14 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
          * least mercurial 1.9 anyways. Server versions between 0.9 and 1.7
          * will return an empty result for the "capabilities" command, as
          * opposed to no result at all with older servers. */
-	stdio_send_capabilities_command(&conn->stdio);
-	stdio_send_between_command(&conn->stdio);
+	stdio_send_capabilities_command(conn->stdio);
+	stdio_send_between_command(conn->stdio);
 
-	stdio_read_response(&conn->stdio, &buf);
+	stdio_read_response(conn->stdio, &buf);
 	if (!(buf.len == 1 && buf.buf[0] == '\n')) {
 		split_capabilities(conn, buf.buf);
 		/* Now read the response for the "between" command. */
-		stdio_read_response(&conn->stdio, &buf);
+		stdio_read_response(conn->stdio, &buf);
 	}
 	strbuf_release(&buf);
 

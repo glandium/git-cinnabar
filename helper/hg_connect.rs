@@ -61,8 +61,8 @@ struct hg_connection {
 #[allow(non_camel_case_types)]
 #[repr(C)]
 union hg_connection_inner {
-    http: hg_connection_http,
-    stdio: hg_connection_stdio,
+    http: *mut hg_connection_http,
+    stdio: *mut hg_connection_stdio,
 }
 
 #[allow(non_camel_case_types)]
@@ -725,12 +725,9 @@ unsafe extern "C" fn stdio_simple_command(
     args: args_slice,
 ) {
     let conn = conn.as_mut().unwrap();
-    stdio_send_command(
-        &mut conn.inner.stdio,
-        CStr::from_ptr(command).to_str().unwrap(),
-        args,
-    );
-    stdio_read_response(&mut conn.inner.stdio, response);
+    let stdio = conn.inner.stdio.as_mut().unwrap();
+    stdio_send_command(stdio, CStr::from_ptr(command).to_str().unwrap(), args);
+    stdio_read_response(stdio, response);
 }
 
 #[no_mangle]
@@ -741,20 +738,17 @@ unsafe extern "C" fn stdio_changegroup_command(
     args: args_slice,
 ) {
     let conn = conn.as_mut().unwrap();
-    stdio_send_command(
-        &mut conn.inner.stdio,
-        CStr::from_ptr(command).to_str().unwrap(),
-        args,
-    );
+    let stdio = conn.inner.stdio.as_mut().unwrap();
+    stdio_send_command(stdio, CStr::from_ptr(command).to_str().unwrap(), args);
 
     /* We're going to receive a stream, but we don't know how big it is
      * going to be in advance, so we have to read it according to its
      * format: changegroup or bundle2.
      */
-    if conn.inner.stdio.is_remote > 0 {
+    if stdio.is_remote > 0 {
         bufferize_writer(writer);
     }
-    copy_bundle(conn.inner.stdio.out, writer);
+    copy_bundle(stdio.out, writer);
 }
 
 #[no_mangle]
@@ -767,25 +761,18 @@ unsafe extern "C" fn stdio_push_command(
     args: args_slice,
 ) {
     let conn = conn.as_mut().unwrap();
-    stdio_send_command(
-        &mut conn.inner.stdio,
-        CStr::from_ptr(command).to_str().unwrap(),
-        args,
-    );
+    let stdio = conn.inner.stdio.as_mut().unwrap();
+    stdio_send_command(stdio, CStr::from_ptr(command).to_str().unwrap(), args);
     /* The server normally sends an empty response before reading the data
      * it's sent if not, it's an error (typically, the remote will
      * complain here if there was a lost push race). */
     //TODO: handle that error.
     let mut header = strbuf::new();
-    stdio_read_response(&mut conn.inner.stdio, &mut header);
+    stdio_read_response(stdio, &mut header);
 
     //TODO: chunk in smaller pieces.
     header.extend_from_slice(format!("{}\n", len).as_bytes());
-    stdio_write(
-        &mut conn.inner.stdio,
-        header.as_bytes().as_ptr(),
-        header.as_bytes().len(),
-    );
+    stdio_write(stdio, header.as_bytes().as_ptr(), header.as_bytes().len());
     drop(header);
 
     let is_bundle2 = if len > 4 {
@@ -804,19 +791,19 @@ unsafe extern "C" fn stdio_push_command(
         let mut read = cmp::min(buf_len, len.try_into().unwrap_or(buf_len));
         read = libc::fread(buf.as_mut_ptr() as *mut c_void, 1, read, input);
         len -= read as off_t;
-        stdio_write(&mut conn.inner.stdio, buf.as_ptr(), read);
+        stdio_write(stdio, buf.as_ptr(), read);
     }
 
-    stdio_write(&mut conn.inner.stdio, "0\n".as_ptr(), 2);
+    stdio_write(stdio, "0\n".as_ptr(), 2);
     if is_bundle2 {
-        copy_bundle_to_strbuf(conn.inner.stdio.out, response);
+        copy_bundle_to_strbuf(stdio.out, response);
     } else {
         /* There are two responses, one for output, one for actual response. */
         //TODO: actually handle output here
         let mut header = strbuf::new();
-        stdio_read_response(&mut conn.inner.stdio, &mut header);
+        stdio_read_response(stdio, &mut header);
         drop(header);
-        stdio_read_response(&mut conn.inner.stdio, response);
+        stdio_read_response(stdio, response);
     }
 }
 
@@ -950,7 +937,7 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
     if info.redirects > 0 {
         let effective_url = unsafe { CStr::from_ptr(info.effective_url).to_bytes() };
         if let Some(query_idx) = effective_url.find("?cmd=") {
-            let http = unsafe { &mut data.conn.inner.http };
+            let http = unsafe { data.conn.inner.http.as_mut().unwrap() };
             let mut new_url_buf = strbuf::new();
             let new_url = &effective_url[..query_idx];
             new_url_buf.extend_from_slice(new_url);
@@ -1027,7 +1014,7 @@ unsafe fn prepare_command_request(
         .and_then(|s| usize::from_str(s).ok())
         .unwrap_or(0);
 
-    let http = &mut data.conn.inner.http;
+    let http = data.conn.inner.http.as_mut().unwrap();
     if http_follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && http.initial_request > 0 {
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
         http.initial_request = 0;
@@ -1078,7 +1065,7 @@ unsafe fn http_command(
         args,
     );
     if http_request_reauth(&mut request_data) != HTTP_OK {
-        http_command_error(&mut conn.inner.http);
+        http_command_error(conn.inner.http);
     }
 }
 
@@ -1278,6 +1265,7 @@ unsafe extern "C" fn hg_finish_connect(conn: *mut hg_connection) -> c_int {
     let conn = conn.as_mut().unwrap();
     let code = (conn.finish)(conn);
     conn.capabilities.take();
+    free(conn.inner.http as *mut c_void);
     free(conn as *mut _ as *mut c_void);
     code
 }

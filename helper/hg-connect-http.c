@@ -148,7 +148,7 @@ extern void http_capabilities_command(struct hg_connection *conn,
 static int http_finish(struct hg_connection *conn)
 {
 	http_cleanup();
-	free(conn->http.url);
+	free(conn->http->url);
 	return 0;
 }
 
@@ -158,11 +158,12 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 	struct strbuf caps = STRBUF_INIT;
 	struct writer writer;
 	conn->capabilities = NULL;
+	conn->http = xmalloc(sizeof(*conn->http));
 
-	conn->http.url = xstrdup(url);
-	conn->http.initial_request = 1;
+	conn->http->url = xstrdup(url);
+	conn->http->initial_request = 1;
 
-	http_init(NULL, conn->http.url, 0);
+	http_init(NULL, conn->http->url, 0);
 
 	writer.write = fwrite_buffer;
 	writer.close = NULL;
@@ -172,7 +173,8 @@ struct hg_connection *hg_connect_http(const char *url, int flags)
 	 * sent to stdout, the writer was switched to fwrite. */
 	if (writer.write != fwrite_buffer) {
 		writer_close(&writer);
-		free(conn->http.url);
+		free(conn->http->url);
+		free(conn->http);
 		free(conn);
 		return NULL;
 	}

@@ -39,8 +39,8 @@ struct hg_connection {
 	void *capabilities;
 
 	union {
-		struct hg_connection_stdio stdio;
-		struct hg_connection_http http;
+		struct hg_connection_stdio *stdio;
+		struct hg_connection_http *http;
 	};
 };
 
