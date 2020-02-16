@@ -81,12 +81,6 @@ struct hg_connection_stdio {
     is_remote: c_int,
 }
 
-#[no_mangle]
-unsafe extern "C" fn drop_capabilities(conn: *mut hg_connection) {
-    let conn = conn.as_mut().unwrap();
-    conn.capabilities.take();
-}
-
 #[allow(non_camel_case_types)]
 #[repr(C)]
 struct args_slice<'a> {
@@ -1283,7 +1277,7 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
 unsafe extern "C" fn hg_finish_connect(conn: *mut hg_connection) -> c_int {
     let conn = conn.as_mut().unwrap();
     let code = (conn.finish)(conn);
-    drop_capabilities(conn);
+    conn.capabilities.take();
     free(conn as *mut _ as *mut c_void);
     code
 }
