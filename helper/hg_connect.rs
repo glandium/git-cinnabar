@@ -23,7 +23,7 @@ use curl_sys::{
     curl_easy_getinfo, curl_easy_setopt, curl_off_t, curl_slist, curl_slist_append,
     curl_slist_free_all, CURLcode, CURL, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT,
     CURLOPT_FAILONERROR, CURLOPT_FOLLOWLOCATION, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER,
-    CURLOPT_NOBODY, CURLOPT_URL, CURLOPT_USERAGENT,
+    CURLOPT_NOBODY, CURLOPT_URL, CURLOPT_USERAGENT, CURL_ERROR_SIZE,
 };
 use itertools::Itertools;
 use libc::{off_t, FILE};
@@ -245,6 +245,17 @@ impl Drop for strbuf {
         unsafe {
             strbuf_release(self);
         }
+    }
+}
+
+extern "C" {
+    fn die(fmt: *const c_char, ...) -> !;
+}
+
+macro_rules! die {
+    ($($e:expr),+) => {
+        let s = CString::new(format!($($e),+)).unwrap();
+        die(s.as_ptr())
     }
 }
 
@@ -850,9 +861,6 @@ struct http_request_info {
 }
 
 extern "C" {
-    #[allow(improper_ctypes)]
-    fn http_command_error(conn: *mut hg_connection_http) -> !;
-
     fn free(ptr: *mut c_void);
 
     fn credential_fill(auth: *mut credential);
@@ -862,6 +870,8 @@ extern "C" {
     fn get_active_slot() -> *mut active_request_slot;
 
     fn run_one_slot(slot: *mut active_request_slot, results: *mut slot_results) -> c_int;
+
+    static curl_errorstr: [c_char; CURL_ERROR_SIZE];
 }
 
 #[allow(non_camel_case_types)]
@@ -1065,7 +1075,13 @@ unsafe fn http_command(
         args,
     );
     if http_request_reauth(&mut request_data) != HTTP_OK {
-        http_command_error(conn.inner.http);
+        die!(
+            "unable to access '{}': {}",
+            CStr::from_ptr(conn.inner.http.as_mut().unwrap().url)
+                .to_bytes()
+                .as_bstr(),
+            CStr::from_ptr(curl_errorstr.as_ptr()).to_bytes().as_bstr()
+        );
     }
 }
 
@@ -1220,8 +1236,6 @@ extern "C" {
 
     #[allow(improper_ctypes)]
     fn hg_connect_http(url: *const c_char, flags: c_int) -> *mut hg_connection;
-
-    fn die(fmt: *const c_char, ...) -> !;
 }
 
 #[no_mangle]
@@ -1248,12 +1262,10 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
     for cap in &REQUIRED_CAPS {
         let cap_ = CString::new(*cap).unwrap();
         if hg_get_capability(conn, cap_.as_ptr()).is_null() {
-            let s = CString::new(format!(
+            die!(
                 "Mercurial repository doesn't support the required \"{}\" capability.",
                 cap
-            ))
-            .unwrap();
-            die(s.as_ptr());
+            );
         }
     }
 
