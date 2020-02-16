@@ -712,15 +712,9 @@ extern "C" {
     fn copy_bundle_to_strbuf(intput: *mut FILE, out: *mut strbuf);
 }
 
-#[no_mangle]
-unsafe extern "C" fn stdio_send_command(
-    conn: *mut hg_connection,
-    command: *const c_char,
-    args: args_slice,
-) {
-    let conn = conn.as_mut().unwrap();
+unsafe fn stdio_send_command(conn: &mut hg_connection, command: &str, args: args_slice) {
     let mut data = BString::from(Vec::<u8>::new());
-    data.extend(CStr::from_ptr(command).to_bytes());
+    data.extend(command.as_bytes());
     data.push(b'\n');
     prepare_command(
         |name, value| stdio_command_add_param(&mut data, name, value),
@@ -736,7 +730,8 @@ unsafe extern "C" fn stdio_simple_command(
     command: *const c_char,
     args: args_slice,
 ) {
-    stdio_send_command(conn, command, args);
+    let conn = conn.as_mut().unwrap();
+    stdio_send_command(conn, CStr::from_ptr(command).to_str().unwrap(), args);
     stdio_read_response(conn, response);
 }
 
@@ -748,7 +743,7 @@ unsafe extern "C" fn stdio_changegroup_command(
     args: args_slice,
 ) {
     let conn = conn.as_mut().unwrap();
-    stdio_send_command(conn, command, args);
+    stdio_send_command(conn, CStr::from_ptr(command).to_str().unwrap(), args);
 
     /* We're going to receive a stream, but we don't know how big it is
      * going to be in advance, so we have to read it according to its
@@ -770,7 +765,7 @@ unsafe extern "C" fn stdio_push_command(
     args: args_slice,
 ) {
     let conn = conn.as_mut().unwrap();
-    stdio_send_command(conn, command, args);
+    stdio_send_command(conn, CStr::from_ptr(command).to_str().unwrap(), args);
     /* The server normally sends an empty response before reading the data
      * it's sent if not, it's an error (typically, the remote will
      * complain here if there was a lost push race). */
@@ -817,19 +812,22 @@ unsafe extern "C" fn stdio_push_command(
 
 #[no_mangle]
 unsafe extern "C" fn stdio_send_empty_command(conn: *mut hg_connection) {
-    stdio_send_command(conn, cstr!("").as_ptr(), args_slice::new(&[]));
+    let conn = conn.as_mut().unwrap();
+    stdio_send_command(conn, "", args_slice::new(&[]));
 }
 
 #[no_mangle]
 unsafe extern "C" fn stdio_send_capabilities_command(conn: *mut hg_connection) {
-    stdio_send_command(conn, cstr!("capabilities").as_ptr(), args_slice::new(&[]));
+    let conn = conn.as_mut().unwrap();
+    stdio_send_command(conn, "capabilities", args_slice::new(&[]));
 }
 
 #[no_mangle]
 unsafe extern "C" fn stdio_send_between_command(conn: *mut hg_connection) {
+    let conn = conn.as_mut().unwrap();
     stdio_send_command(
         conn,
-        cstr!("between").as_ptr(),
+        "between",
         args_slice::new(&[
             cstr!("pairs").as_ptr() as _,
             cstr!(
