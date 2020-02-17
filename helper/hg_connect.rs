@@ -6,7 +6,7 @@ use std::cmp;
 use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString};
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::mem;
 use std::os::raw::{c_char, c_int, c_long};
 #[cfg(unix)]
@@ -21,8 +21,8 @@ use curl_sys::{
     curl_easy_getinfo, curl_easy_setopt, curl_off_t, curl_slist, curl_slist_append,
     curl_slist_free_all, CURL, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT,
     CURLOPT_FAILONERROR, CURLOPT_FILE, CURLOPT_FOLLOWLOCATION, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER,
-    CURLOPT_INFILE, CURLOPT_NOBODY, CURLOPT_POST, CURLOPT_POSTFIELDSIZE_LARGE, CURLOPT_URL,
-    CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
+    CURLOPT_NOBODY, CURLOPT_POST, CURLOPT_POSTFIELDSIZE_LARGE, CURLOPT_READDATA,
+    CURLOPT_READFUNCTION, CURLOPT_URL, CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
 };
 use either::Either;
 use itertools::Itertools;
@@ -839,7 +839,12 @@ impl HgWireConnection for HgHTTPConnection {
                  * of authentication (401). */
                 libc::fseek(input, 0, libc::SEEK_SET);
                 mem::replace(&mut http_response, strbuf::new());
-                curl_easy_setopt(curl, CURLOPT_INFILE, input);
+                curl_easy_setopt(curl, CURLOPT_READDATA, &input);
+                curl_easy_setopt(
+                    curl,
+                    CURLOPT_READFUNCTION,
+                    read_from_read::<crate::libc::File> as *const c_void,
+                );
 
                 let headers = curl_slist_append(
                     headers,
@@ -873,6 +878,17 @@ impl HgWireConnection for HgHTTPConnection {
         libc::free(mem::replace(&mut self.inner, ptr::null_mut()) as *mut c_void);
         code
     }
+}
+
+unsafe extern "C" fn read_from_read<R: Read>(
+    ptr: *mut c_char,
+    size: usize,
+    nmemb: usize,
+    data: *const c_void,
+) -> usize {
+    let read = (data as *mut R).as_mut().unwrap();
+    let mut buf = std::slice::from_raw_parts_mut(ptr as *mut u8, size.checked_mul(nmemb).unwrap());
+    read.read(&mut buf).unwrap()
 }
 
 /* The first request we send is a "capabilities" request. This sends to
