@@ -85,10 +85,8 @@ impl push_request_info {
 extern "C" {
     pub fn copy_bundle_to_file(input: *mut FILE, file: *mut FILE);
 
-    #[allow(improper_ctypes)]
     pub fn stdio_write(conn: *mut hg_connection_stdio, buf: *const u8, len: usize);
 
-    #[allow(improper_ctypes)]
     pub fn stdio_read_response(conn: *mut hg_connection_stdio, response: *mut strbuf);
 
     pub fn bufferize_writer(writer: *mut writer);
