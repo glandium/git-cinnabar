@@ -12,7 +12,7 @@ use std::os::unix::io::AsRawFd;
 use std::os::windows::io::AsRawHandle;
 use std::ptr;
 
-use curl_sys::{curl_slist, CURL};
+use curl_sys::CURL;
 use libc::FILE;
 
 use crate::libgit::strbuf;
@@ -150,7 +150,7 @@ impl Drop for writer {
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct changegroup_response_data {
-    curl: *mut CURL,
+    pub curl: *mut CURL,
     writer: *mut writer,
 }
 
@@ -173,11 +173,12 @@ extern "C" {
 
     pub fn copy_bundle(input: *mut FILE, out: *mut writer);
 
-    pub fn prepare_changegroup_request(
-        curl: *mut CURL,
-        headers: *mut curl_slist,
-        data: *mut changegroup_response_data,
-    );
+    pub fn changegroup_write(
+        ptr: *const c_char,
+        size: usize,
+        nmemb: usize,
+        data: *mut c_void,
+    ) -> usize;
 
     pub fn prefix_writer(writer: *mut writer, prefix: *const c_char);
 

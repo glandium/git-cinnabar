@@ -26,10 +26,10 @@ use libc::{off_t, FILE};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
 
 use crate::libcinnabar::{
-    bufferize_writer, changegroup_response_data, copy_bundle, decompress_bundle_writer,
-    hg_connect_http, hg_connect_stdio, hg_connection_http, hg_connection_stdio, http_finish,
-    prefix_writer, prepare_changegroup_request, stdio_finish, stdio_read_response, stdio_write,
-    writer,
+    bufferize_writer, changegroup_response_data, changegroup_write, copy_bundle,
+    decompress_bundle_writer, hg_connect_http, hg_connect_stdio, hg_connection_http,
+    hg_connection_stdio, http_finish, prefix_writer, stdio_finish, stdio_read_response,
+    stdio_write, writer,
 };
 use crate::libgit::{
     credential_fill, curl_errorstr, die, fwrite_buffer, get_active_slot, http_auth,
@@ -800,11 +800,16 @@ impl HgWireConnection for HgHTTPConnection {
      *  * zlib stream when called over HTTP. */
     unsafe fn changegroup_command(&mut self, writer: &mut writer, command: &str, args: HgArgs) {
         let mut response_data = changegroup_response_data::new(writer);
-
         http_command(
             self,
-            Box::new(|curl, headers| {
-                prepare_changegroup_request(curl, headers, &mut response_data)
+            Box::new(|curl, _headers| {
+                response_data.curl = curl;
+                curl_easy_setopt(curl, CURLOPT_FILE, &mut response_data);
+                curl_easy_setopt(
+                    curl,
+                    CURLOPT_WRITEFUNCTION,
+                    changegroup_write as *const c_void,
+                );
             }),
             command,
             args,

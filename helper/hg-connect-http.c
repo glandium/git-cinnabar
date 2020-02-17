@@ -11,7 +11,7 @@ struct changegroup_response_data {
 	struct writer *writer;
 };
 
-static size_t changegroup_write(char *buffer, size_t size, size_t nmemb, void* data)
+size_t changegroup_write(char *buffer, size_t size, size_t nmemb, void* data)
 {
 	struct changegroup_response_data *response_data =
 		(struct changegroup_response_data *)data;
@@ -35,15 +35,6 @@ static size_t changegroup_write(char *buffer, size_t size, size_t nmemb, void* d
 	}
 
 	return write_to(buffer, size, nmemb, response_data->writer);
-}
-
-void prepare_changegroup_request(CURL *curl, struct curl_slist *headers,
-			         struct changegroup_response_data *data)
-{
-	data->curl = curl;
-
-	curl_easy_setopt(curl, CURLOPT_FILE, data);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, changegroup_write);
 }
 
 int http_finish(struct hg_connection_http *conn)
