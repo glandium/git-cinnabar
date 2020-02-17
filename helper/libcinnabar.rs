@@ -3,8 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::ffi::c_void;
+use std::fs::File;
 use std::io::{self, Write};
 use std::os::raw::{c_char, c_int};
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
+#[cfg(windows)]
+use std::os::windows::io::AsRawHandle;
 use std::ptr;
 
 use curl_sys::{curl_slist, CURL};
@@ -64,6 +69,16 @@ pub trait GetRawFd {
 impl<T: GetRawFd + ?Sized> GetRawFd for &mut T {
     fn get_writer_fd(&mut self) -> c_int {
         (**self).get_writer_fd()
+    }
+}
+
+impl GetRawFd for File {
+    fn get_writer_fd(&mut self) -> c_int {
+        #[cfg(unix)]
+        let fd = self.as_raw_fd();
+        #[cfg(windows)]
+        let fd = unsafe { libc::open_osfhandle(self.as_raw_handle() as _, 0) };
+        fd
     }
 }
 

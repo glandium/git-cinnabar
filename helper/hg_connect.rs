@@ -9,10 +9,6 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::{c_char, c_int, c_long};
-#[cfg(unix)]
-use std::os::unix::io::IntoRawFd;
-#[cfg(windows)]
-use std::os::windows::io::IntoRawHandle;
 use std::ptr;
 use std::str::FromStr;
 
@@ -93,7 +89,7 @@ trait HgWireConnection: HgCapabilities {
     unsafe fn push_command(
         &mut self,
         response: &mut strbuf,
-        input: crate::libc::File,
+        input: File,
         len: off_t,
         command: &str,
         args: HgArgs,
@@ -365,33 +361,19 @@ unsafe extern "C" fn hg_unbundle(
         .rand_bytes(6)
         .tempfile()
         .unwrap();
-    let (f, path) = tempfile.into_parts();
-    let fh = into_raw_fd(f, "w");
-    copy_bundle(input, &mut writer::new(crate::libc::File::new(fh)));
-    libc::fflush(fh);
-    libc::fclose(fh);
+    let (mut f, path) = tempfile.into_parts();
+    copy_bundle(input, &mut writer::new(&mut f));
+    drop(f);
 
     let file = File::open(path).unwrap();
     let len = file.metadata().unwrap().len();
-    let fh = into_raw_fd(file, "r");
     conn.push_command(
         response.as_mut().unwrap(),
-        crate::libc::File::new(fh),
+        file,
         len.try_into().unwrap(),
         "unbundle",
         args!(heads: heads_str.as_bytes()),
     );
-    libc::fclose(fh);
-}
-
-unsafe fn into_raw_fd(file: File, mode: &str) -> *mut FILE {
-    #[cfg(unix)]
-    let fd = file.into_raw_fd();
-    #[cfg(windows)]
-    let fd = libc::open_osfhandle(file.into_raw_handle() as _, 0);
-
-    let mode = CString::new(mode).unwrap();
-    libc::fdopen(fd, mode.as_ptr())
 }
 
 #[no_mangle]
@@ -518,7 +500,7 @@ impl HgWireConnection for HgStdIOConnection {
     unsafe fn push_command(
         &mut self,
         response: &mut strbuf,
-        mut input: crate::libc::File,
+        mut input: File,
         len: off_t,
         command: &str,
         args: HgArgs,
@@ -820,7 +802,7 @@ impl HgWireConnection for HgHTTPConnection {
     unsafe fn push_command(
         &mut self,
         response: &mut strbuf,
-        mut input: crate::libc::File,
+        mut input: File,
         len: off_t,
         command: &str,
         args: HgArgs,
@@ -841,7 +823,7 @@ impl HgWireConnection for HgHTTPConnection {
                 curl_easy_setopt(
                     curl,
                     CURLOPT_READFUNCTION,
-                    read_from_read::<crate::libc::File> as *const c_void,
+                    read_from_read::<File> as *const c_void,
                 );
 
                 let headers = curl_slist_append(
