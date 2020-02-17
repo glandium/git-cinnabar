@@ -6,37 +6,6 @@
 #include "http.h"
 #include "strbuf.h"
 
-struct changegroup_response_data {
-	CURL *curl;
-	struct writer *writer;
-};
-
-size_t changegroup_write(char *buffer, size_t size, size_t nmemb, void* data)
-{
-	struct changegroup_response_data *response_data =
-		(struct changegroup_response_data *)data;
-
-	if (response_data->curl) {
-		char *content_type;
-		if (!curl_easy_getinfo(response_data->curl, CURLINFO_CONTENT_TYPE,
-		                       &content_type) && content_type) {
-			if (strcmp(content_type, "application/mercurial-0.1") == 0) {
-				inflate_writer(response_data->writer);
-			} else if (strcmp(content_type, "application/hg-error") == 0) {
-				write_to("err\n", 1, 4, response_data->writer);
-				response_data->writer->write = (write_callback)fwrite;
-				response_data->writer->close = (close_callback)fflush;
-				response_data->writer->context = stderr;
-				prefix_writer(response_data->writer, "remote: ");
-			}
-		}
-		bufferize_writer(response_data->writer);
-		response_data->curl = NULL;
-	}
-
-	return write_to(buffer, size, nmemb, response_data->writer);
-}
-
 int http_finish(struct hg_connection_http *conn)
 {
 	http_cleanup();

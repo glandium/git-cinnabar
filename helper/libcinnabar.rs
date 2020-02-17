@@ -10,9 +10,7 @@ use std::os::raw::{c_char, c_int};
 use std::os::unix::io::AsRawFd;
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
-use std::ptr;
 
-use curl_sys::CURL;
 use libc::FILE;
 
 use crate::libgit::strbuf;
@@ -147,22 +145,6 @@ impl Drop for writer {
     }
 }
 
-#[allow(non_camel_case_types)]
-#[repr(C)]
-pub struct changegroup_response_data {
-    pub curl: *mut CURL,
-    writer: *mut writer,
-}
-
-impl changegroup_response_data {
-    pub fn new(writer: &mut writer) -> Self {
-        changegroup_response_data {
-            curl: ptr::null_mut(),
-            writer,
-        }
-    }
-}
-
 extern "C" {
     pub fn stdio_write(conn: *mut hg_connection_stdio, buf: *const u8, len: usize);
 
@@ -170,15 +152,9 @@ extern "C" {
 
     pub fn bufferize_writer(writer: *mut writer);
     pub fn decompress_bundle_writer(writer: *mut writer);
+    pub fn inflate_writer(writer: *mut writer);
 
     pub fn copy_bundle(input: *mut FILE, out: *mut writer);
-
-    pub fn changegroup_write(
-        ptr: *const c_char,
-        size: usize,
-        nmemb: usize,
-        data: *mut c_void,
-    ) -> usize;
 
     pub fn prefix_writer(writer: *mut writer, prefix: *const c_char);
 

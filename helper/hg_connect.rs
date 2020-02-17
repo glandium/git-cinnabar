@@ -15,10 +15,11 @@ use std::str::FromStr;
 use bstr::{BString, ByteSlice};
 use curl_sys::{
     curl_easy_getinfo, curl_easy_setopt, curl_off_t, curl_slist, curl_slist_append,
-    curl_slist_free_all, CURL, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT,
-    CURLOPT_FAILONERROR, CURLOPT_FILE, CURLOPT_FOLLOWLOCATION, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER,
-    CURLOPT_NOBODY, CURLOPT_POST, CURLOPT_POSTFIELDSIZE, CURLOPT_POSTFIELDSIZE_LARGE,
-    CURLOPT_READDATA, CURLOPT_READFUNCTION, CURLOPT_URL, CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
+    curl_slist_free_all, CURL, CURLINFO_CONTENT_TYPE, CURLINFO_EFFECTIVE_URL,
+    CURLINFO_REDIRECT_COUNT, CURLOPT_FAILONERROR, CURLOPT_FILE, CURLOPT_FOLLOWLOCATION,
+    CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY, CURLOPT_POST, CURLOPT_POSTFIELDSIZE,
+    CURLOPT_POSTFIELDSIZE_LARGE, CURLOPT_READDATA, CURLOPT_READFUNCTION, CURLOPT_URL,
+    CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
 };
 use either::Either;
 use itertools::Itertools;
@@ -26,10 +27,9 @@ use libc::{off_t, FILE};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
 
 use crate::libcinnabar::{
-    bufferize_writer, changegroup_response_data, changegroup_write, copy_bundle,
-    decompress_bundle_writer, hg_connect_http, hg_connect_stdio, hg_connection_http,
-    hg_connection_stdio, http_finish, prefix_writer, stdio_finish, stdio_read_response,
-    stdio_write, writer,
+    bufferize_writer, copy_bundle, decompress_bundle_writer, hg_connect_http, hg_connect_stdio,
+    hg_connection_http, hg_connection_stdio, http_finish, inflate_writer, prefix_writer,
+    stdio_finish, stdio_read_response, stdio_write, writer,
 };
 use crate::libgit::{
     credential_fill, curl_errorstr, die, fwrite_buffer, get_active_slot, http_auth,
@@ -773,6 +773,48 @@ unsafe fn prepare_simple_request(curl: *mut CURL, data: *mut strbuf) {
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite_buffer as *const c_void);
 }
 
+#[allow(non_camel_case_types)]
+struct changegroup_response_data<'a> {
+    curl: *mut CURL,
+    writer: &'a mut writer,
+}
+
+unsafe fn changegroup_write(
+    ptr: *const c_char,
+    size: usize,
+    nmemb: usize,
+    data: *mut c_void,
+) -> usize {
+    let mut response_data = (data as *mut changegroup_response_data).as_mut().unwrap();
+    if !response_data.curl.is_null() {
+        let mut content_type: *const c_char = ptr::null();
+        if curl_easy_getinfo(response_data.curl, CURLINFO_CONTENT_TYPE, &mut content_type) == 0
+            && !content_type.is_null()
+        {
+            match CStr::from_ptr(content_type).to_bytes() {
+                b"application/mercurial-0.1" => {
+                    inflate_writer(response_data.writer);
+                }
+                b"application/hg-error" => {
+                    response_data.writer.write_all(b"err\n").unwrap();
+                    mem::replace(
+                        response_data.writer,
+                        writer::new(crate::libc::File::new(get_stderr())),
+                    );
+                    prefix_writer(response_data.writer, cstr!("remote: ").as_ptr());
+                }
+                _ => unimplemented!(),
+            }
+        }
+        bufferize_writer(response_data.writer);
+        response_data.curl = ptr::null_mut();
+    }
+
+    let buf = std::slice::from_raw_parts_mut(ptr as *mut u8, size.checked_mul(nmemb).unwrap());
+    response_data.writer.write_all(buf).unwrap();
+    nmemb
+}
+
 impl HgWireConnection for HgHTTPConnection {
     unsafe fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
         let is_pushkey = command == "pushkey";
@@ -799,7 +841,10 @@ impl HgWireConnection for HgHTTPConnection {
     /* The changegroup, changegroupsubset and getbundle commands return a raw
      *  * zlib stream when called over HTTP. */
     unsafe fn changegroup_command(&mut self, writer: &mut writer, command: &str, args: HgArgs) {
-        let mut response_data = changegroup_response_data::new(writer);
+        let mut response_data = changegroup_response_data {
+            curl: ptr::null_mut(),
+            writer,
+        };
         http_command(
             self,
             Box::new(|curl, _headers| {
