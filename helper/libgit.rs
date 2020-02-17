@@ -5,6 +5,7 @@
 use std::cmp::Ordering;
 use std::ffi::c_void;
 use std::fmt::{self, Display, Formatter};
+use std::io::{self, Write};
 use std::mem;
 use std::os::raw::{c_char, c_int, c_long};
 use std::ptr;
@@ -149,6 +150,17 @@ impl strbuf {
     }
 }
 
+impl Write for strbuf {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 impl Drop for strbuf {
     fn drop(&mut self) {
         unsafe {
@@ -224,6 +236,4 @@ pub enum http_follow_config {
 
 extern "C" {
     pub static http_follow_config: http_follow_config;
-
-    pub fn fwrite_buffer(ptr: *const c_char, elt: usize, nmemb: usize, strbuf: *mut c_void);
 }

@@ -37,9 +37,8 @@ use crate::libcinnabar::{
     writer,
 };
 use crate::libgit::{
-    credential_fill, curl_errorstr, die, fwrite_buffer, get_active_slot, http_auth,
-    http_follow_config, object_id, oid_array, run_one_slot, slot_results, strbuf, HTTP_OK,
-    HTTP_REAUTH,
+    credential_fill, curl_errorstr, die, get_active_slot, http_auth, http_follow_config, object_id,
+    oid_array, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
 };
 
 #[allow(non_camel_case_types)]
@@ -329,11 +328,7 @@ unsafe extern "C" fn hg_getbundle(
             args.push(("bundlecaps", bundle2caps.to_owned().into()));
         }
     }
-    let mut writer = writer {
-        write: libc::fwrite as _,
-        close: libc::fflush as _,
-        context: out as *mut _,
-    };
+    let mut writer = writer::new(crate::libc::File::new(out));
     let args = args
         .iter()
         .map(|(n, v)| OneHgArg { name: n, value: v })
@@ -847,11 +842,7 @@ impl HgWireConnection for HgHTTPConnection {
         if http_response.get(..4) == Some(b"HG20") {
             response.extend_from_slice(http_response);
         } else {
-            let mut writer = writer {
-                write: libc::fwrite as _,
-                close: libc::fflush as _,
-                context: get_stderr() as _,
-            };
+            let mut writer = writer::new(crate::libc::File::new(get_stderr()));
             match &http_response.splitn_str(2, "\n").collect::<Vec<_>>()[..] {
                 [stdout_, stderr_] => {
                     response.extend_from_slice(stdout_);
@@ -895,11 +886,7 @@ unsafe extern "C" fn caps_request_write(
     if writers.is_left() {
         match input.get(..4) {
             Some(b"HG10") | Some(b"HG20") => {
-                let mut new_writer = writer {
-                    write: libc::fwrite as _,
-                    close: libc::fflush as _,
-                    context: get_stdout() as _,
-                };
+                let mut new_writer = writer::new(crate::libc::File::new(get_stdout()));
                 new_writer.write_all(b"bundle\n").unwrap();
                 decompress_bundle_writer(&mut new_writer);
                 bufferize_writer(&mut new_writer);
@@ -952,11 +939,7 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
         });
 
         let mut caps = strbuf::new();
-        let mut writer = writer {
-            write: fwrite_buffer as _,
-            close: ptr::null(),
-            context: &mut caps as *mut _ as *mut c_void,
-        };
+        let mut writer = writer::new(&mut caps);
         let mut writers = Either::Left(&mut writer);
         http_capabilities_command(&mut conn, &mut writers);
         /* Cf. comment above caps_request_write. If the bundle stream was
