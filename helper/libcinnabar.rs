@@ -7,8 +7,8 @@ use std::io::{self, Write};
 use std::os::raw::{c_char, c_int};
 use std::ptr;
 
-use curl_sys::{curl_off_t, curl_slist, CURL};
-use libc::{off_t, FILE};
+use curl_sys::{curl_slist, CURL};
+use libc::FILE;
 
 use crate::libgit::strbuf;
 
@@ -148,24 +148,6 @@ impl changegroup_response_data {
     }
 }
 
-#[allow(non_camel_case_types)]
-#[repr(C)]
-pub struct push_request_info {
-    response: *mut strbuf,
-    input: *mut FILE,
-    len: curl_off_t,
-}
-
-impl push_request_info {
-    pub fn new(response: &mut strbuf, input: *mut FILE, len: off_t) -> Self {
-        push_request_info {
-            response,
-            input,
-            len: len.into(),
-        }
-    }
-}
-
 extern "C" {
     pub fn stdio_write(conn: *mut hg_connection_stdio, buf: *const u8, len: usize);
 
@@ -182,11 +164,6 @@ extern "C" {
         curl: *mut CURL,
         headers: *mut curl_slist,
         data: *mut changegroup_response_data,
-    );
-    pub fn prepare_push_request(
-        curl: *mut CURL,
-        headers: *mut curl_slist,
-        data: *mut push_request_info,
     );
 
     pub fn prefix_writer(writer: *mut writer, prefix: *const c_char);

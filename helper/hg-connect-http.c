@@ -65,29 +65,6 @@ void prepare_changegroup_request(CURL *curl, struct curl_slist *headers,
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, changegroup_write);
 }
 
-struct push_request_info {
-	struct strbuf *response;
-	FILE *in;
-	curl_off_t len;
-};
-
-void prepare_push_request(CURL *curl, struct curl_slist *headers,
-			  struct push_request_info *info)
-{
-	prepare_simple_request(curl, headers, info->response);
-	curl_easy_setopt(curl, CURLOPT_POST, 1);
-	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, info->len);
-	/* Ensure we have no state from a previous attempt that failed because
-	 * of authentication (401). */
-	fseek(info->in, 0L, SEEK_SET);
-	strbuf_release(info->response);
-	curl_easy_setopt(curl, CURLOPT_INFILE, info->in);
-
-	headers = curl_slist_append(headers,
-				    "Content-Type: application/mercurial-0.1");
-	headers = curl_slist_append(headers, "Expect:");
-}
-
 int http_finish(struct hg_connection_http *conn)
 {
 	http_cleanup();

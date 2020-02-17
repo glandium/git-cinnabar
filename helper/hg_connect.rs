@@ -18,9 +18,10 @@ use std::str::FromStr;
 
 use bstr::{BString, ByteSlice};
 use curl_sys::{
-    curl_easy_getinfo, curl_easy_setopt, curl_slist, curl_slist_append, curl_slist_free_all, CURL,
-    CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT, CURLOPT_FAILONERROR, CURLOPT_FILE,
-    CURLOPT_FOLLOWLOCATION, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY, CURLOPT_URL,
+    curl_easy_getinfo, curl_easy_setopt, curl_off_t, curl_slist, curl_slist_append,
+    curl_slist_free_all, CURL, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT,
+    CURLOPT_FAILONERROR, CURLOPT_FILE, CURLOPT_FOLLOWLOCATION, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER,
+    CURLOPT_INFILE, CURLOPT_NOBODY, CURLOPT_POST, CURLOPT_POSTFIELDSIZE_LARGE, CURLOPT_URL,
     CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
 };
 use either::Either;
@@ -31,9 +32,8 @@ use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERI
 use crate::libcinnabar::{
     bufferize_writer, changegroup_response_data, copy_bundle, decompress_bundle_writer,
     hg_connect_http, hg_connect_stdio, hg_connection_http, hg_connection_stdio, http_finish,
-    prefix_writer, prepare_changegroup_request, prepare_push_request, prepare_pushkey_request,
-    prepare_simple_request, push_request_info, stdio_finish, stdio_read_response, stdio_write,
-    writer,
+    prefix_writer, prepare_changegroup_request, prepare_pushkey_request, prepare_simple_request,
+    stdio_finish, stdio_read_response, stdio_write, writer,
 };
 use crate::libgit::{
     credential_fill, curl_errorstr, die, get_active_slot, http_auth, http_follow_config, object_id,
@@ -828,11 +828,25 @@ impl HgWireConnection for HgHTTPConnection {
         args: HgArgs,
     ) {
         let mut http_response = strbuf::new();
-        let mut info = push_request_info::new(&mut http_response, input, len);
         //TODO: handle errors.
         http_command(
             self,
-            Box::new(|curl, headers| prepare_push_request(curl, headers, &mut info)),
+            Box::new(|curl, headers| {
+                prepare_simple_request(curl, headers, &mut http_response);
+                curl_easy_setopt(curl, CURLOPT_POST, 1);
+                curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, curl_off_t::from(len));
+                /* Ensure we have no state from a previous attempt that failed because
+                 * of authentication (401). */
+                libc::fseek(input, 0, libc::SEEK_SET);
+                mem::replace(&mut http_response, strbuf::new());
+                curl_easy_setopt(curl, CURLOPT_INFILE, input);
+
+                let headers = curl_slist_append(
+                    headers,
+                    cstr!("Content-Type: application/mercurial-0.1").as_ptr(),
+                );
+                curl_slist_append(headers, cstr!("Expect:").as_ptr());
+            }),
             command,
             args,
         );
