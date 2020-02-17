@@ -88,44 +88,6 @@ void prepare_push_request(CURL *curl, struct curl_slist *headers,
 	headers = curl_slist_append(headers, "Expect:");
 }
 
-/* The first request we send is a "capabilities" request. This sends to
- * the repo url with a query string "?cmd=capabilities". If the remote
- * url is not actually a repo, but a bundle, the content will start with
- * 'HG10' or 'HG20', which is not something that would appear as the first
- * four characters for the "capabilities" answer. In that case, we output
- * the stream to stdout.
- * (Note this assumes HTTP servers serving bundles don't care about query
- * strings)
- * Ideally, it would be good to pause the curl request, return a
- * hg_connection, and give control back to the caller, but git's http.c
- * doesn't allow pauses.
- */
-static size_t caps_request_write(char *ptr, size_t size, size_t nmemb,
-				 void *data)
-{
-	struct writer *writer = data;
-	size_t len = size * nmemb;
-	if (writer->write == fwrite_buffer && ((struct strbuf *)writer->context)->len == 0) {
-		if (len > 4 && ptr[0] == 'H' && ptr[1] == 'G' &&
-		    (ptr[2] == '1' || ptr[2] == '2') && ptr[3] == '0') {
-			writer->write = (write_callback)fwrite;
-			writer->close = (close_callback)fflush;
-			writer->context = stdout;
-			fwrite("bundle\n", 1, 7, stdout);
-			decompress_bundle_writer(writer);
-			bufferize_writer(writer);
-		}
-	}
-	return write_to(ptr, size, nmemb, writer);
-}
-
-void prepare_caps_request(CURL *curl, struct curl_slist *headers,
-			  struct writer *writer)
-{
-	curl_easy_setopt(curl, CURLOPT_FILE, writer);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, caps_request_write);
-}
-
 int http_finish(struct hg_connection_http *conn)
 {
 	http_cleanup();

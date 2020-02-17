@@ -19,17 +19,19 @@ use std::str::FromStr;
 use bstr::{BString, ByteSlice};
 use curl_sys::{
     curl_easy_getinfo, curl_easy_setopt, curl_slist, curl_slist_append, curl_slist_free_all, CURL,
-    CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT, CURLOPT_FAILONERROR, CURLOPT_FOLLOWLOCATION,
-    CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY, CURLOPT_URL, CURLOPT_USERAGENT,
+    CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT, CURLOPT_FAILONERROR, CURLOPT_FILE,
+    CURLOPT_FOLLOWLOCATION, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY, CURLOPT_URL,
+    CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
 };
+use either::Either;
 use itertools::Itertools;
 use libc::{off_t, FILE};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
 
 use crate::libcinnabar::{
     bufferize_writer, changegroup_response_data, copy_bundle, copy_bundle_to_file,
-    copy_bundle_to_strbuf, hg_connect_http, hg_connect_stdio, hg_connection_http,
-    hg_connection_stdio, http_finish, prefix_writer, prepare_caps_request,
+    copy_bundle_to_strbuf, decompress_bundle_writer, hg_connect_http, hg_connect_stdio,
+    hg_connection_http, hg_connection_stdio, http_finish, prefix_writer,
     prepare_changegroup_request, prepare_push_request, prepare_pushkey_request,
     prepare_simple_request, push_request_info, stdio_finish, stdio_read_response, stdio_write,
     writer,
@@ -787,6 +789,7 @@ fn http_command(
 }
 
 extern "C" {
+    fn get_stdout() -> *mut FILE;
     fn get_stderr() -> *mut FILE;
 }
 
@@ -868,10 +871,65 @@ impl HgWireConnection for HgHTTPConnection {
     }
 }
 
-fn http_capabilities_command(conn: &mut HgHTTPConnection, writer: &mut writer) {
+/* The first request we send is a "capabilities" request. This sends to
+ * the repo url with a query string "?cmd=capabilities". If the remote
+ * url is not actually a repo, but a bundle, the content will start with
+ * 'HG10' or 'HG20', which is not something that would appear as the first
+ * four characters for the "capabilities" answer. In that case, we output
+ * the stream to stdout.
+ * (Note this assumes HTTP servers serving bundles don't care about query
+ * strings)
+ * Ideally, it would be good to pause the curl request, return a
+ * hg_connection, and give control back to the caller, but git's http.c
+ * doesn't allow pauses.
+ */
+unsafe extern "C" fn caps_request_write(
+    ptr: *const c_char,
+    size: usize,
+    nmemb: usize,
+    data: *const c_void,
+) -> usize {
+    let writers = (data as *mut Either<&mut writer, writer>).as_mut().unwrap();
+    let len = size.checked_mul(nmemb).unwrap();
+    let input = std::slice::from_raw_parts(ptr as *const u8, len);
+    if writers.is_left() {
+        match input.get(..4) {
+            Some(b"HG10") | Some(b"HG20") => {
+                let mut new_writer = writer {
+                    write: libc::fwrite as _,
+                    close: libc::fflush as _,
+                    context: get_stdout() as _,
+                };
+                new_writer.write_all(b"bundle\n").unwrap();
+                decompress_bundle_writer(&mut new_writer);
+                bufferize_writer(&mut new_writer);
+                mem::replace(writers, Either::Right(new_writer));
+            }
+            _ => {}
+        }
+    };
+    match writers {
+        &mut Either::Left(&mut ref mut writer) | &mut Either::Right(ref mut writer) => {
+            writer.write_all(input).unwrap()
+        }
+    }
+    len
+}
+
+fn http_capabilities_command(
+    conn: &mut HgHTTPConnection,
+    writers: &mut Either<&mut writer, writer>,
+) {
     http_command(
         conn,
-        Box::new(|curl, headers| unsafe { prepare_caps_request(curl, headers, writer) }),
+        Box::new(|curl, _| unsafe {
+            curl_easy_setopt(curl, CURLOPT_FILE, writers as *mut _);
+            curl_easy_setopt(
+                curl,
+                CURLOPT_WRITEFUNCTION,
+                caps_request_write as *const c_void,
+            );
+        }),
         "capabilities",
         args!(),
     );
@@ -899,10 +957,11 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
             close: ptr::null(),
             context: &mut caps as *mut _ as *mut c_void,
         };
-        http_capabilities_command(&mut conn, &mut writer);
+        let mut writers = Either::Left(&mut writer);
+        http_capabilities_command(&mut conn, &mut writers);
         /* Cf. comment above caps_request_write. If the bundle stream was
-         * sent to stdout, the writer was switched to fwrite. */
-        if writer.write != fwrite_buffer as _ {
+         * sent to stdout, the writer was switched to the right. */
+        if writers.is_right() {
             drop(writer);
             http_finish(inner);
             return ptr::null_mut();

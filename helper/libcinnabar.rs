@@ -102,6 +102,7 @@ extern "C" {
     pub fn stdio_read_response(conn: *mut hg_connection_stdio, response: *mut strbuf);
 
     pub fn bufferize_writer(writer: *mut writer);
+    pub fn decompress_bundle_writer(writer: *mut writer);
 
     pub fn copy_bundle(input: *mut FILE, out: *mut writer);
 
@@ -119,7 +120,6 @@ extern "C" {
         headers: *mut curl_slist,
         data: *mut push_request_info,
     );
-    pub fn prepare_caps_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut writer);
 
     pub fn prefix_writer(writer: *mut writer, prefix: *const c_char);
 
