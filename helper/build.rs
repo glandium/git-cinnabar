@@ -99,6 +99,7 @@ fn main() {
         if (name.ends_with(".h")
             || name.ends_with(".c")
             || name.ends_with(".c.patch")
+            || name.ends_with(".rs")
             || name.ends_with(".mk"))
             && !name.ends_with("patched.c")
         {
