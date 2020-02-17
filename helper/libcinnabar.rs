@@ -14,13 +14,6 @@ use crate::libgit::strbuf;
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub union hg_connection_inner {
-    pub http: *mut hg_connection_http,
-    pub stdio: *mut hg_connection_stdio,
-}
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
 #[derive(Copy, Clone)]
 pub struct hg_connection_http {
     pub url: *const c_char,
@@ -132,9 +125,9 @@ extern "C" {
 
     pub fn hg_connect_stdio(url: *const c_char, flags: c_int) -> *mut hg_connection_stdio;
 
-    pub fn stdio_finish(conn: *mut c_void) -> c_int;
+    pub fn stdio_finish(conn: *mut hg_connection_stdio) -> c_int;
 
     pub fn hg_connect_http(url: *const c_char, flags: c_int) -> *mut hg_connection_http;
 
-    pub fn http_finish(conn: *mut c_void) -> c_int;
+    pub fn http_finish(conn: *mut hg_connection_http) -> c_int;
 }
