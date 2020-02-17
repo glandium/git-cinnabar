@@ -65,26 +65,6 @@ void copy_bundle(FILE *in, struct writer *out)
 	}
 }
 
-void copy_bundle_to_file(FILE *in, FILE *out)
-{
-	struct writer writer;
-	writer.write = (write_callback)fwrite;
-	writer.close = (close_callback)fflush;
-	writer.context = out;
-	copy_bundle(in, &writer);
-	writer_close(&writer);
-}
-
-void copy_bundle_to_strbuf(FILE *in, struct strbuf *out)
-{
-	struct writer writer;
-	writer.write = fwrite_buffer;
-	writer.close = NULL;
-	writer.context = out;
-	copy_bundle(in, &writer);
-	writer_close(&writer);
-}
-
 void read_chunk(FILE *in, struct strbuf *out)
 {
 	// See copy_bundle2_chunk and copy_changegroup_chunk.

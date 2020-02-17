@@ -29,10 +29,9 @@ use libc::{off_t, FILE};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
 
 use crate::libcinnabar::{
-    bufferize_writer, changegroup_response_data, copy_bundle, copy_bundle_to_file,
-    copy_bundle_to_strbuf, decompress_bundle_writer, hg_connect_http, hg_connect_stdio,
-    hg_connection_http, hg_connection_stdio, http_finish, prefix_writer,
-    prepare_changegroup_request, prepare_push_request, prepare_pushkey_request,
+    bufferize_writer, changegroup_response_data, copy_bundle, decompress_bundle_writer,
+    hg_connect_http, hg_connect_stdio, hg_connection_http, hg_connection_stdio, http_finish,
+    prefix_writer, prepare_changegroup_request, prepare_push_request, prepare_pushkey_request,
     prepare_simple_request, push_request_info, stdio_finish, stdio_read_response, stdio_write,
     writer,
 };
@@ -368,7 +367,7 @@ unsafe extern "C" fn hg_unbundle(
         .unwrap();
     let (f, path) = tempfile.into_parts();
     let fh = into_raw_fd(f, "w");
-    copy_bundle_to_file(input, fh);
+    copy_bundle(input, &mut writer::new(crate::libc::File::new(fh)));
     libc::fflush(fh);
     libc::fclose(fh);
 
@@ -559,7 +558,7 @@ impl HgWireConnection for HgStdIOConnection {
 
         stdio_write(stdio, "0\n".as_ptr(), 2);
         if is_bundle2 {
-            copy_bundle_to_strbuf(stdio.out, response);
+            copy_bundle(stdio.out, &mut writer::new(response));
         } else {
             /* There are two responses, one for output, one for actual response. */
             //TODO: actually handle output here

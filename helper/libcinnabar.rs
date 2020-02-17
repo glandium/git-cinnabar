@@ -167,8 +167,6 @@ impl push_request_info {
 }
 
 extern "C" {
-    pub fn copy_bundle_to_file(input: *mut FILE, file: *mut FILE);
-
     pub fn stdio_write(conn: *mut hg_connection_stdio, buf: *const u8, len: usize);
 
     pub fn stdio_read_response(conn: *mut hg_connection_stdio, response: *mut strbuf);
@@ -177,8 +175,6 @@ extern "C" {
     pub fn decompress_bundle_writer(writer: *mut writer);
 
     pub fn copy_bundle(input: *mut FILE, out: *mut writer);
-
-    pub fn copy_bundle_to_strbuf(intput: *mut FILE, out: *mut strbuf);
 
     pub fn prepare_simple_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut strbuf);
     pub fn prepare_pushkey_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut strbuf);
