@@ -268,7 +268,10 @@ enum param_value<'a> {
     value(&'a [u8]),
 }
 
-unsafe fn prepare_command<F: FnMut(&str, param_value)>(mut command_add_param: F, args: HgArgs) {
+unsafe fn prepare_command<'a, F: FnMut(&str, param_value) + 'a>(
+    mut command_add_param: F,
+    args: HgArgs,
+) {
     for OneHgArg { name, value } in args.args {
         command_add_param(name, param_value::value(value));
     }
@@ -566,9 +569,9 @@ unsafe extern "C" fn stdio_send_empty_command(conn: *mut hg_connection_stdio) {
 }
 
 #[allow(non_camel_case_types)]
-struct command_request_data<'a> {
+struct command_request_data<'a, 'b> {
     conn: &'a mut hg_connection,
-    prepare_request_cb: Box<dyn FnMut(*mut CURL, *mut curl_slist)>,
+    prepare_request_cb: Box<dyn FnMut(*mut CURL, *mut curl_slist) + 'b>,
     command: &'a str,
     args: BString,
 }
@@ -737,7 +740,7 @@ unsafe fn prepare_command_request(
 
 unsafe fn http_command(
     conn: &mut hg_connection,
-    prepare_request_cb: Box<dyn FnMut(*mut CURL, *mut curl_slist)>,
+    prepare_request_cb: Box<dyn FnMut(*mut CURL, *mut curl_slist) + '_>,
     command: &str,
     args: HgArgs,
 ) {
@@ -768,11 +771,10 @@ unsafe fn http_simple_command(
     command: &str,
     args: HgArgs,
 ) {
-    let response = response as *mut strbuf;
     let is_pushkey = command == "pushkey";
     http_command(
         conn,
-        Box::new(move |curl, headers| {
+        Box::new(|curl, headers| {
             if is_pushkey {
                 prepare_pushkey_request(curl, headers, response)
             } else {
@@ -796,9 +798,7 @@ unsafe fn http_changegroup_command(
 
     http_command(
         conn,
-        Box::new(move |curl, headers| {
-            prepare_changegroup_request(curl, headers, &mut response_data)
-        }),
+        Box::new(|curl, headers| prepare_changegroup_request(curl, headers, &mut response_data)),
         command,
         args,
     );
@@ -821,7 +821,7 @@ unsafe fn http_push_command(
     //TODO: handle errors.
     http_command(
         conn,
-        Box::new(move |curl, headers| prepare_push_request(curl, headers, &mut info)),
+        Box::new(|curl, headers| prepare_push_request(curl, headers, &mut info)),
         command,
         args,
     );
@@ -850,7 +850,7 @@ unsafe fn http_push_command(
 unsafe fn http_capabilities_command(conn: *mut hg_connection, writer: *mut writer) {
     http_command(
         conn.as_mut().unwrap(),
-        Box::new(move |curl, headers| prepare_caps_request(curl, headers, writer)),
+        Box::new(|curl, headers| prepare_caps_request(curl, headers, writer)),
         "capabilities",
         args!(),
     );
