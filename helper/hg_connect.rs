@@ -32,7 +32,7 @@ use crate::libcinnabar::{
     hg_connection_stdio, http_finish, prefix_writer, prepare_caps_request,
     prepare_changegroup_request, prepare_push_request, prepare_pushkey_request,
     prepare_simple_request, push_request_info, stdio_finish, stdio_read_response, stdio_write,
-    write_to, writer, writer_close,
+    writer,
 };
 use crate::libgit::{
     credential_fill, curl_errorstr, die, fwrite_buffer, get_active_slot, http_auth,
@@ -313,7 +313,6 @@ unsafe extern "C" fn hg_getbundle(
         .map(|(n, v)| OneHgArg { name: n, value: v })
         .collect::<Vec<_>>();
     (conn.changegroup_command)(conn, &mut writer, "getbundle", args!(*: &args[..]));
-    writer_close(&mut writer);
 }
 
 #[no_mangle]
@@ -828,13 +827,7 @@ unsafe fn http_push_command(
             [stdout_, stderr_] => {
                 response.extend_from_slice(stdout_);
                 prefix_writer(&mut writer, cstr!("remote: ").as_ptr());
-                write_to(
-                    stderr_.as_ptr() as *const c_char,
-                    1,
-                    stderr_.len(),
-                    &mut writer,
-                );
-                writer_close(&mut writer);
+                writer.write_all(stderr_).unwrap();
             }
             //TODO: better eror handling.
             _ => panic!("Bad output from server"),
@@ -879,7 +872,7 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
         /* Cf. comment above caps_request_write. If the bundle stream was
          * sent to stdout, the writer was switched to fwrite. */
         if writer.write != fwrite_buffer as _ {
-            writer_close(&mut writer);
+            drop(writer);
             http_finish(inner as *mut c_void);
             return ptr::null_mut();
         }

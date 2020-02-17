@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::ffi::c_void;
+use std::io::{self, Write};
 use std::os::raw::{c_char, c_int};
 use std::ptr;
 
@@ -43,9 +44,27 @@ pub struct writer {
 }
 
 extern "C" {
-    pub fn write_to(buf: *const c_char, size: usize, nmemb: usize, writer: *mut writer) -> usize;
+    fn write_to(buf: *const c_char, size: usize, nmemb: usize, writer: *mut writer) -> usize;
 
-    pub fn writer_close(w: *mut writer);
+    fn writer_close(w: *mut writer);
+}
+
+impl Write for writer {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        Ok(unsafe { write_to(buf.as_ptr() as *const c_char, 1, buf.len(), self) })
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Drop for writer {
+    fn drop(&mut self) {
+        unsafe {
+            writer_close(self);
+        }
+    }
 }
 
 #[allow(non_camel_case_types)]
