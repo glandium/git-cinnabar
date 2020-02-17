@@ -17,8 +17,8 @@ use curl_sys::{
     curl_easy_getinfo, curl_easy_setopt, curl_off_t, curl_slist, curl_slist_append,
     curl_slist_free_all, CURL, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT,
     CURLOPT_FAILONERROR, CURLOPT_FILE, CURLOPT_FOLLOWLOCATION, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER,
-    CURLOPT_NOBODY, CURLOPT_POST, CURLOPT_POSTFIELDSIZE_LARGE, CURLOPT_READDATA,
-    CURLOPT_READFUNCTION, CURLOPT_URL, CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
+    CURLOPT_NOBODY, CURLOPT_POST, CURLOPT_POSTFIELDSIZE, CURLOPT_POSTFIELDSIZE_LARGE,
+    CURLOPT_READDATA, CURLOPT_READFUNCTION, CURLOPT_URL, CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
 };
 use either::Either;
 use itertools::Itertools;
@@ -28,8 +28,8 @@ use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERI
 use crate::libcinnabar::{
     bufferize_writer, changegroup_response_data, copy_bundle, decompress_bundle_writer,
     hg_connect_http, hg_connect_stdio, hg_connection_http, hg_connection_stdio, http_finish,
-    prefix_writer, prepare_changegroup_request, prepare_pushkey_request, stdio_finish,
-    stdio_read_response, stdio_write, writer,
+    prefix_writer, prepare_changegroup_request, stdio_finish, stdio_read_response, stdio_write,
+    writer,
 };
 use crate::libgit::{
     credential_fill, curl_errorstr, die, fwrite_buffer, get_active_slot, http_auth,
@@ -768,8 +768,7 @@ extern "C" {
     fn get_stderr() -> *mut FILE;
 }
 
-#[no_mangle]
-unsafe extern "C" fn prepare_simple_request(curl: *mut CURL, data: *mut strbuf) {
+unsafe fn prepare_simple_request(curl: *mut CURL, data: *mut strbuf) {
     curl_easy_setopt(curl, CURLOPT_FILE, data);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite_buffer as *const c_void);
 }
@@ -780,10 +779,16 @@ impl HgWireConnection for HgHTTPConnection {
         http_command(
             self,
             Box::new(|curl, headers| {
+                prepare_simple_request(curl, response);
                 if is_pushkey {
-                    prepare_pushkey_request(curl, headers, response)
-                } else {
-                    prepare_simple_request(curl, response)
+                    curl_easy_setopt(curl, CURLOPT_POST, 1);
+                    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 0);
+                    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0);
+                    let headers = curl_slist_append(
+                        headers,
+                        cstr!("Content-Type: application/mercurial-0.1").as_ptr(),
+                    );
+                    curl_slist_append(headers, cstr!("Expect:").as_ptr());
                 }
             }),
             command,

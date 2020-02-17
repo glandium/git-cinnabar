@@ -6,20 +6,6 @@
 #include "http.h"
 #include "strbuf.h"
 
-extern void prepare_simple_request(CURL *curl, struct strbuf *data);
-
-void prepare_pushkey_request(CURL *curl, struct curl_slist *headers,
-			     struct strbuf *data)
-{
-	prepare_simple_request(curl, data);
-	curl_easy_setopt(curl, CURLOPT_POST, 1);
-	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 0);
-	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0);
-	headers = curl_slist_append(headers,
-				    "Content-Type: application/mercurial-0.1");
-	headers = curl_slist_append(headers, "Expect:");
-}
-
 struct changegroup_response_data {
 	CURL *curl;
 	struct writer *writer;
