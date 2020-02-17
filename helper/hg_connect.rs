@@ -575,11 +575,11 @@ struct command_request_data<'a> {
 
 #[allow(non_camel_case_types)]
 struct http_request_info {
-    redirects: c_long,
-    effective_url: *const c_char,
+    retcode: c_int,
+    redirect_url: Option<BString>,
 }
 
-fn http_request(info: &mut http_request_info, data: &mut command_request_data) -> c_int {
+fn http_request(data: &mut command_request_data) -> http_request_info {
     unsafe {
         let slot = get_active_slot().as_mut().unwrap();
         curl_easy_setopt(slot.curl, CURLOPT_FAILONERROR, 0);
@@ -604,26 +604,38 @@ fn http_request(info: &mut http_request_info, data: &mut command_request_data) -
         let ret = run_one_slot(slot, &mut results);
         curl_slist_free_all(headers);
 
-        curl_easy_getinfo(slot.curl, CURLINFO_REDIRECT_COUNT, &mut info.redirects);
-        curl_easy_getinfo(slot.curl, CURLINFO_EFFECTIVE_URL, &mut info.effective_url);
+        let mut redirects: c_long = 0;
+        curl_easy_getinfo(slot.curl, CURLINFO_REDIRECT_COUNT, &mut redirects);
 
-        ret
+        http_request_info {
+            retcode: ret,
+            redirect_url: if redirects > 0 {
+                let mut effective_url: *const c_char = ptr::null();
+                curl_easy_getinfo(slot.curl, CURLINFO_EFFECTIVE_URL, &mut effective_url);
+                Some(
+                    CStr::from_ptr(effective_url.as_ref().unwrap())
+                        .to_bytes()
+                        .to_owned()
+                        .into(),
+                )
+            } else {
+                None
+            },
+        }
     }
 }
 
 fn http_request_reauth(data: &mut command_request_data) -> c_int {
-    let mut info = http_request_info {
-        redirects: 0,
-        effective_url: ptr::null(),
-    };
-    let ret = http_request(&mut info, data);
+    let http_request_info {
+        retcode: ret,
+        redirect_url,
+    } = http_request(data);
 
     if ret != HTTP_OK && ret != HTTP_REAUTH {
         return ret;
     }
 
-    if info.redirects > 0 {
-        let effective_url = unsafe { CStr::from_ptr(info.effective_url).to_bytes() };
+    if let Some(effective_url) = redirect_url {
         if let Some(query_idx) = effective_url.find("?cmd=") {
             let http = unsafe { data.conn.inner.http.as_mut().unwrap() };
             let mut new_url_buf = strbuf::new();
@@ -644,7 +656,7 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
     unsafe {
         credential_fill(&mut http_auth);
     }
-    http_request(&mut info, data)
+    http_request(data).retcode
 }
 
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.
