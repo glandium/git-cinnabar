@@ -580,10 +580,6 @@ struct http_request_info {
     effective_url: *const c_char,
 }
 
-extern "C" {
-    fn free(ptr: *mut c_void);
-}
-
 fn http_request(info: &mut http_request_info, data: &mut command_request_data) -> c_int {
     unsafe {
         let slot = get_active_slot().as_mut().unwrap();
@@ -636,7 +632,7 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
             new_url_buf.extend_from_slice(new_url);
             let old_url = mem::replace(&mut http.url, new_url_buf.detach());
             unsafe {
-                free(old_url as *mut c_void);
+                libc::free(old_url as *mut c_void);
             }
             eprintln!("warning: redirecting to {}", new_url.as_bstr());
         }
@@ -968,6 +964,6 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
 unsafe extern "C" fn hg_finish_connect(conn: *mut hg_connection) -> c_int {
     let conn = Box::from_raw(conn.as_mut().unwrap());
     let code = (conn.finish)(conn.inner.http as *mut c_void);
-    free(conn.inner.http as *mut c_void);
+    libc::free(conn.inner.http as *mut c_void);
     code
 }
