@@ -6,7 +6,7 @@ use std::cmp;
 use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString};
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::{c_char, c_int, c_long};
 #[cfg(unix)]
@@ -93,7 +93,7 @@ trait HgWireConnection: HgCapabilities {
     unsafe fn push_command(
         &mut self,
         response: &mut strbuf,
-        input: *mut FILE,
+        input: crate::libc::File,
         len: off_t,
         command: &str,
         args: HgArgs,
@@ -376,7 +376,7 @@ unsafe extern "C" fn hg_unbundle(
     let fh = into_raw_fd(file, "r");
     conn.push_command(
         response.as_mut().unwrap(),
-        fh,
+        crate::libc::File::new(fh),
         len.try_into().unwrap(),
         "unbundle",
         args!(heads: heads_str.as_bytes()),
@@ -518,7 +518,7 @@ impl HgWireConnection for HgStdIOConnection {
     unsafe fn push_command(
         &mut self,
         response: &mut strbuf,
-        input: *mut FILE,
+        mut input: crate::libc::File,
         len: off_t,
         command: &str,
         args: HgArgs,
@@ -539,8 +539,8 @@ impl HgWireConnection for HgStdIOConnection {
 
         let is_bundle2 = if len > 4 {
             let mut header = [0u8; 4];
-            libc::fread(header.as_mut_ptr() as *mut c_void, 4, 1, input);
-            libc::fseek(input, 0, libc::SEEK_SET);
+            input.read_exact(&mut header).unwrap();
+            input.seek(SeekFrom::Start(0)).unwrap();
             &header == b"HG20"
         } else {
             false
@@ -549,9 +549,7 @@ impl HgWireConnection for HgStdIOConnection {
         let mut len = len;
         let mut buf = [0u8; 4096];
         while len > 0 {
-            let buf_len = buf.len();
-            let mut read = cmp::min(buf_len, len.try_into().unwrap_or(buf_len));
-            read = libc::fread(buf.as_mut_ptr() as *mut c_void, 1, read, input);
+            let read = input.read(&mut buf).unwrap();
             len -= read as off_t;
             stdio_write(stdio, buf.as_ptr(), read);
         }
@@ -822,7 +820,7 @@ impl HgWireConnection for HgHTTPConnection {
     unsafe fn push_command(
         &mut self,
         response: &mut strbuf,
-        input: *mut FILE,
+        mut input: crate::libc::File,
         len: off_t,
         command: &str,
         args: HgArgs,
@@ -837,7 +835,7 @@ impl HgWireConnection for HgHTTPConnection {
                 curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, curl_off_t::from(len));
                 /* Ensure we have no state from a previous attempt that failed because
                  * of authentication (401). */
-                libc::fseek(input, 0, libc::SEEK_SET);
+                input.seek(SeekFrom::Start(0)).unwrap();
                 mem::replace(&mut http_response, strbuf::new());
                 curl_easy_setopt(curl, CURLOPT_READDATA, &input);
                 curl_easy_setopt(
