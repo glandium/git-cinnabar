@@ -236,4 +236,6 @@ pub enum http_follow_config {
 
 extern "C" {
     pub static http_follow_config: http_follow_config;
+
+    pub fn fwrite_buffer(ptr: *const c_char, elt: usize, nmemb: usize, strbuf: *mut c_void);
 }

@@ -173,7 +173,6 @@ extern "C" {
 
     pub fn copy_bundle(input: *mut FILE, out: *mut writer);
 
-    pub fn prepare_simple_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut strbuf);
     pub fn prepare_pushkey_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut strbuf);
     pub fn prepare_changegroup_request(
         curl: *mut CURL,

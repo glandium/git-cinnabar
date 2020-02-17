@@ -6,17 +6,12 @@
 #include "http.h"
 #include "strbuf.h"
 
-void prepare_simple_request(CURL *curl, struct curl_slist *headers,
-			    struct strbuf *data)
-{
-	curl_easy_setopt(curl, CURLOPT_FILE, data);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite_buffer);
-}
+extern void prepare_simple_request(CURL *curl, struct strbuf *data);
 
 void prepare_pushkey_request(CURL *curl, struct curl_slist *headers,
 			     struct strbuf *data)
 {
-	prepare_simple_request(curl, headers, data);
+	prepare_simple_request(curl, data);
 	curl_easy_setopt(curl, CURLOPT_POST, 1);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 0);
 	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0);

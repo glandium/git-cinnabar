@@ -28,12 +28,13 @@ use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERI
 use crate::libcinnabar::{
     bufferize_writer, changegroup_response_data, copy_bundle, decompress_bundle_writer,
     hg_connect_http, hg_connect_stdio, hg_connection_http, hg_connection_stdio, http_finish,
-    prefix_writer, prepare_changegroup_request, prepare_pushkey_request, prepare_simple_request,
-    stdio_finish, stdio_read_response, stdio_write, writer,
+    prefix_writer, prepare_changegroup_request, prepare_pushkey_request, stdio_finish,
+    stdio_read_response, stdio_write, writer,
 };
 use crate::libgit::{
-    credential_fill, curl_errorstr, die, get_active_slot, http_auth, http_follow_config, object_id,
-    oid_array, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
+    credential_fill, curl_errorstr, die, fwrite_buffer, get_active_slot, http_auth,
+    http_follow_config, object_id, oid_array, run_one_slot, slot_results, strbuf, HTTP_OK,
+    HTTP_REAUTH,
 };
 
 #[allow(non_camel_case_types)]
@@ -767,6 +768,12 @@ extern "C" {
     fn get_stderr() -> *mut FILE;
 }
 
+#[no_mangle]
+unsafe extern "C" fn prepare_simple_request(curl: *mut CURL, data: *mut strbuf) {
+    curl_easy_setopt(curl, CURLOPT_FILE, data);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite_buffer as *const c_void);
+}
+
 impl HgWireConnection for HgHTTPConnection {
     unsafe fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
         let is_pushkey = command == "pushkey";
@@ -776,7 +783,7 @@ impl HgWireConnection for HgHTTPConnection {
                 if is_pushkey {
                     prepare_pushkey_request(curl, headers, response)
                 } else {
-                    prepare_simple_request(curl, headers, response)
+                    prepare_simple_request(curl, response)
                 }
             }),
             command,
@@ -812,7 +819,7 @@ impl HgWireConnection for HgHTTPConnection {
         http_command(
             self,
             Box::new(|curl, headers| {
-                prepare_simple_request(curl, headers, &mut http_response);
+                prepare_simple_request(curl, &mut http_response);
                 curl_easy_setopt(curl, CURLOPT_POST, 1);
                 curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, curl_off_t::from(len));
                 /* Ensure we have no state from a previous attempt that failed because
