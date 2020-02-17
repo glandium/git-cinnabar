@@ -268,10 +268,7 @@ enum param_value<'a> {
     value(&'a [u8]),
 }
 
-unsafe fn prepare_command<'a, F: FnMut(&str, param_value) + 'a>(
-    mut command_add_param: F,
-    args: HgArgs,
-) {
+fn prepare_command<'a, F: FnMut(&str, param_value) + 'a>(mut command_add_param: F, args: HgArgs) {
     for OneHgArg { name, value } in args.args {
         command_add_param(name, param_value::value(value));
     }
@@ -467,7 +464,7 @@ fn stdio_command_add_param(data: &mut BString, name: &str, value: param_value) {
     };
 }
 
-unsafe fn stdio_send_command(conn: &mut hg_connection_stdio, command: &str, args: HgArgs) {
+fn stdio_send_command(conn: &mut hg_connection_stdio, command: &str, args: HgArgs) {
     let mut data = BString::from(Vec::<u8>::new());
     data.extend(command.as_bytes());
     data.push(b'\n');
@@ -475,7 +472,9 @@ unsafe fn stdio_send_command(conn: &mut hg_connection_stdio, command: &str, args
         |name, value| stdio_command_add_param(&mut data, name, value),
         args,
     );
-    stdio_write(conn, data.as_ptr(), data.len());
+    unsafe {
+        stdio_write(conn, data.as_ptr(), data.len());
+    }
 }
 
 unsafe fn stdio_simple_command(
@@ -738,7 +737,7 @@ unsafe fn prepare_command_request(
     curl_easy_setopt(curl, CURLOPT_URL, command_url.as_ptr());
 }
 
-unsafe fn http_command(
+fn http_command(
     conn: &mut hg_connection,
     prepare_request_cb: Box<dyn FnMut(*mut CURL, *mut curl_slist) + '_>,
     command: &str,
@@ -755,13 +754,15 @@ unsafe fn http_command(
         args,
     );
     if http_request_reauth(&mut request_data) != HTTP_OK {
-        die!(
-            "unable to access '{}': {}",
-            CStr::from_ptr(conn.inner.http.as_mut().unwrap().url)
-                .to_bytes()
-                .as_bstr(),
-            CStr::from_ptr(curl_errorstr.as_ptr()).to_bytes().as_bstr()
-        );
+        unsafe {
+            die!(
+                "unable to access '{}': {}",
+                CStr::from_ptr(conn.inner.http.as_mut().unwrap().url)
+                    .to_bytes()
+                    .as_bstr(),
+                CStr::from_ptr(curl_errorstr.as_ptr()).to_bytes().as_bstr()
+            );
+        }
     }
 }
 
@@ -847,10 +848,10 @@ unsafe fn http_push_command(
     }
 }
 
-unsafe fn http_capabilities_command(conn: *mut hg_connection, writer: *mut writer) {
+fn http_capabilities_command(conn: &mut hg_connection, writer: &mut writer) {
     http_command(
-        conn.as_mut().unwrap(),
-        Box::new(|curl, headers| prepare_caps_request(curl, headers, writer)),
+        conn,
+        Box::new(|curl, headers| unsafe { prepare_caps_request(curl, headers, writer) }),
         "capabilities",
         args!(),
     );
@@ -880,7 +881,7 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
             close: ptr::null(),
             context: &mut caps as *mut _ as *mut c_void,
         };
-        http_capabilities_command(&mut *conn, &mut writer);
+        http_capabilities_command(&mut conn, &mut writer);
         /* Cf. comment above caps_request_write. If the bundle stream was
          * sent to stdout, the writer was switched to fwrite. */
         if writer.write != fwrite_buffer as _ {
