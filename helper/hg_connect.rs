@@ -18,15 +18,22 @@ use std::str::FromStr;
 
 use bstr::{BString, ByteSlice};
 use curl_sys::{
-    curl_easy_getinfo, curl_easy_setopt, curl_off_t, curl_slist, curl_slist_append,
-    curl_slist_free_all, CURL, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT,
-    CURLOPT_FAILONERROR, CURLOPT_FOLLOWLOCATION, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER,
-    CURLOPT_NOBODY, CURLOPT_URL, CURLOPT_USERAGENT,
+    curl_easy_getinfo, curl_easy_setopt, curl_slist, curl_slist_append, curl_slist_free_all, CURL,
+    CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT, CURLOPT_FAILONERROR, CURLOPT_FOLLOWLOCATION,
+    CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY, CURLOPT_URL, CURLOPT_USERAGENT,
 };
 use itertools::Itertools;
 use libc::{off_t, FILE};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
 
+use crate::libcinnabar::{
+    bufferize_writer, changegroup_response_data, copy_bundle, copy_bundle_to_file,
+    copy_bundle_to_strbuf, hg_connect_http, hg_connect_stdio, hg_connection_inner,
+    hg_connection_stdio, http_finish, prefix_writer, prepare_caps_request,
+    prepare_changegroup_request, prepare_push_request, prepare_pushkey_request,
+    prepare_simple_request, push_request_info, stdio_finish, stdio_read_response, stdio_write,
+    write_to, writer, writer_close,
+};
 use crate::libgit::{
     credential_fill, curl_errorstr, die, fwrite_buffer, get_active_slot, http_auth,
     http_follow_config, object_id, oid_array, run_one_slot, slot_results, strbuf, HTTP_OK,
@@ -78,29 +85,6 @@ macro_rules! args {
     (@extra $a:expr) => { Some($a) };
 }
 
-#[allow(non_camel_case_types)]
-#[repr(C)]
-union hg_connection_inner {
-    http: *mut hg_connection_http,
-    stdio: *mut hg_connection_stdio,
-}
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
-#[derive(Copy, Clone)]
-struct hg_connection_http {
-    url: *const c_char,
-    initial_request: c_int,
-}
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
-#[derive(Copy, Clone)]
-struct hg_connection_stdio {
-    out: *mut FILE,
-    is_remote: c_int,
-}
-
 /* Split the list of capabilities a mercurial server returned. Also url-decode
  * the bundle2 value (TODO: in place). */
 fn split_capabilities(buf: &[u8]) -> Vec<(BString, CString)> {
@@ -138,20 +122,6 @@ unsafe extern "C" fn hg_get_capability(
         }
     }
     ptr::null()
-}
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
-struct writer {
-    write: *const c_void,
-    close: *const c_void,
-    context: *mut c_void,
-}
-
-extern "C" {
-    fn write_to(buf: *const c_char, size: usize, nmemb: usize, writer: *mut writer) -> usize;
-
-    fn writer_close(w: *mut writer);
 }
 
 #[no_mangle]
@@ -346,10 +316,6 @@ unsafe extern "C" fn hg_getbundle(
     writer_close(&mut writer);
 }
 
-extern "C" {
-    fn copy_bundle_to_file(input: *mut FILE, file: *mut FILE);
-}
-
 #[no_mangle]
 unsafe extern "C" fn hg_unbundle(
     conn: *mut hg_connection,
@@ -497,20 +463,6 @@ fn stdio_command_add_param(data: &mut BString, name: &str, value: param_value) {
         }
         _ => assert!(is_asterisk),
     };
-}
-
-extern "C" {
-    #[allow(improper_ctypes)]
-    fn stdio_write(conn: *mut hg_connection_stdio, buf: *const u8, len: usize);
-
-    #[allow(improper_ctypes)]
-    fn stdio_read_response(conn: *mut hg_connection_stdio, response: *mut strbuf);
-
-    fn bufferize_writer(writer: *mut writer);
-
-    fn copy_bundle(input: *mut FILE, out: *mut writer);
-
-    fn copy_bundle_to_strbuf(intput: *mut FILE, out: *mut strbuf);
 }
 
 unsafe fn stdio_send_command(conn: &mut hg_connection_stdio, command: &str, args: HgArgs) {
@@ -803,22 +755,6 @@ unsafe fn http_command(
     }
 }
 
-extern "C" {
-    fn prepare_simple_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut strbuf);
-    fn prepare_pushkey_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut strbuf);
-    fn prepare_changegroup_request(
-        curl: *mut CURL,
-        headers: *mut curl_slist,
-        data: *mut changegroup_response_data,
-    );
-    fn prepare_push_request(
-        curl: *mut CURL,
-        headers: *mut curl_slist,
-        data: *mut push_request_info,
-    );
-    fn prepare_caps_request(curl: *mut CURL, headers: *mut curl_slist, data: *mut writer);
-}
-
 unsafe fn http_simple_command(
     conn: &mut hg_connection,
     response: &mut strbuf,
@@ -841,13 +777,6 @@ unsafe fn http_simple_command(
     )
 }
 
-#[allow(non_camel_case_types)]
-#[repr(C)]
-struct changegroup_response_data {
-    curl: *mut CURL,
-    writer: *mut writer,
-}
-
 /* The changegroup, changegroupsubset and getbundle commands return a raw
  *  * zlib stream when called over HTTP. */
 unsafe fn http_changegroup_command(
@@ -856,10 +785,7 @@ unsafe fn http_changegroup_command(
     command: &str,
     args: HgArgs,
 ) {
-    let mut response_data = changegroup_response_data {
-        curl: ptr::null_mut(),
-        writer,
-    };
+    let mut response_data = changegroup_response_data::new(writer);
 
     http_command(
         conn,
@@ -871,18 +797,8 @@ unsafe fn http_changegroup_command(
     );
 }
 
-#[allow(non_camel_case_types)]
-#[repr(C)]
-struct push_request_info {
-    response: *mut strbuf,
-    input: *mut FILE,
-    len: curl_off_t,
-}
-
 extern "C" {
     fn get_stderr() -> *mut FILE;
-
-    fn prefix_writer(writer: *mut writer, prefix: *const c_char);
 }
 
 unsafe fn http_push_command(
@@ -894,11 +810,7 @@ unsafe fn http_push_command(
     args: HgArgs,
 ) {
     let mut http_response = strbuf::new();
-    let mut info = push_request_info {
-        response: &mut http_response,
-        input,
-        len: len.into(),
-    };
+    let mut info = push_request_info::new(&mut http_response, input, len);
     //TODO: handle errors.
     http_command(
         conn,
@@ -941,16 +853,6 @@ unsafe fn http_capabilities_command(conn: *mut hg_connection, writer: *mut write
         "capabilities",
         args!(),
     );
-}
-
-extern "C" {
-    fn hg_connect_stdio(url: *const c_char, flags: c_int) -> *mut hg_connection_stdio;
-
-    fn stdio_finish(conn: *mut c_void) -> c_int;
-
-    fn hg_connect_http(url: *const c_char, flags: c_int) -> *mut hg_connection_http;
-
-    fn http_finish(conn: *mut c_void) -> c_int;
 }
 
 #[no_mangle]
