@@ -2,10 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::cmp::{self, Ordering};
+use std::cmp;
 use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString};
-use std::fmt::{self, Display, Formatter};
 use std::fs::File;
 use std::io::Write;
 use std::mem;
@@ -20,14 +19,19 @@ use std::str::FromStr;
 use bstr::{BString, ByteSlice};
 use curl_sys::{
     curl_easy_getinfo, curl_easy_setopt, curl_off_t, curl_slist, curl_slist_append,
-    curl_slist_free_all, CURLcode, CURL, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT,
+    curl_slist_free_all, CURL, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT,
     CURLOPT_FAILONERROR, CURLOPT_FOLLOWLOCATION, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER,
-    CURLOPT_NOBODY, CURLOPT_URL, CURLOPT_USERAGENT, CURL_ERROR_SIZE,
+    CURLOPT_NOBODY, CURLOPT_URL, CURLOPT_USERAGENT,
 };
 use itertools::Itertools;
 use libc::{off_t, FILE};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
-use sha1::{Digest, Sha1};
+
+use crate::libgit::{
+    credential_fill, curl_errorstr, die, fwrite_buffer, get_active_slot, http_auth,
+    http_follow_config, object_id, oid_array, run_one_slot, slot_results, strbuf, HTTP_OK,
+    HTTP_REAUTH,
+};
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -95,162 +99,6 @@ struct hg_connection_http {
 struct hg_connection_stdio {
     out: *mut FILE,
     is_remote: c_int,
-}
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
-struct oid_array {
-    oid: *const object_id,
-    nr: c_int,
-    alloc: c_int,
-    sorted: c_int,
-}
-
-#[allow(non_camel_case_types)]
-struct oid_array_iter<'a> {
-    array: &'a oid_array,
-    next: Option<c_int>,
-}
-
-impl oid_array {
-    fn is_empty(&self) -> bool {
-        self.nr == 0
-    }
-
-    fn iter(&self) -> oid_array_iter {
-        oid_array_iter {
-            array: self,
-            next: Some(0),
-        }
-    }
-}
-
-impl<'a> Iterator for oid_array_iter<'a> {
-    type Item = &'a object_id;
-    fn next(&mut self) -> Option<Self::Item> {
-        let i = self.next.take()?;
-        let result = unsafe { self.array.oid.offset(i as isize).as_ref()? };
-        self.next = i.checked_add(1).filter(|&x| x < self.array.nr);
-        Some(result)
-    }
-}
-
-const GIT_SHA1_RAWSZ: usize = 20;
-const GIT_MAX_RAWSZ: usize = 32;
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
-#[derive(Eq)]
-struct object_id([u8; GIT_MAX_RAWSZ]);
-
-impl Display for object_id {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        for x in self.raw() {
-            write!(f, "{:02x}", x)?;
-        }
-        Ok(())
-    }
-}
-
-impl object_id {
-    fn create() -> object_id_creator {
-        object_id_creator(Sha1::new())
-    }
-
-    fn raw(&self) -> &[u8] {
-        &self.0[..GIT_SHA1_RAWSZ]
-    }
-}
-
-impl PartialEq for object_id {
-    fn eq(&self, other: &Self) -> bool {
-        self.raw() == other.raw()
-    }
-}
-
-impl PartialOrd for object_id {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.raw().cmp(other.raw()))
-    }
-}
-
-impl Ord for object_id {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.raw().cmp(other.raw())
-    }
-}
-
-#[allow(non_camel_case_types)]
-struct object_id_creator(Sha1);
-
-impl object_id_creator {
-    fn result(self) -> object_id {
-        let mut result = object_id([0; GIT_MAX_RAWSZ]);
-        result.0[..GIT_SHA1_RAWSZ].copy_from_slice(self.0.result().as_slice());
-        result
-    }
-
-    fn input(&mut self, data: &[u8]) {
-        self.0.input(data)
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
-struct strbuf {
-    alloc: usize,
-    len: usize,
-    buf: *mut c_char,
-}
-
-extern "C" {
-    static strbuf_slopbuf: *const c_char;
-    fn strbuf_add(buf: *mut strbuf, data: *const c_void, len: usize);
-    fn strbuf_release(buf: *mut strbuf);
-    fn strbuf_detach(buf: *mut strbuf, sz: *mut usize) -> *const c_char;
-}
-
-impl strbuf {
-    fn new() -> Self {
-        strbuf {
-            alloc: 0,
-            len: 0,
-            buf: unsafe { strbuf_slopbuf as *mut _ },
-        }
-    }
-
-    fn as_bytes(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.buf as *const u8, self.len) }
-    }
-
-    fn extend_from_slice(&mut self, s: &[u8]) {
-        unsafe { strbuf_add(self, s.as_ptr() as *const c_void, s.len()) }
-    }
-
-    fn detach(mut self) -> *const c_char {
-        let result = unsafe { strbuf_detach(&mut self, ptr::null_mut()) };
-        mem::forget(self);
-        result
-    }
-}
-
-impl Drop for strbuf {
-    fn drop(&mut self) {
-        unsafe {
-            strbuf_release(self);
-        }
-    }
-}
-
-extern "C" {
-    fn die(fmt: *const c_char, ...) -> !;
-}
-
-macro_rules! die {
-    ($($e:expr),+) => {
-        let s = CString::new(format!($($e),+)).unwrap();
-        die(s.as_ptr())
-    }
 }
 
 /* Split the list of capabilities a mercurial server returned. Also url-decode
@@ -334,15 +182,13 @@ unsafe extern "C" fn hg_get_repo_state(
                 *: &[]
             ),
         );
-        if !out.buf.is_null() {
-            let split = out.as_bytes().split(|&b| b == b';');
-            for (out, buf) in Iterator::zip(
-                split,
-                &mut [Some(branchmap), Some(heads), Some(bookmarks), None],
-            ) {
-                let buf = buf.as_mut().unwrap();
-                unescape_batched_output(out, buf);
-            }
+        let split = out.as_bytes().split(|&b| b == b';');
+        for (out, buf) in Iterator::zip(
+            split,
+            &mut [Some(branchmap), Some(heads), Some(bookmarks), None],
+        ) {
+            let buf = buf.as_mut().unwrap();
+            unescape_batched_output(out, buf);
         }
     }
 }
@@ -784,39 +630,7 @@ struct http_request_info {
 
 extern "C" {
     fn free(ptr: *mut c_void);
-
-    fn credential_fill(auth: *mut credential);
-
-    static mut http_auth: credential;
-
-    fn get_active_slot() -> *mut active_request_slot;
-
-    fn run_one_slot(slot: *mut active_request_slot, results: *mut slot_results) -> c_int;
-
-    static curl_errorstr: [c_char; CURL_ERROR_SIZE];
 }
-
-#[allow(non_camel_case_types)]
-#[repr(transparent)]
-struct credential(c_void);
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
-struct active_request_slot {
-    curl: *mut CURL,
-}
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
-struct slot_results {
-    curl_result: CURLcode,
-    http_code: c_long,
-    auth_avail: c_long,
-    http_connectcode: c_long,
-}
-
-const HTTP_OK: c_int = 0;
-const HTTP_REAUTH: c_int = 4;
 
 fn http_request(info: &mut http_request_info, data: &mut command_request_data) -> c_int {
     unsafe {
@@ -839,12 +653,7 @@ fn http_request(info: &mut http_request_info, data: &mut command_request_data) -
             cstr!("mercurial/proto-1.0").as_ptr(),
         );
 
-        let mut results = slot_results {
-            curl_result: 0,
-            http_code: 0,
-            auth_avail: 0,
-            http_connectcode: 0,
-        };
+        let mut results = slot_results::new();
         let ret = run_one_slot(slot, &mut results);
         curl_slist_free_all(headers);
 
@@ -919,19 +728,6 @@ fn http_query_add_param(data: &mut BString, name: &str, value: param_value) {
         data.extend_from_slice(b"=");
         data.extend_from_slice(value.as_bytes());
     }
-}
-
-#[allow(dead_code, non_camel_case_types)]
-#[repr(C)]
-#[derive(PartialEq)]
-enum http_follow_config {
-    HTTP_FOLLOW_NONE,
-    HTTP_FOLLOW_ALWAYS,
-    HTTP_FOLLOW_INITIAL,
-}
-
-extern "C" {
-    static http_follow_config: http_follow_config;
 }
 
 unsafe fn prepare_command_request(
@@ -1155,8 +951,6 @@ extern "C" {
     fn hg_connect_http(url: *const c_char, flags: c_int) -> *mut hg_connection_http;
 
     fn http_finish(conn: *mut c_void) -> c_int;
-
-    fn fwrite_buffer(ptr: *const c_char, elt: usize, nmemb: usize, strbuf: *mut c_void);
 }
 
 #[no_mangle]

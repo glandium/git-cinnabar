@@ -5,6 +5,9 @@
 #[macro_use]
 extern crate cstr;
 
+#[macro_use]
+mod libgit;
+
 pub mod hg_connect;
 
 use std::convert::TryInto;
