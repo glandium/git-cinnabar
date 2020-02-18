@@ -6,9 +6,7 @@ use std::cmp::Ordering;
 use std::ffi::c_void;
 use std::fmt::{self, Display, Formatter};
 use std::io::{self, Write};
-use std::mem;
 use std::os::raw::{c_char, c_int, c_long};
-use std::ptr;
 
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use sha1::{Digest, Sha1};
@@ -123,7 +121,6 @@ extern "C" {
     static strbuf_slopbuf: *const c_char;
     fn strbuf_add(buf: *mut strbuf, data: *const c_void, len: usize);
     fn strbuf_release(buf: *mut strbuf);
-    fn strbuf_detach(buf: *mut strbuf, sz: *mut usize) -> *const c_char;
 }
 
 impl strbuf {
@@ -141,12 +138,6 @@ impl strbuf {
 
     pub fn extend_from_slice(&mut self, s: &[u8]) {
         unsafe { strbuf_add(self, s.as_ptr() as *const c_void, s.len()) }
-    }
-
-    pub fn detach(mut self) -> *const c_char {
-        let result = unsafe { strbuf_detach(&mut self, ptr::null_mut()) };
-        mem::forget(self);
-        result
     }
 }
 
@@ -185,6 +176,9 @@ extern "C" {
 
     pub static mut http_auth: credential;
 
+    pub fn http_init(remote: *mut remote, url: *const c_char, proactive_auth: c_int);
+    pub fn http_cleanup();
+
     pub fn get_active_slot() -> *mut active_request_slot;
 
     pub fn run_one_slot(slot: *mut active_request_slot, results: *mut slot_results) -> c_int;
@@ -195,6 +189,10 @@ extern "C" {
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
 pub struct credential(c_void);
+
+#[allow(non_camel_case_types)]
+#[repr(transparent)]
+pub struct remote(c_void);
 
 #[allow(non_camel_case_types)]
 #[repr(C)]

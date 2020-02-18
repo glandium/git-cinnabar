@@ -27,14 +27,13 @@ use libc::{off_t, FILE};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
 
 use crate::libcinnabar::{
-    bufferize_writer, copy_bundle, decompress_bundle_writer, hg_connect_http, hg_connect_stdio,
-    hg_connection_http, hg_connection_stdio, http_finish, inflate_writer, prefix_writer,
-    stdio_finish, stdio_read_response, stdio_write, writer,
+    bufferize_writer, copy_bundle, decompress_bundle_writer, hg_connect_stdio, hg_connection_stdio,
+    inflate_writer, prefix_writer, stdio_finish, stdio_read_response, stdio_write, writer,
 };
 use crate::libgit::{
-    credential_fill, curl_errorstr, die, fwrite_buffer, get_active_slot, http_auth,
-    http_follow_config, object_id, oid_array, run_one_slot, slot_results, strbuf, HTTP_OK,
-    HTTP_REAUTH,
+    credential_fill, curl_errorstr, die, fwrite_buffer, get_active_slot, http_auth, http_cleanup,
+    http_follow_config, http_init, object_id, oid_array, run_one_slot, slot_results, strbuf,
+    HTTP_OK, HTTP_REAUTH,
 };
 
 #[allow(non_camel_case_types)]
@@ -72,11 +71,17 @@ macro_rules! args {
 
 struct HgConnection<Inner> {
     capabilities: Vec<(BString, CString)>,
-    inner: *mut Inner,
+    inner: Inner,
+}
+
+#[allow(non_camel_case_types)]
+pub struct hg_connection_http {
+    pub url: CString,
+    pub initial_request: bool,
 }
 
 type HgHTTPConnection = HgConnection<hg_connection_http>;
-type HgStdIOConnection = HgConnection<hg_connection_stdio>;
+type HgStdIOConnection = HgConnection<*mut hg_connection_stdio>;
 
 trait HgCapabilities {
     fn get_capability(&self, name: &[u8]) -> Option<&CStr>;
@@ -635,15 +640,10 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
 
     if let Some(effective_url) = redirect_url {
         if let Some(query_idx) = effective_url.find("?cmd=") {
-            let http = unsafe { data.conn.inner.as_mut().unwrap() };
-            let mut new_url_buf = strbuf::new();
-            let new_url = &effective_url[..query_idx];
-            new_url_buf.extend_from_slice(new_url);
-            let old_url = mem::replace(&mut http.url, new_url_buf.detach());
-            unsafe {
-                libc::free(old_url as *mut c_void);
-            }
+            let http = &mut data.conn.inner;
+            let new_url = effective_url[..query_idx].to_owned();
             eprintln!("warning: redirecting to {}", new_url.as_bstr());
+            http.url = CString::new(new_url).unwrap();
         }
     }
 
@@ -700,15 +700,15 @@ unsafe fn prepare_command_request(
         .and_then(|s| usize::from_str(s).ok())
         .unwrap_or(0);
 
-    let http = data.conn.inner.as_mut().unwrap();
-    if http_follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && http.initial_request > 0 {
+    let http = &mut data.conn.inner;
+    if http_follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && http.initial_request {
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
-        http.initial_request = 0;
+        http.initial_request = false;
     }
 
     (data.prepare_request_cb)(curl, headers);
 
-    command_url.extend_from_slice(CStr::from_ptr(http.url).to_bytes());
+    command_url.extend_from_slice(http.url.as_bytes());
     command_url.extend_from_slice(b"?cmd=");
     command_url.extend_from_slice(data.command.as_bytes());
 
@@ -754,9 +754,7 @@ fn http_command(
         unsafe {
             die!(
                 "unable to access '{}': {}",
-                CStr::from_ptr(conn.inner.as_mut().unwrap().url)
-                    .to_bytes()
-                    .as_bstr(),
+                conn.inner.url.as_bytes().as_bstr(),
                 CStr::from_ptr(curl_errorstr.as_ptr()).to_bytes().as_bstr()
             );
         }
@@ -779,7 +777,7 @@ struct changegroup_response_data<'a> {
     writer: &'a mut writer,
 }
 
-unsafe fn changegroup_write(
+unsafe extern "C" fn changegroup_write(
     ptr: *const c_char,
     size: usize,
     nmemb: usize,
@@ -916,9 +914,8 @@ impl HgWireConnection for HgHTTPConnection {
     }
 
     unsafe fn finish(&mut self) -> c_int {
-        let code = http_finish(self.inner);
-        libc::free(mem::replace(&mut self.inner, ptr::null_mut()) as *mut c_void);
-        code
+        http_cleanup();
+        0
     }
 }
 
@@ -999,15 +996,15 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
     let conn: Box<dyn HgWireConnection + '_> = if url_.starts_with(b"http://")
         || url_.starts_with(b"https://")
     {
-        let inner = hg_connect_http(url, flags);
-        if inner.is_null() {
-            return ptr::null_mut();
-        }
-
         let mut conn = Box::new(HgHTTPConnection {
             capabilities: Vec::new(),
-            inner,
+            inner: hg_connection_http {
+                url: CString::new(url_.to_owned()).unwrap(),
+                initial_request: true,
+            },
         });
+
+        http_init(ptr::null_mut(), conn.inner.url.as_ptr(), 0);
 
         let mut caps = strbuf::new();
         let mut writer = writer::new(&mut caps);
@@ -1017,7 +1014,7 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
          * sent to stdout, the writer was switched to the right. */
         if writers.is_right() {
             drop(writer);
-            http_finish(inner);
+            conn.finish();
             return ptr::null_mut();
         }
         mem::swap(
