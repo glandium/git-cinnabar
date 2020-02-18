@@ -13,6 +13,7 @@ mod libcinnabar;
 #[macro_use]
 pub mod hg_connect;
 pub(crate) mod hg_connect_http;
+pub(crate) mod hg_connect_stdio;
 
 use std::convert::TryInto;
 use std::ffi::OsString;

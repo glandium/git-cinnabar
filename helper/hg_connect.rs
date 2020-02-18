@@ -5,8 +5,6 @@
 use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString};
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, Write};
-use std::mem;
 use std::os::raw::{c_char, c_int};
 use std::ptr;
 
@@ -16,10 +14,8 @@ use libc::{off_t, FILE};
 use percent_encoding::percent_decode;
 
 use crate::hg_connect_http::HgHTTPConnection;
-use crate::libcinnabar::{
-    bufferize_writer, copy_bundle, hg_connect_stdio, hg_connection_stdio, stdio_finish,
-    stdio_read_response, stdio_write, writer,
-};
+use crate::hg_connect_stdio::HgStdIOConnection;
+use crate::libcinnabar::{copy_bundle, writer};
 use crate::libgit::{die, object_id, oid_array, strbuf};
 
 #[allow(non_camel_case_types)]
@@ -60,8 +56,6 @@ pub struct HgConnection<Inner> {
     pub capabilities: Vec<(BString, CString)>,
     pub inner: Inner,
 }
-
-type HgStdIOConnection = HgConnection<*mut hg_connection_stdio>;
 
 pub trait HgCapabilities {
     fn get_capability(&self, name: &[u8]) -> Option<&CStr>;
@@ -410,198 +404,15 @@ unsafe extern "C" fn hg_cinnabarclone(conn: *mut hg_connection, result: *mut str
     conn.simple_command(result.as_mut().unwrap(), "cinnabarclone", args!());
 }
 
-/* The mercurial "stdio" protocol is used for both local repositories and
- * remote ssh repositories.
- * A mercurial client sends commands in the following form:
- *   <command> LF
- *   (<param> SP <length> LF <value>)*
- *   ('*' SP <num> LF (<param> SP <length> LF <value>){num})
- *
- * <value> is <length> bytes long. The number of parameters depends on the
- * command.
- *
- * The '*' special parameter introduces a variable number of extra parameters.
- * The number following the '*' is the number of extra parameters.
- *
- * The server response, for simple commands, is of the following form:
- *   <length> LF
- *   <content>
- *
- * <content> is <length> bytes long.
- */
-fn stdio_command_add_param(data: &mut BString, name: &str, value: param_value) {
-    let is_asterisk = name == "*";
-    let len = match value {
-        param_value::size(s) => {
-            assert!(is_asterisk);
-            s
-        }
-        param_value::value(v) => {
-            assert!(!is_asterisk);
-            v.len()
-        }
-    };
-    data.extend(name.as_bytes());
-    writeln!(data, " {}", len).unwrap();
-    match value {
-        param_value::value(v) => {
-            assert!(!is_asterisk);
-            data.extend(v)
-        }
-        _ => assert!(is_asterisk),
-    };
-}
-
-fn stdio_send_command(conn: &mut hg_connection_stdio, command: &str, args: HgArgs) {
-    let mut data = BString::from(Vec::<u8>::new());
-    data.extend(command.as_bytes());
-    data.push(b'\n');
-    prepare_command(
-        |name, value| stdio_command_add_param(&mut data, name, value),
-        args,
-    );
-    unsafe {
-        stdio_write(conn, data.as_ptr(), data.len());
-    }
-}
-
-impl HgWireConnection for HgStdIOConnection {
-    unsafe fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
-        let stdio = self.inner.as_mut().unwrap();
-        stdio_send_command(stdio, command, args);
-        stdio_read_response(stdio, response);
-    }
-
-    unsafe fn changegroup_command(&mut self, writer: &mut writer, command: &str, args: HgArgs) {
-        let stdio = self.inner.as_mut().unwrap();
-        stdio_send_command(stdio, command, args);
-
-        /* We're going to receive a stream, but we don't know how big it is
-         * going to be in advance, so we have to read it according to its
-         * format: changegroup or bundle2.
-         */
-        if stdio.is_remote > 0 {
-            bufferize_writer(writer);
-        }
-        copy_bundle(stdio.out, writer);
-    }
-
-    unsafe fn push_command(
-        &mut self,
-        response: &mut strbuf,
-        mut input: File,
-        len: off_t,
-        command: &str,
-        args: HgArgs,
-    ) {
-        let stdio = self.inner.as_mut().unwrap();
-        stdio_send_command(stdio, command, args);
-        /* The server normally sends an empty response before reading the data
-         * it's sent if not, it's an error (typically, the remote will
-         * complain here if there was a lost push race). */
-        //TODO: handle that error.
-        let mut header = strbuf::new();
-        stdio_read_response(stdio, &mut header);
-
-        //TODO: chunk in smaller pieces.
-        header.extend_from_slice(format!("{}\n", len).as_bytes());
-        stdio_write(stdio, header.as_bytes().as_ptr(), header.as_bytes().len());
-        drop(header);
-
-        let is_bundle2 = if len > 4 {
-            let mut header = [0u8; 4];
-            input.read_exact(&mut header).unwrap();
-            input.seek(SeekFrom::Start(0)).unwrap();
-            &header == b"HG20"
-        } else {
-            false
-        };
-
-        let mut len = len;
-        let mut buf = [0u8; 4096];
-        while len > 0 {
-            let read = input.read(&mut buf).unwrap();
-            len -= read as off_t;
-            stdio_write(stdio, buf.as_ptr(), read);
-        }
-
-        stdio_write(stdio, "0\n".as_ptr(), 2);
-        if is_bundle2 {
-            copy_bundle(stdio.out, &mut writer::new(response));
-        } else {
-            /* There are two responses, one for output, one for actual response. */
-            //TODO: actually handle output here
-            let mut header = strbuf::new();
-            stdio_read_response(stdio, &mut header);
-            drop(header);
-            stdio_read_response(stdio, response);
-        }
-    }
-
-    unsafe fn finish(&mut self) -> c_int {
-        let code = stdio_finish(self.inner);
-        libc::free(mem::replace(&mut self.inner, ptr::null_mut()) as *mut c_void);
-        code
-    }
-}
-
-#[no_mangle]
-unsafe extern "C" fn stdio_send_empty_command(conn: *mut hg_connection_stdio) {
-    let conn = conn.as_mut().unwrap();
-    stdio_send_command(conn, "", args!());
-}
-
 #[no_mangle]
 unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_connection {
     let url_ = CStr::from_ptr(url).to_bytes();
-    let conn: Option<Box<dyn HgWireConnection + '_>> = if url_.starts_with(b"http://")
-        || url_.starts_with(b"https://")
-    {
-        HgHTTPConnection::new(url_).map(|c| Box::new(c) as _)
-    } else {
-        let inner = if let Some(inner) = hg_connect_stdio(url, flags).as_mut() {
-            inner
+    let conn: Option<Box<dyn HgWireConnection + '_>> =
+        if url_.starts_with(b"http://") || url_.starts_with(b"https://") {
+            HgHTTPConnection::new(url_).map(|c| Box::new(c) as _)
         } else {
-            return ptr::null_mut();
+            HgStdIOConnection::new(url_, flags).map(|c| Box::new(c) as _)
         };
-
-        /* Very old versions of the mercurial server (< 0.9) would ignore
-         * unknown commands, and didn't know the "capabilities" command we want
-         * to use to retrieve the server capabilities.
-         * So, we also emit a command that is supported by those old versions,
-         * and will see if we get a response for one or both commands.
-         * Note the "capabilities" command is not supported over the stdio
-         * protocol before mercurial 1.7, but we require features from at
-         * least mercurial 1.9 anyways. Server versions between 0.9 and 1.7
-         * will return an empty result for the "capabilities" command, as
-         * opposed to no result at all with older servers. */
-        stdio_send_command(inner, "capabilities", args!());
-        stdio_send_command(
-            inner,
-            "between",
-            args!(
-                pairs: b"0000000000000000000000000000000000000000-0000000000000000000000000000000000000000"
-            ),
-        );
-
-        let mut conn = Box::new(HgStdIOConnection {
-            capabilities: Vec::new(),
-            inner,
-        });
-
-        let mut buf = strbuf::new();
-        stdio_read_response(inner, &mut buf);
-        if buf.as_bytes() != b"\n" {
-            mem::swap(
-                &mut conn.capabilities,
-                &mut split_capabilities(buf.as_bytes()),
-            );
-            /* Now read the response for the "between" command. */
-            stdio_read_response(inner, &mut buf);
-        }
-
-        Some(conn)
-    };
 
     let conn = if let Some(conn) = conn {
         conn
