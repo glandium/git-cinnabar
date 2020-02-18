@@ -36,6 +36,18 @@ pub struct writer {
     pub context: *mut c_void,
 }
 
+#[no_mangle]
+unsafe extern "C" fn get_writer_fd(writer: *const writer) -> c_int {
+    let writer = writer.as_ref().unwrap();
+    if writer.write == libc::fwrite as *const c_void
+        && writer.close == libc::fflush as *const c_void
+    {
+        libc::fileno(writer.context as *mut FILE)
+    } else {
+        -1
+    }
+}
+
 extern "C" {
     fn write_to(buf: *const c_char, size: usize, nmemb: usize, writer: *mut writer) -> usize;
 

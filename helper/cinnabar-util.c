@@ -228,18 +228,20 @@ static int pipe_close(void *data)
 	return ret;
 }
 
+extern int get_writer_fd(struct writer *writer);
+
 void pipe_writer(struct writer *writer, const char **argv) {
 	struct pipe_context *context = xcalloc(1, sizeof(struct pipe_context));
 
-	if (writer->write != (write_callback)fwrite &&
-	    writer->close != (close_callback)fflush)
+	int fd = get_writer_fd(writer);
+	if (fd < 0)
 		die("pipe_writer can only redirect an fwrite writer");
 
 	writer_close(writer);
 	child_process_init(&context->proc);
 	context->proc.argv = argv;
 	context->proc.in = -1;
-	context->proc.out = fileno((FILE*)writer->context);
+	context->proc.out = fd;
 	context->proc.no_stderr = 1;
 	start_command(&context->proc);
 	context->pipe = xfdopen(context->proc.in, "w");
