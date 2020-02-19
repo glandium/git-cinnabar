@@ -10,7 +10,9 @@ mod libgit;
 mod libc;
 mod libcinnabar;
 
+#[macro_use]
 pub mod hg_connect;
+pub(crate) mod hg_connect_http;
 
 use std::convert::TryInto;
 use std::ffi::OsString;
