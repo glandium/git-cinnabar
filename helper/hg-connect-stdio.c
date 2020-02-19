@@ -200,7 +200,7 @@ void *prefix_remote_stderr(void *context)
 
 struct hg_connection *hg_connect_stdio(const char *url, int flags)
 {
-	char *user, *host, *port, *path;
+	char *user, *hostandport, *path;
 	const char *remote_path;
 	enum protocol protocol;
 	struct strbuf buf = STRBUF_INIT;
@@ -208,28 +208,39 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	struct child_process *proc = &conn->stdio.proc;
 	string_list_init(&conn->capabilities, 1);
 
-	protocol = parse_connect_url(url, &user, &host, &port, &path);
+	protocol = parse_connect_url(url, &hostandport, &path);
 
 	child_process_init(proc);
+
+	if (looks_like_command_line_option(path))
+		die("strange pathname '%s' blocked", path);
+
 	proc->env = local_repo_env;
+	proc->use_shell = 1;
 	proc->in = proc->out = proc->err = -1;
 
 	remote_path = path;
 
 	if (protocol == PROTO_SSH) {
+		char *ssh_host = hostandport;
+		const char *port = NULL;
+		transport_check_allowed("ssh");
+		get_host_and_port(&ssh_host, &port);
+
+		if (!port)
+			port = get_port(ssh_host);
+
+		proc->trace2_child_class = "transport/ssh";
 		while (*remote_path == '/')
 			remote_path++;
-		proc->use_shell = prepare_ssh_command(
-			&proc->args, user, host, port, flags);
+		fill_ssh_args(proc, ssh_host, port, protocol_v0, flags);
 	} else if (protocol == PROTO_FILE || protocol == PROTO_LOCAL) {
 		struct stat st;
 		stat(path, &st);
 		if (S_ISREG(st.st_mode)) {
 			FILE *file;
 			struct writer writer;
-			free(port);
-			free(host);
-			free(user);
+			free(hostandport);
 			child_process_clear(proc);
 			string_list_clear(&conn->capabilities, 0);
 			free(conn);
@@ -264,9 +275,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	// TODO: return earlier in case the command fails somehow.
 
 	free(path);
-	free(port);
-	free(host);
-	free(user);
+	free(hostandport);
 
 	/* Very old versions of the mercurial server (< 0.9) would ignore
          * unknown commands, and didn't know the "capabilities" command we want
