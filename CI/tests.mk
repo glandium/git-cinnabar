@@ -72,6 +72,8 @@ check: hg.incr.git hg.incr.hg.nobundle2
 ifndef NO_CLONEBUNDLES
 check: hg.clonebundles.git
 check: hg.clonebundles-full.git
+check: hg.clonebundles-bz2.git
+check: hg.clonebundles-full-bz2.git
 endif
 check: hg.push.hg hg.push.hg.nobundle2
 check: hg.http.hg hg.http.hg.nobundle2
@@ -135,20 +137,28 @@ hg.incr.git hg.incr.git.nobundle2: hg.incr.git%: hg.incr.hg% hg.hg% hg.git%
 
 BUNDLESPEC = gzip-v2
 
+hg.incr-bz2.bundle hg.full-bz2.bundle hg.clonebundles-bz2.hg hg.clonebundles-full-bz2.hg: BUNDLESPEC = bzip2-v2
+
 hg.incr.bundle: hg.incr.hg
 hg.full.bundle: hg.hg
-hg.incr.bundle hg.full.bundle:
+hg.incr-bz2.bundle: hg.incr.hg
+hg.full-bz2.bundle: hg.hg
+hg.incr.bundle hg.full.bundle hg.incr-bz2.bundle hg.full-bz2.bundle:
 	$(HG) -R $< bundle -t $(BUNDLESPEC) -a $@
 
 hg.clonebundles.hg: hg.hg hg.incr.bundle
 hg.clonebundles-full.hg: hg.hg hg.full.bundle
-hg.clonebundles.hg hg.clonebundles-full.hg:
+hg.clonebundles-bz2.hg: hg.hg hg.incr-bz2.bundle
+hg.clonebundles-full-bz2.hg: hg.hg hg.full-bz2.bundle
+hg.clonebundles.hg hg.clonebundles-full.hg hg.clonebundles-bz2.hg hg.clonebundles-full-bz2.hg:
 	$(HG) clone -U $< $@
 	echo http://localhost:8080/$(word 2,$^) BUNDLESPEC=$(BUNDLESPEC) | tee $@/.hg/clonebundles.manifest
 
 hg.clonebundles.git: hg.clonebundles.hg hg.git
 hg.clonebundles-full.git: hg.clonebundles-full.hg hg.git
-hg.clonebundles.git hg.clonebundles-full.git:
+hg.clonebundles-bz2.git: hg.clonebundles-bz2.hg hg.git
+hg.clonebundles-full-bz2.git: hg.clonebundles-full-bz2.hg hg.git
+hg.clonebundles.git hg.clonebundles-full.git hg.clonebundles-bz2.git hg.clonebundles-full-bz2.git:
 	$(HG) -R $< --config serve.other=http --config extensions.clonebundles= --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py serve-and-exec -- $(GIT) clone -n hg://localhost:8000.http/ $@
 	$(call COMPARE_REFS, $(word 2,$^), $@)
 

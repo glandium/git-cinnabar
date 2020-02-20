@@ -206,6 +206,10 @@ def decision():
     )
 
     for env in ('linux', 'mingw64', 'osx10_10'):
+        # Can't spawn osx workers from pull requests.
+        if env.startswith('osx') and not TC_IS_PUSH:
+            continue
+
         TestTask(
             task_env=env,
             variant='coverage' if env == 'linux' else None,
