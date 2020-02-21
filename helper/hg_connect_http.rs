@@ -23,6 +23,7 @@ use curl_sys::{
 use either::Either;
 use libc::{off_t, FILE};
 use percent_encoding::{percent_encode, AsciiSet, NON_ALPHANUMERIC};
+use url::Url;
 
 use crate::args;
 use crate::hg_connect::{
@@ -468,7 +469,8 @@ fn http_capabilities_command(
 }
 
 impl HgHTTPConnection {
-    pub fn new(url: &[u8]) -> Option<Self> {
+    pub fn new(url: &Url) -> Option<Self> {
+        let url = url.as_str().as_bytes();
         let mut conn = HgHTTPConnection {
             capabilities: Vec::new(),
             inner: hg_connection_http {

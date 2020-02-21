@@ -11,6 +11,7 @@ use std::ptr;
 
 use bstr::BString;
 use libc::off_t;
+use url::Url;
 
 use crate::args;
 use crate::hg_connect::{
@@ -167,7 +168,8 @@ unsafe extern "C" fn stdio_send_empty_command(conn: *mut hg_connection_stdio) {
 }
 
 impl HgStdIOConnection {
-    pub fn new(url: &[u8], flags: c_int) -> Option<Self> {
+    pub fn new(url: &Url, flags: c_int) -> Option<Self> {
+        let url = url.as_str().as_bytes();
         let url = CString::new(url).unwrap();
         let inner = if let Some(inner) = unsafe { hg_connect_stdio(url.as_ptr(), flags).as_mut() } {
             inner

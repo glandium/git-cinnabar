@@ -12,6 +12,7 @@ use bstr::{BString, ByteSlice};
 use itertools::Itertools;
 use libc::{off_t, FILE};
 use percent_encoding::percent_decode;
+use url::Url;
 
 use crate::hg_connect_http::HgHTTPConnection;
 use crate::hg_connect_stdio::HgStdIOConnection;
@@ -406,12 +407,12 @@ unsafe extern "C" fn hg_cinnabarclone(conn: *mut hg_connection, result: *mut str
 
 #[no_mangle]
 unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_connection {
-    let url_ = CStr::from_ptr(url).to_bytes();
+    let url = Url::parse(CStr::from_ptr(url).to_str().unwrap()).unwrap();
     let conn: Option<Box<dyn HgWireConnection + '_>> =
-        if url_.starts_with(b"http://") || url_.starts_with(b"https://") {
-            HgHTTPConnection::new(url_).map(|c| Box::new(c) as _)
+        if ["http", "https"].contains(&url.scheme()) {
+            HgHTTPConnection::new(&url).map(|c| Box::new(c) as _)
         } else {
-            HgStdIOConnection::new(url_, flags).map(|c| Box::new(c) as _)
+            HgStdIOConnection::new(&url, flags).map(|c| Box::new(c) as _)
         };
 
     let conn = if let Some(conn) = conn {
