@@ -15,6 +15,11 @@ use libc::FILE;
 
 use crate::libgit::strbuf;
 
+extern "C" {
+    pub fn get_stdout() -> *mut FILE;
+    pub fn get_stderr() -> *mut FILE;
+}
+
 #[allow(non_camel_case_types)]
 #[repr(C)]
 #[derive(Copy, Clone)]

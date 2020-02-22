@@ -21,7 +21,7 @@ use curl_sys::{
     CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
 };
 use either::Either;
-use libc::{off_t, FILE};
+use libc::off_t;
 use percent_encoding::{percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use url::Url;
 
@@ -31,7 +31,8 @@ use crate::hg_connect::{
     HgWireConnection,
 };
 use crate::libcinnabar::{
-    bufferize_writer, decompress_bundle_writer, inflate_writer, prefix_writer, writer,
+    bufferize_writer, decompress_bundle_writer, get_stderr, get_stdout, inflate_writer,
+    prefix_writer, writer,
 };
 use crate::libgit::{
     credential_fill, curl_errorstr, die, fwrite_buffer, get_active_slot, http_auth, http_cleanup,
@@ -237,11 +238,6 @@ fn http_command(
             );
         }
     }
-}
-
-extern "C" {
-    fn get_stdout() -> *mut FILE;
-    fn get_stderr() -> *mut FILE;
 }
 
 unsafe fn prepare_simple_request(curl: *mut CURL, data: *mut strbuf) {

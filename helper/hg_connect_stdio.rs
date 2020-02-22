@@ -4,9 +4,10 @@
 
 use std::ffi::{c_void, CString};
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{copy, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::c_int;
+use std::path::Path;
 use std::ptr;
 
 use bstr::BString;
@@ -19,8 +20,8 @@ use crate::hg_connect::{
     OneHgArg,
 };
 use crate::libcinnabar::{
-    bufferize_writer, copy_bundle, hg_connect_stdio, hg_connection_stdio, stdio_finish,
-    stdio_read_response, stdio_write, writer,
+    bufferize_writer, copy_bundle, decompress_bundle_writer, get_stdout, hg_connect_stdio,
+    hg_connection_stdio, stdio_finish, stdio_read_response, stdio_write, writer,
 };
 use crate::libgit::strbuf;
 
@@ -184,6 +185,21 @@ impl HgStdIOConnection {
         let mut path = url.path();
         if url.scheme() == "ssh" {
             path = path.trim_start_matches('/');
+        } else {
+            let path = Path::new(path);
+            if path.metadata().map(|m| m.is_file()).unwrap_or(false) {
+                // TODO: Eventually we want to have a hg_connection
+                // for bundles, but for now, just send the stream to
+                // stdout and return NULL.
+                let mut f = File::open(path).unwrap();
+                let mut writer = writer::new(crate::libc::File::new(unsafe { get_stdout() }));
+                writer.write_all(b"bundle\n").unwrap();
+                unsafe {
+                    decompress_bundle_writer(&mut writer);
+                }
+                copy(&mut f, &mut writer).unwrap();
+                return None;
+            }
         }
         let path = CString::new(path.to_string()).unwrap();
         let inner = if let Some(inner) = unsafe {

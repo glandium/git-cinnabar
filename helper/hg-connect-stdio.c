@@ -95,28 +95,6 @@ struct hg_connection_stdio *hg_connect_stdio(const char *userhost, const char *p
 	if (userhost) {
 		proc->trace2_child_class = "transport/ssh";
 		fill_ssh_args(proc, userhost, port, protocol_v0, flags);
-	} else {
-		struct stat st;
-		stat(path, &st);
-		if (S_ISREG(st.st_mode)) {
-			FILE *file;
-			struct writer writer;
-			child_process_clear(proc);
-			free(conn);
-			// TODO: Eventually we want to have a hg_connection
-			// for bundles, but for now, just send the stream to
-			// stdout and return NULL.
-			file = fopen(path, "r");
-			fwrite("bundle\n", 1, 7, stdout);
-			writer.write = (write_callback)fwrite;
-			writer.close = (close_callback)fflush;
-			writer.context = stdout;
-			decompress_bundle_writer(&writer);
-			copy_to(file, st.st_size, &writer);
-			writer_close(&writer);
-			return NULL;
-		}
-		proc->use_shell = 1;
 	}
 
 	strbuf_addstr(&buf, "hg -R ");
