@@ -36,9 +36,7 @@ pub struct writer {
     context: *mut c_void,
 }
 
-#[no_mangle]
-unsafe extern "C" fn get_writer_fd(writer: *const writer) -> c_int {
-    let writer = writer.as_ref().unwrap();
+pub unsafe fn get_writer_fd(writer: &writer) -> c_int {
     if writer.write == libc::fwrite as *const c_void
         && writer.close == libc::fflush as *const c_void
     {
@@ -86,7 +84,7 @@ impl<T: Write + GetRawFd> WriteAndGetRawFd for T {}
 extern "C" {
     fn write_to(buf: *const c_char, size: usize, nmemb: usize, writer: *mut writer) -> usize;
 
-    fn writer_close(w: *mut writer);
+    pub fn writer_close(w: *mut writer);
 }
 
 impl writer {

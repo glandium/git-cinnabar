@@ -9,6 +9,7 @@ extern crate cstr;
 mod libgit;
 mod libc;
 mod libcinnabar;
+mod util;
 
 #[macro_use]
 pub mod hg_connect;

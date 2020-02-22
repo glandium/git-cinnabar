@@ -206,50 +206,6 @@ void inflate_writer(struct writer *writer) {
 	writer->context = context;
 }
 
-struct pipe_context {
-	struct child_process proc;
-	FILE *pipe;
-};
-
-static size_t pipe_write(char *ptr, size_t size, size_t nmemb, void *data)
-{
-	struct pipe_context *context = data;
-	return fwrite(ptr, size, nmemb, context->pipe);
-}
-
-static int pipe_close(void *data)
-{
-	struct pipe_context *context = data;
-	int ret;
-	fclose(context->pipe);
-	close(context->proc.in);
-	ret = finish_command(&context->proc);
-	free(context);
-	return ret;
-}
-
-extern int get_writer_fd(struct writer *writer);
-
-void pipe_writer(struct writer *writer, const char **argv) {
-	struct pipe_context *context = xcalloc(1, sizeof(struct pipe_context));
-
-	int fd = get_writer_fd(writer);
-	if (fd < 0)
-		die("pipe_writer can only redirect an fwrite writer");
-
-	writer_close(writer);
-	child_process_init(&context->proc);
-	context->proc.argv = argv;
-	context->proc.in = -1;
-	context->proc.out = fd;
-	context->proc.no_stderr = 1;
-	start_command(&context->proc);
-	context->pipe = xfdopen(context->proc.in, "w");
-	writer->write = pipe_write;
-	writer->close = pipe_close;
-	writer->context = context;
-}
-
 struct prefix_context {
 	struct writer out;
 	size_t prefix_len;
