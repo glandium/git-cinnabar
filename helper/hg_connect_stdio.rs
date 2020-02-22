@@ -2,13 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::ffi::{c_void, CString};
+use std::ffi::CString;
 use std::fs::File;
 use std::io::{copy, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::c_int;
 use std::path::Path;
 use std::ptr;
+use std::str::FromStr;
+use std::thread::{spawn, JoinHandle};
 
 use bstr::BString;
 use libc::off_t;
@@ -19,13 +21,23 @@ use crate::hg_connect::{
     param_value, prepare_command, split_capabilities, HgArgs, HgConnection, HgWireConnection,
     OneHgArg,
 };
+use crate::libc::FdFile;
 use crate::libcinnabar::{
-    bufferize_writer, copy_bundle, decompress_bundle_writer, get_stdout, hg_connect_stdio,
-    hg_connection_stdio, stdio_finish, stdio_read_response, stdio_write, writer,
+    bufferize_writer, copy_bundle, decompress_bundle_writer, get_stderr, get_stdout,
+    hg_connect_stdio, prefix_writer, stdio_finish, writer,
 };
-use crate::libgit::strbuf;
+use crate::libgit::{child_process, strbuf};
 
-pub type HgStdIOConnection = HgConnection<*mut hg_connection_stdio>;
+#[allow(non_camel_case_types)]
+pub struct hg_connection_stdio {
+    pub proc_in: FdFile,
+    pub proc_out: crate::libc::File,
+    pub is_remote: bool,
+    pub proc: *mut child_process,
+    pub thread: Option<JoinHandle<()>>,
+}
+
+pub type HgStdIOConnection = HgConnection<hg_connection_stdio>;
 
 /* The mercurial "stdio" protocol is used for both local repositories and
  * remote ssh repositories.
@@ -77,30 +89,45 @@ fn stdio_send_command(conn: &mut hg_connection_stdio, command: &str, args: HgArg
         |name, value| stdio_command_add_param(&mut data, name, value),
         args,
     );
+    conn.proc_in.write_all(&data).unwrap()
+}
+
+extern "C" {
+    fn strbuf_getline_lf(buf: *mut strbuf, file: *mut libc::FILE);
+
+    fn strbuf_fread(buf: *mut strbuf, len: usize, file: *mut libc::FILE);
+}
+
+fn stdio_read_response(conn: &mut hg_connection_stdio, response: &mut strbuf) {
+    let mut length_str = strbuf::new();
     unsafe {
-        stdio_write(conn, data.as_ptr(), data.len());
+        strbuf_getline_lf(&mut length_str, conn.proc_out.raw());
+    }
+    let length = usize::from_str(std::str::from_utf8(length_str.as_bytes()).unwrap()).unwrap();
+    unsafe {
+        strbuf_fread(response, length, conn.proc_out.raw());
     }
 }
 
 impl HgWireConnection for HgStdIOConnection {
     unsafe fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
-        let stdio = self.inner.as_mut().unwrap();
+        let stdio = &mut self.inner;
         stdio_send_command(stdio, command, args);
         stdio_read_response(stdio, response);
     }
 
     unsafe fn changegroup_command(&mut self, writer: &mut writer, command: &str, args: HgArgs) {
-        let stdio = self.inner.as_mut().unwrap();
+        let stdio = &mut self.inner;
         stdio_send_command(stdio, command, args);
 
         /* We're going to receive a stream, but we don't know how big it is
          * going to be in advance, so we have to read it according to its
          * format: changegroup or bundle2.
          */
-        if stdio.is_remote > 0 {
+        if stdio.is_remote {
             bufferize_writer(writer);
         }
-        copy_bundle(stdio.out, writer);
+        copy_bundle(stdio.proc_out.raw(), writer);
     }
 
     unsafe fn push_command(
@@ -111,7 +138,7 @@ impl HgWireConnection for HgStdIOConnection {
         command: &str,
         args: HgArgs,
     ) {
-        let stdio = self.inner.as_mut().unwrap();
+        let stdio = &mut self.inner;
         stdio_send_command(stdio, command, args);
         /* The server normally sends an empty response before reading the data
          * it's sent if not, it's an error (typically, the remote will
@@ -122,7 +149,7 @@ impl HgWireConnection for HgStdIOConnection {
 
         //TODO: chunk in smaller pieces.
         header.extend_from_slice(format!("{}\n", len).as_bytes());
-        stdio_write(stdio, header.as_bytes().as_ptr(), header.as_bytes().len());
+        stdio.proc_in.write_all(header.as_bytes()).unwrap();
         drop(header);
 
         let is_bundle2 = if len > 4 {
@@ -134,17 +161,12 @@ impl HgWireConnection for HgStdIOConnection {
             false
         };
 
-        let mut len = len;
-        let mut buf = [0u8; 4096];
-        while len > 0 {
-            let read = input.read(&mut buf).unwrap();
-            len -= read as off_t;
-            stdio_write(stdio, buf.as_ptr(), read);
-        }
+        assert!(len >= 0);
+        copy(&mut input.take(len as u64), &mut stdio.proc_in).unwrap();
 
-        stdio_write(stdio, "0\n".as_ptr(), 2);
+        stdio.proc_in.write_all(b"0\n").unwrap();
         if is_bundle2 {
-            copy_bundle(stdio.out, &mut writer::new(response));
+            copy_bundle(stdio.proc_out.raw(), &mut writer::new(response));
         } else {
             /* There are two responses, one for output, one for actual response. */
             //TODO: actually handle output here
@@ -156,16 +178,20 @@ impl HgWireConnection for HgStdIOConnection {
     }
 
     unsafe fn finish(&mut self) -> c_int {
-        let code = stdio_finish(self.inner);
-        libc::free(mem::replace(&mut self.inner, ptr::null_mut()) as *mut c_void);
-        code
+        stdio_send_command(&mut self.inner, "", args!());
+        libc::close(self.inner.proc_in.raw());
+        libc::fclose(self.inner.proc_out.raw());
+        self.inner.thread.take().map(|t| t.join());
+        stdio_finish(self.inner.proc)
     }
 }
 
-#[no_mangle]
-unsafe extern "C" fn stdio_send_empty_command(conn: *mut hg_connection_stdio) {
-    let conn = conn.as_mut().unwrap();
-    stdio_send_command(conn, "", args!());
+extern "C" {
+    fn proc_in(proc: *mut child_process) -> c_int;
+
+    fn proc_out(proc: *mut child_process) -> c_int;
+
+    fn proc_err(proc: *mut child_process) -> c_int;
 }
 
 impl HgStdIOConnection {
@@ -202,19 +228,37 @@ impl HgStdIOConnection {
             }
         }
         let path = CString::new(path.to_string()).unwrap();
-        let inner = if let Some(inner) = unsafe {
+        let proc = unsafe {
             hg_connect_stdio(
                 userhost.as_ref().map(|s| s.as_ptr()).unwrap_or(ptr::null()),
                 port.as_ref().map(|s| s.as_ptr()).unwrap_or(ptr::null()),
                 path.as_ref().as_ptr(),
                 flags,
             )
-            .as_mut()
-        } {
-            inner
-        } else {
-            return None;
         };
+        if proc.is_null() {
+            return None;
+        }
+
+        let mut inner = hg_connection_stdio {
+            proc_in: unsafe { FdFile::from_raw_fd(proc_in(proc)) },
+            proc_out: unsafe {
+                crate::libc::File::new(libc::fdopen(proc_out(proc), cstr!("r").as_ptr()))
+            },
+            is_remote: url.scheme() == "ssh",
+            proc,
+            thread: None,
+        };
+
+        let mut proc_err = unsafe { FdFile::from_raw_fd(proc_err(proc)) };
+
+        inner.thread = Some(spawn(move || {
+            let mut writer = writer::new(crate::libc::File::new(unsafe { get_stderr() }));
+            unsafe {
+                prefix_writer(&mut writer, cstr!("remote: ").as_ptr());
+            }
+            copy(&mut proc_err, &mut writer).unwrap();
+        }));
 
         /* Very old versions of the mercurial server (< 0.9) would ignore
          * unknown commands, and didn't know the "capabilities" command we want
@@ -226,9 +270,9 @@ impl HgStdIOConnection {
          * least mercurial 1.9 anyways. Server versions between 0.9 and 1.7
          * will return an empty result for the "capabilities" command, as
          * opposed to no result at all with older servers. */
-        stdio_send_command(inner, "capabilities", args!());
+        stdio_send_command(&mut inner, "capabilities", args!());
         stdio_send_command(
-            inner,
+            &mut inner,
             "between",
             args!(
                 pairs: b"0000000000000000000000000000000000000000-0000000000000000000000000000000000000000"
@@ -241,18 +285,14 @@ impl HgStdIOConnection {
         };
 
         let mut buf = strbuf::new();
-        unsafe {
-            stdio_read_response(inner, &mut buf);
-        }
+        stdio_read_response(&mut conn.inner, &mut buf);
         if buf.as_bytes() != b"\n" {
             mem::swap(
                 &mut conn.capabilities,
                 &mut split_capabilities(buf.as_bytes()),
             );
             /* Now read the response for the "between" command. */
-            unsafe {
-                stdio_read_response(inner, &mut buf);
-            }
+            stdio_read_response(&mut conn.inner, &mut buf);
         }
 
         Some(conn)

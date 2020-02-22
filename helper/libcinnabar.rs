@@ -13,7 +13,7 @@ use std::os::windows::io::AsRawHandle;
 
 use libc::FILE;
 
-use crate::libgit::strbuf;
+use crate::libgit::{child_process, strbuf};
 
 extern "C" {
     pub fn get_stdout() -> *mut FILE;
@@ -143,10 +143,6 @@ impl Drop for writer {
 }
 
 extern "C" {
-    pub fn stdio_write(conn: *mut hg_connection_stdio, buf: *const u8, len: usize);
-
-    pub fn stdio_read_response(conn: *mut hg_connection_stdio, response: *mut strbuf);
-
     pub fn bufferize_writer(writer: *mut writer);
     pub fn decompress_bundle_writer(writer: *mut writer);
     pub fn inflate_writer(writer: *mut writer);
@@ -160,7 +156,7 @@ extern "C" {
         port: *const c_char,
         path: *const c_char,
         flags: c_int,
-    ) -> *mut hg_connection_stdio;
+    ) -> *mut child_process;
 
-    pub fn stdio_finish(conn: *mut hg_connection_stdio) -> c_int;
+    pub fn stdio_finish(conn: *mut child_process) -> c_int;
 }

@@ -17,6 +17,10 @@ impl File {
     pub fn new(f: *mut FILE) -> Self {
         File(f)
     }
+
+    pub unsafe fn raw(&mut self) -> *mut FILE {
+        self.0
+    }
 }
 
 impl Read for File {
@@ -55,5 +59,49 @@ impl Write for File {
 impl GetRawFd for File {
     fn get_writer_fd(&mut self) -> c_int {
         unsafe { libc::fileno(self.0) }
+    }
+}
+
+pub struct FdFile(c_int);
+
+impl FdFile {
+    pub unsafe fn from_raw_fd(fd: c_int) -> Self {
+        FdFile(fd)
+    }
+
+    pub unsafe fn raw(&mut self) -> c_int {
+        self.0
+    }
+}
+
+extern "C" {
+    fn xread(fd: c_int, buf: *mut c_void, size: usize) -> isize;
+
+    fn xwrite(fd: c_int, buf: *const c_void, size: usize) -> isize;
+}
+
+impl Read for FdFile {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        unsafe {
+            match xread(self.0, buf.as_mut_ptr() as _, buf.len()) {
+                s if s < 0 => Err(io::Error::new(io::ErrorKind::Other, "read error")),
+                s => Ok(s as usize),
+            }
+        }
+    }
+}
+
+impl Write for FdFile {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        unsafe {
+            match xwrite(self.0, buf.as_ptr() as _, buf.len()) {
+                s if s < 0 => Err(io::Error::new(io::ErrorKind::Other, "write error")),
+                s => Ok(s as usize),
+            }
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }

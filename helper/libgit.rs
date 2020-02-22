@@ -195,6 +195,10 @@ pub struct credential(c_void);
 pub struct remote(c_void);
 
 #[allow(non_camel_case_types)]
+#[repr(transparent)]
+pub struct child_process(c_void);
+
+#[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct active_request_slot {
     pub curl: *mut CURL,
