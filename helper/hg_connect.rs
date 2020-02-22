@@ -17,7 +17,7 @@ use url::Url;
 use crate::hg_connect_http::HgHTTPConnection;
 use crate::hg_connect_stdio::HgStdIOConnection;
 use crate::libcinnabar::{copy_bundle, writer};
-use crate::libgit::{die, object_id, oid_array, strbuf};
+use crate::libgit::{object_id, oid_array, strbuf};
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]

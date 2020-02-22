@@ -35,7 +35,7 @@ use crate::libcinnabar::{
     prefix_writer, writer,
 };
 use crate::libgit::{
-    credential_fill, curl_errorstr, die, fwrite_buffer, get_active_slot, http_auth, http_cleanup,
+    credential_fill, curl_errorstr, fwrite_buffer, get_active_slot, http_auth, http_cleanup,
     http_follow_config, http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
 };
 

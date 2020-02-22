@@ -166,8 +166,8 @@ extern "C" {
 
 macro_rules! die {
     ($($e:expr),+) => {
-        let s = CString::new(format!($($e),+)).unwrap();
-        die(s.as_ptr())
+        let s = std::ffi::CString::new(format!($($e),+)).unwrap();
+        $crate::libgit::die(s.as_ptr())
     }
 }
 
