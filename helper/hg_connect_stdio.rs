@@ -169,9 +169,32 @@ unsafe extern "C" fn stdio_send_empty_command(conn: *mut hg_connection_stdio) {
 
 impl HgStdIOConnection {
     pub fn new(url: &Url, flags: c_int) -> Option<Self> {
-        let url = url.as_str().as_bytes();
-        let url = CString::new(url).unwrap();
-        let inner = if let Some(inner) = unsafe { hg_connect_stdio(url.as_ptr(), flags).as_mut() } {
+        let userhost = url.host_str().map(|host| {
+            let username = url.username();
+            let host = if username.is_empty() {
+                host.to_owned()
+            } else {
+                format!("{}@{}", username, host)
+            };
+            CString::new(host).unwrap()
+        });
+        let port = url
+            .port()
+            .map(|port| CString::new(port.to_string()).unwrap());
+        let mut path = url.path();
+        if url.scheme() == "ssh" {
+            path = path.trim_start_matches('/');
+        }
+        let path = CString::new(path.to_string()).unwrap();
+        let inner = if let Some(inner) = unsafe {
+            hg_connect_stdio(
+                userhost.as_ref().map(|s| s.as_ptr()).unwrap_or(ptr::null()),
+                port.as_ref().map(|s| s.as_ptr()).unwrap_or(ptr::null()),
+                path.as_ref().as_ptr(),
+                flags,
+            )
+            .as_mut()
+        } {
             inner
         } else {
             return None;

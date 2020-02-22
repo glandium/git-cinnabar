@@ -408,12 +408,14 @@ unsafe extern "C" fn hg_cinnabarclone(conn: *mut hg_connection, result: *mut str
 #[no_mangle]
 unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_connection {
     let url = Url::parse(CStr::from_ptr(url).to_str().unwrap()).unwrap();
-    let conn: Option<Box<dyn HgWireConnection + '_>> =
-        if ["http", "https"].contains(&url.scheme()) {
-            HgHTTPConnection::new(&url).map(|c| Box::new(c) as _)
-        } else {
-            HgStdIOConnection::new(&url, flags).map(|c| Box::new(c) as _)
-        };
+    let conn: Option<Box<dyn HgWireConnection + '_>> = if ["http", "https"].contains(&url.scheme())
+    {
+        HgHTTPConnection::new(&url).map(|c| Box::new(c) as _)
+    } else if ["ssh", "file"].contains(&url.scheme()) {
+        HgStdIOConnection::new(&url, flags).map(|c| Box::new(c) as _)
+    } else {
+        die!("protocol '{}' is not supported", url.scheme());
+    };
 
     let conn = if let Some(conn) = conn {
         conn

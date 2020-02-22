@@ -150,7 +150,12 @@ extern "C" {
 
     pub fn prefix_writer(writer: *mut writer, prefix: *const c_char);
 
-    pub fn hg_connect_stdio(url: *const c_char, flags: c_int) -> *mut hg_connection_stdio;
+    pub fn hg_connect_stdio(
+        userhost: *const c_char,
+        port: *const c_char,
+        path: *const c_char,
+        flags: c_int,
+    ) -> *mut hg_connection_stdio;
 
     pub fn stdio_finish(conn: *mut hg_connection_stdio) -> c_int;
 }

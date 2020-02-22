@@ -76,16 +76,12 @@ void *prefix_remote_stderr(void *context)
 	return NULL;
 }
 
-struct hg_connection_stdio *hg_connect_stdio(const char *url, int flags)
+struct hg_connection_stdio *hg_connect_stdio(const char *userhost, const char *port,
+					     const char *path, int flags)
 {
-	char *user, *hostandport, *path;
-	const char *remote_path;
-	enum protocol protocol;
 	struct strbuf buf = STRBUF_INIT;
 	struct hg_connection_stdio *conn = xmalloc(sizeof(*conn));
 	struct child_process *proc = &conn->proc;
-
-	protocol = parse_connect_url(url, &hostandport, &path);
 
 	child_process_init(proc);
 
@@ -96,35 +92,21 @@ struct hg_connection_stdio *hg_connect_stdio(const char *url, int flags)
 	proc->use_shell = 1;
 	proc->in = proc->out = proc->err = -1;
 
-	remote_path = path;
-
-	if (protocol == PROTO_SSH) {
-		char *ssh_host = hostandport;
-		const char *port = NULL;
-		transport_check_allowed("ssh");
-		get_host_and_port(&ssh_host, &port);
-
-		if (!port)
-			port = get_port(ssh_host);
-
+	if (userhost) {
 		proc->trace2_child_class = "transport/ssh";
-		while (*remote_path == '/')
-			remote_path++;
-		fill_ssh_args(proc, ssh_host, port, protocol_v0, flags);
-	} else if (protocol == PROTO_FILE || protocol == PROTO_LOCAL) {
+		fill_ssh_args(proc, userhost, port, protocol_v0, flags);
+	} else {
 		struct stat st;
 		stat(path, &st);
 		if (S_ISREG(st.st_mode)) {
 			FILE *file;
 			struct writer writer;
-			free(hostandport);
 			child_process_clear(proc);
 			free(conn);
 			// TODO: Eventually we want to have a hg_connection
 			// for bundles, but for now, just send the stream to
 			// stdout and return NULL.
 			file = fopen(path, "r");
-			free(path);
 			fwrite("bundle\n", 1, 7, stdout);
 			writer.write = (write_callback)fwrite;
 			writer.close = (close_callback)fflush;
@@ -135,23 +117,19 @@ struct hg_connection_stdio *hg_connect_stdio(const char *url, int flags)
 			return NULL;
 		}
 		proc->use_shell = 1;
-	} else
-		die("I don't handle protocol '%s'", prot_name(protocol));
+	}
 
 	strbuf_addstr(&buf, "hg -R ");
-	maybe_sq_quote_buf(&buf, remote_path);
+	maybe_sq_quote_buf(&buf, path);
 	strbuf_addstr(&buf, " serve --stdio");
 	argv_array_push(&proc->args, buf.buf);
 	strbuf_release(&buf);
 
 	start_command(proc);
-	conn->is_remote = (protocol == PROTO_SSH);
+	conn->is_remote = userhost != NULL;
 	conn->out = xfdopen(proc->out, "r");
 	pthread_create(&conn->thread, NULL, prefix_remote_stderr, conn);
 	// TODO: return earlier in case the command fails somehow.
-
-	free(path);
-	free(hostandport);
 
 	return conn;
 }
