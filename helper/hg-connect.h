@@ -4,24 +4,13 @@
 #include "cinnabar-util.h"
 #include "run-command.h"
 #include "sha1-array.h"
-#include "string-list.h"
-
-struct args_slice {
-	void **data;
-	size_t len;
-};
 
 struct hg_connection_stdio {
 	FILE *out;
 	int is_remote;
 	struct child_process *proc;
 	pthread_t thread;
-} stdio;
-
-struct hg_connection_http {
-	char *url;
-	int initial_request;
-} http;
+};
 
 struct hg_connection;
 
