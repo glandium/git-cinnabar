@@ -27,7 +27,7 @@ static void maybe_sq_quote_buf(struct strbuf *buf, const char *src)
 }
 
 void stdio_write(struct hg_connection_stdio *conn, const uint8_t *buf, size_t len) {
-	xwrite(conn->proc.in, buf, len);
+	xwrite(conn->proc->in, buf, len);
 }
 
 void stdio_read_response(struct hg_connection_stdio *conn,
@@ -48,11 +48,14 @@ extern void stdio_send_empty_command(struct hg_connection_stdio *conn);
 
 int stdio_finish(struct hg_connection_stdio *conn)
 {
+	int ret;
 	stdio_send_empty_command(conn);
-	close(conn->proc.in);
+	close(conn->proc->in);
 	fclose(conn->out);
 	pthread_join(conn->thread, NULL);
-	return finish_command(&conn->proc);
+	ret = finish_command(conn->proc);
+	free(conn->proc);
+	return ret;
 }
 
 void *prefix_remote_stderr(void *context)
@@ -67,7 +70,7 @@ void *prefix_remote_stderr(void *context)
 
 	for (;;) {
 		char buf[4096];
-		ssize_t len = xread(conn->proc.err, buf, 4096);
+		ssize_t len = xread(conn->proc->err, buf, 4096);
 		if (len <= 0)
 			break;
 		write_to(buf, 1, len, &writer);
@@ -81,7 +84,8 @@ struct hg_connection_stdio *hg_connect_stdio(const char *userhost, const char *p
 {
 	struct strbuf buf = STRBUF_INIT;
 	struct hg_connection_stdio *conn = xmalloc(sizeof(*conn));
-	struct child_process *proc = &conn->proc;
+	struct child_process *proc = xmalloc(sizeof(*proc));
+	conn->proc = proc;
 
 	child_process_init(proc);
 

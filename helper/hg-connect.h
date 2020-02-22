@@ -14,7 +14,7 @@ struct args_slice {
 struct hg_connection_stdio {
 	FILE *out;
 	int is_remote;
-	struct child_process proc;
+	struct child_process *proc;
 	pthread_t thread;
 } stdio;
 
