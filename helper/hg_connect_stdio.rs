@@ -24,7 +24,7 @@ use crate::hg_connect::{
 use crate::libc::FdFile;
 use crate::libcinnabar::{
     bufferize_writer, copy_bundle, decompress_bundle_writer, get_stderr, get_stdout,
-    hg_connect_stdio, prefix_writer, stdio_finish, writer,
+    hg_connect_stdio, prefix_writer, stdio_finish, writer, WriteAndGetRawFd,
 };
 use crate::libgit::{child_process, strbuf};
 
@@ -116,8 +116,14 @@ impl HgWireConnection for HgStdIOConnection {
         stdio_read_response(stdio, response);
     }
 
-    unsafe fn changegroup_command(&mut self, writer: &mut writer, command: &str, args: HgArgs) {
+    unsafe fn changegroup_command(
+        &mut self,
+        out: &mut dyn WriteAndGetRawFd,
+        command: &str,
+        args: HgArgs,
+    ) {
         let stdio = &mut self.inner;
+        let mut writer = writer::new(out);
         stdio_send_command(stdio, command, args);
 
         /* We're going to receive a stream, but we don't know how big it is
@@ -125,9 +131,9 @@ impl HgWireConnection for HgStdIOConnection {
          * format: changegroup or bundle2.
          */
         if stdio.is_remote {
-            bufferize_writer(writer);
+            bufferize_writer(&mut writer);
         }
-        copy_bundle(stdio.proc_out.raw(), writer);
+        copy_bundle(stdio.proc_out.raw(), &mut writer);
     }
 
     unsafe fn push_command(

@@ -16,7 +16,7 @@ use url::Url;
 
 use crate::hg_connect_http::HgHTTPConnection;
 use crate::hg_connect_stdio::HgStdIOConnection;
-use crate::libcinnabar::{copy_bundle, writer};
+use crate::libcinnabar::{copy_bundle, writer, WriteAndGetRawFd};
 use crate::libgit::{object_id, oid_array, strbuf};
 
 #[allow(non_camel_case_types)]
@@ -65,7 +65,12 @@ pub trait HgCapabilities {
 pub trait HgWireConnection: HgCapabilities {
     unsafe fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs);
 
-    unsafe fn changegroup_command(&mut self, out: &mut writer, command: &str, args: HgArgs);
+    unsafe fn changegroup_command(
+        &mut self,
+        out: &mut dyn WriteAndGetRawFd,
+        command: &str,
+        args: HgArgs,
+    );
 
     unsafe fn push_command(
         &mut self,
@@ -307,12 +312,12 @@ unsafe extern "C" fn hg_getbundle(
             args.push(("bundlecaps", bundle2caps.to_owned().into()));
         }
     }
-    let mut writer = writer::new(crate::libc::File::new(out));
+    let mut out = crate::libc::File::new(out);
     let args = args
         .iter()
         .map(|(n, v)| OneHgArg { name: n, value: v })
         .collect::<Vec<_>>();
-    conn.changegroup_command(&mut writer, "getbundle", args!(*: &args[..]));
+    conn.changegroup_command(&mut out, "getbundle", args!(*: &args[..]));
 }
 
 #[no_mangle]

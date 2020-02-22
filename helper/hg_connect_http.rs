@@ -32,7 +32,7 @@ use crate::hg_connect::{
 };
 use crate::libcinnabar::{
     bufferize_writer, decompress_bundle_writer, get_stderr, get_stdout, inflate_writer,
-    prefix_writer, writer,
+    prefix_writer, writer, WriteAndGetRawFd,
 };
 use crate::libgit::{
     credential_fill, curl_errorstr, fwrite_buffer, get_active_slot, http_auth, http_cleanup,
@@ -246,9 +246,9 @@ unsafe fn prepare_simple_request(curl: *mut CURL, data: *mut strbuf) {
 }
 
 #[allow(non_camel_case_types)]
-struct changegroup_response_data<'a> {
+struct changegroup_response_data {
     curl: *mut CURL,
-    writer: &'a mut writer,
+    writer: writer,
 }
 
 unsafe extern "C" fn changegroup_write(
@@ -265,20 +265,20 @@ unsafe extern "C" fn changegroup_write(
         {
             match CStr::from_ptr(content_type).to_bytes() {
                 b"application/mercurial-0.1" => {
-                    inflate_writer(response_data.writer);
+                    inflate_writer(&mut response_data.writer);
                 }
                 b"application/hg-error" => {
                     response_data.writer.write_all(b"err\n").unwrap();
                     mem::replace(
-                        response_data.writer,
+                        &mut response_data.writer,
                         writer::new(crate::libc::File::new(get_stderr())),
                     );
-                    prefix_writer(response_data.writer, cstr!("remote: ").as_ptr());
+                    prefix_writer(&mut response_data.writer, cstr!("remote: ").as_ptr());
                 }
                 _ => unimplemented!(),
             }
         }
-        bufferize_writer(response_data.writer);
+        bufferize_writer(&mut response_data.writer);
         response_data.curl = ptr::null_mut();
     }
 
@@ -312,10 +312,15 @@ impl HgWireConnection for HgHTTPConnection {
 
     /* The changegroup, changegroupsubset and getbundle commands return a raw
      *  * zlib stream when called over HTTP. */
-    unsafe fn changegroup_command(&mut self, writer: &mut writer, command: &str, args: HgArgs) {
+    unsafe fn changegroup_command(
+        &mut self,
+        out: &mut dyn WriteAndGetRawFd,
+        command: &str,
+        args: HgArgs,
+    ) {
         let mut response_data = changegroup_response_data {
             curl: ptr::null_mut(),
-            writer,
+            writer: writer::new(out),
         };
         http_command(
             self,
