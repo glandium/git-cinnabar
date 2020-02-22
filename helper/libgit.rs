@@ -118,7 +118,7 @@ pub struct strbuf {
 }
 
 extern "C" {
-    static strbuf_slopbuf: *const c_char;
+    static strbuf_slopbuf: [c_char; 1];
     fn strbuf_add(buf: *mut strbuf, data: *const c_void, len: usize);
     fn strbuf_release(buf: *mut strbuf);
 }
@@ -128,7 +128,7 @@ impl strbuf {
         strbuf {
             alloc: 0,
             len: 0,
-            buf: unsafe { strbuf_slopbuf as *mut _ },
+            buf: unsafe { strbuf_slopbuf.as_ptr() as *mut _ },
         }
     }
 
