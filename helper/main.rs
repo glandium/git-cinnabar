@@ -30,6 +30,16 @@ use std::os::unix::ffi::OsStrExt;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
 
+use libgit::strbuf;
+
+const HELPER_HASH: &'static str = env!("HELPER_HASH");
+
+#[no_mangle]
+unsafe extern "C" fn get_helper_hash(buf: *mut strbuf) {
+    let buf = buf.as_mut().unwrap();
+    buf.extend_from_slice(HELPER_HASH.as_bytes());
+}
+
 extern "C" {
     #[cfg(unix)]
     pub fn helper_main(argc: c_int, argv: *const *const c_char) -> c_int;

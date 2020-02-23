@@ -5,7 +5,7 @@
 use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use itertools::Itertools;
 use make_cmd::gnu_make;
@@ -108,4 +108,15 @@ fn main() {
     }
 
     println!("cargo:rerun-if-env-changed=CINNABAR_MAKE_FLAGS");
+
+    let git_cinnabar = dir.parent().unwrap().join("git-cinnabar");
+    let helper_hash = Command::new("python")
+        .arg(git_cinnabar)
+        .arg("--version=helper")
+        .stderr(Stdio::null())
+        .output()
+        .unwrap();
+    let helper_hash = String::from_utf8(helper_hash.stdout).unwrap();
+    let helper_hash = helper_hash.split('/').last().unwrap();
+    println!("cargo:rustc-env=HELPER_HASH={}", helper_hash);
 }

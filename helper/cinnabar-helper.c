@@ -80,10 +80,6 @@
 #define _STRINGIFY(s) # s
 #define STRINGIFY(s) _STRINGIFY(s)
 
-#ifndef HELPER_HASH
-#define HELPER_HASH unknown
-#endif
-
 #define CMD_VERSION 3003
 #define MIN_CMD_VERSION 3003
 
@@ -1040,6 +1036,8 @@ error:
 	hg_file_release(&file);
 }
 
+extern void get_helper_hash(struct strbuf *buf);
+
 static void do_version(struct string_list *args)
 {
 	long int version;
@@ -1055,7 +1053,7 @@ static void do_version(struct string_list *args)
 	if (!version || version < MIN_CMD_VERSION || version > CMD_VERSION)
 		exit(128);
 
-	strbuf_add(&version_s, STRINGIFY(HELPER_HASH), sizeof(STRINGIFY(HELPER_HASH)) - 1);
+	get_helper_hash(&version_s);
 	if (version >= 3000)
 		strbuf_addf(&version_s, " " STRINGIFY(CMD_VERSION));
 	strbuf_addch(&version_s, '\n');
