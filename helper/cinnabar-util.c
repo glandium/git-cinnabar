@@ -163,49 +163,6 @@ void bufferize_writer(struct writer *writer)
 	}
 }
 
-struct inflate_context {
-	struct writer out;
-	git_zstream strm;
-};
-
-static size_t inflate_to(char *ptr, size_t size, size_t nmemb, void *data)
-{
-	char buf[4096];
-	struct inflate_context *context = data;
-	int ret;
-
-	context->strm.next_in = (void *)ptr;
-	context->strm.avail_in = size * nmemb;
-
-	do {
-		context->strm.next_out = (void *)buf;
-		context->strm.avail_out = sizeof(buf);
-		ret = git_inflate(&context->strm, Z_SYNC_FLUSH);
-		write_to(buf, 1, sizeof(buf) - context->strm.avail_out, &context->out);
-	} while (context->strm.avail_in && ret == Z_OK);
-
-	return nmemb;
-}
-
-static int inflate_close(void *data)
-{
-	struct inflate_context *context = data;
-	int ret;
-	git_inflate_end(&context->strm);
-	ret = writer_close(&context->out);
-	free(context);
-	return ret;
-}
-
-void inflate_writer(struct writer *writer) {
-	struct inflate_context *context = xcalloc(1, sizeof(struct inflate_context));
-	git_inflate_init(&context->strm);
-	context->out = *writer;
-	writer->write = inflate_to;
-	writer->close = inflate_close;
-	writer->context = context;
-}
-
 struct prefix_context {
 	struct writer out;
 	size_t prefix_len;

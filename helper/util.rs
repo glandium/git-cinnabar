@@ -13,8 +13,11 @@ use std::os::unix::io::FromRawFd;
 #[cfg(windows)]
 use std::os::windows::io::FromRawHandle;
 use std::process::{Child, Command, Stdio};
+use std::ptr;
 #[cfg(windows)]
 use std::str;
+
+use flate2::write::ZlibDecoder;
 
 use crate::libcinnabar::{get_writer_fd, writer, writer_close, GetRawFd};
 
@@ -88,4 +91,12 @@ unsafe extern "C" fn pipe_writer(writer: &mut writer, argv: *const *const c_char
     let mut new_writer = writer::new(PipeWriter { child });
     mem::swap(&mut new_writer, writer);
     mem::forget(new_writer);
+}
+
+impl<W: Write> GetRawFd for ZlibDecoder<W> {}
+
+#[no_mangle]
+unsafe extern "C" fn inflate_writer(writer: &mut writer) {
+    let writer_copy = ptr::read(writer);
+    ptr::write(writer, writer::new(ZlibDecoder::new(writer_copy)));
 }
