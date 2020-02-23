@@ -145,7 +145,7 @@ libcinnabar.a: $(CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(X
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
 
 linker-flags: GIT-LDFLAGS FORCE
-	@echo $(ALL_LDFLAGS) -L$(CURDIR) $(EXTLIBS)
+	@echo $(ALL_LDFLAGS) -L$(CURDIR) $(filter-out -lz,$(EXTLIBS))
 
 export CINNABAR_MAKE_FLAGS
 

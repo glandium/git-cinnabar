@@ -32,6 +32,10 @@ url = "2"
 version = "0.4"
 default-features = false
 
+[dependencies.libz-sys]
+version = "1"
+features = ["static"]
+
 [build-dependencies]
 itertools = "0.8"
 make-cmd = "0.1"
