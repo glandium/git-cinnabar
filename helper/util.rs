@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::ffi::{CStr, OsStr};
-use std::io::{self, Write};
+use std::io::{self, LineWriter, Write};
 use std::mem;
 use std::os::raw::c_char;
 #[cfg(unix)]
@@ -17,6 +17,7 @@ use std::ptr;
 #[cfg(windows)]
 use std::str;
 
+use bstr::ByteSlice;
 use flate2::write::ZlibDecoder;
 
 use crate::libcinnabar::{get_writer_fd, writer, writer_close, GetRawFd};
@@ -99,4 +100,42 @@ impl<W: Write> GetRawFd for ZlibDecoder<W> {}
 unsafe extern "C" fn inflate_writer(writer: &mut writer) {
     let writer_copy = ptr::read(writer);
     ptr::write(writer, writer::new(ZlibDecoder::new(writer_copy)));
+}
+
+struct PrefixWriter<W: Write> {
+    prefix: Vec<u8>,
+    line_writer: LineWriter<W>,
+}
+
+impl<W: Write> PrefixWriter<W> {
+    fn new(prefix: &[u8], w: W) -> Self {
+        PrefixWriter {
+            prefix: prefix.to_owned(),
+            line_writer: LineWriter::new(w),
+        }
+    }
+}
+
+impl<W: Write> GetRawFd for PrefixWriter<W> {}
+
+impl<W: Write> Write for PrefixWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut len = 0;
+        for line in buf.lines_with_terminator() {
+            self.line_writer.write(&self.prefix)?;
+            len += self.line_writer.write(line)?;
+        }
+        Ok(len)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.line_writer.flush()
+    }
+}
+
+#[no_mangle]
+unsafe extern "C" fn prefix_writer(writer: &mut writer, prefix: *mut c_char) {
+    let prefix = CStr::from_ptr(prefix.as_ref().unwrap()).to_bytes();
+    let writer_copy = ptr::read(writer);
+    ptr::write(writer, writer::new(PrefixWriter::new(prefix, writer_copy)));
 }
