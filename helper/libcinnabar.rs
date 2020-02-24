@@ -71,6 +71,12 @@ impl<T: GetRawFd + ?Sized> GetRawFd for &mut T {
     }
 }
 
+impl<T: GetRawFd + ?Sized> GetRawFd for Box<T> {
+    fn get_writer_fd(&mut self) -> c_int {
+        (**self).get_writer_fd()
+    }
+}
+
 impl GetRawFd for File {
     fn get_writer_fd(&mut self) -> c_int {
         #[cfg(unix)]
@@ -82,6 +88,7 @@ impl GetRawFd for File {
 }
 
 impl GetRawFd for strbuf {}
+impl GetRawFd for Vec<u8> {}
 
 pub trait WriteAndGetRawFd: Write + GetRawFd {}
 

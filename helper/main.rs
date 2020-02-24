@@ -13,6 +13,7 @@ mod libc;
 mod libcinnabar;
 mod util;
 
+pub(crate) mod hg_bundle;
 #[macro_use]
 pub mod hg_connect;
 pub(crate) mod hg_connect_http;

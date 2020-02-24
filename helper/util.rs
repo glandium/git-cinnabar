@@ -2,9 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::borrow::{Cow, ToOwned};
 use std::ffi::{CStr, OsStr};
 use std::io::{self, LineWriter, Write};
 use std::mem;
+use std::ops::Deref;
 use std::os::raw::c_char;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
@@ -22,7 +24,85 @@ use replace_with::replace_with_or_abort;
 
 use crate::libcinnabar::{writer, GetRawFd, WriteAndGetRawFd};
 
-struct PipeWriter {
+pub trait SliceExt<T> {
+    fn get_split_at(&self, mid: usize) -> Option<(&[T], &[T])>;
+}
+
+impl<T> SliceExt<T> for [T] {
+    fn get_split_at(&self, mid: usize) -> Option<(&[T], &[T])> {
+        if self.len() > mid {
+            Some(self.split_at(mid))
+        } else {
+            None
+        }
+    }
+}
+
+pub struct BorrowingVec<'a, T>(Cow<'a, [T]>)
+where
+    [T]: ToOwned<Owned = Vec<T>>;
+
+impl<'a, T> BorrowingVec<'a, T>
+where
+    [T]: ToOwned<Owned = Vec<T>>,
+{
+    pub fn new() -> Self {
+        BorrowingVec(Cow::Borrowed(&[]))
+    }
+}
+
+impl<'a, T: Clone> BorrowingVec<'a, T>
+where
+    [T]: ToOwned<Owned = Vec<T>>,
+{
+    pub fn extend_from_slice(&mut self, other: &'a [T]) {
+        if !other.is_empty() {
+            if let Cow::Borrowed(b) = &self.0 {
+                if !b.is_empty() {
+                    self.0 = Cow::Owned((*b).to_owned());
+                }
+            }
+            match &mut self.0 {
+                Cow::Borrowed(_) => {
+                    self.0 = Cow::Borrowed(other);
+                }
+                Cow::Owned(o) => {
+                    o.extend_from_slice(other);
+                }
+            }
+        }
+    }
+}
+
+impl<'a, T> Deref for BorrowingVec<'a, T>
+where
+    [T]: ToOwned<Owned = Vec<T>>,
+{
+    type Target = [T];
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
+}
+
+impl<'a, T: Clone> From<Vec<T>> for BorrowingVec<'a, T>
+where
+    [T]: ToOwned<Owned = Vec<T>>,
+{
+    fn from(v: Vec<T>) -> Self {
+        BorrowingVec(v.into())
+    }
+}
+
+impl<'a, T: Clone> From<BorrowingVec<'a, T>> for Vec<T>
+where
+    [T]: ToOwned<Owned = Vec<T>>,
+{
+    fn from(v: BorrowingVec<'a, T>) -> Self {
+        v.0.into()
+    }
+}
+
+pub struct PipeWriter {
     child: Child,
 }
 
@@ -68,7 +148,7 @@ unsafe extern "C" fn pipe_writer(writer: &mut writer, argv: *const *const c_char
 }
 
 impl PipeWriter {
-    fn new<W: WriteAndGetRawFd>(mut w: W, cmd: &[&OsStr]) -> Self {
+    pub fn new<W: WriteAndGetRawFd>(mut w: W, cmd: &[&OsStr]) -> Self {
         let fd = w.get_writer_fd();
         if fd < 0 {
             die!("pipe_writer can only redirect an fwrite writer");
