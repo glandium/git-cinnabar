@@ -179,7 +179,7 @@ impl<W: Write> Write for PrefixWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let mut len = 0;
         for line in buf.lines_with_terminator() {
-            self.line_writer.write(&self.prefix)?;
+            self.line_writer.write_all(&self.prefix)?;
             len += self.line_writer.write(line)?;
         }
         Ok(len)
