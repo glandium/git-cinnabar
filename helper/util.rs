@@ -161,13 +161,13 @@ pub fn inflate_writer(writer: &mut writer) {
     replace_with_or_abort(writer, |w| writer::new(ZlibDecoder::new(w)));
 }
 
-struct PrefixWriter<W: Write> {
+pub struct PrefixWriter<W: Write> {
     prefix: Vec<u8>,
     line_writer: LineWriter<W>,
 }
 
 impl<W: Write> PrefixWriter<W> {
-    fn new(prefix: &[u8], w: W) -> Self {
+    pub fn new(prefix: &[u8], w: W) -> Self {
         PrefixWriter {
             prefix: prefix.to_owned(),
             line_writer: LineWriter::new(w),
@@ -190,8 +190,4 @@ impl<W: Write> Write for PrefixWriter<W> {
     fn flush(&mut self) -> std::io::Result<()> {
         self.line_writer.flush()
     }
-}
-
-pub fn prefix_writer(writer: &mut writer, prefix: &[u8]) {
-    replace_with_or_abort(writer, |w| writer::new(PrefixWriter::new(prefix, w)));
 }

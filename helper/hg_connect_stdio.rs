@@ -28,7 +28,7 @@ use crate::libcinnabar::{
     WriteAndGetRawFd,
 };
 use crate::libgit::{child_process, strbuf};
-use crate::util::prefix_writer;
+use crate::util::PrefixWriter;
 
 #[allow(non_camel_case_types)]
 pub struct hg_connection_stdio {
@@ -259,8 +259,8 @@ impl HgStdIOConnection {
         let mut proc_err = unsafe { FdFile::from_raw_fd(proc_err(proc)) };
 
         inner.thread = Some(spawn(move || {
-            let mut writer = writer::new(crate::libc::File::new(unsafe { get_stderr() }));
-            prefix_writer(&mut writer, b"remote: ");
+            let file = crate::libc::File::new(unsafe { get_stderr() });
+            let mut writer = PrefixWriter::new(b"remote: ", file);
             copy(&mut proc_err, &mut writer).unwrap();
         }));
 
