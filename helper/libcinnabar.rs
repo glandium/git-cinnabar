@@ -59,6 +59,12 @@ pub trait GetRawFd {
     }
 }
 
+impl GetRawFd for writer {
+    fn get_writer_fd(&mut self) -> c_int {
+        unsafe { get_writer_fd(self) }
+    }
+}
+
 impl<T: GetRawFd + ?Sized> GetRawFd for &mut T {
     fn get_writer_fd(&mut self) -> c_int {
         (**self).get_writer_fd()

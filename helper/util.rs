@@ -20,7 +20,7 @@ use bstr::ByteSlice;
 use flate2::write::ZlibDecoder;
 use replace_with::replace_with_or_abort;
 
-use crate::libcinnabar::{get_writer_fd, writer, writer_close, GetRawFd};
+use crate::libcinnabar::{writer, GetRawFd, WriteAndGetRawFd};
 
 struct PipeWriter {
     child: Child,
@@ -64,35 +64,41 @@ unsafe extern "C" fn pipe_writer(writer: &mut writer, argv: *const *const c_char
         }
     }
 
-    let fd = get_writer_fd(writer);
-    if fd < 0 {
-        die!("pipe_writer can only redirect an fwrite writer");
-    }
-    writer_close(writer);
+    replace_with_or_abort(writer, |w| writer::new(PipeWriter::new(w, &args)));
+}
 
-    #[cfg(unix)]
-    let stdout = Stdio::from_raw_fd(fd);
-    #[cfg(windows)]
-    let stdout = Stdio::from_raw_handle({
-        let handle = libc::get_osfhandle(fd);
-        if handle == -1 {
-            die!("cannot get I/O handle");
+impl PipeWriter {
+    fn new<W: WriteAndGetRawFd>(mut w: W, cmd: &[&OsStr]) -> Self {
+        let fd = w.get_writer_fd();
+        if fd < 0 {
+            die!("pipe_writer can only redirect an fwrite writer");
         }
-        handle as std::os::windows::raw::HANDLE
-    });
+        w.flush().unwrap();
 
-    let child = Command::new(args[0])
-        .args(&args[1..])
-        .stdin(Stdio::piped())
-        .stdout(stdout)
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
+        #[cfg(unix)]
+        let stdout = unsafe { Stdio::from_raw_fd(fd) };
+        #[cfg(windows)]
+        let stdout = unsafe {
+            Stdio::from_raw_handle({
+                let handle = libc::get_osfhandle(fd);
+                if handle == -1 {
+                    die!("cannot get I/O handle");
+                }
+                handle as std::os::windows::raw::HANDLE
+            })
+        };
 
-    replace_with_or_abort(writer, |w| {
         mem::forget(w);
-        writer::new(PipeWriter { child })
-    });
+
+        let child = Command::new(cmd[0])
+            .args(&cmd[1..])
+            .stdin(Stdio::piped())
+            .stdout(stdout)
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        PipeWriter { child }
+    }
 }
 
 impl<W: Write> GetRawFd for ZlibDecoder<W> {}
