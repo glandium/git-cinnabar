@@ -155,12 +155,8 @@ impl Drop for writer {
 
 extern "C" {
     pub fn bufferize_writer(writer: *mut writer);
-    pub fn decompress_bundle_writer(writer: *mut writer);
-    pub fn inflate_writer(writer: *mut writer);
 
     pub fn copy_bundle(input: *mut FILE, out: *mut writer);
-
-    pub fn prefix_writer(writer: *mut writer, prefix: *const c_char);
 
     pub fn hg_connect_stdio(
         userhost: *const c_char,

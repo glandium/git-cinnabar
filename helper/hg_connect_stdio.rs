@@ -17,16 +17,18 @@ use libc::off_t;
 use url::Url;
 
 use crate::args;
+use crate::hg_bundle::decompress_bundle_writer;
 use crate::hg_connect::{
     param_value, prepare_command, split_capabilities, HgArgs, HgConnection, HgWireConnection,
     OneHgArg,
 };
 use crate::libc::FdFile;
 use crate::libcinnabar::{
-    bufferize_writer, copy_bundle, decompress_bundle_writer, get_stderr, get_stdout,
-    hg_connect_stdio, prefix_writer, stdio_finish, writer, WriteAndGetRawFd,
+    bufferize_writer, copy_bundle, get_stderr, get_stdout, hg_connect_stdio, stdio_finish, writer,
+    WriteAndGetRawFd,
 };
 use crate::libgit::{child_process, strbuf};
+use crate::util::prefix_writer;
 
 #[allow(non_camel_case_types)]
 pub struct hg_connection_stdio {
@@ -226,9 +228,7 @@ impl HgStdIOConnection {
                 let mut f = File::open(path).unwrap();
                 let mut writer = writer::new(crate::libc::File::new(unsafe { get_stdout() }));
                 writer.write_all(b"bundle\n").unwrap();
-                unsafe {
-                    decompress_bundle_writer(&mut writer);
-                }
+                decompress_bundle_writer(&mut writer);
                 copy(&mut f, &mut writer).unwrap();
                 return None;
             }
@@ -260,9 +260,7 @@ impl HgStdIOConnection {
 
         inner.thread = Some(spawn(move || {
             let mut writer = writer::new(crate::libc::File::new(unsafe { get_stderr() }));
-            unsafe {
-                prefix_writer(&mut writer, cstr!("remote: ").as_ptr());
-            }
+            prefix_writer(&mut writer, b"remote: ");
             copy(&mut proc_err, &mut writer).unwrap();
         }));
 

@@ -26,18 +26,17 @@ use percent_encoding::{percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use url::Url;
 
 use crate::args;
+use crate::hg_bundle::decompress_bundle_writer;
 use crate::hg_connect::{
     param_value, prepare_command, split_capabilities, HgArgs, HgCapabilities, HgConnection,
     HgWireConnection,
 };
-use crate::libcinnabar::{
-    bufferize_writer, decompress_bundle_writer, get_stderr, get_stdout, inflate_writer,
-    prefix_writer, writer, WriteAndGetRawFd,
-};
+use crate::libcinnabar::{bufferize_writer, get_stderr, get_stdout, writer, WriteAndGetRawFd};
 use crate::libgit::{
     credential_fill, curl_errorstr, fwrite_buffer, get_active_slot, http_auth, http_cleanup,
     http_follow_config, http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
 };
+use crate::util::{inflate_writer, prefix_writer};
 
 #[allow(non_camel_case_types)]
 pub struct hg_connection_http {
@@ -273,7 +272,7 @@ unsafe extern "C" fn changegroup_write(
                         &mut response_data.writer,
                         writer::new(crate::libc::File::new(get_stderr())),
                     );
-                    prefix_writer(&mut response_data.writer, cstr!("remote: ").as_ptr());
+                    prefix_writer(&mut response_data.writer, b"remote: ");
                 }
                 _ => unimplemented!(),
             }
@@ -383,7 +382,7 @@ impl HgWireConnection for HgHTTPConnection {
             match &http_response.splitn_str(2, "\n").collect::<Vec<_>>()[..] {
                 [stdout_, stderr_] => {
                     response.extend_from_slice(stdout_);
-                    prefix_writer(&mut writer, cstr!("remote: ").as_ptr());
+                    prefix_writer(&mut writer, b"remote: ");
                     writer.write_all(stderr_).unwrap();
                 }
                 //TODO: better eror handling.

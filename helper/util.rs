@@ -3,20 +3,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::{Cow, ToOwned};
-use std::ffi::{CStr, OsStr};
+use std::ffi::OsStr;
 use std::io::{self, LineWriter, Write};
 use std::mem;
 use std::ops::Deref;
-use std::os::raw::c_char;
-#[cfg(unix)]
-use std::os::unix::ffi::OsStrExt;
 #[cfg(unix)]
 use std::os::unix::io::FromRawFd;
 #[cfg(windows)]
 use std::os::windows::io::FromRawHandle;
 use std::process::{Child, Command, Stdio};
-#[cfg(windows)]
-use std::str;
 
 use bstr::ByteSlice;
 use flate2::write::ZlibDecoder;
@@ -126,27 +121,6 @@ impl Write for PipeWriter {
 
 impl GetRawFd for PipeWriter {}
 
-#[no_mangle]
-unsafe extern "C" fn pipe_writer(writer: &mut writer, argv: *const *const c_char) {
-    let mut args = Vec::new();
-    assert!(!argv.is_null());
-    for i in 0.. {
-        let arg = argv.offset(i).as_ref().unwrap();
-        if let Some(arg) = arg.as_ref() {
-            let bytes = CStr::from_ptr(arg).to_bytes();
-            #[cfg(unix)]
-            let os_str = OsStr::from_bytes(bytes);
-            #[cfg(windows)]
-            let os_str = OsStr::new(str::from_utf8(bytes).unwrap());
-            args.push(os_str);
-        } else {
-            break;
-        }
-    }
-
-    replace_with_or_abort(writer, |w| writer::new(PipeWriter::new(w, &args)));
-}
-
 impl PipeWriter {
     pub fn new<W: WriteAndGetRawFd>(mut w: W, cmd: &[&OsStr]) -> Self {
         let fd = w.get_writer_fd();
@@ -183,8 +157,7 @@ impl PipeWriter {
 
 impl<W: Write> GetRawFd for ZlibDecoder<W> {}
 
-#[no_mangle]
-unsafe extern "C" fn inflate_writer(writer: &mut writer) {
+pub fn inflate_writer(writer: &mut writer) {
     replace_with_or_abort(writer, |w| writer::new(ZlibDecoder::new(w)));
 }
 
@@ -219,8 +192,6 @@ impl<W: Write> Write for PrefixWriter<W> {
     }
 }
 
-#[no_mangle]
-unsafe extern "C" fn prefix_writer(writer: &mut writer, prefix: *mut c_char) {
-    let prefix = CStr::from_ptr(prefix.as_ref().unwrap()).to_bytes();
+pub fn prefix_writer(writer: &mut writer, prefix: &[u8]) {
     replace_with_or_abort(writer, |w| writer::new(PrefixWriter::new(prefix, w)));
 }

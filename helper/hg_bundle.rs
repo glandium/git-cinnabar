@@ -227,7 +227,6 @@ fn test_decompress_bundle_writer() {
     }
 }
 
-#[no_mangle]
-unsafe extern "C" fn decompress_bundle_writer(writer: &mut writer) {
+pub fn decompress_bundle_writer(writer: &mut writer) {
     replace_with_or_abort(writer, |w| writer::new(DecompressBundleWriter::new(w)));
 }
