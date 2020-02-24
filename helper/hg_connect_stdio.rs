@@ -7,7 +7,6 @@ use std::fs::File;
 use std::io::{copy, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::c_int;
-use std::path::Path;
 use std::ptr;
 use std::str::FromStr;
 use std::thread::{spawn, JoinHandle};
@@ -214,7 +213,7 @@ impl HgStdIOConnection {
         if url.scheme() == "ssh" {
             path = path.trim_start_matches('/');
         } else {
-            let path = Path::new(path);
+            let path = url.to_file_path().unwrap();
             if path.metadata().map(|m| m.is_file()).unwrap_or(false) {
                 // TODO: Eventually we want to have a hg_connection
                 // for bundles, but for now, just send the stream to
