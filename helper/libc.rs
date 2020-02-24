@@ -58,7 +58,10 @@ impl Write for File {
 
 impl GetRawFd for File {
     fn get_writer_fd(&mut self) -> c_int {
-        unsafe { libc::fileno(self.0) }
+        unsafe {
+            libc::fflush(self.0);
+            libc::fileno(self.0)
+        }
     }
 }
 
