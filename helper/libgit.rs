@@ -164,10 +164,16 @@ extern "C" {
     pub fn die(fmt: *const c_char, ...) -> !;
 }
 
+pub(crate) fn _die(s: String) -> ! {
+    unsafe {
+        let s = std::ffi::CString::new(s).unwrap();
+        die(s.as_ptr())
+    }
+}
+
 macro_rules! die {
     ($($e:expr),+) => {
-        let s = std::ffi::CString::new(format!($($e),+)).unwrap();
-        $crate::libgit::die(s.as_ptr())
+        $crate::libgit::_die(format!($($e),+))
     }
 }
 
