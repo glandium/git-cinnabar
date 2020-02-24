@@ -21,10 +21,4 @@ size_t copy_to(FILE *in, size_t len, struct writer *writer);
 
 void bufferize_writer(struct writer *writer);
 
-void inflate_writer(struct writer *writer);
-
-void pipe_writer(struct writer *writer, const char **argv);
-
-void prefix_writer(struct writer *writer, const char *prefix);
-
 #endif

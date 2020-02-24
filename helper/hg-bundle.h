@@ -46,6 +46,4 @@ void rev_diff_start_iter(struct rev_diff_part *iterator,
 
 int rev_diff_iter_next(struct rev_diff_part *iterator);
 
-void decompress_bundle_writer(struct writer *writer);
-
 #endif
