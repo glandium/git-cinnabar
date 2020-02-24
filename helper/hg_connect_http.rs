@@ -26,7 +26,7 @@ use percent_encoding::{percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use url::Url;
 
 use crate::args;
-use crate::hg_bundle::decompress_bundle_writer;
+use crate::hg_bundle::DecompressBundleWriter;
 use crate::hg_connect::{
     param_value, prepare_command, split_capabilities, HgArgs, HgCapabilities, HgConnection,
     HgWireConnection,
@@ -435,9 +435,9 @@ unsafe extern "C" fn caps_request_write(
     if writers.is_left() {
         match input.get(..4) {
             Some(b"HG10") | Some(b"HG20") => {
-                let mut new_writer = writer::new(crate::libc::File::new(get_stdout()));
-                new_writer.write_all(b"bundle\n").unwrap();
-                decompress_bundle_writer(&mut new_writer);
+                let mut out = crate::libc::File::new(get_stdout());
+                out.write_all(b"bundle\n").unwrap();
+                let mut new_writer = writer::new(DecompressBundleWriter::new(out));
                 bufferize_writer(&mut new_writer);
                 mem::replace(writers, Either::Right(new_writer));
             }

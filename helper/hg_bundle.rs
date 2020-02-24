@@ -10,16 +10,16 @@ use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 use flate2::write::ZlibDecoder;
 use replace_with::replace_with_or_abort;
 
-use crate::libcinnabar::{writer, GetRawFd, WriteAndGetRawFd};
+use crate::libcinnabar::{GetRawFd, WriteAndGetRawFd};
 use crate::util::{BorrowingVec, PipeWriter, SliceExt};
 
-struct DecompressBundleWriter<'a> {
+pub struct DecompressBundleWriter<'a> {
     initial_buf: Option<Vec<u8>>,
     out: Box<dyn WriteAndGetRawFd + 'a>,
 }
 
 impl<'a> DecompressBundleWriter<'a> {
-    fn new<W: WriteAndGetRawFd + 'a>(w: W) -> Self {
+    pub fn new<W: WriteAndGetRawFd + 'a>(w: W) -> Self {
         DecompressBundleWriter {
             initial_buf: Some(Vec::new()),
             out: Box::new(w),
@@ -225,8 +225,4 @@ fn test_decompress_bundle_writer() {
         f2.read_to_end(&mut result).unwrap();
         assert_eq!(result.as_bstr(), expected.as_bstr());
     }
-}
-
-pub fn decompress_bundle_writer(writer: &mut writer) {
-    replace_with_or_abort(writer, |w| writer::new(DecompressBundleWriter::new(w)));
 }

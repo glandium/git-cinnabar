@@ -17,7 +17,7 @@ use libc::off_t;
 use url::Url;
 
 use crate::args;
-use crate::hg_bundle::decompress_bundle_writer;
+use crate::hg_bundle::DecompressBundleWriter;
 use crate::hg_connect::{
     param_value, prepare_command, split_capabilities, HgArgs, HgConnection, HgWireConnection,
     OneHgArg,
@@ -226,9 +226,9 @@ impl HgStdIOConnection {
                 // for bundles, but for now, just send the stream to
                 // stdout and return NULL.
                 let mut f = File::open(path).unwrap();
-                let mut writer = writer::new(crate::libc::File::new(unsafe { get_stdout() }));
-                writer.write_all(b"bundle\n").unwrap();
-                decompress_bundle_writer(&mut writer);
+                let mut out = crate::libc::File::new(unsafe { get_stdout() });
+                out.write_all(b"bundle\n").unwrap();
+                let mut writer = DecompressBundleWriter::new(out);
                 copy(&mut f, &mut writer).unwrap();
                 return None;
             }
