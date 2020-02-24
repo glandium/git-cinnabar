@@ -481,7 +481,7 @@ impl HgHTTPConnection {
             http_init(ptr::null_mut(), conn.inner.url.as_ptr(), 0);
         }
 
-        let mut caps = strbuf::new();
+        let mut caps = Vec::<u8>::new();
         let mut writer = writer::new(&mut caps);
         let mut writers = Either::Left(&mut writer);
         http_capabilities_command(&mut conn, &mut writers);
@@ -494,10 +494,7 @@ impl HgHTTPConnection {
             }
             return None;
         }
-        mem::swap(
-            &mut conn.capabilities,
-            &mut split_capabilities(caps.as_bytes()),
-        );
+        mem::swap(&mut conn.capabilities, &mut split_capabilities(&caps));
 
         Some(conn)
     }
