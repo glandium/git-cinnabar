@@ -3,23 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::{Cow, ToOwned};
-use std::ffi::OsStr;
-use std::io::{self, LineWriter, Write};
-use std::mem;
+use std::io::{LineWriter, Write};
 use std::ops::Deref;
-#[cfg(unix)]
-use std::os::unix::io::FromRawFd;
-#[cfg(windows)]
-use std::os::windows::io::FromRawHandle;
-use std::process::{Child, Command, Stdio};
 
 use bstr::ByteSlice;
-use bzip2::write::BzDecoder;
 use flate2::write::ZlibDecoder;
 use replace_with::replace_with_or_abort;
-use zstd::stream::write::Decoder as ZstdDecoder;
 
-use crate::libcinnabar::{writer, GetRawFd, WriteAndGetRawFd};
+use crate::libcinnabar::writer;
 
 pub trait SliceExt<T> {
     fn get_split_at(&self, mid: usize) -> Option<(&[T], &[T])>;
@@ -98,68 +89,6 @@ where
         v.0.into()
     }
 }
-
-pub struct PipeWriter {
-    child: Child,
-}
-
-impl Drop for PipeWriter {
-    fn drop(&mut self) {
-        self.child.stdout.take();
-        self.child.stdin.take();
-        self.child.wait().unwrap();
-    }
-}
-
-impl Write for PipeWriter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.child.stdin.as_mut().unwrap().write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.child.stdin.as_mut().unwrap().flush()
-    }
-}
-
-impl GetRawFd for PipeWriter {}
-
-impl PipeWriter {
-    pub fn new<W: WriteAndGetRawFd>(mut w: W, cmd: &[&OsStr]) -> Self {
-        let fd = w.get_writer_fd();
-        if fd < 0 {
-            die!("pipe_writer can only redirect an fwrite writer");
-        }
-        w.flush().unwrap();
-
-        #[cfg(unix)]
-        let stdout = unsafe { Stdio::from_raw_fd(fd) };
-        #[cfg(windows)]
-        let stdout = unsafe {
-            Stdio::from_raw_handle({
-                let handle = libc::get_osfhandle(fd);
-                if handle == -1 {
-                    die!("cannot get I/O handle");
-                }
-                handle as std::os::windows::raw::HANDLE
-            })
-        };
-
-        mem::forget(w);
-
-        let child = Command::new(cmd[0])
-            .args(&cmd[1..])
-            .stdin(Stdio::piped())
-            .stdout(stdout)
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        PipeWriter { child }
-    }
-}
-
-impl<W: Write> GetRawFd for BzDecoder<W> {}
-impl<W: Write> GetRawFd for ZlibDecoder<W> {}
-impl<W: Write> GetRawFd for ZstdDecoder<W> {}
 
 pub fn inflate_writer(writer: &mut writer) {
     replace_with_or_abort(writer, |w| writer::new(ZlibDecoder::new(w)));

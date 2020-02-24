@@ -9,8 +9,6 @@ use std::os::raw::c_int;
 
 use libc::{fflush, fread, fseek, fwrite, FILE};
 
-use crate::libcinnabar::GetRawFd;
-
 pub struct File(*mut FILE);
 
 impl File {
@@ -68,12 +66,6 @@ impl FdFile {
     }
 
     pub unsafe fn raw(&mut self) -> c_int {
-        self.0
-    }
-}
-
-impl GetRawFd for FdFile {
-    fn get_writer_fd(&mut self) -> c_int {
         self.0
     }
 }

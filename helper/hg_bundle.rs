@@ -11,16 +11,15 @@ use flate2::write::ZlibDecoder;
 use replace_with::replace_with_or_abort;
 use zstd::stream::write::Decoder as ZstdDecoder;
 
-use crate::libcinnabar::{GetRawFd, WriteAndGetRawFd};
 use crate::util::{BorrowingVec, SliceExt};
 
 pub struct DecompressBundleWriter<'a> {
     initial_buf: Option<Vec<u8>>,
-    out: Box<dyn WriteAndGetRawFd + 'a>,
+    out: Box<dyn Write + 'a>,
 }
 
 impl<'a> DecompressBundleWriter<'a> {
-    pub fn new<W: WriteAndGetRawFd + 'a>(w: W) -> Self {
+    pub fn new<W: Write + 'a>(w: W) -> Self {
         DecompressBundleWriter {
             initial_buf: Some(Vec::new()),
             out: Box::new(w),
@@ -34,8 +33,6 @@ impl<'a> Drop for DecompressBundleWriter<'a> {
         self.out.flush().unwrap();
     }
 }
-
-impl<'a> GetRawFd for DecompressBundleWriter<'a> {}
 
 struct Bundlev2Header<'a> {
     params: Vec<(&'a [u8], &'a [u8])>,

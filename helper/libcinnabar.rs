@@ -3,13 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::ffi::c_void;
-use std::fs::File;
 use std::io::{self, Write};
 use std::os::raw::{c_char, c_int};
-#[cfg(unix)]
-use std::os::unix::io::AsRawFd;
-#[cfg(windows)]
-use std::os::windows::io::AsRawHandle;
 
 use libc::FILE;
 
@@ -34,40 +29,6 @@ pub struct writer {
     close: *const c_void,
     context: *mut c_void,
 }
-
-pub trait GetRawFd {
-    fn get_writer_fd(&mut self) -> c_int {
-        -1
-    }
-}
-
-impl<T: GetRawFd + ?Sized> GetRawFd for &mut T {
-    fn get_writer_fd(&mut self) -> c_int {
-        (**self).get_writer_fd()
-    }
-}
-
-impl<T: GetRawFd + ?Sized> GetRawFd for Box<T> {
-    fn get_writer_fd(&mut self) -> c_int {
-        (**self).get_writer_fd()
-    }
-}
-
-impl GetRawFd for File {
-    fn get_writer_fd(&mut self) -> c_int {
-        #[cfg(unix)]
-        let fd = self.as_raw_fd();
-        #[cfg(windows)]
-        let fd = unsafe { libc::open_osfhandle(self.as_raw_handle() as _, 0) };
-        fd
-    }
-}
-
-impl GetRawFd for Vec<u8> {}
-
-pub trait WriteAndGetRawFd: Write + GetRawFd {}
-
-impl<T: Write + GetRawFd> WriteAndGetRawFd for T {}
 
 extern "C" {
     fn write_to(buf: *const c_char, size: usize, nmemb: usize, writer: *mut writer) -> usize;
