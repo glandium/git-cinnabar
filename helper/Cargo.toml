@@ -18,6 +18,7 @@ path = "main.rs"
 
 [dependencies]
 bstr = "0.2"
+bzip2 = "0.3"
 byteorder = "1"
 cstr = "0.1"
 either = "1"

@@ -1070,12 +1070,7 @@ static void do_helpercaps(struct string_list *args)
 
 	if (mode & MODE_WIRE) {
 		char *resolved;
-		strbuf_addstr(&caps, "compression=UN,GZ");
-		resolved = which("bzip2");
-		if (resolved) {
-			free(resolved);
-			strbuf_addstr(&caps, ",BZ");
-		}
+		strbuf_addstr(&caps, "compression=UN,GZ,BZ");
 		resolved = which("zstd");
 		if (resolved) {
 			free(resolved);

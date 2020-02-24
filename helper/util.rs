@@ -14,6 +14,7 @@ use std::os::windows::io::FromRawHandle;
 use std::process::{Child, Command, Stdio};
 
 use bstr::ByteSlice;
+use bzip2::write::BzDecoder;
 use flate2::write::ZlibDecoder;
 use replace_with::replace_with_or_abort;
 
@@ -155,6 +156,7 @@ impl PipeWriter {
     }
 }
 
+impl<W: Write> GetRawFd for BzDecoder<W> {}
 impl<W: Write> GetRawFd for ZlibDecoder<W> {}
 
 pub fn inflate_writer(writer: &mut writer) {

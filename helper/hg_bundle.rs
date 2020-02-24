@@ -7,6 +7,7 @@ use std::ffi::OsStr;
 use std::io::{self, Write};
 
 use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
+use bzip2::write::BzDecoder;
 use flate2::write::ZlibDecoder;
 use replace_with::replace_with_or_abort;
 
@@ -99,10 +100,7 @@ impl<'a> Write for DecompressBundleWriter<'a> {
                         if let Some(compression) = compression {
                             replace_with_or_abort(&mut self.out, |out| match compression {
                                 b"GZ" => Box::new(ZlibDecoder::new(out)),
-                                b"BZ" => Box::new(PipeWriter::new(
-                                    out,
-                                    &[OsStr::new("bzip2"), OsStr::new("-d")],
-                                )),
+                                b"BZ" => Box::new(BzDecoder::new(out)),
                                 b"ZS" => Box::new(PipeWriter::new(
                                     out,
                                     &[OsStr::new("zstd"), OsStr::new("-d")],
@@ -127,10 +125,7 @@ impl<'a> Write for DecompressBundleWriter<'a> {
                                 replace_with_or_abort(&mut self.out, |out| match compression {
                                     b"GZ" => Box::new(ZlibDecoder::new(out)),
                                     b"BZ" => {
-                                        let mut out = Box::new(PipeWriter::new(
-                                            out,
-                                            &[OsStr::new("bzip2"), OsStr::new("-d")],
-                                        ));
+                                        let mut out = Box::new(BzDecoder::new(out));
                                         out.write_all(b"BZ").unwrap();
                                         out
                                     }
@@ -165,8 +160,6 @@ impl<'a> Write for DecompressBundleWriter<'a> {
 #[test]
 fn test_decompress_bundle_writer() {
     use bstr::ByteSlice;
-    use std::io::Read;
-    use tempfile::NamedTempFile;
 
     let test_cases = [
         (&b"HG20\0\0\0\0data"[..], &b"HG20\0\0\0\0data"[..]),
@@ -187,9 +180,17 @@ fn test_decompress_bundle_writer() {
             &b"HG20\0\0\0\x18k=v Compression=GZ k2=v2\x78\x9c\x4b\x49\x2c\x49\x04\x00\x04\x00\x01\x9b"[..],
             &b"HG20\0\0\0\x09k=v k2=v2data"[..],
         ),
+        (
+            &b"HG20\0\0\0\x0eCompression=BZBZ\x68\x39\x31\x41\x59\x26\x53\x59\xaf\xe6\x9e\x72\0\0\x01\x01\x80\x24\0\x04\0\x20\0\x30\xcc\x0c\x7a\x82\x71\x77\x24\x53\x85\x09\x0a\xfe\x69\xe7\x20"[..],
+            &b"HG20\0\0\0\0data"[..],
+        ),
         (&b"HG10UNdata"[..], &b"HG10UNdata"[..]),
         (
             &b"HG10GZ\x78\x9c\x4b\x49\x2c\x49\x04\x00\x04\x00\x01\x9b"[..],
+            &b"HG10UNdata"[..],
+        ),
+        (
+            &b"HG10BZ\x68\x39\x31\x41\x59\x26\x53\x59\xaf\xe6\x9e\x72\0\0\x01\x01\x80\x24\0\x04\0\x20\0\x30\xcc\x0c\x7a\x82\x71\x77\x24\x53\x85\x09\x0a\xfe\x69\xe7\x20"[..],
             &b"HG10UNdata"[..],
         ),
     ];
@@ -203,26 +204,5 @@ fn test_decompress_bundle_writer() {
             drop(d);
             assert_eq!(result.as_bstr(), expected.as_bstr());
         }
-    }
-    let test_cases = [
-        (
-            &b"HG20\0\0\0\x0eCompression=BZBZ\x68\x39\x31\x41\x59\x26\x53\x59\xaf\xe6\x9e\x72\0\0\x01\x01\x80\x24\0\x04\0\x20\0\x30\xcc\x0c\x7a\x82\x71\x77\x24\x53\x85\x09\x0a\xfe\x69\xe7\x20"[..],
-            &b"HG20\0\0\0\0data"[..],
-        ),
-        (
-            &b"HG10BZ\x68\x39\x31\x41\x59\x26\x53\x59\xaf\xe6\x9e\x72\0\0\x01\x01\x80\x24\0\x04\0\x20\0\x30\xcc\x0c\x7a\x82\x71\x77\x24\x53\x85\x09\x0a\xfe\x69\xe7\x20"[..],
-            &b"HG10UNdata"[..],
-        ),
-    ];
-    for (input, expected) in &test_cases {
-        let mut f = NamedTempFile::new().unwrap();
-        let mut f2 = f.reopen().unwrap();
-        let mut d = DecompressBundleWriter::new(f.as_file_mut());
-        d.write_all(input).unwrap();
-        d.flush().unwrap();
-        drop(d);
-        let mut result = Vec::new();
-        f2.read_to_end(&mut result).unwrap();
-        assert_eq!(result.as_bstr(), expected.as_bstr());
     }
 }
