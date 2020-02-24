@@ -13,7 +13,7 @@ use std::os::windows::io::AsRawHandle;
 
 use libc::FILE;
 
-use crate::libgit::{child_process, strbuf};
+use crate::libgit::child_process;
 
 extern "C" {
     pub fn get_stdout() -> *mut FILE;
@@ -36,32 +36,9 @@ pub struct writer {
     context: *mut c_void,
 }
 
-pub unsafe fn get_writer_fd(writer: &writer) -> c_int {
-    if writer.write == libc::fwrite as *const c_void
-        && writer.close == libc::fflush as *const c_void
-    {
-        libc::fileno(writer.context as *mut FILE)
-    } else if writer.write == write_writer_write as *const c_void
-        && writer.close == write_writer_close as *const c_void
-    {
-        let w = (writer.context as *mut Box<dyn WriteAndGetRawFd>)
-            .as_mut()
-            .unwrap();
-        w.get_writer_fd()
-    } else {
-        -1
-    }
-}
-
 pub trait GetRawFd {
     fn get_writer_fd(&mut self) -> c_int {
         -1
-    }
-}
-
-impl GetRawFd for writer {
-    fn get_writer_fd(&mut self) -> c_int {
-        unsafe { get_writer_fd(self) }
     }
 }
 
@@ -87,7 +64,6 @@ impl GetRawFd for File {
     }
 }
 
-impl GetRawFd for strbuf {}
 impl GetRawFd for Vec<u8> {}
 
 pub trait WriteAndGetRawFd: Write + GetRawFd {}
@@ -101,8 +77,8 @@ extern "C" {
 }
 
 impl writer {
-    pub fn new<W: WriteAndGetRawFd>(w: W) -> writer {
-        let w: Box<dyn WriteAndGetRawFd + '_> = Box::new(w);
+    pub fn new<W: Write>(w: W) -> writer {
+        let w: Box<dyn Write + '_> = Box::new(w);
         writer {
             write: write_writer_write as _,
             close: write_writer_close as _,
@@ -117,20 +93,14 @@ unsafe extern "C" fn write_writer_write(
     nmemb: usize,
     context: *mut c_void,
 ) -> usize {
-    let w = (context as *mut Box<dyn WriteAndGetRawFd>)
-        .as_mut()
-        .unwrap();
+    let w = (context as *mut Box<dyn Write>).as_mut().unwrap();
     let buf = std::slice::from_raw_parts(ptr as *const u8, elt.checked_mul(nmemb).unwrap());
     w.write_all(buf).unwrap();
     buf.len()
 }
 
 unsafe extern "C" fn write_writer_close(context: *mut c_void) {
-    let mut w = Box::from_raw(
-        (context as *mut Box<dyn WriteAndGetRawFd>)
-            .as_mut()
-            .unwrap(),
-    );
+    let mut w = Box::from_raw((context as *mut Box<dyn Write>).as_mut().unwrap());
     w.flush().unwrap();
     drop(w);
 }

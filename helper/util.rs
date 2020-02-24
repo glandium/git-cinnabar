@@ -175,8 +175,6 @@ impl<W: Write> PrefixWriter<W> {
     }
 }
 
-impl<W: Write> GetRawFd for PrefixWriter<W> {}
-
 impl<W: Write> Write for PrefixWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let mut len = 0;

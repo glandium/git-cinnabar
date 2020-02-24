@@ -5,6 +5,7 @@
 use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString};
 use std::fs::File;
+use std::io::Write;
 use std::os::raw::{c_char, c_int};
 use std::ptr;
 
@@ -16,7 +17,7 @@ use url::Url;
 
 use crate::hg_connect_http::HgHTTPConnection;
 use crate::hg_connect_stdio::HgStdIOConnection;
-use crate::libcinnabar::{copy_bundle, writer, WriteAndGetRawFd};
+use crate::libcinnabar::{copy_bundle, writer};
 use crate::libgit::{object_id, oid_array, strbuf};
 
 #[allow(non_camel_case_types)]
@@ -65,12 +66,7 @@ pub trait HgCapabilities {
 pub trait HgWireConnection: HgCapabilities {
     unsafe fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs);
 
-    unsafe fn changegroup_command(
-        &mut self,
-        out: &mut dyn WriteAndGetRawFd,
-        command: &str,
-        args: HgArgs,
-    );
+    unsafe fn changegroup_command(&mut self, out: &mut dyn Write, command: &str, args: HgArgs);
 
     unsafe fn push_command(
         &mut self,

@@ -31,7 +31,7 @@ use crate::hg_connect::{
     param_value, prepare_command, split_capabilities, HgArgs, HgCapabilities, HgConnection,
     HgWireConnection,
 };
-use crate::libcinnabar::{bufferize_writer, get_stderr, get_stdout, writer, WriteAndGetRawFd};
+use crate::libcinnabar::{bufferize_writer, get_stderr, get_stdout, writer};
 use crate::libgit::{
     credential_fill, curl_errorstr, fwrite_buffer, get_active_slot, http_auth, http_cleanup,
     http_follow_config, http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
@@ -314,12 +314,7 @@ impl HgWireConnection for HgHTTPConnection {
 
     /* The changegroup, changegroupsubset and getbundle commands return a raw
      *  * zlib stream when called over HTTP. */
-    unsafe fn changegroup_command(
-        &mut self,
-        out: &mut dyn WriteAndGetRawFd,
-        command: &str,
-        args: HgArgs,
-    ) {
+    unsafe fn changegroup_command(&mut self, out: &mut dyn Write, command: &str, args: HgArgs) {
         let mut response_data = changegroup_response_data {
             curl: ptr::null_mut(),
             writer: writer::new(out),

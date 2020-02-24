@@ -25,7 +25,6 @@ use crate::hg_connect::{
 use crate::libc::FdFile;
 use crate::libcinnabar::{
     bufferize_writer, copy_bundle, get_stderr, get_stdout, hg_connect_stdio, stdio_finish, writer,
-    WriteAndGetRawFd,
 };
 use crate::libgit::{child_process, strbuf};
 use crate::util::PrefixWriter;
@@ -118,12 +117,7 @@ impl HgWireConnection for HgStdIOConnection {
         stdio_read_response(stdio, response);
     }
 
-    unsafe fn changegroup_command(
-        &mut self,
-        out: &mut dyn WriteAndGetRawFd,
-        command: &str,
-        args: HgArgs,
-    ) {
+    unsafe fn changegroup_command(&mut self, out: &mut dyn Write, command: &str, args: HgArgs) {
         let stdio = &mut self.inner;
         let mut writer = writer::new(out);
         stdio_send_command(stdio, command, args);
