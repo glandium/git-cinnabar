@@ -30,6 +30,7 @@ replace_with = "0.1"
 sha-1 = "0.8"
 tempfile = "3"
 url = "2"
+zstd = "0.5"
 
 [dependencies.curl-sys]
 version = "0.4"

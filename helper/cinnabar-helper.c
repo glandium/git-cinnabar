@@ -1069,13 +1069,7 @@ static void do_helpercaps(struct string_list *args)
 		die("helpercaps takes no arguments");
 
 	if (mode & MODE_WIRE) {
-		char *resolved;
-		strbuf_addstr(&caps, "compression=UN,GZ,BZ");
-		resolved = which("zstd");
-		if (resolved) {
-			free(resolved);
-			strbuf_addstr(&caps, ",ZS");
-		}
+		strbuf_addstr(&caps, "compression=UN,GZ,BZ,ZS");
 	}
 
 	if (cinnabar_experiments & EXPERIMENT_STORE) {

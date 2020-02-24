@@ -17,6 +17,7 @@ use bstr::ByteSlice;
 use bzip2::write::BzDecoder;
 use flate2::write::ZlibDecoder;
 use replace_with::replace_with_or_abort;
+use zstd::stream::write::Decoder as ZstdDecoder;
 
 use crate::libcinnabar::{writer, GetRawFd, WriteAndGetRawFd};
 
@@ -158,6 +159,7 @@ impl PipeWriter {
 
 impl<W: Write> GetRawFd for BzDecoder<W> {}
 impl<W: Write> GetRawFd for ZlibDecoder<W> {}
+impl<W: Write> GetRawFd for ZstdDecoder<W> {}
 
 pub fn inflate_writer(writer: &mut writer) {
     replace_with_or_abort(writer, |w| writer::new(ZlibDecoder::new(w)));

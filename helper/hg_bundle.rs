@@ -3,16 +3,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::convert::{TryFrom, TryInto};
-use std::ffi::OsStr;
 use std::io::{self, Write};
 
 use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 use bzip2::write::BzDecoder;
 use flate2::write::ZlibDecoder;
 use replace_with::replace_with_or_abort;
+use zstd::stream::write::Decoder as ZstdDecoder;
 
 use crate::libcinnabar::{GetRawFd, WriteAndGetRawFd};
-use crate::util::{BorrowingVec, PipeWriter, SliceExt};
+use crate::util::{BorrowingVec, SliceExt};
 
 pub struct DecompressBundleWriter<'a> {
     initial_buf: Option<Vec<u8>>,
@@ -25,6 +25,13 @@ impl<'a> DecompressBundleWriter<'a> {
             initial_buf: Some(Vec::new()),
             out: Box::new(w),
         }
+    }
+}
+
+// ZstdDecoder doesn't flush on drop, so we have to do it instead.
+impl<'a> Drop for DecompressBundleWriter<'a> {
+    fn drop(&mut self) {
+        self.out.flush().unwrap();
     }
 }
 
@@ -101,10 +108,7 @@ impl<'a> Write for DecompressBundleWriter<'a> {
                             replace_with_or_abort(&mut self.out, |out| match compression {
                                 b"GZ" => Box::new(ZlibDecoder::new(out)),
                                 b"BZ" => Box::new(BzDecoder::new(out)),
-                                b"ZS" => Box::new(PipeWriter::new(
-                                    out,
-                                    &[OsStr::new("zstd"), OsStr::new("-d")],
-                                )),
+                                b"ZS" => Box::new(ZstdDecoder::new(out).unwrap()),
                                 comp => die!(
                                     "Unknown mercurial bundle compression: {}",
                                     String::from_utf8_lossy(comp)
@@ -182,6 +186,10 @@ fn test_decompress_bundle_writer() {
         ),
         (
             &b"HG20\0\0\0\x0eCompression=BZBZ\x68\x39\x31\x41\x59\x26\x53\x59\xaf\xe6\x9e\x72\0\0\x01\x01\x80\x24\0\x04\0\x20\0\x30\xcc\x0c\x7a\x82\x71\x77\x24\x53\x85\x09\x0a\xfe\x69\xe7\x20"[..],
+            &b"HG20\0\0\0\0data"[..],
+        ),
+        (
+            &b"HG20\0\0\0\x0eCompression=ZS\x28\xb5\x2f\xfd\x04\x58\x21\0\0\x64\x61\x74\x61\xa3\x1d\x2d\x55"[..],
             &b"HG20\0\0\0\0data"[..],
         ),
         (&b"HG10UNdata"[..], &b"HG10UNdata"[..]),
