@@ -30,7 +30,7 @@ use crate::hg_bundle::DecompressBundleWriter;
 use crate::hg_connect::{
     split_capabilities, HgArgs, HgCapabilities, HgConnection, HgWireConnection, OneHgArg,
 };
-use crate::libcinnabar::{bufferize_writer, get_stderr, get_stdout, writer};
+use crate::libcinnabar::{bufferize_writer, get_stderr, writer};
 use crate::libgit::{
     credential_fill, curl_errorstr, fwrite_buffer, get_active_slot, http_auth, http_cleanup,
     http_follow_config, http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
@@ -426,7 +426,7 @@ unsafe extern "C" fn caps_request_write(
     if writers.is_left() {
         match input.get(..4) {
             Some(b"HG10") | Some(b"HG20") => {
-                let mut out = crate::libc::File::new(get_stdout());
+                let mut out = crate::libc::FdFile::stdout();
                 out.write_all(b"bundle\n").unwrap();
                 let mut new_writer = writer::new(DecompressBundleWriter::new(out));
                 bufferize_writer(&mut new_writer);

@@ -16,7 +16,6 @@ use libc::FILE;
 use crate::libgit::child_process;
 
 extern "C" {
-    pub fn get_stdout() -> *mut FILE;
     pub fn get_stderr() -> *mut FILE;
 }
 

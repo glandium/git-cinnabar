@@ -56,15 +56,6 @@ impl Write for File {
     }
 }
 
-impl GetRawFd for File {
-    fn get_writer_fd(&mut self) -> c_int {
-        unsafe {
-            libc::fflush(self.0);
-            libc::fileno(self.0)
-        }
-    }
-}
-
 pub struct FdFile(c_int);
 
 impl FdFile {
@@ -72,7 +63,17 @@ impl FdFile {
         FdFile(fd)
     }
 
+    pub unsafe fn stdout() -> Self {
+        FdFile(1)
+    }
+
     pub unsafe fn raw(&mut self) -> c_int {
+        self.0
+    }
+}
+
+impl GetRawFd for FdFile {
+    fn get_writer_fd(&mut self) -> c_int {
         self.0
     }
 }

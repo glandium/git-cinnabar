@@ -22,7 +22,7 @@ use crate::hg_connect::{
 };
 use crate::libc::FdFile;
 use crate::libcinnabar::{
-    bufferize_writer, copy_bundle, get_stderr, get_stdout, hg_connect_stdio, stdio_finish, writer,
+    bufferize_writer, copy_bundle, get_stderr, hg_connect_stdio, stdio_finish, writer,
 };
 use crate::libgit::{child_process, strbuf};
 use crate::util::PrefixWriter;
@@ -206,7 +206,7 @@ impl HgStdIOConnection {
                 // for bundles, but for now, just send the stream to
                 // stdout and return NULL.
                 let mut f = File::open(path).unwrap();
-                let mut out = crate::libc::File::new(unsafe { get_stdout() });
+                let mut out = unsafe { crate::libc::FdFile::stdout() };
                 out.write_all(b"bundle\n").unwrap();
                 let mut writer = DecompressBundleWriter::new(out);
                 copy(&mut f, &mut writer).unwrap();
