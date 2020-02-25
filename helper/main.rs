@@ -5,8 +5,6 @@
 #[macro_use]
 extern crate cstr;
 
-extern crate libz_sys;
-
 #[macro_use]
 mod libgit;
 mod libc;
