@@ -18,8 +18,7 @@ use url::Url;
 use crate::args;
 use crate::hg_bundle::DecompressBundleWriter;
 use crate::hg_connect::{
-    param_value, prepare_command, split_capabilities, HgArgs, HgConnection, HgWireConnection,
-    OneHgArg,
+    split_capabilities, HgArgs, HgConnection, HgWireConnection, OneHgArg,
 };
 use crate::libc::FdFile;
 use crate::libcinnabar::{
@@ -58,37 +57,25 @@ pub type HgStdIOConnection = HgConnection<hg_connection_stdio>;
  *
  * <content> is <length> bytes long.
  */
-fn stdio_command_add_param(data: &mut BString, name: &str, value: param_value) {
-    let is_asterisk = name == "*";
-    let len = match value {
-        param_value::size(s) => {
-            assert!(is_asterisk);
-            s
-        }
-        param_value::value(v) => {
-            assert!(!is_asterisk);
-            v.len()
-        }
-    };
+fn stdio_command_add_param(data: &mut BString, name: &str, value: &[u8]) {
     data.extend(name.as_bytes());
-    writeln!(data, " {}", len).unwrap();
-    match value {
-        param_value::value(v) => {
-            assert!(!is_asterisk);
-            data.extend(v)
-        }
-        _ => assert!(is_asterisk),
-    };
+    writeln!(data, " {}", value.len()).unwrap();
+    data.extend(value)
 }
 
 fn stdio_send_command(conn: &mut hg_connection_stdio, command: &str, args: HgArgs) {
     let mut data = BString::from(Vec::<u8>::new());
     data.extend(command.as_bytes());
     data.push(b'\n');
-    prepare_command(
-        |name, value| stdio_command_add_param(&mut data, name, value),
-        args,
-    );
+    for OneHgArg { name, value } in args.args {
+        stdio_command_add_param(&mut data, name, value);
+    }
+    if let Some(extra_args) = args.extra_args {
+        writeln!(data, "* {}", extra_args.len()).unwrap();
+        for OneHgArg { name, value } in extra_args {
+            stdio_command_add_param(&mut data, name, value);
+        }
+    }
     conn.proc_in.write_all(&data).unwrap()
 }
 

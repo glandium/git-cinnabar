@@ -28,8 +28,7 @@ use url::Url;
 use crate::args;
 use crate::hg_bundle::DecompressBundleWriter;
 use crate::hg_connect::{
-    param_value, prepare_command, split_capabilities, HgArgs, HgCapabilities, HgConnection,
-    HgWireConnection,
+    split_capabilities, HgArgs, HgCapabilities, HgConnection, HgWireConnection, OneHgArg,
 };
 use crate::libcinnabar::{bufferize_writer, get_stderr, get_stdout, writer};
 use crate::libgit::{
@@ -150,19 +149,14 @@ const QUERY_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b' ');
 
-fn http_query_add_param(data: &mut BString, name: &str, value: param_value) {
-    if name != "*" {
-        let value = match value {
-            param_value::value(v) => percent_encode(v, QUERY_ENCODE_SET)
-                .to_string()
-                .replace(" ", "+"),
-            _ => unreachable!(),
-        };
-        data.extend_from_slice(b"&");
-        data.extend_from_slice(name.as_bytes());
-        data.extend_from_slice(b"=");
-        data.extend_from_slice(value.as_bytes());
-    }
+fn http_query_add_param(data: &mut BString, name: &str, value: &[u8]) {
+    let value = percent_encode(value, QUERY_ENCODE_SET)
+        .to_string()
+        .replace(" ", "+");
+    data.extend_from_slice(b"&");
+    data.extend_from_slice(name.as_bytes());
+    data.extend_from_slice(b"=");
+    data.extend_from_slice(value.as_bytes());
 }
 
 unsafe fn prepare_command_request(
@@ -224,10 +218,12 @@ fn http_command(
         command,
         args: Vec::new().into(),
     };
-    prepare_command(
-        |name, value| http_query_add_param(&mut request_data.args, name, value),
-        args,
-    );
+    for OneHgArg { name, value } in Iterator::chain(
+        args.args.iter(),
+        args.extra_args.as_ref().unwrap_or(&&[][..]).iter(),
+    ) {
+        http_query_add_param(&mut request_data.args, name, value)
+    }
     if http_request_reauth(&mut request_data) != HTTP_OK {
         unsafe {
             die!(

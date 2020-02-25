@@ -264,27 +264,6 @@ unsafe extern "C" fn hg_listkeys(
     )
 }
 
-#[allow(non_camel_case_types)]
-pub enum param_value<'a> {
-    size(usize),
-    value(&'a [u8]),
-}
-
-pub fn prepare_command<'a, F: FnMut(&str, param_value) + 'a>(
-    mut command_add_param: F,
-    args: HgArgs,
-) {
-    for OneHgArg { name, value } in args.args {
-        command_add_param(name, param_value::value(value));
-    }
-    if let Some(extra_args) = args.extra_args {
-        command_add_param("*", param_value::size(extra_args.len()));
-        for OneHgArg { name, value } in extra_args {
-            command_add_param(name, param_value::value(value));
-        }
-    }
-}
-
 #[no_mangle]
 unsafe extern "C" fn hg_getbundle(
     conn: *mut hg_connection,
