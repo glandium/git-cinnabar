@@ -22,7 +22,7 @@ use crate::args;
 use crate::hg_bundle::{copy_bundle, DecompressBundleWriter};
 use crate::hg_connect::{split_capabilities, HgArgs, HgConnection, HgWireConnection, OneHgArg};
 use crate::libc::FdFile;
-use crate::libcinnabar::{get_stderr, hg_connect_stdio, stdio_finish, writer};
+use crate::libcinnabar::{get_stderr, hg_connect_stdio, stdio_finish};
 use crate::libgit::{child_process, strbuf};
 use crate::util::{BufferedWriter, PrefixWriter};
 
@@ -116,16 +116,16 @@ impl HgWireConnection for HgStdIOConnection {
          * format: changegroup or bundle2.
          */
         let mut writer = if stdio.is_remote {
-            writer::new(BufferedWriter::new(out))
+            Box::new(BufferedWriter::new(out))
         } else {
-            writer::new(out)
+            out
         };
         copy_bundle(&mut stdio.proc_out, &mut writer).unwrap();
     }
 
     unsafe fn push_command(
         &mut self,
-        response: &mut strbuf,
+        mut response: &mut strbuf,
         mut input: File,
         len: off_t,
         command: &str,
@@ -159,7 +159,7 @@ impl HgWireConnection for HgStdIOConnection {
 
         stdio.proc_in.write_all(b"0\n").unwrap();
         if is_bundle2 {
-            copy_bundle(&mut stdio.proc_out, &mut writer::new(response)).unwrap();
+            copy_bundle(&mut stdio.proc_out, &mut response).unwrap();
         } else {
             /* There are two responses, one for output, one for actual response. */
             //TODO: actually handle output here

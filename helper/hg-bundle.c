@@ -1,5 +1,4 @@
 #include "git-compat-util.h"
-#include "cinnabar-util.h"
 #include "http.h"
 #include "hg-bundle.h"
 #include <stdint.h>

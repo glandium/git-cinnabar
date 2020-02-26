@@ -1,7 +1,6 @@
 #ifndef HG_CONNECT_H
 #define HG_CONNECT_H
 
-#include "cinnabar-util.h"
 #include "run-command.h"
 #include "sha1-array.h"
 

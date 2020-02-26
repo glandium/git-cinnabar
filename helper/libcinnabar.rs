@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::ffi::c_void;
-use std::io::{self, Write};
 use std::os::raw::{c_char, c_int};
 
 use libc::FILE;
@@ -20,67 +18,6 @@ extern "C" {
 pub struct hg_connection_stdio {
     pub out: *mut FILE,
     pub is_remote: c_int,
-}
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
-pub struct writer {
-    write: *const c_void,
-    close: *const c_void,
-    context: *mut c_void,
-}
-
-extern "C" {
-    fn write_to(buf: *const c_char, size: usize, nmemb: usize, writer: *mut writer) -> usize;
-
-    pub fn writer_close(w: *mut writer);
-}
-
-impl writer {
-    pub fn new<W: Write>(w: W) -> writer {
-        let w: Box<dyn Write + '_> = Box::new(w);
-        writer {
-            write: write_writer_write as _,
-            close: write_writer_close as _,
-            context: Box::into_raw(Box::new(w)) as _,
-        }
-    }
-}
-
-unsafe extern "C" fn write_writer_write(
-    ptr: *const c_char,
-    elt: usize,
-    nmemb: usize,
-    context: *mut c_void,
-) -> usize {
-    let w = (context as *mut Box<dyn Write>).as_mut().unwrap();
-    let buf = std::slice::from_raw_parts(ptr as *const u8, elt.checked_mul(nmemb).unwrap());
-    w.write_all(buf).unwrap();
-    buf.len()
-}
-
-unsafe extern "C" fn write_writer_close(context: *mut c_void) {
-    let mut w = Box::from_raw((context as *mut Box<dyn Write>).as_mut().unwrap());
-    w.flush().unwrap();
-    drop(w);
-}
-
-impl Write for writer {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        Ok(unsafe { write_to(buf.as_ptr() as *const c_char, 1, buf.len(), self) })
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl Drop for writer {
-    fn drop(&mut self) {
-        unsafe {
-            writer_close(self);
-        }
-    }
 }
 
 extern "C" {

@@ -3,7 +3,6 @@
 
 #include "cache.h"
 #include "strbuf.h"
-#include "cinnabar-util.h"
 #include "hg-data.h"
 #include <stdio.h>
 

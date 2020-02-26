@@ -18,7 +18,6 @@ use url::Url;
 use crate::hg_bundle::copy_bundle;
 use crate::hg_connect_http::HgHTTPConnection;
 use crate::hg_connect_stdio::HgStdIOConnection;
-use crate::libcinnabar::writer;
 use crate::libgit::{object_id, oid_array, strbuf};
 
 #[allow(non_camel_case_types)]
@@ -332,7 +331,7 @@ unsafe extern "C" fn hg_unbundle(
         .tempfile()
         .unwrap();
     let (mut f, path) = tempfile.into_parts();
-    copy_bundle(&mut crate::libc::File::new(input), &mut writer::new(&mut f)).unwrap();
+    copy_bundle(&mut crate::libc::File::new(input), &mut f).unwrap();
     drop(f);
 
     let file = File::open(path).unwrap();
