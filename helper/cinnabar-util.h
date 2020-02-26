@@ -19,6 +19,4 @@ int writer_close(struct writer* writer);
 
 size_t copy_to(FILE *in, size_t len, struct writer *writer);
 
-void bufferize_writer(struct writer *writer);
-
 #endif

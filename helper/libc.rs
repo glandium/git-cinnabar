@@ -11,6 +11,8 @@ use libc::{fflush, fread, fseek, fwrite, FILE};
 
 pub struct File(*mut FILE);
 
+unsafe impl Send for File {}
+
 impl File {
     pub fn new(f: *mut FILE) -> Self {
         File(f)

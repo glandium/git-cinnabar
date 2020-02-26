@@ -22,11 +22,9 @@ use crate::args;
 use crate::hg_bundle::DecompressBundleWriter;
 use crate::hg_connect::{split_capabilities, HgArgs, HgConnection, HgWireConnection, OneHgArg};
 use crate::libc::FdFile;
-use crate::libcinnabar::{
-    bufferize_writer, copy_bundle, get_stderr, hg_connect_stdio, stdio_finish, writer,
-};
+use crate::libcinnabar::{copy_bundle, get_stderr, hg_connect_stdio, stdio_finish, writer};
 use crate::libgit::{child_process, strbuf};
-use crate::util::PrefixWriter;
+use crate::util::{BufferedWriter, PrefixWriter};
 
 #[allow(non_camel_case_types)]
 pub struct hg_connection_stdio {
@@ -104,18 +102,24 @@ impl HgWireConnection for HgStdIOConnection {
         stdio_read_response(stdio, response);
     }
 
-    unsafe fn changegroup_command(&mut self, out: &mut dyn Write, command: &str, args: HgArgs) {
+    unsafe fn changegroup_command(
+        &mut self,
+        out: Box<dyn Write + Send>,
+        command: &str,
+        args: HgArgs,
+    ) {
         let stdio = &mut self.inner;
-        let mut writer = writer::new(out);
         stdio_send_command(stdio, command, args);
 
         /* We're going to receive a stream, but we don't know how big it is
          * going to be in advance, so we have to read it according to its
          * format: changegroup or bundle2.
          */
-        if stdio.is_remote {
-            bufferize_writer(&mut writer);
-        }
+        let mut writer = if stdio.is_remote {
+            writer::new(BufferedWriter::new(out))
+        } else {
+            writer::new(out)
+        };
         copy_bundle(stdio.proc_out.raw(), &mut writer);
     }
 

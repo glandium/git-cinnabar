@@ -3,14 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::{Cow, ToOwned};
-use std::io::{LineWriter, Write};
+use std::io::{self, LineWriter, Write};
 use std::ops::Deref;
+use std::sync::mpsc::{channel, Sender};
+use std::thread::{self, JoinHandle};
 
 use bstr::ByteSlice;
-use flate2::write::ZlibDecoder;
-use replace_with::replace_with_or_abort;
-
-use crate::libcinnabar::writer;
 
 pub trait SliceExt<T> {
     fn get_split_at(&self, mid: usize) -> Option<(&[T], &[T])>;
@@ -90,10 +88,6 @@ where
     }
 }
 
-pub fn inflate_writer(writer: &mut writer) {
-    replace_with_or_abort(writer, |w| writer::new(ZlibDecoder::new(w)));
-}
-
 pub struct PrefixWriter<W: Write> {
     prefix: Vec<u8>,
     line_writer: LineWriter<W>,
@@ -121,4 +115,80 @@ impl<W: Write> Write for PrefixWriter<W> {
     fn flush(&mut self) -> std::io::Result<()> {
         self.line_writer.flush()
     }
+}
+
+pub struct BufferedWriter {
+    thread: Option<JoinHandle<io::Result<()>>>,
+    sender: Option<Sender<Vec<u8>>>,
+}
+
+impl BufferedWriter {
+    pub fn new<W: 'static + Write + Send>(mut w: W) -> Self {
+        let (sender, receiver) = channel::<Vec<u8>>();
+        let thread = thread::spawn(move || {
+            for buf in receiver.iter() {
+                w.write_all(&buf)?;
+            }
+            w.flush()?;
+            Ok(())
+        });
+        BufferedWriter {
+            thread: Some(thread),
+            sender: Some(sender),
+        }
+    }
+}
+
+impl Drop for BufferedWriter {
+    fn drop(&mut self) {
+        drop(self.sender.take());
+        self.thread.take().unwrap().join().unwrap().unwrap();
+    }
+}
+
+impl Write for BufferedWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.sender.as_ref().map(|s| s.send(buf.to_owned()));
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn test_buffered_writer() {
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    struct SlowWrite<W: Write>(Arc<Mutex<W>>);
+
+    impl<W: Write> Write for SlowWrite<W> {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            thread::sleep(Duration::from_millis(1));
+            self.0.lock().unwrap().write(buf)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.0.lock().unwrap().flush()
+        }
+    }
+
+    let data = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let mut writer = BufferedWriter::new(SlowWrite(Arc::clone(&data)));
+
+    let start_time = Instant::now();
+    for _ in 0..20 {
+        assert_eq!(writer.write("0".as_bytes()).unwrap(), 1);
+    }
+    let write_time = Instant::now();
+    drop(writer);
+    let drop_time = Instant::now();
+    assert_eq!(&data.lock().unwrap()[..], &[b'0'; 20][..]);
+    // The writing loop should take (much) less than 1ms.
+    assert!((write_time - start_time).as_micros() < 1000);
+    // The drop, which waits for the thread to finish, should take at
+    // least 20 times the sleep time of 1ms.
+    assert!((drop_time - write_time).as_micros() >= 20000);
 }

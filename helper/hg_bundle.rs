@@ -15,11 +15,11 @@ use crate::util::{BorrowingVec, SliceExt};
 
 pub struct DecompressBundleWriter<'a> {
     initial_buf: Option<Vec<u8>>,
-    out: Box<dyn Write + 'a>,
+    out: Box<dyn Write + Send + 'a>,
 }
 
 impl<'a> DecompressBundleWriter<'a> {
-    pub fn new<W: Write + 'a>(w: W) -> Self {
+    pub fn new<W: Write + Send + 'a>(w: W) -> Self {
         DecompressBundleWriter {
             initial_buf: Some(Vec::new()),
             out: Box::new(w),

@@ -66,7 +66,12 @@ pub trait HgCapabilities {
 pub trait HgWireConnection: HgCapabilities {
     unsafe fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs);
 
-    unsafe fn changegroup_command(&mut self, out: &mut dyn Write, command: &str, args: HgArgs);
+    unsafe fn changegroup_command(
+        &mut self,
+        out: Box<dyn Write + Send>,
+        command: &str,
+        args: HgArgs,
+    );
 
     unsafe fn push_command(
         &mut self,
@@ -287,12 +292,12 @@ unsafe extern "C" fn hg_getbundle(
             args.push(("bundlecaps", bundle2caps.to_owned().into()));
         }
     }
-    let mut out = crate::libc::File::new(out);
+    let out = crate::libc::File::new(out);
     let args = args
         .iter()
         .map(|(n, v)| OneHgArg { name: n, value: v })
         .collect::<Vec<_>>();
-    conn.changegroup_command(&mut out, "getbundle", args!(*: &args[..]));
+    conn.changegroup_command(Box::new(out), "getbundle", args!(*: &args[..]));
 }
 
 #[no_mangle]

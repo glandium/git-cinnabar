@@ -21,8 +21,10 @@ use curl_sys::{
     CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
 };
 use either::Either;
+use flate2::write::ZlibDecoder;
 use libc::off_t;
 use percent_encoding::{percent_encode, AsciiSet, NON_ALPHANUMERIC};
+use replace_with::replace_with_or_abort;
 use url::Url;
 
 use crate::args;
@@ -30,12 +32,12 @@ use crate::hg_bundle::DecompressBundleWriter;
 use crate::hg_connect::{
     split_capabilities, HgArgs, HgCapabilities, HgConnection, HgWireConnection, OneHgArg,
 };
-use crate::libcinnabar::{bufferize_writer, get_stderr, writer};
+use crate::libcinnabar::{get_stderr, writer};
 use crate::libgit::{
     credential_fill, curl_errorstr, fwrite_buffer, get_active_slot, http_auth, http_cleanup,
     http_follow_config, http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
 };
-use crate::util::{inflate_writer, PrefixWriter};
+use crate::util::{BufferedWriter, PrefixWriter};
 
 #[allow(non_camel_case_types)]
 pub struct hg_connection_http {
@@ -243,7 +245,7 @@ unsafe fn prepare_simple_request(curl: *mut CURL, data: *mut strbuf) {
 #[allow(non_camel_case_types)]
 struct changegroup_response_data {
     curl: *mut CURL,
-    writer: writer,
+    writer: Box<dyn Write + Send>,
 }
 
 unsafe extern "C" fn changegroup_write(
@@ -260,14 +262,16 @@ unsafe extern "C" fn changegroup_write(
         {
             match CStr::from_ptr(content_type).to_bytes() {
                 b"application/mercurial-0.1" => {
-                    inflate_writer(&mut response_data.writer);
+                    replace_with_or_abort(&mut response_data.writer, |w| {
+                        Box::new(ZlibDecoder::new(w))
+                    });
                 }
                 b"application/hg-error" => {
                     response_data.writer.write_all(b"err\n").unwrap();
 
                     mem::replace(
                         &mut response_data.writer,
-                        writer::new(PrefixWriter::new(
+                        Box::new(PrefixWriter::new(
                             b"remote: ",
                             crate::libc::File::new(get_stderr()),
                         )),
@@ -276,7 +280,9 @@ unsafe extern "C" fn changegroup_write(
                 _ => unimplemented!(),
             }
         }
-        bufferize_writer(&mut response_data.writer);
+        replace_with_or_abort(&mut response_data.writer, |w| {
+            Box::new(BufferedWriter::new(w))
+        });
         response_data.curl = ptr::null_mut();
     }
 
@@ -310,10 +316,15 @@ impl HgWireConnection for HgHTTPConnection {
 
     /* The changegroup, changegroupsubset and getbundle commands return a raw
      *  * zlib stream when called over HTTP. */
-    unsafe fn changegroup_command(&mut self, out: &mut dyn Write, command: &str, args: HgArgs) {
+    unsafe fn changegroup_command(
+        &mut self,
+        out: Box<dyn Write + Send>,
+        command: &str,
+        args: HgArgs,
+    ) {
         let mut response_data = changegroup_response_data {
             curl: ptr::null_mut(),
-            writer: writer::new(out),
+            writer: out,
         };
         http_command(
             self,
@@ -428,8 +439,7 @@ unsafe extern "C" fn caps_request_write(
             Some(b"HG10") | Some(b"HG20") => {
                 let mut out = crate::libc::FdFile::stdout();
                 out.write_all(b"bundle\n").unwrap();
-                let mut new_writer = writer::new(DecompressBundleWriter::new(out));
-                bufferize_writer(&mut new_writer);
+                let new_writer = writer::new(BufferedWriter::new(DecompressBundleWriter::new(out)));
                 mem::replace(writers, Either::Right(new_writer));
             }
             _ => {}

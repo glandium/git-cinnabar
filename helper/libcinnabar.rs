@@ -84,8 +84,6 @@ impl Drop for writer {
 }
 
 extern "C" {
-    pub fn bufferize_writer(writer: *mut writer);
-
     pub fn copy_bundle(input: *mut FILE, out: *mut writer);
 
     pub fn hg_connect_stdio(
