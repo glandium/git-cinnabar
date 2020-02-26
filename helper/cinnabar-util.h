@@ -17,6 +17,4 @@ size_t write_to(char *buf, size_t size, size_t nmemb, struct writer *writer);
 
 int writer_close(struct writer* writer);
 
-size_t copy_to(FILE *in, size_t len, struct writer *writer);
-
 #endif

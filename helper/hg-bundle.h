@@ -7,8 +7,6 @@
 #include "hg-data.h"
 #include <stdio.h>
 
-void copy_bundle(FILE *in, struct writer *out);
-
 void read_chunk(FILE *in, struct strbuf *out);
 
 struct rev_chunk {

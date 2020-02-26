@@ -19,10 +19,10 @@ use percent_encoding::percent_decode;
 use url::Url;
 
 use crate::args;
-use crate::hg_bundle::DecompressBundleWriter;
+use crate::hg_bundle::{copy_bundle, DecompressBundleWriter};
 use crate::hg_connect::{split_capabilities, HgArgs, HgConnection, HgWireConnection, OneHgArg};
 use crate::libc::FdFile;
-use crate::libcinnabar::{copy_bundle, get_stderr, hg_connect_stdio, stdio_finish, writer};
+use crate::libcinnabar::{get_stderr, hg_connect_stdio, stdio_finish, writer};
 use crate::libgit::{child_process, strbuf};
 use crate::util::{BufferedWriter, PrefixWriter};
 
@@ -120,7 +120,7 @@ impl HgWireConnection for HgStdIOConnection {
         } else {
             writer::new(out)
         };
-        copy_bundle(stdio.proc_out.raw(), &mut writer);
+        copy_bundle(&mut stdio.proc_out, &mut writer).unwrap();
     }
 
     unsafe fn push_command(
@@ -159,7 +159,7 @@ impl HgWireConnection for HgStdIOConnection {
 
         stdio.proc_in.write_all(b"0\n").unwrap();
         if is_bundle2 {
-            copy_bundle(stdio.proc_out.raw(), &mut writer::new(response));
+            copy_bundle(&mut stdio.proc_out, &mut writer::new(response)).unwrap();
         } else {
             /* There are two responses, one for output, one for actual response. */
             //TODO: actually handle output here

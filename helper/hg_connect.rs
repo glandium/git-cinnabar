@@ -15,9 +15,10 @@ use libc::{off_t, FILE};
 use percent_encoding::percent_decode;
 use url::Url;
 
+use crate::hg_bundle::copy_bundle;
 use crate::hg_connect_http::HgHTTPConnection;
 use crate::hg_connect_stdio::HgStdIOConnection;
-use crate::libcinnabar::{copy_bundle, writer};
+use crate::libcinnabar::writer;
 use crate::libgit::{object_id, oid_array, strbuf};
 
 #[allow(non_camel_case_types)]
@@ -331,7 +332,7 @@ unsafe extern "C" fn hg_unbundle(
         .tempfile()
         .unwrap();
     let (mut f, path) = tempfile.into_parts();
-    copy_bundle(input, &mut writer::new(&mut f));
+    copy_bundle(&mut crate::libc::File::new(input), &mut writer::new(&mut f)).unwrap();
     drop(f);
 
     let file = File::open(path).unwrap();

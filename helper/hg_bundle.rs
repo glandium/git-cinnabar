@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::convert::{TryFrom, TryInto};
-use std::io::{self, Write};
+use std::io::{self, copy, Read, Write};
 
 use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 use bzip2::write::BzDecoder;
@@ -210,4 +210,70 @@ fn test_decompress_bundle_writer() {
             assert_eq!(result.as_bstr(), expected.as_bstr());
         }
     }
+}
+
+fn copy_chunk<R: Read + ?Sized, W: Write + ?Sized>(
+    adjust: u64,
+    input: &mut R,
+    output: &mut W,
+) -> io::Result<u64> {
+    let mut buf = [0; 4];
+    input.read_exact(&mut buf)?;
+    output.write_all(&buf)?;
+    let len = BigEndian::read_u32(&buf) as u64;
+    if len == 0 {
+        return Ok(0)
+    }
+    copy(&mut input.take(len.checked_sub(adjust).unwrap()), output)
+}
+
+fn copy_changegroup_chunk<R: Read + ?Sized, W: Write + ?Sized>(
+    input: &mut R,
+    output: &mut W,
+) -> io::Result<u64> {
+    copy_chunk(4, input, output)
+}
+
+fn copy_changegroup<R: Read + ?Sized, W: Write + ?Sized>(
+    input: &mut R,
+    output: &mut W,
+) -> io::Result<()> {
+    // changesets
+    while copy_changegroup_chunk(input, output)? > 0 {}
+    // manifests
+    while copy_changegroup_chunk(input, output)? > 0 {}
+    // files
+    while copy_changegroup_chunk(input, output)? > 0 {
+        while copy_changegroup_chunk(input, output)? > 0 {}
+    }
+    Ok(())
+}
+
+fn copy_bundle2_chunk<R: Read + ?Sized, W: Write + ?Sized>(
+    input: &mut R,
+    output: &mut W,
+) -> io::Result<u64> {
+    copy_chunk(0, input, output)
+}
+
+pub fn copy_bundle<R: Read + ?Sized, W: Write + ?Sized>(
+    input: &mut R,
+    output: &mut W,
+) -> io::Result<()> {
+    let mut buf = [0; 4];
+    input.read_exact(&mut buf)?;
+    output.write_all(&buf)?;
+    if &buf == b"HG20" {
+        // bundle2 parameters
+        copy_bundle2_chunk(input, output)?;
+        // bundle2 parts
+        while copy_bundle2_chunk(input, output)? > 0 {
+            while copy_bundle2_chunk(input, output)? > 0 {}
+        }
+    } else {
+        let len = BigEndian::read_u32(&buf) as u64;
+        copy(&mut input.take(len - 4), output)?;
+        copy_changegroup(input, output)?;
+    }
+    Ok(())
 }
