@@ -32,7 +32,7 @@ use crate::hg_bundle::DecompressBundleWriter;
 use crate::hg_connect::{
     split_capabilities, HgArgs, HgCapabilities, HgConnection, HgWireConnection, OneHgArg,
 };
-use crate::libcinnabar::{get_stderr, writer};
+use crate::libcinnabar::get_stderr;
 use crate::libgit::{
     credential_fill, curl_errorstr, fwrite_buffer, get_active_slot, http_auth, http_cleanup,
     http_follow_config, http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
@@ -431,7 +431,9 @@ unsafe extern "C" fn caps_request_write(
     nmemb: usize,
     data: *const c_void,
 ) -> usize {
-    let writers = (data as *mut Either<&mut writer, writer>).as_mut().unwrap();
+    let writers = (data as *mut Either<&mut dyn Write, Box<dyn Write>>)
+        .as_mut()
+        .unwrap();
     let len = size.checked_mul(nmemb).unwrap();
     let input = std::slice::from_raw_parts(ptr as *const u8, len);
     if writers.is_left() {
@@ -439,23 +441,22 @@ unsafe extern "C" fn caps_request_write(
             Some(b"HG10") | Some(b"HG20") => {
                 let mut out = crate::libc::FdFile::stdout();
                 out.write_all(b"bundle\n").unwrap();
-                let new_writer = writer::new(BufferedWriter::new(DecompressBundleWriter::new(out)));
+                let new_writer = Box::new(BufferedWriter::new(DecompressBundleWriter::new(out)));
                 mem::replace(writers, Either::Right(new_writer));
             }
             _ => {}
         }
     };
     match writers {
-        &mut Either::Left(&mut ref mut writer) | &mut Either::Right(ref mut writer) => {
-            writer.write_all(input).unwrap()
-        }
+        Either::Left(ref mut writer) => writer.write_all(input).unwrap(),
+        Either::Right(ref mut writer) => writer.write_all(input).unwrap(),
     }
     len
 }
 
 fn http_capabilities_command(
     conn: &mut HgHTTPConnection,
-    writers: &mut Either<&mut writer, writer>,
+    writers: &mut Either<&mut dyn Write, Box<dyn Write>>,
 ) {
     http_command(
         conn,
@@ -488,13 +489,11 @@ impl HgHTTPConnection {
         }
 
         let mut caps = Vec::<u8>::new();
-        let mut writer = writer::new(&mut caps);
-        let mut writers = Either::Left(&mut writer);
+        let mut writers = Either::Left(&mut caps as &mut dyn Write);
         http_capabilities_command(&mut conn, &mut writers);
         /* Cf. comment above caps_request_write. If the bundle stream was
          * sent to stdout, the writer was switched to the right. */
         if writers.is_right() {
-            drop(writer);
             unsafe {
                 conn.finish();
             }
