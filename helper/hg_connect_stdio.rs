@@ -7,19 +7,20 @@ use std::fs::File;
 use std::io::{copy, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::c_int;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 use std::ptr;
 use std::str::FromStr;
 use std::thread::{spawn, JoinHandle};
 
 use bstr::BString;
 use libc::off_t;
+use percent_encoding::percent_decode;
 use url::Url;
 
 use crate::args;
 use crate::hg_bundle::DecompressBundleWriter;
-use crate::hg_connect::{
-    split_capabilities, HgArgs, HgConnection, HgWireConnection, OneHgArg,
-};
+use crate::hg_connect::{split_capabilities, HgArgs, HgConnection, HgWireConnection, OneHgArg};
 use crate::libc::FdFile;
 use crate::libcinnabar::{
     bufferize_writer, copy_bundle, get_stderr, hg_connect_stdio, stdio_finish, writer,
@@ -196,9 +197,8 @@ impl HgStdIOConnection {
         let port = url
             .port()
             .map(|port| CString::new(port.to_string()).unwrap());
-        let mut path = url.path();
-        if url.scheme() == "ssh" {
-            path = path.trim_start_matches('/');
+        let path = if url.scheme() == "ssh" {
+            percent_decode(url.path().trim_start_matches('/').as_bytes()).collect::<Vec<u8>>()
         } else {
             let path = url.to_file_path().unwrap();
             if path.metadata().map(|m| m.is_file()).unwrap_or(false) {
@@ -212,8 +212,13 @@ impl HgStdIOConnection {
                 copy(&mut f, &mut writer).unwrap();
                 return None;
             }
-        }
-        let path = CString::new(path.to_string()).unwrap();
+            #[cfg(windows)]
+            let path = path.to_str().unwrap().as_bytes();
+            #[cfg(unix)]
+            let path = path.as_os_str().as_bytes();
+            path.to_owned()
+        };
+        let path = CString::new(path).unwrap();
         let proc = unsafe {
             hg_connect_stdio(
                 userhost.as_ref().map(|s| s.as_ptr()).unwrap_or(ptr::null()),
