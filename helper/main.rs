@@ -33,7 +33,7 @@ use std::os::windows::ffi::OsStrExt;
 
 use libgit::strbuf;
 
-const HELPER_HASH: &'static str = env!("HELPER_HASH");
+const HELPER_HASH: &str = env!("HELPER_HASH");
 
 #[no_mangle]
 unsafe extern "C" fn get_helper_hash(buf: *mut strbuf) {

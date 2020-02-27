@@ -45,7 +45,7 @@ impl<'a> Bundlev2Header<'a> {
         let (params, remainder) = remainder.get_split_at(params_len)?;
         let header = Bundlev2Header {
             params: match params {
-                buf if buf.len() == 0 => Vec::new(),
+                buf if buf.is_empty() => Vec::new(),
                 buf => buf
                     .split(|c| *c == b' ')
                     .map(|s| {
