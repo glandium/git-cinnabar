@@ -23,6 +23,12 @@ impl File {
     }
 }
 
+impl Drop for File {
+    fn drop(&mut self) {
+        self.flush().unwrap()
+    }
+}
+
 impl Read for File {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         Ok(unsafe { fread(buf.as_mut_ptr() as *mut c_void, 1, buf.len(), self.0) })
