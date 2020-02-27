@@ -1895,8 +1895,6 @@ int helper_main(int argc, const char *argv[])
 	struct strbuf buf = STRBUF_INIT;
 
 	// Initialization from common-main.c.
-	trace2_initialize_clock();
-
 	sanitize_stdfds();
 	restore_sigpipe_to_default();
 
@@ -1907,10 +1905,6 @@ int helper_main(int argc, const char *argv[])
 	initialize_the_repository();
 
 	attr_start();
-
-	trace2_initialize();
-	trace2_cmd_start(argv);
-	trace2_collect_process_info(TRACE2_PROCESS_INFO_STARTUP);
 
 	if (argc > 1) {
 		if (argc > 2)
