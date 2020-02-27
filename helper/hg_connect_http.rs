@@ -5,7 +5,7 @@
 use std::cmp;
 use std::ffi::{c_void, CStr, CString};
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{stderr, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::{c_char, c_int, c_long};
 use std::ptr;
@@ -32,7 +32,6 @@ use crate::hg_bundle::DecompressBundleWriter;
 use crate::hg_connect::{
     split_capabilities, HgArgs, HgCapabilities, HgConnection, HgWireConnection, OneHgArg,
 };
-use crate::libcinnabar::get_stderr;
 use crate::libgit::{
     credential_fill, curl_errorstr, fwrite_buffer, get_active_slot, http_auth, http_cleanup,
     http_follow_config, http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
@@ -269,12 +268,10 @@ unsafe extern "C" fn changegroup_write(
                 b"application/hg-error" => {
                     response_data.writer.write_all(b"err\n").unwrap();
 
+                    //XXX: Can't easily pass a StderrLock here.
                     mem::replace(
                         &mut response_data.writer,
-                        Box::new(PrefixWriter::new(
-                            b"remote: ",
-                            crate::libc::File::new(get_stderr()),
-                        )),
+                        Box::new(PrefixWriter::new(b"remote: ", stderr())),
                     );
                 }
                 _ => unimplemented!(),
@@ -383,11 +380,11 @@ impl HgWireConnection for HgHTTPConnection {
         if http_response.get(..4) == Some(b"HG20") {
             response.extend_from_slice(http_response);
         } else {
-            let file = crate::libc::File::new(get_stderr());
+            let stderr = stderr();
             match &http_response.splitn_str(2, "\n").collect::<Vec<_>>()[..] {
                 [stdout_, stderr_] => {
                     response.extend_from_slice(stdout_);
-                    let mut writer = PrefixWriter::new(b"remote: ", file);
+                    let mut writer = PrefixWriter::new(b"remote: ", stderr.lock());
                     writer.write_all(stderr_).unwrap();
                 }
                 //TODO: better eror handling.

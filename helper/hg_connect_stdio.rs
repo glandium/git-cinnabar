@@ -4,7 +4,7 @@
 
 use std::ffi::CString;
 use std::fs::File;
-use std::io::{copy, Read, Seek, SeekFrom, Write};
+use std::io::{copy, stderr, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::c_int;
 #[cfg(unix)]
@@ -22,7 +22,7 @@ use crate::args;
 use crate::hg_bundle::{copy_bundle, DecompressBundleWriter};
 use crate::hg_connect::{split_capabilities, HgArgs, HgConnection, HgWireConnection, OneHgArg};
 use crate::libc::FdFile;
-use crate::libcinnabar::{get_stderr, hg_connect_stdio, stdio_finish};
+use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
 use crate::libgit::{child_process, strbuf};
 use crate::util::{BufferedWriter, PrefixWriter};
 
@@ -248,8 +248,8 @@ impl HgStdIOConnection {
         let mut proc_err = unsafe { FdFile::from_raw_fd(proc_err(proc)) };
 
         inner.thread = Some(spawn(move || {
-            let file = crate::libc::File::new(unsafe { get_stderr() });
-            let mut writer = PrefixWriter::new(b"remote: ", file);
+            let stderr = stderr();
+            let mut writer = PrefixWriter::new(b"remote: ", stderr.lock());
             copy(&mut proc_err, &mut writer).unwrap();
         }));
 

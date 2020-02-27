@@ -8,10 +8,6 @@ use libc::FILE;
 
 use crate::libgit::child_process;
 
-extern "C" {
-    pub fn get_stderr() -> *mut FILE;
-}
-
 #[allow(non_camel_case_types)]
 #[repr(C)]
 #[derive(Copy, Clone)]
