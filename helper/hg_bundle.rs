@@ -222,7 +222,7 @@ fn copy_chunk<R: Read + ?Sized, W: Write + ?Sized>(
     output.write_all(&buf)?;
     let len = BigEndian::read_u32(&buf) as u64;
     if len == 0 {
-        return Ok(0)
+        return Ok(0);
     }
     copy(&mut input.take(len.checked_sub(adjust).unwrap()), output)
 }
