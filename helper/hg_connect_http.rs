@@ -23,9 +23,8 @@ use curl_sys::{
 use either::Either;
 use flate2::write::ZlibDecoder;
 use libc::off_t;
-use percent_encoding::{percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use replace_with::replace_with_or_abort;
-use url::Url;
+use url::{form_urlencoded, Url};
 
 use crate::args;
 use crate::hg_bundle::DecompressBundleWriter;
@@ -40,7 +39,7 @@ use crate::util::{BufferedWriter, PrefixWriter};
 
 #[allow(non_camel_case_types)]
 pub struct hg_connection_http {
-    pub url: CString,
+    pub url: Url,
     pub initial_request: bool,
 }
 
@@ -57,7 +56,7 @@ struct command_request_data<'a, 'b> {
 #[allow(non_camel_case_types)]
 struct http_request_info {
     retcode: c_int,
-    redirect_url: Option<BString>,
+    redirect_url: Option<Url>,
 }
 
 fn http_request(data: &mut command_request_data) -> http_request_info {
@@ -94,10 +93,12 @@ fn http_request(data: &mut command_request_data) -> http_request_info {
                 let mut effective_url: *const c_char = ptr::null();
                 curl_easy_getinfo(slot.curl, CURLINFO_EFFECTIVE_URL, &mut effective_url);
                 Some(
-                    CStr::from_ptr(effective_url.as_ref().unwrap())
-                        .to_bytes()
-                        .to_owned()
-                        .into(),
+                    Url::parse(
+                        CStr::from_ptr(effective_url.as_ref().unwrap())
+                            .to_str()
+                            .unwrap(),
+                    )
+                    .unwrap(),
                 )
             } else {
                 None
@@ -117,12 +118,10 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
     }
 
     if let Some(effective_url) = redirect_url {
-        if let Some(query_idx) = effective_url.find("?cmd=") {
-            let http = &mut data.conn.inner;
-            let new_url = effective_url[..query_idx].to_owned();
-            eprintln!("warning: redirecting to {}", new_url.as_bstr());
-            http.url = CString::new(new_url).unwrap();
-        }
+        let mut new_url = effective_url.clone();
+        new_url.set_query(None);
+        eprintln!("warning: redirecting to {}", new_url.as_str());
+        data.conn.inner.url = new_url;
     }
 
     if ret != HTTP_REAUTH {
@@ -143,29 +142,11 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
  *
  * The command results are simply the corresponding HTTP responses.
  */
-const QUERY_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'*')
-    .remove(b'-')
-    .remove(b'.')
-    .remove(b'_')
-    .remove(b' ');
-
-fn http_query_add_param(data: &mut BString, name: &str, value: &str) {
-    let value = percent_encode(value.as_bytes(), QUERY_ENCODE_SET)
-        .to_string()
-        .replace(" ", "+");
-    data.extend_from_slice(b"&");
-    data.extend_from_slice(name.as_bytes());
-    data.extend_from_slice(b"=");
-    data.extend_from_slice(value.as_bytes());
-}
-
 unsafe fn prepare_command_request(
     curl: *mut CURL,
     headers: *mut curl_slist,
     data: &mut command_request_data,
 ) {
-    let mut command_url: BString = Vec::new().into();
     let httpheader = data
         .conn
         .get_capability(b"httpheader")
@@ -181,32 +162,36 @@ unsafe fn prepare_command_request(
 
     (data.prepare_request_cb)(curl, headers);
 
-    command_url.extend_from_slice(http.url.as_bytes());
-    command_url.extend_from_slice(b"?cmd=");
-    command_url.extend_from_slice(data.command.as_bytes());
+    let mut command_url = http.url.clone();
+    let mut query_pairs = command_url.query_pairs_mut();
+    query_pairs.append_pair("cmd", data.command);
 
-    let mut args = BString::from(Vec::new());
-    for (name, value) in data.args.iter() {
-        http_query_add_param(&mut args, name, value);
-    }
-    if httpheader > 0 && !args.is_empty() {
-        let mut args = &args[1..];
+    if httpheader > 0 && !data.args.is_empty() {
+        let mut encoder = form_urlencoded::Serializer::new(String::new());
+        for (name, value) in data.args.iter() {
+            encoder.append_pair(name, value);
+        }
+        let args = encoder.finish();
+        let mut args = &args[..];
         let mut headers = headers;
         let mut num = 1;
         while !args.is_empty() {
             let mut header = BString::from(format!("X-HgArg-{}: ", num).into_bytes());
             num += 1;
             let (chunk, remainder) = args.split_at(cmp::min(args.len(), httpheader - header.len()));
-            header.extend_from_slice(chunk);
+            header.extend_from_slice(chunk.as_bytes());
             let header = CString::new(header).unwrap();
             headers = curl_slist_append(headers, header.as_ptr());
             args = remainder;
         }
     } else {
-        command_url.extend_from_slice(args.as_bytes());
+        for (name, value) in data.args.iter() {
+            query_pairs.append_pair(name, value);
+        }
     }
+    drop(query_pairs);
 
-    let command_url = CString::new(command_url).unwrap();
+    let command_url = CString::new(command_url.to_string()).unwrap();
     curl_easy_setopt(curl, CURLOPT_URL, command_url.as_ptr());
 }
 
@@ -232,7 +217,7 @@ fn http_command(
         unsafe {
             die!(
                 "unable to access '{}': {}",
-                conn.inner.url.as_bytes().as_bstr(),
+                conn.inner.url,
                 CStr::from_ptr(curl_errorstr.as_ptr()).to_bytes().as_bstr()
             );
         }
@@ -475,17 +460,17 @@ fn http_capabilities_command(
 
 impl HgHTTPConnection {
     pub fn new(url: &Url) -> Option<Self> {
-        let url = url.as_str().as_bytes();
         let mut conn = HgHTTPConnection {
             capabilities: Vec::new(),
             inner: hg_connection_http {
-                url: CString::new(url.to_owned()).unwrap(),
+                url: url.clone(),
                 initial_request: true,
             },
         };
 
+        let c_url = CString::new(url.to_string()).unwrap();
         unsafe {
-            http_init(ptr::null_mut(), conn.inner.url.as_ptr(), 0);
+            http_init(ptr::null_mut(), c_url.as_ptr(), 0);
         }
 
         let mut caps = Vec::<u8>::new();
