@@ -66,6 +66,12 @@ fn http_command(
     .map(|OneHgArg { name, value }| (name, value))
     .collect::<Vec<_>>();
 
+    let httpheader = conn
+        .get_capability(b"httpheader")
+        .and_then(|c| c.to_str().ok())
+        .and_then(|s| usize::from_str(s).ok())
+        .unwrap_or(0);
+
     unsafe {
         let mut reauth = false;
         let ret = loop {
@@ -78,20 +84,12 @@ fn http_command(
             headers =
                 curl_slist_append(headers, cstr!("Accept: application/mercurial-0.1").as_ptr());
 
-            let httpheader = conn
-                .get_capability(b"httpheader")
-                .and_then(|c| c.to_str().ok())
-                .and_then(|s| usize::from_str(s).ok())
-                .unwrap_or(0);
-
             let http = &mut conn.inner;
             if http_follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && http.initial_request
             {
                 curl_easy_setopt(slot.curl, CURLOPT_FOLLOWLOCATION, 1);
                 http.initial_request = false;
             }
-
-            (prepare_request_cb)(slot.curl, headers);
 
             let mut command_url = http.url.clone();
             let mut query_pairs = command_url.query_pairs_mut();
@@ -135,6 +133,8 @@ fn http_command(
                 CURLOPT_USERAGENT,
                 cstr!("mercurial/proto-1.0").as_ptr(),
             );
+
+            (prepare_request_cb)(slot.curl, headers);
 
             let mut results = slot_results::new();
             let ret = run_one_slot(slot, &mut results);
