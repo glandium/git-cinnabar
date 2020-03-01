@@ -56,10 +56,10 @@ pub type HgStdIOConnection = HgConnection<hg_connection_stdio>;
  *
  * <content> is <length> bytes long.
  */
-fn stdio_command_add_param(data: &mut BString, name: &str, value: &[u8]) {
+fn stdio_command_add_param(data: &mut BString, name: &str, value: &str) {
     data.extend(name.as_bytes());
     writeln!(data, " {}", value.len()).unwrap();
-    data.extend(value)
+    data.extend(value.as_bytes())
 }
 
 fn stdio_send_command(conn: &mut hg_connection_stdio, command: &str, args: HgArgs) {
@@ -268,7 +268,7 @@ impl HgStdIOConnection {
             &mut inner,
             "between",
             args!(
-                pairs: b"0000000000000000000000000000000000000000-0000000000000000000000000000000000000000"
+                pairs: "0000000000000000000000000000000000000000-0000000000000000000000000000000000000000"
             ),
         );
 

@@ -150,8 +150,8 @@ const QUERY_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b' ');
 
-fn http_query_add_param(data: &mut BString, name: &str, value: &[u8]) {
-    let value = percent_encode(value, QUERY_ENCODE_SET)
+fn http_query_add_param(data: &mut BString, name: &str, value: &str) {
+    let value = percent_encode(value.as_bytes(), QUERY_ENCODE_SET)
         .to_string()
         .replace(" ", "+");
     data.extend_from_slice(b"&");

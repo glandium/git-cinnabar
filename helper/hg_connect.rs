@@ -30,7 +30,7 @@ unsafe fn to_wire_connection<'a>(ptr: *mut hg_connection) -> &'a mut (dyn HgWire
 
 pub struct OneHgArg<'a> {
     pub name: &'a str,
-    pub value: &'a [u8],
+    pub value: &'a str,
 }
 
 pub struct HgArgs<'a> {
@@ -84,7 +84,7 @@ pub trait HgWireConnection: HgCapabilities {
 
     unsafe fn finish(&mut self) -> c_int;
 
-    fn listkeys(&mut self, result: &mut strbuf, namespace: &[u8]) {
+    fn listkeys(&mut self, result: &mut strbuf, namespace: &str) {
         unsafe { self.simple_command(result, "listkeys", args!(namespace: namespace)) }
     }
 }
@@ -151,14 +151,14 @@ unsafe extern "C" fn hg_get_repo_state(
         // (see the cinnabar.remote_helper python module)
         conn.simple_command(branchmap, "branchmap", args!());
         conn.simple_command(heads, "heads", args!());
-        conn.listkeys(bookmarks, b"bookmarks");
+        conn.listkeys(bookmarks, "bookmarks");
     } else {
         let mut out = strbuf::new();
         conn.simple_command(
             &mut out,
             "batch",
             args!(
-                cmds: b"branchmap ;heads ;listkeys namespace=bookmarks",
+                cmds: "branchmap ;heads ;listkeys namespace=bookmarks",
                 *: &[]
             ),
         );
@@ -250,7 +250,7 @@ unsafe extern "C" fn hg_known(
         result.as_mut().unwrap(),
         "known",
         args!(
-            nodes: nodes_str.as_bytes(),
+            nodes: &nodes_str,
             *: &[]
         ),
     );
@@ -265,7 +265,9 @@ unsafe extern "C" fn hg_listkeys(
     let conn = to_wire_connection(conn);
     conn.listkeys(
         result.as_mut().unwrap(),
-        CStr::from_ptr(namespace.as_ref().unwrap()).to_bytes(),
+        CStr::from_ptr(namespace.as_ref().unwrap())
+            .to_str()
+            .unwrap(),
     )
 }
 
@@ -278,18 +280,18 @@ unsafe extern "C" fn hg_getbundle(
     bundle2caps: *const c_char,
 ) {
     let conn = to_wire_connection(conn);
-    let mut args = Vec::<(&str, BString)>::new();
+    let mut args = Vec::<(&str, String)>::new();
     if let Some(heads) = heads.as_ref() {
-        args.push(("heads", heads.iter().join(" ").into()));
+        args.push(("heads", heads.iter().join(" ")));
     }
     if let Some(common) = common.as_ref() {
-        args.push(("common", common.iter().join(" ").into()));
+        args.push(("common", common.iter().join(" ")));
     }
     let bundle2caps = bundle2caps.as_ref();
     if let Some(bundle2caps) = bundle2caps {
-        let bundle2caps = CStr::from_ptr(bundle2caps).to_bytes();
+        let bundle2caps = CStr::from_ptr(bundle2caps).to_str().unwrap();
         if !bundle2caps.is_empty() {
-            args.push(("bundlecaps", bundle2caps.to_owned().into()));
+            args.push(("bundlecaps", bundle2caps.to_owned()));
         }
     }
     let out = crate::libc::File::new(out);
@@ -341,7 +343,7 @@ unsafe extern "C" fn hg_unbundle(
         file,
         len.try_into().unwrap(),
         "unbundle",
-        args!(heads: heads_str.as_bytes()),
+        args!(heads: &heads_str),
     );
 }
 
@@ -360,10 +362,10 @@ unsafe extern "C" fn hg_pushkey(
         response.as_mut().unwrap(),
         "pushkey",
         args!(
-            namespace: CStr::from_ptr(namespace.as_ref().unwrap()).to_bytes(),
-            key: CStr::from_ptr(key.as_ref().unwrap()).to_bytes(),
-            old: CStr::from_ptr(old.as_ref().unwrap()).to_bytes(),
-            new: CStr::from_ptr(new.as_ref().unwrap()).to_bytes(),
+            namespace: CStr::from_ptr(namespace.as_ref().unwrap()).to_str().unwrap(),
+            key: CStr::from_ptr(key.as_ref().unwrap()).to_str().unwrap(),
+            old: CStr::from_ptr(old.as_ref().unwrap()).to_str().unwrap(),
+            new: CStr::from_ptr(new.as_ref().unwrap()).to_str().unwrap(),
         ),
     );
 }
@@ -374,7 +376,7 @@ unsafe extern "C" fn hg_lookup(conn: *mut hg_connection, result: *mut strbuf, ke
     conn.simple_command(
         result.as_mut().unwrap(),
         "lookup",
-        args!(key: CStr::from_ptr(key.as_ref().unwrap()).to_bytes()),
+        args!(key: CStr::from_ptr(key.as_ref().unwrap()).to_str().unwrap()),
     );
 }
 
