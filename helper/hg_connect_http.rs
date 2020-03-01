@@ -45,14 +45,6 @@ pub struct hg_connection_http {
 
 pub type HgHTTPConnection = HgConnection<hg_connection_http>;
 
-#[allow(non_camel_case_types)]
-struct command_request_data<'a, 'b> {
-    conn: &'a mut HgHTTPConnection,
-    prepare_request_cb: Box<dyn FnMut(*mut CURL, *mut curl_slist) + 'b>,
-    command: &'a str,
-    args: Vec<(&'a str, &'a str)>,
-}
-
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.
  * The command name is passed as "cmd" query parameter.
  * The command arguments can be passed in several different ways, but for now,
@@ -61,9 +53,22 @@ struct command_request_data<'a, 'b> {
  *
  * The command results are simply the corresponding HTTP responses.
  */
-fn http_request_reauth(data: &mut command_request_data) -> c_int {
+fn http_command(
+    conn: &mut HgHTTPConnection,
+    mut prepare_request_cb: Box<dyn FnMut(*mut CURL, *mut curl_slist) + '_>,
+    command: &str,
+    args: HgArgs,
+) {
+    let args = Iterator::chain(
+        args.args.iter(),
+        args.extra_args.as_ref().unwrap_or(&&[][..]).iter(),
+    )
+    .map(|OneHgArg { name, value }| (name, value))
+    .collect::<Vec<_>>();
+
     unsafe {
-        for reauth in 0..=1 {
+        let mut reauth = false;
+        let ret = loop {
             let slot = get_active_slot().as_mut().unwrap();
             curl_easy_setopt(slot.curl, CURLOPT_FAILONERROR, 0);
             curl_easy_setopt(slot.curl, CURLOPT_HTTPGET, 1);
@@ -73,29 +78,28 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
             headers =
                 curl_slist_append(headers, cstr!("Accept: application/mercurial-0.1").as_ptr());
 
-            let httpheader = data
-                .conn
+            let httpheader = conn
                 .get_capability(b"httpheader")
                 .and_then(|c| c.to_str().ok())
                 .and_then(|s| usize::from_str(s).ok())
                 .unwrap_or(0);
 
-            let http = &mut data.conn.inner;
+            let http = &mut conn.inner;
             if http_follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && http.initial_request
             {
                 curl_easy_setopt(slot.curl, CURLOPT_FOLLOWLOCATION, 1);
                 http.initial_request = false;
             }
 
-            (data.prepare_request_cb)(slot.curl, headers);
+            (prepare_request_cb)(slot.curl, headers);
 
             let mut command_url = http.url.clone();
             let mut query_pairs = command_url.query_pairs_mut();
-            query_pairs.append_pair("cmd", data.command);
+            query_pairs.append_pair("cmd", command);
 
-            if httpheader > 0 && !data.args.is_empty() {
+            if httpheader > 0 && !args.is_empty() {
                 let mut encoder = form_urlencoded::Serializer::new(String::new());
-                for (name, value) in data.args.iter() {
+                for (name, value) in args.iter() {
                     encoder.append_pair(name, value);
                 }
                 let args = encoder.finish();
@@ -113,7 +117,7 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
                     args = remainder;
                 }
             } else {
-                for (name, value) in data.args.iter() {
+                for (name, value) in args.iter() {
                     query_pairs.append_pair(name, value);
                 }
             }
@@ -139,8 +143,8 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
             let mut redirects: c_long = 0;
             curl_easy_getinfo(slot.curl, CURLINFO_REDIRECT_COUNT, &mut redirects);
 
-            if (ret != HTTP_OK && ret != HTTP_REAUTH) || reauth > 0 {
-                return ret;
+            if (ret != HTTP_OK && ret != HTTP_REAUTH) || reauth {
+                break ret;
             }
 
             if redirects > 0 {
@@ -157,34 +161,12 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
                 http.url = new_url;
             }
             if ret != HTTP_REAUTH {
-                return ret;
+                break ret;
             }
             credential_fill(&mut http_auth);
-        }
-    }
-    unreachable!()
-}
-
-fn http_command(
-    conn: &mut HgHTTPConnection,
-    prepare_request_cb: Box<dyn FnMut(*mut CURL, *mut curl_slist) + '_>,
-    command: &str,
-    args: HgArgs,
-) {
-    let mut request_data = command_request_data {
-        conn,
-        prepare_request_cb,
-        command,
-        args: Vec::new(),
-    };
-    for OneHgArg { name, value } in Iterator::chain(
-        args.args.iter(),
-        args.extra_args.as_ref().unwrap_or(&&[][..]).iter(),
-    ) {
-        request_data.args.push((name, value));
-    }
-    if http_request_reauth(&mut request_data) != HTTP_OK {
-        unsafe {
+            reauth = true;
+        };
+        if ret != HTTP_OK {
             die!(
                 "unable to access '{}': {}",
                 conn.inner.url,
