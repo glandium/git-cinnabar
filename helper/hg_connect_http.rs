@@ -51,7 +51,7 @@ struct command_request_data<'a, 'b> {
     conn: &'a mut HgHTTPConnection,
     prepare_request_cb: Box<dyn FnMut(*mut CURL, *mut curl_slist) + 'b>,
     command: &'a str,
-    args: BString,
+    args: Vec<(&'a str, &'a str)>,
 }
 
 #[allow(non_camel_case_types)]
@@ -185,7 +185,10 @@ unsafe fn prepare_command_request(
     command_url.extend_from_slice(b"?cmd=");
     command_url.extend_from_slice(data.command.as_bytes());
 
-    let args = data.args.as_bytes();
+    let mut args = BString::from(Vec::new());
+    for (name, value) in data.args.iter() {
+        http_query_add_param(&mut args, name, value);
+    }
     if httpheader > 0 && !args.is_empty() {
         let mut args = &args[1..];
         let mut headers = headers;
@@ -200,7 +203,7 @@ unsafe fn prepare_command_request(
             args = remainder;
         }
     } else {
-        command_url.extend_from_slice(args);
+        command_url.extend_from_slice(args.as_bytes());
     }
 
     let command_url = CString::new(command_url).unwrap();
@@ -217,13 +220,13 @@ fn http_command(
         conn,
         prepare_request_cb,
         command,
-        args: Vec::new().into(),
+        args: Vec::new(),
     };
     for OneHgArg { name, value } in Iterator::chain(
         args.args.iter(),
         args.extra_args.as_ref().unwrap_or(&&[][..]).iter(),
     ) {
-        http_query_add_param(&mut request_data.args, name, value)
+        request_data.args.push((name, value));
     }
     if http_request_reauth(&mut request_data) != HTTP_OK {
         unsafe {
