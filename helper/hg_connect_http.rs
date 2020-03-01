@@ -229,11 +229,11 @@ unsafe extern "C" fn changegroup_write(
 }
 
 impl HgWireConnection for HgHTTPConnection {
-    unsafe fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
+    fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
         let is_pushkey = command == "pushkey";
         http_command(
             self,
-            Box::new(|curl, headers| {
+            Box::new(|curl, headers| unsafe {
                 prepare_simple_request(curl, response);
                 if is_pushkey {
                     curl_easy_setopt(curl, CURLOPT_POST, 1);
@@ -253,19 +253,14 @@ impl HgWireConnection for HgHTTPConnection {
 
     /* The changegroup, changegroupsubset and getbundle commands return a raw
      *  * zlib stream when called over HTTP. */
-    unsafe fn changegroup_command(
-        &mut self,
-        out: Box<dyn Write + Send>,
-        command: &str,
-        args: HgArgs,
-    ) {
+    fn changegroup_command(&mut self, out: Box<dyn Write + Send>, command: &str, args: HgArgs) {
         let mut response_data = changegroup_response_data {
             curl: ptr::null_mut(),
             writer: out,
         };
         http_command(
             self,
-            Box::new(|curl, _headers| {
+            Box::new(|curl, _headers| unsafe {
                 response_data.curl = curl;
                 curl_easy_setopt(curl, CURLOPT_FILE, &mut response_data);
                 curl_easy_setopt(
@@ -279,7 +274,7 @@ impl HgWireConnection for HgHTTPConnection {
         );
     }
 
-    unsafe fn push_command(
+    fn push_command(
         &mut self,
         response: &mut strbuf,
         mut input: File,
@@ -291,7 +286,7 @@ impl HgWireConnection for HgHTTPConnection {
         //TODO: handle errors.
         http_command(
             self,
-            Box::new(|curl, headers| {
+            Box::new(|curl, headers| unsafe {
                 prepare_simple_request(curl, &mut http_response);
                 curl_easy_setopt(curl, CURLOPT_POST, 1);
                 curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, curl_off_t::from(len));

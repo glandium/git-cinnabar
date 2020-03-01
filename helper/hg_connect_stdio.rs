@@ -96,18 +96,13 @@ fn stdio_read_response(conn: &mut hg_connection_stdio, response: &mut strbuf) {
 }
 
 impl HgWireConnection for HgStdIOConnection {
-    unsafe fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
+    fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
         let stdio = &mut self.inner;
         stdio_send_command(stdio, command, args);
         stdio_read_response(stdio, response);
     }
 
-    unsafe fn changegroup_command(
-        &mut self,
-        out: Box<dyn Write + Send>,
-        command: &str,
-        args: HgArgs,
-    ) {
+    fn changegroup_command(&mut self, out: Box<dyn Write + Send>, command: &str, args: HgArgs) {
         let stdio = &mut self.inner;
         stdio_send_command(stdio, command, args);
 
@@ -123,7 +118,7 @@ impl HgWireConnection for HgStdIOConnection {
         copy_bundle(&mut stdio.proc_out, &mut writer).unwrap();
     }
 
-    unsafe fn push_command(
+    fn push_command(
         &mut self,
         mut response: &mut strbuf,
         mut input: File,

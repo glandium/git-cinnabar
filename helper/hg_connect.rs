@@ -64,16 +64,11 @@ pub trait HgCapabilities {
 }
 
 pub trait HgWireConnection: HgCapabilities {
-    unsafe fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs);
+    fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs);
 
-    unsafe fn changegroup_command(
-        &mut self,
-        out: Box<dyn Write + Send>,
-        command: &str,
-        args: HgArgs,
-    );
+    fn changegroup_command(&mut self, out: Box<dyn Write + Send>, command: &str, args: HgArgs);
 
-    unsafe fn push_command(
+    fn push_command(
         &mut self,
         response: &mut strbuf,
         input: File,
@@ -85,7 +80,7 @@ pub trait HgWireConnection: HgCapabilities {
     unsafe fn finish(&mut self) -> c_int;
 
     fn listkeys(&mut self, result: &mut strbuf, namespace: &str) {
-        unsafe { self.simple_command(result, "listkeys", args!(namespace: namespace)) }
+        self.simple_command(result, "listkeys", args!(namespace: namespace))
     }
 }
 
