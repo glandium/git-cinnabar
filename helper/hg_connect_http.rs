@@ -53,6 +53,14 @@ struct command_request_data<'a, 'b> {
     args: Vec<(&'a str, &'a str)>,
 }
 
+/* The Mercurial HTTP protocol uses HTTP requests for each individual command.
+ * The command name is passed as "cmd" query parameter.
+ * The command arguments can be passed in several different ways, but for now,
+ * only the following is supported:
+ * - each argument is passed as a query parameter.
+ *
+ * The command results are simply the corresponding HTTP responses.
+ */
 fn http_request_reauth(data: &mut command_request_data) -> c_int {
     unsafe {
         for reauth in 0..=1 {
@@ -64,7 +72,55 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
             let mut headers = ptr::null_mut();
             headers =
                 curl_slist_append(headers, cstr!("Accept: application/mercurial-0.1").as_ptr());
-            prepare_command_request(slot.curl, headers, data);
+
+            let httpheader = data
+                .conn
+                .get_capability(b"httpheader")
+                .and_then(|c| c.to_str().ok())
+                .and_then(|s| usize::from_str(s).ok())
+                .unwrap_or(0);
+
+            let http = &mut data.conn.inner;
+            if http_follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && http.initial_request
+            {
+                curl_easy_setopt(slot.curl, CURLOPT_FOLLOWLOCATION, 1);
+                http.initial_request = false;
+            }
+
+            (data.prepare_request_cb)(slot.curl, headers);
+
+            let mut command_url = http.url.clone();
+            let mut query_pairs = command_url.query_pairs_mut();
+            query_pairs.append_pair("cmd", data.command);
+
+            if httpheader > 0 && !data.args.is_empty() {
+                let mut encoder = form_urlencoded::Serializer::new(String::new());
+                for (name, value) in data.args.iter() {
+                    encoder.append_pair(name, value);
+                }
+                let args = encoder.finish();
+                let mut args = &args[..];
+                let mut headers = headers;
+                let mut num = 1;
+                while !args.is_empty() {
+                    let mut header = BString::from(format!("X-HgArg-{}: ", num).into_bytes());
+                    num += 1;
+                    let (chunk, remainder) =
+                        args.split_at(cmp::min(args.len(), httpheader - header.len()));
+                    header.extend_from_slice(chunk.as_bytes());
+                    let header = CString::new(header).unwrap();
+                    headers = curl_slist_append(headers, header.as_ptr());
+                    args = remainder;
+                }
+            } else {
+                for (name, value) in data.args.iter() {
+                    query_pairs.append_pair(name, value);
+                }
+            }
+            drop(query_pairs);
+
+            let command_url = CString::new(command_url.to_string()).unwrap();
+            curl_easy_setopt(slot.curl, CURLOPT_URL, command_url.as_ptr());
 
             curl_easy_setopt(slot.curl, CURLOPT_HTTPHEADER, headers);
             /* Strictly speaking, this is not necessary, but bitbucket does
@@ -98,7 +154,7 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
                 .unwrap();
                 new_url.set_query(None);
                 eprintln!("warning: redirecting to {}", new_url.as_str());
-                data.conn.inner.url = new_url;
+                http.url = new_url;
             }
             if ret != HTTP_REAUTH {
                 return ret;
@@ -107,67 +163,6 @@ fn http_request_reauth(data: &mut command_request_data) -> c_int {
         }
     }
     unreachable!()
-}
-
-/* The Mercurial HTTP protocol uses HTTP requests for each individual command.
- * The command name is passed as "cmd" query parameter.
- * The command arguments can be passed in several different ways, but for now,
- * only the following is supported:
- * - each argument is passed as a query parameter.
- *
- * The command results are simply the corresponding HTTP responses.
- */
-unsafe fn prepare_command_request(
-    curl: *mut CURL,
-    headers: *mut curl_slist,
-    data: &mut command_request_data,
-) {
-    let httpheader = data
-        .conn
-        .get_capability(b"httpheader")
-        .and_then(|c| c.to_str().ok())
-        .and_then(|s| usize::from_str(s).ok())
-        .unwrap_or(0);
-
-    let http = &mut data.conn.inner;
-    if http_follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && http.initial_request {
-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
-        http.initial_request = false;
-    }
-
-    (data.prepare_request_cb)(curl, headers);
-
-    let mut command_url = http.url.clone();
-    let mut query_pairs = command_url.query_pairs_mut();
-    query_pairs.append_pair("cmd", data.command);
-
-    if httpheader > 0 && !data.args.is_empty() {
-        let mut encoder = form_urlencoded::Serializer::new(String::new());
-        for (name, value) in data.args.iter() {
-            encoder.append_pair(name, value);
-        }
-        let args = encoder.finish();
-        let mut args = &args[..];
-        let mut headers = headers;
-        let mut num = 1;
-        while !args.is_empty() {
-            let mut header = BString::from(format!("X-HgArg-{}: ", num).into_bytes());
-            num += 1;
-            let (chunk, remainder) = args.split_at(cmp::min(args.len(), httpheader - header.len()));
-            header.extend_from_slice(chunk.as_bytes());
-            let header = CString::new(header).unwrap();
-            headers = curl_slist_append(headers, header.as_ptr());
-            args = remainder;
-        }
-    } else {
-        for (name, value) in data.args.iter() {
-            query_pairs.append_pair(name, value);
-        }
-    }
-    drop(query_pairs);
-
-    let command_url = CString::new(command_url.to_string()).unwrap();
-    curl_easy_setopt(curl, CURLOPT_URL, command_url.as_ptr());
 }
 
 fn http_command(
