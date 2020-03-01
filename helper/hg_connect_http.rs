@@ -53,85 +53,60 @@ struct command_request_data<'a, 'b> {
     args: Vec<(&'a str, &'a str)>,
 }
 
-#[allow(non_camel_case_types)]
-struct http_request_info {
-    retcode: c_int,
-    redirect_url: Option<Url>,
-}
-
-fn http_request(data: &mut command_request_data) -> http_request_info {
+fn http_request_reauth(data: &mut command_request_data) -> c_int {
     unsafe {
-        let slot = get_active_slot().as_mut().unwrap();
-        curl_easy_setopt(slot.curl, CURLOPT_FAILONERROR, 0);
-        curl_easy_setopt(slot.curl, CURLOPT_HTTPGET, 1);
-        curl_easy_setopt(slot.curl, CURLOPT_NOBODY, 0);
+        for reauth in 0..=1 {
+            let slot = get_active_slot().as_mut().unwrap();
+            curl_easy_setopt(slot.curl, CURLOPT_FAILONERROR, 0);
+            curl_easy_setopt(slot.curl, CURLOPT_HTTPGET, 1);
+            curl_easy_setopt(slot.curl, CURLOPT_NOBODY, 0);
 
-        let mut headers = ptr::null_mut();
-        headers = curl_slist_append(headers, cstr!("Accept: application/mercurial-0.1").as_ptr());
-        prepare_command_request(slot.curl, headers, data);
+            let mut headers = ptr::null_mut();
+            headers =
+                curl_slist_append(headers, cstr!("Accept: application/mercurial-0.1").as_ptr());
+            prepare_command_request(slot.curl, headers, data);
 
-        curl_easy_setopt(slot.curl, CURLOPT_HTTPHEADER, headers);
-        /* Strictly speaking, this is not necessary, but bitbucket does
-         * user-agent sniffing, and git's user-agent gets 404 on mercurial
-         * urls. */
-        curl_easy_setopt(
-            slot.curl,
-            CURLOPT_USERAGENT,
-            cstr!("mercurial/proto-1.0").as_ptr(),
-        );
+            curl_easy_setopt(slot.curl, CURLOPT_HTTPHEADER, headers);
+            /* Strictly speaking, this is not necessary, but bitbucket does
+             * user-agent sniffing, and git's user-agent gets 404 on mercurial
+             * urls. */
+            curl_easy_setopt(
+                slot.curl,
+                CURLOPT_USERAGENT,
+                cstr!("mercurial/proto-1.0").as_ptr(),
+            );
 
-        let mut results = slot_results::new();
-        let ret = run_one_slot(slot, &mut results);
-        curl_slist_free_all(headers);
+            let mut results = slot_results::new();
+            let ret = run_one_slot(slot, &mut results);
+            curl_slist_free_all(headers);
 
-        let mut redirects: c_long = 0;
-        curl_easy_getinfo(slot.curl, CURLINFO_REDIRECT_COUNT, &mut redirects);
+            let mut redirects: c_long = 0;
+            curl_easy_getinfo(slot.curl, CURLINFO_REDIRECT_COUNT, &mut redirects);
 
-        http_request_info {
-            retcode: ret,
-            redirect_url: if redirects > 0 {
+            if (ret != HTTP_OK && ret != HTTP_REAUTH) || reauth > 0 {
+                return ret;
+            }
+
+            if redirects > 0 {
                 let mut effective_url: *const c_char = ptr::null();
                 curl_easy_getinfo(slot.curl, CURLINFO_EFFECTIVE_URL, &mut effective_url);
-                Some(
-                    Url::parse(
-                        CStr::from_ptr(effective_url.as_ref().unwrap())
-                            .to_str()
-                            .unwrap(),
-                    )
-                    .unwrap(),
+                let mut new_url = Url::parse(
+                    CStr::from_ptr(effective_url.as_ref().unwrap())
+                        .to_str()
+                        .unwrap(),
                 )
-            } else {
-                None
-            },
+                .unwrap();
+                new_url.set_query(None);
+                eprintln!("warning: redirecting to {}", new_url.as_str());
+                data.conn.inner.url = new_url;
+            }
+            if ret != HTTP_REAUTH {
+                return ret;
+            }
+            credential_fill(&mut http_auth);
         }
     }
-}
-
-fn http_request_reauth(data: &mut command_request_data) -> c_int {
-    let http_request_info {
-        retcode: ret,
-        redirect_url,
-    } = http_request(data);
-
-    if ret != HTTP_OK && ret != HTTP_REAUTH {
-        return ret;
-    }
-
-    if let Some(effective_url) = redirect_url {
-        let mut new_url = effective_url.clone();
-        new_url.set_query(None);
-        eprintln!("warning: redirecting to {}", new_url.as_str());
-        data.conn.inner.url = new_url;
-    }
-
-    if ret != HTTP_REAUTH {
-        return ret;
-    }
-
-    unsafe {
-        credential_fill(&mut http_auth);
-    }
-    http_request(data).retcode
+    unreachable!()
 }
 
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.
