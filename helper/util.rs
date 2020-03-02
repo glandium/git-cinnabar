@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::{Cow, ToOwned};
-use std::io::{self, LineWriter, Write};
+use std::io::{self, LineWriter, Seek, SeekFrom, Write};
 use std::ops::Deref;
 use std::sync::mpsc::{channel, Sender};
 use std::thread::{self, JoinHandle};
@@ -192,3 +192,14 @@ fn test_buffered_writer() {
     // least 20 times the sleep time of 1ms.
     assert!((drop_time - write_time).as_micros() >= 20000);
 }
+
+pub trait SeekExt: Seek {
+    fn stream_len_(&mut self) -> io::Result<u64> {
+        let old_pos = self.seek(SeekFrom::Current(0))?;
+        let len = self.seek(SeekFrom::End(0))?;
+        self.seek(SeekFrom::Start(old_pos))?;
+        Ok(len)
+    }
+}
+
+impl<T: Seek> SeekExt for T {}

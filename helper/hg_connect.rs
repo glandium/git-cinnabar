@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString};
 use std::fs::File;
 use std::io::Write;
@@ -11,7 +10,7 @@ use std::ptr;
 
 use bstr::{BString, ByteSlice};
 use itertools::Itertools;
-use libc::{off_t, FILE};
+use libc::FILE;
 use percent_encoding::percent_decode;
 use url::Url;
 
@@ -68,14 +67,7 @@ pub trait HgWireConnection: HgCapabilities {
 
     fn changegroup_command(&mut self, out: Box<dyn Write + Send>, command: &str, args: HgArgs);
 
-    fn push_command(
-        &mut self,
-        response: &mut strbuf,
-        input: File,
-        len: off_t,
-        command: &str,
-        args: HgArgs,
-    );
+    fn push_command(&mut self, response: &mut strbuf, input: File, command: &str, args: HgArgs);
 
     unsafe fn finish(&mut self) -> c_int;
 
@@ -332,11 +324,9 @@ unsafe extern "C" fn hg_unbundle(
     drop(f);
 
     let file = File::open(path).unwrap();
-    let len = file.metadata().unwrap().len();
     conn.push_command(
         response.as_mut().unwrap(),
         file,
-        len.try_into().unwrap(),
         "unbundle",
         args!(heads: &heads_str),
     );

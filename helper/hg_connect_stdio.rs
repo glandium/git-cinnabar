@@ -14,7 +14,6 @@ use std::str::FromStr;
 use std::thread::{spawn, JoinHandle};
 
 use bstr::BString;
-use libc::off_t;
 use percent_encoding::percent_decode;
 use url::Url;
 
@@ -24,7 +23,7 @@ use crate::hg_connect::{split_capabilities, HgArgs, HgConnection, HgWireConnecti
 use crate::libc::FdFile;
 use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
 use crate::libgit::{child_process, strbuf};
-use crate::util::{BufferedWriter, PrefixWriter};
+use crate::util::{BufferedWriter, PrefixWriter, SeekExt};
 
 #[allow(non_camel_case_types)]
 pub struct hg_connection_stdio {
@@ -122,7 +121,6 @@ impl HgWireConnection for HgStdIOConnection {
         &mut self,
         mut response: &mut strbuf,
         mut input: File,
-        len: off_t,
         command: &str,
         args: HgArgs,
     ) {
@@ -135,6 +133,7 @@ impl HgWireConnection for HgStdIOConnection {
         let mut header = strbuf::new();
         stdio_read_response(stdio, &mut header);
 
+        let len = input.stream_len_().unwrap();
         //TODO: chunk in smaller pieces.
         header.extend_from_slice(format!("{}\n", len).as_bytes());
         stdio.proc_in.write_all(header.as_bytes()).unwrap();
@@ -149,8 +148,7 @@ impl HgWireConnection for HgStdIOConnection {
             false
         };
 
-        assert!(len >= 0);
-        copy(&mut input.take(len as u64), &mut stdio.proc_in).unwrap();
+        copy(&mut input.take(len), &mut stdio.proc_in).unwrap();
 
         stdio.proc_in.write_all(b"0\n").unwrap();
         if is_bundle2 {

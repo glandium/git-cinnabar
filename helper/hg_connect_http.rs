@@ -13,16 +13,14 @@ use std::str::FromStr;
 
 use bstr::{BString, ByteSlice};
 use curl_sys::{
-    curl_easy_getinfo, curl_easy_setopt, curl_off_t, curl_slist, curl_slist_append,
-    curl_slist_free_all, CURL, CURLINFO_CONTENT_TYPE, CURLINFO_EFFECTIVE_URL,
-    CURLINFO_REDIRECT_COUNT, CURLOPT_FAILONERROR, CURLOPT_FILE, CURLOPT_FOLLOWLOCATION,
-    CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY, CURLOPT_POST, CURLOPT_POSTFIELDSIZE,
-    CURLOPT_POSTFIELDSIZE_LARGE, CURLOPT_READDATA, CURLOPT_READFUNCTION, CURLOPT_URL,
-    CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
+    curl_easy_getinfo, curl_easy_setopt, curl_slist, curl_slist_append, curl_slist_free_all, CURL,
+    CURLINFO_CONTENT_TYPE, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT, CURLOPT_FAILONERROR,
+    CURLOPT_FILE, CURLOPT_FOLLOWLOCATION, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY,
+    CURLOPT_POST, CURLOPT_POSTFIELDSIZE, CURLOPT_POSTFIELDSIZE_LARGE, CURLOPT_READDATA,
+    CURLOPT_READFUNCTION, CURLOPT_URL, CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
 };
 use either::Either;
 use flate2::write::ZlibDecoder;
-use libc::off_t;
 use replace_with::replace_with_or_abort;
 use url::{form_urlencoded, Url};
 
@@ -35,7 +33,7 @@ use crate::libgit::{
     credential_fill, curl_errorstr, fwrite_buffer, get_active_slot, http_auth, http_cleanup,
     http_follow_config, http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
 };
-use crate::util::{BufferedWriter, PrefixWriter};
+use crate::util::{BufferedWriter, PrefixWriter, SeekExt};
 
 #[allow(non_camel_case_types)]
 pub struct hg_connection_http {
@@ -278,7 +276,6 @@ impl HgWireConnection for HgHTTPConnection {
         &mut self,
         response: &mut strbuf,
         mut input: File,
-        len: off_t,
         command: &str,
         args: HgArgs,
     ) {
@@ -289,7 +286,11 @@ impl HgWireConnection for HgHTTPConnection {
             Box::new(|curl, headers| unsafe {
                 prepare_simple_request(curl, &mut http_response);
                 curl_easy_setopt(curl, CURLOPT_POST, 1);
-                curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, curl_off_t::from(len));
+                curl_easy_setopt(
+                    curl,
+                    CURLOPT_POSTFIELDSIZE_LARGE,
+                    input.stream_len_().unwrap(),
+                );
                 /* Ensure we have no state from a previous attempt that failed because
                  * of authentication (401). */
                 input.seek(SeekFrom::Start(0)).unwrap();
