@@ -235,7 +235,7 @@ pub const HTTP_REAUTH: c_int = 4;
 
 #[allow(dead_code, non_camel_case_types)]
 #[repr(C)]
-#[derive(PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum http_follow_config {
     HTTP_FOLLOW_NONE,
     HTTP_FOLLOW_ALWAYS,
@@ -244,6 +244,4 @@ pub enum http_follow_config {
 
 extern "C" {
     pub static http_follow_config: http_follow_config;
-
-    pub fn fwrite_buffer(ptr: *const c_char, elt: usize, nmemb: usize, strbuf: *mut c_void);
 }
