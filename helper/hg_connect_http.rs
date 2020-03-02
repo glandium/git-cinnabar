@@ -51,125 +51,128 @@ pub type HgHTTPConnection = HgConnection<hg_connection_http>;
  *
  * The command results are simply the corresponding HTTP responses.
  */
-fn http_command(
-    conn: &mut HgHTTPConnection,
-    mut prepare_request_cb: Box<dyn FnMut(*mut CURL, *mut curl_slist) + '_>,
-    command: &str,
-    args: HgArgs,
-) {
-    let args = Iterator::chain(
-        args.args.iter(),
-        args.extra_args.as_ref().unwrap_or(&&[][..]).iter(),
-    )
-    .map(|OneHgArg { name, value }| (name, value))
-    .collect::<Vec<_>>();
+impl HgHTTPConnection {
+    fn command(
+        &mut self,
+        mut prepare_request_cb: Box<dyn FnMut(*mut CURL, *mut curl_slist) + '_>,
+        command: &str,
+        args: HgArgs,
+    ) {
+        let args = Iterator::chain(
+            args.args.iter(),
+            args.extra_args.as_ref().unwrap_or(&&[][..]).iter(),
+        )
+        .map(|OneHgArg { name, value }| (name, value))
+        .collect::<Vec<_>>();
 
-    let httpheader = conn
-        .get_capability(b"httpheader")
-        .and_then(|c| c.to_str().ok())
-        .and_then(|s| usize::from_str(s).ok())
-        .unwrap_or(0);
+        let httpheader = self
+            .get_capability(b"httpheader")
+            .and_then(|c| c.to_str().ok())
+            .and_then(|s| usize::from_str(s).ok())
+            .unwrap_or(0);
 
-    unsafe {
-        let mut reauth = false;
-        let ret = loop {
-            let slot = get_active_slot().as_mut().unwrap();
-            curl_easy_setopt(slot.curl, CURLOPT_FAILONERROR, 0);
-            curl_easy_setopt(slot.curl, CURLOPT_HTTPGET, 1);
-            curl_easy_setopt(slot.curl, CURLOPT_NOBODY, 0);
+        unsafe {
+            let mut reauth = false;
+            let ret = loop {
+                let slot = get_active_slot().as_mut().unwrap();
+                curl_easy_setopt(slot.curl, CURLOPT_FAILONERROR, 0);
+                curl_easy_setopt(slot.curl, CURLOPT_HTTPGET, 1);
+                curl_easy_setopt(slot.curl, CURLOPT_NOBODY, 0);
 
-            let mut headers = ptr::null_mut();
-            headers =
-                curl_slist_append(headers, cstr!("Accept: application/mercurial-0.1").as_ptr());
+                let mut headers = ptr::null_mut();
+                headers =
+                    curl_slist_append(headers, cstr!("Accept: application/mercurial-0.1").as_ptr());
 
-            let http = &mut conn.inner;
-            if http_follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && http.initial_request
-            {
-                curl_easy_setopt(slot.curl, CURLOPT_FOLLOWLOCATION, 1);
-                http.initial_request = false;
-            }
-
-            let mut command_url = http.url.clone();
-            let mut query_pairs = command_url.query_pairs_mut();
-            query_pairs.append_pair("cmd", command);
-
-            if httpheader > 0 && !args.is_empty() {
-                let mut encoder = form_urlencoded::Serializer::new(String::new());
-                for (name, value) in args.iter() {
-                    encoder.append_pair(name, value);
+                let http = &mut self.inner;
+                if http_follow_config == http_follow_config::HTTP_FOLLOW_INITIAL
+                    && http.initial_request
+                {
+                    curl_easy_setopt(slot.curl, CURLOPT_FOLLOWLOCATION, 1);
+                    http.initial_request = false;
                 }
-                let args = encoder.finish();
-                let mut args = &args[..];
-                let mut headers = headers;
-                let mut num = 1;
-                while !args.is_empty() {
-                    let mut header = BString::from(format!("X-HgArg-{}: ", num).into_bytes());
-                    num += 1;
-                    let (chunk, remainder) =
-                        args.split_at(cmp::min(args.len(), httpheader - header.len()));
-                    header.extend_from_slice(chunk.as_bytes());
-                    let header = CString::new(header).unwrap();
-                    headers = curl_slist_append(headers, header.as_ptr());
-                    args = remainder;
+
+                let mut command_url = http.url.clone();
+                let mut query_pairs = command_url.query_pairs_mut();
+                query_pairs.append_pair("cmd", command);
+
+                if httpheader > 0 && !args.is_empty() {
+                    let mut encoder = form_urlencoded::Serializer::new(String::new());
+                    for (name, value) in args.iter() {
+                        encoder.append_pair(name, value);
+                    }
+                    let args = encoder.finish();
+                    let mut args = &args[..];
+                    let mut headers = headers;
+                    let mut num = 1;
+                    while !args.is_empty() {
+                        let mut header = BString::from(format!("X-HgArg-{}: ", num).into_bytes());
+                        num += 1;
+                        let (chunk, remainder) =
+                            args.split_at(cmp::min(args.len(), httpheader - header.len()));
+                        header.extend_from_slice(chunk.as_bytes());
+                        let header = CString::new(header).unwrap();
+                        headers = curl_slist_append(headers, header.as_ptr());
+                        args = remainder;
+                    }
+                } else {
+                    for (name, value) in args.iter() {
+                        query_pairs.append_pair(name, value);
+                    }
                 }
-            } else {
-                for (name, value) in args.iter() {
-                    query_pairs.append_pair(name, value);
+                drop(query_pairs);
+
+                let command_url = CString::new(command_url.to_string()).unwrap();
+                curl_easy_setopt(slot.curl, CURLOPT_URL, command_url.as_ptr());
+
+                curl_easy_setopt(slot.curl, CURLOPT_HTTPHEADER, headers);
+                /* Strictly speaking, this is not necessary, but bitbucket does
+                 * user-agent sniffing, and git's user-agent gets 404 on mercurial
+                 * urls. */
+                curl_easy_setopt(
+                    slot.curl,
+                    CURLOPT_USERAGENT,
+                    cstr!("mercurial/proto-1.0").as_ptr(),
+                );
+
+                (prepare_request_cb)(slot.curl, headers);
+
+                let mut results = slot_results::new();
+                let ret = run_one_slot(slot, &mut results);
+                curl_slist_free_all(headers);
+
+                let mut redirects: c_long = 0;
+                curl_easy_getinfo(slot.curl, CURLINFO_REDIRECT_COUNT, &mut redirects);
+
+                if (ret != HTTP_OK && ret != HTTP_REAUTH) || reauth {
+                    break ret;
                 }
+
+                if redirects > 0 {
+                    let mut effective_url: *const c_char = ptr::null();
+                    curl_easy_getinfo(slot.curl, CURLINFO_EFFECTIVE_URL, &mut effective_url);
+                    let mut new_url = Url::parse(
+                        CStr::from_ptr(effective_url.as_ref().unwrap())
+                            .to_str()
+                            .unwrap(),
+                    )
+                    .unwrap();
+                    new_url.set_query(None);
+                    eprintln!("warning: redirecting to {}", new_url.as_str());
+                    http.url = new_url;
+                }
+                if ret != HTTP_REAUTH {
+                    break ret;
+                }
+                credential_fill(&mut http_auth);
+                reauth = true;
+            };
+            if ret != HTTP_OK {
+                die!(
+                    "unable to access '{}': {}",
+                    self.inner.url,
+                    CStr::from_ptr(curl_errorstr.as_ptr()).to_bytes().as_bstr()
+                );
             }
-            drop(query_pairs);
-
-            let command_url = CString::new(command_url.to_string()).unwrap();
-            curl_easy_setopt(slot.curl, CURLOPT_URL, command_url.as_ptr());
-
-            curl_easy_setopt(slot.curl, CURLOPT_HTTPHEADER, headers);
-            /* Strictly speaking, this is not necessary, but bitbucket does
-             * user-agent sniffing, and git's user-agent gets 404 on mercurial
-             * urls. */
-            curl_easy_setopt(
-                slot.curl,
-                CURLOPT_USERAGENT,
-                cstr!("mercurial/proto-1.0").as_ptr(),
-            );
-
-            (prepare_request_cb)(slot.curl, headers);
-
-            let mut results = slot_results::new();
-            let ret = run_one_slot(slot, &mut results);
-            curl_slist_free_all(headers);
-
-            let mut redirects: c_long = 0;
-            curl_easy_getinfo(slot.curl, CURLINFO_REDIRECT_COUNT, &mut redirects);
-
-            if (ret != HTTP_OK && ret != HTTP_REAUTH) || reauth {
-                break ret;
-            }
-
-            if redirects > 0 {
-                let mut effective_url: *const c_char = ptr::null();
-                curl_easy_getinfo(slot.curl, CURLINFO_EFFECTIVE_URL, &mut effective_url);
-                let mut new_url = Url::parse(
-                    CStr::from_ptr(effective_url.as_ref().unwrap())
-                        .to_str()
-                        .unwrap(),
-                )
-                .unwrap();
-                new_url.set_query(None);
-                eprintln!("warning: redirecting to {}", new_url.as_str());
-                http.url = new_url;
-            }
-            if ret != HTTP_REAUTH {
-                break ret;
-            }
-            credential_fill(&mut http_auth);
-            reauth = true;
-        };
-        if ret != HTTP_OK {
-            die!(
-                "unable to access '{}': {}",
-                conn.inner.url,
-                CStr::from_ptr(curl_errorstr.as_ptr()).to_bytes().as_bstr()
-            );
         }
     }
 }
@@ -229,8 +232,7 @@ unsafe extern "C" fn changegroup_write(
 impl HgWireConnection for HgHTTPConnection {
     fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
         let is_pushkey = command == "pushkey";
-        http_command(
-            self,
+        self.command(
             Box::new(|curl, headers| unsafe {
                 prepare_simple_request(curl, response);
                 if is_pushkey {
@@ -256,8 +258,7 @@ impl HgWireConnection for HgHTTPConnection {
             curl: ptr::null_mut(),
             writer: out,
         };
-        http_command(
-            self,
+        self.command(
             Box::new(|curl, _headers| unsafe {
                 response_data.curl = curl;
                 curl_easy_setopt(curl, CURLOPT_FILE, &mut response_data);
@@ -281,8 +282,7 @@ impl HgWireConnection for HgHTTPConnection {
     ) {
         let mut http_response = strbuf::new();
         //TODO: handle errors.
-        http_command(
-            self,
+        self.command(
             Box::new(|curl, headers| unsafe {
                 prepare_simple_request(curl, &mut http_response);
                 curl_easy_setopt(curl, CURLOPT_POST, 1);
@@ -387,26 +387,22 @@ unsafe extern "C" fn caps_request_write(
     len
 }
 
-fn http_capabilities_command(
-    conn: &mut HgHTTPConnection,
-    writers: &mut Either<&mut dyn Write, Box<dyn Write>>,
-) {
-    http_command(
-        conn,
-        Box::new(|curl, _| unsafe {
-            curl_easy_setopt(curl, CURLOPT_FILE, writers as *mut _);
-            curl_easy_setopt(
-                curl,
-                CURLOPT_WRITEFUNCTION,
-                caps_request_write as *const c_void,
-            );
-        }),
-        "capabilities",
-        args!(),
-    );
-}
-
 impl HgHTTPConnection {
+    fn capabilities_command(&mut self, writers: &mut Either<&mut dyn Write, Box<dyn Write>>) {
+        self.command(
+            Box::new(|curl, _| unsafe {
+                curl_easy_setopt(curl, CURLOPT_FILE, writers as *mut _);
+                curl_easy_setopt(
+                    curl,
+                    CURLOPT_WRITEFUNCTION,
+                    caps_request_write as *const c_void,
+                );
+            }),
+            "capabilities",
+            args!(),
+        );
+    }
+
     pub fn new(url: &Url) -> Option<Self> {
         let mut conn = HgHTTPConnection {
             capabilities: Vec::new(),
@@ -423,7 +419,7 @@ impl HgHTTPConnection {
 
         let mut caps = Vec::<u8>::new();
         let mut writers = Either::Left(&mut caps as &mut dyn Write);
-        http_capabilities_command(&mut conn, &mut writers);
+        conn.capabilities_command(&mut writers);
         /* Cf. comment above caps_request_write. If the bundle stream was
          * sent to stdout, the writer was switched to the right. */
         if writers.is_right() {
