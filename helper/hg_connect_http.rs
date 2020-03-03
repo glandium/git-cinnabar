@@ -10,7 +10,7 @@ use std::mem;
 use std::os::raw::{c_char, c_int, c_long};
 use std::ptr;
 use std::str::FromStr;
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 
 use bstr::ByteSlice;
@@ -26,7 +26,7 @@ use flate2::write::ZlibDecoder;
 use url::{form_urlencoded, Url};
 
 use crate::args;
-use crate::hg_bundle::DecompressBundleWriter;
+use crate::hg_bundle::DecompressBundleReader;
 use crate::hg_connect::{
     split_capabilities, HgArgs, HgCapabilities, HgConnection, HgWireConnection, OneHgArg,
 };
@@ -34,7 +34,7 @@ use crate::libgit::{
     credential_fill, curl_errorstr, get_active_slot, http_auth, http_cleanup, http_follow_config,
     http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
 };
-use crate::util::{BufferedWriter, PrefixWriter, ReadExt, SeekExt};
+use crate::util::{PrefixWriter, ReadExt, SeekExt};
 
 #[allow(non_camel_case_types)]
 pub struct hg_connection_http {
@@ -87,7 +87,7 @@ struct HTTPResponse {
 type HTTPRequestChannelData = Either<HTTPResponseInfo, Vec<u8>>;
 
 struct HTTPThreadData {
-    sender: SyncSender<HTTPRequestChannelData>,
+    sender: Sender<HTTPRequestChannelData>,
     curl: *mut CURL,
     first: bool,
 }
@@ -137,7 +137,7 @@ impl HTTPRequest {
     }
 
     fn execute_once(mut self) -> Result<HTTPResponse, (c_int, Self)> {
-        let (sender, receiver) = sync_channel::<HTTPRequestChannelData>(0);
+        let (sender, receiver) = channel::<HTTPRequestChannelData>();
         let thread = thread::spawn(move || unsafe {
             let url = CString::new(self.url.to_string()).unwrap();
             let slot = get_active_slot().as_mut().unwrap();
@@ -438,8 +438,6 @@ impl HgWireConnection for HgHTTPConnection {
             }
             _ => unimplemented!(),
         }
-        writer = Box::new(BufferedWriter::new(writer));
-
         copy(&mut http_resp, &mut *writer).unwrap();
     }
 
@@ -512,9 +510,8 @@ impl HgHTTPConnection {
             b"HG10" | b"HG20" => {
                 let mut out = unsafe { crate::libc::FdFile::stdout() };
                 out.write_all(b"bundle\n").unwrap();
-                let mut out = Box::new(BufferedWriter::new(DecompressBundleWriter::new(out)));
-                out.write_all(header).unwrap();
-                copy(&mut http_resp, &mut out).unwrap();
+                let mut reader = DecompressBundleReader::new(Cursor::new(header).chain(http_resp));
+                copy(&mut reader, &mut out).unwrap();
                 false
             }
             _ => {

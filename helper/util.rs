@@ -2,92 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::borrow::{Cow, ToOwned};
+use std::borrow::ToOwned;
 use std::convert::TryInto;
 use std::io::{self, copy, Cursor, LineWriter, Read, Seek, SeekFrom, Write};
-use std::ops::Deref;
 use std::sync::mpsc::{channel, Sender};
 use std::thread::{self, JoinHandle};
 
 use bstr::ByteSlice;
-
-pub trait SliceExt<T> {
-    fn get_split_at(&self, mid: usize) -> Option<(&[T], &[T])>;
-}
-
-impl<T> SliceExt<T> for [T] {
-    fn get_split_at(&self, mid: usize) -> Option<(&[T], &[T])> {
-        if self.len() > mid {
-            Some(self.split_at(mid))
-        } else {
-            None
-        }
-    }
-}
-
-pub struct BorrowingVec<'a, T>(Cow<'a, [T]>)
-where
-    [T]: ToOwned<Owned = Vec<T>>;
-
-impl<'a, T> BorrowingVec<'a, T>
-where
-    [T]: ToOwned<Owned = Vec<T>>,
-{
-    pub fn new() -> Self {
-        BorrowingVec(Cow::Borrowed(&[]))
-    }
-}
-
-impl<'a, T: Clone> BorrowingVec<'a, T>
-where
-    [T]: ToOwned<Owned = Vec<T>>,
-{
-    pub fn extend_from_slice(&mut self, other: &'a [T]) {
-        if !other.is_empty() {
-            if let Cow::Borrowed(b) = &self.0 {
-                if !b.is_empty() {
-                    self.0 = Cow::Owned((*b).to_owned());
-                }
-            }
-            match &mut self.0 {
-                Cow::Borrowed(_) => {
-                    self.0 = Cow::Borrowed(other);
-                }
-                Cow::Owned(o) => {
-                    o.extend_from_slice(other);
-                }
-            }
-        }
-    }
-}
-
-impl<'a, T> Deref for BorrowingVec<'a, T>
-where
-    [T]: ToOwned<Owned = Vec<T>>,
-{
-    type Target = [T];
-    fn deref(&self) -> &Self::Target {
-        &*self.0
-    }
-}
-
-impl<'a, T: Clone> From<Vec<T>> for BorrowingVec<'a, T>
-where
-    [T]: ToOwned<Owned = Vec<T>>,
-{
-    fn from(v: Vec<T>) -> Self {
-        BorrowingVec(v.into())
-    }
-}
-
-impl<'a, T: Clone> From<BorrowingVec<'a, T>> for Vec<T>
-where
-    [T]: ToOwned<Owned = Vec<T>>,
-{
-    fn from(v: BorrowingVec<'a, T>) -> Self {
-        v.0.into()
-    }
-}
 
 pub struct PrefixWriter<W: Write> {
     prefix: Vec<u8>,

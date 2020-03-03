@@ -2,164 +2,150 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::convert::{TryFrom, TryInto};
-use std::io::{self, copy, Read, Write};
+use std::convert::TryInto;
+use std::io::{self, copy, Cursor, ErrorKind, Read, Write};
 
-use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
-use bzip2::write::BzDecoder;
-use flate2::write::ZlibDecoder;
+use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
+use bzip2::read::BzDecoder;
+use flate2::read::ZlibDecoder;
 use replace_with::replace_with_or_abort;
-use zstd::stream::write::Decoder as ZstdDecoder;
+use zstd::stream::read::Decoder as ZstdDecoder;
 
-use crate::util::{BorrowingVec, SliceExt};
-
-pub struct DecompressBundleWriter<'a> {
-    initial_buf: Option<Vec<u8>>,
-    out: Box<dyn Write + Send + 'a>,
+pub struct DecompressBundleReader<'a> {
+    initial_buf: Option<Cursor<Vec<u8>>>,
+    inner: Box<dyn Read + Send + 'a>,
 }
 
-impl<'a> DecompressBundleWriter<'a> {
-    pub fn new<W: Write + Send + 'a>(w: W) -> Self {
-        DecompressBundleWriter {
-            initial_buf: Some(Vec::new()),
-            out: Box::new(w),
+impl<'a> DecompressBundleReader<'a> {
+    pub fn new<R: Read + Send + 'a>(r: R) -> Self {
+        DecompressBundleReader {
+            initial_buf: Some(Cursor::new(Vec::new())),
+            inner: Box::new(r),
         }
     }
 }
 
-// ZstdDecoder doesn't flush on drop, so we have to do it instead.
-impl<'a> Drop for DecompressBundleWriter<'a> {
-    fn drop(&mut self) {
-        self.out.flush().unwrap();
+enum Compression {
+    Bzip,
+    BzipNoHeader,
+    Gzip,
+    Zstd,
+}
+
+fn decompress_bundlev2_header<R: Read>(
+    mut r: R,
+    buf: &mut Vec<u8>,
+) -> io::Result<Option<Compression>> {
+    let params_len = r.read_u32::<BigEndian>()?;
+    let mut params_str = String::new();
+    if r.take(params_len.into()).read_to_string(&mut params_str)? != params_len.try_into().unwrap()
+    {
+        return Err(io::Error::new(
+            ErrorKind::UnexpectedEof,
+            "Premature end of bundle v2 header",
+        ));
     }
-}
-
-struct Bundlev2Header<'a> {
-    params: Vec<(&'a [u8], &'a [u8])>,
-}
-
-impl<'a> Bundlev2Header<'a> {
-    fn new(buf: &'a [u8]) -> Option<(Self, &'a [u8])> {
-        let (params_len, remainder) = buf.get_split_at(4)?;
-        let params_len = usize::try_from(BigEndian::read_u32(params_len)).unwrap();
-        let (params, remainder) = remainder.get_split_at(params_len)?;
-        let header = Bundlev2Header {
-            params: match params {
-                buf if buf.is_empty() => Vec::new(),
-                buf => buf
-                    .split(|c| *c == b' ')
-                    .map(|s| {
-                        let mut iter = s.splitn(2, |c| *c == b'=');
-                        match (iter.next(), iter.next()) {
-                            (Some(k), Some(v)) => (k, v),
-                            _ => die!("malformed mercurial bundle header"),
+    let mut compression = None;
+    let mut params = Vec::new();
+    if !params_str.is_empty() {
+        for s in params_str.split(' ') {
+            let mut iter = s.splitn(2, '=');
+            match (iter.next(), iter.next()) {
+                (Some("Compression"), Some(v)) => {
+                    compression = match v {
+                        "GZ" => Some(Compression::Gzip),
+                        "BZ" => Some(Compression::Bzip),
+                        "ZS" => Some(Compression::Zstd),
+                        comp => {
+                            return Err(io::Error::new(
+                                ErrorKind::Other,
+                                format!("Unknown mercurial bundle compression: {}", comp),
+                            ))
                         }
-                    })
-                    .collect(),
-            },
-        };
-        Some((header, remainder))
-    }
-
-    fn dump<W: Write, F: FnMut(&'a [u8], &'a [u8]) -> bool>(
-        &'a self,
-        mut w: W,
-        mut f: F,
-    ) -> io::Result<usize> {
-        let mut data = Vec::new();
-        for (k, v) in &self.params {
-            if f(k, v) {
-                data.extend_from_slice(k);
-                data.push(b'=');
-                data.extend_from_slice(v);
-                data.push(b' ');
+                    };
+                }
+                (Some(_), Some(_)) => params.push(s),
+                _ => {
+                    return Err(io::Error::new(
+                        ErrorKind::Other,
+                        "Malformed mercurial bundle header",
+                    ));
+                }
             }
         }
-        data.pop();
-        w.write_u32::<BigEndian>(data.len().try_into().unwrap())?;
-        w.write(&data)
+    }
+    let params = params.join(" ");
+    buf.write_u32::<BigEndian>(params.len().try_into().unwrap())?;
+    buf.write(params.as_bytes())?;
+    Ok(compression)
+}
+
+fn decompress_bundlev1_header<R: Read>(
+    mut r: R,
+    buf: &mut Vec<u8>,
+) -> io::Result<Option<Compression>> {
+    let mut buf_ = [0u8; 2];
+    r.read_exact(&mut buf_)?;
+    buf.write_all(b"UN")?;
+    match &buf_ {
+        b"GZ" => Ok(Some(Compression::Gzip)),
+        b"BZ" => Ok(Some(Compression::BzipNoHeader)),
+        b"UN" => Ok(None),
+        comp => Err(io::Error::new(
+            ErrorKind::Other,
+            format!(
+                "Unknown mercurial bundle compression: {}",
+                String::from_utf8_lossy(comp)
+            ),
+        )),
     }
 }
 
-impl<'a> Write for DecompressBundleWriter<'a> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if let Some(initial_buf) = self.initial_buf.take() {
-            let mut initial_buf = BorrowingVec::from(initial_buf);
-            initial_buf.extend_from_slice(buf);
-            let len = match initial_buf.get(..4) {
-                Some(h @ b"HG20") => {
-                    Bundlev2Header::new(&initial_buf[4..]).map(|(header, remainder)| {
-                        self.out.write_all(h).unwrap();
-                        let mut compression = None;
-                        header
-                            .dump(&mut self.out, |k, v| {
-                                if k == b"Compression" {
-                                    compression = Some(v);
-                                    false
-                                } else {
-                                    true
-                                }
-                            })
-                            .unwrap();
-                        if let Some(compression) = compression {
-                            replace_with_or_abort(&mut self.out, |out| match compression {
-                                b"GZ" => Box::new(ZlibDecoder::new(out)),
-                                b"BZ" => Box::new(BzDecoder::new(out)),
-                                b"ZS" => Box::new(ZstdDecoder::new(out).unwrap()),
-                                comp => die!(
-                                    "Unknown mercurial bundle compression: {}",
-                                    String::from_utf8_lossy(comp)
-                                ),
-                            });
+impl<'a> Read for DecompressBundleReader<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if let Some(mut initial_buf_) = self.initial_buf.take() {
+            let mut initial_buf = initial_buf_.get_mut();
+            if initial_buf.is_empty() {
+                if (&mut self.inner).take(4).read_to_end(&mut initial_buf)? != 4 {
+                    return Err(io::Error::new(
+                        ErrorKind::Other,
+                        "Unrecognized mercurial bundle",
+                    ));
+                }
+                let compression = match &initial_buf[..] {
+                    b"HG20" => decompress_bundlev2_header(&mut self.inner, &mut initial_buf)?,
+                    b"HG10" => decompress_bundlev1_header(&mut self.inner, &mut initial_buf)?,
+                    _ => {
+                        return Err(io::Error::new(
+                            ErrorKind::Other,
+                            "Unrecognized mercurial bundle",
+                        ))
+                    }
+                };
+                if let Some(compression) = compression {
+                    replace_with_or_abort(&mut self.inner, |inner| match compression {
+                        Compression::Bzip => Box::new(BzDecoder::new(inner)),
+                        Compression::BzipNoHeader => {
+                            Box::new(BzDecoder::new(Cursor::new("BZ").chain(inner)))
                         }
-                        self.out.write_all(remainder).unwrap();
-                        buf.len()
-                    })
+                        Compression::Gzip => Box::new(ZlibDecoder::new(inner)),
+                        Compression::Zstd => Box::new(ZstdDecoder::new(inner).unwrap()),
+                    });
                 }
-                Some(h @ b"HG10") => {
-                    initial_buf[4..]
-                        .get_split_at(2)
-                        .map(|(compression, remainder)| {
-                            self.out.write_all(h).unwrap();
-                            self.out.write_all(b"UN").unwrap();
-                            if compression != b"UN" {
-                                replace_with_or_abort(&mut self.out, |out| match compression {
-                                    b"GZ" => Box::new(ZlibDecoder::new(out)),
-                                    b"BZ" => {
-                                        let mut out = Box::new(BzDecoder::new(out));
-                                        out.write_all(b"BZ").unwrap();
-                                        out
-                                    }
-                                    comp => die!(
-                                        "Unknown mercurial bundle compression: {}",
-                                        String::from_utf8_lossy(comp)
-                                    ),
-                                });
-                            }
-                            self.out.write_all(remainder).unwrap();
-                            buf.len()
-                        })
-                }
-                Some(_) => die!("Unrecognized mercurial bundle"),
-                None => None,
-            };
-
-            if let Some(len) = len {
-                return Ok(len);
             }
-            self.initial_buf = Some(initial_buf.into());
-            return Ok(buf.len());
+            let result = (&mut initial_buf_).chain(&mut self.inner).read(buf);
+            if initial_buf_.position() < initial_buf_.get_ref().len().try_into().unwrap() {
+                self.initial_buf = Some(initial_buf_);
+            }
+            result
+        } else {
+            self.inner.read(buf)
         }
-        self.out.write(buf)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.out.flush()
     }
 }
 
 #[test]
-fn test_decompress_bundle_writer() {
+fn test_decompress_bundle_reader() {
     use bstr::ByteSlice;
 
     let test_cases = [
@@ -201,13 +187,19 @@ fn test_decompress_bundle_writer() {
     ];
     for (input, expected) in &test_cases {
         for chunk_size in 1..12 {
-            let mut result = Vec::<u8>::new();
-            let mut d = DecompressBundleWriter::new(&mut result);
-            for c in input.chunks(chunk_size) {
-                assert_eq!(d.write(c).unwrap(), c.len());
+            let mut r = DecompressBundleReader::new(Cursor::new(input));
+            for c in expected.chunks(chunk_size) {
+                let mut buf = Vec::new();
+                (&mut r)
+                    .take(chunk_size.try_into().unwrap())
+                    .read_to_end(&mut buf)
+                    .unwrap();
+                assert_eq!(c.as_bstr(), buf.as_bstr());
             }
-            drop(d);
-            assert_eq!(result.as_bstr(), expected.as_bstr());
+            assert_eq!(
+                r.bytes().collect::<io::Result<Vec<_>>>().unwrap(),
+                Vec::new()
+            );
         }
     }
 }

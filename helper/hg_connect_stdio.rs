@@ -18,7 +18,7 @@ use percent_encoding::percent_decode;
 use url::Url;
 
 use crate::args;
-use crate::hg_bundle::{copy_bundle, DecompressBundleWriter};
+use crate::hg_bundle::{copy_bundle, DecompressBundleReader};
 use crate::hg_connect::{split_capabilities, HgArgs, HgConnection, HgWireConnection, OneHgArg};
 use crate::libc::FdFile;
 use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
@@ -202,11 +202,10 @@ impl HgStdIOConnection {
                 // TODO: Eventually we want to have a hg_connection
                 // for bundles, but for now, just send the stream to
                 // stdout and return NULL.
-                let mut f = File::open(path).unwrap();
+                let mut f = DecompressBundleReader::new(File::open(path).unwrap());
                 let mut out = unsafe { crate::libc::FdFile::stdout() };
                 out.write_all(b"bundle\n").unwrap();
-                let mut writer = DecompressBundleWriter::new(out);
-                copy(&mut f, &mut writer).unwrap();
+                copy(&mut f, &mut out).unwrap();
                 return None;
             }
             #[cfg(windows)]
