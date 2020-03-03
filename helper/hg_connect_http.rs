@@ -34,7 +34,7 @@ use crate::libgit::{
     credential_fill, curl_errorstr, get_active_slot, http_auth, http_cleanup, http_follow_config,
     http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
 };
-use crate::util::{BufferedWriter, PrefixWriter, SeekExt};
+use crate::util::{BufferedWriter, PrefixWriter, ReadExt, SeekExt};
 
 #[allow(non_camel_case_types)]
 pub struct hg_connection_http {
@@ -450,7 +450,7 @@ impl HgWireConnection for HgHTTPConnection {
         let mut http_resp = http_req.execute().unwrap();
         self.handle_redirect(&http_resp);
         let mut header = [0u8; 4];
-        let len = http_resp.read(&mut header).unwrap();
+        let len = http_resp.read_at_most(&mut header).unwrap();
         let header = &header[..len];
         if header == b"HG20" {
             response.extend_from_slice(header);
@@ -506,7 +506,7 @@ impl HgHTTPConnection {
         let mut http_resp = http_req.execute().unwrap();
         self.handle_redirect(&http_resp);
         let mut header = [0u8; 4];
-        let len = http_resp.read(&mut header).unwrap();
+        let len = http_resp.read_at_most(&mut header).unwrap();
         let header = &header[..len];
         match header {
             b"HG10" | b"HG20" => {

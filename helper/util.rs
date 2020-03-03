@@ -3,7 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::{Cow, ToOwned};
-use std::io::{self, LineWriter, Seek, SeekFrom, Write};
+use std::convert::TryInto;
+use std::io::{self, copy, Cursor, LineWriter, Read, Seek, SeekFrom, Write};
 use std::ops::Deref;
 use std::sync::mpsc::{channel, Sender};
 use std::thread::{self, JoinHandle};
@@ -192,6 +193,16 @@ fn test_buffered_writer() {
     // least 20 times the sleep time of 1ms.
     assert!((drop_time - write_time).as_micros() >= 20000);
 }
+
+pub trait ReadExt: Read {
+    fn read_at_most(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut input = self.take(buf.len().try_into().unwrap());
+        let mut buf = Cursor::new(buf);
+        copy(&mut input, &mut buf).map(|l| l as usize)
+    }
+}
+
+impl<T: Read> ReadExt for T {}
 
 pub trait SeekExt: Seek {
     fn stream_len_(&mut self) -> io::Result<u64> {
