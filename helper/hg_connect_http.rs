@@ -14,6 +14,8 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 
 use bstr::ByteSlice;
+use byteorder::ReadBytesExt;
+use bzip2::read::BzDecoder;
 use curl_sys::{
     curl_easy_getinfo, curl_easy_setopt, curl_slist_append, curl_slist_free_all, CURL,
     CURLINFO_CONTENT_TYPE, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT, CURLINFO_RESPONSE_CODE,
@@ -22,8 +24,9 @@ use curl_sys::{
     CURLOPT_READFUNCTION, CURLOPT_URL, CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
 };
 use either::Either;
-use flate2::write::ZlibDecoder;
+use flate2::read::ZlibDecoder;
 use url::{form_urlencoded, Url};
+use zstd::stream::read::Decoder as ZstdDecoder;
 
 use crate::args;
 use crate::hg_bundle::DecompressBundleReader;
@@ -422,23 +425,52 @@ impl HgWireConnection for HgHTTPConnection {
     /* The changegroup, changegroupsubset and getbundle commands return a raw
      *  * zlib stream when called over HTTP. */
     fn changegroup_command(&mut self, out: Box<dyn Write + Send>, command: &str, args: HgArgs) {
-        let mut http_resp = self.start_command_request(command, args).execute().unwrap();
+        let mut http_req = self.start_command_request(command, args);
+        if let Some(media_type) = self
+            .get_capability(b"httpmediatype")
+            .and_then(|c| c.to_str().ok())
+        {
+            if media_type.split(',').any(|t| t == "0.2tx") {
+                //TODO: Allow to disable individual features via configuration.
+                //TODO: Only send compression types the server reported supporting.
+                //TODO: Tests!
+                http_req.header("X-HgProto-1", "0.1 0.2 comp=zstd,zlib,none,bzip2");
+            }
+        }
+        let mut http_resp = http_req.execute().unwrap();
         self.handle_redirect(&http_resp);
         let mut writer = out;
 
-        match http_resp.content_type() {
-            Some("application/mercurial-0.1") => {
-                writer = Box::new(ZlibDecoder::new(writer));
+        let mut reader: Box<dyn Read> = match http_resp.content_type() {
+            Some("application/mercurial-0.1") => Box::new(ZlibDecoder::new(http_resp)),
+            Some("application/mercurial-0.2") => {
+                let comp_len = http_resp.read_u8().unwrap() as u64;
+                let mut comp = Vec::new();
+                (&mut http_resp)
+                    .take(comp_len)
+                    .read_to_end(&mut comp)
+                    .unwrap();
+                match &comp[..] {
+                    b"zstd" => Box::new(ZstdDecoder::new(http_resp).unwrap()),
+                    b"zlib" => Box::new(ZlibDecoder::new(http_resp)),
+                    b"none" => Box::new(http_resp),
+                    b"bzip2" => Box::new(BzDecoder::new(http_resp)),
+                    comp => die!(
+                        "Server responded with unknown compression {}",
+                        String::from_utf8_lossy(comp)
+                    ),
+                }
             }
             Some("application/hg-error") => {
                 writer.write_all(b"err\n").unwrap();
 
                 //XXX: Can't easily pass a StderrLock here.
                 writer = Box::new(PrefixWriter::new(b"remote: ", stderr()));
+                Box::new(http_resp)
             }
             _ => unimplemented!(),
-        }
-        copy(&mut http_resp, &mut *writer).unwrap();
+        };
+        copy(&mut reader, &mut *writer).unwrap();
     }
 
     fn push_command(&mut self, response: &mut strbuf, input: File, command: &str, args: HgArgs) {
