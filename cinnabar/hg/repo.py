@@ -752,7 +752,7 @@ class BundleApplier(object):
             try:
                 store.store_changeset(cs)
             except NothingToGraftException:
-                logging.warn('Cannot graft %s, not importing.', cs.node)
+                logging.debug('Cannot graft %s, not importing.', cs.node)
 
 
 SHA1_RE = re.compile(b'[0-9a-fA-F]{1,40}$')
