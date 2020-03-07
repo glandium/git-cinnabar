@@ -135,3 +135,30 @@ pub trait SeekExt: Seek {
 }
 
 impl<T: Seek> SeekExt for T {}
+
+pub trait SliceExt {
+    type Item;
+    fn split2(&self, c: Self::Item) -> Option<(&Self, &Self)>;
+}
+
+impl<T: PartialEq> SliceExt for [T] {
+    type Item = T;
+    fn split2(&self, x: T) -> Option<(&[T], &[T])> {
+        let mut iter = self.splitn(2, |i| *i == x);
+        match (iter.next(), iter.next()) {
+            (Some(a), Some(b)) => Some((a, b)),
+            _ => None,
+        }
+    }
+}
+
+impl SliceExt for str {
+    type Item = char;
+    fn split2(&self, c: char) -> Option<(&str, &str)> {
+        let mut iter = self.splitn(2, c);
+        match (iter.next(), iter.next()) {
+            (Some(a), Some(b)) => Some((a, b)),
+            _ => None,
+        }
+    }
+}

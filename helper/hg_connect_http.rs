@@ -37,7 +37,7 @@ use crate::libgit::{
     credential_fill, curl_errorstr, get_active_slot, http_auth, http_cleanup, http_follow_config,
     http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
 };
-use crate::util::{PrefixWriter, ReadExt, SeekExt};
+use crate::util::{PrefixWriter, ReadExt, SeekExt, SliceExt};
 
 #[allow(non_camel_case_types)]
 pub struct hg_connection_http {
@@ -489,8 +489,8 @@ impl HgWireConnection for HgHTTPConnection {
             let stderr = stderr();
             let mut buf = header.to_owned();
             http_resp.read_to_end(&mut buf).unwrap();
-            match &buf.splitn_str(2, "\n").collect::<Vec<_>>()[..] {
-                [stdout_, stderr_] => {
+            match buf.split2(b'\n') {
+                Some((stdout_, stderr_)) => {
                     response.extend_from_slice(stdout_);
                     let mut writer = PrefixWriter::new(b"remote: ", stderr.lock());
                     writer.write_all(stderr_).unwrap();

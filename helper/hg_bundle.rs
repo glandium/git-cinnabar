@@ -11,6 +11,8 @@ use flate2::read::ZlibDecoder;
 use replace_with::replace_with_or_abort;
 use zstd::stream::read::Decoder as ZstdDecoder;
 
+use crate::util::SliceExt;
+
 pub struct DecompressBundleReader<'a> {
     initial_buf: Option<Cursor<Vec<u8>>>,
     inner: Box<dyn Read + Send + 'a>,
@@ -49,9 +51,8 @@ fn decompress_bundlev2_header<R: Read>(
     let mut params = Vec::new();
     if !params_str.is_empty() {
         for s in params_str.split(' ') {
-            let mut iter = s.splitn(2, '=');
-            match (iter.next(), iter.next()) {
-                (Some("Compression"), Some(v)) => {
+            match s.split2('=') {
+                Some(("Compression", v)) => {
                     compression = match v {
                         "GZ" => Some(Compression::Gzip),
                         "BZ" => Some(Compression::Bzip),
@@ -64,7 +65,7 @@ fn decompress_bundlev2_header<R: Read>(
                         }
                     };
                 }
-                (Some(_), Some(_)) => params.push(s),
+                Some(_) => params.push(s),
                 _ => {
                     return Err(io::Error::new(
                         ErrorKind::Other,
