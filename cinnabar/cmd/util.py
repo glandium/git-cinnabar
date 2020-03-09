@@ -37,6 +37,32 @@ class CLI(object):
         subparser.set_defaults(callback=func)
 
     @staticmethod
+    def helper_subcommand(name, help):
+        subparser = CLI.subparsers.add_parser(name, help=help, add_help=False)
+        subparser.add_argument('args', nargs=argparse.REMAINDER)
+
+        def func(args):
+            from cinnabar.helper import GitHgHelper
+            import subprocess
+
+            command, env = GitHgHelper._helper_command()
+            environ = dict(os.environ)
+            environ.update(env)
+            cmd = command + ["--command", args.command] + args.args
+            retcode = subprocess.call(cmd, env=environ)
+            if retcode == 128:
+                GitHgHelper._helper_error('outdated')
+
+        def parse_known_args(args=None, namespace=None):
+            if namespace is None:
+                namespace = argparse.Namespace()
+            setattr(namespace, 'args', args)
+            setattr(namespace, 'callback', func)
+            return namespace, []
+
+        setattr(subparser, 'parse_known_args', parse_known_args)
+
+    @staticmethod
     def prepare(argv):
         CLI.parser.add_argument('--version', action=Version)
 

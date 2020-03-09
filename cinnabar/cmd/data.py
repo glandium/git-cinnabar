@@ -1,9 +1,19 @@
 from __future__ import absolute_import, print_function, unicode_literals
+import argparse
+import re
 import sys
-from cinnabar.cmd.convert import sha1_value
 from cinnabar.cmd.util import CLI
 from cinnabar.githg import GitHgStore
 from cinnabar.util import bytes_stdout
+
+
+SHA1_RE = re.compile(r'[0-9a-fA-F]{1,40}$')
+
+
+def sha1_value(value):
+    if not SHA1_RE.match(value):
+        raise argparse.ArgumentTypeError("must be a sha1")
+    return value.encode('ascii')
 
 
 @CLI.subcommand

@@ -4,10 +4,7 @@ from .fsck import fsck  # noqa: F401
 from .upgrade import upgrade  # noqa: F401
 from .reclone import reclone  # noqa: F401
 from .fetch import fetch  # noqa: F401
-from .convert import (  # noqa: F401
-    hg2git,
-    git2hg,
-)
+from .convert import git2hg  # noqa: F401
 from .bundle import bundle  # noqa: F401
 from .rollback import rollback  # noqa: F401
 from .python import python  # noqa: F401

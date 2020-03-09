@@ -54,7 +54,7 @@ const GIT_MAX_RAWSZ: usize = 32;
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-#[derive(Eq)]
+#[derive(Clone, Eq)]
 pub struct object_id([u8; GIT_MAX_RAWSZ]);
 
 impl Display for object_id {
@@ -73,6 +73,10 @@ impl object_id {
 
     pub fn raw(&self) -> &[u8] {
         &self.0[..GIT_SHA1_RAWSZ]
+    }
+
+    pub const fn null() -> object_id {
+        object_id([0; GIT_MAX_RAWSZ])
     }
 }
 

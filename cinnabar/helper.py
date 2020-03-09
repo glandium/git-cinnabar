@@ -108,21 +108,39 @@ class BaseHelper(object):
         self._helper = self
 
     @classmethod
+    def _helper_command(self):
+        helper_path = Git.config('cinnabar.helper')
+        env = {
+            b'GIT_REPLACE_REF_BASE': b'refs/cinnabar/replace/',
+        }
+        for k in os.environ:
+            if k.startswith('GIT_CINNABAR_'):
+                env[k] = os.environ[k]
+        if helper_path:
+            helper_path = fsdecode(helper_path)
+        if helper_path and os.path.exists(helper_path):
+            command = [helper_path]
+        else:
+            command = ['git', 'cinnabar-helper']
+        return command, env
+
+    @classmethod
+    def _helper_error(self, which):
+        if which == 'outdated':
+            message = ('Cinnabar helper executable is outdated. '
+                       'Please try `git cinnabar download` or '
+                       'rebuild it.')
+        else:
+            message = ('Cannot find cinnabar helper executable. '
+                       'Please try `git cinnabar download` or '
+                       'build it.')
+
+        raise NoHelperAbort(message)
+
+    @classmethod
     def _ensure_helper(self):
         if self._helper is False:
-            helper_path = Git.config('cinnabar.helper')
-            env = {
-                b'GIT_REPLACE_REF_BASE': b'refs/cinnabar/replace/',
-            }
-            for k in os.environ:
-                if k.startswith('GIT_CINNABAR_'):
-                    env[k] = os.environ[k]
-            if helper_path:
-                helper_path = fsdecode(helper_path)
-            if helper_path and os.path.exists(helper_path):
-                command = [helper_path]
-            else:
-                command = ['git', 'cinnabar-helper']
+            command, env = self._helper_command()
             command.append('--{}'.format(self.MODE))
 
             try:
@@ -136,19 +154,11 @@ class BaseHelper(object):
                 self._helper = None
                 response = None
 
-            outdated = ('Cinnabar helper executable is outdated. '
-                        'Please try `git cinnabar download` or '
-                        'rebuild it.')
-
             if not response:
                 if self._helper and self._helper.wait() == 128:
-                    message = outdated
+                    self._helper_error('outdated')
                 else:
-                    message = ('Cannot find cinnabar helper executable. '
-                               'Please try `git cinnabar download` or '
-                               'build it.')
-
-                raise NoHelperAbort(message)
+                    self._helper_error('not_found')
             else:
                 version = response.lstrip(b'ok\n') or b'unknown'
                 self._revision, _, version = version.partition(b' ')
@@ -169,7 +179,10 @@ class BaseHelper(object):
                     BaseHelper._helper_hash = helper_hash() or False
                     if BaseHelper._helper_hash is not False and \
                             BaseHelper._helper_hash != self._revision:
-                        logging.warning(outdated)
+                        try:
+                            self._helper_error('outdated')
+                        except NoHelperAbort as e:
+                            logging.warning(str(e))
 
                 atexit.register(self.close)
 
@@ -242,7 +255,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 3003
+    VERSION = 3004
     MODE = 'import'
     _helper = False
 

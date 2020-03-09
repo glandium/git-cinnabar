@@ -80,7 +80,7 @@
 #define _STRINGIFY(s) # s
 #define STRINGIFY(s) _STRINGIFY(s)
 
-#define CMD_VERSION 3003
+#define CMD_VERSION 3004
 #define MIN_CMD_VERSION 3003
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
@@ -480,8 +480,8 @@ static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1)
 	return hex - hex_start + !!hex[0];
 }
 
-static const struct object_id *resolve_hg2git(const struct hg_object_id *oid,
-                                              size_t len)
+const struct object_id *resolve_hg2git(const struct hg_object_id *oid,
+                                       size_t len)
 {
 	struct object_id git_oid;
 	const struct object_id *note;
@@ -1889,22 +1889,59 @@ static void restore_sigpipe_to_default(void)
 	signal(SIGPIPE, SIG_DFL);
 }
 
-int helper_main(int argc, const char *argv[])
+void init_cinnabar(const char *argv0)
 {
-	int initialized = 0;
-	struct strbuf buf = STRBUF_INIT;
-
 	// Initialization from common-main.c.
 	sanitize_stdfds();
 	restore_sigpipe_to_default();
 
-	git_resolve_executable_dir(argv[0]);
+	git_resolve_executable_dir(argv0);
 
 	git_setup_gettext();
 
 	initialize_the_repository();
 
 	attr_start();
+
+	init_git_config();
+	git_config(git_default_config, NULL);
+	init_config();
+	ignore_case = 0;
+	save_commit_buffer = 0;
+	warn_on_object_refname_ambiguity = 0;
+}
+
+void init_cinnabar_2()
+{
+	setup_git_directory();
+	git_config(git_diff_basic_config, NULL);
+	ignore_case = 0;
+	init_metadata();
+	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
+}
+
+void done_cinnabar()
+{
+	if (notes_initialized(&git2hg))
+		free_notes(&git2hg);
+
+	if (notes_initialized(&hg2git))
+		free_notes(&hg2git);
+
+	if (notes_initialized(&files_meta))
+		free_notes(&files_meta);
+
+	oidset_clear(&hg2git_seen);
+
+	hashmap_free_entries(&git_tree_cache, struct oid_map_entry, ent);
+}
+
+int helper_main(int argc, const char *argv[])
+{
+	int initialized = 0;
+	struct strbuf buf = STRBUF_INIT;
+
+	init_cinnabar(argv[0]);
 
 	if (argc > 1) {
 		if (argc > 2)
@@ -1915,13 +1952,6 @@ int helper_main(int argc, const char *argv[])
 			mode = MODE_IMPORT;
 		}
 	}
-
-	init_git_config();
-	git_config(git_default_config, NULL);
-	init_config();
-	ignore_case = 0;
-	save_commit_buffer = 0;
-	warn_on_object_refname_ambiguity = 0;
 
 	while (strbuf_getline(&buf, stdin) != EOF) {
 		struct string_list args = STRING_LIST_INIT_NODUP;
@@ -1944,12 +1974,8 @@ int helper_main(int argc, const char *argv[])
 		if (!(mode & MODE_IMPORT))
 			die("Unknown command: \"%s\"", command);
 		if (!initialized) {
-			setup_git_directory();
-			git_config(git_diff_basic_config, NULL);
-			ignore_case = 0;
-			init_metadata();
+			init_cinnabar_2();
 			initialized = 1;
-			hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
 		}
 		if (!strcmp("git2hg", command))
 			do_get_note(&git2hg, &args);
@@ -1994,18 +2020,6 @@ int helper_main(int argc, const char *argv[])
 
 	strbuf_release(&buf);
 
-	if (notes_initialized(&git2hg))
-		free_notes(&git2hg);
-
-	if (notes_initialized(&hg2git))
-		free_notes(&hg2git);
-
-	if (notes_initialized(&files_meta))
-		free_notes(&files_meta);
-
-	oidset_clear(&hg2git_seen);
-
-	hashmap_free_entries(&git_tree_cache, struct oid_map_entry, ent);
-
+	done_cinnabar();
 	return 0;
 }
