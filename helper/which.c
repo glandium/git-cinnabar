@@ -1,6 +1,7 @@
 #include "run-command.c"
 
 #ifdef _WIN32
+#define winansi_init(...)
 #define main helper_main
 extern int helper_main(int argc, const char *argv[]);
 #include "compat/mingw.c"
