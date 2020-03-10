@@ -255,7 +255,7 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 3004
+    VERSION = 3005
     MODE = 'import'
     _helper = False
 

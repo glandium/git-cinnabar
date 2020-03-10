@@ -23,19 +23,20 @@ pub(crate) mod hg_connect_stdio;
 use std::convert::TryInto;
 use std::ffi::OsString;
 use std::os::raw::c_int;
-use std::str::FromStr;
+use std::str::{self, FromStr};
 
-#[cfg(unix)]
 use std::ffi::CString;
 use std::os::raw::c_char;
-#[cfg(unix)]
-use std::os::unix::ffi::OsStrExt;
 
 #[cfg(windows)]
-use std::os::windows::ffi::OsStrExt;
+use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 
-use libcinnabar::AbbrevHgObjectId;
-use libgit::{object_id, strbuf};
+use libcinnabar::{ensure_notes, git2hg, hg_object_id, AbbrevHgObjectId};
+use libgit::{
+    get_note, object_id, repo_get_oid_committish, repo_lookup_replace_object, strbuf,
+    the_repository, Object,
+};
+use util::OsStrExt;
 
 const HELPER_HASH: &str = env!("HELPER_HASH");
 
@@ -73,6 +74,38 @@ fn do_hg2git(abbrev: Option<usize>, sha1s: Vec<AbbrevHgObjectId>) -> i32 {
     for sha1 in &sha1s {
         let hex = format!("{}", sha1.to_git().unwrap_or_else(object_id::null));
         println!("{}", &hex[..abbrev]);
+    }
+    0
+}
+
+fn do_git2hg(abbrev: Option<usize>, committish: Vec<OsString>) -> i32 {
+    let abbrev = abbrev.unwrap_or(40);
+    unsafe {
+        ensure_notes(&mut git2hg);
+        for c in &committish {
+            let mut oid = object_id::null();
+            let c = CString::new(c.as_bytes()).unwrap();
+            let note = if repo_get_oid_committish(the_repository, c.as_ptr(), &mut oid) == 0 {
+                get_note(
+                    &mut git2hg,
+                    repo_lookup_replace_object(the_repository, &oid),
+                )
+                .as_ref()
+                .and_then(Object::read)
+                .map(|o| {
+                    let blob_buf = o.blob().unwrap().as_bytes();
+                    assert!(blob_buf.starts_with(b"changeset "));
+                    hg_object_id::from_str(
+                        str::from_utf8(&blob_buf[b"changeset ".len()..][..40]).unwrap(),
+                    )
+                    .unwrap()
+                })
+            } else {
+                None
+            };
+            let hex = format!("{}", note.unwrap_or_else(hg_object_id::null));
+            println!("{}", &hex[..abbrev]);
+        }
     }
     0
 }
@@ -115,6 +148,19 @@ enum CinnabarCommand {
         #[structopt(help = "Mercurial sha1")]
         sha1: Vec<AbbrevHgObjectId>,
     },
+    #[structopt(name = "git2hg")]
+    #[structopt(about = "Convert git sha1 to corresponding mercurial sha1")]
+    Git2Hg {
+        #[structopt(long)]
+        #[structopt(require_equals = true)]
+        #[structopt(max_values = 1)]
+        #[structopt(help = "Show a partial prefix")]
+        abbrev: Option<Vec<AbbrevSize>>,
+        #[structopt(required = true)]
+        #[structopt(help = "Git sha1/committish")]
+        #[structopt(parse(from_os_str))]
+        committish: Vec<OsString>,
+    },
 }
 
 use CinnabarCommand::*;
@@ -143,6 +189,10 @@ fn git_cinnabar(argv0: *const c_char) -> i32 {
         Hg2Git { abbrev, sha1 } => {
             do_hg2git(abbrev.map(|v| v.get(0).map(|a| a.0).unwrap_or(12)), sha1)
         }
+        Git2Hg { abbrev, committish } => do_git2hg(
+            abbrev.map(|v| v.get(0).map(|a| a.0).unwrap_or(12)),
+            committish,
+        ),
     };
     unsafe {
         done_cinnabar();

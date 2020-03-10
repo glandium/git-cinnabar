@@ -3,10 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::cmp::Ordering;
+use std::convert::TryInto;
 use std::ffi::c_void;
 use std::fmt::{self, Display, Formatter};
 use std::io::{self, Write};
-use std::os::raw::{c_char, c_int, c_long};
+use std::os::raw::{c_char, c_int, c_long, c_ulong};
 
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use sha1::{Digest, Sha1};
@@ -63,6 +64,12 @@ impl Display for object_id {
             write!(f, "{:02x}", x)?;
         }
         Ok(())
+    }
+}
+
+impl fmt::Debug for object_id {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Oid({})", self)
     }
 }
 
@@ -248,4 +255,112 @@ pub enum http_follow_config {
 
 extern "C" {
     pub static http_follow_config: http_follow_config;
+}
+
+#[repr(C)]
+pub struct repository {
+    gitdir: *const c_char,
+    commondir: *const c_char,
+}
+
+#[repr(C)]
+#[allow(non_camel_case_types)]
+#[allow(dead_code)]
+pub enum object_type {
+    OBJ_BAD = -1,
+    OBJ_NONE = 0,
+    OBJ_COMMIT = 1,
+    OBJ_TREE = 2,
+    OBJ_BLOB = 3,
+    OBJ_TAG = 4,
+    OBJ_OFS_DELTA = 6,
+    OBJ_REF_DELTA = 7,
+    OBJ_ANY,
+    OBJ_MAX,
+}
+
+extern "C" {
+    fn read_object_file_extended(
+        r: *mut repository,
+        oid: *const object_id,
+        typ: *mut object_type,
+        size: *mut c_ulong,
+        lookup_replace: c_int,
+    ) -> *const c_void;
+}
+
+pub enum Object {
+    Commit(RawObject),
+    Tree(RawObject),
+    Blob(RawObject),
+}
+
+impl Object {
+    pub fn read(oid: &object_id) -> Option<Self> {
+        let mut t = object_type::OBJ_NONE;
+        let mut len: c_ulong = 0;
+        let buf = unsafe { read_object_file_extended(the_repository, oid, &mut t, &mut len, 0) };
+        if buf.is_null() {
+            return None;
+        }
+        let raw = RawObject {
+            buf,
+            len: len.try_into().unwrap(),
+        };
+        match t {
+            object_type::OBJ_COMMIT => Some(Object::Commit(raw)),
+            object_type::OBJ_TREE => Some(Object::Tree(raw)),
+            object_type::OBJ_BLOB => Some(Object::Blob(raw)),
+            _ => None,
+        }
+    }
+
+    pub fn blob(&self) -> Option<&RawObject> {
+        match self {
+            Object::Blob(r) => Some(r),
+            _ => None,
+        }
+    }
+}
+
+pub struct RawObject {
+    buf: *const c_void,
+    len: usize,
+}
+
+impl RawObject {
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.buf as *const u8, self.len) }
+    }
+}
+
+impl Drop for RawObject {
+    fn drop(&mut self) {
+        unsafe {
+            libc::free(self.buf as *mut _);
+        }
+    }
+}
+
+#[repr(C)]
+pub struct notes_tree {
+    root: *mut c_void,
+    oid: object_id,
+}
+
+extern "C" {
+    pub static mut the_repository: *mut repository;
+
+    pub fn repo_get_oid_committish(
+        r: *mut repository,
+        s: *const c_char,
+        oid: *mut object_id,
+    ) -> c_int;
+
+    pub fn repo_lookup_replace_object(
+        r: *mut repository,
+        oid: *const object_id,
+    ) -> *const object_id;
+
+    pub fn get_note(t: *mut notes_tree, oid: *const object_id) -> *const object_id;
 }

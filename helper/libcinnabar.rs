@@ -9,11 +9,17 @@ use std::str::{self, FromStr};
 
 use libc::FILE;
 
-use crate::libgit::{child_process, object_id};
+use crate::libgit::{child_process, notes_tree, object_id};
 
 #[repr(C)]
 #[derive(PartialEq, Eq)]
 pub struct hg_object_id([u8; 20]);
+
+impl hg_object_id {
+    pub fn null() -> Self {
+        hg_object_id([0; 20])
+    }
+}
 
 impl fmt::Display for hg_object_id {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -118,6 +124,10 @@ fn test_abbrev_hg_object_id() {
 }
 
 extern "C" {
+    pub static mut git2hg: notes_tree;
+
+    pub fn ensure_notes(t: *mut notes_tree);
+
     fn resolve_hg2git(oid: *const hg_object_id, len: usize) -> *const object_id;
 }
 

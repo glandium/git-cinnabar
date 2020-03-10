@@ -32,24 +32,7 @@ void ensure_heads(struct oid_array *heads);
 
 extern struct notes_tree git2hg, hg2git, files_meta;
 
-static inline void ensure_notes(struct notes_tree *notes)
-{
-	if (!notes_initialized(notes)) {
-		const char *ref;
-		int flags = 0;
-		if (notes == &git2hg)
-			ref = NOTES_REF;
-		else if (notes == &hg2git)
-			ref = HG2GIT_REF;
-		else if (notes == &files_meta) {
-			ref = FILES_META_REF;
-			if (!(metadata_flags & FILES_META))
-				flags = NOTES_INIT_EMPTY;
-		} else
-			die("Unknown notes tree");
-		init_notes(notes, ref, combine_notes_ignore, flags);
-	}
-}
+extern void ensure_notes(struct notes_tree *notes);
 
 struct strbuf *generate_manifest(const struct object_id *oid);
 

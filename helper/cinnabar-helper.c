@@ -80,7 +80,7 @@
 #define _STRINGIFY(s) # s
 #define STRINGIFY(s) _STRINGIFY(s)
 
-#define CMD_VERSION 3004
+#define CMD_VERSION 3005
 #define MIN_CMD_VERSION 3003
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
@@ -428,6 +428,31 @@ static void do_diff_tree(struct string_list *args)
 	send_buffer(&buf);
 	strbuf_release(&buf);
 	rev_info_release(&revs);
+}
+
+void ensure_notes(struct notes_tree *notes)
+{
+	if (!notes_initialized(notes)) {
+		const char *ref;
+		int flags = 0;
+		if (notes == &git2hg)
+			ref = NOTES_REF;
+		else if (notes == &hg2git)
+			ref = HG2GIT_REF;
+		else if (notes == &files_meta) {
+			ref = FILES_META_REF;
+			if (!(metadata_flags & FILES_META))
+				flags = NOTES_INIT_EMPTY;
+		} else
+			die("Unknown notes tree");
+		init_notes(notes, ref, combine_notes_ignore, flags);
+	}
+}
+
+const struct object_id *repo_lookup_replace_object(
+	struct repository *r, const struct object_id *oid)
+{
+	return lookup_replace_object(r, oid);
 }
 
 static void do_get_note(struct notes_tree *t, struct string_list *args)
