@@ -5,6 +5,10 @@
 use std::borrow::ToOwned;
 use std::convert::TryInto;
 use std::io::{self, copy, Cursor, LineWriter, Read, Seek, SeekFrom, Write};
+#[cfg(unix)]
+pub use std::os::unix::ffi::OsStrExt;
+#[cfg(windows)]
+use std::os::windows::ffi;
 use std::sync::mpsc::{channel, Sender};
 use std::thread::{self, JoinHandle};
 
@@ -160,5 +164,18 @@ impl SliceExt for str {
             (Some(a), Some(b)) => Some((a, b)),
             _ => None,
         }
+    }
+}
+
+#[cfg(windows)]
+pub trait OsStrExt: ffi::OsStrExt {
+    fn as_bytes(&self) -> &[u8];
+}
+
+#[cfg(windows)]
+impl OsStrExt for std::ffi::OsStr {
+    // git assumes everything is UTF-8-valid on Windows
+    fn as_bytes(&self) -> &[u8] {
+        self.to_str().unwrap().as_bytes()
     }
 }

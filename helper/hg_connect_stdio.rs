@@ -7,8 +7,6 @@ use std::fs::File;
 use std::io::{copy, stderr, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::c_int;
-#[cfg(unix)]
-use std::os::unix::ffi::OsStrExt;
 use std::ptr;
 use std::str::FromStr;
 use std::thread::{spawn, JoinHandle};
@@ -23,7 +21,7 @@ use crate::hg_connect::{split_capabilities, HgArgs, HgConnection, HgWireConnecti
 use crate::libc::FdFile;
 use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
 use crate::libgit::{child_process, strbuf};
-use crate::util::{BufferedWriter, PrefixWriter, SeekExt};
+use crate::util::{BufferedWriter, OsStrExt, PrefixWriter, SeekExt};
 
 #[allow(non_camel_case_types)]
 pub struct hg_connection_stdio {
@@ -208,11 +206,7 @@ impl HgStdIOConnection {
                 copy(&mut f, &mut out).unwrap();
                 return None;
             }
-            #[cfg(windows)]
-            let path = path.to_str().unwrap().as_bytes();
-            #[cfg(unix)]
-            let path = path.as_os_str().as_bytes();
-            path.to_owned()
+            path.as_os_str().as_bytes().to_owned()
         };
         let path = CString::new(path).unwrap();
         let proc = unsafe {
