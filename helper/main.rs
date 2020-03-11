@@ -174,7 +174,11 @@ fn git_cinnabar(argv0: *const c_char) -> i32 {
         Ok(c) => c,
         Err(e) if e.use_stderr() => {
             eprintln!("{}", e.message);
-            return 1;
+            return if e.message.contains("SUBCOMMAND") {
+                128
+            } else {
+                1
+            };
         }
         Err(e) => {
             println!("{}", e.message);
