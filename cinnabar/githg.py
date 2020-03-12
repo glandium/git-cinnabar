@@ -1079,7 +1079,7 @@ class GitHgStore(object):
 
     def git_tree(self, manifest_sha1, ref_changeset=None):
         if manifest_sha1 == NULL_NODE_ID:
-            return EMPTY_TREE,
+            return EMPTY_TREE
         return GitHgHelper.create_git_tree(manifest_sha1, ref_changeset)
 
     def store_changeset(self, instance, commit=None):
