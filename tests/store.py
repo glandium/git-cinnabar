@@ -454,7 +454,7 @@ class TestStoreCG01(unittest.TestCase):
         self.assertEqual(c5.raw_data, c5_gen.raw_data)
 
         commit = GitCommit(GitHgHelper.hg2git(c5.node))
-        self.assertEqual(commit.body, c5.body + '\0')
+        self.assertEqual(commit.body, c5.body + b'\0')
         self.assertEqual(ct, one(Git.ls_tree(commit.tree, b'bar'))[2])
 
 
