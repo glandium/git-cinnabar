@@ -446,7 +446,7 @@ class TestStoreCG01(unittest.TestCase):
         # character to the commit message..
         chunk = c2.to_chunk(RawRevChunk02)
         c5 = Changeset.from_chunk(chunk)
-        c5.branch = 'branched'
+        c5.branch = b'branched'
         c5.node = c5.sha1
 
         store.store_changeset(c5)
