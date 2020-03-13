@@ -339,7 +339,7 @@ class TestStoreCG01(unittest.TestCase):
         c.manifest = m.node
         c.author = b'Cinnabar test <cinnabar@test>'
         c.timestamp = b'0'
-        c.utcoffset = b'0000'
+        c.utcoffset = b'0'
         c.files = [i.path for i in m]
         c.body = b'Test commit'
         c.node = c.sha1
@@ -379,7 +379,7 @@ class TestStoreCG01(unittest.TestCase):
         c2.manifest = m2.node
         c2.author = b'Cinnabar test <cinnabar@test>'
         c2.timestamp = b'0'
-        c2.utcoffset = b'0000'
+        c2.utcoffset = b'0'
         c2.files = [i.path for i in m2]
         c2.body = b'Test commit'
         c2.node = c2.sha1
