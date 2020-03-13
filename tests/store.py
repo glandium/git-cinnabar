@@ -6,7 +6,11 @@ import unittest
 from binascii import unhexlify
 from collections import OrderedDict
 from itertools import chain
-from cinnabar.git import Git
+from cinnabar.git import (
+    EMPTY_TREE,
+    Git,
+    NULL_NODE_ID,
+)
 from cinnabar.githg import (
     GitCommit,
     GitHgStore,
@@ -339,7 +343,7 @@ class TestStoreCG01(unittest.TestCase):
         c.manifest = m.node
         c.author = b'Cinnabar test <cinnabar@test>'
         c.timestamp = b'0'
-        c.utcoffset = b'0000'
+        c.utcoffset = b'0'
         c.files = [i.path for i in m]
         c.body = b'Test commit'
         c.node = c.sha1
@@ -379,7 +383,7 @@ class TestStoreCG01(unittest.TestCase):
         c2.manifest = m2.node
         c2.author = b'Cinnabar test <cinnabar@test>'
         c2.timestamp = b'0'
-        c2.utcoffset = b'0000'
+        c2.utcoffset = b'0'
         c2.files = [i.path for i in m2]
         c2.body = b'Test commit'
         c2.node = c2.sha1
@@ -390,6 +394,67 @@ class TestStoreCG01(unittest.TestCase):
 
         commit = GitCommit(GitHgHelper.hg2git(c2.node))
         self.assertEqual(commit.body, c2.body)
+        self.assertEqual(ct, one(Git.ls_tree(commit.tree, b'bar'))[2])
+
+        # Corner case: empty manifest
+        m3 = Manifest()
+        m3.node = m3.sha1
+        self.assertEqual(b'b80de5d138758541c5f05265ad144ab9fa86d1db', m3.node)
+
+        chunk = m3.to_chunk(self.RevChunk, m2)
+        GitHgHelper.store(b'manifest', chunk)
+        commit = GitCommit(GitHgHelper.hg2git(m3.node))
+        self.assertEqual(EMPTY_TREE, commit.tree)
+
+        c3 = Changeset()
+        c3.parent1 = c2.node
+        c3.manifest = m3.node
+        c3.author = b'Cinnabar test <cinnabar@test>'
+        c3.timestamp = b'0'
+        c3.utcoffset = b'0'
+        c3.body = b'Test commit'
+        c3.node = c3.sha1
+
+        store.store_changeset(c3)
+        c3_gen = store.changeset(c3.node)
+        self.assertEqual(c3.raw_data, c3_gen.raw_data)
+
+        commit = GitCommit(GitHgHelper.hg2git(c3.node))
+        self.assertEqual(commit.body, c3.body)
+        self.assertEqual(EMPTY_TREE, commit.tree)
+
+        # Corner case: null manifest
+        c4 = Changeset()
+        c4.parent1 = c3.node
+        c4.manifest = NULL_NODE_ID
+        c4.author = b'Cinnabar test <cinnabar@test>'
+        c4.timestamp = b'0'
+        c4.utcoffset = b'0'
+        c4.body = b'Test commit'
+        c4.node = c4.sha1
+
+        store.store_changeset(c4)
+        c4_gen = store.changeset(c4.node)
+        self.assertEqual(c4.raw_data, c4_gen.raw_data)
+
+        commit = GitCommit(GitHgHelper.hg2git(c4.node))
+        self.assertEqual(commit.body, c4.body)
+        self.assertEqual(EMPTY_TREE, commit.tree)
+
+        # Corner case: identical changeset with a difference that wouldn't
+        # appear in the git commit without adjustment (which is: cinnabar adds
+        # a nul character to the commit message..
+        chunk = c2.to_chunk(RawRevChunk02)
+        c5 = Changeset.from_chunk(chunk)
+        c5.branch = b'branched'
+        c5.node = c5.sha1
+
+        store.store_changeset(c5)
+        c5_gen = store.changeset(c5.node)
+        self.assertEqual(c5.raw_data, c5_gen.raw_data)
+
+        commit = GitCommit(GitHgHelper.hg2git(c5.node))
+        self.assertEqual(commit.body, c5.body + b'\0')
         self.assertEqual(ct, one(Git.ls_tree(commit.tree, b'bar'))[2])
 
 
