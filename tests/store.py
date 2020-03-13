@@ -441,9 +441,9 @@ class TestStoreCG01(unittest.TestCase):
         self.assertEqual(commit.body, c4.body)
         self.assertEqual(EMPTY_TREE, commit.tree)
 
-        # Corner case: identical changeset with a difference that wouldn't appear
-        # in the git commit without adjustment (which is: cinnabar adds a nul
-        # character to the commit message..
+        # Corner case: identical changeset with a difference that wouldn't
+        # appear in the git commit without adjustment (which is: cinnabar adds
+        # a nul character to the commit message..
         chunk = c2.to_chunk(RawRevChunk02)
         c5 = Changeset.from_chunk(chunk)
         c5.branch = b'branched'
