@@ -364,9 +364,9 @@ class Helper(Task, metaclass=Tool):
             elif os == 'linux':
                 environ['CARGO_TARGET'] = 'x86_64-unknown-linux-gnu'
         if variant in ('coverage', 'asan'):
-            rust_version = 'nightly-2020-02-02'
+            rust_version = 'nightly-2020-03-12'
         else:
-            rust_version = '1.41.0'
+            rust_version = '1.42.0'
         rust_install += [
             '{rustup} install {rust_version} --profile minimal',
             'PATH={cargo_dir}:$PATH',
