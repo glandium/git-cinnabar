@@ -82,8 +82,7 @@ void hg_file_store(struct hg_file *file, struct hg_file *reference);
 
 int add_note_hg(struct notes_tree *notes,
                 const struct hg_object_id *oid,
-                const struct object_id *note_oid,
-                combine_notes_fn combine_notes);
+                const struct object_id *note_oid);
 
 int remove_note_hg(struct notes_tree *notes,
                    const struct hg_object_id *oid);

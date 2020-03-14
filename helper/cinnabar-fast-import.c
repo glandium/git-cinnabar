@@ -494,7 +494,7 @@ static void do_set(struct string_list *args)
 	} else {
 		if (is_changeset)
 			handle_changeset_conflict(&hg_id, &git_id);
-		add_note_hg(notes, &hg_id, &git_id, NULL);
+		add_note_hg(notes, &hg_id, &git_id);
 		if (heads)
 			add_head(heads, &git_id);
 	}
@@ -544,7 +544,7 @@ void hg_file_store(struct hg_file *file, struct hg_file *reference)
 	if (file->metadata.buf) {
 		store_object(OBJ_BLOB, &file->metadata, NULL, &oid, 0);
 		ensure_notes(&files_meta);
-		add_note_hg(&files_meta, &file->oid, &oid, NULL);
+		add_note_hg(&files_meta, &file->oid, &oid);
 	}
 
 	if (reference)
@@ -558,7 +558,7 @@ void hg_file_store(struct hg_file *file, struct hg_file *reference)
 	}
 	store_object(OBJ_BLOB, &file->content, &last_blob, &oid, 0);
 	ensure_notes(&hg2git);
-	add_note_hg(&hg2git, &file->oid, &oid, NULL);
+	add_note_hg(&hg2git, &file->oid, &oid);
 
 	file->content_oe = find_object(&oid);
 }
@@ -827,7 +827,7 @@ static void old_store_manifest(struct rev_chunk *chunk)
 	store_object(OBJ_COMMIT, &data, NULL, &last_manifest->oid, 0);
 	strbuf_release(&data);
 	ensure_notes(&hg2git);
-	add_note_hg(&hg2git, &last_manifest_oid, &last_manifest->oid, NULL);
+	add_note_hg(&hg2git, &last_manifest_oid, &last_manifest->oid);
 	add_head(&manifest_heads, &last_manifest->oid);
 	if ((cinnabar_check & CHECK_MANIFESTS) &&
 	    !check_manifest(&last_manifest->oid, NULL))
@@ -1126,7 +1126,7 @@ static void new_store_manifest(struct rev_chunk *chunk)
 	store_object(OBJ_COMMIT, &data, NULL, &last_manifest->oid, 0);
 	strbuf_release(&data);
 	ensure_notes(&hg2git);
-	add_note_hg(&hg2git, &last_manifest_oid, &last_manifest->oid, NULL);
+	add_note_hg(&hg2git, &last_manifest_oid, &last_manifest->oid);
 	add_head(&manifest_heads, &last_manifest->oid);
 	if ((cinnabar_check & CHECK_MANIFESTS) &&
 	    !check_manifest(&last_manifest->oid, NULL))

@@ -109,12 +109,11 @@ void hg_file_release(struct hg_file *file)
 
 int add_note_hg(struct notes_tree *notes,
                 const struct hg_object_id *oid,
-                const struct object_id *note_oid,
-                combine_notes_fn combine_notes)
+                const struct object_id *note_oid)
 {
 	struct object_id git_oid;
 	hg_oidcpy2git(&git_oid, oid);
-	return cinnabar_add_note(notes, &git_oid, note_oid, combine_notes);
+	return cinnabar_add_note(notes, &git_oid, note_oid, NULL);
 }
 
 int remove_note_hg(struct notes_tree *notes,
