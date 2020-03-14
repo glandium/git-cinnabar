@@ -80,7 +80,7 @@
 #define _STRINGIFY(s) # s
 #define STRINGIFY(s) _STRINGIFY(s)
 
-#define CMD_VERSION 3005
+#define CMD_VERSION 3006
 #define MIN_CMD_VERSION 3003
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
@@ -505,20 +505,26 @@ static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1)
 	return hex - hex_start + !!hex[0];
 }
 
-const struct object_id *resolve_hg2git(const struct hg_object_id *oid,
-                                       size_t len)
+const struct object_id *resolve_hg(
+	struct notes_tree* tree, const struct hg_object_id *oid, size_t len)
 {
 	struct object_id git_oid;
 	const struct object_id *note;
 
-	ensure_notes(&hg2git);
+	ensure_notes(tree);
 
-	note = get_note_hg(&hg2git, oid);
+	note = get_note_hg(tree, oid);
 	if (len == 40)
 		return note;
 
 	hg_oidcpy2git(&git_oid, oid);
-	return get_abbrev_note(&hg2git, &git_oid, len);
+	return get_abbrev_note(tree, &git_oid, len);
+}
+
+const struct object_id *resolve_hg2git(const struct hg_object_id *oid,
+                                       size_t len)
+{
+	return resolve_hg(&hg2git, oid, len);
 }
 
 static void do_hg2git(struct string_list *args)

@@ -8,9 +8,13 @@ use std::ffi::c_void;
 use std::fmt::{self, Display, Formatter};
 use std::io::{self, Write};
 use std::os::raw::{c_char, c_int, c_long, c_ulong};
+use std::str::FromStr;
 
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use sha1::{Digest, Sha1};
+
+use crate::libcinnabar::{git2hg, hg_object_id};
+use crate::util::FromBytes;
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -58,6 +62,15 @@ const GIT_MAX_RAWSZ: usize = 32;
 #[derive(Clone, Eq)]
 pub struct object_id([u8; GIT_MAX_RAWSZ]);
 
+impl FromStr for object_id {
+    type Err = hex::FromHexError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut result = object_id([0; GIT_MAX_RAWSZ]);
+        hex::decode_to_slice(s, &mut result.0[..GIT_SHA1_RAWSZ])?;
+        Ok(result)
+    }
+}
+
 impl Display for object_id {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         for x in self.raw() {
@@ -84,6 +97,22 @@ impl object_id {
 
     pub const fn null() -> object_id {
         object_id([0; GIT_MAX_RAWSZ])
+    }
+
+    pub fn to_hg(&self) -> Option<hg_object_id> {
+        unsafe {
+            get_note(
+                &mut git2hg,
+                repo_lookup_replace_object(the_repository, self),
+            )
+            .as_ref()
+            .and_then(Object::read)
+            .map(|o| {
+                let blob_buf = o.blob().unwrap().as_bytes();
+                assert!(blob_buf.starts_with(b"changeset "));
+                hg_object_id::from_bytes(&blob_buf[b"changeset ".len()..][..40]).unwrap()
+            })
+        }
     }
 }
 
@@ -318,6 +347,13 @@ impl Object {
     pub fn blob(&self) -> Option<&RawObject> {
         match self {
             Object::Blob(r) => Some(r),
+            _ => None,
+        }
+    }
+
+    pub fn commit(&self) -> Option<&RawObject> {
+        match self {
+            Object::Commit(r) => Some(r),
             _ => None,
         }
     }

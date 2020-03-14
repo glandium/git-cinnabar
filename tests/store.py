@@ -1,6 +1,7 @@
 from __future__ import absolute_import, unicode_literals
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 from binascii import unhexlify
@@ -42,6 +43,7 @@ class TestStoreCG01(unittest.TestCase):
         os.environ['GIT_DIR'] = tmpdir
         os.environ['GIT_CINNABAR_EXPERIMENTS'] = \
             'store' if self.NEW_STORE else ''
+        os.environ['GIT_CONFIG_PARAMETERS'] = "'fastimport.unpacklimit=0'"
         self.assertEquals(
             GitHgHelper.supports((b'store', b'new')), self.NEW_STORE)
 
@@ -459,6 +461,36 @@ class TestStoreCG01(unittest.TestCase):
         commit = GitCommit(GitHgHelper.hg2git(c5.node))
         self.assertEqual(commit.body, c5.body + b'\0')
         self.assertEqual(ct, one(Git.ls_tree(commit.tree, b'bar'))[2])
+
+        store.close()
+        GitHgHelper.close(rollback=False)
+        GitHgHelper._helper = False
+
+        # Now test that `git cinnabar data -c` reproduces the above
+        # changesets appropriately. Ideally, we'd also have tests for grafts,
+        # but that is covered by the graft tests from CI/tests.mk anyways.
+        def git_output(*command):
+            cinnabar_dir = os.path.join(os.path.dirname(__file__), '..')
+            path = os.pathsep.join((cinnabar_dir, os.environ['PATH']))
+            command = [c if isinstance(c, str) else c.decode('ascii')
+                       for c in command]
+            return b'\n'.join(
+                Git.run(*command, stdout=subprocess.PIPE, env={'PATH': path}))
+
+        c_gen = git_output('cinnabar', 'data', '-c', c.node)
+        self.assertEqual(c.raw_data, c_gen)
+
+        c2_gen = git_output('cinnabar', 'data', '-c', c2.node)
+        self.assertEqual(c2.raw_data, c2_gen)
+
+        c3_gen = git_output('cinnabar', 'data', '-c', c3.node)
+        self.assertEqual(c3.raw_data, c3_gen)
+
+        c4_gen = git_output('cinnabar', 'data', '-c', c4.node)
+        self.assertEqual(c4.raw_data, c4_gen)
+
+        c5_gen = git_output('cinnabar', 'data', '-c', c5.node)
+        self.assertEqual(c5.raw_data, c5_gen)
 
 
 class TestStoreCG02(TestStoreCG01):

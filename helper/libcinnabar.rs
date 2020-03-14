@@ -8,15 +8,26 @@ use std::os::raw::{c_char, c_int};
 use std::str::{self, FromStr};
 
 use libc::FILE;
+use sha1::{Digest, Sha1};
 
-use crate::libgit::{child_process, notes_tree, object_id};
+use crate::libgit::{child_process, notes_tree, object_id, strbuf};
 
+#[allow(non_camel_case_types)]
 #[repr(C)]
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct hg_object_id([u8; 20]);
 
+//TODO: Share code with object_id.
 impl hg_object_id {
-    pub fn null() -> Self {
+    pub fn create() -> hg_object_id_creator {
+        hg_object_id_creator(Sha1::new())
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0[..]
+    }
+
+    pub const fn null() -> Self {
         hg_object_id([0; 20])
     }
 }
@@ -35,6 +46,21 @@ impl FromStr for hg_object_id {
         let mut result = hg_object_id([0; 20]);
         hex::decode_to_slice(s, &mut result.0)?;
         Ok(result)
+    }
+}
+
+#[allow(non_camel_case_types)]
+pub struct hg_object_id_creator(Sha1);
+
+impl hg_object_id_creator {
+    pub fn result(self) -> hg_object_id {
+        let mut result = hg_object_id([0; 20]);
+        result.0.copy_from_slice(self.0.result().as_slice());
+        result
+    }
+
+    pub fn input(&mut self, data: &[u8]) {
+        self.0.input(data)
     }
 }
 
@@ -125,15 +151,32 @@ fn test_abbrev_hg_object_id() {
 
 extern "C" {
     pub static mut git2hg: notes_tree;
+    pub static mut hg2git: notes_tree;
+    pub static mut files_meta: notes_tree;
 
     pub fn ensure_notes(t: *mut notes_tree);
 
-    fn resolve_hg2git(oid: *const hg_object_id, len: usize) -> *const object_id;
+    pub fn resolve_hg(t: *mut notes_tree, oid: *const hg_object_id, len: usize)
+        -> *const object_id;
+
+    pub fn generate_manifest(oid: *const object_id) -> *const strbuf;
 }
 
 impl AbbrevHgObjectId {
     pub fn to_git(&self) -> Option<object_id> {
-        unsafe { resolve_hg2git(&self.oid, self.len).as_ref().cloned() }
+        unsafe {
+            resolve_hg(&mut hg2git, &self.oid, self.len)
+                .as_ref()
+                .cloned()
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub unsafe fn as_hg_object_id(&self) -> &hg_object_id {
+        &self.oid
     }
 }
 

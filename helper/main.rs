@@ -5,6 +5,8 @@
 #[macro_use]
 extern crate cstr;
 
+use bstr::ByteSlice;
+use percent_encoding::percent_decode;
 use structopt::clap::{crate_version, AppSettings};
 use structopt::StructOpt;
 
@@ -19,24 +21,28 @@ pub(crate) mod hg_bundle;
 pub mod hg_connect;
 pub(crate) mod hg_connect_http;
 pub(crate) mod hg_connect_stdio;
+pub(crate) mod hg_data;
 
+use std::borrow::Cow;
 use std::convert::TryInto;
+use std::ffi::CString;
 use std::ffi::OsString;
+use std::io::{stdout, Write};
+use std::iter::repeat;
+use std::mem;
+use std::os::raw::c_char;
 use std::os::raw::c_int;
 use std::str::{self, FromStr};
-
-use std::ffi::CString;
-use std::os::raw::c_char;
 
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 
-use libcinnabar::{ensure_notes, git2hg, hg_object_id, AbbrevHgObjectId};
-use libgit::{
-    get_note, object_id, repo_get_oid_committish, repo_lookup_replace_object, strbuf,
-    the_repository, Object,
+use hg_data::Authorship;
+use libcinnabar::{
+    ensure_notes, files_meta, generate_manifest, git2hg, hg_object_id, resolve_hg, AbbrevHgObjectId,
 };
-use util::OsStrExt;
+use libgit::{get_note, object_id, repo_get_oid_committish, strbuf, the_repository, Object};
+use util::{FromBytes, OsStrExt, SliceExt};
 
 const HELPER_HASH: &str = env!("HELPER_HASH");
 
@@ -69,16 +75,16 @@ pub fn prepare_arg(arg: OsString) -> Vec<u16> {
     arg
 }
 
-fn do_hg2git(abbrev: Option<usize>, sha1s: Vec<AbbrevHgObjectId>) -> i32 {
+fn do_hg2git(abbrev: Option<usize>, sha1s: Vec<AbbrevHgObjectId>) -> Result<(), String> {
     let abbrev = abbrev.unwrap_or(40);
     for sha1 in &sha1s {
         let hex = format!("{}", sha1.to_git().unwrap_or_else(object_id::null));
         println!("{}", &hex[..abbrev]);
     }
-    0
+    Ok(())
 }
 
-fn do_git2hg(abbrev: Option<usize>, committish: Vec<OsString>) -> i32 {
+fn do_git2hg(abbrev: Option<usize>, committish: Vec<OsString>) -> Result<(), String> {
     let abbrev = abbrev.unwrap_or(40);
     unsafe {
         ensure_notes(&mut git2hg);
@@ -86,20 +92,7 @@ fn do_git2hg(abbrev: Option<usize>, committish: Vec<OsString>) -> i32 {
             let mut oid = object_id::null();
             let c = CString::new(c.as_bytes()).unwrap();
             let note = if repo_get_oid_committish(the_repository, c.as_ptr(), &mut oid) == 0 {
-                get_note(
-                    &mut git2hg,
-                    repo_lookup_replace_object(the_repository, &oid),
-                )
-                .as_ref()
-                .and_then(Object::read)
-                .map(|o| {
-                    let blob_buf = o.blob().unwrap().as_bytes();
-                    assert!(blob_buf.starts_with(b"changeset "));
-                    hg_object_id::from_str(
-                        str::from_utf8(&blob_buf[b"changeset ".len()..][..40]).unwrap(),
-                    )
-                    .unwrap()
-                })
+                oid.to_hg()
             } else {
                 None
             };
@@ -107,7 +100,177 @@ fn do_git2hg(abbrev: Option<usize>, committish: Vec<OsString>) -> i32 {
             println!("{}", &hex[..abbrev]);
         }
     }
-    0
+    Ok(())
+}
+
+enum HgObjectType {
+    Changeset,
+    Manifest,
+    File,
+}
+
+fn do_data(rev: AbbrevHgObjectId, typ: HgObjectType) -> Result<(), String> {
+    let git_obj = rev
+        .to_git()
+        .ok_or_else(|| format!("Unknown revision: {}", rev))?;
+    match typ {
+        HgObjectType::Changeset => unsafe {
+            ensure_notes(&mut git2hg);
+            let note = get_note(&mut git2hg, &git_obj).as_ref().unwrap();
+            let metadata = Object::read(note).unwrap();
+            let metadata = metadata.blob().unwrap().as_bytes();
+            let commit = Object::read(&git_obj).unwrap();
+            let commit = commit.commit().unwrap().as_bytes();
+            let (header, body) = commit.split2(&b"\n\n"[..]).unwrap();
+            let mut parents = Vec::new();
+            let mut author = None;
+            let mut committer = None;
+            for line in header.lines() {
+                if line.is_empty() {
+                    break;
+                }
+                match line.split2(b' ').unwrap() {
+                    (b"parent", p) => parents.push(object_id::from_bytes(p).unwrap()),
+                    (b"author", a) => author = Some(a),
+                    (b"committer", c) => committer = Some(c),
+                    _ => {}
+                }
+            }
+            let (mut hg_author, hg_timestamp, hg_utcoffset) =
+                Authorship::from_git_bytes(author.unwrap()).to_hg_parts();
+            let hg_committer = if author != committer {
+                Some(Authorship::from_git_bytes(committer.unwrap()).to_hg_bytes())
+            } else {
+                None
+            };
+            let mut node = None;
+            let mut manifest = hg_object_id::null();
+            let mut extra = None;
+            let mut files = None;
+            let mut patch = None;
+            for line in metadata.lines() {
+                match line.split2(b' ').unwrap() {
+                    (b"changeset", c) => node = Some(hg_object_id::from_bytes(c).unwrap()),
+                    (b"manifest", m) => manifest = hg_object_id::from_bytes(m).unwrap(),
+                    (b"author", a) => hg_author = a.to_owned(),
+                    (b"extra", e) => extra = Some(e),
+                    (b"files", f) => files = Some(f),
+                    (b"patch", p) => patch = Some(p),
+                    _ => panic!("Malformed metadata"),
+                }
+            }
+
+            let mut changeset = Vec::new();
+            writeln!(changeset, "{}", manifest).unwrap();
+            changeset.extend_from_slice(&hg_author);
+            changeset.push(b'\n');
+            changeset.extend_from_slice(&hg_timestamp);
+            changeset.push(b' ');
+            changeset.extend_from_slice(&hg_utcoffset);
+            if extra.is_some() || hg_committer.is_some() {
+                changeset.push(b' ');
+                let hg_committer = hg_committer.map(|c| {
+                    let mut hg_committer = Vec::new();
+                    hg_committer.extend_from_slice(b"committer:");
+                    hg_committer.extend_from_slice(&c);
+                    hg_committer
+                });
+                match (extra, hg_committer) {
+                    (Some(extra), None) => changeset.extend_from_slice(&extra),
+                    (None, Some(hg_committer)) => changeset.extend_from_slice(&hg_committer),
+                    (Some(extra), Some(hg_committer)) => {
+                        let mut extra = extra.split(|c| *c == b'\0');
+                        let mut new_extra = (&mut extra)
+                            .take_while(|e| *e < &b"committer:"[..])
+                            .collect::<Vec<_>>();
+                        let mut hg_committer_extra = Vec::new();
+                        hg_committer_extra.extend_from_slice(b"committer:");
+                        hg_committer_extra.extend_from_slice(&hg_committer);
+                        new_extra.push(&hg_committer_extra);
+                        new_extra.extend(extra.skip_while(|e| *e <= &b"committer:"[..]));
+                        changeset.extend_from_slice(&new_extra.join(&b"\0"[..]));
+                    }
+                    (None, None) => unreachable!(),
+                }
+            }
+            if let Some(files) = files {
+                let mut files = files.split(|c| *c == b'\0').collect::<Vec<_>>();
+                files.sort();
+                for f in &files {
+                    changeset.push(b'\n');
+                    changeset.extend_from_slice(f);
+                }
+            }
+            changeset.extend_from_slice(b"\n\n");
+            changeset.extend_from_slice(body);
+
+            if let Some(patch) = patch {
+                let mut patched = Vec::new();
+                let mut last_end = 0;
+                for part in patch.split(|c| *c == b'\0') {
+                    let (start, end, data) = part.split3(b',').unwrap();
+                    let start: usize = usize::from_bytes(start).unwrap();
+                    let data = Cow::from(percent_decode(data));
+                    patched.extend_from_slice(&changeset[last_end..start]);
+                    patched.extend_from_slice(&data);
+                    last_end = usize::from_bytes(end).unwrap();
+                }
+                patched.extend_from_slice(&changeset[last_end..]);
+                mem::swap(&mut changeset, &mut patched);
+            }
+
+            // Adjust for `handle_changeset_conflict`.
+            // TODO: when creating the git2hg metadata moves to Rust, we can
+            // create a patch instead, which would be handled above instead of
+            // manually here.
+            let node = node.unwrap();
+            let mut changeset = &changeset[..];
+            while let [adjusted @ .., b'\0'] = changeset {
+                let mut hash = hg_object_id::create();
+                let mut parents = parents
+                    .iter()
+                    .map(|p| p.to_hg().unwrap())
+                    .collect::<Vec<_>>();
+                parents.sort();
+                for p in parents.iter().chain(repeat(&hg_object_id::null())).take(2) {
+                    hash.input(p.as_bytes());
+                }
+                hash.input(&changeset);
+                if hash.result() == node {
+                    break;
+                }
+                changeset = adjusted;
+            }
+            //TODO: adjustement, per end of ChangesetPatcher.apply
+            stdout().write_all(&changeset).map_err(|e| e.to_string())?;
+        },
+        HgObjectType::Manifest => {
+            let buf = unsafe { generate_manifest(&git_obj).as_ref().unwrap() };
+            stdout()
+                .write_all(buf.as_bytes())
+                .map_err(|e| e.to_string())?;
+        }
+        HgObjectType::File => {
+            let mut stdout = stdout();
+            unsafe {
+                ensure_notes(&mut files_meta);
+                resolve_hg(&mut files_meta, rev.as_hg_object_id(), rev.len())
+                    .as_ref()
+                    .and_then(Object::read)
+                    .map(|o| {
+                        stdout.write_all(b"\x01\n")?;
+                        stdout.write_all(o.blob().unwrap().as_bytes())?;
+                        stdout.write_all(b"\x01\n")
+                    })
+                    .transpose()
+                    .and_then(|_| {
+                        stdout.write_all(Object::read(&git_obj).unwrap().blob().unwrap().as_bytes())
+                    })
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -136,6 +299,20 @@ impl FromStr for AbbrevSize {
 #[structopt(setting(AppSettings::SubcommandRequired))]
 #[structopt(setting(AppSettings::VersionlessSubcommands))]
 enum CinnabarCommand {
+    #[structopt(name = "data")]
+    #[structopt(about = "Dump the contents of a mercurial revision")]
+    Data {
+        #[structopt(short = "c")]
+        #[structopt(help = "Open changelog")]
+        changeset: bool,
+        #[structopt(short = "m")]
+        #[structopt(conflicts_with = "changeset")]
+        #[structopt(help = "Open manifest")]
+        manifest: bool,
+        #[structopt(required = true)]
+        #[structopt(help = "Revision")]
+        rev: AbbrevHgObjectId,
+    },
     #[structopt(name = "hg2git")]
     #[structopt(about = "Convert mercurial sha1 to corresponding git sha1")]
     Hg2Git {
@@ -190,6 +367,19 @@ fn git_cinnabar(argv0: *const c_char) -> i32 {
         init_cinnabar_2();
     }
     let ret = match command {
+        Data {
+            changeset,
+            manifest,
+            rev,
+        } => do_data(
+            rev,
+            match (changeset, manifest) {
+                (true, false) => HgObjectType::Changeset,
+                (false, true) => HgObjectType::Manifest,
+                (false, false) => HgObjectType::File,
+                (true, true) => unreachable!(),
+            },
+        ),
         Hg2Git { abbrev, sha1 } => {
             do_hg2git(abbrev.map(|v| v.get(0).map(|a| a.0).unwrap_or(12)), sha1)
         }
@@ -201,7 +391,13 @@ fn git_cinnabar(argv0: *const c_char) -> i32 {
     unsafe {
         done_cinnabar();
     }
-    ret
+    match ret {
+        Ok(()) => 0,
+        Err(msg) => {
+            eprintln!("{}", msg);
+            1
+        }
+    }
 }
 
 pub fn main() {

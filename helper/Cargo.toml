@@ -25,6 +25,7 @@ either = "1"
 hex = "0.4"
 itertools = "0.8"
 libc = "0.2"
+once_cell = "1"
 percent-encoding = "2"
 replace_with = "0.1"
 sha-1 = "0.8"
@@ -45,6 +46,11 @@ features = ["zlib"]
 [dependencies.libz-sys]
 version = "1"
 features = ["static"]
+
+[dependencies.regex]
+version = "1"
+default-features = false
+features = ["std"]
 
 [build-dependencies]
 itertools = "0.8"

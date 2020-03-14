@@ -5,10 +5,12 @@
 use std::borrow::ToOwned;
 use std::convert::TryInto;
 use std::io::{self, copy, Cursor, LineWriter, Read, Seek, SeekFrom, Write};
+use std::mem;
 #[cfg(unix)]
 pub use std::os::unix::ffi::OsStrExt;
 #[cfg(windows)]
 use std::os::windows::ffi;
+use std::str::{self, FromStr};
 use std::sync::mpsc::{channel, Sender};
 use std::thread::{self, JoinHandle};
 
@@ -140,13 +142,15 @@ pub trait SeekExt: Seek {
 
 impl<T: Seek> SeekExt for T {}
 
-pub trait SliceExt {
-    type Item;
-    fn split2(&self, c: Self::Item) -> Option<(&Self, &Self)>;
+pub trait SliceExt<C> {
+    fn split2(&self, c: C) -> Option<(&Self, &Self)>;
+    fn split3(&self, c: C) -> Option<(&Self, &Self, &Self)>;
+    fn rsplit2(&self, c: C) -> Option<(&Self, &Self)>;
+    fn rsplit3(&self, c: C) -> Option<(&Self, &Self, &Self)>;
 }
 
-impl<T: PartialEq> SliceExt for [T] {
-    type Item = T;
+//TODO: generate with macros
+impl<T: PartialEq> SliceExt<T> for [T] {
     fn split2(&self, x: T) -> Option<(&[T], &[T])> {
         let mut iter = self.splitn(2, |i| *i == x);
         match (iter.next(), iter.next()) {
@@ -154,14 +158,97 @@ impl<T: PartialEq> SliceExt for [T] {
             _ => None,
         }
     }
+
+    fn split3(&self, x: T) -> Option<(&[T], &[T], &[T])> {
+        let mut iter = self.splitn(3, |i| *i == x);
+        match (iter.next(), iter.next(), iter.next()) {
+            (Some(a), Some(b), Some(c)) => Some((a, b, c)),
+            _ => None,
+        }
+    }
+
+    fn rsplit2(&self, x: T) -> Option<(&[T], &[T])> {
+        let mut iter = self.rsplitn(2, |i| *i == x);
+        match (iter.next(), iter.next()) {
+            (Some(a), Some(b)) => Some((b, a)),
+            _ => None,
+        }
+    }
+
+    fn rsplit3(&self, x: T) -> Option<(&[T], &[T], &[T])> {
+        let mut iter = self.rsplitn(3, |i| *i == x);
+        match (iter.next(), iter.next(), iter.next()) {
+            (Some(a), Some(b), Some(c)) => Some((c, b, a)),
+            _ => None,
+        }
+    }
 }
 
-impl SliceExt for str {
-    type Item = char;
+impl SliceExt<char> for str {
     fn split2(&self, c: char) -> Option<(&str, &str)> {
         let mut iter = self.splitn(2, c);
         match (iter.next(), iter.next()) {
             (Some(a), Some(b)) => Some((a, b)),
+            _ => None,
+        }
+    }
+
+    fn split3(&self, c: char) -> Option<(&str, &str, &str)> {
+        let mut iter = self.splitn(3, c);
+        match (iter.next(), iter.next(), iter.next()) {
+            (Some(a), Some(b), Some(c)) => Some((a, b, c)),
+            _ => None,
+        }
+    }
+
+    fn rsplit2(&self, c: char) -> Option<(&str, &str)> {
+        let mut iter = self.rsplitn(2, c);
+        match (iter.next(), iter.next()) {
+            (Some(a), Some(b)) => Some((b, a)),
+            _ => None,
+        }
+    }
+
+    fn rsplit3(&self, c: char) -> Option<(&str, &str, &str)> {
+        let mut iter = self.rsplitn(3, c);
+        match (iter.next(), iter.next(), iter.next()) {
+            (Some(a), Some(b), Some(c)) => Some((c, b, a)),
+            _ => None,
+        }
+    }
+}
+
+impl SliceExt<&[u8]> for [u8] {
+    fn split2(&self, b: &[u8]) -> Option<(&[u8], &[u8])> {
+        // Safety: This works around ByteSlice::splitn_str being too restrictive.
+        // https://github.com/BurntSushi/bstr/issues/45
+        let mut iter = self.splitn_str(2, unsafe { mem::transmute::<_, &[u8]>(b) });
+        match (iter.next(), iter.next()) {
+            (Some(a), Some(b)) => Some((a, b)),
+            _ => None,
+        }
+    }
+
+    fn split3(&self, b: &[u8]) -> Option<(&[u8], &[u8], &[u8])> {
+        let mut iter = self.splitn_str(3, unsafe { mem::transmute::<_, &[u8]>(b) });
+        match (iter.next(), iter.next(), iter.next()) {
+            (Some(a), Some(b), Some(c)) => Some((a, b, c)),
+            _ => None,
+        }
+    }
+
+    fn rsplit2(&self, b: &[u8]) -> Option<(&[u8], &[u8])> {
+        let mut iter = self.rsplitn_str(2, unsafe { mem::transmute::<_, &[u8]>(b) });
+        match (iter.next(), iter.next()) {
+            (Some(a), Some(b)) => Some((b, a)),
+            _ => None,
+        }
+    }
+
+    fn rsplit3(&self, b: &[u8]) -> Option<(&[u8], &[u8], &[u8])> {
+        let mut iter = self.rsplitn_str(3, unsafe { mem::transmute::<_, &[u8]>(b) });
+        match (iter.next(), iter.next(), iter.next()) {
+            (Some(a), Some(b), Some(c)) => Some((c, b, a)),
             _ => None,
         }
     }
@@ -177,5 +264,18 @@ impl OsStrExt for std::ffi::OsStr {
     // git assumes everything is UTF-8-valid on Windows
     fn as_bytes(&self) -> &[u8] {
         self.to_str().unwrap().as_bytes()
+    }
+}
+
+pub trait FromBytes: Sized {
+    type Err;
+    fn from_bytes(b: &[u8]) -> Result<Self, Self::Err>;
+}
+
+impl<T: FromStr> FromBytes for T {
+    type Err = <T as FromStr>::Err;
+    fn from_bytes(b: &[u8]) -> Result<Self, Self::Err> {
+        //TODO: convert the error from str::from_utf8 to Self::Err
+        Self::from_str(str::from_utf8(b).unwrap())
     }
 }
