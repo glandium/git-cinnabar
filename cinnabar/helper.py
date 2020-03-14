@@ -179,7 +179,7 @@ class BaseHelper(object):
                     BaseHelper._helper_hash = helper_hash() or False
                     if BaseHelper._helper_hash is not False and \
                             BaseHelper._helper_hash != self._revision and \
-                            version <= self.VERSION:
+                            self._version <= self.VERSION:
                         try:
                             self._helper_error('outdated')
                         except NoHelperAbort as e:
