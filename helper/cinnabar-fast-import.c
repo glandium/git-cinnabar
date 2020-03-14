@@ -479,7 +479,7 @@ static void do_set(struct string_list *args)
 			                           NULL) != OBJ_BLOB) {
 				die("Invalid object");
 			} else {
-				add_note(notes, note, &git_id, NULL);
+				add_note(notes, note, &git_id);
 			}
 		} else if (!is_null_oid(&git_id))
 			die("Invalid sha1");

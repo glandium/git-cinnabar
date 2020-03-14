@@ -113,7 +113,7 @@ int add_note_hg(struct notes_tree *notes,
 {
 	struct object_id git_oid;
 	hg_oidcpy2git(&git_oid, oid);
-	return cinnabar_add_note(notes, &git_oid, note_oid, NULL);
+	return cinnabar_add_note(notes, &git_oid, note_oid);
 }
 
 int remove_note_hg(struct notes_tree *notes,

@@ -123,10 +123,9 @@ void cinnabar_free_notes(struct cinnabar_notes_tree *t)
 
 int cinnabar_add_note(
 	struct cinnabar_notes_tree *t, const struct object_id *object_oid,
-	const struct object_id *note_oid, combine_notes_fn combine_notes)
+	const struct object_id *note_oid)
 {
-	if (!combine_notes)
-		combine_notes = t->current.combine_notes;
+	combine_notes_fn combine_notes = t->current.combine_notes;
 	if (combine_notes == combine_notes_ignore) {
 		if (get_note(&t->current, object_oid))
 			return 0;

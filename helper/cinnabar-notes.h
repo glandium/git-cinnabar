@@ -43,7 +43,7 @@ void free_notes(struct notes_tree *t);
 
 extern int add_note(
 	struct notes_tree *t, const struct object_id *object_oid,
-	const struct object_id *note_oid, combine_notes_fn combine_notes);
+	const struct object_id *note_oid);
 
 int remove_note(struct notes_tree *t, const unsigned char *object_sha1);
 
