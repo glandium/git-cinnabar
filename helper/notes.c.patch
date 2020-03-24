@@ -1,5 +1,5 @@
 diff --git a/notes.c b/notes.c
-index 0c79964c26..e0b0032133 100644
+index 564baac64d..26c320fb53 100644
 --- a/notes.c
 +++ b/notes.c
 @@ -417,11 +417,6 @@ static void load_subtree(struct notes_tree *t, struct leaf_node *subtree,
@@ -14,15 +14,15 @@ index 0c79964c26..e0b0032133 100644
  			if (hex_to_bytes(object_oid.hash + prefix_len, entry.path,
  					 hashsz - prefix_len))
  				goto handle_non_note; /* entry.path is not a SHA1 */
-@@ -724,6 +719,7 @@ static int write_each_note_helper(struct tree_write_stack *tws,
- struct write_each_note_data {
+@@ -725,6 +720,7 @@ struct write_each_note_data {
  	struct tree_write_stack *root;
- 	struct non_note *next_non_note;
+ 	struct non_note **nn_list;
+ 	struct non_note *nn_prev;
 +	unsigned int note_mode;
  };
  
  static int write_each_non_note_until(const char *note_path,
-@@ -753,7 +749,7 @@ static int write_each_note(const struct object_id *object_oid,
+@@ -756,7 +752,7 @@ static int write_each_note(const struct object_id *object_oid,
  	struct write_each_note_data *d =
  		(struct write_each_note_data *) cb_data;
  	size_t note_path_len = strlen(note_path);
@@ -31,7 +31,7 @@ index 0c79964c26..e0b0032133 100644
  
  	if (note_path[note_path_len - 1] == '/') {
  		/* subtree entry */
-@@ -1161,7 +1157,8 @@ int for_each_note(struct notes_tree *t, int flags, each_note_fn fn,
+@@ -1164,7 +1160,8 @@ int for_each_note(struct notes_tree *t, int flags, each_note_fn fn,
  	return for_each_note_helper(t, t->root, 0, 0, flags, fn, cb_data);
  }
  
@@ -41,15 +41,15 @@ index 0c79964c26..e0b0032133 100644
  {
  	struct tree_write_stack root;
  	struct write_each_note_data cb_data;
-@@ -1178,6 +1175,7 @@ int write_notes_tree(struct notes_tree *t, struct object_id *result)
- 	root.path[0] = root.path[1] = '\0';
+@@ -1182,6 +1179,7 @@ int write_notes_tree(struct notes_tree *t, struct object_id *result)
  	cb_data.root = &root;
- 	cb_data.next_non_note = t->first_non_note;
+ 	cb_data.nn_list = &(t->first_non_note);
+ 	cb_data.nn_prev = NULL;
 +	cb_data.note_mode = mode;
  
  	/* Write tree objects representing current notes tree */
  	flags = FOR_EACH_NOTE_DONT_UNPACK_SUBTREES |
-@@ -1190,6 +1188,11 @@ int write_notes_tree(struct notes_tree *t, struct object_id *result)
+@@ -1194,6 +1192,11 @@ int write_notes_tree(struct notes_tree *t, struct object_id *result)
  	return ret;
  }
  

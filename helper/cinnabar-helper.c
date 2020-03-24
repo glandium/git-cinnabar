@@ -188,7 +188,7 @@ static void send_object(const struct object_id *oid)
 	unsigned long sz;
 	struct git_istream *st;
 
-	st = open_istream(oid, &type, &sz, NULL);
+	st = open_istream(the_repository, oid, &type, &sz, NULL);
 
 	if (!st)
 		die("open_istream failed for %s", oid_to_hex(oid));
@@ -1758,6 +1758,7 @@ static void reset_replace_map()
 {
 	oidmap_free(the_repository->objects->replace_map, 1);
 	FREE_AND_NULL(the_repository->objects->replace_map);
+	the_repository->objects->replace_map_initialized = 0;
 }
 
 static void init_metadata()
@@ -1792,6 +1793,7 @@ static void init_metadata()
 	the_repository->objects->replace_map =
 		xmalloc(sizeof(*the_repository->objects->replace_map));
 	oidmap_init(the_repository->objects->replace_map, 0);
+	the_repository->objects->replace_map_initialized = 1;
 
 	tree = get_commit_tree(c);
 	parse_tree(tree);
