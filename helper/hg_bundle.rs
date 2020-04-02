@@ -77,7 +77,7 @@ fn decompress_bundlev2_header<R: Read>(
     }
     let params = params.join(" ");
     buf.write_u32::<BigEndian>(params.len().try_into().unwrap())?;
-    buf.write(params.as_bytes())?;
+    buf.write_all(params.as_bytes())?;
     Ok(compression)
 }
 
