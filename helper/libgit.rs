@@ -10,12 +10,14 @@ use std::io::{self, Write};
 use std::os::raw::{c_char, c_int, c_long, c_ulong};
 use std::str::FromStr;
 
+use bstr::ByteSlice;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use derive_more::{Deref, Display};
+use getset::Getters;
 use sha1::{Digest, Sha1};
 
 use crate::libcinnabar::{git2hg, hg_object_id};
-use crate::util::FromBytes;
+use crate::util::{FromBytes, SliceExt};
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -367,6 +369,13 @@ macro_rules! oid_type {
                 $name(oid)
             }
         }
+
+        impl FromBytes for $name {
+            type Err = <object_id as FromBytes>::Err;
+            fn from_bytes(b: &[u8]) -> Result<Self, Self::Err> {
+                object_id::from_bytes(b).map(Self)
+            }
+        }
     };
 }
 
@@ -393,6 +402,54 @@ macro_rules! raw_object {
 raw_object!(OBJ_COMMIT | CommitId => RawCommit);
 raw_object!(OBJ_TREE | TreeId => RawTree);
 raw_object!(OBJ_BLOB | BlobId => RawBlob);
+
+#[derive(Getters)]
+pub struct Commit<'a> {
+    #[getset(get = "pub")]
+    tree: TreeId,
+    parents: Vec<CommitId>,
+    #[getset(get = "pub")]
+    author: &'a [u8],
+    #[getset(get = "pub")]
+    committer: &'a [u8],
+    #[getset(get = "pub")]
+    body: &'a [u8],
+}
+
+impl<'a> Commit<'a> {
+    pub fn parents(&self) -> &[CommitId] {
+        &self.parents[..]
+    }
+}
+
+impl RawCommit {
+    pub fn parse(&self) -> Option<Commit> {
+        let (header, body) = self.as_bytes().split2(&b"\n\n"[..])?;
+        let mut tree = None;
+        let mut parents = Vec::new();
+        let mut author = None;
+        let mut committer = None;
+        for line in header.lines() {
+            if line.is_empty() {
+                break;
+            }
+            match line.split2(b' ')? {
+                (b"tree", t) => tree = Some(TreeId::from_bytes(t).ok()?),
+                (b"parent", p) => parents.push(CommitId::from_bytes(p).ok()?),
+                (b"author", a) => author = Some(a),
+                (b"committer", a) => committer = Some(a),
+                _ => {}
+            }
+        }
+        Some(Commit {
+            tree: tree?,
+            parents,
+            author: author?,
+            committer: committer?,
+            body,
+        })
+    }
+}
 
 #[repr(C)]
 pub struct notes_tree {

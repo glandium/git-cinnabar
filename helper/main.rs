@@ -123,26 +123,11 @@ fn do_data(rev: AbbrevHgObjectId, typ: HgObjectType) -> Result<(), String> {
             let metadata = RawBlob::read(&note).unwrap();
             let metadata = metadata.as_bytes();
             let commit = RawCommit::read(&CommitId::from(git_obj)).unwrap();
-            let commit = commit.as_bytes();
-            let (header, body) = commit.split2(&b"\n\n"[..]).unwrap();
-            let mut parents = Vec::new();
-            let mut author = None;
-            let mut committer = None;
-            for line in header.lines() {
-                if line.is_empty() {
-                    break;
-                }
-                match line.split2(b' ').unwrap() {
-                    (b"parent", p) => parents.push(object_id::from_bytes(p).unwrap()),
-                    (b"author", a) => author = Some(a),
-                    (b"committer", c) => committer = Some(c),
-                    _ => {}
-                }
-            }
+            let commit = commit.parse().unwrap();
             let (mut hg_author, hg_timestamp, hg_utcoffset) =
-                Authorship::from_git_bytes(author.unwrap()).to_hg_parts();
-            let hg_committer = if author != committer {
-                Some(Authorship::from_git_bytes(committer.unwrap()).to_hg_bytes())
+                Authorship::from_git_bytes(commit.author()).to_hg_parts();
+            let hg_committer = if commit.author() != commit.committer() {
+                Some(Authorship::from_git_bytes(commit.committer()).to_hg_bytes())
             } else {
                 None
             };
@@ -205,7 +190,7 @@ fn do_data(rev: AbbrevHgObjectId, typ: HgObjectType) -> Result<(), String> {
                 }
             }
             changeset.extend_from_slice(b"\n\n");
-            changeset.extend_from_slice(body);
+            changeset.extend_from_slice(commit.body());
 
             if let Some(patch) = patch {
                 let mut patched = Vec::new();
@@ -230,7 +215,8 @@ fn do_data(rev: AbbrevHgObjectId, typ: HgObjectType) -> Result<(), String> {
             let mut changeset = &changeset[..];
             while let [adjusted @ .., b'\0'] = changeset {
                 let mut hash = hg_object_id::create();
-                let mut parents = parents
+                let mut parents = commit
+                    .parents()
                     .iter()
                     .map(|p| p.to_hg().unwrap())
                     .collect::<Vec<_>>();
