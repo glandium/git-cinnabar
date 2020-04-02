@@ -5,8 +5,6 @@
 #[macro_use]
 extern crate cstr;
 
-use bstr::ByteSlice;
-use percent_encoding::percent_decode;
 use structopt::clap::{crate_version, AppSettings};
 use structopt::StructOpt;
 
@@ -14,6 +12,7 @@ use structopt::StructOpt;
 pub mod libgit;
 mod libc;
 mod libcinnabar;
+pub mod store;
 mod util;
 
 pub(crate) mod hg_bundle;
@@ -23,7 +22,6 @@ pub(crate) mod hg_connect_http;
 pub(crate) mod hg_connect_stdio;
 pub(crate) mod hg_data;
 
-use std::borrow::Cow;
 use std::convert::TryInto;
 use std::ffi::CString;
 use std::ffi::OsString;
@@ -39,13 +37,14 @@ use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 
 use hg_data::Authorship;
 use libcinnabar::{
-    ensure_notes, files_meta, generate_manifest, git2hg, hg_object_id, resolve_hg, AbbrevHgObjectId,
+    ensure_notes, files_meta, generate_manifest, hg_object_id, resolve_hg, AbbrevHgObjectId,
 };
 use libgit::{
-    get_note, object_id, repo_get_oid_committish, strbuf, the_repository, BlobId, CommitId,
-    RawBlob, RawCommit,
+    object_id, repo_get_oid_committish, strbuf, the_repository, BlobId, CommitId, RawBlob,
+    RawCommit,
 };
-use util::{FromBytes, OsStrExt, SliceExt};
+use store::{ChangesetExtra, GitChangesetId, GitChangesetMetadata, HgChangesetId};
+use util::OsStrExt;
 
 const HELPER_HASH: &str = env!("HELPER_HASH");
 
@@ -90,16 +89,15 @@ fn do_hg2git(abbrev: Option<usize>, sha1s: Vec<AbbrevHgObjectId>) -> Result<(), 
 fn do_git2hg(abbrev: Option<usize>, committish: Vec<OsString>) -> Result<(), String> {
     let abbrev = abbrev.unwrap_or(40);
     unsafe {
-        ensure_notes(&mut git2hg);
         for c in &committish {
-            let mut oid = object_id::null();
+            let mut oid = GitChangesetId::null();
             let c = CString::new(c.as_bytes()).unwrap();
-            let note = if repo_get_oid_committish(the_repository, c.as_ptr(), &mut oid) == 0 {
+            let note = if repo_get_oid_committish(the_repository, c.as_ptr(), &mut **oid) == 0 {
                 oid.to_hg()
             } else {
                 None
             };
-            let hex = format!("{}", note.unwrap_or_else(hg_object_id::null));
+            let hex = format!("{}", note.unwrap_or_else(HgChangesetId::null));
             println!("{}", &hex[..abbrev]);
         }
     }
@@ -118,11 +116,8 @@ fn do_data(rev: AbbrevHgObjectId, typ: HgObjectType) -> Result<(), String> {
         .ok_or_else(|| format!("Unknown revision: {}", rev))?;
     match typ {
         HgObjectType::Changeset => unsafe {
-            ensure_notes(&mut git2hg);
-            let note = BlobId::from(get_note(&mut git2hg, &git_obj).as_ref().unwrap().clone());
-            let metadata = RawBlob::read(&note).unwrap();
-            let metadata = metadata.as_bytes();
-            let commit = RawCommit::read(&CommitId::from(git_obj)).unwrap();
+            let commit_id = CommitId::from(git_obj);
+            let commit = RawCommit::read(&commit_id).unwrap();
             let commit = commit.parse().unwrap();
             let (mut hg_author, hg_timestamp, hg_utcoffset) =
                 Authorship::from_git_bytes(commit.author()).to_hg_parts();
@@ -131,79 +126,42 @@ fn do_data(rev: AbbrevHgObjectId, typ: HgObjectType) -> Result<(), String> {
             } else {
                 None
             };
-            let mut node = None;
-            let mut manifest = hg_object_id::null();
-            let mut extra = None;
-            let mut files = None;
-            let mut patch = None;
-            for line in metadata.lines() {
-                match line.split2(b' ').unwrap() {
-                    (b"changeset", c) => node = Some(hg_object_id::from_bytes(c).unwrap()),
-                    (b"manifest", m) => manifest = hg_object_id::from_bytes(m).unwrap(),
-                    (b"author", a) => hg_author = a.to_owned(),
-                    (b"extra", e) => extra = Some(e),
-                    (b"files", f) => files = Some(f),
-                    (b"patch", p) => patch = Some(p),
-                    _ => panic!("Malformed metadata"),
-                }
-            }
+            let hg_committer = hg_committer.as_ref();
 
+            let metadata = GitChangesetMetadata::read(&GitChangesetId::from(commit_id)).unwrap();
+            let metadata = metadata.parse().unwrap();
+            if let Some(author) = metadata.author() {
+                hg_author = author.to_owned();
+            }
+            let mut extra = metadata.extra();
+            if let Some(hg_committer) = hg_committer {
+                extra
+                    .get_or_insert_with(ChangesetExtra::new)
+                    .set(b"committer", &hg_committer);
+            };
             let mut changeset = Vec::new();
-            writeln!(changeset, "{}", manifest).unwrap();
+            writeln!(changeset, "{}", metadata.manifest_id()).unwrap();
             changeset.extend_from_slice(&hg_author);
             changeset.push(b'\n');
             changeset.extend_from_slice(&hg_timestamp);
             changeset.push(b' ');
             changeset.extend_from_slice(&hg_utcoffset);
-            if extra.is_some() || hg_committer.is_some() {
+            if let Some(extra) = extra {
                 changeset.push(b' ');
-                let hg_committer = hg_committer.map(|c| {
-                    let mut hg_committer = Vec::new();
-                    hg_committer.extend_from_slice(b"committer:");
-                    hg_committer.extend_from_slice(&c);
-                    hg_committer
-                });
-                match (extra, hg_committer) {
-                    (Some(extra), None) => changeset.extend_from_slice(&extra),
-                    (None, Some(hg_committer)) => changeset.extend_from_slice(&hg_committer),
-                    (Some(extra), Some(hg_committer)) => {
-                        let mut extra = extra.split(|c| *c == b'\0');
-                        let mut new_extra = (&mut extra)
-                            .take_while(|e| *e < &b"committer:"[..])
-                            .collect::<Vec<_>>();
-                        let mut hg_committer_extra = Vec::new();
-                        hg_committer_extra.extend_from_slice(b"committer:");
-                        hg_committer_extra.extend_from_slice(&hg_committer);
-                        new_extra.push(&hg_committer_extra);
-                        new_extra.extend(extra.skip_while(|e| *e <= &b"committer:"[..]));
-                        changeset.extend_from_slice(&new_extra.join(&b"\0"[..]));
-                    }
-                    (None, None) => unreachable!(),
-                }
+                extra.dump_into(&mut changeset);
             }
-            if let Some(files) = files {
-                let mut files = files.split(|c| *c == b'\0').collect::<Vec<_>>();
-                files.sort();
-                for f in &files {
-                    changeset.push(b'\n');
-                    changeset.extend_from_slice(f);
-                }
+            let mut files = metadata.files().collect::<Vec<_>>();
+            //TODO: probably don't actually need sorting.
+            files.sort();
+            for f in &files {
+                changeset.push(b'\n');
+                changeset.extend_from_slice(f);
             }
             changeset.extend_from_slice(b"\n\n");
             changeset.extend_from_slice(commit.body());
 
-            if let Some(patch) = patch {
-                let mut patched = Vec::new();
-                let mut last_end = 0;
-                for part in patch.split(|c| *c == b'\0') {
-                    let (start, end, data) = part.split3(b',').unwrap();
-                    let start: usize = usize::from_bytes(start).unwrap();
-                    let data = Cow::from(percent_decode(data));
-                    patched.extend_from_slice(&changeset[last_end..start]);
-                    patched.extend_from_slice(&data);
-                    last_end = usize::from_bytes(end).unwrap();
-                }
-                patched.extend_from_slice(&changeset[last_end..]);
+            if let Some(patch) = metadata.patch() {
+                let mut patched = patch.apply(&changeset).unwrap();
                 mem::swap(&mut changeset, &mut patched);
             }
 
@@ -211,21 +169,21 @@ fn do_data(rev: AbbrevHgObjectId, typ: HgObjectType) -> Result<(), String> {
             // TODO: when creating the git2hg metadata moves to Rust, we can
             // create a patch instead, which would be handled above instead of
             // manually here.
-            let node = node.unwrap();
+            let node = metadata.changeset_id();
             let mut changeset = &changeset[..];
             while let [adjusted @ .., b'\0'] = changeset {
                 let mut hash = hg_object_id::create();
                 let mut parents = commit
                     .parents()
                     .iter()
-                    .map(|p| p.to_hg().unwrap())
+                    .map(|p| GitChangesetId::from(p.clone()).to_hg().unwrap())
                     .collect::<Vec<_>>();
                 parents.sort();
-                for p in parents.iter().chain(repeat(&hg_object_id::null())).take(2) {
+                for p in parents.iter().chain(repeat(&HgChangesetId::null())).take(2) {
                     hash.input(p.as_bytes());
                 }
                 hash.input(&changeset);
-                if hash.result() == node {
+                if hash.result() == **node {
                     break;
                 }
                 changeset = adjusted;

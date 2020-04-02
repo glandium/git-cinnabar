@@ -12,11 +12,10 @@ use std::str::FromStr;
 
 use bstr::ByteSlice;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
-use derive_more::{Deref, Display};
+use derive_more::{Deref, DerefMut, Display};
 use getset::Getters;
 use sha1::{Digest, Sha1};
 
-use crate::libcinnabar::{git2hg, hg_object_id};
 use crate::util::{FromBytes, SliceExt};
 
 #[allow(non_camel_case_types)]
@@ -100,23 +99,6 @@ impl object_id {
 
     pub const fn null() -> object_id {
         object_id([0; GIT_MAX_RAWSZ])
-    }
-
-    pub fn to_hg(&self) -> Option<hg_object_id> {
-        unsafe {
-            get_note(
-                &mut git2hg,
-                repo_lookup_replace_object(the_repository, self),
-            )
-            .as_ref()
-            .map(|oid| BlobId::from(oid.clone()))
-            .and_then(|oid| RawBlob::read(&oid))
-            .map(|o| {
-                let blob_buf = o.as_bytes();
-                assert!(blob_buf.starts_with(b"changeset "));
-                hg_object_id::from_bytes(&blob_buf[b"changeset ".len()..][..40]).unwrap()
-            })
-        }
     }
 }
 
@@ -355,33 +337,34 @@ impl Drop for RawObject {
     }
 }
 
+#[macro_export]
 macro_rules! oid_type {
-    ($name:ident) => {
-        #[derive(Clone, Deref, Display, Eq, PartialEq, Ord, PartialOrd)]
-        pub struct $name(object_id);
+    ($name:ident($oid_type:ident)) => {
+        #[derive(Clone, Deref, DerefMut, Display, Eq, PartialEq, Ord, PartialOrd)]
+        pub struct $name($oid_type);
 
         impl $name {
             pub fn null() -> Self {
-                $name(object_id::null())
+                $name($oid_type::null())
             }
 
-            pub unsafe fn from(oid: object_id) -> Self {
+            pub unsafe fn from(oid: $oid_type) -> Self {
                 $name(oid)
             }
         }
 
         impl FromBytes for $name {
-            type Err = <object_id as FromBytes>::Err;
+            type Err = <$oid_type as FromBytes>::Err;
             fn from_bytes(b: &[u8]) -> Result<Self, Self::Err> {
-                object_id::from_bytes(b).map(Self)
+                $oid_type::from_bytes(b).map(Self)
             }
         }
     };
 }
 
-oid_type!(CommitId);
-oid_type!(TreeId);
-oid_type!(BlobId);
+oid_type!(CommitId(object_id));
+oid_type!(TreeId(object_id));
+oid_type!(BlobId(object_id));
 
 macro_rules! raw_object {
     ($t:ident | $oid_type:ident => $name:ident) => {

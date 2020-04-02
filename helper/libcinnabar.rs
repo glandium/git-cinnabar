@@ -14,7 +14,7 @@ use crate::libgit::{child_process, notes_tree, object_id, strbuf};
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct hg_object_id([u8; 20]);
 
 //TODO: Share code with object_id.
@@ -155,6 +155,8 @@ extern "C" {
     pub static mut files_meta: notes_tree;
 
     pub fn ensure_notes(t: *mut notes_tree);
+
+    pub fn get_note_hg(notes: *mut notes_tree, oid: *const hg_object_id) -> *const object_id;
 
     pub fn resolve_hg(t: *mut notes_tree, oid: *const hg_object_id, len: usize)
         -> *const object_id;
