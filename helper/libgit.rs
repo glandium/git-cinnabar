@@ -11,6 +11,7 @@ use std::os::raw::{c_char, c_int, c_long, c_ulong};
 use std::str::FromStr;
 
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
+use derive_more::{Deref, Display};
 use sha1::{Digest, Sha1};
 
 use crate::libcinnabar::{git2hg, hg_object_id};
@@ -106,9 +107,10 @@ impl object_id {
                 repo_lookup_replace_object(the_repository, self),
             )
             .as_ref()
-            .and_then(Object::read)
+            .map(|oid| BlobId::from(oid.clone()))
+            .and_then(|oid| RawBlob::read(&oid))
             .map(|o| {
-                let blob_buf = o.blob().unwrap().as_bytes();
+                let blob_buf = o.as_bytes();
                 assert!(blob_buf.starts_with(b"changeset "));
                 hg_object_id::from_bytes(&blob_buf[b"changeset ".len()..][..40]).unwrap()
             })
@@ -318,14 +320,13 @@ extern "C" {
     ) -> *const c_void;
 }
 
-pub enum Object {
-    Commit(RawObject),
-    Tree(RawObject),
-    Blob(RawObject),
+pub struct RawObject {
+    buf: *const c_void,
+    len: usize,
 }
 
-impl Object {
-    pub fn read(oid: &object_id) -> Option<Self> {
+impl RawObject {
+    fn read(oid: &object_id) -> Option<(object_type, RawObject)> {
         let mut t = object_type::OBJ_NONE;
         let mut len: c_ulong = 0;
         let buf = unsafe { read_object_file_extended(the_repository, oid, &mut t, &mut len, 0) };
@@ -336,35 +337,9 @@ impl Object {
             buf,
             len: len.try_into().unwrap(),
         };
-        match t {
-            object_type::OBJ_COMMIT => Some(Object::Commit(raw)),
-            object_type::OBJ_TREE => Some(Object::Tree(raw)),
-            object_type::OBJ_BLOB => Some(Object::Blob(raw)),
-            _ => None,
-        }
+        Some((t, raw))
     }
 
-    pub fn blob(&self) -> Option<&RawObject> {
-        match self {
-            Object::Blob(r) => Some(r),
-            _ => None,
-        }
-    }
-
-    pub fn commit(&self) -> Option<&RawObject> {
-        match self {
-            Object::Commit(r) => Some(r),
-            _ => None,
-        }
-    }
-}
-
-pub struct RawObject {
-    buf: *const c_void,
-    len: usize,
-}
-
-impl RawObject {
     pub fn as_bytes(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.buf as *const u8, self.len) }
     }
@@ -377,6 +352,47 @@ impl Drop for RawObject {
         }
     }
 }
+
+macro_rules! oid_type {
+    ($name:ident) => {
+        #[derive(Clone, Deref, Display, Eq, PartialEq, Ord, PartialOrd)]
+        pub struct $name(object_id);
+
+        impl $name {
+            pub fn null() -> Self {
+                $name(object_id::null())
+            }
+
+            pub unsafe fn from(oid: object_id) -> Self {
+                $name(oid)
+            }
+        }
+    };
+}
+
+oid_type!(CommitId);
+oid_type!(TreeId);
+oid_type!(BlobId);
+
+macro_rules! raw_object {
+    ($t:ident | $oid_type:ident => $name:ident) => {
+        #[derive(Deref)]
+        pub struct $name(RawObject);
+
+        impl $name {
+            pub fn read(oid: &$oid_type) -> Option<Self> {
+                match RawObject::read(oid)? {
+                    (object_type::$t, o) => Some($name(o)),
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+raw_object!(OBJ_COMMIT | CommitId => RawCommit);
+raw_object!(OBJ_TREE | TreeId => RawTree);
+raw_object!(OBJ_BLOB | BlobId => RawBlob);
 
 #[repr(C)]
 pub struct notes_tree {

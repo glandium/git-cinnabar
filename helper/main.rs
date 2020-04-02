@@ -11,7 +11,7 @@ use structopt::clap::{crate_version, AppSettings};
 use structopt::StructOpt;
 
 #[macro_use]
-mod libgit;
+pub mod libgit;
 mod libc;
 mod libcinnabar;
 mod util;
@@ -41,7 +41,10 @@ use hg_data::Authorship;
 use libcinnabar::{
     ensure_notes, files_meta, generate_manifest, git2hg, hg_object_id, resolve_hg, AbbrevHgObjectId,
 };
-use libgit::{get_note, object_id, repo_get_oid_committish, strbuf, the_repository, Object};
+use libgit::{
+    get_note, object_id, repo_get_oid_committish, strbuf, the_repository, BlobId, CommitId,
+    RawBlob, RawCommit,
+};
 use util::{FromBytes, OsStrExt, SliceExt};
 
 const HELPER_HASH: &str = env!("HELPER_HASH");
@@ -116,11 +119,11 @@ fn do_data(rev: AbbrevHgObjectId, typ: HgObjectType) -> Result<(), String> {
     match typ {
         HgObjectType::Changeset => unsafe {
             ensure_notes(&mut git2hg);
-            let note = get_note(&mut git2hg, &git_obj).as_ref().unwrap();
-            let metadata = Object::read(note).unwrap();
-            let metadata = metadata.blob().unwrap().as_bytes();
-            let commit = Object::read(&git_obj).unwrap();
-            let commit = commit.commit().unwrap().as_bytes();
+            let note = BlobId::from(get_note(&mut git2hg, &git_obj).as_ref().unwrap().clone());
+            let metadata = RawBlob::read(&note).unwrap();
+            let metadata = metadata.as_bytes();
+            let commit = RawCommit::read(&CommitId::from(git_obj)).unwrap();
+            let commit = commit.as_bytes();
             let (header, body) = commit.split2(&b"\n\n"[..]).unwrap();
             let mut parents = Vec::new();
             let mut author = None;
@@ -256,15 +259,20 @@ fn do_data(rev: AbbrevHgObjectId, typ: HgObjectType) -> Result<(), String> {
                 ensure_notes(&mut files_meta);
                 resolve_hg(&mut files_meta, rev.as_hg_object_id(), rev.len())
                     .as_ref()
-                    .and_then(Object::read)
+                    .map(|oid| BlobId::from(oid.clone()))
+                    .and_then(|oid| RawBlob::read(&oid))
                     .map(|o| {
                         stdout.write_all(b"\x01\n")?;
-                        stdout.write_all(o.blob().unwrap().as_bytes())?;
+                        stdout.write_all(o.as_bytes())?;
                         stdout.write_all(b"\x01\n")
                     })
                     .transpose()
                     .and_then(|_| {
-                        stdout.write_all(Object::read(&git_obj).unwrap().blob().unwrap().as_bytes())
+                        stdout.write_all(
+                            RawBlob::read(&BlobId::from(git_obj.clone()))
+                                .unwrap()
+                                .as_bytes(),
+                        )
                     })
                     .map_err(|e| e.to_string())?;
             }
