@@ -188,7 +188,6 @@ fn do_data(rev: AbbrevHgObjectId, typ: HgObjectType) -> Result<(), String> {
                 }
                 changeset = adjusted;
             }
-            //TODO: adjustement, per end of ChangesetPatcher.apply
             stdout().write_all(&changeset).map_err(|e| e.to_string())?;
         },
         HgObjectType::Manifest => {
