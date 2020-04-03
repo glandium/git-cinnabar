@@ -26,8 +26,6 @@ use std::convert::TryInto;
 use std::ffi::CString;
 use std::ffi::OsString;
 use std::io::{stdout, Write};
-use std::iter::repeat;
-use std::mem;
 use std::os::raw::c_char;
 use std::os::raw::c_int;
 use std::str::{self, FromStr};
@@ -35,15 +33,11 @@ use std::str::{self, FromStr};
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 
-use hg_data::Authorship;
-use libcinnabar::{
-    ensure_notes, files_meta, generate_manifest, hg_object_id, resolve_hg, AbbrevHgObjectId,
-};
+use libcinnabar::{ensure_notes, files_meta, generate_manifest, resolve_hg, AbbrevHgObjectId};
 use libgit::{
     object_id, repo_get_oid_committish, strbuf, the_repository, BlobId, CommitId, RawBlob,
-    RawCommit,
 };
-use store::{ChangesetExtra, GitChangesetId, GitChangesetMetadata, HgChangesetId};
+use store::{GitChangesetId, HgChangesetId, RawHgChangeset};
 use util::OsStrExt;
 
 const HELPER_HASH: &str = env!("HELPER_HASH");
@@ -116,78 +110,8 @@ fn do_data(rev: AbbrevHgObjectId, typ: HgObjectType) -> Result<(), String> {
         .ok_or_else(|| format!("Unknown revision: {}", rev))?;
     match typ {
         HgObjectType::Changeset => unsafe {
-            let commit_id = CommitId::from(git_obj);
-            let commit = RawCommit::read(&commit_id).unwrap();
-            let commit = commit.parse().unwrap();
-            let (mut hg_author, hg_timestamp, hg_utcoffset) =
-                Authorship::from_git_bytes(commit.author()).to_hg_parts();
-            let hg_committer = if commit.author() != commit.committer() {
-                Some(Authorship::from_git_bytes(commit.committer()).to_hg_bytes())
-            } else {
-                None
-            };
-            let hg_committer = hg_committer.as_ref();
-
-            let metadata = GitChangesetMetadata::read(&GitChangesetId::from(commit_id)).unwrap();
-            let metadata = metadata.parse().unwrap();
-            if let Some(author) = metadata.author() {
-                hg_author = author.to_owned();
-            }
-            let mut extra = metadata.extra();
-            if let Some(hg_committer) = hg_committer {
-                extra
-                    .get_or_insert_with(ChangesetExtra::new)
-                    .set(b"committer", &hg_committer);
-            };
-            let mut changeset = Vec::new();
-            writeln!(changeset, "{}", metadata.manifest_id()).unwrap();
-            changeset.extend_from_slice(&hg_author);
-            changeset.push(b'\n');
-            changeset.extend_from_slice(&hg_timestamp);
-            changeset.push(b' ');
-            changeset.extend_from_slice(&hg_utcoffset);
-            if let Some(extra) = extra {
-                changeset.push(b' ');
-                extra.dump_into(&mut changeset);
-            }
-            let mut files = metadata.files().collect::<Vec<_>>();
-            //TODO: probably don't actually need sorting.
-            files.sort();
-            for f in &files {
-                changeset.push(b'\n');
-                changeset.extend_from_slice(f);
-            }
-            changeset.extend_from_slice(b"\n\n");
-            changeset.extend_from_slice(commit.body());
-
-            if let Some(patch) = metadata.patch() {
-                let mut patched = patch.apply(&changeset).unwrap();
-                mem::swap(&mut changeset, &mut patched);
-            }
-
-            // Adjust for `handle_changeset_conflict`.
-            // TODO: when creating the git2hg metadata moves to Rust, we can
-            // create a patch instead, which would be handled above instead of
-            // manually here.
-            let node = metadata.changeset_id();
-            let mut changeset = &changeset[..];
-            while let [adjusted @ .., b'\0'] = changeset {
-                let mut hash = hg_object_id::create();
-                let mut parents = commit
-                    .parents()
-                    .iter()
-                    .map(|p| GitChangesetId::from(p.clone()).to_hg().unwrap())
-                    .collect::<Vec<_>>();
-                parents.sort();
-                for p in parents.iter().chain(repeat(&HgChangesetId::null())).take(2) {
-                    hash.input(p.as_bytes());
-                }
-                hash.input(&changeset);
-                if hash.result() == **node {
-                    break;
-                }
-                changeset = adjusted;
-            }
+            let commit_id = GitChangesetId::from(CommitId::from(git_obj));
+            let changeset = RawHgChangeset::read(&commit_id).unwrap();
             stdout().write_all(&changeset).map_err(|e| e.to_string())?;
         },
         HgObjectType::Manifest => {

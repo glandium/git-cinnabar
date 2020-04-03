@@ -3,6 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::Cow;
+use std::io::Write;
+use std::iter::repeat;
+use std::mem;
 
 use bstr::ByteSlice;
 use derive_more::{Deref, DerefMut, Display};
@@ -10,8 +13,9 @@ use getset::Getters;
 use itertools::Itertools;
 use percent_encoding::percent_decode;
 
+use crate::hg_data::Authorship;
 use crate::libcinnabar::{ensure_notes, get_note_hg, git2hg, hg2git, hg_object_id};
-use crate::libgit::{get_note, BlobId, CommitId, RawBlob};
+use crate::libgit::{get_note, BlobId, CommitId, RawBlob, RawCommit};
 use crate::oid_type;
 use crate::util::{FromBytes, SliceExt};
 
@@ -74,12 +78,8 @@ impl GitChangesetMetadata {
         let mut patch = None;
         for line in self.0.as_bytes().lines() {
             match line.split2(b' ')? {
-                (b"changeset", c) => {
-                    changeset = Some(HgChangesetId::from_bytes(c).ok()?)
-                }
-                (b"manifest", m) => {
-                    manifest = Some(HgManifestId::from_bytes(m).ok()?)
-                }
+                (b"changeset", c) => changeset = Some(HgChangesetId::from_bytes(c).ok()?),
+                (b"manifest", m) => manifest = Some(HgManifestId::from_bytes(m).ok()?),
                 (b"author", a) => author = Some(a),
                 (b"extra", e) => extra = Some(e),
                 (b"files", f) => files = Some(f),
@@ -216,5 +216,85 @@ impl<'a> GitChangesetPatch<'a> {
         }
         patched.extend_from_slice(&input[last_end..]);
         Some(patched)
+    }
+}
+
+#[derive(Deref)]
+#[deref(forward)]
+pub struct RawHgChangeset(Box<[u8]>);
+
+impl RawHgChangeset {
+    pub fn read(oid: &GitChangesetId) -> Option<Self> {
+        let commit = RawCommit::read(oid)?;
+        let commit = commit.parse()?;
+        let (mut hg_author, hg_timestamp, hg_utcoffset) =
+            Authorship::from_git_bytes(commit.author()).to_hg_parts();
+        let hg_committer = if commit.author() != commit.committer() {
+            Some(Authorship::from_git_bytes(commit.committer()).to_hg_bytes())
+        } else {
+            None
+        };
+        let hg_committer = hg_committer.as_ref();
+
+        let metadata = GitChangesetMetadata::read(oid)?;
+        let metadata = metadata.parse()?;
+        if let Some(author) = metadata.author() {
+            hg_author = author.to_owned();
+        }
+        let mut extra = metadata.extra();
+        if let Some(hg_committer) = hg_committer {
+            extra
+                .get_or_insert_with(ChangesetExtra::new)
+                .set(b"committer", &hg_committer);
+        };
+        let mut changeset = Vec::new();
+        writeln!(changeset, "{}", metadata.manifest_id()).ok()?;
+        changeset.extend_from_slice(&hg_author);
+        changeset.push(b'\n');
+        changeset.extend_from_slice(&hg_timestamp);
+        changeset.push(b' ');
+        changeset.extend_from_slice(&hg_utcoffset);
+        if let Some(extra) = extra {
+            changeset.push(b' ');
+            extra.dump_into(&mut changeset);
+        }
+        let mut files = metadata.files().collect::<Vec<_>>();
+        //TODO: probably don't actually need sorting.
+        files.sort();
+        for f in &files {
+            changeset.push(b'\n');
+            changeset.extend_from_slice(f);
+        }
+        changeset.extend_from_slice(b"\n\n");
+        changeset.extend_from_slice(commit.body());
+
+        if let Some(patch) = metadata.patch() {
+            let mut patched = patch.apply(&changeset)?;
+            mem::swap(&mut changeset, &mut patched);
+        }
+
+        // Adjust for `handle_changeset_conflict`.
+        // TODO: when creating the git2hg metadata moves to Rust, we can
+        // create a patch instead, which would be handled above instead of
+        // manually here.
+        let node = metadata.changeset_id();
+        while changeset[changeset.len() - 1] == b'\0' {
+            let mut hash = hg_object_id::create();
+            let mut parents = commit
+                .parents()
+                .iter()
+                .map(|p| unsafe { GitChangesetId::from(p.clone()) }.to_hg())
+                .collect::<Option<Vec<_>>>()?;
+            parents.sort();
+            for p in parents.iter().chain(repeat(&HgChangesetId::null())).take(2) {
+                hash.input(p.as_bytes());
+            }
+            hash.input(&changeset);
+            if hash.result() == **node {
+                break;
+            }
+            changeset.pop();
+        }
+        Some(RawHgChangeset(changeset.into()))
     }
 }
