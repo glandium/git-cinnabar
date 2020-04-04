@@ -42,7 +42,7 @@ def main(args):
 
     store = GitHgStore()
 
-    if remote.url == 'tags:':
+    if remote.url == b'tags:':
         helper = TagsRemoteHelper(store)
     else:
         helper = GitRemoteHelper(store, remote)
