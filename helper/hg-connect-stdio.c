@@ -200,7 +200,7 @@ void *prefix_remote_stderr(void *context)
 
 struct hg_connection *hg_connect_stdio(const char *url, int flags)
 {
-	char *user, *hostandport, *path;
+	char *hostandport, *path;
 	const char *remote_path;
 	enum protocol protocol;
 	struct strbuf buf = STRBUF_INIT;
