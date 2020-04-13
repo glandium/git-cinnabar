@@ -537,7 +537,7 @@ def fsck(args):
             for m, t, p in GitHgHelper.rev_list(
                     b'--topo-order', b'--full-history', b'--reverse',
                     *iter_manifests(store_manifest_heads, manifest_heads)):
-                status.fix('Removing metadata commit %s with no corresponding '
+                status.fix('Removing manifest commit %s with no corresponding '
                            'changeset' % (m.decode('ascii')))
 
             for h in store_manifest_heads - manifest_heads:
