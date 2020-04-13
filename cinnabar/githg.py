@@ -468,7 +468,12 @@ class Grafter(object):
         self._early_history = set()
         self._graft_trees = defaultdict(list)
         self._grafted = False
-        refs = [b'--exclude=refs/cinnabar/*', b'--all']
+        refs = [
+            b'--exclude=refs/cinnabar/*',
+            b'--exclude=refs/notes/cinnabar',
+            b'--exclude=refs/original/*',
+            b'--all',
+        ]
         if store._has_metadata:
             refs += [b'--not', b'refs/cinnabar/metadata^']
         for node, tree, parents in progress_iter(
