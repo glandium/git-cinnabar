@@ -1087,7 +1087,7 @@ def get_ui():
     if not ssh:
         ssh = os.environ.get('GIT_SSH')
         if ssh:
-            ssh = procutil.shellquote(ssh)
+            ssh = procutil.shellquote(ssh.encode('utf-8'))
     if ssh:
         ui_.setconfig(b'ui', b'ssh', ssh)
     return ui_
