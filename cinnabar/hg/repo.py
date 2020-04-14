@@ -47,6 +47,7 @@ import random
 from cinnabar.dag import gitdag
 from cinnabar.git import (
     Git,
+    InvalidConfig,
     NULL_NODE_ID,
 )
 from cinnabar.util import (
@@ -870,9 +871,23 @@ SHA1_RE = re.compile(b'[0-9a-fA-F]{1,40}$')
 
 
 def do_cinnabarclone(repo, manifest, store):
+    GRAFT = {
+        None: None,
+        b'false': False,
+        b'true': True,
+    }
+    try:
+        enable_graft = Git.config(
+            'cinnabar.graft', remote=repo.remote, values=GRAFT)
+    except InvalidConfig:
+        enable_graft = None
+
     url = None
+    candidates = []
     for line in manifest.splitlines():
         line = line.strip()
+        if not line:
+            continue
         spec, _, params = line.partition(b' ')
         params = {
             k: v
@@ -883,17 +898,21 @@ def do_cinnabarclone(repo, manifest, store):
             # Future proofing: ignore lines with unknown params, even if we
             # support some that are present.
             continue
-        if store._graft:
-            # When grafting, ignore lines without a graft revision.
-            if not graft:
-                continue
-            graft = graft.split(b',')
-            graft_u = []
-            for g in graft:
-                if SHA1_RE.match(g):
-                    graft_u.append(g.decode('ascii'))
-            if len(graft) != len(graft_u):
-                continue
+        # When grafting, ignore lines without a graft revision.
+        if store._graft and not graft:
+            continue
+        # When explicitly disabling graft, ignore lines with a graft revision.
+        if enable_graft is False and graft:
+            continue
+
+        graft = graft.split(b',') if graft else []
+        graft_u = []
+        for g in graft:
+            if SHA1_RE.match(g):
+                graft_u.append(g.decode('ascii'))
+        if len(graft) != len(graft_u):
+            continue
+        if graft:
             revs = list(Git.iter('rev-parse', '--revs-only', *graft_u))
             if len(revs) != len(graft):
                 continue
@@ -904,11 +923,20 @@ def do_cinnabarclone(repo, manifest, store):
                     '--max-count=1', '--ancestry-path', '--stdin',
                     stdin=(b'^%s^@' % c for c in graft))):
                 continue
-        elif graft:
-            # When not grafting, ignore lines with a graft revision.
-            continue
-        url, _, branch = spec.partition(b'#')
-        url, branch = (url.split(b'#', 1) + [None])[:2]
+
+        candidates.append((spec, len(graft) != 0))
+
+    if enable_graft is not False:
+        graft_filters = [True, False]
+    else:
+        graft_filters = [False]
+    for graft_filter in graft_filters:
+        for spec, graft in candidates:
+            if graft == graft_filter:
+                url, _, branch = spec.partition(b'#')
+                url, branch = (url.split(b'#', 1) + [None])[:2]
+                if url:
+                    break
         if url:
             break
 
