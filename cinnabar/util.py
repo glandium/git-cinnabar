@@ -723,7 +723,7 @@ class Process(object):
         else:
             proc_stdin = stdin
 
-        full_env = VersionedDict(os.environ)
+        full_env = VersionedDict(environ())
         if env:
             full_env.update(env)
 
@@ -758,6 +758,10 @@ class Process(object):
 
     def _popen(self, cmd, env, **kwargs):
         assert isinstance(env, VersionedDict)
+        if not getattr(os, 'supports_bytes_environ', True):
+            env = {
+                fsdecode(k): fsdecode(v) for k, v in iteritems(env)
+            }
         proc = subprocess.Popen(cmd, env=env, **kwargs)
         logger = logging.getLogger('process')
         if logger.isEnabledFor(logging.INFO):
@@ -969,6 +973,22 @@ if sys.version_info[0] == 3:
 
     fsencode = os.fsencode
     fsdecode = os.fsdecode
+
+    def environ(k=None):
+        if os.supports_bytes_environ:
+            if k is None:
+                return os.environb
+            return os.environb.get(k)
+
+        if k is None:
+            return {
+                fsencode(k): fsencode(v)
+                for k, v in iteritems(os.environ)
+            }
+        v = os.environ.get(fsdecode(k))
+        if v is None:
+            return None
+        return fsencode(v)
 else:
     def iteritems(d):
         return d.iteritems()
@@ -981,6 +1001,11 @@ else:
 
     def fsdecode(s):
         return s
+
+    def environ(k=None):
+        if k is None:
+            return os.environ
+        return os.environ.get(k)
 
 if hasattr(sys.stdout, 'buffer'):
     bytes_stdout = sys.stdout.buffer

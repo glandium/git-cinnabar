@@ -53,6 +53,7 @@ from cinnabar.util import (
     HTTPReader,
     check_enabled,
     chunkbuffer,
+    environ,
     experiment,
     fsdecode,
     progress_enum,
@@ -1083,9 +1084,9 @@ def get_ui():
     ui_.fout = ui_.ferr
     ui_.setconfig(b'ui', b'interactive', False)
     ui_.setconfig(b'progress', b'disable', True)
-    ssh = os.environ.get('GIT_SSH_COMMAND')
+    ssh = environ(b'GIT_SSH_COMMAND')
     if not ssh:
-        ssh = os.environ.get('GIT_SSH')
+        ssh = environ(b'GIT_SSH')
         if ssh:
             ssh = procutil.shellquote(ssh)
     if ssh:
