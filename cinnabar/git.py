@@ -135,7 +135,12 @@ class Git(object):
         if name.startswith('cinnabar.'):
             var = ('GIT_%s' % name.replace('.', '_').upper()).encode('ascii')
             if sys.version_info[0] == 3:
-                value = os.environb.get(var)
+                if os.supports_bytes_environ:
+                    value = os.environb.get(var)
+                else:
+                    value = os.environ.get(var.decode('utf-8'))
+                    if isinstance(value, str):
+                        value = value.encode('utf-8')
             else:
                 value = os.environ.get(var)
             if value is None and remote:
