@@ -4,6 +4,7 @@ import hashlib
 import logging
 import os
 import subprocess
+import sys
 from binascii import unhexlify
 from types import GeneratorType
 from io import BytesIO
@@ -111,8 +112,13 @@ class BaseHelper(object):
         if self._helper is False:
             helper_path = Git.config('cinnabar.helper')
             env = {
-                b'GIT_REPLACE_REF_BASE': b'refs/cinnabar/replace/',
+                'GIT_REPLACE_REF_BASE': 'refs/cinnabar/replace/',
             }
+            if sys.version_info[0] == 2:
+                encoded = {}
+                for (k, v) in env.iteritems():
+                    encoded[k.encode('utf-8')] = v.encode('utf-8')
+                env = encoded
             for k in os.environ:
                 if k.startswith('GIT_CINNABAR_'):
                     env[k] = os.environ[k]
