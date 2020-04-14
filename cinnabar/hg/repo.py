@@ -412,7 +412,7 @@ def findcommon(repo, store, hgheads):
 
 
 class HelperRepo(object):
-    __slots__ = "_url", "_branchmap", "_heads", "_bookmarks", "_ui"
+    __slots__ = "_url", "_branchmap", "_heads", "_bookmarks", "_ui", "remote"
 
     def __init__(self, url):
         self._url = url
@@ -420,6 +420,7 @@ class HelperRepo(object):
         self._heads = None
         self._bookmarks = None
         self._ui = None
+        self.remote = None
 
     @property
     def ui(self):
@@ -754,7 +755,7 @@ def get_clonebundle_url(repo):
 
 
 def get_clonebundle(repo):
-    url = Git.config('cinnabar.clonebundle')
+    url = Git.config('cinnabar.clonebundle', remote=repo.remote)
     if not url:
         url = get_clonebundle_url(repo)
 
@@ -935,7 +936,7 @@ def getbundle(repo, store, heads, branch_names):
         got_partial = False
         if not common:
             if not store._has_metadata:
-                manifest = Git.config('cinnabar.clone')
+                manifest = Git.config('cinnabar.clone', remote=repo.remote)
                 if manifest is None and repo.capable(b'cinnabarclone'):
                     manifest = repo._call(b'cinnabarclone')
                 if manifest:
@@ -1191,6 +1192,12 @@ if changegroup:
 
 
 def get_repo(remote):
+    repo = _get_repo(remote)
+    repo.remote = remote.name
+    return repo
+
+
+def _get_repo(remote):
     if not changegroup or experiment('wire'):
         if not changegroup and not check_enabled('no-mercurial'):
             logging.warning('Mercurial libraries not found. Falling back to '
