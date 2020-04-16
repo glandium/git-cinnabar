@@ -343,6 +343,11 @@ static void do_rev_list(struct string_list *args)
 	setup_revisions(args->nr + 1, argv, &revs, NULL);
 	free(argv);
 
+	// Hack to force simplify_commit to save parents. full_diff is only
+	// checked for there or in setup_revisions so there is no other side
+	// effect.
+	revs.full_diff = 1;
+
 	if (prepare_revision_walk(&revs))
 		die("revision walk setup failed");
 
@@ -361,6 +366,14 @@ static void do_rev_list(struct string_list *args)
 			parent = parent->next;
 		}
 		strbuf_addch(&buf, '\n');
+
+		// If parents were altered by simplify_commit, we want to
+		// restore them for any subsequent operation on the commit.
+		parent = get_saved_parents(&revs, commit);
+		if (parent != commit->parents) {
+			free_commit_list(commit->parents);
+			commit->parents = copy_commit_list(parent);
+		}
 	}
 
 	// More extensive than reset_revision_walk(). Otherwise --boundary
