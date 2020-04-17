@@ -188,7 +188,10 @@ class PushStore(GitHgStore):
             manifests = sorted_merge(parent_manifest, parent2_manifest,
                                      key=lambda i: i.path, non_key=lambda i: i)
             for line in sorted_merge(files, sorted_merge(changes, manifests)):
-                path, f, (change, (manifest_line_p1, manifest_line_p2)) = line
+                path, f, (change, m) = line
+                if not m:
+                    m = (None, None)
+                manifest_line_p1, manifest_line_p2 = m
                 if not f:  # File was removed
                     if manifest_line_p1:
                         manifest.removed.add(path)
@@ -202,6 +205,7 @@ class PushStore(GitHgStore):
                     file_parents = (manifest_line_p2.sha1,)
                 elif not manifest_line_p1 and not manifest_line_p2:
                     file_parents = ()
+                    changeset_files.append(path)
                 elif manifest_line_p1.sha1 == manifest_line_p2.sha1:
                     file_parents = (manifest_line_p1.sha1,)
                 else:
@@ -225,9 +229,9 @@ class PushStore(GitHgStore):
                         node = file_parents[0]
                     else:
                         merged = True
-                if merged:
+                if merged or not file_parents:
                     node = self._store_file_internal(f)
-                else:
+                elif file_parents:
                     node = file_parents[0]
 
                 attr_change = (manifest_line_p1 and
