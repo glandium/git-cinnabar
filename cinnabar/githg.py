@@ -121,11 +121,12 @@ class FileFindParents(object):
                 # this by default, the fallback will work just fine.
                 file_dag = gitdag()
                 mapping = {}
+                path = GitHgStore.manifest_metadata_path(path)
                 for sha1, tree, fparents in GitHgHelper.rev_list(
                         b'--parents', b'--boundary', b'--topo-order',
                         b'--full-history', b'--reverse',
                         b'%s...%s' % git_manifest_parents, b'--',
-                        GitHgStore.manifest_metadata_path(path)):
+                        path):
                     if sha1.startswith(b'-'):
                         sha1 = sha1[1:]
                     node = [
