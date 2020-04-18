@@ -123,7 +123,8 @@ class FileFindParents(object):
                 mapping = {}
                 for sha1, tree, fparents in GitHgHelper.rev_list(
                         b'--parents', b'--boundary', b'--topo-order',
-                        b'--reverse', b'%s...%s' % git_manifest_parents, b'--',
+                        b'--full-history', b'--reverse',
+                        b'%s...%s' % git_manifest_parents, b'--',
                         GitHgStore.manifest_metadata_path(path)):
                     if sha1.startswith(b'-'):
                         sha1 = sha1[1:]
