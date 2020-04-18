@@ -89,7 +89,6 @@ class FileFindParents(object):
     def set_parents(file, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID,
                     git_manifest_parents=None, path=None):
         assert git_manifest_parents is not None and path is not None
-        path = GitHgStore.manifest_metadata_path(path)
 
         # Remove null nodes
         parents = tuple(p for p in (parent1, parent2) if p != NULL_NODE_ID)
@@ -125,7 +124,7 @@ class FileFindParents(object):
                 for sha1, tree, fparents in GitHgHelper.rev_list(
                         b'--parents', b'--boundary', b'--topo-order',
                         b'--reverse', b'%s...%s' % git_manifest_parents, b'--',
-                        path):
+                        GitHgStore.manifest_metadata_path(path)):
                     if sha1.startswith(b'-'):
                         sha1 = sha1[1:]
                     node = [
