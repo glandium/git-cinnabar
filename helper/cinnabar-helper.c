@@ -369,8 +369,13 @@ static void do_rev_list(struct string_list *args)
 
 		// If parents were altered by simplify_commit, we want to
 		// restore them for any subsequent operation on the commit.
+		//
+		// get_saved_parents returning NULL means there is no saved
+		// parents for the commit. If there was a saved value of null,
+		// it would mean the commit was a root in the first place, but
+		// then why would it have been saved?
 		parent = get_saved_parents(&revs, commit);
-		if (parent != commit->parents) {
+		if (parent && parent != commit->parents) {
 			free_commit_list(commit->parents);
 			commit->parents = copy_commit_list(parent);
 		}
