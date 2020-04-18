@@ -181,14 +181,12 @@ class PushStore(GitHgStore):
                              self.manifest_ref(parent2_node))
 
             # TODO: this would benefit from less git queries
-            changes = list(get_changes(commit, parents))
-
             files = [(path, mode, sha1) for mode, _, sha1, path in
                      Git.ls_tree(commit, recursive=True)]
             manifests = sorted_merge(parent_manifest, parent2_manifest,
                                      key=lambda i: i.path, non_key=lambda i: i)
-            for line in sorted_merge(files, sorted_merge(changes, manifests)):
-                path, f, (change, m) = line
+            for line in sorted_merge(files, manifests):
+                path, f, m = line
                 if not m:
                     m = (None, None)
                 manifest_line_p1, manifest_line_p2 = m
