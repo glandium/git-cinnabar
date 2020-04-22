@@ -60,7 +60,6 @@ from .hg.objects import (
 )
 from .helper import GitHgHelper
 from .util import progress_iter
-from .dag import gitdag
 from cinnabar import util
 from cinnabar.util import fsdecode
 
@@ -86,10 +85,7 @@ class FileFindParents(object):
                             'Please open an issue with details.')
 
     @staticmethod
-    def set_parents(file, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID,
-                    git_manifest_parents=None, path=None):
-        assert git_manifest_parents is not None and path is not None
-
+    def set_parents(file, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
         # Remove null nodes
         parents = tuple(p for p in (parent1, parent2) if p != NULL_NODE_ID)
         orig_parents = parents
@@ -101,55 +97,10 @@ class FileFindParents(object):
             if len(parents) == 2:
                 FileFindParents._invalid_if_new(file)
             elif len(parents) == 1:
-                if git_manifest_parents is not None:
-                    if len(git_manifest_parents) != 2:
-                        FileFindParents._invalid_if_new(file)
                 parents = (NULL_NODE_ID, parents[0])
-            elif git_manifest_parents is not None:
-                if len(git_manifest_parents) == 0:
-                    FileFindParents._invalid_if_new(file)
         elif len(parents) == 2:
-            if git_manifest_parents is not None:
-                if len(git_manifest_parents) != 2:
-                    FileFindParents._invalid_if_new(file)
             if parents[0] == parents[1]:
                 parents = parents[:1]
-            elif (git_manifest_parents is not None and
-                  (file.node == NULL_NODE_ID or check_enabled('files'))):
-                # Checking if one parent is the ancestor of another is slow.
-                # So, unless we're actually creating this file, skip over
-                # this by default, the fallback will work just fine.
-                file_dag = gitdag()
-                mapping = {}
-                path = GitHgStore.manifest_metadata_path(path)
-                for sha1, tree, fparents in GitHgHelper.rev_list(
-                        b'--parents', b'--boundary', b'--topo-order',
-                        b'--full-history', b'--reverse',
-                        b'%s...%s' % git_manifest_parents, b'--',
-                        path):
-                    if sha1.startswith(b'-'):
-                        sha1 = sha1[1:]
-                    node = [
-                        s
-                        for mode, typ, s, p in
-                        Git.ls_tree(sha1, path)
-                    ]
-                    if not node:
-                        continue
-                    node = node[0]
-                    mapping[sha1] = node
-                    file_dag.add(node, tuple(mapping[p]
-                                             for p in fparents
-                                             if p in mapping))
-
-                file_dag.tag_nodes_and_parents((parents[0],), 'a')
-                if file_dag._tags.get(parents[1]) == 'a':
-                    parents = parents[:1]
-                else:
-                    file_dag._tags.clear()
-                    file_dag.tag_nodes_and_parents((parents[1],), 'b')
-                    if file_dag._tags.get(parents[0]) == 'b':
-                        parents = parents[1:]
 
         file.parents = parents
         if file.node != NULL_NODE_ID and file.node != file.sha1:
@@ -1045,8 +996,7 @@ class GitHgStore(object):
     def file_meta(self, sha1):
         return GitHgHelper.file_meta(sha1)
 
-    def file(self, sha1, file_parents=None, git_manifest_parents=None,
-             path=None):
+    def file(self, sha1, file_parents=None):
         if sha1 == HG_EMPTY_FILE:
             content = b''
         else:
@@ -1058,10 +1008,7 @@ class GitHgStore(object):
             file.metadata = meta
         file.content = content
         if file_parents is not None:
-            FileFindParents.set_parents(
-                file, *file_parents,
-                git_manifest_parents=git_manifest_parents,
-                path=path)
+            FileFindParents.set_parents(file, *file_parents)
         return file
 
     def git_file_ref(self, sha1):

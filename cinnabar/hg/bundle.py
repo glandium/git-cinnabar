@@ -4,6 +4,7 @@ try:
 except ImportError:
     from urllib import quote as quote_from_bytes
     from urllib import unquote as unquote_to_bytes
+from cinnabar.dag import gitdag
 from cinnabar.githg import (
     Changeset,
     FileFindParents,
@@ -160,8 +161,7 @@ class PushStore(GitHgStore):
         if not parents:
             for line in Git.ls_tree(commit, recursive=True):
                 mode, typ, sha1, path = line
-                node = self.create_file(sha1, git_manifest_parents=(),
-                                        path=path)
+                node = self.create_file(sha1)
                 manifest.add(path, node, self.ATTR[mode], modified=True)
                 changeset_files.append(path)
 
@@ -181,7 +181,22 @@ class PushStore(GitHgStore):
                              self.manifest_ref(parent2_node))
 
             # TODO: this would benefit from less git queries
-            files = [(path, mode, sha1) for mode, _, sha1, path in
+            file_dags = {}
+            for m, tree, mparents in GitHgHelper.rev_list(
+                    b'--parents', b'--topo-order',
+                    b'--full-history', b'--reverse',
+                    b'%s...%s' % git_manifests):
+                for p in mparents:
+                    for path, sha1_after, sha1_before in manifest_diff(p, m):
+                        path = GitHgStore.manifest_path(path)
+                        if path not in file_dags:
+                            file_dags[path] = gitdag()
+                        dag = file_dags[path]
+                        if sha1_before == NULL_NODE_ID:
+                            dag.add(sha1_after, ())
+                        else:
+                            dag.add(sha1_after, (sha1_before,))
+            files = [(p, mode, sha1) for mode, _, sha1, p in
                      Git.ls_tree(commit, recursive=True)]
             manifests = sorted_merge(parent_manifest, parent2_manifest,
                                      key=lambda i: i.path, non_key=lambda i: i)
@@ -210,15 +225,25 @@ class PushStore(GitHgStore):
                     if self._merge_warn == 1:
                         logging.warning('This may take a while...')
                         self._merge_warn = 2
-                    file_parents = (manifest_line_p1.sha1,
-                                    manifest_line_p2.sha1)
+                    file_parents = ()
+                    dag = file_dags.pop(path)
+                    if dag:
+                        dag.tag_nodes_and_parents(
+                            (manifest_line_p1.sha1,), 'a')
+                        if dag._tags.get(manifest_line_p2.sha1) == 'a':
+                            file_parents = (manifest_line_p1.sha1,)
+                        else:
+                            dag._tags.clear()
+                            dag.tag_nodes_and_parents(
+                                (manifest_line_p2.sha1,), 'b')
+                            if dag._tags.get(manifest_line_p1.sha1) == 'b':
+                                file_parents = (manifest_line_p2.sha1,)
+                    if not file_parents:
+                        file_parents = (manifest_line_p1.sha1,
+                                        manifest_line_p2.sha1)
 
                 assert file_parents is not None
-                f = self._create_file_internal(
-                    sha1, *file_parents,
-                    git_manifest_parents=git_manifests,
-                    path=path
-                )
+                f = self._create_file_internal(sha1, *file_parents)
                 file_parents = tuple(p for p in (f.parent1, f.parent2)
                                      if p != NULL_NODE_ID)
                 merged = len(file_parents) == 2
@@ -277,31 +302,17 @@ class PushStore(GitHgStore):
                 if sha1_before == sha1_after:
                     node = manifest_line.sha1
                 else:
-                    node = self.create_file(
-                        sha1_after, manifest_line.sha1,
-                        git_manifest_parents=(
-                            self.manifest_ref(parent_node),),
-                        path=path)
+                    node = self.create_file(sha1_after, manifest_line.sha1)
             elif status in b'RC':
                 if sha1_after != EMPTY_BLOB:
                     node = self.create_copy(
                         (path2, parent_lines[path2].sha1), sha1_after,
-                        git_manifest_parents=(
-                            self.manifest_ref(parent_node),),
                         path=path)
                 else:
-                    node = self.create_file(
-                        sha1_after,
-                        git_manifest_parents=(
-                            self.manifest_ref(parent_node),),
-                        path=path)
+                    node = self.create_file(sha1_after)
             else:
                 assert status == b'A'
-                node = self.create_file(
-                    sha1_after,
-                    git_manifest_parents=(
-                        self.manifest_ref(parent_node),),
-                    path=path)
+                node = self.create_file(sha1_after)
             manifest.add(path, node, attr, modified=True)
             changeset_files.append(path)
         manifest.parents = (parent_node,)
@@ -364,14 +375,10 @@ class PushStore(GitHgStore):
                 raise Exception('Changeset mismatch')
 
     def _create_file_internal(self, sha1, parent1=NULL_NODE_ID,
-                              parent2=NULL_NODE_ID,
-                              git_manifest_parents=None, path=None):
+                              parent2=NULL_NODE_ID):
         hg_file = File()
         hg_file.content = GitHgHelper.cat_file(b'blob', sha1)
-        FileFindParents.set_parents(
-            hg_file, parent1, parent2,
-            git_manifest_parents=git_manifest_parents,
-            path=path)
+        FileFindParents.set_parents(hg_file, parent1, parent2)
         node = hg_file.node = hg_file.sha1
         GitHgHelper.set(b'file', node, sha1)
         return hg_file
@@ -381,14 +388,11 @@ class PushStore(GitHgStore):
         self._pushed.add(node)
         return node
 
-    def create_file(self, sha1, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID,
-                    git_manifest_parents=None, path=None):
-        hg_file = self._create_file_internal(sha1, parent1, parent2,
-                                             git_manifest_parents, path)
+    def create_file(self, sha1, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
+        hg_file = self._create_file_internal(sha1, parent1, parent2)
         return self._store_file_internal(hg_file)
 
-    def create_copy(self, hg_source, sha1, git_manifest_parents=None,
-                    path=None):
+    def create_copy(self, hg_source, sha1, path=None):
         path, rev = hg_source
         hg_file = File()
         hg_file.metadata = {
@@ -476,7 +480,7 @@ def bundle_data(store, commits):
         for path, hg_file, hg_fileparents in changes:
             if hg_file != NULL_NODE_ID:
                 files[store.manifest_path(path)].append(
-                    (hg_file, hg_fileparents, changeset, parents))
+                    (hg_file, hg_fileparents, changeset))
 
     yield None
 
@@ -485,12 +489,12 @@ def bundle_data(store, commits):
         for count_names, path in enumerate(sorted(files), 1):
             yield (count_chunks, count_names), path
             nodes = set()
-            for node, parents, changeset, mn_parents in files[path]:
+            for node, parents, changeset in files[path]:
                 if node in nodes:
                     continue
                 count_chunks += 1
                 nodes.add(node)
-                file = store.file(node, parents, mn_parents, path)
+                file = store.file(node, parents)
                 file.changeset = changeset
                 assert file.node == file.sha1
                 yield (count_chunks, count_names), file
