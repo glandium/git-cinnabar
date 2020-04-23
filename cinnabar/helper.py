@@ -19,7 +19,9 @@ from .hg.changegroup import (
     RawRevChunk02,
 )
 from .util import (
+    environ,
     fsdecode,
+    iteritems,
     IOLogger,
     lrucache,
     Process,
@@ -113,9 +115,9 @@ class BaseHelper(object):
         env = {
             b'GIT_REPLACE_REF_BASE': b'refs/cinnabar/replace/',
         }
-        for k in os.environ:
-            if k.startswith('GIT_CINNABAR_'):
-                env[k] = os.environ[k]
+        for k, v in iteritems(environ()):
+            if k.startswith(b'GIT_CINNABAR_'):
+                env[k] = v
         if helper_path:
             helper_path = fsdecode(helper_path)
         if helper_path and os.path.exists(helper_path):

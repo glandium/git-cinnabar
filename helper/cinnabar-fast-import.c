@@ -696,6 +696,7 @@ static void old_store_manifest(struct rev_chunk *chunk)
 	if (!is_null_hg_oid(chunk->delta_node) &&
 	    !hg_oideq(chunk->delta_node, &last_manifest_oid)) {
 		const struct object_id *note;
+		ensure_notes(&hg2git);
 		note = get_note_hg(&hg2git, chunk->delta_node);
 		if (!note)
 			die("Cannot find delta node %s for %s",

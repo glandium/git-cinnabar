@@ -43,6 +43,7 @@ import random
 from cinnabar.dag import gitdag
 from cinnabar.git import (
     Git,
+    InvalidConfig,
     NULL_NODE_ID,
 )
 from cinnabar.util import (
@@ -336,7 +337,7 @@ def findcommon(repo, store, hgheads):
 
 
 class HelperRepo(object):
-    __slots__ = "_url", "_branchmap", "_heads", "_bookmarks", "_ui"
+    __slots__ = "_url", "_branchmap", "_heads", "_bookmarks", "_ui", "remote"
 
     def __init__(self, url):
         self._url = url
@@ -344,6 +345,7 @@ class HelperRepo(object):
         self._heads = None
         self._bookmarks = None
         self._ui = None
+        self.remote = None
 
     @property
     def ui(self):
@@ -647,7 +649,7 @@ def get_clonebundle_url(repo):
 
 
 def get_clonebundle(repo):
-    url = Git.config('cinnabar.clonebundle')
+    url = Git.config('cinnabar.clonebundle', remote=repo.remote)
     if not url:
         url = get_clonebundle_url(repo)
 
@@ -759,9 +761,23 @@ SHA1_RE = re.compile(b'[0-9a-fA-F]{1,40}$')
 
 
 def do_cinnabarclone(repo, manifest, store):
+    GRAFT = {
+        None: None,
+        b'false': False,
+        b'true': True,
+    }
+    try:
+        enable_graft = Git.config(
+            'cinnabar.graft', remote=repo.remote, values=GRAFT)
+    except InvalidConfig:
+        enable_graft = None
+
     url = None
+    candidates = []
     for line in manifest.splitlines():
         line = line.strip()
+        if not line:
+            continue
         spec, _, params = line.partition(b' ')
         params = {
             k: v
@@ -772,17 +788,21 @@ def do_cinnabarclone(repo, manifest, store):
             # Future proofing: ignore lines with unknown params, even if we
             # support some that are present.
             continue
-        if store._graft:
-            # When grafting, ignore lines without a graft revision.
-            if not graft:
-                continue
-            graft = graft.split(b',')
-            graft_u = []
-            for g in graft:
-                if SHA1_RE.match(g):
-                    graft_u.append(g.decode('ascii'))
-            if len(graft) != len(graft_u):
-                continue
+        # When grafting, ignore lines without a graft revision.
+        if store._graft and not graft:
+            continue
+        # When explicitly disabling graft, ignore lines with a graft revision.
+        if enable_graft is False and graft:
+            continue
+
+        graft = graft.split(b',') if graft else []
+        graft_u = []
+        for g in graft:
+            if SHA1_RE.match(g):
+                graft_u.append(g.decode('ascii'))
+        if len(graft) != len(graft_u):
+            continue
+        if graft:
             revs = list(Git.iter('rev-parse', '--revs-only', *graft_u))
             if len(revs) != len(graft):
                 continue
@@ -793,11 +813,20 @@ def do_cinnabarclone(repo, manifest, store):
                     '--max-count=1', '--ancestry-path', '--stdin',
                     stdin=(b'^%s^@' % c for c in graft))):
                 continue
-        elif graft:
-            # When not grafting, ignore lines with a graft revision.
-            continue
-        url, _, branch = spec.partition(b'#')
-        url, branch = (url.split(b'#', 1) + [None])[:2]
+
+        candidates.append((spec, len(graft) != 0))
+
+    if enable_graft is not False:
+        graft_filters = [True, False]
+    else:
+        graft_filters = [False]
+    for graft_filter in graft_filters:
+        for spec, graft in candidates:
+            if graft == graft_filter:
+                url, _, branch = spec.partition(b'#')
+                url, branch = (url.split(b'#', 1) + [None])[:2]
+                if url:
+                    break
         if url:
             break
 
@@ -826,7 +855,7 @@ def getbundle(repo, store, heads, branch_names):
         got_partial = False
         if not common:
             if not store._has_metadata:
-                manifest = Git.config('cinnabar.clone')
+                manifest = Git.config('cinnabar.clone', remote=repo.remote)
                 if manifest is None and repo.capable(b'cinnabarclone'):
                     manifest = repo._call(b'cinnabarclone')
                 if manifest:
@@ -1018,6 +1047,12 @@ class Remote(object):
 
 
 def get_repo(remote):
+    repo = _get_repo(remote)
+    repo.remote = remote.name
+    return repo
+
+
+def _get_repo(remote):
     stream = HgRepoHelper.connect(remote.url)
     if stream:
         return bundlerepo(remote.url, stream)

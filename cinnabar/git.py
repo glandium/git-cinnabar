@@ -2,9 +2,9 @@ from __future__ import absolute_import, division, unicode_literals
 import logging
 import os
 import posixpath
-import sys
 import time
 from .util import (
+    environ,
     fsdecode,
     one,
     Process,
@@ -134,10 +134,7 @@ class Git(object):
         value = None
         if name.startswith('cinnabar.'):
             var = ('GIT_%s' % name.replace('.', '_').upper()).encode('ascii')
-            if sys.version_info[0] == 3:
-                value = os.environb.get(var)
-            else:
-                value = os.environ.get(var)
+            value = environ(var)
             if value is None and remote:
                 var = b'remote.%s.%s' % (
                     remote, name.replace('.', '-').encode('ascii'))

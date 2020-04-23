@@ -1,4 +1,5 @@
 git-cinnabar-helper
+git-cinnabar-helper.exe
 *.patched.c
 *.pyc
 helper/target

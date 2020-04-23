@@ -475,7 +475,7 @@ class TestStoreCG01(unittest.TestCase):
             command = [c if isinstance(c, str) else c.decode('ascii')
                        for c in command]
             return b'\n'.join(
-                Git.run(*command, stdout=subprocess.PIPE, env={'PATH': path}))
+                Git.run(*command, stdout=subprocess.PIPE, env={b'PATH': path}))
 
         c_gen = git_output('cinnabar', 'data', '-c', c.node)
         self.assertEqual(c.raw_data, c_gen)
