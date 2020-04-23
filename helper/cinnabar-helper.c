@@ -77,14 +77,15 @@
 #include "cinnabar-notes.h"
 #include "which.h"
 
-#define STRINGIFY(s) _STRINGIFY(s)
 #define _STRINGIFY(s) # s
+#define STRINGIFY(s) _STRINGIFY(s)
 
 #ifndef HELPER_HASH
 #define HELPER_HASH unknown
 #endif
 
 #define CMD_VERSION 3003
+
 #define MIN_CMD_VERSION 3003
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
@@ -192,7 +193,7 @@ static void send_object(const struct object_id *oid)
 	unsigned long sz;
 	struct git_istream *st;
 
-	st = open_istream(oid, &type, &sz, NULL);
+	st = open_istream(the_repository, oid, &type, &sz, NULL);
 
 	if (!st)
 		die("open_istream failed for %s", oid_to_hex(oid));
@@ -342,6 +343,11 @@ static void do_rev_list(struct string_list *args)
 	setup_revisions(args->nr + 1, argv, &revs, NULL);
 	free(argv);
 
+	// Hack to force simplify_commit to save parents. full_diff is only
+	// checked for there or in setup_revisions so there is no other side
+	// effect.
+	revs.full_diff = 1;
+
 	if (prepare_revision_walk(&revs))
 		die("revision walk setup failed");
 
@@ -360,6 +366,19 @@ static void do_rev_list(struct string_list *args)
 			parent = parent->next;
 		}
 		strbuf_addch(&buf, '\n');
+
+		// If parents were altered by simplify_commit, we want to
+		// restore them for any subsequent operation on the commit.
+		//
+		// get_saved_parents returning NULL means there is no saved
+		// parents for the commit. If there was a saved value of null,
+		// it would mean the commit was a root in the first place, but
+		// then why would it have been saved?
+		parent = get_saved_parents(&revs, commit);
+		if (parent && parent != commit->parents) {
+			free_commit_list(commit->parents);
+			commit->parents = copy_commit_list(parent);
+		}
 	}
 
 	// More extensive than reset_revision_walk(). Otherwise --boundary
@@ -2270,6 +2289,7 @@ static void reset_replace_map()
 {
 	oidmap_free(the_repository->objects->replace_map, 1);
 	FREE_AND_NULL(the_repository->objects->replace_map);
+	the_repository->objects->replace_map_initialized = 0;
 }
 
 static void init_metadata()
@@ -2304,6 +2324,7 @@ static void init_metadata()
 	the_repository->objects->replace_map =
 		xmalloc(sizeof(*the_repository->objects->replace_map));
 	oidmap_init(the_repository->objects->replace_map, 0);
+	the_repository->objects->replace_map_initialized = 1;
 
 	tree = get_commit_tree(c);
 	parse_tree(tree);

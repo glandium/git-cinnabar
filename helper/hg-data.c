@@ -49,6 +49,8 @@ void hg_file_load(struct hg_file *result, const struct hg_object_id *oid)
 	if (note) {
 		content = read_object_file_extended(
 			the_repository, note, &type, &len, 0);
+		if (!content)
+			die("Missing data");
 		strbuf_add(&result->file, "\1\n", 2);
 		strbuf_add(&result->file, content, len);
 		strbuf_add(&result->file, "\1\n", 2);
@@ -64,6 +66,9 @@ void hg_file_load(struct hg_file *result, const struct hg_object_id *oid)
 
 	content = read_object_file_extended(
 		the_repository, note, &type, &len, 0);
+	if (!content)
+		die("Missing data");
+
 	strbuf_add(&result->file, content, len);
 	free(content);
 

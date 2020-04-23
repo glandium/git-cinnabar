@@ -506,8 +506,7 @@ def fsck(args):
                                             GitHgHelper.seen(b'hg2git',
                                                              hg_file)):
                 if full_file_check:
-                    file = store.file(hg_file, hg_fileparents, git_parents,
-                                      store.manifest_path(path))
+                    file = store.file(hg_file, hg_fileparents)
                     valid = file.node == file.sha1
                 else:
                     valid = GitHgHelper.check_file(hg_file,
@@ -537,7 +536,7 @@ def fsck(args):
             for m, t, p in GitHgHelper.rev_list(
                     b'--topo-order', b'--full-history', b'--reverse',
                     *iter_manifests(store_manifest_heads, manifest_heads)):
-                status.fix('Removing metadata commit %s with no corresponding '
+                status.fix('Removing manifest commit %s with no corresponding '
                            'changeset' % (m.decode('ascii')))
 
             for h in store_manifest_heads - manifest_heads:

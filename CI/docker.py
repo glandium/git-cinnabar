@@ -42,6 +42,7 @@ DOCKER_IMAGES = {
          python3-wheel\\
          unzip\\
          xz-utils\\
+         zip\\
          && apt-get clean
         RUN pip install pip==19.2.2 --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
@@ -75,7 +76,11 @@ DOCKER_IMAGES = {
          && apt-get clean
         RUN ln -s /usr/bin/python-coverage /usr/local/bin/coverage\\
          && pip install codecov==2.0.15
-        ''',
+        RUN curl -sL {} | tar -C /usr/local/bin -jxf -
+        '''.format(
+        'https://github.com/mozilla/grcov/releases/download/v0.5.9'
+        '/grcov-linux-x86_64.tar.bz2'
+    ),
 
     'test': '''\
         FROM base

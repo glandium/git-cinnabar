@@ -11,15 +11,15 @@ from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '5.2.2'
-GIT_VERSION = '2.25.0'
+MERCURIAL_VERSION = '5.3'
+GIT_VERSION = '2.26.2'
 
 ALL_MERCURIAL_VERSIONS = (
     '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
     '2.6.3', '2.7.2', '2.8.2', '2.9.1', '3.0.1', '3.1.2', '3.2.4',
     '3.3.3', '3.4.2', '3.5.2', '3.6.3', '3.7.3', '3.8.4', '3.9.2',
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
-    '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2',
+    '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2', '5.3',
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -293,10 +293,10 @@ class Helper(Task, metaclass=Tool):
                 .format(opt))
         elif variant == 'coverage':
             make_flags.append('CFLAGS="-coverage"')
-            artifacts += ['coverage.tar.xz']
+            artifacts += ['coverage.zip']
             extra_commands = [
                 'mv repo/git-core/{{cinnabar,connect,hg}}*.gcno repo/helper',
-                '(cd repo && tar -Jcf $ARTIFACTS/coverage.tar.xz'
+                '(cd repo && zip $ARTIFACTS/coverage.zip'
                 ' helper/{{cinnabar,connect,hg}}*.gcno)',
             ]
         elif variant == 'old' or variant.startswith('old:'):
