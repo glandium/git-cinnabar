@@ -5,7 +5,7 @@
 #[macro_use]
 extern crate cstr;
 
-use structopt::clap::{crate_version, AppSettings};
+use structopt::clap::{crate_version, AppSettings, ArgGroup};
 use structopt::StructOpt;
 
 #[macro_use]
@@ -25,9 +25,11 @@ pub(crate) mod hg_data;
 use std::convert::TryInto;
 use std::ffi::CString;
 use std::ffi::OsString;
-use std::io::{stdout, Write};
+use std::fmt;
+use std::io::{stdin, stdout, BufRead, BufWriter, Write};
 use std::os::raw::c_char;
 use std::os::raw::c_int;
+use std::path::PathBuf;
 use std::str::{self, FromStr};
 
 #[cfg(windows)]
@@ -71,28 +73,86 @@ pub fn prepare_arg(arg: OsString) -> Vec<u16> {
     arg
 }
 
-fn do_hg2git(abbrev: Option<usize>, sha1s: Vec<AbbrevHgObjectId>) -> Result<(), String> {
+fn do_one_hg2git(sha1: &AbbrevHgObjectId) -> Result<String, String> {
+    Ok(format!("{}", sha1.to_git().unwrap_or_else(object_id::null)))
+}
+
+fn do_one_git2hg(committish: &OsString) -> Result<String, String> {
+    unsafe {
+        let mut oid = GitChangesetId::null();
+        let c = CString::new(committish.as_bytes()).unwrap();
+        let note = if repo_get_oid_committish(the_repository, c.as_ptr(), &mut **oid) == 0 {
+            oid.to_hg()
+        } else {
+            None
+        };
+        Ok(format!("{}", note.unwrap_or_else(HgChangesetId::null)))
+    }
+}
+
+fn do_conversion<T, I: Iterator<Item = T>, F: Fn(T) -> Result<String, String>, W: Write>(
+    abbrev: Option<usize>,
+    input: I,
+    f: F,
+    mut output: W,
+) -> Result<(), String> {
     let abbrev = abbrev.unwrap_or(40);
-    for sha1 in &sha1s {
-        let hex = format!("{}", sha1.to_git().unwrap_or_else(object_id::null));
-        println!("{}", &hex[..abbrev]);
+    for i in input {
+        let out = f(i)?;
+        writeln!(output, "{}", &out[..abbrev]).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
 
-fn do_git2hg(abbrev: Option<usize>, committish: Vec<OsString>) -> Result<(), String> {
-    let abbrev = abbrev.unwrap_or(40);
-    unsafe {
-        for c in &committish {
-            let mut oid = GitChangesetId::null();
-            let c = CString::new(c.as_bytes()).unwrap();
-            let note = if repo_get_oid_committish(the_repository, c.as_ptr(), &mut **oid) == 0 {
-                oid.to_hg()
-            } else {
-                None
-            };
-            let hex = format!("{}", note.unwrap_or_else(HgChangesetId::null));
-            println!("{}", &hex[..abbrev]);
+// There is an impl FromStr for PathBuf, but not for OsString :(
+struct FromStrHelper<T>(T);
+
+impl FromStr for FromStrHelper<OsString> {
+    type Err = <PathBuf as FromStr>::Err;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        PathBuf::from_str(s).map(|p| Self(p.into()))
+    }
+}
+
+impl FromStr for FromStrHelper<AbbrevHgObjectId> {
+    type Err = <AbbrevHgObjectId as FromStr>::Err;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        AbbrevHgObjectId::from_str(s).map(Self)
+    }
+}
+
+fn do_conversion_cmd<'a, T, I, F>(
+    abbrev: Option<usize>,
+    input: I,
+    batch: bool,
+    f: F,
+) -> Result<(), String>
+where
+    T: 'a,
+    FromStrHelper<T>: FromStr,
+    <FromStrHelper<T> as FromStr>::Err: fmt::Display,
+    I: Iterator<Item = &'a T>,
+    F: Fn(&T) -> Result<String, String>,
+{
+    let f = &f;
+    let out = stdout();
+    let mut out = BufWriter::new(out.lock());
+    do_conversion(abbrev, input, f, &mut out)?;
+    if batch {
+        out.flush().map_err(|e| e.to_string())?;
+        let input = stdin();
+        for line in input.lock().lines() {
+            let line = line.map_err(|e| e.to_string())?;
+            do_conversion(
+                abbrev,
+                line.split_whitespace(),
+                |i| {
+                    let t = FromStrHelper::<T>::from_str(i).map_err(|e| e.to_string())?;
+                    f(&t.0)
+                },
+                &mut out,
+            )?;
+            out.flush().map_err(|e| e.to_string())?;
         }
     }
     Ok(())
@@ -189,6 +249,7 @@ enum CinnabarCommand {
         rev: AbbrevHgObjectId,
     },
     #[structopt(name = "hg2git")]
+    #[structopt(group = ArgGroup::with_name("input").multiple(true).required(true))]
     #[structopt(about = "Convert mercurial sha1 to corresponding git sha1")]
     Hg2Git {
         #[structopt(long)]
@@ -196,11 +257,16 @@ enum CinnabarCommand {
         #[structopt(max_values = 1)]
         #[structopt(help = "Show a partial prefix")]
         abbrev: Option<Vec<AbbrevSize>>,
-        #[structopt(required = true)]
+        #[structopt(group = "input")]
         #[structopt(help = "Mercurial sha1")]
         sha1: Vec<AbbrevHgObjectId>,
+        #[structopt(long)]
+        #[structopt(group = "input")]
+        #[structopt(help = "Read sha1s on stdin")]
+        batch: bool,
     },
     #[structopt(name = "git2hg")]
+    #[structopt(group = ArgGroup::with_name("input").multiple(true).required(true))]
     #[structopt(about = "Convert git sha1 to corresponding mercurial sha1")]
     Git2Hg {
         #[structopt(long)]
@@ -208,10 +274,14 @@ enum CinnabarCommand {
         #[structopt(max_values = 1)]
         #[structopt(help = "Show a partial prefix")]
         abbrev: Option<Vec<AbbrevSize>>,
-        #[structopt(required = true)]
+        #[structopt(group = "input")]
         #[structopt(help = "Git sha1/committish")]
         #[structopt(parse(from_os_str))]
         committish: Vec<OsString>,
+        #[structopt(long)]
+        #[structopt(group = "input")]
+        #[structopt(help = "Read sha1/committish on stdin")]
+        batch: bool,
     },
 }
 
@@ -255,12 +325,25 @@ fn git_cinnabar(argv0: *const c_char) -> i32 {
                 (true, true) => unreachable!(),
             },
         ),
-        Hg2Git { abbrev, sha1 } => {
-            do_hg2git(abbrev.map(|v| v.get(0).map(|a| a.0).unwrap_or(12)), sha1)
-        }
-        Git2Hg { abbrev, committish } => do_git2hg(
+        Hg2Git {
+            abbrev,
+            sha1,
+            batch,
+        } => do_conversion_cmd(
             abbrev.map(|v| v.get(0).map(|a| a.0).unwrap_or(12)),
+            sha1.iter(),
+            batch,
+            do_one_hg2git,
+        ),
+        Git2Hg {
+            abbrev,
             committish,
+            batch,
+        } => do_conversion_cmd(
+            abbrev.map(|v| v.get(0).map(|a| a.0).unwrap_or(12)),
+            committish.iter(),
+            batch,
+            do_one_git2hg,
         ),
     };
     unsafe {
