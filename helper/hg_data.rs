@@ -8,7 +8,7 @@ use regex::bytes::Regex;
 use crate::util::{FromBytes, SliceExt};
 
 // TODO: This doesn't actually need to be a regexp
-static WHO_RE: Lazy<Regex> = Lazy::new(|| Regex::new("^(.*?) ?(?:<(.*?)>)").unwrap());
+static WHO_RE: Lazy<Regex> = Lazy::new(|| Regex::new("^(?-u)(.*?) ?(?:<(.*?)>)").unwrap());
 
 pub struct Authorship {
     name: Vec<u8>,
