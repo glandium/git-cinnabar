@@ -14,7 +14,6 @@ use bstr::ByteSlice;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use derive_more::{Deref, DerefMut, Display};
 use getset::Getters;
-use sha1::{Digest, Sha1};
 
 use crate::util::{FromBytes, SliceExt};
 
@@ -89,10 +88,6 @@ impl fmt::Debug for object_id {
 }
 
 impl object_id {
-    pub fn create() -> object_id_creator {
-        object_id_creator(Sha1::new())
-    }
-
     pub fn raw(&self) -> &[u8] {
         &self.0[..GIT_SHA1_RAWSZ]
     }
@@ -117,21 +112,6 @@ impl PartialOrd for object_id {
 impl Ord for object_id {
     fn cmp(&self, other: &Self) -> Ordering {
         self.raw().cmp(other.raw())
-    }
-}
-
-#[allow(non_camel_case_types)]
-pub struct object_id_creator(Sha1);
-
-impl object_id_creator {
-    pub fn result(self) -> object_id {
-        let mut result = object_id([0; GIT_MAX_RAWSZ]);
-        result.0[..GIT_SHA1_RAWSZ].copy_from_slice(self.0.result().as_slice());
-        result
-    }
-
-    pub fn input(&mut self, data: &[u8]) {
-        self.0.input(data)
     }
 }
 

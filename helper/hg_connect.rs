@@ -12,12 +12,13 @@ use bstr::{BString, ByteSlice};
 use itertools::Itertools;
 use libc::FILE;
 use percent_encoding::percent_decode;
+use sha1::{Digest, Sha1};
 use url::Url;
 
 use crate::hg_bundle::copy_bundle;
 use crate::hg_connect_http::HgHTTPConnection;
 use crate::hg_connect_stdio::HgStdIOConnection;
-use crate::libgit::{object_id, oid_array, strbuf};
+use crate::libgit::{oid_array, strbuf};
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
@@ -303,11 +304,11 @@ unsafe extern "C" fn hg_unbundle(
     } else if conn.get_capability(b"unbundlehash").is_none() {
         heads.iter().join(" ")
     } else {
-        let mut hash = object_id::create();
+        let mut hash = Sha1::new();
         for h in heads.iter().sorted().dedup() {
             hash.input(h.raw());
         }
-        format!("{} {}", hex::encode("hashed"), hash.result())
+        format!("{} {:x}", hex::encode("hashed"), hash.result())
     };
 
     /* Neither the stdio nor the HTTP protocols can handle a stream for
