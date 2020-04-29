@@ -41,10 +41,8 @@ hg2git!(HgChangesetId => GitChangesetId(CommitId));
 hg2git!(HgManifestId => GitManifestId(CommitId));
 hg2git!(HgFileId => GitFileId(BlobId));
 
-#[derive(Clone, Deref, Display, Eq, PartialEq, Ord, PartialOrd)]
-pub struct GitChangesetMetadataId(BlobId);
-#[derive(Clone, Deref, Display, Eq, PartialEq, Ord, PartialOrd)]
-pub struct GitFileMetadataId(BlobId);
+oid_type!(GitChangesetMetadataId(BlobId));
+oid_type!(GitFileMetadataId(BlobId));
 
 impl GitChangesetId {
     pub fn to_hg(&self) -> Option<HgChangesetId> {
