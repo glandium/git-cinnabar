@@ -16,6 +16,22 @@ use std::thread::{self, JoinHandle};
 
 use bstr::ByteSlice;
 
+#[macro_export]
+macro_rules! derive_debug_display {
+    ($typ:ty) => {
+        impl ::std::fmt::Debug for $typ
+        where
+            $typ: ::std::fmt::Display,
+        {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                f.debug_tuple(stringify!($typ))
+                    .field(&format!("{}", self))
+                    .finish()
+            }
+        }
+    };
+}
+
 pub struct PrefixWriter<W: Write> {
     prefix: Vec<u8>,
     line_writer: LineWriter<W>,

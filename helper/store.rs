@@ -14,15 +14,16 @@ use itertools::Itertools;
 use percent_encoding::percent_decode;
 
 use crate::hg_data::Authorship;
-use crate::libcinnabar::{git2hg, hg2git, hg_object_id};
+use crate::libcinnabar::{git2hg, hg2git};
 use crate::libgit::{BlobId, CommitId, RawBlob, RawCommit};
+use crate::oid::{HgObjectId, ObjectId};
 use crate::oid_type;
 use crate::util::{FromBytes, SliceExt};
 
 macro_rules! hg2git {
     ($h:ident => $g:ident($i:ident)) => {
         oid_type!($g($i));
-        oid_type!($h(hg_object_id));
+        oid_type!($h(HgObjectId));
 
         impl $h {
             pub fn to_git(&self) -> Option<$g> {
@@ -269,7 +270,7 @@ impl RawHgChangeset {
         // manually here.
         let node = metadata.changeset_id();
         while changeset[changeset.len() - 1] == b'\0' {
-            let mut hash = hg_object_id::create();
+            let mut hash = HgObjectId::create();
             let mut parents = commit
                 .parents()
                 .iter()
@@ -277,7 +278,7 @@ impl RawHgChangeset {
                 .collect::<Option<Vec<_>>>()?;
             parents.sort();
             for p in parents.iter().chain(repeat(&HgChangesetId::null())).take(2) {
-                hash.input(p.as_bytes());
+                hash.input(p.as_raw_bytes());
             }
             hash.input(&changeset);
             if hash.result() == **node {

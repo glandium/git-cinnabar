@@ -4,16 +4,20 @@
 
 #[macro_use]
 extern crate cstr;
+#[macro_use]
+extern crate all_asserts;
 
 use structopt::clap::{crate_version, AppSettings, ArgGroup};
 use structopt::StructOpt;
 
 #[macro_use]
 pub mod libgit;
+#[macro_use]
+mod util;
 mod libc;
 mod libcinnabar;
+mod oid;
 pub mod store;
-mod util;
 
 pub(crate) mod hg_bundle;
 #[macro_use]
@@ -35,10 +39,11 @@ use std::str::{self, FromStr};
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 
-use libcinnabar::{files_meta, generate_manifest, hg2git, AbbrevHgObjectId};
+use libcinnabar::{files_meta, generate_manifest, hg2git};
 use libgit::{
     object_id, repo_get_oid_committish, strbuf, the_repository, BlobId, CommitId, RawBlob,
 };
+use oid::{Abbrev, HgObjectId};
 use store::{GitChangesetId, HgChangesetId, RawHgChangeset};
 use util::OsStrExt;
 
@@ -73,7 +78,7 @@ pub fn prepare_arg(arg: OsString) -> Vec<u16> {
     arg
 }
 
-fn do_one_hg2git(sha1: &AbbrevHgObjectId) -> Result<String, String> {
+fn do_one_hg2git(sha1: &Abbrev<HgObjectId>) -> Result<String, String> {
     Ok(format!("{}", unsafe {
         hg2git.get_note_abbrev(sha1).unwrap_or_else(object_id::null)
     }))
@@ -116,10 +121,10 @@ impl FromStr for FromStrHelper<OsString> {
     }
 }
 
-impl FromStr for FromStrHelper<AbbrevHgObjectId> {
-    type Err = <AbbrevHgObjectId as FromStr>::Err;
+impl FromStr for FromStrHelper<Abbrev<HgObjectId>> {
+    type Err = <Abbrev<HgObjectId> as FromStr>::Err;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        AbbrevHgObjectId::from_str(s).map(Self)
+        Abbrev::<HgObjectId>::from_str(s).map(Self)
     }
 }
 
@@ -166,7 +171,7 @@ enum HgObjectType {
     File,
 }
 
-fn do_data(rev: AbbrevHgObjectId, typ: HgObjectType) -> Result<(), String> {
+fn do_data(rev: Abbrev<HgObjectId>, typ: HgObjectType) -> Result<(), String> {
     let git_obj = unsafe { hg2git.get_note_abbrev(&rev) }
         .ok_or_else(|| format!("Unknown revision: {}", rev))?;
     match typ {
@@ -246,7 +251,7 @@ enum CinnabarCommand {
         manifest: bool,
         #[structopt(required = true)]
         #[structopt(help = "Revision")]
-        rev: AbbrevHgObjectId,
+        rev: Abbrev<HgObjectId>,
     },
     #[structopt(name = "hg2git")]
     #[structopt(group = ArgGroup::with_name("input").multiple(true).required(true))]
@@ -259,7 +264,7 @@ enum CinnabarCommand {
         abbrev: Option<Vec<AbbrevSize>>,
         #[structopt(group = "input")]
         #[structopt(help = "Mercurial sha1")]
-        sha1: Vec<AbbrevHgObjectId>,
+        sha1: Vec<Abbrev<HgObjectId>>,
         #[structopt(long)]
         #[structopt(group = "input")]
         #[structopt(help = "Read sha1s on stdin")]
