@@ -14,8 +14,8 @@ use itertools::Itertools;
 use percent_encoding::percent_decode;
 
 use crate::hg_data::Authorship;
-use crate::libcinnabar::{ensure_notes, get_note_hg, git2hg, hg2git, hg_object_id};
-use crate::libgit::{get_note, BlobId, CommitId, RawBlob, RawCommit};
+use crate::libcinnabar::{git2hg, hg2git, hg_object_id};
+use crate::libgit::{BlobId, CommitId, RawBlob, RawCommit};
 use crate::oid_type;
 use crate::util::{FromBytes, SliceExt};
 
@@ -26,12 +26,7 @@ macro_rules! hg2git {
 
         impl $h {
             pub fn to_git(&self) -> Option<$g> {
-                unsafe {
-                    ensure_notes(&mut hg2git);
-                    Some($g::from($i::from(
-                        get_note_hg(&mut hg2git, &**self).as_ref().cloned()?,
-                    )))
-                }
+                unsafe { hg2git.get_note(&self).map(|o| $g::from($i::from(o))) }
             }
         }
     };
@@ -60,10 +55,7 @@ pub struct GitChangesetMetadata(RawBlob);
 
 impl GitChangesetMetadata {
     pub fn read(changeset_id: &GitChangesetId) -> Option<Self> {
-        let note = unsafe {
-            ensure_notes(&mut git2hg);
-            BlobId::from(get_note(&mut git2hg, &***changeset_id).as_ref()?.clone())
-        };
+        let note = unsafe { git2hg.get_note(&changeset_id).map(|o| BlobId::from(o))? };
         RawBlob::read(&note).map(Self)
     }
 

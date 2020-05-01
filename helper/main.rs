@@ -35,7 +35,7 @@ use std::str::{self, FromStr};
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 
-use libcinnabar::{ensure_notes, files_meta, generate_manifest, resolve_hg, AbbrevHgObjectId};
+use libcinnabar::{files_meta, generate_manifest, AbbrevHgObjectId};
 use libgit::{
     object_id, repo_get_oid_committish, strbuf, the_repository, BlobId, CommitId, RawBlob,
 };
@@ -183,10 +183,9 @@ fn do_data(rev: AbbrevHgObjectId, typ: HgObjectType) -> Result<(), String> {
         HgObjectType::File => {
             let mut stdout = stdout();
             unsafe {
-                ensure_notes(&mut files_meta);
-                resolve_hg(&mut files_meta, rev.as_hg_object_id(), rev.len())
-                    .as_ref()
-                    .map(|oid| BlobId::from(oid.clone()))
+                files_meta
+                    .get_note_abbrev(&rev)
+                    .map(|oid| BlobId::from(oid))
                     .and_then(|oid| RawBlob::read(&oid))
                     .map(|o| {
                         stdout.write_all(b"\x01\n")?;

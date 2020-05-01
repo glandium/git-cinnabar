@@ -10,7 +10,7 @@ use std::str::{self, FromStr};
 use libc::FILE;
 use sha1::{Digest, Sha1};
 
-use crate::libgit::{child_process, notes_tree, object_id, strbuf};
+use crate::libgit::{child_process, get_note, notes_tree, object_id, strbuf};
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -150,9 +150,9 @@ fn test_abbrev_hg_object_id() {
 }
 
 extern "C" {
-    pub static mut git2hg: notes_tree;
-    pub static mut hg2git: notes_tree;
-    pub static mut files_meta: notes_tree;
+    pub static mut git2hg: git_notes_tree;
+    pub static mut hg2git: hg_notes_tree;
+    pub static mut files_meta: hg_notes_tree;
 
     pub fn ensure_notes(t: *mut notes_tree);
 
@@ -164,21 +164,44 @@ extern "C" {
     pub fn generate_manifest(oid: *const object_id) -> *const strbuf;
 }
 
-impl AbbrevHgObjectId {
-    pub fn to_git(&self) -> Option<object_id> {
+#[allow(non_camel_case_types)]
+#[repr(transparent)]
+pub struct git_notes_tree(notes_tree);
+
+impl git_notes_tree {
+    pub fn get_note(&mut self, oid: &object_id) -> Option<object_id> {
         unsafe {
-            resolve_hg(&mut hg2git, &self.oid, self.len)
+            ensure_notes(&mut self.0);
+            get_note(&mut self.0, oid).as_ref().cloned()
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[repr(transparent)]
+pub struct hg_notes_tree(notes_tree);
+
+impl hg_notes_tree {
+    pub fn get_note(&mut self, oid: &hg_object_id) -> Option<object_id> {
+        unsafe {
+            ensure_notes(&mut self.0);
+            get_note_hg(&mut self.0, oid).as_ref().cloned()
+        }
+    }
+
+    pub fn get_note_abbrev(&mut self, oid: &AbbrevHgObjectId) -> Option<object_id> {
+        unsafe {
+            ensure_notes(&mut self.0);
+            resolve_hg(&mut self.0, &oid.oid, oid.len)
                 .as_ref()
                 .cloned()
         }
     }
+}
 
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    pub unsafe fn as_hg_object_id(&self) -> &hg_object_id {
-        &self.oid
+impl AbbrevHgObjectId {
+    pub fn to_git(&self) -> Option<object_id> {
+        unsafe { hg2git.get_note_abbrev(self) }
     }
 }
 
