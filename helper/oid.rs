@@ -29,6 +29,7 @@ pub trait ObjectId: Sized {
     }
 }
 
+#[macro_export]
 macro_rules! oid_type {
     ($name:ident($base_type:ident)) => {
         #[repr(transparent)]

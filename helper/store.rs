@@ -8,7 +8,7 @@ use std::iter::repeat;
 use std::mem;
 
 use bstr::ByteSlice;
-use derive_more::{Deref, DerefMut, Display};
+use derive_more::{Deref, Display};
 use getset::Getters;
 use itertools::Itertools;
 use percent_encoding::percent_decode;

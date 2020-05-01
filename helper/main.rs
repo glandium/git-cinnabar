@@ -11,12 +11,13 @@ use structopt::clap::{crate_version, AppSettings, ArgGroup};
 use structopt::StructOpt;
 
 #[macro_use]
-pub mod libgit;
-#[macro_use]
 mod util;
+#[macro_use]
+mod oid;
+#[macro_use]
+pub mod libgit;
 mod libc;
 mod libcinnabar;
-mod oid;
 pub mod store;
 
 pub(crate) mod hg_bundle;
@@ -40,10 +41,8 @@ use std::str::{self, FromStr};
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 
 use libcinnabar::{files_meta, generate_manifest, hg2git};
-use libgit::{
-    object_id, repo_get_oid_committish, strbuf, the_repository, BlobId, CommitId, RawBlob,
-};
-use oid::{Abbrev, HgObjectId};
+use libgit::{get_oid_committish, strbuf, BlobId, CommitId, RawBlob};
+use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use store::{GitChangesetId, HgChangesetId, RawHgChangeset};
 use util::OsStrExt;
 
@@ -80,21 +79,16 @@ pub fn prepare_arg(arg: OsString) -> Vec<u16> {
 
 fn do_one_hg2git(sha1: &Abbrev<HgObjectId>) -> Result<String, String> {
     Ok(format!("{}", unsafe {
-        hg2git.get_note_abbrev(sha1).unwrap_or_else(object_id::null)
+        hg2git
+            .get_note_abbrev(sha1)
+            .unwrap_or_else(GitObjectId::null)
     }))
 }
 
 fn do_one_git2hg(committish: &OsString) -> Result<String, String> {
-    unsafe {
-        let mut oid = GitChangesetId::null();
-        let c = CString::new(committish.as_bytes()).unwrap();
-        let note = if repo_get_oid_committish(the_repository, c.as_ptr(), &mut **oid) == 0 {
-            oid.to_hg()
-        } else {
-            None
-        };
-        Ok(format!("{}", note.unwrap_or_else(HgChangesetId::null)))
-    }
+    let note = get_oid_committish(committish.as_bytes())
+        .and_then(|oid| unsafe { GitChangesetId::from(oid).to_hg() });
+    Ok(format!("{}", note.unwrap_or_else(HgChangesetId::null)))
 }
 
 fn do_conversion<T, I: Iterator<Item = T>, F: Fn(T) -> Result<String, String>, W: Write>(
@@ -181,7 +175,7 @@ fn do_data(rev: Abbrev<HgObjectId>, typ: HgObjectType) -> Result<(), String> {
             stdout().write_all(&changeset).map_err(|e| e.to_string())?;
         },
         HgObjectType::Manifest => {
-            let buf = unsafe { generate_manifest(&git_obj).as_ref().unwrap() };
+            let buf = unsafe { generate_manifest(&git_obj.into()).as_ref().unwrap() };
             stdout()
                 .write_all(buf.as_bytes())
                 .map_err(|e| e.to_string())?;

@@ -19,6 +19,7 @@ use crate::hg_bundle::copy_bundle;
 use crate::hg_connect_http::HgHTTPConnection;
 use crate::hg_connect_stdio::HgStdIOConnection;
 use crate::libgit::{oid_array, strbuf};
+use crate::oid::ObjectId;
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
@@ -306,7 +307,7 @@ unsafe extern "C" fn hg_unbundle(
     } else {
         let mut hash = Sha1::new();
         for h in heads.iter().sorted().dedup() {
-            hash.input(h.raw());
+            hash.input(h.as_raw_bytes());
         }
         format!("{} {:x}", hex::encode("hashed"), hash.result())
     };

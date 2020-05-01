@@ -7,7 +7,7 @@ use std::os::raw::{c_char, c_int};
 use libc::FILE;
 
 use crate::libgit::{child_process, get_note, notes_tree, object_id, strbuf};
-use crate::oid::{Abbrev, HgObjectId};
+use crate::oid::{Abbrev, GitObjectId, HgObjectId};
 
 #[allow(non_camel_case_types)]
 type hg_object_id = HgObjectId;
@@ -32,10 +32,13 @@ extern "C" {
 pub struct git_notes_tree(notes_tree);
 
 impl git_notes_tree {
-    pub fn get_note(&mut self, oid: &object_id) -> Option<object_id> {
+    pub fn get_note(&mut self, oid: &GitObjectId) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
-            get_note(&mut self.0, oid).as_ref().cloned()
+            get_note(&mut self.0, &oid.clone().into())
+                .as_ref()
+                .cloned()
+                .map(Into::into)
         }
     }
 }
@@ -45,19 +48,23 @@ impl git_notes_tree {
 pub struct hg_notes_tree(notes_tree);
 
 impl hg_notes_tree {
-    pub fn get_note(&mut self, oid: &HgObjectId) -> Option<object_id> {
+    pub fn get_note(&mut self, oid: &HgObjectId) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
-            get_note_hg(&mut self.0, oid).as_ref().cloned()
+            get_note_hg(&mut self.0, oid)
+                .as_ref()
+                .cloned()
+                .map(Into::into)
         }
     }
 
-    pub fn get_note_abbrev(&mut self, oid: &Abbrev<HgObjectId>) -> Option<object_id> {
+    pub fn get_note_abbrev(&mut self, oid: &Abbrev<HgObjectId>) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
             resolve_hg(&mut self.0, oid.as_object_id(), oid.len())
                 .as_ref()
                 .cloned()
+                .map(Into::into)
         }
     }
 }

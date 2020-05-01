@@ -2,19 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::cmp::Ordering;
+
 use std::convert::TryInto;
-use std::ffi::c_void;
-use std::fmt::{self, Display, Formatter};
+use std::ffi::{c_void, CString};
+
 use std::io::{self, Write};
 use std::os::raw::{c_char, c_int, c_long, c_ulong};
-use std::str::FromStr;
+
 
 use bstr::ByteSlice;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
-use derive_more::{Deref, DerefMut, Display};
+use derive_more::{Deref, Display};
 use getset::Getters;
 
+use crate::oid::{GitObjectId, ObjectId};
 use crate::util::{FromBytes, SliceExt};
 
 #[allow(non_camel_case_types)]
@@ -46,72 +47,37 @@ impl oid_array {
 }
 
 impl<'a> Iterator for oid_array_iter<'a> {
-    type Item = &'a object_id;
+    type Item = GitObjectId;
     fn next(&mut self) -> Option<Self::Item> {
         let i = self.next.take()?;
         let result = unsafe { self.array.oid.offset(i as isize).as_ref()? };
         self.next = i.checked_add(1).filter(|&x| x < self.array.nr);
-        Some(result)
+        Some(result.clone().into())
     }
 }
 
-const GIT_SHA1_RAWSZ: usize = 20;
 const GIT_MAX_RAWSZ: usize = 32;
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-#[derive(Clone, Eq)]
+#[derive(Clone)]
 pub struct object_id([u8; GIT_MAX_RAWSZ]);
 
-impl FromStr for object_id {
-    type Err = hex::FromHexError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut result = object_id([0; GIT_MAX_RAWSZ]);
-        hex::decode_to_slice(s, &mut result.0[..GIT_SHA1_RAWSZ])?;
-        Ok(result)
+impl From<GitObjectId> for object_id {
+    fn from(oid: GitObjectId) -> Self {
+        let mut result = Self([0; GIT_MAX_RAWSZ]);
+        let oid = oid.as_raw_bytes();
+        result.0[..oid.len()].clone_from_slice(oid);
+        result
     }
 }
 
-impl Display for object_id {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        for x in self.raw() {
-            write!(f, "{:02x}", x)?;
-        }
-        Ok(())
-    }
-}
-
-impl fmt::Debug for object_id {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Oid({})", self)
-    }
-}
-
-impl object_id {
-    pub fn raw(&self) -> &[u8] {
-        &self.0[..GIT_SHA1_RAWSZ]
-    }
-
-    pub const fn null() -> object_id {
-        object_id([0; GIT_MAX_RAWSZ])
-    }
-}
-
-impl PartialEq for object_id {
-    fn eq(&self, other: &Self) -> bool {
-        self.raw() == other.raw()
-    }
-}
-
-impl PartialOrd for object_id {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.raw().cmp(other.raw()))
-    }
-}
-
-impl Ord for object_id {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.raw().cmp(other.raw())
+impl From<object_id> for GitObjectId {
+    fn from(oid: object_id) -> Self {
+        let mut result = Self::null();
+        let slice = result.as_raw_bytes_mut();
+        slice.clone_from_slice(&oid.0[..slice.len()]);
+        result
     }
 }
 
@@ -290,10 +256,12 @@ pub struct RawObject {
 }
 
 impl RawObject {
-    fn read(oid: &object_id) -> Option<(object_type, RawObject)> {
+    fn read(oid: &GitObjectId) -> Option<(object_type, RawObject)> {
         let mut t = object_type::OBJ_NONE;
         let mut len: c_ulong = 0;
-        let buf = unsafe { read_object_file_extended(the_repository, oid, &mut t, &mut len, 0) };
+        let buf = unsafe {
+            read_object_file_extended(the_repository, &oid.clone().into(), &mut t, &mut len, 0)
+        };
         if buf.is_null() {
             return None;
         }
@@ -317,34 +285,9 @@ impl Drop for RawObject {
     }
 }
 
-#[macro_export]
-macro_rules! oid_type {
-    ($name:ident($oid_type:ident)) => {
-        #[derive(Clone, Deref, DerefMut, Display, Eq, PartialEq, Ord, PartialOrd)]
-        pub struct $name($oid_type);
-
-        impl $name {
-            pub fn null() -> Self {
-                $name($oid_type::null())
-            }
-
-            pub unsafe fn from(oid: $oid_type) -> Self {
-                $name(oid)
-            }
-        }
-
-        impl FromBytes for $name {
-            type Err = <$oid_type as FromBytes>::Err;
-            fn from_bytes(b: &[u8]) -> Result<Self, Self::Err> {
-                $oid_type::from_bytes(b).map(Self)
-            }
-        }
-    };
-}
-
-oid_type!(CommitId(object_id));
-oid_type!(TreeId(object_id));
-oid_type!(BlobId(object_id));
+oid_type!(CommitId(GitObjectId));
+oid_type!(TreeId(GitObjectId));
+oid_type!(BlobId(GitObjectId));
 
 macro_rules! raw_object {
     ($t:ident | $oid_type:ident => $name:ident) => {
@@ -435,4 +378,16 @@ extern "C" {
     ) -> *const object_id;
 
     pub fn get_note(t: *mut notes_tree, oid: *const object_id) -> *const object_id;
+}
+
+pub fn get_oid_committish(s: &[u8]) -> Option<CommitId> {
+    unsafe {
+        let c = CString::new(s).unwrap();
+        let mut oid = object_id([0; GIT_MAX_RAWSZ]);
+        if repo_get_oid_committish(the_repository, c.as_ptr(), &mut oid) == 0 {
+            Some(CommitId(oid.into()))
+        } else {
+            None
+        }
+    }
 }
