@@ -35,7 +35,7 @@ use std::str::{self, FromStr};
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 
-use libcinnabar::{files_meta, generate_manifest, AbbrevHgObjectId};
+use libcinnabar::{files_meta, generate_manifest, hg2git, AbbrevHgObjectId};
 use libgit::{
     object_id, repo_get_oid_committish, strbuf, the_repository, BlobId, CommitId, RawBlob,
 };
@@ -74,7 +74,9 @@ pub fn prepare_arg(arg: OsString) -> Vec<u16> {
 }
 
 fn do_one_hg2git(sha1: &AbbrevHgObjectId) -> Result<String, String> {
-    Ok(format!("{}", sha1.to_git().unwrap_or_else(object_id::null)))
+    Ok(format!("{}", unsafe {
+        hg2git.get_note_abbrev(sha1).unwrap_or_else(object_id::null)
+    }))
 }
 
 fn do_one_git2hg(committish: &OsString) -> Result<String, String> {
@@ -165,8 +167,7 @@ enum HgObjectType {
 }
 
 fn do_data(rev: AbbrevHgObjectId, typ: HgObjectType) -> Result<(), String> {
-    let git_obj = rev
-        .to_git()
+    let git_obj = unsafe { hg2git.get_note_abbrev(&rev) }
         .ok_or_else(|| format!("Unknown revision: {}", rev))?;
     match typ {
         HgObjectType::Changeset => unsafe {

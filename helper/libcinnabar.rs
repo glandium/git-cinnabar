@@ -192,16 +192,8 @@ impl hg_notes_tree {
     pub fn get_note_abbrev(&mut self, oid: &AbbrevHgObjectId) -> Option<object_id> {
         unsafe {
             ensure_notes(&mut self.0);
-            resolve_hg(&mut self.0, &oid.oid, oid.len)
-                .as_ref()
-                .cloned()
+            resolve_hg(&mut self.0, &oid.oid, oid.len).as_ref().cloned()
         }
-    }
-}
-
-impl AbbrevHgObjectId {
-    pub fn to_git(&self) -> Option<object_id> {
-        unsafe { hg2git.get_note_abbrev(self) }
     }
 }
 
