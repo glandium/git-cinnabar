@@ -432,8 +432,6 @@ class Grafter(object):
                 'Reading {} graft candidates',
                 GitHgHelper.rev_list(b'--full-history', *refs)):
             self._graft_trees[tree].append(node)
-        if not self._graft_trees:
-            raise NothingToGraftException()
 
     def _is_cinnabar_commit(self, commit):
         data = self._store.read_changeset_data(commit)
