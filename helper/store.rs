@@ -270,7 +270,7 @@ impl RawHgChangeset {
         // manually here.
         let node = metadata.changeset_id();
         while changeset[changeset.len() - 1] == b'\0' {
-            let mut hash = HgObjectId::create();
+            let mut hash = HgChangesetId::create();
             let mut parents = commit
                 .parents()
                 .iter()
@@ -281,7 +281,7 @@ impl RawHgChangeset {
                 hash.input(p.as_raw_bytes());
             }
             hash.input(&changeset);
-            if hash.result() == **node {
+            if hash.result() == *node {
                 break;
             }
             changeset.pop();
