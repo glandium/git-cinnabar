@@ -267,30 +267,37 @@ unsafe extern "C" fn hg_listkeys(
 }
 
 #[no_mangle]
-unsafe extern "C" fn hg_getbundle(
-    conn: *mut hg_connection,
-    out: *mut FILE,
-    heads: *const oid_array,
-    common: *const oid_array,
-    bundle2caps: *const c_char,
-) {
+unsafe extern "C" fn do_getbundle(conn: *mut hg_connection, args: *const string_list) {
     let conn = to_wire_connection(conn);
-    let mut args = Vec::<(&str, String)>::new();
-    if let Some(heads) = heads.as_ref() {
-        args.push(("heads", heads.iter().join(" ")));
+    let args = args.as_ref().unwrap();
+    let args = args.iter().collect::<Vec<_>>();
+    assert_le!(args.len(), 3);
+
+    let arg_list = |a: &[u8]| {
+        if a.is_empty() {
+            String::new()
+        } else {
+            a.split(|&b| b == b',')
+                .map(|b| HgChangesetId::from_bytes(b).unwrap())
+                .join(" ")
+        }
+    };
+
+    let mut cmd_args = Vec::<(&str, String)>::new();
+    if args.len() > 0 {
+        cmd_args.push(("heads", arg_list(args[0])));
     }
-    if let Some(common) = common.as_ref() {
-        args.push(("common", common.iter().join(" ")));
+    if args.len() > 1 {
+        cmd_args.push(("common", arg_list(args[1])));
     }
-    let bundle2caps = bundle2caps.as_ref();
-    if let Some(bundle2caps) = bundle2caps {
-        let bundle2caps = CStr::from_ptr(bundle2caps).to_str().unwrap();
+    if args.len() > 2 {
+        let bundle2caps = args[2];
         if !bundle2caps.is_empty() {
-            args.push(("bundlecaps", bundle2caps.to_owned()));
+            cmd_args.push(("bundlecaps", bundle2caps.to_str().unwrap().to_owned()));
         }
     }
-    let out = crate::libc::File::new(out);
-    let args = args
+    let out = crate::libc::FdFile::stdout();
+    let args = cmd_args
         .iter()
         .map(|(n, v)| OneHgArg { name: n, value: v })
         .collect::<Vec<_>>();

@@ -1141,35 +1141,7 @@ static void do_listkeys(struct hg_connection *conn, struct string_list *args)
 	strbuf_release(&result);
 }
 
-static void arg_as_oid_array(char *nodes, struct oid_array *array)
-{
-	struct string_list list = STRING_LIST_INIT_NODUP;
-	string_list_split_in_place(&list, nodes, ',', -1);
-	string_list_as_oid_array(&list, array);
-	string_list_clear(&list, 0);
-}
-
-static void do_getbundle(struct hg_connection *conn, struct string_list *args)
-{
-	struct oid_array heads = OID_ARRAY_INIT;
-	struct oid_array common = OID_ARRAY_INIT;
-	const char *bundle2caps = NULL;
-
-	if (args->nr > 3)
-		exit(1);
-
-	if (args->nr > 0)
-		arg_as_oid_array(args->items[0].string, &heads);
-	if (args->nr > 1)
-		arg_as_oid_array(args->items[1].string, &common);
-	if (args->nr > 2)
-		bundle2caps = args->items[2].string;
-
-	hg_getbundle(conn, stdout, &heads, &common, bundle2caps);
-
-	oid_array_clear(&common);
-	oid_array_clear(&heads);
-}
+extern void do_getbundle(struct hg_connection *conn, struct string_list *args);
 
 static void do_unbundle(struct hg_connection *conn, struct string_list *args)
 {
