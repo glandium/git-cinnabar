@@ -2,10 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::io::Write;
 use std::os::raw::{c_char, c_int};
 
 use libc::FILE;
 
+use crate::libc::FdFile;
 use crate::libgit::{child_process, get_note, notes_tree, object_id, strbuf};
 use crate::oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 
@@ -106,4 +108,17 @@ extern "C" {
     ) -> *mut child_process;
 
     pub fn stdio_finish(conn: *mut child_process) -> c_int;
+}
+
+#[no_mangle]
+unsafe extern "C" fn send_buffer(buf: *const strbuf) {
+    let mut stdout = FdFile::stdout();
+    if let Some(buf) = buf.as_ref() {
+        let buf = buf.as_bytes();
+        writeln!(&mut stdout, "{}", buf.len()).unwrap();
+        stdout.write_all(buf).unwrap();
+        writeln!(&mut stdout, "").unwrap();
+    } else {
+        write!(&mut stdout, "-1\n\n").unwrap();
+    }
 }

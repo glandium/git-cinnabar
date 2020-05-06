@@ -164,21 +164,7 @@ static void split_command(char *line, const char **command,
 	string_list_clear(&split_line, 0);
 }
 
-static void send_buffer(struct strbuf *buf)
-{
-	if (buf) {
-		struct strbuf header = STRBUF_INIT;
-
-		strbuf_addf(&header, "%lu\n", buf->len);
-		write_or_die(1, header.buf, header.len);
-		strbuf_release(&header);
-
-		write_or_die(1, buf->buf, buf->len);
-		write_or_die(1, "\n", 1);
-	} else {
-		write_or_die(1, "-1\n\n", 4);
-	}
-}
+extern void send_buffer(struct strbuf *buf);
 
 /* Send git object info and content to stdout, like cat-file --batch does. */
 static void send_object(const struct object_id *oid)
