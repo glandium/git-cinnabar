@@ -16,44 +16,6 @@ use getset::Getters;
 use crate::oid::{GitObjectId, ObjectId};
 use crate::util::{FromBytes, SliceExt};
 
-#[allow(non_camel_case_types)]
-#[repr(C)]
-pub struct oid_array {
-    oid: *const object_id,
-    nr: c_int,
-    alloc: c_int,
-    sorted: c_int,
-}
-
-#[allow(non_camel_case_types)]
-pub struct oid_array_iter<'a> {
-    array: &'a oid_array,
-    next: Option<c_int>,
-}
-
-impl oid_array {
-    pub fn is_empty(&self) -> bool {
-        self.nr == 0
-    }
-
-    pub fn iter(&self) -> oid_array_iter {
-        oid_array_iter {
-            array: self,
-            next: Some(0),
-        }
-    }
-}
-
-impl<'a> Iterator for oid_array_iter<'a> {
-    type Item = GitObjectId;
-    fn next(&mut self) -> Option<Self::Item> {
-        let i = self.next.take()?;
-        let result = unsafe { self.array.oid.offset(i as isize).as_ref()? };
-        self.next = i.checked_add(1).filter(|&x| x < self.array.nr);
-        Some(result.clone().into())
-    }
-}
-
 const GIT_MAX_RAWSZ: usize = 32;
 
 #[allow(non_camel_case_types)]
