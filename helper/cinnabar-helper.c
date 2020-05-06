@@ -1128,16 +1128,7 @@ static void string_list_as_oid_array(struct string_list *list,
 	}
 }
 
-static void do_known(struct hg_connection *conn, struct string_list *args)
-{
-	struct strbuf result = STRBUF_INIT;
-	struct oid_array nodes = OID_ARRAY_INIT;
-	string_list_as_oid_array(args, &nodes);
-	hg_known(conn, &result, &nodes);
-	send_buffer(&result);
-	oid_array_clear(&nodes);
-	strbuf_release(&result);
-}
+extern void do_known(struct hg_connection *conn, struct string_list *args);
 
 static void do_listkeys(struct hg_connection *conn, struct string_list *args)
 {

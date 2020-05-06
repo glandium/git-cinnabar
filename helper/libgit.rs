@@ -2,13 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-
 use std::convert::TryInto;
-use std::ffi::{c_void, CString};
+use std::ffi::{c_void, CStr, CString};
 
 use std::io::{self, Write};
-use std::os::raw::{c_char, c_int, c_long, c_ulong};
-
+use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong};
 
 use bstr::ByteSlice;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
@@ -389,5 +387,49 @@ pub fn get_oid_committish(s: &[u8]) -> Option<CommitId> {
         } else {
             None
         }
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct string_list {
+    items: *const string_list_item,
+    nr: c_uint,
+    /* there are more but we don't use them */
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+struct string_list_item {
+    string: *const c_char,
+    util: *const c_void,
+}
+
+#[allow(non_camel_case_types)]
+pub struct string_list_iter<'a> {
+    list: &'a string_list,
+    next: Option<c_uint>,
+}
+
+impl string_list {
+    pub fn is_empty(&self) -> bool {
+        self.nr == 0
+    }
+
+    pub fn iter(&self) -> string_list_iter {
+        string_list_iter {
+            list: self,
+            next: Some(0),
+        }
+    }
+}
+
+impl<'a> Iterator for string_list_iter<'a> {
+    type Item = &'a [u8];
+    fn next(&mut self) -> Option<Self::Item> {
+        let i = self.next.take()?;
+        let result = unsafe { self.list.items.offset(i as isize).as_ref()? };
+        self.next = i.checked_add(1).filter(|&x| x < self.list.nr);
+        Some(unsafe { CStr::from_ptr(result.string) }.to_bytes())
     }
 }

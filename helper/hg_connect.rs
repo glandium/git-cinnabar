@@ -18,8 +18,11 @@ use url::Url;
 use crate::hg_bundle::copy_bundle;
 use crate::hg_connect_http::HgHTTPConnection;
 use crate::hg_connect_stdio::HgStdIOConnection;
-use crate::libgit::{oid_array, strbuf};
+use crate::libcinnabar::send_buffer;
+use crate::libgit::{oid_array, strbuf, string_list};
 use crate::oid::ObjectId;
+use crate::store::HgChangesetId;
+use crate::util::FromBytes;
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
@@ -227,22 +230,25 @@ fn test_unescape_batched_output() {
 }
 
 #[no_mangle]
-unsafe extern "C" fn hg_known(
-    conn: *mut hg_connection,
-    result: *mut strbuf,
-    nodes: *const oid_array,
-) {
+unsafe extern "C" fn do_known(conn: *mut hg_connection, args: *const string_list) {
     let conn = to_wire_connection(conn);
-    let nodes = nodes.as_ref().unwrap();
+    let args = args.as_ref().unwrap();
+    let nodes = args
+        .iter()
+        .map(HgChangesetId::from_bytes)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     let nodes_str = nodes.iter().join(" ");
+    let mut result = strbuf::new();
     conn.simple_command(
-        result.as_mut().unwrap(),
+        &mut result,
         "known",
         args!(
             nodes: &nodes_str,
             *: &[]
         ),
     );
+    send_buffer(&result);
 }
 
 #[no_mangle]

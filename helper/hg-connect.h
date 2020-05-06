@@ -24,9 +24,6 @@ void hg_get_repo_state(struct hg_connection *conn,
                        struct strbuf *branchmap, struct strbuf *heads,
                        struct strbuf *bookmarks);
 
-void hg_known(struct hg_connection *conn, struct strbuf *result,
-              struct oid_array *nodes);
-
 void hg_getbundle(struct hg_connection *conn, FILE *out,
                   struct oid_array *heads, struct oid_array *common,
                   const char *bundle2caps);

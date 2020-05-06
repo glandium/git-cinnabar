@@ -111,7 +111,7 @@ extern "C" {
 }
 
 #[no_mangle]
-unsafe extern "C" fn send_buffer(buf: *const strbuf) {
+pub unsafe extern "C" fn send_buffer(buf: *const strbuf) {
     let mut stdout = FdFile::stdout();
     if let Some(buf) = buf.as_ref() {
         let buf = buf.as_bytes();
