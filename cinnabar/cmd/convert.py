@@ -95,7 +95,9 @@ def git2hg(args):
     '''convert git sha1 to corresponding mercurial sha1'''
 
     def do_one(arg):
-        data = GitHgHelper.git2hg(arg.encode('ascii'))
+        if isinstance(arg, str):
+            arg = arg.encode('ascii')
+        data = GitHgHelper.git2hg(arg)
         if data:
             assert data.startswith(b'changeset ')
             bytes_stdout.write(data[10:10 + args.abbrev])
