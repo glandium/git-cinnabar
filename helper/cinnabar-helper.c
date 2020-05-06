@@ -99,6 +99,10 @@ int metadata_flags = 0;
 int cinnabar_check = 0;
 int cinnabar_experiments = 0;
 
+FILE* get_stdin() {
+	return stdin;
+}
+
 static int config(const char *name, struct strbuf *result)
 {
 	struct strbuf key = STRBUF_INIT;
@@ -1143,19 +1147,7 @@ static void do_listkeys(struct hg_connection *conn, struct string_list *args)
 
 extern void do_getbundle(struct hg_connection *conn, struct string_list *args);
 
-static void do_unbundle(struct hg_connection *conn, struct string_list *args)
-{
-	struct strbuf result = STRBUF_INIT;
-	struct oid_array heads = OID_ARRAY_INIT;
-	if (args->nr < 1)
-		exit(1);
-	if (args->nr != 1 || strcmp(args->items[0].string, "force"))
-		string_list_as_oid_array(args, &heads);
-	hg_unbundle(conn, &result, stdin, &heads);
-	send_buffer(&result);
-	oid_array_clear(&heads);
-	strbuf_release(&result);
-}
+extern void do_unbundle(struct hg_connection *conn, struct string_list *args);
 
 static void do_pushkey(struct hg_connection *conn, struct string_list *args)
 {

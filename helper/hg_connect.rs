@@ -10,7 +10,6 @@ use std::ptr;
 
 use bstr::{BString, ByteSlice};
 use itertools::Itertools;
-use libc::FILE;
 use percent_encoding::percent_decode;
 use sha1::{Digest, Sha1};
 use url::Url;
@@ -19,7 +18,7 @@ use crate::hg_bundle::copy_bundle;
 use crate::hg_connect_http::HgHTTPConnection;
 use crate::hg_connect_stdio::HgStdIOConnection;
 use crate::libcinnabar::send_buffer;
-use crate::libgit::{oid_array, strbuf, string_list};
+use crate::libgit::{strbuf, string_list};
 use crate::oid::ObjectId;
 use crate::store::HgChangesetId;
 use crate::util::FromBytes;
@@ -305,24 +304,23 @@ unsafe extern "C" fn do_getbundle(conn: *mut hg_connection, args: *const string_
 }
 
 #[no_mangle]
-unsafe extern "C" fn hg_unbundle(
-    conn: *mut hg_connection,
-    response: *mut strbuf,
-    input: *mut FILE,
-    heads: *const oid_array,
-) {
+unsafe extern "C" fn do_unbundle(conn: *mut hg_connection, args: *const string_list) {
     let conn = to_wire_connection(conn);
-    let heads = heads.as_ref().unwrap();
-    let heads_str = if heads.is_empty() {
+    let args = args.as_ref().unwrap();
+    let args = args.iter().collect::<Vec<_>>();
+    let heads_str = if args.is_empty() || &args[..] == &[b"force"] {
         hex::encode("force")
-    } else if conn.get_capability(b"unbundlehash").is_none() {
-        heads.iter().join(" ")
     } else {
-        let mut hash = Sha1::new();
-        for h in heads.iter().sorted().dedup() {
-            hash.input(h.as_raw_bytes());
+        let mut heads = args.iter().map(|a| HgChangesetId::from_bytes(a).unwrap());
+        if conn.get_capability(b"unbundlehash").is_none() {
+            heads.join(" ")
+        } else {
+            let mut hash = Sha1::new();
+            for h in heads.sorted().dedup() {
+                hash.input(h.as_raw_bytes());
+            }
+            format!("{} {:x}", hex::encode("hashed"), hash.result())
         }
-        format!("{} {:x}", hex::encode("hashed"), hash.result())
     };
 
     /* Neither the stdio nor the HTTP protocols can handle a stream for
@@ -335,16 +333,13 @@ unsafe extern "C" fn hg_unbundle(
         .tempfile()
         .unwrap();
     let (mut f, path) = tempfile.into_parts();
-    copy_bundle(&mut crate::libc::File::new(input), &mut f).unwrap();
+    copy_bundle(&mut crate::libc::File::stdin(), &mut f).unwrap();
     drop(f);
 
     let file = File::open(path).unwrap();
-    conn.push_command(
-        response.as_mut().unwrap(),
-        file,
-        "unbundle",
-        args!(heads: &heads_str),
-    );
+    let mut response = strbuf::new();
+    conn.push_command(&mut response, file, "unbundle", args!(heads: &heads_str));
+    send_buffer(&response);
 }
 
 #[no_mangle]

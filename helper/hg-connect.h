@@ -24,9 +24,6 @@ void hg_get_repo_state(struct hg_connection *conn,
                        struct strbuf *branchmap, struct strbuf *heads,
                        struct strbuf *bookmarks);
 
-void hg_unbundle(struct hg_connection *conn, struct strbuf *response,
-                 FILE *in, struct oid_array *heads);
-
 void hg_pushkey(struct hg_connection *conn, struct strbuf *response,
                 const char *namespace, const char *key, const char *old,
                 const char *new);
