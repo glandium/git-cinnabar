@@ -1121,17 +1121,6 @@ static void do_helpercaps(struct string_list *args)
 	strbuf_release(&caps);
 }
 
-static void string_list_as_oid_array(struct string_list *list,
-				     struct oid_array *array)
-{
-	struct string_list_item *item;
-	for_each_string_list_item(item, list) {
-		struct object_id oid;
-		if (!get_oid_hex(item->string, &oid))
-			oid_array_append(array, &oid);
-	}
-}
-
 extern void do_known(struct hg_connection *conn, struct string_list *args);
 
 static void do_listkeys(struct hg_connection *conn, struct string_list *args)
