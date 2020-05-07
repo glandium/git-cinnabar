@@ -937,7 +937,7 @@ def run(func, args):
     except Abort as e:
         # These exceptions are normal abort and require no traceback
         retcode = 1
-        logging.error(e.message)
+        logging.error(str(e))
     except Exception as e:
         # Catch all exceptions and provide a nice message
         retcode = 70  # Internal software error
