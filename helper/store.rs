@@ -14,7 +14,7 @@ use itertools::Itertools;
 use percent_encoding::percent_decode;
 
 use crate::hg_data::Authorship;
-use crate::libcinnabar::{git2hg, hg2git};
+use crate::libcinnabar::{generate_manifest, git2hg, hg2git};
 use crate::libgit::{BlobId, CommitId, RawBlob, RawCommit};
 use crate::oid::{HgObjectId, ObjectId};
 use crate::oid_type;
@@ -287,5 +287,36 @@ impl RawHgChangeset {
             changeset.pop();
         }
         Some(RawHgChangeset(changeset.into()))
+    }
+}
+
+#[derive(Deref)]
+#[deref(forward)]
+pub struct RawHgManifest(Box<[u8]>);
+
+impl RawHgManifest {
+    pub fn read(oid: &GitManifestId) -> Option<Self> {
+        unsafe {
+            generate_manifest(&(&***oid).clone().into())
+                .as_ref()
+                .map(|b| Self(b.as_bytes().to_owned().into()))
+        }
+    }
+}
+
+#[derive(Deref)]
+#[deref(forward)]
+pub struct RawHgFile(Box<[u8]>);
+
+impl RawHgFile {
+    pub fn read(oid: &GitFileId, metadata: Option<&GitFileMetadataId>) -> Option<Self> {
+        let mut result = Vec::new();
+        if let Some(metadata) = metadata {
+            result.extend_from_slice(b"\x01\n");
+            result.extend_from_slice(RawBlob::read(metadata)?.as_bytes());
+            result.extend_from_slice(b"\x01\n");
+        }
+        result.extend_from_slice(RawBlob::read(oid)?.as_bytes());
+        Some(Self(result.into()))
     }
 }

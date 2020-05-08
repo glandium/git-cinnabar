@@ -41,10 +41,13 @@ use std::str::{self, FromStr};
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 
-use libcinnabar::{files_meta, generate_manifest, hg2git};
-use libgit::{get_oid_committish, strbuf, BlobId, CommitId, RawBlob};
+use libcinnabar::{files_meta, hg2git};
+use libgit::{get_oid_committish, strbuf, BlobId, CommitId};
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
-use store::{GitChangesetId, HgChangesetId, HgFileId, HgManifestId, RawHgChangeset};
+use store::{
+    GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
+    HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest,
+};
 use util::OsStrExt;
 
 const HELPER_HASH: &str = env!("HELPER_HASH");
@@ -176,10 +179,9 @@ fn do_data_manifest(rev: Abbrev<HgManifestId>) -> Result<(), String> {
         let commit_id = hg2git
             .get_note_abbrev(&rev)
             .ok_or_else(|| format!("Unknown manifest id: {}", rev))?;
-        let buf = generate_manifest(&commit_id.into()).as_ref().unwrap();
-        stdout()
-            .write_all(buf.as_bytes())
-            .map_err(|e| e.to_string())
+        let manifest =
+            RawHgManifest::read(&GitManifestId::from(CommitId::from(commit_id))).unwrap();
+        stdout().write_all(&manifest).map_err(|e| e.to_string())
     }
 }
 
@@ -189,20 +191,12 @@ fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
         let blob_id = hg2git
             .get_note_abbrev(&rev)
             .ok_or_else(|| format!("Unknown file id: {}", rev))?;
-        files_meta
+        let file_id = GitFileId::from(BlobId::from(blob_id));
+        let metadata_id = files_meta
             .get_note_abbrev(&rev)
-            .map(|oid| BlobId::from(oid))
-            .and_then(|oid| RawBlob::read(&oid))
-            .map(|o| {
-                stdout.write_all(b"\x01\n")?;
-                stdout.write_all(o.as_bytes())?;
-                stdout.write_all(b"\x01\n")
-            })
-            .transpose()
-            .and_then(|_| {
-                stdout.write_all(RawBlob::read(&BlobId::from(blob_id)).unwrap().as_bytes())
-            })
-            .map_err(|e| e.to_string())
+            .map(|oid| GitFileMetadataId::from(BlobId::from(oid)));
+        let file = RawHgFile::read(&file_id, metadata_id.as_ref()).unwrap();
+        stdout.write_all(&file).map_err(|e| e.to_string())
     }
 }
 
