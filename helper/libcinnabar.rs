@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::io::Write;
+use std::ops::Deref;
 use std::os::raw::{c_char, c_int};
 
 use libc::FILE;
@@ -18,6 +19,15 @@ pub struct hg_object_id([u8; 20]);
 
 impl From<HgObjectId> for hg_object_id {
     fn from(oid: HgObjectId) -> Self {
+        let mut result = Self([0; 20]);
+        let oid = oid.as_raw_bytes();
+        result.0[..oid.len()].clone_from_slice(oid);
+        result
+    }
+}
+
+impl<H: ObjectId + Deref<Target = HgObjectId>> From<H> for hg_object_id {
+    fn from(oid: H) -> Self {
         let mut result = Self([0; 20]);
         let oid = oid.as_raw_bytes();
         result.0[..oid.len()].clone_from_slice(oid);
@@ -80,7 +90,10 @@ impl hg_notes_tree {
         }
     }
 
-    pub fn get_note_abbrev(&mut self, oid: &Abbrev<HgObjectId>) -> Option<GitObjectId> {
+    pub fn get_note_abbrev<H: ObjectId + Clone + Deref<Target = HgObjectId>>(
+        &mut self,
+        oid: &Abbrev<H>,
+    ) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
             resolve_hg(&mut self.0, &oid.as_object_id().clone().into(), oid.len())

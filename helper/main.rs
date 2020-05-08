@@ -32,6 +32,7 @@ use std::ffi::CString;
 use std::ffi::OsString;
 use std::fmt;
 use std::io::{stdin, stdout, BufRead, BufWriter, Write};
+use std::ops::Deref;
 use std::os::raw::c_char;
 use std::os::raw::c_int;
 use std::path::PathBuf;
@@ -43,7 +44,7 @@ use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 use libcinnabar::{files_meta, generate_manifest, hg2git};
 use libgit::{get_oid_committish, strbuf, BlobId, CommitId, RawBlob};
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
-use store::{GitChangesetId, HgChangesetId, RawHgChangeset};
+use store::{GitChangesetId, HgChangesetId, HgFileId, HgManifestId, RawHgChangeset};
 use util::OsStrExt;
 
 const HELPER_HASH: &str = env!("HELPER_HASH");
@@ -77,7 +78,7 @@ pub fn prepare_arg(arg: OsString) -> Vec<u16> {
     arg
 }
 
-fn do_one_hg2git(sha1: &Abbrev<HgObjectId>) -> Result<String, String> {
+fn do_one_hg2git(sha1: &Abbrev<HgChangesetId>) -> Result<String, String> {
     Ok(format!("{}", unsafe {
         hg2git
             .get_note_abbrev(sha1)
@@ -115,10 +116,10 @@ impl FromStr for FromStrHelper<OsString> {
     }
 }
 
-impl FromStr for FromStrHelper<Abbrev<HgObjectId>> {
-    type Err = <Abbrev<HgObjectId> as FromStr>::Err;
+impl<H: ObjectId + Deref<Target = HgObjectId>> FromStr for FromStrHelper<Abbrev<H>> {
+    type Err = <Abbrev<H> as FromStr>::Err;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Abbrev::<HgObjectId>::from_str(s).map(Self)
+        Abbrev::<H>::from_str(s).map(Self)
     }
 }
 
@@ -159,52 +160,50 @@ where
     Ok(())
 }
 
-enum HgObjectType {
-    Changeset,
-    Manifest,
-    File,
+fn do_data_changeset(rev: Abbrev<HgChangesetId>) -> Result<(), String> {
+    unsafe {
+        let commit_id = hg2git
+            .get_note_abbrev(&rev)
+            .ok_or_else(|| format!("Unknown changeset id: {}", rev))?;
+        let changeset =
+            RawHgChangeset::read(&GitChangesetId::from(CommitId::from(commit_id))).unwrap();
+        stdout().write_all(&changeset).map_err(|e| e.to_string())
+    }
 }
 
-fn do_data(rev: Abbrev<HgObjectId>, typ: HgObjectType) -> Result<(), String> {
-    let git_obj = unsafe { hg2git.get_note_abbrev(&rev) }
-        .ok_or_else(|| format!("Unknown revision: {}", rev))?;
-    match typ {
-        HgObjectType::Changeset => unsafe {
-            let commit_id = GitChangesetId::from(CommitId::from(git_obj));
-            let changeset = RawHgChangeset::read(&commit_id).unwrap();
-            stdout().write_all(&changeset).map_err(|e| e.to_string())?;
-        },
-        HgObjectType::Manifest => {
-            let buf = unsafe { generate_manifest(&git_obj.into()).as_ref().unwrap() };
-            stdout()
-                .write_all(buf.as_bytes())
-                .map_err(|e| e.to_string())?;
-        }
-        HgObjectType::File => {
-            let mut stdout = stdout();
-            unsafe {
-                files_meta
-                    .get_note_abbrev(&rev)
-                    .map(|oid| BlobId::from(oid))
-                    .and_then(|oid| RawBlob::read(&oid))
-                    .map(|o| {
-                        stdout.write_all(b"\x01\n")?;
-                        stdout.write_all(o.as_bytes())?;
-                        stdout.write_all(b"\x01\n")
-                    })
-                    .transpose()
-                    .and_then(|_| {
-                        stdout.write_all(
-                            RawBlob::read(&BlobId::from(git_obj.clone()))
-                                .unwrap()
-                                .as_bytes(),
-                        )
-                    })
-                    .map_err(|e| e.to_string())?;
-            }
-        }
+fn do_data_manifest(rev: Abbrev<HgManifestId>) -> Result<(), String> {
+    unsafe {
+        let commit_id = hg2git
+            .get_note_abbrev(&rev)
+            .ok_or_else(|| format!("Unknown manifest id: {}", rev))?;
+        let buf = generate_manifest(&commit_id.into()).as_ref().unwrap();
+        stdout()
+            .write_all(buf.as_bytes())
+            .map_err(|e| e.to_string())
     }
-    Ok(())
+}
+
+fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
+    unsafe {
+        let mut stdout = stdout();
+        let blob_id = hg2git
+            .get_note_abbrev(&rev)
+            .ok_or_else(|| format!("Unknown file id: {}", rev))?;
+        files_meta
+            .get_note_abbrev(&rev)
+            .map(|oid| BlobId::from(oid))
+            .and_then(|oid| RawBlob::read(&oid))
+            .map(|o| {
+                stdout.write_all(b"\x01\n")?;
+                stdout.write_all(o.as_bytes())?;
+                stdout.write_all(b"\x01\n")
+            })
+            .transpose()
+            .and_then(|_| {
+                stdout.write_all(RawBlob::read(&BlobId::from(blob_id)).unwrap().as_bytes())
+            })
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[derive(Debug)]
@@ -234,18 +233,20 @@ impl FromStr for AbbrevSize {
 #[structopt(setting(AppSettings::VersionlessSubcommands))]
 enum CinnabarCommand {
     #[structopt(name = "data")]
+    #[structopt(group = ArgGroup::with_name("input").multiple(false).required(true))]
     #[structopt(about = "Dump the contents of a mercurial revision")]
     Data {
         #[structopt(short = "c")]
+        #[structopt(group = "input")]
         #[structopt(help = "Open changelog")]
-        changeset: bool,
+        changeset: Option<Abbrev<HgChangesetId>>,
         #[structopt(short = "m")]
-        #[structopt(conflicts_with = "changeset")]
+        #[structopt(group = "input")]
         #[structopt(help = "Open manifest")]
-        manifest: bool,
-        #[structopt(required = true)]
-        #[structopt(help = "Revision")]
-        rev: Abbrev<HgObjectId>,
+        manifest: Option<Abbrev<HgManifestId>>,
+        #[structopt(group = "input")]
+        #[structopt(help = "Open file")]
+        file: Option<Abbrev<HgFileId>>,
     },
     #[structopt(name = "hg2git")]
     #[structopt(group = ArgGroup::with_name("input").multiple(true).required(true))]
@@ -258,7 +259,7 @@ enum CinnabarCommand {
         abbrev: Option<Vec<AbbrevSize>>,
         #[structopt(group = "input")]
         #[structopt(help = "Mercurial sha1")]
-        sha1: Vec<Abbrev<HgObjectId>>,
+        sha1: Vec<Abbrev<HgChangesetId>>,
         #[structopt(long)]
         #[structopt(group = "input")]
         #[structopt(help = "Read sha1s on stdin")]
@@ -312,18 +313,13 @@ fn git_cinnabar(argv0: *const c_char) -> i32 {
     }
     let ret = match command {
         Data {
-            changeset,
-            manifest,
-            rev,
-        } => do_data(
-            rev,
-            match (changeset, manifest) {
-                (true, false) => HgObjectType::Changeset,
-                (false, true) => HgObjectType::Manifest,
-                (false, false) => HgObjectType::File,
-                (true, true) => unreachable!(),
-            },
-        ),
+            changeset: Some(c), ..
+        } => do_data_changeset(c),
+        Data {
+            manifest: Some(m), ..
+        } => do_data_manifest(m),
+        Data { file: Some(f), .. } => do_data_file(f),
+        Data { .. } => unreachable!(),
         Hg2Git {
             abbrev,
             sha1,
