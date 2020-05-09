@@ -390,10 +390,28 @@ static void do_rev_list(struct string_list *args)
 	rev_list_finish(revs);
 }
 
-static void strbuf_diff_tree(struct diff_queue_struct *q,
-                             struct diff_options *opt, void *data)
+struct diff_tree_file {
+	struct object_id *oid;
+	char *path;
+	unsigned short mode;
+};
+
+struct diff_tree_item {
+	struct diff_tree_file a;
+	struct diff_tree_file b;
+	unsigned short int score;
+	char status;
+};
+
+struct diff_tree_ctx {
+	void (*cb)(void *, struct diff_tree_item *);
+	void *context;
+};
+
+static void diff_tree_cb(struct diff_queue_struct *q,
+                         struct diff_options *opt, void *data)
 {
-	struct strbuf *buf = data;
+	struct diff_tree_ctx *ctx = data;
 	int i;
 
 	for (i = 0; i < q->nr; i++) {
@@ -402,45 +420,30 @@ static void strbuf_diff_tree(struct diff_queue_struct *q,
 			die("internal diff status error");
 		if (p->status == DIFF_STATUS_UNKNOWN)
 			continue;
-		strbuf_addf(buf, "%06o %06o %s %s %c",
-		            p->one->mode,
-		            p->two->mode,
-		            oid_to_hex(&p->one->oid),
-		            oid_to_hex(&p->two->oid),
-		            p->status);
-		if (p->score)
-			strbuf_addf(buf, "%03d",
-			            (int)(p->score * 100 / MAX_SCORE));
-		strbuf_addch(buf, '\t');
-		if (p->status == DIFF_STATUS_COPIED ||
-		    p->status == DIFF_STATUS_RENAMED) {
-			strbuf_addstr(buf, p->one->path);
-			strbuf_addch(buf, '\0');
-			strbuf_addstr(buf, p->two->path);
-		} else {
-			strbuf_addstr(buf, p->one->mode ? p->one->path
-			                                : p->two->path);
-		}
-		strbuf_addch(buf, '\0');
+		struct diff_tree_item item = {
+			{ &p->one->oid, p->one->path, p->one->mode },
+			{ &p->two->oid, p->two->path, p->two->mode },
+			p->score,
+			p->status,
+		};
+		ctx->cb(ctx->context, &item);
 	}
 }
 
-static void do_diff_tree(struct string_list *args)
+void diff_tree_(int argc, const char **argv, void (*cb)(void *, struct diff_tree_item *), void *context)
 {
+	struct diff_tree_ctx ctx = { cb, context };
 	struct rev_info revs;
-	struct strbuf buf = STRBUF_INIT;
-	const char **argv = string_list_to_argv(args);
 
 	init_revisions(&revs, NULL);
 	revs.diff = 1;
 	// Note: we do a pass through, but don't make much effort to actually
 	// support all the options properly.
-	setup_revisions(args->nr + 1, argv, &revs, NULL);
+	setup_revisions(argc, argv, &revs, NULL);
 	revs.diffopt.output_format = DIFF_FORMAT_CALLBACK;
-	revs.diffopt.format_callback = strbuf_diff_tree;
-	revs.diffopt.format_callback_data = &buf;
+	revs.diffopt.format_callback = diff_tree_cb;
+	revs.diffopt.format_callback_data = &ctx;
 	revs.diffopt.flags.recursive = 1;
-	free(argv);
 
 	if (revs.pending.nr != 2)
 		die("diff-tree needs two revs");
@@ -449,9 +452,44 @@ static void do_diff_tree(struct string_list *args)
 	              &revs.pending.objects[1].item->oid,
 	              "", &revs.diffopt);
 	log_tree_diff_flush(&revs);
+	rev_info_release(&revs);
+}
+
+static void strbuf_diff_tree(void *ctx, struct diff_tree_item *item)
+{
+	struct strbuf *buf = ctx;
+	strbuf_addf(buf, "%06o %06o %s %s %c",
+	            item->a.mode,
+	            item->b.mode,
+	            oid_to_hex(item->a.oid),
+	            oid_to_hex(item->b.oid),
+	            item->status);
+	if (item->score)
+		strbuf_addf(buf, "%03d",
+		            (int)(item->score * 100 / MAX_SCORE));
+	strbuf_addch(buf, '\t');
+	if (item->status == DIFF_STATUS_COPIED ||
+	    item->status == DIFF_STATUS_RENAMED) {
+		strbuf_addstr(buf, item->a.path);
+		strbuf_addch(buf, '\0');
+		strbuf_addstr(buf, item->b.path);
+	} else {
+		strbuf_addstr(buf, item->a.mode ? item->a.path
+		                                : item->b.path);
+	}
+	strbuf_addch(buf, '\0');
+}
+
+static void do_diff_tree(struct string_list *args)
+{
+	struct strbuf buf = STRBUF_INIT;
+	const char **argv = string_list_to_argv(args);
+
+	diff_tree_(args->nr + 1, argv, strbuf_diff_tree, &buf);
+	free(argv);
+
 	send_buffer(&buf);
 	strbuf_release(&buf);
-	rev_info_release(&revs);
 }
 
 void ensure_notes(struct notes_tree *notes)

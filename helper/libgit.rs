@@ -5,7 +5,7 @@
 use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString, OsStr};
 use std::io::{self, Write};
-use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong};
+use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 
@@ -15,7 +15,7 @@ use derive_more::{Deref, Display};
 use getset::Getters;
 
 use crate::oid::{GitObjectId, ObjectId};
-use crate::util::{FromBytes, SliceExt};
+use crate::util::{BorrowKey, FromBytes, SliceExt};
 
 const GIT_MAX_RAWSZ: usize = 32;
 
@@ -455,4 +455,159 @@ impl Iterator for RevList {
                 .map(|c| CommitId::from(GitObjectId::from(commit_oid(c).as_ref().unwrap().clone())))
         }
     }
+}
+
+const DIFF_STATUS_ADDED: c_char = b'A' as c_char;
+const DIFF_STATUS_COPIED: c_char = b'C' as c_char;
+const DIFF_STATUS_DELETED: c_char = b'D' as c_char;
+const DIFF_STATUS_MODIFIED: c_char = b'M' as c_char;
+const DIFF_STATUS_TYPE_CHANGED: c_char = b'T' as c_char;
+const DIFF_STATUS_RENAMED: c_char = b'R' as c_char;
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+struct diff_tree_file {
+    oid: *const object_id,
+    path: *const c_char,
+    mode: c_ushort,
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+struct diff_tree_item {
+    a: diff_tree_file,
+    b: diff_tree_file,
+    score: c_ushort,
+    status: c_char,
+}
+
+extern "C" {
+    fn diff_tree_(
+        argc: c_int,
+        argv: *const *const c_char,
+        cb: unsafe extern "C" fn(*mut c_void, *const diff_tree_item),
+        context: *const c_void,
+    );
+}
+
+pub struct FileMode(u16);
+
+pub enum DiffTreeItem {
+    Added {
+        path: Box<[u8]>,
+        mode: FileMode,
+        oid: BlobId,
+    },
+    Deleted {
+        path: Box<[u8]>,
+        mode: FileMode,
+        oid: BlobId,
+    },
+    Modified {
+        path: Box<[u8]>,
+        from_mode: FileMode,
+        from_oid: BlobId,
+        to_mode: FileMode,
+        to_oid: BlobId,
+    },
+    Renamed {
+        to_path: Box<[u8]>,
+        to_mode: FileMode,
+        to_oid: BlobId,
+        from_path: Box<[u8]>,
+        from_mode: FileMode,
+        from_oid: BlobId,
+    },
+    Copied {
+        to_path: Box<[u8]>,
+        to_mode: FileMode,
+        to_oid: BlobId,
+        from_path: Box<[u8]>,
+        from_mode: FileMode,
+        from_oid: BlobId,
+    },
+}
+
+impl BorrowKey for DiffTreeItem {
+    type Key = Box<[u8]>;
+    fn borrow_key(&self) -> &Self::Key {
+        match self {
+            DiffTreeItem::Added { path, .. } => path,
+            DiffTreeItem::Deleted { path, .. } => path,
+            DiffTreeItem::Modified { path, .. } => path,
+            DiffTreeItem::Renamed { to_path, .. } => to_path,
+            DiffTreeItem::Copied { to_path, .. } => to_path,
+        }
+    }
+}
+
+unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tree_item) {
+    let diff_tree = (diff_tree as *mut Vec<DiffTreeItem>).as_mut().unwrap();
+    let item = item.as_ref().unwrap();
+    let item = match item.status {
+        DIFF_STATUS_MODIFIED | DIFF_STATUS_TYPE_CHANGED => DiffTreeItem::Modified {
+            path: {
+                let a_path: Box<[u8]> = CStr::from_ptr(item.a.path).to_bytes().into();
+                let b_path = CStr::from_ptr(item.b.path).to_bytes();
+                assert_eq!(a_path.as_bstr(), b_path.as_bstr());
+                a_path
+            },
+            from_oid: BlobId::from(GitObjectId::from(item.a.oid.as_ref().unwrap().clone())),
+            from_mode: FileMode(item.a.mode),
+            to_oid: BlobId::from(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
+            to_mode: FileMode(item.b.mode),
+        },
+        DIFF_STATUS_ADDED => DiffTreeItem::Added {
+            path: CStr::from_ptr(item.b.path).to_bytes().into(),
+            oid: BlobId::from(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
+            mode: FileMode(item.b.mode),
+        },
+        DIFF_STATUS_DELETED => DiffTreeItem::Deleted {
+            path: CStr::from_ptr(item.a.path).to_bytes().into(),
+            oid: BlobId::from(GitObjectId::from(item.a.oid.as_ref().unwrap().clone())),
+            mode: FileMode(item.a.mode),
+        },
+        DIFF_STATUS_RENAMED => DiffTreeItem::Renamed {
+            to_path: CStr::from_ptr(item.b.path).to_bytes().into(),
+            to_oid: BlobId::from(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
+            to_mode: FileMode(item.b.mode),
+            from_path: CStr::from_ptr(item.a.path).to_bytes().into(),
+            from_oid: BlobId::from(GitObjectId::from(item.a.oid.as_ref().unwrap().clone())),
+            from_mode: FileMode(item.a.mode),
+        },
+        DIFF_STATUS_COPIED => DiffTreeItem::Copied {
+            to_path: CStr::from_ptr(item.b.path).to_bytes().into(),
+            to_oid: BlobId::from(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
+            to_mode: FileMode(item.b.mode),
+            from_path: CStr::from_ptr(item.a.path).to_bytes().into(),
+            from_oid: BlobId::from(GitObjectId::from(item.a.oid.as_ref().unwrap().clone())),
+            from_mode: FileMode(item.a.mode),
+        },
+        c => panic!("Unknown diff state: {}", c),
+    };
+    diff_tree.push(item);
+}
+
+pub fn diff_tree(a: &CommitId, b: &CommitId) -> impl Iterator<Item = DiffTreeItem> {
+    let a = CString::new(format!("{}", a)).unwrap();
+    let b = CString::new(format!("{}", b)).unwrap();
+    let args = [
+        cstr!(""),
+        &a,
+        &b,
+        cstr!("--ignore-submodules=dirty"),
+        cstr!("--"),
+    ];
+    let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
+    argv.push(std::ptr::null());
+    let mut result = Vec::<DiffTreeItem>::new();
+    unsafe {
+        diff_tree_(
+            args.len().try_into().unwrap(),
+            &argv[0],
+            diff_tree_fill,
+            &mut result as *mut _ as *mut c_void,
+        );
+    }
+    result.into_iter()
 }
