@@ -7,7 +7,7 @@ use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::os::raw::{c_char, c_int, c_long, c_ulong};
 
-use bstr::{BStr, ByteSlice};
+use bstr::ByteSlice;
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -67,11 +67,13 @@ extern "C" {
     ) -> c_int;
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug)]
 pub struct PatchInfo<'a> {
     pub start: usize,
     pub end: usize,
-    pub data: &'a BStr,
+    #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
+    pub data: &'a [u8],
 }
 
 struct HunkContext<'a> {

@@ -5,6 +5,7 @@
 use std::borrow::ToOwned;
 use std::cmp::Ordering;
 use std::convert::TryInto;
+use std::fmt;
 use std::io::{self, copy, Cursor, LineWriter, Read, Seek, SeekFrom, Write};
 use std::mem;
 #[cfg(unix)]
@@ -515,4 +516,8 @@ fn test_ordered_zip() {
         o.next().map(|x| x.map(|y| y.to_tuple())),
         Some(Err(UnorderedError(())))
     );
+}
+
+pub fn bstr_fmt<S: AsRef<[u8]>>(s: &S, f: &mut fmt::Formatter) -> fmt::Result {
+    fmt::Debug::fmt(s.as_ref().as_bstr(), f)
 }

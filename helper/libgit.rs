@@ -4,6 +4,7 @@
 
 use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString, OsStr};
+use std::fmt;
 use std::io::{self, Write};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 #[cfg(unix)]
@@ -492,18 +493,29 @@ extern "C" {
 
 pub struct FileMode(u16);
 
+impl fmt::Debug for FileMode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:06o}", self.0)
+    }
+}
+
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub enum DiffTreeItem {
     Added {
+        #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         path: Box<[u8]>,
         mode: FileMode,
         oid: BlobId,
     },
     Deleted {
+        #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         path: Box<[u8]>,
         mode: FileMode,
         oid: BlobId,
     },
     Modified {
+        #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         path: Box<[u8]>,
         from_mode: FileMode,
         from_oid: BlobId,
@@ -511,17 +523,21 @@ pub enum DiffTreeItem {
         to_oid: BlobId,
     },
     Renamed {
+        #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         to_path: Box<[u8]>,
         to_mode: FileMode,
         to_oid: BlobId,
+        #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         from_path: Box<[u8]>,
         from_mode: FileMode,
         from_oid: BlobId,
     },
     Copied {
+        #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         to_path: Box<[u8]>,
         to_mode: FileMode,
         to_oid: BlobId,
+        #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         from_path: Box<[u8]>,
         from_mode: FileMode,
         from_oid: BlobId,
