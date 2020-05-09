@@ -5,6 +5,8 @@
 #[macro_use]
 extern crate cstr;
 #[macro_use]
+extern crate derivative;
+#[macro_use]
 extern crate all_asserts;
 
 use structopt::clap::{crate_version, AppSettings, ArgGroup};
@@ -19,6 +21,7 @@ pub mod libgit;
 mod libc;
 mod libcinnabar;
 pub mod store;
+mod xdiff;
 
 pub(crate) mod hg_bundle;
 #[macro_use]
