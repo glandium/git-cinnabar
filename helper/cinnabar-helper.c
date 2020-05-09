@@ -315,28 +315,48 @@ static const char **string_list_to_argv(struct string_list *args)
 	return argv;
 }
 
+struct object_id *commit_oid(struct commit *c) {
+	return &c->object.oid;
+}
+
+struct rev_info *rev_list_new(int argc, const char **argv) {
+	struct rev_info *revs = xmalloc(sizeof(*revs));
+
+	init_revisions(revs, NULL);
+	// Note: we do a pass through, but don't make much effort to actually
+	// support all the options properly.
+	setup_revisions(argc, argv, revs, NULL);
+
+	if (prepare_revision_walk(revs))
+		die("revision walk setup failed");
+
+	return revs;
+}
+
+void rev_list_finish(struct rev_info *revs) {
+	// More extensive than reset_revision_walk(). Otherwise --boundary
+	// and pathspecs don't work properly.
+	clear_object_flags(ALL_REV_FLAGS | TOPO_WALK_EXPLORED | TOPO_WALK_INDEGREE);
+	rev_info_release(revs);
+	free(revs);
+}
+
 static void do_rev_list(struct string_list *args)
 {
-	struct rev_info revs;
+	struct rev_info *revs;
 	struct commit *commit;
 	struct strbuf buf = STRBUF_INIT;
 	const char **argv = string_list_to_argv(args);
 
-	init_revisions(&revs, NULL);
-	// Note: we do a pass through, but don't make much effort to actually
-	// support all the options properly.
-	setup_revisions(args->nr + 1, argv, &revs, NULL);
+	revs = rev_list_new(args->nr + 1, argv);
 	free(argv);
 
 	// Hack to force simplify_commit to save parents. full_diff is only
 	// checked for there or in setup_revisions so there is no other side
 	// effect.
-	revs.full_diff = 1;
+	revs->full_diff = 1;
 
-	if (prepare_revision_walk(&revs))
-		die("revision walk setup failed");
-
-	while ((commit = get_revision(&revs)) != NULL) {
+	while ((commit = get_revision(revs)) != NULL) {
 		struct commit_list *parent;
 		if (commit->object.flags & BOUNDARY)
 			strbuf_addch(&buf, '-');
@@ -359,19 +379,15 @@ static void do_rev_list(struct string_list *args)
 		// parents for the commit. If there was a saved value of null,
 		// it would mean the commit was a root in the first place, but
 		// then why would it have been saved?
-		parent = get_saved_parents(&revs, commit);
+		parent = get_saved_parents(revs, commit);
 		if (parent && parent != commit->parents) {
 			free_commit_list(commit->parents);
 			commit->parents = copy_commit_list(parent);
 		}
 	}
-
-	// More extensive than reset_revision_walk(). Otherwise --boundary
-	// and pathspecs don't work properly.
-	clear_object_flags(ALL_REV_FLAGS | TOPO_WALK_EXPLORED | TOPO_WALK_INDEGREE);
 	send_buffer(&buf);
 	strbuf_release(&buf);
-	rev_info_release(&revs);
+	rev_list_finish(revs);
 }
 
 static void strbuf_diff_tree(struct diff_queue_struct *q,

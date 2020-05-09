@@ -3,9 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::convert::TryInto;
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{c_void, CStr, CString, OsStr};
 use std::io::{self, Write};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong};
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 
 use bstr::ByteSlice;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
@@ -392,5 +394,65 @@ impl<'a> Iterator for string_list_iter<'a> {
         let result = unsafe { self.list.items.offset(i as isize).as_ref()? };
         self.next = i.checked_add(1).filter(|&x| x < self.list.nr);
         Some(unsafe { CStr::from_ptr(result.string) }.to_bytes())
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[repr(transparent)]
+pub struct rev_info(c_void);
+
+#[allow(non_camel_case_types)]
+#[repr(transparent)]
+pub struct commit(c_void);
+
+extern "C" {
+    pub fn commit_oid(c: *const commit) -> *const object_id;
+
+    pub fn get_revision(revs: *mut rev_info) -> *const commit;
+
+    pub fn rev_list_new(argc: c_int, argv: *const *const c_char) -> *mut rev_info;
+
+    pub fn rev_list_finish(revs: *mut rev_info);
+}
+
+pub struct RevList {
+    revs: *mut rev_info,
+}
+
+fn prepare_arg(arg: &OsStr) -> CString {
+    #[cfg(windows)]
+    let arg = arg.to_str().unwrap();
+    CString::new(arg.as_bytes()).unwrap()
+}
+
+pub fn rev_list(args: &[&OsStr]) -> RevList {
+    let args: Vec<_> = Some(OsStr::new(""))
+        .iter()
+        .chain(args)
+        .map(|a| prepare_arg(a))
+        .collect();
+    let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
+    argv.push(std::ptr::null());
+    RevList {
+        revs: unsafe { rev_list_new(args.len().try_into().unwrap(), &argv[0]) },
+    }
+}
+
+impl Drop for RevList {
+    fn drop(&mut self) {
+        unsafe {
+            rev_list_finish(self.revs);
+        }
+    }
+}
+
+impl Iterator for RevList {
+    type Item = CommitId;
+    fn next(&mut self) -> Option<Self::Item> {
+        unsafe {
+            get_revision(self.revs)
+                .as_ref()
+                .map(|c| CommitId::from(GitObjectId::from(commit_oid(c).as_ref().unwrap().clone())))
+        }
     }
 }
