@@ -4,7 +4,6 @@
 
 use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString};
-
 use std::io::{self, Write};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong};
 
@@ -98,7 +97,7 @@ extern "C" {
 
 pub(crate) fn _die(s: String) -> ! {
     unsafe {
-        let s = std::ffi::CString::new(s).unwrap();
+        let s = CString::new(s).unwrap();
         die(s.as_ptr())
     }
 }
