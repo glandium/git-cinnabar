@@ -19,6 +19,7 @@ use crate::libgit::{BlobId, CommitId, RawBlob, RawCommit};
 use crate::oid::{HgObjectId, ObjectId};
 use crate::oid_type;
 use crate::util::{FromBytes, SliceExt};
+use crate::xdiff::{apply, PatchInfo};
 
 macro_rules! hg2git {
     ($h:ident => $g:ident($i:ident)) => {
@@ -194,19 +195,22 @@ impl<'a> Iterator for ChangesetFilesIter<'a> {
 pub struct GitChangesetPatch<'a>(&'a [u8]);
 
 impl<'a> GitChangesetPatch<'a> {
+    pub fn iter(&self) -> Option<impl Iterator<Item = PatchInfo<Cow<'a, [u8]>>>> {
+        self.0
+            .split(|c| *c == b'\0')
+            .map(|part| {
+                let (start, end, data) = part.split3(b',')?;
+                let start = usize::from_bytes(start).ok()?;
+                let end = usize::from_bytes(end).ok()?;
+                let data = Cow::from(percent_decode(data));
+                Some(PatchInfo { start, end, data })
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(|v| v.into_iter())
+    }
+
     pub fn apply(&self, input: &[u8]) -> Option<Vec<u8>> {
-        let mut patched = Vec::new();
-        let mut last_end = 0;
-        for part in self.0.split(|c| *c == b'\0') {
-            let (start, end, data) = part.split3(b',')?;
-            let start = usize::from_bytes(start).ok()?;
-            let data = Cow::from(percent_decode(data));
-            patched.extend_from_slice(&input[last_end..start]);
-            patched.extend_from_slice(&data);
-            last_end = usize::from_bytes(end).ok()?;
-        }
-        patched.extend_from_slice(&input[last_end..]);
-        Some(patched)
+        Some(apply(self.iter()?, input))
     }
 }
 

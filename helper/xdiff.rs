@@ -67,17 +67,29 @@ extern "C" {
     ) -> c_int;
 }
 
-#[derive(Derivative, PartialEq)]
+#[derive(Clone, Copy, Derivative, PartialEq)]
 #[derivative(Debug)]
-pub struct PatchInfo<'a> {
+pub struct PatchInfo<S: AsRef<[u8]>> {
     pub start: usize,
     pub end: usize,
     #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
-    pub data: &'a [u8],
+    pub data: S,
+}
+
+pub fn apply<S: AsRef<[u8]>>(patch: impl Iterator<Item = PatchInfo<S>>, input: &[u8]) -> Vec<u8> {
+    let mut patched = Vec::new();
+    let mut last_end = 0;
+    for PatchInfo { start, end, data } in patch {
+        patched.extend_from_slice(&input[last_end..start]);
+        patched.extend_from_slice(data.as_ref());
+        last_end = end;
+    }
+    patched.extend_from_slice(&input[last_end..]);
+    patched
 }
 
 struct HunkContext<'a> {
-    patch_info: Vec<PatchInfo<'a>>,
+    patch_info: Vec<PatchInfo<&'a [u8]>>,
     a_line_offsets: Vec<usize>,
     b_line_offsets: Vec<usize>,
     b: &'a [u8],
@@ -121,7 +133,7 @@ fn line_offsets(buf: &[u8]) -> Vec<usize> {
         .collect()
 }
 
-pub fn textdiff<'a>(a: &[u8], b: &'a [u8]) -> Vec<PatchInfo<'a>> {
+pub fn textdiff<'a>(a: &[u8], b: &'a [u8]) -> Vec<PatchInfo<&'a [u8]>> {
     let mut ctx = HunkContext {
         patch_info: Vec::new(),
         a_line_offsets: line_offsets(a),
