@@ -9,7 +9,7 @@ static void start_packfile();
 #include "hg-bundle.h"
 #include "hg-data.h"
 #include "list.h"
-#include "sha1-array.h"
+#include "oid-array.h"
 #include "strslice.h"
 #include "tree-walk.h"
 
@@ -130,6 +130,8 @@ static void init()
 	branch_table = xcalloc(branch_table_sz, sizeof(struct branch*));
 	avail_tree_table = xcalloc(avail_tree_table_sz, sizeof(struct avail_tree_content*));
 	marks = mem_pool_calloc(&fi_mem_pool, 1, sizeof(struct mark_set));
+
+	hashmap_init(&object_table, object_entry_hashcmp, NULL, 0);
 
 	global_argc = 1;
 
@@ -266,7 +268,7 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 		e->pack_id = MAX_PACK_ID;
 		e->idx.offset = 1;
 	}
-	insert_mark(2, e);
+	insert_mark(marks, 2, e);
 	return 2;
 }
 
@@ -462,7 +464,7 @@ static void do_set(struct string_list *args)
 
 	if (args->items[2].string[0] == ':') {
 		uintmax_t mark = parse_mark_ref_eol(args->items[2].string);
-		struct object_entry *oe = find_mark(mark);
+		struct object_entry *oe = find_mark(marks, mark);
 		oidcpy(&git_id, &oe->idx.oid);
 	} else if (get_oid_hex(args->items[2].string, &git_id))
 		die("Invalid sha1");

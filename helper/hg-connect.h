@@ -3,7 +3,7 @@
 
 #include "cinnabar-util.h"
 #include "run-command.h"
-#include "sha1-array.h"
+#include "oid-array.h"
 #include "string-list.h"
 
 struct hg_connection {
