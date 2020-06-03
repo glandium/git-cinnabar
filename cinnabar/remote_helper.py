@@ -397,7 +397,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                     heads = set(self._branchmap.heads()) & unknown_heads
                 getbundle(self._repo, self._store, heads,
                           self._branchmap.names())
-        except Exception:
+        except:
             wanted_refs = {}
             raise
         finally:
