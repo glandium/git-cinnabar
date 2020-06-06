@@ -811,7 +811,8 @@ def do_cinnabarclone(repo, manifest, store):
             if not any(Git.iter(
                     'rev-list', '--branches', '--tags', '--remotes',
                     '--max-count=1', '--ancestry-path', '--stdin',
-                    stdin=(b'^%s^@' % c for c in graft))):
+                    stdin=(b'^%s^@' % c for c in graft),
+                    stderr=open(os.devnull, 'wb'))):
                 continue
 
         candidates.append((spec, len(graft) != 0))

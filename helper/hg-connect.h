@@ -2,7 +2,7 @@
 #define HG_CONNECT_H
 
 #include "run-command.h"
-#include "sha1-array.h"
+#include "oid-array.h"
 
 struct hg_connection_stdio {
 	FILE *out;
