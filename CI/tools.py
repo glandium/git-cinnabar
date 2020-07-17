@@ -313,7 +313,6 @@ class Helper(Task, metaclass=Tool):
                 '-Zprofile',
                 '-Ccodegen-units=1',
                 '-Cinline-threshold=0',
-                '-Zno-landing-pads',
             ])
             # Build without --release
             environ['CARGO_BUILD_FLAGS'] = ''
@@ -364,9 +363,9 @@ class Helper(Task, metaclass=Tool):
             elif os == 'linux':
                 environ['CARGO_TARGET'] = 'x86_64-unknown-linux-gnu'
         if variant in ('coverage', 'asan'):
-            rust_version = 'nightly-2020-03-12'
+            rust_version = 'nightly-2020-06-05'
         else:
-            rust_version = '1.42.0'
+            rust_version = '1.45.0'
         rust_install += [
             '{rustup} install {rust_version} --profile minimal',
             'PATH={cargo_dir}:$PATH',
