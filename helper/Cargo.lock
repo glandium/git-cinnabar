@@ -7,7 +7,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "all_asserts"
-version = "1.0.1"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -58,7 +58,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "bzip2"
-version = "0.3.3"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "bzip2-sys 0.1.9+1.0.8 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -225,10 +225,10 @@ dependencies = [
 name = "git-cinnabar"
 version = "0.6.0-a"
 dependencies = [
- "all_asserts 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "all_asserts 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bstr 0.2.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder 1.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "bzip2 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bzip2 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "cstr 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "curl-sys 0.4.32+curl-7.70.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "derivative 2.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -702,14 +702,14 @@ dependencies = [
 
 [metadata]
 "checksum adler 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "ee2a4ec343196209d6594e19543ae87a39f96d5534d7174822a3ad825dd6ed7e"
-"checksum all_asserts 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "39d3f5a2ba8811c992448070c5ce82ed4311db974867b2e88e23f649cd2a04c1"
+"checksum all_asserts 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "46ba0b0e08c037e75308c0563f76832177a4ffde37ef1cc9c3a7b20a8b069d9b"
 "checksum ansi_term 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)" = "ee49baf6cb617b853aa8d93bf420db2383fab46d314482ca2803b40d5fde979b"
 "checksum atty 0.2.14 (registry+https://github.com/rust-lang/crates.io-index)" = "d9b39be18770d11421cdb1b9947a45dd3f37e93092cbf377614828a319d5fee8"
 "checksum bitflags 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
 "checksum block-buffer 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)" = "4152116fd6e9dadb291ae18fc1ec3575ed6d84c29642d97890f4b4a3417297e4"
 "checksum bstr 0.2.13 (registry+https://github.com/rust-lang/crates.io-index)" = "31accafdb70df7871592c058eca3985b71104e15ac32f64706022c58867da931"
 "checksum byteorder 1.3.4 (registry+https://github.com/rust-lang/crates.io-index)" = "08c48aae112d48ed9f069b33538ea9e3e90aa263cfa3d1c24309612b1f7472de"
-"checksum bzip2 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)" = "42b7c3cbf0fa9c1b82308d57191728ca0256cb821220f4e2fd410a72ade26e3b"
+"checksum bzip2 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)" = "275d84fe348b838dc49477d39770682839b3e73e21a3eadc07b12924f1a9fcbe"
 "checksum bzip2-sys 0.1.9+1.0.8 (registry+https://github.com/rust-lang/crates.io-index)" = "ad3b39a260062fca31f7b0b12f207e8f2590a67d32ec7d59c20484b07ea7285e"
 "checksum cc 1.0.58 (registry+https://github.com/rust-lang/crates.io-index)" = "f9a06fb2e53271d7c279ec1efea6ab691c35a2ae67ec0d91d7acec0caf13b518"
 "checksum cfg-if 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)" = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
