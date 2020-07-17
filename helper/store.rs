@@ -282,10 +282,10 @@ impl RawHgChangeset {
                 .collect::<Option<Vec<_>>>()?;
             parents.sort();
             for p in parents.iter().chain(repeat(&HgChangesetId::null())).take(2) {
-                hash.input(p.as_raw_bytes());
+                hash.update(p.as_raw_bytes());
             }
-            hash.input(&changeset);
-            if hash.result() == *node {
+            hash.update(&changeset);
+            if hash.finalize() == *node {
                 break;
             }
             changeset.pop();

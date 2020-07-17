@@ -317,9 +317,9 @@ unsafe extern "C" fn do_unbundle(conn: *mut hg_connection, args: *const string_l
         } else {
             let mut hash = Sha1::new();
             for h in heads.sorted().dedup() {
-                hash.input(h.as_raw_bytes());
+                hash.update(h.as_raw_bytes());
             }
-            format!("{} {:x}", hex::encode("hashed"), hash.result())
+            format!("{} {:x}", hex::encode("hashed"), hash.finalize())
         }
     };
 

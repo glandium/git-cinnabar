@@ -84,7 +84,7 @@ macro_rules! oid_type {
             }
 
             fn from_digest(h: Self::Digest) -> Self {
-                Self(h.result().into())
+                Self(h.finalize().into())
             }
         }
 
@@ -135,11 +135,11 @@ macro_rules! oid_type {
 pub struct OidCreator<O: ObjectId>(O::Digest);
 
 impl<O: ObjectId> OidCreator<O> {
-    pub fn input<B: AsRef<[u8]>>(&mut self, data: B) {
-        self.0.input(data)
+    pub fn update<B: AsRef<[u8]>>(&mut self, data: B) {
+        self.0.update(data)
     }
 
-    pub fn result(self) -> O {
+    pub fn finalize(self) -> O {
         O::from_digest(self.0)
     }
 }
