@@ -35,10 +35,8 @@ use std::ffi::CString;
 use std::ffi::OsString;
 use std::fmt;
 use std::io::{stdin, stdout, BufRead, BufWriter, Write};
-use std::ops::Deref;
 use std::os::raw::c_char;
 use std::os::raw::c_int;
-use std::path::PathBuf;
 use std::str::{self, FromStr};
 
 #[cfg(windows)]
@@ -46,7 +44,7 @@ use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 
 use libcinnabar::{files_meta, hg2git};
 use libgit::{get_oid_committish, strbuf, BlobId, CommitId};
-use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
+use oid::{Abbrev, GitObjectId, ObjectId};
 use store::{
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
     HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest,
@@ -112,23 +110,6 @@ fn do_conversion<T, I: Iterator<Item = T>, F: Fn(T) -> Result<String, String>, W
     Ok(())
 }
 
-// There is an impl FromStr for PathBuf, but not for OsString :(
-struct FromStrHelper<T>(T);
-
-impl FromStr for FromStrHelper<OsString> {
-    type Err = <PathBuf as FromStr>::Err;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        PathBuf::from_str(s).map(|p| Self(p.into()))
-    }
-}
-
-impl<H: ObjectId + Deref<Target = HgObjectId>> FromStr for FromStrHelper<Abbrev<H>> {
-    type Err = <Abbrev<H> as FromStr>::Err;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Abbrev::<H>::from_str(s).map(Self)
-    }
-}
-
 fn do_conversion_cmd<'a, T, I, F>(
     abbrev: Option<usize>,
     input: I,
@@ -136,9 +117,8 @@ fn do_conversion_cmd<'a, T, I, F>(
     f: F,
 ) -> Result<(), String>
 where
-    T: 'a,
-    FromStrHelper<T>: FromStr,
-    <FromStrHelper<T> as FromStr>::Err: fmt::Display,
+    T: 'a + FromStr,
+    <T as FromStr>::Err: fmt::Display,
     I: Iterator<Item = &'a T>,
     F: Fn(&T) -> Result<String, String>,
 {
@@ -155,8 +135,8 @@ where
                 abbrev,
                 line.split_whitespace(),
                 |i| {
-                    let t = FromStrHelper::<T>::from_str(i).map_err(|e| e.to_string())?;
-                    f(&t.0)
+                    let t = T::from_str(i).map_err(|e| e.to_string())?;
+                    f(&t)
                 },
                 &mut out,
             )?;
