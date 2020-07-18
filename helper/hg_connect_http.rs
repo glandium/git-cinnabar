@@ -16,6 +16,7 @@ use std::thread::{self, JoinHandle};
 use bstr::ByteSlice;
 use byteorder::ReadBytesExt;
 use bzip2::read::BzDecoder;
+use cstr::cstr;
 use curl_sys::{
     curl_easy_getinfo, curl_easy_setopt, curl_slist_append, curl_slist_free_all, CURL,
     CURLINFO_CONTENT_TYPE, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT, CURLINFO_RESPONSE_CODE,

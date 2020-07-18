@@ -12,6 +12,7 @@ use std::str::FromStr;
 use std::thread::{spawn, JoinHandle};
 
 use bstr::BString;
+use cstr::cstr;
 use percent_encoding::percent_decode;
 use url::Url;
 

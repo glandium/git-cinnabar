@@ -11,6 +11,7 @@ use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 use std::os::unix::ffi::OsStrExt;
 
 use bstr::ByteSlice;
+use cstr::cstr;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use derive_more::{Deref, Display};
 use getset::Getters;
