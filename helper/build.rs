@@ -67,7 +67,7 @@ fn main() {
         .arg("libcinnabar.a")
         .arg("V=1")
         .arg("HAVE_WPGMPTR=")
-        .env("MAKEFLAGS", env("CARGO_MAKEFLAGS"))
+        .env("MAKEFLAGS", format!("-j {}", env("CARGO_MAKEFLAGS")))
         .current_dir(&git_core)
         .status()
         .expect("Failed to execute GNU make")
