@@ -669,35 +669,6 @@ def unbundler(bundle):
 def get_clonebundle_url(repo):
     bundles = repo._call(b'clonebundles')
 
-    try:
-        if check_enabled('no-mercurial'):
-            raise ImportError('Do not use mercurial')
-        from mercurial.exchange import (
-            parseclonebundlesmanifest,
-            filterclonebundleentries,
-        )
-    except ImportError:
-        parseclonebundlesmanifest = False
-
-    if parseclonebundlesmanifest:
-        class dummy(object):
-            pass
-
-        fakerepo = dummy()
-        fakerepo.requirements = set()
-        fakerepo.supportedformats = set()
-        fakerepo.ui = repo.ui
-
-        entries = parseclonebundlesmanifest(fakerepo, bundles)
-        if not entries:
-            return None
-
-        entries = filterclonebundleentries(fakerepo, entries)
-        if not entries:
-            return None
-
-        return entries[0].get(b'URL')
-
     supported_bundles = (b'v1', b'v2')
     supported_compressions = tuple(
         k for k, v in (
