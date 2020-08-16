@@ -1150,7 +1150,7 @@ if changegroup:
 
         sshargs = procutil.sshargs
         shellquote = procutil.shellquote
-        quotecommand = procutil.quotecommand
+        quotecommand = getattr(procutil, 'quotecommand', None)
         url = util.url
         if has_checksafessh:
             checksafessh = util.checksafessh
@@ -1168,7 +1168,8 @@ if changegroup:
             if cmd.startswith(b'"'):
                 cmd = cmd[1:-1]
             return quotecommand(cmd)
-        procutil.quotecommand = override_quotecommand
+        if quotecommand:
+            procutil.quotecommand = override_quotecommand
 
         class override_url(object):
             def __init__(self, *args, **kwargs):
@@ -1185,7 +1186,8 @@ if changegroup:
         if has_checksafessh:
             util.checksafessh = checksafessh
         util.url = url
-        procutil.quotecommand = quotecommand
+        if quotecommand:
+            procutil.quotecommand = quotecommand
         procutil.shellquote = shellquote
         procutil.sshargs = sshargs
 
