@@ -91,8 +91,12 @@ CINNABAR_OBJECTS += which.o
 
 PATCHES = $(notdir $(wildcard $(SOURCE_DIR)helper/*.patch))
 
-$(addprefix $(SOURCE_DIR)helper/,$(PATCHES:%.c.patch=%.patched.c)): $(SOURCE_DIR)helper/%.patched.c: $(SOURCE_DIR)helper/%.c.patch %.c
-	patch -p1 -F0 -o $@ $(CURDIR)/$(notdir $(lastword $^)) < $<
+define patch
+$$(SOURCE_DIR)helper/$1.patched.c: $$(SOURCE_DIR)helper/$1.c.patch $$(firstword $$(wildcard $$(SOURCE_DIR)git-core/$1.c $$(SOURCE_DIR)git-core/builtin/$1.c))
+	patch -p1 -F0 -o $$@ $$(lastword $$^) < $$<
+endef
+
+$(foreach p,$(PATCHES),$(eval $(call patch,$(p:%.c.patch=%))))
 
 clean-patched:
 	$(RM) $(addprefix $(SOURCE_DIR)helper/,$(PATCHES:%.c.patch=%.patched.c))
