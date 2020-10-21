@@ -88,21 +88,21 @@ Pushing `a` and `c` to the default branch.
   adding file changes
   added 2 changesets with 2 changes to 2 files
 
-  $ git -C repo-git push origin 7688446e0a5d5b6108443632be74c9bca72d31b1:refs/head/branches/default/tip
+  $ git -C repo-git push origin 7688446e0a5d5b6108443632be74c9bca72d31b1:refs/heads/branches/default/tip
   remote: adding changesets
   remote: adding manifests
   remote: adding file changes
   remote: added 2 changesets with 2 changes to 2 files
   To hg::.*/push-refs.t/repo-from-git (re)
-   * [new branch]      7688446e0a5d5b6108443632be74c9bca72d31b1 -> refs/head/branches/default/tip
+   * [new branch]      7688446e0a5d5b6108443632be74c9bca72d31b1 -> branches/default/tip
 
-  $ git -C repo-git2 push origin 7688446e0a5d5b6108443632be74c9bca72d31b1:refs/head/branches/default/tip
+  $ git -C repo-git2 push origin 7688446e0a5d5b6108443632be74c9bca72d31b1:refs/heads/branches/default/tip
   remote: adding changesets
   remote: adding manifests
   remote: adding file changes
   remote: added 2 changesets with 2 changes to 2 files
   To hg::.*/push-refs.t/repo-from-git2 (re)
-   * [new branch]      7688446e0a5d5b6108443632be74c9bca72d31b1 -> refs/head/branches/default/tip
+   * [new branch]      7688446e0a5d5b6108443632be74c9bca72d31b1 -> branches/default/tip
 
   $ git -C repo-git ls-remote hg::$REPO-from-hg
   7688446e0a5d5b6108443632be74c9bca72d31b1	HEAD
