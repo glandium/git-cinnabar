@@ -638,8 +638,11 @@ class chunkbuffer(object):
 
 class HTTPReader(object):
     def __init__(self, url):
-        self.url = fsdecode(url)
-        self.fh = urlopen(self.url)
+        url = fsdecode(url)
+        self.fh = urlopen(url)
+        # If the url was redirected, get the final url for possible future
+        # range requests.
+        self.url = self.fh.geturl()
         try:
             length = self.fh.headers['content-length']
             self.length = None if length is None else int(length)

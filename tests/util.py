@@ -451,7 +451,20 @@ class TestHTTPReader(unittest.TestCase):
         # It assumes the client will retry with a Range request starting from
         # where it left, up to the end of the file.
         class Handler(BaseHTTPRequestHandler):
+            redirected_once = False
+
             def do_GET(self):
+                if self.path == '/foo':
+                    the_test.assertFalse(self.redirected_once)
+                    Handler.redirected_once = True
+                    self.send_response(301)
+                    self.send_header('Location', '/bar')
+                    self.end_headers()
+                    return
+                elif self.path != '/bar':
+                    self.send_response(404)
+                    self.end_headers()
+                    return
                 range_def = self.headers.get('Range')
                 if range_def:
                     start, end = range_def.partition('bytes=')[2].split('-')
