@@ -10,7 +10,11 @@ case "$experiments" in
   PYTHON=${PYTHON%%,*}
   ;;
 *)
-  PYTHON=python2.7
+  if command -v python2.7 > /dev/null; then
+    PYTHON=python2.7
+  else
+    PYTHON=python2
+  fi
   ;;
 esac
 exec $PYTHON $0 "$@"
