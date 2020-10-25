@@ -942,8 +942,14 @@ def getbundle(repo, store, heads, branch_names):
                 manifest = Git.config('cinnabar.clone', remote=repo.remote)
                 limit_schemes = False
                 if manifest is None and repo.capable(b'cinnabarclone'):
-                    manifest = repo._call(b'cinnabarclone')
-                    limit_schemes = True
+                    # If no cinnabar.clone config was given, but a
+                    # cinnabar.clonebundle config was, act as if an empty
+                    # cinnabar.clone config had been given, and proceed with
+                    # the mercurial clonebundle.
+                    if not Git.config('cinnabar.clonebundle',
+                                      remote=repo.remote):
+                        manifest = repo._call(b'cinnabarclone')
+                        limit_schemes = True
                 if manifest:
                     got_partial = do_cinnabarclone(repo, manifest, store,
                                                    limit_schemes)
