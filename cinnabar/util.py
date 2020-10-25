@@ -650,6 +650,7 @@ class HTTPReader(object):
             self.length = None
         self.can_recover = \
             self.fh.headers.get('Accept-Ranges') == 'bytes'
+        self.backoff_period = 0
         self.offset = 0
         self.closed = False
 
@@ -665,6 +666,9 @@ class HTTPReader(object):
                 # When self.length is None, self.offset < self.length is always
                 # false.
                 if self.can_recover and self.offset < self.length:
+                    # Linear backoff.
+                    self.backoff_period += 1
+                    time.sleep(self.backoff_period)
                     current_fh = self.fh
                     self.fh = self._reopen()
                     if self.fh is current_fh:
