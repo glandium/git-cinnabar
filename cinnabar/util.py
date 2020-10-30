@@ -666,14 +666,18 @@ class HTTPReader(object):
                 # When self.length is None, self.offset < self.length is always
                 # false.
                 if self.can_recover and self.offset < self.length:
-                    # Linear backoff.
-                    self.backoff_period += 1
-                    time.sleep(self.backoff_period)
-                    current_fh = self.fh
-                    self.fh = self._reopen()
-                    if self.fh is current_fh:
-                        break
-                    continue
+                    while True:
+                        # Linear backoff.
+                        self.backoff_period += 1
+                        time.sleep(self.backoff_period)
+                        try:
+                            self.fh = self._reopen()
+                            break
+                        except Exception:
+                            if self.backoff_period >= 10:
+                                raise
+                    if self.fh:
+                        continue
                 break
             length += len(buf)
             self.offset += len(buf)
@@ -687,23 +691,23 @@ class HTTPReader(object):
         req.add_header('Range', 'bytes=%d-' % self.offset)
         fh = urlopen(req)
         if fh.getcode() != 206:
-            return self.fh
+            return None
         range = fh.headers.get('Content-Range') or ''
         unit, _, range = range.partition(' ')
         if unit != 'bytes':
-            return self.fh
+            return None
         start, _, end = range.lstrip().partition('-')
         try:
             start = int(start)
         except (TypeError, ValueError):
             start = 0
         if start > self.offset:
-            return self.fh
+            return None
         logging.getLogger('httpreader').debug('Retrying from offset %d', start)
         while start < self.offset:
             l = len(fh.read(self.offset - start))
             if not l:
-                return self.fh
+                return None
             start += l
         return fh
 
