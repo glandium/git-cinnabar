@@ -210,7 +210,11 @@ def decision():
         if env.startswith('osx') and not TC_IS_PUSH:
             continue
 
-        TestTask(task_env=env)
+        mercurial_version = MERCURIAL_VERSION
+        if env == 'osx10_10':
+            mercurial_version = '5.4.2'
+
+        TestTask(task_env=env, hg=mercurial_version)
 
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
         Task(
@@ -219,7 +223,7 @@ def decision():
                                                        task_env.cpu),
             command=list(chain(
                 Git.install('{}.{}'.format(env, GIT_VERSION)),
-                Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
+                Hg.install('{}.{}'.format(env, mercurial_version)),
                 Task.checkout(),
                 [
                     '(cd repo ; ./git-cinnabar download --dev)',
@@ -248,6 +252,7 @@ def decision():
             env={
                 'UPGRADE_FROM': upgrade,
             },
+            hg='5.4.2',
         )
         TestTask(
             extra_desc='upgrade-from-{}'.format(upgrade),
@@ -257,7 +262,7 @@ def decision():
                 'GIT_CINNABAR_LOG': 'reexec:3',
                 'UPGRADE_FROM': upgrade,
             },
-            hg='{}.py3'.format(MERCURIAL_VERSION),
+            hg='5.4.2.py3',
         )
 
     for git in ('1.8.5', '2.7.4'):
@@ -313,6 +318,7 @@ def decision():
         env={
             'GIT_CINNABAR_OLD': '1',
         },
+        hg='5.4.2',
     )
 
     TestTask(
@@ -323,6 +329,7 @@ def decision():
             'GIT_CINNABAR_OLD': '1',
             'GRAFT': '1',
         },
+        hg='5.4.2',
     )
 
     TestTask(
