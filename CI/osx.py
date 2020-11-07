@@ -26,11 +26,18 @@ class OsxCommon(object):
         command.append('. venv/bin/activate')
         command.extend(params['command'])
         params['command'] = bash_command(*command)
+        env = params.setdefault('env', {})
+        dev = env.setdefault('DEVELOPER_DIR',
+                             '/Applications/Xcode_11.7.app/Contents/Developer')
+        env.setdefault(
+            'SDKROOT',
+            '{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.15.sdk'
+            .format(dev))
         return params
 
 
 class Osx(OsxCommon, metaclass=TaskEnvironment):
-    ITERATION = '1'
+    ITERATION = '3'
     PREFIX = 'osx'
     worker_suffix = ''
     os_version = '10.15'
