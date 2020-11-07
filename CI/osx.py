@@ -41,3 +41,21 @@ class Osx(OsxCommon, metaclass=TaskEnvironment):
     PREFIX = 'osx'
     worker_suffix = ''
     os_version = '10.15'
+
+
+class OsxArm64(OsxCommon, metaclass=TaskEnvironment):
+    cpu = 'arm64'
+    ITERATION = '1'
+    PREFIX = 'arm64-osx'
+    worker_suffix = ''
+    os_version = '10.15'
+
+    def prepare_params(self, params):
+        env = params.setdefault('env', {})
+        dev = env.setdefault('DEVELOPER_DIR',
+                             '/Applications/Xcode_12.2.app/Contents/Developer')
+        env.setdefault(
+            'SDKROOT',
+            '{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.0.sdk'
+            .format(dev))
+        return super(OsxArm64, self).prepare_params(params)

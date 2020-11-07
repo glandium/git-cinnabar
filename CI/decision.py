@@ -239,6 +239,9 @@ def decision():
     # Because nothing is using the x86 windows helper, we need to manually
     # touch it.
     Helper.by_name('mingw32')
+    # Same for arm64 mac
+    if TC_IS_PUSH:
+        Helper.by_name('arm64-osx')
 
     for upgrade in UPGRADE_FROM:
         TestTask(

@@ -308,6 +308,9 @@ class Helper(Task, metaclass=Tool):
 
         if os == 'linux':
             make_flags.append('CURL_COMPAT=1')
+        elif os == 'arm64-osx':
+            make_flags.append('CFLAGS+="-arch {}"'.format(env.cpu))
+            make_flags.append('LDFLAGS+="-arch {}"'.format(env.cpu))
         elif not os.startswith('osx'):
             make_flags.append('USE_LIBPCRE1=YesPlease')
             make_flags.append('USE_LIBPCRE2=')
