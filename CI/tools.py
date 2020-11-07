@@ -33,7 +33,7 @@ assert all(v in ALL_MERCURIAL_VERSIONS for v in SOME_MERCURIAL_VERSIONS)
 
 def nproc(env):
     if env.os == 'macos':
-        return 'sysctl -n hg.physicalcpu'
+        return 'sysctl -n hw.physicalcpu'
     return 'nproc --all'
 
 
