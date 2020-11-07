@@ -650,14 +650,16 @@ def get_clonebundle_url(repo):
 
 def get_clonebundle(repo):
     url = Git.config('cinnabar.clonebundle', remote=repo.remote)
+    limit_schemes = False
     if not url:
         url = get_clonebundle_url(repo)
+        limit_schemes = True
 
     if not url:
         return None
 
     parsed_url = urlparse(url)
-    if parsed_url.scheme not in (b'http', b'https'):
+    if limit_schemes and parsed_url.scheme not in (b'http', b'https'):
         logging.warn('Server advertizes clone bundle but provided a non '
                      'http/https url. Skipping.')
         return None
@@ -760,7 +762,7 @@ class BundleApplier(object):
 SHA1_RE = re.compile(b'[0-9a-fA-F]{1,40}$')
 
 
-def do_cinnabarclone(repo, manifest, store):
+def do_cinnabarclone(repo, manifest, store, limit_schemes=True):
     GRAFT = {
         None: None,
         b'false': False,
@@ -837,7 +839,7 @@ def do_cinnabarclone(repo, manifest, store):
         return False
 
     parsed_url = urlparse(url)
-    if parsed_url.scheme not in (b'http', b'https', b'git'):
+    if limit_schemes and parsed_url.scheme not in (b'http', b'https', b'git'):
         logging.warn('Server advertizes cinnabarclone but provided a non '
                      'http/https git repository. Skipping.')
         return False
@@ -857,10 +859,19 @@ def getbundle(repo, store, heads, branch_names):
         if not common:
             if not store._has_metadata:
                 manifest = Git.config('cinnabar.clone', remote=repo.remote)
+                limit_schemes = False
                 if manifest is None and repo.capable(b'cinnabarclone'):
-                    manifest = repo._call(b'cinnabarclone')
+                    # If no cinnabar.clone config was given, but a
+                    # cinnabar.clonebundle config was, act as if an empty
+                    # cinnabar.clone config had been given, and proceed with
+                    # the mercurial clonebundle.
+                    if not Git.config('cinnabar.clonebundle',
+                                      remote=repo.remote):
+                        manifest = repo._call(b'cinnabarclone')
+                        limit_schemes = True
                 if manifest:
-                    got_partial = do_cinnabarclone(repo, manifest, store)
+                    got_partial = do_cinnabarclone(repo, manifest, store,
+                                                   limit_schemes)
                     if not got_partial:
                         if check_enabled('cinnabarclone'):
                             raise Exception('cinnabarclone failed.')

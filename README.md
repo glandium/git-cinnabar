@@ -64,6 +64,9 @@ following:
 It has been tested mainly with python 3.5 and 3.7. Corner cases may not work
 properly.
 
+It is also possible to replace `python3` in either `GIT_CINNABAR_EXPERIMENTS`
+or `cinnabar.experiments` with `python=/path/to/python`.
+
 Usage:
 ------
 

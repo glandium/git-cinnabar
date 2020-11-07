@@ -1,8 +1,5 @@
-#define cmd_main fast_import_main
-#define hashwrite fast_import_hashwrite
 static void start_packfile();
 #include "fast-import.patched.c"
-#undef hashwrite
 #include "cinnabar-fast-import.h"
 #include "cinnabar-helper.h"
 #include "cinnabar-notes.h"
@@ -32,10 +29,9 @@ static void cleanup();
 static struct pack_window *pack_win;
 static struct pack_window *prev_win;
 
-void hashwrite(struct hashfile *, const void *, unsigned int);
+void real_hashwrite(struct hashfile *, const void *, unsigned int);
 
-void fast_import_hashwrite(struct hashfile *f, const void *buf,
-			   unsigned int count)
+void hashwrite(struct hashfile *f, const void *buf, unsigned int count)
 {
 	size_t window_size;
 
@@ -52,7 +48,7 @@ void fast_import_hashwrite(struct hashfile *f, const void *buf,
 		pack_data->pack_size = pack_win->len;
 	}
 
-	hashwrite(f, buf, count);
+	real_hashwrite(f, buf, count);
 	pack_win->last_used = -1; /* always last used */
 	pack_win->inuse_cnt = -1;
 	if (pack_data)

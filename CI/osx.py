@@ -11,7 +11,8 @@ class OsxCommon(object):
     cpu = 'x86_64'
 
     def __init__(self, name):
-        self.hexdigest = hashlib.sha1(b'0').hexdigest()
+        self.hexdigest = hashlib.sha1(
+            self.ITERATION.encode('utf-8')).hexdigest()
         self.name = name
 
     def prepare_params(self, params):
@@ -25,18 +26,36 @@ class OsxCommon(object):
         command.append('. venv/bin/activate')
         command.extend(params['command'])
         params['command'] = bash_command(*command)
-        if self.name == 'build':
-            env = params.setdefault('env', {})
-            env.setdefault('MACOSX_DEPLOYMENT_TARGET', '10.7')
-            env.setdefault('CC', 'clang')
+        env = params.setdefault('env', {})
+        dev = env.setdefault('DEVELOPER_DIR',
+                             '/Applications/Xcode_11.7.app/Contents/Developer')
+        env.setdefault(
+            'SDKROOT',
+            '{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.15.sdk'
+            .format(dev))
         return params
 
 
-class Osx10_10(OsxCommon, metaclass=TaskEnvironment):
-    PREFIX = 'osx10_10'
-    worker_suffix = '-10-10'
-
-
 class Osx(OsxCommon, metaclass=TaskEnvironment):
+    ITERATION = '3'
     PREFIX = 'osx'
     worker_suffix = ''
+    os_version = '10.15'
+
+
+class OsxArm64(OsxCommon, metaclass=TaskEnvironment):
+    cpu = 'arm64'
+    ITERATION = '1'
+    PREFIX = 'arm64-osx'
+    worker_suffix = ''
+    os_version = '10.15'
+
+    def prepare_params(self, params):
+        env = params.setdefault('env', {})
+        dev = env.setdefault('DEVELOPER_DIR',
+                             '/Applications/Xcode_12.2.app/Contents/Developer')
+        env.setdefault(
+            'SDKROOT',
+            '{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.0.sdk'
+            .format(dev))
+        return super(OsxArm64, self).prepare_params(params)

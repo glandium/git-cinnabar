@@ -67,7 +67,7 @@ struct child_process *hg_connect_stdio(
 	strbuf_addstr(&buf, "hg -R ");
 	maybe_sq_quote_buf(&buf, path);
 	strbuf_addstr(&buf, " serve --stdio");
-	argv_array_push(&proc->args, buf.buf);
+	strvec_push(&proc->args, buf.buf);
 	strbuf_release(&buf);
 
 	start_command(proc);

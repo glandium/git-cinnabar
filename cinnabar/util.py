@@ -638,8 +638,11 @@ class chunkbuffer(object):
 
 class HTTPReader(object):
     def __init__(self, url):
-        self.url = fsdecode(url)
-        self.fh = urlopen(self.url)
+        url = fsdecode(url)
+        self.fh = urlopen(url)
+        # If the url was redirected, get the final url for possible future
+        # range requests.
+        self.url = self.fh.geturl()
         try:
             length = self.fh.headers['content-length']
             self.length = None if length is None else int(length)
@@ -647,6 +650,7 @@ class HTTPReader(object):
             self.length = None
         self.can_recover = \
             self.fh.headers.get('Accept-Ranges') == 'bytes'
+        self.backoff_period = 0
         self.offset = 0
         self.closed = False
 
@@ -662,11 +666,18 @@ class HTTPReader(object):
                 # When self.length is None, self.offset < self.length is always
                 # false.
                 if self.can_recover and self.offset < self.length:
-                    current_fh = self.fh
-                    self.fh = self._reopen()
-                    if self.fh is current_fh:
-                        break
-                    continue
+                    while True:
+                        # Linear backoff.
+                        self.backoff_period += 1
+                        time.sleep(self.backoff_period)
+                        try:
+                            self.fh = self._reopen()
+                            break
+                        except Exception:
+                            if self.backoff_period >= 10:
+                                raise
+                    if self.fh:
+                        continue
                 break
             length += len(buf)
             self.offset += len(buf)
@@ -680,23 +691,23 @@ class HTTPReader(object):
         req.add_header('Range', 'bytes=%d-' % self.offset)
         fh = urlopen(req)
         if fh.getcode() != 206:
-            return self.fh
+            return None
         range = fh.headers.get('Content-Range') or ''
         unit, _, range = range.partition(' ')
         if unit != 'bytes':
-            return self.fh
+            return None
         start, _, end = range.lstrip().partition('-')
         try:
             start = int(start)
         except (TypeError, ValueError):
             start = 0
         if start > self.offset:
-            return self.fh
+            return None
         logging.getLogger('httpreader').debug('Retrying from offset %d', start)
         while start < self.offset:
             l = len(fh.read(self.offset - start))
             if not l:
-                return self.fh
+                return None
             start += l
         return fh
 
@@ -933,7 +944,15 @@ def run(func, args):
 
     version_check = VersionCheck()
     try:
-        retcode = func(args)
+        from cinnabar.git import Git
+        objectformat = Git.config('extensions.objectformat') or 'sha1'
+        if objectformat != 'sha1':
+            sys.stderr.write(
+                'Git repository uses unsupported %s object format\n'
+                % objectformat)
+            retcode = 65  # Data format error
+        else:
+            retcode = func(args)
     except Abort as e:
         # These exceptions are normal abort and require no traceback
         retcode = 1

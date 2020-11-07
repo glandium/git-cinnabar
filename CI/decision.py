@@ -205,7 +205,7 @@ def decision():
         ],
     )
 
-    for env in ('linux', 'mingw64', 'osx10_10'):
+    for env in ('linux', 'mingw64', 'osx'):
         # Can't spawn osx workers from pull requests.
         if env.startswith('osx') and not TC_IS_PUSH:
             continue
@@ -242,6 +242,9 @@ def decision():
     # Because nothing is using the x86 windows helper, we need to manually
     # touch it.
     Helper.by_name('mingw32')
+    # Same for arm64 mac
+    if TC_IS_PUSH:
+        Helper.by_name('arm64-osx')
 
     for upgrade in UPGRADE_FROM:
         TestTask(
@@ -251,6 +254,7 @@ def decision():
             env={
                 'UPGRADE_FROM': upgrade,
             },
+            hg='5.4.2',
         )
         TestTask(
             extra_desc='upgrade-from-{}'.format(upgrade),
@@ -260,7 +264,7 @@ def decision():
                 'GIT_CINNABAR_LOG': 'reexec:3',
                 'UPGRADE_FROM': upgrade,
             },
-            hg='{}.py3'.format(MERCURIAL_VERSION),
+            hg='5.4.2.py3',
         )
 
     for git in ('1.8.5', '2.7.4'):
@@ -316,6 +320,7 @@ def decision():
         env={
             'GIT_CINNABAR_OLD': '1',
         },
+        hg='5.4.2',
     )
 
     TestTask(
@@ -326,6 +331,7 @@ def decision():
             'GIT_CINNABAR_OLD': '1',
             'GRAFT': '1',
         },
+        hg='5.4.2',
     )
 
     TestTask(

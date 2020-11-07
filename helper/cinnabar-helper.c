@@ -1882,7 +1882,7 @@ static void init_git_config()
 		setup_path();
 	}
 	proc.argv = argv;
-	argv_array_push(&proc.env_array, "GIT_EDITOR=echo");
+	strvec_push(&proc.env_array, "GIT_EDITOR=echo");
 	proc.no_stdin = 1;
 	proc.no_stderr = 1;
 	/* We don't really care about the capture_command return value. If
