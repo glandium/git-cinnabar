@@ -11,7 +11,8 @@ class OsxCommon(object):
     cpu = 'x86_64'
 
     def __init__(self, name):
-        self.hexdigest = hashlib.sha1(b'0').hexdigest()
+        self.hexdigest = hashlib.sha1(
+            self.ITERATION.encode('utf-8')).hexdigest()
         self.name = name
 
     def prepare_params(self, params):
@@ -33,10 +34,12 @@ class OsxCommon(object):
 
 
 class Osx10_10(OsxCommon, metaclass=TaskEnvironment):
+    ITERATION = '0'
     PREFIX = 'osx10_10'
     worker_suffix = '-10-10'
 
 
 class Osx(OsxCommon, metaclass=TaskEnvironment):
+    ITERATION = '1'
     PREFIX = 'osx'
     worker_suffix = ''
