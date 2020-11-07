@@ -205,16 +205,12 @@ def decision():
         ],
     )
 
-    for env in ('linux', 'mingw64', 'osx10_10'):
+    for env in ('linux', 'mingw64', 'osx'):
         # Can't spawn osx workers from pull requests.
         if env.startswith('osx') and not TC_IS_PUSH:
             continue
 
-        mercurial_version = MERCURIAL_VERSION
-        if env == 'osx10_10':
-            mercurial_version = '5.4.2'
-
-        TestTask(task_env=env, hg=mercurial_version)
+        TestTask(task_env=env)
 
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
         Task(
@@ -223,7 +219,7 @@ def decision():
                                                        task_env.cpu),
             command=list(chain(
                 Git.install('{}.{}'.format(env, GIT_VERSION)),
-                Hg.install('{}.{}'.format(env, mercurial_version)),
+                Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
                 Task.checkout(),
                 [
                     '(cd repo ; ./git-cinnabar download --dev)',

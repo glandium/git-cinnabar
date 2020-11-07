@@ -43,7 +43,7 @@ class Git(Task, metaclass=Tool):
     def __init__(self, os_and_version):
         (os, version) = os_and_version.split('.', 1)
         if os.startswith('osx'):
-            build_image = TaskEnvironment.by_name('osx10_10.build')
+            build_image = TaskEnvironment.by_name('osx.build')
         else:
             build_image = DockerImage.by_name('build')
         if os == 'linux' or os.startswith('osx'):
@@ -154,12 +154,10 @@ class Hg(Task, metaclass=Tool):
         else:
             desc = '{} {} {}'.format(desc, env.os, env.cpu)
             if os.startswith('osx'):
-                if os != 'osx10_10':
-                    wheel_cpu = 'x86_64'
-                else:
-                    wheel_cpu = 'intel'
+                wheel_cpu = 'x86_64'
                 artifact = ('mercurial-{{}}-cp27-cp27m-macosx_{}_{}.whl'
-                            .format(os[3:], wheel_cpu))
+                            .format(env.os_version.replace('.', '_'),
+                                    wheel_cpu))
             else:
                 artifact = 'mercurial-{}-cp27-cp27m-mingw.whl'
 

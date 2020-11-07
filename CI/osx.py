@@ -29,13 +29,8 @@ class OsxCommon(object):
         return params
 
 
-class Osx10_10(OsxCommon, metaclass=TaskEnvironment):
-    ITERATION = '0'
-    PREFIX = 'osx10_10'
-    worker_suffix = '-10-10'
-
-
 class Osx(OsxCommon, metaclass=TaskEnvironment):
     ITERATION = '1'
     PREFIX = 'osx'
     worker_suffix = ''
+    os_version = '10.15'
