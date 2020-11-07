@@ -26,10 +26,6 @@ class OsxCommon(object):
         command.append('. venv/bin/activate')
         command.extend(params['command'])
         params['command'] = bash_command(*command)
-        if self.name == 'build':
-            env = params.setdefault('env', {})
-            env.setdefault('MACOSX_DEPLOYMENT_TARGET', '10.7')
-            env.setdefault('CC', 'clang')
         return params
 
 

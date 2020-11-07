@@ -160,8 +160,6 @@ class Hg(Task, metaclass=Tool):
                     wheel_cpu = 'intel'
                 artifact = ('mercurial-{{}}-cp27-cp27m-macosx_{}_{}.whl'
                             .format(os[3:], wheel_cpu))
-                kwargs.setdefault('env', {})['MACOSX_DEPLOYMENT_TARGET'] = \
-                    os[len('osx'):].replace('_', '.')
             else:
                 artifact = 'mercurial-{}-cp27-cp27m-mingw.whl'
 
@@ -319,6 +317,11 @@ class Helper(Task, metaclass=Tool):
 
         hash = hash or helper_hash()
 
+        kwargs = {}
+        if os.startswith('osx'):
+            kwargs.setdefault('env', {}).setdefault(
+                'MACOSX_DEPLOYMENT_TARGET', '10.7')
+
         Task.__init__(
             self,
             task_env=env,
@@ -333,6 +336,7 @@ class Helper(Task, metaclass=Tool):
                 'mv repo/{} $ARTIFACTS/'.format(artifact),
             ] + extra_commands,
             artifacts=artifacts,
+            **kwargs,
         )
 
     @classmethod
