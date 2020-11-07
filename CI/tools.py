@@ -369,8 +369,14 @@ class Helper(Task, metaclass=Tool):
             rust_version = '1.45.0'
         rust_install += [
             '{rustup} install {rust_version} --profile minimal',
+            '{rustup} default {rust_version}',
             'PATH={cargo_dir}:$PATH',
         ]
+        target = environ.get('CARGO_TARGET')
+        if target:
+            rust_install += [
+                '{rustup} target add {target}',
+            ]
         if os.startswith('mingw'):
             rust_install += [
                 '{rustup} component remove rust-mingw',
