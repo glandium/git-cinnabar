@@ -48,13 +48,15 @@ fn main() {
             target_os, target_env
         );
     }
-    if target_arch != target::arch()
-        || target_os != target::os()
-        || target_env != target::env()
-        || target_endian != target::endian()
-        || target_pointer_width != target::pointer_width()
-    {
-        panic!("Cross-compilation is not supported");
+    if std::env::var("CINNABAR_CROSS_COMPILE_I_KNOW_WHAT_I_M_DOING").is_err() {
+        if target_arch != target::arch()
+            || target_os != target::os()
+            || target_env != target::env()
+            || target_endian != target::endian()
+            || target_pointer_width != target::pointer_width()
+        {
+            panic!("Cross-compilation is not supported");
+        }
     }
 
     let dir = env_os("CARGO_MANIFEST_DIR");
