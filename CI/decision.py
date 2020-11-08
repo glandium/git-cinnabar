@@ -188,6 +188,7 @@ class Clone(TestTask, metaclass=Tool):
             env={
                 'REPO': REPO,
             },
+            priority='high',
         )
 
 
