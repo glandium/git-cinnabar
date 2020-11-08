@@ -27,6 +27,7 @@ from tools import (
     Git,
     Helper,
     Hg,
+    nproc,
     old_compatible_python,
 )
 from variables import *  # noqa: F403
@@ -102,8 +103,12 @@ class TestTask(Task):
             if commit:
                 # Always use the current CI scripts
                 command.append('git -C repo checkout {} CI'.format(TC_COMMIT))
+            output_sync = ' --output-sync=target'
+            if env.os == 'macos':
+                output_sync = ''
             kwargs['command'] = command + [
-                'make -C repo -f CI/tests.mk',
+                'make -C repo -f CI/tests.mk -j$({}){}'
+                .format(nproc(env), output_sync),
             ]
 
         if variant == 'coverage':
@@ -183,6 +188,7 @@ class Clone(TestTask, metaclass=Tool):
             env={
                 'REPO': REPO,
             },
+            priority='high',
         )
 
 

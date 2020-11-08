@@ -221,7 +221,7 @@ class Task(object):
         self.artifacts = []
 
         for k, v in kwargs.items():
-            if k in ('provisionerId', 'workerType'):
+            if k in ('provisionerId', 'workerType', 'priority'):
                 task[k] = v
             elif k == 'description':
                 task['metadata'][k] = task['metadata']['name'] = v
