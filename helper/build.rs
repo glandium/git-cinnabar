@@ -69,6 +69,8 @@ fn main() {
         .arg("libcinnabar.a")
         .arg("V=1")
         .arg("HAVE_WPGMPTR=")
+        .arg("USE_LIBPCRE1=")
+        .arg("USE_LIBPCRE2=")
         .env("MAKEFLAGS", format!("-j {}", env("CARGO_MAKEFLAGS")))
         .current_dir(&git_core)
         .status()
@@ -79,6 +81,8 @@ fn main() {
     let output = prepare_make(&mut make)
         .arg("--no-print-directory")
         .arg("linker-flags")
+        .arg("USE_LIBPCRE1=")
+        .arg("USE_LIBPCRE2=")
         .current_dir(&git_core)
         .output()
         .expect("Failed to execute GNU make");

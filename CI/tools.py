@@ -331,8 +331,6 @@ class Helper(Task, metaclass=Tool):
             make_flags.append('LDFLAGS+="-arch {}"'.format(env.cpu))
             environ['CINNABAR_CROSS_COMPILE_I_KNOW_WHAT_I_M_DOING'] = '1'
         elif not os.startswith('osx'):
-            make_flags.append('USE_LIBPCRE1=YesPlease')
-            make_flags.append('USE_LIBPCRE2=')
             make_flags.append('LDFLAGS="-lssp_nonshared -lssp"')
 
         rustup_opts = '-y --default-toolchain none'
