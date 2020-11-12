@@ -121,7 +121,7 @@ class TagsRemoteHelper(BaseRemoteHelper):
         self._helper.flush()
 
     def list(self, arg=None):
-        for tag, ref in sorted(self._store.tags(self._store.heads())):
+        for tag, ref in sorted(self._store.tags()):
             self._helper.write(b'%s refs/tags/%s\n' % (ref, tag))
         self._helper.write(b'\n')
         self._helper.flush()
@@ -257,7 +257,8 @@ class GitRemoteHelper(BaseRemoteHelper):
                 }
                 new_heads = set(h for h in branchmap.heads()
                                 if h not in branchmap.unknown_heads())
-                for status, head, branch in self._store._hgheads.iterchanges():
+                for status, head, (branch, _) in \
+                        self._store._hgheads.iterchanges():
                     branch_heads = new_branchmap.get(branch)
                     if status == VersionedDict.REMOVED:
                         if branch_heads and head in branch_heads:
@@ -397,7 +398,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                     heads = set(self._branchmap.heads()) & unknown_heads
                 getbundle(self._repo, self._store, heads,
                           self._branchmap.names())
-        except Exception:
+        except:
             wanted_refs = {}
             raise
         finally:

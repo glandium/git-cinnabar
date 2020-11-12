@@ -165,7 +165,10 @@ class OtherServer(object):
             cls = HgLogging(SimpleHTTPRequestHandler)
         else:
             assert False
-        self.httpd = HTTPServer(('', 8080), cls)
+        self.httpd = HTTPServer(
+            ('', ui.configint(b'serve', b'otherport', 8080)),
+            cls,
+        )
         self.httpd.accesslog = openlog(
             ui.config(b'web', b'accesslog'), ui.fout)
         self.httpd.errorlog = openlog(ui.config(b'web', b'errorlog'), ui.ferr)
@@ -187,7 +190,10 @@ def serve_and_exec(ui, repo, *command):
     repo.baseui.setconfig(b'web', b'push_ssl', False, b'hgweb')
     repo.baseui.setconfig(b'web', b'allow_push', b'*', b'hgweb')
     app = hgweb.hgweb(repo, baseui=ui)
-    service = httpservice(ui, app, {b'port': 8000, b'print_url': False})
+    service = httpservice(ui, app, {
+        b'port': ui.configint(b'web', b'port', 8000),
+        b'print_url': False
+    })
     service.init()
     service_thread = Thread(target=service.run)
     service_thread.start()

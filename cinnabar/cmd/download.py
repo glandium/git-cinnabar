@@ -65,6 +65,7 @@ def download(args):
     available = (
         ('Linux', 'x86_64'),
         ('macOS', 'x86_64'),
+        ('macOS', 'arm64'),
         ('Windows', 'x86_64'),
         ('Windows', 'x86'),
     )

@@ -1,15 +1,12 @@
-#define cmd_main fast_import_main
-#define hashwrite fast_import_hashwrite
 static void start_packfile();
 #include "fast-import.patched.c"
-#undef hashwrite
 #include "cinnabar-fast-import.h"
 #include "cinnabar-helper.h"
 #include "cinnabar-notes.h"
 #include "hg-bundle.h"
 #include "hg-data.h"
 #include "list.h"
-#include "sha1-array.h"
+#include "oid-array.h"
 #include "strslice.h"
 #include "tree-walk.h"
 
@@ -32,10 +29,9 @@ static void cleanup();
 static struct pack_window *pack_win;
 static struct pack_window *prev_win;
 
-void hashwrite(struct hashfile *, const void *, unsigned int);
+void real_hashwrite(struct hashfile *, const void *, unsigned int);
 
-void fast_import_hashwrite(struct hashfile *f, const void *buf,
-			   unsigned int count)
+void hashwrite(struct hashfile *f, const void *buf, unsigned int count)
 {
 	size_t window_size;
 
@@ -52,7 +48,7 @@ void fast_import_hashwrite(struct hashfile *f, const void *buf,
 		pack_data->pack_size = pack_win->len;
 	}
 
-	hashwrite(f, buf, count);
+	real_hashwrite(f, buf, count);
 	pack_win->last_used = -1; /* always last used */
 	pack_win->inuse_cnt = -1;
 	if (pack_data)
@@ -130,6 +126,8 @@ static void init()
 	branch_table = xcalloc(branch_table_sz, sizeof(struct branch*));
 	avail_tree_table = xcalloc(avail_tree_table_sz, sizeof(struct avail_tree_content*));
 	marks = mem_pool_calloc(&fi_mem_pool, 1, sizeof(struct mark_set));
+
+	hashmap_init(&object_table, object_entry_hashcmp, NULL, 0);
 
 	global_argc = 1;
 
@@ -266,7 +264,7 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 		e->pack_id = MAX_PACK_ID;
 		e->idx.offset = 1;
 	}
-	insert_mark(2, e);
+	insert_mark(marks, 2, e);
 	return 2;
 }
 
@@ -462,7 +460,7 @@ static void do_set(struct string_list *args)
 
 	if (args->items[2].string[0] == ':') {
 		uintmax_t mark = parse_mark_ref_eol(args->items[2].string);
-		struct object_entry *oe = find_mark(mark);
+		struct object_entry *oe = find_mark(marks, mark);
 		oidcpy(&git_id, &oe->idx.oid);
 	} else if (get_oid_hex(args->items[2].string, &git_id))
 		die("Invalid sha1");

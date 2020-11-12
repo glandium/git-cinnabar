@@ -265,7 +265,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	strbuf_addstr(&buf, "hg -R ");
 	maybe_sq_quote_buf(&buf, remote_path);
 	strbuf_addstr(&buf, " serve --stdio");
-	argv_array_push(&proc->args, buf.buf);
+	strvec_push(&proc->args, buf.buf);
 	strbuf_release(&buf);
 
 	start_command(proc);

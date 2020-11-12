@@ -432,8 +432,6 @@ class Grafter(object):
                 'Reading {} graft candidates',
                 GitHgHelper.rev_list(b'--full-history', *refs)):
             self._graft_trees[tree].append(node)
-        if not self._graft_trees:
-            raise NothingToGraftException()
 
     def _is_cinnabar_commit(self, commit):
         data = self._store.read_changeset_data(commit)
@@ -639,14 +637,16 @@ class GitHgStore(object):
         self._has_metadata = bool(metadata)
         self._metadata_refs = refs if metadata else {}
         self._manifest_heads_orig = set()
+        self._generation = 0
         if metadata:
             changesets_ref = self._metadata_refs.get(
                 b'refs/cinnabar/changesets')
             if changesets_ref:
                 commit = GitCommit(changesets_ref)
-                for head in commit.body.splitlines():
+                for n, head in enumerate(commit.body.splitlines()):
                     hghead, branch = head.split(b' ', 1)
-                    self._hgheads._previous[hghead] = branch
+                    self._hgheads._previous[hghead] = (branch, n)
+                    self._generation = n + 1
 
             self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
 
@@ -815,11 +815,13 @@ class GitHgStore(object):
         self._has_metadata = True
         self._metadata_refs = refs if metadata else {}
         changesets_ref = self._metadata_refs.get(b'refs/cinnabar/changesets')
+        self._generation = 0
         if changesets_ref:
             commit = GitCommit(changesets_ref)
-            for head in commit.body.splitlines():
+            for n, head in enumerate(commit.body.splitlines()):
                 hghead, branch = head.split(b' ', 1)
-                self._hgheads._previous[hghead] = branch
+                self._hgheads._previous[hghead] = (branch, 1)
+                self._generation = n + 1
 
         self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
 
@@ -829,9 +831,10 @@ class GitHgStore(object):
 
         return True
 
-    def tags(self, heads):
+    def tags(self):
         tags = TagSet()
-        for h in heads:
+        heads = sorted((n, h) for h, (b, n) in util.iteritems(self._hgheads))
+        for _, h in heads:
             h = self.changeset_ref(h)
             tags.update(self._get_hgtags(h))
         for tag, node in tags:
@@ -879,12 +882,12 @@ class GitHgStore(object):
     def heads(self, branches={}):
         if not isinstance(branches, (dict, set)):
             branches = set(branches)
-        return set(h for h, b in util.iteritems(self._hgheads)
+        return set(h for h, (b, _) in util.iteritems(self._hgheads)
                    if not branches or b in branches)
 
     def _head_branch(self, head):
         if head in self._hgheads:
-            return self._hgheads[head], head
+            return self._hgheads[head][0], head
         if head in self._branches:
             return self._branches[head], head
         branch = self.changeset(head).branch or b'default'
@@ -899,10 +902,12 @@ class GitHgStore(object):
             parent_branch, parent_head = self._head_branch(p)
             if parent_branch == branch:
                 if parent_head in self._hgheads:
-                    assert parent_branch == self._hgheads[parent_head]
+                    assert parent_branch == self._hgheads[parent_head][0]
                     del self._hgheads[parent_head]
 
-        self._hgheads[head] = branch
+        generation = self._generation
+        self._generation += 1
+        self._hgheads[head] = (branch, generation)
 
     def read_changeset_data(self, obj):
         assert obj is not None
@@ -1176,13 +1181,13 @@ class GitHgStore(object):
                                for h in hg_changeset_heads)
         if (any(self._hgheads.iterchanges()) or
                 b'refs/cinnabar/changesets' in refresh):
-            heads = sorted((self._hgheads[h], h, g)
+            heads = sorted((self._hgheads[h][1], self._hgheads[h][0], h, g)
                            for h, g in zip(hg_changeset_heads,
                                            changeset_heads))
             with GitHgHelper.commit(
                 ref=b'refs/cinnabar/changesets',
-                parents=list(h for _, __, h in heads),
-                message=b'\n'.join(b'%s %s' % (h, b) for b, h, _ in heads),
+                parents=list(h for _, __, ___, h in heads),
+                message=b'\n'.join(b'%s %s' % (h, b) for _, b, h, __ in heads),
             ) as commit:
                 pass
             update_metadata[b'refs/cinnabar/changesets'] = commit.sha1

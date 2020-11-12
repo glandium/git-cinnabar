@@ -107,7 +107,8 @@ class MsysEnvironment(MsysCommon):
         create_commands = (
             'pacman-key --init',
             'pacman-key --populate msys2',
-            'pacman --noconfirm -Sy --force --asdeps pacman-mirrors',
+            'sed -i s,://repo.msys2.org/,'
+            '://mirrors.zju.edu.cn/msys2/, /etc/pacman.d/mirrorlist.*',
             'pacman --noconfirm -Sy tar {}'.format(
                 ' '.join(self.packages(name))),
             'rm -rf /var/cache/pacman/pkg',

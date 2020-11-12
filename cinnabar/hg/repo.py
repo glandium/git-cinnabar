@@ -669,35 +669,6 @@ def unbundler(bundle):
 def get_clonebundle_url(repo):
     bundles = repo._call(b'clonebundles')
 
-    try:
-        if check_enabled('no-mercurial'):
-            raise ImportError('Do not use mercurial')
-        from mercurial.exchange import (
-            parseclonebundlesmanifest,
-            filterclonebundleentries,
-        )
-    except ImportError:
-        parseclonebundlesmanifest = False
-
-    if parseclonebundlesmanifest:
-        class dummy(object):
-            pass
-
-        fakerepo = dummy()
-        fakerepo.requirements = set()
-        fakerepo.supportedformats = set()
-        fakerepo.ui = repo.ui
-
-        entries = parseclonebundlesmanifest(fakerepo, bundles)
-        if not entries:
-            return None
-
-        entries = filterclonebundleentries(fakerepo, entries)
-        if not entries:
-            return None
-
-        return entries[0].get(b'URL')
-
     supported_bundles = (b'v1', b'v2')
     supported_compressions = tuple(
         k for k, v in (
@@ -758,14 +729,16 @@ def get_clonebundle_url(repo):
 
 def get_clonebundle(repo):
     url = Git.config('cinnabar.clonebundle', remote=repo.remote)
+    limit_schemes = False
     if not url:
         url = get_clonebundle_url(repo)
+        limit_schemes = True
 
     if not url:
         return None
 
     parsed_url = urlparse(url)
-    if parsed_url.scheme not in (b'http', b'https'):
+    if limit_schemes and parsed_url.scheme not in (b'http', b'https'):
         logging.warn('Server advertizes clone bundle but provided a non '
                      'http/https url. Skipping.')
         return None
@@ -870,7 +843,7 @@ class BundleApplier(object):
 SHA1_RE = re.compile(b'[0-9a-fA-F]{1,40}$')
 
 
-def do_cinnabarclone(repo, manifest, store):
+def do_cinnabarclone(repo, manifest, store, limit_schemes=True):
     GRAFT = {
         None: None,
         b'false': False,
@@ -921,7 +894,8 @@ def do_cinnabarclone(repo, manifest, store):
             if not any(Git.iter(
                     'rev-list', '--branches', '--tags', '--remotes',
                     '--max-count=1', '--ancestry-path', '--stdin',
-                    stdin=(b'^%s^@' % c for c in graft))):
+                    stdin=(b'^%s^@' % c for c in graft),
+                    stderr=open(os.devnull, 'wb'))):
                 continue
 
         candidates.append((spec, len(graft) != 0))
@@ -946,7 +920,7 @@ def do_cinnabarclone(repo, manifest, store):
         return False
 
     parsed_url = urlparse(url)
-    if parsed_url.scheme not in (b'http', b'https', b'git'):
+    if limit_schemes and parsed_url.scheme not in (b'http', b'https', b'git'):
         logging.warn('Server advertizes cinnabarclone but provided a non '
                      'http/https git repository. Skipping.')
         return False
@@ -966,10 +940,19 @@ def getbundle(repo, store, heads, branch_names):
         if not common:
             if not store._has_metadata:
                 manifest = Git.config('cinnabar.clone', remote=repo.remote)
+                limit_schemes = False
                 if manifest is None and repo.capable(b'cinnabarclone'):
-                    manifest = repo._call(b'cinnabarclone')
+                    # If no cinnabar.clone config was given, but a
+                    # cinnabar.clonebundle config was, act as if an empty
+                    # cinnabar.clone config had been given, and proceed with
+                    # the mercurial clonebundle.
+                    if not Git.config('cinnabar.clonebundle',
+                                      remote=repo.remote):
+                        manifest = repo._call(b'cinnabarclone')
+                        limit_schemes = True
                 if manifest:
-                    got_partial = do_cinnabarclone(repo, manifest, store)
+                    got_partial = do_cinnabarclone(repo, manifest, store,
+                                                   limit_schemes)
                     if not got_partial:
                         if check_enabled('cinnabarclone'):
                             raise Exception('cinnabarclone failed.')
@@ -1178,7 +1161,7 @@ if changegroup:
 
         sshargs = procutil.sshargs
         shellquote = procutil.shellquote
-        quotecommand = procutil.quotecommand
+        quotecommand = getattr(procutil, 'quotecommand', None)
         url = util.url
         if has_checksafessh:
             checksafessh = util.checksafessh
@@ -1196,7 +1179,8 @@ if changegroup:
             if cmd.startswith(b'"'):
                 cmd = cmd[1:-1]
             return quotecommand(cmd)
-        procutil.quotecommand = override_quotecommand
+        if quotecommand:
+            procutil.quotecommand = override_quotecommand
 
         class override_url(object):
             def __init__(self, *args, **kwargs):
@@ -1213,7 +1197,8 @@ if changegroup:
         if has_checksafessh:
             util.checksafessh = checksafessh
         util.url = url
-        procutil.quotecommand = quotecommand
+        if quotecommand:
+            procutil.quotecommand = quotecommand
         procutil.shellquote = shellquote
         procutil.sshargs = sshargs
 

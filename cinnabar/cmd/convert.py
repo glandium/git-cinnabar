@@ -4,7 +4,10 @@ import re
 from cinnabar.cmd.util import CLI
 from cinnabar.git import NULL_NODE_ID
 from cinnabar.helper import GitHgHelper
-from cinnabar.util import bytes_stdout
+from cinnabar.util import (
+    bytes_stdin,
+    bytes_stdout,
+)
 
 
 class AbbrevAction(argparse.Action):
@@ -53,30 +56,53 @@ def sha1_value(value):
     return value.encode('ascii')
 
 
+def do_all(args, callback):
+    for arg in args.sha1:
+        callback(arg)
+
+    if args.batch:
+        bytes_stdout.flush()
+        while True:
+            line = bytes_stdin.readline()
+            if not line:
+                break
+            for arg in line.split():
+                callback(arg)
+            bytes_stdout.flush()
+
+
 @CLI.subcommand
 @CLI.argument('--abbrev', action=AbbrevAction)
+@CLI.argument('--batch', action='store_true', help='read sha1s on stdin')
 @CLI.argument('sha1', action=SHA1Action, nargs='*', type=sha1_value,
               help='mercurial sha1')
 def hg2git(args):
     '''convert mercurial sha1 to corresponding git sha1'''
 
-    for arg in args.sha1:
+    def do_one(arg):
         bytes_stdout.write(
             GitHgHelper.hg2git(arg)[:args.abbrev])
         bytes_stdout.write(b'\n')
 
+    do_all(args, do_one)
+
 
 @CLI.subcommand
 @CLI.argument('--abbrev', action=AbbrevAction)
+@CLI.argument('--batch', action='store_true', help='read sha1s on stdin')
 @CLI.argument('sha1', action=SHA1Action, nargs='*', help='git sha1')
 def git2hg(args):
     '''convert git sha1 to corresponding mercurial sha1'''
 
-    for arg in args.sha1:
-        data = GitHgHelper.git2hg(arg.encode('ascii'))
+    def do_one(arg):
+        if isinstance(arg, str):
+            arg = arg.encode('ascii')
+        data = GitHgHelper.git2hg(arg)
         if data:
             assert data.startswith(b'changeset ')
             bytes_stdout.write(data[10:10 + args.abbrev])
         else:
             bytes_stdout.write(NULL_NODE_ID[:args.abbrev])
         bytes_stdout.write(b'\n')
+
+    do_all(args, do_one)
