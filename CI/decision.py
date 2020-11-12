@@ -82,8 +82,8 @@ class TestTask(Task):
         command.extend(helper)
         if clone:
             command.extend([
-                'curl -L {{{}.artifact}} -o repo/bundle.git'.format(
-                    Clone.by_name(clone)),
+                'curl --compressed -L {{{}.artifact}} -o repo/bundle.git'
+                .format(Clone.by_name(clone)),
                 'git init repo/hg.old.git',
                 'git -C repo/hg.old.git fetch ../bundle.git refs/*:refs/*',
                 'git -C repo/hg.old.git remote add origin hg::$REPO',
