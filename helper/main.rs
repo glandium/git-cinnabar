@@ -346,7 +346,18 @@ pub fn main() {
 
 #[no_mangle]
 unsafe extern "C" fn cinnabar_main(argc: c_int, argv: *const *const c_char) -> c_int {
-    if let Some("--command") = std::env::args().skip(1).next().as_ref().map(|s| &**s) {
+    if let Some("git-cinnabar") = (|| {
+        std::env::current_exe()
+            .ok()?
+            .file_stem()?
+            .to_os_string()
+            .into_string()
+            .ok()
+    })()
+    .as_deref()
+    {
+        git_cinnabar(*argv.as_ref().unwrap())
+    } else if let Some("--command") = std::env::args().skip(1).next().as_ref().map(|s| &**s) {
         git_cinnabar(*argv.as_ref().unwrap())
     } else {
         helper_main(argc, argv)
