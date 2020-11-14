@@ -445,7 +445,7 @@ impl<T: BorrowKey, U: BorrowKey<Key = T::Key>> OrderedZipItem<T, U> {
         }
     }
 
-    pub fn to_tuple(self) -> (Option<T>, Option<U>) {
+    pub fn into_tuple(self) -> (Option<T>, Option<U>) {
         (self.0, self.1)
     }
 }
@@ -489,7 +489,7 @@ fn test_ordered_zip() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap()
         .into_iter()
-        .map(OrderedZipItem::to_tuple)
+        .map(OrderedZipItem::into_tuple)
         .collect::<Vec<_>>();
     assert_eq!(
         &result[..],
@@ -505,15 +505,15 @@ fn test_ordered_zip() {
     let b = [Foo(1, 2), Foo(3, 2), Foo(2, 2), Foo(5, 2)];
     let mut o = OrderedZip::new(a.iter(), b.iter());
     assert_eq!(
-        o.next().map(|x| x.map(|y| y.to_tuple())),
+        o.next().map(|x| x.map(|y| y.into_tuple())),
         Some(Ok((Some(&Foo(1, 1)), Some(&Foo(1, 2)))))
     );
     assert_eq!(
-        o.next().map(|x| x.map(|y| y.to_tuple())),
+        o.next().map(|x| x.map(|y| y.into_tuple())),
         Some(Ok((Some(&Foo(2, 1)), None)))
     );
     assert_eq!(
-        o.next().map(|x| x.map(|y| y.to_tuple())),
+        o.next().map(|x| x.map(|y| y.into_tuple())),
         Some(Err(UnorderedError(())))
     );
 }

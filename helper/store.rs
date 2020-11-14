@@ -82,7 +82,7 @@ impl GitChangesetMetadata {
 
         Some(ParsedGitChangesetMetadata {
             changeset_id: changeset?,
-            manifest_id: manifest.unwrap_or_else(|| HgManifestId::null()),
+            manifest_id: manifest.unwrap_or_else(HgManifestId::null),
             author,
             extra,
             files,
@@ -105,7 +105,7 @@ pub struct ParsedGitChangesetMetadata<'a> {
 
 impl<'a> ParsedGitChangesetMetadata<'a> {
     pub fn author(&self) -> Option<&[u8]> {
-        self.author.clone()
+        self.author
     }
 
     pub fn extra(&self) -> Option<ChangesetExtra> {
@@ -113,7 +113,7 @@ impl<'a> ParsedGitChangesetMetadata<'a> {
     }
 
     pub fn files(&self) -> ChangesetFilesIter {
-        ChangesetFilesIter(self.files.clone())
+        ChangesetFilesIter(self.files)
     }
 
     pub fn patch(&self) -> Option<GitChangesetPatch> {

@@ -138,7 +138,7 @@ pub fn textdiff<'a>(a: &[u8], b: &'a [u8]) -> Vec<PatchInfo<&'a [u8]>> {
         patch_info: Vec::new(),
         a_line_offsets: line_offsets(a),
         b_line_offsets: line_offsets(b),
-        b: b,
+        b,
     };
     let a = mmfile_t::from(a);
     let b = mmfile_t::from(b);

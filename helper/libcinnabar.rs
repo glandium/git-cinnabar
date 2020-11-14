@@ -130,7 +130,7 @@ pub unsafe extern "C" fn send_buffer(buf: *const strbuf) {
         let buf = buf.as_bytes();
         writeln!(&mut stdout, "{}", buf.len()).unwrap();
         stdout.write_all(buf).unwrap();
-        writeln!(&mut stdout, "").unwrap();
+        writeln!(&mut stdout).unwrap();
     } else {
         write!(&mut stdout, "-1\n\n").unwrap();
     }

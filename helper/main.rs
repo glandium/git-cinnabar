@@ -357,7 +357,7 @@ unsafe extern "C" fn cinnabar_main(argc: c_int, argv: *const *const c_char) -> c
     .as_deref()
     {
         git_cinnabar(*argv.as_ref().unwrap())
-    } else if let Some("--command") = std::env::args().skip(1).next().as_ref().map(|s| &**s) {
+    } else if let Some("--command") = std::env::args().nth(1).as_deref() {
         git_cinnabar(*argv.as_ref().unwrap())
     } else {
         helper_main(argc, argv)

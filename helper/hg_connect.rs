@@ -283,7 +283,7 @@ unsafe extern "C" fn do_getbundle(conn: *mut hg_connection, args: *const string_
     };
 
     let mut cmd_args = Vec::<(&str, String)>::new();
-    if args.len() > 0 {
+    if !args.is_empty() {
         cmd_args.push(("heads", arg_list(args[0])));
     }
     if args.len() > 1 {
@@ -308,7 +308,7 @@ unsafe extern "C" fn do_unbundle(conn: *mut hg_connection, args: *const string_l
     let conn = to_wire_connection(conn);
     let args = args.as_ref().unwrap();
     let args = args.iter().collect::<Vec<_>>();
-    let heads_str = if args.is_empty() || &args[..] == &[b"force"] {
+    let heads_str = if args.is_empty() || args[..] == [b"force"] {
         hex::encode("force")
     } else {
         let mut heads = args.iter().map(|a| HgChangesetId::from_bytes(a).unwrap());

@@ -11,11 +11,11 @@ use itertools::Itertools;
 use make_cmd::gnu_make;
 
 fn env(name: &str) -> String {
-    std::env::var(name).expect(&format!("Failed to get {}", name))
+    std::env::var(name).unwrap_or_else(|_| panic!("Failed to get {}", name))
 }
 
 fn env_os(name: &str) -> OsString {
-    std::env::var_os(name).expect(&format!("Failed to get {}", name))
+    std::env::var_os(name).unwrap_or_else(|| panic!("Failed to get {}", name))
 }
 
 fn prepare_make(make: &mut Command) -> &mut Command {
@@ -48,15 +48,14 @@ fn main() {
             target_os, target_env
         );
     }
-    if std::env::var("CINNABAR_CROSS_COMPILE_I_KNOW_WHAT_I_M_DOING").is_err() {
-        if target_arch != target::arch()
-            || target_os != target::os()
-            || target_env != target::env()
-            || target_endian != target::endian()
-            || target_pointer_width != target::pointer_width()
-        {
-            panic!("Cross-compilation is not supported");
-        }
+    if std::env::var("CINNABAR_CROSS_COMPILE_I_KNOW_WHAT_I_M_DOING").is_err()
+        && target_arch != target::arch()
+        || target_os != target::os()
+        || target_env != target::env()
+        || target_endian != target::endian()
+        || target_pointer_width != target::pointer_width()
+    {
+        panic!("Cross-compilation is not supported");
     }
 
     let dir = env_os("CARGO_MANIFEST_DIR");

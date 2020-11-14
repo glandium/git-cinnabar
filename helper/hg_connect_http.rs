@@ -217,7 +217,7 @@ impl HTTPRequest {
             }),
             Ok(Either::Right(_)) => unreachable!(),
             _ => {
-                while let Ok(_) = receiver.recv() {}
+                while receiver.recv().is_ok() {}
                 drop(receiver);
                 thread.join().unwrap()?;
                 unreachable!();

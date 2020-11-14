@@ -22,10 +22,7 @@ pub trait ObjectId: Sized {
             len,
             2 * <<Self::Digest as Digest>::OutputSize as typenum::marker_traits::Unsigned>::USIZE
         );
-        Abbrev {
-            oid: self,
-            len: len,
-        }
+        Abbrev { oid: self, len }
     }
 }
 
