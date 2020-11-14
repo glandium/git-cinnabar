@@ -262,12 +262,8 @@ enum CinnabarCommand {
 
 use CinnabarCommand::*;
 
-fn git_cinnabar(argv0: *const c_char) -> i32 {
-    let command = match CinnabarCommand::from_iter_safe(
-        Some(OsString::from("git-cinnabar"))
-            .into_iter()
-            .chain(std::env::args_os().skip(2)),
-    ) {
+fn git_cinnabar(argv0: *const c_char, args: &mut dyn Iterator<Item = OsString>) -> i32 {
+    let command = match CinnabarCommand::from_iter_safe(args) {
         Ok(c) => c,
         Err(e) if e.use_stderr() => {
             eprintln!("{}", e.message);
@@ -356,9 +352,12 @@ unsafe extern "C" fn cinnabar_main(argc: c_int, argv: *const *const c_char) -> c
     })()
     .as_deref()
     {
-        git_cinnabar(*argv.as_ref().unwrap())
+        git_cinnabar(*argv.as_ref().unwrap(), &mut std::env::args_os())
     } else if let Some("--command") = std::env::args().nth(1).as_deref() {
-        git_cinnabar(*argv.as_ref().unwrap())
+        let mut args = Some(OsString::from("git-cinnabar"))
+            .into_iter()
+            .chain(std::env::args_os().skip(2));
+        git_cinnabar(*argv.as_ref().unwrap(), &mut args)
     } else {
         helper_main(argc, argv)
     }
