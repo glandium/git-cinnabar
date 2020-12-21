@@ -35,6 +35,7 @@ from .exceptions import (
 )
 from .util import (
     HTTPReader,
+    Seekable,
     byte_diff,
     check_enabled,
     interval_expired,
@@ -718,6 +719,10 @@ class GitHgStore(object):
             except URLError as e:
                 logging.error(e.reason)
                 return False
+            if bundle.fh.headers.get('Content-Encoding', 'identity') == 'gzip':
+                from gzip import GzipFile
+                bundle = Seekable(bundle, bundle.length)
+                bundle = GzipFile(mode='rb', fileobj=bundle)
             BUNDLE_SIGNATURE = b'# v2 git bundle\n'
             signature = bundle.read(len(BUNDLE_SIGNATURE))
             if signature != BUNDLE_SIGNATURE:

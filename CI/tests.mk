@@ -212,6 +212,7 @@ hg.cinnabarclone-graft.git: NUM=09
 hg.cinnabarclone-graft-replace.git: NUM=10
 hg.cinnabarclone-bundle.git: NUM=11
 hg.cinnabarclone-bundle-full.git: NUM=12
+hg.cinnabarclone-graft-bundle.git: NUM=13
 hg.cinnabarclone-graft-bundle.git: OTHER_SERVER=http
 hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-graft.git hg.cinnabarclone-graft-replace.git: OTHER_SERVER=git
 hg.cinnabarclone-bundle.git hg.cinnabarclone-bundle-full.git hg.cinnabarclone-graft-bundle.git: OTHER_SERVER=http
