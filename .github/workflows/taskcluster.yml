@@ -6,7 +6,7 @@ jobs:
     env:
       secret: ${{ secrets.SECRET }}
       TC_WORKER_TYPE: osx
-      PATH: /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      PATH: /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Frameworks/Python.framework/Versions/2.7/bin
     steps:
       - uses: actions/checkout@v2
       - run: curl -OL https://bootstrap.pypa.io/2.6/get-pip.py
