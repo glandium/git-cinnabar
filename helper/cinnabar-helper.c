@@ -1978,8 +1978,8 @@ static void do_upgrade(struct string_list *args)
 				free_tree_buffer(get_commit_tree(manifest_commit));
 			}
 		}
-		hashmap_free_entries(&track.commit_cache, struct oid_map_entry, ent);
-		hashmap_free_entries(&track.tree_cache, struct oid_map_entry, ent);
+		hashmap_clear_and_free(&track.commit_cache, struct oid_map_entry, ent);
+		hashmap_clear_and_free(&track.tree_cache, struct oid_map_entry, ent);
 		oidset_clear(&track.manifests);
 		stop_progress(&track.progress);
 	}
@@ -2371,7 +2371,7 @@ static void do_reload(struct string_list *args)
 
 	oidset_clear(&hg2git_seen);
 
-	hashmap_free_entries(&git_tree_cache, struct oid_map_entry, ent);
+	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
 
 	oid_array_clear(&manifest_heads);
@@ -2574,6 +2574,6 @@ int main(int argc, const char *argv[])
 		free_notes(&files_meta);
 
 	oidset_clear(&hg2git_seen);
-	hashmap_free_entries(&git_tree_cache, struct oid_map_entry, ent);
+	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
 	return 0;
 }
