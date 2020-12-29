@@ -1842,7 +1842,7 @@ static void do_reload(struct string_list *args)
 
 	oidset_clear(&hg2git_seen);
 
-	hashmap_free_entries(&git_tree_cache, struct oid_map_entry, ent);
+	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
 
 	oid_array_clear(&manifest_heads);
@@ -1968,7 +1968,7 @@ void done_cinnabar()
 
 	oidset_clear(&hg2git_seen);
 
-	hashmap_free_entries(&git_tree_cache, struct oid_map_entry, ent);
+	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
 }
 
 int helper_main(int argc, const char *argv[])

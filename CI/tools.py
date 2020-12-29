@@ -11,8 +11,8 @@ from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '5.5.2'
-GIT_VERSION = '2.29.2'
+MERCURIAL_VERSION = '5.6.1'
+GIT_VERSION = '2.30.0'
 
 ALL_MERCURIAL_VERSIONS = (
     '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
@@ -20,7 +20,7 @@ ALL_MERCURIAL_VERSIONS = (
     '3.3.3', '3.4.2', '3.5.2', '3.6.3', '3.7.3', '3.8.4', '3.9.2',
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
     '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2', '5.3.2',
-    '5.4.2', '5.5.2',
+    '5.4.2', '5.5.2', '5.6.1',
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -158,6 +158,8 @@ class Hg(Task, metaclass=Tool):
                 artifact = ('mercurial-{{}}-cp27-cp27m-macosx_{}_{}.whl'
                             .format(env.os_version.replace('.', '_'),
                                     wheel_cpu))
+                kwargs.setdefault('env', {}).setdefault(
+                    'MACOSX_DEPLOYMENT_TARGET', env.os_version)
             else:
                 artifact = 'mercurial-{}-cp27-cp27m-mingw.whl'
 

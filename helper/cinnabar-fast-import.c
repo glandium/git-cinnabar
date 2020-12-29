@@ -264,7 +264,7 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 		e->pack_id = MAX_PACK_ID;
 		e->idx.offset = 1;
 	}
-	insert_mark(marks, 2, e);
+	insert_mark(&marks, 2, e);
 	return 2;
 }
 
