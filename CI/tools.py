@@ -158,6 +158,8 @@ class Hg(Task, metaclass=Tool):
                 artifact = ('mercurial-{{}}-cp27-cp27m-macosx_{}_{}.whl'
                             .format(env.os_version.replace('.', '_'),
                                     wheel_cpu))
+                kwargs.setdefault('env', {}).setdefault(
+                    'MACOSX_DEPLOYMENT_TARGET', env.os_version)
             else:
                 artifact = 'mercurial-{}-cp27-cp27m-mingw.whl'
 
