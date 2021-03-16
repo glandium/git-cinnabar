@@ -314,9 +314,10 @@ class Helper(Task, metaclass=Tool):
             make_flags.append('CFLAGS+="-arch {}"'.format(env.cpu))
             make_flags.append('LDFLAGS+="-arch {}"'.format(env.cpu))
         elif not os.startswith('osx'):
-            make_flags.append('USE_LIBPCRE1=YesPlease')
-            make_flags.append('USE_LIBPCRE2=')
             make_flags.append('CFLAGS+=-DCURLOPT_PROXY_CAINFO=246')
+        make_flags.append('USE_LIBPCRE=')
+        make_flags.append('USE_LIBPCRE1=')
+        make_flags.append('USE_LIBPCRE2=')
 
         hash = hash or helper_hash()
 
