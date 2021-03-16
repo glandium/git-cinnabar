@@ -11,7 +11,7 @@ void copy_bundle(FILE *in, struct writer *out);
 void copy_bundle_to_file(FILE *in, FILE *out);
 void copy_bundle_to_strbuf(FILE *in, struct strbuf *out);
 
-void read_chunk(FILE *in, struct strbuf *out);
+void read_rev_chunk(FILE *in, struct strbuf *out);
 
 struct rev_chunk {
 	struct strbuf raw;

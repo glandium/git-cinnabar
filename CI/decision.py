@@ -306,6 +306,7 @@ def decision():
         env={
             'GIT_CINNABAR_OLD_HELPER': '1',
         },
+        git='2.30.0'
     )
 
     TestTask(
@@ -315,6 +316,7 @@ def decision():
             'GIT_CINNABAR_OLD_HELPER': '1',
             'GRAFT': '1',
         },
+        git='2.30.0'
     )
 
     rev = old_compatible_python()
@@ -395,8 +397,10 @@ def decision():
         env = {
             'GIT_CINNABAR_CHECK': 'no-mercurial',
         }
+        kwargs = {}
         if variant == 'old':
             env['GIT_CINNABAR_OLD_HELPER'] = '1'
+            kwargs['git'] = '2.30.0'
         TestTask(
             variant=variant,
             extra_desc='no-mercurial',
@@ -413,7 +417,8 @@ def decision():
                 'export PATH=$PWD/git/bin:$PATH:$PWD/venv/bin',
                 'make -C repo -f CI/tests.mk',
             ],
-            env=env
+            env=env,
+            **kwargs,
         )
 
     for variant in ('coverage', 'asan'):
