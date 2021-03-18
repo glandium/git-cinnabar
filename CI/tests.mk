@@ -24,6 +24,9 @@ GIT = git
 ifndef GIT_CINNABAR_OLD_HELPER
 GIT += -c core.packedGitWindowSize=8k
 endif
+ifndef GIT_OLD_VERSION
+GIT += -c credential.helper=
+endif
 
 COMMA=,
 export GIT_CINNABAR_CHECK:=all,traceback,cinnabarclone,clonebundles,no-version-check$(addprefix $(COMMA),$(GIT_CINNABAR_CHECK))

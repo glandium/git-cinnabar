@@ -70,6 +70,7 @@ fn main() {
         .arg("HAVE_WPGMPTR=")
         .arg("USE_LIBPCRE1=")
         .arg("USE_LIBPCRE2=")
+        .arg("FSMONITOR_DAEMON_BACKEND=")
         .env("MAKEFLAGS", format!("-j {}", env("CARGO_MAKEFLAGS")))
         .current_dir(&git_core)
         .status()

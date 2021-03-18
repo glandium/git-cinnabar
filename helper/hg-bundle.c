@@ -3,7 +3,7 @@
 #include "hg-bundle.h"
 #include <stdint.h>
 
-void read_chunk(FILE *in, struct strbuf *out)
+void read_rev_chunk(FILE *in, struct strbuf *out)
 {
 	// See copy_bundle2_chunk and copy_changegroup_chunk.
 	char buf[4];

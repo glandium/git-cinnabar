@@ -274,7 +274,10 @@ def decision():
         )
 
     for git in ('1.8.5', '2.7.4'):
-        TestTask(git=git)
+        TestTask(
+            git=git,
+            env={'GIT_OLD_VERSION': '1'}
+        )
 
     for hg in SOME_MERCURIAL_VERSIONS:
         if hg != MERCURIAL_VERSION:
@@ -306,6 +309,7 @@ def decision():
         env={
             'GIT_CINNABAR_OLD_HELPER': '1',
         },
+        git='2.30.0'
     )
 
     TestTask(
@@ -315,6 +319,7 @@ def decision():
             'GIT_CINNABAR_OLD_HELPER': '1',
             'GRAFT': '1',
         },
+        git='2.30.0'
     )
 
     rev = old_compatible_python()
