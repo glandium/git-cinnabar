@@ -40,7 +40,7 @@ helper:
 TARGET=$@
 git: TARGET=all
 git-install: TARGET=install
-git-cinnabar-helper$X: EXTRA_FLAGS=USE_LIBPCRE= USELIBPCRE1= USELIBPCRE2=
+git-cinnabar-helper$X: EXTRA_FLAGS=USE_LIBPCRE= USELIBPCRE1= USELIBPCRE2= FSMONITOR_DAEMON_BACKEND=
 
 %:
 	$(MAKE) -C $(CURDIR)/git-core -f $(CURDIR)/helper/helper.mk $(TARGET) $(EXTRA_FLAGS)
