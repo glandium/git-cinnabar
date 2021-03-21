@@ -262,6 +262,36 @@ def helper_hash(head='HEAD'):
         cwd=os.path.join(os.path.dirname(__file__), '..'))))[2].decode()
 
 
+def install_rust(version, target='x86_64-unknown-linux-gnu'):
+    rustup_opts = '-y --default-toolchain none'
+    cargo_dir = '$HOME/.cargo/bin/'
+    rustup = cargo_dir + 'rustup'
+    if 'windows' in target:
+        cpu, _, __ = target.partition('-')
+        rust_install = [
+            'curl -o rustup-init.exe https://win.rustup.rs/{cpu}',
+            './rustup-init.exe {rustup_opts}',
+            '{rustup} set default-host {target}',
+        ]
+    else:
+        rust_install = [
+            'curl -o rustup.sh https://sh.rustup.rs',
+            'sh rustup.sh {rustup_opts}',
+        ]
+    rust_install += [
+        '{rustup} install {version} --profile minimal',
+        '{rustup} default {version}',
+        'PATH={cargo_dir}:$PATH',
+        '{rustup} target add {target}',
+    ]
+    if 'windows' in target:
+        rust_install += [
+            '{rustup} component remove rust-mingw',
+        ]
+    l = locals()
+    return [r.format(**l) for r in rust_install]
+
+
 class Helper(Task, metaclass=Tool):
     PREFIX = 'helper'
 
@@ -335,17 +365,9 @@ class Helper(Task, metaclass=Tool):
         elif not os.startswith('osx'):
             make_flags.append('LDFLAGS="-lssp_nonshared -lssp"')
 
-        rustup_opts = '-y --default-toolchain none'
-        cargo_dir = '$HOME/.cargo/bin/'
-        rustup = cargo_dir + 'rustup'
         if os.startswith('mingw'):
             cpu = msys.msys_cpu(env.cpu)
-            rust_install = [
-                'curl -o rustup-init.exe https://win.rustup.rs/{cpu}',
-                './rustup-init.exe {rustup_opts}',
-                '{rustup} set default-host {cpu}-pc-windows-gnu',
-            ]
-            environ['CARGO_TARGET'] = '{}-pc-windows-gnu'.format(cpu)
+            rust_target = "{}-pc-windows-gnu".format(cpu)
             # Statically link libcurl on Windows.
             # This leaves it to curl-sys build scripts to deal with building
             # libcurl, instead of us.
@@ -354,39 +376,20 @@ class Helper(Task, metaclass=Tool):
                 'curl-sys/static-curl',
                 'curl-sys/static-ssl',
             ))
-        else:
-            rust_install = [
-                'curl -o rustup.sh https://sh.rustup.rs',
-                'sh rustup.sh {rustup_opts}',
-            ]
-            if os.startswith('osx'):
-                environ['CARGO_TARGET'] = 'x86_64-apple-darwin'
-            elif os.startswith('arm64-osx'):
-                environ['CARGO_TARGET'] = 'aarch64-apple-darwin'
-            elif os == 'linux':
-                environ['CARGO_TARGET'] = 'x86_64-unknown-linux-gnu'
+        elif os.startswith('osx'):
+            rust_target = 'x86_64-apple-darwin'
+        elif os.startswith('arm64-osx'):
+            rust_target = 'aarch64-apple-darwin'
+        elif os == 'linux':
+            rust_target = 'x86_64-unknown-linux-gnu'
         if os == 'arm64-osx':
             rust_version = 'nightly-2020-11-06'
         elif variant in ('coverage', 'asan'):
             rust_version = 'nightly-2020-06-05'
         else:
             rust_version = '1.45.0'
-        rust_install += [
-            '{rustup} install {rust_version} --profile minimal',
-            '{rustup} default {rust_version}',
-            'PATH={cargo_dir}:$PATH',
-        ]
-        target = environ.get('CARGO_TARGET')
-        if target:
-            rust_install += [
-                '{rustup} target add {target}',
-            ]
-        if os.startswith('mingw'):
-            rust_install += [
-                '{rustup} component remove rust-mingw',
-            ]
-        l = locals()
-        rust_install = [r.format(**l) for r in rust_install]
+        rust_install = install_rust(rust_version, rust_target)
+        environ["CARGO_TARGET"] = rust_target
 
         hash = hash or helper_hash()
 
