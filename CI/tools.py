@@ -262,7 +262,7 @@ def helper_hash(head='HEAD'):
         cwd=os.path.join(os.path.dirname(__file__), '..'))))[2].decode()
 
 
-def install_rust(version, target='x86_64-unknown-linux-gnu'):
+def install_rust(version='1.50.0', target='x86_64-unknown-linux-gnu'):
     rustup_opts = '-y --default-toolchain none'
     cargo_dir = '$HOME/.cargo/bin/'
     rustup = cargo_dir + 'rustup'
@@ -382,13 +382,10 @@ class Helper(Task, metaclass=Tool):
             rust_target = 'aarch64-apple-darwin'
         elif os == 'linux':
             rust_target = 'x86_64-unknown-linux-gnu'
-        if os == 'arm64-osx':
-            rust_version = 'nightly-2020-11-06'
-        elif variant in ('coverage', 'asan'):
-            rust_version = 'nightly-2020-06-05'
+        if variant in ('coverage', 'asan'):
+            rust_install = install_rust('nightly-2020-06-05', rust_target)
         else:
-            rust_version = '1.45.0'
-        rust_install = install_rust(rust_version, rust_target)
+            rust_install = install_rust(target=rust_target)
         environ["CARGO_TARGET"] = rust_target
 
         hash = hash or helper_hash()
