@@ -212,7 +212,9 @@ impl<O: ObjectId> FromStr for Abbrev<O> {
 fn test_abbrev_hg_object_id() {
     let hex = "123456789abcdef00123456789abcdefedcba987";
     for len in 1..40 {
-        let abbrev = HgObjectId(*b"123456789abcdef00123456789abcdefedcba987").abbrev(len);
+        let abbrev = HgObjectId::from_str("123456789abcdef00123456789abcdefedcba987")
+            .unwrap()
+            .abbrev(len);
         let result = format!("{}", abbrev);
         assert_eq!(&result, &hex[..len]);
 

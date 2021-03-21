@@ -67,13 +67,21 @@ extern "C" {
     ) -> c_int;
 }
 
-#[derive(Clone, Copy, Derivative, PartialEq)]
+#[derive(Clone, Copy, Derivative)]
 #[derivative(Debug)]
 pub struct PatchInfo<S: AsRef<[u8]>> {
     pub start: usize,
     pub end: usize,
     #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
     pub data: S,
+}
+
+impl<S: AsRef<[u8]>, R: AsRef<[u8]>> PartialEq<PatchInfo<S>> for PatchInfo<R> {
+    fn eq(&self, other: &PatchInfo<S>) -> bool {
+        self.start == other.start
+            && self.end == other.end
+            && self.data.as_ref() == other.data.as_ref()
+    }
 }
 
 pub fn apply<S: AsRef<[u8]>>(patch: impl Iterator<Item = PatchInfo<S>>, input: &[u8]) -> Vec<u8> {
