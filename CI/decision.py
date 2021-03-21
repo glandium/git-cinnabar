@@ -24,6 +24,7 @@ from tools import (
     MERCURIAL_VERSION,
     ALL_MERCURIAL_VERSIONS,
     SOME_MERCURIAL_VERSIONS,
+    install_rust,
     Git,
     Helper,
     Hg,
@@ -423,6 +424,37 @@ def decision():
         },
         hg='{}.py3'.format(MERCURIAL_VERSION),
     )
+
+    for cargo_cmd in ('test', 'clippy', 'fmt'):
+        Task(
+            task_env=TaskEnvironment.by_name('linux.build'),
+            description='cargo {}'.format(cargo_cmd),
+            command=list(chain(
+                install_rust(),
+                {
+                    'clippy': ['rustup component add clippy'],
+                    'fmt': ['rustup component add rustfmt'],
+                }.get(cargo_cmd, []),
+                Task.checkout(),
+                ['git -C repo submodule update --init']
+                if cargo_cmd != 'fmt' else [],
+                [
+                    '(cd repo/helper ; cargo {})'.format({
+                        'clippy': 'clippy -- -D warnings {}'.format(
+                            ' '.join('-A {}'.format(w) for w in [
+                                'clippy::borrowed_box',
+                                'clippy::if_same_then_else',
+                                'clippy::manual-strip',
+                                'clippy::missing_safety_doc',
+                                'clippy::new_without_default',
+                                'clippy::unnecessary_wraps',
+                                'dead_code',
+                            ])),
+                        'fmt': 'fmt -- --check',
+                    }.get(cargo_cmd, cargo_cmd)),
+                ],
+            )),
+        )
 
 
 @action('more-hg-versions',
