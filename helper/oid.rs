@@ -160,12 +160,12 @@ impl<O: ObjectId> PartialEq for Abbrev<O> {
     fn eq(&self, other: &Self) -> bool {
         let self_oid = self.oid.as_raw_bytes();
         let other_oid = other.oid.as_raw_bytes();
-        if self.len == other.len && self_oid[..self.len / 2] == other_oid[..self.len / 2] {
-            if self.len % 2 == 0 {
-                return true;
-            } else if self_oid[self.len / 2] & 0xf0 == other_oid[self.len / 2] & 0xf0 {
-                return true;
-            }
+        if self.len == other.len
+            && self_oid[..self.len / 2] == other_oid[..self.len / 2]
+            && (self.len % 2 == 0
+                || self_oid[self.len / 2] & 0xf0 == other_oid[self.len / 2] & 0xf0)
+        {
+            return true;
         }
         false
     }

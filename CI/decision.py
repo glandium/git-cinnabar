@@ -443,7 +443,6 @@ def decision():
                         'clippy': 'clippy -- -D warnings {}'.format(
                             ' '.join('-A {}'.format(w) for w in [
                                 'clippy::borrowed_box',
-                                'clippy::if_same_then_else',
                                 'clippy::manual-strip',
                                 'clippy::missing_safety_doc',
                                 'clippy::new_without_default',
