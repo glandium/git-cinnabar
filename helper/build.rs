@@ -92,10 +92,10 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", git_core.display());
 
     for flag in output.split_whitespace() {
-        if flag.starts_with("-l") {
-            println!("cargo:rustc-link-lib={}", &flag[2..]);
-        } else if flag.starts_with("-L") {
-            println!("cargo:rustc-link-search=native={}", &flag[2..]);
+        if let Some(lib) = flag.strip_prefix("-l") {
+            println!("cargo:rustc-link-lib={}", lib);
+        } else if let Some(libdir) = flag.strip_prefix("-L") {
+            println!("cargo:rustc-link-search=native={}", libdir);
         }
     }
 
