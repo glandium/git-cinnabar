@@ -66,6 +66,7 @@
 #include "oidset.h"
 #include "progress.h"
 #include "quote.h"
+#include "remote.h"
 #include "replace-object.h"
 #include "revision.h"
 #include "tree.h"
@@ -1922,6 +1923,13 @@ static void restore_sigpipe_to_default(void)
 	sigaddset(&unblock, SIGPIPE);
 	sigprocmask(SIG_UNBLOCK, &unblock, NULL);
 	signal(SIGPIPE, SIG_DFL);
+}
+
+void remote_get_url(const struct remote *remote, const char * const **url,
+                    int* url_nr)
+{
+	*url = remote->url;
+	*url_nr = remote->url_nr;
 }
 
 void init_cinnabar(const char *argv0)

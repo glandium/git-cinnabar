@@ -446,18 +446,20 @@ unsafe extern "C" fn hg_cinnabarclone(conn: *mut hg_connection, result: *mut str
     conn.simple_command(result.as_mut().unwrap(), "cinnabarclone", args!());
 }
 
-#[no_mangle]
-unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_connection {
-    let url = Url::parse(CStr::from_ptr(url).to_str().unwrap()).unwrap();
-    let conn: Option<Box<dyn HgConnection + '_>> = if ["http", "https"].contains(&url.scheme()) {
+pub fn get_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnection>> {
+    if ["http", "https"].contains(&url.scheme()) {
         get_http_connection(&url)
     } else if ["ssh", "file"].contains(&url.scheme()) {
         get_stdio_connection(&url, flags)
     } else {
         die!("protocol '{}' is not supported", url.scheme());
-    };
+    }
+}
 
-    let mut conn = if let Some(conn) = conn {
+#[no_mangle]
+unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_connection {
+    let url = Url::parse(CStr::from_ptr(url).to_str().unwrap()).unwrap();
+    let mut conn = if let Some(conn) = get_connection(&url, flags) {
         conn
     } else {
         return ptr::null_mut();

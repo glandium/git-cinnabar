@@ -15,7 +15,7 @@ use derive_more::{Deref, Display};
 use getset::Getters;
 
 use crate::oid::{GitObjectId, ObjectId};
-use crate::util::{BorrowKey, FromBytes, OsStrExt, SliceExt};
+use crate::util::{BorrowKey, CStrExt, FromBytes, OsStrExt, SliceExt};
 
 const GIT_MAX_RAWSZ: usize = 32;
 
@@ -619,4 +619,30 @@ pub fn diff_tree(a: &CommitId, b: &CommitId) -> impl Iterator<Item = DiffTreeIte
         );
     }
     result.into_iter()
+}
+
+extern "C" {
+    pub fn remote_get(name: *const c_char) -> *mut remote;
+    pub fn remote_get_url(
+        remote: *const remote,
+        url: *mut *const *const c_char,
+        url_nr: *mut c_int,
+    );
+}
+
+impl remote {
+    pub fn get(name: &OsStr) -> &'static mut remote {
+        // /!\ This potentially leaks memory.
+        unsafe { remote_get(name.to_cstring().into_raw()).as_mut().unwrap() }
+    }
+
+    pub fn get_url(&self) -> &OsStr {
+        let mut urls: *const *const c_char = std::ptr::null();
+        let mut url_nr: c_int = 0;
+        unsafe {
+            remote_get_url(self, &mut urls, &mut url_nr);
+        }
+        let urls = unsafe { std::slice::from_raw_parts(urls, url_nr as usize) };
+        unsafe { CStr::from_ptr(urls[0]).to_osstr() }
+    }
 }

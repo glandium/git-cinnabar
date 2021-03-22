@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #![cfg_attr(feature_min_const_generics, feature(min_const_generics))]
+#![cfg_attr(feature_slice_strip, feature(slice_strip))]
 
 #[macro_use]
 extern crate derivative;
@@ -30,27 +31,33 @@ pub(crate) mod hg_connect_http;
 pub(crate) mod hg_connect_stdio;
 pub(crate) mod hg_data;
 
+use std::borrow::Cow;
 use std::convert::TryInto;
 #[cfg(unix)]
 use std::ffi::CString;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::io::{stdin, stdout, BufRead, BufWriter, Write};
 use std::os::raw::c_char;
 use std::os::raw::c_int;
+use std::path::Path;
+use std::process::Command;
 use std::str::{self, FromStr};
 
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 
+use bstr::ByteSlice;
+use url::Url;
+
 use libcinnabar::{files_meta, hg2git};
-use libgit::{get_oid_committish, strbuf, BlobId, CommitId};
-use oid::{Abbrev, GitObjectId, ObjectId};
+use libgit::{get_oid_committish, remote, strbuf, BlobId, CommitId};
+use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use store::{
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
     HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest,
 };
-use util::OsStrExt;
+use util::{OsStrExt, SliceExt};
 
 const HELPER_HASH: &str = env!("HELPER_HASH");
 
@@ -169,6 +176,214 @@ fn do_data_manifest(rev: Abbrev<HgManifestId>) -> Result<(), String> {
     }
 }
 
+fn hg_url(url: impl AsRef<OsStr>) -> Option<Url> {
+    let url = url.as_ref().strip_prefix("hg:")?;
+    if let Some(url) = url.strip_prefix(":") {
+        // hg:: prefix
+        match url.to_str().and_then(|s| Url::parse(s).ok()) {
+            Some(parsed_url)
+                // On Windows, assume that a one-letter scheme and no host
+                // means we originally had something like c:/foo.
+                if !(cfg!(windows)
+                    && parsed_url.scheme().len() == 1
+                    && parsed_url.host_str().is_none()) =>
+            {
+                Some(parsed_url)
+            }
+            _ => {
+                let path = Path::new(url);
+                let path = if path.is_relative() {
+                    #[cfg(not(test))]
+                    let curdir = std::env::current_dir().ok()?;
+                    #[cfg(all(test, windows))]
+                    let curdir = Path::new("c:/foo");
+                    #[cfg(all(test, unix))]
+                    let curdir = Path::new("/foo");
+                    Cow::from(curdir.join(path))
+                } else {
+                    Cow::from(path)
+                };
+                Url::from_file_path(path).ok()
+            }
+        }
+    } else if let Some(remainder) = url.strip_prefix("//") {
+        // hg:// prefix
+        let remainder = remainder.as_bytes();
+        let mut in_brackets = false;
+        let mut bytes = 0;
+        for b in remainder {
+            match b {
+                b':' if !in_brackets => break,
+                b'/' | b'?' | b'#' => break,
+                b'[' => in_brackets = true,
+                b']' => in_brackets = false,
+                _ => {}
+            }
+            bytes += 1;
+        }
+        let (userhost, remainder) = remainder.split_at(bytes);
+        let (scheme, port, remainder) = remainder
+            .strip_prefix(b":")
+            .map(|remainder| {
+                let mut bytes = 0;
+                for b in remainder {
+                    match b {
+                        b'/' | b'?' | b'#' => break,
+                        _ => {}
+                    }
+                    bytes += 1;
+                }
+                let (port, remainder) = remainder.split_at(bytes);
+                let [port, scheme] = port.splitn_exact(b'.').unwrap_or_else(|| {
+                    if port.iter().all(|b| b.is_ascii_digit()) {
+                        [port, b"https"]
+                    } else {
+                        [b"", port]
+                    }
+                });
+                (scheme, port, remainder)
+            })
+            .unwrap_or_else(|| (b"https", b"", remainder));
+        let mut url = scheme.to_owned();
+        if scheme == b"tags" && userhost.is_empty() && port.is_empty() && remainder.is_empty() {
+            url.push(b':');
+        } else {
+            url.extend_from_slice(b"://");
+            url.extend_from_slice(userhost);
+            if !port.is_empty() {
+                url.push(b':');
+                url.extend_from_slice(port);
+            }
+            url.extend_from_slice(remainder);
+        }
+
+        Url::parse(&url.to_str().ok()?).ok()
+    } else {
+        None
+    }
+}
+
+#[test]
+fn test_hg_url() {
+    assert_eq!(hg_url("http://foo.com/foo"), None);
+    assert_eq!(
+        hg_url("hg::https://foo.com/foo"),
+        Url::parse("https://foo.com/foo").ok()
+    );
+    assert_eq!(hg_url("hg::tags:"), Url::parse("tags:").ok());
+    assert_eq!(hg_url("hg://:tags"), Url::parse("tags:").ok());
+    assert_eq!(
+        hg_url("hg://:tags").unwrap().as_str(),
+        Url::parse("tags:").unwrap().as_str()
+    );
+    assert_eq!(hg_url("/foo/bar"), None);
+    assert_eq!(
+        hg_url("hg::file:///foo/bar"),
+        Url::parse("file:///foo/bar").ok()
+    );
+    assert_eq!(
+        hg_url("hg://:file/foo/bar"),
+        Url::parse("file:///foo/bar").ok()
+    );
+    #[cfg(unix)]
+    {
+        assert_eq!(hg_url("hg::/foo/bar"), Url::parse("file:///foo/bar").ok());
+        assert_eq!(hg_url("hg::bar"), Url::parse("file:///foo/bar").ok());
+    }
+    #[cfg(windows)]
+    {
+        assert_eq!(hg_url("c:/foo/bar"), None);
+        assert_eq!(
+            hg_url("hg::c:/foo/bar"),
+            Url::parse("file:///C:/foo/bar").ok()
+        );
+        assert_eq!(hg_url("hg::bar"), Url::parse("file:///C:/foo/bar").ok());
+        assert_eq!(
+            hg_url("hg::file://c:/foo/bar"),
+            Url::parse("file:///c:/foo/bar").ok()
+        );
+        assert_eq!(
+            hg_url("hg::file:///c:/foo/bar"),
+            Url::parse("file:///c:/foo/bar").ok()
+        );
+        assert_eq!(
+            hg_url("hg://:file/c:/foo/bar"),
+            Url::parse("file:///c:/foo/bar").ok()
+        );
+    }
+    assert_eq!(
+        hg_url("hg://foo.com/foo"),
+        Url::parse("https://foo.com/foo").ok()
+    );
+    assert_eq!(
+        hg_url("hg://foo.com:8443/foo"),
+        Url::parse("https://foo.com:8443/foo").ok()
+    );
+    assert_eq!(
+        hg_url("hg://foo.com:http/foo"),
+        Url::parse("http://foo.com/foo").ok()
+    );
+    assert_eq!(
+        hg_url("hg://foo.com:8080.http/foo"),
+        Url::parse("http://foo.com:8080/foo").ok()
+    );
+}
+
+fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
+    let url = remote::get(&remote).get_url();
+    let url =
+        hg_url(url).ok_or_else(|| format!("Invalid mercurial url: {}", url.to_string_lossy()))?;
+    let mut conn = hg_connect::get_connection(&url, 0)
+        .ok_or_else(|| format!("Failed to connect to {}", url))?;
+    if conn.get_capability(b"lookup").is_none() {
+        return Err(
+            "Remote repository does not support the \"lookup\" command. \
+                 Cannot fetch."
+                .to_owned(),
+        );
+    }
+    let mut full_revs = vec![];
+    let revs = revs
+        .iter()
+        .map(|rev| match rev.to_string_lossy() {
+            Cow::Borrowed(s) => Ok(s),
+            Cow::Owned(s) => Err(format!("Invalid character in revision: {}", s)),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    for rev in revs {
+        let mut result = strbuf::new();
+        conn.lookup(&mut result, rev);
+        let [success, data] = result
+            .as_bytes()
+            .trim_end()
+            .splitn_exact(b' ')
+            .expect("lookup command result is malformed");
+        if success == b"0" {
+            return Err(data.to_str_lossy().into_owned());
+        }
+        full_revs.push(
+            data.to_str()
+                .ok()
+                .and_then(|d| HgObjectId::from_str(d).ok())
+                .expect("lookup command result is malformed")
+                .to_string(),
+        );
+    }
+    let cmd = Command::new("git")
+        .arg("-c")
+        .arg(format!("cinnabar.fetch={}", full_revs.join(" ")))
+        .arg("fetch")
+        .arg(remote)
+        .args(full_revs.iter().map(|s| format!("hg/revs/{}", s)))
+        .status()
+        .map_err(|e| e.to_string())?;
+    if cmd.success() {
+        Ok(())
+    } else {
+        Err("fetch failed".to_owned())
+    }
+}
+
 fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
     unsafe {
         let mut stdout = stdout();
@@ -261,6 +476,17 @@ enum CinnabarCommand {
         #[structopt(help = "Read sha1/committish on stdin")]
         batch: bool,
     },
+    #[structopt(name = "fetch")]
+    #[structopt(about = "Fetch a changeset from a mercurial remote")]
+    Fetch {
+        #[structopt(help = "Mercurial remote name or url")]
+        #[structopt(parse(from_os_str))]
+        remote: OsString,
+        #[structopt(required = true)]
+        #[structopt(help = "Mercurial changeset to fetch")]
+        #[structopt(parse(from_os_str))]
+        revs: Vec<OsString>,
+    },
 }
 
 use CinnabarCommand::*;
@@ -314,6 +540,7 @@ fn git_cinnabar(argv0: *const c_char, args: &mut dyn Iterator<Item = OsString>) 
             batch,
             do_one_git2hg,
         ),
+        Fetch { remote, revs } => do_fetch(&remote, &revs),
     };
     unsafe {
         done_cinnabar();
