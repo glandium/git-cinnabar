@@ -445,7 +445,6 @@ def decision():
                                 'clippy::borrowed_box',
                                 'clippy::missing_safety_doc',
                                 'clippy::new_without_default',
-                                'clippy::unnecessary_wraps',
                                 'dead_code',
                             ])),
                         'fmt': 'fmt -- --check',

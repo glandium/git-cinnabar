@@ -80,18 +80,18 @@ pub fn prepare_arg(arg: OsString) -> Vec<u16> {
     arg
 }
 
-fn do_one_hg2git(sha1: &Abbrev<HgChangesetId>) -> Result<String, String> {
-    Ok(format!("{}", unsafe {
+fn do_one_hg2git(sha1: &Abbrev<HgChangesetId>) -> String {
+    format!("{}", unsafe {
         hg2git
             .get_note_abbrev(sha1)
             .unwrap_or_else(GitObjectId::null)
-    }))
+    })
 }
 
-fn do_one_git2hg(committish: &OsString) -> Result<String, String> {
+fn do_one_git2hg(committish: &OsString) -> String {
     let note = get_oid_committish(committish.as_bytes())
         .and_then(|oid| unsafe { GitChangesetId::from(oid).to_hg() });
-    Ok(format!("{}", note.unwrap_or_else(HgChangesetId::null)))
+    format!("{}", note.unwrap_or_else(HgChangesetId::null))
 }
 
 fn do_conversion<T, I: Iterator<Item = T>, F: Fn(T) -> Result<String, String>, W: Write>(
@@ -118,12 +118,12 @@ where
     T: 'a + FromStr,
     <T as FromStr>::Err: fmt::Display,
     I: Iterator<Item = &'a T>,
-    F: Fn(&T) -> Result<String, String>,
+    F: Fn(&T) -> String,
 {
     let f = &f;
     let out = stdout();
     let mut out = BufWriter::new(out.lock());
-    do_conversion(abbrev, input, f, &mut out)?;
+    do_conversion(abbrev, input, |t| Ok(f(t)), &mut out)?;
     if batch {
         out.flush().map_err(|e| e.to_string())?;
         let input = stdin();
@@ -134,7 +134,7 @@ where
                 line.split_whitespace(),
                 |i| {
                     let t = T::from_str(i).map_err(|e| e.to_string())?;
-                    f(&t)
+                    Ok(f(&t))
                 },
                 &mut out,
             )?;
