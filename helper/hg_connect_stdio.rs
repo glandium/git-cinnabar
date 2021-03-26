@@ -13,7 +13,7 @@ use std::thread::{spawn, JoinHandle};
 
 use bstr::BString;
 use cstr::cstr;
-use percent_encoding::percent_decode;
+use percent_encoding::percent_decode_str;
 use url::Url;
 
 use crate::args;
@@ -182,19 +182,22 @@ extern "C" {
 impl HgStdIOConnection {
     pub fn new(url: &Url, flags: c_int) -> Option<Self> {
         let userhost = url.host_str().map(|host| {
-            let username = url.username();
-            let host = if username.is_empty() {
-                host.to_owned()
+            let username = percent_decode_str(url.username()).collect::<Vec<_>>();
+            let userhost = if username.is_empty() {
+                host.as_bytes().to_owned()
             } else {
-                format!("{}@{}", username, host)
+                let mut userhost = username;
+                userhost.push(b'@');
+                userhost.extend_from_slice(host.as_bytes());
+                userhost
             };
-            CString::new(host).unwrap()
+            CString::new(userhost).unwrap()
         });
         let port = url
             .port()
             .map(|port| CString::new(port.to_string()).unwrap());
         let path = if url.scheme() == "ssh" {
-            percent_decode(url.path().trim_start_matches('/').as_bytes()).collect::<Vec<u8>>()
+            percent_decode_str(url.path().trim_start_matches('/')).collect::<Vec<u8>>()
         } else {
             let path = url.to_file_path().unwrap();
             if path.metadata().map(|m| m.is_file()).unwrap_or(false) {
