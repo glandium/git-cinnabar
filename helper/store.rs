@@ -152,25 +152,25 @@ impl<'a> ChangesetExtra<'a> {
     }
 
     pub fn dump_into(&self, buf: &mut Vec<u8>) {
-        for b in self
-            .buf
-            .split(|c| *c == b'\0')
-            .merge_join_by(&self.more, |e, (n, _v)| {
-                e.split2(b':').map(|e| e.0).unwrap_or(e).cmp(n)
-            })
-            .map(|e| {
-                e.map_left(Cow::Borrowed)
-                    .map_right(|(n, v)| {
-                        let mut buf = Vec::new();
-                        buf.extend_from_slice(n);
-                        buf.extend_from_slice(&b": "[..]);
-                        buf.extend_from_slice(v);
-                        Cow::Owned(buf)
-                    })
-                    .reduce(|_, y| y)
-            })
-            .intersperse(Cow::Borrowed(&b"\0"[..]))
-        {
+        for b in Itertools::intersperse(
+            self.buf
+                .split(|c| *c == b'\0')
+                .merge_join_by(&self.more, |e, (n, _v)| {
+                    e.split2(b':').map(|e| e.0).unwrap_or(e).cmp(n)
+                })
+                .map(|e| {
+                    e.map_left(Cow::Borrowed)
+                        .map_right(|(n, v)| {
+                            let mut buf = Vec::new();
+                            buf.extend_from_slice(n);
+                            buf.extend_from_slice(&b": "[..]);
+                            buf.extend_from_slice(v);
+                            Cow::Owned(buf)
+                        })
+                        .reduce(|_, y| y)
+                }),
+            Cow::Borrowed(&b"\0"[..]),
+        ) {
             buf.extend_from_slice(&b);
         }
     }
