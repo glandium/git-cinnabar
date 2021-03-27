@@ -262,7 +262,7 @@ def helper_hash(head='HEAD'):
         cwd=os.path.join(os.path.dirname(__file__), '..'))))[2].decode()
 
 
-def install_rust(version='1.50.0', target='x86_64-unknown-linux-gnu'):
+def install_rust(version='1.51.0', target='x86_64-unknown-linux-gnu'):
     rustup_opts = '-y --default-toolchain none'
     cargo_dir = '$HOME/.cargo/bin/'
     rustup = cargo_dir + 'rustup'
