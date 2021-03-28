@@ -29,6 +29,7 @@ pub(crate) mod hg_connect_stdio;
 pub(crate) mod hg_data;
 
 use std::convert::TryInto;
+#[cfg(unix)]
 use std::ffi::CString;
 use std::ffi::OsString;
 use std::fmt;
