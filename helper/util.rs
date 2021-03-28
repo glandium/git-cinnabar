@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::fmt;
 use std::io::{self, copy, Cursor, LineWriter, Read, Seek, SeekFrom, Write};
-use std::mem;
+use std::mem::{self, MaybeUninit};
 #[cfg(unix)]
 pub use std::os::unix::ffi::OsStrExt;
 #[cfg(windows)]
@@ -161,114 +161,83 @@ pub trait SeekExt: Seek {
 impl<T: Seek> SeekExt for T {}
 
 pub trait SliceExt<C> {
-    fn split2(&self, c: C) -> Option<(&Self, &Self)>;
-    fn split3(&self, c: C) -> Option<(&Self, &Self, &Self)>;
-    fn rsplit2(&self, c: C) -> Option<(&Self, &Self)>;
-    fn rsplit3(&self, c: C) -> Option<(&Self, &Self, &Self)>;
+    fn splitn_exact<const N: usize>(&self, c: C) -> Option<[&Self; N]>;
+    fn rsplitn_exact<const N: usize>(&self, c: C) -> Option<[&Self; N]>;
 }
 
-//TODO: generate with macros
+// Ideally, we'd just use array_init::from_iter, but it's not usable
+// both in versions of rustc with stable min_const_generics and versions
+// with unstable min_const_generics.
+fn array_init_from_iter_<
+    'a,
+    T: ?Sized,
+    I: Iterator<Item = &'a T>,
+    const N: usize,
+    const REVERSED: bool,
+>(
+    mut iter: I,
+) -> Option<[&'a T; N]> {
+    let mut result: MaybeUninit<[&'a T; N]> = MaybeUninit::uninit();
+    let ptr = result.as_mut_ptr() as *mut &'a T;
+    let mut forward = 0..N;
+    let mut reversed = (0..N).rev();
+    let indices: &mut dyn Iterator<Item = _> = if REVERSED {
+        &mut reversed
+    } else {
+        &mut forward
+    };
+    unsafe {
+        for i in indices {
+            #[allow(clippy::ptr_offset_with_cast)]
+            ptr.offset(i as isize).write(iter.next()?);
+        }
+        Some(result.assume_init())
+    }
+}
+
+fn array_init_from_iter<'a, T: ?Sized, const N: usize>(
+    iter: impl Iterator<Item = &'a T>,
+) -> Option<[&'a T; N]> {
+    array_init_from_iter_::<'a, T, _, N, false>(iter)
+}
+
+fn array_init_from_rev_iter<'a, T: ?Sized, const N: usize>(
+    iter: impl Iterator<Item = &'a T>,
+) -> Option<[&'a T; N]> {
+    array_init_from_iter_::<'a, T, _, N, true>(iter)
+}
+
 impl<T: PartialEq> SliceExt<T> for [T] {
-    fn split2(&self, x: T) -> Option<(&[T], &[T])> {
-        let mut iter = self.splitn(2, |i| *i == x);
-        match (iter.next(), iter.next()) {
-            (Some(a), Some(b)) => Some((a, b)),
-            _ => None,
-        }
+    fn splitn_exact<const N: usize>(&self, x: T) -> Option<[&Self; N]> {
+        array_init_from_iter(self.splitn(N, |i| *i == x))
     }
 
-    fn split3(&self, x: T) -> Option<(&[T], &[T], &[T])> {
-        let mut iter = self.splitn(3, |i| *i == x);
-        match (iter.next(), iter.next(), iter.next()) {
-            (Some(a), Some(b), Some(c)) => Some((a, b, c)),
-            _ => None,
-        }
-    }
-
-    fn rsplit2(&self, x: T) -> Option<(&[T], &[T])> {
-        let mut iter = self.rsplitn(2, |i| *i == x);
-        match (iter.next(), iter.next()) {
-            (Some(a), Some(b)) => Some((b, a)),
-            _ => None,
-        }
-    }
-
-    fn rsplit3(&self, x: T) -> Option<(&[T], &[T], &[T])> {
-        let mut iter = self.rsplitn(3, |i| *i == x);
-        match (iter.next(), iter.next(), iter.next()) {
-            (Some(a), Some(b), Some(c)) => Some((c, b, a)),
-            _ => None,
-        }
+    fn rsplitn_exact<const N: usize>(&self, x: T) -> Option<[&Self; N]> {
+        array_init_from_rev_iter(self.rsplitn(N, |i| *i == x))
     }
 }
 
 impl SliceExt<char> for str {
-    fn split2(&self, c: char) -> Option<(&str, &str)> {
-        let mut iter = self.splitn(2, c);
-        match (iter.next(), iter.next()) {
-            (Some(a), Some(b)) => Some((a, b)),
-            _ => None,
-        }
+    fn splitn_exact<const N: usize>(&self, c: char) -> Option<[&Self; N]> {
+        array_init_from_iter(self.splitn(N, c))
     }
 
-    fn split3(&self, c: char) -> Option<(&str, &str, &str)> {
-        let mut iter = self.splitn(3, c);
-        match (iter.next(), iter.next(), iter.next()) {
-            (Some(a), Some(b), Some(c)) => Some((a, b, c)),
-            _ => None,
-        }
-    }
-
-    fn rsplit2(&self, c: char) -> Option<(&str, &str)> {
-        let mut iter = self.rsplitn(2, c);
-        match (iter.next(), iter.next()) {
-            (Some(a), Some(b)) => Some((b, a)),
-            _ => None,
-        }
-    }
-
-    fn rsplit3(&self, c: char) -> Option<(&str, &str, &str)> {
-        let mut iter = self.rsplitn(3, c);
-        match (iter.next(), iter.next(), iter.next()) {
-            (Some(a), Some(b), Some(c)) => Some((c, b, a)),
-            _ => None,
-        }
+    fn rsplitn_exact<const N: usize>(&self, c: char) -> Option<[&Self; N]> {
+        array_init_from_rev_iter(self.rsplitn(N, c))
     }
 }
 
 impl SliceExt<&[u8]> for [u8] {
-    fn split2(&self, b: &[u8]) -> Option<(&[u8], &[u8])> {
+    fn splitn_exact<const N: usize>(&self, b: &[u8]) -> Option<[&Self; N]> {
         // Safety: This works around ByteSlice::splitn_str being too restrictive.
         // https://github.com/BurntSushi/bstr/issues/45
-        let mut iter = self.splitn_str(2, unsafe { mem::transmute::<_, &[u8]>(b) });
-        match (iter.next(), iter.next()) {
-            (Some(a), Some(b)) => Some((a, b)),
-            _ => None,
-        }
+        let iter = self.splitn_str(N, unsafe { mem::transmute::<_, &[u8]>(b) });
+        array_init_from_iter(iter)
     }
 
-    fn split3(&self, b: &[u8]) -> Option<(&[u8], &[u8], &[u8])> {
-        let mut iter = self.splitn_str(3, unsafe { mem::transmute::<_, &[u8]>(b) });
-        match (iter.next(), iter.next(), iter.next()) {
-            (Some(a), Some(b), Some(c)) => Some((a, b, c)),
-            _ => None,
-        }
-    }
-
-    fn rsplit2(&self, b: &[u8]) -> Option<(&[u8], &[u8])> {
-        let mut iter = self.rsplitn_str(2, unsafe { mem::transmute::<_, &[u8]>(b) });
-        match (iter.next(), iter.next()) {
-            (Some(a), Some(b)) => Some((b, a)),
-            _ => None,
-        }
-    }
-
-    fn rsplit3(&self, b: &[u8]) -> Option<(&[u8], &[u8], &[u8])> {
-        let mut iter = self.rsplitn_str(3, unsafe { mem::transmute::<_, &[u8]>(b) });
-        match (iter.next(), iter.next(), iter.next()) {
-            (Some(a), Some(b), Some(c)) => Some((c, b, a)),
-            _ => None,
-        }
+    fn rsplitn_exact<const N: usize>(&self, b: &[u8]) -> Option<[&Self; N]> {
+        let iter = self.rsplitn_str(N, unsafe { mem::transmute::<_, &[u8]>(b) });
+        array_init_from_rev_iter(iter)
     }
 }
 

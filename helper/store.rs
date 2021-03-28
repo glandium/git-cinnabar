@@ -69,13 +69,13 @@ impl GitChangesetMetadata {
         let mut files = None;
         let mut patch = None;
         for line in self.0.as_bytes().lines() {
-            match line.split2(b' ')? {
-                (b"changeset", c) => changeset = Some(HgChangesetId::from_bytes(c).ok()?),
-                (b"manifest", m) => manifest = Some(HgManifestId::from_bytes(m).ok()?),
-                (b"author", a) => author = Some(a),
-                (b"extra", e) => extra = Some(e),
-                (b"files", f) => files = Some(f),
-                (b"patch", p) => patch = Some(p),
+            match line.splitn_exact(b' ')? {
+                [b"changeset", c] => changeset = Some(HgChangesetId::from_bytes(c).ok()?),
+                [b"manifest", m] => manifest = Some(HgManifestId::from_bytes(m).ok()?),
+                [b"author", a] => author = Some(a),
+                [b"extra", e] => extra = Some(e),
+                [b"files", f] => files = Some(f),
+                [b"patch", p] => patch = Some(p),
                 _ => None?,
             }
         }
@@ -156,7 +156,7 @@ impl<'a> ChangesetExtra<'a> {
             self.buf
                 .split(|c| *c == b'\0')
                 .merge_join_by(&self.more, |e, (n, _v)| {
-                    e.split2(b':').map(|e| e.0).unwrap_or(e).cmp(n)
+                    e.splitn_exact::<2>(b':').map(|e| e[0]).unwrap_or(e).cmp(n)
                 })
                 .map(|e| {
                     e.map_left(Cow::Borrowed)
@@ -182,8 +182,8 @@ impl<'a> Iterator for ChangesetFilesIter<'a> {
     type Item = &'a [u8];
     fn next(&mut self) -> Option<&'a [u8]> {
         let files = self.0.take()?;
-        match files.split2(b'\0') {
-            Some((a, b)) => {
+        match files.splitn_exact(b'\0') {
+            Some([a, b]) => {
                 self.0 = Some(b);
                 Some(a)
             }
@@ -199,7 +199,7 @@ impl<'a> GitChangesetPatch<'a> {
         self.0
             .split(|c| *c == b'\0')
             .map(|part| {
-                let (start, end, data) = part.split3(b',')?;
+                let [start, end, data] = part.splitn_exact(b',')?;
                 let start = usize::from_bytes(start).ok()?;
                 let end = usize::from_bytes(end).ok()?;
                 let data = Cow::from(percent_decode(data));

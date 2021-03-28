@@ -61,6 +61,7 @@ features = ["std"]
 [build-dependencies]
 itertools = "0.10"
 make-cmd = "0.1"
+rustversion = "1.0"
 target = "1.0"
 
 [profile.release]

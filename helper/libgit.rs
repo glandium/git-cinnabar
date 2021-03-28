@@ -293,7 +293,7 @@ impl<'a> Commit<'a> {
 
 impl RawCommit {
     pub fn parse(&self) -> Option<Commit> {
-        let (header, body) = self.as_bytes().split2(&b"\n\n"[..])?;
+        let [header, body] = self.as_bytes().splitn_exact(&b"\n\n"[..])?;
         let mut tree = None;
         let mut parents = Vec::new();
         let mut author = None;
@@ -302,11 +302,11 @@ impl RawCommit {
             if line.is_empty() {
                 break;
             }
-            match line.split2(b' ')? {
-                (b"tree", t) => tree = Some(TreeId::from_bytes(t).ok()?),
-                (b"parent", p) => parents.push(CommitId::from_bytes(p).ok()?),
-                (b"author", a) => author = Some(a),
-                (b"committer", a) => committer = Some(a),
+            match line.splitn_exact(b' ')? {
+                [b"tree", t] => tree = Some(TreeId::from_bytes(t).ok()?),
+                [b"parent", p] => parents.push(CommitId::from_bytes(p).ok()?),
+                [b"author", a] => author = Some(a),
+                [b"committer", a] => committer = Some(a),
                 _ => {}
             }
         }

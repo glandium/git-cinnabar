@@ -51,8 +51,8 @@ fn decompress_bundlev2_header<R: Read>(
     let mut params = Vec::new();
     if !params_str.is_empty() {
         for s in params_str.split(' ') {
-            match s.split2('=') {
-                Some(("Compression", v)) => {
+            match s.splitn_exact('=') {
+                Some(["Compression", v]) => {
                     compression = match v {
                         "GZ" => Some(Compression::Gzip),
                         "BZ" => Some(Compression::Bzip),

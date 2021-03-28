@@ -21,7 +21,7 @@ impl Authorship {
     pub fn from_git_bytes(s: &[u8]) -> Self {
         // We don't ever expect a git `who` information not to match the
         // split+regexp, as git is very conservative in what it accepts.
-        let (who, timestamp, utcoffset) = s.rsplit3(b' ').unwrap();
+        let [who, timestamp, utcoffset] = s.rsplitn_exact(b' ').unwrap();
         let caps = WHO_RE.captures(who).unwrap();
         let utcoffset = i32::from_bytes(utcoffset).unwrap();
         let sign = -utcoffset.signum();
