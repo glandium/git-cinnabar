@@ -426,33 +426,44 @@ def decision():
     )
 
     for cargo_cmd in ('test', 'clippy', 'fmt'):
-        Task(
-            task_env=TaskEnvironment.by_name('linux.build'),
-            description='cargo {}'.format(cargo_cmd),
-            command=list(chain(
-                install_rust(),
-                {
-                    'clippy': ['rustup component add clippy'],
-                    'fmt': ['rustup component add rustfmt'],
-                }.get(cargo_cmd, []),
-                Task.checkout(),
-                ['git -C repo submodule update --init']
-                if cargo_cmd != 'fmt' else [],
-                [
-                    '(cd repo/helper ; cargo {})'.format({
-                        'clippy': 'clippy -- -D warnings {}'.format(
-                            ' '.join('-A {}'.format(w) for w in [
-                                'clippy::borrowed_box',
-                                'clippy::missing_safety_doc',
-                                'clippy::new_without_default',
-                                'clippy::upper_case_acronyms',
-                                'dead_code',
-                            ])),
-                        'fmt': 'fmt -- --check',
-                    }.get(cargo_cmd, cargo_cmd)),
-                ],
-            )),
-        )
+        for env in ('linux', 'mingw64', 'osx'):
+            task_env = TaskEnvironment.by_name('{}.build'.format(env))
+            desc = 'cargo {}'.format(cargo_cmd)
+            if env != 'linux':
+                desc = ' '.join((desc, task_env.os, task_env.cpu))
+            Task(
+                task_env=task_env,
+                description=desc,
+                command=list(chain(
+                    install_rust(target={
+                        'linux': 'x86_64-unknown-linux-gnu',
+                        'mingw64': 'x86_64-pc-windows-gnu',
+                        'osx': 'x86_64-apple-darwin',
+                    }[env]),
+                    {
+                        'clippy': ['rustup component add clippy'],
+                        'fmt': ['rustup component add rustfmt'],
+                    }.get(cargo_cmd, []),
+                    Task.checkout(),
+                    ['git -C repo submodule update --init']
+                    if cargo_cmd != 'fmt' else [],
+                    [
+                        '(cd repo/helper ; cargo {})'.format({
+                            'clippy': 'clippy -- -D warnings {}'.format(
+                                ' '.join('-A {}'.format(w) for w in [
+                                    'clippy::borrowed_box',
+                                    'clippy::missing_safety_doc',
+                                    'clippy::new_without_default',
+                                    'clippy::upper_case_acronyms',
+                                    'dead_code',
+                                ])),
+                            'fmt': 'fmt -- --check',
+                        }.get(cargo_cmd, cargo_cmd)),
+                    ],
+                )),
+            )
+            if cargo_cmd == 'fmt':
+                break
 
 
 @action('more-hg-versions',
