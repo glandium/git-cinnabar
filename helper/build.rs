@@ -91,6 +91,11 @@ fn main() {
     println!("cargo:rustc-link-lib=static=cinnabar");
     println!("cargo:rustc-link-search=native={}", git_core.display());
 
+    if target_os == "windows" && target_env == "gnu" {
+        println!("cargo:rustc-link-lib=ssp_nonshared");
+        println!("cargo:rustc-link-lib=ssp");
+    }
+
     for flag in output.split_whitespace() {
         if let Some(lib) = flag.strip_prefix("-l") {
             println!("cargo:rustc-link-lib={}", lib);

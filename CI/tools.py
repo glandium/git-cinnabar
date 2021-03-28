@@ -362,8 +362,6 @@ class Helper(Task, metaclass=Tool):
             make_flags.append('CFLAGS+="-arch {}"'.format(env.cpu))
             make_flags.append('LDFLAGS+="-arch {}"'.format(env.cpu))
             environ['CINNABAR_CROSS_COMPILE_I_KNOW_WHAT_I_M_DOING'] = '1'
-        elif not os.startswith('osx'):
-            make_flags.append('LDFLAGS="-lssp_nonshared -lssp"')
 
         if os.startswith('mingw'):
             cpu = msys.msys_cpu(env.cpu)
