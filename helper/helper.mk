@@ -177,4 +177,4 @@ compat/mingw.o: EXTRA_CPPFLAGS = -D'winansi_init()'=
 
 # Bump when CI changes need a new helper build but the helper code itself
 # hasn't changed.
-DUMMY = 6
+DUMMY = 8

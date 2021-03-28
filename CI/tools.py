@@ -380,8 +380,10 @@ class Helper(Task, metaclass=Tool):
             rust_target = 'aarch64-apple-darwin'
         elif os == 'linux':
             rust_target = 'x86_64-unknown-linux-gnu'
-        if variant in ('coverage', 'asan'):
-            rust_install = install_rust('nightly-2020-06-05', rust_target)
+        if variant == 'coverage':
+            rust_install = install_rust('nightly-2020-08-23', rust_target)
+        elif variant == 'asan':
+            rust_install = install_rust('nightly-2021-02-07', rust_target)
         else:
             rust_install = install_rust(target=rust_target)
         environ["CARGO_TARGET"] = rust_target
