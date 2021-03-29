@@ -14,9 +14,9 @@ pub use std::os::unix::ffi::OsStrExt;
 use std::os::windows::ffi;
 use std::str::{self, FromStr};
 use std::sync::mpsc::{channel, Sender};
-use std::thread::{self, JoinHandle};
 
 use bstr::ByteSlice;
+use crossbeam::thread::{Scope, ScopedJoinHandle};
 
 #[macro_export]
 macro_rules! derive_debug_display {
@@ -63,15 +63,15 @@ impl<W: Write> Write for PrefixWriter<W> {
     }
 }
 
-pub struct BufferedWriter {
-    thread: Option<JoinHandle<io::Result<()>>>,
+pub struct BufferedWriter<'scope> {
+    thread: Option<ScopedJoinHandle<'scope, io::Result<()>>>,
     sender: Option<Sender<Vec<u8>>>,
 }
 
-impl BufferedWriter {
-    pub fn new<W: 'static + Write + Send>(mut w: W) -> Self {
+impl<'scope> BufferedWriter<'scope> {
+    pub fn new<'a: 'scope, W: 'a + Write + Send>(mut w: W, scope: &'scope Scope<'a>) -> Self {
         let (sender, receiver) = channel::<Vec<u8>>();
-        let thread = thread::spawn(move || {
+        let thread = scope.spawn(move |_| {
             for buf in receiver.iter() {
                 w.write_all(&buf)?;
             }
@@ -85,14 +85,14 @@ impl BufferedWriter {
     }
 }
 
-impl Drop for BufferedWriter {
+impl<'scope> Drop for BufferedWriter<'scope> {
     fn drop(&mut self) {
         drop(self.sender.take());
         self.thread.take().unwrap().join().unwrap().unwrap();
     }
 }
 
-impl Write for BufferedWriter {
+impl<'scope> Write for BufferedWriter<'scope> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.sender.as_ref().map(|s| s.send(buf.to_owned()));
         Ok(buf.len())
@@ -105,6 +105,7 @@ impl Write for BufferedWriter {
 
 #[test]
 fn test_buffered_writer() {
+    use crossbeam::thread;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
@@ -112,7 +113,7 @@ fn test_buffered_writer() {
 
     impl<W: Write> Write for SlowWrite<W> {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            thread::sleep(Duration::from_millis(1));
+            std::thread::sleep(Duration::from_millis(1));
             self.0.lock().unwrap().write(buf)
         }
 
@@ -122,21 +123,24 @@ fn test_buffered_writer() {
     }
 
     let data = Arc::new(Mutex::new(Vec::<u8>::new()));
-    let mut writer = BufferedWriter::new(SlowWrite(Arc::clone(&data)));
+    thread::scope(|s| {
+        let mut writer = BufferedWriter::new(SlowWrite(Arc::clone(&data)), s);
 
-    let start_time = Instant::now();
-    for _ in 0..20 {
-        assert_eq!(writer.write("0".as_bytes()).unwrap(), 1);
-    }
-    let write_time = Instant::now();
-    drop(writer);
-    let drop_time = Instant::now();
-    assert_eq!(&data.lock().unwrap()[..], &[b'0'; 20][..]);
-    // The writing loop should take (much) less than 1ms.
-    assert!((write_time - start_time).as_micros() < 1000);
-    // The drop, which waits for the thread to finish, should take at
-    // least 20 times the sleep time of 1ms.
-    assert!((drop_time - write_time).as_micros() >= 20000);
+        let start_time = Instant::now();
+        for _ in 0..20 {
+            assert_eq!(writer.write("0".as_bytes()).unwrap(), 1);
+        }
+        let write_time = Instant::now();
+        drop(writer);
+        let drop_time = Instant::now();
+        assert_eq!(&data.lock().unwrap()[..], &[b'0'; 20][..]);
+        // The writing loop should take (much) less than 1ms.
+        assert!((write_time - start_time).as_micros() < 1000);
+        // The drop, which waits for the thread to finish, should take at
+        // least 20 times the sleep time of 1ms.
+        assert!((drop_time - write_time).as_micros() >= 20000);
+    })
+    .unwrap();
 }
 
 pub trait ReadExt: Read {

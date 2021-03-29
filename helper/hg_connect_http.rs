@@ -422,7 +422,7 @@ impl HgWireConnection for HgHTTPConnection {
 
     /* The changegroup, changegroupsubset and getbundle commands return a raw
      *  * zlib stream when called over HTTP. */
-    fn changegroup_command(&mut self, out: Box<dyn Write + Send>, command: &str, args: HgArgs) {
+    fn changegroup_command(&mut self, out: &mut (dyn Write + Send), command: &str, args: HgArgs) {
         let mut http_req = self.start_command_request(command, args);
         if let Some(media_type) = self
             .get_capability(b"httpmediatype")
@@ -437,10 +437,12 @@ impl HgWireConnection for HgHTTPConnection {
         }
         let mut http_resp = http_req.execute().unwrap();
         self.handle_redirect(&http_resp);
-        let mut writer = out;
 
-        let mut reader: Box<dyn Read> = match http_resp.content_type() {
-            Some("application/mercurial-0.1") => Box::new(ZlibDecoder::new(http_resp)),
+        match http_resp.content_type() {
+            Some("application/mercurial-0.1") => {
+                let mut reader = ZlibDecoder::new(http_resp);
+                copy(&mut reader, out).unwrap();
+            }
             Some("application/mercurial-0.2") => {
                 let comp_len = http_resp.read_u8().unwrap() as u64;
                 let mut comp = Vec::new();
@@ -448,7 +450,7 @@ impl HgWireConnection for HgHTTPConnection {
                     .take(comp_len)
                     .read_to_end(&mut comp)
                     .unwrap();
-                match &comp[..] {
+                let mut reader: Box<dyn Read> = match &comp[..] {
                     b"zstd" => Box::new(ZstdDecoder::new(http_resp).unwrap()),
                     b"zlib" => Box::new(ZlibDecoder::new(http_resp)),
                     b"none" => Box::new(http_resp),
@@ -457,18 +459,18 @@ impl HgWireConnection for HgHTTPConnection {
                         "Server responded with unknown compression {}",
                         String::from_utf8_lossy(comp)
                     ),
-                }
+                };
+                copy(&mut reader, out).unwrap();
             }
             Some("application/hg-error") => {
-                writer.write_all(b"err\n").unwrap();
+                out.write_all(b"err\n").unwrap();
 
                 //XXX: Can't easily pass a StderrLock here.
-                writer = Box::new(PrefixWriter::new(b"remote: ", stderr()));
-                Box::new(http_resp)
+                let mut writer = PrefixWriter::new(b"remote: ", stderr());
+                copy(&mut http_resp, &mut writer).unwrap();
             }
             _ => unimplemented!(),
         };
-        copy(&mut reader, &mut *writer).unwrap();
     }
 
     fn push_command(&mut self, response: &mut strbuf, input: File, command: &str, args: HgArgs) {

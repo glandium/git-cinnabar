@@ -100,7 +100,7 @@ pub trait HgConnectionBase {
 pub trait HgWireConnection: HgConnectionBase {
     fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs);
 
-    fn changegroup_command(&mut self, out: Box<dyn Write + Send>, command: &str, args: HgArgs);
+    fn changegroup_command(&mut self, out: &mut (dyn Write + Send), command: &str, args: HgArgs);
 
     fn push_command(&mut self, response: &mut strbuf, input: File, command: &str, args: HgArgs);
 }
@@ -317,12 +317,12 @@ unsafe extern "C" fn do_getbundle(conn: *mut hg_connection, args: *const string_
             cmd_args.push(("bundlecaps", bundle2caps.to_str().unwrap().to_owned()));
         }
     }
-    let out = crate::libc::FdFile::stdout();
+    let mut out = crate::libc::FdFile::stdout();
     let args = cmd_args
         .iter()
         .map(|(n, v)| OneHgArg { name: n, value: v })
         .collect::<Vec<_>>();
-    conn.changegroup_command(Box::new(out), "getbundle", args!(*: &args[..]));
+    conn.changegroup_command(&mut out, "getbundle", args!(*: &args[..]));
 }
 
 #[no_mangle]

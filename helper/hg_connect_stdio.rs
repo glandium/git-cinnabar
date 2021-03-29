@@ -99,19 +99,21 @@ impl HgWireConnection for HgStdIOConnection {
         stdio_read_response(self, response);
     }
 
-    fn changegroup_command(&mut self, out: Box<dyn Write + Send>, command: &str, args: HgArgs) {
+    fn changegroup_command(&mut self, out: &mut (dyn Write + Send), command: &str, args: HgArgs) {
         stdio_send_command(self, command, args);
 
         /* We're going to receive a stream, but we don't know how big it is
          * going to be in advance, so we have to read it according to its
          * format: changegroup or bundle2.
          */
-        let mut writer = if self.is_remote {
-            Box::new(BufferedWriter::new(out))
+        if self.is_remote {
+            crossbeam::thread::scope(|scope| {
+                copy_bundle(&mut self.proc_out, &mut BufferedWriter::new(out, scope)).unwrap();
+            })
+            .unwrap();
         } else {
-            out
+            copy_bundle(&mut self.proc_out, out).unwrap();
         };
-        copy_bundle(&mut self.proc_out, &mut writer).unwrap();
     }
 
     fn push_command(
