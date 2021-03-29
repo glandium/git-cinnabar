@@ -31,23 +31,18 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 
 use crate::args;
 use crate::hg_bundle::DecompressBundleReader;
-use crate::hg_connect::{
-    split_capabilities, HgArgs, HgCapabilities, HgConnection, HgWireConnection, OneHgArg,
-};
+use crate::hg_connect::{HgArgs, HgCapabilities, HgWireConnection, OneHgArg};
 use crate::libgit::{
     credential_fill, curl_errorstr, get_active_slot, http_auth, http_cleanup, http_follow_config,
     http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
 };
 use crate::util::{PrefixWriter, ReadExt, SeekExt, SliceExt};
 
-#[allow(non_camel_case_types)]
-pub struct hg_connection_http {
-    pub url: Url,
-    pub initial_request: bool,
+pub struct HgHTTPConnection {
+    capabilities: HgCapabilities,
+    url: Url,
     client: HTTPClient,
 }
-
-pub type HgHTTPConnection = HgConnection<hg_connection_http>;
 
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.
  * The command name is passed as "cmd" query parameter.
@@ -363,7 +358,7 @@ impl HgHTTPConnection {
             .and_then(|s| usize::from_str(s).ok())
             .unwrap_or(0);
 
-        let mut command_url = self.inner.url.clone();
+        let mut command_url = self.url.clone();
         let mut query_pairs = command_url.query_pairs_mut();
         query_pairs.append_pair("cmd", command);
         let mut headers = Vec::new();
@@ -393,7 +388,7 @@ impl HgHTTPConnection {
         }
         drop(query_pairs);
 
-        let mut request = self.inner.client.request(command_url);
+        let mut request = self.client.request(command_url);
         request.header("Accept", "application/mercurial-0.1");
         for (name, value) in headers {
             request.header(&name, &value);
@@ -406,12 +401,16 @@ impl HgHTTPConnection {
             let mut new_url = url.clone();
             new_url.set_query(None);
             eprintln!("warning: redirecting to {}", new_url.as_str());
-            self.inner.url = new_url;
+            self.url = new_url;
         }
     }
 }
 
 impl HgWireConnection for HgHTTPConnection {
+    fn get_capability(&self, name: &[u8]) -> Option<&CStr> {
+        self.capabilities.get_capability(name)
+    }
+
     fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
         let mut http_req = self.start_command_request(command, args);
         if command == "pushkey" {
@@ -557,12 +556,9 @@ impl HgHTTPConnection {
 
     pub fn new(url: &Url) -> Option<Self> {
         let mut conn = HgHTTPConnection {
-            capabilities: Vec::new(),
-            inner: hg_connection_http {
-                url: url.clone(),
-                initial_request: true,
-                client: HTTPClient::new(),
-            },
+            capabilities: Default::default(),
+            url: url.clone(),
+            client: HTTPClient::new(),
         };
 
         let c_url = CString::new(url.to_string()).unwrap();
@@ -577,7 +573,7 @@ impl HgHTTPConnection {
             }
             return None;
         }
-        mem::swap(&mut conn.capabilities, &mut split_capabilities(&caps));
+        mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&caps));
 
         Some(conn)
     }

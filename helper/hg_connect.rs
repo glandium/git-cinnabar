@@ -57,16 +57,49 @@ macro_rules! args {
     (@extra $a:expr) => { Some($a) };
 }
 
-pub struct HgConnection<Inner> {
-    pub capabilities: Vec<(BString, CString)>,
-    pub inner: Inner,
+#[derive(Default)]
+pub struct HgCapabilities {
+    capabilities: Vec<(BString, CString)>,
 }
 
-pub trait HgCapabilities {
+impl HgCapabilities {
+    /* Split the list of capabilities a mercurial server returned. Also url-decode
+     * the bundle2 value (TODO: in place). */
+    pub fn new_from(buf: &[u8]) -> Self {
+        let mut capabilities = Vec::new();
+        for item in buf.split(|&b| b == b' ') {
+            let (name, value) = match item.find_byte(b'=') {
+                Some(off) => {
+                    let (name, value) = item.split_at(off);
+                    (name, &value[1..])
+                }
+                None => (item, &b""[..]),
+            };
+            capabilities.push((
+                BString::from(name.to_owned()),
+                if name == b"bundle2" {
+                    CString::new(percent_decode(value).collect::<Vec<_>>()).unwrap()
+                } else {
+                    CString::new(value.to_owned()).unwrap()
+                },
+            ));
+        }
+        HgCapabilities { capabilities }
+    }
+
+    pub fn get_capability(&self, needle: &[u8]) -> Option<&CStr> {
+        for (name, value) in self.capabilities.iter() {
+            if name == needle {
+                return Some(&value);
+            }
+        }
+        None
+    }
+}
+
+pub trait HgWireConnection {
     fn get_capability(&self, name: &[u8]) -> Option<&CStr>;
-}
 
-pub trait HgWireConnection: HgCapabilities {
     fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs);
 
     fn changegroup_command(&mut self, out: Box<dyn Write + Send>, command: &str, args: HgArgs);
@@ -80,30 +113,6 @@ pub trait HgWireConnection: HgCapabilities {
     }
 }
 
-/* Split the list of capabilities a mercurial server returned. Also url-decode
- * the bundle2 value (TODO: in place). */
-pub fn split_capabilities(buf: &[u8]) -> Vec<(BString, CString)> {
-    let mut capabilities = Vec::new();
-    for item in buf.split(|&b| b == b' ') {
-        let (name, value) = match item.find_byte(b'=') {
-            Some(off) => {
-                let (name, value) = item.split_at(off);
-                (name, &value[1..])
-            }
-            None => (item, &b""[..]),
-        };
-        capabilities.push((
-            BString::from(name.to_owned()),
-            if name == b"bundle2" {
-                CString::new(percent_decode(value).collect::<Vec<_>>()).unwrap()
-            } else {
-                CString::new(value.to_owned()).unwrap()
-            },
-        ));
-    }
-    capabilities
-}
-
 #[no_mangle]
 unsafe extern "C" fn hg_get_capability(
     conn: *mut hg_connection,
@@ -113,17 +122,6 @@ unsafe extern "C" fn hg_get_capability(
         .get_capability(CStr::from_ptr(name.as_ref().unwrap()).to_bytes().as_bstr())
         .map(CStr::as_ptr)
         .unwrap_or(ptr::null())
-}
-
-impl<Inner> HgCapabilities for HgConnection<Inner> {
-    fn get_capability(&self, needle: &[u8]) -> Option<&CStr> {
-        for (name, value) in self.capabilities.iter() {
-            if name == needle {
-                return Some(&value);
-            }
-        }
-        None
-    }
 }
 
 #[no_mangle]
