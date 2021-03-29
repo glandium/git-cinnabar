@@ -500,10 +500,13 @@ impl HgWireConnection for HgHTTPConnection {
             }
         }
     }
+}
 
-    unsafe fn finish(&mut self) -> c_int {
-        http_cleanup();
-        0
+impl Drop for HgHTTPConnection {
+    fn drop(&mut self) {
+        unsafe {
+            http_cleanup();
+        }
     }
 }
 
@@ -568,9 +571,6 @@ impl HgHTTPConnection {
 
         let mut caps = Vec::<u8>::new();
         if !conn.capabilities_command(&mut caps) {
-            unsafe {
-                conn.finish();
-            }
             return None;
         }
         mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&caps));

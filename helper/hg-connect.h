@@ -18,7 +18,7 @@ struct hg_connection *hg_connect(const char *url, int flags);
 const char *hg_get_capability(struct hg_connection *conn,
                               const char *name);
 
-int hg_finish_connect(struct hg_connection *conn);
+void hg_finish_connect(struct hg_connection *conn);
 
 void hg_get_repo_state(struct hg_connection *conn,
                        struct strbuf *branchmap, struct strbuf *heads,

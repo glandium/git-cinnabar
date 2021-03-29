@@ -106,8 +106,6 @@ pub trait HgWireConnection {
 
     fn push_command(&mut self, response: &mut strbuf, input: File, command: &str, args: HgArgs);
 
-    unsafe fn finish(&mut self) -> c_int;
-
     fn listkeys(&mut self, result: &mut strbuf, namespace: &str) {
         self.simple_command(result, "listkeys", args!(namespace: namespace))
     }
@@ -425,7 +423,7 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
 }
 
 #[no_mangle]
-unsafe extern "C" fn hg_finish_connect(conn: *mut hg_connection) -> c_int {
-    let mut conn = Box::from_raw((conn as *mut Box<dyn HgWireConnection>).as_mut().unwrap());
-    conn.finish()
+unsafe extern "C" fn hg_finish_connect(conn: *mut hg_connection) {
+    Box::from_raw((conn as *mut Box<dyn HgWireConnection>).as_mut().unwrap());
+    // The box is dropped here, invalidating the *mut hg_connection.
 }

@@ -160,13 +160,17 @@ impl HgWireConnection for HgStdIOConnection {
             stdio_read_response(self, response);
         }
     }
+}
 
-    unsafe fn finish(&mut self) -> c_int {
+impl Drop for HgStdIOConnection {
+    fn drop(&mut self) {
         stdio_send_command(self, "", args!());
-        libc::close(self.proc_in.raw());
-        libc::fclose(self.proc_out.raw());
-        self.thread.take().map(|t| t.join());
-        stdio_finish(self.proc)
+        unsafe {
+            libc::close(self.proc_in.raw());
+            libc::fclose(self.proc_out.raw());
+            self.thread.take().map(|t| t.join());
+            stdio_finish(self.proc);
+        }
     }
 }
 
