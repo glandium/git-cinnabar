@@ -18,7 +18,9 @@ use url::Url;
 
 use crate::args;
 use crate::hg_bundle::{copy_bundle, DecompressBundleReader};
-use crate::hg_connect::{HgArgs, HgCapabilities, HgWireConnection, OneHgArg};
+use crate::hg_connect::{
+    HgArgs, HgCapabilities, HgConnection, HgConnectionBase, HgWireConnection, OneHgArg,
+};
 use crate::libc::FdFile;
 use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
 use crate::libgit::{child_process, strbuf};
@@ -92,10 +94,6 @@ fn stdio_read_response(conn: &mut HgStdIOConnection, response: &mut strbuf) {
 }
 
 impl HgWireConnection for HgStdIOConnection {
-    fn get_capability(&self, name: &[u8]) -> Option<&CStr> {
-        self.capabilities.get_capability(name)
-    }
-
     fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
         stdio_send_command(self, command, args);
         stdio_read_response(self, response);
@@ -162,6 +160,12 @@ impl HgWireConnection for HgStdIOConnection {
     }
 }
 
+impl HgConnectionBase for HgStdIOConnection {
+    fn get_capability(&self, name: &[u8]) -> Option<&CStr> {
+        self.capabilities.get_capability(name)
+    }
+}
+
 impl Drop for HgStdIOConnection {
     fn drop(&mut self) {
         stdio_send_command(self, "", args!());
@@ -182,7 +186,7 @@ extern "C" {
     fn proc_err(proc: *mut child_process) -> c_int;
 }
 
-pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgWireConnection>> {
+pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnection>> {
     let userhost = url.host_str().map(|host| {
         let username = percent_decode_str(url.username()).collect::<Vec<_>>();
         let userhost = if username.is_empty() {
@@ -276,5 +280,5 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgWireCon
         stdio_read_response(&mut conn, &mut buf);
     }
 
-    Some(Box::new(conn))
+    Some(Box::new(Box::new(conn) as Box<dyn HgWireConnection>))
 }

@@ -31,7 +31,9 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 
 use crate::args;
 use crate::hg_bundle::DecompressBundleReader;
-use crate::hg_connect::{HgArgs, HgCapabilities, HgWireConnection, OneHgArg};
+use crate::hg_connect::{
+    HgArgs, HgCapabilities, HgConnection, HgConnectionBase, HgWireConnection, OneHgArg,
+};
 use crate::libgit::{
     credential_fill, curl_errorstr, get_active_slot, http_auth, http_cleanup, http_follow_config,
     http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
@@ -407,10 +409,6 @@ impl HgHTTPConnection {
 }
 
 impl HgWireConnection for HgHTTPConnection {
-    fn get_capability(&self, name: &[u8]) -> Option<&CStr> {
-        self.capabilities.get_capability(name)
-    }
-
     fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
         let mut http_req = self.start_command_request(command, args);
         if command == "pushkey" {
@@ -502,6 +500,12 @@ impl HgWireConnection for HgHTTPConnection {
     }
 }
 
+impl HgConnectionBase for HgHTTPConnection {
+    fn get_capability(&self, name: &[u8]) -> Option<&CStr> {
+        self.capabilities.get_capability(name)
+    }
+}
+
 impl Drop for HgHTTPConnection {
     fn drop(&mut self) {
         unsafe {
@@ -521,7 +525,7 @@ unsafe extern "C" fn read_from_read<R: Read>(
     read.read(&mut buf).unwrap()
 }
 
-pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgWireConnection>> {
+pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
     let mut conn = HgHTTPConnection {
         capabilities: Default::default(),
         url: url.clone(),
@@ -564,7 +568,7 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgWireConnection>> {
             caps.extend_from_slice(&header);
             copy(&mut http_resp, &mut caps).unwrap();
             mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&caps));
-            Some(Box::new(conn))
+            Some(Box::new(Box::new(conn) as Box<dyn HgWireConnection>))
         }
     }
 }

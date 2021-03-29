@@ -27,10 +27,6 @@ use crate::util::FromBytes;
 #[repr(transparent)]
 struct hg_connection(c_void);
 
-unsafe fn to_wire_connection<'a>(ptr: *mut hg_connection) -> &'a mut (dyn HgWireConnection + 'a) {
-    &mut **(ptr as *mut Box<dyn HgWireConnection>).as_mut().unwrap()
-}
-
 pub struct OneHgArg<'a> {
     pub name: &'a str,
     pub value: &'a str,
@@ -97,18 +93,47 @@ impl HgCapabilities {
     }
 }
 
-pub trait HgWireConnection {
+pub trait HgConnectionBase {
     fn get_capability(&self, name: &[u8]) -> Option<&CStr>;
+}
 
+pub trait HgWireConnection: HgConnectionBase {
     fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs);
 
     fn changegroup_command(&mut self, out: Box<dyn Write + Send>, command: &str, args: HgArgs);
 
     fn push_command(&mut self, response: &mut strbuf, input: File, command: &str, args: HgArgs);
+}
+
+pub trait HgConnection: HgConnectionBase {
+    fn wire(&mut self) -> Option<&mut dyn HgWireConnection> {
+        None
+    }
+
+    //TODO: eventually, we'll want a better API here, not filling a strbuf.
+    fn listkeys(&mut self, _result: &mut strbuf, _namespace: &str) {
+        unimplemented!();
+    }
+}
+
+impl HgConnectionBase for Box<dyn HgWireConnection> {
+    fn get_capability(&self, name: &[u8]) -> Option<&CStr> {
+        (**self).get_capability(name)
+    }
+}
+
+impl HgConnection for Box<dyn HgWireConnection> {
+    fn wire(&mut self) -> Option<&mut dyn HgWireConnection> {
+        Some(&mut **self)
+    }
 
     fn listkeys(&mut self, result: &mut strbuf, namespace: &str) {
         self.simple_command(result, "listkeys", args!(namespace: namespace))
     }
+}
+
+unsafe fn hg_connection_from_ffi<'a>(ptr: *mut hg_connection) -> &'a mut (dyn HgConnection + 'a) {
+    &mut **(ptr as *mut Box<dyn HgConnection>).as_mut().unwrap()
 }
 
 #[no_mangle]
@@ -116,7 +141,7 @@ unsafe extern "C" fn hg_get_capability(
     conn: *mut hg_connection,
     name: *const c_char,
 ) -> *const c_char {
-    to_wire_connection(conn)
+    hg_connection_from_ffi(conn)
         .get_capability(CStr::from_ptr(name.as_ref().unwrap()).to_bytes().as_bstr())
         .map(CStr::as_ptr)
         .unwrap_or(ptr::null())
@@ -129,19 +154,20 @@ unsafe extern "C" fn hg_get_repo_state(
     heads: *mut strbuf,
     bookmarks: *mut strbuf,
 ) {
-    let conn = to_wire_connection(conn);
+    let conn = hg_connection_from_ffi(conn);
     let branchmap = branchmap.as_mut().unwrap();
     let heads = heads.as_mut().unwrap();
     let bookmarks = bookmarks.as_mut().unwrap();
     if conn.get_capability(b"batch".as_bstr()).is_none() {
         // TODO: when not batching, check for coherency
         // (see the cinnabar.remote_helper python module)
-        conn.simple_command(branchmap, "branchmap", args!());
-        conn.simple_command(heads, "heads", args!());
+        let wire = conn.wire().unwrap();
+        wire.simple_command(branchmap, "branchmap", args!());
+        wire.simple_command(heads, "heads", args!());
         conn.listkeys(bookmarks, "bookmarks");
     } else {
         let mut out = strbuf::new();
-        conn.simple_command(
+        conn.wire().unwrap().simple_command(
             &mut out,
             "batch",
             args!(
@@ -226,7 +252,7 @@ fn test_unescape_batched_output() {
 
 #[no_mangle]
 unsafe extern "C" fn do_known(conn: *mut hg_connection, args: *const string_list) {
-    let conn = to_wire_connection(conn);
+    let conn = hg_connection_from_ffi(conn).wire().unwrap();
     let args = args.as_ref().unwrap();
     let nodes = args
         .iter()
@@ -252,7 +278,7 @@ unsafe extern "C" fn hg_listkeys(
     result: *mut strbuf,
     namespace: *const c_char,
 ) {
-    let conn = to_wire_connection(conn);
+    let conn = hg_connection_from_ffi(conn);
     conn.listkeys(
         result.as_mut().unwrap(),
         CStr::from_ptr(namespace.as_ref().unwrap())
@@ -263,7 +289,7 @@ unsafe extern "C" fn hg_listkeys(
 
 #[no_mangle]
 unsafe extern "C" fn do_getbundle(conn: *mut hg_connection, args: *const string_list) {
-    let conn = to_wire_connection(conn);
+    let conn = hg_connection_from_ffi(conn).wire().unwrap();
     let args = args.as_ref().unwrap();
     let args = args.iter().collect::<Vec<_>>();
     assert_le!(args.len(), 3);
@@ -301,7 +327,7 @@ unsafe extern "C" fn do_getbundle(conn: *mut hg_connection, args: *const string_
 
 #[no_mangle]
 unsafe extern "C" fn do_unbundle(conn: *mut hg_connection, args: *const string_list) {
-    let conn = to_wire_connection(conn);
+    let conn = hg_connection_from_ffi(conn);
     let args = args.as_ref().unwrap();
     let args = args.iter().collect::<Vec<_>>();
     let heads_str = if args.is_empty() || args[..] == [b"force"] {
@@ -334,7 +360,9 @@ unsafe extern "C" fn do_unbundle(conn: *mut hg_connection, args: *const string_l
 
     let file = File::open(path).unwrap();
     let mut response = strbuf::new();
-    conn.push_command(&mut response, file, "unbundle", args!(heads: &heads_str));
+    conn.wire()
+        .unwrap()
+        .push_command(&mut response, file, "unbundle", args!(heads: &heads_str));
     send_buffer(&response);
 }
 
@@ -347,7 +375,7 @@ unsafe extern "C" fn hg_pushkey(
     old: *const c_char,
     new: *const c_char,
 ) {
-    let conn = to_wire_connection(conn);
+    let conn = hg_connection_from_ffi(conn).wire().unwrap();
     //TODO: handle the response being a mix of return code and output
     conn.simple_command(
         response.as_mut().unwrap(),
@@ -363,7 +391,7 @@ unsafe extern "C" fn hg_pushkey(
 
 #[no_mangle]
 unsafe extern "C" fn hg_lookup(conn: *mut hg_connection, result: *mut strbuf, key: *const c_char) {
-    let conn = to_wire_connection(conn);
+    let conn = hg_connection_from_ffi(conn).wire().unwrap();
     conn.simple_command(
         result.as_mut().unwrap(),
         "lookup",
@@ -373,21 +401,20 @@ unsafe extern "C" fn hg_lookup(conn: *mut hg_connection, result: *mut strbuf, ke
 
 #[no_mangle]
 unsafe extern "C" fn hg_clonebundles(conn: *mut hg_connection, result: *mut strbuf) {
-    let conn = to_wire_connection(conn);
+    let conn = hg_connection_from_ffi(conn).wire().unwrap();
     conn.simple_command(result.as_mut().unwrap(), "clonebundles", args!());
 }
 
 #[no_mangle]
 unsafe extern "C" fn hg_cinnabarclone(conn: *mut hg_connection, result: *mut strbuf) {
-    let conn = to_wire_connection(conn);
+    let conn = hg_connection_from_ffi(conn).wire().unwrap();
     conn.simple_command(result.as_mut().unwrap(), "cinnabarclone", args!());
 }
 
 #[no_mangle]
 unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_connection {
     let url = Url::parse(CStr::from_ptr(url).to_str().unwrap()).unwrap();
-    let conn: Option<Box<dyn HgWireConnection + '_>> = if ["http", "https"].contains(&url.scheme())
-    {
+    let conn: Option<Box<dyn HgConnection + '_>> = if ["http", "https"].contains(&url.scheme()) {
         get_http_connection(&url)
     } else if ["ssh", "file"].contains(&url.scheme()) {
         get_stdio_connection(&url, flags)
@@ -424,6 +451,6 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
 
 #[no_mangle]
 unsafe extern "C" fn hg_finish_connect(conn: *mut hg_connection) {
-    Box::from_raw((conn as *mut Box<dyn HgWireConnection>).as_mut().unwrap());
+    Box::from_raw((conn as *mut Box<dyn HgConnection>).as_mut().unwrap());
     // The box is dropped here, invalidating the *mut hg_connection.
 }
