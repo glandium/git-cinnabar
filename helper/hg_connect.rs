@@ -15,8 +15,8 @@ use sha1::{Digest, Sha1};
 use url::Url;
 
 use crate::hg_bundle::copy_bundle;
-use crate::hg_connect_http::HgHTTPConnection;
-use crate::hg_connect_stdio::HgStdIOConnection;
+use crate::hg_connect_http::get_http_connection;
+use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libcinnabar::send_buffer;
 use crate::libgit::{strbuf, string_list};
 use crate::oid::ObjectId;
@@ -388,9 +388,9 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
     let url = Url::parse(CStr::from_ptr(url).to_str().unwrap()).unwrap();
     let conn: Option<Box<dyn HgWireConnection + '_>> = if ["http", "https"].contains(&url.scheme())
     {
-        HgHTTPConnection::new(&url).map(|c| Box::new(c) as _)
+        get_http_connection(&url)
     } else if ["ssh", "file"].contains(&url.scheme()) {
-        HgStdIOConnection::new(&url, flags).map(|c| Box::new(c) as _)
+        get_stdio_connection(&url, flags)
     } else {
         die!("protocol '{}' is not supported", url.scheme());
     };

@@ -521,52 +521,50 @@ unsafe extern "C" fn read_from_read<R: Read>(
     read.read(&mut buf).unwrap()
 }
 
-impl HgHTTPConnection {
-    pub fn new(url: &Url) -> Option<Self> {
-        let mut conn = HgHTTPConnection {
-            capabilities: Default::default(),
-            url: url.clone(),
-            client: HTTPClient::new(),
-        };
+pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgWireConnection>> {
+    let mut conn = HgHTTPConnection {
+        capabilities: Default::default(),
+        url: url.clone(),
+        client: HTTPClient::new(),
+    };
 
-        let c_url = CString::new(url.to_string()).unwrap();
-        unsafe {
-            http_init(ptr::null_mut(), c_url.as_ptr(), 0);
+    let c_url = CString::new(url.to_string()).unwrap();
+    unsafe {
+        http_init(ptr::null_mut(), c_url.as_ptr(), 0);
+    }
+
+    /* The first request we send is a "capabilities" request. This sends to
+     * the repo url with a query string "?cmd=capabilities". If the remote
+     * url is not actually a repo, but a bundle, the content will start with
+     * 'HG10' or 'HG20', which is not something that would appear as the first
+     * four characters for the "capabilities" answer. In that case, we output
+     * the stream to stdout.
+     * (Note this assumes HTTP servers serving bundles don't care about query
+     * strings)
+     * Ideally, it would be good to pause the curl request, return a
+     * hg_connection, and give control back to the caller, but git's http.c
+     * doesn't allow pauses.
+     */
+    let http_req = conn.start_command_request("capabilities", args!());
+    let mut http_resp = http_req.execute().unwrap();
+    conn.handle_redirect(&http_resp);
+    let mut header = [0u8; 4];
+    let len = http_resp.read_at_most(&mut header).unwrap();
+    let header = &header[..len];
+    match header {
+        b"HG10" | b"HG20" => {
+            let mut out = unsafe { crate::libc::FdFile::stdout() };
+            out.write_all(b"bundle\n").unwrap();
+            let mut reader = DecompressBundleReader::new(Cursor::new(header).chain(http_resp));
+            copy(&mut reader, &mut out).unwrap();
+            None
         }
-
-        /* The first request we send is a "capabilities" request. This sends to
-         * the repo url with a query string "?cmd=capabilities". If the remote
-         * url is not actually a repo, but a bundle, the content will start with
-         * 'HG10' or 'HG20', which is not something that would appear as the first
-         * four characters for the "capabilities" answer. In that case, we output
-         * the stream to stdout.
-         * (Note this assumes HTTP servers serving bundles don't care about query
-         * strings)
-         * Ideally, it would be good to pause the curl request, return a
-         * hg_connection, and give control back to the caller, but git's http.c
-         * doesn't allow pauses.
-         */
-        let http_req = conn.start_command_request("capabilities", args!());
-        let mut http_resp = http_req.execute().unwrap();
-        conn.handle_redirect(&http_resp);
-        let mut header = [0u8; 4];
-        let len = http_resp.read_at_most(&mut header).unwrap();
-        let header = &header[..len];
-        match header {
-            b"HG10" | b"HG20" => {
-                let mut out = unsafe { crate::libc::FdFile::stdout() };
-                out.write_all(b"bundle\n").unwrap();
-                let mut reader = DecompressBundleReader::new(Cursor::new(header).chain(http_resp));
-                copy(&mut reader, &mut out).unwrap();
-                None
-            }
-            _ => {
-                let mut caps = Vec::<u8>::new();
-                caps.extend_from_slice(&header);
-                copy(&mut http_resp, &mut caps).unwrap();
-                mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&caps));
-                Some(conn)
-            }
+        _ => {
+            let mut caps = Vec::<u8>::new();
+            caps.extend_from_slice(&header);
+            copy(&mut http_resp, &mut caps).unwrap();
+            mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&caps));
+            Some(Box::new(conn))
         }
     }
 }
