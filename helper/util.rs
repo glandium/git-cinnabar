@@ -250,6 +250,8 @@ pub trait OsStrExt: ffi::OsStrExt {
     fn as_bytes(&self) -> &[u8];
 
     fn to_cstring(&self) -> CString;
+
+    fn strip_prefix(&self, prefix: impl AsRef<OsStr>) -> Option<&Self>;
 }
 
 impl OsStrExt for OsStr {
@@ -265,6 +267,20 @@ impl OsStrExt for OsStr {
 
     fn to_cstring(&self) -> CString {
         CString::new(self.as_bytes()).unwrap()
+    }
+
+    #[cfg(unix)]
+    fn strip_prefix(&self, prefix: impl AsRef<OsStr>) -> Option<&Self> {
+        self.as_bytes()
+            .strip_prefix(prefix.as_ref().as_bytes())
+            .map(|b| ffi::OsStrExt::from_bytes(b))
+    }
+    #[cfg(windows)]
+    fn strip_prefix(&self, prefix: impl AsRef<OsStr>) -> Option<&Self> {
+        self.to_str()
+            .unwrap()
+            .strip_prefix(prefix.as_ref().to_str().unwrap())
+            .map(|b| OsStr::new(b))
     }
 }
 

@@ -43,6 +43,13 @@ fn feature_min_const_generics() {
 #[rustversion::not(all(nightly, before(2020-12-27)))]
 fn feature_min_const_generics() {}
 
+#[rustversion::all(nightly, before(2021-01-07))]
+fn feature_slice_strip() {
+    println!("cargo:rustc-cfg=feature_slice_strip");
+}
+#[rustversion::not(all(nightly, before(2021-01-07)))]
+fn feature_slice_strip() {}
+
 fn main() {
     let target_arch = env("CARGO_CFG_TARGET_ARCH");
     let target_os = env("CARGO_CFG_TARGET_OS");
@@ -138,4 +145,5 @@ fn main() {
     let helper_hash = helper_hash.split('/').last().unwrap();
     println!("cargo:rustc-env=HELPER_HASH={}", helper_hash);
     feature_min_const_generics();
+    feature_slice_strip();
 }
