@@ -73,7 +73,7 @@ extern "C" {
 
 #[cfg(unix)]
 pub fn prepare_arg(arg: OsString) -> CString {
-    CString::new(arg.as_bytes()).unwrap()
+    arg.to_cstring()
 }
 
 #[cfg(windows)]

@@ -5,11 +5,12 @@
 use std::borrow::ToOwned;
 use std::cmp::Ordering;
 use std::convert::TryInto;
+use std::ffi::{CString, OsStr};
 use std::fmt;
 use std::io::{self, copy, Cursor, LineWriter, Read, Seek, SeekFrom, Write};
 use std::mem::{self, MaybeUninit};
 #[cfg(unix)]
-pub use std::os::unix::ffi::OsStrExt;
+use std::os::unix::ffi;
 #[cfg(windows)]
 use std::os::windows::ffi;
 use std::str::{self, FromStr};
@@ -245,16 +246,25 @@ impl SliceExt<&[u8]> for [u8] {
     }
 }
 
-#[cfg(windows)]
 pub trait OsStrExt: ffi::OsStrExt {
     fn as_bytes(&self) -> &[u8];
+
+    fn to_cstring(&self) -> CString;
 }
 
-#[cfg(windows)]
-impl OsStrExt for std::ffi::OsStr {
-    // git assumes everything is UTF-8-valid on Windows
+impl OsStrExt for OsStr {
+    #[cfg(windows)]
     fn as_bytes(&self) -> &[u8] {
+        // git assumes everything is UTF-8-valid on Windows
         self.to_str().unwrap().as_bytes()
+    }
+    #[cfg(unix)]
+    fn as_bytes(&self) -> &[u8] {
+        ffi::OsStrExt::as_bytes(self)
+    }
+
+    fn to_cstring(&self) -> CString {
+        CString::new(self.as_bytes()).unwrap()
     }
 }
 

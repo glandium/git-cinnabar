@@ -7,8 +7,6 @@ use std::ffi::{c_void, CStr, CString, OsStr};
 use std::fmt;
 use std::io::{self, Write};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
-#[cfg(unix)]
-use std::os::unix::ffi::OsStrExt;
 
 use bstr::ByteSlice;
 use cstr::cstr;
@@ -17,7 +15,7 @@ use derive_more::{Deref, Display};
 use getset::Getters;
 
 use crate::oid::{GitObjectId, ObjectId};
-use crate::util::{BorrowKey, FromBytes, SliceExt};
+use crate::util::{BorrowKey, FromBytes, OsStrExt, SliceExt};
 
 const GIT_MAX_RAWSZ: usize = 32;
 
@@ -421,17 +419,11 @@ pub struct RevList {
     revs: *mut rev_info,
 }
 
-fn prepare_arg(arg: &OsStr) -> CString {
-    #[cfg(windows)]
-    let arg = arg.to_str().unwrap();
-    CString::new(arg.as_bytes()).unwrap()
-}
-
 pub fn rev_list(args: &[&OsStr]) -> RevList {
     let args: Vec<_> = Some(OsStr::new(""))
         .iter()
         .chain(args)
-        .map(|a| prepare_arg(a))
+        .map(|a| a.to_cstring())
         .collect();
     let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
     argv.push(std::ptr::null());
