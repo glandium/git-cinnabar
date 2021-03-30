@@ -5,7 +5,7 @@
 use std::borrow::ToOwned;
 use std::cmp::Ordering;
 use std::convert::TryInto;
-use std::ffi::{CString, OsStr};
+use std::ffi::{CStr, CString, OsStr};
 use std::fmt;
 use std::io::{self, copy, Cursor, LineWriter, Read, Seek, SeekFrom, Write};
 use std::mem::{self, MaybeUninit};
@@ -281,6 +281,22 @@ impl OsStrExt for OsStr {
             .unwrap()
             .strip_prefix(prefix.as_ref().to_str().unwrap())
             .map(|b| OsStr::new(b))
+    }
+}
+
+pub trait CStrExt {
+    fn to_osstr(&self) -> &OsStr;
+}
+
+impl CStrExt for CStr {
+    #[cfg(windows)]
+    fn to_osstr(&self) -> &OsStr {
+        OsStr::new(self.to_str().unwrap())
+    }
+
+    #[cfg(unix)]
+    fn to_osstr(&self) -> &OsStr {
+        ffi::OsStrExt::from_bytes(self.to_bytes())
     }
 }
 
