@@ -126,6 +126,11 @@ pub trait HgConnection: HgConnectionBase {
     ) {
         unimplemented!();
     }
+
+    //TODO: eventually, we'll want a better API here, not filling a strbuf.
+    fn lookup(&mut self, _result: &mut strbuf, _key: &str) {
+        unimplemented!();
+    }
 }
 
 impl HgConnectionBase for Box<dyn HgWireConnection> {
@@ -170,6 +175,10 @@ impl HgConnection for Box<dyn HgWireConnection> {
             }
         }
         self.changegroup_command(out, "getbundle", args!(*: &args[..]));
+    }
+
+    fn lookup(&mut self, result: &mut strbuf, key: &str) {
+        self.simple_command(result, "lookup", args!(key: key))
     }
 }
 
@@ -418,11 +427,10 @@ unsafe extern "C" fn hg_pushkey(
 
 #[no_mangle]
 unsafe extern "C" fn hg_lookup(conn: *mut hg_connection, result: *mut strbuf, key: *const c_char) {
-    let conn = hg_connection_from_ffi(conn).wire().unwrap();
-    conn.simple_command(
+    let conn = hg_connection_from_ffi(conn);
+    conn.lookup(
         result.as_mut().unwrap(),
-        "lookup",
-        args!(key: CStr::from_ptr(key.as_ref().unwrap()).to_str().unwrap()),
+        CStr::from_ptr(key.as_ref().unwrap()).to_str().unwrap(),
     );
 }
 
