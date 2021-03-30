@@ -94,7 +94,9 @@ impl HgCapabilities {
 }
 
 pub trait HgConnectionBase {
-    fn get_capability(&self, name: &[u8]) -> Option<&CStr>;
+    fn get_capability(&self, _name: &[u8]) -> Option<&CStr> {
+        None
+    }
 }
 
 pub trait HgWireConnection: HgConnectionBase {
@@ -447,11 +449,19 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
         die!("protocol '{}' is not supported", url.scheme());
     };
 
-    let conn = if let Some(conn) = conn {
+    let mut conn = if let Some(conn) = conn {
         conn
     } else {
         return ptr::null_mut();
     };
+
+    if conn.wire().is_none() {
+        // For now the wire helper just sends the bundle to stdout.
+        let mut out = crate::libc::FdFile::stdout();
+        out.write_all(b"bundle\n").unwrap();
+        conn.getbundle(&mut out, &[], &[], None);
+        return ptr::null_mut();
+    }
 
     const REQUIRED_CAPS: [&str; 5] = [
         "getbundle",

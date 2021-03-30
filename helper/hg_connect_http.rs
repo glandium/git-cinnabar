@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::cmp;
+use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString};
 use std::fs::File;
 use std::io::{self, copy, stderr, Cursor, Read, Seek, SeekFrom, Write};
@@ -38,6 +39,7 @@ use crate::libgit::{
     credential_fill, curl_errorstr, get_active_slot, http_auth, http_cleanup, http_follow_config,
     http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
 };
+use crate::store::HgChangesetId;
 use crate::util::{PrefixWriter, ReadExt, SeekExt, SliceExt};
 
 pub struct HgHTTPConnection {
@@ -516,6 +518,36 @@ impl Drop for HgHTTPConnection {
     }
 }
 
+pub struct HgHTTPBundle {
+    header: [u8; 4],
+    http_resp: HTTPResponse,
+    // Not used, but needed to guarantee http_cleanup doesn't happen before
+    // HTTPResponse is dropped.
+    #[allow(unused)]
+    conn: HgHTTPConnection,
+}
+
+// Because we don't support getbundle fully, we don't override get_capability
+// to say we handle it.
+impl HgConnectionBase for HgHTTPBundle {}
+impl HgConnection for HgHTTPBundle {
+    fn getbundle(
+        &mut self,
+        out: &mut (dyn Write + Send),
+        heads: &[HgChangesetId],
+        common: &[HgChangesetId],
+        bundle2caps: Option<&str>,
+    ) {
+        assert!(heads.is_empty());
+        assert!(common.is_empty());
+        assert!(bundle2caps.is_none());
+
+        let mut reader =
+            DecompressBundleReader::new(Cursor::new(self.header).chain(&mut self.http_resp));
+        copy(&mut reader, out).unwrap();
+    }
+}
+
 unsafe extern "C" fn read_from_read<R: Read>(
     ptr: *mut c_char,
     size: usize,
@@ -558,13 +590,11 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
     let len = http_resp.read_at_most(&mut header).unwrap();
     let header = &header[..len];
     match header {
-        b"HG10" | b"HG20" => {
-            let mut out = unsafe { crate::libc::FdFile::stdout() };
-            out.write_all(b"bundle\n").unwrap();
-            let mut reader = DecompressBundleReader::new(Cursor::new(header).chain(http_resp));
-            copy(&mut reader, &mut out).unwrap();
-            None
-        }
+        b"HG10" | b"HG20" => Some(Box::new(HgHTTPBundle {
+            conn,
+            header: header.try_into().unwrap(),
+            http_resp,
+        })),
         _ => {
             let mut caps = Vec::<u8>::new();
             caps.extend_from_slice(&header);

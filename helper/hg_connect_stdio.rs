@@ -7,6 +7,7 @@ use std::fs::File;
 use std::io::{copy, stderr, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::c_int;
+use std::path::PathBuf;
 use std::ptr;
 use std::str::FromStr;
 use std::thread::{spawn, JoinHandle};
@@ -24,6 +25,7 @@ use crate::hg_connect::{
 use crate::libc::FdFile;
 use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
 use crate::libgit::{child_process, strbuf};
+use crate::store::HgChangesetId;
 use crate::util::{BufferedWriter, OsStrExt, PrefixWriter, SeekExt};
 
 pub struct HgStdIOConnection {
@@ -180,6 +182,30 @@ impl Drop for HgStdIOConnection {
     }
 }
 
+pub struct HgStdIOBundle {
+    path: PathBuf,
+}
+
+// Because we don't support getbundle fully, we don't override get_capability
+// to say we handle it.
+impl HgConnectionBase for HgStdIOBundle {}
+impl HgConnection for HgStdIOBundle {
+    fn getbundle(
+        &mut self,
+        out: &mut (dyn Write + Send),
+        heads: &[HgChangesetId],
+        common: &[HgChangesetId],
+        bundle2caps: Option<&str>,
+    ) {
+        assert!(heads.is_empty());
+        assert!(common.is_empty());
+        assert!(bundle2caps.is_none());
+
+        let mut f = DecompressBundleReader::new(File::open(&self.path).unwrap());
+        copy(&mut f, out).unwrap();
+    }
+}
+
 extern "C" {
     fn proc_in(proc: *mut child_process) -> c_int;
 
@@ -209,14 +235,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
     } else {
         let path = url.to_file_path().unwrap();
         if path.metadata().map(|m| m.is_file()).unwrap_or(false) {
-            // TODO: Eventually we want to have a hg_connection
-            // for bundles, but for now, just send the stream to
-            // stdout and return NULL.
-            let mut f = DecompressBundleReader::new(File::open(path).unwrap());
-            let mut out = unsafe { crate::libc::FdFile::stdout() };
-            out.write_all(b"bundle\n").unwrap();
-            copy(&mut f, &mut out).unwrap();
-            return None;
+            return Some(Box::new(HgStdIOBundle { path }));
         }
         path.as_os_str().as_bytes().to_owned()
     };
