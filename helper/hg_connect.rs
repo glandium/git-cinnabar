@@ -114,6 +114,16 @@ pub trait HgConnection: HgConnectionBase {
     fn listkeys(&mut self, _result: &mut strbuf, _namespace: &str) {
         unimplemented!();
     }
+
+    fn getbundle(
+        &mut self,
+        _out: &mut (dyn Write + Send),
+        _heads: &[HgChangesetId],
+        _common: &[HgChangesetId],
+        _bundle2caps: Option<&str>,
+    ) {
+        unimplemented!();
+    }
 }
 
 impl HgConnectionBase for Box<dyn HgWireConnection> {
@@ -129,6 +139,35 @@ impl HgConnection for Box<dyn HgWireConnection> {
 
     fn listkeys(&mut self, result: &mut strbuf, namespace: &str) {
         self.simple_command(result, "listkeys", args!(namespace: namespace))
+    }
+
+    fn getbundle(
+        &mut self,
+        out: &mut (dyn Write + Send),
+        heads: &[HgChangesetId],
+        common: &[HgChangesetId],
+        bundle2caps: Option<&str>,
+    ) {
+        let mut args = Vec::new();
+        let heads = heads.iter().join(" ");
+        let common = common.iter().join(" ");
+        args.push(OneHgArg {
+            name: "heads",
+            value: &heads,
+        });
+        args.push(OneHgArg {
+            name: "common",
+            value: &common,
+        });
+        if let Some(caps) = bundle2caps {
+            if !caps.is_empty() {
+                args.push(OneHgArg {
+                    name: "bundlecaps",
+                    value: caps,
+                });
+            }
+        }
+        self.changegroup_command(out, "getbundle", args!(*: &args[..]));
     }
 }
 
@@ -289,40 +328,26 @@ unsafe extern "C" fn hg_listkeys(
 
 #[no_mangle]
 unsafe extern "C" fn do_getbundle(conn: *mut hg_connection, args: *const string_list) {
-    let conn = hg_connection_from_ffi(conn).wire().unwrap();
-    let args = args.as_ref().unwrap();
-    let args = args.iter().collect::<Vec<_>>();
-    assert_le!(args.len(), 3);
+    let conn = hg_connection_from_ffi(conn);
+    let mut args = args.as_ref().unwrap().iter();
 
     let arg_list = |a: &[u8]| {
         if a.is_empty() {
-            String::new()
+            Vec::new()
         } else {
             a.split(|&b| b == b',')
                 .map(|b| HgChangesetId::from_bytes(b).unwrap())
-                .join(" ")
+                .collect()
         }
     };
 
-    let mut cmd_args = Vec::<(&str, String)>::new();
-    if !args.is_empty() {
-        cmd_args.push(("heads", arg_list(args[0])));
-    }
-    if args.len() > 1 {
-        cmd_args.push(("common", arg_list(args[1])));
-    }
-    if args.len() > 2 {
-        let bundle2caps = args[2];
-        if !bundle2caps.is_empty() {
-            cmd_args.push(("bundlecaps", bundle2caps.to_str().unwrap().to_owned()));
-        }
-    }
+    let heads = args.next().map(arg_list).unwrap_or_else(Vec::new);
+    let common = args.next().map(arg_list).unwrap_or_else(Vec::new);
+    let bundle2caps = args.next().map(|b| b.to_str().unwrap());
+    assert!(args.next().is_none());
+
     let mut out = crate::libc::FdFile::stdout();
-    let args = cmd_args
-        .iter()
-        .map(|(n, v)| OneHgArg { name: n, value: v })
-        .collect::<Vec<_>>();
-    conn.changegroup_command(&mut out, "getbundle", args!(*: &args[..]));
+    conn.getbundle(&mut out, &heads, &common, bundle2caps);
 }
 
 #[no_mangle]
