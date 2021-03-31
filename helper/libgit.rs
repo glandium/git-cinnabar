@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::borrow::Cow;
 use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString, OsStr};
 use std::fmt;
@@ -341,6 +342,19 @@ pub fn get_oid_committish(s: &[u8]) -> Option<CommitId> {
             Some(CommitId(oid.into()))
         } else {
             None
+        }
+    }
+}
+
+pub fn lookup_replace_commit(c: &CommitId) -> Cow<CommitId> {
+    unsafe {
+        let oid = object_id::from(c.0.clone());
+        let replaced = repo_lookup_replace_object(the_repository, &oid);
+        if replaced == &oid {
+            Cow::Borrowed(c)
+        } else {
+            //TODO: we should actually check the object is a commit.
+            Cow::Owned(CommitId::from(replaced.as_ref().unwrap().clone().into()))
         }
     }
 }

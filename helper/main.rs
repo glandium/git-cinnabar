@@ -51,7 +51,7 @@ use bstr::ByteSlice;
 use url::Url;
 
 use libcinnabar::{files_meta, hg2git};
-use libgit::{get_oid_committish, remote, strbuf, BlobId, CommitId};
+use libgit::{get_oid_committish, lookup_replace_commit, remote, strbuf, BlobId, CommitId};
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use store::{
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
@@ -100,7 +100,9 @@ fn do_one_hg2git(sha1: &Abbrev<HgChangesetId>) -> String {
 
 fn do_one_git2hg(committish: &OsString) -> String {
     let note = get_oid_committish(committish.as_bytes())
-        .and_then(|oid| unsafe { GitChangesetId::from(oid).to_hg() });
+        .as_ref()
+        .map(|oid| lookup_replace_commit(oid))
+        .and_then(|oid| unsafe { GitChangesetId::from(oid.into_owned()).to_hg() });
     format!("{}", note.unwrap_or_else(HgChangesetId::null))
 }
 
