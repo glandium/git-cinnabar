@@ -124,7 +124,7 @@ Pushing `b` fails because it would add a new head to the branch.
   pushing to .*/push-refs.t/repo-from-hg (re)
   searching for changes
   abort: push creates new remote head 636e60525868!? (re)
-  (merge or see 'hg help push' for details about pushing new heads)
+  \(merge or see ['"]hg help push["'] for details about pushing new heads\) (re)
   [255]
 
   $ git -C repo-git push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/branches/default/tip
@@ -239,7 +239,7 @@ changeset added above.
   searching for changes
   remote has heads on branch 'default' that are not known locally: a08654acdc93
   abort: push creates new remote head 7937e1a59459!? (re)
-  (pull and merge or see 'hg help push' for details about pushing new heads)
+  \(pull and merge or see ['"]hg help push["'] for details about pushing new heads\) (re)
   [255]
 
 TODO: this should fail like mercurial does above.
@@ -470,7 +470,7 @@ Push the same bookmark, pointing to `b`.
   pushing to .*/push-refs.t/repo-from-hg (re)
   searching for changes
   abort: push creates new remote head 636e60525868 with bookmark 'qux'!? (re)
-  (merge or see 'hg help push' for details about pushing new heads)
+  \(merge or see ['"]hg help push["'] for details about pushing new heads\) (re)
   [255]
 
   $ git -C repo-git push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/bookmarks/qux
@@ -595,7 +595,7 @@ Pushing the same bookmark, pointing to `d` fails.
   searching for changes
   remote has heads on branch 'default' that are not known locally: a08654acdc93
   abort: push creates new remote head 7937e1a59459 with bookmark 'qux'!? (re)
-  (pull and merge or see 'hg help push' for details about pushing new heads)
+  \(pull and merge or see ['"]hg help push["'] for details about pushing new heads\) (re)
   [255]
 
 TODO: this should fail like mercurial does above.

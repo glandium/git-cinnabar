@@ -281,7 +281,7 @@ def decision():
 
     for hg in SOME_MERCURIAL_VERSIONS:
         if hg != MERCURIAL_VERSION:
-            TestTask(hg=hg)
+            do_hg_version(hg)
 
     TestTask(
         task_env='linux',
@@ -462,13 +462,38 @@ def decision():
         )
 
 
+def do_hg_version(hg):
+    TestTask(hg=hg)
+    try:
+        # Don't run cram tests for version < 3.6, which would need
+        # different tests because of server-side changes in behavior
+        # wrt bookmarks.
+        if StrictVersion(hg) < '3.6':
+            return
+    except ValueError:
+        # `hg` is a sha1 for trunk, which means it's >= 3.6
+        pass
+    TestTask(
+        short_desc='cram',
+        clone=False,
+        hg=hg,
+        command=[
+            'repo/git-cinnabar --version',
+            'cram --verbose repo/tests',
+        ],
+        env={
+            'GIT_CINNABAR_CHECK': 'no-version-check',
+        },
+    )
+
+
 @action('more-hg-versions',
         title='More hg versions',
         description='Trigger tests against more mercurial versions')
 def more_hg_versions():
     for hg in ALL_MERCURIAL_VERSIONS:
         if hg != MERCURIAL_VERSION and hg not in SOME_MERCURIAL_VERSIONS:
-            TestTask(hg=hg)
+            do_hg_version(hg)
 
 
 @action('hg-trunk',
@@ -484,7 +509,7 @@ def hg_trunk():
             trunk = fields[-1]
     if not trunk:
         raise Exception('Cannot find mercurial trunk changeset')
-    TestTask(hg=trunk)
+    do_hg_version(trunk)
 
 
 def main():
