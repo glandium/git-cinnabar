@@ -11,7 +11,7 @@ from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '5.6.1'
+MERCURIAL_VERSION = '5.7.1'
 GIT_VERSION = '2.31.1'
 
 ALL_MERCURIAL_VERSIONS = (
@@ -20,7 +20,7 @@ ALL_MERCURIAL_VERSIONS = (
     '3.3.3', '3.4.2', '3.5.2', '3.6.3', '3.7.3', '3.8.4', '3.9.2',
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
     '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2', '5.3.2',
-    '5.4.2', '5.5.2', '5.6.1',
+    '5.4.2', '5.5.2', '5.6.1', '5.7.1',
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -172,6 +172,7 @@ class Hg(Task, metaclass=Tool):
                 'hg clone https://www.mercurial-scm.org/repo/hg -r {}'
                 .format(version),
                 'rm -rf hg/.hg',
+                'echo tag: unknown > hg/.hg_archival.txt',
             ])
         # 2.6.2 is the first version available on pypi
         elif parse_version('2.6.2') <= parse_version(version):
@@ -189,6 +190,7 @@ class Hg(Task, metaclass=Tool):
             index='{}.hg.{}'.format(h.hexdigest(), pretty_version),
             expireIn=expire,
             command=pre_command + [
+                'rm -f {}/pyproject.toml'.format(source.format(version)),
                 '{} -m pip wheel -v --build-option -b --build-option'
                 ' $PWD/wheel -w $ARTIFACTS {}'.format(
                     python,

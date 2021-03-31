@@ -56,6 +56,7 @@ class TestTask(Task):
         helper = kwargs.pop('helper', None)
         clone = kwargs.pop('clone', TC_COMMIT)
         desc = kwargs.pop('description', None)
+        short_desc = kwargs.pop('short_desc', 'test')
         extra_desc = kwargs.pop('extra_desc', None)
         pre_command = kwargs.pop('pre_command', None)
         if helper is None:
@@ -132,8 +133,8 @@ class TestTask(Task):
             artifacts.append('coverage.zip')
             self.coverage.append(self)
         if not desc:
-            desc = 'test w/ git-{} hg-{}'.format(
-                git, 'r' + hg if len(hg) == 40 else hg)
+            desc = '{} w/ git-{} hg-{}'.format(
+                short_desc, git, 'r' + hg if len(hg) == 40 else hg)
             if variant and variant != 'coverage':
                 desc = ' '.join((desc, variant))
         if extra_desc:
@@ -255,7 +256,8 @@ def decision():
 
     for upgrade in UPGRADE_FROM:
         TestTask(
-            extra_desc='upgrade-from-{}'.format(upgrade),
+            short_desc='upgrade tests',
+            extra_desc='from-{}'.format(upgrade),
             variant='coverage',
             clone=upgrade,
             env={
@@ -264,7 +266,8 @@ def decision():
             hg='5.4.2',
         )
         TestTask(
-            extra_desc='upgrade-from-{}'.format(upgrade),
+            short_desc='upgrade tests',
+            extra_desc='from-{}'.format(upgrade),
             clone=upgrade,
             env={
                 'GIT_CINNABAR_EXPERIMENTS': 'python3',
@@ -282,7 +285,7 @@ def decision():
 
     for hg in SOME_MERCURIAL_VERSIONS:
         if hg != MERCURIAL_VERSION:
-            TestTask(hg=hg)
+            do_hg_version(hg)
 
     TestTask(
         task_env='linux',
@@ -299,7 +302,7 @@ def decision():
 
     TestTask(
         variant='coverage',
-        extra_desc='graft',
+        short_desc='graft tests',
         env={
             'GRAFT': '1',
         },
@@ -315,7 +318,7 @@ def decision():
 
     TestTask(
         variant='old',
-        extra_desc='graft',
+        short_desc='graft tests',
         env={
             'GIT_CINNABAR_OLD_HELPER': '1',
             'GRAFT': '1',
@@ -338,7 +341,8 @@ def decision():
     TestTask(
         commit=rev,
         clone=rev,
-        extra_desc='old python graft',
+        short_desc='graft tests',
+        extra_desc='old python',
         env={
             'GIT_CINNABAR_OLD': '1',
             'GRAFT': '1',
@@ -354,7 +358,7 @@ def decision():
     )
 
     TestTask(
-        extra_desc='graft',
+        short_desc='graft tests',
         env={
             'GIT_CINNABAR_EXPERIMENTS': 'python3',
             'GRAFT': '1',
@@ -371,7 +375,8 @@ def decision():
 
     TestTask(
         variant='coverage',
-        extra_desc='experiments graft',
+        short_desc='graft tests',
+        extra_desc='experiments',
         env={
             'GIT_CINNABAR_EXPERIMENTS': 'true',
             'GRAFT': '1',
@@ -388,7 +393,8 @@ def decision():
     )
 
     TestTask(
-        extra_desc='experiments graft',
+        short_desc='graft tests',
+        extra_desc='experiments',
         env={
             'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
             'GIT_CINNABAR_LOG': 'reexec:3',
@@ -400,7 +406,7 @@ def decision():
     for variant in ('coverage', 'asan'):
         TestTask(
             variant=variant,
-            extra_desc='cram',
+            short_desc='cram',
             clone=False,
             command=[
                 'repo/git-cinnabar --version',
@@ -466,13 +472,38 @@ def decision():
                 break
 
 
+def do_hg_version(hg):
+    TestTask(hg=hg)
+    try:
+        # Don't run cram tests for version < 3.6, which would need
+        # different tests because of server-side changes in behavior
+        # wrt bookmarks.
+        if StrictVersion(hg) < '3.6':
+            return
+    except ValueError:
+        # `hg` is a sha1 for trunk, which means it's >= 3.6
+        pass
+    TestTask(
+        short_desc='cram',
+        clone=False,
+        hg=hg,
+        command=[
+            'repo/git-cinnabar --version',
+            'cram --verbose repo/tests',
+        ],
+        env={
+            'GIT_CINNABAR_CHECK': 'no-version-check',
+        },
+    )
+
+
 @action('more-hg-versions',
         title='More hg versions',
         description='Trigger tests against more mercurial versions')
 def more_hg_versions():
     for hg in ALL_MERCURIAL_VERSIONS:
         if hg != MERCURIAL_VERSION and hg not in SOME_MERCURIAL_VERSIONS:
-            TestTask(hg=hg)
+            do_hg_version(hg)
 
 
 @action('hg-trunk',
@@ -488,7 +519,7 @@ def hg_trunk():
             trunk = fields[-1]
     if not trunk:
         raise Exception('Cannot find mercurial trunk changeset')
-    TestTask(hg=trunk)
+    do_hg_version(trunk)
 
 
 def main():

@@ -123,8 +123,8 @@ Pushing `b` fails because it would add a new head to the branch.
   $ hg -R $REPO push -r 636e60525868096cbdc961870493510558f41d2f
   pushing to .*/push-refs.t/repo-from-hg (re)
   searching for changes
-  abort: push creates new remote head 636e60525868!
-  (merge or see 'hg help push' for details about pushing new heads)
+  abort: push creates new remote head 636e60525868!? (re)
+  \(merge or see ['"]hg help push["'] for details about pushing new heads\) (re)
   [255]
 
   $ git -C repo-git push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/branches/default/tip
@@ -238,8 +238,8 @@ changeset added above.
   pushing to .*/push-refs.t/repo-from-hg (re)
   searching for changes
   remote has heads on branch 'default' that are not known locally: a08654acdc93
-  abort: push creates new remote head 7937e1a59459!
-  (pull and merge or see 'hg help push' for details about pushing new heads)
+  abort: push creates new remote head 7937e1a59459!? (re)
+  \(pull and merge or see ['"]hg help push["'] for details about pushing new heads\) (re)
   [255]
 
 TODO: this should fail like mercurial does above.
@@ -301,7 +301,7 @@ Push `f`.
   $ hg -R $REPO push -r 312a5a9c675e3ce302a33bd4605205a6be36d561
   pushing to .*/push-refs.t/repo-from-hg (re)
   searching for changes
-  abort: push creates new remote branches: foo!
+  abort: push creates new remote branches: foo!? (re)
   (use 'hg push --new-branch' to create new remote branches)
   [255]
 
@@ -469,8 +469,8 @@ Push the same bookmark, pointing to `b`.
   $ hg -R $REPO push -B qux
   pushing to .*/push-refs.t/repo-from-hg (re)
   searching for changes
-  abort: push creates new remote head 636e60525868 with bookmark 'qux'!
-  (merge or see 'hg help push' for details about pushing new heads)
+  abort: push creates new remote head 636e60525868 with bookmark 'qux'!? (re)
+  \(merge or see ['"]hg help push["'] for details about pushing new heads\) (re)
   [255]
 
   $ git -C repo-git push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/bookmarks/qux
@@ -594,8 +594,8 @@ Pushing the same bookmark, pointing to `d` fails.
   pushing to .*/push-refs.t/repo-from-hg (re)
   searching for changes
   remote has heads on branch 'default' that are not known locally: a08654acdc93
-  abort: push creates new remote head 7937e1a59459 with bookmark 'qux'!
-  (pull and merge or see 'hg help push' for details about pushing new heads)
+  abort: push creates new remote head 7937e1a59459 with bookmark 'qux'!? (re)
+  \(pull and merge or see ['"]hg help push["'] for details about pushing new heads\) (re)
   [255]
 
 TODO: this should fail like mercurial does above.
