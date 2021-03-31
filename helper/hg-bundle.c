@@ -86,7 +86,7 @@ void copy_bundle_to_strbuf(FILE *in, struct strbuf *out)
 	writer_close(&writer);
 }
 
-void read_chunk(FILE *in, struct strbuf *out)
+void read_rev_chunk(FILE *in, struct strbuf *out)
 {
 	// See copy_bundle2_chunk and copy_changegroup_chunk.
 	char buf[4];

@@ -20,6 +20,7 @@ from cinnabar.helper import helper_hash
 from cinnabar.util import (
     HTTPReader,
     Progress,
+    Seekable,
 )
 from gzip import GzipFile
 from io import BytesIO
@@ -150,68 +151,31 @@ def download(args):
             self._reader = reader
             self._length = length
             self._read = 0
-            self._pos = 0
-            self._buf = ''
             self._progress = Progress(' {}%' if self._length else ' {} bytes')
 
         def read(self, length):
-            # See comment above tell
-            if self._pos < self._read:
-                assert self._read - self._pos <= 8
-                assert length <= len(self._buf)
-                data = self._buf[:length]
-                self._buf = self._buf[length:]
-                self._pos += length
-            else:
-                assert self._read == self._pos
-                data = self._reader.read(length)
-                self._read += len(data)
-                self._pos = self._read
-                # Keep the last 8 bytes we read for GzipFile
-                self._buf = data[-8:]
-            self.progress()
-            return data
-
-        def progress(self):
+            data = self._reader.read(length)
+            self._read += len(data)
             if self._length:
                 count = self._read * 100 // self._length
             else:
                 count = self._read
             self._progress.progress(count)
+            return data
 
         def finish(self):
             self._progress.finish()
 
-        # GzipFile wants to seek to the end of the file and back, so we add
-        # enough tell/seek support to make it happy. It also rewinds 8 bytes
-        # for the CRC, so we also handle that.
-        def tell(self):
-            return self._pos
-
-        def seek(self, pos, how=os.SEEK_SET):
-            if how == os.SEEK_END:
-                self._pos = self._length + pos
-            elif how == os.SEEK_SET:
-                self._pos = pos
-            elif how == os.SEEK_CUR:
-                self._pos += pos
-            else:
-                raise NotImplementedError()
-            return self._pos
-
     encoding = reader.fh.headers.get('Content-Encoding', 'identity')
-    helper_content = ReaderProgress(reader, reader.length)
+    progress = ReaderProgress(reader, reader.length)
+    helper_content = Seekable(progress, reader.length)
     if encoding == 'gzip':
-        class WrapGzipFile(GzipFile):
-            def finish(self):
-                self.fileobj.finish()
-        helper_content = WrapGzipFile(mode='rb', fileobj=helper_content)
+        helper_content = GzipFile(mode='rb', fileobj=helper_content)
 
     if args.dev is False:
         content = BytesIO()
         copyfileobj(helper_content, content)
-        if hasattr(helper_content, 'finish'):
-            helper_content.finish()
+        progress.finish()
         content.seek(0)
 
         print('Extracting %s...' % helper)
@@ -245,6 +209,7 @@ def download(args):
 
         else:
             assert False
+        progress = helper_content
 
     fd, path = tempfile.mkstemp(prefix=helper, dir=d)
     fh = os.fdopen(fd, 'wb')
@@ -254,8 +219,7 @@ def download(args):
         copyfileobj(helper_content, fh)
         success = True
     finally:
-        if hasattr(helper_content, 'finish'):
-            helper_content.finish()
+        progress.finish()
         fh.close()
         if success:
             mode = os.stat(path).st_mode

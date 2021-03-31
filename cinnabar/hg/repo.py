@@ -1237,7 +1237,9 @@ def _get_repo(remote):
         try:
             repo = hg.peer(ui, {}, remote.url)
         except (error.RepoError, HTTPError, IOError):
-            return bundlerepo(remote.url, HTTPReader(remote.url))
+            if remote.parsed_url.scheme in ('http', 'https'):
+                return bundlerepo(remote.url, HTTPReader(remote.url))
+            raise
 
     assert repo.capable(b'getbundle')
 

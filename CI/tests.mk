@@ -24,6 +24,9 @@ GIT = git
 ifndef GIT_CINNABAR_OLD_HELPER
 GIT += -c core.packedGitWindowSize=8k
 endif
+ifndef GIT_OLD_VERSION
+GIT += -c credential.helper=
+endif
 
 COMMA=,
 export GIT_CINNABAR_CHECK:=all,traceback,cinnabarclone,clonebundles,no-version-check$(addprefix $(COMMA),$(GIT_CINNABAR_CHECK))
@@ -217,6 +220,7 @@ hg.cinnabarclone-graft.git: NUM=09
 hg.cinnabarclone-graft-replace.git: NUM=10
 hg.cinnabarclone-bundle.git: NUM=11
 hg.cinnabarclone-bundle-full.git: NUM=12
+hg.cinnabarclone-graft-bundle.git: NUM=13
 hg.cinnabarclone-graft-bundle.git: OTHER_SERVER=http
 hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-graft.git hg.cinnabarclone-graft-replace.git: OTHER_SERVER=git
 hg.cinnabarclone-bundle.git hg.cinnabarclone-bundle-full.git hg.cinnabarclone-graft-bundle.git: OTHER_SERVER=http

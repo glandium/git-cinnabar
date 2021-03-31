@@ -720,6 +720,50 @@ class HTTPReader(object):
         return len(buf)
 
 
+# Transforms a File object without seek() or tell() into one that has.
+# This only implements enough to make GzipFile happy. It wants to seek to
+# the end of the file and back ; it also rewinds 8 bytes for the CRC.
+class Seekable(object):
+    def __init__(self, reader, length):
+        self._reader = reader
+        self._length = length
+        self._read = 0
+        self._pos = 0
+        self._buf = b''
+
+    def read(self, length):
+        if self._pos < self._read:
+            assert self._read - self._pos <= 8
+            assert length <= len(self._buf)
+            data = self._buf[:length]
+            self._buf = self._buf[length:]
+            self._pos += length
+        else:
+            assert self._read == self._pos
+            data = self._reader.read(length)
+            self._read += len(data)
+            self._pos = self._read
+            # Keep the last 8 bytes we read for GzipFile
+            self._buf = data[-8:]
+        return data
+
+    def tell(self):
+        return self._pos
+
+    def seek(self, pos, how=os.SEEK_SET):
+        if how == os.SEEK_END:
+            if pos:
+                raise NotImplementedError()
+            self._pos = self._length
+        elif how == os.SEEK_SET:
+            self._pos = pos
+        elif how == os.SEEK_CUR:
+            self._pos += pos
+        else:
+            raise NotImplementedError()
+        return self._pos
+
+
 class Process(object):
     def __init__(self, *args, **kwargs):
         stdin = kwargs.pop('stdin', None)

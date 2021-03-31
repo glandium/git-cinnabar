@@ -264,7 +264,7 @@ static uintmax_t parse_mark_ref(const char *p, char **endptr)
 		e->pack_id = MAX_PACK_ID;
 		e->idx.offset = 1;
 	}
-	insert_mark(marks, 2, e);
+	insert_mark(&marks, 2, e);
 	return 2;
 }
 
@@ -1152,7 +1152,7 @@ static void for_each_changegroup_chunk(FILE *in, int version,
 	struct rev_chunk chunk = { STRBUF_INIT, };
 	struct hg_object_id delta_node = {{ 0, }};
 
-	while (read_chunk(in, &buf), buf.len) {
+	while (read_rev_chunk(in, &buf), buf.len) {
 		rev_chunk_from_memory(&chunk, &buf, cg2 ? NULL : &delta_node);
 		if (!cg2 && is_null_hg_oid(&delta_node))
 			hg_oidcpy(&delta_node, chunk.parent1);
@@ -1239,7 +1239,7 @@ static void do_store(struct string_list *args)
 		/* manifests */
 		for_each_changegroup_chunk(stdin, version, store_manifest);
 		/* files */
-		while (read_chunk(stdin, &buf), buf.len) {
+		while (read_rev_chunk(stdin, &buf), buf.len) {
 			strbuf_release(&buf);
 			for_each_changegroup_chunk(stdin, version, store_file);
 		}
