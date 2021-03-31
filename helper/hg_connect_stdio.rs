@@ -28,7 +28,7 @@ use crate::libgit::{child_process, strbuf};
 use crate::store::HgChangesetId;
 use crate::util::{BufferedWriter, OsStrExt, PrefixWriter, SeekExt};
 
-pub struct HgStdIOConnection {
+pub struct HgStdioConnection {
     capabilities: HgCapabilities,
     proc_in: FdFile,
     proc_out: crate::libc::File,
@@ -62,7 +62,7 @@ fn stdio_command_add_param(data: &mut BString, name: &str, value: &str) {
     data.extend(value.as_bytes())
 }
 
-fn stdio_send_command(conn: &mut HgStdIOConnection, command: &str, args: HgArgs) {
+fn stdio_send_command(conn: &mut HgStdioConnection, command: &str, args: HgArgs) {
     let mut data = BString::from(Vec::<u8>::new());
     data.extend(command.as_bytes());
     data.push(b'\n');
@@ -84,7 +84,7 @@ extern "C" {
     fn strbuf_fread(buf: *mut strbuf, len: usize, file: *mut libc::FILE);
 }
 
-fn stdio_read_response(conn: &mut HgStdIOConnection, response: &mut strbuf) {
+fn stdio_read_response(conn: &mut HgStdioConnection, response: &mut strbuf) {
     let mut length_str = strbuf::new();
     unsafe {
         strbuf_getline_lf(&mut length_str, conn.proc_out.raw());
@@ -95,7 +95,7 @@ fn stdio_read_response(conn: &mut HgStdIOConnection, response: &mut strbuf) {
     }
 }
 
-impl HgWireConnection for HgStdIOConnection {
+impl HgWireConnection for HgStdioConnection {
     fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
         stdio_send_command(self, command, args);
         stdio_read_response(self, response);
@@ -164,13 +164,13 @@ impl HgWireConnection for HgStdIOConnection {
     }
 }
 
-impl HgConnectionBase for HgStdIOConnection {
+impl HgConnectionBase for HgStdioConnection {
     fn get_capability(&self, name: &[u8]) -> Option<&CStr> {
         self.capabilities.get_capability(name)
     }
 }
 
-impl Drop for HgStdIOConnection {
+impl Drop for HgStdioConnection {
     fn drop(&mut self) {
         stdio_send_command(self, "", args!());
         unsafe {
@@ -182,14 +182,14 @@ impl Drop for HgStdIOConnection {
     }
 }
 
-pub struct HgStdIOBundle {
+pub struct HgStdioBundle {
     path: PathBuf,
 }
 
 // Because we don't support getbundle fully, we don't override get_capability
 // to say we handle it.
-impl HgConnectionBase for HgStdIOBundle {}
-impl HgConnection for HgStdIOBundle {
+impl HgConnectionBase for HgStdioBundle {}
+impl HgConnection for HgStdioBundle {
     fn getbundle(
         &mut self,
         out: &mut (dyn Write + Send),
@@ -235,7 +235,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
     } else {
         let path = url.to_file_path().unwrap();
         if path.metadata().map(|m| m.is_file()).unwrap_or(false) {
-            return Some(Box::new(HgStdIOBundle { path }));
+            return Some(Box::new(HgStdioBundle { path }));
         }
         path.as_os_str().as_bytes().to_owned()
     };
@@ -252,7 +252,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
         return None;
     }
 
-    let mut conn = HgStdIOConnection {
+    let mut conn = HgStdioConnection {
         capabilities: Default::default(),
         proc_in: unsafe { FdFile::from_raw_fd(proc_in(proc)) },
         proc_out: unsafe {

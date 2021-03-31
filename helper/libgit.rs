@@ -166,7 +166,7 @@ impl slot_results {
 pub const HTTP_OK: c_int = 0;
 pub const HTTP_REAUTH: c_int = 4;
 
-#[allow(dead_code, non_camel_case_types)]
+#[allow(dead_code, non_camel_case_types, clippy::upper_case_acronyms)]
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum http_follow_config {
@@ -185,9 +185,8 @@ pub struct repository {
     commondir: *const c_char,
 }
 
+#[allow(dead_code, non_camel_case_types, clippy::upper_case_acronyms)]
 #[repr(C)]
-#[allow(non_camel_case_types)]
-#[allow(dead_code)]
 pub enum object_type {
     OBJ_BAD = -1,
     OBJ_NONE = 0,

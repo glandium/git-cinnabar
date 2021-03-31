@@ -42,10 +42,10 @@ use crate::libgit::{
 use crate::store::HgChangesetId;
 use crate::util::{PrefixWriter, ReadExt, SeekExt, SliceExt};
 
-pub struct HgHTTPConnection {
+pub struct HgHttpConnection {
     capabilities: HgCapabilities,
     url: Url,
-    client: HTTPClient,
+    client: HttpClient,
 }
 
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.
@@ -61,11 +61,11 @@ trait ReadAndSeek: Read + Seek {}
 
 impl<T: Read + Seek> ReadAndSeek for T {}
 
-struct HTTPClient {
+struct HttpClient {
     initial_request: bool,
 }
 
-struct HTTPRequest {
+struct HttpRequest {
     url: Url,
     headers: Vec<(String, String)>,
     body: Option<Box<dyn ReadAndSeek + Send>>,
@@ -73,37 +73,37 @@ struct HTTPRequest {
 }
 
 #[derive(Debug)]
-struct HTTPResponseInfo {
+struct HttpResponseInfo {
     http_status: usize,
     redirected_to: Option<Url>,
     content_type: Option<String>,
 }
 
 #[derive(Debug)]
-struct HTTPResponse {
-    info: HTTPResponseInfo,
-    thread: Option<JoinHandle<Result<(), (c_int, HTTPRequest)>>>,
+struct HttpResponse {
+    info: HttpResponseInfo,
+    thread: Option<JoinHandle<Result<(), (c_int, HttpRequest)>>>,
     cursor: Cursor<Vec<u8>>,
-    receiver: Option<Receiver<HTTPRequestChannelData>>,
+    receiver: Option<Receiver<HttpRequestChannelData>>,
 }
 
-type HTTPRequestChannelData = Either<HTTPResponseInfo, Vec<u8>>;
+type HttpRequestChannelData = Either<HttpResponseInfo, Vec<u8>>;
 
-struct HTTPThreadData {
-    sender: Sender<HTTPRequestChannelData>,
+struct HttpThreadData {
+    sender: Sender<HttpRequestChannelData>,
     curl: *mut CURL,
     first: bool,
 }
 
-impl HTTPClient {
+impl HttpClient {
     fn new() -> Self {
-        HTTPClient {
+        HttpClient {
             initial_request: true,
         }
     }
 
-    fn request(&mut self, url: Url) -> HTTPRequest {
-        let mut req = HTTPRequest::new(url);
+    fn request(&mut self, url: Url) -> HttpRequest {
+        let mut req = HttpRequest::new(url);
         let follow_config = unsafe { http_follow_config };
         if (follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && self.initial_request)
             || follow_config == http_follow_config::HTTP_FOLLOW_ALWAYS
@@ -117,9 +117,9 @@ impl HTTPClient {
     }
 }
 
-impl HTTPRequest {
+impl HttpRequest {
     fn new(url: Url) -> Self {
-        HTTPRequest {
+        HttpRequest {
             url,
             headers: Vec::new(),
             body: None,
@@ -139,8 +139,8 @@ impl HTTPRequest {
         self.body = Some(data);
     }
 
-    fn execute_once(mut self) -> Result<HTTPResponse, (c_int, Self)> {
-        let (sender, receiver) = channel::<HTTPRequestChannelData>();
+    fn execute_once(mut self) -> Result<HttpResponse, (c_int, Self)> {
+        let (sender, receiver) = channel::<HttpRequestChannelData>();
         let thread = thread::spawn(move || unsafe {
             let url = CString::new(self.url.to_string()).unwrap();
             let slot = get_active_slot().as_mut().unwrap();
@@ -155,7 +155,7 @@ impl HTTPRequest {
                 CURLOPT_USERAGENT,
                 cstr!("mercurial/proto-1.0").as_ptr(),
             );
-            let mut data = HTTPThreadData {
+            let mut data = HttpThreadData {
                 sender,
                 curl: slot.curl,
                 first: true,
@@ -208,7 +208,7 @@ impl HTTPRequest {
         });
 
         match receiver.recv() {
-            Ok(Either::Left(info)) if info.http_status < 300 => Ok(HTTPResponse {
+            Ok(Either::Left(info)) if info.http_status < 300 => Ok(HttpResponse {
                 info,
                 thread: Some(thread),
                 cursor: Cursor::new(Vec::new()),
@@ -224,7 +224,7 @@ impl HTTPRequest {
         }
     }
 
-    fn execute(self) -> Result<HTTPResponse, ()> {
+    fn execute(self) -> Result<HttpResponse, ()> {
         self.execute_once()
             .or_else(|(result, this)| {
                 if result == HTTP_REAUTH {
@@ -245,7 +245,7 @@ impl HTTPRequest {
     }
 }
 
-impl Read for HTTPResponse {
+impl Read for HttpResponse {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.cursor.read(buf)?;
         if n == 0 && self.receiver.is_some() {
@@ -264,7 +264,7 @@ impl Read for HTTPResponse {
     }
 }
 
-impl Drop for HTTPResponse {
+impl Drop for HttpResponse {
     fn drop(&mut self) {
         drop(self.receiver.take());
         if let Some(thread) = self.thread.take() {
@@ -273,7 +273,7 @@ impl Drop for HTTPResponse {
     }
 }
 
-impl HTTPResponse {
+impl HttpResponse {
     fn content_type(&self) -> Option<&str> {
         self.info.content_type.as_ref().map(|s| &s[..])
     }
@@ -283,7 +283,7 @@ impl HTTPResponse {
     }
 }
 
-fn http_send_info(data: &mut HTTPThreadData) {
+fn http_send_info(data: &mut HttpThreadData) {
     if data.first {
         unsafe {
             data.first = false;
@@ -322,7 +322,7 @@ fn http_send_info(data: &mut HTTPThreadData) {
                 }
             };
             data.sender
-                .send(Either::Left(HTTPResponseInfo {
+                .send(Either::Left(HttpResponseInfo {
                     http_status: http_status as usize,
                     redirected_to,
                     content_type,
@@ -338,7 +338,7 @@ unsafe extern "C" fn http_request_execute(
     nmemb: usize,
     data: *mut c_void,
 ) -> usize {
-    let data = (data as *mut HTTPThreadData).as_mut().unwrap();
+    let data = (data as *mut HttpThreadData).as_mut().unwrap();
     http_send_info(data);
     let buf = std::slice::from_raw_parts(ptr as *const u8, size.checked_mul(nmemb).unwrap());
     if data.sender.send(Either::Right(buf.to_owned())).is_err() {
@@ -347,8 +347,8 @@ unsafe extern "C" fn http_request_execute(
     nmemb
 }
 
-impl HgHTTPConnection {
-    fn start_command_request(&mut self, command: &str, args: HgArgs) -> HTTPRequest {
+impl HgHttpConnection {
+    fn start_command_request(&mut self, command: &str, args: HgArgs) -> HttpRequest {
         let args = Iterator::chain(
             args.args.iter(),
             args.extra_args.as_ref().unwrap_or(&&[][..]).iter(),
@@ -400,7 +400,7 @@ impl HgHTTPConnection {
         request
     }
 
-    fn handle_redirect(&mut self, http_resp: &HTTPResponse) {
+    fn handle_redirect(&mut self, http_resp: &HttpResponse) {
         if let Some(url) = http_resp.redirected_to() {
             let mut new_url = url.clone();
             new_url.set_query(None);
@@ -410,7 +410,7 @@ impl HgHTTPConnection {
     }
 }
 
-impl HgWireConnection for HgHTTPConnection {
+impl HgWireConnection for HgHttpConnection {
     fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
         let mut http_req = self.start_command_request(command, args);
         if command == "pushkey" {
@@ -504,13 +504,13 @@ impl HgWireConnection for HgHTTPConnection {
     }
 }
 
-impl HgConnectionBase for HgHTTPConnection {
+impl HgConnectionBase for HgHttpConnection {
     fn get_capability(&self, name: &[u8]) -> Option<&CStr> {
         self.capabilities.get_capability(name)
     }
 }
 
-impl Drop for HgHTTPConnection {
+impl Drop for HgHttpConnection {
     fn drop(&mut self) {
         unsafe {
             http_cleanup();
@@ -518,19 +518,19 @@ impl Drop for HgHTTPConnection {
     }
 }
 
-pub struct HgHTTPBundle {
+pub struct HgHttpBundle {
     header: [u8; 4],
-    http_resp: HTTPResponse,
+    http_resp: HttpResponse,
     // Not used, but needed to guarantee http_cleanup doesn't happen before
-    // HTTPResponse is dropped.
+    // HttpResponse is dropped.
     #[allow(unused)]
-    conn: HgHTTPConnection,
+    conn: HgHttpConnection,
 }
 
 // Because we don't support getbundle fully, we don't override get_capability
 // to say we handle it.
-impl HgConnectionBase for HgHTTPBundle {}
-impl HgConnection for HgHTTPBundle {
+impl HgConnectionBase for HgHttpBundle {}
+impl HgConnection for HgHttpBundle {
     fn getbundle(
         &mut self,
         out: &mut (dyn Write + Send),
@@ -560,10 +560,10 @@ unsafe extern "C" fn read_from_read<R: Read>(
 }
 
 pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
-    let mut conn = HgHTTPConnection {
+    let mut conn = HgHttpConnection {
         capabilities: Default::default(),
         url: url.clone(),
-        client: HTTPClient::new(),
+        client: HttpClient::new(),
     };
 
     let c_url = CString::new(url.to_string()).unwrap();
@@ -590,7 +590,7 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
     let len = http_resp.read_at_most(&mut header).unwrap();
     let header = &header[..len];
     match header {
-        b"HG10" | b"HG20" => Some(Box::new(HgHTTPBundle {
+        b"HG10" | b"HG20" => Some(Box::new(HgHttpBundle {
             conn,
             header: header.try_into().unwrap(),
             http_resp,
