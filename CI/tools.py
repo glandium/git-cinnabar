@@ -172,6 +172,7 @@ class Hg(Task, metaclass=Tool):
                 'hg clone https://www.mercurial-scm.org/repo/hg -r {}'
                 .format(version),
                 'rm -rf hg/.hg',
+                'echo tag: unknown > hg/.hg_archival.txt',
             ])
         # 2.6.2 is the first version available on pypi
         elif parse_version('2.6.2') <= parse_version(version):
