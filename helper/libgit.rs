@@ -326,16 +326,9 @@ pub struct notes_tree {
 extern "C" {
     pub static mut the_repository: *mut repository;
 
-    pub fn repo_get_oid_committish(
-        r: *mut repository,
-        s: *const c_char,
-        oid: *mut object_id,
-    ) -> c_int;
+    fn repo_get_oid_committish(r: *mut repository, s: *const c_char, oid: *mut object_id) -> c_int;
 
-    pub fn repo_lookup_replace_object(
-        r: *mut repository,
-        oid: *const object_id,
-    ) -> *const object_id;
+    fn repo_lookup_replace_object(r: *mut repository, oid: *const object_id) -> *const object_id;
 
     pub fn get_note(t: *mut notes_tree, oid: *const object_id) -> *const object_id;
 }
@@ -405,13 +398,13 @@ pub struct rev_info(c_void);
 pub struct commit(c_void);
 
 extern "C" {
-    pub fn commit_oid(c: *const commit) -> *const object_id;
+    fn commit_oid(c: *const commit) -> *const object_id;
 
-    pub fn get_revision(revs: *mut rev_info) -> *const commit;
+    fn get_revision(revs: *mut rev_info) -> *const commit;
 
-    pub fn rev_list_new(argc: c_int, argv: *const *const c_char) -> *mut rev_info;
+    fn rev_list_new(argc: c_int, argv: *const *const c_char) -> *mut rev_info;
 
-    pub fn rev_list_finish(revs: *mut rev_info);
+    fn rev_list_finish(revs: *mut rev_info);
 }
 
 pub struct RevList {
@@ -621,12 +614,9 @@ pub fn diff_tree(a: &CommitId, b: &CommitId) -> impl Iterator<Item = DiffTreeIte
 }
 
 extern "C" {
-    pub fn remote_get(name: *const c_char) -> *mut remote;
-    pub fn remote_get_url(
-        remote: *const remote,
-        url: *mut *const *const c_char,
-        url_nr: *mut c_int,
-    );
+    fn remote_get(name: *const c_char) -> *mut remote;
+
+    fn remote_get_url(remote: *const remote, url: *mut *const *const c_char, url_nr: *mut c_int);
 }
 
 impl remote {

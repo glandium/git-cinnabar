@@ -49,12 +49,11 @@ extern "C" {
     pub static mut hg2git: hg_notes_tree;
     pub static mut files_meta: hg_notes_tree;
 
-    pub fn ensure_notes(t: *mut notes_tree);
+    fn ensure_notes(t: *mut notes_tree);
 
-    pub fn get_note_hg(notes: *mut notes_tree, oid: *const hg_object_id) -> *const object_id;
+    fn get_note_hg(notes: *mut notes_tree, oid: *const hg_object_id) -> *const object_id;
 
-    pub fn resolve_hg(t: *mut notes_tree, oid: *const hg_object_id, len: usize)
-        -> *const object_id;
+    fn resolve_hg(t: *mut notes_tree, oid: *const hg_object_id, len: usize) -> *const object_id;
 
     pub fn generate_manifest(oid: *const object_id) -> *const strbuf;
 }

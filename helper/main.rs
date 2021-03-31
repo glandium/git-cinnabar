@@ -68,14 +68,14 @@ unsafe extern "C" fn get_helper_hash(buf: *mut strbuf) {
 }
 
 extern "C" {
-    pub fn helper_main(argc: c_int, argv: *const *const c_char) -> c_int;
+    fn helper_main(argc: c_int, argv: *const *const c_char) -> c_int;
 
     #[cfg(windows)]
-    pub fn wmain(argc: c_int, argv: *const *const u16) -> c_int;
+    fn wmain(argc: c_int, argv: *const *const u16) -> c_int;
 
-    pub fn init_cinnabar(argv0: *const c_char);
-    pub fn init_cinnabar_2();
-    pub fn done_cinnabar();
+    fn init_cinnabar(argv0: *const c_char);
+    fn init_cinnabar_2();
+    fn done_cinnabar();
 }
 
 #[cfg(unix)]
