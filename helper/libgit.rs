@@ -73,6 +73,15 @@ impl strbuf {
     pub fn extend_from_slice(&mut self, s: &[u8]) {
         unsafe { strbuf_add(self, s.as_ptr() as *const c_void, s.len()) }
     }
+
+    pub fn reset(&mut self) {
+        self.len = 0;
+        unsafe {
+            if self.buf != strbuf_slopbuf.as_ptr() as *mut _ {
+                *self.buf = 0;
+            }
+        }
+    }
 }
 
 impl Write for strbuf {
