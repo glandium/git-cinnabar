@@ -189,6 +189,7 @@ class Hg(Task, metaclass=Tool):
             index='{}.hg.{}'.format(h.hexdigest(), pretty_version),
             expireIn=expire,
             command=pre_command + [
+                'rm -f {}/pyproject.toml'.format(source.format(version)),
                 '{} -m pip wheel -v --build-option -b --build-option'
                 ' $PWD/wheel -w $ARTIFACTS {}'.format(
                     python,
