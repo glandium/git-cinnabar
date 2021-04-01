@@ -763,3 +763,18 @@ pub fn for_each_ref_in<E, F: FnMut(&OsStr, &GitObjectId) -> Result<(), E>>(
         }
     }
 }
+
+extern "C" {
+    fn read_ref(refname: *const c_char, oid: *mut object_id) -> c_int;
+}
+
+pub fn resolve_ref(refname: &OsStr) -> Option<GitObjectId> {
+    let mut oid = object_id([0; GIT_MAX_RAWSZ]);
+    unsafe {
+        if read_ref(refname.to_cstring().as_ptr(), &mut oid) == 0 {
+            Some(GitObjectId::from(oid))
+        } else {
+            None
+        }
+    }
+}
