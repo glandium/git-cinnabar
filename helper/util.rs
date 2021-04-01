@@ -547,3 +547,74 @@ fn test_ordered_zip() {
 pub fn bstr_fmt<S: AsRef<[u8]>>(s: &S, f: &mut fmt::Formatter) -> fmt::Result {
     fmt::Debug::fmt(s.as_ref().as_bstr(), f)
 }
+
+pub trait OptionExt<T> {
+    fn as_ptr(&self) -> *const T;
+}
+
+pub trait OptionMutExt<T>: OptionExt<T> {
+    fn as_mut_ptr(&mut self) -> *mut T;
+}
+
+impl<T> OptionExt<T> for Option<&T> {
+    fn as_ptr(&self) -> *const T {
+        match self {
+            Some(x) => *x as *const T,
+            None => std::ptr::null(),
+        }
+    }
+}
+
+impl<T> OptionExt<T> for Option<&mut T> {
+    fn as_ptr(&self) -> *const T {
+        match self {
+            Some(x) => *x as *const T,
+            None => std::ptr::null(),
+        }
+    }
+}
+
+impl<T> OptionMutExt<T> for Option<&mut T> {
+    fn as_mut_ptr(&mut self) -> *mut T {
+        match self {
+            Some(ref mut x) => *x as *mut T,
+            None => std::ptr::null_mut(),
+        }
+    }
+}
+
+#[test]
+fn test_optionext() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static DROPPED: AtomicBool = AtomicBool::new(false);
+
+    struct Foo;
+    impl Drop for Foo {
+        fn drop(&mut self) {
+            assert!(!DROPPED.load(Ordering::SeqCst));
+            DROPPED.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn callback(ptr: *const Foo) {
+        assert_ne!(ptr, std::ptr::null());
+        assert!(!DROPPED.load(Ordering::SeqCst));
+    }
+
+    fn callback_mut(ptr: *mut Foo) {
+        assert_ne!(ptr, std::ptr::null_mut());
+        assert!(!DROPPED.load(Ordering::SeqCst));
+    }
+
+    // For good measure, ensure that lifetimes workout fine.
+    callback(Some(Foo).as_ref().as_ptr());
+    assert!(DROPPED.load(Ordering::SeqCst));
+    DROPPED.store(false, Ordering::SeqCst);
+    callback(Some(Foo).as_mut().as_ptr());
+    assert!(DROPPED.load(Ordering::SeqCst));
+    DROPPED.store(false, Ordering::SeqCst);
+    callback_mut(Some(Foo).as_mut().as_mut_ptr());
+    assert!(DROPPED.load(Ordering::SeqCst));
+    assert_eq!(std::ptr::null(), (None as Option<&usize>).as_ptr());
+}
