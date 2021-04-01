@@ -249,6 +249,8 @@ impl SliceExt<&[u8]> for [u8] {
 pub trait OsStrExt: ffi::OsStrExt {
     fn as_bytes(&self) -> &[u8];
 
+    fn from_bytes(b: &[u8]) -> &Self;
+
     fn to_cstring(&self) -> CString;
 
     fn strip_prefix(&self, prefix: impl AsRef<OsStr>) -> Option<&Self>;
@@ -260,9 +262,18 @@ impl OsStrExt for OsStr {
         // git assumes everything is UTF-8-valid on Windows
         self.to_str().unwrap().as_bytes()
     }
+    #[cfg(windows)]
+    fn from_bytes(b: &[u8]) -> &Self {
+        b.to_str().unwrap().as_ref()
+    }
+
     #[cfg(unix)]
     fn as_bytes(&self) -> &[u8] {
         ffi::OsStrExt::as_bytes(self)
+    }
+    #[cfg(unix)]
+    fn from_bytes(b: &[u8]) -> &Self {
+        ffi::OsStrExt::from_bytes(b)
     }
 
     fn to_cstring(&self) -> CString {

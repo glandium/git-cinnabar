@@ -639,13 +639,25 @@ pub fn diff_tree(a: &CommitId, b: &CommitId) -> impl Iterator<Item = DiffTreeIte
 extern "C" {
     fn remote_get(name: *const c_char) -> *mut remote;
 
+    fn remote_get_name(remote: *const remote) -> *const c_char;
+
     fn remote_get_url(remote: *const remote, url: *mut *const *const c_char, url_nr: *mut c_int);
+
+    fn remote_skip_default_update(remote: *const remote) -> c_int;
 }
 
 impl remote {
     pub fn get(name: &OsStr) -> &'static mut remote {
         // /!\ This potentially leaks memory.
         unsafe { remote_get(name.to_cstring().into_raw()).as_mut().unwrap() }
+    }
+
+    pub fn name(&self) -> Option<&OsStr> {
+        unsafe {
+            remote_get_name(self)
+                .as_ref()
+                .map(|n| OsStr::from_bytes(CStr::from_ptr(n).to_bytes()))
+        }
     }
 
     pub fn get_url(&self) -> &OsStr {
@@ -656,5 +668,9 @@ impl remote {
         }
         let urls = unsafe { std::slice::from_raw_parts(urls, url_nr as usize) };
         unsafe { CStr::from_ptr(urls[0]).to_osstr() }
+    }
+
+    pub fn skip_default_update(&self) -> bool {
+        unsafe { remote_skip_default_update(self) != 0 }
     }
 }

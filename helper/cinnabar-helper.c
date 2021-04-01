@@ -1925,11 +1925,21 @@ static void restore_sigpipe_to_default(void)
 	signal(SIGPIPE, SIG_DFL);
 }
 
+const char *remote_get_name(const struct remote *remote)
+{
+	return remote->name;
+}
+
 void remote_get_url(const struct remote *remote, const char * const **url,
                     int* url_nr)
 {
 	*url = remote->url;
 	*url_nr = remote->url_nr;
+}
+
+int remote_skip_default_update(const struct remote *remote)
+{
+	return remote->skip_default_update;
 }
 
 void init_cinnabar(const char *argv0)
