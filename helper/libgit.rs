@@ -714,3 +714,52 @@ pub fn for_each_remote<E, F: FnMut(&remote) -> Result<(), E>>(f: F) -> Result<()
         }
     }
 }
+
+mod refs {
+    use super::*;
+    extern "C" {
+        pub fn for_each_ref_in(
+            prefix: *const c_char,
+            cb: unsafe extern "C" fn(*const c_char, *const object_id, c_int, *mut c_void) -> c_int,
+            cb_data: *mut c_void,
+        ) -> c_int;
+    }
+}
+
+pub fn for_each_ref_in<E, F: FnMut(&OsStr, &GitObjectId) -> Result<(), E>>(
+    prefix: &OsStr,
+    f: F,
+) -> Result<(), Option<E>> {
+    let mut cb_data = (f, None);
+    let prefix = prefix.to_cstring();
+
+    unsafe extern "C" fn each_ref_cb<E, F: FnMut(&OsStr, &GitObjectId) -> Result<(), E>>(
+        refname: *const c_char,
+        oid: *const object_id,
+        _flags: c_int,
+        cb_data: *mut c_void,
+    ) -> c_int {
+        let (func, ref mut error) = (cb_data as *mut (F, Option<E>)).as_mut().unwrap();
+        let refname = OsStr::from_bytes(CStr::from_ptr(refname).to_bytes());
+        let oid = GitObjectId::from(oid.as_ref().unwrap().clone());
+        match func(refname, &oid) {
+            Ok(()) => 0,
+            Err(e) => {
+                *error = Some(e);
+                -1
+            }
+        }
+    }
+
+    unsafe {
+        if 0 == refs::for_each_ref_in(
+            prefix.as_ptr(),
+            each_ref_cb::<E, F>,
+            &mut cb_data as *mut (F, Option<E>) as *mut c_void,
+        ) {
+            Ok(())
+        } else {
+            Err(cb_data.1.take())
+        }
+    }
+}
