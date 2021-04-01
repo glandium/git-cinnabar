@@ -51,7 +51,10 @@ use bstr::ByteSlice;
 use url::Url;
 
 use libcinnabar::{files_meta, hg2git};
-use libgit::{get_oid_committish, lookup_replace_commit, remote, strbuf, BlobId, CommitId};
+use libgit::{
+    for_each_ref_in, for_each_remote, get_oid_committish, lookup_replace_commit, remote,
+    resolve_ref, strbuf, BlobId, CommitId, RefTransaction,
+};
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use store::{
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
@@ -386,6 +389,53 @@ fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
     }
 }
 
+fn do_reclone() -> Result<(), String> {
+    let mut transaction = RefTransaction::new().unwrap();
+    let mut previous_metadata = None;
+    // TODO: Avoid resetting at all, possibly leaving the repo with no metadata
+    // if this is interrupted somehow.
+    for_each_ref_in(OsStr::new("refs/cinnabar/"), |r, oid| {
+        let mut full_ref = OsStr::new("refs/cinnabar/").to_os_string();
+        full_ref.push(r);
+        if r == OsStr::new("metadata") {
+            previous_metadata = Some(oid.clone());
+        }
+        transaction.delete(&full_ref, Some(oid), "reclone")
+    })
+    .map_err(|e| e.expect("Failed to enumerate refs/cinnabar/*"))?;
+    if let Some(oid) = resolve_ref(OsStr::new("refs/notes/cinnabar")) {
+        transaction
+            .delete(OsStr::new("refs/notes/cinnabar"), Some(&oid), "reclone")
+            .unwrap();
+    }
+    transaction.commit()?;
+
+    for_each_remote(|remote| {
+        if remote.skip_default_update() || hg_url(remote.get_url()).is_none() {
+            return Ok(());
+        }
+        let mut cmd = Command::new("git");
+        if let Some(previous_metadata) = previous_metadata.take() {
+            cmd.arg("-c")
+                .arg(format!("cinnabar.previous-metadata={}", previous_metadata));
+        }
+        let cmd = cmd
+            .args(&["remote", "update", "--prune"])
+            .arg(remote.name().unwrap())
+            .status()
+            .map_err(|e| e.to_string())?;
+        if cmd.success() {
+            Ok(())
+        } else {
+            Err("fetch failed".to_string())
+        }
+    })
+    .map(|_| {
+        println!("Please note that reclone left your local branches untouched.");
+        println!("They may be based on entirely different commits.");
+    })
+}
+
 fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
     unsafe {
         let mut stdout = stdout();
@@ -489,6 +539,9 @@ enum CinnabarCommand {
         #[structopt(parse(from_os_str))]
         revs: Vec<OsString>,
     },
+    #[structopt(name = "reclone")]
+    #[structopt(about = "Reclone all mercurial remotes")]
+    Reclone,
 }
 
 use CinnabarCommand::*;
@@ -543,6 +596,7 @@ fn git_cinnabar(argv0: *const c_char, args: &mut dyn Iterator<Item = OsString>) 
             do_one_git2hg,
         ),
         Fetch { remote, revs } => do_fetch(&remote, &revs),
+        Reclone => do_reclone(),
     };
     unsafe {
         done_cinnabar();
