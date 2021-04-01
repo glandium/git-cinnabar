@@ -8,15 +8,17 @@ use std::ffi::{c_void, CStr, CString, OsStr};
 use std::fmt;
 use std::io::{self, Write};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
+use std::sync::RwLock;
 
 use bstr::ByteSlice;
 use cstr::cstr;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use derive_more::{Deref, Display};
 use getset::Getters;
+use once_cell::sync::Lazy;
 
 use crate::oid::{GitObjectId, ObjectId};
-use crate::util::{BorrowKey, CStrExt, FromBytes, OsStrExt, SliceExt};
+use crate::util::{BorrowKey, CStrExt, FromBytes, OptionExt, OsStrExt, SliceExt};
 
 const GIT_MAX_RAWSZ: usize = 32;
 
@@ -726,10 +728,13 @@ mod refs {
     }
 }
 
+static REFS_LOCK: Lazy<RwLock<()>> = Lazy::new(|| RwLock::new(()));
+
 pub fn for_each_ref_in<E, F: FnMut(&OsStr, &GitObjectId) -> Result<(), E>>(
     prefix: &OsStr,
     f: F,
 ) -> Result<(), Option<E>> {
+    let _locked = REFS_LOCK.read().unwrap();
     let mut cb_data = (f, None);
     let prefix = prefix.to_cstring();
 
@@ -769,12 +774,152 @@ extern "C" {
 }
 
 pub fn resolve_ref(refname: &OsStr) -> Option<GitObjectId> {
+    let _locked = REFS_LOCK.read().unwrap();
     let mut oid = object_id([0; GIT_MAX_RAWSZ]);
     unsafe {
         if read_ref(refname.to_cstring().as_ptr(), &mut oid) == 0 {
             Some(GitObjectId::from(oid))
         } else {
             None
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[repr(transparent)]
+pub struct ref_transaction(c_void);
+
+extern "C" {
+    fn ref_transaction_begin(err: *mut strbuf) -> *mut ref_transaction;
+
+    fn ref_transaction_free(tr: *mut ref_transaction);
+
+    fn ref_transaction_update(
+        tr: *mut ref_transaction,
+        refname: *const c_char,
+        new_oid: *const object_id,
+        old_oid: *const object_id,
+        flags: c_uint,
+        msg: *const c_char,
+        err: *mut strbuf,
+    ) -> c_int;
+
+    fn ref_transaction_delete(
+        tr: *mut ref_transaction,
+        refname: *const c_char,
+        old_oid: *const object_id,
+        flags: c_uint,
+        msg: *const c_char,
+        err: *mut strbuf,
+    ) -> c_int;
+
+    fn ref_transaction_commit(tr: *mut ref_transaction, err: *mut strbuf) -> c_int;
+
+    fn ref_transaction_abort(tr: *mut ref_transaction, err: *mut strbuf) -> c_int;
+}
+
+pub struct RefTransaction {
+    tr: *mut ref_transaction,
+    err: strbuf,
+}
+
+impl RefTransaction {
+    pub fn new() -> Option<Self> {
+        let mut err = strbuf::new();
+        Some(RefTransaction {
+            tr: unsafe { ref_transaction_begin(&mut err).as_mut()? },
+            err,
+        })
+    }
+
+    pub fn commit(mut self) -> Result<(), String> {
+        let _locked = REFS_LOCK.try_write().unwrap();
+        let tr = std::mem::replace(&mut self.tr, std::ptr::null_mut());
+        let ret = unsafe { ref_transaction_commit(tr, &mut self.err) };
+        unsafe {
+            ref_transaction_free(tr);
+        }
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(self.err.as_bytes().to_str_lossy().to_string())
+        }
+    }
+
+    pub fn abort(mut self) -> Result<(), String> {
+        let tr = std::mem::replace(&mut self.tr, std::ptr::null_mut());
+        let ret = unsafe { ref_transaction_abort(tr, &mut self.err) };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(self.err.as_bytes().to_str_lossy().to_string())
+        }
+    }
+
+    pub fn update(
+        &mut self,
+        refname: &OsStr,
+        new_oid: &GitObjectId,
+        old_oid: Option<&GitObjectId>,
+        msg: &str,
+    ) -> Result<(), String> {
+        let msg = CString::new(msg).unwrap();
+        let ret = unsafe {
+            ref_transaction_update(
+                self.tr,
+                refname.to_cstring().as_ptr(),
+                &new_oid.clone().into(),
+                old_oid.cloned().map(object_id::from).as_ref().as_ptr(),
+                0,
+                msg.as_ptr(),
+                &mut self.err,
+            )
+        };
+        let result = if ret == 0 {
+            Ok(())
+        } else {
+            Err(self.err.as_bytes().to_str_lossy().to_string())
+        };
+        self.err.reset();
+        result
+    }
+
+    pub fn delete(
+        &mut self,
+        refname: &OsStr,
+        old_oid: Option<&GitObjectId>,
+        msg: &str,
+    ) -> Result<(), String> {
+        let msg = CString::new(msg).unwrap();
+        let ret = unsafe {
+            ref_transaction_delete(
+                self.tr,
+                refname.to_cstring().as_ptr(),
+                old_oid.cloned().map(object_id::from).as_ref().as_ptr(),
+                0,
+                msg.as_ptr(),
+                &mut self.err,
+            )
+        };
+        let result = if ret == 0 {
+            Ok(())
+        } else {
+            Err(self.err.as_bytes().to_str_lossy().to_string())
+        };
+        self.err.reset();
+        result
+    }
+}
+
+impl Drop for RefTransaction {
+    fn drop(&mut self) {
+        if !self.tr.is_null() {
+            RefTransaction {
+                tr: std::mem::replace(&mut self.tr, std::ptr::null_mut()),
+                err: std::mem::replace(&mut self.err, strbuf::new()),
+            }
+            .abort()
+            .unwrap();
         }
     }
 }
