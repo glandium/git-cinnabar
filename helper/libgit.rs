@@ -674,3 +674,43 @@ impl remote {
         unsafe { remote_skip_default_update(self) != 0 }
     }
 }
+
+mod remotes {
+    use super::*;
+    extern "C" {
+        pub fn for_each_remote(
+            cb: unsafe extern "C" fn(*const remote, *mut c_void) -> c_int,
+            cb_data: *mut c_void,
+        ) -> c_int;
+    }
+}
+
+pub fn for_each_remote<E, F: FnMut(&remote) -> Result<(), E>>(f: F) -> Result<(), E> {
+    let mut cb_data = (f, None);
+
+    unsafe extern "C" fn each_remote_cb<E, F: FnMut(&remote) -> Result<(), E>>(
+        remot: *const remote,
+        cb_data: *mut c_void,
+    ) -> c_int {
+        let (func, ref mut error) = (cb_data as *mut (F, Option<E>)).as_mut().unwrap();
+        let remot = remot.as_ref().unwrap();
+        match func(remot) {
+            Ok(()) => 0,
+            Err(e) => {
+                *error = Some(e);
+                -1
+            }
+        }
+    }
+
+    unsafe {
+        if 0 == remotes::for_each_remote(
+            each_remote_cb::<E, F>,
+            &mut cb_data as *mut (F, Option<E>) as *mut c_void,
+        ) {
+            Ok(())
+        } else {
+            Err(cb_data.1.take().unwrap())
+        }
+    }
+}
