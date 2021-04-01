@@ -28,8 +28,11 @@ Please run `git cinnabar upgrade` with version 0.5.0 first.
 Requirements:
 -------------
 
-- Git (any version should work ; cinnabarclone bundles require 1.4.4)
+- Git (any version should work ; cinnabarclone bundles require 1.4.4).
 - Python 2.7 and/or, experimentally, 3.5 or more.
+- In order to build from source:
+  - Rust 1.51.0 or newer.
+  - GCC or clang.
 
 Setup:
 ------
