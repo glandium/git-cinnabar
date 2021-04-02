@@ -347,6 +347,8 @@ extern "C" {
 
 pub fn get_oid_committish(s: &[u8]) -> Option<CommitId> {
     unsafe {
+        let mut s = s.to_vec();
+        s.extend_from_slice(b"^{commit}");
         let c = CString::new(s).unwrap();
         let mut oid = object_id([0; GIT_MAX_RAWSZ]);
         if repo_get_oid_committish(the_repository, c.as_ptr(), &mut oid) == 0 {
