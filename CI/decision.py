@@ -582,8 +582,8 @@ def main():
                 merge_coverage,
                 [
                     'cd repo',
-                    'codecov --name "taskcluster" --commit {} --branch {}'
-                    .format(TC_COMMIT, TC_BRANCH),
+                    'codecov --required --name "taskcluster" --commit {}'
+                    ' --branch {}'.format(TC_COMMIT, TC_BRANCH),
                 ],
             )),
         )
