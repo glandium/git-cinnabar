@@ -52,6 +52,7 @@ class CLI(object):
             retcode = subprocess.call(cmd, env=environ)
             if retcode == 128:
                 GitHgHelper._helper_error('outdated')
+            return retcode
 
         def parse_known_args(args=None, namespace=None):
             if namespace is None:
