@@ -101,6 +101,7 @@ class ReadWriter(object):
 
 
 class BaseHelper(object):
+    VERSION = 3007
     _helper_hash = None
 
     @classmethod
@@ -258,7 +259,6 @@ class BaseHelper(object):
 
 
 class GitHgHelper(BaseHelper):
-    VERSION = 3007
     MODE = 'import'
     _helper = False
 
@@ -572,7 +572,6 @@ class CommitHelper(object):
 
 
 class HgRepoHelper(BaseHelper):
-    VERSION = 3003
     MODE = 'wire'
     _helper = False
 

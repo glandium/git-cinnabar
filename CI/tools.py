@@ -222,14 +222,14 @@ def old_compatible_python():
                            'cinnabar-helper.c')) as fh:
         min_version = None
         for l in fh:
-            if l.startswith('#define MIN_CMD_VERSION'):
+            if l.startswith('#define CMD_VERSION'):
                 min_version = l.rstrip().split()[-1]
                 break
         if not min_version:
-            raise Exception('Cannot find MIN_CMD_VERSION')
+            raise Exception('Cannot find CMD_VERSION')
     return list(Git.iter(
         'log', 'HEAD', '--format=%H', '-S',
-        'class GitHgHelper(BaseHelper):\n    VERSION = {}'.format(min_version),
+        'class BaseHelper(object):\n    VERSION = {}'.format(min_version),
         cwd=os.path.join(os.path.dirname(__file__), '..')))[-1].decode()
 
 

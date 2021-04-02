@@ -82,7 +82,6 @@
 #define STRINGIFY(s) _STRINGIFY(s)
 
 #define CMD_VERSION 3007
-#define MIN_CMD_VERSION 3003
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
@@ -1144,7 +1143,7 @@ static void do_version(struct string_list *args)
 	if (version < 100)
 		version *= 100;
 
-	if (!version || version < MIN_CMD_VERSION || version > CMD_VERSION)
+	if (!version || version < CMD_VERSION || version > CMD_VERSION)
 		exit(128);
 
 	get_helper_hash(&version_s);
