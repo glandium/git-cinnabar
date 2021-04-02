@@ -732,13 +732,13 @@ mod refs {
 
 static REFS_LOCK: Lazy<RwLock<()>> = Lazy::new(|| RwLock::new(()));
 
-pub fn for_each_ref_in<E, F: FnMut(&OsStr, &GitObjectId) -> Result<(), E>>(
-    prefix: &OsStr,
+pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, &GitObjectId) -> Result<(), E>>(
+    prefix: S,
     f: F,
 ) -> Result<(), Option<E>> {
     let _locked = REFS_LOCK.read().unwrap();
     let mut cb_data = (f, None);
-    let prefix = prefix.to_cstring();
+    let prefix = prefix.as_ref().to_cstring();
 
     unsafe extern "C" fn each_ref_cb<E, F: FnMut(&OsStr, &GitObjectId) -> Result<(), E>>(
         refname: *const c_char,
@@ -775,11 +775,11 @@ extern "C" {
     fn read_ref(refname: *const c_char, oid: *mut object_id) -> c_int;
 }
 
-pub fn resolve_ref(refname: &OsStr) -> Option<GitObjectId> {
+pub fn resolve_ref<S: AsRef<OsStr>>(refname: S) -> Option<GitObjectId> {
     let _locked = REFS_LOCK.read().unwrap();
     let mut oid = object_id([0; GIT_MAX_RAWSZ]);
     unsafe {
-        if read_ref(refname.to_cstring().as_ptr(), &mut oid) == 0 {
+        if read_ref(refname.as_ref().to_cstring().as_ptr(), &mut oid) == 0 {
             Some(GitObjectId::from(oid))
         } else {
             None
@@ -858,9 +858,9 @@ impl RefTransaction {
         }
     }
 
-    pub fn update(
+    pub fn update<S: AsRef<OsStr>>(
         &mut self,
-        refname: &OsStr,
+        refname: S,
         new_oid: &GitObjectId,
         old_oid: Option<&GitObjectId>,
         msg: &str,
@@ -869,7 +869,7 @@ impl RefTransaction {
         let ret = unsafe {
             ref_transaction_update(
                 self.tr,
-                refname.to_cstring().as_ptr(),
+                refname.as_ref().to_cstring().as_ptr(),
                 &new_oid.clone().into(),
                 old_oid.cloned().map(object_id::from).as_ref().as_ptr(),
                 0,
@@ -886,9 +886,9 @@ impl RefTransaction {
         result
     }
 
-    pub fn delete(
+    pub fn delete<S: AsRef<OsStr>>(
         &mut self,
-        refname: &OsStr,
+        refname: S,
         old_oid: Option<&GitObjectId>,
         msg: &str,
     ) -> Result<(), String> {
@@ -896,7 +896,7 @@ impl RefTransaction {
         let ret = unsafe {
             ref_transaction_delete(
                 self.tr,
-                refname.to_cstring().as_ptr(),
+                refname.as_ref().to_cstring().as_ptr(),
                 old_oid.cloned().map(object_id::from).as_ref().as_ptr(),
                 0,
                 msg.as_ptr(),
