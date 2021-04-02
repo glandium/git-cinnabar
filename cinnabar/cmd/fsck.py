@@ -318,7 +318,7 @@ def fsck_quick(force=False):
         status.info('Could not find the following files:')
         for path, sha1 in sorted(all_interesting):
             p = store.manifest_path(path)
-            status.info('  %s %s' % (sha1.decode('ascii'), fsdecode(path)))
+            status.info('  %s %s' % (sha1.decode('ascii'), fsdecode(p)))
         status.info(
             'This might be a bug in `git cinnabar fsck`. Please open '
             'an issue, with the message above, on\n'
