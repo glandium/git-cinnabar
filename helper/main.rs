@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#![cfg_attr(feature_bool_to_option, feature(bool_to_option))]
 #![cfg_attr(feature_min_const_generics, feature(min_const_generics))]
 #![cfg_attr(feature_slice_strip, feature(slice_strip))]
 

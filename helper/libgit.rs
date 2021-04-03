@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::{Borrow, Cow};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::ffi::{c_void, CStr, CString, OsStr};
 use std::fmt;
 use std::io::{self, Write};
@@ -212,6 +212,39 @@ pub enum object_type {
     OBJ_MAX,
 }
 
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct object_info {
+    typep: *mut object_type,
+    sizep: *mut c_ulong,
+    disk_sizep: *mut libc::off_t,
+    delta_base_oid: *mut object_id,
+    type_name: *mut strbuf,
+    contentp: *mut *const c_void,
+    whence: c_int, // In reality, it's an inline enum.
+    // In reality, following is a union with one struct.
+    u_packed_pack: *mut c_void, // packed_git.
+    u_packed_offset: libc::off_t,
+    u_packed_is_delta: c_uint,
+}
+
+impl Default for object_info {
+    fn default() -> Self {
+        object_info {
+            typep: std::ptr::null_mut(),
+            sizep: std::ptr::null_mut(),
+            disk_sizep: std::ptr::null_mut(),
+            delta_base_oid: std::ptr::null_mut(),
+            type_name: std::ptr::null_mut(),
+            contentp: std::ptr::null_mut(),
+            whence: 0,
+            u_packed_pack: std::ptr::null_mut(),
+            u_packed_offset: 0,
+            u_packed_is_delta: 0,
+        }
+    }
+}
+
 extern "C" {
     fn read_object_file_extended(
         r: *mut repository,
@@ -220,6 +253,13 @@ extern "C" {
         size: *mut c_ulong,
         lookup_replace: c_int,
     ) -> *const c_void;
+
+    fn oid_object_info_extended(
+        r: *mut repository,
+        oid: *const object_id,
+        oi: *mut object_info,
+        flags: c_uint,
+    ) -> c_int;
 }
 
 pub struct RawObject {
@@ -241,6 +281,14 @@ impl RawObject {
             len: len.try_into().unwrap(),
         };
         Some((t, raw))
+    }
+
+    fn get_type<O: Borrow<GitObjectId>>(oid: O) -> Option<object_type> {
+        let mut info = object_info::default();
+        let mut t = object_type::OBJ_NONE;
+        info.typep = &mut t;
+        (unsafe { oid_object_info_extended(the_repository, &oid.into(), &mut info, 0) } == 0)
+            .then(|| t)
     }
 
     pub fn as_bytes(&self) -> &[u8] {
@@ -270,6 +318,16 @@ macro_rules! raw_object {
                 match RawObject::read(oid)? {
                     (object_type::$t, o) => Some($name(o)),
                     _ => None,
+                }
+            }
+        }
+
+        impl TryFrom<GitObjectId> for $oid_type {
+            type Error = ();
+            fn try_from(oid: GitObjectId) -> std::result::Result<Self, ()> {
+                match RawObject::get_type(&oid).ok_or(())? {
+                    object_type::$t => Ok(unsafe { $oid_type::from_unchecked(oid) }),
+                    _ => Err(()),
                 }
             }
         }

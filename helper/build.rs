@@ -36,6 +36,13 @@ fn prepare_make(make: &mut Command) -> &mut Command {
     result.env_remove("PROFILE")
 }
 
+#[rustversion::all(nightly, before(2020-11-23))]
+fn feature_bool_to_option() {
+    println!("cargo:rustc-cfg=feature_bool_to_option");
+}
+#[rustversion::not(all(nightly, before(2020-11-23)))]
+fn feature_bool_to_option() {}
+
 #[rustversion::all(nightly, before(2020-12-27))]
 fn feature_min_const_generics() {
     println!("cargo:rustc-cfg=feature_min_const_generics");
@@ -144,6 +151,7 @@ fn main() {
     let helper_hash = String::from_utf8(helper_hash.stdout).unwrap();
     let helper_hash = helper_hash.split('/').last().unwrap();
     println!("cargo:rustc-env=HELPER_HASH={}", helper_hash);
+    feature_bool_to_option();
     feature_min_const_generics();
     feature_slice_strip();
 }
