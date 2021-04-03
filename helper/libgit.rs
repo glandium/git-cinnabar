@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString, OsStr};
 use std::fmt;
@@ -27,10 +27,10 @@ const GIT_MAX_RAWSZ: usize = 32;
 #[derive(Clone)]
 pub struct object_id([u8; GIT_MAX_RAWSZ]);
 
-impl From<GitObjectId> for object_id {
-    fn from(oid: GitObjectId) -> Self {
+impl<O: Borrow<GitObjectId>> From<O> for object_id {
+    fn from(oid: O) -> Self {
         let mut result = Self([0; GIT_MAX_RAWSZ]);
-        let oid = oid.as_raw_bytes();
+        let oid = oid.borrow().as_raw_bytes();
         result.0[..oid.len()].clone_from_slice(oid);
         result
     }
@@ -231,9 +231,8 @@ impl RawObject {
     fn read(oid: &GitObjectId) -> Option<(object_type, RawObject)> {
         let mut t = object_type::OBJ_NONE;
         let mut len: c_ulong = 0;
-        let buf = unsafe {
-            read_object_file_extended(the_repository, &oid.clone().into(), &mut t, &mut len, 0)
-        };
+        let buf =
+            unsafe { read_object_file_extended(the_repository, &oid.into(), &mut t, &mut len, 0) };
         if buf.is_null() {
             return None;
         }
@@ -361,7 +360,7 @@ pub fn get_oid_committish(s: &[u8]) -> Option<CommitId> {
 
 pub fn lookup_replace_commit(c: &CommitId) -> Cow<CommitId> {
     unsafe {
-        let oid = object_id::from(c.0.clone());
+        let oid = object_id::from(c);
         let replaced = repo_lookup_replace_object(the_repository, &oid);
         if replaced == &oid {
             Cow::Borrowed(c)
@@ -870,8 +869,8 @@ impl RefTransaction {
             ref_transaction_update(
                 self.tr,
                 refname.as_ref().to_cstring().as_ptr(),
-                &new_oid.clone().into(),
-                old_oid.cloned().map(object_id::from).as_ref().as_ptr(),
+                &new_oid.into(),
+                old_oid.map(object_id::from).as_ref().as_ptr(),
                 0,
                 msg.as_ptr(),
                 &mut self.err,
@@ -897,7 +896,7 @@ impl RefTransaction {
             ref_transaction_delete(
                 self.tr,
                 refname.as_ref().to_cstring().as_ptr(),
-                old_oid.cloned().map(object_id::from).as_ref().as_ptr(),
+                old_oid.map(object_id::from).as_ref().as_ptr(),
                 0,
                 msg.as_ptr(),
                 &mut self.err,

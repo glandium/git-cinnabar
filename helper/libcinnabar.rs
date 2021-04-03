@@ -66,7 +66,7 @@ impl git_notes_tree {
     pub fn get_note(&mut self, oid: &GitObjectId) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
-            get_note(&mut self.0, &oid.clone().into())
+            get_note(&mut self.0, &oid.into())
                 .as_ref()
                 .cloned()
                 .map(Into::into)

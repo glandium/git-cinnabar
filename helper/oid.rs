@@ -58,6 +58,18 @@ macro_rules! oid_type {
             }
         }
 
+        impl ::std::borrow::Borrow<$base_type> for $name {
+            fn borrow(&self) -> &$base_type {
+                &self.0
+            }
+        }
+
+        impl<'a> ::std::borrow::Borrow<$base_type> for &'a $name where Self: 'a {
+            fn borrow(&self) -> &$base_type {
+                &self.0
+            }
+        }
+
         oid_type!(@other $name);
     };
     ($name:ident for $typ:ty) => {
