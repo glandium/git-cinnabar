@@ -53,7 +53,7 @@ macro_rules! oid_type {
             }
         }
         impl $name {
-            pub unsafe fn from(o: $base_type) -> Self {
+            pub unsafe fn from_unchecked(o: $base_type) -> Self {
                 Self(o)
             }
         }

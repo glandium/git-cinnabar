@@ -28,7 +28,11 @@ macro_rules! hg2git {
 
         impl $h {
             pub fn to_git(&self) -> Option<$g> {
-                unsafe { hg2git.get_note(&self).map(|o| $g::from($i::from(o))) }
+                unsafe {
+                    hg2git
+                        .get_note(&self)
+                        .map(|o| $g::from_unchecked($i::from_unchecked(o)))
+                }
             }
         }
     };
@@ -57,7 +61,11 @@ pub struct GitChangesetMetadata(RawBlob);
 
 impl GitChangesetMetadata {
     pub fn read(changeset_id: &GitChangesetId) -> Option<Self> {
-        let note = unsafe { git2hg.get_note(&changeset_id).map(|o| BlobId::from(o))? };
+        let note = unsafe {
+            git2hg
+                .get_note(&changeset_id)
+                .map(|o| BlobId::from_unchecked(o))?
+        };
         RawBlob::read(&note).map(Self)
     }
 
@@ -278,7 +286,7 @@ impl RawHgChangeset {
             let mut parents = commit
                 .parents()
                 .iter()
-                .map(|p| unsafe { GitChangesetId::from(p.clone()) }.to_hg())
+                .map(|p| unsafe { GitChangesetId::from_unchecked(p.clone()) }.to_hg())
                 .collect::<Option<Vec<_>>>()?;
             parents.sort();
             for p in parents.iter().chain(repeat(&HgChangesetId::null())).take(2) {

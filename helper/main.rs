@@ -105,7 +105,7 @@ fn do_one_git2hg(committish: &OsString) -> String {
     let note = get_oid_committish(committish.as_bytes())
         .as_ref()
         .map(|oid| lookup_replace_commit(oid))
-        .and_then(|oid| unsafe { GitChangesetId::from(oid.into_owned()).to_hg() });
+        .and_then(|oid| unsafe { GitChangesetId::from_unchecked(oid.into_owned()).to_hg() });
     format!("{}", note.unwrap_or_else(HgChangesetId::null))
 }
 
@@ -164,8 +164,10 @@ fn do_data_changeset(rev: Abbrev<HgChangesetId>) -> Result<(), String> {
         let commit_id = hg2git
             .get_note_abbrev(&rev)
             .ok_or_else(|| format!("Unknown changeset id: {}", rev))?;
-        let changeset =
-            RawHgChangeset::read(&GitChangesetId::from(CommitId::from(commit_id))).unwrap();
+        let changeset = RawHgChangeset::read(&GitChangesetId::from_unchecked(
+            CommitId::from_unchecked(commit_id),
+        ))
+        .unwrap();
         stdout().write_all(&changeset).map_err(|e| e.to_string())
     }
 }
@@ -175,8 +177,10 @@ fn do_data_manifest(rev: Abbrev<HgManifestId>) -> Result<(), String> {
         let commit_id = hg2git
             .get_note_abbrev(&rev)
             .ok_or_else(|| format!("Unknown manifest id: {}", rev))?;
-        let manifest =
-            RawHgManifest::read(&GitManifestId::from(CommitId::from(commit_id))).unwrap();
+        let manifest = RawHgManifest::read(&GitManifestId::from_unchecked(
+            CommitId::from_unchecked(commit_id),
+        ))
+        .unwrap();
         stdout().write_all(&manifest).map_err(|e| e.to_string())
     }
 }
@@ -442,10 +446,10 @@ fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
         let blob_id = hg2git
             .get_note_abbrev(&rev)
             .ok_or_else(|| format!("Unknown file id: {}", rev))?;
-        let file_id = GitFileId::from(BlobId::from(blob_id));
+        let file_id = GitFileId::from_unchecked(BlobId::from_unchecked(blob_id));
         let metadata_id = files_meta
             .get_note_abbrev(&rev)
-            .map(|oid| GitFileMetadataId::from(BlobId::from(oid)));
+            .map(|oid| GitFileMetadataId::from_unchecked(BlobId::from_unchecked(oid)));
         let file = RawHgFile::read(&file_id, metadata_id.as_ref()).unwrap();
         stdout.write_all(&file).map_err(|e| e.to_string())
     }

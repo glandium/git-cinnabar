@@ -366,7 +366,9 @@ pub fn lookup_replace_commit(c: &CommitId) -> Cow<CommitId> {
             Cow::Borrowed(c)
         } else {
             //TODO: we should actually check the object is a commit.
-            Cow::Owned(CommitId::from(replaced.as_ref().unwrap().clone().into()))
+            Cow::Owned(CommitId::from_unchecked(
+                replaced.as_ref().unwrap().clone().into(),
+            ))
         }
     }
 }
@@ -462,9 +464,9 @@ impl Iterator for RevList {
     type Item = CommitId;
     fn next(&mut self) -> Option<Self::Item> {
         unsafe {
-            get_revision(self.revs)
-                .as_ref()
-                .map(|c| CommitId::from(GitObjectId::from(commit_oid(c).as_ref().unwrap().clone())))
+            get_revision(self.revs).as_ref().map(|c| {
+                CommitId::from_unchecked(GitObjectId::from(commit_oid(c).as_ref().unwrap().clone()))
+            })
         }
     }
 }
@@ -579,35 +581,41 @@ unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tr
                 assert_eq!(a_path.as_bstr(), b_path.as_bstr());
                 a_path
             },
-            from_oid: BlobId::from(GitObjectId::from(item.a.oid.as_ref().unwrap().clone())),
+            from_oid: BlobId::from_unchecked(GitObjectId::from(
+                item.a.oid.as_ref().unwrap().clone(),
+            )),
             from_mode: FileMode(item.a.mode),
-            to_oid: BlobId::from(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
+            to_oid: BlobId::from_unchecked(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
             to_mode: FileMode(item.b.mode),
         },
         DIFF_STATUS_ADDED => DiffTreeItem::Added {
             path: CStr::from_ptr(item.b.path).to_bytes().into(),
-            oid: BlobId::from(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
+            oid: BlobId::from_unchecked(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
             mode: FileMode(item.b.mode),
         },
         DIFF_STATUS_DELETED => DiffTreeItem::Deleted {
             path: CStr::from_ptr(item.a.path).to_bytes().into(),
-            oid: BlobId::from(GitObjectId::from(item.a.oid.as_ref().unwrap().clone())),
+            oid: BlobId::from_unchecked(GitObjectId::from(item.a.oid.as_ref().unwrap().clone())),
             mode: FileMode(item.a.mode),
         },
         DIFF_STATUS_RENAMED => DiffTreeItem::Renamed {
             to_path: CStr::from_ptr(item.b.path).to_bytes().into(),
-            to_oid: BlobId::from(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
+            to_oid: BlobId::from_unchecked(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
             to_mode: FileMode(item.b.mode),
             from_path: CStr::from_ptr(item.a.path).to_bytes().into(),
-            from_oid: BlobId::from(GitObjectId::from(item.a.oid.as_ref().unwrap().clone())),
+            from_oid: BlobId::from_unchecked(GitObjectId::from(
+                item.a.oid.as_ref().unwrap().clone(),
+            )),
             from_mode: FileMode(item.a.mode),
         },
         DIFF_STATUS_COPIED => DiffTreeItem::Copied {
             to_path: CStr::from_ptr(item.b.path).to_bytes().into(),
-            to_oid: BlobId::from(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
+            to_oid: BlobId::from_unchecked(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
             to_mode: FileMode(item.b.mode),
             from_path: CStr::from_ptr(item.a.path).to_bytes().into(),
-            from_oid: BlobId::from(GitObjectId::from(item.a.oid.as_ref().unwrap().clone())),
+            from_oid: BlobId::from_unchecked(GitObjectId::from(
+                item.a.oid.as_ref().unwrap().clone(),
+            )),
             from_mode: FileMode(item.a.mode),
         },
         c => panic!("Unknown diff state: {}", c),
