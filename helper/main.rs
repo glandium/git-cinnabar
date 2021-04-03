@@ -562,7 +562,43 @@ fn do_reclone() -> Result<(), String> {
     })
 }
 
-fn do_rollback(fsck: bool, force: bool, committish: Option<OsString>) -> Result<(), String> {
+fn do_rollback(
+    candidates: bool,
+    fsck: bool,
+    force: bool,
+    committish: Option<OsString>,
+) -> Result<(), String> {
+    let metadata = resolve_ref(METADATA_REF);
+    if candidates {
+        assert!(committish.is_none());
+        assert!(!fsck);
+        assert!(!force);
+        let labels = [
+            ("current", metadata.clone()),
+            ("checked", resolve_ref(CHECKED_REF)),
+            ("broken", resolve_ref(BROKEN_REF)),
+        ];
+        let labels = labels
+            .iter()
+            .filter_map(|(name, cid)| Some((*name, cid.clone()?)))
+            .collect::<Vec<_>>();
+        let mut metadata = metadata;
+        while let Some(m) = metadata {
+            print!("{}", m);
+            let matched_labels = labels
+                .iter()
+                .filter_map(|(name, cid)| (*cid == m).then(|| *name))
+                .collect::<Vec<_>>()
+                .join(", ");
+            if !matched_labels.is_empty() {
+                print!(" ({})", matched_labels);
+            }
+            println!();
+            metadata = get_previous_metadata(&m);
+        }
+        return Ok(());
+    }
+
     let wanted_metadata = if fsck {
         assert!(committish.is_none());
         if let Some(oid) = resolve_ref(CHECKED_REF) {
@@ -579,7 +615,7 @@ fn do_rollback(fsck: bool, force: bool, committish: Option<OsString>) -> Result<
                     .ok_or_else(|| format!("Invalid revision: {}", committish.to_string_lossy()))?,
             )
         }
-    } else if let Some(ref oid) = resolve_ref(METADATA_REF) {
+    } else if let Some(ref oid) = metadata {
         get_previous_metadata(&oid)
     } else {
         return Err("Nothing to rollback.".to_string());
@@ -698,9 +734,15 @@ enum CinnabarCommand {
     Rollback {
         #[structopt(long)]
         #[structopt(conflicts_with = "committish")]
+        #[structopt(help = "Show a list of candidates for rollback")]
+        candidates: bool,
+        #[structopt(long)]
+        #[structopt(conflicts_with = "committish")]
+        #[structopt(conflicts_with = "candidates")]
         #[structopt(help = "Rollback to the last successful fsck state")]
         fsck: bool,
         #[structopt(long)]
+        #[structopt(conflicts_with = "candidates")]
         #[structopt(
             help = "Force to use the given committish even if it is not in the current metadata's ancestry"
         )]
@@ -765,10 +807,11 @@ fn git_cinnabar(argv0: *const c_char, args: &mut dyn Iterator<Item = OsString>) 
         Fetch { remote, revs } => do_fetch(&remote, &revs),
         Reclone => do_reclone(),
         Rollback {
+            candidates,
             fsck,
             force,
             committish,
-        } => do_rollback(fsck, force, committish),
+        } => do_rollback(candidates, fsck, force, committish),
     };
     unsafe {
         done_cinnabar();

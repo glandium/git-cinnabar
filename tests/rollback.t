@@ -62,6 +62,13 @@ metadata history.
   From hg::.*/rollback.t/repo (re)
    * branch            hg/revs/312a5a9c675e3ce302a33bd4605205a6be36d561 -> FETCH_HEAD
 
+  $ git -C repo-git cinnabar rollback --candidates
+  fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 (current)
+  1533f7bbc5d7bd3e420cd927b890097cf660531e
+  544f4ec28c4b9e3b2f5ac01fe2e50a8a67a12909
+  ee1547daada51509736d29942d8ad9cdd53e5500 (checked)
+  9134dcc9628afe079a8a61e06f1e49a36a983cc4
+
   $ git -C repo-git for-each-ref refs/cinnabar/ refs/notes/
   ee1547daada51509736d29942d8ad9cdd53e5500 commit	refs/cinnabar/checked
   23bcc26b9fea7e37426260465bed35eac54af5e1 commit	refs/cinnabar/hg/revs/312a5a9c675e3ce302a33bd4605205a6be36d561
@@ -73,6 +80,13 @@ metadata history.
 Fake fsck breakage
 
   $ git -C repo-git update-ref refs/cinnabar/broken refs/cinnabar/metadata
+
+  $ git -C repo-git cinnabar rollback --candidates
+  fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 (current, broken)
+  1533f7bbc5d7bd3e420cd927b890097cf660531e
+  544f4ec28c4b9e3b2f5ac01fe2e50a8a67a12909
+  ee1547daada51509736d29942d8ad9cdd53e5500 (checked)
+  9134dcc9628afe079a8a61e06f1e49a36a983cc4
 
   $ git -C repo-git for-each-ref refs/cinnabar/ refs/notes/
   fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 commit	refs/cinnabar/broken
@@ -87,6 +101,12 @@ Rollback to the previous metadata. Its status is not broken but unknown.
 
   $ git -C repo-git cinnabar rollback
 
+  $ git -C repo-git cinnabar rollback --candidates
+  1533f7bbc5d7bd3e420cd927b890097cf660531e (current)
+  544f4ec28c4b9e3b2f5ac01fe2e50a8a67a12909
+  ee1547daada51509736d29942d8ad9cdd53e5500 (checked)
+  9134dcc9628afe079a8a61e06f1e49a36a983cc4
+
   $ git -C repo-git for-each-ref refs/cinnabar/ refs/notes/
   fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 commit	refs/cinnabar/broken
   ee1547daada51509736d29942d8ad9cdd53e5500 commit	refs/cinnabar/checked
@@ -96,6 +116,10 @@ Rollback to the previous metadata. Its status is not broken but unknown.
 Rollback to the last known good
 
   $ git -C repo-git cinnabar rollback --fsck
+
+  $ git -C repo-git cinnabar rollback --candidates
+  ee1547daada51509736d29942d8ad9cdd53e5500 (current, checked)
+  9134dcc9628afe079a8a61e06f1e49a36a983cc4
 
   $ git -C repo-git for-each-ref refs/cinnabar/ refs/notes/
   fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 commit	refs/cinnabar/broken
@@ -107,6 +131,9 @@ Rollback to the previous metadata, since it precedes a checked one, it is
 considered checked.
 
   $ git -C repo-git cinnabar rollback
+
+  $ git -C repo-git cinnabar rollback --candidates
+  9134dcc9628afe079a8a61e06f1e49a36a983cc4 (current, checked)
 
   $ git -C repo-git for-each-ref refs/cinnabar/ refs/notes/
   fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 commit	refs/cinnabar/broken
@@ -122,6 +149,13 @@ state of ee1547d.
   [1]
   $ git -C repo-git cinnabar rollback --force fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
 
+  $ git -C repo-git cinnabar rollback --candidates
+  fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 (current, broken)
+  1533f7bbc5d7bd3e420cd927b890097cf660531e
+  544f4ec28c4b9e3b2f5ac01fe2e50a8a67a12909
+  ee1547daada51509736d29942d8ad9cdd53e5500
+  9134dcc9628afe079a8a61e06f1e49a36a983cc4 (checked)
+
   $ git -C repo-git for-each-ref refs/cinnabar/ refs/notes/
   fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 commit	refs/cinnabar/broken
   9134dcc9628afe079a8a61e06f1e49a36a983cc4 commit	refs/cinnabar/checked
@@ -131,6 +165,8 @@ state of ee1547d.
 Clear metadata
 
   $ git -C repo-git cinnabar rollback 0000000000000000000000000000000000000000
+
+  $ git -C repo-git cinnabar rollback --candidates
 
   $ git -C repo-git for-each-ref refs/cinnabar/
 
