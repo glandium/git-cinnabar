@@ -29,7 +29,6 @@ PYTHON_LIBS := \
 	cinnabar/cmd/download.py \
 	cinnabar/cmd/fsck.py \
 	cinnabar/cmd/python.py \
-	cinnabar/cmd/rollback.py \
 	cinnabar/cmd/upgrade.py \
 	cinnabar/cmd/util.py \
 	cinnabar/util.py

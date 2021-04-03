@@ -21,6 +21,12 @@ use crate::oid_type;
 use crate::util::{FromBytes, SliceExt};
 use crate::xdiff::{apply, PatchInfo};
 
+pub const REFS_PREFIX: &str = "refs/cinnabar/";
+pub const METADATA_REF: &str = "refs/cinnabar/metadata";
+pub const CHECKED_REF: &str = "refs/cinnabar/checked";
+pub const BROKEN_REF: &str = "refs/cinnabar/broken";
+pub const NOTES_REF: &str = "refs/notes/cinnabar";
+
 macro_rules! hg2git {
     ($h:ident => $g:ident($i:ident)) => {
         oid_type!($g($i));

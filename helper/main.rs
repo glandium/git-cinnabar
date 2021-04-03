@@ -33,6 +33,7 @@ pub(crate) mod hg_connect_stdio;
 pub(crate) mod hg_data;
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::convert::TryInto;
 #[cfg(unix)]
 use std::ffi::CString;
@@ -54,14 +55,15 @@ use url::Url;
 use libcinnabar::{files_meta, hg2git};
 use libgit::{
     for_each_ref_in, for_each_remote, get_oid_committish, lookup_replace_commit, remote,
-    resolve_ref, strbuf, BlobId, CommitId, RefTransaction,
+    resolve_ref, strbuf, BlobId, CommitId, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use store::{
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
-    HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest,
+    HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF,
+    NOTES_REF, REFS_PREFIX,
 };
-use util::{OsStrExt, SliceExt};
+use util::{IteratorExt, OsStrExt, SliceExt};
 
 const HELPER_HASH: &str = env!("HELPER_HASH");
 
@@ -394,26 +396,120 @@ fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
     }
 }
 
-fn do_reclone() -> Result<(), String> {
-    let mut transaction = RefTransaction::new().unwrap();
-    let mut previous_metadata = None;
-    // TODO: Avoid resetting at all, possibly leaving the repo with no metadata
-    // if this is interrupted somehow.
-    for_each_ref_in("refs/cinnabar/", |r, oid| {
-        let mut full_ref = OsStr::new("refs/cinnabar/").to_os_string();
+fn get_previous_metadata(metadata: &CommitId) -> Option<CommitId> {
+    // TODO: fully parse the metadata commit.
+    let commit = RawCommit::read(metadata)?;
+    let commit = commit.parse()?;
+    let num_parents = if commit
+        .body()
+        .split(|b| *b == b' ')
+        .any(|f| f == b"files-meta")
+    {
+        6
+    } else {
+        5
+    };
+    let parents = commit.parents();
+    if parents.len() == num_parents {
+        Some(parents[num_parents - 1].clone())
+    } else {
+        None
+    }
+}
+
+fn rollback_to(new_metadata: Option<&CommitId>, msg: &str) -> Result<Option<CommitId>, String> {
+    let mut refs = HashMap::new();
+    for_each_ref_in(REFS_PREFIX, |r, oid| {
+        let mut full_ref = OsString::from(REFS_PREFIX);
         full_ref.push(r);
-        if r == "metadata" {
-            previous_metadata = Some(oid.clone());
+        if refs.insert(full_ref, oid.clone()).is_some() {
+            return Err("Shouldn't have had conflicts in refs hashmap");
         }
-        transaction.delete(&full_ref, Some(oid), "reclone")
+        Ok(())
     })
-    .map_err(|e| e.expect("Failed to enumerate refs/cinnabar/*"))?;
-    if let Some(oid) = resolve_ref("refs/notes/cinnabar") {
-        transaction
-            .delete("refs/notes/cinnabar", Some(&oid), "reclone")
-            .unwrap();
+    .map_err(|_| "Failed to enumerate refs/cinnabar/*")
+    .unwrap();
+
+    let mut broken = None;
+    let mut checked = None;
+    let mut metadata = None;
+
+    let mut transaction = RefTransaction::new().unwrap();
+    for (r, oid) in refs.iter() {
+        match (new_metadata, r) {
+            (Some(_), _) if r == METADATA_REF => metadata = Some(oid.clone()),
+            (Some(_), _) if r == CHECKED_REF => checked = Some(oid),
+            (Some(_), _) if r == BROKEN_REF => broken = Some(oid),
+            _ => {
+                transaction.delete(r, Some(oid), msg)?;
+            }
+        }
+    }
+
+    let broken = broken;
+    let checked = checked;
+    let metadata = metadata;
+
+    if let Some(new) = new_metadata {
+        #[derive(Debug, PartialEq)]
+        enum MetadataState {
+            Unknown,
+            Broken,
+            Checked,
+        }
+
+        let mut state = match metadata {
+            Some(ref m) if Some(m) == broken => MetadataState::Broken,
+            Some(ref m) if Some(m) == checked => MetadataState::Checked,
+            _ => MetadataState::Unknown,
+        };
+
+        let mut m = metadata.clone();
+        let found = std::iter::from_fn(move || {
+            m = m.as_ref().and_then(get_previous_metadata);
+            m.clone()
+        })
+        .try_find_(|m| -> Result<_, String> {
+            if Some(m) == broken {
+                state = MetadataState::Broken;
+            } else if Some(m) == checked {
+                state = MetadataState::Checked;
+            } else if state == MetadataState::Broken {
+                // We don't know whether ancestors of broken metadata are broken.
+                state = MetadataState::Unknown;
+            }
+            Ok(m == new)
+        })?
+        .ok_or_else(|| {
+            format!(
+                "Cannot rollback to {}, it is not in the ancestry of current metadata.",
+                new
+            )
+        })?;
+        // And just in case, check we got what we were looking for. Any error
+        // should already have been returned by the `?` above.
+        assert_eq!(found, *new);
+
+        match state {
+            MetadataState::Checked => transaction.update(CHECKED_REF, new, checked, msg)?,
+
+            MetadataState::Broken => transaction.update(BROKEN_REF, new, broken, msg)?,
+            MetadataState::Unknown => {}
+        }
+
+        transaction.update(METADATA_REF, new, metadata.as_ref(), msg)?;
+    }
+    if let Some(notes) = resolve_ref(NOTES_REF) {
+        transaction.delete(NOTES_REF, Some(&notes), msg)?;
     }
     transaction.commit()?;
+    Ok(metadata)
+}
+
+fn do_reclone() -> Result<(), String> {
+    // TODO: Avoid resetting at all, possibly leaving the repo with no metadata
+    // if this is interrupted somehow.
+    let mut previous_metadata = rollback_to(None, "reclone")?;
 
     for_each_remote(|remote| {
         if remote.skip_default_update() || hg_url(remote.get_url()).is_none() {
@@ -439,6 +535,31 @@ fn do_reclone() -> Result<(), String> {
         println!("Please note that reclone left your local branches untouched.");
         println!("They may be based on entirely different commits.");
     })
+}
+
+fn do_rollback(fsck: bool, committish: Option<OsString>) -> Result<(), String> {
+    let wanted_metadata = if fsck {
+        assert!(committish.is_none());
+        if let Some(oid) = resolve_ref(CHECKED_REF) {
+            Some(oid)
+        } else {
+            return Err("No successful fsck has been recorded. Cannot rollback.".to_string());
+        }
+    } else if let Some(committish) = committish {
+        if *committish == *CommitId::null().to_string() {
+            None
+        } else {
+            Some(
+                get_oid_committish(committish.as_bytes())
+                    .ok_or_else(|| format!("Invalid revision: {}", committish.to_string_lossy()))?,
+            )
+        }
+    } else if let Some(ref oid) = resolve_ref(METADATA_REF) {
+        get_previous_metadata(&oid)
+    } else {
+        return Err("Nothing to rollback.".to_string());
+    };
+    rollback_to(wanted_metadata.as_ref(), "rollback").map(|_| ())
 }
 
 fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
@@ -547,6 +668,17 @@ enum CinnabarCommand {
     #[structopt(name = "reclone")]
     #[structopt(about = "Reclone all mercurial remotes")]
     Reclone,
+    #[structopt(name = "rollback")]
+    #[structopt(about = "Rollback cinnabar metadata state")]
+    Rollback {
+        #[structopt(long)]
+        #[structopt(conflicts_with = "committish")]
+        #[structopt(help = "Rollback to the last successful fsck state")]
+        fsck: bool,
+        #[structopt(help = "Git sha1/committish of the state to rollback to")]
+        #[structopt(parse(from_os_str))]
+        committish: Option<OsString>,
+    },
 }
 
 use CinnabarCommand::*;
@@ -602,6 +734,7 @@ fn git_cinnabar(argv0: *const c_char, args: &mut dyn Iterator<Item = OsString>) 
         ),
         Fetch { remote, revs } => do_fetch(&remote, &revs),
         Reclone => do_reclone(),
+        Rollback { fsck, committish } => do_rollback(fsck, committish),
     };
     unsafe {
         done_cinnabar();

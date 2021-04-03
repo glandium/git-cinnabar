@@ -101,7 +101,7 @@ class ReadWriter(object):
 
 
 class BaseHelper(object):
-    VERSION = 3007
+    VERSION = 3008
     _helper_hash = None
 
     @classmethod
