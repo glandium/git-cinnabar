@@ -117,7 +117,7 @@ state of ee1547d.
   $ git -C repo-git cinnabar rollback fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
   Cannot rollback to fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08, it is not in the ancestry of current metadata.
   [1]
-  $ git -C repo-git update-ref refs/cinnabar/metadata fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
+  $ git -C repo-git cinnabar rollback --force fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
 
   $ git -C repo-git for-each-ref refs/cinnabar/ refs/notes/
   fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 commit	refs/cinnabar/broken
@@ -141,7 +141,13 @@ Corner cases
   $ git -C repo-git cinnabar rollback fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
   Invalid revision: fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
   [1]
+  $ git -C repo-git cinnabar rollback --force fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
+  Invalid revision: fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
+  [1]
   $ git -C repo-git cinnabar rollback foo
+  Invalid revision: foo
+  [1]
+  $ git -C repo-git cinnabar rollback --force foo
   Invalid revision: foo
   [1]
   $ git -C repo-git cinnabar rollback --fsck
@@ -150,4 +156,7 @@ Corner cases
   $ git -C repo-git cinnabar rollback 0000000000000000000000000000000000000000
   $ git -C repo-git cinnabar rollback main
   Cannot rollback to 23bcc26b9fea7e37426260465bed35eac54af5e1, it is not in the ancestry of current metadata.
+  [1]
+  $ git -C repo-git cinnabar rollback --force main
+  Invalid cinnabar metadata: 23bcc26b9fea7e37426260465bed35eac54af5e1
   [1]

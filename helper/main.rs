@@ -421,7 +421,11 @@ fn get_previous_metadata(metadata: &CommitId) -> Option<CommitId> {
     }
 }
 
-fn rollback_to(new_metadata: Option<&CommitId>, msg: &str) -> Result<Option<CommitId>, String> {
+fn rollback_to(
+    new_metadata: Option<&CommitId>,
+    force: bool,
+    msg: &str,
+) -> Result<Option<CommitId>, String> {
     let mut refs = HashMap::new();
     for_each_ref_in(REFS_PREFIX, |r, oid| {
         let mut full_ref = OsString::from(REFS_PREFIX);
@@ -484,6 +488,14 @@ fn rollback_to(new_metadata: Option<&CommitId>, msg: &str) -> Result<Option<Comm
             }
             Ok(m == new)
         })?
+        .or_else(|| {
+            if force {
+                state = MetadataState::Unknown;
+                Some(new.clone())
+            } else {
+                None
+            }
+        })
         .ok_or_else(|| {
             format!(
                 "Cannot rollback to {}, it is not in the ancestry of current metadata.",
@@ -501,6 +513,13 @@ fn rollback_to(new_metadata: Option<&CommitId>, msg: &str) -> Result<Option<Comm
             MetadataState::Unknown => {}
         }
 
+        // TODO: fully parse the metadata commit. Also check earlier
+        // (ideally before calling this function).
+        let commit = RawCommit::read(new).unwrap();
+        let commit = commit.parse().unwrap();
+        if commit.author() != b" <cinnabar@git> 0 +0000" {
+            return Err(format!("Invalid cinnabar metadata: {}", new));
+        }
         transaction.update(METADATA_REF, new, metadata.as_ref(), msg)?;
     }
     if let Some(notes) = resolve_ref(NOTES_REF) {
@@ -513,7 +532,7 @@ fn rollback_to(new_metadata: Option<&CommitId>, msg: &str) -> Result<Option<Comm
 fn do_reclone() -> Result<(), String> {
     // TODO: Avoid resetting at all, possibly leaving the repo with no metadata
     // if this is interrupted somehow.
-    let mut previous_metadata = rollback_to(None, "reclone")?;
+    let mut previous_metadata = rollback_to(None, false, "reclone")?;
 
     for_each_remote(|remote| {
         if remote.skip_default_update() || hg_url(remote.get_url()).is_none() {
@@ -541,7 +560,7 @@ fn do_reclone() -> Result<(), String> {
     })
 }
 
-fn do_rollback(fsck: bool, committish: Option<OsString>) -> Result<(), String> {
+fn do_rollback(fsck: bool, force: bool, committish: Option<OsString>) -> Result<(), String> {
     let wanted_metadata = if fsck {
         assert!(committish.is_none());
         if let Some(oid) = resolve_ref(CHECKED_REF) {
@@ -563,7 +582,7 @@ fn do_rollback(fsck: bool, committish: Option<OsString>) -> Result<(), String> {
     } else {
         return Err("Nothing to rollback.".to_string());
     };
-    rollback_to(wanted_metadata.as_ref(), "rollback").map(|_| ())
+    rollback_to(wanted_metadata.as_ref(), force, "rollback").map(|_| ())
 }
 
 fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
@@ -679,6 +698,11 @@ enum CinnabarCommand {
         #[structopt(conflicts_with = "committish")]
         #[structopt(help = "Rollback to the last successful fsck state")]
         fsck: bool,
+        #[structopt(long)]
+        #[structopt(
+            help = "Force to use the given committish even if it is not in the current metadata's ancestry"
+        )]
+        force: bool,
         #[structopt(help = "Git sha1/committish of the state to rollback to")]
         #[structopt(parse(from_os_str))]
         committish: Option<OsString>,
@@ -738,7 +762,11 @@ fn git_cinnabar(argv0: *const c_char, args: &mut dyn Iterator<Item = OsString>) 
         ),
         Fetch { remote, revs } => do_fetch(&remote, &revs),
         Reclone => do_reclone(),
-        Rollback { fsck, committish } => do_rollback(fsck, committish),
+        Rollback {
+            fsck,
+            force,
+            committish,
+        } => do_rollback(fsck, force, committish),
     };
     unsafe {
         done_cinnabar();
