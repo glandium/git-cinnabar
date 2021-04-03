@@ -618,3 +618,26 @@ fn test_optionext() {
     assert!(DROPPED.load(Ordering::SeqCst));
     assert_eq!(std::ptr::null(), (None as Option<&usize>).as_ptr());
 }
+
+pub trait IteratorExt: Iterator {
+    fn try_find_<E, F: FnMut(&Self::Item) -> Result<bool, E>>(
+        &mut self,
+        mut f: F,
+    ) -> Result<Option<Self::Item>, E>
+    where
+        Self: Sized,
+    {
+        let result = self.try_for_each(|i| match f(&i) {
+            Ok(false) => Ok(()),
+            Ok(true) => Err(Ok(i)),
+            Err(e) => Err(Err(e)),
+        });
+        match result {
+            Ok(()) => Ok(None),
+            Err(Ok(item)) => Ok(Some(item)),
+            Err(Err(e)) => Err(e),
+        }
+    }
+}
+
+impl<I: Iterator> IteratorExt for I {}
