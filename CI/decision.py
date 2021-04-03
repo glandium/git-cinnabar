@@ -455,13 +455,7 @@ def decision():
                     if cargo_cmd != 'fmt' else [],
                     [
                         '(cd repo/helper ; cargo {})'.format({
-                            'clippy': 'clippy -- -D warnings {}'.format(
-                                ' '.join('-A {}'.format(w) for w in [
-                                    'clippy::borrowed_box',
-                                    'clippy::missing_safety_doc',
-                                    'clippy::new_without_default',
-                                    'dead_code',
-                                ])),
+                            'clippy': 'clippy -- -D warnings',
                             'fmt': 'fmt -- --check',
                         }.get(cargo_cmd, cargo_cmd)),
                     ],
