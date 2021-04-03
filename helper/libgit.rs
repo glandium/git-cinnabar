@@ -797,7 +797,7 @@ mod refs {
 
 static REFS_LOCK: Lazy<RwLock<()>> = Lazy::new(|| RwLock::new(()));
 
-pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, &GitObjectId) -> Result<(), E>>(
+pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, &CommitId) -> Result<(), E>>(
     prefix: S,
     f: F,
 ) -> Result<(), Option<E>> {
@@ -805,7 +805,7 @@ pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, &GitObjectId) -> Res
     let mut cb_data = (f, None);
     let prefix = prefix.as_ref().to_cstring();
 
-    unsafe extern "C" fn each_ref_cb<E, F: FnMut(&OsStr, &GitObjectId) -> Result<(), E>>(
+    unsafe extern "C" fn each_ref_cb<E, F: FnMut(&OsStr, &CommitId) -> Result<(), E>>(
         refname: *const c_char,
         oid: *const object_id,
         _flags: c_int,
@@ -813,13 +813,18 @@ pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, &GitObjectId) -> Res
     ) -> c_int {
         let (func, ref mut error) = (cb_data as *mut (F, Option<E>)).as_mut().unwrap();
         let refname = OsStr::from_bytes(CStr::from_ptr(refname).to_bytes());
-        let oid = GitObjectId::from(oid.as_ref().unwrap().clone());
-        match func(refname, &oid) {
-            Ok(()) => 0,
-            Err(e) => {
-                *error = Some(e);
-                -1
+        if let Ok(oid) = CommitId::try_from(GitObjectId::from(oid.as_ref().unwrap().clone())) {
+            match func(refname, &oid) {
+                Ok(()) => 0,
+                Err(e) => {
+                    *error = Some(e);
+                    -1
+                }
             }
+        } else {
+            // We only interate refs that point to commits. Refs may technically also
+            // point to tags, but we don't expect to rely on finding tags this way.
+            0
         }
     }
 
@@ -840,12 +845,13 @@ extern "C" {
     fn read_ref(refname: *const c_char, oid: *mut object_id) -> c_int;
 }
 
-pub fn resolve_ref<S: AsRef<OsStr>>(refname: S) -> Option<GitObjectId> {
+pub fn resolve_ref<S: AsRef<OsStr>>(refname: S) -> Option<CommitId> {
     let _locked = REFS_LOCK.read().unwrap();
     let mut oid = object_id([0; GIT_MAX_RAWSZ]);
     unsafe {
         if read_ref(refname.as_ref().to_cstring().as_ptr(), &mut oid) == 0 {
-            Some(GitObjectId::from(oid))
+            // We ignore tags. See comment in for_each_ref_in.
+            CommitId::try_from(GitObjectId::from(oid)).ok()
         } else {
             None
         }
@@ -926,8 +932,8 @@ impl RefTransaction {
     pub fn update<S: AsRef<OsStr>>(
         &mut self,
         refname: S,
-        new_oid: &GitObjectId,
-        old_oid: Option<&GitObjectId>,
+        new_oid: &CommitId,
+        old_oid: Option<&CommitId>,
         msg: &str,
     ) -> Result<(), String> {
         let msg = CString::new(msg).unwrap();
@@ -954,7 +960,7 @@ impl RefTransaction {
     pub fn delete<S: AsRef<OsStr>>(
         &mut self,
         refname: S,
-        old_oid: Option<&GitObjectId>,
+        old_oid: Option<&CommitId>,
         msg: &str,
     ) -> Result<(), String> {
         let msg = CString::new(msg).unwrap();
