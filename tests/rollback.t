@@ -91,6 +91,7 @@ Rollback to the previous metadata. Its status is not broken but unknown.
   fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 commit	refs/cinnabar/broken
   ee1547daada51509736d29942d8ad9cdd53e5500 commit	refs/cinnabar/checked
   1533f7bbc5d7bd3e420cd927b890097cf660531e commit	refs/cinnabar/metadata
+  78ae75b918bc679865b2b566d64c81864d8ce7e4 commit	refs/notes/cinnabar
 
 Rollback to the last known good
 
@@ -100,6 +101,7 @@ Rollback to the last known good
   fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 commit	refs/cinnabar/broken
   ee1547daada51509736d29942d8ad9cdd53e5500 commit	refs/cinnabar/checked
   ee1547daada51509736d29942d8ad9cdd53e5500 commit	refs/cinnabar/metadata
+  abbd4d8876d12871c52111ef763728cc70b60c20 commit	refs/notes/cinnabar
 
 Rollback to the previous metadata, since it precedes a checked one, it is
 considered checked.
@@ -110,6 +112,7 @@ considered checked.
   fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 commit	refs/cinnabar/broken
   9134dcc9628afe079a8a61e06f1e49a36a983cc4 commit	refs/cinnabar/checked
   9134dcc9628afe079a8a61e06f1e49a36a983cc4 commit	refs/cinnabar/metadata
+  522a8fcad148fe794046af5769734cdd44f3ebc4 commit	refs/notes/cinnabar
 
 Restore the state where it used to be, except we rightfully lost the checked
 state of ee1547d.
@@ -123,6 +126,7 @@ state of ee1547d.
   fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 commit	refs/cinnabar/broken
   9134dcc9628afe079a8a61e06f1e49a36a983cc4 commit	refs/cinnabar/checked
   fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 commit	refs/cinnabar/metadata
+  0d790d01720127d15c119268277eda391270b588 commit	refs/notes/cinnabar
 
 Clear metadata
 

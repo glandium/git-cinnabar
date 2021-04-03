@@ -458,6 +458,8 @@ fn rollback_to(
     let checked = checked;
     let metadata = metadata;
 
+    let notes = resolve_ref(NOTES_REF);
+
     if let Some(new) = new_metadata {
         #[derive(Debug, PartialEq)]
         enum MetadataState {
@@ -521,8 +523,8 @@ fn rollback_to(
             return Err(format!("Invalid cinnabar metadata: {}", new));
         }
         transaction.update(METADATA_REF, new, metadata.as_ref(), msg)?;
-    }
-    if let Some(notes) = resolve_ref(NOTES_REF) {
+        transaction.update(NOTES_REF, &commit.parents()[3], notes.as_ref(), msg)?;
+    } else if let Some(notes) = notes {
         transaction.delete(NOTES_REF, Some(&notes), msg)?;
     }
     transaction.commit()?;
