@@ -399,18 +399,18 @@ fn do_reclone() -> Result<(), String> {
     let mut previous_metadata = None;
     // TODO: Avoid resetting at all, possibly leaving the repo with no metadata
     // if this is interrupted somehow.
-    for_each_ref_in(OsStr::new("refs/cinnabar/"), |r, oid| {
+    for_each_ref_in("refs/cinnabar/", |r, oid| {
         let mut full_ref = OsStr::new("refs/cinnabar/").to_os_string();
         full_ref.push(r);
-        if r == OsStr::new("metadata") {
+        if r == "metadata" {
             previous_metadata = Some(oid.clone());
         }
         transaction.delete(&full_ref, Some(oid), "reclone")
     })
     .map_err(|e| e.expect("Failed to enumerate refs/cinnabar/*"))?;
-    if let Some(oid) = resolve_ref(OsStr::new("refs/notes/cinnabar")) {
+    if let Some(oid) = resolve_ref("refs/notes/cinnabar") {
         transaction
-            .delete(OsStr::new("refs/notes/cinnabar"), Some(&oid), "reclone")
+            .delete("refs/notes/cinnabar", Some(&oid), "reclone")
             .unwrap();
     }
     transaction.commit()?;
