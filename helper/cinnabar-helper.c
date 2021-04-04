@@ -1941,6 +1941,8 @@ int remote_skip_default_update(const struct remote *remote)
 	return remote->skip_default_update;
 }
 
+static int nongit = 0;
+
 void init_cinnabar(const char *argv0)
 {
 	// Initialization from common-main.c.
@@ -1956,7 +1958,8 @@ void init_cinnabar(const char *argv0)
 	attr_start();
 
 	init_git_config();
-	git_config(git_default_config, NULL);
+	setup_git_directory_gently(&nongit);
+	git_config(git_diff_basic_config, NULL);
 	init_config();
 	ignore_case = 0;
 	save_commit_buffer = 0;
@@ -1965,9 +1968,9 @@ void init_cinnabar(const char *argv0)
 
 void init_cinnabar_2()
 {
-	setup_git_directory();
-	git_config(git_diff_basic_config, NULL);
-	ignore_case = 0;
+	if (nongit) {
+		die("not a git repository");
+	}
 	init_metadata();
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
 }
