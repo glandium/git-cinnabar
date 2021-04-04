@@ -92,6 +92,7 @@ struct oidset hg2git_seen = OIDSET_INIT;
 int metadata_flags = 0;
 int cinnabar_check = 0;
 int cinnabar_experiments = 0;
+int python3 = 0;
 
 FILE* get_stdin() {
 	return stdin;
@@ -1744,6 +1745,8 @@ static void init_config()
 				cinnabar_experiments = -1;
 			else if (!strcmp((*c)->buf, "store"))
 				cinnabar_experiments |= EXPERIMENT_STORE;
+			else if (!strcmp((*c)->buf, "python3"))
+				python3 = 1;
 		}
 		strbuf_list_free(check);
 	}

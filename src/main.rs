@@ -43,10 +43,12 @@ use std::convert::TryInto;
 use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};
 use std::fmt;
-use std::io::{stdin, stdout, BufRead, BufWriter, Write};
+use std::io::{copy, stdin, stdout, BufRead, BufWriter, Cursor, Write};
 use std::os::raw::c_char;
 use std::os::raw::c_int;
-use std::path::Path;
+#[cfg(unix)]
+use std::os::unix::process::ExitStatusExt;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::{self, FromStr};
 
@@ -55,6 +57,7 @@ use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 
 use bstr::ByteSlice;
 use url::Url;
+use which::which;
 
 use libcinnabar::{files_meta, hg2git};
 use libgit::{
@@ -751,6 +754,41 @@ enum CinnabarCommand {
         #[structopt(parse(from_os_str))]
         committish: Option<OsString>,
     },
+    #[structopt(name = "fsck")]
+    #[structopt(about = "Check cinnabar metadata consistency")]
+    Fsck {
+        #[structopt(long)]
+        #[structopt(
+            help = "Force check, even when metadata was already checked. Also disables incremental fsck"
+        )]
+        force: bool,
+        #[structopt(long)]
+        #[structopt(help = "Check more thoroughly")]
+        full: bool,
+        #[structopt(help = "Specific commit or changeset to check")]
+        #[structopt(parse(from_os_str))]
+        commit: Vec<OsString>,
+    },
+    #[structopt(name = "bundle")]
+    #[structopt(about = "Create a mercurial bundle")]
+    Bundle {
+        #[structopt(long)]
+        #[structopt(default_value = "2")]
+        #[structopt(possible_values = &["1", "2"])]
+        #[structopt(help = "Bundle version")]
+        version: u8,
+        #[structopt(help = "Path of the bundle")]
+        #[structopt(parse(from_os_str))]
+        path: PathBuf,
+        #[structopt(
+            help = "Git revision range (see the Specifying Ranges section of gitrevisions(7))"
+        )]
+        #[structopt(parse(from_os_str))]
+        revs: Vec<OsString>,
+    },
+    #[structopt(name = "upgrade")]
+    #[structopt(about = "Upgrade cinnabar metadata")]
+    Upgrade,
 }
 
 use CinnabarCommand::*;
@@ -811,6 +849,9 @@ fn git_cinnabar() -> i32 {
             force,
             committish,
         } => do_rollback(candidates, fsck, force, committish),
+        Bundle { .. } | Fsck { .. } | Upgrade => {
+            return run_python_command(PythonCommand::GitCinnabar);
+        }
     };
     match ret {
         Ok(()) => 0,
@@ -839,6 +880,10 @@ struct HelperCommand {
     import: bool,
 }
 
+extern "C" {
+    static python3: c_int;
+}
+
 pub fn main() {
     let args: Vec<_> = std::env::args_os().map(prepare_arg).collect();
     let argc = args.len();
@@ -853,6 +898,97 @@ pub fn main() {
     let ret = unsafe { cinnabar_main_(argc.try_into().unwrap(), &argv[0]) };
     drop(args);
     std::process::exit(ret);
+}
+
+#[derive(PartialEq)]
+enum PythonCommand {
+    GitRemoteHg,
+    GitCinnabar,
+}
+
+fn run_python_command(cmd: PythonCommand) -> c_int {
+    let want_python2 = unsafe { python3 == 0 };
+    let (loader, python) = if want_python2 {
+        (
+            include_str!("../bootstrap/loader_py2.py"),
+            which("python2.7").or_else(|_| which("python2")),
+        )
+    } else {
+        (include_str!("../bootstrap/loader_py3.py"), which("python3"))
+    };
+    let python = match python {
+        Ok(p) => p,
+        Err(_) => {
+            eprintln!(
+                "Could not find python {}",
+                if want_python2 { "2.7" } else { "3.x" }
+            );
+            return 1;
+        }
+    };
+
+    // We aggregate the various parts of a bootstrap code that reads a
+    // tarball from stdin, and use the contents of that tarball as a
+    // source of python modules, using a custom loader.
+    // The tarball itself is included compressed in this binary, and
+    // we decompress it before sending.
+    let mut bootstrap = String::new();
+    bootstrap.push_str(include_str!("../bootstrap/loader_common.py"));
+    bootstrap.push_str(loader);
+    if std::env::var("GIT_CINNABAR_COVERAGE").is_ok() {
+        bootstrap.push_str(include_str!("../bootstrap/coverage.py"));
+    }
+    bootstrap.push_str(match cmd {
+        PythonCommand::GitRemoteHg => include_str!("../bootstrap/git-remote-hg.py"),
+        PythonCommand::GitCinnabar => include_str!("../bootstrap/git-cinnabar.py"),
+    });
+    let mut child = match Command::new(python)
+        .arg("-c")
+        .arg(bootstrap)
+        .args(std::env::args_os())
+        .env("GIT_CINNABAR_HELPER", std::env::current_exe().unwrap())
+        .env_remove("GIT_CINNABAR_COVERAGE")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Failed to start python: {}", e);
+            return 1;
+        }
+    };
+
+    let mut child_stdin = child.stdin.as_mut().unwrap();
+    let sent_data = (|| -> Result<(), std::io::Error> {
+        writeln!(child_stdin, "{}", env!("PYTHON_TAR_SIZE"))?;
+        zstd::stream::copy_decode(
+            &mut Cursor::new(include_bytes!(env!("PYTHON_TAR"))),
+            &mut child_stdin,
+        )?;
+        if cmd == PythonCommand::GitRemoteHg {
+            copy(&mut std::io::stdin().lock(), child_stdin)?;
+        }
+        Ok(())
+    })();
+    let status = child.wait().expect("Python command wasn't running?!");
+    match status.code() {
+        Some(0) => {}
+        Some(code) => return code,
+        None => {
+            #[cfg(unix)]
+            if let Some(signal) = status.signal() {
+                return -signal;
+            }
+            return 1;
+        }
+    };
+    match sent_data {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("Failed to communicate with python: {}", e);
+            1
+        }
+    }
 }
 
 #[no_mangle]
@@ -874,6 +1010,7 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
             assert_ne!(helper.wire, helper.import);
             helper_main(if helper.wire { 1 } else { 0 })
         }
+        Some("git-remote-hg") => run_python_command(PythonCommand::GitRemoteHg),
         Some(_) | None => 1,
     };
     done_cinnabar();

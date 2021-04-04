@@ -921,7 +921,10 @@ class VersionCheck(Thread):
         from cinnabar import VERSION
         from cinnabar.git import Git, GitProcess
         from distutils.version import StrictVersion
-        parent_dir = os.path.dirname(os.path.dirname(__file__))
+        try:
+            parent_dir = os.path.dirname(os.path.dirname(__file__))
+        except NameError:
+            return
         if not os.path.exists(os.path.join(parent_dir, '.git')) or \
                 check_enabled('no-version-check') or \
                 not interval_expired('version-check', 86400, globl=True):

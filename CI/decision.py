@@ -200,10 +200,12 @@ def decision():
             ' nosetests3 --all-modules tests)',
             '(cd repo && python -m flake8 --ignore E402,F405'
             ' $(git ls-files \\*\\*.py git-cinnabar git-remote-hg'
-            ' | grep -v ^CI/))',
+            ' | grep -v ^CI/ | grep -v ^bootstrap/))',
             '(cd repo && flake8 --ignore E402,F405'
             ' $(git ls-files CI/\\*\\*.py)'
             ' $(git grep -l unicode_literals))',
+            '(cd repo && flake8 --ignore E402,F405,F821'
+            ' $(git ls-files bootstrap/\\*\\*.py))',
         ],
     )
 

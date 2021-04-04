@@ -36,16 +36,18 @@ def git_hash(type, data):
 
 
 def helper_hash():
+    try:
+        workdir = os.path.join(os.path.dirname(__file__), '..')
+    except NameError:
+        return False
     env = environ().copy()
     for k in list(env.keys()):
         # Variables like GIT_DIR cause problems with the command below, so
         # unset them all.
         if k.startswith(b'GIT_'):
             del env[k]
-    return one(Git.iter(
-        '-C', os.path.join(os.path.dirname(__file__), '..'),
-        'rev-parse', '--verify', 'HEAD', stderr=open(os.devnull, 'wb'),
-        env=env))
+    return one(Git.iter('-C', workdir, 'rev-parse', '--verify', 'HEAD',
+                        stderr=open(os.devnull, 'wb'), env=env))
 
 
 class ReadWriter(object):
@@ -112,12 +114,18 @@ class BaseHelper(object):
     def _ensure_helper(self):
         if self._helper is False:
             command, env = self._helper_command()
+            if len(command) == 1:
+                executable = command[0]
+                command[0] = 'git-cinnabar-helper'
+            else:
+                executable = None
             command.append('--{}'.format(self.MODE))
 
             try:
-                self._helper = Process(*command, stdin=subprocess.PIPE,
-                                       stderr=None, env=env,
-                                       logger='helper-{}'.format(self.MODE))
+                self._helper = Process(
+                    *command, executable=executable,
+                    stdin=subprocess.PIPE, stderr=None, env=env,
+                    logger='helper-{}'.format(self.MODE))
                 self._helper.stdin.write(b'version %d\n' % self.VERSION)
                 self._helper.stdin.flush()
                 response = self._helper.stdout.readline()
