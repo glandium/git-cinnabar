@@ -1,9 +1,11 @@
 from __future__ import absolute_import, division, unicode_literals
 from binascii import unhexlify
+import os
 import sys
 
 from cinnabar.githg import (
     BranchMap,
+    GitHgStore,
 )
 from cinnabar.helper import GitHgHelper
 from cinnabar.hg.repo import (
@@ -11,6 +13,7 @@ from cinnabar.hg.repo import (
     getbundle,
     get_repo,
     push,
+    Remote,
 )
 from cinnabar.hg.bundle import (
     PushStore,
@@ -27,12 +30,14 @@ from cinnabar.util import (
     bytes_stdout,
     ConfigSetFunc,
     fsdecode,
+    fsencode,
     IOLogger,
     iteritems,
     strip_suffix,
     VersionedDict,
 )
 import cinnabar.util
+
 try:
     from urllib.parse import unquote_to_bytes
 except ImportError:
@@ -533,3 +538,23 @@ class GitRemoteHelper(BaseRemoteHelper):
                 data = False
 
             self._store.close(rollback=not data)
+
+
+def main(args):
+    if sys.platform == 'win32':
+        # By default, sys.stdout on Windows will transform \n into \r\n, which
+        # the calling git process won't recognize in our answers.
+        import msvcrt
+        msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
+    assert len(args) == 2
+    remote = Remote(*(fsencode(a) for a in args))
+
+    store = GitHgStore()
+
+    if remote.url == b'tags:':
+        helper = TagsRemoteHelper(store)
+    else:
+        helper = GitRemoteHelper(store, remote)
+    helper.run()
+
+    store.close()
