@@ -78,7 +78,7 @@ unsafe extern "C" fn get_helper_hash(buf: *mut strbuf) {
 }
 
 extern "C" {
-    fn helper_main(argc: c_int, argv: *const *const c_char) -> c_int;
+    fn helper_main(wire: c_int) -> c_int;
 
     #[cfg(windows)]
     fn wmain(argc: c_int, argv: *const *const u16) -> c_int;
@@ -825,6 +825,24 @@ fn git_cinnabar(argv0: *const c_char, args: &mut dyn Iterator<Item = OsString>) 
     }
 }
 
+#[derive(StructOpt)]
+#[structopt(name = "git-cinnabar-helper")]
+#[structopt(version=crate_version!())]
+#[structopt(long_version=concat!(crate_version!(), "\nhelper-hash: ", env!("HELPER_HASH")))]
+#[structopt(setting(AppSettings::AllowInvalidUtf8))]
+#[structopt(setting(AppSettings::ArgRequiredElseHelp))]
+#[structopt(setting(AppSettings::DeriveDisplayOrder))]
+#[structopt(setting(AppSettings::DontCollapseArgsInUsage))]
+#[structopt(group = ArgGroup::with_name("mode").multiple(false).required(true))]
+struct HelperCommand {
+    #[structopt(long)]
+    #[structopt(group = "mode")]
+    wire: bool,
+    #[structopt(long)]
+    #[structopt(group = "mode")]
+    import: bool,
+}
+
 pub fn main() {
     let args: Vec<_> = std::env::args_os().map(prepare_arg).collect();
     let argc = args.len();
@@ -842,7 +860,7 @@ pub fn main() {
 }
 
 #[no_mangle]
-unsafe extern "C" fn cinnabar_main(argc: c_int, argv: *const *const c_char) -> c_int {
+unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> c_int {
     if let Some("git-cinnabar") = (|| {
         std::env::current_exe()
             .ok()?
@@ -860,6 +878,9 @@ unsafe extern "C" fn cinnabar_main(argc: c_int, argv: *const *const c_char) -> c
             .chain(std::env::args_os().skip(2));
         git_cinnabar(*argv.as_ref().unwrap(), &mut args)
     } else {
-        helper_main(argc, argv)
+        let helper = HelperCommand::from_args();
+        assert_ne!(helper.wire, helper.import);
+        init_cinnabar(*argv.as_ref().unwrap());
+        helper_main(if helper.wire { 1 } else { 0 })
     }
 }

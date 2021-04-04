@@ -85,11 +85,6 @@
 
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
-#define MODE_IMPORT 0x01
-#define MODE_WIRE 0x02
-
-static int mode = 0xff; // Enable everything by default
-
 struct notes_tree git2hg, hg2git, files_meta;
 
 // XXX: Should use a hg-specific oidset type.
@@ -1154,14 +1149,14 @@ static void do_version(struct string_list *args)
 	strbuf_release(&version_s);
 }
 
-static void do_helpercaps(struct string_list *args)
+static void do_helpercaps(int wire, struct string_list *args)
 {
 	struct strbuf caps = STRBUF_INIT;
 
 	if (args->nr != 0)
 		die("helpercaps takes no arguments");
 
-	if (mode & MODE_WIRE) {
+	if (wire) {
 		strbuf_addstr(&caps, "compression=UN,GZ,BZ,ZS");
 	}
 
@@ -1991,22 +1986,10 @@ void done_cinnabar()
 	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
 }
 
-int helper_main(int argc, const char *argv[])
+int helper_main(int wire)
 {
 	int initialized = 0;
 	struct strbuf buf = STRBUF_INIT;
-
-	init_cinnabar(argv[0]);
-
-	if (argc > 1) {
-		if (argc > 2)
-			die("Too many arguments");
-		if (!strcmp(argv[1], "--wire")) {
-			mode = MODE_WIRE;
-		} else if (!strcmp(argv[1], "--import")) {
-			mode = MODE_IMPORT;
-		}
-	}
 
 	while (strbuf_getline(&buf, stdin) != EOF) {
 		struct string_list args = STRING_LIST_INIT_NODUP;
@@ -2018,15 +2001,15 @@ int helper_main(int argc, const char *argv[])
 			string_list_clear(&args, 0);
 			continue;
 		} else if (!strcmp("helpercaps", command)) {
-			do_helpercaps(&args);
+			do_helpercaps(wire, &args);
 			string_list_clear(&args, 0);
 			continue;
-		} else if ((mode & MODE_WIRE) && !strcmp("connect", command)) {
+		} else if (wire && !strcmp("connect", command)) {
 			do_connect(&args);
 			string_list_clear(&args, 0);
 			break;
 		}
-		if (!(mode & MODE_IMPORT))
+		if (wire)
 			die("Unknown command: \"%s\"", command);
 		if (!initialized) {
 			init_cinnabar_2();
