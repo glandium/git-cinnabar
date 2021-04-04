@@ -1,11 +1,11 @@
 from __future__ import absolute_import, print_function, unicode_literals
-from .fsck import fsck  # noqa: F401
-from .upgrade import upgrade  # noqa: F401
-from .bundle import bundle  # noqa: F401
-from .python import python  # noqa: F401
-from .download import download  # noqa: F401
+from cinnabar.cmd.fsck import fsck  # noqa: F401
+from cinnabar.cmd.upgrade import upgrade  # noqa: F401
+from cinnabar.cmd.bundle import bundle  # noqa: F401
+from cinnabar.cmd.python import python  # noqa: F401
+from cinnabar.cmd.download import download  # noqa: F401
 
-from .util import CLI  # noqa: F401
+from cinnabar.cmd.util import CLI  # noqa: F401
 
 
 CLI.helper_subcommand(

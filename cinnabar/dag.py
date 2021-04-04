@@ -3,7 +3,7 @@ from collections import (
     deque,
     defaultdict
 )
-from .util import (
+from cinnabar.util import (
     iteritems,
     itervalues,
     OrderedDefaultDict,

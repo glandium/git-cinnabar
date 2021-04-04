@@ -3,14 +3,14 @@ import hashlib
 import re
 from binascii import unhexlify
 from collections import OrderedDict
-from .changegroup import (
+from cinnabar.hg.changegroup import (
     ParentsTrait,
     RawRevChunk,
 )
-from ..git import NULL_NODE_ID
-from ..util import TypedProperty
+from cinnabar.git import NULL_NODE_ID
+from cinnabar.util import TypedProperty
 
-from ..bdiff import bdiff as textdiff
+from cinnabar.bdiff import bdiff as textdiff
 
 
 class Authorship(object):

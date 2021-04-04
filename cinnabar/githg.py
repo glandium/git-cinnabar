@@ -27,13 +27,13 @@ try:
     from urlparse import urlparse
 except ImportError:
     from urllib.parse import urlparse
-from .exceptions import (
+from cinnabar.exceptions import (
     AmbiguousGraftAbort,
     NothingToGraftException,
     OldUpgradeAbort,
     UpgradeAbort,
 )
-from .util import (
+from cinnabar.util import (
     HTTPReader,
     Seekable,
     byte_diff,
@@ -42,25 +42,25 @@ from .util import (
     one,
     VersionedDict,
 )
-from .git import (
+from cinnabar.git import (
     EMPTY_BLOB,
     EMPTY_TREE,
     Git,
     GitProcess,
     NULL_NODE_ID,
 )
-from .hg.changegroup import (
+from cinnabar.hg.changegroup import (
     RawRevChunk,
     RevDiff,
 )
-from .hg.objects import (
+from cinnabar.hg.objects import (
     Authorship,
     Changeset,
     File,
     Manifest,
 )
-from .helper import GitHgHelper
-from .util import progress_iter
+from cinnabar.helper import GitHgHelper
+from cinnabar.util import progress_iter
 from cinnabar import util
 from cinnabar.util import fsdecode
 

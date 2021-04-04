@@ -3,7 +3,7 @@ import logging
 import os
 import posixpath
 import time
-from .util import (
+from cinnabar.util import (
     environ,
     fsdecode,
     one,
@@ -87,7 +87,7 @@ class Git(object):
 
     @classmethod
     def ls_tree(self, treeish, path=b'', recursive=False):
-        from .helper import GitHgHelper
+        from cinnabar.helper import GitHgHelper
         assert not treeish.startswith(b'refs/')
 
         if path.endswith(b'/') or recursive or path == b'':
@@ -108,7 +108,7 @@ class Git(object):
     @classmethod
     def update_ref(self, ref, newvalue):
         assert not newvalue.startswith(b'refs/')
-        from .helper import GitHgHelper
+        from cinnabar.helper import GitHgHelper
         GitHgHelper.update_ref(ref, newvalue)
 
     @classmethod

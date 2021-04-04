@@ -41,7 +41,7 @@ except ImportError:
 from threading import Thread
 from weakref import WeakKeyDictionary
 
-from .exceptions import Abort
+from cinnabar.exceptions import Abort
 
 
 class StreamHandler(logging.StreamHandler):
@@ -76,7 +76,7 @@ def init_logging():
     # Still read the configuration to force the git config cache being
     # filled before logging is setup, so that the output of
     # `git config -l` is never logged.
-    from .git import Git
+    from cinnabar.git import Git
     logger = logging.getLogger()
     handler = StreamHandler()
     handler.setFormatter(Formatter())
@@ -109,7 +109,7 @@ class ConfigSetFunc(object):
 
     def __call__(self, name):
         if self._config is None:
-            from .git import Git
+            from cinnabar.git import Git
             if self._remote:
                 config = Git.config(self._key, self._remote) or self._default
             else:
@@ -152,7 +152,7 @@ experiment = ConfigSetFunc(
 
 
 def interval_expired(config_key, interval, globl=False):
-    from .git import Git
+    from cinnabar.git import Git
     config_key = 'cinnabar.{}'.format(config_key)
     try:
         last = int(Git.config(config_key))

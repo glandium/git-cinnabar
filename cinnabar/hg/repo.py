@@ -58,12 +58,12 @@ from collections import (
     defaultdict,
     deque,
 )
-from .bundle import (
+from cinnabar.hg.bundle import (
     create_bundle,
     encodecaps,
     decodecaps,
 )
-from .changegroup import (
+from cinnabar.hg.changegroup import (
     RawRevChunk01,
     RawRevChunk02,
 )

@@ -7,18 +7,18 @@ import subprocess
 from binascii import unhexlify
 from types import GeneratorType
 from io import BytesIO
-from .exceptions import NoHelperAbort, HelperClosedError
-from .git import (
+from cinnabar.exceptions import NoHelperAbort, HelperClosedError
+from cinnabar.git import (
     EMPTY_BLOB,
     Git,
     NULL_NODE_ID,
     split_ls_tree,
 )
-from .hg.changegroup import (
+from cinnabar.hg.changegroup import (
     RawRevChunk01,
     RawRevChunk02,
 )
-from .util import (
+from cinnabar.util import (
     environ,
     fsdecode,
     iteritems,

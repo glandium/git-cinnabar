@@ -27,11 +27,11 @@ from cinnabar.util import (
     progress_iter,
     sorted_merge,
 )
-from .changegroup import (
+from cinnabar.hg.changegroup import (
     RawRevChunk01,
     RawRevChunk02,
 )
-from .objects import (
+from cinnabar.hg.objects import (
     File,
     HgObject,
 )
