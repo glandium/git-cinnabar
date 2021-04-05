@@ -135,8 +135,8 @@ fn test_buffered_writer() {
         drop(writer);
         let drop_time = Instant::now();
         assert_eq!(&data.lock().unwrap()[..], &[b'0'; 20][..]);
-        // The writing loop should take (much) less than 1ms.
-        assert_lt!((write_time - start_time).as_micros(), 1000);
+        // The writing loop should take (much) less than 2ms.
+        assert_lt!((write_time - start_time).as_micros(), 2000);
         // The drop, which waits for the thread to finish, should take at
         // least 20 times the sleep time of 1ms.
         assert_ge!((drop_time - write_time).as_micros(), 20000);
