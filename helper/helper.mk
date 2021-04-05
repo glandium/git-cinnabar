@@ -147,8 +147,8 @@ export CINNABAR_MAKE_FLAGS
 
 git-cinnabar-helper$X: CINNABAR_MAKE_FLAGS := $(filter %,$(foreach v,$(.VARIABLES),$(if $(filter command line,$(origin $(v))),$(v)='$(if $(findstring ',$($(v))),$(error $(v) contains a single quote))$($(v))')))
 git-cinnabar-helper$X: FORCE
-	+cd $(SOURCE_DIR)helper && $(CARGO) build -vv $(addprefix --target=,$(CARGO_TARGET))$(if $(CARGO_FEATURES), --features "$(CARGO_FEATURES)") $(CARGO_BUILD_FLAGS)
-	cp $(SOURCE_DIR)helper/target/$(if $(CARGO_TARGET),$(CARGO_TARGET)/)$(if $(filter --release,$(CARGO_BUILD_FLAGS)),release,debug)/$@ $@
+	+cd $(SOURCE_DIR) && $(CARGO) build -vv $(addprefix --target=,$(CARGO_TARGET))$(if $(CARGO_FEATURES), --features "$(CARGO_FEATURES)") $(CARGO_BUILD_FLAGS)
+	cp $(SOURCE_DIR)target/$(if $(CARGO_TARGET),$(CARGO_TARGET)/)$(if $(filter --release,$(CARGO_BUILD_FLAGS)),release,debug)/$@ $@
 
 $(CINNABAR_OBJECTS): %.o: $(SOURCE_DIR)helper/%.c GIT-CFLAGS $(missing_dep_dirs)
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
@@ -167,7 +167,3 @@ config.patched.sp config.patched.s config.patched.o: EXTRA_CPPFLAGS = \
 compat/mingw.o: EXTRA_CPPFLAGS = -D'winansi_init()'=
 
 .PHONY: FORCE
-
-# Bump when CI changes need a new helper build but the helper code itself
-# hasn't changed.
-DUMMY = 8

@@ -10,11 +10,11 @@ edition = "2018"
 license = "MPL-2.0"
 repository = "https://github.com/glandium/git-cinnabar"
 publish = false
-build = "build.rs"
+build = "helper/build.rs"
 
 [[bin]]
 name = "git-cinnabar-helper"
-path = "main.rs"
+path = "helper/main.rs"
 
 [dependencies]
 all_asserts = "2"

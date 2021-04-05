@@ -85,7 +85,7 @@ fn main() {
     let dir = env_os("CARGO_MANIFEST_DIR");
     let dir = Path::new(&dir);
 
-    let git_core = dir.parent().unwrap().join("git-core");
+    let git_core = dir.join("git-core");
 
     let mut make = gnu_make();
     assert!(prepare_make(&mut make)

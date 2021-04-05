@@ -401,7 +401,7 @@ def decision():
                     ['git -C repo submodule update --init']
                     if cargo_cmd != 'fmt' else [],
                     [
-                        '(cd repo/helper ; cargo {})'.format({
+                        '(cd repo ; cargo {})'.format({
                             'clippy': 'clippy -- -D warnings',
                             'fmt': 'fmt -- --check',
                         }.get(cargo_cmd, cargo_cmd)),
