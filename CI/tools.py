@@ -215,11 +215,11 @@ class Hg(Task, metaclass=Tool):
 
 
 def helper_hash(head='HEAD'):
-    from cinnabar.git import Git, split_ls_tree
+    from cinnabar.git import Git
     from cinnabar.util import one
-    return split_ls_tree(one(Git.iter(
-        'ls-tree', head, 'helper',
-        cwd=os.path.join(os.path.dirname(__file__), '..'))))[2].decode()
+    return one(Git.iter(
+        '-C', os.path.join(os.path.dirname(__file__), '..'),
+        'rev-parse', '--verify', head, stderr=open(os.devnull, 'wb'))).decode()
 
 
 def install_rust(version='1.51.0', target='x86_64-unknown-linux-gnu'):

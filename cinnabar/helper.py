@@ -4,7 +4,6 @@ import hashlib
 import logging
 import os
 import subprocess
-from binascii import unhexlify
 from types import GeneratorType
 from io import BytesIO
 from cinnabar.exceptions import NoHelperAbort, HelperClosedError
@@ -24,6 +23,7 @@ from cinnabar.util import (
     iteritems,
     IOLogger,
     lrucache,
+    one,
     Process,
 )
 from contextlib import contextmanager
@@ -35,49 +35,17 @@ def git_hash(type, data):
     return h.hexdigest().encode('ascii')
 
 
-def tree_hash(files, full_base, base=b''):
-    if base:
-        base = base + b'/'
-    tree = {}
-    for f in files:
-        p = f.split(os.sep.encode('ascii'), 1)
-        if len(p) == 1:
-            tree[p[0]] = None
-        else:
-            tree.setdefault(p[0], list()).append(p[1])
-    content = b''
-    for f, subtree in sorted(tree.items()):
-        path = os.path.join(full_base, f.decode('ascii'))
-        if subtree:
-            sha1 = tree_hash(subtree, path, b'%s%s' % (base, f))
-            attr = b'40000'
-        else:
-            sha1 = git_hash(
-                b'blob', open(path, 'rb').read().replace(b'\r\n', b'\n'))
-            attr = b'100644'
-            logging.debug('%s %s %s%s', attr, sha1, base, f)
-        content += b'%s %s\0%s' % (attr, f, unhexlify(sha1))
-    sha1 = git_hash(b'tree', content)
-    logging.debug('040000 %s %s', sha1, base.rstrip(b'/'))
-    return sha1
-
-
 def helper_hash():
-    script_path = os.path.join(os.path.dirname(__file__), '..')
-    d = os.path.join(script_path, 'helper')
-    files = (os.listdir(d) if os.path.exists(d) else ())
-
-    def match(f):
-        return (f.endswith(('.h', '.c', '.c.patch', '.rs')) and
-                'patched' not in f) or \
-            f in ('GIT-VERSION.mk', 'Cargo.toml', 'Cargo.lock', 'MPL-2.0',
-                  'helper.mk')
-    files = list(f.encode('ascii') for f in files if match(f))
-
-    if b'cinnabar-helper.c' not in files:
-        return None
-
-    return tree_hash(files, d)
+    env = environ().copy()
+    for k in list(env.keys()):
+        # Variables like GIT_DIR cause problems with the command below, so
+        # unset them all.
+        if k.startswith(b'GIT_'):
+            del env[k]
+    return one(Git.iter(
+        '-C', os.path.join(os.path.dirname(__file__), '..'),
+        'rev-parse', '--verify', 'HEAD', stderr=open(os.devnull, 'wb'),
+        env=env))
 
 
 class ReadWriter(object):

@@ -5,10 +5,13 @@
 use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
+use git_version::git_version;
 use itertools::Itertools;
 use make_cmd::gnu_make;
+
+const GIT_VERSION: &str = git_version!(args = ["--always", "--abbrev=40"]);
 
 fn env(name: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| panic!("Failed to get {}", name))
@@ -141,15 +144,11 @@ fn main() {
 
     println!("cargo:rerun-if-env-changed=CINNABAR_MAKE_FLAGS");
 
-    let git_cinnabar = dir.parent().unwrap().join("git-cinnabar");
-    let helper_hash = Command::new("python")
-        .arg(git_cinnabar)
-        .arg("--version=helper")
-        .stderr(Stdio::null())
-        .output()
-        .unwrap();
-    let helper_hash = String::from_utf8(helper_hash.stdout).unwrap();
-    let helper_hash = helper_hash.split('/').last().unwrap();
+    let helper_hash = if GIT_VERSION.is_empty() {
+        "unknown"
+    } else {
+        &GIT_VERSION[GIT_VERSION.len() - 40..]
+    };
     println!("cargo:rustc-env=HELPER_HASH={}", helper_hash);
     feature_bool_to_option();
     feature_min_const_generics();

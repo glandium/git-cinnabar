@@ -2,7 +2,6 @@ from __future__ import absolute_import, print_function, unicode_literals
 import argparse
 import os
 import sys
-from cinnabar.helper import helper_hash, tree_hash
 from cinnabar import VERSION
 
 
@@ -107,53 +106,20 @@ class Version(argparse.Action):
                  help="show program's version number and exit"):
         super(Version, self).__init__(
             option_strings=option_strings, dest=dest, default=default,
-            nargs='?', choices=('cinnabar', 'module', 'helper'),
-            help=help)
-
-    @staticmethod
-    def cinnabar_version():
-        return VERSION
-
-    @staticmethod
-    def module_version():
-        # Import the remote_helper module, that is not imported by
-        # git-cinnabar
-        import cinnabar.remote_helper
-        # Import the bdiff module, that is only imported if mercurial is
-        # not installed
-        import cinnabar.bdiff
-        cinnabar_path = os.path.dirname(cinnabar.__file__)
-        v = tree_hash(iter_modules_in_path(cinnabar_path), cinnabar_path)
-        return v.decode('ascii')
+            nargs=0, help=help)
 
     @staticmethod
     def helper_version():
         from cinnabar.helper import GitHgHelper
         try:
             with GitHgHelper.query(b'revision') as out:
-                version = out.read(40).decode('ascii')
+                return out.read(40).decode('ascii')
         except Exception:
-            version = 'unknown'
-
-        sha1 = (helper_hash() or b'unknown').decode('ascii')
-        return version, sha1
+            return 'unknown'
 
     def __call__(self, parser, namespace, values, option_string=None):
-        if values == 'cinnabar' or not values:
-            print(self.cinnabar_version())
-        if values == 'module' or not values:
-            sha1 = self.module_version()
-            if not values:
-                print('module-hash:', sha1)
-            else:
-                print(sha1)
-        if values == 'helper' or not values:
-            version, sha1 = self.helper_version()
-            if version != sha1:
-                sha1 = '%s/%s' % (version, sha1)
-            if not values:
-                print('helper-hash:', sha1)
-            else:
-                print(sha1)
+        print(VERSION)
+        version = self.helper_version()
+        print('helper-hash:', version)
 
         parser.exit()
