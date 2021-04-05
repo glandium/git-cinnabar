@@ -418,7 +418,7 @@ def decision():
         )
 
     TestTask(
-        extra_desc='cram',
+        short_desc='cram',
         clone=False,
         command=[
             'repo/git-cinnabar --version',
