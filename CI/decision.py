@@ -29,7 +29,6 @@ from tools import (
     Helper,
     Hg,
     nproc,
-    old_compatible_python,
 )
 from variables import *  # noqa: F403
 
@@ -306,48 +305,6 @@ def decision():
         env={
             'GRAFT': '1',
         },
-    )
-
-    TestTask(
-        variant='old',
-        env={
-            'GIT_CINNABAR_OLD_HELPER': '1',
-        },
-        git='2.30.0'
-    )
-
-    TestTask(
-        variant='old',
-        short_desc='graft tests',
-        env={
-            'GIT_CINNABAR_OLD_HELPER': '1',
-            'GRAFT': '1',
-        },
-        git='2.30.0'
-    )
-
-    rev = old_compatible_python()
-
-    TestTask(
-        commit=rev,
-        clone=rev,
-        extra_desc='old python',
-        env={
-            'GIT_CINNABAR_OLD': '1',
-        },
-        hg='5.4.2',
-    )
-
-    TestTask(
-        commit=rev,
-        clone=rev,
-        short_desc='graft tests',
-        extra_desc='old python',
-        env={
-            'GIT_CINNABAR_OLD': '1',
-            'GRAFT': '1',
-        },
-        hg='5.4.2',
     )
 
     TestTask(

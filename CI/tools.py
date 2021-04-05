@@ -214,48 +214,6 @@ class Hg(Task, metaclass=Tool):
         ]
 
 
-def old_compatible_python():
-    '''Find the oldest version of the python code that is compatible with the
-    current helper'''
-    from cinnabar.git import Git
-    with open(os.path.join(os.path.dirname(__file__), '..', 'helper',
-                           'cinnabar-helper.c')) as fh:
-        min_version = None
-        for l in fh:
-            if l.startswith('#define CMD_VERSION'):
-                min_version = l.rstrip().split()[-1]
-                break
-        if not min_version:
-            raise Exception('Cannot find CMD_VERSION')
-    return list(Git.iter(
-        'log', 'HEAD', '--format=%H', '-S',
-        'class BaseHelper(object):\n    VERSION = {}'.format(min_version),
-        cwd=os.path.join(os.path.dirname(__file__), '..')))[-1].decode()
-
-
-def old_helper_head():
-    from cinnabar import VERSION
-    from distutils.version import StrictVersion
-    version = VERSION
-    if version.endswith('a'):
-        v = StrictVersion(VERSION[:-1]).version
-        if v[2] == 0:
-            from cinnabar.git import Git
-            from cinnabar.helper import (
-                GitHgHelper,
-                HgRepoHelper,
-            )
-            version = max(GitHgHelper.VERSION, HgRepoHelper.VERSION)
-            return list(Git.iter(
-                'log', 'HEAD', '--format=%H',
-                '-S', '#define CMD_VERSION {}'.format(version),
-                cwd=os.path.join(os.path.dirname(__file__),
-                                 '..')))[-1].decode()
-    else:
-        v = StrictVersion(VERSION).version
-    return '{}.{}.{}'.format(v[0], v[1], max(v[2] - 1, 0))
-
-
 def helper_hash(head='HEAD'):
     from cinnabar.git import Git, split_ls_tree
     from cinnabar.util import one
@@ -348,11 +306,8 @@ class Helper(Task, metaclass=Tool):
             # Build without --release
             environ['CARGO_BUILD_FLAGS'] = ''
             environ['CARGO_INCREMENTAL'] = '0'
-        elif variant == 'old' or variant.startswith('old:'):
-            if len(variant) > 3:
-                head = variant[4:]
-            else:
-                head = old_helper_head()
+        elif variant.startswith('old:'):
+            head = variant[4:]
             hash = helper_hash(head)
             variant = ''
         elif variant:

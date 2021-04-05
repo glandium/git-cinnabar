@@ -21,9 +21,7 @@ REPO ?= https://hg.mozilla.org/users/mh_glandium.org/jqplot
 HG = hg
 GIT = git
 
-ifndef GIT_CINNABAR_OLD_HELPER
 GIT += -c core.packedGitWindowSize=8k
-endif
 ifndef GIT_OLD_VERSION
 GIT += -c credential.helper=
 endif
@@ -92,10 +90,8 @@ check-graft: hg.cant.graft.git
 check-graft: hg.graft.new.bundle
 check-graft: hg.cinnabarclone-graft.git
 check-graft: hg.cinnabarclone-graft-replace.git
-ifndef GIT_CINNABAR_OLD
 check-graft: hg.cinnabarclone-graft-bundle.git
 check-graft: hg.graft.cinnabar.git
-endif
 
 hg.hg hg.hg.nobundle2: hg.upgraded.git
 	$(call HG_INIT, $@)
@@ -221,8 +217,8 @@ hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-graft.git hg.cin
 hg.cinnabarclone-bundle.git hg.cinnabarclone-bundle-full.git hg.cinnabarclone-graft-bundle.git: OTHER_SERVER=http
 hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-bundle.git hg.cinnabarclone-bundle-full.git hg.cinnabarclone-graft.git hg.cinnabarclone-graft-replace.git: hg.pure.hg
 	$(HG) clone -U $< $@.hg
-	($(if $(GIT_CINNABAR_OLD),,echo http://localhost:8888/$(word 2,$^) foo=1 ; )echo http://localhost:88$(NUM)/$(word 2,$^)) | tee $@.hg/.hg/cinnabar.manifest
-	$(if $(GIT_CINNABAR_OLD),env GIT_CINNABAR_EXPERIMENTS=$(GIT_CINNABAR_EXPERIMENTS:%=%,)git-clone) $(HG) -R $@.hg --config web.port=80$(NUM) --config serve.other=$(OTHER_SERVER) --config serve.otherport=88$(NUM) --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(HG_CINNABARCLONE_EXT) serve-and-exec -- $(GIT) clone hg://localhost:80$(NUM).http/ $@
+	echo http://localhost:88$(NUM)/$(word 2,$^) | tee $@.hg/.hg/cinnabar.manifest
+	$(HG) -R $@.hg --config web.port=80$(NUM) --config serve.other=$(OTHER_SERVER) --config serve.otherport=88$(NUM) --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(HG_CINNABARCLONE_EXT) serve-and-exec -- $(GIT) clone hg://localhost:80$(NUM).http/ $@
 	$(call COMPARE_REFS, $(or $(word 3,$^),$(word 2,$^)), $@)
 	$(GIT) -C $@ cinnabar fsck
 	$(GIT) -C $@ cinnabar fsck --full
@@ -232,8 +228,8 @@ hg.cinnabarclone-graft-bundle.git: hg.pure.hg
 	cp -r $(word 3,$^) $@
 	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
 	$(GIT) -C $@ remote rename origin grafted
-	(echo http://localhost:88$(NUM)/$(word 2,$^)$(if $(GIT_CINNABAR_OLD),,; echo http://localhost:88$(NUM)/$(word 4,$^) graft=$$($(GIT) ls-remote $(CURDIR)/$(word 4,$^) refs/cinnabar/replace/* | awk -F/ '{print $$NF}'))) | tee $@.hg/.hg/cinnabar.manifest
-	$(if $(GIT_CINNABAR_OLD),env GIT_CINNABAR_EXPERIMENTS=$(GIT_CINNABAR_EXPERIMENTS:%=%,)git-clone) $(HG) -R $@.hg --config serve.other=http --config serve.otherport=88$(NUM) --config web.port=80$(NUM) --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(HG_CINNABARCLONE_EXT) serve-and-exec -- $(GIT) -c cinnabar.graft=true -C $@ fetch hg://localhost:80$(NUM).http/ refs/heads/*:refs/remotes/origin/*
+	(echo http://localhost:88$(NUM)/$(word 2,$^); echo http://localhost:88$(NUM)/$(word 4,$^) graft=$$($(GIT) ls-remote $(CURDIR)/$(word 4,$^) refs/cinnabar/replace/* | awk -F/ '{print $$NF}')) | tee $@.hg/.hg/cinnabar.manifest
+	$(HG) -R $@.hg --config serve.other=http --config serve.otherport=88$(NUM) --config web.port=80$(NUM) --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(HG_CINNABARCLONE_EXT) serve-and-exec -- $(GIT) -c cinnabar.graft=true -C $@ fetch hg://localhost:80$(NUM).http/ refs/heads/*:refs/remotes/origin/*
 	$(call COMPARE_REFS, $(or $(word 3,$^),$(word 2,$^)), $@)
 	$(GIT) -C $@ cinnabar fsck
 	$(GIT) -C $@ cinnabar fsck --full
