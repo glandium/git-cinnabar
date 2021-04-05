@@ -27,7 +27,6 @@ PYTHON_LIBS := \
 	cinnabar/cmd/__init__.py \
 	cinnabar/cmd/bundle.py \
 	cinnabar/cmd/fsck.py \
-	cinnabar/cmd/python.py \
 	cinnabar/cmd/upgrade.py \
 	cinnabar/cmd/util.py \
 	cinnabar/util.py
