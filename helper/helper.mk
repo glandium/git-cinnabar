@@ -26,7 +26,6 @@ PYTHON_LIBS := \
 	cinnabar/hg/repo.py \
 	cinnabar/cmd/__init__.py \
 	cinnabar/cmd/bundle.py \
-	cinnabar/cmd/download.py \
 	cinnabar/cmd/fsck.py \
 	cinnabar/cmd/python.py \
 	cinnabar/cmd/upgrade.py \

@@ -131,11 +131,11 @@ class BaseHelper(object):
     def _helper_error(self, which):
         if which == 'outdated':
             message = ('Cinnabar helper executable is outdated. '
-                       'Please try `git cinnabar download` or '
+                       'Please try `./download.py` from the repository or '
                        'rebuild it.')
         else:
             message = ('Cannot find cinnabar helper executable. '
-                       'Please try `git cinnabar download` or '
+                       'Please try `./download.py` from the repository or '
                        'build it.')
 
         raise NoHelperAbort(message)

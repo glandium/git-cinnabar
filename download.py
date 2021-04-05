@@ -1,3 +1,19 @@
+#!/bin/sh
+''':'
+if command -v python3 > /dev/null; then
+  PYTHON=python3
+elif command -v python2.7 > /dev/null; then
+  PYTHON=python2.7
+elif command -v python2 > /dev/null; then
+  PYTHON=python2
+else
+  echo "Could not find python 2.7 or 3.x" >&2
+  exit 1
+fi
+exec $PYTHON $0 "$@"
+exit 1
+'''
+
 from __future__ import (
     absolute_import,
     division,
@@ -8,13 +24,8 @@ import os
 import sys
 import argparse
 import platform
-import subprocess
 import tempfile
-import threading
-import zipfile
 import errno
-from cinnabar import VERSION
-from cinnabar.cmd.util import CLI
 from cinnabar.git import Git
 from cinnabar.helper import helper_hash
 from cinnabar.util import (
@@ -23,7 +34,6 @@ from cinnabar.util import (
     Seekable,
 )
 from gzip import GzipFile
-from io import BytesIO
 from shutil import copyfileobj
 try:
     from urllib2 import HTTPError
@@ -31,21 +41,6 @@ except ImportError:
     from urllib.error import HTTPError
 
 
-@CLI.subcommand
-@CLI.argument('--url', action='store_true',
-              help='only print the download url')
-@CLI.argument('--dev', nargs='?', metavar='VARIANT',
-              default=False,
-              help='download the development helper')
-@CLI.argument('--system', default=platform.system(),
-              help=argparse.SUPPRESS)
-@CLI.argument('--machine', default=platform.machine(),
-              help=argparse.SUPPRESS)
-@CLI.argument('-o', '--output', help=argparse.SUPPRESS)
-@CLI.argument('--no-config', action='store_true',
-              help=argparse.SUPPRESS)
-@CLI.argument('--list', action='store_true',
-              help=argparse.SUPPRESS)
 def download(args):
     '''download a prebuilt helper'''
 
@@ -81,36 +76,20 @@ def download(args):
               file=sys.stderr)
         return 1
 
-    if args.dev is False:
-        version = VERSION
-        if version.endswith('a'):
-            # For version x.y.za, download a development helper
-            args.dev = ''
-
     script_path = os.path.dirname(os.path.abspath(sys.argv[0]))
 
-    if args.dev is not False:
-        sha1 = helper_hash()
-        if sha1 is None:
-            print('Cannot find the right development helper for this '
-                  'version of git cinnabar.',
-                  file=sys.stderr)
-            return 1
-        url = 'https://community-tc.services.mozilla.com/api/index/v1/task/'
-        url += 'project.git-cinnabar.helper.'
-        url += '{}.{}.{}.{}'.format(
-            sha1.decode('ascii'), system.lower(), machine,
-            args.dev.lower() if args.dev else '').rstrip('.')
-        url += '/artifacts/public/{}'.format(helper)
-
-    else:
-        if system in ('Windows', 'macOS'):
-            ext = 'zip'
-        else:
-            ext = 'tar.xz'
-        REPO_BASE = 'https://github.com/glandium'
-        url = '%s/git-cinnabar/releases/download/%s/git-cinnabar.%s.%s.%s' % (
-            REPO_BASE, version, system.lower(), machine.lower(), ext)
+    sha1 = helper_hash()
+    if sha1 is None:
+        print('Cannot find the right development helper for this '
+              'version of git cinnabar.',
+              file=sys.stderr)
+        return 1
+    url = 'https://community-tc.services.mozilla.com/api/index/v1/task/'
+    url += 'project.git-cinnabar.helper.'
+    url += '{}.{}.{}.{}'.format(
+        sha1.decode('ascii'), system.lower(), machine,
+        args.variant.lower() if args.variant else '').rstrip('.')
+    url += '/artifacts/public/{}'.format(helper)
 
     if args.url:
         print(url)
@@ -172,45 +151,6 @@ def download(args):
     if encoding == 'gzip':
         helper_content = GzipFile(mode='rb', fileobj=helper_content)
 
-    if args.dev is False:
-        content = BytesIO()
-        copyfileobj(helper_content, content)
-        progress.finish()
-        content.seek(0)
-
-        print('Extracting %s...' % helper)
-        if ext == 'zip':
-            zip = zipfile.ZipFile(content, 'r')
-            info = zip.getinfo('git-cinnabar/%s' % helper)
-            helper_content = ReaderProgress(zip.open(info), info.file_size)
-        elif ext == 'tar.xz':
-            class UntarProgress(ReaderProgress):
-                def __init__(self, content, helper):
-                    self._proc = subprocess.Popen(
-                        ['tar', '-JxO', 'git-cinnabar/%s' % helper],
-                        stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-
-                    super(UntarProgress, self).__init__(self._proc.stdout)
-
-                    def send(stdin, content):
-                        copyfileobj(content, stdin)
-                        stdin.close()
-
-                    self._thread = threading.Thread(
-                        target=send, args=(self._proc.stdin, content))
-                    self._thread.start()
-
-                def finish(self):
-                    self._proc.wait()
-                    self._thread.join()
-                    super(UntarProgress, self).finish()
-
-            helper_content = UntarProgress(content, helper)
-
-        else:
-            assert False
-        progress = helper_content
-
     fd, path = tempfile.mkstemp(prefix=helper, dir=d)
     fh = os.fdopen(fd, 'wb')
 
@@ -246,3 +186,20 @@ def download(args):
             os.unlink(path)
 
     return 0
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--url', action='store_true',
+                        help='only print the download url')
+    parser.add_argument('--variant', nargs=1, metavar='VARIANT',
+                        help='download the given variant')
+    parser.add_argument('--system', default=platform.system(),
+                        help=argparse.SUPPRESS)
+    parser.add_argument('--machine', default=platform.machine(),
+                        help=argparse.SUPPRESS)
+    parser.add_argument('-o', '--output', help=argparse.SUPPRESS)
+    parser.add_argument('--no-config', action='store_true',
+                        help=argparse.SUPPRESS)
+    parser.add_argument('--list', action='store_true', help=argparse.SUPPRESS)
+    download(parser.parse_args())

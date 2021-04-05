@@ -43,7 +43,7 @@ Setup:
   binary with the following command (assuming one is available for your system):
 
   ```
-  $ git cinnabar download
+  $ ./download.py
   ```
 
   Alternatively, you can build it:

@@ -156,24 +156,17 @@ class Clone(TestTask, metaclass=Tool):
             else:
                 download = Helper.install('linux.old:{}'.format(version))
             expireIn = '26 weeks'
-        elif parse_version(version) > parse_version('0.5.0a'):
+        elif parse_version(version) < parse_version('0.6.0'):
             download = ['repo/git-cinnabar download']
-        elif parse_version(version) == parse_version('0.4.0'):
-            download = ['(cd repo ; ./git-cinnabar download)']
         else:
-            download = []
-        if (parse_version(version) < parse_version('0.5.0b3') and
-                version != TC_COMMIT):
-            hg = '4.3.3'
-        else:
-            hg = MERCURIAL_VERSION
+            download = ['repo/download.py']
         if REPO == DEFAULT_REPO:
             index = 'bundle.{}'.format(sha1)
         else:
             index = 'bundle.{}.{}'.format(hashlib.sha1(REPO).hexdigest(), sha1)
         TestTask.__init__(
             self,
-            hg=hg,
+            hg=MERCURIAL_VERSION,
             description='clone w/ {}'.format(version),
             index=index,
             expireIn=expireIn,
@@ -232,10 +225,7 @@ def decision():
                 Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
                 Task.checkout(),
                 [
-                    '(cd repo ; ./git-cinnabar download --dev)',
-                    'rm -rf repo/.git',
-                    '(cd repo ; ./git-cinnabar download --dev)',
-                    '(cd repo ; ./git-cinnabar download)',
+                    '(cd repo ; ./download.py)',
                 ],
             )),
             dependencies=[

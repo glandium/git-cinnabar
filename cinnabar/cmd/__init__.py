@@ -3,7 +3,6 @@ from cinnabar.cmd.fsck import fsck  # noqa: F401
 from cinnabar.cmd.upgrade import upgrade  # noqa: F401
 from cinnabar.cmd.bundle import bundle  # noqa: F401
 from cinnabar.cmd.python import python  # noqa: F401
-from cinnabar.cmd.download import download  # noqa: F401
 
 from cinnabar.cmd.util import CLI  # noqa: F401
 
