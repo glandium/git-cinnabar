@@ -39,7 +39,7 @@ class TestStoreCG01(unittest.TestCase):
     def setUp(self):
         self.git_dir = os.environ.get('GIT_DIR')
         tmpdir = tempfile.mkdtemp()
-        Git.run('init', '--bare', tmpdir, stdout=open(os.devnull, 'w'))
+        Git.run('init', '-q', '--bare', tmpdir, stdout=open(os.devnull, 'w'))
         os.environ['GIT_DIR'] = tmpdir
         os.environ['GIT_CINNABAR_EXPERIMENTS'] = \
             'store' if self.NEW_STORE else ''
