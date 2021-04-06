@@ -1,7 +1,5 @@
 TOPDIR = $(abspath $(or $(dir $(firstword $(MAKEFILE_LIST))),$(CURDIR))/..)
 
-include $(TOPDIR)/helper/GIT-VERSION.mk
-
 ifeq (a,$(firstword a$(subst /, ,$(abspath .))))
 PATHSEP = :
 else
