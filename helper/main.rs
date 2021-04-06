@@ -41,7 +41,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 #[cfg(unix)]
 use std::ffi::CString;
-use std::ffi::{OsStr, OsString};
+use std::ffi::{CStr, OsStr, OsString};
 use std::fmt;
 use std::io::{stdin, stdout, BufRead, BufWriter, Write};
 use std::os::raw::c_char;
@@ -67,7 +67,7 @@ use store::{
     HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF,
     NOTES_REF, REFS_PREFIX,
 };
-use util::{IteratorExt, OsStrExt, SliceExt};
+use util::{CStrExt, IteratorExt, OsStrExt, SliceExt};
 
 const HELPER_HASH: &str = env!("HELPER_HASH");
 
@@ -755,8 +755,8 @@ enum CinnabarCommand {
 
 use CinnabarCommand::*;
 
-fn git_cinnabar(argv0: *const c_char, args: &mut dyn Iterator<Item = OsString>) -> i32 {
-    let command = match CinnabarCommand::from_iter_safe(args) {
+fn git_cinnabar(argv0: *const c_char) -> i32 {
+    let command = match CinnabarCommand::from_args_safe() {
         Ok(c) => c,
         Err(e) if e.use_stderr() => {
             eprintln!("{}", e.message);
@@ -861,26 +861,24 @@ pub fn main() {
 
 #[no_mangle]
 unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> c_int {
-    if let Some("git-cinnabar") = (|| {
-        std::env::current_exe()
-            .ok()?
-            .file_stem()?
-            .to_os_string()
-            .into_string()
-            .ok()
-    })()
-    .as_deref()
-    {
-        git_cinnabar(*argv.as_ref().unwrap(), &mut std::env::args_os())
-    } else if let Some("--command") = std::env::args().nth(1).as_deref() {
-        let mut args = Some(OsString::from("git-cinnabar"))
-            .into_iter()
-            .chain(std::env::args_os().skip(2));
-        git_cinnabar(*argv.as_ref().unwrap(), &mut args)
-    } else {
-        let helper = HelperCommand::from_args();
-        assert_ne!(helper.wire, helper.import);
-        init_cinnabar(*argv.as_ref().unwrap());
-        helper_main(if helper.wire { 1 } else { 0 })
+    // We look at argv[0] to choose what behavior to take, but it's not
+    // guaranteed to have a full path, while init_cinnabar (really, git-core)
+    // needs one, so for that we use current_exe().
+    let argv0 = CStr::from_ptr(*argv.as_ref().unwrap());
+    let argv0_path = Path::new(argv0.to_osstr());
+
+    // If for some reason current_exe() failed, fallback to argv[0].
+    let exe = std::env::current_exe().map(|e| e.as_os_str().to_cstring());
+    let exe = exe.as_deref().unwrap_or(argv0);
+
+    match argv0_path.file_stem().and_then(|a| a.to_str()) {
+        Some("git-cinnabar") => git_cinnabar(exe.as_ptr()),
+        Some("git-cinnabar-helper") => {
+            let helper = HelperCommand::from_args();
+            assert_ne!(helper.wire, helper.import);
+            init_cinnabar(exe.as_ptr());
+            helper_main(if helper.wire { 1 } else { 0 })
+        }
+        Some(_) | None => 1,
     }
 }

@@ -45,10 +45,16 @@ class CLI(object):
             import subprocess
 
             command, env = GitHgHelper._helper_command()
+            if len(command) == 1:
+                executable = command[0]
+                command[0] = 'git-cinnabar'
+            else:
+                executable = None
             environ = dict(os.environ)
             environ.update(env)
-            cmd = command + ["--command", args.command] + args.args
-            retcode = subprocess.call(cmd, env=environ)
+            cmd = command + [args.command] + args.args
+            retcode = subprocess.call(cmd, executable=executable,
+                                      env=environ)
             if retcode == 128:
                 GitHgHelper._helper_error('outdated')
             return retcode

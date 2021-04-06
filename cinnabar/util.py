@@ -772,6 +772,7 @@ class Process(object):
         logger = kwargs.pop('logger', args[0])
         env = kwargs.pop('env', {})
         cwd = kwargs.pop('cwd', None)
+        executable = kwargs.pop('executable', None)
         assert not kwargs
         if isinstance(stdin, (str, Iterable)):
             proc_stdin = subprocess.PIPE
@@ -783,7 +784,8 @@ class Process(object):
             full_env.update(env)
 
         self._proc = self._popen(args, stdin=proc_stdin, stdout=stdout,
-                                 stderr=stderr, env=full_env, cwd=cwd)
+                                 stderr=stderr, env=full_env, cwd=cwd,
+                                 executable=executable)
 
         logger = logging.getLogger(logger)
         if logger.isEnabledFor(logging.INFO):
