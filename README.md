@@ -52,8 +52,6 @@ Setup:
   $ make
   ```
 
-  If you want to build git along the helper, you can run `make git`.
-
 Experimental support for python 3.x:
 ------------------------------------
 

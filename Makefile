@@ -1,4 +1,3 @@
-SYSTEM = $(shell python2.7 -c 'import platform; print platform.system()')
 SUBMODULE_STATUS := $(shell git submodule status git-core 2> /dev/null || echo no)
 
 define exec
@@ -22,12 +21,8 @@ helper:
 
 .SUFFIXES:
 
-TARGET=$@
-git: TARGET=all
-git-install: TARGET=install
-
 %:
-	$(MAKE) -C $(CURDIR)/git-core -f $(CURDIR)/helper/helper.mk $(TARGET)
+	$(MAKE) -C $(CURDIR)/git-core -f $(CURDIR)/helper/helper.mk $@
 
 install:
 	$(error Not a supported target)
@@ -36,7 +31,7 @@ include git-core/config.mak.uname
 
 .PHONY: FORCE
 
-git-cinnabar-helper$X git git-install: FORCE
+git-cinnabar-helper$X: FORCE
 
 helper: git-cinnabar-helper$X
 	mv git-core/$^ $^
