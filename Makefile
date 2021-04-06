@@ -22,7 +22,7 @@ helper:
 .SUFFIXES:
 
 %:
-	$(MAKE) -C $(CURDIR)/git-core -f $(CURDIR)/src/helper.mk $@
+	$(MAKE) -C $(CURDIR)/git-core -f $(CURDIR)/src/build.mk $@
 
 install:
 	$(error Not a supported target)
