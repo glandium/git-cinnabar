@@ -282,8 +282,8 @@ class Helper(Task, metaclass=Tool):
                 opt = '-Og'
                 make_flags.append('CC=clang-4.0')
             make_flags.append(
-                'CFLAGS="{} -g -fsanitize=address -fno-omit-frame-pointer '
-                '-fPIC"'.format(opt))
+                'TARGET_CFLAGS="{} -g -fsanitize=address '
+                '-fno-omit-frame-pointer -fPIC"'.format(opt))
             environ['RUSTFLAGS'] = ' '.join([
                 '-Zsanitizer=address',
                 '-Copt-level=1',
@@ -291,7 +291,7 @@ class Helper(Task, metaclass=Tool):
             ])
         elif variant == 'coverage':
             make_flags.append('CC=clang-4.0')
-            make_flags.append('CFLAGS="-coverage -fPIC"')
+            make_flags.append('TARGET_CFLAGS="-coverage -fPIC"')
             artifacts += ['coverage.zip']
             extra_commands = [
                 'mv repo/git-core/{{cinnabar,connect,hg}}*.gcno repo/helper',
