@@ -6,31 +6,6 @@ ifdef NO_CURL
 $(error Cannot build without curl)
 endif
 
-SHELL_SCRIPTS := \
-	git-remote-hg \
-	git-cinnabar \
-
-PYTHON_LIBS := \
-	cinnabar/__init__.py \
-	cinnabar/githg.py \
-	cinnabar/bdiff.py \
-	cinnabar/dag.py \
-	cinnabar/exceptions.py \
-	cinnabar/helper.py \
-	cinnabar/remote_helper.py \
-	cinnabar/git.py \
-	cinnabar/hg/__init__.py \
-	cinnabar/hg/bundle.py \
-	cinnabar/hg/changegroup.py \
-	cinnabar/hg/objects.py \
-	cinnabar/hg/repo.py \
-	cinnabar/cmd/__init__.py \
-	cinnabar/cmd/bundle.py \
-	cinnabar/cmd/fsck.py \
-	cinnabar/cmd/upgrade.py \
-	cinnabar/cmd/util.py \
-	cinnabar/util.py
-
 NO_GETTEXT ?= 1
 NO_OPENSSL ?= 1
 
@@ -43,39 +18,6 @@ endif
 SOURCE_DIR := $(dir $(CURDIR))
 
 vpath cinnabar/% $(SOURCE_DIR)
-
-all:: $(addprefix pythonlib/,$(PYTHON_LIBS)) $(SHELL_SCRIPTS)
-
-$(addprefix pythonlib/,$(PYTHON_LIBS)): pythonlib/%: %
-	$(INSTALL) -d ${@D}
-	$(INSTALL) -m 644 $^ $@
-
-install: install-pythonlib install-cinnabarscripts
-clean: clean-pythonlib clean-cinnabarscripts clean-patched
-
-PYTHON_LIBS_DIRS := $(sort $(dir $(PYTHON_LIBS)))
-
-$(SHELL_SCRIPTS):
-	ln -s ../$@ $@
-
-clean-cinnabarscripts:
-	rm $(SHELL_SCRIPTS)
-
-install-cinnabarscripts:
-	$(INSTALL) $(SHELL_SCRIPTS) '$(DESTDIR_SQ)$(gitexec_instdir_SQ)'
-
-define _
-$1
-
-endef
-
-.PHONY: install-pythonlib clean-pythonlib
-install-pythonlib:
-	$(foreach dir,$(PYTHON_LIBS_DIRS),$(call _,$(INSTALL) -d -m 755 '$(DESTDIR_SQ)$(gitexec_instdir_SQ)/pythonlib/$(dir)'))
-	$(foreach dir,$(PYTHON_LIBS_DIRS),$(call _,$(INSTALL) -m 644 $(addprefix pythonlib/,$(foreach lib,$(PYTHON_LIBS),$(if $(filter $(dir)$(notdir $(lib)),$(lib)),$(lib)))) '$(DESTDIR_SQ)$(gitexec_instdir_SQ)/pythonlib/$(dir)'))
-
-clean-pythonlib:
-	$(RM) -r pythonlib
 
 ALL_PROGRAMS += git-cinnabar-helper$X
 
@@ -98,6 +40,7 @@ endef
 
 $(foreach p,$(PATCHES),$(eval $(call patch,$(p:%.c.patch=%))))
 
+clean: clean-patched
 clean-patched:
 	$(RM) $(addprefix $(SOURCE_DIR)src/,$(PATCHES:%.c.patch=%.patched.c))
 
