@@ -38,7 +38,7 @@ structopt = "0.3"
 tempfile = "3"
 typenum = "1"
 url = "2"
-zstd = "0.6"
+zstd = "0.7"
 
 [dependencies.curl-sys]
 version = "0.4"
