@@ -97,9 +97,10 @@ fn main() {
         .arg("FSMONITOR_DAEMON_BACKEND=");
 
     let cflags_var = format!("CFLAGS_{}", env("TARGET").replace("-", "_"));
-    if let Ok(cflags) = std::env::var(cflags_var) {
+    if let Ok(cflags) = std::env::var(&cflags_var) {
         cmd.arg(format!("CFLAGS+={}", cflags));
     }
+    println!("cargo:rerun-if-env-changed={}", cflags_var);
 
     assert!(cmd
         .env("MAKEFLAGS", format!("-j {}", env("CARGO_MAKEFLAGS")))
