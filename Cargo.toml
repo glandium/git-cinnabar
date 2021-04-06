@@ -11,10 +11,6 @@ license = "MPL-2.0"
 repository = "https://github.com/glandium/git-cinnabar"
 publish = false
 
-[[bin]]
-name = "git-cinnabar-helper"
-path = "src/main.rs"
-
 [dependencies]
 all_asserts = "2"
 bstr = "0.2"

@@ -912,18 +912,8 @@ class MemoryCPUReporter(Thread):
 
 
 def run(func, args):
-    reexec = None
     assert not experiment('python3') or sys.version_info[0] != 2
-    if os.environ.pop('GIT_CINNABAR_COVERAGE', None):
-        if not reexec:
-            reexec = [sys.executable]
-        reexec.extend(['-m', 'coverage', 'run', '--append'])
     init_logging()
-    if reexec:
-        reexec.append(os.path.abspath(sys.argv[0]))
-        reexec.extend(sys.argv[1:])
-        os.execlp(reexec[0], *reexec)
-        assert False
     if check_enabled('memory') or check_enabled('cpu'):
         reporter = MemoryCPUReporter(memory=check_enabled('memory'),
                                      cpu=check_enabled('cpu'))

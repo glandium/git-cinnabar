@@ -195,6 +195,7 @@ def decision():
         variant='coverage',
         clone=False,
         command=[
+            'PATH=$PWD/repo:$PATH',
             '(cd repo &&'
             ' nosetests --all-modules --with-coverage --cover-tests tests &&'
             ' nosetests3 --all-modules tests)',
@@ -502,6 +503,8 @@ def main():
                 'cov-{{{}.id}}.zip'.format(task)
                 for task in TestTask.coverage),
             'cd repo',
+            '(echo "[paths]"; echo "source ="; echo "  $PWD/cinnabar";'
+            ' echo "  /git-cinnabar::cinnabar") > .coveragerc',
             'coverage combine --append {}'.format(' '.join(
                 '../cov-{{{}.id}}/.coverage'.format(task)
                 for task in TestTask.coverage)),

@@ -261,7 +261,7 @@ class Helper(Task, metaclass=Tool):
             os = 'osx'
         env = TaskEnvironment.by_name('{}.build'.format(os))
 
-        artifact = 'git-cinnabar-helper'
+        artifact = 'git-cinnabar'
         if os.startswith('mingw'):
             artifact += '.exe'
         artifacts = [artifact]
@@ -383,8 +383,8 @@ class Helper(Task, metaclass=Tool):
         helper = cls.by_name(name)
         filename = os.path.basename(helper.artifacts[0])
         return [
-            'curl --compressed -o {} -L {{{}.artifacts[0]}}'.format(
+            'curl --compressed -o repo/{} -L {{{}.artifacts[0]}}'.format(
                 filename, helper),
-            'chmod +x {}'.format(filename),
-            'git config --global cinnabar.helper $PWD/{}'.format(filename),
+            'chmod +x repo/{}'.format(filename),
+            'ln -s $PWD/repo/{} $PWD/repo/git-remote-hg'.format(filename),
         ]

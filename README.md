@@ -39,8 +39,8 @@ Setup:
 - Add this directory to your PATH. If you have another git-remote-hg project in
   your PATH already, make sure the git-cinnabar path comes before.
 
-- A native helper is used for faster operations. You can download a prebuilt
-  binary with the following command (assuming one is available for your system):
+- Download a prebuilt binary with the following command (assuming one is
+  available for your system):
 
   ```
   $ ./download.py

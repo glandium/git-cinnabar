@@ -26,7 +26,6 @@ import argparse
 import platform
 import tempfile
 import errno
-from cinnabar.git import Git
 from cinnabar.helper import helper_hash
 from cinnabar.util import (
     HTTPReader,
@@ -34,7 +33,7 @@ from cinnabar.util import (
     Seekable,
 )
 from gzip import GzipFile
-from shutil import copyfileobj
+from shutil import copyfileobj, copyfile
 try:
     from urllib2 import HTTPError
 except ImportError:
@@ -44,9 +43,12 @@ except ImportError:
 def download(args):
     '''download a prebuilt helper'''
 
-    helper = 'git-cinnabar-helper'
+    helper = 'git-cinnabar'
     system = args.system
     machine = args.machine
+
+    default_platform = (system == platform.system() and
+                        machine == platform.machine())
 
     if system.startswith('MSYS_NT'):
         system = 'Windows'
@@ -173,15 +175,25 @@ def download(args):
             except OSError as exc:
                 if exc.errno != errno.ENOENT:
                     raise
-                pass
             os.rename(path, helper_path)
             # Add executable bits wherever read bits are set
             mode = mode | ((mode & 0o0444) >> 2)
             os.chmod(helper_path, mode)
+            (dirname, filename) = os.path.split(helper_path)
+            (stem, ext) = os.path.splitext(filename)
+            remote_hg_path = os.path.join(dirname, "git-remote-hg" + ext)
+            if default_platform and not args.no_config:
+                try:
+                    os.unlink(remote_hg_path)
+                except OSError as exc:
+                    if exc.errno != errno.ENOENT:
+                        raise
+                try:
+                    os.symlink(filename, remote_hg_path)
+                except (AttributeError, OSError):
+                    copyfile(helper_path, remote_hg_path)
+                    os.chmod(remote_hg_path, mode)
 
-            if not args.no_config:
-                Git.run('config', '--global', 'cinnabar.helper',
-                        os.path.abspath(helper_path))
         else:
             os.unlink(path)
 

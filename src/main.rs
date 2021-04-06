@@ -964,7 +964,6 @@ fn run_python_command(cmd: PythonCommand) -> c_int {
         .arg(bootstrap)
         .args(std::env::args_os())
         .env("GIT_CINNABAR_HELPER", std::env::current_exe().unwrap())
-        .env_remove("GIT_CINNABAR_COVERAGE")
         .stdin(std::process::Stdio::piped())
         .spawn()
     {

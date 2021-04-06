@@ -94,7 +94,7 @@ class BaseHelper(object):
         if helper_path and os.path.exists(helper_path):
             command = [helper_path]
         else:
-            command = ['git', 'cinnabar-helper']
+            command = ['git-cinnabar']
         return command, env
 
     @classmethod

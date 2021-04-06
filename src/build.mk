@@ -13,9 +13,9 @@ $(CURDIR)/Makefile:
 	git -C $(SOURCE_DIR) submodule sync
 	git -C $(SOURCE_DIR) submodule update --init
 
-ALL_PROGRAMS += git-cinnabar-helper$X
+ALL_PROGRAMS += git-cinnabar$X
 
-all:: git-cinnabar-helper$X
+all:: git-cinnabar$X
 
 CINNABAR_OBJECTS += cinnabar-fast-import.o
 CINNABAR_OBJECTS += cinnabar-helper.o
