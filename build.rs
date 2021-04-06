@@ -88,13 +88,20 @@ fn main() {
     let git_core = dir.join("git-core");
 
     let mut make = gnu_make();
-    assert!(prepare_make(&mut make)
-        .arg("libcinnabar.a")
+    let cmd = prepare_make(&mut make);
+    cmd.arg("libcinnabar.a")
         .arg("V=1")
         .arg("HAVE_WPGMPTR=")
         .arg("USE_LIBPCRE1=")
         .arg("USE_LIBPCRE2=")
-        .arg("FSMONITOR_DAEMON_BACKEND=")
+        .arg("FSMONITOR_DAEMON_BACKEND=");
+
+    let cflags_var = format!("CFLAGS_{}", env("TARGET").replace("-", "_"));
+    if let Ok(cflags) = std::env::var(cflags_var) {
+        cmd.arg(format!("CFLAGS+={}", cflags));
+    }
+
+    assert!(cmd
         .env("MAKEFLAGS", format!("-j {}", env("CARGO_MAKEFLAGS")))
         .current_dir(&git_core)
         .status()
