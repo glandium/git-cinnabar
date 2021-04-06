@@ -89,23 +89,23 @@ CINNABAR_OBJECTS += hg-connect-stdio.o
 CINNABAR_OBJECTS += hg-data.o
 CINNABAR_OBJECTS += which.o
 
-PATCHES = $(notdir $(wildcard $(SOURCE_DIR)helper/*.patch))
+PATCHES = $(notdir $(wildcard $(SOURCE_DIR)src/*.patch))
 
 define patch
-$$(SOURCE_DIR)helper/$1.patched.c: $$(SOURCE_DIR)helper/$1.c.patch $$(firstword $$(wildcard $$(SOURCE_DIR)git-core/$1.c $$(SOURCE_DIR)git-core/builtin/$1.c))
+$$(SOURCE_DIR)src/$1.patched.c: $$(SOURCE_DIR)src/$1.c.patch $$(firstword $$(wildcard $$(SOURCE_DIR)git-core/$1.c $$(SOURCE_DIR)git-core/builtin/$1.c))
 	patch -p1 -F0 -o $$@ $$(lastword $$^) < $$<
 endef
 
 $(foreach p,$(PATCHES),$(eval $(call patch,$(p:%.c.patch=%))))
 
 clean-patched:
-	$(RM) $(addprefix $(SOURCE_DIR)helper/,$(PATCHES:%.c.patch=%.patched.c))
+	$(RM) $(addprefix $(SOURCE_DIR)src/,$(PATCHES:%.c.patch=%.patched.c))
 
-$(addprefix $(SOURCE_DIR)helper/,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c)):
+$(addprefix $(SOURCE_DIR)src/,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c)):
 
 CINNABAR_OBJECTS += $(filter-out fast-import.patched.o,$(PATCHES:%.c.patch=%.patched.o))
 
-cinnabar-fast-import.o: $(SOURCE_DIR)helper/fast-import.patched.c
+cinnabar-fast-import.o: $(SOURCE_DIR)src/fast-import.patched.c
 
 ifdef USE_COMPUTED_HEADER_DEPENDENCIES
 dep_files := $(foreach f,$(CINNABAR_OBJECTS),$(dir $f).depend/$(notdir $f).d)
@@ -150,13 +150,13 @@ git-cinnabar-helper$X: FORCE
 	+cd $(SOURCE_DIR) && $(CARGO) build -vv $(addprefix --target=,$(CARGO_TARGET))$(if $(CARGO_FEATURES), --features "$(CARGO_FEATURES)") $(CARGO_BUILD_FLAGS)
 	cp $(SOURCE_DIR)target/$(if $(CARGO_TARGET),$(CARGO_TARGET)/)$(if $(filter --release,$(CARGO_BUILD_FLAGS)),release,debug)/$@ $@
 
-$(CINNABAR_OBJECTS): %.o: $(SOURCE_DIR)helper/%.c GIT-CFLAGS $(missing_dep_dirs)
+$(CINNABAR_OBJECTS): %.o: $(SOURCE_DIR)src/%.c GIT-CFLAGS $(missing_dep_dirs)
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
 
 ifdef CURL_COMPAT
 libcinnabar.a: libcurl.so
 
-libcurl.so: $(SOURCE_DIR)helper/curl-compat.c
+libcurl.so: $(SOURCE_DIR)src/curl-compat.c
 	$(CC) -shared -Wl,-soname,libcurl.so.4 -o $@ $<
 endif
 
@@ -167,3 +167,6 @@ config.patched.sp config.patched.s config.patched.o: EXTRA_CPPFLAGS = \
 compat/mingw.o: EXTRA_CPPFLAGS = -D'winansi_init()'=
 
 .PHONY: FORCE
+
+# Allow for a smoother transition from helper/ to src/
+$(SOURCE_DIR)helper/%.c: FORCE ;

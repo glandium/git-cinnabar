@@ -294,9 +294,9 @@ class Helper(Task, metaclass=Tool):
             make_flags.append('TARGET_CFLAGS="-coverage -fPIC"')
             artifacts += ['coverage.zip']
             extra_commands = [
-                'mv repo/git-core/{{cinnabar,connect,hg}}*.gcno repo/helper',
+                'mv repo/git-core/{{cinnabar,connect,hg}}*.gcno repo/src',
                 '(cd repo && zip $ARTIFACTS/coverage.zip'
-                ' $(find helper -name "*.gcno" -not -name "build_script*"))',
+                ' $(find src -name "*.gcno" -not -name "build_script*"))',
             ]
             environ['RUSTFLAGS'] = ' '.join([
                 '-Zprofile',

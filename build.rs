@@ -22,7 +22,7 @@ fn env_os(name: &str) -> OsString {
 }
 
 fn prepare_make(make: &mut Command) -> &mut Command {
-    let mut result = make.arg("-f").arg("../helper/helper.mk");
+    let mut result = make.arg("-f").arg("../src/helper.mk");
 
     for chunk in &std::env::var("CINNABAR_MAKE_FLAGS")
         .unwrap_or_else(|_| "".into())

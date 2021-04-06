@@ -13,7 +13,7 @@ publish = false
 
 [[bin]]
 name = "git-cinnabar-helper"
-path = "helper/main.rs"
+path = "src/main.rs"
 
 [dependencies]
 all_asserts = "2"
