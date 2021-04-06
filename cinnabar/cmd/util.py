@@ -88,24 +88,6 @@ class CLI(object):
         return (args.callback, args)
 
 
-def iter_modules_in_path(path):
-    base = os.path.abspath(os.path.normcase(path)) + os.sep
-    for name, module in sys.modules.items():
-        if not hasattr(module, '__file__'):
-            continue
-
-        path = module.__file__
-        if not path:
-            continue
-
-        if path.endswith('.pyc'):
-            path = path[:-1]
-        path = os.path.abspath(os.path.normcase(path))
-
-        if path.startswith(base):
-            yield os.path.relpath(path, base).encode('ascii')
-
-
 class Version(argparse.Action):
     def __init__(self, option_strings, dest=argparse.SUPPRESS,
                  default=argparse.SUPPRESS,
