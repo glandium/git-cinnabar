@@ -1,7 +1,6 @@
 from __future__ import absolute_import, print_function, unicode_literals
 import argparse
 import os
-from cinnabar import VERSION
 
 
 class CLI(object):
@@ -69,8 +68,6 @@ class CLI(object):
 
     @staticmethod
     def prepare(argv):
-        CLI.parser.add_argument('--version', action=Version)
-
         args, leftovers = CLI.parser.parse_known_args(argv)
 
         if not hasattr(args, 'callback'):
@@ -85,28 +82,3 @@ class CLI(object):
         else:
             args = CLI.parser.parse_args(argv)
         return (args.callback, args)
-
-
-class Version(argparse.Action):
-    def __init__(self, option_strings, dest=argparse.SUPPRESS,
-                 default=argparse.SUPPRESS,
-                 help="show program's version number and exit"):
-        super(Version, self).__init__(
-            option_strings=option_strings, dest=dest, default=default,
-            nargs=0, help=help)
-
-    @staticmethod
-    def helper_version():
-        from cinnabar.helper import GitHgHelper
-        try:
-            with GitHgHelper.query(b'revision') as out:
-                return out.read(40).decode('ascii')
-        except Exception:
-            return 'unknown'
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        print(VERSION)
-        version = self.helper_version()
-        print('helper-hash:', version)
-
-        parser.exit()

@@ -5,7 +5,6 @@ import logging
 import os
 import subprocess
 from types import GeneratorType
-from io import BytesIO
 from cinnabar.exceptions import NoHelperAbort, HelperClosedError
 from cinnabar.git import (
     EMPTY_BLOB,
@@ -173,10 +172,6 @@ class BaseHelper(object):
     @contextmanager
     def query(self, name, *args):
         self._ensure_helper()
-        if name == b'revision':
-            yield BytesIO(self._revision)
-            return
-
         helper = self._helper
         logger = logging.getLogger(name.decode('ascii'))
         if logger.isEnabledFor(logging.INFO):
