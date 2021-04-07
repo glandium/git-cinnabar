@@ -105,7 +105,18 @@ fn main() {
         std::env::var("DEP_Z_INCLUDE").map(|i| format!("-I{}", i)),
     ]
     .iter()
-    .filter_map(|v| v.as_ref().ok())
+    .filter_map(|v| v.as_deref().ok())
+    .chain(
+        match &*target_os {
+            "windows" => &[
+                "-Dpthread_create=win32_pthread_create",
+                "-Dpthread_self=win32_pthread_self",
+            ][..],
+            _ => &[][..],
+        }
+        .iter()
+        .cloned(),
+    )
     .join(" ");
     if !cflags.is_empty() {
         cmd.arg(format!("CFLAGS+={}", cflags));
