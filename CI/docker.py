@@ -62,6 +62,7 @@ DOCKER_IMAGES = {
          libcurl4-openssl-dev\\
          make\\
          patch\\
+         pkg-config\\
          python-dev\\
          python3-dev\\
          zlib1g-dev\\
