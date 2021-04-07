@@ -122,7 +122,7 @@ class TestTask(Task):
                 'done',
                 'cd repo',
                 'zip $ARTIFACTS/coverage.zip .coverage'
-                ' $(find src -name "*.gcda")',
+                ' $(find . -name "*.gcda")',
                 'cd ..',
                 'shopt -u nullglob',
             ])

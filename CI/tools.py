@@ -302,7 +302,7 @@ class Helper(Task, metaclass=Tool):
             extra_commands = [
                 'mv repo/git-core/{{cinnabar,connect,hg}}*.gcno repo/src',
                 '(cd repo && zip $ARTIFACTS/coverage.zip'
-                ' $(find src -name "*.gcno" -not -name "build_script*"))',
+                ' $(find . -name "*.gcno" -not -name "build_script*"))',
             ]
             environ['RUSTFLAGS'] = ' '.join([
                 '-Zprofile',
