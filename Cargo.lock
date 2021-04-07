@@ -337,6 +337,7 @@ dependencies = [
  "bstr",
  "byteorder",
  "bzip2",
+ "cc",
  "crossbeam",
  "cstr",
  "curl-sys",

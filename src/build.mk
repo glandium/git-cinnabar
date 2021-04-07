@@ -91,13 +91,6 @@ git-cinnabar-helper$X: FORCE
 $(CINNABAR_OBJECTS): %.o: $(SOURCE_DIR)src/%.c GIT-CFLAGS $(missing_dep_dirs)
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
 
-ifdef CURL_COMPAT
-libcinnabar.a: libcurl.so
-
-libcurl.so: $(SOURCE_DIR)src/curl-compat.c
-	$(CC) -shared -Wl,-soname,libcurl.so.4 -o $@ $<
-endif
-
 config.patched.sp config.patched.s config.patched.o: GIT-PREFIX
 config.patched.sp config.patched.s config.patched.o: EXTRA_CPPFLAGS = \
 	-DETC_GITCONFIG='"$(ETC_GITCONFIG_SQ)"'

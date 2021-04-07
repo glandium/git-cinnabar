@@ -65,6 +65,10 @@ make-cmd = "0.1"
 rustversion = "1.0"
 target = "1.0"
 
+[build-dependencies.cc]
+version = "1"
+optional = true
+
 [profile.release]
 codegen-units = 1
 debug = true
@@ -73,3 +77,6 @@ panic = "abort"
 [profile.dev]
 opt-level = 1
 panic = "abort"
+
+[features]
+curl-compat = ["cc"]

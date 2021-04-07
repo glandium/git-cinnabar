@@ -1,3 +1,7 @@
+#include <curl/curlver.h>
+#if LIBCURL_VERSION_NUM >= 0x073500
+#error curl-compat feature requires building with libcurl 7.52.x or older
+#endif
 void curl_easy_cleanup() {}
 void curl_easy_duphandle() {}
 void curl_easy_getinfo() {}

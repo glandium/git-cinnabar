@@ -127,6 +127,34 @@ fn main() {
     println!("cargo:rerun-if-env-changed=DEP_CURL_STATIC");
     println!("cargo:rerun-if-env-changed=DEP_Z_INCLUDE");
 
+    #[cfg(feature = "curl-compat")]
+    {
+        use std::path::PathBuf;
+        if target_os != "linux" {
+            panic!("The curl-compat feature is only supported on linux");
+        } else if std::env::var("DEP_CURL_STATIC").is_ok() {
+            panic!("The curl-compat feature is not compatible with building curl statically");
+        }
+        let mut cmd = cc::Build::new().get_compiler().to_command();
+        cmd.args(&[
+            "-shared",
+            "-Wl,-soname,libcurl.so.4",
+            "src/curl-compat.c",
+            "-o",
+        ]);
+        let curl_dir = PathBuf::from(env_os("OUT_DIR"));
+        cmd.arg(curl_dir.join("libcurl.so"));
+        if let Ok(include) = std::env::var("DEP_CURL_INCLUDE") {
+            cmd.arg(format!("-I{}", include));
+        }
+        match cmd.status() {
+            Ok(s) if s.success() => {}
+            _ => panic!("Failed to build libcurl.so with command {:?}", cmd),
+        }
+        println!("cargo:rerun-if-changed=src/curl-compat.c");
+        println!("cargo:rustc-link-search=native={}", curl_dir.display());
+    }
+
     assert!(cmd
         .env("MAKEFLAGS", format!("-j {}", env("CARGO_MAKEFLAGS")))
         .current_dir(&git_core)
