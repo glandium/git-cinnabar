@@ -269,7 +269,6 @@ class Helper(Task, metaclass=Tool):
         def prefix(p, s):
             return p + s if s else s
 
-        make_flags = []
         hash = None
         head = None
         desc_variant = variant
@@ -280,18 +279,25 @@ class Helper(Task, metaclass=Tool):
                 opt = '-O2'
             else:
                 opt = '-Og'
-                make_flags.append('CC=clang-4.0')
-            make_flags.append(
-                'TARGET_CFLAGS="{} -g -fsanitize=address '
-                '-fno-omit-frame-pointer -fPIC"'.format(opt))
+                environ['CC'] = 'clang-4.0'
+            environ['TARGET_CFLAGS'] = ' '.join([
+                opt,
+                '-g',
+                '-fsanitize=address',
+                '-fno-omit-frame-pointer',
+                '-fPIC',
+            ])
             environ['RUSTFLAGS'] = ' '.join([
                 '-Zsanitizer=address',
                 '-Copt-level=1',
                 '-Cforce-frame-pointers=yes',
             ])
         elif variant == 'coverage':
-            make_flags.append('CC=clang-4.0')
-            make_flags.append('TARGET_CFLAGS="-coverage -fPIC"')
+            environ['CC'] = 'clang-4.0'
+            environ['TARGET_CFLAGS'] = ' '.join([
+                '-coverage',
+                '-fPIC',
+            ])
             artifacts += ['coverage.zip']
             extra_commands = [
                 'mv repo/git-core/{{cinnabar,connect,hg}}*.gcno repo/src',
@@ -359,8 +365,7 @@ class Helper(Task, metaclass=Tool):
                 hash, env.os, env.cpu, prefix('.', variant)),
             expireIn='26 weeks',
             command=Task.checkout(commit=head) + rust_install + [
-                'make -C repo helper -j $({}) prefix=/usr{} V=1'.format(
-                    nproc(env), prefix(' ', ' '.join(make_flags))),
+                'make -C repo helper -j $({}) prefix=/usr'.format(nproc(env)),
                 'mv repo/{} $ARTIFACTS/'.format(artifact),
             ] + extra_commands,
             artifacts=artifacts,
