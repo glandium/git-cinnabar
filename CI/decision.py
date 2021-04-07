@@ -103,7 +103,9 @@ class TestTask(Task):
         else:
             if commit:
                 # Always use the current CI scripts
-                command.append('git -C repo checkout {} CI'.format(TC_COMMIT))
+                command.append(
+                    'git -C repo -c core.autocrlf=input checkout {} CI'
+                    .format(TC_COMMIT))
             output_sync = ' --output-sync=target'
             if env.os == 'macos':
                 output_sync = ''

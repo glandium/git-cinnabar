@@ -184,8 +184,8 @@ class Task(object):
         commit = commit or TC_COMMIT
         return [
             'git clone -n {} repo'.format(repo),
-            'git -c advice.detachedHead=false -C repo checkout {}'.format(
-                commit),
+            'git -c core.autocrlf=input -c advice.detachedHead=false -C repo'
+            ' checkout {}'.format(commit),
         ]
 
     def __init__(self, **kwargs):
