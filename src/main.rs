@@ -90,12 +90,6 @@ use version_check::VersionCheck;
 
 const HELPER_HASH: &str = env!("HELPER_HASH");
 
-#[no_mangle]
-unsafe extern "C" fn get_helper_hash(buf: *mut strbuf) {
-    let buf = buf.as_mut().unwrap();
-    buf.extend_from_slice(HELPER_HASH.as_bytes());
-}
-
 extern "C" {
     fn helper_main(wire: c_int) -> c_int;
 

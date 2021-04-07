@@ -80,8 +80,6 @@
 #define _STRINGIFY(s) # s
 #define STRINGIFY(s) _STRINGIFY(s)
 
-#define CMD_VERSION 3008
-
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
 struct notes_tree git2hg, hg2git, files_meta;
@@ -1124,31 +1122,6 @@ error:
 	hg_file_release(&file);
 }
 
-extern void get_helper_hash(struct strbuf *buf);
-
-static void do_version(struct string_list *args)
-{
-	long int version;
-	struct strbuf version_s = STRBUF_INIT;
-
-	if (args->nr != 1)
-		exit(1);
-
-	version = strtol(args->items[0].string, NULL, 10);
-	if (version < 100)
-		version *= 100;
-
-	if (!version || version < CMD_VERSION || version > CMD_VERSION)
-		exit(128);
-
-	get_helper_hash(&version_s);
-	if (version >= 3000)
-		strbuf_addf(&version_s, " " STRINGIFY(CMD_VERSION));
-	strbuf_addch(&version_s, '\n');
-	write_or_die(1, version_s.buf, version_s.len);
-	strbuf_release(&version_s);
-}
-
 static void do_helpercaps(int wire, struct string_list *args)
 {
 	struct strbuf caps = STRBUF_INIT;
@@ -2000,11 +1973,7 @@ int helper_main(int wire)
 		const char *command;
 		record_command(&buf);
 		split_command(buf.buf, &command, &args);
-		if (!strcmp("version", command)) {
-			do_version(&args);
-			string_list_clear(&args, 0);
-			continue;
-		} else if (!strcmp("helpercaps", command)) {
+		if (!strcmp("helpercaps", command)) {
 			do_helpercaps(wire, &args);
 			string_list_clear(&args, 0);
 			continue;

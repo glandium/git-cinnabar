@@ -5,10 +5,6 @@ class Abort(Exception):
     """Raised if a command needs to print an error and exit."""
 
 
-class NoHelperAbort(Abort):
-    """No helper has been found."""
-
-
 class HelperClosedError(RuntimeError):
     """Running a query with a closed helper."""
 

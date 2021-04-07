@@ -5,7 +5,7 @@ import logging
 import os
 import subprocess
 from types import GeneratorType
-from cinnabar.exceptions import NoHelperAbort, HelperClosedError
+from cinnabar.exceptions import HelperClosedError
 from cinnabar.git import (
     EMPTY_BLOB,
     Git,
@@ -70,9 +70,6 @@ class ReadWriter(object):
 
 
 class BaseHelper(object):
-    VERSION = 3008
-    _helper_hash = None
-
     @classmethod
     def close(self):
         if self._helper and self._helper is not self:
@@ -97,19 +94,6 @@ class BaseHelper(object):
         return command, env
 
     @classmethod
-    def _helper_error(self, which):
-        if which == 'outdated':
-            message = ('Cinnabar helper executable is outdated. '
-                       'Please try `./download.py` from the repository or '
-                       'rebuild it.')
-        else:
-            message = ('Cannot find cinnabar helper executable. '
-                       'Please try `./download.py` from the repository or '
-                       'build it.')
-
-        raise NoHelperAbort(message)
-
-    @classmethod
     def _ensure_helper(self):
         if self._helper is False:
             command, env = self._helper_command()
@@ -120,50 +104,20 @@ class BaseHelper(object):
                 executable = None
             command.append('--{}'.format(self.MODE))
 
-            try:
-                self._helper = Process(
-                    *command, executable=executable,
-                    stdin=subprocess.PIPE, stderr=None, env=env,
-                    logger='helper-{}'.format(self.MODE))
-                self._helper.stdin.write(b'version %d\n' % self.VERSION)
-                self._helper.stdin.flush()
-                response = self._helper.stdout.readline()
-            except Exception:
-                self._helper = None
-                response = None
+            self._helper = Process(
+                *command, executable=executable,
+                stdin=subprocess.PIPE, stderr=None, env=env,
+                logger='helper-{}'.format(self.MODE))
 
-            if not response:
-                if self._helper and self._helper.wait() == 128:
-                    self._helper_error('outdated')
-                else:
-                    self._helper_error('not_found')
-            else:
-                version = response.lstrip(b'ok\n') or b'unknown'
-                self._revision, _, version = version.partition(b' ')
-                if version:
-                    self._version = int(version)
-                else:
-                    self._version = self.VERSION
-                self._helper.stdin.write(b'helpercaps\n')
-                self._helper.stdin.flush()
-                response = self._read_data(self._helper.stdout)
-                self._caps = {
-                    k: v.split(b',')
-                    for k, _, v in (l.partition(b'=')
-                                    for l in response.splitlines())
-                }
-
-                if BaseHelper._helper_hash is None:
-                    BaseHelper._helper_hash = helper_hash() or False
-                    if BaseHelper._helper_hash is not False and \
-                            BaseHelper._helper_hash != self._revision and \
-                            self._version <= self.VERSION:
-                        try:
-                            self._helper_error('outdated')
-                        except NoHelperAbort as e:
-                            logging.warning(str(e))
-
-                atexit.register(self.close)
+            self._helper.stdin.write(b'helpercaps\n')
+            self._helper.stdin.flush()
+            response = self._read_data(self._helper.stdout)
+            self._caps = {
+                k: v.split(b',')
+                for k, _, v in (l.partition(b'=')
+                                for l in response.splitlines())
+            }
+            atexit.register(self.close)
 
         if self._helper is self:
             raise HelperClosedError
