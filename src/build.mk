@@ -13,7 +13,7 @@ include $(CURDIR)/Makefile
 
 SYSTEM = $(shell python2.7 -c 'import platform; print platform.system()')
 ifeq ($(SYSTEM),Windows)
-CFLAGS += -DCURL_STATICLIB -Dpthread_create=win32_pthread_create -Dpthread_self=win32_pthread_self
+CFLAGS += -Dpthread_create=win32_pthread_create -Dpthread_self=win32_pthread_self
 endif
 SOURCE_DIR := $(dir $(CURDIR))
 

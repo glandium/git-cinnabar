@@ -97,15 +97,24 @@ fn main() {
         .arg("FSMONITOR_DAEMON_BACKEND=");
 
     let cflags_var = format!("CFLAGS_{}", env("TARGET").replace("-", "_"));
-    let cflags = [std::env::var(&cflags_var), std::env::var("TARGET_CFLAGS")]
-        .iter()
-        .filter_map(|v| v.as_ref().ok())
-        .join(" ");
+    let cflags = [
+        std::env::var(&cflags_var),
+        std::env::var("TARGET_CFLAGS"),
+        std::env::var("DEP_CURL_INCLUDE").map(|i| format!("-I{}", i)),
+        std::env::var("DEP_CURL_STATIC").map(|_| "-DCURL_STATICLIB".to_string()),
+        std::env::var("DEP_Z_INCLUDE").map(|i| format!("-I{}", i)),
+    ]
+    .iter()
+    .filter_map(|v| v.as_ref().ok())
+    .join(" ");
     if !cflags.is_empty() {
         cmd.arg(format!("CFLAGS+={}", cflags));
     }
     println!("cargo:rerun-if-env-changed={}", cflags_var);
     println!("cargo:rerun-if-env-changed=TARGET_CFLAGS");
+    println!("cargo:rerun-if-env-changed=DEP_CURL_INCLUDE");
+    println!("cargo:rerun-if-env-changed=DEP_CURL_STATIC");
+    println!("cargo:rerun-if-env-changed=DEP_Z_INCLUDE");
 
     assert!(cmd
         .env("MAKEFLAGS", format!("-j {}", env("CARGO_MAKEFLAGS")))
