@@ -121,11 +121,15 @@ fn main() {
     if !cflags.is_empty() {
         cmd.arg(format!("CFLAGS+={}", cflags));
     }
+    if let Ok(cc) = std::env::var("CC") {
+        cmd.arg(format!("CC={}", cc));
+    }
     println!("cargo:rerun-if-env-changed={}", cflags_var);
     println!("cargo:rerun-if-env-changed=TARGET_CFLAGS");
     println!("cargo:rerun-if-env-changed=DEP_CURL_INCLUDE");
     println!("cargo:rerun-if-env-changed=DEP_CURL_STATIC");
     println!("cargo:rerun-if-env-changed=DEP_Z_INCLUDE");
+    println!("cargo:rerun-if-env-changed=CC");
 
     #[cfg(feature = "curl-compat")]
     {
