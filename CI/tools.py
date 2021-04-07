@@ -269,6 +269,7 @@ class Helper(Task, metaclass=Tool):
         def prefix(p, s):
             return p + s if s else s
 
+        make_flags = []
         hash = None
         head = None
         desc_variant = variant
@@ -358,7 +359,8 @@ class Helper(Task, metaclass=Tool):
                 hash, env.os, env.cpu, prefix('.', variant)),
             expireIn='26 weeks',
             command=Task.checkout(commit=head) + rust_install + [
-                'make -C repo helper -j $({}) prefix=/usr'.format(nproc(env)),
+                'make -C repo helper -j $({}) prefix=/usr{} V=1'.format(
+                    nproc(env), prefix(' ', ' '.join(make_flags))),
                 'mv repo/{} $ARTIFACTS/'.format(artifact),
             ] + extra_commands,
             artifacts=artifacts,
