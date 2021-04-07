@@ -1,6 +1,6 @@
 # Accomodate with ArgumentParser using sys.argv[0]
 sys.argv.pop(0)
-from cinnabar.cmd import CLI
+from cinnabar.cmd.util import CLI
 from cinnabar.util import run
 
 
