@@ -755,7 +755,7 @@ enum CinnabarCommand {
 
 use CinnabarCommand::*;
 
-fn git_cinnabar(argv0: *const c_char) -> i32 {
+fn git_cinnabar() -> i32 {
     let command = match CinnabarCommand::from_args_safe() {
         Ok(c) => c,
         Err(e) if e.use_stderr() => {
@@ -772,7 +772,6 @@ fn git_cinnabar(argv0: *const c_char) -> i32 {
         }
     };
     unsafe {
-        init_cinnabar(argv0);
         init_cinnabar_2();
     }
     let ret = match command {
@@ -813,9 +812,6 @@ fn git_cinnabar(argv0: *const c_char) -> i32 {
             committish,
         } => do_rollback(candidates, fsck, force, committish),
     };
-    unsafe {
-        done_cinnabar();
-    }
     match ret {
         Ok(()) => 0,
         Err(msg) => {
@@ -869,16 +865,17 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
 
     // If for some reason current_exe() failed, fallback to argv[0].
     let exe = std::env::current_exe().map(|e| e.as_os_str().to_cstring());
-    let exe = exe.as_deref().unwrap_or(argv0);
+    init_cinnabar(exe.as_deref().unwrap_or(argv0).as_ptr());
 
-    match argv0_path.file_stem().and_then(|a| a.to_str()) {
-        Some("git-cinnabar") => git_cinnabar(exe.as_ptr()),
+    let ret = match argv0_path.file_stem().and_then(|a| a.to_str()) {
+        Some("git-cinnabar") => git_cinnabar(),
         Some("git-cinnabar-helper") => {
             let helper = HelperCommand::from_args();
             assert_ne!(helper.wire, helper.import);
-            init_cinnabar(exe.as_ptr());
             helper_main(if helper.wire { 1 } else { 0 })
         }
         Some(_) | None => 1,
-    }
+    };
+    done_cinnabar();
+    ret
 }

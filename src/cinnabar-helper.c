@@ -2057,7 +2057,5 @@ int helper_main(int wire)
 	}
 
 	strbuf_release(&buf);
-
-	done_cinnabar();
 	return 0;
 }
