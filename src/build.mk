@@ -9,8 +9,6 @@ include $(CURDIR)/Makefile
 
 SOURCE_DIR := $(dir $(CURDIR))
 
-vpath cinnabar/% $(SOURCE_DIR)
-
 ALL_PROGRAMS += git-cinnabar-helper$X
 
 all:: git-cinnabar-helper$X
