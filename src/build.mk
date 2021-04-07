@@ -25,7 +25,7 @@ CINNABAR_OBJECTS += cinnabar-notes.o
 CINNABAR_OBJECTS += hg-bundle.o
 CINNABAR_OBJECTS += hg-connect-stdio.o
 CINNABAR_OBJECTS += hg-data.o
-CINNABAR_OBJECTS += which.o
+CINNABAR_OBJECTS += mingw.o
 
 PATCHES = $(notdir $(wildcard $(SOURCE_DIR)src/*.patch))
 
@@ -74,7 +74,6 @@ EXCLUDE_OBJS += default.o
 EXCLUDE_OBJS += help.o
 EXCLUDE_OBJS += iterator.o
 EXCLUDE_OBJS += reachable.o
-EXCLUDE_OBJS += run-command.o
 EXCLUDE_OBJS += serve.o
 libcinnabar.a: $(CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(XDIFF_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
@@ -102,8 +101,6 @@ endif
 config.patched.sp config.patched.s config.patched.o: GIT-PREFIX
 config.patched.sp config.patched.s config.patched.o: EXTRA_CPPFLAGS = \
 	-DETC_GITCONFIG='"$(ETC_GITCONFIG_SQ)"'
-
-compat/mingw.o: EXTRA_CPPFLAGS = -D'winansi_init()'=
 
 .PHONY: FORCE
 

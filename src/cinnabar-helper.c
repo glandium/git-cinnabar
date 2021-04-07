@@ -76,7 +76,6 @@
 #include "cinnabar-helper.h"
 #include "cinnabar-fast-import.h"
 #include "cinnabar-notes.h"
-#include "which.h"
 
 #define _STRINGIFY(s) # s
 #define STRINGIFY(s) _STRINGIFY(s)
