@@ -313,10 +313,11 @@ class Helper(Task, metaclass=Tool):
         if os == 'linux':
             make_flags.append('CURL_COMPAT=1')
         elif os == 'arm64-osx':
-            make_flags.append('CFLAGS+="-arch {}"'.format(env.cpu))
-            make_flags.append('LDFLAGS+="-arch {}"'.format(env.cpu))
+            make_flags.append('CFLAGS="-g -O2 -Wall -arch {}"'.format(env.cpu))
+            make_flags.append('LDFLAGS="-arch {}"'.format(env.cpu))
         elif not os.startswith('osx'):
-            make_flags.append('CFLAGS+=-DCURLOPT_PROXY_CAINFO=246')
+            make_flags.append(
+                'CFLAGS="-g -O2 -Wall -DCURLOPT_PROXY_CAINFO=246"')
 
         hash = hash or helper_hash()
 
