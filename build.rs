@@ -99,16 +99,28 @@ fn main() {
         .arg("USE_LIBPCRE2=")
         .arg("FSMONITOR_DAEMON_BACKEND=");
 
-    let cflags_var = format!("CFLAGS_{}", env("TARGET").replace("-", "_"));
+    let compiler = cc::Build::new().get_compiler();
+
     let cflags = [
-        std::env::var(&cflags_var),
-        std::env::var("TARGET_CFLAGS"),
-        std::env::var("DEP_CURL_INCLUDE").map(|i| format!("-I{}", i)),
-        std::env::var("DEP_CURL_STATIC").map(|_| "-DCURL_STATICLIB".to_string()),
-        std::env::var("DEP_Z_INCLUDE").map(|i| format!("-I{}", i)),
+        compiler.cflags_env().into_string().ok(),
+        // cc-rs ignores TARGET_CFLAGS when TARGET == HOST
+        if env("TARGET") == env("HOST") {
+            std::env::var("TARGET_CFLAGS").ok()
+        } else {
+            None
+        },
+        std::env::var("DEP_CURL_INCLUDE")
+            .map(|i| format!("-I{}", i))
+            .ok(),
+        std::env::var("DEP_CURL_STATIC")
+            .map(|_| "-DCURL_STATICLIB".to_string())
+            .ok(),
+        std::env::var("DEP_Z_INCLUDE")
+            .map(|i| format!("-I{}", i))
+            .ok(),
     ]
     .iter()
-    .filter_map(|v| v.as_deref().ok())
+    .filter_map(|v| v.as_deref())
     .chain(
         match &*target_os {
             "windows" => &[
@@ -121,18 +133,26 @@ fn main() {
         .cloned(),
     )
     .join(" ");
-    if !cflags.is_empty() {
-        cmd.arg(format!("CFLAGS+={}", cflags));
-    }
-    if let Ok(cc) = std::env::var("CC") {
-        cmd.arg(format!("CC={}", cc));
-    }
-    println!("cargo:rerun-if-env-changed={}", cflags_var);
+    cmd.arg(format!("CFLAGS={}", cflags));
+    cmd.arg(format!("CC={}", compiler.path().display()));
+
+    println!("cargo:rerun-if-env-changed=CFLAGS_{}", env("TARGET"));
+    println!(
+        "cargo:rerun-if-env-changed=CFLAGS_{}",
+        env("TARGET").replace("-", "_")
+    );
+    println!("cargo:rerun-if-env-changed=CFLAGS");
     println!("cargo:rerun-if-env-changed=TARGET_CFLAGS");
     println!("cargo:rerun-if-env-changed=DEP_CURL_INCLUDE");
     println!("cargo:rerun-if-env-changed=DEP_CURL_STATIC");
     println!("cargo:rerun-if-env-changed=DEP_Z_INCLUDE");
+    println!("cargo:rerun-if-env-changed=CC_{}", env("TARGET"));
+    println!(
+        "cargo:rerun-if-env-changed=CC_{}",
+        env("TARGET").replace("-", "_")
+    );
     println!("cargo:rerun-if-env-changed=CC");
+    println!("cargo:rerun-if-env-changed=CRATE_CC_NO_DEFAULTS");
 
     #[cfg(feature = "curl-compat")]
     {
@@ -142,7 +162,7 @@ fn main() {
         } else if std::env::var("DEP_CURL_STATIC").is_ok() {
             panic!("The curl-compat feature is not compatible with building curl statically");
         }
-        let mut cmd = cc::Build::new().get_compiler().to_command();
+        let mut cmd = compiler.to_command();
         cmd.args(&[
             "-shared",
             "-Wl,-soname,libcurl.so.4",

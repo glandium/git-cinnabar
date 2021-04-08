@@ -322,7 +322,6 @@ class Helper(Task, metaclass=Tool):
         if os == 'linux':
             environ['CARGO_FEATURES'] = 'curl-compat'
         elif os == 'arm64-osx':
-            environ['CFLAGS_aarch64_apple_darwin'] = '-arch {}'.format(env.cpu)
             environ['CINNABAR_CROSS_COMPILE_I_KNOW_WHAT_I_M_DOING'] = '1'
 
         if os.startswith('mingw'):

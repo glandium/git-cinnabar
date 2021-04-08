@@ -60,6 +60,7 @@ default-features = false
 features = ["std"]
 
 [build-dependencies]
+cc = "1"
 count-write = "0.1"
 git-version = "0.3"
 itertools = "0.10"
@@ -69,10 +70,6 @@ tar = "0.4"
 target = "1.0"
 walkdir = "2"
 zstd = "0.7"
-
-[build-dependencies.cc]
-version = "1"
-optional = true
 
 [profile.release]
 codegen-units = 1
@@ -84,4 +81,4 @@ opt-level = 1
 panic = "abort"
 
 [features]
-curl-compat = ["cc"]
+curl-compat = []
