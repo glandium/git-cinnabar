@@ -72,6 +72,22 @@ use store::{
 };
 use util::{CStrExt, IteratorExt, OsStrExt, SliceExt};
 
+#[cfg(any(version_check_tags, version_check_branch))]
+mod version_check;
+
+#[cfg(not(any(version_check_tags, version_check_branch)))]
+mod version_check {
+    pub struct VersionCheck;
+
+    impl VersionCheck {
+        pub fn new() -> Self {
+            VersionCheck
+        }
+    }
+}
+
+use version_check::VersionCheck;
+
 const HELPER_HASH: &str = env!("HELPER_HASH");
 
 #[no_mangle]
@@ -809,6 +825,7 @@ fn git_cinnabar() -> i32 {
             return 0;
         }
     };
+    let _v = VersionCheck::new();
     unsafe {
         init_cinnabar_2();
     }
@@ -1010,7 +1027,10 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
             assert_ne!(helper.wire, helper.import);
             helper_main(if helper.wire { 1 } else { 0 })
         }
-        Some("git-remote-hg") => run_python_command(PythonCommand::GitRemoteHg),
+        Some("git-remote-hg") => {
+            let _v = VersionCheck::new();
+            run_python_command(PythonCommand::GitRemoteHg)
+        }
         Some(_) | None => 1,
     };
     done_cinnabar();

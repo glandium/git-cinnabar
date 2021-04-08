@@ -4,7 +4,7 @@
 
 use std::borrow::{Borrow, Cow};
 use std::convert::{TryFrom, TryInto};
-use std::ffi::{c_void, CStr, CString, OsStr};
+use std::ffi::{c_void, CStr, CString, OsStr, OsString};
 use std::fmt;
 use std::io::{self, Write};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
@@ -995,4 +995,15 @@ impl Drop for RefTransaction {
             .unwrap();
         }
     }
+}
+
+extern "C" {
+    fn git_config_get_value(key: *const c_char, value: *mut *const c_char) -> c_int;
+}
+
+pub fn config_get_value(key: &str) -> Option<OsString> {
+    let mut value = std::ptr::null();
+    let key = CString::new(key).unwrap();
+    (unsafe { git_config_get_value(key.as_ptr(), &mut value) } == 0)
+        .then(|| unsafe { CStr::from_ptr(value) }.to_osstr().to_os_string())
 }

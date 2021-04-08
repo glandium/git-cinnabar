@@ -90,7 +90,7 @@ struct notes_tree git2hg, hg2git, files_meta;
 struct oidset hg2git_seen = OIDSET_INIT;
 
 int metadata_flags = 0;
-int cinnabar_check = 0;
+int cinnabar_check = CHECK_VERSION;
 int cinnabar_experiments = 0;
 int python3 = 0;
 
@@ -1728,6 +1728,8 @@ static void init_config()
 				cinnabar_check |= CHECK_HELPER;
 			else if (!strcmp((*c)->buf, "manifests"))
 				cinnabar_check |= CHECK_MANIFESTS;
+			else if (!strcmp((*c)->buf, "no-version-check"))
+				cinnabar_check &= ~CHECK_VERSION;
 		}
 		strbuf_list_free(check);
 	}

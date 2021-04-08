@@ -911,69 +911,6 @@ class MemoryCPUReporter(Thread):
         self.join()
 
 
-class VersionCheck(Thread):
-    def __init__(self):
-        super(VersionCheck, self).__init__()
-        self.message = None
-        self.start()
-
-    def run(self):
-        from cinnabar import VERSION
-        from cinnabar.git import Git, GitProcess
-        from distutils.version import StrictVersion
-        try:
-            parent_dir = os.path.dirname(os.path.dirname(__file__))
-        except NameError:
-            return
-        if not os.path.exists(os.path.join(parent_dir, '.git')) or \
-                check_enabled('no-version-check') or \
-                not interval_expired('version-check', 86400, globl=True):
-            return
-        REPO = 'https://github.com/glandium/git-cinnabar'
-        devnull = open(os.devnull, 'wb')
-        if VERSION.endswith('a'):
-            _, _, extra = StrictVersion(VERSION[:-1]).version
-            ref = 'refs/heads/next' if extra == 0 else 'refs/heads/master'
-            for line in Git.iter('ls-remote', REPO, ref, stderr=devnull):
-                sha1, head = line.split()
-                if head != ref:
-                    continue
-                proc = GitProcess(
-                    '-C', parent_dir, 'merge-base', '--is-ancestor', sha1,
-                    'HEAD', stdout=devnull, stderr=devnull)
-                if proc.wait() != 0:
-                    self.message = (
-                        'The `{}` branch of git-cinnabar was updated. '
-                        'Please update your copy.\n'
-                        'You can switch to the `release` branch if you want '
-                        'to reduce these update notifications.'
-                        .format(ref.partition('refs/heads/')[-1]))
-                    break
-        else:
-            version = StrictVersion(VERSION)
-            newer_version = version
-            for line in Git.iter('ls-remote', REPO, 'refs/tags/*',
-                                 stderr=devnull):
-                sha1, tag = line.split()
-                tag = tag.partition('refs/tags/')[-1]
-                try:
-                    v = StrictVersion(tag)
-                except ValueError:
-                    continue
-                if v > newer_version:
-                    newer_version = v
-            if newer_version != version:
-                self.message = (
-                    'New git-cinnabar version available: {} '
-                    '(current version: {})'
-                    .format(newer_version, version))
-
-    def join(self):
-        super(VersionCheck, self).join()
-        if self.message:
-            sys.stderr.write('\n' + self.message + '\n')
-
-
 def run(func, args):
     reexec = None
     assert not experiment('python3') or sys.version_info[0] != 2
@@ -991,7 +928,6 @@ def run(func, args):
         reporter = MemoryCPUReporter(memory=check_enabled('memory'),
                                      cpu=check_enabled('cpu'))
 
-    version_check = VersionCheck()
     try:
         from cinnabar.git import Git
         objectformat = Git.config('extensions.objectformat') or 'sha1'
@@ -1022,7 +958,6 @@ def run(func, args):
     finally:
         if check_enabled('memory') or check_enabled('cpu'):
             reporter.shutdown()
-        version_check.join()
     sys.exit(retcode)
 
 

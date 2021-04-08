@@ -232,6 +232,16 @@ impl SliceExt<char> for str {
     }
 }
 
+impl<F: FnMut(&u8) -> bool> SliceExt<F> for [u8] {
+    fn splitn_exact<const N: usize>(&self, f: F) -> Option<[&Self; N]> {
+        array_init_from_iter(self.splitn(N, f))
+    }
+
+    fn rsplitn_exact<const N: usize>(&self, f: F) -> Option<[&Self; N]> {
+        array_init_from_rev_iter(self.rsplitn(N, f))
+    }
+}
+
 impl SliceExt<&[u8]> for [u8] {
     fn splitn_exact<const N: usize>(&self, b: &[u8]) -> Option<[&Self; N]> {
         // Safety: This works around ByteSlice::splitn_str being too restrictive.

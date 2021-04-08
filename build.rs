@@ -275,4 +275,20 @@ fn main() {
     counter.into_inner().finish().unwrap();
     println!("cargo:rustc-env=PYTHON_TAR={}", python_tar.display());
     println!("cargo:rustc-env=PYTHON_TAR_SIZE={}", size);
+
+    #[cfg(feature = "version-check")]
+    {
+        if env("CARGO_PKG_VERSION_PRE") == "a" {
+            println!("cargo:rustc-cfg=version_check_branch");
+            println!(
+                "cargo:rustc-env=VERSION_CHECK_BRANCH={}",
+                if env("CARGO_PKG_VERSION_PATCH") == "0" {
+                    "next"
+                } else {
+                    "master"
+                }
+            );
+        }
+        println!("cargo:rerun-if-env-changed=CARGO_PKG_VERSION");
+    }
 }

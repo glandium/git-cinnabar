@@ -54,10 +54,22 @@ features = ["zlib"]
 version = "1"
 features = ["static"]
 
+[dependencies.os_pipe]
+version = "0.9"
+optional = true
+
 [dependencies.regex]
 version = "1"
 default-features = false
 features = ["std"]
+
+[dependencies.semver]
+version = "0.11"
+optional = true
+
+[dependencies.shared_child]
+version = "0.3"
+optional = true
 
 [build-dependencies]
 cc = "1"
@@ -71,6 +83,9 @@ target = "1.0"
 walkdir = "2"
 zstd = "0.7"
 
+[dev-dependencies]
+tempfile = "3"
+
 [profile.release]
 codegen-units = 1
 debug = true
@@ -81,4 +96,6 @@ opt-level = 1
 panic = "abort"
 
 [features]
+default = ["version-check"]
 curl-compat = []
+version-check = ["os_pipe", "semver", "shared_child"]
