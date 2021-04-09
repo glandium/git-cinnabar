@@ -274,6 +274,8 @@ class Helper(Task, metaclass=Tool):
         desc_variant = variant
         extra_commands = []
         environ = {}
+        cargo_flags = ['-vv', '--release']
+        cargo_features = []
         if variant == 'asan':
             if os.startswith('osx'):
                 opt = '-O2'
@@ -310,7 +312,7 @@ class Helper(Task, metaclass=Tool):
                 '-Cinline-threshold=0',
             ])
             # Build without --release
-            environ['CARGO_BUILD_FLAGS'] = ''
+            cargo_flags.remove('--release')
             environ['CARGO_INCREMENTAL'] = '0'
         elif variant.startswith('old:'):
             head = variant[4:]
@@ -320,7 +322,7 @@ class Helper(Task, metaclass=Tool):
             raise Exception('Unknown variant: {}'.format(variant))
 
         if os == 'linux':
-            environ['CARGO_FEATURES'] = 'curl-compat'
+            cargo_features.append('curl-compat')
         elif os == 'arm64-osx':
             environ['CINNABAR_CROSS_COMPILE_I_KNOW_WHAT_I_M_DOING'] = '1'
 
@@ -330,11 +332,11 @@ class Helper(Task, metaclass=Tool):
             # Statically link libcurl on Windows.
             # This leaves it to curl-sys build scripts to deal with building
             # libcurl, instead of us.
-            environ['CARGO_FEATURES'] = ' '.join((
+            cargo_features.extend([
                 'curl-sys/ssl',
                 'curl-sys/static-curl',
                 'curl-sys/static-ssl',
-            ))
+            ])
         elif os.startswith('osx'):
             rust_target = 'x86_64-apple-darwin'
         elif os.startswith('arm64-osx'):
@@ -347,7 +349,9 @@ class Helper(Task, metaclass=Tool):
             rust_install = install_rust('nightly-2021-02-07', rust_target)
         else:
             rust_install = install_rust(target=rust_target)
-        environ["CARGO_TARGET"] = rust_target
+        cargo_flags.extend(['--target', rust_target])
+        if cargo_features:
+            cargo_flags.extend(['--features', ','.join(cargo_features)])
 
         hash = hash or helper_hash()
 
@@ -364,8 +368,11 @@ class Helper(Task, metaclass=Tool):
                 hash, env.os, env.cpu, prefix('.', variant)),
             expireIn='26 weeks',
             command=Task.checkout(commit=head) + rust_install + [
-                'make -C repo helper -j $({}) prefix=/usr'.format(nproc(env)),
-                'mv repo/{} $ARTIFACTS/'.format(artifact),
+                '(cd repo ; cargo build {})'.format(' '.join(cargo_flags)),
+                'mv repo/target/{}/{}/{} $ARTIFACTS/'.format(
+                    rust_target,
+                    'release' if '--release' in cargo_flags else 'debug',
+                    artifact),
             ] + extra_commands,
             artifacts=artifacts,
             env=environ,
