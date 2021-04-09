@@ -217,13 +217,12 @@ fn main() {
         }
     }
 
-    for src in fs::read_dir(&dir).unwrap() {
+    for src in fs::read_dir(&dir.join("src")).unwrap() {
         let path = src.unwrap().path();
         let name = path.file_name().unwrap().to_str().unwrap();
         if (name.ends_with(".h")
             || name.ends_with(".c")
             || name.ends_with(".c.patch")
-            || name.ends_with(".rs")
             || name.ends_with(".mk"))
             && !name.ends_with("patched.c")
         {
