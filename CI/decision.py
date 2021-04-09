@@ -117,9 +117,6 @@ class TestTask(Task):
         if variant == 'coverage':
             kwargs['command'].extend([
                 'shopt -s nullglob',
-                'for f in repo/git-core/{{cinnabar,connect,hg}}*.gcda',
-                'do mv $f repo/src',
-                'done',
                 'cd repo',
                 'zip $ARTIFACTS/coverage.zip .coverage'
                 ' $(find . -name "*.gcda")',

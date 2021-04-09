@@ -4,7 +4,7 @@
 
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use count_write::CountWrite;
@@ -25,7 +25,10 @@ fn env_os(name: &str) -> OsString {
 }
 
 fn prepare_make(make: &mut Command) -> &mut Command {
-    let mut result = make.arg("-f").arg("../src/build.mk");
+    let mut build_mk = PathBuf::from(env_os("CARGO_MANIFEST_DIR"));
+    build_mk.push("src");
+    build_mk.push("build.mk");
+    let mut result = make.arg("-f").arg(&build_mk);
 
     for chunk in &std::env::var("CINNABAR_MAKE_FLAGS")
         .unwrap_or_else(|_| "".into())
@@ -88,7 +91,7 @@ fn main() {
     let dir = env_os("CARGO_MANIFEST_DIR");
     let dir = Path::new(&dir);
 
-    let git_core = dir.join("git-core");
+    let out_dir = PathBuf::from(env_os("OUT_DIR"));
 
     let mut make = gnu_make();
     let cmd = prepare_make(&mut make);
@@ -156,7 +159,6 @@ fn main() {
 
     #[cfg(feature = "curl-compat")]
     {
-        use std::path::PathBuf;
         if target_os != "linux" {
             panic!("The curl-compat feature is only supported on linux");
         } else if std::env::var("DEP_CURL_STATIC").is_ok() {
@@ -184,7 +186,7 @@ fn main() {
 
     assert!(cmd
         .env("MAKEFLAGS", format!("-j {}", env("CARGO_MAKEFLAGS")))
-        .current_dir(&git_core)
+        .current_dir(&out_dir)
         .status()
         .expect("Failed to execute GNU make")
         .success());
@@ -195,13 +197,12 @@ fn main() {
         .arg("linker-flags")
         .arg("USE_LIBPCRE1=")
         .arg("USE_LIBPCRE2=")
-        .current_dir(&git_core)
+        .current_dir(&out_dir)
         .output()
         .expect("Failed to execute GNU make");
     let output = String::from_utf8(output.stdout).unwrap();
 
     println!("cargo:rustc-link-lib=static=cinnabar");
-    println!("cargo:rustc-link-search=native={}", git_core.display());
 
     if target_os == "windows" && target_env == "gnu" {
         println!("cargo:rustc-link-lib=ssp_nonshared");

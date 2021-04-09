@@ -302,7 +302,6 @@ class Build(Task, metaclass=Tool):
             ])
             artifacts += ['coverage.zip']
             extra_commands = [
-                'mv repo/git-core/{{cinnabar,connect,hg}}*.gcno repo/src',
                 '(cd repo && zip $ARTIFACTS/coverage.zip'
                 ' $(find . -name "*.gcno" -not -name "build_script*"))',
             ]
