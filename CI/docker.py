@@ -55,7 +55,14 @@ DOCKER_IMAGES = {
     'build': '''\
         FROM base
         RUN apt-get install -y --no-install-recommends\\
-         clang-4.0\\
+         apt-transport-https gnupg2 software-properties-common&&\\
+         curl -s https://apt.llvm.org/llvm-snapshot.gpg.key\\
+         | apt-key add - &&\\
+         add-apt-repository\\
+         "deb http://apt.llvm.org/stretch/ llvm-toolchain-stretch-11 main" &&\\
+         apt-get update -o Acquire::Check-Valid-Until=false
+        RUN apt-get install -y --no-install-recommends\\
+         clang-11\\
          gcc\\
          git\\
          libc6-dev\\

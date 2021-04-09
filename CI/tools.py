@@ -281,7 +281,7 @@ class Build(Task, metaclass=Tool):
                 opt = '-O2'
             else:
                 opt = '-Og'
-                environ['CC'] = 'clang-4.0'
+                environ['CC'] = 'clang-11'
             environ['TARGET_CFLAGS'] = ' '.join([
                 opt,
                 '-g',
@@ -295,7 +295,7 @@ class Build(Task, metaclass=Tool):
                 '-Cforce-frame-pointers=yes',
             ])
         elif variant == 'coverage':
-            environ['CC'] = 'clang-4.0'
+            environ['CC'] = 'clang-11'
             environ['TARGET_CFLAGS'] = ' '.join([
                 '-coverage',
                 '-fPIC',
@@ -342,9 +342,7 @@ class Build(Task, metaclass=Tool):
             rust_target = 'aarch64-apple-darwin'
         elif os == 'linux':
             rust_target = 'x86_64-unknown-linux-gnu'
-        if variant == 'coverage':
-            rust_install = install_rust('nightly-2020-08-23', rust_target)
-        elif variant == 'asan':
+        if variant in ('coverage', 'asan'):
             rust_install = install_rust('nightly-2021-02-07', rust_target)
         else:
             rust_install = install_rust(target=rust_target)
