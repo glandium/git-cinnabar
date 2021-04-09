@@ -24,9 +24,9 @@ from tools import (
     MERCURIAL_VERSION,
     ALL_MERCURIAL_VERSIONS,
     SOME_MERCURIAL_VERSIONS,
+    Build,
     install_rust,
     Git,
-    Helper,
     Hg,
     nproc,
 )
@@ -52,15 +52,15 @@ class TestTask(Task):
         commit = kwargs.pop('commit', None)
         task_env = kwargs.pop('task_env', 'linux')
         variant = kwargs.pop('variant', None)
-        helper = kwargs.pop('helper', None)
+        build = kwargs.pop('build', None)
         clone = kwargs.pop('clone', TC_COMMIT)
         desc = kwargs.pop('description', None)
         short_desc = kwargs.pop('short_desc', 'test')
         extra_desc = kwargs.pop('extra_desc', None)
         pre_command = kwargs.pop('pre_command', None)
-        if helper is None:
-            helper = '{}.{}'.format(task_env, variant) if variant else task_env
-            helper = Helper.install(helper)
+        if build is None:
+            build = '{}.{}'.format(task_env, variant) if variant else task_env
+            build = Build.install(build)
         if variant:
             kwargs.setdefault('env', {})['VARIANT'] = variant
         env = TaskEnvironment.by_name('{}.test'.format(task_env))
@@ -80,7 +80,7 @@ class TestTask(Task):
             command.extend(Git.install('{}.{}'.format(task_env, git)))
             command.append('git --version')
         command.extend(Task.checkout(commit=commit))
-        command.extend(helper)
+        command.extend(build)
         if clone:
             command.extend([
                 'curl --compressed -L {{{}.artifact}} -o repo/bundle.git'
@@ -154,9 +154,9 @@ class Clone(TestTask, metaclass=Tool):
         expireIn = '26 weeks'
         if version == TC_COMMIT or len(version) == 40:
             if version == TC_COMMIT:
-                download = Helper.install('linux')
+                download = Build.install('linux')
             else:
-                download = Helper.install('linux.old:{}'.format(version))
+                download = Build.install('linux.old:{}'.format(version))
             expireIn = '26 weeks'
         elif parse_version(version) < parse_version('0.6.0'):
             download = ['repo/git-cinnabar download']
@@ -172,7 +172,7 @@ class Clone(TestTask, metaclass=Tool):
             description='clone w/ {}'.format(version),
             index=index,
             expireIn=expireIn,
-            helper=download,
+            build=download,
             commit=sha1,
             clone=False,
             command=[
@@ -223,8 +223,8 @@ def decision():
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
         Task(
             task_env=task_env,
-            description='download helper {} {}'.format(task_env.os,
-                                                       task_env.cpu),
+            description='download build {} {}'.format(task_env.os,
+                                                      task_env.cpu),
             command=list(chain(
                 Git.install('{}.{}'.format(env, GIT_VERSION)),
                 Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
@@ -234,19 +234,19 @@ def decision():
                 ],
             )),
             dependencies=[
-                Helper.by_name(env),
+                Build.by_name(env),
             ],
             env={
                 'GIT_CINNABAR_EXPERIMENTS': 'python3',
             } if env == 'linux' else {},
         )
 
-    # Because nothing is using the x86 windows helper, we need to manually
+    # Because nothing is using the x86 windows build, we need to manually
     # touch it.
-    Helper.by_name('mingw32')
+    Build.by_name('mingw32')
     # Same for arm64 mac
     if TC_IS_PUSH:
-        Helper.by_name('arm64-osx')
+        Build.by_name('arm64-osx')
 
     for upgrade in UPGRADE_FROM:
         TestTask(
@@ -483,9 +483,9 @@ def main():
                 task, task)
             for task in TestTask.coverage
         ]
-        task = Helper.by_name('linux.coverage')
+        task = Build.by_name('linux.coverage')
         download_coverage.append(
-            'curl -o gcno-helper.zip -L {{{}.artifacts[1]}}'.format(task))
+            'curl -o gcno-build.zip -L {{{}.artifacts[1]}}'.format(task))
 
         merge_coverage.append(
             '(' + '& '.join(download_coverage) + '& wait)',
@@ -498,7 +498,7 @@ def main():
             ])
 
         merge_coverage.extend([
-            'grcov -s repo -t lcov -o repo/coverage.lcov gcno-helper.zip ' +
+            'grcov -s repo -t lcov -o repo/coverage.lcov gcno-build.zip ' +
             ' '.join(
                 'cov-{{{}.id}}.zip'.format(task)
                 for task in TestTask.coverage),

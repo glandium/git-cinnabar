@@ -17,7 +17,7 @@ use shared_child::SharedChild;
 
 use crate::libgit::config_get_value;
 use crate::util::SliceExt;
-use crate::HELPER_HASH;
+use crate::BUILD_COMMIT;
 
 extern "C" {
     static cinnabar_check: c_int;
@@ -97,7 +97,7 @@ fn version_check_from_repo(when: SystemTime) -> Option<VersionCheck> {
                     {
                         new_version = Some(version);
                     }
-                } else if r == VERSION_CHECK_REF.as_bytes() && sha1 != HELPER_HASH.as_bytes() {
+                } else if r == VERSION_CHECK_REF.as_bytes() && sha1 != BUILD_COMMIT.as_bytes() {
                     return std::str::from_utf8(sha1).map(String::from).ok();
                 }
             }

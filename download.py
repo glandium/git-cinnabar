@@ -26,7 +26,7 @@ import argparse
 import platform
 import tempfile
 import errno
-from cinnabar.helper import helper_hash
+from cinnabar.helper import build_commit
 from cinnabar.util import (
     HTTPReader,
     Progress,
@@ -41,9 +41,9 @@ except ImportError:
 
 
 def download(args):
-    '''download a prebuilt helper'''
+    '''download a prebuilt binary'''
 
-    helper = 'git-cinnabar'
+    binary = 'git-cinnabar'
     system = args.system
     machine = args.machine
 
@@ -56,7 +56,7 @@ def download(args):
     if system == 'Darwin':
         system = 'macOS'
     elif system == 'Windows':
-        helper += '.exe'
+        binary += '.exe'
         if machine == 'AMD64':
             machine = 'x86_64'
 
@@ -80,18 +80,18 @@ def download(args):
 
     script_path = os.path.dirname(os.path.abspath(sys.argv[0]))
 
-    sha1 = helper_hash()
+    sha1 = build_commit()
     if sha1 is None:
-        print('Cannot find the right development helper for this '
+        print('Cannot find the right development binary for this '
               'version of git cinnabar.',
               file=sys.stderr)
         return 1
     url = 'https://community-tc.services.mozilla.com/api/index/v1/task/'
-    url += 'project.git-cinnabar.helper.'
+    url += 'project.git-cinnabar.build.'
     url += '{}.{}.{}.{}'.format(
         sha1.decode('ascii'), system.lower(), machine,
         args.variant.lower() if args.variant else '').rstrip('.')
-    url += '/artifacts/public/{}'.format(helper)
+    url += '/artifacts/public/{}'.format(binary)
 
     if args.url:
         print(url)
@@ -149,16 +149,16 @@ def download(args):
 
     encoding = reader.fh.headers.get('Content-Encoding', 'identity')
     progress = ReaderProgress(reader, reader.length)
-    helper_content = Seekable(progress, reader.length)
+    binary_content = Seekable(progress, reader.length)
     if encoding == 'gzip':
-        helper_content = GzipFile(mode='rb', fileobj=helper_content)
+        binary_content = GzipFile(mode='rb', fileobj=binary_content)
 
-    fd, path = tempfile.mkstemp(prefix=helper, dir=d)
+    fd, path = tempfile.mkstemp(prefix=binary, dir=d)
     fh = os.fdopen(fd, 'wb')
 
     success = False
     try:
-        copyfileobj(helper_content, fh)
+        copyfileobj(binary_content, fh)
         success = True
     finally:
         progress.finish()
@@ -166,20 +166,20 @@ def download(args):
         if success:
             mode = os.stat(path).st_mode
             if args.output:
-                helper_path = args.output
+                binary_path = args.output
             else:
-                helper_path = os.path.join(d, helper)
+                binary_path = os.path.join(d, binary)
             try:
                 # on Windows it's necessary to remove the file first.
-                os.remove(helper_path)
+                os.remove(binary_path)
             except OSError as exc:
                 if exc.errno != errno.ENOENT:
                     raise
-            os.rename(path, helper_path)
+            os.rename(path, binary_path)
             # Add executable bits wherever read bits are set
             mode = mode | ((mode & 0o0444) >> 2)
-            os.chmod(helper_path, mode)
-            (dirname, filename) = os.path.split(helper_path)
+            os.chmod(binary_path, mode)
+            (dirname, filename) = os.path.split(binary_path)
             (stem, ext) = os.path.splitext(filename)
             remote_hg_path = os.path.join(dirname, "git-remote-hg" + ext)
             if default_platform and not args.no_config:
@@ -191,7 +191,7 @@ def download(args):
                 try:
                     os.symlink(filename, remote_hg_path)
                 except (AttributeError, OSError):
-                    copyfile(helper_path, remote_hg_path)
+                    copyfile(binary_path, remote_hg_path)
                     os.chmod(remote_hg_path, mode)
 
         else:

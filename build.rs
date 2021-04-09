@@ -232,12 +232,12 @@ fn main() {
 
     println!("cargo:rerun-if-env-changed=CINNABAR_MAKE_FLAGS");
 
-    let helper_hash = if GIT_VERSION.is_empty() {
+    let build_commit = if GIT_VERSION.is_empty() {
         "unknown"
     } else {
         &GIT_VERSION[GIT_VERSION.len() - 40..]
     };
-    println!("cargo:rustc-env=HELPER_HASH={}", helper_hash);
+    println!("cargo:rustc-env=BUILD_COMMIT={}", build_commit);
     feature_bool_to_option();
     feature_min_const_generics();
     feature_slice_strip();

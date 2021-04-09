@@ -20,9 +20,6 @@ HG = hg
 GIT = git
 
 GIT += -c core.packedGitWindowSize=8k
-ifndef GIT_OLD_VERSION
-GIT += -c credential.helper=
-endif
 
 COMMA=,
 export GIT_CINNABAR_CHECK:=all,traceback,cinnabarclone,clonebundles,no-version-check$(addprefix $(COMMA),$(GIT_CINNABAR_CHECK))

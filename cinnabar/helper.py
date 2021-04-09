@@ -34,7 +34,7 @@ def git_hash(type, data):
     return h.hexdigest().encode('ascii')
 
 
-def helper_hash():
+def build_commit():
     try:
         workdir = os.path.join(os.path.dirname(__file__), '..')
     except NameError:

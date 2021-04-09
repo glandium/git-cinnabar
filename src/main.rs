@@ -88,7 +88,7 @@ mod version_check {
 
 use version_check::VersionCheck;
 
-const HELPER_HASH: &str = env!("HELPER_HASH");
+const BUILD_COMMIT: &str = env!("BUILD_COMMIT");
 
 extern "C" {
     fn helper_main(wire: c_int) -> c_int;
@@ -669,7 +669,7 @@ impl FromStr for AbbrevSize {
 #[derive(StructOpt)]
 #[structopt(name = "git-cinnabar")]
 #[structopt(version=crate_version!())]
-#[structopt(long_version=concat!(crate_version!(), "\nhelper-hash: ", env!("HELPER_HASH")))]
+#[structopt(long_version=concat!(crate_version!(), "\nbuild-commit: ", env!("BUILD_COMMIT")))]
 #[structopt(setting(AppSettings::AllowInvalidUtf8))]
 #[structopt(setting(AppSettings::ArgRequiredElseHelp))]
 #[structopt(setting(AppSettings::DeriveDisplayOrder))]
@@ -876,7 +876,7 @@ fn git_cinnabar() -> i32 {
 #[derive(StructOpt)]
 #[structopt(name = "git-cinnabar-helper")]
 #[structopt(version=crate_version!())]
-#[structopt(long_version=concat!(crate_version!(), "\nhelper-hash: ", env!("HELPER_HASH")))]
+#[structopt(long_version=concat!(crate_version!(), "\nbuild-commit: ", env!("BUILD_COMMIT")))]
 #[structopt(setting(AppSettings::AllowInvalidUtf8))]
 #[structopt(setting(AppSettings::ArgRequiredElseHelp))]
 #[structopt(setting(AppSettings::DeriveDisplayOrder))]

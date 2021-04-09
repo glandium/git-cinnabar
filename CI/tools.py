@@ -214,7 +214,7 @@ class Hg(Task, metaclass=Tool):
         ]
 
 
-def helper_hash(head='HEAD'):
+def build_commit(head='HEAD'):
     from cinnabar.git import Git
     from cinnabar.util import one
     return one(Git.iter(
@@ -252,8 +252,8 @@ def install_rust(version='1.51.0', target='x86_64-unknown-linux-gnu'):
     return [r.format(**l) for r in rust_install]
 
 
-class Helper(Task, metaclass=Tool):
-    PREFIX = 'helper'
+class Build(Task, metaclass=Tool):
+    PREFIX = 'build'
 
     def __init__(self, os_and_variant):
         os, variant = (os_and_variant.split('.', 2) + [''])[:2]
@@ -316,7 +316,7 @@ class Helper(Task, metaclass=Tool):
             environ['CARGO_INCREMENTAL'] = '0'
         elif variant.startswith('old:'):
             head = variant[4:]
-            hash = helper_hash(head)
+            hash = build_commit(head)
             variant = ''
         elif variant:
             raise Exception('Unknown variant: {}'.format(variant))
@@ -353,7 +353,7 @@ class Helper(Task, metaclass=Tool):
         if cargo_features:
             cargo_flags.extend(['--features', ','.join(cargo_features)])
 
-        hash = hash or helper_hash()
+        hash = hash or build_commit()
 
         if os.startswith('osx'):
             environ.setdefault(
@@ -362,9 +362,9 @@ class Helper(Task, metaclass=Tool):
         Task.__init__(
             self,
             task_env=env,
-            description='helper {} {}{}'.format(
+            description='build {} {}{}'.format(
                 env.os, env.cpu, prefix(' ', desc_variant)),
-            index='helper.{}.{}.{}{}'.format(
+            index='build.{}.{}.{}{}'.format(
                 hash, env.os, env.cpu, prefix('.', variant)),
             expireIn='26 weeks',
             command=Task.checkout(commit=head) + rust_install + [
@@ -380,11 +380,11 @@ class Helper(Task, metaclass=Tool):
 
     @classmethod
     def install(cls, name):
-        helper = cls.by_name(name)
-        filename = os.path.basename(helper.artifacts[0])
+        build = cls.by_name(name)
+        filename = os.path.basename(build.artifacts[0])
         return [
             'curl --compressed -o repo/{} -L {{{}.artifacts[0]}}'.format(
-                filename, helper),
+                filename, build),
             'chmod +x repo/{}'.format(filename),
             'ln -s $PWD/repo/{} $PWD/repo/git-remote-hg'.format(filename),
         ]
