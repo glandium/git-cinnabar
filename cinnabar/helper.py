@@ -79,9 +79,7 @@ class BaseHelper(object):
     @classmethod
     def _helper_command(self):
         helper_path = Git.config('cinnabar.helper')
-        env = {
-            b'GIT_REPLACE_REF_BASE': b'refs/cinnabar/replace/',
-        }
+        env = {}
         for k, v in iteritems(environ()):
             if k.startswith(b'GIT_CINNABAR_'):
                 env[k] = v
