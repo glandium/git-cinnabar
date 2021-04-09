@@ -1,13 +1,3 @@
-define exec
-$$(shell echo $1 >&2)
-ifeq (fail,$$(shell $1 >&2 || echo fail))
-$$(error failed)
-endif
-endef
-
-$(eval $(call exec,git submodule sync))
-$(eval $(call exec,git submodule update --init))
-
 .PHONY: helper
 helper:
 

@@ -5,9 +5,13 @@ endif
 NO_GETTEXT ?= 1
 NO_OPENSSL ?= 1
 
-include $(CURDIR)/Makefile
+-include $(CURDIR)/Makefile
 
 SOURCE_DIR := $(dir $(CURDIR))
+
+$(CURDIR)/Makefile:
+	git -C $(SOURCE_DIR) submodule sync
+	git -C $(SOURCE_DIR) submodule update --init
 
 ALL_PROGRAMS += git-cinnabar-helper$X
 
