@@ -10,14 +10,20 @@ export PATH := $(TOPDIR)$(PATHSEP)$(PATH)
 export PYTHONDONTWRITEBYTECODE := 1
 
 ifeq ($(MAKECMDGOALS),package)
+LOWER = $(subst A,a,$(subst B,b,$(subst C,c,$(subst D,d,$(subst E,e,$(subst F,f,$(subst G,g,$(subst H,h,$(subst I,i,$(subst J,j,$(subst K,k,$(subst L,l,$(subst M,m,$(subst N,n,$(subst O,o,$(subst P,p,$(subst Q,q,$(subst R,r,$(subst S,s,$(subst T,t,$(subst U,u,$(subst V,v,$(subst W,w,$(subst X,x,$(subst Y,y,$(subst Z,z,$1))))))))))))))))))))))))))
+
+system := $(call LOWER,$(SYSTEM))
+machine := $(call LOWER,$(MACHINE))
 PACKAGE_FLAGS = $(addprefix --system ,$(SYSTEM)) $(addprefix --machine ,$(MACHINE))
-PACKAGE = $(notdir $(shell $(TOPDIR)/download.py --url $(PACKAGE_FLAGS)))
+PACKAGE_EXT = $(if $(filter windows macos,$(system)),zip,tar.xz)
+PACKAGE = git-cinnabar.$(system).$(machine).$(PACKAGE_EXT)
+EXT = $(if $(filter windows,$(system)),.exe)
 
 $(PACKAGE):
 	@mkdir -p tmp
 	@rm -rf tmp/git-cinnabar
-	git archive --format=tar --prefix=git-cinnabar/ HEAD | tar -C tmp -x
-	@$(TOPDIR)/download.py --no-config -o tmp/git-cinnabar/$(PACKAGE) $(PACKAGE_FLAGS)
+	@mkdir -p tmp/git-cinnabar
+	@$(TOPDIR)/download.py --no-config -o tmp/git-cinnabar/git-cinnabar$(EXT) $(PACKAGE_FLAGS)
 ifneq (,$(filter %.tar.xz,$(PACKAGE)))
 	tar --owner cinnabar:1000 --group cinnabar:1000 -C tmp --remove-files --sort=name -Jcvf $@ git-cinnabar
 else
