@@ -83,7 +83,6 @@ tempfile = "3"
 
 [profile.release]
 codegen-units = 1
-debug = true
 panic = "abort"
 
 [profile.dev]
