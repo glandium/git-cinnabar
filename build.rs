@@ -45,27 +45,6 @@ fn prepare_make(make: &mut Command) -> &mut Command {
     result.env_remove("PROFILE")
 }
 
-#[rustversion::all(nightly, before(2020-11-23))]
-fn feature_bool_to_option() {
-    println!("cargo:rustc-cfg=feature_bool_to_option");
-}
-#[rustversion::not(all(nightly, before(2020-11-23)))]
-fn feature_bool_to_option() {}
-
-#[rustversion::all(nightly, before(2020-12-27))]
-fn feature_min_const_generics() {
-    println!("cargo:rustc-cfg=feature_min_const_generics");
-}
-#[rustversion::not(all(nightly, before(2020-12-27)))]
-fn feature_min_const_generics() {}
-
-#[rustversion::all(nightly, before(2021-01-07))]
-fn feature_slice_strip() {
-    println!("cargo:rustc-cfg=feature_slice_strip");
-}
-#[rustversion::not(all(nightly, before(2021-01-07)))]
-fn feature_slice_strip() {}
-
 fn main() {
     let target_arch = env("CARGO_CFG_TARGET_ARCH");
     let target_os = env("CARGO_CFG_TARGET_OS");
@@ -238,9 +217,6 @@ fn main() {
         &GIT_VERSION[GIT_VERSION.len() - 40..]
     };
     println!("cargo:rustc-env=BUILD_COMMIT={}", build_commit);
-    feature_bool_to_option();
-    feature_min_const_generics();
-    feature_slice_strip();
 
     let dir = dir.join("cinnabar");
     let python_tar = Path::new(&env_os("OUT_DIR")).join("python.tar.zst");
