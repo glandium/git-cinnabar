@@ -50,10 +50,6 @@ endef
 
 $(foreach p,$(PATCHES),$(eval $(call patch,$(p:%.c.patch=%))))
 
-clean: clean-patched
-clean-patched:
-	$(RM) $(addprefix $(SOURCE_DIR)/src/,$(PATCHES:%.c.patch=%.patched.c))
-
 $(addprefix $(SOURCE_DIR)/src/,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c)):
 
 CINNABAR_OBJECTS += $(filter-out fast-import.patched.o,$(PATCHES:%.c.patch=%.patched.o))
