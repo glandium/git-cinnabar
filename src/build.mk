@@ -28,7 +28,7 @@ GIT-VERSION-GEN:
 	echo ". $(SOURCE_DIR)/git-core/$@" > $@
 
 ALL_PROGRAMS += git-cinnabar$X
-ALL_CFLAGS := $(subst -I. ,-I$(SOURCE_DIR)/git-core ,$(ALL_CFLAGS))
+ALL_CFLAGS := $(subst -I. ,-I$(SOURCE_DIR)/git-core -I. ,$(ALL_CFLAGS))
 ALL_CFLAGS := $(subst -Icompat,-I$(SOURCE_DIR)/git-core/compat,$(ALL_CFLAGS))
 
 all:: git-cinnabar$X
@@ -44,7 +44,7 @@ CINNABAR_OBJECTS += mingw.o
 PATCHES = $(notdir $(wildcard $(SOURCE_DIR)/src/*.patch))
 
 define patch
-$$(SOURCE_DIR)/src/$1.patched.c: $$(SOURCE_DIR)/src/$1.c.patch $$(firstword $$(wildcard $$(SOURCE_DIR)/git-core/$1.c $$(SOURCE_DIR)/git-core/builtin/$1.c))
+$1.patched.c: $$(SOURCE_DIR)/src/$1.c.patch $$(firstword $$(wildcard $$(SOURCE_DIR)/git-core/$1.c $$(SOURCE_DIR)/git-core/builtin/$1.c))
 	patch -p1 -F0 -o $$@ $$(lastword $$^) < $$<
 endef
 
@@ -52,19 +52,18 @@ $(foreach p,$(PATCHES),$(eval $(call patch,$(p:%.c.patch=%))))
 
 $(addprefix $(SOURCE_DIR)/src/,$(PATCHES) $(CINNABAR_OBJECTS:%.o=%.c)):
 
-CINNABAR_OBJECTS += $(filter-out fast-import.patched.o,$(PATCHES:%.c.patch=%.patched.o))
-
-cinnabar-fast-import.o: $(SOURCE_DIR)/src/fast-import.patched.c
-
 ifdef USE_COMPUTED_HEADER_DEPENDENCIES
-dep_files := $(foreach f,$(CINNABAR_OBJECTS),$(dir $f).depend/$(notdir $f).d)
+dep_files := $(foreach f,$(ALL_CINNABAR_OBJECTS),$(dir $f).depend/$(notdir $f).d)
 dep_files_present := $(wildcard $(dep_files))
 ifneq ($(dep_files_present),)
 include $(dep_files_present)
 endif
 else
-$(CINNABAR_OBJECTS): $(LIB_H)
+$(ALL_CINNABAR_OBJECTS): $(LIB_H)
 endif
+
+PATCHED_GIT_OBJECTS := $(filter-out fast-import.patched.o,$(PATCHES:%.c.patch=%.patched.o))
+ALL_CINNABAR_OBJECTS = $(CINNABAR_OBJECTS) $(PATCHED_GIT_OBJECTS)
 
 ifeq (,$(filter http.c.patch,$(PATCHES)))
 libcinnabar.a: http.o
@@ -85,13 +84,18 @@ EXCLUDE_OBJS += help.o
 EXCLUDE_OBJS += iterator.o
 EXCLUDE_OBJS += reachable.o
 EXCLUDE_OBJS += serve.o
-libcinnabar.a: $(CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(XDIFF_OBJS)
+libcinnabar.a: $(ALL_CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(XDIFF_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
 
 linker-flags: GIT-LDFLAGS FORCE
 	@echo $(ALL_LDFLAGS) -L$(CURDIR) $(filter-out -lz,$(EXTLIBS))
 
-$(CINNABAR_OBJECTS): %.o: $(SOURCE_DIR)/src/%.c GIT-CFLAGS $(missing_dep_dirs)
+$(CINNABAR_OBJECTS): %.o: $(SOURCE_DIR)/src/%.c
+$(PATCHED_GIT_OBJECTS): %.o: %.c
+cinnabar-fast-import.o: fast-import.patched.c
+$(ALL_CINNABAR_OBJECTS): GIT-CFLAGS $(missing_dep_dirs)
+
+$(ALL_CINNABAR_OBJECTS):
 	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
 
 config.patched.sp config.patched.s config.patched.o: GIT-PREFIX

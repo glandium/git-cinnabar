@@ -2,6 +2,5 @@ git-cinnabar
 git-cinnabar.exe
 git-remote-hg
 git-remote-hg.exe
-*.patched.c
 *.pyc
 target
