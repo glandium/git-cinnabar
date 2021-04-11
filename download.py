@@ -10,7 +10,7 @@ else
   echo "Could not find python 2.7 or 3.x" >&2
   exit 1
 fi
-exec $PYTHON $0 "$@"
+exec $PYTHON -B $0 "$@"
 exit 1
 '''
 
