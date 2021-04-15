@@ -66,6 +66,7 @@
 #include "oidset.h"
 #include "progress.h"
 #include "quote.h"
+#include "refs.h"
 #include "remote.h"
 #include "replace-object.h"
 #include "revision.h"
@@ -1735,6 +1736,13 @@ static void reset_replace_map()
 	the_repository->objects->replace_map_initialized = 0;
 }
 
+static int count_refs(const char *refname, const struct object_id *oid,
+                      int flags, void *cb_dat) {
+	size_t *count = (size_t *)cb_dat;
+	(*count)++;
+	return 0;
+}
+
 static void init_metadata()
 {
 	struct commit *c;
@@ -1744,6 +1752,7 @@ static void init_metadata()
 	struct tree_desc desc;
 	struct name_entry entry;
 	struct replace_object *replace;
+	size_t count = 0;
 
 	c = lookup_commit_reference_by_name(METADATA_REF);
 	if (!c)
@@ -1756,12 +1765,24 @@ static void init_metadata()
 		strbuf_trim(*f);
 		if (!strcmp("files-meta", (*f)->buf))
 			metadata_flags |= FILES_META;
-		else if (!strcmp("unified-manifests", (*f)->buf))
-			metadata_flags |= UNIFIED_MANIFESTS;
-		else if (!strcmp("unified-manifests-v2", (*f)->buf))
+		else if (!strcmp("unified-manifests", (*f)->buf)) {
+			strbuf_list_free(flags);
+			goto old;
+		} else if (!strcmp("unified-manifests-v2", (*f)->buf))
 			metadata_flags |= UNIFIED_MANIFESTS_v2;
+		else {
+			strbuf_list_free(flags);
+			goto new;
+		}
 	}
 	strbuf_list_free(flags);
+
+	if (!metadata_flags & (FILES_META | UNIFIED_MANIFESTS_v2))
+		goto old;
+
+	for_each_ref_in("refs/cinnabar/branches/", count_refs, &count);
+	if (count)
+		goto old;
 
 	reset_replace_map();
 	the_repository->objects->replace_map =
@@ -1794,6 +1815,25 @@ static void init_metadata()
 			die(_("duplicate replace: %s"),
 			    oid_to_hex(&replace->original.oid));
 	}
+	if (the_repository->objects->replace_map->map.tablesize == 0) {
+		count = 0;
+		for_each_ref_in("refs/cinnabar/replace/", count_refs, &count);
+		if (count > 0)
+			goto old;
+	}
+	return;
+old:
+	die("Metadata from git-cinnabar versions older than 0.5.0 is not "
+	    "supported.\n"
+	    "Please run `git cinnabar upgrade` with version 0.5.x first.");
+new:
+	die("It looks like this repository was used with a newer version of "
+	    "git-cinnabar. Cannot use this version.");
+#if 0
+upgrade:
+	die("Git-cinnabar metadata needs upgrade. "
+	    "Please run `git cinnabar upgrade`.");
+#endif
 }
 
 void dump_branches(void);

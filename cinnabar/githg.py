@@ -30,8 +30,6 @@ except ImportError:
 from cinnabar.exceptions import (
     AmbiguousGraftAbort,
     NothingToGraftException,
-    OldUpgradeAbort,
-    UpgradeAbort,
 )
 from cinnabar.util import (
     HTTPReader,
@@ -566,7 +564,7 @@ class GitHgStore(object):
         b'refs/cinnabar/files-meta',
     )
 
-    def _metadata(self):
+    def metadata(self):
         if self._metadata_sha1:
             metadata = GitCommit(self._metadata_sha1)
             self._flags = set(metadata.body.split())
@@ -575,21 +573,6 @@ class GitHgStore(object):
                 refs = list(refs)
                 refs.remove(b'refs/cinnabar/files-meta')
             return metadata, dict(zip(refs, metadata.parents))
-
-    def metadata(self):
-        metadata = self._metadata()
-        if metadata:
-            if len(self._flags) > len(self.FLAGS):
-                raise UpgradeAbort(
-                    'It looks like this repository was used with a newer '
-                    'version of git-cinnabar. Cannot use this version.')
-
-            if b'unified-manifests-v2' not in self._flags:
-                raise OldUpgradeAbort()
-
-            if set(self._flags) != set(self.FLAGS):
-                raise UpgradeAbort()
-        return metadata
 
     def __init__(self):
         self._flags = set()
@@ -608,8 +591,6 @@ class GitHgStore(object):
                                           'refs/notes/cinnabar'):
             if ref.startswith(b'refs/cinnabar/replace/'):
                 self._replace[ref[22:]] = sha1
-            elif ref.startswith(b'refs/cinnabar/branches/'):
-                raise OldUpgradeAbort()
             elif ref == b'refs/cinnabar/metadata':
                 self._metadata_sha1 = sha1
             elif ref == b'refs/cinnabar/tag_cache':
@@ -654,14 +635,6 @@ class GitHgStore(object):
                     self._generation = n + 1
 
             self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
-
-            replace = {}
-            for line in Git.ls_tree(metadata.tree):
-                mode, typ, sha1, path = line
-                replace[path] = sha1
-
-            if self._replace and not replace:
-                raise OldUpgradeAbort()
 
             # Delete old tag-cache, which may contain incomplete data.
             Git.delete_ref(b'refs/cinnabar/tag-cache')

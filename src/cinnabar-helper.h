@@ -13,8 +13,7 @@
 
 
 #define FILES_META 0x1
-#define UNIFIED_MANIFESTS 0x2
-#define UNIFIED_MANIFESTS_v2 0x4
+#define UNIFIED_MANIFESTS_v2 0x2
 
 extern int metadata_flags;
 

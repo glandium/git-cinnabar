@@ -633,6 +633,15 @@ fn do_rollback(
     rollback_to(wanted_metadata.as_ref(), force, "rollback").map(|_| ())
 }
 
+#[allow(clippy::unnecessary_wraps)]
+fn do_upgrade() -> Result<(), String> {
+    // If we got here, init_cinnabar_2/init_metadata went through,
+    // which means we didn't die because of unusable metadata.
+    // There are currently no conditions that will require an upgrade.
+    println!("No metadata to upgrade");
+    Ok(())
+}
+
 fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
     unsafe {
         let mut stdout = stdout();
@@ -857,7 +866,8 @@ fn git_cinnabar() -> i32 {
             force,
             committish,
         } => do_rollback(candidates, fsck, force, committish),
-        Bundle { .. } | Fsck { .. } | Upgrade => {
+        Upgrade => do_upgrade(),
+        Bundle { .. } | Fsck { .. } => {
             return run_python_command(PythonCommand::GitCinnabar);
         }
     };
