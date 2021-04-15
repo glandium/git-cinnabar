@@ -17,7 +17,7 @@ use shared_child::SharedChild;
 
 use crate::libgit::config_get_value;
 use crate::util::SliceExt;
-use crate::BUILD_COMMIT;
+use crate::FULL_VERSION;
 
 extern "C" {
     static cinnabar_check: c_int;
@@ -70,6 +70,18 @@ impl VersionCheck {
 fn version_check_from_repo(when: SystemTime) -> Option<VersionCheck> {
     let mut cmd = Command::new("git");
     cmd.args(&["ls-remote", CARGO_PKG_REPOSITORY, VERSION_CHECK_REF]);
+    let build_commit = {
+        let len = if FULL_VERSION.ends_with("-modified") {
+            "-modified".len()
+        } else {
+            0
+        };
+        if FULL_VERSION.len() > len + 40 {
+            &FULL_VERSION[FULL_VERSION.len() - len - 40..FULL_VERSION.len() - len]
+        } else {
+            ""
+        }
+    };
 
     let (mut reader, writer) = pipe().ok()?;
     cmd.stdout(writer);
@@ -97,7 +109,7 @@ fn version_check_from_repo(when: SystemTime) -> Option<VersionCheck> {
                     {
                         new_version = Some(version);
                     }
-                } else if r == VERSION_CHECK_REF.as_bytes() && sha1 != BUILD_COMMIT.as_bytes() {
+                } else if r == VERSION_CHECK_REF.as_bytes() && sha1 != build_commit.as_bytes() {
                     return std::str::from_utf8(sha1).map(String::from).ok();
                 }
             }

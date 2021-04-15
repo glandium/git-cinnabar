@@ -8,13 +8,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use count_write::CountWrite;
-use git_version::git_version;
 use itertools::Itertools;
 use make_cmd::gnu_make;
 use tar::{Builder, EntryType, Header};
 use walkdir::WalkDir;
-
-const GIT_VERSION: &str = git_version!(args = ["--always", "--abbrev=40"]);
 
 fn env(name: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| panic!("Failed to get {}", name))
@@ -210,13 +207,6 @@ fn main() {
     }
 
     println!("cargo:rerun-if-env-changed=CINNABAR_MAKE_FLAGS");
-
-    let build_commit = if GIT_VERSION.is_empty() {
-        "unknown"
-    } else {
-        &GIT_VERSION[GIT_VERSION.len() - 40..]
-    };
-    println!("cargo:rustc-env=BUILD_COMMIT={}", build_commit);
 
     let dir = dir.join("cinnabar");
     let python_tar = Path::new(&env_os("OUT_DIR")).join("python.tar.zst");
