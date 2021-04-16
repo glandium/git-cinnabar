@@ -64,7 +64,6 @@
 #include "streaming.h"
 #include "object.h"
 #include "oidset.h"
-#include "progress.h"
 #include "quote.h"
 #include "refs.h"
 #include "remote.h"
@@ -1362,11 +1361,6 @@ static void do_reset_heads(struct string_list *args)
 	reset_heads(heads);
 }
 
-struct track_upgrade {
-	struct oidset set;
-	struct progress *progress;
-};
-
 static struct name_entry *
 lazy_tree_entry_by_name(struct manifest_tree_state *state,
                         const struct object_id *tree_id,
@@ -1392,13 +1386,6 @@ lazy_tree_entry_by_name(struct manifest_tree_state *state,
 	return NULL;
 }
 
-struct track_manifests_upgrade {
-	struct progress *progress;
-	struct oidset manifests;
-	struct hashmap tree_cache;
-	struct hashmap commit_cache;
-};
-
 struct oid_map_entry {
 	struct hashmap_entry ent;
 	struct object_id old_oid;
@@ -1414,18 +1401,6 @@ static int oid_map_entry_cmp(const void *cmpdata, const struct hashmap_entry *e1
 		container_of(e2, const struct oid_map_entry, ent);
 
 	return oidcmp(&entry1->old_oid, &entry2->old_oid);
-}
-
-static void do_upgrade(struct string_list *args)
-{
-        if (args->nr != 0)
-                die("upgrade takes no arguments");
-
-	if (!(metadata_flags & (FILES_META | UNIFIED_MANIFESTS_v2))) {
-		die("Unsupported upgrade");
-	}
-
-	write_or_die(1, "ok\n", 3);
 }
 
 static void recurse_create_git_tree(const struct object_id *tree_id,
@@ -2053,8 +2028,6 @@ int helper_main(int wire)
 			do_heads(&args);
 		else if (!strcmp("reset-heads", command))
 			do_reset_heads(&args);
-		else if (!strcmp("upgrade", command))
-			do_upgrade(&args);
 		else if (!strcmp("create-git-tree", command))
 			do_create_git_tree(&args);
 		else if (!strcmp("seen", command))

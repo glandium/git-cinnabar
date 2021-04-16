@@ -334,11 +334,6 @@ class GitHgHelper(BaseHelper):
             pass
 
     @classmethod
-    def upgrade(self):
-        with self.query(b'upgrade') as stdout:
-            return stdout.readline().strip() == b'ok'
-
-    @classmethod
     def create_git_tree(self, manifest_sha1, ref_commit=None):
         extra_arg = (ref_commit,) if ref_commit else ()
         with self.query(b'create-git-tree', manifest_sha1,
