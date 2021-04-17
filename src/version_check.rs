@@ -33,6 +33,7 @@ const VERSION_CHECK_REF: &str = if cfg!(version_check_branch) {
 } else {
     ALL_TAG_REFS
 };
+const VERSION_CHECK_CONFIG: &str = "cinnabar.version-check";
 
 pub struct VersionCheck {
     child: Option<Arc<SharedChild>>,
@@ -47,7 +48,7 @@ impl VersionCheck {
         }
         let now = SystemTime::now();
         // Don't run the check if the last one was less than 24 hours ago.
-        if config_get_value("cinnabar.version-check")
+        if config_get_value(VERSION_CHECK_CONFIG)
             .and_then(|x| x.into_string().ok())
             .and_then(|x| u64::from_str(&x).ok())
             .and_then(|x| x.checked_add(86400))
@@ -145,7 +146,7 @@ impl Drop for VersionCheck {
                 .args(&[
                     "config",
                     "--global",
-                    "cinnabar.version-check",
+                    VERSION_CHECK_CONFIG,
                     &format!("{}", timestamp.as_secs()),
                 ])
                 .stdout(Stdio::null())
