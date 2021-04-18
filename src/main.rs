@@ -70,10 +70,10 @@ use store::{
 };
 use util::{CStrExt, IteratorExt, OsStrExt, SliceExt};
 
-#[cfg(any(version_check_tags, version_check_branch))]
+#[cfg(feature = "version-check")]
 mod version_check;
 
-#[cfg(not(any(version_check_tags, version_check_branch)))]
+#[cfg(not(feature = "version-check"))]
 mod version_check {
     pub struct VersionCheck;
 

@@ -28,11 +28,10 @@ const CHECK_VERSION: c_int = 0x04;
 const ALL_TAG_REFS: &str = "refs/tags/*";
 const CARGO_PKG_REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
-const VERSION_CHECK_REF: &str = if cfg!(version_check_branch) {
-    concat!("refs/heads/", env!("VERSION_CHECK_BRANCH"))
-} else {
-    ALL_TAG_REFS
-};
+#[cfg(version_check_branch)]
+const VERSION_CHECK_REF: &str = concat!("refs/heads/", env!("VERSION_CHECK_BRANCH"));
+#[cfg(not(version_check_branch))]
+const VERSION_CHECK_REF: &str = ALL_TAG_REFS;
 const VERSION_CHECK_CONFIG: &str = "cinnabar.version-check";
 
 pub struct VersionCheck {
