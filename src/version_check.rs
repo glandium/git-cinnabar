@@ -14,6 +14,7 @@ use bstr::ByteSlice;
 use os_pipe::pipe;
 use semver::Version;
 use shared_child::SharedChild;
+use structopt::clap::crate_version;
 
 use crate::libgit::config_get_value;
 use crate::util::SliceExt;
@@ -70,18 +71,11 @@ impl VersionCheck {
 fn version_check_from_repo(when: SystemTime) -> Option<VersionCheck> {
     let mut cmd = Command::new("git");
     cmd.args(&["ls-remote", CARGO_PKG_REPOSITORY, VERSION_CHECK_REF]);
-    let build_commit = {
-        let len = if FULL_VERSION.ends_with("-modified") {
-            "-modified".len()
-        } else {
-            0
-        };
-        if FULL_VERSION.len() > len + 40 {
-            &FULL_VERSION[FULL_VERSION.len() - len - 40..FULL_VERSION.len() - len]
-        } else {
-            ""
-        }
-    };
+    let build_commit = FULL_VERSION
+        .strip_suffix("-modified")
+        .unwrap_or(FULL_VERSION)
+        .strip_prefix(concat!(crate_version!(), "-"))
+        .unwrap();
 
     let (mut reader, writer) = pipe().ok()?;
     cmd.stdout(writer);
