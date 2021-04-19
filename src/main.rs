@@ -95,7 +95,7 @@ pub const FULL_VERSION: &str = git_version!(
     ],
     prefix = concat!(crate_version!(), "-"),
     cargo_prefix = "",
-    fallback = "unknown"
+    fallback = crate_version!(),
 );
 
 extern "C" {

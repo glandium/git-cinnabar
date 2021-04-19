@@ -75,7 +75,7 @@ fn version_check_from_repo(when: SystemTime) -> Option<VersionCheck> {
         .strip_suffix("-modified")
         .unwrap_or(FULL_VERSION)
         .strip_prefix(concat!(crate_version!(), "-"))
-        .unwrap();
+        .unwrap_or("");
 
     let (mut reader, writer) = pipe().ok()?;
     cmd.stdout(writer);
