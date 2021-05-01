@@ -126,10 +126,25 @@ class TagsRemoteHelper(BaseRemoteHelper):
         self._helper.flush()
 
     def list(self, arg=None):
-        for tag, ref in sorted(self._store.tags()):
+        tags = sorted(self._store.tags())
+        # git fetch does a check-connection that calls
+        # `git rev-list --objects --stdin --not --all` with the list of
+        # sha1s from the list we're about to give it. With no refs on these
+        # exact sha1s, the rev-list can take a long time on large repos.
+        # So we temporarily create refs to make that rev-list faster.
+        for tag, ref in tags:
+            Git.update_ref(b'refs/cinnabar/refs/tags/' + tag, ref)
+        GitHgHelper.reload()
+        for tag, ref in tags:
             self._helper.write(b'%s refs/tags/%s\n' % (ref, tag))
         self._helper.write(b'\n')
         self._helper.flush()
+
+        # Now remove the refs. The deletion will only actually be committed
+        # on the store close in main(), after git is done doing
+        # check-connection.
+        for tag, _ in tags:
+            Git.delete_ref(b'refs/cinnabar/refs/tags/' + tag)
 
 
 class GitRemoteHelper(BaseRemoteHelper):
