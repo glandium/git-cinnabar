@@ -255,6 +255,10 @@ class GitHgHelper(BaseHelper):
         self.git2hg.invalidate()
         self.hg2git.invalidate()
         self._cat_commit.invalidate()
+        # Force this method to be synchronous with the helper, using the
+        # synchronous `version` command.
+        with self.query(b'version %d' % self.VERSION) as stdout:
+            stdout.readline()
 
     @classmethod
     def _cat_file(self, typ, sha1):
