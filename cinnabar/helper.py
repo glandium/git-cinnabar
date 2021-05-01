@@ -187,8 +187,8 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def reload(self):
-        with self.query(b'reload'):
-            pass
+        with self.query(b'reload') as stdout:
+            return stdout.readline().strip() == b'ok'
         self.git2hg.invalidate()
         self.hg2git.invalidate()
         self._cat_commit.invalidate()

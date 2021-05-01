@@ -1840,6 +1840,8 @@ static void do_reload(struct string_list *args)
 	metadata_flags = 0;
 	reset_replace_map();
 	init_metadata();
+
+	write_or_die(1, "ok\n", 3);
 }
 
 int configset_add_value(struct config_set *, const char*, const char *);
