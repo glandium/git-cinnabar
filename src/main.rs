@@ -813,6 +813,16 @@ enum CinnabarCommand {
         #[structopt(parse(from_os_str))]
         revs: Vec<OsString>,
     },
+    #[structopt(name = "unbundle")]
+    #[structopt(about = "Apply a mercurial bundle to the repository")]
+    Unbundle {
+        #[structopt(long)]
+        #[structopt(help = "Get clone bundle from given repository")]
+        clonebundle: bool,
+        #[structopt(help = "Url of the bundle")]
+        #[structopt(parse(from_os_str))]
+        url: OsString,
+    },
     #[structopt(name = "upgrade")]
     #[structopt(about = "Upgrade cinnabar metadata")]
     Upgrade,
@@ -878,7 +888,7 @@ fn git_cinnabar() -> i32 {
             committish,
         } => do_rollback(candidates, fsck, force, committish),
         Upgrade => do_upgrade(),
-        Bundle { .. } | Fsck { .. } => {
+        Bundle { .. } | Unbundle { .. } | Fsck { .. } => {
             return run_python_command(PythonCommand::GitCinnabar);
         }
     };
