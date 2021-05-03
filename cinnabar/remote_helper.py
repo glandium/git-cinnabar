@@ -456,10 +456,9 @@ class GitRemoteHelper(BaseRemoteHelper):
 
     def push(self, *refspecs):
         try:
-            default = b'never' if self._graft else b'phase'
             values = {
-                None: default,
-                b'': default,
+                None: b'phase',
+                b'': b'phase',
                 b'never': b'never',
                 b'phase': b'phase',
                 b'always': b'always',
@@ -482,7 +481,7 @@ class GitRemoteHelper(BaseRemoteHelper):
             self._helper.flush()
         else:
             repo_heads = self._branchmap.heads()
-            PushStore.adopt(self._store, self._graft)
+            PushStore.adopt(self._store)
             pushed = push(self._repo, self._store, pushes, repo_heads,
                           self._branchmap.names(), self._dry_run)
 

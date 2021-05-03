@@ -40,17 +40,7 @@ def bundle(args):
     if bundle_commits:
         # TODO: better UX. For instance, this will fail with an exception when
         # the parent commit doesn't have mercurial metadata.
-        GRAFT = {
-            None: False,
-            b'false': False,
-            b'true': True,
-        }
-        try:
-            graft = Git.config('cinnabar.graft', values=GRAFT)
-        except InvalidConfig as e:
-            logging.error(str(e))
-            return 1
-        store = PushStore(graft=graft)
+        store = PushStore()
         if args.version == 1:
             b2caps = {}
         elif args.version == 2:

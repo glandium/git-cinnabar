@@ -83,7 +83,6 @@ check-graft: hg.graft.git
 check-graft: hg.graft2.git
 check-graft: hg.graft.replace.git
 check-graft: hg.cant.graft.git
-check-graft: hg.graft.new.bundle
 check-graft: hg.cinnabarclone-graft.git
 check-graft: hg.cinnabarclone-graft-replace.git
 check-graft: hg.cinnabarclone-graft-bundle.git
@@ -275,11 +274,3 @@ hg.cant.graft.git: hg.graft.replace.git
 	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
 	$(GIT) -C $@ for-each-ref --format='%(refname)' | grep -v refs/remotes/origin/HEAD | sed 's/^/delete /' | $(GIT) -C $@ update-ref --stdin
 	$(GIT) -C $@ -c cinnabar.graft=true remote update
-
-hg.graft.new.bundle: hg.graft2.git
-	cp -r $< $@.git
-	$(GIT) -C $@.git checkout refs/remotes/new/HEAD
-	GIT_AUTHOR_DATE="1970-01-01T00:00:00 +0000" GIT_COMMITTER_DATE="1970-01-01T00:00:00 +0000" $(GIT) -C $@.git -c user.email=git@cinnabar -c user.name=cinnabar commit --allow-empty -m 'New commit'
-	$(GIT) -C $@.git -c cinnabar.graft=true cinnabar bundle $(CURDIR)/$@ HEAD^!
-	$(GIT) -C $@.git -c cinnabar.graft=true fetch hg::$(PATH_URL)/$@
-	test "$$($(GIT) -C $@.git cinnabar data -c $$($(GIT) -C $@.git cinnabar git2hg FETCH_HEAD) | tail -c 1)" = t

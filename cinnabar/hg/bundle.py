@@ -124,22 +124,18 @@ def get_changes(tree, parents, all=False):
 
 class PushStore(GitHgStore):
     @classmethod
-    def adopt(cls, store, graft):
+    def adopt(cls, store):
         assert isinstance(store, GitHgStore)
         store.__class__ = cls
-        store._init(graft)
+        store._init()
 
     def __init__(self, *args, **kwargs):
-        graft = kwargs.get('graft', False)
-        if 'graft' in kwargs:
-            del kwargs['graft']
         super(PushStore, self).__init__(*args, **kwargs)
-        self._init(graft)
+        self._init()
 
-    def _init(self, graft=False):
+    def _init(self):
         self._pushed = set()
         self._manifest_git_tree = {}
-        self._graft = bool(graft)
         self._merge_warn = 0
 
     def create_hg_manifest(self, commit, parents):
@@ -349,15 +345,6 @@ class PushStore(GitHgStore):
             parent_changeset = self.changeset(changeset.parent1)
             if parent_changeset.branch:
                 changeset.branch = parent_changeset.branch
-
-        if self._graft is True and parents and changeset.body[-1:] == b'\n':
-            parent_commit = GitCommit(parents[0])
-            if (parent_commit.body[-1:] == b'\n' and
-                    parent_commit.body[-2] == parent_changeset.body[-1]):
-                self._graft = 'true'
-
-        if self._graft == 'true' and changeset.body[-1:] == b'\n':
-            changeset.body = changeset.body[:-1]
 
         changeset.node = changeset.sha1
         self._pushed.add(changeset.node)
