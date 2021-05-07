@@ -222,7 +222,7 @@ def build_commit(head='HEAD'):
         'rev-parse', '--verify', head, stderr=open(os.devnull, 'wb'))).decode()
 
 
-def install_rust(version='1.51.0', target='x86_64-unknown-linux-gnu'):
+def install_rust(version='1.52.0', target='x86_64-unknown-linux-gnu'):
     rustup_opts = '-y --default-toolchain none'
     cargo_dir = '$HOME/.cargo/bin/'
     rustup = cargo_dir + 'rustup'
@@ -256,7 +256,7 @@ class Build(Task, metaclass=Tool):
     PREFIX = 'build'
 
     def __init__(self, os_and_variant):
-        os, variant = (os_and_variant.split('.', 2) + [''])[:2]
+        os, variant = (os_and_variant.split('.', 1) + [''])[:2]
         if os.startswith('osx'):
             os = 'osx'
         env = TaskEnvironment.by_name('{}.build'.format(os))
@@ -276,6 +276,7 @@ class Build(Task, metaclass=Tool):
         environ = {}
         cargo_flags = ['-vv', '--release']
         cargo_features = []
+        rust_version = None
         if variant == 'asan':
             if os.startswith('osx'):
                 opt = '-O2'
@@ -317,6 +318,8 @@ class Build(Task, metaclass=Tool):
             head = variant[4:]
             hash = build_commit(head)
             variant = ''
+        elif variant.startswith('rust-'):
+            rust_version = variant[5:]
         elif variant:
             raise Exception('Unknown variant: {}'.format(variant))
 
@@ -343,7 +346,9 @@ class Build(Task, metaclass=Tool):
         elif os == 'linux':
             rust_target = 'x86_64-unknown-linux-gnu'
         if variant in ('coverage', 'asan'):
-            rust_install = install_rust('nightly-2021-02-07', rust_target)
+            rust_install = install_rust('nightly-2021-03-22', rust_target)
+        elif rust_version:
+            rust_install = install_rust(rust_version, target=rust_target)
         else:
             rust_install = install_rust(target=rust_target)
         cargo_flags.extend(['--target', rust_target])

@@ -245,6 +245,9 @@ def decision():
     if TC_IS_PUSH:
         Build.by_name('arm64-osx')
 
+    # Test build with the MSRV.
+    Build.by_name('linux.rust-1.51.0')
+
     for upgrade in UPGRADE_FROM:
         TestTask(
             short_desc='upgrade tests',
