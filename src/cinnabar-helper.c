@@ -231,8 +231,7 @@ struct ls_tree_context {
 };
 
 static int fill_ls_tree(const struct object_id *oid, struct strbuf *base,
-			const char *pathname, unsigned mode, int stage,
-			void *context)
+			const char *pathname, unsigned mode, void *context)
 {
 	struct ls_tree_context *ctx = context;
 	struct strbuf *buf = &ctx->buf;
@@ -277,8 +276,7 @@ static void do_ls_tree(struct string_list *args)
 		goto not_found;
 
 	memset(&match_all, 0, sizeof(match_all));
-	read_tree_recursive(the_repository, tree, "", 0, 0, &match_all,
-	                    fill_ls_tree, &ctx);
+	read_tree(the_repository, tree, &match_all, fill_ls_tree, &ctx);
 	send_buffer(&ctx.buf);
 	strbuf_release(&ctx.buf);
 
