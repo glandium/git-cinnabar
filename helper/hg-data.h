@@ -43,11 +43,13 @@ static inline void hg_oidcpy2git(struct object_id *dst,
 {
 	memcpy(dst->hash, src->hash, 20);
 	memset(dst->hash + 20, 0, the_hash_algo->rawsz - 20);
+	dst->algo = GIT_HASH_SHA1;
 }
 
 static inline void oidcpy2hg(struct hg_object_id *dst,
                              const struct object_id *src)
 {
+	assert(src->algo == GIT_HASH_SHA1);
 	memcpy(dst->hash, src->hash, 20);
 }
 

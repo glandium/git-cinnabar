@@ -1,5 +1,5 @@
 diff --git a/tree-walk.c b/tree-walk.c
-index d5a8e096a6..cace4fd6cf 100644
+index 3a94959d64..70558d2964 100644
 --- a/tree-walk.c
 +++ b/tree-walk.c
 @@ -47,7 +47,7 @@ static int decode_tree_entry(struct tree_desc *desc, const char *buf, unsigned l
@@ -9,5 +9,5 @@ index d5a8e096a6..cace4fd6cf 100644
 -	desc->entry.mode = canon_mode(mode);
 +	desc->entry.mode = mode;
  	desc->entry.pathlen = len - 1;
- 	hashcpy(desc->entry.oid.hash, (const unsigned char *)path + len);
+ 	oidread(&desc->entry.oid, (const unsigned char *)path + len);
  
