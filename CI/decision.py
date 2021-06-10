@@ -167,6 +167,9 @@ class Clone(TestTask, metaclass=Tool):
             hg = '4.3.3'
         else:
             hg = MERCURIAL_VERSION
+        kwargs = {}
+        if parse_version(version) < parse_version('0.5.7'):
+            kwargs['git'] = '2.30.2'
         if REPO == DEFAULT_REPO:
             index = 'bundle.{}'.format(sha1)
         else:
@@ -190,6 +193,7 @@ class Clone(TestTask, metaclass=Tool):
                 'REPO': REPO,
             },
             priority='high',
+            **kwargs,
         )
 
 
