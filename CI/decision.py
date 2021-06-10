@@ -159,6 +159,9 @@ class Clone(TestTask, metaclass=Tool):
             download = ['repo/git-cinnabar download']
         else:
             download = ['repo/download.py']
+        kwargs = {}
+        if parse_version(version) < parse_version('0.5.7'):
+            kwargs['git'] = '2.30.2'
         if REPO == DEFAULT_REPO:
             index = 'bundle.{}'.format(sha1)
         else:
@@ -182,6 +185,7 @@ class Clone(TestTask, metaclass=Tool):
                 'REPO': REPO,
             },
             priority='high',
+            **kwargs,
         )
 
 

@@ -106,6 +106,7 @@ void *get_object_entry(const unsigned char *sha1)
 {
 	struct object_id oid;
 	hashcpy(oid.hash, sha1);
+	oid.algo = GIT_HASH_SHA1;
 	return find_object(&oid);
 }
 
@@ -220,7 +221,7 @@ static void end_packfile()
 const struct object_id empty_tree = { {
 	0x4b, 0x82, 0x5d, 0xc6, 0x42, 0xcb, 0x6e, 0xb9, 0xa0, 0x60,
 	0xe5, 0x4b, 0xf8, 0xd6, 0x92, 0x88, 0xfb, 0xee, 0x49, 0x04,
-} };
+}, GIT_HASH_SHA1 };
 
 /* Override fast-import.c's parse_mark_ref to allow a syntax for
  * mercurial sha1s, resolved through hg2git. Hack: it uses a fixed
@@ -1285,7 +1286,7 @@ void store_git_commit(struct strbuf *commit_buf, struct object_id *result)
 const struct object_id empty_blob = { {
 	0xe6, 0x9d, 0xe2, 0x9b, 0xb2, 0xd1, 0xd6, 0x43, 0x4b, 0x8b,
 	0x29, 0xae, 0x77, 0x5a, 0xd8, 0xc2, 0xe4, 0x8c, 0x53, 0x91,
-} };
+}, GIT_HASH_SHA1 };
 
 const struct object_id *ensure_empty_blob() {
 	struct object_entry *oe = find_object((struct object_id *)&empty_blob);
