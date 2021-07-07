@@ -192,17 +192,28 @@ def download(args):
 
                     super(UntarProgress, self).__init__(self._proc.stdout)
 
-                    def send(stdin, content):
-                        copyfileobj(content, stdin)
-                        stdin.close()
+                    class ExtractThread(threading.Thread):
+                        def __init__(self, stdin, content):
+                            super(ExtractThread, self).__init__()
+                            self.stdin = stdin
+                            self.content = content
+                            self.exc = None
 
-                    self._thread = threading.Thread(
-                        target=send, args=(self._proc.stdin, content))
+                        def run(self):
+                            try:
+                                copyfileobj(self.content, self.stdin)
+                                self.stdin.close()
+                            except Exception as e:
+                                self.exc = e
+
+                    self._thread = ExtractThread(self._proc.stdin, content)
                     self._thread.start()
 
                 def finish(self):
                     self._proc.wait()
                     self._thread.join()
+                    if self._thread.exc:
+                        raise self._thread.exc
                     super(UntarProgress, self).finish()
 
             helper_content = UntarProgress(content, helper)
