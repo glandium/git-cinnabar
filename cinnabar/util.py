@@ -18,9 +18,12 @@ except ImportError:
     )
 from collections import (
     deque,
-    Iterable,
     OrderedDict,
 )
+try:
+    from collections.abc import Iterable
+except ImportError:
+    from collections import Iterable
 from difflib import (
     Match,
     SequenceMatcher,

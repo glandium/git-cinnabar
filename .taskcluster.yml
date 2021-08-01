@@ -10,6 +10,7 @@ tasks:
           then:
             repo_name: ${event.repository.name}
             repo_url: ${event.repository.url}
+            base_repo_url: ${event.repository.url}
             login: ${event.pusher.name}
             commit: ${event.after}
             branch:
@@ -24,6 +25,7 @@ tasks:
           else:
             repo_name: ${event.pull_request.head.repo.name}
             repo_url: ${event.pull_request.head.repo.clone_url}
+            base_repo_url: ${event.pull_request.base.repo.clone_url}
             login: ${event.pull_request.head.user.login}
             commit: ${event.pull_request.head.sha}
             branch: ${event.pull_request.base.ref}
@@ -63,7 +65,9 @@ tasks:
             - sh
             - '-c'
             - >-
-              git clone -n ${e.repo_url} repo &&
+              git clone -n ${e.base_repo_url} repo &&
+              git -C repo remote add head ${e.repo_url} &&
+              git -C repo remote update head &&
               git -c advice.detachedHead=false -C repo checkout ${e.commit} &&
               python3 -m venv venv &&
               venv/bin/pip install pyyaml requests &&

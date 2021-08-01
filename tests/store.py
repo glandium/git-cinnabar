@@ -44,7 +44,7 @@ class TestStoreCG01(unittest.TestCase):
         os.environ['GIT_CINNABAR_EXPERIMENTS'] = \
             'store' if self.NEW_STORE else ''
         os.environ['GIT_CONFIG_PARAMETERS'] = "'fastimport.unpacklimit=0'"
-        self.assertEquals(
+        self.assertEqual(
             GitHgHelper.supports((b'store', b'new')), self.NEW_STORE)
 
     def tearDown(self):

@@ -16,9 +16,12 @@ except ImportError:
     from urllib import unquote as unquote_to_bytes
 from collections import (
     OrderedDict,
-    Sequence,
     defaultdict,
 )
+try:
+    from collections.abc import Sequence
+except ImportError:
+    from collections import Sequence
 try:
     from urllib2 import URLError
 except ImportError:
