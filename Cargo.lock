@@ -122,12 +122,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "convert_case"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
-
-[[package]]
 name = "count-write"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -260,7 +254,6 @@ version = "0.99.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5cc7b9cef1e351660e5443924e4f43ab25fbbed3e9a5f052df3677deb4d6b320"
 dependencies = [
- "convert_case",
  "proc-macro2",
  "quote",
  "syn",
