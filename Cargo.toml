@@ -35,7 +35,7 @@ tempfile = "3"
 typenum = "1"
 url = "2"
 which = "4"
-zstd = "0.8"
+zstd = "0.9"
 
 [dependencies.curl-sys]
 version = "0.4"
@@ -80,7 +80,7 @@ make-cmd = "0.1"
 tar = "0.4"
 target = "1.0"
 walkdir = "2"
-zstd = "0.8"
+zstd = "0.9"
 
 [dev-dependencies]
 tempfile = "3"
