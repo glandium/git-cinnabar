@@ -1,20 +1,15 @@
-from io import BytesIO
+import os
 import sys
 import tarfile
 
-stdin = getattr(sys.stdin, 'buffer', sys.stdin)
+input = int(os.environ["GIT_CINNABAR_BOOTSTRAP_FD"])
 if sys.platform == 'win32':
     import msvcrt
-    import os
-    msvcrt.setmode(stdin.fileno(), os.O_BINARY)
-size = int(stdin.readline())
-raw_tar = stdin.read(size)
-tar = tarfile.open(fileobj=BytesIO(raw_tar), mode='r|')
+    input = msvcrt.open_osfhandle(input, os.O_RDONLY)
+tar = tarfile.open(fileobj=os.fdopen(input, 'rb'), mode='r|')
 modules = {}
 for f in tar:
     content = tar.extractfile(f).read()
     modules['cinnabar/' + f.name] = content
 
 del tar
-del raw_tar
-del stdin

@@ -40,7 +40,7 @@ use std::convert::TryInto;
 use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};
 use std::fmt;
-use std::io::{copy, stdin, stdout, BufRead, BufWriter, Cursor, Write};
+use std::io::{stdin, stdout, BufRead, BufWriter, Cursor, Write};
 use std::os::raw::c_char;
 use std::os::raw::c_int;
 #[cfg(unix)]
@@ -54,6 +54,7 @@ use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 
 use bstr::ByteSlice;
 use git_version::git_version;
+use os_pipe::pipe;
 use url::Url;
 use which::which;
 
@@ -68,7 +69,7 @@ use store::{
     HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF,
     NOTES_REF, REFS_PREFIX,
 };
-use util::{CStrExt, IteratorExt, OsStrExt, SliceExt};
+use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
 
 #[cfg(feature = "version-check")]
 mod version_check;
@@ -981,12 +982,22 @@ fn run_python_command(cmd: PythonCommand) -> c_int {
         PythonCommand::GitRemoteHg => include_str!("../bootstrap/git-remote-hg.py"),
         PythonCommand::GitCinnabar => include_str!("../bootstrap/git-cinnabar.py"),
     });
+
+    let (reader, mut writer) = match pipe() {
+        Ok((reader, writer)) => (reader.dup_inheritable(), writer),
+        Err(e) => {
+            eprintln!("Failed to create pipe: {}", e);
+            return 1;
+        }
+    };
+
     let mut child = match Command::new(python)
         .arg("-c")
         .arg(bootstrap)
         .args(std::env::args_os())
         .env("GIT_CINNABAR_HELPER", std::env::current_exe().unwrap())
-        .stdin(std::process::Stdio::piped())
+        .env("GIT_CINNABAR_BOOTSTRAP_FD", format!("{}", reader))
+        .stdin(std::process::Stdio::inherit())
         .spawn()
     {
         Ok(c) => c,
@@ -995,19 +1006,13 @@ fn run_python_command(cmd: PythonCommand) -> c_int {
             return 1;
         }
     };
+    drop(reader);
 
-    let mut child_stdin = child.stdin.as_mut().unwrap();
-    let sent_data = (|| -> Result<(), std::io::Error> {
-        writeln!(child_stdin, "{}", env!("PYTHON_TAR_SIZE"))?;
-        zstd::stream::copy_decode(
-            &mut Cursor::new(include_bytes!(env!("PYTHON_TAR"))),
-            &mut child_stdin,
-        )?;
-        if cmd == PythonCommand::GitRemoteHg {
-            copy(&mut std::io::stdin().lock(), child_stdin)?;
-        }
-        Ok(())
-    })();
+    let sent_data = zstd::stream::copy_decode(
+        &mut Cursor::new(include_bytes!(env!("PYTHON_TAR"))),
+        &mut writer,
+    );
+    drop(writer);
     let status = child.wait().expect("Python command wasn't running?!");
     match status.code() {
         Some(0) => {}

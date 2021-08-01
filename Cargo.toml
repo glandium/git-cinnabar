@@ -72,6 +72,10 @@ optional = true
 version = "0.3"
 optional = true
 
+[target.'cfg(windows)'.dependencies.winapi]
+version = "0.3"
+features = ["handleapi", "processthreadsapi"]
+
 [build-dependencies]
 cc = "1"
 count-write = "0.1"

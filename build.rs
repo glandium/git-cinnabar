@@ -237,10 +237,8 @@ fn main() {
             .unwrap();
     }
     let counter = builder.into_inner().unwrap();
-    let size = counter.count();
     counter.into_inner().finish().unwrap();
     println!("cargo:rustc-env=PYTHON_TAR={}", python_tar.display());
-    println!("cargo:rustc-env=PYTHON_TAR_SIZE={}", size);
 
     #[cfg(feature = "version-check")]
     {
