@@ -687,7 +687,7 @@ impl fmt::Display for DuplicateFd {
 impl<T: AsRawFd> Duplicate for T {
     fn dup_inheritable(&self) -> DuplicateFd {
         let fd = unsafe { libc::dup(self.as_raw_fd()) };
-        if (fd < 0) {
+        if fd < 0 {
             panic!("Failed to duplicate file descriptor");
         }
         DuplicateFd(fd)
@@ -708,7 +708,8 @@ impl<T: AsRawHandle> Duplicate for T {
                 /* dwDesiredAccess */ 0,
                 /* bInheritHandle */ 1,
                 winapi::um::winnt::DUPLICATE_SAME_ACCESS,
-            ) == 0 {
+            ) == 0
+            {
                 panic!("Failed to duplicate handle");
             }
         }
