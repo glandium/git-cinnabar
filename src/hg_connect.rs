@@ -86,7 +86,7 @@ impl HgCapabilities {
     pub fn get_capability(&self, needle: &[u8]) -> Option<&CStr> {
         for (name, value) in self.capabilities.iter() {
             if name == needle {
-                return Some(&value);
+                return Some(value);
             }
         }
         None
@@ -448,9 +448,9 @@ unsafe extern "C" fn hg_cinnabarclone(conn: *mut hg_connection, result: *mut str
 
 pub fn get_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnection>> {
     if ["http", "https"].contains(&url.scheme()) {
-        get_http_connection(&url)
+        get_http_connection(url)
     } else if ["ssh", "file"].contains(&url.scheme()) {
-        get_stdio_connection(&url, flags)
+        get_stdio_connection(url, flags)
     } else {
         die!("protocol '{}' is not supported", url.scheme());
     }

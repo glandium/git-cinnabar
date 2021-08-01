@@ -294,7 +294,7 @@ fn hg_url(url: impl AsRef<OsStr>) -> Option<Url> {
             url.extend_from_slice(remainder);
         }
 
-        Url::parse(&url.to_str().ok()?).ok()
+        Url::parse(url.to_str().ok()?).ok()
     } else {
         None
     }
@@ -367,7 +367,7 @@ fn test_hg_url() {
 }
 
 fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
-    let url = remote::get(&remote).get_url();
+    let url = remote::get(remote).get_url();
     let url =
         hg_url(url).ok_or_else(|| format!("Invalid mercurial url: {}", url.to_string_lossy()))?;
     let mut conn = hg_connect::get_connection(&url, 0)
@@ -637,7 +637,7 @@ fn do_rollback(
             )
         }
     } else if let Some(ref oid) = metadata {
-        get_previous_metadata(&oid)
+        get_previous_metadata(oid)
     } else {
         return Err("Nothing to rollback.".to_string());
     };

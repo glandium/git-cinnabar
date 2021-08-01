@@ -597,7 +597,7 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
         })),
         _ => {
             let mut caps = Vec::<u8>::new();
-            caps.extend_from_slice(&header);
+            caps.extend_from_slice(header);
             copy(&mut http_resp, &mut caps).unwrap();
             mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&caps));
             Some(Box::new(Box::new(conn) as Box<dyn HgWireConnection>))

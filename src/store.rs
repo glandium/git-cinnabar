@@ -69,7 +69,7 @@ impl GitChangesetMetadata {
     pub fn read(changeset_id: &GitChangesetId) -> Option<Self> {
         let note = unsafe {
             git2hg
-                .get_note(&changeset_id)
+                .get_note(changeset_id)
                 .map(|o| BlobId::from_unchecked(o))?
         };
         RawBlob::read(&note).map(Self)
@@ -254,7 +254,7 @@ impl RawHgChangeset {
         if let Some(hg_committer) = hg_committer {
             extra
                 .get_or_insert_with(ChangesetExtra::new)
-                .set(b"committer", &hg_committer);
+                .set(b"committer", hg_committer);
         };
         let mut changeset = Vec::new();
         writeln!(changeset, "{}", metadata.manifest_id()).ok()?;
