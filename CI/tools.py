@@ -175,10 +175,18 @@ class Hg(Task, metaclass=Tool):
                 'echo tag: unknown > hg/.hg_archival.txt',
             ])
         # 2.6.2 is the first version available on pypi
-        elif parse_version('2.6.2') <= parse_version(version):
+        # creating a wheel of versions >= 5.8 fails because of pyproject.toml
+        # so we prefer to download manually to then remove that file.
+        elif parse_version('2.6.2') <= parse_version(version) < \
+                parse_version('5.8'):
             source = 'mercurial=={}'
         else:
-            source = 'https://mercurial-scm.org/release/mercurial-{}.tar.gz'
+            source = './mercurial-{}'
+            url = 'https://mercurial-scm.org/release/mercurial-{}.tar.gz'
+            pre_command.extend([
+                'curl -sLO {}'.format(url.format(version)),
+                'tar -zxf mercurial-{}.tar.gz'.format(version),
+            ])
 
         h = hashlib.sha1(env.hexdigest.encode())
         h.update(artifact.encode())
