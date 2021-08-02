@@ -11,7 +11,7 @@ from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '5.7.1'
+MERCURIAL_VERSION = '5.8.1'
 GIT_VERSION = '2.32.0'
 
 ALL_MERCURIAL_VERSIONS = (
@@ -20,7 +20,7 @@ ALL_MERCURIAL_VERSIONS = (
     '3.3.3', '3.4.2', '3.5.2', '3.6.3', '3.7.3', '3.8.4', '3.9.2',
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
     '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2', '5.3.2',
-    '5.4.2', '5.5.2', '5.6.1', '5.7.1',
+    '5.4.2', '5.5.2', '5.6.1', '5.7.1', '5.8.1',
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -175,10 +175,18 @@ class Hg(Task, metaclass=Tool):
                 'echo tag: unknown > hg/.hg_archival.txt',
             ])
         # 2.6.2 is the first version available on pypi
-        elif parse_version('2.6.2') <= parse_version(version):
+        # creating a wheel of versions >= 5.8 fails because of pyproject.toml
+        # so we prefer to download manually to then remove that file.
+        elif parse_version('2.6.2') <= parse_version(version) < \
+                parse_version('5.8'):
             source = 'mercurial=={}'
         else:
-            source = 'https://mercurial-scm.org/release/mercurial-{}.tar.gz'
+            source = './mercurial-{}'
+            url = 'https://mercurial-scm.org/release/mercurial-{}.tar.gz'
+            pre_command.extend([
+                'curl -sLO {}'.format(url.format(version)),
+                'tar -zxf mercurial-{}.tar.gz'.format(version),
+            ])
 
         h = hashlib.sha1(env.hexdigest.encode())
         h.update(artifact.encode())
