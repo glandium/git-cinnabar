@@ -92,7 +92,6 @@ try:
         hg,
         ui,
         url,
-        util,
     )
     try:
         from mercurial.sshpeer import instance as sshpeer
@@ -102,6 +101,10 @@ try:
         from mercurial.utils import procutil
     except ImportError:
         from mercurial import util as procutil
+    try:
+        from mercurial.utils import urlutil
+    except ImportError:
+        from mercurial import util as urlutil
 except ImportError:
     changegroup = unbundle20 = False
 
@@ -1157,19 +1160,19 @@ if changegroup:
     def localpeer(ui, path):
         ui.setconfig(b'ui', b'ssh', b'')
 
-        has_checksafessh = hasattr(util, 'checksafessh')
+        has_checksafessh = hasattr(urlutil, 'checksafessh')
 
         sshargs = procutil.sshargs
         shellquote = procutil.shellquote
         quotecommand = getattr(procutil, 'quotecommand', None)
-        url = util.url
+        url = urlutil.url
         if has_checksafessh:
-            checksafessh = util.checksafessh
+            checksafessh = urlutil.checksafessh
 
         procutil.sshargs = lambda *a: b''
         procutil.shellquote = lambda x: x
         if has_checksafessh:
-            util.checksafessh = lambda x: None
+            urlutil.checksafessh = lambda x: None
 
         # In very old versions of mercurial, shellquote was not used, and
         # double quotes were hardcoded. Remove them by overriding
@@ -1190,13 +1193,13 @@ if changegroup:
                 self.path = path
                 self.user = b'user'
                 self.passwd = None
-        util.url = override_url
+        urlutil.url = override_url
 
         repo = sshpeer(ui, path, False)
 
         if has_checksafessh:
-            util.checksafessh = checksafessh
-        util.url = url
+            urlutil.checksafessh = checksafessh
+        urlutil.url = url
         if quotecommand:
             procutil.quotecommand = quotecommand
         procutil.shellquote = shellquote
