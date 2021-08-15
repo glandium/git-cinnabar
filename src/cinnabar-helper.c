@@ -179,7 +179,7 @@ static void send_object(const struct object_id *oid)
 	strbuf_addf(&header, "%s %s %lu\n", oid_to_hex(oid), type_name(type),
 	            sz);
 
-	write_or_die(1, header.buf, header.len);
+	write_or_die(STDOUT_FILENO, header.buf, header.len);
 
 	strbuf_release(&header);
 
@@ -191,7 +191,7 @@ static void send_object(const struct object_id *oid)
 		if (readlen <= 0)
 			break;
 
-		wrote = write_in_full(1, buf, readlen);
+		wrote = write_in_full(STDOUT_FILENO, buf, readlen);
 		if (wrote < readlen)
 			break;
 
@@ -201,7 +201,7 @@ static void send_object(const struct object_id *oid)
 	if (sz != 0)
 		die("Failed to write object");
 
-	write_or_die(1, "\n", 1);
+	write_or_die(STDOUT_FILENO, "\n", 1);
 
 	close_istream(st);
 }
@@ -220,8 +220,8 @@ static void do_cat_file(struct string_list *args)
 	return;
 
 not_found:
-	write_or_die(1, NULL_NODE, 40);
-	write_or_die(1, "\n", 1);
+	write_or_die(STDOUT_FILENO, NULL_NODE, 40);
+	write_or_die(STDOUT_FILENO, "\n", 1);
 }
 
 struct ls_tree_context {
@@ -289,7 +289,7 @@ static void do_ls_tree(struct string_list *args)
 	}
 	return;
 not_found:
-	write_or_die(1, "0\n\n", 3);
+	write_or_die(STDOUT_FILENO, "0\n\n", 3);
 }
 
 static const char **string_list_to_argv(struct string_list *args)
@@ -529,8 +529,8 @@ static void do_get_note(struct notes_tree *t, struct string_list *args)
 	return;
 
 not_found:
-	write_or_die(1, NULL_NODE, 40);
-	write_or_die(1, "\n", 1);
+	write_or_die(STDOUT_FILENO, NULL_NODE, 40);
+	write_or_die(STDOUT_FILENO, "\n", 1);
 }
 
 static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1)
@@ -595,14 +595,14 @@ static void do_hg2git(struct string_list *args)
 
 	note = resolve_hg2git(&oid, sha1_len);
 	if (note) {
-		write_or_die(1, oid_to_hex(note), 40);
-		write_or_die(1, "\n", 1);
+		write_or_die(STDOUT_FILENO, oid_to_hex(note), 40);
+		write_or_die(STDOUT_FILENO, "\n", 1);
 		return;
 	}
 
 not_found:
-	write_or_die(1, NULL_NODE, 40);
-	write_or_die(1, "\n", 1);
+	write_or_die(STDOUT_FILENO, NULL_NODE, 40);
+	write_or_die(STDOUT_FILENO, "\n", 1);
 }
 
 /* The git storage for a mercurial manifest uses not-entirely valid file modes
@@ -946,7 +946,7 @@ static void do_manifest(struct string_list *args)
 	return;
 
 not_found:
-	write_or_die(1, "0\n\n", 3);
+	write_or_die(STDOUT_FILENO, "0\n\n", 3);
 }
 
 static void get_manifest_oid(const struct commit *commit, struct hg_object_id *oid)
@@ -1054,10 +1054,10 @@ static void do_check_manifest(struct string_list *args)
 	if (manifest_oid != &oid && !hg_oideq(&stored, &hg_oid))
 		goto error;
 
-	write_or_die(1, "ok\n", 3);
+	write_or_die(STDOUT_FILENO, "ok\n", 3);
 	return;
 error:
-	write_or_die(1, "error\n", 6);
+	write_or_die(STDOUT_FILENO, "error\n", 6);
 }
 
 static void do_check_file(struct string_list *args)
@@ -1111,12 +1111,12 @@ static void do_check_file(struct string_list *args)
 		goto error;
 
 ok:
-	write_or_die(1, "ok\n", 3);
+	write_or_die(STDOUT_FILENO, "ok\n", 3);
 	hg_file_release(&file);
 	return;
 
 error:
-	write_or_die(1, "error\n", 6);
+	write_or_die(STDOUT_FILENO, "error\n", 6);
 	hg_file_release(&file);
 }
 
@@ -1299,7 +1299,7 @@ static void do_connect(struct string_list *args)
 	// or returns NULL, in which case it has sent out a stream
 	// to stdout.
 	if (conn) {
-		write_or_die(1, "ok\n", 3);
+		write_or_die(STDOUT_FILENO, "ok\n", 3);
 		connected_loop(conn);
 
 		hg_finish_connect(conn);
@@ -1562,8 +1562,8 @@ static void do_create_git_tree(struct string_list *args)
 	recurse_create_git_tree(get_commit_tree_oid(commit), ref_tree, NULL,
 	                        &oid, &git_tree_cache);
 
-	write_or_die(1, oid_to_hex(&oid), 40);
-	write_or_die(1, "\n", 1);
+	write_or_die(STDOUT_FILENO, oid_to_hex(&oid), 40);
+	write_or_die(STDOUT_FILENO, "\n", 1);
 	return;
 
 not_found:
@@ -1595,9 +1595,9 @@ static void do_seen(struct string_list *args)
 	}
 
 	if (seen)
-		write_or_die(1, "yes\n", 4);
+		write_or_die(STDOUT_FILENO, "yes\n", 4);
 	else
-		write_or_die(1, "no\n", 3);
+		write_or_die(STDOUT_FILENO, "no\n", 3);
 }
 
 struct dangling_data {
@@ -1839,7 +1839,7 @@ static void do_reload(struct string_list *args)
 	reset_replace_map();
 	init_metadata();
 
-	write_or_die(1, "ok\n", 3);
+	write_or_die(STDOUT_FILENO, "ok\n", 3);
 }
 
 int configset_add_value(struct config_set *, const char*, const char *);

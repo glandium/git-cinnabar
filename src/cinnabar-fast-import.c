@@ -1190,8 +1190,8 @@ static void do_store(struct string_list *args)
 				notes = &hg2git;
 			}
 			store_notes(notes, &result);
-			write_or_die(1, oid_to_hex(&result), 40);
-			write_or_die(1, "\n", 1);
+			write_or_die(STDOUT_FILENO, oid_to_hex(&result), 40);
+			write_or_die(STDOUT_FILENO, "\n", 1);
 		} else {
 			die("Unknown metadata kind: %s", args->items[1].string);
 		}
