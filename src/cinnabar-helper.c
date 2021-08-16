@@ -1120,16 +1120,12 @@ error:
 	hg_file_release(&file);
 }
 
-static void do_helpercaps(int wire, struct string_list *args)
+static void do_helpercaps(struct string_list *args)
 {
 	struct strbuf caps = STRBUF_INIT;
 
 	if (args->nr != 0)
 		die("helpercaps takes no arguments");
-
-	if (wire) {
-		strbuf_addstr(&caps, "compression=UN,GZ,BZ,ZS");
-	}
 
 	if (cinnabar_experiments & EXPERIMENT_STORE) {
 		if (caps.len)
@@ -1988,17 +1984,17 @@ int helper_main(int wire)
 		const char *command;
 		record_command(&buf);
 		split_command(buf.buf, &command, &args);
-		if (!strcmp("helpercaps", command)) {
-			do_helpercaps(wire, &args);
-			string_list_clear(&args, 0);
-			continue;
-		} else if (wire && !strcmp("connect", command)) {
+		if (wire && !strcmp("connect", command)) {
 			do_connect(&args);
 			string_list_clear(&args, 0);
 			break;
-		}
-		if (wire)
+		} else if (wire)
 			die("Unknown command: \"%s\"", command);
+		if (!strcmp("helpercaps", command)) {
+			do_helpercaps(&args);
+			string_list_clear(&args, 0);
+			continue;
+		}
 		if (!initialized) {
 			init_cinnabar_2();
 			initialized = 1;

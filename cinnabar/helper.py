@@ -107,9 +107,12 @@ class BaseHelper(object):
                 stdin=subprocess.PIPE, stderr=None, env=env,
                 logger='helper-{}'.format(self.MODE))
 
-            self._helper.stdin.write(b'helpercaps\n')
-            self._helper.stdin.flush()
-            response = self._read_data(self._helper.stdout)
+            if self.MODE == "import":
+                self._helper.stdin.write(b'helpercaps\n')
+                self._helper.stdin.flush()
+                response = self._read_data(self._helper.stdout)
+            else:
+                response = b''
             self._caps = {
                 k: v.split(b',')
                 for k, _, v in (l.partition(b'=')

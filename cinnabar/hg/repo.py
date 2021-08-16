@@ -591,14 +591,7 @@ def get_clonebundle_url(repo):
     bundles = repo._call(b'clonebundles')
 
     supported_bundles = (b'v1', b'v2')
-    supported_compressions = tuple(
-        k for k, v in (
-            (b'none', b'UN'),
-            (b'gzip', b'GZ'),
-            (b'bzip2', b'BZ'),
-            (b'zstd', b'ZS'),
-        ) if HgRepoHelper.supports((b'compression', v))
-    )
+    supported_compressions = (b'none', b'gzip', b'bzip2', b'zstd')
 
     has_sni = getattr(ssl, 'HAS_SNI', False)
 
