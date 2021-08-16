@@ -14,7 +14,7 @@ use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 
-use bstr::ByteSlice;
+use bstr::{BStr, ByteSlice};
 use byteorder::ReadBytesExt;
 use bzip2::read::BzDecoder;
 use cstr::cstr;
@@ -505,7 +505,7 @@ impl HgWireConnection for HgHttpConnection {
 }
 
 impl HgConnectionBase for HgHttpConnection {
-    fn get_capability(&self, name: &[u8]) -> Option<&CStr> {
+    fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
         self.capabilities.get_capability(name)
     }
 }

@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::c_void;
 use std::fs::File;
 use std::io::{BufRead, Write};
 use std::os::raw::c_int;
 use std::ptr;
 
-use bstr::{BString, ByteSlice};
+use bstr::{BStr, BString, ByteSlice};
 use itertools::Itertools;
 use percent_encoding::percent_decode;
 use sha1::{Digest, Sha1};
@@ -55,7 +55,7 @@ macro_rules! args {
 
 #[derive(Default)]
 pub struct HgCapabilities {
-    capabilities: Vec<(BString, CString)>,
+    capabilities: Vec<(BString, BString)>,
 }
 
 impl HgCapabilities {
@@ -74,19 +74,19 @@ impl HgCapabilities {
             capabilities.push((
                 BString::from(name.to_owned()),
                 if name == b"bundle2" {
-                    CString::new(percent_decode(value).collect::<Vec<_>>()).unwrap()
+                    BString::from(percent_decode(value).collect::<Vec<_>>())
                 } else {
-                    CString::new(value.to_owned()).unwrap()
+                    BString::from(value.to_owned())
                 },
             ));
         }
         HgCapabilities { capabilities }
     }
 
-    pub fn get_capability(&self, needle: &[u8]) -> Option<&CStr> {
+    pub fn get_capability(&self, needle: &[u8]) -> Option<&BStr> {
         for (name, value) in self.capabilities.iter() {
             if name == needle {
-                return Some(value);
+                return Some(value.as_ref());
             }
         }
         None
@@ -94,7 +94,7 @@ impl HgCapabilities {
 }
 
 pub trait HgConnectionBase {
-    fn get_capability(&self, _name: &[u8]) -> Option<&CStr> {
+    fn get_capability(&self, _name: &[u8]) -> Option<&BStr> {
         None
     }
 }
@@ -134,7 +134,7 @@ pub trait HgConnection: HgConnectionBase {
 }
 
 impl HgConnectionBase for Box<dyn HgWireConnection> {
-    fn get_capability(&self, name: &[u8]) -> Option<&CStr> {
+    fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
         (**self).get_capability(name)
     }
 }
@@ -365,7 +365,7 @@ fn do_capable(conn: &mut dyn HgConnection, args: &[&[u8]]) {
     let name = args[0];
     if let Some(cap) = conn.get_capability(name) {
         let mut result = strbuf::new();
-        result.extend_from_slice(cap.to_bytes());
+        result.extend_from_slice(cap);
         unsafe {
             send_buffer(&result);
         }

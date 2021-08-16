@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::fs::File;
 use std::io::{copy, stderr, Read, Seek, SeekFrom, Write};
 use std::mem;
@@ -12,7 +12,7 @@ use std::ptr;
 use std::str::FromStr;
 use std::thread::{spawn, JoinHandle};
 
-use bstr::BString;
+use bstr::{BStr, BString};
 use cstr::cstr;
 use percent_encoding::percent_decode_str;
 use url::Url;
@@ -165,7 +165,7 @@ impl HgWireConnection for HgStdioConnection {
 }
 
 impl HgConnectionBase for HgStdioConnection {
-    fn get_capability(&self, name: &[u8]) -> Option<&CStr> {
+    fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
         self.capabilities.get_capability(name)
     }
 }
