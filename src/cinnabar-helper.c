@@ -69,9 +69,9 @@
 #include "remote.h"
 #include "replace-object.h"
 #include "revision.h"
+#include "run-command.h"
 #include "tree.h"
 #include "tree-walk.h"
-#include "hg-connect.h"
 #include "hg-data.h"
 #include "cinnabar-helper.h"
 #include "cinnabar-fast-import.h"
@@ -1137,171 +1137,6 @@ static void do_helpercaps(struct string_list *args)
 	strbuf_release(&caps);
 }
 
-extern void do_known(struct hg_connection *conn, struct string_list *args);
-
-static void do_listkeys(struct hg_connection *conn, struct string_list *args)
-{
-	struct strbuf result = STRBUF_INIT;
-	if (args->nr != 1)
-		exit(1);
-
-	hg_listkeys(conn, &result, args->items[0].string);
-	send_buffer(&result);
-	strbuf_release(&result);
-}
-
-extern void do_getbundle(struct hg_connection *conn, struct string_list *args);
-
-extern void do_unbundle(struct hg_connection *conn, struct string_list *args);
-
-static void do_pushkey(struct hg_connection *conn, struct string_list *args)
-{
-	struct strbuf result = STRBUF_INIT;
-
-	if (args->nr != 4)
-		exit(1);
-
-	hg_pushkey(conn, &result, args->items[0].string, args->items[1].string,
-		   args->items[2].string, args->items[3].string);
-	send_buffer(&result);
-	strbuf_release(&result);
-}
-
-static void do_capable(struct hg_connection *conn, struct string_list *args)
-{
-	struct strbuf result = STRBUF_INIT;
-	const char *result_str;
-
-	if (args->nr != 1)
-		exit(1);
-
-	result_str = hg_get_capability(conn, args->items[0].string);
-	if (result_str) {
-		strbuf_addstr(&result, result_str);
-		send_buffer(&result);
-	} else {
-		send_buffer(NULL);
-	}
-	strbuf_release(&result);
-}
-
-static void do_state(struct hg_connection *conn, struct string_list *args)
-{
-	struct strbuf branchmap = STRBUF_INIT;
-	struct strbuf heads = STRBUF_INIT;
-	struct strbuf bookmarks = STRBUF_INIT;
-
-	if (args->nr != 0)
-		exit(1);
-
-	hg_get_repo_state(conn, &branchmap, &heads, &bookmarks);
-	send_buffer(&branchmap);
-	send_buffer(&heads);
-	send_buffer(&bookmarks);
-	strbuf_release(&branchmap);
-	strbuf_release(&heads);
-	strbuf_release(&bookmarks);
-}
-
-static void do_lookup(struct hg_connection *conn, struct string_list *args)
-{
-	struct strbuf result = STRBUF_INIT;
-	if (args->nr != 1)
-		exit(1);
-
-	hg_lookup(conn, &result, args->items[0].string);
-	send_buffer(&result);
-	strbuf_release(&result);
-}
-
-static void do_clonebundles(struct hg_connection *conn, struct string_list *args)
-{
-	struct strbuf result = STRBUF_INIT;
-	if (args->nr != 0)
-		exit(1);
-
-	hg_clonebundles(conn, &result);
-	send_buffer(&result);
-	strbuf_release(&result);
-}
-
-static void do_cinnabarclone(struct hg_connection *conn, struct string_list *args)
-{
-	struct strbuf result = STRBUF_INIT;
-	if (args->nr != 0)
-		exit(1);
-
-	hg_cinnabarclone(conn, &result);
-	send_buffer(&result);
-	strbuf_release(&result);
-}
-
-static void connected_loop(struct hg_connection *conn)
-{
-	struct strbuf buf = STRBUF_INIT;
-
-	while (strbuf_getline(&buf, stdin) != EOF) {
-		struct string_list args = STRING_LIST_INIT_NODUP;
-		const char *command;
-		record_command(&buf);
-		split_command(buf.buf, &command, &args);
-
-		if (!*command) {
-			string_list_clear(&args, 0);
-			break;
-		}
-		if (!strcmp("known", command))
-			do_known(conn, &args);
-		else if (!strcmp("listkeys", command))
-			do_listkeys(conn, &args);
-		else if (!strcmp("getbundle", command))
-			do_getbundle(conn, &args);
-		else if (!strcmp("unbundle", command))
-			do_unbundle(conn, &args);
-		else if (!strcmp("pushkey", command))
-			do_pushkey(conn, &args);
-		else if (!strcmp("capable", command))
-			do_capable(conn, &args);
-		else if (!strcmp("state", command))
-			do_state(conn, &args);
-		else if (!strcmp("lookup", command))
-			do_lookup(conn, &args);
-		else if (!strcmp("clonebundles", command))
-			do_clonebundles(conn, &args);
-		else if (!strcmp("cinnabarclone", command))
-			do_cinnabarclone(conn, &args);
-		else
-			die("Unknown command: \"%s\"", command);
-
-		string_list_clear(&args, 0);
-	}
-
-	strbuf_release(&buf);
-}
-
-static void do_connect(struct string_list *args)
-{
-	const char *url;
-	struct hg_connection *conn;
-
-	if (args->nr != 1)
-		return;
-
-	url = args->items[0].string;
-
-	conn = hg_connect(url, 0);
-
-	// hg_connect either dies in case of connection failure,
-	// or returns NULL, in which case it has sent out a stream
-	// to stdout.
-	if (conn) {
-		write_or_die(STDOUT_FILENO, "ok\n", 3);
-		connected_loop(conn);
-
-		hg_finish_connect(conn);
-	}
-}
-
 static int add_each_head(const struct object_id *oid, void *data)
 {
 	struct strbuf *buf = data;
@@ -1974,7 +1809,7 @@ void done_cinnabar()
 	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
 }
 
-int helper_main(int wire)
+int helper_main()
 {
 	int initialized = 0;
 	struct strbuf buf = STRBUF_INIT;
@@ -1984,12 +1819,6 @@ int helper_main(int wire)
 		const char *command;
 		record_command(&buf);
 		split_command(buf.buf, &command, &args);
-		if (wire && !strcmp("connect", command)) {
-			do_connect(&args);
-			string_list_clear(&args, 0);
-			break;
-		} else if (wire)
-			die("Unknown command: \"%s\"", command);
 		if (!strcmp("helpercaps", command)) {
 			do_helpercaps(&args);
 			string_list_clear(&args, 0);

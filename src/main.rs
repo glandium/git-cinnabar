@@ -58,6 +58,7 @@ use os_pipe::pipe;
 use url::Url;
 use which::which;
 
+use hg_connect::connect_main;
 use libcinnabar::{files_meta, hg2git};
 use libgit::{
     for_each_ref_in, for_each_remote, get_oid_committish, lookup_replace_commit, remote,
@@ -100,7 +101,7 @@ pub const FULL_VERSION: &str = git_version!(
 );
 
 extern "C" {
-    fn helper_main(wire: c_int) -> c_int;
+    fn helper_main() -> c_int;
 
     #[cfg(windows)]
     fn wmain(argc: c_int, argv: *const *const u16) -> c_int;
@@ -1051,7 +1052,11 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
         Some("git-cinnabar-helper") => {
             let helper = HelperCommand::from_args();
             assert_ne!(helper.wire, helper.import);
-            helper_main(if helper.wire { 1 } else { 0 })
+            if helper.wire {
+                connect_main()
+            } else {
+                helper_main()
+            }
         }
         Some("git-remote-hg") => {
             let _v = VersionCheck::new();

@@ -1,6 +1,7 @@
 #include "git-compat-util.h"
-#include "hg-connect.h"
+//#include "hg-connect.h"
 #include "hg-bundle.h"
+#include "run-command.h"
 #include "strbuf.h"
 #include "quote.h"
 

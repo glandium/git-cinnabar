@@ -4,8 +4,8 @@
 
 use std::ffi::{c_void, CStr, CString};
 use std::fs::File;
-use std::io::Write;
-use std::os::raw::{c_char, c_int};
+use std::io::{BufRead, Write};
+use std::os::raw::c_int;
 use std::ptr;
 
 use bstr::{BString, ByteSlice};
@@ -18,10 +18,10 @@ use crate::hg_bundle::copy_bundle;
 use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libcinnabar::send_buffer;
-use crate::libgit::{strbuf, string_list};
+use crate::libgit::strbuf;
 use crate::oid::ObjectId;
 use crate::store::HgChangesetId;
-use crate::util::FromBytes;
+use crate::util::{FromBytes, SliceExt};
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
@@ -182,60 +182,6 @@ impl HgConnection for Box<dyn HgWireConnection> {
     }
 }
 
-unsafe fn hg_connection_from_ffi<'a>(ptr: *mut hg_connection) -> &'a mut (dyn HgConnection + 'a) {
-    &mut **(ptr as *mut Box<dyn HgConnection>).as_mut().unwrap()
-}
-
-#[no_mangle]
-unsafe extern "C" fn hg_get_capability(
-    conn: *mut hg_connection,
-    name: *const c_char,
-) -> *const c_char {
-    hg_connection_from_ffi(conn)
-        .get_capability(CStr::from_ptr(name.as_ref().unwrap()).to_bytes().as_bstr())
-        .map(CStr::as_ptr)
-        .unwrap_or(ptr::null())
-}
-
-#[no_mangle]
-unsafe extern "C" fn hg_get_repo_state(
-    conn: *mut hg_connection,
-    branchmap: *mut strbuf,
-    heads: *mut strbuf,
-    bookmarks: *mut strbuf,
-) {
-    let conn = hg_connection_from_ffi(conn);
-    let branchmap = branchmap.as_mut().unwrap();
-    let heads = heads.as_mut().unwrap();
-    let bookmarks = bookmarks.as_mut().unwrap();
-    if conn.get_capability(b"batch".as_bstr()).is_none() {
-        // TODO: when not batching, check for coherency
-        // (see the cinnabar.remote_helper python module)
-        let wire = conn.wire().unwrap();
-        wire.simple_command(branchmap, "branchmap", args!());
-        wire.simple_command(heads, "heads", args!());
-        conn.listkeys(bookmarks, "bookmarks");
-    } else {
-        let mut out = strbuf::new();
-        conn.wire().unwrap().simple_command(
-            &mut out,
-            "batch",
-            args!(
-                cmds: "branchmap ;heads ;listkeys namespace=bookmarks",
-                *: &[]
-            ),
-        );
-        let split = out.as_bytes().split(|&b| b == b';');
-        for (out, buf) in Iterator::zip(
-            split,
-            &mut [Some(branchmap), Some(heads), Some(bookmarks), None],
-        ) {
-            let buf = buf.as_mut().unwrap();
-            unescape_batched_output(out, buf);
-        }
-    }
-}
-
 fn unescape_batched_output(out: &[u8], buf: &mut strbuf) {
     // This will fail if `split` has more than 3 items.
     let mut start = 0;
@@ -300,13 +246,11 @@ fn test_unescape_batched_output() {
     assert_eq!(buf.as_bytes().as_bstr(), b"abc=def:;=,z".as_bstr());
 }
 
-#[no_mangle]
-unsafe extern "C" fn do_known(conn: *mut hg_connection, args: *const string_list) {
-    let conn = hg_connection_from_ffi(conn).wire().unwrap();
-    let args = args.as_ref().unwrap();
+fn do_known(conn: &mut dyn HgConnection, args: &[&[u8]]) {
+    let conn = conn.wire().unwrap();
     let nodes = args
         .iter()
-        .map(HgChangesetId::from_bytes)
+        .map(|b| HgChangesetId::from_bytes(b))
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     let nodes_str = nodes.iter().join(" ");
@@ -319,30 +263,25 @@ unsafe extern "C" fn do_known(conn: *mut hg_connection, args: *const string_list
             *: &[]
         ),
     );
-    send_buffer(&result);
+    unsafe {
+        send_buffer(&result);
+    }
 }
 
-#[no_mangle]
-unsafe extern "C" fn hg_listkeys(
-    conn: *mut hg_connection,
-    result: *mut strbuf,
-    namespace: *const c_char,
-) {
-    let conn = hg_connection_from_ffi(conn);
-    conn.listkeys(
-        result.as_mut().unwrap(),
-        CStr::from_ptr(namespace.as_ref().unwrap())
-            .to_str()
-            .unwrap(),
-    )
+fn do_listkeys(conn: &mut dyn HgConnection, args: &[&[u8]]) {
+    assert_eq!(args.len(), 1);
+    let namespace = args[0].to_str().unwrap();
+    let mut result = strbuf::new();
+    conn.listkeys(&mut result, namespace);
+    unsafe {
+        send_buffer(&result);
+    }
 }
 
-#[no_mangle]
-unsafe extern "C" fn do_getbundle(conn: *mut hg_connection, args: *const string_list) {
-    let conn = hg_connection_from_ffi(conn);
-    let mut args = args.as_ref().unwrap().iter();
+fn do_getbundle(conn: &mut dyn HgConnection, args: &[&[u8]]) {
+    let mut args = args.iter();
 
-    let arg_list = |a: &[u8]| {
+    let arg_list = |a: &&[u8]| {
         if a.is_empty() {
             Vec::new()
         } else {
@@ -357,15 +296,11 @@ unsafe extern "C" fn do_getbundle(conn: *mut hg_connection, args: *const string_
     let bundle2caps = args.next().map(|b| b.to_str().unwrap());
     assert!(args.next().is_none());
 
-    let mut out = crate::libc::FdFile::stdout();
+    let mut out = unsafe { crate::libc::FdFile::stdout() };
     conn.getbundle(&mut out, &heads, &common, bundle2caps);
 }
 
-#[no_mangle]
-unsafe extern "C" fn do_unbundle(conn: *mut hg_connection, args: *const string_list) {
-    let conn = hg_connection_from_ffi(conn);
-    let args = args.as_ref().unwrap();
-    let args = args.iter().collect::<Vec<_>>();
+fn do_unbundle(conn: &mut dyn HgConnection, args: &[&[u8]]) {
     let heads_str = if args.is_empty() || args[..] == [b"force"] {
         hex::encode("force")
     } else {
@@ -391,7 +326,7 @@ unsafe extern "C" fn do_unbundle(conn: *mut hg_connection, args: *const string_l
         .tempfile()
         .unwrap();
     let (mut f, path) = tempfile.into_parts();
-    copy_bundle(&mut crate::libc::File::stdin(), &mut f).unwrap();
+    copy_bundle(&mut std::io::stdin(), &mut f).unwrap();
     drop(f);
 
     let file = File::open(path).unwrap();
@@ -399,51 +334,119 @@ unsafe extern "C" fn do_unbundle(conn: *mut hg_connection, args: *const string_l
     conn.wire()
         .unwrap()
         .push_command(&mut response, file, "unbundle", args!(heads: &heads_str));
-    send_buffer(&response);
+    unsafe {
+        send_buffer(&response);
+    }
 }
 
-#[no_mangle]
-unsafe extern "C" fn hg_pushkey(
-    conn: *mut hg_connection,
-    response: *mut strbuf,
-    namespace: *const c_char,
-    key: *const c_char,
-    old: *const c_char,
-    new: *const c_char,
-) {
-    let conn = hg_connection_from_ffi(conn).wire().unwrap();
+fn do_pushkey(conn: &mut dyn HgConnection, args: &[&[u8]]) {
+    assert_eq!(args.len(), 4);
+    let mut response = strbuf::new();
+    let (namespace, key, old, new) = (args[0], args[1], args[2], args[3]);
+    let conn = conn.wire().unwrap();
     //TODO: handle the response being a mix of return code and output
     conn.simple_command(
-        response.as_mut().unwrap(),
+        &mut response,
         "pushkey",
         args!(
-            namespace: CStr::from_ptr(namespace.as_ref().unwrap()).to_str().unwrap(),
-            key: CStr::from_ptr(key.as_ref().unwrap()).to_str().unwrap(),
-            old: CStr::from_ptr(old.as_ref().unwrap()).to_str().unwrap(),
-            new: CStr::from_ptr(new.as_ref().unwrap()).to_str().unwrap(),
+            namespace: namespace.to_str().unwrap(),
+            key: key.to_str().unwrap(),
+            old: old.to_str().unwrap(),
+            new: new.to_str().unwrap(),
         ),
     );
+    unsafe {
+        send_buffer(&response);
+    }
 }
 
-#[no_mangle]
-unsafe extern "C" fn hg_lookup(conn: *mut hg_connection, result: *mut strbuf, key: *const c_char) {
-    let conn = hg_connection_from_ffi(conn);
-    conn.lookup(
-        result.as_mut().unwrap(),
-        CStr::from_ptr(key.as_ref().unwrap()).to_str().unwrap(),
-    );
+fn do_capable(conn: &mut dyn HgConnection, args: &[&[u8]]) {
+    assert_eq!(args.len(), 1);
+    let name = args[0];
+    if let Some(cap) = conn.get_capability(name) {
+        let mut result = strbuf::new();
+        result.extend_from_slice(cap.to_bytes());
+        unsafe {
+            send_buffer(&result);
+        }
+    } else {
+        unsafe {
+            send_buffer(ptr::null());
+        }
+    }
 }
 
-#[no_mangle]
-unsafe extern "C" fn hg_clonebundles(conn: *mut hg_connection, result: *mut strbuf) {
-    let conn = hg_connection_from_ffi(conn).wire().unwrap();
-    conn.simple_command(result.as_mut().unwrap(), "clonebundles", args!());
+fn do_state(conn: &mut dyn HgConnection, args: &[&[u8]]) {
+    assert!(args.is_empty());
+    let mut branchmap = strbuf::new();
+    let mut heads = strbuf::new();
+    let mut bookmarks = strbuf::new();
+    if conn.get_capability(b"batch".as_bstr()).is_none() {
+        // TODO: when not batching, check for coherency
+        // (see the cinnabar.remote_helper python module)
+        let wire = conn.wire().unwrap();
+        wire.simple_command(&mut branchmap, "branchmap", args!());
+        wire.simple_command(&mut heads, "heads", args!());
+        conn.listkeys(&mut bookmarks, "bookmarks");
+    } else {
+        let mut out = strbuf::new();
+        conn.wire().unwrap().simple_command(
+            &mut out,
+            "batch",
+            args!(
+                cmds: "branchmap ;heads ;listkeys namespace=bookmarks",
+                *: &[]
+            ),
+        );
+        let split = out.as_bytes().split(|&b| b == b';');
+        for (out, buf) in Iterator::zip(
+            split,
+            &mut [
+                Some(&mut branchmap),
+                Some(&mut heads),
+                Some(&mut bookmarks),
+                None,
+            ],
+        ) {
+            let buf = buf.as_mut().unwrap();
+            unescape_batched_output(out, buf);
+        }
+    }
+    unsafe {
+        send_buffer(&branchmap);
+        send_buffer(&heads);
+        send_buffer(&bookmarks);
+    }
 }
 
-#[no_mangle]
-unsafe extern "C" fn hg_cinnabarclone(conn: *mut hg_connection, result: *mut strbuf) {
-    let conn = hg_connection_from_ffi(conn).wire().unwrap();
-    conn.simple_command(result.as_mut().unwrap(), "cinnabarclone", args!());
+fn do_lookup(conn: &mut dyn HgConnection, args: &[&[u8]]) {
+    assert_eq!(args.len(), 1);
+    let key = args[0];
+    let mut result = strbuf::new();
+    conn.lookup(&mut result, key.to_str().unwrap());
+    unsafe {
+        send_buffer(&result);
+    }
+}
+
+fn do_clonebundles(conn: &mut dyn HgConnection, args: &[&[u8]]) {
+    assert!(args.is_empty());
+    let mut result = strbuf::new();
+    let conn = conn.wire().unwrap();
+    conn.simple_command(&mut result, "clonebundles", args!());
+    unsafe {
+        send_buffer(&result);
+    }
+}
+
+fn do_cinnabarclone(conn: &mut dyn HgConnection, args: &[&[u8]]) {
+    assert!(args.is_empty());
+    let mut result = strbuf::new();
+    let conn = conn.wire().unwrap();
+    conn.simple_command(&mut result, "cinnabarclone", args!());
+    unsafe {
+        send_buffer(&result);
+    }
 }
 
 pub fn get_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnection>> {
@@ -456,21 +459,16 @@ pub fn get_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnection>> 
     }
 }
 
-#[no_mangle]
-unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_connection {
-    let url = Url::parse(CStr::from_ptr(url).to_str().unwrap()).unwrap();
-    let mut conn = if let Some(conn) = get_connection(&url, flags) {
-        conn
-    } else {
-        return ptr::null_mut();
-    };
+fn hg_connect(url: &str, flags: c_int) -> Option<Box<dyn HgConnection>> {
+    let url = Url::parse(url).unwrap();
+    let mut conn = get_connection(&url, flags)?;
 
     if conn.wire().is_none() {
         // For now the wire helper just sends the bundle to stdout.
-        let mut out = crate::libc::FdFile::stdout();
+        let mut out = unsafe { crate::libc::FdFile::stdout() };
         out.write_all(b"bundle\n").unwrap();
         conn.getbundle(&mut out, &[], &[], None);
-        return ptr::null_mut();
+        return None;
     }
 
     const REQUIRED_CAPS: [&str; 5] = [
@@ -491,11 +489,45 @@ unsafe extern "C" fn hg_connect(url: *const c_char, flags: c_int) -> *mut hg_con
         }
     }
 
-    Box::into_raw(Box::new(conn)) as *mut hg_connection
+    Some(conn)
 }
 
-#[no_mangle]
-unsafe extern "C" fn hg_finish_connect(conn: *mut hg_connection) {
-    Box::from_raw((conn as *mut Box<dyn HgConnection>).as_mut().unwrap());
-    // The box is dropped here, invalidating the *mut hg_connection.
+fn connect_main_internal() -> Result<(), Box<dyn std::error::Error>> {
+    let stdin = std::io::stdin();
+    let mut connect_command = String::new();
+    stdin.read_line(&mut connect_command)?;
+    let [connect, url] = connect_command.splitn_exact(' ').unwrap();
+    assert_eq!(connect, "connect");
+    let mut conn = hg_connect(url, 0).ok_or("Failed to connect")?;
+    let mut out = unsafe { crate::libc::FdFile::stdout() };
+    out.write_all(b"ok\n").unwrap();
+
+    loop {
+        let mut line = vec![];
+        stdin.lock().read_until(b'\n', &mut line)?;
+        let mut args = line.trim_with(|b| b == '\n').split(|x| *x == b' ');
+        let command = args.next().ok_or("Missing command")?;
+        let args = args.collect::<Vec<_>>();
+        match command {
+            b"known" => do_known(&mut *conn, &*args),
+            b"listkeys" => do_listkeys(&mut *conn, &*args),
+            b"getbundle" => do_getbundle(&mut *conn, &*args),
+            b"unbundle" => do_unbundle(&mut *conn, &*args),
+            b"pushkey" => do_pushkey(&mut *conn, &*args),
+            b"capable" => do_capable(&mut *conn, &*args),
+            b"state" => do_state(&mut *conn, &*args),
+            b"lookup" => do_lookup(&mut *conn, &*args),
+            b"clonebundles" => do_clonebundles(&mut *conn, &*args),
+            b"cinnabarclone" => do_cinnabarclone(&mut *conn, &*args),
+            b"" => return Ok(()),
+            _ => return Err(format!("Unknown command: {}", command.as_bstr()).into()),
+        }
+    }
+}
+
+pub fn connect_main() -> c_int {
+    connect_main_internal().map(|_| 0).unwrap_or_else(|e| {
+        eprintln!("{}", e);
+        1
+    })
 }
