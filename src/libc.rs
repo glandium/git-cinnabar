@@ -13,17 +13,9 @@ pub struct File(*mut FILE);
 
 unsafe impl Send for File {}
 
-extern "C" {
-    fn get_stdin() -> *mut FILE;
-}
-
 impl File {
     pub fn new(f: *mut FILE) -> Self {
         File(f)
-    }
-
-    pub unsafe fn stdin() -> Self {
-        File(get_stdin())
     }
 
     pub unsafe fn raw(&mut self) -> *mut FILE {

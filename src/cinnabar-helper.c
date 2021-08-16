@@ -92,10 +92,6 @@ int cinnabar_check = CHECK_VERSION;
 int cinnabar_experiments = 0;
 int python3 = 0;
 
-FILE* get_stdin() {
-	return stdin;
-}
-
 static int config(const char *name, struct strbuf *result)
 {
 	struct strbuf key = STRBUF_INIT;
