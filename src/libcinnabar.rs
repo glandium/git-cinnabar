@@ -128,13 +128,8 @@ pub unsafe extern "C" fn send_buffer(buf: *const strbuf) {
     send_buffer_to(buf.as_ref().map(strbuf::as_bytes), &mut stdout)
 }
 
-pub unsafe fn send_slice(s: &[u8]) {
-    let mut stdout = FdFile::stdout();
-    send_buffer_to(Some(s), &mut stdout)
-}
-
-pub fn send_buffer_to(buf: Option<&[u8]>, mut out: impl Write) {
-    if let Some(buf) = buf {
+pub fn send_buffer_to<'a>(buf: impl Into<Option<&'a [u8]>>, out: &mut impl Write) {
+    if let Some(buf) = buf.into() {
         writeln!(out, "{}", buf.len()).unwrap();
         out.write_all(buf).unwrap();
         writeln!(out).unwrap();
