@@ -4,7 +4,7 @@
 
 use std::ffi::c_void;
 use std::fs::File;
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::os::raw::c_int;
 use std::str::FromStr;
 
@@ -284,7 +284,12 @@ fn do_getbundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut (impl Writ
     conn.getbundle(out, &heads, &common, bundle2caps);
 }
 
-fn do_unbundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
+fn do_unbundle(
+    conn: &mut dyn HgConnection,
+    args: &[&str],
+    input: &mut impl Read,
+    out: &mut impl Write,
+) {
     let heads_str = if args.is_empty() || args[..] == ["force"] {
         hex::encode("force")
     } else {
@@ -310,7 +315,7 @@ fn do_unbundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write)
         .tempfile()
         .unwrap();
     let (mut f, path) = tempfile.into_parts();
-    copy_bundle(&mut std::io::stdin(), &mut f).unwrap();
+    copy_bundle(input, &mut f).unwrap();
     drop(f);
 
     let file = File::open(path).unwrap();
@@ -440,7 +445,7 @@ fn hg_connect(
 }
 
 fn connect_main_internal() -> Result<(), Box<dyn std::error::Error>> {
-    let stdin = std::io::stdin();
+    let mut stdin = std::io::stdin();
     let mut out = unsafe { crate::libc::FdFile::stdout() };
     let mut connect_command = String::new();
     stdin.read_line(&mut connect_command)?;
@@ -459,7 +464,7 @@ fn connect_main_internal() -> Result<(), Box<dyn std::error::Error>> {
             "known" => do_known(&mut *conn, &*args, &mut out),
             "listkeys" => do_listkeys(&mut *conn, &*args, &mut out),
             "getbundle" => do_getbundle(&mut *conn, &*args, &mut out),
-            "unbundle" => do_unbundle(&mut *conn, &*args, &mut out),
+            "unbundle" => do_unbundle(&mut *conn, &*args, &mut stdin, &mut out),
             "pushkey" => do_pushkey(&mut *conn, &*args, &mut out),
             "capable" => do_capable(&mut *conn, &*args, &mut out),
             "state" => do_state(&mut *conn, &*args, &mut out),
