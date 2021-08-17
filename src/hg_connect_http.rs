@@ -37,7 +37,7 @@ use crate::hg_connect::{
 };
 use crate::libgit::{
     credential_fill, curl_errorstr, get_active_slot, http_auth, http_cleanup, http_follow_config,
-    http_init, run_one_slot, slot_results, strbuf, HTTP_OK, HTTP_REAUTH,
+    http_init, run_one_slot, slot_results, HTTP_OK, HTTP_REAUTH,
 };
 use crate::store::HgChangesetId;
 use crate::util::{PrefixWriter, ReadExt, SeekExt, SliceExt};
@@ -411,7 +411,7 @@ impl HgHttpConnection {
 }
 
 impl HgWireConnection for HgHttpConnection {
-    fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
+    fn simple_command(&mut self, command: &str, args: HgArgs) -> Box<[u8]> {
         let mut http_req = self.start_command_request(command, args);
         if command == "pushkey" {
             http_req.header("Content-Type", "application/mercurial-0.1");
@@ -419,7 +419,9 @@ impl HgWireConnection for HgHttpConnection {
         }
         let mut http_resp = http_req.execute().unwrap();
         self.handle_redirect(&http_resp);
-        copy(&mut http_resp, response).unwrap();
+        let mut response = Vec::new();
+        http_resp.read_to_end(&mut response).unwrap();
+        response.into_boxed_slice()
     }
 
     /* The changegroup, changegroupsubset and getbundle commands return a raw
@@ -475,7 +477,7 @@ impl HgWireConnection for HgHttpConnection {
         };
     }
 
-    fn push_command(&mut self, response: &mut strbuf, input: File, command: &str, args: HgArgs) {
+    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> Box<[u8]> {
         let mut http_req = self.start_command_request(command, args);
         http_req.post_data(Box::new(input));
         http_req.header("Content-Type", "application/mercurial-0.1");
@@ -485,17 +487,18 @@ impl HgWireConnection for HgHttpConnection {
         let len = http_resp.read_at_most(&mut header).unwrap();
         let header = &header[..len];
         if header == b"HG20" {
-            response.extend_from_slice(header);
-            copy(&mut http_resp, response).unwrap();
+            let mut response = Vec::new();
+            http_resp.read_to_end(&mut response).unwrap();
+            response.into_boxed_slice()
         } else {
             let stderr = stderr();
             let mut buf = header.to_owned();
             http_resp.read_to_end(&mut buf).unwrap();
             match buf.splitn_exact(b'\n') {
                 Some([stdout_, stderr_]) => {
-                    response.extend_from_slice(stdout_);
                     let mut writer = PrefixWriter::new(b"remote: ", stderr.lock());
                     writer.write_all(stderr_).unwrap();
+                    stdout_.to_vec().into_boxed_slice()
                 }
                 //TODO: better eror handling.
                 _ => panic!("Bad output from server"),

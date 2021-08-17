@@ -4,7 +4,7 @@
 
 use std::ffi::CString;
 use std::fs::File;
-use std::io::{copy, stderr, Read, Seek, SeekFrom, Write};
+use std::io::{copy, stderr, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::c_int;
 use std::path::PathBuf;
@@ -13,7 +13,6 @@ use std::str::FromStr;
 use std::thread::{spawn, JoinHandle};
 
 use bstr::{BStr, BString};
-use cstr::cstr;
 use percent_encoding::percent_decode_str;
 use url::Url;
 
@@ -31,7 +30,7 @@ use crate::util::{BufferedWriter, OsStrExt, PrefixWriter, SeekExt};
 pub struct HgStdioConnection {
     capabilities: HgCapabilities,
     proc_in: FdFile,
-    proc_out: crate::libc::File,
+    proc_out: BufReader<FdFile>,
     is_remote: bool,
     proc: *mut child_process,
     thread: Option<JoinHandle<()>>,
@@ -79,26 +78,22 @@ fn stdio_send_command(conn: &mut HgStdioConnection, command: &str, args: HgArgs)
 }
 
 extern "C" {
-    fn strbuf_getline_lf(buf: *mut strbuf, file: *mut libc::FILE);
-
     fn strbuf_fread(buf: *mut strbuf, len: usize, file: *mut libc::FILE);
 }
 
-fn stdio_read_response(conn: &mut HgStdioConnection, response: &mut strbuf) {
-    let mut length_str = strbuf::new();
-    unsafe {
-        strbuf_getline_lf(&mut length_str, conn.proc_out.raw());
-    }
-    let length = usize::from_str(std::str::from_utf8(length_str.as_bytes()).unwrap()).unwrap();
-    unsafe {
-        strbuf_fread(response, length, conn.proc_out.raw());
-    }
+fn stdio_read_response(conn: &mut HgStdioConnection) -> Box<[u8]> {
+    let mut length_str = String::new();
+    conn.proc_out.read_line(&mut length_str).unwrap();
+    let length = usize::from_str(length_str.trim_end_matches('\n')).unwrap();
+    let mut response = vec![0; length].into_boxed_slice();
+    conn.proc_out.read_exact(&mut response).unwrap();
+    response
 }
 
 impl HgWireConnection for HgStdioConnection {
-    fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs) {
+    fn simple_command(&mut self, command: &str, args: HgArgs) -> Box<[u8]> {
         stdio_send_command(self, command, args);
-        stdio_read_response(self, response);
+        stdio_read_response(self)
     }
 
     fn changegroup_command(&mut self, out: &mut (dyn Write + Send), command: &str, args: HgArgs) {
@@ -118,26 +113,19 @@ impl HgWireConnection for HgStdioConnection {
         };
     }
 
-    fn push_command(
-        &mut self,
-        mut response: &mut strbuf,
-        mut input: File,
-        command: &str,
-        args: HgArgs,
-    ) {
+    fn push_command(&mut self, mut input: File, command: &str, args: HgArgs) -> Box<[u8]> {
         stdio_send_command(self, command, args);
         /* The server normally sends an empty response before reading the data
          * it's sent if not, it's an error (typically, the remote will
          * complain here if there was a lost push race). */
         //TODO: handle that error.
-        let mut header = strbuf::new();
-        stdio_read_response(self, &mut header);
+        let header = stdio_read_response(self);
+        self.proc_in.write_all(&header).unwrap();
+        drop(header);
 
         let len = input.stream_len_().unwrap();
         //TODO: chunk in smaller pieces.
-        header.extend_from_slice(format!("{}\n", len).as_bytes());
-        self.proc_in.write_all(header.as_bytes()).unwrap();
-        drop(header);
+        writeln!(self.proc_in, "{}", len).unwrap();
 
         let is_bundle2 = if len > 4 {
             let mut header = [0u8; 4];
@@ -152,14 +140,14 @@ impl HgWireConnection for HgStdioConnection {
 
         self.proc_in.write_all(b"0\n").unwrap();
         if is_bundle2 {
+            let mut response = Vec::new();
             copy_bundle(&mut self.proc_out, &mut response).unwrap();
+            response.into_boxed_slice()
         } else {
             /* There are two responses, one for output, one for actual response. */
             //TODO: actually handle output here
-            let mut header = strbuf::new();
-            stdio_read_response(self, &mut header);
-            drop(header);
-            stdio_read_response(self, response);
+            drop(stdio_read_response(self));
+            stdio_read_response(self)
         }
     }
 }
@@ -175,7 +163,7 @@ impl Drop for HgStdioConnection {
         stdio_send_command(self, "", args!());
         unsafe {
             libc::close(self.proc_in.raw());
-            libc::fclose(self.proc_out.raw());
+            libc::close(self.proc_out.get_mut().raw());
             self.thread.take().map(|t| t.join());
             stdio_finish(self.proc);
         }
@@ -255,9 +243,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
     let mut conn = HgStdioConnection {
         capabilities: Default::default(),
         proc_in: unsafe { FdFile::from_raw_fd(proc_in(proc)) },
-        proc_out: unsafe {
-            crate::libc::File::new(libc::fdopen(proc_out(proc), cstr!("r").as_ptr()))
-        },
+        proc_out: BufReader::new(unsafe { FdFile::from_raw_fd(proc_out(proc)) }),
         is_remote: url.scheme() == "ssh",
         proc,
         thread: None,
@@ -290,15 +276,11 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
         ),
     );
 
-    let mut buf = strbuf::new();
-    stdio_read_response(&mut conn, &mut buf);
-    if buf.as_bytes() != b"\n" {
-        mem::swap(
-            &mut conn.capabilities,
-            &mut HgCapabilities::new_from(buf.as_bytes()),
-        );
+    let buf = stdio_read_response(&mut conn);
+    if *buf != b"\n"[..] {
+        mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&buf));
         /* Now read the response for the "between" command. */
-        stdio_read_response(&mut conn, &mut buf);
+        stdio_read_response(&mut conn);
     }
 
     Some(Box::new(Box::new(conn) as Box<dyn HgWireConnection>))

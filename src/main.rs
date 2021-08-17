@@ -62,7 +62,7 @@ use hg_connect::connect_main;
 use libcinnabar::{files_meta, hg2git};
 use libgit::{
     for_each_ref_in, for_each_remote, get_oid_committish, lookup_replace_commit, remote,
-    resolve_ref, strbuf, BlobId, CommitId, RawCommit, RefTransaction,
+    resolve_ref, BlobId, CommitId, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use store::{
@@ -390,10 +390,8 @@ fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
         })
         .collect::<Result<Vec<_>, _>>()?;
     for rev in revs {
-        let mut result = strbuf::new();
-        conn.lookup(&mut result, rev);
+        let result = conn.lookup(rev);
         let [success, data] = result
-            .as_bytes()
             .trim_end()
             .splitn_exact(b' ')
             .expect("lookup command result is malformed");

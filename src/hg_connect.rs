@@ -18,8 +18,7 @@ use url::Url;
 use crate::hg_bundle::copy_bundle;
 use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
-use crate::libcinnabar::send_buffer;
-use crate::libgit::strbuf;
+use crate::libcinnabar::{send_buffer, send_slice};
 use crate::oid::ObjectId;
 use crate::store::HgChangesetId;
 use crate::util::SliceExt;
@@ -101,11 +100,11 @@ pub trait HgConnectionBase {
 }
 
 pub trait HgWireConnection: HgConnectionBase {
-    fn simple_command(&mut self, response: &mut strbuf, command: &str, args: HgArgs);
+    fn simple_command(&mut self, command: &str, args: HgArgs) -> Box<[u8]>;
 
     fn changegroup_command(&mut self, out: &mut (dyn Write + Send), command: &str, args: HgArgs);
 
-    fn push_command(&mut self, response: &mut strbuf, input: File, command: &str, args: HgArgs);
+    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> Box<[u8]>;
 }
 
 pub trait HgConnection: HgConnectionBase {
@@ -113,8 +112,7 @@ pub trait HgConnection: HgConnectionBase {
         None
     }
 
-    //TODO: eventually, we'll want a better API here, not filling a strbuf.
-    fn listkeys(&mut self, _result: &mut strbuf, _namespace: &str) {
+    fn listkeys(&mut self, _namespace: &str) -> Box<[u8]> {
         unimplemented!();
     }
 
@@ -128,8 +126,7 @@ pub trait HgConnection: HgConnectionBase {
         unimplemented!();
     }
 
-    //TODO: eventually, we'll want a better API here, not filling a strbuf.
-    fn lookup(&mut self, _result: &mut strbuf, _key: &str) {
+    fn lookup(&mut self, _key: &str) -> Box<[u8]> {
         unimplemented!();
     }
 }
@@ -145,8 +142,8 @@ impl HgConnection for Box<dyn HgWireConnection> {
         Some(&mut **self)
     }
 
-    fn listkeys(&mut self, result: &mut strbuf, namespace: &str) {
-        self.simple_command(result, "listkeys", args!(namespace: namespace))
+    fn listkeys(&mut self, namespace: &str) -> Box<[u8]> {
+        self.simple_command("listkeys", args!(namespace: namespace))
     }
 
     fn getbundle(
@@ -178,15 +175,16 @@ impl HgConnection for Box<dyn HgWireConnection> {
         self.changegroup_command(out, "getbundle", args!(*: &args[..]));
     }
 
-    fn lookup(&mut self, result: &mut strbuf, key: &str) {
-        self.simple_command(result, "lookup", args!(key: key))
+    fn lookup(&mut self, key: &str) -> Box<[u8]> {
+        self.simple_command("lookup", args!(key: key))
     }
 }
 
-fn unescape_batched_output(out: &[u8], buf: &mut strbuf) {
+fn unescape_batched_output(out: &[u8]) -> Box<[u8]> {
     // This will fail if `split` has more than 3 items.
     let mut start = 0;
     let mut out = out;
+    let mut buf = Vec::new();
     loop {
         if let Some(colon) = out[start..].find_byte(b':') {
             let (before, after) = out.split_at(start + colon);
@@ -214,37 +212,31 @@ fn unescape_batched_output(out: &[u8], buf: &mut strbuf) {
             break;
         }
     }
+    buf.into_boxed_slice()
 }
 
 #[test]
 fn test_unescape_batched_output() {
-    let mut buf = strbuf::new();
-    unescape_batched_output(b"", &mut buf);
-    assert_eq!(buf.as_bytes().as_bstr(), b"".as_bstr());
+    let buf = unescape_batched_output(b"");
+    assert_eq!(buf.as_bstr(), b"".as_bstr());
 
-    let mut buf = strbuf::new();
-    unescape_batched_output(b"abc", &mut buf);
-    assert_eq!(buf.as_bytes().as_bstr(), b"abc".as_bstr());
+    let buf = unescape_batched_output(b"abc");
+    assert_eq!(buf.as_bstr(), b"abc".as_bstr());
 
-    let mut buf = strbuf::new();
-    unescape_batched_output(b"abc:def", &mut buf);
-    assert_eq!(buf.as_bytes().as_bstr(), b"abc:def".as_bstr());
+    let buf = unescape_batched_output(b"abc:def");
+    assert_eq!(buf.as_bstr(), b"abc:def".as_bstr());
 
-    let mut buf = strbuf::new();
-    unescape_batched_output(b"abc:def:", &mut buf);
-    assert_eq!(buf.as_bytes().as_bstr(), b"abc:def:".as_bstr());
+    let buf = unescape_batched_output(b"abc:def:");
+    assert_eq!(buf.as_bstr(), b"abc:def:".as_bstr());
 
-    let mut buf = strbuf::new();
-    unescape_batched_output(b"abc:edef:", &mut buf);
-    assert_eq!(buf.as_bytes().as_bstr(), b"abc=def:".as_bstr());
+    let buf = unescape_batched_output(b"abc:edef:");
+    assert_eq!(buf.as_bstr(), b"abc=def:".as_bstr());
 
-    let mut buf = strbuf::new();
-    unescape_batched_output(b"abc:edef:c", &mut buf);
-    assert_eq!(buf.as_bytes().as_bstr(), b"abc=def:".as_bstr());
+    let buf = unescape_batched_output(b"abc:edef:c");
+    assert_eq!(buf.as_bstr(), b"abc=def:".as_bstr());
 
-    let mut buf = strbuf::new();
-    unescape_batched_output(b"abc:edef:c:s:e:oz", &mut buf);
-    assert_eq!(buf.as_bytes().as_bstr(), b"abc=def:;=,z".as_bstr());
+    let buf = unescape_batched_output(b"abc:edef:c:s:e:oz");
+    assert_eq!(buf.as_bstr(), b"abc=def:;=,z".as_bstr());
 }
 
 fn do_known(conn: &mut dyn HgConnection, args: &[&str]) {
@@ -255,9 +247,7 @@ fn do_known(conn: &mut dyn HgConnection, args: &[&str]) {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     let nodes_str = nodes.iter().join(" ");
-    let mut result = strbuf::new();
-    conn.simple_command(
-        &mut result,
+    let result = conn.simple_command(
         "known",
         args!(
             nodes: &nodes_str,
@@ -265,17 +255,16 @@ fn do_known(conn: &mut dyn HgConnection, args: &[&str]) {
         ),
     );
     unsafe {
-        send_buffer(&result);
+        send_slice(&result);
     }
 }
 
 fn do_listkeys(conn: &mut dyn HgConnection, args: &[&str]) {
     assert_eq!(args.len(), 1);
     let namespace = args[0];
-    let mut result = strbuf::new();
-    conn.listkeys(&mut result, namespace);
+    let result = conn.listkeys(namespace);
     unsafe {
-        send_buffer(&result);
+        send_slice(&result);
     }
 }
 
@@ -331,28 +320,26 @@ fn do_unbundle(conn: &mut dyn HgConnection, args: &[&str]) {
     drop(f);
 
     let file = File::open(path).unwrap();
-    let mut response = strbuf::new();
-    conn.wire()
+    let response = conn
+        .wire()
         .unwrap()
-        .push_command(&mut response, file, "unbundle", args!(heads: &heads_str));
+        .push_command(file, "unbundle", args!(heads: &heads_str));
     unsafe {
-        send_buffer(&response);
+        send_slice(&response);
     }
 }
 
 fn do_pushkey(conn: &mut dyn HgConnection, args: &[&str]) {
     assert_eq!(args.len(), 4);
-    let mut response = strbuf::new();
     let (namespace, key, old, new) = (args[0], args[1], args[2], args[3]);
     let conn = conn.wire().unwrap();
     //TODO: handle the response being a mix of return code and output
-    conn.simple_command(
-        &mut response,
+    let response = conn.simple_command(
         "pushkey",
         args!(namespace: namespace, key: key, old: old, new: new,),
     );
     unsafe {
-        send_buffer(&response);
+        send_slice(&response);
     }
 }
 
@@ -360,10 +347,8 @@ fn do_capable(conn: &mut dyn HgConnection, args: &[&str]) {
     assert_eq!(args.len(), 1);
     let name = args[0];
     if let Some(cap) = conn.get_capability(name.as_bytes()) {
-        let mut result = strbuf::new();
-        result.extend_from_slice(cap);
         unsafe {
-            send_buffer(&result);
+            send_slice(cap);
         }
     } else {
         unsafe {
@@ -374,74 +359,60 @@ fn do_capable(conn: &mut dyn HgConnection, args: &[&str]) {
 
 fn do_state(conn: &mut dyn HgConnection, args: &[&str]) {
     assert!(args.is_empty());
-    let mut branchmap = strbuf::new();
-    let mut heads = strbuf::new();
-    let mut bookmarks = strbuf::new();
+    let branchmap;
+    let heads;
+    let bookmarks;
     if conn.get_capability(b"batch".as_bstr()).is_none() {
         // TODO: when not batching, check for coherency
         // (see the cinnabar.remote_helper python module)
         let wire = conn.wire().unwrap();
-        wire.simple_command(&mut branchmap, "branchmap", args!());
-        wire.simple_command(&mut heads, "heads", args!());
-        conn.listkeys(&mut bookmarks, "bookmarks");
+        branchmap = wire.simple_command("branchmap", args!());
+        heads = wire.simple_command("heads", args!());
+        bookmarks = conn.listkeys("bookmarks");
     } else {
-        let mut out = strbuf::new();
-        conn.wire().unwrap().simple_command(
-            &mut out,
+        let out = conn.wire().unwrap().simple_command(
             "batch",
             args!(
                 cmds: "branchmap ;heads ;listkeys namespace=bookmarks",
                 *: &[]
             ),
         );
-        let split = out.as_bytes().split(|&b| b == b';');
-        for (out, buf) in Iterator::zip(
-            split,
-            &mut [
-                Some(&mut branchmap),
-                Some(&mut heads),
-                Some(&mut bookmarks),
-                None,
-            ],
-        ) {
-            let buf = buf.as_mut().unwrap();
-            unescape_batched_output(out, buf);
-        }
+        let split: [_; 3] = out.splitn_exact(b';').unwrap();
+        branchmap = unescape_batched_output(split[0]);
+        heads = unescape_batched_output(split[1]);
+        bookmarks = unescape_batched_output(split[2]);
     }
     unsafe {
-        send_buffer(&branchmap);
-        send_buffer(&heads);
-        send_buffer(&bookmarks);
+        send_slice(&branchmap);
+        send_slice(&heads);
+        send_slice(&bookmarks);
     }
 }
 
 fn do_lookup(conn: &mut dyn HgConnection, args: &[&str]) {
     assert_eq!(args.len(), 1);
     let key = args[0];
-    let mut result = strbuf::new();
-    conn.lookup(&mut result, key);
+    let result = conn.lookup(key);
     unsafe {
-        send_buffer(&result);
+        send_slice(&result);
     }
 }
 
 fn do_clonebundles(conn: &mut dyn HgConnection, args: &[&str]) {
     assert!(args.is_empty());
-    let mut result = strbuf::new();
     let conn = conn.wire().unwrap();
-    conn.simple_command(&mut result, "clonebundles", args!());
+    let result = conn.simple_command("clonebundles", args!());
     unsafe {
-        send_buffer(&result);
+        send_slice(&result);
     }
 }
 
 fn do_cinnabarclone(conn: &mut dyn HgConnection, args: &[&str]) {
     assert!(args.is_empty());
-    let mut result = strbuf::new();
     let conn = conn.wire().unwrap();
-    conn.simple_command(&mut result, "cinnabarclone", args!());
+    let result = conn.simple_command("cinnabarclone", args!());
     unsafe {
-        send_buffer(&result);
+        send_slice(&result);
     }
 }
 
