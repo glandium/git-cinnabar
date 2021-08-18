@@ -40,7 +40,7 @@ use std::convert::TryInto;
 use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};
 use std::fmt;
-use std::io::{stdin, stdout, BufRead, BufWriter, Cursor, Write};
+use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Cursor, Write};
 use std::os::raw::c_char;
 use std::os::raw::c_int;
 #[cfg(unix)]
@@ -48,6 +48,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::{self, FromStr};
+use std::thread::spawn;
 
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
@@ -58,7 +59,7 @@ use os_pipe::pipe;
 use url::Url;
 use which::which;
 
-use hg_connect::connect_main;
+use hg_connect::{connect_main, connect_main_with};
 use libcinnabar::{files_meta, hg2git};
 use libgit::{
     for_each_ref_in, for_each_remote, get_oid_committish, lookup_replace_commit, remote,
@@ -998,6 +999,21 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
     } else {
         (None, None)
     };
+
+    let (extra_fds, thread) = if cmd == PythonCommand::GitRemoteHg {
+        let (reader1, mut writer1) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
+        let (reader2, writer2) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
+        let reader1 = reader1.dup_inheritable();
+        let writer2 = writer2.dup_inheritable();
+        extra_env.push(("GIT_CINNABAR_WIRE_FDS", format!("{},{}", reader1, writer2)));
+        let thread = spawn(move || {
+            connect_main_with(&mut BufReader::new(reader2), &mut writer1).unwrap();
+        });
+        (Some((reader1, writer2)), Some(thread))
+    } else {
+        (None, None)
+    };
+
     let mut child = Command::new(python)
         .arg("-c")
         .arg(bootstrap)
@@ -1007,6 +1023,7 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
         .stdin(std::process::Stdio::inherit())
         .spawn()
         .map_err(|e| format!("Failed to start python: {}", e))?;
+    drop(extra_fds);
     drop(reader);
 
     let sent_data = if let Some(mut writer) = writer {
@@ -1029,6 +1046,7 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
             return Ok(1);
         }
     };
+    drop(thread);
     sent_data
         .map(|_| 0)
         .map_err(|e| format!("Failed to communicate with python: {}", e))

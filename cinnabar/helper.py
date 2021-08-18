@@ -4,6 +4,7 @@ import hashlib
 import logging
 import os
 import subprocess
+import sys
 from types import GeneratorType
 from cinnabar.exceptions import HelperClosedError, HelperFailedError
 from cinnabar.git import (
@@ -502,7 +503,7 @@ class CommitHelper(object):
             self.cmd_data(content)
 
 
-class HgRepoHelper(BaseHelper):
+class HgBaseRepoHelper(BaseHelper):
     MODE = 'wire'
     _helper = False
 
@@ -583,5 +584,44 @@ class HgRepoHelper(BaseHelper):
             return self._read_data(stdout)
 
 
-class BundleHelper(HgRepoHelper):
+class FdHelper(object):
+    def __init__(self, mode):
+        env_name = "GIT_CINNABAR_{}_FDS".format(mode.upper())
+        logger_name = "helper-{}".format(mode)
+        (reader, writer) = (int(fd) for fd in os.environ[env_name].split(','))
+        if sys.platform == 'win32':
+            import msvcrt
+            reader = msvcrt.open_osfhandle(reader, os.O_RDONLY)
+            writer = msvcrt.open_osfhandle(writer, os.O_WRONLY)
+        self.pid = 0
+        self.stdin = os.fdopen(writer, 'wb')
+        self.stdout = os.fdopen(reader, 'rb')
+        logger = logging.getLogger(logger_name)
+        if logger.isEnabledFor(logging.INFO):
+            self.stdin = IOLogger(logger, self.stdout, self.stdin)
+        if logger.isEnabledFor(logging.DEBUG):
+            self.stdout = self.stdin
+
+
+class HgRepoHelper(HgBaseRepoHelper):
+    _helper = False
+
+    @classmethod
+    def close(self):
+        if self._helper and self._helper is not self:
+            self._helper.stdin.close()
+        self._helper = self
+
+    @classmethod
+    def _ensure_helper(self):
+        if self._helper is False:
+            self._helper = FdHelper(self.MODE)
+
+            atexit.register(self.close)
+
+        if self._helper is self:
+            raise HelperClosedError
+
+
+class BundleHelper(HgBaseRepoHelper):
     _helper = False
