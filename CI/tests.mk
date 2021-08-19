@@ -25,6 +25,7 @@ COMMA=,
 export GIT_CINNABAR_CHECK:=all,traceback,cinnabarclone,clonebundles,no-version-check$(addprefix $(COMMA),$(GIT_CINNABAR_CHECK))
 export GIT_CINNABAR_LOG=process:3,reexec:3
 export GIT_CINNABAR_EXPERIMENTS
+export RUST_BACKTRACE=1
 
 hg.pure.hg:
 	$(HG) clone -U $(REPO) $@
