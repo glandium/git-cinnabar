@@ -44,6 +44,13 @@ DOCKER_IMAGES = {
          xz-utils\\
          zip\\
          && apt-get clean
+        RUN apt-get install -y --no-install-recommends\\
+         apt-transport-https gnupg2 software-properties-common&&\\
+         curl -s https://apt.llvm.org/llvm-snapshot.gpg.key\\
+         | apt-key add - &&\\
+         add-apt-repository\\
+         "deb http://apt.llvm.org/stretch/ llvm-toolchain-stretch-11 main" &&\\
+         apt-get update -o Acquire::Check-Valid-Until=false
         RUN pip install pip==20.3.4 --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
             '20190812T140702Z', (
@@ -54,13 +61,6 @@ DOCKER_IMAGES = {
 
     'build': '''\
         FROM base
-        RUN apt-get install -y --no-install-recommends\\
-         apt-transport-https gnupg2 software-properties-common&&\\
-         curl -s https://apt.llvm.org/llvm-snapshot.gpg.key\\
-         | apt-key add - &&\\
-         add-apt-repository\\
-         "deb http://apt.llvm.org/stretch/ llvm-toolchain-stretch-11 main" &&\\
-         apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
          clang-11\\
          gcc\\
@@ -95,7 +95,7 @@ DOCKER_IMAGES = {
         FROM base
         RUN apt-get install -y --no-install-recommends\\
          flake8\\
-         llvm-4.0\\
+         llvm-11\\
          make\\
          python-coverage\\
          python-flake8\\
@@ -106,7 +106,7 @@ DOCKER_IMAGES = {
          python-virtualenv\\
          && apt-get clean\\
          && pip install cram==0.7\\
-         && ln -s llvm-symbolizer-4.0 /usr/bin/llvm-symbolizer
+         && ln -s llvm-symbolizer-11 /usr/bin/llvm-symbolizer
         ''',
 }
 
