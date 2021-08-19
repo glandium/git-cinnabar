@@ -446,7 +446,7 @@ fn hg_connect(
 
 fn connect_main_internal() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdin = std::io::stdin();
-    let mut out = unsafe { crate::libc::FdFile::stdout() };
+    let mut out = std::io::stdout();
     let mut connect_command = String::new();
     stdin.read_line(&mut connect_command)?;
     let [connect, url] = connect_command.splitn_exact(' ').unwrap();
@@ -454,10 +454,12 @@ fn connect_main_internal() -> Result<(), Box<dyn std::error::Error>> {
     let mut conn = match hg_connect(url, 0, &mut out) {
         Some(conn) => {
             out.write_all(b"ok\n").unwrap();
+            out.flush().unwrap();
             conn
         }
         None => {
             out.write_all(b"failed\n").unwrap();
+            out.flush().unwrap();
             return Ok(());
         }
     };
@@ -482,6 +484,7 @@ fn connect_main_internal() -> Result<(), Box<dyn std::error::Error>> {
             "" => return Ok(()),
             _ => return Err(format!("Unknown command: {}", command).into()),
         }
+        out.flush().unwrap();
     }
 }
 
