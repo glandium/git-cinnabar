@@ -451,8 +451,16 @@ fn connect_main_internal() -> Result<(), Box<dyn std::error::Error>> {
     stdin.read_line(&mut connect_command)?;
     let [connect, url] = connect_command.splitn_exact(' ').unwrap();
     assert_eq!(connect, "connect");
-    let mut conn = hg_connect(url, 0, &mut out).ok_or("Failed to connect")?;
-    out.write_all(b"ok\n").unwrap();
+    let mut conn = match hg_connect(url, 0, &mut out) {
+        Some(conn) => {
+            out.write_all(b"ok\n").unwrap();
+            conn
+        }
+        None => {
+            out.write_all(b"failed\n").unwrap();
+            return Ok(());
+        }
+    };
 
     loop {
         let mut line = String::new();
