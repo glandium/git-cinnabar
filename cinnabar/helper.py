@@ -5,7 +5,7 @@ import logging
 import os
 import subprocess
 from types import GeneratorType
-from cinnabar.exceptions import HelperClosedError
+from cinnabar.exceptions import HelperClosedError, HelperFailedError
 from cinnabar.git import (
     EMPTY_BLOB,
     Git,
@@ -71,9 +71,19 @@ class ReadWriter(object):
 
 class BaseHelper(object):
     @classmethod
-    def close(self):
+    def close(self, on_atexit=False):
         if self._helper and self._helper is not self:
-            self._helper.wait()
+            if self._helper.wait() != 0:
+                try:
+                    raise HelperFailedError
+                except HelperFailedError:
+                    if on_atexit:
+                        # Raising an exception during atexit handlers doesn't
+                        # alter the exit code. So print and exit manually.
+                        import traceback
+                        traceback.print_exc()
+                        os._exit(1)
+                    raise
         self._helper = self
 
     @classmethod
@@ -118,7 +128,7 @@ class BaseHelper(object):
                 for k, _, v in (l.partition(b'=')
                                 for l in response.splitlines())
             }
-            atexit.register(self.close)
+            atexit.register(self.close, True)
 
         if self._helper is self:
             raise HelperClosedError

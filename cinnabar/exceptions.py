@@ -9,6 +9,10 @@ class HelperClosedError(RuntimeError):
     """Running a query with a closed helper."""
 
 
+class HelperFailedError(RuntimeError):
+    """Helper returned an error code."""
+
+
 class NothingToGraftException(Exception):
     """Not found any tree to graft."""
 
