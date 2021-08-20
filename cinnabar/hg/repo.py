@@ -1085,7 +1085,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                         message += '\n\n' + hint.decode('utf-8')
                     raise Exception(message)
                 else:
-                    logging.getLogger(b'bundle2').warning(
+                    logging.getLogger('bundle2').warning(
                         'ignoring bundle2 part: %s', part.type)
         pushed = reply != 0
     return gitdag(push_commits) if pushed or dry_run else ()
