@@ -76,7 +76,7 @@ def cg1unpacker(fh, alg):
 
 if not check_enabled('no-bundle2'):
     class unbundle20(object):
-        def __init__(self, ui, fh):
+        def __init__(self, fh):
             self.fh = fh
             params_len = readexactly(fh, 4)
             assert params_len == b'\0\0\0\0'
@@ -356,12 +356,6 @@ class HelperRepo(object):
         self._ui = None
         self.remote = None
 
-    @property
-    def ui(self):
-        if not self._ui:
-            self._ui = get_ui()
-        return self._ui
-
     def init_state(self):
         state = HgRepoHelper.state()
         self._branchmap = {
@@ -428,7 +422,7 @@ class HelperRepo(object):
                                       b','.join(kwargs.get('bundlecaps', ())))
         header = readexactly(data, 4)
         if header == b'HG20':
-            return unbundle20(self.ui, data)
+            return unbundle20(data)
 
         class Reader(object):
             def __init__(self, header, data):
@@ -453,7 +447,7 @@ class HelperRepo(object):
         data = HgRepoHelper.unbundle(cg, (hexlify(h) if h != b'force' else h
                                           for h in heads))
         if isinstance(data, str) and data.startswith(b'HG20'):
-            data = unbundle20(self.ui, BytesIO(data[4:]))
+            data = unbundle20(BytesIO(data[4:]))
         return data
 
     def lookup(self, key):
@@ -472,7 +466,7 @@ def unbundle_fh(fh, path):
         alg = readexactly(fh, 2)
         return cg1unpacker(fh, alg)
     elif unbundle20 and version.startswith(b'2'):
-        return unbundle20(get_ui(), fh)
+        return unbundle20(fh)
     else:
         raise Exception('%s: unsupported bundle version %s' % (fsdecode(path),
                         version.decode('ascii')))
@@ -1001,10 +995,6 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                         'ignoring bundle2 part: %s', part.type)
         pushed = reply != 0
     return gitdag(push_commits) if pushed or dry_run else ()
-
-
-def get_ui():
-    return None
 
 
 def munge_url(url):
