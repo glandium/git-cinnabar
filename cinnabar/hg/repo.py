@@ -456,9 +456,6 @@ class HelperRepo(object):
             data = unbundle20(self.ui, BytesIO(data[4:]))
         return data
 
-    def local(self):
-        return None
-
     def lookup(self, key):
         data = HgRepoHelper.lookup(key)
         if data:
@@ -968,8 +965,6 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                 repo_heads = [NULL_NODE_ID]
             repo_heads = [unhexlify(h) for h in repo_heads]
     if push_commits and not dry_run:
-        if repo.local():
-            repo.local().ui.setconfig(b'server', b'validate', True)
         if unbundle20:
             b2caps = repo.capable(b'bundle2') or {}
         else:
