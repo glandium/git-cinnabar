@@ -89,7 +89,9 @@ if not check_enabled('no-bundle2'):
                     break
                 assert length > 0
                 header = readexactly(self.fh, length)
-                yield Part(header, self.fh)
+                part = Part(header, self.fh)
+                yield part
+                part.consume()
 
     class Part(object):
         def __init__(self, rawheader, fh):
@@ -117,9 +119,9 @@ if not check_enabled('no-bundle2'):
             self.chunk_size = 0
             self.consumed = False
 
-        def read(self, size):
+        def read(self, size=None):
             ret = b''
-            while size and not self.consumed:
+            while (size is None or size > 0) and not self.consumed:
                 if self.chunk_size == self.chunk_offset:
                     d = readexactly(self.fh, 4)
                     self.chunk_size = struct.unpack('>i', d)[0]
@@ -130,12 +132,19 @@ if not check_enabled('no-bundle2'):
                     assert self.chunk_size > 0
                     self.chunk_offset = 0
 
-                data = readexactly(
-                    self.fh, min(size, self.chunk_size - self.chunk_offset))
-                size -= len(data)
+                wanted = self.chunk_size - self.chunk_offset
+                if size is not None:
+                    wanted = min(size, wanted)
+                data = readexactly(self.fh, wanted)
+                if size is not None:
+                    size -= len(data)
                 self.chunk_offset += len(data)
                 ret += data
             return ret
+
+        def consume(self):
+            while not self.consumed:
+                self.read(32768)
 
 
 # The following two functions (readexactly, getchunk) were copied from the
@@ -993,7 +1002,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                         message += '\n\n' + hint.decode('utf-8')
                     raise Exception(message)
                 else:
-                    logging.getLogger(b'bundle2').warning(
+                    logging.getLogger('bundle2').warning(
                         'ignoring bundle2 part: %s', part.type)
         pushed = reply != 0
     return gitdag(push_commits) if pushed or dry_run else ()
