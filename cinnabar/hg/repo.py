@@ -169,7 +169,9 @@ if not unbundle20 and not check_enabled('no-bundle2'):
                     break
                 assert length > 0
                 header = readexactly(self.fh, length)
-                yield Part(header, self.fh)
+                part = Part(header, self.fh)
+                yield part
+                part.consume()
 
     class Part(object):
         def __init__(self, rawheader, fh):
@@ -216,6 +218,10 @@ if not unbundle20 and not check_enabled('no-bundle2'):
                 self.chunk_offset += len(data)
                 ret += data
             return ret
+
+        def consume(self):
+            while not self.consumed:
+                self.read(32768)
 
 
 # The following two functions (readexactly, getchunk) were copied from the
