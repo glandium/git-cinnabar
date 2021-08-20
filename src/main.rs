@@ -889,7 +889,12 @@ fn git_cinnabar() -> i32 {
         } => do_rollback(candidates, fsck, force, committish),
         Upgrade => do_upgrade(),
         Bundle { .. } | Unbundle { .. } | Fsck { .. } => {
-            return run_python_command(PythonCommand::GitCinnabar);
+            match run_python_command(PythonCommand::GitCinnabar) {
+                Ok(code) => {
+                    return code;
+                }
+                Err(e) => Err(e),
+            }
         }
     };
     match ret {
@@ -945,7 +950,7 @@ enum PythonCommand {
     GitCinnabar,
 }
 
-fn run_python_command(cmd: PythonCommand) -> c_int {
+fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
     let want_python2 = unsafe { python3 == 0 };
     let (loader, python) = if want_python2 {
         (
@@ -955,16 +960,12 @@ fn run_python_command(cmd: PythonCommand) -> c_int {
     } else {
         (include_str!("../bootstrap/loader_py3.py"), which("python3"))
     };
-    let python = match python {
-        Ok(p) => p,
-        Err(_) => {
-            eprintln!(
-                "Could not find python {}",
-                if want_python2 { "2.7" } else { "3.x" }
-            );
-            return 1;
-        }
-    };
+    let python = python.map_err(|_| {
+        format!(
+            "Could not find python {}",
+            if want_python2 { "2.7" } else { "3.x" }
+        )
+    })?;
 
     // We aggregate the various parts of a bootstrap code that reads a
     // tarball from stdin, and use the contents of that tarball as a
@@ -982,15 +983,10 @@ fn run_python_command(cmd: PythonCommand) -> c_int {
         PythonCommand::GitCinnabar => include_str!("../bootstrap/git-cinnabar.py"),
     });
 
-    let (reader, mut writer) = match pipe() {
-        Ok((reader, writer)) => (reader.dup_inheritable(), writer),
-        Err(e) => {
-            eprintln!("Failed to create pipe: {}", e);
-            return 1;
-        }
-    };
+    let (reader, mut writer) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
+    let reader = reader.dup_inheritable();
 
-    let mut child = match Command::new(python)
+    let mut child = Command::new(python)
         .arg("-c")
         .arg(bootstrap)
         .args(std::env::args_os())
@@ -998,13 +994,7 @@ fn run_python_command(cmd: PythonCommand) -> c_int {
         .env("GIT_CINNABAR_BOOTSTRAP_FD", format!("{}", reader))
         .stdin(std::process::Stdio::inherit())
         .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Failed to start python: {}", e);
-            return 1;
-        }
-    };
+        .map_err(|e| format!("Failed to start python: {}", e))?;
     drop(reader);
 
     let sent_data = zstd::stream::copy_decode(
@@ -1015,22 +1005,18 @@ fn run_python_command(cmd: PythonCommand) -> c_int {
     let status = child.wait().expect("Python command wasn't running?!");
     match status.code() {
         Some(0) => {}
-        Some(code) => return code,
+        Some(code) => return Ok(code),
         None => {
             #[cfg(unix)]
             if let Some(signal) = status.signal() {
-                return -signal;
+                return Ok(-signal);
             }
-            return 1;
+            return Ok(1);
         }
     };
-    match sent_data {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("Failed to communicate with python: {}", e);
-            1
-        }
-    }
+    sent_data
+        .map(|_| 0)
+        .map_err(|e| format!("Failed to communicate with python: {}", e))
 }
 
 #[no_mangle]
@@ -1058,7 +1044,13 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
         }
         Some("git-remote-hg") => {
             let _v = VersionCheck::new();
-            run_python_command(PythonCommand::GitRemoteHg)
+            match run_python_command(PythonCommand::GitRemoteHg) {
+                Ok(code) => code,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    1
+                }
+            }
         }
         Some(_) | None => 1,
     };
