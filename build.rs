@@ -255,4 +255,7 @@ fn main() {
         }
         println!("cargo:rerun-if-env-changed=CARGO_PKG_VERSION");
     }
+    if let Ok(profile) = std::env::var("PROFILE") {
+        println!("cargo:rustc-cfg=profile={:?}", profile);
+    }
 }

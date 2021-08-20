@@ -973,8 +973,14 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
     // The tarball itself is included compressed in this binary, and
     // we decompress it before sending.
     let mut bootstrap = String::new();
-    bootstrap.push_str(include_str!("../bootstrap/loader_common.py"));
-    bootstrap.push_str(loader);
+    let internal_python =
+        cfg!(profile = "release") || std::env::var_os("GIT_CINNABAR_NO_INTERNAL_PYTHON").is_none();
+    if internal_python {
+        bootstrap.push_str(include_str!("../bootstrap/loader_common.py"));
+        bootstrap.push_str(loader);
+    } else {
+        bootstrap.push_str("import sys\n");
+    }
     if std::env::var("GIT_CINNABAR_COVERAGE").is_ok() {
         bootstrap.push_str(include_str!("../bootstrap/coverage.py"));
     }
@@ -983,25 +989,34 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
         PythonCommand::GitCinnabar => include_str!("../bootstrap/git-cinnabar.py"),
     });
 
-    let (reader, mut writer) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
-    let reader = reader.dup_inheritable();
-
+    let mut extra_env = Vec::new();
+    let (reader, writer) = if internal_python {
+        let (reader, writer) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
+        let reader = reader.dup_inheritable();
+        extra_env.push(("GIT_CINNABAR_BOOTSTRAP_FD", format!("{}", reader)));
+        (Some(reader), Some(writer))
+    } else {
+        (None, None)
+    };
     let mut child = Command::new(python)
         .arg("-c")
         .arg(bootstrap)
         .args(std::env::args_os())
         .env("GIT_CINNABAR_HELPER", std::env::current_exe().unwrap())
-        .env("GIT_CINNABAR_BOOTSTRAP_FD", format!("{}", reader))
+        .envs(extra_env)
         .stdin(std::process::Stdio::inherit())
         .spawn()
         .map_err(|e| format!("Failed to start python: {}", e))?;
     drop(reader);
 
-    let sent_data = zstd::stream::copy_decode(
-        &mut Cursor::new(include_bytes!(env!("PYTHON_TAR"))),
-        &mut writer,
-    );
-    drop(writer);
+    let sent_data = if let Some(mut writer) = writer {
+        zstd::stream::copy_decode(
+            &mut Cursor::new(include_bytes!(env!("PYTHON_TAR"))),
+            &mut writer,
+        )
+    } else {
+        Ok(())
+    };
     let status = child.wait().expect("Python command wasn't running?!");
     match status.code() {
         Some(0) => {}
