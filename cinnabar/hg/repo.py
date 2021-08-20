@@ -199,9 +199,9 @@ if not unbundle20 and not check_enabled('no-bundle2'):
             self.chunk_size = 0
             self.consumed = False
 
-        def read(self, size):
+        def read(self, size=None):
             ret = b''
-            while size and not self.consumed:
+            while (size is None or size > 0) and not self.consumed:
                 if self.chunk_size == self.chunk_offset:
                     d = readexactly(self.fh, 4)
                     self.chunk_size = struct.unpack('>i', d)[0]
@@ -212,9 +212,12 @@ if not unbundle20 and not check_enabled('no-bundle2'):
                     assert self.chunk_size > 0
                     self.chunk_offset = 0
 
-                data = readexactly(
-                    self.fh, min(size, self.chunk_size - self.chunk_offset))
-                size -= len(data)
+                wanted = self.chunk_size - self.chunk_offset
+                if size is not None:
+                    wanted = min(size, wanted)
+                data = readexactly(self.fh, wanted)
+                if size is not None:
+                    size -= len(data)
                 self.chunk_offset += len(data)
                 ret += data
             return ret
