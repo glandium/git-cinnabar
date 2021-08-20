@@ -17,6 +17,10 @@ impl FdFile {
         FdFile(1)
     }
 
+    pub unsafe fn stderr() -> Self {
+        FdFile(2)
+    }
+
     pub unsafe fn raw(&mut self) -> c_int {
         self.0
     }

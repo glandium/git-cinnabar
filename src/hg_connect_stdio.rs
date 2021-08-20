@@ -4,7 +4,7 @@
 
 use std::ffi::CString;
 use std::fs::File;
-use std::io::{copy, stderr, BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{copy, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::c_int;
 use std::path::PathBuf;
@@ -252,8 +252,12 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
     let mut proc_err = unsafe { FdFile::from_raw_fd(proc_err(proc)) };
 
     conn.thread = Some(spawn(move || {
-        let stderr = stderr();
-        let mut writer = PrefixWriter::new(b"remote: ", stderr.lock());
+        /* Because we read from a raw fd for a pipe, we need to use a raw fd
+         * to send data verbatim to stderr, because it's not necessarily data
+         * that std::io::stderr will like on Windows (i.e. not UTF-8 on e.g.
+         * Japanese locale) */
+        let stderr = unsafe { FdFile::stderr() };
+        let mut writer = PrefixWriter::new(b"remote: ", stderr);
         copy(&mut proc_err, &mut writer).unwrap();
     }));
 
