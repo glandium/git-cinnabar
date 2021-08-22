@@ -70,6 +70,25 @@ class ReadWriter(object):
         self._writer.flush()
 
 
+class FdHelper(object):
+    def __init__(self, mode):
+        env_name = "GIT_CINNABAR_{}_FDS".format(mode.upper())
+        logger_name = "helper-{}".format(mode)
+        (reader, writer) = (int(fd) for fd in os.environ[env_name].split(','))
+        if sys.platform == 'win32':
+            import msvcrt
+            reader = msvcrt.open_osfhandle(reader, os.O_RDONLY)
+            writer = msvcrt.open_osfhandle(writer, os.O_WRONLY)
+        self.pid = 0
+        self.stdin = os.fdopen(writer, 'wb')
+        self.stdout = os.fdopen(reader, 'rb')
+        logger = logging.getLogger(logger_name)
+        if logger.isEnabledFor(logging.INFO):
+            self.stdin = IOLogger(logger, self.stdout, self.stdin)
+        if logger.isEnabledFor(logging.DEBUG):
+            self.stdout = self.stdin
+
+
 class BaseHelper(object):
     @classmethod
     def close(self, on_atexit=False):
@@ -597,25 +616,6 @@ class HgRepoHelper(BaseHelper):
     def cinnabarclone(self):
         with self.query(b'cinnabarclone') as stdout:
             return self._read_data(stdout)
-
-
-class FdHelper(object):
-    def __init__(self, mode):
-        env_name = "GIT_CINNABAR_{}_FDS".format(mode.upper())
-        logger_name = "helper-{}".format(mode)
-        (reader, writer) = (int(fd) for fd in os.environ[env_name].split(','))
-        if sys.platform == 'win32':
-            import msvcrt
-            reader = msvcrt.open_osfhandle(reader, os.O_RDONLY)
-            writer = msvcrt.open_osfhandle(writer, os.O_WRONLY)
-        self.pid = 0
-        self.stdin = os.fdopen(writer, 'wb')
-        self.stdout = os.fdopen(reader, 'rb')
-        logger = logging.getLogger(logger_name)
-        if logger.isEnabledFor(logging.INFO):
-            self.stdin = IOLogger(logger, self.stdout, self.stdin)
-        if logger.isEnabledFor(logging.DEBUG):
-            self.stdout = self.stdin
 
 
 class BundleHelper(HgRepoHelper):
