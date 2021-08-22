@@ -45,7 +45,7 @@ use crate::util::{PrefixWriter, ReadExt, SeekExt, SliceExt};
 pub struct HgHttpConnection {
     capabilities: HgCapabilities,
     url: Url,
-    client: HttpClient,
+    initial_request: bool,
 }
 
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.
@@ -60,10 +60,6 @@ pub struct HgHttpConnection {
 trait ReadAndSeek: Read + Seek {}
 
 impl<T: Read + Seek> ReadAndSeek for T {}
-
-struct HttpClient {
-    initial_request: bool,
-}
 
 struct HttpRequest {
     url: Url,
@@ -93,28 +89,6 @@ struct HttpThreadData {
     sender: Sender<HttpRequestChannelData>,
     curl: *mut CURL,
     first: bool,
-}
-
-impl HttpClient {
-    fn new() -> Self {
-        HttpClient {
-            initial_request: true,
-        }
-    }
-
-    fn request(&mut self, url: Url) -> HttpRequest {
-        let mut req = HttpRequest::new(url);
-        let follow_config = unsafe { http_follow_config };
-        if (follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && self.initial_request)
-            || follow_config == http_follow_config::HTTP_FOLLOW_ALWAYS
-        {
-            req.follow_redirects(true);
-        }
-        if self.initial_request {
-            self.initial_request = false;
-        }
-        req
-    }
 }
 
 impl HttpRequest {
@@ -348,6 +322,20 @@ unsafe extern "C" fn http_request_execute(
 }
 
 impl HgHttpConnection {
+    fn request(&mut self, url: Url) -> HttpRequest {
+        let mut req = HttpRequest::new(url);
+        let follow_config = unsafe { http_follow_config };
+        if (follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && self.initial_request)
+            || follow_config == http_follow_config::HTTP_FOLLOW_ALWAYS
+        {
+            req.follow_redirects(true);
+        }
+        if self.initial_request {
+            self.initial_request = false;
+        }
+        req
+    }
+
     fn start_command_request(&mut self, command: &str, args: HgArgs) -> HttpRequest {
         let args = Iterator::chain(
             args.args.iter(),
@@ -392,7 +380,7 @@ impl HgHttpConnection {
         }
         drop(query_pairs);
 
-        let mut request = self.client.request(command_url);
+        let mut request = self.request(command_url);
         request.header("Accept", "application/mercurial-0.1");
         for (name, value) in headers {
             request.header(&name, &value);
@@ -566,7 +554,7 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
     let mut conn = HgHttpConnection {
         capabilities: Default::default(),
         url: url.clone(),
-        client: HttpClient::new(),
+        initial_request: true,
     };
 
     let c_url = CString::new(url.to_string()).unwrap();
