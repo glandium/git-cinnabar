@@ -59,7 +59,7 @@ use os_pipe::pipe;
 use url::Url;
 use which::which;
 
-use hg_connect::{connect_main, connect_main_with};
+use hg_connect::connect_main_with;
 use libcinnabar::{files_meta, hg2git};
 use libgit::{
     for_each_ref_in, for_each_remote, get_oid_committish, lookup_replace_commit, remote,
@@ -907,24 +907,6 @@ fn git_cinnabar() -> i32 {
     }
 }
 
-#[derive(StructOpt)]
-#[structopt(name = "git-cinnabar-helper")]
-#[structopt(version=crate_version!())]
-#[structopt(long_version=FULL_VERSION)]
-#[structopt(setting(AppSettings::AllowInvalidUtf8))]
-#[structopt(setting(AppSettings::ArgRequiredElseHelp))]
-#[structopt(setting(AppSettings::DeriveDisplayOrder))]
-#[structopt(setting(AppSettings::DontCollapseArgsInUsage))]
-#[structopt(group = ArgGroup::with_name("mode").multiple(false).required(true))]
-struct HelperCommand {
-    #[structopt(long)]
-    #[structopt(group = "mode")]
-    wire: bool,
-    #[structopt(long)]
-    #[structopt(group = "mode")]
-    import: bool,
-}
-
 extern "C" {
     static python3: c_int;
 }
@@ -1066,15 +1048,7 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
 
     let ret = match argv0_path.file_stem().and_then(|a| a.to_str()) {
         Some("git-cinnabar") => git_cinnabar(),
-        Some("git-cinnabar-helper") => {
-            let helper = HelperCommand::from_args();
-            assert_ne!(helper.wire, helper.import);
-            if helper.wire {
-                connect_main()
-            } else {
-                helper_main()
-            }
-        }
+        Some("git-cinnabar-helper") => helper_main(),
         Some("git-remote-hg") => {
             let _v = VersionCheck::new();
             match run_python_command(PythonCommand::GitRemoteHg) {

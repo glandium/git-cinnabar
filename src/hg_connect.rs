@@ -505,15 +505,3 @@ pub fn connect_main_with(
         out.flush().unwrap();
     }
 }
-
-pub fn connect_main() -> c_int {
-    let stdin = std::io::stdin();
-    let mut stdin = stdin.lock();
-    let mut out = std::io::stdout();
-    connect_main_with(&mut stdin, &mut out)
-        .map(|_| 0)
-        .unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            1
-        })
-}
