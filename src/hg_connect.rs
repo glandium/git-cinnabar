@@ -448,45 +448,58 @@ pub fn connect_main_with(
     input: &mut impl BufRead,
     out: &mut (impl Write + Send),
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut connect_command = String::new();
-    input.read_line(&mut connect_command)?;
-    let [connect, url] = connect_command.splitn_exact(' ').unwrap();
-    assert_eq!(connect, "connect");
-    let mut conn = match hg_connect(url, 0, out) {
-        Some(mut conn) => {
-            // Bundle connections have already been handled in hg_connect.
-            if conn.wire().is_none() {
-                return Ok(());
-            }
-            out.write_all(b"ok\n").unwrap();
-            out.flush().unwrap();
-            conn
-        }
-        None => {
-            out.write_all(b"failed\n").unwrap();
-            out.flush().unwrap();
-            return Ok(());
-        }
-    };
-
+    let mut connection = None;
     loop {
         let mut line = String::new();
         input.read_line(&mut line)?;
-        let mut args = line.trim_matches('\n').split(' ');
+        let line = line.trim_matches('\n');
+        if line.is_empty() {
+            return Ok(());
+        }
+        let mut args = line.split(' ');
         let command = args.next().ok_or("Missing command")?;
+        if command == "connect" {
+            let url = args.next().unwrap();
+            assert!(args.next().is_none());
+            match hg_connect(url, 0, out) {
+                // We allow multiple connect commands, but only one of them should be
+                // wired.
+                Some(mut conn) => {
+                    // Bundle connections have already been handled in hg_connect.
+                    if conn.wire().is_none() {
+                        continue;
+                    }
+                    assert!(connection.is_none());
+                    connection = Some(conn);
+                    out.write_all(b"ok\n").unwrap();
+                }
+                _ => {
+                    out.write_all(b"failed\n").unwrap();
+                }
+            }
+            out.flush().unwrap();
+            continue;
+        }
+        if connection.is_none() {
+            return Err(format!("Unknown command: {}", command).into());
+        }
         let args = args.collect::<Vec<_>>();
+        let conn = &mut **connection.as_mut().unwrap();
         match command {
-            "known" => do_known(&mut *conn, &*args, out),
-            "listkeys" => do_listkeys(&mut *conn, &*args, out),
-            "getbundle" => do_getbundle(&mut *conn, &*args, out),
-            "unbundle" => do_unbundle(&mut *conn, &*args, input, out),
-            "pushkey" => do_pushkey(&mut *conn, &*args, out),
-            "capable" => do_capable(&mut *conn, &*args, out),
-            "state" => do_state(&mut *conn, &*args, out),
-            "lookup" => do_lookup(&mut *conn, &*args, out),
-            "clonebundles" => do_clonebundles(&mut *conn, &*args, out),
-            "cinnabarclone" => do_cinnabarclone(&mut *conn, &*args, out),
-            "" => return Ok(()),
+            "known" => do_known(conn, &*args, out),
+            "listkeys" => do_listkeys(conn, &*args, out),
+            "getbundle" => do_getbundle(conn, &*args, out),
+            "unbundle" => do_unbundle(conn, &*args, input, out),
+            "pushkey" => do_pushkey(conn, &*args, out),
+            "capable" => do_capable(conn, &*args, out),
+            "state" => do_state(conn, &*args, out),
+            "lookup" => do_lookup(conn, &*args, out),
+            "clonebundles" => do_clonebundles(conn, &*args, out),
+            "cinnabarclone" => do_cinnabarclone(conn, &*args, out),
+            "close" => {
+                connection = None;
+                continue;
+            }
             _ => return Err(format!("Unknown command: {}", command).into()),
         }
         out.flush().unwrap();

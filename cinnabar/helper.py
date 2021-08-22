@@ -609,8 +609,7 @@ class HgRepoHelper(HgBaseRepoHelper):
     @classmethod
     def close(self):
         if self._helper and self._helper is not self:
-            self._helper.stdin.close()
-        self._helper = self
+            self._helper.stdin.write(b'close')
 
     @classmethod
     def _ensure_helper(self):
@@ -623,5 +622,9 @@ class HgRepoHelper(HgBaseRepoHelper):
             raise HelperClosedError
 
 
-class BundleHelper(HgBaseRepoHelper):
+class BundleHelper(HgRepoHelper):
     _helper = False
+
+    @classmethod
+    def close(self):
+        pass
