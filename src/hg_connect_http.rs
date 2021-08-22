@@ -45,7 +45,6 @@ use crate::util::{PrefixWriter, ReadExt, SeekExt, SliceExt};
 pub struct HgHttpConnection {
     capabilities: HgCapabilities,
     url: Url,
-    initial_request: bool,
 }
 
 /* The Mercurial HTTP protocol uses HTTP requests for each individual command.
@@ -322,20 +321,6 @@ unsafe extern "C" fn http_request_execute(
 }
 
 impl HgHttpConnection {
-    fn request(&mut self, url: Url) -> HttpRequest {
-        let mut req = HttpRequest::new(url);
-        let follow_config = unsafe { http_follow_config };
-        if (follow_config == http_follow_config::HTTP_FOLLOW_INITIAL && self.initial_request)
-            || follow_config == http_follow_config::HTTP_FOLLOW_ALWAYS
-        {
-            req.follow_redirects(true);
-        }
-        if self.initial_request {
-            self.initial_request = false;
-        }
-        req
-    }
-
     fn start_command_request(&mut self, command: &str, args: HgArgs) -> HttpRequest {
         let args = Iterator::chain(
             args.args.iter(),
@@ -380,7 +365,11 @@ impl HgHttpConnection {
         }
         drop(query_pairs);
 
-        let mut request = self.request(command_url);
+        let mut request = HttpRequest::new(command_url);
+        if unsafe { http_follow_config } == http_follow_config::HTTP_FOLLOW_ALWAYS {
+            request.follow_redirects(true);
+        }
+
         request.header("Accept", "application/mercurial-0.1");
         for (name, value) in headers {
             request.header(&name, &value);
@@ -554,7 +543,6 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
     let mut conn = HgHttpConnection {
         capabilities: Default::default(),
         url: url.clone(),
-        initial_request: true,
     };
 
     let c_url = CString::new(url.to_string()).unwrap();
@@ -574,7 +562,10 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
      * hg_connection, and give control back to the caller, but git's http.c
      * doesn't allow pauses.
      */
-    let http_req = conn.start_command_request("capabilities", args!());
+    let mut http_req = conn.start_command_request("capabilities", args!());
+    if unsafe { http_follow_config } == http_follow_config::HTTP_FOLLOW_INITIAL {
+        http_req.follow_redirects(true);
+    }
     let mut http_resp = http_req.execute().unwrap();
     conn.handle_redirect(&http_resp);
     let mut header = [0u8; 4];
