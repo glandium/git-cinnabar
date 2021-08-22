@@ -420,7 +420,7 @@ fn hg_connect(
         // For now the wire helper just sends the bundle to the given output writer.
         out.write_all(b"bundle\n").unwrap();
         conn.getbundle(out, &[], &[], None);
-        return None;
+        return Some(conn);
     }
 
     const REQUIRED_CAPS: [&str; 5] = [
@@ -453,7 +453,11 @@ pub fn connect_main_with(
     let [connect, url] = connect_command.splitn_exact(' ').unwrap();
     assert_eq!(connect, "connect");
     let mut conn = match hg_connect(url, 0, out) {
-        Some(conn) => {
+        Some(mut conn) => {
+            // Bundle connections have already been handled in hg_connect.
+            if conn.wire().is_none() {
+                return Ok(());
+            }
             out.write_all(b"ok\n").unwrap();
             out.flush().unwrap();
             conn
