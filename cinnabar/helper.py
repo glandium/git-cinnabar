@@ -503,9 +503,24 @@ class CommitHelper(object):
             self.cmd_data(content)
 
 
-class HgBaseRepoHelper(BaseHelper):
+class HgRepoHelper(BaseHelper):
     MODE = 'wire'
     _helper = False
+
+    @classmethod
+    def close(self):
+        if self._helper and self._helper is not self:
+            self._helper.stdin.write(b'close')
+
+    @classmethod
+    def _ensure_helper(self):
+        if self._helper is False:
+            self._helper = FdHelper(self.MODE)
+
+            atexit.register(self.close)
+
+        if self._helper is self:
+            raise HelperClosedError
 
     @classmethod
     def connect(self, url):
@@ -601,25 +616,6 @@ class FdHelper(object):
             self.stdin = IOLogger(logger, self.stdout, self.stdin)
         if logger.isEnabledFor(logging.DEBUG):
             self.stdout = self.stdin
-
-
-class HgRepoHelper(HgBaseRepoHelper):
-    _helper = False
-
-    @classmethod
-    def close(self):
-        if self._helper and self._helper is not self:
-            self._helper.stdin.write(b'close')
-
-    @classmethod
-    def _ensure_helper(self):
-        if self._helper is False:
-            self._helper = FdHelper(self.MODE)
-
-            atexit.register(self.close)
-
-        if self._helper is self:
-            raise HelperClosedError
 
 
 class BundleHelper(HgRepoHelper):
