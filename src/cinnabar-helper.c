@@ -157,7 +157,7 @@ static void split_command(char *line, const char **command,
 	string_list_clear(&split_line, 0);
 }
 
-extern void send_buffer(struct strbuf *buf);
+extern void send_buffer(int fd, struct strbuf *buf);
 
 /* Send git object info and content to stdout, like cat-file --batch does. */
 static void send_object(const struct object_id *oid)
@@ -273,7 +273,7 @@ static void do_ls_tree(struct string_list *args)
 
 	memset(&match_all, 0, sizeof(match_all));
 	read_tree(the_repository, tree, &match_all, fill_ls_tree, &ctx);
-	send_buffer(&ctx.buf);
+	send_buffer(STDOUT_FILENO, &ctx.buf);
 	strbuf_release(&ctx.buf);
 
 	while (ctx.list) {
@@ -372,7 +372,7 @@ static void do_rev_list(struct string_list *args)
 			commit->parents = copy_commit_list(parent);
 		}
 	}
-	send_buffer(&buf);
+	send_buffer(STDOUT_FILENO, &buf);
 	strbuf_release(&buf);
 	rev_list_finish(revs);
 }
@@ -475,7 +475,7 @@ static void do_diff_tree(struct string_list *args)
 	diff_tree_(args->nr + 1, argv, strbuf_diff_tree, &buf);
 	free(argv);
 
-	send_buffer(&buf);
+	send_buffer(STDOUT_FILENO, &buf);
 	strbuf_release(&buf);
 }
 
@@ -938,7 +938,7 @@ static void do_manifest(struct string_list *args)
 	if (!manifest)
 		goto not_found;
 
-	send_buffer(manifest);
+	send_buffer(STDOUT_FILENO, manifest);
 	return;
 
 not_found:
@@ -1129,7 +1129,7 @@ static void do_helpercaps(struct string_list *args)
 		strbuf_addstr(&caps, "store=new");
 	}
 
-	send_buffer(&caps);
+	send_buffer(STDOUT_FILENO, &caps);
 	strbuf_release(&caps);
 }
 
@@ -1158,7 +1158,7 @@ static void do_heads(struct string_list *args)
 
 	ensure_heads(heads);
 	oid_array_for_each_unique(heads, add_each_head, &heads_buf);
-	send_buffer(&heads_buf);
+	send_buffer(STDOUT_FILENO, &heads_buf);
 	strbuf_release(&heads_buf);
 }
 
@@ -1481,7 +1481,7 @@ static void do_dangling(struct string_list *args)
 	ensure_notes(data.notes);
 	for_each_note(data.notes, 0, dangling_note, &data);
 
-	send_buffer(&buf);
+	send_buffer(STDOUT_FILENO, &buf);
 	strbuf_release(&buf);
 }
 
