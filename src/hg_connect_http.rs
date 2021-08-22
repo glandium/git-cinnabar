@@ -12,6 +12,7 @@ use std::os::raw::{c_char, c_int, c_long};
 use std::ptr;
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use bstr::{BStr, ByteSlice};
@@ -36,12 +37,78 @@ use crate::hg_connect::{
     HgArgs, HgCapabilities, HgConnection, HgConnectionBase, HgWireConnection, OneHgArg,
 };
 use crate::libgit::{
-    credential_fill, curl_errorstr, get_active_slot, http_auth, http_cleanup, http_follow_config,
-    http_init, run_one_slot, slot_results, HTTP_OK, HTTP_REAUTH,
+    credential_fill, curl_errorstr, get_active_slot, http_auth, http_follow_config, run_one_slot,
+    slot_results, HTTP_OK, HTTP_REAUTH,
 };
 use crate::store::HgChangesetId;
 use crate::util::{PrefixWriter, ReadExt, SeekExt, SliceExt};
 
+use self::git_http_state::{GitHttpStateToken, GIT_HTTP_STATE};
+
+mod git_http_state {
+    use std::{ffi::CString, ptr, sync::Mutex};
+
+    use once_cell::sync::Lazy;
+    use url::Url;
+
+    use crate::libgit::{http_cleanup, http_init};
+
+    pub struct GitHttpState {
+        url: Option<Url>,
+        taken: bool,
+    }
+
+    pub struct GitHttpStateToken(());
+
+    impl GitHttpState {
+        fn new() -> Self {
+            GitHttpState {
+                url: None,
+                taken: false,
+            }
+        }
+
+        pub fn take(&mut self, url: &Url) -> GitHttpStateToken {
+            assert!(!self.taken);
+            let mut normalized_url = url.clone();
+            let _ = normalized_url.set_password(None);
+            normalized_url.set_query(None);
+            normalized_url.set_fragment(None);
+            match &self.url {
+                Some(url) if url == &normalized_url => {}
+                _ => {
+                    let c_url = CString::new(normalized_url.to_string()).unwrap();
+                    unsafe {
+                        http_init(ptr::null_mut(), c_url.as_ptr(), 0);
+                    }
+                    self.url = Some(normalized_url);
+                }
+            }
+            self.taken = true;
+            GitHttpStateToken(())
+        }
+
+        pub fn clean(&mut self) {
+            assert!(!self.taken);
+            if self.url.take().is_some() {
+                unsafe {
+                    http_cleanup();
+                }
+            }
+        }
+    }
+
+    pub static GIT_HTTP_STATE: Lazy<Mutex<GitHttpState>> =
+        Lazy::new(|| Mutex::new(GitHttpState::new()));
+
+    impl Drop for GitHttpStateToken {
+        fn drop(&mut self) {
+            let mut state = GIT_HTTP_STATE.lock().unwrap();
+            assert!(state.taken);
+            state.taken = false;
+        }
+    }
+}
 pub struct HgHttpConnection {
     capabilities: HgCapabilities,
     url: Url,
@@ -65,6 +132,7 @@ struct HttpRequest {
     headers: Vec<(String, String)>,
     body: Option<Box<dyn ReadAndSeek + Send>>,
     follow_redirects: bool,
+    token: Arc<GitHttpStateToken>,
 }
 
 #[derive(Debug)]
@@ -74,12 +142,15 @@ struct HttpResponseInfo {
     content_type: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug)]
 struct HttpResponse {
     info: HttpResponseInfo,
     thread: Option<JoinHandle<Result<(), (c_int, HttpRequest)>>>,
     cursor: Cursor<Vec<u8>>,
     receiver: Option<Receiver<HttpRequestChannelData>>,
+    #[derivative(Debug = "ignore")]
+    token: Arc<GitHttpStateToken>,
 }
 
 type HttpRequestChannelData = Either<HttpResponseInfo, Vec<u8>>;
@@ -92,11 +163,13 @@ struct HttpThreadData {
 
 impl HttpRequest {
     fn new(url: Url) -> Self {
+        let token = GIT_HTTP_STATE.lock().unwrap().take(&url);
         HttpRequest {
             url,
             headers: Vec::new(),
             body: None,
             follow_redirects: false,
+            token: Arc::new(token),
         }
     }
 
@@ -114,6 +187,7 @@ impl HttpRequest {
 
     fn execute_once(mut self) -> Result<HttpResponse, (c_int, Self)> {
         let (sender, receiver) = channel::<HttpRequestChannelData>();
+        let token = self.token.clone();
         let thread = thread::spawn(move || unsafe {
             let url = CString::new(self.url.to_string()).unwrap();
             let slot = get_active_slot().as_mut().unwrap();
@@ -186,6 +260,7 @@ impl HttpRequest {
                 thread: Some(thread),
                 cursor: Cursor::new(Vec::new()),
                 receiver: Some(receiver),
+                token,
             }),
             Ok(Either::Right(_)) => unreachable!(),
             _ => {
@@ -492,9 +567,7 @@ impl HgConnectionBase for HgHttpConnection {
 
 impl Drop for HgHttpConnection {
     fn drop(&mut self) {
-        unsafe {
-            http_cleanup();
-        }
+        GIT_HTTP_STATE.lock().unwrap().clean();
     }
 }
 
@@ -544,11 +617,6 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
         capabilities: Default::default(),
         url: url.clone(),
     };
-
-    let c_url = CString::new(url.to_string()).unwrap();
-    unsafe {
-        http_init(ptr::null_mut(), c_url.as_ptr(), 0);
-    }
 
     /* The first request we send is a "capabilities" request. This sends to
      * the repo url with a query string "?cmd=capabilities". If the remote
