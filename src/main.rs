@@ -102,7 +102,7 @@ pub const FULL_VERSION: &str = git_version!(
 );
 
 extern "C" {
-    fn helper_main() -> c_int;
+    fn helper_main(in_: c_int, out: c_int) -> c_int;
 
     #[cfg(windows)]
     fn wmain(argc: c_int, argv: *const *const u16) -> c_int;
@@ -1048,7 +1048,7 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
 
     let ret = match argv0_path.file_stem().and_then(|a| a.to_str()) {
         Some("git-cinnabar") => git_cinnabar(),
-        Some("git-cinnabar-helper") => helper_main(),
+        Some("git-cinnabar-helper") => helper_main(0, 1),
         Some("git-remote-hg") => {
             let _v = VersionCheck::new();
             match run_python_command(PythonCommand::GitRemoteHg) {

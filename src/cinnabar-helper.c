@@ -91,6 +91,8 @@ int metadata_flags = 0;
 int cinnabar_check = CHECK_VERSION;
 int cinnabar_experiments = 0;
 int python3 = 0;
+FILE *helper_input;
+extern int cat_blob_fd;
 
 static int config(const char *name, struct strbuf *result)
 {
@@ -175,7 +177,7 @@ static void send_object(const struct object_id *oid)
 	strbuf_addf(&header, "%s %s %lu\n", oid_to_hex(oid), type_name(type),
 	            sz);
 
-	write_or_die(STDOUT_FILENO, header.buf, header.len);
+	write_or_die(cat_blob_fd, header.buf, header.len);
 
 	strbuf_release(&header);
 
@@ -187,7 +189,7 @@ static void send_object(const struct object_id *oid)
 		if (readlen <= 0)
 			break;
 
-		wrote = write_in_full(STDOUT_FILENO, buf, readlen);
+		wrote = write_in_full(cat_blob_fd, buf, readlen);
 		if (wrote < readlen)
 			break;
 
@@ -197,7 +199,7 @@ static void send_object(const struct object_id *oid)
 	if (sz != 0)
 		die("Failed to write object");
 
-	write_or_die(STDOUT_FILENO, "\n", 1);
+	write_or_die(cat_blob_fd, "\n", 1);
 
 	close_istream(st);
 }
@@ -216,8 +218,8 @@ static void do_cat_file(struct string_list *args)
 	return;
 
 not_found:
-	write_or_die(STDOUT_FILENO, NULL_NODE, 40);
-	write_or_die(STDOUT_FILENO, "\n", 1);
+	write_or_die(cat_blob_fd, NULL_NODE, 40);
+	write_or_die(cat_blob_fd, "\n", 1);
 }
 
 struct ls_tree_context {
@@ -273,7 +275,7 @@ static void do_ls_tree(struct string_list *args)
 
 	memset(&match_all, 0, sizeof(match_all));
 	read_tree(the_repository, tree, &match_all, fill_ls_tree, &ctx);
-	send_buffer(STDOUT_FILENO, &ctx.buf);
+	send_buffer(cat_blob_fd, &ctx.buf);
 	strbuf_release(&ctx.buf);
 
 	while (ctx.list) {
@@ -285,7 +287,7 @@ static void do_ls_tree(struct string_list *args)
 	}
 	return;
 not_found:
-	write_or_die(STDOUT_FILENO, "0\n\n", 3);
+	write_or_die(cat_blob_fd, "0\n\n", 3);
 }
 
 static const char **string_list_to_argv(struct string_list *args)
@@ -372,7 +374,7 @@ static void do_rev_list(struct string_list *args)
 			commit->parents = copy_commit_list(parent);
 		}
 	}
-	send_buffer(STDOUT_FILENO, &buf);
+	send_buffer(cat_blob_fd, &buf);
 	strbuf_release(&buf);
 	rev_list_finish(revs);
 }
@@ -475,7 +477,7 @@ static void do_diff_tree(struct string_list *args)
 	diff_tree_(args->nr + 1, argv, strbuf_diff_tree, &buf);
 	free(argv);
 
-	send_buffer(STDOUT_FILENO, &buf);
+	send_buffer(cat_blob_fd, &buf);
 	strbuf_release(&buf);
 }
 
@@ -525,8 +527,8 @@ static void do_get_note(struct notes_tree *t, struct string_list *args)
 	return;
 
 not_found:
-	write_or_die(STDOUT_FILENO, NULL_NODE, 40);
-	write_or_die(STDOUT_FILENO, "\n", 1);
+	write_or_die(cat_blob_fd, NULL_NODE, 40);
+	write_or_die(cat_blob_fd, "\n", 1);
 }
 
 static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1)
@@ -591,14 +593,14 @@ static void do_hg2git(struct string_list *args)
 
 	note = resolve_hg2git(&oid, sha1_len);
 	if (note) {
-		write_or_die(STDOUT_FILENO, oid_to_hex(note), 40);
-		write_or_die(STDOUT_FILENO, "\n", 1);
+		write_or_die(cat_blob_fd, oid_to_hex(note), 40);
+		write_or_die(cat_blob_fd, "\n", 1);
 		return;
 	}
 
 not_found:
-	write_or_die(STDOUT_FILENO, NULL_NODE, 40);
-	write_or_die(STDOUT_FILENO, "\n", 1);
+	write_or_die(cat_blob_fd, NULL_NODE, 40);
+	write_or_die(cat_blob_fd, "\n", 1);
 }
 
 /* The git storage for a mercurial manifest uses not-entirely valid file modes
@@ -938,11 +940,11 @@ static void do_manifest(struct string_list *args)
 	if (!manifest)
 		goto not_found;
 
-	send_buffer(STDOUT_FILENO, manifest);
+	send_buffer(cat_blob_fd, manifest);
 	return;
 
 not_found:
-	write_or_die(STDOUT_FILENO, "0\n\n", 3);
+	write_or_die(cat_blob_fd, "0\n\n", 3);
 }
 
 static void get_manifest_oid(const struct commit *commit, struct hg_object_id *oid)
@@ -1050,10 +1052,10 @@ static void do_check_manifest(struct string_list *args)
 	if (manifest_oid != &oid && !hg_oideq(&stored, &hg_oid))
 		goto error;
 
-	write_or_die(STDOUT_FILENO, "ok\n", 3);
+	write_or_die(cat_blob_fd, "ok\n", 3);
 	return;
 error:
-	write_or_die(STDOUT_FILENO, "error\n", 6);
+	write_or_die(cat_blob_fd, "error\n", 6);
 }
 
 static void do_check_file(struct string_list *args)
@@ -1107,12 +1109,12 @@ static void do_check_file(struct string_list *args)
 		goto error;
 
 ok:
-	write_or_die(STDOUT_FILENO, "ok\n", 3);
+	write_or_die(cat_blob_fd, "ok\n", 3);
 	hg_file_release(&file);
 	return;
 
 error:
-	write_or_die(STDOUT_FILENO, "error\n", 6);
+	write_or_die(cat_blob_fd, "error\n", 6);
 	hg_file_release(&file);
 }
 
@@ -1129,7 +1131,7 @@ static void do_helpercaps(struct string_list *args)
 		strbuf_addstr(&caps, "store=new");
 	}
 
-	send_buffer(STDOUT_FILENO, &caps);
+	send_buffer(cat_blob_fd, &caps);
 	strbuf_release(&caps);
 }
 
@@ -1158,7 +1160,7 @@ static void do_heads(struct string_list *args)
 
 	ensure_heads(heads);
 	oid_array_for_each_unique(heads, add_each_head, &heads_buf);
-	send_buffer(STDOUT_FILENO, &heads_buf);
+	send_buffer(cat_blob_fd, &heads_buf);
 	strbuf_release(&heads_buf);
 }
 
@@ -1389,8 +1391,8 @@ static void do_create_git_tree(struct string_list *args)
 	recurse_create_git_tree(get_commit_tree_oid(commit), ref_tree, NULL,
 	                        &oid, &git_tree_cache);
 
-	write_or_die(STDOUT_FILENO, oid_to_hex(&oid), 40);
-	write_or_die(STDOUT_FILENO, "\n", 1);
+	write_or_die(cat_blob_fd, oid_to_hex(&oid), 40);
+	write_or_die(cat_blob_fd, "\n", 1);
 	return;
 
 not_found:
@@ -1422,9 +1424,9 @@ static void do_seen(struct string_list *args)
 	}
 
 	if (seen)
-		write_or_die(STDOUT_FILENO, "yes\n", 4);
+		write_or_die(cat_blob_fd, "yes\n", 4);
 	else
-		write_or_die(STDOUT_FILENO, "no\n", 3);
+		write_or_die(cat_blob_fd, "no\n", 3);
 }
 
 struct dangling_data {
@@ -1481,7 +1483,7 @@ static void do_dangling(struct string_list *args)
 	ensure_notes(data.notes);
 	for_each_note(data.notes, 0, dangling_note, &data);
 
-	send_buffer(STDOUT_FILENO, &buf);
+	send_buffer(cat_blob_fd, &buf);
 	strbuf_release(&buf);
 }
 
@@ -1666,7 +1668,7 @@ static void do_reload(struct string_list *args)
 	reset_replace_map();
 	init_metadata();
 
-	write_or_die(STDOUT_FILENO, "ok\n", 3);
+	write_or_die(cat_blob_fd, "ok\n", 3);
 }
 
 int configset_add_value(struct config_set *, const char*, const char *);
@@ -1805,12 +1807,14 @@ void done_cinnabar()
 	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
 }
 
-int helper_main()
+int helper_main(int in, int out)
 {
 	int initialized = 0;
 	struct strbuf buf = STRBUF_INIT;
+	helper_input = fdopen(in, "r");
+	cat_blob_fd = out;
 
-	while (strbuf_getline(&buf, stdin) != EOF) {
+	while (strbuf_getline(&buf, helper_input) != EOF) {
 		struct string_list args = STRING_LIST_INIT_NODUP;
 		const char *command;
 		record_command(&buf);

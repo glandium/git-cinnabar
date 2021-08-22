@@ -1,4 +1,8 @@
+#include "git-compat-util.h"
 static void start_packfile();
+#include <stdio.h>
+extern FILE *helper_input;
+#define stdin helper_input
 #include "fast-import.patched.c"
 #include "cinnabar-fast-import.h"
 #include "cinnabar-helper.h"
@@ -1190,8 +1194,8 @@ static void do_store(struct string_list *args)
 				notes = &hg2git;
 			}
 			store_notes(notes, &result);
-			write_or_die(STDOUT_FILENO, oid_to_hex(&result), 40);
-			write_or_die(STDOUT_FILENO, "\n", 1);
+			write_or_die(cat_blob_fd, oid_to_hex(&result), 40);
+			write_or_die(cat_blob_fd, "\n", 1);
 		} else {
 			die("Unknown metadata kind: %s", args->items[1].string);
 		}
@@ -1216,7 +1220,7 @@ static void do_store(struct string_list *args)
 
 		// TODO: Error handling
 		length = strtol(args->items[2].string, NULL, 10);
-		strbuf_fread(&buf, length, stdin);
+		strbuf_fread(&buf, length, helper_input);
 		rev_chunk_from_memory(&chunk, &buf, delta_node);
 		if (args->items[0].string[0] == 'f')
 			store_file(&chunk);
@@ -1236,13 +1240,13 @@ static void do_store(struct string_list *args)
 			die("unsupported version");
 
 		/* changesets */
-		for_each_changegroup_chunk(stdin, version, skip_chunk);
+		for_each_changegroup_chunk(helper_input, version, skip_chunk);
 		/* manifests */
-		for_each_changegroup_chunk(stdin, version, store_manifest);
+		for_each_changegroup_chunk(helper_input, version, store_manifest);
 		/* files */
-		while (read_rev_chunk(stdin, &buf), buf.len) {
+		while (read_rev_chunk(helper_input, &buf), buf.len) {
 			strbuf_release(&buf);
-			for_each_changegroup_chunk(stdin, version, store_file);
+			for_each_changegroup_chunk(helper_input, version, store_file);
 		}
 	} else {
 		die("Unknown store kind: %s", args->items[0].string);
