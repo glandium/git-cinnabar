@@ -258,6 +258,9 @@ class IOLogger(object):
     def flush(self):
         self._writer.flush()
 
+    def close(self):
+        self._writer.close()
+
     def __iter__(self):
         while self._reader:
             line = self.readline()
