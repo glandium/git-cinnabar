@@ -684,6 +684,13 @@ impl fmt::Display for DuplicateFd {
 }
 
 #[cfg(unix)]
+impl AsRawFd for DuplicateFd {
+    fn as_raw_fd(&self) -> RawFd {
+        self.0
+    }
+}
+
+#[cfg(unix)]
 impl<T: AsRawFd> Duplicate for T {
     fn dup_inheritable(&self) -> DuplicateFd {
         let fd = unsafe { libc::dup(self.as_raw_fd()) };
@@ -691,6 +698,13 @@ impl<T: AsRawFd> Duplicate for T {
             panic!("Failed to duplicate file descriptor");
         }
         DuplicateFd(fd)
+    }
+}
+
+#[cfg(windows)]
+impl AsRawHandle for DuplicateFd {
+    fn as_raw_handle(&self) -> RawHandle {
+        self.0
     }
 }
 

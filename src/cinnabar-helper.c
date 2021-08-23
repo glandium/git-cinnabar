@@ -1782,6 +1782,8 @@ void init_cinnabar(const char *argv0)
 	warn_on_object_refname_ambiguity = 0;
 }
 
+static int initialized = 0;
+
 void init_cinnabar_2()
 {
 	if (nongit) {
@@ -1789,6 +1791,7 @@ void init_cinnabar_2()
 	}
 	init_metadata();
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
+	initialized = 1;
 }
 
 void done_cinnabar()
@@ -1809,7 +1812,6 @@ void done_cinnabar()
 
 int helper_main(int in, int out)
 {
-	int initialized = 0;
 	struct strbuf buf = STRBUF_INIT;
 	helper_input = fdopen(in, "r");
 	cat_blob_fd = out;
@@ -1826,7 +1828,6 @@ int helper_main(int in, int out)
 		}
 		if (!initialized) {
 			init_cinnabar_2();
-			initialized = 1;
 		}
 		if (!strcmp("git2hg", command))
 			do_get_note(&git2hg, &args);

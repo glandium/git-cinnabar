@@ -50,8 +50,12 @@ use std::process::Command;
 use std::str::{self, FromStr};
 use std::thread::spawn;
 
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
+#[cfg(windows)]
+use std::os::windows::io::AsRawHandle;
 
 use bstr::ByteSlice;
 use git_version::git_version;
@@ -982,7 +986,7 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
         (None, None)
     };
 
-    let (extra_fds, thread) = if cmd == PythonCommand::GitRemoteHg {
+    let (wire_fds, wire_thread) = if cmd == PythonCommand::GitRemoteHg {
         let (reader1, mut writer1) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
         let (reader2, writer2) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
         let reader1 = reader1.dup_inheritable();
@@ -996,6 +1000,30 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
         (None, None)
     };
 
+    let (import_fds, import_thread) = {
+        let (reader1, writer1) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
+        let (reader2, writer2) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
+        let reader1 = reader1.dup_inheritable();
+        let writer2 = writer2.dup_inheritable();
+        extra_env.push((
+            "GIT_CINNABAR_IMPORT_FDS",
+            format!("{},{}", reader1, writer2),
+        ));
+        let thread = spawn(move || {
+            #[cfg(windows)]
+            let (reader2, writer1) = unsafe {
+                (
+                    ::libc::open_osfhandle(reader2.as_raw_handle() as isize, ::libc::O_RDONLY),
+                    ::libc::open_osfhandle(writer1.as_raw_handle() as isize, ::libc::O_RDONLY),
+                )
+            };
+            #[cfg(unix)]
+            let (reader2, writer1) = (reader2.as_raw_fd(), writer1.as_raw_fd());
+            unsafe { helper_main(reader2, writer1) };
+        });
+        ((reader1, writer2), thread)
+    };
+
     let mut child = Command::new(python)
         .arg("-c")
         .arg(bootstrap)
@@ -1005,7 +1033,8 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
         .stdin(std::process::Stdio::inherit())
         .spawn()
         .map_err(|e| format!("Failed to start python: {}", e))?;
-    drop(extra_fds);
+    drop(wire_fds);
+    drop(import_fds);
     drop(reader);
 
     let sent_data = if let Some(mut writer) = writer {
@@ -1028,7 +1057,8 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
             return Ok(1);
         }
     };
-    drop(thread);
+    drop(wire_thread);
+    drop(import_thread);
     sent_data
         .map(|_| 0)
         .map_err(|e| format!("Failed to communicate with python: {}", e))

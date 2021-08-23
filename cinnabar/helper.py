@@ -70,10 +70,16 @@ class ReadWriter(object):
         self._writer.flush()
 
 
+class NoFdHelper(RuntimeError):
+    """FdHelper not setup by parent process"""
+
+
 class FdHelper(object):
     def __init__(self, mode):
         env_name = "GIT_CINNABAR_{}_FDS".format(mode.upper())
         logger_name = "helper-{}".format(mode)
+        if env_name not in os.environ:
+            raise NoFdHelper
         (reader, writer) = (int(fd) for fd in os.environ[env_name].split(','))
         if sys.platform == 'win32':
             import msvcrt
@@ -92,7 +98,8 @@ class FdHelper(object):
 class BaseHelper(object):
     @classmethod
     def close(self, on_atexit=False):
-        if self._helper and self._helper is not self:
+        if self._helper and self._helper is not self \
+                and not isinstance(self._helper, FdHelper):
             if self._helper.wait() != 0:
                 try:
                     raise HelperFailedError
@@ -124,18 +131,21 @@ class BaseHelper(object):
     @classmethod
     def _ensure_helper(self):
         if self._helper is False:
-            command, env = self._helper_command()
-            if len(command) == 1:
-                executable = command[0]
-                command[0] = 'git-cinnabar-helper'
-            else:
-                executable = None
-            command.append('--{}'.format(self.MODE))
+            try:
+                self._helper = FdHelper(self.MODE)
+            except NoFdHelper:
+                command, env = self._helper_command()
+                if len(command) == 1:
+                    executable = command[0]
+                    command[0] = 'git-cinnabar-helper'
+                else:
+                    executable = None
+                command.append('--{}'.format(self.MODE))
 
-            self._helper = Process(
-                *command, executable=executable,
-                stdin=subprocess.PIPE, stderr=None, env=env,
-                logger='helper-{}'.format(self.MODE))
+                self._helper = Process(
+                    *command, executable=executable,
+                    stdin=subprocess.PIPE, stderr=None, env=env,
+                    logger='helper-{}'.format(self.MODE))
 
             if self.MODE == "import":
                 self._helper.stdin.write(b'helpercaps\n')
@@ -532,16 +542,6 @@ class HgRepoHelper(BaseHelper):
     def close(self, on_atexit=False):
         if self._helper and self._helper is not self:
             self._helper.stdin.write(b'close')
-
-    @classmethod
-    def _ensure_helper(self):
-        if self._helper is False:
-            self._helper = FdHelper(self.MODE)
-
-            atexit.register(self.close)
-
-        if self._helper is self:
-            raise HelperClosedError
 
     @classmethod
     def connect(self, url):
