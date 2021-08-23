@@ -148,7 +148,7 @@ class BaseHelper(object):
                 for k, _, v in (l.partition(b'=')
                                 for l in response.splitlines())
             }
-            atexit.register(self.close, True)
+            atexit.register(self.close, on_atexit=True)
 
         if self._helper is self:
             raise HelperClosedError
@@ -467,11 +467,11 @@ class GitHgHelper(BaseHelper):
             helper.sha1 = self._get_last()
 
     @classmethod
-    def close(self, rollback=True):
+    def close(self, rollback=True, on_atexit=False):
         if not rollback and self._helper != self:
             with self.query(b'done'):
                 pass
-        super(GitHgHelper, self).close()
+        super(GitHgHelper, self).close(on_atexit=on_atexit)
 
 
 class CommitHelper(object):
@@ -527,7 +527,7 @@ class HgRepoHelper(BaseHelper):
     _helper = False
 
     @classmethod
-    def close(self):
+    def close(self, on_atexit=False):
         if self._helper and self._helper is not self:
             self._helper.stdin.write(b'close')
 
@@ -622,5 +622,5 @@ class BundleHelper(HgRepoHelper):
     _helper = False
 
     @classmethod
-    def close(self):
+    def close(self, on_atexit=False):
         pass
