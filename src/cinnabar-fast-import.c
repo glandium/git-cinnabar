@@ -1314,6 +1314,13 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		COMMON_HANDLING();
 		require_explicit_termination = 0;
 		cleanup();
+		write_or_die(cat_blob_fd, "ok\n", 3);
+	} else if (!strcmp(command, "rollback")) {
+		if (initialized) {
+			COMMON_HANDLING();
+			cleanup();
+		}
+		write_or_die(cat_blob_fd, "ok\n", 3);
 	} else if (!strcmp(command, "feature")) {
 		COMMON_HANDLING();
 		parse_feature(command_buf.buf + sizeof("feature"));

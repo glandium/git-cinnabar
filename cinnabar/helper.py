@@ -468,9 +468,11 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def close(self, rollback=True, on_atexit=False):
-        if not rollback and self._helper != self:
-            with self.query(b'done'):
-                pass
+        if self._helper != self:
+            command = b'rollback' if rollback else b'done'
+            with self.query(command) as stdout:
+                resp = stdout.readline().rstrip()
+                assert resp == b'ok'
         super(GitHgHelper, self).close(on_atexit=on_atexit)
 
 
