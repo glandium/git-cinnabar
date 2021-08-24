@@ -39,6 +39,11 @@ void hashwrite(struct hashfile *f, const void *buf, unsigned int count)
 {
 	size_t window_size;
 
+	if (f != pack_file) {
+		real_hashwrite(f, buf, count);
+		return;
+	}
+
 	if (!pack_win) {
 		pack_win = xcalloc(1, sizeof(*pack_data->windows));
 		pack_win->offset = 0;
