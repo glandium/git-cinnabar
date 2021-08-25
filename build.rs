@@ -54,7 +54,11 @@ fn main() {
             target_os, target_env
         );
     }
-    if std::env::var("CINNABAR_CROSS_COMPILE_I_KNOW_WHAT_I_M_DOING").is_err()
+    let extra_args = if target_os == "linux" {
+        &["uname_S=Linux"][..]
+    } else if target_os == "macos" {
+        &["uname_S=Darwin", "uname_R=15.0"][..]
+    } else if std::env::var("CINNABAR_CROSS_COMPILE_I_KNOW_WHAT_I_M_DOING").is_err()
         && target_arch != target::arch()
         || target_os != target::os()
         || target_env != target::env()
@@ -62,7 +66,9 @@ fn main() {
         || target_pointer_width != target::pointer_width()
     {
         panic!("Cross-compilation is not supported");
-    }
+    } else {
+        &[][..]
+    };
 
     let dir = env_os("CARGO_MANIFEST_DIR");
     let dir = Path::new(&dir);
@@ -76,7 +82,8 @@ fn main() {
         .arg("HAVE_WPGMPTR=")
         .arg("USE_LIBPCRE1=")
         .arg("USE_LIBPCRE2=")
-        .arg("FSMONITOR_DAEMON_BACKEND=");
+        .arg("FSMONITOR_DAEMON_BACKEND=")
+        .args(extra_args);
 
     let compiler = cc::Build::new().get_compiler();
 
@@ -173,6 +180,7 @@ fn main() {
         .arg("linker-flags")
         .arg("USE_LIBPCRE1=")
         .arg("USE_LIBPCRE2=")
+        .args(extra_args)
         .current_dir(&out_dir)
         .output()
         .expect("Failed to execute GNU make");

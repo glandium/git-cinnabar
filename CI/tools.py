@@ -333,8 +333,6 @@ class Build(Task, metaclass=Tool):
 
         if os == 'linux':
             cargo_features.append('curl-compat')
-        elif os == 'arm64-osx':
-            environ['CINNABAR_CROSS_COMPILE_I_KNOW_WHAT_I_M_DOING'] = '1'
 
         if os.startswith('mingw'):
             cpu = msys.msys_cpu(env.cpu)
