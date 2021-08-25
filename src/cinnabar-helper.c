@@ -1861,8 +1861,15 @@ int helper_main(int in, int out)
 			do_dangling(&args);
 		else if (!strcmp("reload", command))
 			do_reload(&args);
-		else if (!maybe_handle_command(command, &args))
-			die("Unknown command: \"%s\"", command);
+		else {
+			int res = maybe_handle_command(command, &args);
+			if (res == 0)
+				die("Unknown command: \"%s\"", command);
+			if (res == 2) {
+				string_list_clear(&args, 0);
+				break;
+			}
+		}
 
 		string_list_clear(&args, 0);
 	}
