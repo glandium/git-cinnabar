@@ -1223,6 +1223,10 @@ class GitHgStore(object):
             ) as commit:
                 for sha1, target in util.iteritems(self._replace):
                     commit.filemodify(sha1, target, b'commit')
+            if b'refs/cinnabar/checked' in refresh:
+                Git.update_ref(b'refs/cinnabar/checked', commit.sha1)
+        elif self._metadata_sha1:
+            Git.update_ref(b'refs/cinnabar/checked', self._metadata_sha1)
 
         for c in self._tagcache:
             if c not in changeset_heads:
