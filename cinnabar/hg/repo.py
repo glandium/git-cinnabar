@@ -1052,7 +1052,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
             if not force:
                 raise Exception('Cannot push a new root')
             else:
-                logging.warn('Pushing a new root')
+                logging.warn('Pushing a new root. Note that shallow git clones are not support by git-cinnabar.')
         if force:
             repo_heads = [b'force']
         else:
