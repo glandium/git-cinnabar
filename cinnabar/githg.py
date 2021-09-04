@@ -1302,7 +1302,9 @@ class GitHgStore(object):
             if ref not in (b'refs/notes/cinnabar',):
                 Git.delete_ref(ref)
 
+        # Warn after 8 full days to allow weekly cron jobs to avoid resulting
+        # in spurious warnings.
         if self._metadata_sha1 and update_metadata and not refresh and \
-                interval_expired('fsck', 86400 * 7):
+                interval_expired('fsck', 86400 * 8):
             logging.warn('Have you run `git cinnabar fsck` recently?')
         GitHgHelper.close(rollback=False)
