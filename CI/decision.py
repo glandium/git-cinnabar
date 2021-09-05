@@ -431,22 +431,32 @@ def decision():
             **kwargs,
         )
 
-    for variant in ('coverage', 'asan'):
-        for check in ([], ['no-mercurial']):
-            TestTask(
-                variant=variant,
-                short_desc='cram',
-                extra_desc=' '.join(check),
-                clone=False,
-                command=[
-                    'repo/git-cinnabar --version',
-                    'cram --verbose repo/tests',
-                ],
-                env={
-                    'GIT_CINNABAR_CHECK': ','.join(
-                        ['no-version-check'] + check),
-                },
-            )
+    for env, variant, check in (
+        ('linux', 'coverage', []),
+        ('linux', 'coverage', ['no-mercurial']),
+        ('linux', 'asan', []),
+        ('linux', 'asan', ['no-mercurial']),
+        ('osx', None, []),
+    ):
+        pre_command = []
+        if env != 'linux':
+            pre_command.append('pip install cram')
+
+        TestTask(
+            task_env=env,
+            variant=variant,
+            short_desc='cram',
+            extra_desc=' '.join(check),
+            clone=False,
+            command=pre_command + [
+                'repo/git-cinnabar --version',
+                'cram --verbose repo/tests',
+            ],
+            env={
+                'GIT_CINNABAR_CHECK': ','.join(
+                    ['no-version-check'] + check),
+            },
+        )
 
     for check in ([], ['no-mercurial']):
         TestTask(
