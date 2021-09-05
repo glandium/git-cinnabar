@@ -129,7 +129,7 @@ Pushing `b` fails because it would add a new head to the branch.
   \(merge or see ['"]hg help push["'] for details about pushing new heads\) (re)
   [255]
 
-  $ git -C repo-git push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/branches/default/tip
+  $ git -c advice.pushnonffcurrent=true -c advice.pushupdaterejected=true -C repo-git push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/branches/default/tip
   To hg::.*/push-refs.t/repo-from-git (re)
    ! [rejected]        d04f6df4abe2870ceb759263ee6aaa9241c4f93c -> branches/default/tip (non-fast-forward)
   error: failed to push some refs to 'hg::.*/push-refs.t/repo-from-git' (re)
@@ -139,7 +139,7 @@ Pushing `b` fails because it would add a new head to the branch.
   hint: See the 'Note about fast-forwards' in 'git push --help' for details.
   [1]
 
-  $ git -C repo-git2 push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/branches/default/tip
+  $ git -c advice.pushnonffmatching=true -c advice.pushupdaterejected=true -C repo-git2 push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/branches/default/tip
   To hg::.*/push-refs.t/repo-from-git2 (re)
    ! [rejected]        d04f6df4abe2870ceb759263ee6aaa9241c4f93c -> branches/default/tip (non-fast-forward)
   error: failed to push some refs to 'hg::.*/push-refs.t/repo-from-git2' (re)
@@ -475,7 +475,7 @@ Push the same bookmark, pointing to `b`.
   \(merge or see ['"]hg help push["'] for details about pushing new heads\) (re)
   [255]
 
-  $ git -C repo-git push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/bookmarks/qux
+  $ git -c advice.pushnonffmatching=true -c advice.pushupdaterejected=true -C repo-git push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/bookmarks/qux
   To hg::.*/push-refs.t/repo-from-git (re)
    ! [rejected]        d04f6df4abe2870ceb759263ee6aaa9241c4f93c -> bookmarks/qux (non-fast-forward)
   error: failed to push some refs to 'hg::.*/push-refs.t/repo-from-git' (re)
@@ -485,7 +485,7 @@ Push the same bookmark, pointing to `b`.
   hint: See the 'Note about fast-forwards' in 'git push --help' for details.
   [1]
 
-  $ git -C repo-git2 push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/bookmarks/qux
+  $ git -c advice.pushnonffmatching=true -c advice.pushupdaterejected=true -C repo-git2 push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/bookmarks/qux
   To hg::.*/push-refs.t/repo-from-git2 (re)
    ! [rejected]        d04f6df4abe2870ceb759263ee6aaa9241c4f93c -> bookmarks/qux (non-fast-forward)
   error: failed to push some refs to 'hg::.*/push-refs.t/repo-from-git2' (re)
