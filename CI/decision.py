@@ -438,6 +438,10 @@ def decision():
         ('linux', 'asan', ['no-mercurial']),
         ('osx', None, []),
     ):
+        # Can't spawn osx workers from pull requests.
+        if env.startswith('osx') and not TC_IS_PUSH:
+            continue
+
         pre_command = []
         if env != 'linux':
             pre_command.append('pip install cram')
