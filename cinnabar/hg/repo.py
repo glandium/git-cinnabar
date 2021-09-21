@@ -1025,6 +1025,8 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                                             b'--boundary', *h):
             if c[:1] != b'-':
                 continue
+            if c[1:] == b"shallow":
+                raise Exception("Pushing git shallow clones is not supported.")
             yield store.hg_changeset(c[1:])
 
         for w, _, _ in what:

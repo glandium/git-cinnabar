@@ -176,3 +176,49 @@ This time, forced push is allowed.
   remote: added 3 changesets with 3 changes to 3 files (+1 heads)
   To hg::.*/push.t/repo (re)
    + 687e015...62326f3 62326f34fea5b80510f57599da9fd6e5997c0ca4 -> branches/default/tip (forced update)
+
+Similarly, when pushing from a shallow git repository.
+
+  $ git clone --depth=1 file://$ABC-git abc-shallow
+  Cloning into 'abc-shallow'...
+  $ rm -rf $REPO/.hg
+  $ hg init $REPO
+  $ git -C abc-shallow remote set-url origin hg::$REPO
+  $ git -C abc-shallow push origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
+  \r (no-eol) (esc)
+  ERROR Pushing git shallow clones is not supported.
+  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
+  error: failed to push some refs to 'hg::.*/push.t/repo' (re)
+  [1]
+  $ git -C abc-shallow push -f origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
+  \r (no-eol) (esc)
+  ERROR Pushing git shallow clones is not supported.
+  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
+  error: failed to push some refs to 'hg::.*/push.t/repo' (re)
+  [1]
+
+After pulling from a different repo, we still recognize we have a shallow clone.
+
+  $ git -C abc-shallow cinnabar fetch hg::$DEF 90f6163d2820561ebe0f6c28e87d766ef619e43c
+  From hg::.*/push.t/def (re)
+   * branch            hg/revs/90f6163d2820561ebe0f6c28e87d766ef619e43c -> FETCH_HEAD
+  $ git -C abc-shallow push -f origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
+  \r (no-eol) (esc)
+  ERROR Pushing git shallow clones is not supported.
+  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
+  error: failed to push some refs to 'hg::.*/push.t/repo' (re)
+  [1]
+
+Pulling from a repo that contains the history behind the shallow clone is
+supported and makes it unshallowed.
+
+  $ git -C abc-shallow cinnabar fetch hg::$ABC bd623dea939349b06a47d5dce064255e5f1d9ec1
+  From hg::.*/push.t/abc (re)
+   * branch            hg/revs/bd623dea939349b06a47d5dce064255e5f1d9ec1 -> FETCH_HEAD
+  $ git -C abc-shallow push -f origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 3 changesets with 3 changes to 3 files
+  To hg::.*/push.t/repo (re)
+   * [new branch]      687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip

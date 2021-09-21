@@ -1,8 +1,16 @@
 diff --git a/builtin/fast-import.c b/builtin/fast-import.c
-index 20406f6775..48d7f3dd66 100644
+index 20406f6775..7ff0911c2c 100644
 --- a/builtin/fast-import.c
 +++ b/builtin/fast-import.c
-@@ -737,7 +737,7 @@ static struct tree_content *dup_tree_content(struct tree_content *s)
+@@ -19,6 +19,7 @@
+ #include "mem-pool.h"
+ #include "commit-reach.h"
+ #include "khash.h"
++#include "shallow.h"
+ 
+ #define PACK_ID_BITS 16
+ #define MAX_PACK_ID ((1<<PACK_ID_BITS)-1)
+@@ -737,7 +738,7 @@ static struct tree_content *dup_tree_content(struct tree_content *s)
  	return d;
  }
  
@@ -11,7 +19,7 @@ index 20406f6775..48d7f3dd66 100644
  {
  	struct strbuf tmp_file = STRBUF_INIT;
  	struct packed_git *p;
-@@ -838,7 +838,7 @@ static int loosen_small_pack(const struct packed_git *p)
+@@ -838,7 +839,7 @@ static int loosen_small_pack(const struct packed_git *p)
  	return run_command(&unpack);
  }
  
@@ -20,7 +28,7 @@ index 20406f6775..48d7f3dd66 100644
  {
  	static int running;
  
-@@ -857,6 +857,7 @@ static void end_packfile(void)
+@@ -857,6 +858,7 @@ static void end_packfile(void)
  
  		close_pack_windows(pack_data);
  		finalize_hashfile(pack_file, cur_pack_oid.hash, 0);
@@ -28,7 +36,17 @@ index 20406f6775..48d7f3dd66 100644
  		fixup_pack_header_footer(pack_data->pack_fd, pack_data->hash,
  					 pack_data->pack_name, object_count,
  					 cur_pack_oid.hash, pack_size);
-@@ -1639,7 +1640,7 @@ static int update_branch(struct branch *b)
+@@ -956,6 +958,9 @@ static int store_object(
+ 		e->pack_id = MAX_PACK_ID;
+ 		e->idx.offset = 1; /* just not zero! */
+ 		duplicate_count_by_type[type]++;
++		if (type == OBJ_COMMIT) {
++			cinnabar_unregister_shallow(&oid);
++		}
+ 		return 1;
+ 	}
+ 
+@@ -1639,7 +1644,7 @@ static int update_branch(struct branch *b)
  	return 0;
  }
  
@@ -37,7 +55,7 @@ index 20406f6775..48d7f3dd66 100644
  {
  	unsigned int i;
  	struct branch *b;
-@@ -2208,7 +2209,9 @@ static int parse_mapped_oid_hex(const char *hex, struct object_id *oid, const ch
+@@ -2208,7 +2213,9 @@ static int parse_mapped_oid_hex(const char *hex, struct object_id *oid, const ch
   * Complain if the following character is not what is expected,
   * either a space or end of the string.
   */
@@ -48,7 +66,7 @@ index 20406f6775..48d7f3dd66 100644
  {
  	uintmax_t mark;
  
-@@ -2272,9 +2275,8 @@ static void file_change_m(const char *p, struct branch *b)
+@@ -2272,9 +2279,8 @@ static void file_change_m(const char *p, struct branch *b)
  	case S_IFDIR:
  	case S_IFGITLINK:
  		/* ok */
