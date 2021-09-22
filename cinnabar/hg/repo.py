@@ -924,6 +924,8 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                                             b'--boundary', *h):
             if c[:1] != b'-':
                 continue
+            if c[1:] == b"shallow":
+                raise Exception("Pushing git shallow clones is not supported.")
             yield store.hg_changeset(c[1:])
 
         for w, _, _ in what:
@@ -932,7 +934,24 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                 if rev:
                     yield rev
 
-    common = findcommon(repo, store, set(local_bases()))
+    local_bases = set(local_bases())
+    pushing_anything = any(src for src, _, _ in what)
+    force = all(v for _, _, v in what)
+    if pushing_anything and not local_bases and repo_heads:
+        fail = True
+        if store.metadata() and force:
+            cinnabar_roots = [
+                unhexlify(store.hg_changeset(c))
+                for c, _, _ in GitHgHelper.rev_list(
+                    b'--topo-order', b'--full-history', b'--boundary',
+                    b'--max-parents=0', b'refs/cinnabar/metadata^')
+            ]
+            if any(repo.known(cinnabar_roots)):
+                fail = False
+        if fail:
+            raise Exception(
+                'Cannot push to this remote without pulling/updating first.')
+    common = findcommon(repo, store, local_bases)
     logging.info('common: %s', common)
 
     def revs():
@@ -946,7 +965,6 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
     pushed = False
     if push_commits:
         has_root = any(not p for (c, p) in push_commits)
-        force = all(v for _, _, v in what)
         if has_root and repo_heads:
             if not force:
                 raise Exception('Cannot push a new root')

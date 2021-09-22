@@ -1,3 +1,5 @@
+#!/usr/bin/env cram
+
   $ PATH=$TESTDIR/..:$PATH
 
 Test repository setup.
@@ -108,7 +110,7 @@ TODO: Ideally, the error message would say the server could not be connected to.
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/
   \r (no-eol) (esc)
-  ERROR [Errno 111] Connection refused
+  ERROR \[Errno (61|111)\] Connection refused (re)
   \r (no-eol) (esc)
   WARNING Falling back to normal clone.
 
@@ -118,7 +120,7 @@ TODO: Ideally, the error message would say the server could not be connected to.
 - Server listens but does not serve a repository or bundle
 TODO: git errors are repeating and lack newlines.
 
-  $ sed -i '/other/s/=.*/= git/' $REPO/.hg/hgrc
+  $ sed -i.bak '/other/s/=.*/= git/' $REPO/.hg/hgrc
   $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/
@@ -137,7 +139,7 @@ TODO: git errors are repeating and lack newlines.
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://this.cannot.possibly.exist.invalid-tld/
   \r (no-eol) (esc)
-  ERROR [Errno -2] Name or service not known
+  ERROR \[Errno (-2\] Name or service not known|8\] nodename nor servname provided, or not known) (re)
   \r (no-eol) (esc)
   WARNING Falling back to normal clone.
 
@@ -188,7 +190,7 @@ TODO: git errors are repeating and lack newlines.
 
 - Server listens, but serves a 404.
 
-  $ sed -i '/other/s/=.*/= http/' $REPO/.hg/hgrc
+  $ sed -i.bak '/other/s/=.*/= http/' $REPO/.hg/hgrc
   $ echo http://localhost:8080/non-existing.git > $REPO/.hg/cinnabar.manifest
   $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
@@ -218,7 +220,7 @@ TODO: git errors are repeating and lack newlines.
 
 - Server listens, but serves a truncated bundle file.
 
-  $ dd if=cinnabarclone-full.git of=truncated.git bs=1024 count=1 status=none
+  $ dd if=cinnabarclone-full.git of=truncated.git bs=1024 count=1 2>/dev/null
   $ echo http://localhost:8080/truncated.git > $REPO/.hg/cinnabar.manifest
   $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
@@ -268,7 +270,7 @@ Then, a partial clone.
 
 Same thing, with git repositories rather than bundles.
 
-  $ sed -i '/other/s/=.*/= git/' $REPO/.hg/hgrc
+  $ sed -i.bak '/other/s/=.*/= git/' $REPO/.hg/hgrc
 
 First, a full clone.
 
@@ -301,7 +303,7 @@ Then, a partial clone.
 
 Same thing again, with a git daemon.
 
-  $ sed -i '/other/s/=.*/=/' $REPO/.hg/hgrc
+  $ sed -i.bak '/other/s/=.*/=/' $REPO/.hg/hgrc
 
 First, a full clone.
 
@@ -341,7 +343,7 @@ Git config takes precedence over whatever the mercurial server might say
 
   $ > $CRAMTMP/accesslog
 
-  $ sed -i '/other/s/=.*/= http/' $REPO/.hg/hgrc
+  $ sed -i.bak '/other/s/=.*/= http/' $REPO/.hg/hgrc
   $ echo http://this.cannot.possibly.exist.invalid-tld/ > $REPO/.hg/cinnabar.manifest
   $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.clone=http://localhost:8080/cinnabarclone-full.git clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...

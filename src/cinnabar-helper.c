@@ -58,6 +58,7 @@
 #include "exec-cmd.h"
 #include "hashmap.h"
 #include "log-tree.h"
+#include "shallow.h"
 #include "strslice.h"
 #include "strbuf.h"
 #include "string-list.h"
@@ -347,13 +348,21 @@ static void do_rev_list(struct string_list *args)
 
 	while ((commit = get_revision(revs)) != NULL) {
 		struct commit_list *parent;
+		struct commit_graft *graft;
 		if (commit->object.flags & BOUNDARY)
 			strbuf_addch(&buf, '-');
 		strbuf_addstr(&buf, oid_to_hex(&commit->object.oid));
 		strbuf_addch(&buf, ' ');
 		strbuf_addstr(&buf, oid_to_hex(get_commit_tree_oid(commit)));
 		parent = commit->parents;
-		while (parent) {
+		if (!parent && is_repository_shallow(the_repository) &&
+		    (graft = lookup_commit_graft(
+			the_repository, &commit->object.oid)) != NULL &&
+		    graft->nr_parent < 0) {
+			strbuf_addstr(&buf, " shallow");
+			if (revs->boundary)
+				strbuf_addstr(&buf, "\n-shallow shallow");
+		} else while (parent) {
 			strbuf_addch(&buf, ' ');
 			strbuf_addstr(&buf, oid_to_hex(
 				&parent->item->object.oid));

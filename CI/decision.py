@@ -359,12 +359,25 @@ def decision():
         hg='{}.py3'.format(MERCURIAL_VERSION),
     )
 
-    for variant in ('coverage', 'asan'):
+    for env, variant in (
+        ('linux', 'coverage'),
+        ('linux', 'asan'),
+        ('osx', None),
+    ):
+        # Can't spawn osx workers from pull requests.
+        if env.startswith('osx') and not TC_IS_PUSH:
+            continue
+
+        pre_command = []
+        if env != 'linux':
+            pre_command.append('pip install cram')
+
         TestTask(
+            task_env=env,
             variant=variant,
             short_desc='cram',
             clone=False,
-            command=[
+            command=pre_command + [
                 'repo/git-cinnabar --version',
                 'cram --verbose repo/tests',
             ],

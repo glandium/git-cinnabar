@@ -1,3 +1,5 @@
+#!/usr/bin/env cram
+
   $ PATH=$TESTDIR/..:$PATH
 
   $ n=0

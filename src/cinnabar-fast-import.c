@@ -1,5 +1,7 @@
 #include "git-compat-util.h"
+struct object_id;
 static void start_packfile();
+static void cinnabar_unregister_shallow(const struct object_id *oid);
 #include <stdio.h>
 extern FILE *helper_input;
 #define stdin helper_input
@@ -11,6 +13,7 @@ extern FILE *helper_input;
 #include "hg-data.h"
 #include "list.h"
 #include "oid-array.h"
+#include "shallow.h"
 #include "strslice.h"
 #include "tree-walk.h"
 
@@ -24,6 +27,12 @@ extern const char *tag_type;
 } while (0)
 
 static int initialized = 0;
+static int update_shallow = 0;
+
+void cinnabar_unregister_shallow(const struct object_id *oid) {
+	if (unregister_shallow(oid) == 0)
+		update_shallow = 1;
+}
 
 static void cleanup();
 
@@ -164,8 +173,17 @@ static void cleanup()
 	end_packfile();
 	reprepare_packed_git(the_repository);
 
-	if (!require_explicit_termination)
+	if (!require_explicit_termination) {
+		if (update_shallow) {
+			struct shallow_lock shallow_lock;
+			const char *alternate_shallow_file;
+			setup_alternate_shallow(
+				&shallow_lock, &alternate_shallow_file,
+				NULL);
+			commit_shallow_file(the_repository, &shallow_lock);
+		}
 		dump_branches();
+	}
 
 	unkeep_all_packs();
 
