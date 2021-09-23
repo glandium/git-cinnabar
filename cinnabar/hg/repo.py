@@ -1040,7 +1040,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
     force = all(v for _, _, v in what)
     if pushing_anything and not local_bases and repo_heads:
         fail = True
-        if store.metadata() and force:
+        if store._has_metadata and force:
             cinnabar_roots = [
                 unhexlify(store.hg_changeset(c))
                 for c, _, _ in GitHgHelper.rev_list(
