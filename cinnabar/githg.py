@@ -31,6 +31,7 @@ try:
 except ImportError:
     from urllib.parse import urlparse
 from .exceptions import (
+    Abort,
     AmbiguousGraftAbort,
     NothingToGraftException,
     OldUpgradeAbort,
@@ -1306,3 +1307,33 @@ class GitHgStore(object):
                 interval_expired('fsck', 86400 * 7):
             logging.warn('Have you run `git cinnabar fsck` recently?')
         GitHgHelper.close(rollback=False)
+
+        # Try to detect issue #207 as early as possible.
+        GitHgHelper._helper = False
+        busted = False
+        from .hg.repo import getbundle_params, stored_files
+        for (node, (parent1, parent2)) in progress_iter(
+                "Checking {} imported file root and head revisions",
+                util.iteritems(stored_files)):
+            if not GitHgHelper.check_file(node, parent1, parent2):
+                busted = True
+                logging.error("Error in file %s" % node)
+        if busted:
+            import json
+            extra = ""
+            if getbundle_params:
+                extra = \
+                    "If it failed, please also copy/paste the following:\n"
+                extra += json.dumps(getbundle_params, sort_keys=True, indent=4)
+            raise Abort(
+                "It seems you have hit a known, rare, and difficult to "
+                "reproduce issue.\n"
+                "Your help would be appreciated.\n"
+                "Please try either `git cinnabar rollback` followed by the "
+                "same command that just\n"
+                "failed, or `git cinnabar reclone`.\n"
+                "Please open a new issue "
+                "(https://github.com/glandium/git-cinnabar/issues/new)\n"
+                "mentioning issue #207 and reporting whether the second "
+                "attempt succeeded.\n" + extra
+            )

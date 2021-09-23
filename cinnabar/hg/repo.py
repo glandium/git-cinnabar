@@ -63,6 +63,7 @@ from cinnabar.util import (
 from collections import (
     defaultdict,
     deque,
+    OrderedDict,
 )
 from .bundle import (
     create_bundle,
@@ -425,6 +426,9 @@ def findcommon(repo, store, hgheads):
     return [store.hg_changeset(h) for h in dag.heads('known')]
 
 
+getbundle_params = {}
+
+
 class HelperRepo(object):
     __slots__ = "_url", "_branchmap", "_heads", "_bookmarks", "_ui", "remote"
 
@@ -503,9 +507,13 @@ class HelperRepo(object):
         return [b == b'1'[0] for b in result]
 
     def getbundle(self, name, heads, common, *args, **kwargs):
-        data = HgRepoHelper.getbundle((hexlify(h) for h in heads),
-                                      (hexlify(c) for c in common),
-                                      b','.join(kwargs.get('bundlecaps', ())))
+        heads = [hexlify(h) for h in heads]
+        common = [hexlify(c) for c in common]
+        bundlecaps = b','.join(kwargs.get('bundlecaps', ()))
+        getbundle_params["heads"] = heads
+        getbundle_params["common"] = common
+        getbundle_params["bundlecaps"] = bundlecaps
+        data = HgRepoHelper.getbundle(heads, common, bundlecaps)
         header = readexactly(data, 4)
         if header == b'HG20':
             return unbundle20(self.ui, data)
@@ -811,6 +819,9 @@ def store_changegroup(changegroup):
             assert False
 
 
+stored_files = OrderedDict()
+
+
 class BundleApplier(object):
     def __init__(self, bundle):
         self._bundle = store_changegroup(bundle)
@@ -824,13 +835,32 @@ class BundleApplier(object):
                 next(self._bundle, None)):
             pass
 
-        def enumerate_files(iter):
+        def enumerate_files(iterator):
+            null_parents = (NULL_NODE_ID, NULL_NODE_ID)
             last_name = None
             count_names = 0
-            for count_chunks, (name, chunk) in enumerate(iter, start=1):
+            for count_chunks, (name, chunk) in enumerate(iterator, start=1):
                 if name != last_name:
                     count_names += 1
                 last_name = name
+                parents = (chunk.parent1, chunk.parent2)
+                # Try to detect issue #207 as early as possible.
+                # Keep track of file roots of files with metadata and at least
+                # one head that can be traced back to each of those roots.
+                # Or, in the case of updates, all heads.
+                if store._has_metadata or chunk.parent1 in stored_files or \
+                        chunk.parent2 in stored_files:
+                    stored_files[chunk.node] = parents
+                    for p in parents:
+                        if p == NULL_NODE_ID:
+                            continue
+                        if stored_files.get(p, null_parents) != null_parents:
+                            del stored_files[p]
+                elif parents == null_parents:
+                    diff = next(iter(chunk.patch), None)
+                    if diff and diff.start == 0 and \
+                            diff.text_data[:2] == b'\1\n':
+                        stored_files[chunk.node] = parents
                 yield (count_chunks, count_names), chunk
 
         for rev_chunk in progress_enum(
