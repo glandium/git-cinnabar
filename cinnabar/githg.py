@@ -42,7 +42,6 @@ from .util import (
     Seekable,
     byte_diff,
     check_enabled,
-    interval_expired,
     one,
     VersionedDict,
 )
@@ -1303,9 +1302,6 @@ class GitHgStore(object):
             if ref not in (b'refs/notes/cinnabar',):
                 Git.delete_ref(ref)
 
-        if self._metadata_sha1 and update_metadata and not refresh and \
-                interval_expired('fsck', 86400 * 7):
-            logging.warn('Have you run `git cinnabar fsck` recently?')
         GitHgHelper.close(rollback=False)
 
         # Try to detect issue #207 as early as possible.
