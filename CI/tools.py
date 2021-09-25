@@ -293,7 +293,7 @@ class Build(Task, metaclass=Tool):
                 opt = '-O2'
             else:
                 opt = '-Og'
-                environ['CC'] = 'clang-11'
+                environ['CC'] = 'clang-12'
             environ['TARGET_CFLAGS'] = ' '.join([
                 opt,
                 '-g',
@@ -307,7 +307,7 @@ class Build(Task, metaclass=Tool):
                 '-Cforce-frame-pointers=yes',
             ])
         elif variant == 'coverage':
-            environ['CC'] = 'clang-11'
+            environ['CC'] = 'clang-12'
             environ['TARGET_CFLAGS'] = ' '.join([
                 '-coverage',
                 '-fPIC',

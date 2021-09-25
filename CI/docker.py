@@ -51,7 +51,7 @@ DOCKER_IMAGES = {
           --import llvm-snapshot.gpg.key&& rm llvm-snapshot.gpg.key &&\\
          echo\\
           "deb [signed-by=/usr/share/keyrings/llvm.gpg]\\
-           http://apt.llvm.org/stretch/ llvm-toolchain-stretch-11 main"\\
+           https://apt.llvm.org/stretch/ llvm-toolchain-stretch-12 main"\\
           > /etc/apt/sources.list.d/llvm.list &&\\
          apt-get update -o Acquire::Check-Valid-Until=false
         RUN pip install pip==20.3.4 --upgrade --ignore-installed
@@ -65,7 +65,7 @@ DOCKER_IMAGES = {
     'build': '''\
         FROM base
         RUN apt-get install -y --no-install-recommends\\
-         clang-11\\
+         clang-12\\
          gcc\\
          git\\
          libc6-dev\\
@@ -98,7 +98,7 @@ DOCKER_IMAGES = {
         FROM base
         RUN apt-get install -y --no-install-recommends\\
          flake8\\
-         llvm-11\\
+         llvm-12\\
          make\\
          python-coverage\\
          python-flake8\\
@@ -108,7 +108,7 @@ DOCKER_IMAGES = {
          python-virtualenv\\
          && apt-get clean\\
          && pip install cram==0.7\\
-         && ln -s llvm-symbolizer-11 /usr/bin/llvm-symbolizer
+         && ln -s llvm-symbolizer-12 /usr/bin/llvm-symbolizer
         ''',
 }
 
