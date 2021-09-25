@@ -80,17 +80,10 @@ class BaseRemoteHelper(object):
                 assert args
                 args = args[0].split(b' ', 1)
 
-            if cmd in (
-                b'capabilities',
-                b'list',
-                b'option',
-                b'import',
-                b'push',
-            ):
-                if cmd == b'import':
-                    # Can't have a method named import
-                    cmd = b'import_'
-                func = getattr(self, cmd.decode('ascii'), None)
+            if cmd == b'import':
+                # Can't have a method named import
+                cmd = b'import_'
+            func = getattr(self, cmd.decode('ascii'), None)
             assert func
             func(*args)
 
