@@ -1331,5 +1331,6 @@ class GitHgStore(object):
                 "Please open a new issue "
                 "(https://github.com/glandium/git-cinnabar/issues/new)\n"
                 "mentioning issue #207 and reporting whether the second "
-                "attempt succeeded.\n" + extra
+                "attempt succeeded.\n" + extra + "\n"
+                "Please keep a copy of this repository."
             )
