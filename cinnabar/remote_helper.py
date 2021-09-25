@@ -85,19 +85,25 @@ class BaseRemoteHelper(object):
                 assert args
                 args = args[0].split(b' ', 1)
 
-            if cmd in (
-                b'capabilities',
-                b'list',
-                b'option',
-                b'import',
-                b'push',
-            ):
-                if cmd == b'import':
-                    # Can't have a method named import
-                    cmd = b'import_'
+            if cmd == b'import':
+                # Can't have a method named import, so we use import_
+                try:
+                    self.import_(*args)
+                except Exception:
+                    # The Exception will eventually get us to return an error
+                    # code, but git actually ignores it. So we send it a
+                    # command it doesn't know over the helper/fast-import
+                    # protocol, so that it emits an error.
+                    # Alternatively, we could send `feature done` before doing
+                    # anything, and on the `done` command not being sent when
+                    # an exception is thrown, triggering an error, but that
+                    # requires git >= 1.7.7.
+                    self._helper.write(b'error\n')
+                    raise
+            else:
                 func = getattr(self, cmd.decode('ascii'), None)
-            assert func
-            func(*args)
+                assert func
+                func(*args)
 
     def option(self, name, value):
         if name == b'progress' and value in (b'true', b'false'):
