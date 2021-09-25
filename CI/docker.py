@@ -75,7 +75,7 @@ DOCKER_IMAGES = {
          python-coverage\\
          && apt-get clean
         RUN ln -s /usr/bin/python-coverage /usr/local/bin/coverage\\
-         && pip install codecov==2.1.11
+         && pip install codecov==2.1.12
         RUN curl -sL {} | tar -C /usr/local/bin -jxf -
         '''.format(
         'https://github.com/mozilla/grcov/releases/download/v0.7.1'
@@ -178,7 +178,7 @@ class DockerImageTask(DockerImage, Task, metaclass=TaskEnvironment):
             image='python:3.7',
             dind=True,
             command=Task.checkout() + [
-                'pip install requests-unixsocket zstandard==0.8.1',
+                'pip install requests-unixsocket==0.2.0 zstandard==0.8.1',
                 'python repo/CI/docker.py build {}'
                 .format(name),
                 'python repo/CI/docker.py save {}'

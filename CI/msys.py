@@ -114,7 +114,7 @@ class MsysEnvironment(MsysCommon):
                 ' '.join(self.packages(name))),
             'rm -rf /var/cache/pacman/pkg',
             'python -m pip install pip==20.3.4 --upgrade',
-            'pip install wheel',
+            'pip install wheel==0.37.0',
             'mv {}/{}/bin/{{{{mingw32-,}}}}make.exe'.format(msys(cpu),
                                                             mingw(cpu)),
             'tar -jcf msys2.tar.bz2 --hard-dereference {}'.format(msys(cpu)),

@@ -70,7 +70,7 @@ tasks:
               git -C repo remote update head &&
               git -c advice.detachedHead=false -C repo checkout ${e.commit} &&
               python3 -m venv venv &&
-              venv/bin/pip install pyyaml requests &&
+              venv/bin/pip install pyyaml==5.4.1 requests==2.26.0 &&
               venv/bin/python repo/CI/decision.py
           artifacts:
             $if: 'e.decision_id'
