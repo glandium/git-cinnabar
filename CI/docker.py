@@ -31,9 +31,11 @@ DOCKER_IMAGES = {
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
+         apt-transport-https\\
          bzip2\\
          ca-certificates\\
          curl\\
+         gnupg2\\
          python-setuptools\\
          python-pip\\
          python-wheel\\
@@ -44,12 +46,13 @@ DOCKER_IMAGES = {
          xz-utils\\
          zip\\
          && apt-get clean
-        RUN apt-get install -y --no-install-recommends\\
-         apt-transport-https gnupg2 software-properties-common&&\\
-         curl -s https://apt.llvm.org/llvm-snapshot.gpg.key\\
-         | apt-key add - &&\\
-         add-apt-repository\\
-         "deb http://apt.llvm.org/stretch/ llvm-toolchain-stretch-11 main" &&\\
+        RUN curl -sO https://apt.llvm.org/llvm-snapshot.gpg.key &&\\
+         gpg --no-default-keyring --keyring /usr/share/keyrings/llvm.gpg\\
+          --import llvm-snapshot.gpg.key&& rm llvm-snapshot.gpg.key &&\\
+         echo\\
+          "deb [signed-by=/usr/share/keyrings/llvm.gpg]\\
+           http://apt.llvm.org/stretch/ llvm-toolchain-stretch-11 main"\\
+          > /etc/apt/sources.list.d/llvm.list &&\\
          apt-get update -o Acquire::Check-Valid-Until=false
         RUN pip install pip==20.3.4 --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
