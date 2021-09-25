@@ -178,7 +178,7 @@ class DockerImageTask(DockerImage, Task, metaclass=TaskEnvironment):
             image='python:3.7',
             dind=True,
             command=Task.checkout() + [
-                'pip install requests-unixsocket==0.2.0 zstandard==0.8.1',
+                'pip install requests-unixsocket==0.2.0 zstandard==0.15.2',
                 'python repo/CI/docker.py build {}'
                 .format(name),
                 'python repo/CI/docker.py save {}'
@@ -343,7 +343,7 @@ class CommandHandler(object):
     @classmethod
     def load(cls, image):
         import requests
-        import zstd
+        import zstandard as zstd
 
         taskId = Task.by_index[image.index]
         if not isinstance(taskId, Task.by_index.Existing):
@@ -360,7 +360,7 @@ class CommandHandler(object):
 
         r = docker_session().post(
             docker_url('images/load', quiet=0),
-            data=zstd.ZstdDecompressor().read_from(r.raw),
+            data=zstd.ZstdDecompressor().read_to_iter(r.raw),
             stream=True,
             headers={'Content-Type': 'application/x-tar'},
         )
@@ -368,7 +368,7 @@ class CommandHandler(object):
 
     @classmethod
     def save(cls, image):
-        import zstd
+        import zstandard as zstd
 
         r = docker_session().get(
             docker_url('images/{}/get'.format(image.tag)),
