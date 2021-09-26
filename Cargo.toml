@@ -78,7 +78,6 @@ features = ["handleapi", "processthreadsapi"]
 
 [build-dependencies]
 cc = "1"
-count-write = "0.1"
 itertools = "0.10"
 make-cmd = "0.1"
 tar = "0.4"

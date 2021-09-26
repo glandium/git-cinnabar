@@ -7,7 +7,6 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use count_write::CountWrite;
 use itertools::Itertools;
 use make_cmd::gnu_make;
 use tar::{Builder, EntryType, Header};
@@ -220,7 +219,7 @@ fn main() {
     let python_tar = Path::new(&env_os("OUT_DIR")).join("python.tar.zst");
     let output = File::create(&python_tar).unwrap();
     let compress = zstd::stream::Encoder::new(output, 23).unwrap();
-    let mut builder = Builder::new(CountWrite::from(compress));
+    let mut builder = Builder::new(compress);
     let mut python_files = WalkDir::new(&dir)
         .into_iter()
         .filter_map(|e| {
@@ -244,8 +243,7 @@ fn main() {
             .append(&header, File::open(entry.path()).unwrap())
             .unwrap();
     }
-    let counter = builder.into_inner().unwrap();
-    counter.into_inner().finish().unwrap();
+    builder.into_inner().unwrap().finish().unwrap();
     println!("cargo:rustc-env=PYTHON_TAR={}", python_tar.display());
 
     #[cfg(feature = "version-check")]
