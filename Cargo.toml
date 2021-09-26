@@ -55,9 +55,12 @@ version = "1"
 default-features = false
 features = ["zlib"]
 
-[dependencies.libz-sys]
+[target.'cfg(windows)'.dependencies.libz-sys]
 version = "1"
 features = ["static"]
+
+[target.'cfg(not(windows))'.dependencies.libz-sys]
+version = "1"
 
 [dependencies.os_pipe]
 version = "0.9"
