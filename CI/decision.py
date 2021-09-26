@@ -248,6 +248,7 @@ def decision():
     # Same for arm64 mac
     if TC_IS_PUSH:
         Build.by_name('arm64-osx')
+    Build.by_name('arm64-linux')
 
     # Test build with the MSRV.
     Build.by_name('linux.rust-1.51.0')

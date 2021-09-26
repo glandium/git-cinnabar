@@ -270,7 +270,8 @@ class Build(Task, metaclass=Tool):
         os, variant = (os_and_variant.split('.', 1) + [''])[:2]
         if os.startswith('osx'):
             os = 'osx'
-        env = TaskEnvironment.by_name('{}.build'.format(os))
+        env = TaskEnvironment.by_name(
+            '{}.build'.format(os.replace('arm64-linux', 'linux')))
 
         artifact = 'git-cinnabar'
         if os.startswith('mingw'):
@@ -332,7 +333,7 @@ class Build(Task, metaclass=Tool):
         elif variant:
             raise Exception('Unknown variant: {}'.format(variant))
 
-        if os == 'linux':
+        if os in ('linux', 'arm64-linux'):
             environ['CC'] = 'clang-12'
             cargo_features.append('curl-compat')
 
@@ -353,6 +354,14 @@ class Build(Task, metaclass=Tool):
             rust_target = 'aarch64-apple-darwin'
         elif os == 'linux':
             rust_target = 'x86_64-unknown-linux-gnu'
+        elif os == 'arm64-linux':
+            rust_target = 'aarch64-unknown-linux-gnu'
+            environ['PKG_CONFIG_aarch64_unknown_linux_gnu'] = \
+                '/usr/bin/aarch64-linux-gnu-pkg-config'
+            environ['CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER'] = \
+                environ['CC']
+            environ['CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS'] = \
+                '-C link-arg=--target=aarch64-unknown-linux-gnu'
         if variant in ('coverage', 'asan'):
             rust_install = install_rust('nightly-2021-06-13', rust_target)
         elif rust_version:
@@ -369,13 +378,14 @@ class Build(Task, metaclass=Tool):
             environ.setdefault(
                 'MACOSX_DEPLOYMENT_TARGET', '10.7')
 
+        cpu = 'arm64' if os == 'arm64-linux' else env.cpu
         Task.__init__(
             self,
             task_env=env,
             description='build {} {}{}'.format(
-                env.os, env.cpu, prefix(' ', desc_variant)),
+                env.os, cpu, prefix(' ', desc_variant)),
             index='build.{}.{}.{}{}'.format(
-                hash, env.os, env.cpu, prefix('.', variant)),
+                hash, env.os, cpu, prefix('.', variant)),
             expireIn='26 weeks',
             command=Task.checkout(commit=head) + rust_install + [
                 '(cd repo ; cargo build {})'.format(' '.join(cargo_flags)),

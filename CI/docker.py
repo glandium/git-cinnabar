@@ -64,19 +64,32 @@ DOCKER_IMAGES = {
 
     'build': '''\
         FROM base
-        RUN apt-get install -y --no-install-recommends\\
+        RUN dpkg --add-architecture arm64\\
+         && apt-get update -o Acquire::Check-Valid-Until=false\\
+         && apt-get install -y --no-install-recommends\\
          clang-12\\
          gcc\\
          git\\
-         libc6-dev\\
-         libcurl4-openssl-dev\\
          make\\
          patch\\
          pkg-config\\
          python-dev\\
          python3-dev\\
+         libc6-dev\\
+         libcurl4-openssl-dev\\
          zlib1g-dev\\
-         && apt-get clean
+         && echo path-exclude=/usr/bin/curl-config\\
+          > /etc/dpkg/dpkg.cfg.d/excludes\\
+         && apt-get install -y --no-install-recommends\\
+         libc6-dev:arm64\\
+         libcurl4-openssl-dev:arm64\\
+         zlib1g-dev:arm64\\
+         libgcc-6-dev:arm64\\
+         binutils-aarch64-linux-gnu\\
+         dpkg-dev\\
+         && apt-get clean\\
+         && ln -s /usr/bin/aarch64-linux-gnu-ld\\
+          /usr/bin/aarch64-unknown-linux-gnu-ld
         ''',
 
     'codecov': '''\

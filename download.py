@@ -59,9 +59,12 @@ def download(args):
         binary += '.exe'
         if machine == 'AMD64':
             machine = 'x86_64'
+    if machine == 'aarch64':
+        machine = 'arm64'
 
     available = (
         ('Linux', 'x86_64'),
+        ('Linux', 'arm64'),
         ('macOS', 'x86_64'),
         ('macOS', 'arm64'),
         ('Windows', 'x86_64'),
