@@ -293,7 +293,6 @@ class Build(Task, metaclass=Tool):
                 opt = '-O2'
             else:
                 opt = '-Og'
-                environ['CC'] = 'clang-12'
             environ['TARGET_CFLAGS'] = ' '.join([
                 opt,
                 '-g',
@@ -307,7 +306,6 @@ class Build(Task, metaclass=Tool):
                 '-Cforce-frame-pointers=yes',
             ])
         elif variant == 'coverage':
-            environ['CC'] = 'clang-12'
             environ['TARGET_CFLAGS'] = ' '.join([
                 '-coverage',
                 '-fPIC',
@@ -335,6 +333,7 @@ class Build(Task, metaclass=Tool):
             raise Exception('Unknown variant: {}'.format(variant))
 
         if os == 'linux':
+            environ['CC'] = 'clang-12'
             cargo_features.append('curl-compat')
 
         if os.startswith('mingw'):
