@@ -2,13 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use once_cell::sync::Lazy;
-use regex::bytes::Regex;
+use std::os::raw::{c_char, c_int};
+use std::ptr;
 
-use crate::util::{FromBytes, SliceExt};
-
-// TODO: This doesn't actually need to be a regexp
-static WHO_RE: Lazy<Regex> = Lazy::new(|| Regex::new("^(?-u)(.*?) ?(?:<(.*?)>)").unwrap());
+use crate::libgit::{ident_split, split_ident_line};
+use crate::util::FromBytes;
 
 pub struct Authorship {
     name: Vec<u8>,
@@ -19,19 +17,38 @@ pub struct Authorship {
 
 impl Authorship {
     pub fn from_git_bytes(s: &[u8]) -> Self {
-        // We don't ever expect a git `who` information not to match the
-        // split+regexp, as git is very conservative in what it accepts.
-        let [who, timestamp, utcoffset] = s.rsplitn_exact(b' ').unwrap();
-        let caps = WHO_RE.captures(who).unwrap();
-        let utcoffset = i32::from_bytes(utcoffset).unwrap();
-        let sign = -utcoffset.signum();
-        let utcoffset = utcoffset.abs();
-        let utcoffset = (utcoffset / 100) * 60 + (utcoffset % 100);
-        Authorship {
-            name: caps.get(1).unwrap().as_bytes().to_owned(),
-            email: caps.get(2).unwrap().as_bytes().to_owned(),
-            timestamp: u64::from_bytes(timestamp).unwrap(),
-            utcoffset: sign * utcoffset * 60,
+        let mut split = ident_split {
+            name_begin: ptr::null(),
+            name_end: ptr::null(),
+            mail_begin: ptr::null(),
+            mail_end: ptr::null(),
+            date_begin: ptr::null(),
+            date_end: ptr::null(),
+            tz_begin: ptr::null(),
+            tz_end: ptr::null(),
+        };
+        unsafe {
+            assert!(
+                split_ident_line(&mut split, s.as_ptr() as *const c_char, s.len() as c_int) == 0
+            );
+
+            unsafe fn to_slice<'a>(begin: *const c_char, end: *const c_char) -> &'a [u8] {
+                assert!(!begin.is_null() && !end.is_null());
+                let size = end.offset_from(begin);
+                std::slice::from_raw_parts(begin as *const u8, size as usize)
+            }
+
+            let utcoffset = to_slice(split.tz_begin, split.tz_end);
+            let utcoffset = i32::from_bytes(utcoffset).unwrap();
+            let sign = -utcoffset.signum();
+            let utcoffset = utcoffset.abs();
+            let utcoffset = (utcoffset / 100) * 60 + (utcoffset % 100);
+            Authorship {
+                name: to_slice(split.name_begin, split.name_end).to_owned(),
+                email: to_slice(split.mail_begin, split.mail_end).to_owned(),
+                timestamp: u64::from_bytes(to_slice(split.date_begin, split.date_end)).unwrap(),
+                utcoffset: sign * utcoffset * 60,
+            }
         }
     }
 

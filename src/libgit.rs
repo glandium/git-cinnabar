@@ -1008,3 +1008,20 @@ pub fn config_get_value(key: &str) -> Option<OsString> {
     (unsafe { git_config_get_value(key.as_ptr(), &mut value) } == 0)
         .then(|| unsafe { CStr::from_ptr(value) }.to_osstr().to_os_string())
 }
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct ident_split {
+    pub name_begin: *const c_char,
+    pub name_end: *const c_char,
+    pub mail_begin: *const c_char,
+    pub mail_end: *const c_char,
+    pub date_begin: *const c_char,
+    pub date_end: *const c_char,
+    pub tz_begin: *const c_char,
+    pub tz_end: *const c_char,
+}
+
+extern "C" {
+    pub fn split_ident_line(split: *mut ident_split, line: *const c_char, len: c_int) -> c_int;
+}
