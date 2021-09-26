@@ -1038,10 +1038,7 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
     drop(reader);
 
     let sent_data = if let Some(mut writer) = writer {
-        zstd::stream::copy_decode(
-            &mut Cursor::new(include_bytes!(env!("PYTHON_TAR"))),
-            &mut writer,
-        )
+        zstd::stream::copy_decode(&mut Cursor::new(cinnabar_py::CINNABAR_PY), &mut writer)
     } else {
         Ok(())
     };

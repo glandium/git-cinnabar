@@ -1,0 +1,20 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+[package]
+name = "cinnabar-py"
+version = "0.6.0-a"
+authors = ["Mike Hommey <mh@glandium.org>"]
+edition = "2018"
+license = "MPL-2.0"
+repository = "https://github.com/glandium/git-cinnabar"
+publish = false
+
+[lib]
+path = "lib.rs"
+
+[build-dependencies]
+tar = "0.4"
+walkdir = "2"
+zstd  = "0.9"

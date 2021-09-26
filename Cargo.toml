@@ -37,6 +37,9 @@ url = "2"
 which = "4"
 zstd = "0.9"
 
+[dependencies.cinnabar-py]
+path = "cinnabar"
+
 [dependencies.curl-sys]
 version = "0.4"
 default-features = false
@@ -80,10 +83,7 @@ features = ["handleapi", "processthreadsapi"]
 cc = "1"
 itertools = "0.10"
 make-cmd = "0.1"
-tar = "0.4"
 target = "2.0"
-walkdir = "2"
-zstd = "0.9"
 
 [dev-dependencies]
 tempfile = "3"

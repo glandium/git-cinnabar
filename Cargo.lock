@@ -109,6 +109,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "cinnabar-py"
+version = "0.6.0-a"
+dependencies = [
+ "tar",
+ "walkdir",
+ "zstd",
+]
+
+[[package]]
 name = "clap"
 version = "2.33.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -347,6 +356,7 @@ dependencies = [
  "byteorder",
  "bzip2",
  "cc",
+ "cinnabar-py",
  "crossbeam",
  "cstr",
  "curl-sys",
@@ -371,12 +381,10 @@ dependencies = [
  "sha-1",
  "shared_child",
  "structopt",
- "tar",
  "target",
  "tempfile",
  "typenum",
  "url",
- "walkdir",
  "which",
  "winapi",
  "zstd",

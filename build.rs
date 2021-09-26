@@ -2,15 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::ffi::{OsStr, OsString};
-use std::fs::{self, File};
+use std::ffi::OsString;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use itertools::Itertools;
 use make_cmd::gnu_make;
-use tar::{Builder, EntryType, Header};
-use walkdir::WalkDir;
 
 fn env(name: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| panic!("Failed to get {}", name))
@@ -214,37 +212,6 @@ fn main() {
     }
 
     println!("cargo:rerun-if-env-changed=CINNABAR_MAKE_FLAGS");
-
-    let dir = dir.join("cinnabar");
-    let python_tar = Path::new(&env_os("OUT_DIR")).join("python.tar.zst");
-    let output = File::create(&python_tar).unwrap();
-    let compress = zstd::stream::Encoder::new(output, 23).unwrap();
-    let mut builder = Builder::new(compress);
-    let mut python_files = WalkDir::new(&dir)
-        .into_iter()
-        .filter_map(|e| {
-            e.ok()
-                .filter(|e| e.path().extension() == Some(OsStr::new("py")))
-        })
-        .collect::<Vec<_>>();
-    python_files.sort_unstable_by(|a, b| a.path().cmp(b.path()));
-
-    for entry in python_files {
-        println!("cargo:rerun-if-changed={}", entry.path().display());
-        let mut header = Header::new_gnu();
-        header
-            .set_path(entry.path().strip_prefix(&dir).unwrap())
-            .unwrap();
-        header.set_size(entry.metadata().unwrap().len());
-        header.set_mode(0o644);
-        header.set_entry_type(EntryType::Regular);
-        header.set_cksum();
-        builder
-            .append(&header, File::open(entry.path()).unwrap())
-            .unwrap();
-    }
-    builder.into_inner().unwrap().finish().unwrap();
-    println!("cargo:rustc-env=PYTHON_TAR={}", python_tar.display());
 
     #[cfg(feature = "version-check")]
     {
