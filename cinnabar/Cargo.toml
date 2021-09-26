@@ -17,4 +17,7 @@ path = "lib.rs"
 [build-dependencies]
 tar = "0.4"
 walkdir = "2"
-zstd  = "0.9"
+
+[build-dependencies.zstd]
+version  = "0.9"
+default-features = false

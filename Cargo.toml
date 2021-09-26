@@ -36,7 +36,6 @@ tempfile = "3"
 typenum = "1"
 url = "2"
 which = "4"
-zstd = "0.9"
 
 [dependencies.cinnabar-py]
 path = "cinnabar"
@@ -82,6 +81,10 @@ optional = true
 [target.'cfg(windows)'.dependencies.winapi]
 version = "0.3"
 features = ["handleapi", "processthreadsapi"]
+
+[dependencies.zstd]
+version = "0.9"
+default-features = false
 
 [build-dependencies]
 cc = "1"
