@@ -1,4 +1,5 @@
 from __future__ import absolute_import, unicode_literals
+import hashlib
 import os
 import shutil
 import subprocess
@@ -25,11 +26,14 @@ from cinnabar.hg.objects import (
     File,
     Manifest,
 )
-from cinnabar.helper import (
-    GitHgHelper,
-    git_hash,
-)
+from cinnabar.helper import GitHgHelper
 from cinnabar.util import one
+
+
+def git_hash(type, data):
+    h = hashlib.sha1(b'%s %d\0' % (type, len(data)))
+    h.update(data)
+    return h.hexdigest().encode('ascii')
 
 
 class TestStoreCG01(unittest.TestCase):

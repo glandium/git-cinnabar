@@ -1,6 +1,5 @@
 from __future__ import absolute_import, unicode_literals
 import atexit
-import hashlib
 import logging
 import os
 import subprocess
@@ -26,12 +25,6 @@ from cinnabar.util import (
     Process,
 )
 from contextlib import contextmanager
-
-
-def git_hash(type, data):
-    h = hashlib.sha1(b'%s %d\0' % (type, len(data)))
-    h.update(data)
-    return h.hexdigest().encode('ascii')
 
 
 class ReadWriter(object):
