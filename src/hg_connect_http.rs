@@ -79,6 +79,9 @@ mod git_http_state {
                 _ => {
                     let c_url = CString::new(normalized_url.to_string()).unwrap();
                     unsafe {
+                        if self.url.is_some() {
+                            http_cleanup();
+                        }
                         http_init(ptr::null_mut(), c_url.as_ptr(), 0);
                     }
                     self.url = Some(normalized_url);
