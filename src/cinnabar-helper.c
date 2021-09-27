@@ -1786,7 +1786,6 @@ void init_cinnabar(const char *argv0)
 	setup_git_directory_gently(&nongit);
 	git_config(git_diff_basic_config, NULL);
 	init_config();
-	ignore_case = 0;
 	save_commit_buffer = 0;
 	warn_on_object_refname_ambiguity = 0;
 }

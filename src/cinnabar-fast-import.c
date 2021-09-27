@@ -5,6 +5,8 @@ static void cinnabar_unregister_shallow(const struct object_id *oid);
 #include <stdio.h>
 extern FILE *helper_input;
 #define stdin helper_input
+#include "dir.h"
+#define fspathncmp strncmp
 #include "fast-import.patched.c"
 #include "cinnabar-fast-import.h"
 #include "cinnabar-helper.h"
@@ -135,7 +137,6 @@ static void init()
 
 	reset_pack_idx_option(&pack_idx_opts);
 	git_pack_config();
-	ignore_case = 0;
 	warn_on_object_refname_ambiguity = 0;
 
 	alloc_objects(object_entry_alloc);
