@@ -48,7 +48,7 @@ class Git(Task, metaclass=Tool):
             build_image = DockerImage.by_name('build')
         if os == 'linux' or os.startswith('osx'):
             h = hashlib.sha1(build_image.hexdigest.encode())
-            h.update(b'v2')
+            h.update(b'v3' if version == GIT_VERSION else b'v2')
             if os == 'linux':
                 description = 'git v{}'.format(version)
             else:
@@ -62,9 +62,12 @@ class Git(Task, metaclass=Tool):
                 expireIn='26 weeks',
                 command=Task.checkout(
                     'git://git.kernel.org/pub/scm/git/git.git',
-                    'v{}'.format(version)
-                ) + [
-                    'make -C repo -j$({}) install prefix=/ NO_GETTEXT=1'
+                    'v{}'.format(version),
+                    dest='git',
+                ) + Task.checkout() + ([
+                    'patch -d git -p1 < repo/CI/git-transport-disconnect.diff',
+                ] if version == GIT_VERSION else []) + [
+                    'make -C git -j$({}) install prefix=/ NO_GETTEXT=1'
                     ' NO_OPENSSL=1 NO_TCLTK=1 DESTDIR=$PWD/git'.format(
                         nproc(build_image)),
                     'tar -Jcf $ARTIFACTS/git-{}.tar.xz git'

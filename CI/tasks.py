@@ -179,13 +179,13 @@ class Task(object):
             pass
 
     @staticmethod
-    def checkout(repo=None, commit=None):
+    def checkout(repo=None, commit=None, dest='repo'):
         repo = repo or TC_REPO_URL
         commit = commit or TC_COMMIT
         return [
-            'git clone -n {} repo'.format(repo),
-            'git -c core.autocrlf=input -c advice.detachedHead=false -C repo'
-            ' checkout {}'.format(commit),
+            'git clone -n {} {}'.format(repo, dest),
+            'git -c core.autocrlf=input -c advice.detachedHead=false'
+            ' -C {} checkout {}'.format(dest, commit),
         ]
 
     def __init__(self, **kwargs):
