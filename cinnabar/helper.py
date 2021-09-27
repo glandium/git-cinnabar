@@ -539,11 +539,13 @@ class CommitHelper(object):
 class HgRepoHelper(BaseHelper):
     MODE = 'wire'
     _helper = False
+    connected = False
 
     @classmethod
     def close(self, on_atexit=False):
-        if self._helper and self._helper is not self:
+        if self._helper and self._helper is not self and self.connected:
             self._helper.stdin.write(b'close')
+            self.connected = False
 
     @classmethod
     def connect(self, url):
@@ -553,6 +555,7 @@ class HgRepoHelper(BaseHelper):
                 return stdout
             if resp != b'ok':
                 raise Exception(resp.decode('ascii'))
+            self.connected = True
 
     @classmethod
     def state(self):
@@ -624,6 +627,7 @@ class HgRepoHelper(BaseHelper):
 
 class BundleHelper(HgRepoHelper):
     _helper = False
+    connected = False
 
     @classmethod
     def close(self, on_atexit=False):
