@@ -18,7 +18,7 @@ use getset::Getters;
 use once_cell::sync::Lazy;
 
 use crate::oid::{GitObjectId, ObjectId};
-use crate::util::{BorrowKey, CStrExt, FromBytes, OptionExt, OsStrExt, SliceExt};
+use crate::util::{CStrExt, FromBytes, OptionExt, OsStrExt, SliceExt};
 
 const GIT_MAX_RAWSZ: usize = 32;
 const GIT_HASH_SHA1: c_int = 1;
@@ -614,19 +614,6 @@ pub enum DiffTreeItem {
         from_mode: FileMode,
         from_oid: BlobId,
     },
-}
-
-impl BorrowKey for DiffTreeItem {
-    type Key = Box<[u8]>;
-    fn borrow_key(&self) -> &Self::Key {
-        match self {
-            DiffTreeItem::Added { path, .. } => path,
-            DiffTreeItem::Deleted { path, .. } => path,
-            DiffTreeItem::Modified { path, .. } => path,
-            DiffTreeItem::Renamed { to_path, .. } => to_path,
-            DiffTreeItem::Copied { to_path, .. } => to_path,
-        }
-    }
 }
 
 unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tree_item) {
