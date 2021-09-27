@@ -17,7 +17,6 @@ from cinnabar.hg.repo import (
     get_clonebundle,
     get_repo,
     Remote,
-    unbundle20,
     unbundler,
 )
 from cinnabar.util import fsencode
@@ -25,7 +24,7 @@ from cinnabar.util import fsencode
 
 @CLI.subcommand
 @CLI.argument('--version', choices=(1, 2), type=int,
-              default=2 if unbundle20 else 1,
+              default=2,
               help='bundle version')
 @CLI.argument('path', help='path of the bundle')
 @CLI.argument('rev', nargs='+',

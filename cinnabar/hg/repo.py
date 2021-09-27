@@ -75,77 +75,77 @@ def cg1unpacker(fh, alg):
     return fh
 
 
-if not check_enabled('no-bundle2'):
-    class unbundle20(object):
-        def __init__(self, fh):
-            self.fh = fh
-            params_len = readexactly(fh, 4)
-            assert params_len == b'\0\0\0\0'
+class unbundle20(object):
+    def __init__(self, fh):
+        self.fh = fh
+        params_len = readexactly(fh, 4)
+        assert params_len == b'\0\0\0\0'
 
-        def iterparts(self):
-            while True:
+    def iterparts(self):
+        while True:
+            d = readexactly(self.fh, 4)
+            length = struct.unpack('>i', d)[0]
+            if length == 0:
+                break
+            assert length > 0
+            header = readexactly(self.fh, length)
+            part = Part(header, self.fh)
+            yield part
+            part.consume()
+
+
+class Part(object):
+    def __init__(self, rawheader, fh):
+        rawheader = memoryview(rawheader)
+        part_type_len = struct.unpack('>B', rawheader[:1])[0]
+        self.type = rawheader[1:part_type_len + 1].tobytes().lower()
+        rawheader = rawheader[part_type_len + 5:]
+        params_count1, params_count2 = struct.unpack('>BB', rawheader[:2])
+        rawheader = rawheader[2:]
+        count = params_count1 + params_count2
+        param_sizes = struct.unpack(
+            '>' + ('BB' * count), rawheader[:2 * count])
+        rawheader = rawheader[2 * count:]
+        data = []
+        for size in param_sizes:
+            data.append(rawheader[:size])
+            rawheader = rawheader[size:]
+        assert len(rawheader) == 0
+        self.params = {
+            k.tobytes(): v.tobytes()
+            for k, v in zip(data[::2], data[1::2])
+        }
+        self.fh = fh
+        self.chunk_offset = 0
+        self.chunk_size = 0
+        self.consumed = False
+
+    def read(self, size=None):
+        ret = b''
+        while (size is None or size > 0) and not self.consumed:
+            if self.chunk_size == self.chunk_offset:
                 d = readexactly(self.fh, 4)
-                length = struct.unpack('>i', d)[0]
-                if length == 0:
+                self.chunk_size = struct.unpack('>i', d)[0]
+                if self.chunk_size == 0:
+                    self.consumed = True
                     break
-                assert length > 0
-                header = readexactly(self.fh, length)
-                part = Part(header, self.fh)
-                yield part
-                part.consume()
+                # TODO: handle -1, which is a special value
+                assert self.chunk_size > 0
+                self.chunk_offset = 0
 
-    class Part(object):
-        def __init__(self, rawheader, fh):
-            rawheader = memoryview(rawheader)
-            part_type_len = struct.unpack('>B', rawheader[:1])[0]
-            self.type = rawheader[1:part_type_len + 1].tobytes().lower()
-            rawheader = rawheader[part_type_len + 5:]
-            params_count1, params_count2 = struct.unpack('>BB', rawheader[:2])
-            rawheader = rawheader[2:]
-            count = params_count1 + params_count2
-            param_sizes = struct.unpack(
-                '>' + ('BB' * count), rawheader[:2 * count])
-            rawheader = rawheader[2 * count:]
-            data = []
-            for size in param_sizes:
-                data.append(rawheader[:size])
-                rawheader = rawheader[size:]
-            assert len(rawheader) == 0
-            self.params = {
-                k.tobytes(): v.tobytes()
-                for k, v in zip(data[::2], data[1::2])
-            }
-            self.fh = fh
-            self.chunk_offset = 0
-            self.chunk_size = 0
-            self.consumed = False
+            wanted = self.chunk_size - self.chunk_offset
+            if size is not None:
+                wanted = min(size, wanted)
+            data = readexactly(self.fh, wanted)
+            if size is not None:
+                size -= len(data)
+            self.chunk_offset += len(data)
+            ret += data
+        return ret
 
-        def read(self, size=None):
-            ret = b''
-            while (size is None or size > 0) and not self.consumed:
-                if self.chunk_size == self.chunk_offset:
-                    d = readexactly(self.fh, 4)
-                    self.chunk_size = struct.unpack('>i', d)[0]
-                    if self.chunk_size == 0:
-                        self.consumed = True
-                        break
-                    # TODO: handle -1, which is a special value
-                    assert self.chunk_size > 0
-                    self.chunk_offset = 0
-
-                wanted = self.chunk_size - self.chunk_offset
-                if size is not None:
-                    wanted = min(size, wanted)
-                data = readexactly(self.fh, wanted)
-                if size is not None:
-                    size -= len(data)
-                self.chunk_offset += len(data)
-                ret += data
-            return ret
-
-        def consume(self):
-            while not self.consumed:
-                self.read(32768)
+    def consume(self):
+        while not self.consumed:
+            self.read(32768)
 
 
 # The following two functions (readexactly, getchunk) were copied from the
@@ -473,7 +473,7 @@ def unbundle_fh(fh, path):
     if version == b'10':
         alg = readexactly(fh, 2)
         return cg1unpacker(fh, alg)
-    elif unbundle20 and version.startswith(b'2'):
+    elif version.startswith(b'2'):
         return unbundle20(fh)
     else:
         raise Exception('%s: unsupported bundle version %s' % (fsdecode(path),
@@ -560,7 +560,7 @@ class bundlerepo(object):
 
 
 def unbundler(bundle):
-    if unbundle20 and isinstance(bundle, unbundle20):
+    if isinstance(bundle, unbundle20):
         parts = iter(bundle.iterparts())
         for part in parts:
             if part.type != b'changegroup':
@@ -589,7 +589,7 @@ def unbundler(bundle):
     yield chunks_in_changegroup(chunk_type, cg, 'manifest')
     yield iterate_files(chunk_type, cg)
 
-    if unbundle20 and isinstance(bundle, unbundle20):
+    if isinstance(bundle, unbundle20):
         for part in parts:
             logging.getLogger('bundle2').warning(
                 'ignoring bundle2 part: %s', part.type)
@@ -921,7 +921,7 @@ def getbundle(repo, store, heads, branch_names):
             logging.info('common: %s', common)
 
         kwargs = {}
-        if unbundle20 and repo.capable(b'bundle2'):
+        if repo.capable(b'bundle2'):
             bundle2caps = {
                 b'HG20': (),
                 b'changegroup': (b'01', b'02'),
@@ -1007,10 +1007,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                 repo_heads = [NULL_NODE_ID]
             repo_heads = [unhexlify(h) for h in repo_heads]
     if push_commits and not dry_run:
-        if unbundle20:
-            b2caps = repo.capable(b'bundle2') or {}
-        else:
-            b2caps = {}
+        b2caps = repo.capable(b'bundle2') or {}
         if b2caps:
             b2caps = decodecaps(unquote_to_bytes(b2caps))
         logging.getLogger('bundle2').debug('%r', b2caps)
@@ -1022,7 +1019,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
             if not b2caps:
                 cg = cg1unpacker(cg, b'UN')
         reply = repo.unbundle(cg, repo_heads, b'')
-        if unbundle20 and isinstance(reply, unbundle20):
+        if isinstance(reply, unbundle20):
             parts = iter(reply.iterparts())
             for part in parts:
                 logging.getLogger('bundle2').debug('part: %s', part.type)
