@@ -3,7 +3,6 @@ import logging
 from cinnabar.cmd.util import CLI
 from cinnabar.git import (
     Git,
-    GitProcess,
     InvalidConfig,
 )
 from cinnabar.githg import GitHgStore
@@ -73,11 +72,6 @@ def bundle(args):
 @CLI.argument('url', help='url of the bundle')
 def unbundle(args):
     '''apply a mercurial bundle to the repository'''
-    # Make git emit its error when the current directory is not in a git repo.
-    proc = GitProcess('rev-parse')
-    ret = proc.wait()
-    if ret:
-        return ret
     remote = Remote(b'', fsencode(args.url))
     if remote.parsed_url.scheme not in (b'file', b'http', b'https'):
         logging.error('%s urls are not supported.' % remote.parsed_url.scheme)
