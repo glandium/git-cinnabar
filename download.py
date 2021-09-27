@@ -26,7 +26,7 @@ import argparse
 import platform
 import tempfile
 import errno
-from cinnabar.helper import build_commit
+from CI.util import build_commit
 from cinnabar.util import (
     HTTPReader,
     Progress,
@@ -92,7 +92,7 @@ def download(args):
     url = 'https://community-tc.services.mozilla.com/api/index/v1/task/'
     url += 'project.git-cinnabar.build.'
     url += '{}.{}.{}.{}'.format(
-        sha1.decode('ascii'), system.lower(), machine,
+        sha1, system.lower(), machine,
         args.variant.lower() if args.variant else '').rstrip('.')
     url += '/artifacts/public/{}'.format(binary)
 

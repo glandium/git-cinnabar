@@ -23,7 +23,6 @@ from cinnabar.util import (
     iteritems,
     IOLogger,
     lrucache,
-    one,
     Process,
 )
 from contextlib import contextmanager
@@ -33,21 +32,6 @@ def git_hash(type, data):
     h = hashlib.sha1(b'%s %d\0' % (type, len(data)))
     h.update(data)
     return h.hexdigest().encode('ascii')
-
-
-def build_commit():
-    try:
-        workdir = os.path.join(os.path.dirname(__file__), '..')
-    except NameError:
-        return False
-    env = environ().copy()
-    for k in list(env.keys()):
-        # Variables like GIT_DIR cause problems with the command below, so
-        # unset them all.
-        if k.startswith(b'GIT_'):
-            del env[k]
-    return one(Git.iter('-C', workdir, 'rev-parse', '--verify', 'HEAD',
-                        stderr=open(os.devnull, 'wb'), env=env))
 
 
 class ReadWriter(object):

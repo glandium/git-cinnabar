@@ -7,6 +7,7 @@ from tasks import (
     Tool,
     parse_version,
 )
+from util import build_commit
 from docker import DockerImage
 import msys
 
@@ -223,14 +224,6 @@ class Hg(Task, metaclass=Tool):
             'curl -L {{{}.artifact}} -o {}'.format(hg, filename),
             '{} -m pip install {}'.format(python, filename)
         ]
-
-
-def build_commit(head='HEAD'):
-    from cinnabar.git import Git
-    from cinnabar.util import one
-    return one(Git.iter(
-        '-C', os.path.join(os.path.dirname(__file__), '..'),
-        'rev-parse', '--verify', head, stderr=open(os.devnull, 'wb'))).decode()
 
 
 def install_rust(version='1.54.0', target='x86_64-unknown-linux-gnu'):
