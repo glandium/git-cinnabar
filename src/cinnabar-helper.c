@@ -1126,17 +1126,6 @@ error:
 	hg_file_release(&file);
 }
 
-static void do_helpercaps(struct string_list *args)
-{
-	struct strbuf caps = STRBUF_INIT;
-
-	if (args->nr != 0)
-		die("helpercaps takes no arguments");
-
-	send_buffer(cat_blob_fd, &caps);
-	strbuf_release(&caps);
-}
-
 static int add_each_head(const struct object_id *oid, void *data)
 {
 	struct strbuf *buf = data;
@@ -1819,11 +1808,6 @@ int helper_main(int in, int out)
 		const char *command;
 		record_command(&buf);
 		split_command(buf.buf, &command, &args);
-		if (!strcmp("helpercaps", command)) {
-			do_helpercaps(&args);
-			string_list_clear(&args, 0);
-			continue;
-		}
 		if (!initialized) {
 			init_cinnabar_2();
 		}

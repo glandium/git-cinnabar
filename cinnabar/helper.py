@@ -124,17 +124,6 @@ class BaseHelper(object):
                     stdin=subprocess.PIPE, stderr=None, env=env,
                     logger='helper-{}'.format(self.MODE))
 
-            if self.MODE == "import":
-                self._helper.stdin.write(b'helpercaps\n')
-                self._helper.stdin.flush()
-                response = self._read_data(self._helper.stdout)
-            else:
-                response = b''
-            self._caps = {
-                k: v.split(b',')
-                for k, _, v in (l.partition(b'=')
-                                for l in response.splitlines())
-            }
             atexit.register(self.close, on_atexit=True)
 
         if self._helper is self:
@@ -190,15 +179,6 @@ class BaseHelper(object):
         lf = stdout.read(1)
         assert lf == b'\n'
         return ret
-
-    @classmethod
-    def supports(self, feature):
-        self._ensure_helper()
-        if isinstance(feature, int):
-            return feature <= self._version
-        assert isinstance(feature, tuple) and len(feature) == 2
-        k, v = feature
-        return v in self._caps.get(k, ())
 
 
 class GitHgHelper(BaseHelper):
