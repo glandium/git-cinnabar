@@ -207,7 +207,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', action='store_true',
                         help='only print the download url')
-    parser.add_argument('--variant', nargs=1, metavar='VARIANT',
+    parser.add_argument('--variant', metavar='VARIANT',
                         help='download the given variant')
     parser.add_argument('--system', default=platform.system(),
                         help=argparse.SUPPRESS)
