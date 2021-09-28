@@ -149,7 +149,7 @@ check_enabled = ConfigSetFunc(
 
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
-    ('merge', 'store'),
+    ('merge',),
     ('python3',),
 )
 

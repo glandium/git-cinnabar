@@ -90,7 +90,6 @@ struct oidset hg2git_seen = OIDSET_INIT;
 
 int metadata_flags = 0;
 int cinnabar_check = CHECK_VERSION;
-int cinnabar_experiments = 0;
 int python3 = 0;
 FILE *helper_input;
 extern int cat_blob_fd;
@@ -1134,12 +1133,6 @@ static void do_helpercaps(struct string_list *args)
 	if (args->nr != 0)
 		die("helpercaps takes no arguments");
 
-	if (cinnabar_experiments & EXPERIMENT_STORE) {
-		if (caps.len)
-			strbuf_addch(&caps, '\n');
-		strbuf_addstr(&caps, "store=new");
-	}
-
 	send_buffer(cat_blob_fd, &caps);
 	strbuf_release(&caps);
 }
@@ -1527,12 +1520,7 @@ static void init_config()
 			// strbuf_split leaves the `,`.
 			if ((*c)->buf[(*c) -> len - 1] == ',')
 				strbuf_setlen(*c, (*c)->len - 1);
-			if (!strcmp((*c)->buf, "true") ||
-			    !strcmp((*c)->buf, "all"))
-				cinnabar_experiments = -1;
-			else if (!strcmp((*c)->buf, "store"))
-				cinnabar_experiments |= EXPERIMENT_STORE;
-			else if (!strcmp((*c)->buf, "python3"))
+			if (!strcmp((*c)->buf, "python3"))
 				python3 = 1;
 		}
 		strbuf_list_free(check);

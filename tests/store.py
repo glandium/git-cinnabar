@@ -38,18 +38,13 @@ def git_hash(type, data):
 
 class TestStoreCG01(unittest.TestCase):
     RevChunk = RawRevChunk01
-    NEW_STORE = False
 
     def setUp(self):
         self.git_dir = os.environ.get('GIT_DIR')
         tmpdir = tempfile.mkdtemp()
         Git.run('init', '-q', '--bare', tmpdir, stdout=open(os.devnull, 'w'))
         os.environ['GIT_DIR'] = tmpdir
-        os.environ['GIT_CINNABAR_EXPERIMENTS'] = \
-            'store' if self.NEW_STORE else ''
         os.environ['GIT_CONFIG_PARAMETERS'] = "'fastimport.unpacklimit=0'"
-        self.assertEqual(
-            GitHgHelper.supports((b'store', b'new')), self.NEW_STORE)
 
     def tearDown(self):
         GitHgHelper.close(rollback=True)
@@ -499,11 +494,3 @@ class TestStoreCG01(unittest.TestCase):
 
 class TestStoreCG02(TestStoreCG01):
     RevChunk = RawRevChunk02
-
-
-class TestNewStoreCG01(TestStoreCG01):
-    NEW_STORE = True
-
-
-class TestNewStoreCG02(TestStoreCG02):
-    NEW_STORE = True
