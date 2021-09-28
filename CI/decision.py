@@ -290,14 +290,6 @@ def decision():
         task_env='linux',
         variant='asan',
     )
-    TestTask(
-        task_env='linux',
-        variant='asan',
-        extra_desc='experiments',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'true',
-        },
-    )
 
     TestTask(
         variant='coverage',
@@ -318,43 +310,6 @@ def decision():
         short_desc='graft tests',
         env={
             'GIT_CINNABAR_EXPERIMENTS': 'python3',
-            'GRAFT': '1',
-        },
-        hg='{}.py3'.format(MERCURIAL_VERSION),
-    )
-
-    TestTask(
-        extra_desc='experiments',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'true',
-        },
-    )
-
-    TestTask(
-        variant='coverage',
-        short_desc='graft tests',
-        extra_desc='experiments',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'true',
-            'GRAFT': '1',
-        },
-    )
-
-    TestTask(
-        extra_desc='experiments',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
-            'GIT_CINNABAR_LOG': 'reexec:3',
-        },
-        hg='{}.py3'.format(MERCURIAL_VERSION),
-    )
-
-    TestTask(
-        short_desc='graft tests',
-        extra_desc='experiments',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
-            'GIT_CINNABAR_LOG': 'reexec:3',
             'GRAFT': '1',
         },
         hg='{}.py3'.format(MERCURIAL_VERSION),
