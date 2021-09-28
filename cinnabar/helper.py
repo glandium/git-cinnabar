@@ -310,9 +310,6 @@ class GitHgHelper(BaseHelper):
             with self.query(b'store', what, delta_node, b'%d' % len(obj)):
                 self._helper.stdin.write(obj)
                 self._helper.stdin.flush()
-        elif what == b'manifest_changegroup':
-            with self.query(b'store', what, *args):
-                return self._helper.stdin
         else:
             assert False
 
