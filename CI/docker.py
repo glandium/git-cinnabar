@@ -27,7 +27,7 @@ def sources_list(snapshot, sections):
 
 DOCKER_IMAGES = {
     'base': '''\
-        FROM debian:stretch-20190812
+        FROM debian:stretch-20210927
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
@@ -53,7 +53,7 @@ DOCKER_IMAGES = {
          apt-get update -o Acquire::Check-Valid-Until=false
         RUN pip install pip==20.3.4 --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
-            '20190812T140702Z', (
+            '20210927T204628Z', (
                 ('debian', 'stretch'),
                 ('debian', 'stretch-updates'),
                 ('debian-security', 'stretch/updates'),
