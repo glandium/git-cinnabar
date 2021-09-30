@@ -370,7 +370,7 @@ def decision():
 
         pre_command = []
         if env != 'linux':
-            pre_command.append('pip install cram')
+            pre_command.append('pip install cram==0.7')
 
         TestTask(
             task_env=env,

@@ -1714,12 +1714,17 @@ static void init_git_config()
 	 * the path we get is empty we'll know it failed. */
 	capture_command(&proc, &path, 0);
 	strbuf_trim_trailing_newline(&path);
-	/* If we couldn't get a path, then so be it. We may just not have
-	 * a complete configuration. */
-	if (!path.len)
+	/* Bail early when GIT_CONFIG_NO_SYSTEM is set. */
+	if (!git_config_system())
 		goto cleanup;
 
-	if (!git_config_system() || access_or_die(path.buf, R_OK, 0))
+	/* Avoid future uses of the git_config infrastructure reading the
+         * config we just read (or the wrong system gitconfig). */
+	putenv("GIT_CONFIG_NOSYSTEM=1");
+
+	/* If we couldn't get a path, then so be it. We may just not have
+	 * a complete configuration. */
+	if (!path.len || access_or_die(path.buf, R_OK, 0))
 		goto cleanup;
 
 	if (the_repository->config)
@@ -1730,9 +1735,6 @@ static void init_git_config()
 
 	git_configset_init(the_repository->config);
 	git_configset_add_file(the_repository->config, path.buf);
-	// Avoid read_early_config reading the config we just read (or the
-	// wrong system gitconfig).
-	putenv("GIT_CONFIG_NOSYSTEM=1");
 	read_early_config(config_set_callback, the_repository->config);
 
 cleanup:

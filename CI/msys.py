@@ -108,12 +108,13 @@ class MsysEnvironment(MsysCommon):
             'pacman-key --init',
             'pacman-key --populate msys2',
             'sed -i s,://repo.msys2.org/,'
-            '://mirrors.zju.edu.cn/msys2/, /etc/pacman.d/mirrorlist.*',
+            '://mirrors.huaweicloud.com/repository/msys2/,'
+            ' /etc/pacman.d/mirrorlist.*',
             'pacman --noconfirm -Sy tar {}'.format(
                 ' '.join(self.packages(name))),
             'rm -rf /var/cache/pacman/pkg',
             'python -m pip install pip==20.3.4 --upgrade',
-            'pip install wheel',
+            'pip install wheel==0.37.0',
             'mv {}/{}/bin/{{{{mingw32-,}}}}make.exe'.format(msys(cpu),
                                                             mingw(cpu)),
             'tar -jcf msys2.tar.bz2 --hard-dereference {}'.format(msys(cpu)),
