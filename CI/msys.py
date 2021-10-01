@@ -147,7 +147,6 @@ class MsysEnvironment(MsysCommon):
         packages = mingw_packages([
             'curl',
             'make',
-            'pcre',
             'python2',
             'python2-pip',
             'python3',
@@ -157,7 +156,6 @@ class MsysEnvironment(MsysCommon):
         if name == 'build':
             return packages + mingw_packages([
                 'gcc',
-                'perl',
             ]) + [
                 'patch',
             ]
