@@ -1,13 +1,8 @@
-from __future__ import absolute_import, division, unicode_literals
 from collections import (
     deque,
     defaultdict
 )
-from cinnabar.util import (
-    iteritems,
-    itervalues,
-    OrderedDefaultDict,
-)
+from cinnabar.util import OrderedDefaultDict
 
 
 # TODO: this class sucks and is probably wrong
@@ -31,7 +26,7 @@ class gitdag(object):
             self._tags[node] = tag
 
     def roots(self, tag=None):
-        for node, parents in iteritems(self._parents):
+        for node, parents in self._parents.items():
             if self._tags.get(node) == tag:
                 if all(p not in self._parents or self._tags.get(p) != tag
                        for p in parents):
@@ -81,7 +76,7 @@ class gitdag(object):
                 if n not in self._tags:
                     yield n
         else:
-            for n, t in iteritems(self._tags):
+            for n, t in self._tags.items():
                 if t == tag:
                     yield n
 
@@ -92,4 +87,4 @@ class gitdag(object):
         return node in self._parents
 
     def tags(self):
-        return set(itervalues(self._tags))
+        return set(self._tags.values())

@@ -1,4 +1,3 @@
-from __future__ import absolute_import, unicode_literals
 import logging
 import os
 import socket
@@ -150,7 +149,7 @@ check_enabled = ConfigSetFunc(
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
     ('merge',),
-    ('python3',),
+    (),
 )
 
 
@@ -374,9 +373,6 @@ class VersionedDict(object):
         return iter(self._dict)
 
     def items(self):
-        return self.iteritems()
-
-    def iteritems(self):
         if self._previous:
             return chain(
                 self._dict.items(),
@@ -644,7 +640,7 @@ class chunkbuffer(object):
 
 class HTTPReader(object):
     def __init__(self, url):
-        url = fsdecode(url)
+        url = os.fsdecode(url)
         self.fh = urlopen(url)
         # If the url was redirected, get the final url for possible future
         # range requests.
@@ -826,7 +822,7 @@ class Process(object):
             full_cmd = ' '.join(chain(self._env_strings(env), cmd))
         if not getattr(os, 'supports_bytes_environ', True):
             env = {
-                fsdecode(k): fsdecode(v) for k, v in iteritems(env)
+                os.fsdecode(k): os.fsdecode(v) for k, v in env.items()
             }
         proc = subprocess.Popen(cmd, env=env, **kwargs)
         if logger.isEnabledFor(logging.INFO):
@@ -919,7 +915,6 @@ class MemoryCPUReporter(Thread):
 
 
 def run(func, args):
-    assert not experiment('python3') or sys.version_info[0] != 2
     init_logging()
     if check_enabled('memory') or check_enabled('cpu'):
         reporter = MemoryCPUReporter(memory=check_enabled('memory'),
@@ -959,53 +954,18 @@ def run(func, args):
     sys.exit(retcode)
 
 
-# Python3 compat
-if sys.version_info[0] == 3:
-    def iteritems(d):
-        return iter(d.items())
-
-    def itervalues(d):
-        return iter(d.values())
-
-    fsencode = os.fsencode
-    fsdecode = os.fsdecode
-
-    def environ(k=None):
-        if os.supports_bytes_environ:
-            if k is None:
-                return os.environb
-            return os.environb.get(k)
-
+def environ(k=None):
+    if os.supports_bytes_environ:
         if k is None:
-            return {
-                fsencode(k): fsencode(v)
-                for k, v in iteritems(os.environ)
-            }
-        v = os.environ.get(fsdecode(k))
-        if v is None:
-            return None
-        return fsencode(v)
-else:
-    def iteritems(d):
-        return d.iteritems()
+            return os.environb
+        return os.environb.get(k)
 
-    def itervalues(d):
-        return d.itervalues()
-
-    def fsencode(s):
-        return s
-
-    def fsdecode(s):
-        return s
-
-    def environ(k=None):
-        if k is None:
-            return os.environ
-        return os.environ.get(k)
-
-if hasattr(sys.stdout, 'buffer'):
-    bytes_stdout = sys.stdout.buffer
-    bytes_stdin = sys.stdin.buffer
-else:
-    bytes_stdout = sys.stdout
-    bytes_stdin = sys.stdin
+    if k is None:
+        return {
+            os.fsencode(k): os.fsencode(v)
+            for k, v in os.environ.items()
+        }
+    v = os.environ.get(os.fsdecode(k))
+    if v is None:
+        return None
+    return os.fsencode(v)

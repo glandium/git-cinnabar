@@ -1,5 +1,5 @@
-from __future__ import absolute_import, print_function, unicode_literals
 import logging
+import os
 import re
 import sys
 from cinnabar.cmd.util import CLI
@@ -17,9 +17,7 @@ from cinnabar.git import (
     NULL_NODE_ID,
 )
 from cinnabar.util import (
-    fsdecode,
     interval_expired,
-    iteritems,
     Progress,
     progress_iter,
 )
@@ -59,7 +57,7 @@ class FsckStatus(object):
 
 
 def check_replace(store):
-    self_refs = [r for r, s in iteritems(store._replace) if r == s]
+    self_refs = [r for r, s in store._replace.items() if r == s]
     for r in progress_iter('Removing {} self-referencing grafts', self_refs):
         del store._replace[r]
 
@@ -176,8 +174,8 @@ def fsck_quick(force=False):
                 '  Head metadata says changeset %s is in branch %s\n'
                 '  but git2hg metadata says it is in branch %s'
                 % (changeset.node.decode('ascii'),
-                   fsdecode(heads[changeset.node]),
-                   fsdecode(changeset_branch)))
+                   os.fsdecode(heads[changeset.node]),
+                   os.fsdecode(changeset_branch)))
             continue
         manifest_nodes.append(changeset.manifest)
 
@@ -258,7 +256,7 @@ def fsck_quick(force=False):
             for _, t, sha1, path in GitHgHelper.ls_tree(m, recursive=True):
                 if (path, sha1) not in all_interesting:
                     files[path] = sha1
-        all_interesting.update(iteritems(files))
+        all_interesting.update(files.items())
         previous = m
 
     if status('broken'):
@@ -303,7 +301,8 @@ def fsck_quick(force=False):
                 p = store.manifest_path(path)
                 status.report(
                     'Sha1 mismatch for file %s\n'
-                    '  revision %s' % (fsdecode(p), hg_file.decode('ascii')))
+                    '  revision %s' % (os.fsdecode(p), hg_file.decode('ascii'))
+                )
 
                 print_parents = ' '.join(p.decode('ascii')
                                          for p in hg_fileparents
@@ -318,7 +317,7 @@ def fsck_quick(force=False):
         status.info('Could not find the following files:')
         for path, sha1 in sorted(all_interesting):
             p = store.manifest_path(path)
-            status.info('  %s %s' % (sha1.decode('ascii'), fsdecode(p)))
+            status.info('  %s %s' % (sha1.decode('ascii'), os.fsdecode(p)))
         status.info(
             'This might be a bug in `git cinnabar fsck`. Please open '
             'an issue, with the message above, on\n'
@@ -581,11 +580,11 @@ def fsck(args):
             stored_heads = store.heads({branch})
             for head in computed_heads[branch] - stored_heads:
                 status.fix('Adding missing head %s in branch %s' %
-                           (head.decode('ascii'), fsdecode(branch)))
+                           (head.decode('ascii'), os.fsdecode(branch)))
                 store.add_head(head)
             for head in stored_heads - computed_heads[branch]:
                 status.fix('Removing non-head reference to %s in branch %s' %
-                           (head.decode('ascii'), fsdecode(branch)))
+                           (head.decode('ascii'), os.fsdecode(branch)))
                 del store._hgheads[head]
 
     metadata_commit = Git.resolve_ref('refs/cinnabar/metadata')

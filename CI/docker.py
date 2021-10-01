@@ -114,14 +114,12 @@ DOCKER_IMAGES = {
          flake8\\
          llvm-12\\
          make\\
-         python-coverage\\
-         python-flake8\\
+         python3-coverage\\
          python3-flake8\\
-         python-nose\\
          python3-nose\\
          python-virtualenv\\
          && apt-get clean\\
-         && pip install cram==0.7\\
+         && pip3 install cram==0.7\\
          && ln -s llvm-symbolizer-12 /usr/bin/llvm-symbolizer
         ''',
 }

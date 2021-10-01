@@ -2,24 +2,13 @@
 ''':'
 if command -v python3 > /dev/null; then
   PYTHON=python3
-elif command -v python2.7 > /dev/null; then
-  PYTHON=python2.7
-elif command -v python2 > /dev/null; then
-  PYTHON=python2
 else
-  echo "Could not find python 2.7 or 3.x" >&2
+  echo "Could not find python 3.x" >&2
   exit 1
 fi
 exec $PYTHON -B $0 "$@"
 exit 1
 '''
-
-from __future__ import (
-    absolute_import,
-    division,
-    print_function,
-    unicode_literals,
-)
 import os
 import sys
 import argparse

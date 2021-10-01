@@ -1,4 +1,3 @@
-from __future__ import absolute_import, unicode_literals
 import atexit
 import logging
 import os
@@ -18,8 +17,6 @@ from cinnabar.hg.changegroup import (
 )
 from cinnabar.util import (
     environ,
-    fsdecode,
-    iteritems,
     IOLogger,
     lrucache,
     Process,
@@ -94,11 +91,11 @@ class BaseHelper(object):
     def _helper_command(self):
         helper_path = Git.config('cinnabar.helper')
         env = {}
-        for k, v in iteritems(environ()):
+        for k, v in environ().items():
             if k.startswith(b'GIT_CINNABAR_'):
                 env[k] = v
         if helper_path:
-            helper_path = fsdecode(helper_path)
+            helper_path = os.fsdecode(helper_path)
         if helper_path and os.path.exists(helper_path):
             command = [helper_path]
         else:

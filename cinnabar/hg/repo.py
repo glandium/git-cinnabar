@@ -1,4 +1,3 @@
-from __future__ import absolute_import, division, unicode_literals
 import os
 import re
 import ssl
@@ -50,7 +49,6 @@ from cinnabar.util import (
     HTTPReader,
     check_enabled,
     chunkbuffer,
-    fsdecode,
     progress_enum,
     progress_iter,
 )
@@ -462,22 +460,23 @@ class HelperRepo(object):
         data = HgRepoHelper.lookup(key)
         if data:
             return unhexlify(data)
-        raise Exception('Unknown revision %s' % fsdecode(key))
+        raise Exception('Unknown revision %s' % os.fsdecode(key))
 
 
 def unbundle_fh(fh, path):
     header = readexactly(fh, 4)
     magic, version = header[0:2], header[2:4]
     if magic != b'HG':
-        raise Exception('%s: not a Mercurial bundle' % fsdecode(path))
+        raise Exception('%s: not a Mercurial bundle' % os.fsdecode(path))
     if version == b'10':
         alg = readexactly(fh, 2)
         return cg1unpacker(fh, alg)
     elif version.startswith(b'2'):
         return unbundle20(fh)
     else:
-        raise Exception('%s: unsupported bundle version %s' % (fsdecode(path),
-                        version.decode('ascii')))
+        raise Exception(
+            '%s: unsupported bundle version %s'
+            % (os.fsdecode(path), version.decode('ascii')))
 
 
 # Mercurial's bundlerepo completely unwraps bundles in $TMPDIR but we can be
@@ -513,7 +512,7 @@ class bundlerepo(object):
                 yield item
 
         changeset_chunks = ChunksCollection(progress_iter(
-            'Analyzing {} changesets from ' + fsdecode(self._file),
+            'Analyzing {} changesets from ' + os.fsdecode(self._file),
             iter_and_store(next(raw_unbundler, None))))
 
         for chunk in changeset_chunks.iter_initialized(lambda x: x,
@@ -665,7 +664,7 @@ def get_clonebundle(repo):
                      'http/https url. Skipping.')
         return None
 
-    sys.stderr.write('Getting clone bundle from %s\n' % fsdecode(url))
+    sys.stderr.write('Getting clone bundle from %s\n' % os.fsdecode(url))
     return get_bundle(url)
 
 
@@ -866,7 +865,7 @@ def do_cinnabarclone(repo, manifest, store, limit_schemes=True):
         logging.warn('Server advertizes cinnabarclone but provided a non '
                      'http/https git repository. Skipping.')
         return False
-    sys.stderr.write('Fetching cinnabar metadata from %s\n' % fsdecode(url))
+    sys.stderr.write('Fetching cinnabar metadata from %s\n' % os.fsdecode(url))
     sys.stderr.flush()
     return store.merge(url, repo.url(), branch)
 
@@ -1025,7 +1024,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                 logging.getLogger('bundle2').debug('part: %s', part.type)
                 logging.getLogger('bundle2').debug('params: %r', part.params)
                 if part.type == b'output':
-                    sys.stderr.write(fsdecode(part.read()))
+                    sys.stderr.write(os.fsdecode(part.read()))
                 elif part.type == b'reply:changegroup':
                     # TODO: should check params['in-reply-to']
                     reply = int(part.params[b'return'])

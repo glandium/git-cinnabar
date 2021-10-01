@@ -1,4 +1,3 @@
-from __future__ import absolute_import, unicode_literals
 try:
     from urllib.parse import quote_from_bytes, unquote_to_bytes
 except ImportError:
@@ -22,7 +21,6 @@ from cinnabar.util import (
     check_enabled,
     chunkbuffer,
     experiment,
-    iteritems,
     progress_enum,
     progress_iter,
     sorted_merge,
@@ -280,7 +278,7 @@ class PushStore(GitHgStore):
 
         parent_lines = OrderedDict((l.path, l) for l in parent_manifest)
         items = manifest.items
-        for line in sorted_merge(iteritems(parent_lines), git_diff,
+        for line in sorted_merge(parent_lines.items(), git_diff,
                                  non_key=lambda i: i[1]):
             path, manifest_line, change = line
             if not change:
@@ -457,7 +455,7 @@ def bundle_data(store, commits):
     yield None
 
     for manifest, changeset in progress_iter('Bundling {} manifests',
-                                             iteritems(manifests)):
+                                             manifests.items()):
         hg_manifest = store.manifest(manifest, include_parents=True)
         hg_manifest.changeset = changeset
         yield hg_manifest

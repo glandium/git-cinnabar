@@ -1,11 +1,9 @@
-from __future__ import absolute_import, division, unicode_literals
 import logging
 import os
 import posixpath
 import time
 from cinnabar.util import (
     environ,
-    fsdecode,
     one,
     Process,
 )
@@ -165,5 +163,5 @@ class Git(object):
                 else:
                     raise InvalidConfig(
                         'Invalid value for %s: "%s". Valid values: %s' % (
-                            var.decode('ascii'), fsdecode(value), values))
+                            var.decode('ascii'), os.fsdecode(value), values))
         return value

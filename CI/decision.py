@@ -198,14 +198,9 @@ def decision():
         command=[
             'PATH=$PWD/repo:$PATH',
             '(cd repo &&'
-            ' nosetests --all-modules --with-coverage --cover-tests tests &&'
-            ' nosetests3 --all-modules tests)',
-            '(cd repo && python2.7 -m flake8 --ignore E402,F405'
-            ' $(git ls-files \\*\\*.py git-cinnabar git-remote-hg'
-            ' | grep -v ^CI/ | grep -v ^bootstrap/))',
+            ' nosetests3 --all-modules --with-coverage --cover-tests tests)',
             '(cd repo && flake8 --ignore E402,F405'
-            ' $(git ls-files CI/\\*\\*.py)'
-            ' $(git grep -l unicode_literals))',
+            ' $(git ls-files \\*\\*.py | grep -v ^bootstrap/))',
             '(cd repo && flake8 --ignore E402,F405,F821'
             ' $(git ls-files bootstrap/\\*\\*.py))',
         ],
@@ -237,9 +232,6 @@ def decision():
             dependencies=[
                 Build.by_name(env),
             ],
-            env={
-                'GIT_CINNABAR_EXPERIMENTS': 'python3',
-            } if env == 'linux' else {},
         )
 
     # Because nothing is using the x86 windows build, we need to manually
@@ -263,17 +255,6 @@ def decision():
                 'UPGRADE_FROM': upgrade,
             },
             hg='5.4.2',
-        )
-        TestTask(
-            short_desc='upgrade tests',
-            extra_desc='from-{}'.format(upgrade),
-            clone=upgrade,
-            env={
-                'GIT_CINNABAR_EXPERIMENTS': 'python3',
-                'GIT_CINNABAR_LOG': 'reexec:3',
-                'UPGRADE_FROM': upgrade,
-            },
-            hg='5.4.2.py3',
         )
 
     for git in ('1.8.5', '2.7.4'):
@@ -299,24 +280,6 @@ def decision():
             env={
                 'GRAFT': '1',
             },
-        )
-
-        TestTask(
-            task_env=env,
-            env={
-                'GIT_CINNABAR_EXPERIMENTS': 'python3',
-            },
-            hg='{}.py3'.format(MERCURIAL_VERSION),
-        )
-
-        TestTask(
-            task_env=env,
-            short_desc='graft tests',
-            env={
-                'GIT_CINNABAR_EXPERIMENTS': 'python3',
-                'GRAFT': '1',
-            },
-            hg='{}.py3'.format(MERCURIAL_VERSION),
         )
 
     for env, variant in (
@@ -345,20 +308,6 @@ def decision():
                 'GIT_CINNABAR_CHECK': 'no-version-check',
             },
         )
-
-    TestTask(
-        short_desc='cram',
-        clone=False,
-        command=[
-            'repo/git-cinnabar --version',
-            'cram --verbose repo/tests',
-        ],
-        env={
-            'GIT_CINNABAR_CHECK': 'no-version-check',
-            'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
-        },
-        hg='{}.py3'.format(MERCURIAL_VERSION),
-    )
 
     for cargo_cmd in ('test', 'clippy', 'fmt'):
         for env in ('linux', 'mingw64', 'osx'):

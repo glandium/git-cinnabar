@@ -911,10 +911,6 @@ fn git_cinnabar() -> i32 {
     }
 }
 
-extern "C" {
-    static python3: c_int;
-}
-
 pub fn main() {
     let args: Vec<_> = std::env::args_os().map(prepare_arg).collect();
     let argc = args.len();
@@ -938,21 +934,7 @@ enum PythonCommand {
 }
 
 fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
-    let want_python2 = unsafe { python3 == 0 };
-    let (loader, python) = if want_python2 {
-        (
-            include_str!("../bootstrap/loader_py2.py"),
-            which("python2.7").or_else(|_| which("python2")),
-        )
-    } else {
-        (include_str!("../bootstrap/loader_py3.py"), which("python3"))
-    };
-    let python = python.map_err(|_| {
-        format!(
-            "Could not find python {}",
-            if want_python2 { "2.7" } else { "3.x" }
-        )
-    })?;
+    let python = which("python3").map_err(|_| "Could not find python 3.x")?;
 
     // We aggregate the various parts of a bootstrap code that reads a
     // tarball from stdin, and use the contents of that tarball as a
@@ -963,8 +945,7 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
     let internal_python =
         cfg!(profile = "release") || std::env::var_os("GIT_CINNABAR_NO_INTERNAL_PYTHON").is_none();
     if internal_python {
-        bootstrap.push_str(include_str!("../bootstrap/loader_common.py"));
-        bootstrap.push_str(loader);
+        bootstrap.push_str(include_str!("../bootstrap/loader.py"));
     } else {
         bootstrap.push_str("import sys\n");
     }

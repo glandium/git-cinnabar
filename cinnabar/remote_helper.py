@@ -1,4 +1,3 @@
-from __future__ import absolute_import, division, unicode_literals
 from binascii import unhexlify
 import os
 import sys
@@ -26,13 +25,8 @@ from cinnabar.git import (
     NULL_NODE_ID,
 )
 from cinnabar.util import (
-    bytes_stdin,
-    bytes_stdout,
     ConfigSetFunc,
-    fsdecode,
-    fsencode,
     IOLogger,
-    iteritems,
     strip_suffix,
     VersionedDict,
 )
@@ -55,7 +49,7 @@ def sanitize_branch_name(name):
 
 
 class BaseRemoteHelper(object):
-    def __init__(self, stdin=bytes_stdin, stdout=bytes_stdout):
+    def __init__(self, stdin=sys.stdin.buffer, stdout=sys.stdout.buffer):
         self._dry_run = False
         self._helper = IOLogger(logging.getLogger('remote-helper'),
                                 stdin, stdout)
@@ -118,7 +112,8 @@ class BaseRemoteHelper(object):
 
 
 class TagsRemoteHelper(BaseRemoteHelper):
-    def __init__(self, store, stdin=bytes_stdin, stdout=bytes_stdout):
+    def __init__(self, store, stdin=sys.stdin.buffer,
+                 stdout=sys.stdout.buffer):
         super(TagsRemoteHelper, self).__init__(stdin, stdout)
         self._store = store
 
@@ -154,7 +149,8 @@ class TagsRemoteHelper(BaseRemoteHelper):
 
 
 class GitRemoteHelper(BaseRemoteHelper):
-    def __init__(self, store, remote, stdin=bytes_stdin, stdout=bytes_stdout):
+    def __init__(self, store, remote, stdin=sys.stdin.buffer,
+                 stdout=sys.stdout.buffer):
         super(GitRemoteHelper, self).__init__(stdin, stdout)
         self._store = store
         self._repo = get_repo(remote)
@@ -247,7 +243,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                 # some heads don't appear in the branchmap, then something
                 # was pushed to the repo between branchmap() and heads()
                 if set(heads).issubset(
-                        set(chain(*(v for _, v in iteritems(branchmap))))):
+                        set(chain(*(v for _, v in branchmap.items())))):
                     break
             bookmarks = self._repo.listkeys(b'bookmarks')
 
@@ -344,7 +340,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                 self._bookmark_template = b'refs/heads/bookmarks/%s'
             else:
                 self._bookmark_template = b'refs/heads/%s'
-            for name, sha1 in sorted(iteritems(bookmarks)):
+            for name, sha1 in sorted(bookmarks.items()):
                 if sha1 == NULL_NODE_ID:
                     continue
                 ref = self._store.changeset_ref(sha1)
@@ -372,10 +368,10 @@ class GitRemoteHelper(BaseRemoteHelper):
                 refs[b'HEAD'] = b'@%s' % head_ref
 
         self._refs = {sanitize_branch_name(k): v
-                      for k, v in iteritems(refs)}
+                      for k, v in refs.items()}
 
         head_prefix = strip_suffix((self._head_template or b''), b'%s/%s')
-        for k, v in sorted(iteritems(self._refs)):
+        for k, v in sorted(self._refs.items()):
             if head_prefix and k.startswith(head_prefix):
                 v = self._store.changeset_ref(v) or self._branchmap.git_sha1(v)
             elif not v.startswith(b'@'):
@@ -428,7 +424,7 @@ class GitRemoteHelper(BaseRemoteHelper):
             wanted_refs = {}
             raise
         finally:
-            for ref, value in iteritems(wanted_refs):
+            for ref, value in wanted_refs.items():
                 ref = b'refs/cinnabar/' + ref
                 Git.update_ref(ref, self._store.changeset_ref(value))
 
@@ -439,7 +435,7 @@ class GitRemoteHelper(BaseRemoteHelper):
 
         if self._remote.name and self._refs_style('heads'):
             if Git.config('fetch.prune', self._remote.name) != b'true':
-                prune = 'remote.%s.prune' % fsdecode(self._remote.name)
+                prune = 'remote.%s.prune' % os.fsdecode(self._remote.name)
                 sys.stderr.write(
                     'It is recommended that you set "%(conf)s" or '
                     '"fetch.prune" to "true".\n'
@@ -469,7 +465,7 @@ class GitRemoteHelper(BaseRemoteHelper):
             logging.error(str(e))
             return 1
 
-        pushes = list((Git.resolve_ref(fsdecode(s.lstrip(b'+'))), d,
+        pushes = list((Git.resolve_ref(os.fsdecode(s.lstrip(b'+'))), d,
                        s.startswith(b'+'))
                       for s, d in (r.split(b':', 1) for r in refspecs))
         if not self._repo.capable(b'unbundle'):
@@ -529,7 +525,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                 phases = self._repo.listkeys(b'phases')
                 drafts = {}
                 if not phases.get(b'publishing', False):
-                    drafts = set(p for p, is_draft in iteritems(phases)
+                    drafts = set(p for p, is_draft in phases.items()
                                  if int(is_draft))
                 if not drafts:
                     data = True
@@ -567,7 +563,7 @@ def main(args):
         import msvcrt
         msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
     assert len(args) == 2
-    remote = Remote(*(fsencode(a) for a in args))
+    remote = Remote(*(os.fsencode(a) for a in args))
 
     store = GitHgStore()
 

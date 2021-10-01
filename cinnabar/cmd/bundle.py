@@ -1,5 +1,5 @@
-from __future__ import absolute_import, unicode_literals
 import logging
+import os
 from cinnabar.cmd.util import CLI
 from cinnabar.git import (
     Git,
@@ -19,7 +19,6 @@ from cinnabar.hg.repo import (
     Remote,
     unbundler,
 )
-from cinnabar.util import fsencode
 
 
 @CLI.subcommand
@@ -33,7 +32,7 @@ from cinnabar.util import fsencode
 def bundle(args):
     '''create a mercurial bundle'''
 
-    revs = [fsencode(r) for r in args.rev]
+    revs = [os.fsencode(r) for r in args.rev]
     bundle_commits = list((c, p) for c, t, p in GitHgHelper.rev_list(
         b'--topo-order', b'--full-history', b'--parents', b'--reverse', *revs))
     if bundle_commits:
@@ -61,7 +60,7 @@ def bundle(args):
 @CLI.argument('url', help='url of the bundle')
 def unbundle(args):
     '''apply a mercurial bundle to the repository'''
-    remote = Remote(b'', fsencode(args.url))
+    remote = Remote(b'', os.fsencode(args.url))
     if remote.parsed_url.scheme not in (b'file', b'http', b'https'):
         logging.error('%s urls are not supported.' % remote.parsed_url.scheme)
         return 1

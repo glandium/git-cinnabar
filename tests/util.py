@@ -1,4 +1,3 @@
-from __future__ import absolute_import, unicode_literals
 try:
     from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 except ImportError:

@@ -1,4 +1,3 @@
-from __future__ import absolute_import, division, unicode_literals
 import hashlib
 import re
 from binascii import unhexlify

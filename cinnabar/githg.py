@@ -1,4 +1,3 @@
-from __future__ import absolute_import, division, unicode_literals
 from binascii import hexlify, unhexlify
 try:
     from itertools import izip as zip
@@ -63,7 +62,6 @@ from cinnabar.hg.objects import (
 from cinnabar.helper import GitHgHelper
 from cinnabar.util import progress_iter
 from cinnabar import util
-from cinnabar.util import fsdecode
 
 import logging
 
@@ -304,7 +302,7 @@ class TagSet(object):
         if not other:
             return
         assert isinstance(other, TagSet)
-        for key, anode in util.iteritems(other._tags):
+        for key, anode in other._tags.items():
             # derived from mercurial's _updatetags
             ahist = other._taghist[key]
             if key not in self._tags:
@@ -321,7 +319,7 @@ class TagSet(object):
                 n for n in bhist if n not in ahist)
 
     def __iter__(self):
-        return util.iteritems(self._tags)
+        return iter(self._tags.items())
 
     def hist(self, key):
         return iter(sorted(self._taghist[key]))
@@ -370,7 +368,7 @@ class BranchMap(object):
         self._tips = {}
         self._git_sha1s = {}
         self._unknown_heads = set()
-        for branch, heads in util.iteritems(remote_branchmap):
+        for branch, heads in remote_branchmap.items():
             # We can't keep track of tips if the list of heads is not sequenced
             sequenced = isinstance(heads, Sequence) or len(heads) == 1
             branch_heads = []
@@ -683,7 +681,7 @@ class GitHgStore(object):
         # The caller should avoid calling this function otherwise.
         assert not self._has_metadata
         remote_refs = OrderedDict()
-        for line in Git.iter('ls-remote', fsdecode(git_repo_url),
+        for line in Git.iter('ls-remote', os.fsdecode(git_repo_url),
                              stderr=open(os.devnull, 'wb')):
             sha1, ref = line.split(None, 1)
             remote_refs[ref] = sha1
@@ -730,8 +728,8 @@ class GitHgStore(object):
         else:
             fetch = ['fetch', '--no-tags', '--no-recurse-submodules', '-q']
             fetch.append('--progress' if util.progress else '--no-progress')
-            fetch.append(fsdecode(git_repo_url))
-            cmd = fetch + [fsdecode(ref) + ':refs/cinnabar/fetch']
+            fetch.append(os.fsdecode(git_repo_url))
+            cmd = fetch + [os.fsdecode(ref) + ':refs/cinnabar/fetch']
             proc = GitProcess(*cmd, stdout=sys.stdout)
         if proc.wait():
             logging.error('Failed to fetch cinnabar metadata.')
@@ -755,7 +753,7 @@ class GitHgStore(object):
         if commit.tree != EMPTY_TREE:
             errors = False
             by_sha1 = {}
-            for k, v in util.iteritems(remote_refs):
+            for k, v in remote_refs.items():
                 if v not in by_sha1:
                     by_sha1[v] = k
             needed = []
@@ -767,7 +765,7 @@ class GitHgStore(object):
                         Git.update_ref(ref, sha1)
                     else:
                         needed.append(
-                            fsdecode(b':'.join((by_sha1[sha1], ref))))
+                            os.fsdecode(b':'.join((by_sha1[sha1], ref))))
                 else:
                     logging.error('Missing commit: %s', sha1)
                     errors = True
@@ -818,7 +816,7 @@ class GitHgStore(object):
 
     def tags(self):
         tags = TagSet()
-        heads = sorted((n, h) for h, (b, n) in util.iteritems(self._hgheads))
+        heads = sorted((n, h) for h, (b, n) in self._hgheads.items())
         for _, h in heads:
             h = self.changeset_ref(h)
             tags.update(self._get_hgtags(h))
@@ -867,7 +865,7 @@ class GitHgStore(object):
     def heads(self, branches={}):
         if not isinstance(branches, (dict, set)):
             branches = set(branches)
-        return set(h for h, (b, _) in util.iteritems(self._hgheads)
+        return set(h for h, (b, _) in self._hgheads.items()
                    if not branches or b in branches)
 
     def _head_branch(self, head):
@@ -1221,7 +1219,7 @@ class GitHgStore(object):
                 parents=parents,
                 message=b' '.join(sorted(self.FLAGS)),
             ) as commit:
-                for sha1, target in util.iteritems(self._replace):
+                for sha1, target in self._replace.items():
                     commit.filemodify(sha1, target, b'commit')
             if b'refs/cinnabar/checked' in refresh:
                 Git.update_ref(b'refs/cinnabar/checked', commit.sha1)
@@ -1236,7 +1234,7 @@ class GitHgStore(object):
             if c not in self._tagcache:
                 tags = self._get_hgtags(c)
 
-        files = set(util.itervalues(self._tagcache))
+        files = set(self._tagcache.values())
         deleted = set()
         created = {}
         for f in self._tagcache_items:
@@ -1249,7 +1247,7 @@ class GitHgStore(object):
                 yield b'%s\0%s %s\n' % (tag, value,
                                         b' '.join(tags.hist(tag)))
 
-        for f, tags in util.iteritems(self._tags):
+        for f, tags in self._tags.items():
             if f not in self._tagfiles and f != NULL_NODE_ID:
                 data = b''.join(tagset_lines(tags))
                 mark = GitHgHelper.put_blob(data=data)
@@ -1258,7 +1256,7 @@ class GitHgStore(object):
         if created or deleted:
             self.tag_changes = True
 
-        for c, f in util.iteritems(self._tagcache):
+        for c, f in self._tagcache.items():
             if (f and c not in self._tagcache_items):
                 if f == NULL_NODE_ID:
                     created[c] = (f, b'commit')
@@ -1275,7 +1273,7 @@ class GitHgStore(object):
                 for f in deleted:
                     commit.filedelete(f)
 
-                for f, (filesha1, typ) in util.iteritems(created):
+                for f, (filesha1, typ) in created.items():
                     commit.filemodify(f, filesha1, typ)
 
         # refs/notes/cinnabar is kept for convenience
@@ -1291,7 +1289,7 @@ class GitHgStore(object):
         from .hg.repo import getbundle_params, stored_files
         for (node, (parent1, parent2)) in progress_iter(
                 "Checking {} imported file root and head revisions",
-                util.iteritems(stored_files)):
+                stored_files.items()):
             if not GitHgHelper.check_file(node, parent1, parent2):
                 busted = True
                 logging.error("Error in file %s" % node)
