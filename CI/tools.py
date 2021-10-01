@@ -172,11 +172,12 @@ class Hg(Task, metaclass=Tool):
                 kwargs.setdefault('env', {}).setdefault(
                     'MACOSX_DEPLOYMENT_TARGET', env.os_version)
             else:
-                platform_tag = 'mingw'
                 if python == 'python3':
-                    python_tag = 'cp35'
-                    abi_tag = 'cp35m'
+                    platform_tag = 'mingw_x86_64'
+                    python_tag = 'cp39'
+                    abi_tag = 'cp39'
                 else:
+                    platform_tag = 'mingw'
                     python_tag = 'cp27'
                     abi_tag = 'cp27m'
 

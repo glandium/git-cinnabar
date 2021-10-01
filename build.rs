@@ -110,6 +110,7 @@ fn main() {
             "windows" => &[
                 "-Dpthread_create=win32_pthread_create",
                 "-Dpthread_self=win32_pthread_self",
+                "-D_POSIX_THREAD_SAFE_FUNCTIONS=200112L",
             ][..],
             _ => &[][..],
         }

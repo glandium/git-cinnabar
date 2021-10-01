@@ -1,5 +1,4 @@
 import hashlib
-import os
 import re
 
 from tasks import (
@@ -12,7 +11,10 @@ from docker import DockerImage
 
 
 CPUS = ('x86', 'x86_64')
-MSYS_VERSION = '20161025'
+MSYS_VERSION = {
+    'x86': '20210705',
+    'x86_64': '20210725',
+}
 
 
 def mingw(cpu):
@@ -85,7 +87,7 @@ class MsysBase(MsysCommon, Task, metaclass=Tool):
             'curl -L http://repo.msys2.org/distrib/{cpu}'
             '/msys2-base-{cpu}-{version}.tar.xz | xz -cd | bzip2 -c'
             ' > $ARTIFACTS/msys2.tar.bz2'.format(
-                cpu=msys_cpu(cpu), version=MSYS_VERSION)
+                cpu=msys_cpu(cpu), version=MSYS_VERSION[cpu])
         )
         h = hashlib.sha1(_create_command.encode())
         self.hexdigest = h.hexdigest()
@@ -108,11 +110,9 @@ class MsysEnvironment(MsysCommon):
         create_commands = [
             'pacman-key --init',
             'pacman-key --populate msys2',
-            'sed -i s,://repo.msys2.org/,'
-            '://mirrors.huaweicloud.com/repository/msys2/,'
-            ' /etc/pacman.d/mirrorlist.*',
-            'pacman --noconfirm -Sy tar {}'.format(
+            'pacman --noconfirm -Sy procps tar {}'.format(
                 ' '.join(self.packages(name))),
+            'pkill gpg-agent',
             'rm -rf /var/cache/pacman/pkg',
             'python2.7 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade',
             'python3 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade',
@@ -120,21 +120,6 @@ class MsysEnvironment(MsysCommon):
                                                             mingw(cpu)),
             'tar -jcf msys2.tar.bz2 --hard-dereference {}'.format(msys(cpu)),
         ]
-
-        if name == 'build':
-            # https://github.com/msys2/MINGW-packages/issues/5155
-            url = ('https://raw.githubusercontent.com/msys2/MINGW-packages/'
-                   '8a162525a7d6f4a0ac2724db2e21c96eae1ba33f/'
-                   'mingw-w64-python2/2030-fix-msvc9-import.patch')
-            create_commands[-1:-1] = [
-                'curl -sLO {}'.format(url)
-            ]
-            for pyver in ('2.7', '3.5'):
-                path = '/{}/lib/python{}/distutils/msvc9compiler.py'.format(
-                    mingw(cpu), pyver)
-                create_commands[-1:-1] = [
-                    'patch {} < {}'.format(path, os.path.basename(url)),
-                ]
 
         env = MsysBase.by_name(cpu)
 
