@@ -165,31 +165,31 @@ class Hg(Task, metaclass=Tool):
 
         pre_command = []
         if len(version) == 40:
-            source = './hg'
             pre_command.extend(
                 self.install('{}.{}'.format(os, MERCURIAL_VERSION)))
             pre_command.extend([
-                'hg clone https://www.mercurial-scm.org/repo/hg -r {}'
-                .format(version),
+                'hg clone https://www.mercurial-scm.org/repo/hg'
+                ' -r {} mercurial-{}'.format(version, version),
                 'rm -rf hg/.hg',
                 'echo tag: unknown > hg/.hg_archival.txt',
             ])
         # 2.6.2 is the first version available on pypi
-        # creating a wheel of versions >= 5.8 fails because of pyproject.toml
-        # so we prefer to download manually to then remove that file.
-        elif parse_version('2.6.2') <= parse_version(version) < \
-                parse_version('5.8'):
-            source = 'mercurial=={}'
+        elif parse_version('2.6.2') <= parse_version(version):
+            pre_command.append(
+                '{} -m pip download --no-binary mercurial --no-deps'
+                ' --progress-bar off mercurial=={}'.format(python, version))
         else:
-            source = './mercurial-{}'
             url = 'https://mercurial-scm.org/release/mercurial-{}.tar.gz'
-            pre_command.extend([
-                'curl -sLO {}'.format(url.format(version)),
-                'tar -zxf mercurial-{}.tar.gz'.format(version),
-            ])
+            pre_command.append(
+                'curl -sLO {}'.format(url.format(version)))
+
+        if len(version) != 40:
+            pre_command.append(
+                'tar -zxf mercurial-{}.tar.gz'.format(version))
 
         h = hashlib.sha1(env.hexdigest.encode())
         h.update(artifact.encode())
+        h.update(b'v2')
 
         Task.__init__(
             self,
@@ -198,11 +198,15 @@ class Hg(Task, metaclass=Tool):
             index='{}.hg.{}'.format(h.hexdigest(), pretty_version),
             expireIn=expire,
             command=pre_command + [
-                'rm -f {}/pyproject.toml'.format(source.format(version)),
+                # pyproject.toml enables PEP 517, which can't be disabled.
+                # pip wheel doesn't accept --build-option when PEP 517 is
+                # enabled. --build-option is necessary on msys2 because
+                # of problems with the bdist-dir otherwise.
+                'rm -f mercurial-{}/pyproject.toml'.format(version),
                 '{} -m pip wheel -v --build-option -b --build-option'
-                ' $PWD/wheel -w $ARTIFACTS {}'.format(
+                ' $PWD/wheel -w $ARTIFACTS ./mercurial-{}'.format(
                     python,
-                    source.format(version)),
+                    version),
             ],
             artifact=artifact.format(artifact_version),
             **kwargs
