@@ -132,7 +132,7 @@ class Hg(Task, metaclass=Tool):
         if suffix:
             python = 'python3'
         else:
-            python = 'python'
+            python = 'python2.7'
         env = TaskEnvironment.by_name('{}.build'.format(os))
         kwargs = {}
 
@@ -214,7 +214,7 @@ class Hg(Task, metaclass=Tool):
         if name.endswith('.py3'):
             python = 'python3'
         else:
-            python = 'python'
+            python = 'python2.7'
         filename = os.path.basename(hg.artifacts[0])
         return [
             'curl -L {{{}.artifact}} -o {}'.format(hg, filename),

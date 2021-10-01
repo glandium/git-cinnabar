@@ -113,7 +113,7 @@ class MsysEnvironment(MsysCommon):
             'pacman --noconfirm -Sy tar {}'.format(
                 ' '.join(self.packages(name))),
             'rm -rf /var/cache/pacman/pkg',
-            'python -m pip install pip==20.3.4 --upgrade',
+            'python2.7 -m pip install pip==20.3.4 --upgrade',
             'pip install wheel==0.37.0',
             'mv {}/{}/bin/{{{{mingw32-,}}}}make.exe'.format(msys(cpu),
                                                             mingw(cpu)),

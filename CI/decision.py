@@ -207,7 +207,7 @@ def decision():
             '(cd repo &&'
             ' nosetests --all-modules --with-coverage --cover-tests tests &&'
             ' nosetests3 --all-modules tests)',
-            '(cd repo && python -m flake8 --ignore E402,F405'
+            '(cd repo && python2.7 -m flake8 --ignore E402,F405'
             ' $(git ls-files \\*\\*.py git-cinnabar git-remote-hg'
             ' | grep -v ^CI/))',
             '(cd repo && flake8 --ignore E402,F405'
@@ -415,7 +415,7 @@ def decision():
             variant=variant,
             extra_desc='no-mercurial',
             pre_command=[
-                'python -m virtualenv venv',
+                'python2.7 -m virtualenv venv',
                 '. venv/bin/activate',
             ],
             command=[
@@ -583,8 +583,8 @@ def main():
                     'set +x',
                     ('export CODECOV_TOKEN=$(curl -sL '
                      'http://taskcluster/api/secrets/v1/secret/project/git-'
-                     'cinnabar/codecov | '
-                     'python -c "import json, sys; print(json.load(sys.stdin)'
+                     'cinnabar/codecov | python2.7'
+                     ' -c "import json, sys; print(json.load(sys.stdin)'
                      '[\\"secret\\"][\\"token\\"])")'),
                     'set -x',
                 ],

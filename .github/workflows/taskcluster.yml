@@ -9,5 +9,5 @@ jobs:
       PATH: /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Frameworks/Python.framework/Versions/2.7/bin
     steps:
       - uses: actions/checkout@v2
-      - run: sudo -H python -m pip install pip==20.3.4 wheel==0.37.0 --upgrade
+      - run: sudo -H python2.7 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade
       - run: CI/start-worker.sh worker-$TC_WORKER_TYPE $TC_WORKER_TYPE
