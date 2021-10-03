@@ -73,10 +73,10 @@ DOCKER_IMAGES = {
         RUN apt-get install -y --no-install-recommends\\
          gcc\\
          git\\
-         python-coverage\\
+         python3-coverage\\
          && apt-get clean
-        RUN ln -s /usr/bin/python-coverage /usr/local/bin/coverage\\
-         && pip install codecov==2.1.12
+        RUN ln -s /usr/bin/python3-coverage /usr/local/bin/coverage\\
+         && python3 -m pip install codecov==2.1.12
         RUN curl -sL {} | tar -C /usr/local/bin -jxf -
         '''.format(
         'https://github.com/mozilla/grcov/releases/download/v0.7.1'
