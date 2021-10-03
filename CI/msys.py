@@ -1,4 +1,5 @@
 import hashlib
+import os
 import re
 
 from tasks import (
@@ -113,8 +114,8 @@ class MsysEnvironment(MsysCommon):
             'pacman --noconfirm -Sy tar {}'.format(
                 ' '.join(self.packages(name))),
             'rm -rf /var/cache/pacman/pkg',
-            'python2.7 -m pip install pip==20.3.4 --upgrade',
-            'pip install wheel==0.37.0',
+            'python2.7 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade',
+            'python3 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade',
             'mv {}/{}/bin/{{{{mingw32-,}}}}make.exe'.format(msys(cpu),
                                                             mingw(cpu)),
             'tar -jcf msys2.tar.bz2 --hard-dereference {}'.format(msys(cpu)),
@@ -125,11 +126,15 @@ class MsysEnvironment(MsysCommon):
             url = ('https://raw.githubusercontent.com/msys2/MINGW-packages/'
                    '8a162525a7d6f4a0ac2724db2e21c96eae1ba33f/'
                    'mingw-w64-python2/2030-fix-msvc9-import.patch')
-            path = '/{}/lib/python2.7/distutils/msvc9compiler.py'.format(
-                mingw(cpu))
             create_commands[-1:-1] = [
-                'curl -sL {} | patch {}'.format(url, path),
+                'curl -sLO {}'.format(url)
             ]
+            for pyver in ('2.7', '3.5'):
+                path = '/{}/lib/python{}/distutils/msvc9compiler.py'.format(
+                    mingw(cpu), pyver)
+                create_commands[-1:-1] = [
+                    'patch {} < {}'.format(path, os.path.basename(url)),
+                ]
 
         env = MsysBase.by_name(cpu)
 
@@ -160,6 +165,8 @@ class MsysEnvironment(MsysCommon):
             'pcre',
             'python2',
             'python2-pip',
+            'python3',
+            'python3-pip',
         ])
 
         if name == 'build':
@@ -195,6 +202,6 @@ SHELL_QUOTE_RE = re.compile(r'[\\\t\r\n \'\"#<>&|`~(){}$;\*\?]')
 def _quote(s):
     if s and not SHELL_QUOTE_RE.search(s):
         return s
-    for c in '&\\<>^|':
+    for c in '^&\\<>|':
         s = s.replace(c, '^' + c)
     return "'{}'".format(s.replace("'", "'\\''"))

@@ -10,4 +10,5 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: sudo -H python2.7 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade
+      - run: sudo -H python3 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade
       - run: CI/start-worker.sh worker-$TC_WORKER_TYPE $TC_WORKER_TYPE

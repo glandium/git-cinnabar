@@ -352,21 +352,24 @@ def decision():
         hg='5.4.2',
     )
 
-    TestTask(
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'python3',
-        },
-        hg='{}.py3'.format(MERCURIAL_VERSION),
-    )
+    for env in ('linux', 'mingw64', 'osx'):
+        TestTask(
+            task_env=env,
+            env={
+                'GIT_CINNABAR_EXPERIMENTS': 'python3',
+            },
+            hg='{}.py3'.format(MERCURIAL_VERSION),
+        )
 
-    TestTask(
-        short_desc='graft tests',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'python3',
-            'GRAFT': '1',
-        },
-        hg='{}.py3'.format(MERCURIAL_VERSION),
-    )
+        TestTask(
+            task_env=env,
+            short_desc='graft tests',
+            env={
+                'GIT_CINNABAR_EXPERIMENTS': 'python3',
+                'GRAFT': '1',
+            },
+            hg='{}.py3'.format(MERCURIAL_VERSION),
+        )
 
     TestTask(
         extra_desc='experiments',
