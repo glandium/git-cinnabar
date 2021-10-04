@@ -25,7 +25,7 @@ def reclone(args):
         name = config[len('remote.'):-len('.url')]
         skip_pref = 'remote.%s.skipDefaultUpdate' % name.decode('ascii')
         if (url.startswith((b'hg::', b'hg://')) and
-                Git.config(skip_pref) != 'true'):
+                Git.config(skip_pref) != b'true'):
             Git.run('remote', 'update', '--prune', fsdecode(name),
                     config=git_config)
             git_config = {}
