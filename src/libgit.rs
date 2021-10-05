@@ -218,14 +218,14 @@ pub enum object_type {
 pub struct object_info {
     typep: *mut object_type,
     sizep: *mut c_ulong,
-    disk_sizep: *mut libc::off_t,
+    disk_sizep: *mut u64,
     delta_base_oid: *mut object_id,
     type_name: *mut strbuf,
     contentp: *mut *const c_void,
     whence: c_int, // In reality, it's an inline enum.
     // In reality, following is a union with one struct.
     u_packed_pack: *mut c_void, // packed_git.
-    u_packed_offset: libc::off_t,
+    u_packed_offset: u64,
     u_packed_is_delta: c_uint,
 }
 
