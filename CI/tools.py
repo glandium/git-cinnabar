@@ -215,17 +215,9 @@ class Hg(Task, metaclass=Tool):
             pre_command.append(
                 'tar -zxf mercurial-{}.tar.gz'.format(version))
 
-        if os.startswith('mingw'):
-            # Trick setup.py into not doing a python3 version check. Also
-            # work around https://bz.mercurial-scm.org/show_bug.cgi?id=6601
-            pre_command.append(
-                'sed -i "s/if issetuptools/if False/;'
-                's,(.contrib/win32/hg.bat.),," mercurial-{}/setup.py'
-                .format(version))
-
         h = hashlib.sha1(env.hexdigest.encode())
         h.update(artifact.encode())
-        h.update(b'v1')
+        h.update(b'v2' if os.startswith('mingw') else b'v1')
 
         Task.__init__(
             self,
