@@ -821,15 +821,16 @@ class Process(object):
 
     def _popen(self, cmd, env, **kwargs):
         assert isinstance(env, VersionedDict)
+        logger = logging.getLogger('process')
+        if logger.isEnabledFor(logging.INFO):
+            full_cmd = ' '.join(chain(self._env_strings(env), cmd))
         if not getattr(os, 'supports_bytes_environ', True):
             env = {
                 fsdecode(k): fsdecode(v) for k, v in iteritems(env)
             }
         proc = subprocess.Popen(cmd, env=env, **kwargs)
-        logger = logging.getLogger('process')
         if logger.isEnabledFor(logging.INFO):
-            logger.info('[%d] %s', proc.pid,
-                        ' '.join(chain(self._env_strings(env), cmd)))
+            logger.info('[%d] %s', proc.pid, full_cmd)
         return proc
 
     def wait(self):

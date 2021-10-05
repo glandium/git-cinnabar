@@ -136,7 +136,7 @@ class Hg(Task, metaclass=Tool):
         if suffix:
             python = 'python3'
         else:
-            python = 'python'
+            python = 'python2.7'
         env = TaskEnvironment.by_name('{}.build'.format(os))
         kwargs = {}
 
@@ -151,49 +151,80 @@ class Hg(Task, metaclass=Tool):
             expire = '26 weeks'
         desc = 'hg {}'.format(pretty_version)
         if os == 'linux':
+            platform_tag = 'linux_x86_64'
             if python == 'python3':
-                artifact = 'mercurial-{}-cp35-cp35m-linux_x86_64.whl'
+                python_tag = 'cp35'
+                abi_tag = 'cp35m'
             else:
-                artifact = 'mercurial-{}-cp27-cp27mu-linux_x86_64.whl'
+                python_tag = 'cp27'
+                abi_tag = 'cp27mu'
         else:
             desc = '{} {} {}'.format(desc, env.os, env.cpu)
             if os.startswith('osx'):
-                wheel_cpu = 'x86_64'
-                artifact = ('mercurial-{{}}-cp27-cp27m-macosx_{}_{}.whl'
-                            .format(env.os_version.replace('.', '_'),
-                                    wheel_cpu))
+                platform_tag = 'macosx_{}_x86_64'.format(
+                    env.os_version.replace('.', '_'))
+                if python == 'python3':
+                    python_tag = 'cp39'
+                    abi_tag = 'cp39'
+                else:
+                    python_tag = 'cp27'
+                    abi_tag = 'cp27m'
                 kwargs.setdefault('env', {}).setdefault(
                     'MACOSX_DEPLOYMENT_TARGET', env.os_version)
             else:
-                artifact = 'mercurial-{}-cp27-cp27m-mingw.whl'
+                platform_tag = 'mingw'
+                if python == 'python3':
+                    python_tag = 'cp35'
+                    abi_tag = 'cp35m'
+                else:
+                    python_tag = 'cp27'
+                    abi_tag = 'cp27m'
+
+        artifact = 'mercurial-{{}}-{}-{}-{}.whl'.format(
+            python_tag,
+            abi_tag,
+            platform_tag,
+        )
 
         pre_command = []
         if len(version) == 40:
-            source = './hg'
             pre_command.extend(
                 self.install('{}.{}'.format(os, MERCURIAL_VERSION)))
             pre_command.extend([
-                'hg clone https://www.mercurial-scm.org/repo/hg -r {}'
-                .format(version),
+                'hg clone https://www.mercurial-scm.org/repo/hg'
+                ' -r {} mercurial-{}'.format(version, version),
                 'rm -rf hg/.hg',
                 'echo tag: unknown > hg/.hg_archival.txt',
             ])
         # 2.6.2 is the first version available on pypi
-        # creating a wheel of versions >= 5.8 fails because of pyproject.toml
-        # so we prefer to download manually to then remove that file.
-        elif parse_version('2.6.2') <= parse_version(version) < \
-                parse_version('5.8'):
-            source = 'mercurial=={}'
+        elif parse_version('2.6.2') <= parse_version(version):
+            # Always download with python2.7 because pip download does more
+            # than download, and one of the things it does, namely requirements
+            # validation, breaks on Windows with python3 < 3.7 (because
+            # mercurial declares it's not compatible with those).
+            pre_command.append(
+                'python2.7 -m pip download --no-binary mercurial --no-deps'
+                ' --progress-bar off mercurial=={}'.format(version))
         else:
-            source = './mercurial-{}'
             url = 'https://mercurial-scm.org/release/mercurial-{}.tar.gz'
-            pre_command.extend([
-                'curl -sLO {}'.format(url.format(version)),
-                'tar -zxf mercurial-{}.tar.gz'.format(version),
-            ])
+            pre_command.append(
+                'curl -sLO {}'.format(url.format(version)))
+
+        if len(version) != 40:
+            pre_command.append(
+                'tar -zxf mercurial-{}.tar.gz'.format(version))
+
+        if os.startswith('mingw'):
+            # Trick setup.py into not doing a python3 version check. Also
+            # work around https://bz.mercurial-scm.org/show_bug.cgi?id=6601
+            pre_command.append(
+                'sed -i "s/if issetuptools/if False/;'
+                's,(.contrib/win32/hg.bat.),," mercurial-{}/setup.py'
+                .format(version))
 
         h = hashlib.sha1(env.hexdigest.encode())
         h.update(artifact.encode())
+        h.update(b'v1')
 
         Task.__init__(
             self,
@@ -202,11 +233,15 @@ class Hg(Task, metaclass=Tool):
             index='{}.hg.{}'.format(h.hexdigest(), pretty_version),
             expireIn=expire,
             command=pre_command + [
-                'rm -f {}/pyproject.toml'.format(source.format(version)),
+                # pyproject.toml enables PEP 517, which can't be disabled.
+                # pip wheel doesn't accept --build-option when PEP 517 is
+                # enabled. --build-option is necessary on msys2 because
+                # of problems with the bdist-dir otherwise.
+                'rm -f mercurial-{}/pyproject.toml'.format(version),
                 '{} -m pip wheel -v --build-option -b --build-option'
-                ' $PWD/wheel -w $ARTIFACTS {}'.format(
+                ' $PWD/wheel -w $ARTIFACTS ./mercurial-{}'.format(
                     python,
-                    source.format(version)),
+                    version),
             ],
             artifact=artifact.format(artifact_version),
             **kwargs
@@ -218,7 +253,7 @@ class Hg(Task, metaclass=Tool):
         if name.endswith('.py3'):
             python = 'python3'
         else:
-            python = 'python'
+            python = 'python2.7'
         filename = os.path.basename(hg.artifacts[0])
         return [
             'curl -L {{{}.artifact}} -o {}'.format(hg, filename),

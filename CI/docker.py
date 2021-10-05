@@ -53,8 +53,9 @@ DOCKER_IMAGES = {
           "deb [signed-by=/usr/share/keyrings/llvm.gpg]\\
            https://apt.llvm.org/stretch/ llvm-toolchain-stretch-12 main"\\
           > /etc/apt/sources.list.d/llvm.list &&\\
-         apt-get update -o Acquire::Check-Valid-Until=false
-        RUN pip install pip==20.3.4 --upgrade --ignore-installed
+         apt-get update -o Acquire::Check-Valid-Until=false&&\\
+         python2.7 -m pip install pip==20.3.4 --upgrade --ignore-installed&&\\
+         python3 -m pip install pip==20.3.4 --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
             '20210927T204628Z', (
                 ('debian', 'stretch'),
@@ -97,10 +98,10 @@ DOCKER_IMAGES = {
         RUN apt-get install -y --no-install-recommends\\
          gcc\\
          git\\
-         python-coverage\\
+         python3-coverage\\
          && apt-get clean
-        RUN ln -s /usr/bin/python-coverage /usr/local/bin/coverage\\
-         && pip install codecov==2.1.12
+        RUN ln -s /usr/bin/python3-coverage /usr/local/bin/coverage\\
+         && python3 -m pip install codecov==2.1.12
         RUN curl -sL {} | tar -C /usr/local/bin -jxf -
         '''.format(
         'https://github.com/mozilla/grcov/releases/download/v0.7.1'
@@ -206,9 +207,9 @@ class DockerImageTask(DockerImage, Task, metaclass=TaskEnvironment):
             dind=True,
             command=Task.checkout() + [
                 'pip install requests-unixsocket==0.2.0 zstandard==0.15.2',
-                'python repo/CI/docker.py build {}'
+                'python3 repo/CI/docker.py build {}'
                 .format(name),
-                'python repo/CI/docker.py save {}'
+                'python3 repo/CI/docker.py save {}'
                 ' > $ARTIFACTS/image.tar.zst'.format(name),
             ],
             artifact='image.tar.zst',

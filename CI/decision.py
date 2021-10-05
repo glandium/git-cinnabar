@@ -87,7 +87,7 @@ class TestTask(Task):
                 .format(Clone.by_name(clone)),
                 'git init repo/hg.old.git',
                 'git -C repo/hg.old.git fetch ../bundle.git refs/*:refs/*',
-                'git -C repo/hg.old.git remote add origin hg::$REPO',
+                'git -C repo/hg.old.git remote add origin hg:${{REPO#https:}}',
                 'git -C repo/hg.old.git symbolic-ref HEAD'
                 ' refs/heads/branches/default/tip',
             ])
@@ -200,7 +200,7 @@ def decision():
             '(cd repo &&'
             ' nosetests --all-modules --with-coverage --cover-tests tests &&'
             ' nosetests3 --all-modules tests)',
-            '(cd repo && python -m flake8 --ignore E402,F405'
+            '(cd repo && python2.7 -m flake8 --ignore E402,F405'
             ' $(git ls-files \\*\\*.py git-cinnabar git-remote-hg'
             ' | grep -v ^CI/ | grep -v ^bootstrap/))',
             '(cd repo && flake8 --ignore E402,F405'
@@ -291,29 +291,33 @@ def decision():
         variant='asan',
     )
 
-    TestTask(
-        variant='coverage',
-        short_desc='graft tests',
-        env={
-            'GRAFT': '1',
-        },
-    )
+    for env in ('linux', 'mingw64', 'osx'):
+        TestTask(
+            task_env=env,
+            variant='coverage' if env == 'linux' else None,
+            short_desc='graft tests',
+            env={
+                'GRAFT': '1',
+            },
+        )
 
-    TestTask(
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'python3',
-        },
-        hg='{}.py3'.format(MERCURIAL_VERSION),
-    )
+        TestTask(
+            task_env=env,
+            env={
+                'GIT_CINNABAR_EXPERIMENTS': 'python3',
+            },
+            hg='{}.py3'.format(MERCURIAL_VERSION),
+        )
 
-    TestTask(
-        short_desc='graft tests',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'python3',
-            'GRAFT': '1',
-        },
-        hg='{}.py3'.format(MERCURIAL_VERSION),
-    )
+        TestTask(
+            task_env=env,
+            short_desc='graft tests',
+            env={
+                'GIT_CINNABAR_EXPERIMENTS': 'python3',
+                'GRAFT': '1',
+            },
+            hg='{}.py3'.format(MERCURIAL_VERSION),
+        )
 
     for env, variant in (
         ('linux', 'coverage'),
@@ -495,8 +499,8 @@ def main():
                     'set +x',
                     ('export CODECOV_TOKEN=$(curl -sL '
                      'http://taskcluster/api/secrets/v1/secret/project/git-'
-                     'cinnabar/codecov | '
-                     'python -c "import json, sys; print(json.load(sys.stdin)'
+                     'cinnabar/codecov | python2.7'
+                     ' -c "import json, sys; print(json.load(sys.stdin)'
                      '[\\"secret\\"][\\"token\\"])")'),
                     'set -x',
                 ],
