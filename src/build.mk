@@ -30,6 +30,7 @@ GIT-VERSION-GEN:
 ALL_PROGRAMS += git-cinnabar$X
 ALL_CFLAGS := $(subst -I. ,-I$(SOURCE_DIR)/git-core -I. ,$(ALL_CFLAGS))
 ALL_CFLAGS := $(subst -Icompat,-I$(SOURCE_DIR)/git-core/compat,$(ALL_CFLAGS))
+ALL_CFLAGS += -Werror=implicit-function-declaration
 
 all:: git-cinnabar$X
 
