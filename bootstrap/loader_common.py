@@ -9,7 +9,7 @@ if sys.platform == 'win32':
 tar = tarfile.open(fileobj=os.fdopen(input, 'rb'), mode='r|')
 modules = {}
 for f in tar:
-    content = tar.extractfile(f).read()
+    content = tar.extractfile(f).read().decode()
     modules['cinnabar/' + f.name] = content
 
 del tar
