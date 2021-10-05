@@ -79,6 +79,7 @@ fn main() {
         .arg("HAVE_WPGMPTR=")
         .arg("USE_LIBPCRE1=")
         .arg("USE_LIBPCRE2=")
+        .arg("USE_NED_ALLOCATOR=")
         .arg("FSMONITOR_DAEMON_BACKEND=")
         .args(extra_args);
 
@@ -177,6 +178,7 @@ fn main() {
         .arg("linker-flags")
         .arg("USE_LIBPCRE1=")
         .arg("USE_LIBPCRE2=")
+        .arg("USE_NED_ALLOCATOR=")
         .args(extra_args)
         .current_dir(&out_dir)
         .output()
