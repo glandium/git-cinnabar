@@ -143,6 +143,10 @@ pub trait HgConnection: HgConnectionBase {
         unimplemented!();
     }
 
+    fn unbundle(&mut self, _heads: Option<&[HgChangesetId]>, _input: File) -> Box<[u8]> {
+        unimplemented!();
+    }
+
     fn lookup(&mut self, _key: &str) -> Box<[u8]> {
         unimplemented!();
     }
@@ -204,6 +208,24 @@ impl HgConnection for Box<dyn HgWireConnection> {
             }
         }
         self.changegroup_command("getbundle", args!(*: &args[..]))
+    }
+
+    fn unbundle(&mut self, heads: Option<&[HgChangesetId]>, input: File) -> Box<[u8]> {
+        let heads_str = if let Some(heads) = heads {
+            if self.get_capability(b"unbundlehash").is_none() {
+                heads.iter().join(" ")
+            } else {
+                let mut hash = Sha1::new();
+                for h in heads.iter().sorted().dedup() {
+                    hash.update(h.as_raw_bytes());
+                }
+                format!("{} {:x}", hex::encode("hashed"), hash.finalize())
+            }
+        } else {
+            hex::encode("force")
+        };
+
+        self.push_command(input, "unbundle", args!(heads: &heads_str))
     }
 
     fn lookup(&mut self, key: &str) -> Box<[u8]> {
@@ -327,19 +349,14 @@ fn do_unbundle(
     out: &mut impl Write,
 ) {
     conn.require_capability(b"unbundle");
-    let heads_str = if args.is_empty() || args[..] == ["force"] {
-        hex::encode("force")
+    let heads = if args.is_empty() || args[..] == ["force"] {
+        None
     } else {
-        let mut heads = args.iter().map(|a| HgChangesetId::from_str(a).unwrap());
-        if conn.get_capability(b"unbundlehash").is_none() {
-            heads.join(" ")
-        } else {
-            let mut hash = Sha1::new();
-            for h in heads.sorted().dedup() {
-                hash.update(h.as_raw_bytes());
-            }
-            format!("{} {:x}", hex::encode("hashed"), hash.finalize())
-        }
+        Some(
+            args.iter()
+                .map(|a| HgChangesetId::from_str(a).unwrap())
+                .collect::<Vec<_>>(),
+        )
     };
 
     /* Neither the stdio nor the HTTP protocols can handle a stream for
@@ -356,10 +373,7 @@ fn do_unbundle(
     drop(f);
 
     let file = File::open(path).unwrap();
-    let response = conn
-        .wire()
-        .unwrap()
-        .push_command(file, "unbundle", args!(heads: &heads_str));
+    let response = conn.unbundle(heads.as_deref(), file);
     send_buffer_to(&*response, out);
 }
 
