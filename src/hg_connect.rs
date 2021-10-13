@@ -126,6 +126,10 @@ pub trait HgConnection: HgConnectionBase {
         None
     }
 
+    fn known(&mut self, _nodes: &[HgChangesetId]) -> Box<[bool]> {
+        unimplemented!();
+    }
+
     fn listkeys(&mut self, _namespace: &str) -> Box<[u8]> {
         unimplemented!();
     }
@@ -153,6 +157,21 @@ impl HgConnectionBase for Box<dyn HgWireConnection> {
 impl HgConnection for Box<dyn HgWireConnection> {
     fn wire(&mut self) -> Option<&mut dyn HgWireConnection> {
         Some(&mut **self)
+    }
+
+    fn known(&mut self, nodes: &[HgChangesetId]) -> Box<[bool]> {
+        let nodes_str = nodes.iter().join(" ");
+        self.simple_command(
+            "known",
+            args!(
+                nodes: &nodes_str,
+                *: &[]
+            ),
+        )
+        .iter()
+        .map(|b| *b == b'1')
+        .collect::<Vec<_>>()
+        .into_boxed_slice()
     }
 
     fn listkeys(&mut self, namespace: &str) -> Box<[u8]> {
@@ -252,20 +271,16 @@ fn test_unescape_batched_output() {
 }
 
 fn do_known(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
-    let conn = conn.wire().unwrap();
     let nodes = args
         .iter()
         .map(|s| HgChangesetId::from_str(s))
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    let nodes_str = nodes.iter().join(" ");
-    let result = conn.simple_command(
-        "known",
-        args!(
-            nodes: &nodes_str,
-            *: &[]
-        ),
-    );
+    let result = conn
+        .known(&nodes)
+        .iter()
+        .map(|k| if *k { b'1' } else { b'0' })
+        .collect::<Vec<_>>();
     send_buffer_to(&*result, out);
 }
 
