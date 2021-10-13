@@ -1,34 +1,17 @@
 from binascii import hexlify, unhexlify
-try:
-    from itertools import izip as zip
-except ImportError:
-    pass
 import io
 import os
 import shutil
 import subprocess
 import sys
-try:
-    from urllib.parse import quote_from_bytes, unquote_to_bytes
-except ImportError:
-    from urllib import quote as quote_from_bytes
-    from urllib import unquote as unquote_to_bytes
+from urllib.parse import quote_from_bytes, unquote_to_bytes
 from collections import (
     OrderedDict,
     defaultdict,
 )
-try:
-    from collections.abc import Sequence
-except ImportError:
-    from collections import Sequence
-try:
-    from urllib2 import URLError
-except ImportError:
-    from urllib.error import URLError
-try:
-    from urlparse import urlparse
-except ImportError:
-    from urllib.parse import urlparse
+from collections.abc import Sequence
+from urllib.error import URLError
+from urllib.parse import urlparse
 from cinnabar.exceptions import (
     Abort,
     AmbiguousGraftAbort,

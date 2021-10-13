@@ -27,10 +27,6 @@ from collections import (
     defaultdict,
     OrderedDict,
 )
-try:
-    from itertools import izip as zip
-except ImportError:
-    pass
 
 
 SHA1_RE = re.compile(b'[0-9a-f]{40}$')

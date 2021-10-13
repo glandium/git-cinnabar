@@ -32,10 +32,7 @@ from cinnabar.util import (
 )
 import cinnabar.util
 
-try:
-    from urllib.parse import unquote_to_bytes
-except ImportError:
-    from urllib import unquote as unquote_to_bytes
+from urllib.parse import unquote_to_bytes
 
 
 def sanitize_branch_name(name):

@@ -5,41 +5,25 @@ import subprocess
 import sys
 import time
 import traceback
-try:
-    from urllib2 import (
-        Request,
-        urlopen,
-    )
-except ImportError:
-    from urllib.request import (
-        Request,
-        urlopen,
-    )
+from urllib.request import (
+    Request,
+    urlopen,
+)
 from collections import (
     deque,
     OrderedDict,
 )
-try:
-    from collections.abc import Iterable
-except ImportError:
-    from collections import Iterable
+from collections.abc import Iterable
 from difflib import (
     Match,
     SequenceMatcher,
 )
 from functools import wraps
 from itertools import chain
-try:
-    from itertools import izip as zip
-    from Queue import (
-        Empty,
-        Queue,
-    )
-except ImportError:
-    from queue import (
-        Empty,
-        Queue,
-    )
+from queue import (
+    Empty,
+    Queue,
+)
 from threading import Thread
 from weakref import WeakKeyDictionary
 

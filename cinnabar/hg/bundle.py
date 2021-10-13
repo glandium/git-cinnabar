@@ -1,8 +1,4 @@
-try:
-    from urllib.parse import quote_from_bytes, unquote_to_bytes
-except ImportError:
-    from urllib import quote as quote_from_bytes
-    from urllib import unquote as unquote_to_bytes
+from urllib.parse import quote_from_bytes, unquote_to_bytes
 from cinnabar.dag import gitdag
 from cinnabar.githg import (
     Changeset,

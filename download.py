@@ -23,10 +23,7 @@ from cinnabar.util import (
 )
 from gzip import GzipFile
 from shutil import copyfileobj, copyfile
-try:
-    from urllib2 import HTTPError
-except ImportError:
-    from urllib.error import HTTPError
+from urllib.error import HTTPError
 
 
 def download(args):

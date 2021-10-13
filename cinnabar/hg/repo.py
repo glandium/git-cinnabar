@@ -2,11 +2,7 @@ import os
 import re
 import ssl
 import sys
-try:
-    from urllib.parse import quote_from_bytes, unquote_to_bytes
-except ImportError:
-    from urllib import quote as quote_from_bytes
-    from urllib import unquote as unquote_to_bytes
+from urllib.parse import quote_from_bytes, unquote_to_bytes
 from cinnabar.exceptions import NothingToGraftException
 from cinnabar.githg import Changeset
 from cinnabar.helper import (
@@ -19,23 +15,12 @@ from binascii import (
     unhexlify,
 )
 from itertools import chain
-try:
-    from itertools import izip as zip
-except ImportError:
-    pass
 from io import BytesIO
-try:
-    from urlparse import (
-        ParseResult,
-        urlparse,
-        urlunparse,
-    )
-except ImportError:
-    from urllib.parse import (
-        ParseResult,
-        urlparse,
-        urlunparse,
-    )
+from urllib.parse import (
+    ParseResult,
+    urlparse,
+    urlunparse,
+)
 import logging
 import struct
 import random
