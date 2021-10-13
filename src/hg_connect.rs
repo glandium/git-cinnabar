@@ -166,6 +166,14 @@ pub trait HgConnection: HgConnectionBase {
     fn lookup(&mut self, _key: &str) -> Box<[u8]> {
         unimplemented!();
     }
+
+    fn clonebundles(&mut self) -> Box<[u8]> {
+        unimplemented!();
+    }
+
+    fn cinnabarclone(&mut self) -> Box<[u8]> {
+        unimplemented!();
+    }
 }
 
 impl HgConnectionBase for Box<dyn HgWireConnection> {
@@ -272,6 +280,14 @@ impl HgConnection for Box<dyn HgWireConnection> {
 
     fn lookup(&mut self, key: &str) -> Box<[u8]> {
         self.simple_command("lookup", args!(key: key))
+    }
+
+    fn clonebundles(&mut self) -> Box<[u8]> {
+        self.simple_command("clonebundles", args!())
+    }
+
+    fn cinnabarclone(&mut self) -> Box<[u8]> {
+        self.simple_command("cinnabarclone", args!())
     }
 }
 
@@ -467,15 +483,13 @@ fn do_lookup(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
 
 fn do_clonebundles(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
     assert!(args.is_empty());
-    let conn = conn.wire().unwrap();
-    let result = conn.simple_command("clonebundles", args!());
+    let result = conn.clonebundles();
     send_buffer_to(&*result, out);
 }
 
 fn do_cinnabarclone(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
     assert!(args.is_empty());
-    let conn = conn.wire().unwrap();
-    let result = conn.simple_command("cinnabarclone", args!());
+    let result = conn.cinnabarclone();
     send_buffer_to(&*result, out);
 }
 
