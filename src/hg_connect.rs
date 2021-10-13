@@ -159,6 +159,10 @@ pub trait HgConnection: HgConnectionBase {
         unimplemented!();
     }
 
+    fn batch(&mut self, _cmds: &str) -> Box<[u8]> {
+        unimplemented!();
+    }
+
     fn lookup(&mut self, _key: &str) -> Box<[u8]> {
         unimplemented!();
     }
@@ -254,6 +258,16 @@ impl HgConnection for Box<dyn HgWireConnection> {
 
     fn heads(&mut self) -> Box<[u8]> {
         self.simple_command("heads", args!())
+    }
+
+    fn batch(&mut self, _cmds: &str) -> Box<[u8]> {
+        self.simple_command(
+            "batch",
+            args!(
+                cmds: "branchmap ;heads ;listkeys namespace=bookmarks",
+                *: &[]
+            ),
+        )
     }
 
     fn lookup(&mut self, key: &str) -> Box<[u8]> {
@@ -433,13 +447,7 @@ fn do_state(conn: &mut dyn HgConnection, args: &[&str], mut out: &mut impl Write
         heads = conn.heads();
         bookmarks = conn.listkeys("bookmarks");
     } else {
-        let out = conn.wire().unwrap().simple_command(
-            "batch",
-            args!(
-                cmds: "branchmap ;heads ;listkeys namespace=bookmarks",
-                *: &[]
-            ),
-        );
+        let out = conn.batch("branchmap ;heads ;listkeys namespace=bookmarks");
         let split: [_; 3] = out.splitn_exact(b';').unwrap();
         branchmap = unescape_batched_output(split[0]);
         heads = unescape_batched_output(split[1]);
