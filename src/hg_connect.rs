@@ -147,6 +147,10 @@ pub trait HgConnection: HgConnectionBase {
         unimplemented!();
     }
 
+    fn pushkey(&mut self, _namespace: &str, _key: &str, _old: &str, _new: &str) -> Box<[u8]> {
+        unimplemented!();
+    }
+
     fn lookup(&mut self, _key: &str) -> Box<[u8]> {
         unimplemented!();
     }
@@ -226,6 +230,14 @@ impl HgConnection for Box<dyn HgWireConnection> {
         };
 
         self.push_command(input, "unbundle", args!(heads: &heads_str))
+    }
+
+    fn pushkey(&mut self, namespace: &str, key: &str, old: &str, new: &str) -> Box<[u8]> {
+        //TODO: handle the response being a mix of return code and output
+        self.simple_command(
+            "pushkey",
+            args!(namespace: namespace, key: key, old: old, new: new,),
+        )
     }
 
     fn lookup(&mut self, key: &str) -> Box<[u8]> {
@@ -380,12 +392,7 @@ fn do_unbundle(
 fn do_pushkey(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
     assert_eq!(args.len(), 4);
     let (namespace, key, old, new) = (args[0], args[1], args[2], args[3]);
-    let conn = conn.wire().unwrap();
-    //TODO: handle the response being a mix of return code and output
-    let response = conn.simple_command(
-        "pushkey",
-        args!(namespace: namespace, key: key, old: old, new: new,),
-    );
+    let response = conn.pushkey(namespace, key, old, new);
     send_buffer_to(&*response, out);
 }
 
