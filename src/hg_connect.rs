@@ -151,6 +151,14 @@ pub trait HgConnection: HgConnectionBase {
         unimplemented!();
     }
 
+    fn branchmap(&mut self) -> Box<[u8]> {
+        unimplemented!();
+    }
+
+    fn heads(&mut self) -> Box<[u8]> {
+        unimplemented!();
+    }
+
     fn lookup(&mut self, _key: &str) -> Box<[u8]> {
         unimplemented!();
     }
@@ -238,6 +246,14 @@ impl HgConnection for Box<dyn HgWireConnection> {
             "pushkey",
             args!(namespace: namespace, key: key, old: old, new: new,),
         )
+    }
+
+    fn branchmap(&mut self) -> Box<[u8]> {
+        self.simple_command("branchmap", args!())
+    }
+
+    fn heads(&mut self) -> Box<[u8]> {
+        self.simple_command("heads", args!())
     }
 
     fn lookup(&mut self, key: &str) -> Box<[u8]> {
@@ -413,9 +429,8 @@ fn do_state(conn: &mut dyn HgConnection, args: &[&str], mut out: &mut impl Write
     if conn.get_capability(b"batch".as_bstr()).is_none() {
         // TODO: when not batching, check for coherency
         // (see the cinnabar.remote_helper python module)
-        let wire = conn.wire().unwrap();
-        branchmap = wire.simple_command("branchmap", args!());
-        heads = wire.simple_command("heads", args!());
+        branchmap = conn.branchmap();
+        heads = conn.heads();
         bookmarks = conn.listkeys("bookmarks");
     } else {
         let out = conn.wire().unwrap().simple_command(
