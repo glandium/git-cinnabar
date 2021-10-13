@@ -96,6 +96,17 @@ pub trait HgConnectionBase {
     fn get_capability(&self, _name: &[u8]) -> Option<&BStr> {
         None
     }
+
+    fn require_capability(&self, name: &[u8]) -> &BStr {
+        if let Some(cap) = self.get_capability(name) {
+            cap
+        } else {
+            die!(
+                "Mercurial repository doesn't support the required \"{}\" capability.",
+                name.as_bstr()
+            );
+        }
+    }
 }
 
 pub trait HgWireConnection: HgConnectionBase {
@@ -300,6 +311,7 @@ fn do_unbundle(
     input: &mut impl Read,
     out: &mut impl Write,
 ) {
+    conn.require_capability(b"unbundle");
     let heads_str = if args.is_empty() || args[..] == ["force"] {
         hex::encode("force")
     } else {
@@ -429,22 +441,10 @@ fn hg_connect(url: &str, flags: c_int, out: &mut impl Write) -> Option<Box<dyn H
         return Some(conn);
     }
 
-    const REQUIRED_CAPS: [&str; 5] = [
-        "getbundle",
-        "branchmap",
-        "known",
-        "pushkey",
-        //TODO: defer to when pushing.
-        "unbundle",
-    ];
+    const REQUIRED_CAPS: [&str; 4] = ["getbundle", "branchmap", "known", "pushkey"];
 
     for cap in &REQUIRED_CAPS {
-        if conn.get_capability(cap.as_bytes()).is_none() {
-            die!(
-                "Mercurial repository doesn't support the required \"{}\" capability.",
-                cap
-            );
-        }
+        conn.require_capability(cap.as_bytes());
     }
 
     Some(conn)

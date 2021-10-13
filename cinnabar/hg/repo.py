@@ -390,9 +390,9 @@ class HelperRepo(object):
         if capability == b'bundle2':
             return quote_from_bytes(
                 HgRepoHelper.capable(b'bundle2') or b'').encode('ascii')
-        if capability in (b'clonebundles', b'cinnabarclone'):
+        if capability in (b'clonebundles', b'cinnabarclone', b'unbundle'):
             return HgRepoHelper.capable(capability) is not None
-        return capability in (b'getbundle', b'unbundle', b'lookup')
+        return capability in (b'getbundle', b'lookup')
 
     def batch(self):
         raise NotImplementedError()
