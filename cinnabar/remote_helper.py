@@ -204,35 +204,6 @@ class GitRemoteHelper(BaseRemoteHelper):
             branchmap = {None: heads}
             bookmarks = {}
 
-        elif self._repo.capable(b'batch'):
-            if hasattr(self._repo, 'commandexecutor'):
-                with self._repo.commandexecutor() as e:
-                    branchmap = e.callcommand(b'branchmap', {})
-                    heads = e.callcommand(b'heads', {})
-                    bookmarks = e.callcommand(b'listkeys', {
-                        b'namespace': b'bookmarks'
-                    })
-                branchmap = branchmap.result()
-                heads = heads.result()
-                bookmarks = bookmarks.result()
-            elif hasattr(self._repo, b'iterbatch'):
-                batch = self._repo.iterbatch()
-                batch.branchmap()
-                batch.heads()
-                batch.listkeys(b'bookmarks')
-                batch.submit()
-                branchmap, heads, bookmarks = batch.results()
-            else:
-                batch = self._repo.batch()
-                branchmap = batch.branchmap()
-                heads = batch.heads()
-                bookmarks = batch.listkeys(b'bookmarks')
-                batch.submit()
-                branchmap = branchmap.value
-                heads = heads.value
-                bookmarks = bookmarks.value
-            if heads == [b'\0' * 20]:
-                heads = []
         else:
             while True:
                 branchmap = self._repo.branchmap()
