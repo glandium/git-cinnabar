@@ -15,7 +15,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-use bstr::{BStr, ByteSlice};
+use bstr::{BStr, BString, ByteSlice};
 use byteorder::ReadBytesExt;
 use bzip2::read::BzDecoder;
 use cstr::cstr;
@@ -481,7 +481,11 @@ impl HgWireConnection for HgHttpConnection {
 
     /* The changegroup, changegroupsubset and getbundle commands return a raw
      *  * zlib stream when called over HTTP. */
-    fn changegroup_command(&mut self, out: &mut (dyn Write + Send), command: &str, args: HgArgs) {
+    fn changegroup_command<'a>(
+        &'a mut self,
+        command: &str,
+        args: HgArgs,
+    ) -> Result<Box<dyn Read + 'a>, BString> {
         let mut http_req = self.start_command_request(command, args);
         if let Some(media_type) = self
             .get_capability(b"httpmediatype")
@@ -498,10 +502,7 @@ impl HgWireConnection for HgHttpConnection {
         self.handle_redirect(&http_resp);
 
         match http_resp.content_type() {
-            Some("application/mercurial-0.1") => {
-                let mut reader = ZlibDecoder::new(http_resp);
-                copy(&mut reader, out).unwrap();
-            }
+            Some("application/mercurial-0.1") => Ok(Box::new(ZlibDecoder::new(http_resp))),
             Some("application/mercurial-0.2") => {
                 let comp_len = http_resp.read_u8().unwrap() as u64;
                 let mut comp = Vec::new();
@@ -509,7 +510,7 @@ impl HgWireConnection for HgHttpConnection {
                     .take(comp_len)
                     .read_to_end(&mut comp)
                     .unwrap();
-                let mut reader: Box<dyn Read> = match &comp[..] {
+                let reader: Box<dyn Read> = match &comp[..] {
                     b"zstd" => Box::new(ZstdDecoder::new(http_resp).unwrap()),
                     b"zlib" => Box::new(ZlibDecoder::new(http_resp)),
                     b"none" => Box::new(http_resp),
@@ -519,17 +520,15 @@ impl HgWireConnection for HgHttpConnection {
                         String::from_utf8_lossy(comp)
                     ),
                 };
-                copy(&mut reader, out).unwrap();
+                Ok(reader)
             }
             Some("application/hg-error") => {
-                out.write_all(b"err\n").unwrap();
-
-                //XXX: Can't easily pass a StderrLock here.
-                let mut writer = PrefixWriter::new(b"remote: ", stderr());
-                copy(&mut http_resp, &mut writer).unwrap();
+                let mut err = BString::default();
+                http_resp.read_to_end(&mut err).unwrap();
+                Err(err)
             }
             _ => unimplemented!(),
-        };
+        }
     }
 
     fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> Box<[u8]> {
@@ -587,20 +586,19 @@ pub struct HgHttpBundle {
 // to say we handle it.
 impl HgConnectionBase for HgHttpBundle {}
 impl HgConnection for HgHttpBundle {
-    fn getbundle(
-        &mut self,
-        out: &mut (dyn Write + Send),
+    fn getbundle<'a>(
+        &'a mut self,
         heads: &[HgChangesetId],
         common: &[HgChangesetId],
         bundle2caps: Option<&str>,
-    ) {
+    ) -> Result<Box<dyn Read + 'a>, BString> {
         assert!(heads.is_empty());
         assert!(common.is_empty());
         assert!(bundle2caps.is_none());
 
-        let mut reader =
+        let reader =
             DecompressBundleReader::new(Cursor::new(self.header).chain(&mut self.http_resp));
-        copy(&mut reader, out).unwrap();
+        Ok(Box::new(reader))
     }
 }
 

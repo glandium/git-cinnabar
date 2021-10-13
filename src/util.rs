@@ -3,10 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::ToOwned;
+use std::cmp::min;
+use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::ffi::{CStr, CString, OsStr};
 use std::fmt;
 use std::io::{self, copy, Cursor, LineWriter, Read, Seek, SeekFrom, Write};
+use std::marker::PhantomData;
 use std::mem::{self, MaybeUninit};
 #[cfg(unix)]
 use std::os::unix::ffi;
@@ -17,10 +20,9 @@ use std::os::windows::ffi;
 #[cfg(windows)]
 use std::os::windows::io::{AsRawHandle, RawHandle};
 use std::str::{self, FromStr};
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{channel, Receiver};
 
 use bstr::ByteSlice;
-use crossbeam::thread::{Scope, ScopedJoinHandle};
 
 #[macro_export]
 macro_rules! derive_debug_display {
@@ -67,84 +69,105 @@ impl<W: Write> Write for PrefixWriter<W> {
     }
 }
 
-pub struct BufferedWriter<'scope> {
-    thread: Option<ScopedJoinHandle<'scope, io::Result<()>>>,
-    sender: Option<Sender<Vec<u8>>>,
+pub struct BufferedReader<'a> {
+    thread: Option<std::thread::JoinHandle<io::Result<()>>>,
+    receiver: Option<Receiver<Vec<u8>>>,
+    buf: VecDeque<u8>,
+    marker: PhantomData<&'a mut ()>,
 }
 
-impl<'scope> BufferedWriter<'scope> {
-    pub fn new<'a: 'scope, W: 'a + Write + Send>(mut w: W, scope: &'scope Scope<'a>) -> Self {
+impl<'a> BufferedReader<'a> {
+    fn new_<R: Read + Send + 'static, const BUFSIZE: usize>(r: &'a mut R) -> Self {
         let (sender, receiver) = channel::<Vec<u8>>();
-        let thread = scope.spawn(move |_| {
-            for buf in receiver.iter() {
-                w.write_all(&buf)?;
+        let r = unsafe { std::mem::transmute::<_, &'static mut R>(r) };
+        let thread = std::thread::spawn(move || {
+            loop {
+                let mut buf = vec![0; BUFSIZE];
+                let len = r.read_at_most(&mut buf[..])?;
+                if len > 0 {
+                    buf.truncate(len);
+                    buf.shrink_to_fit();
+                    sender.send(buf).unwrap();
+                } else {
+                    break;
+                }
             }
-            w.flush()?;
             Ok(())
         });
-        BufferedWriter {
+        BufferedReader {
             thread: Some(thread),
-            sender: Some(sender),
+            receiver: Some(receiver),
+            buf: VecDeque::new(),
+            marker: PhantomData,
         }
     }
-}
 
-impl<'scope> Drop for BufferedWriter<'scope> {
-    fn drop(&mut self) {
-        drop(self.sender.take());
-        self.thread.take().unwrap().join().unwrap().unwrap();
+    pub fn new<R: Read + Send + 'static>(r: &'a mut R) -> Self {
+        Self::new_::<_, { 1024 * 1024 }>(r)
     }
 }
 
-impl<'scope> Write for BufferedWriter<'scope> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.sender.as_ref().map(|s| s.send(buf.to_owned()));
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
+impl<'a> Read for BufferedReader<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut size = min(self.buf.len(), buf.len());
+        let (start, rest) = buf.split_at_mut(size);
+        for (b, x) in Iterator::zip(start.iter_mut(), self.buf.drain(0..size)) {
+            *b = x;
+        }
+        if !rest.is_empty() {
+            assert!(self.buf.is_empty());
+            if let Some(buf) = self.receiver.as_ref().and_then(|r| r.recv().ok()) {
+                self.buf = buf.into();
+                size += self.read(rest)?;
+            }
+        }
+        Ok(size)
     }
 }
 
 #[test]
-fn test_buffered_writer() {
-    use crossbeam::thread;
+fn test_buffered_reader() {
     use std::sync::{Arc, Mutex};
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
-    struct SlowWrite<W: Write>(Arc<Mutex<W>>);
+    struct ArcRead<R: Read>(Arc<Mutex<R>>);
 
-    impl<W: Write> Write for SlowWrite<W> {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            std::thread::sleep(Duration::from_millis(1));
-            self.0.lock().unwrap().write(buf)
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            self.0.lock().unwrap().flush()
+    impl<R: Read> Read for ArcRead<R> {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().read(buf)
         }
     }
 
-    let data = Arc::new(Mutex::new(Vec::<u8>::new()));
-    thread::scope(|s| {
-        let mut writer = BufferedWriter::new(SlowWrite(Arc::clone(&data)), s);
+    let data = Arc::new(Mutex::new(Cursor::new((1..=200).collect::<Vec<u8>>())));
 
-        let start_time = Instant::now();
-        for _ in 0..20 {
-            assert_eq!(writer.write("0".as_bytes()).unwrap(), 1);
+    let mut r = ArcRead(Arc::clone(&data));
+    let mut reader = BufferedReader::new_::<_, 3>(&mut r);
+
+    let mut buf = vec![0; 255];
+    let mut offset = 0;
+    for i in 1..20 {
+        assert_eq!(reader.read(&mut buf[offset..offset + i]).unwrap(), i);
+        offset += i;
+        if i == 1 {
+            std::thread::sleep(Duration::from_millis(10));
+            // Everything should have been read already.
+            assert_eq!(data.lock().unwrap().position(), 200);
         }
-        let write_time = Instant::now();
-        drop(writer);
-        let drop_time = Instant::now();
-        assert_eq!(&data.lock().unwrap()[..], &[b'0'; 20][..]);
-        // The writing loop should take (much) less than 2ms.
-        assert_lt!((write_time - start_time).as_micros(), 2000);
-        // The drop, which waits for the thread to finish, should take at
-        // least 20 times the sleep time of 1ms.
-        assert_ge!((drop_time - write_time).as_micros(), 20000);
-    })
-    .unwrap();
+    }
+    // We've read 190 characters so far.
+    assert_eq!(offset, 190);
+    // There are only 10 left, although our buffer can take more.
+    assert_eq!(reader.read(&mut buf[190..]).unwrap(), 10);
+    drop(reader);
+    drop(r);
+    assert_eq!(
+        &buf[..200],
+        Arc::try_unwrap(data)
+            .unwrap()
+            .into_inner()
+            .unwrap()
+            .into_inner()
+    );
 }
 
 pub trait ReadExt: Read {

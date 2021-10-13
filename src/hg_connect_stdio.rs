@@ -25,7 +25,7 @@ use crate::libc::FdFile;
 use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
 use crate::libgit::{child_process, strbuf};
 use crate::store::HgChangesetId;
-use crate::util::{BufferedWriter, OsStrExt, PrefixWriter, SeekExt};
+use crate::util::{BufferedReader, OsStrExt, PrefixWriter, SeekExt};
 
 pub struct HgStdioConnection {
     capabilities: HgCapabilities,
@@ -96,21 +96,22 @@ impl HgWireConnection for HgStdioConnection {
         stdio_read_response(self)
     }
 
-    fn changegroup_command(&mut self, out: &mut (dyn Write + Send), command: &str, args: HgArgs) {
+    fn changegroup_command<'a>(
+        &'a mut self,
+        command: &str,
+        args: HgArgs,
+    ) -> Result<Box<dyn Read + 'a>, BString> {
         stdio_send_command(self, command, args);
 
-        /* We're going to receive a stream, but we don't know how big it is
-         * going to be in advance, so we have to read it according to its
+        /* We assume the caller is only going to read the right amount of data according
          * format: changegroup or bundle2.
          */
         if self.is_remote {
-            crossbeam::thread::scope(|scope| {
-                copy_bundle(&mut self.proc_out, &mut BufferedWriter::new(out, scope)).unwrap();
-            })
-            .unwrap();
+            // We buffer as much as we can to avoid any network glitches due to slow processing.
+            Ok(Box::new(BufferedReader::new(&mut self.proc_out)))
         } else {
-            copy_bundle(&mut self.proc_out, out).unwrap();
-        };
+            Ok(Box::new(&mut self.proc_out))
+        }
     }
 
     fn push_command(&mut self, mut input: File, command: &str, args: HgArgs) -> Box<[u8]> {
@@ -178,19 +179,18 @@ pub struct HgStdioBundle {
 // to say we handle it.
 impl HgConnectionBase for HgStdioBundle {}
 impl HgConnection for HgStdioBundle {
-    fn getbundle(
-        &mut self,
-        out: &mut (dyn Write + Send),
+    fn getbundle<'a>(
+        &'a mut self,
         heads: &[HgChangesetId],
         common: &[HgChangesetId],
         bundle2caps: Option<&str>,
-    ) {
+    ) -> Result<Box<dyn Read + 'a>, BString> {
         assert!(heads.is_empty());
         assert!(common.is_empty());
         assert!(bundle2caps.is_none());
 
-        let mut f = DecompressBundleReader::new(File::open(&self.path).unwrap());
-        copy(&mut f, out).unwrap();
+        let f = DecompressBundleReader::new(File::open(&self.path).unwrap());
+        Ok(Box::new(f))
     }
 }
 

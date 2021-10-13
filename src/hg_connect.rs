@@ -4,7 +4,7 @@
 
 use std::ffi::c_void;
 use std::fs::File;
-use std::io::{BufRead, Read, Write};
+use std::io::{stderr, BufRead, Read, Write};
 use std::os::raw::c_int;
 use std::str::FromStr;
 
@@ -20,7 +20,7 @@ use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libcinnabar::send_buffer_to;
 use crate::oid::ObjectId;
 use crate::store::HgChangesetId;
-use crate::util::SliceExt;
+use crate::util::{PrefixWriter, SliceExt};
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
@@ -101,7 +101,11 @@ pub trait HgConnectionBase {
 pub trait HgWireConnection: HgConnectionBase {
     fn simple_command(&mut self, command: &str, args: HgArgs) -> Box<[u8]>;
 
-    fn changegroup_command(&mut self, out: &mut (dyn Write + Send), command: &str, args: HgArgs);
+    fn changegroup_command<'a>(
+        &'a mut self,
+        command: &str,
+        args: HgArgs,
+    ) -> Result<Box<dyn Read + 'a>, BString>;
 
     fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> Box<[u8]>;
 }
@@ -115,13 +119,12 @@ pub trait HgConnection: HgConnectionBase {
         unimplemented!();
     }
 
-    fn getbundle(
-        &mut self,
-        _out: &mut (dyn Write + Send),
+    fn getbundle<'a>(
+        &'a mut self,
         _heads: &[HgChangesetId],
         _common: &[HgChangesetId],
         _bundle2caps: Option<&str>,
-    ) {
+    ) -> Result<Box<dyn Read + 'a>, BString> {
         unimplemented!();
     }
 
@@ -145,13 +148,12 @@ impl HgConnection for Box<dyn HgWireConnection> {
         self.simple_command("listkeys", args!(namespace: namespace))
     }
 
-    fn getbundle(
-        &mut self,
-        out: &mut (dyn Write + Send),
+    fn getbundle<'a>(
+        &'a mut self,
         heads: &[HgChangesetId],
         common: &[HgChangesetId],
         bundle2caps: Option<&str>,
-    ) {
+    ) -> Result<Box<dyn Read + 'a>, BString> {
         let mut args = Vec::new();
         let heads = heads.iter().join(" ");
         let common = common.iter().join(" ");
@@ -171,7 +173,7 @@ impl HgConnection for Box<dyn HgWireConnection> {
                 });
             }
         }
-        self.changegroup_command(out, "getbundle", args!(*: &args[..]));
+        self.changegroup_command("getbundle", args!(*: &args[..]))
     }
 
     fn lookup(&mut self, key: &str) -> Box<[u8]> {
@@ -263,7 +265,7 @@ fn do_listkeys(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write)
     send_buffer_to(&*result, out);
 }
 
-fn do_getbundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut (impl Write + Send)) {
+fn do_getbundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
     let mut args = args.iter();
 
     let arg_list = |a: &&str| {
@@ -281,7 +283,15 @@ fn do_getbundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut (impl Writ
     let bundle2caps = args.next().cloned();
     assert!(args.next().is_none());
 
-    conn.getbundle(out, &heads, &common, bundle2caps);
+    match conn.getbundle(&heads, &common, bundle2caps) {
+        Ok(mut r) => copy_bundle(&mut r, out).unwrap(),
+        Err(e) => {
+            out.write_all(b"err\n").unwrap();
+            let stderr = stderr();
+            let mut writer = PrefixWriter::new(b"remote: ", stderr.lock());
+            writer.write_all(&e).unwrap();
+        }
+    }
 }
 
 fn do_unbundle(
@@ -408,18 +418,14 @@ pub fn get_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnection>> 
     }
 }
 
-fn hg_connect(
-    url: &str,
-    flags: c_int,
-    out: &mut (impl Write + Send),
-) -> Option<Box<dyn HgConnection>> {
+fn hg_connect(url: &str, flags: c_int, out: &mut impl Write) -> Option<Box<dyn HgConnection>> {
     let url = Url::parse(url).unwrap();
     let mut conn = get_connection(&url, flags)?;
 
     if conn.wire().is_none() {
         // For now the wire helper just sends the bundle to the given output writer.
         out.write_all(b"bundle\n").unwrap();
-        conn.getbundle(out, &[], &[], None);
+        copy_bundle(&mut conn.getbundle(&[], &[], None).unwrap(), out).unwrap();
         return Some(conn);
     }
 
@@ -446,7 +452,7 @@ fn hg_connect(
 
 pub fn connect_main_with(
     input: &mut impl BufRead,
-    out: &mut (impl Write + Send),
+    out: &mut impl Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut connection = None;
     loop {
