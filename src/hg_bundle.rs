@@ -15,11 +15,11 @@ use crate::util::SliceExt;
 
 pub struct DecompressBundleReader<'a> {
     initial_buf: Option<Cursor<Vec<u8>>>,
-    inner: Box<dyn Read + Send + 'a>,
+    inner: Box<dyn Read + 'a>,
 }
 
 impl<'a> DecompressBundleReader<'a> {
-    pub fn new<R: Read + Send + 'a>(r: R) -> Self {
+    pub fn new<R: Read + 'a>(r: R) -> Self {
         DecompressBundleReader {
             initial_buf: Some(Cursor::new(Vec::new())),
             inner: Box::new(r),
