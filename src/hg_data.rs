@@ -88,15 +88,19 @@ impl Authorship {
 //TODO: more tests from python, and more tests that don't exist in python.
 #[test]
 fn test_authorship_from_git() {
-    let a = Authorship::from_git_bytes(b"Foo Bar <foo@bar> 0 +0000");
+    // The test strings are \n-suffixed because that's how they would appear
+    // in context in git commits, and split_ident_line doesn't stop at the
+    // last character of the slice if the data section contains digit
+    // characters after the string.
+    let a = Authorship::from_git_bytes(b"Foo Bar <foo@bar> 0 +0000\n");
     assert_eq!(a.name, b"Foo Bar");
     assert_eq!(a.email, b"foo@bar");
 
-    let a = Authorship::from_git_bytes(b"Foo Bar <foo@bar> 1482880019 -0100");
+    let a = Authorship::from_git_bytes(b"Foo Bar <foo@bar> 1482880019 -0100\n");
     assert_eq!(a.timestamp, 1482880019);
     assert_eq!(a.utcoffset, 3600);
 
-    let a = Authorship::from_git_bytes(b"Foo Bar <foo@bar> 1482880019 +0200");
+    let a = Authorship::from_git_bytes(b"Foo Bar <foo@bar> 1482880019 +0200\n");
     assert_eq!(a.timestamp, 1482880019);
     assert_eq!(a.utcoffset, -7200);
 }
