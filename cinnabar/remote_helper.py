@@ -2,6 +2,7 @@ from binascii import unhexlify
 import os
 import sys
 
+from cinnabar.exceptions import Abort
 from cinnabar.githg import (
     BranchMap,
     GitHgStore,
@@ -361,7 +362,8 @@ class GitRemoteHelper(BaseRemoteHelper):
         def resolve_head(head):
             resolved = self._refs.get(head)
             if resolved is None:
-                return resolved
+                raise Abort(
+                    "couldn't find remote ref {}".format(head.decode()))
             if resolved.startswith(b'@'):
                 return self._refs.get(resolved[1:])
             return resolved
