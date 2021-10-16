@@ -10,10 +10,10 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bstr::ByteSlice;
+use clap::crate_version;
 use os_pipe::pipe;
 use semver::Version;
 use shared_child::SharedChild;
-use structopt::clap::crate_version;
 
 use crate::libgit::config_get_value;
 use crate::util::{ReadExt, SliceExt};

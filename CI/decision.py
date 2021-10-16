@@ -246,7 +246,7 @@ def decision():
     Build.by_name('arm64-linux')
 
     # Test build with the MSRV.
-    Build.by_name('linux.rust-1.51.0')
+    Build.by_name('linux.rust-1.54.0')
 
     for upgrade in UPGRADE_FROM:
         TestTask(

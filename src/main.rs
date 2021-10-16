@@ -42,9 +42,8 @@ extern crate derivative;
 #[macro_use]
 extern crate all_asserts;
 
+use clap::{crate_version, AppSettings, ArgGroup, ArgSettings, Parser};
 use itertools::Itertools;
-use structopt::clap::{crate_version, AppSettings, ArgGroup};
-use structopt::StructOpt;
 
 #[macro_use]
 mod util;
@@ -719,158 +718,162 @@ impl FromStr for AbbrevSize {
     }
 }
 
-#[derive(StructOpt)]
-#[structopt(name = "git-cinnabar")]
-#[structopt(version=crate_version!())]
-#[structopt(long_version=FULL_VERSION)]
-#[structopt(setting(AppSettings::AllowInvalidUtf8))]
-#[structopt(setting(AppSettings::ArgRequiredElseHelp))]
-#[structopt(setting(AppSettings::DeriveDisplayOrder))]
-#[structopt(setting(AppSettings::DontCollapseArgsInUsage))]
-#[structopt(setting(AppSettings::SubcommandRequired))]
-#[structopt(setting(AppSettings::VersionlessSubcommands))]
+#[derive(Parser)]
+#[clap(name = "git-cinnabar")]
+#[clap(version=crate_version!())]
+#[clap(long_version=FULL_VERSION)]
+#[clap(setting(AppSettings::ArgRequiredElseHelp))]
+#[clap(setting(AppSettings::DeriveDisplayOrder))]
+#[clap(setting(AppSettings::DontCollapseArgsInUsage))]
+#[clap(setting(AppSettings::SubcommandRequired))]
 enum CinnabarCommand {
-    #[structopt(name = "data")]
-    #[structopt(group = ArgGroup::with_name("input").multiple(false).required(true))]
-    #[structopt(about = "Dump the contents of a mercurial revision")]
+    #[clap(name = "data")]
+    #[clap(group = ArgGroup::new("input").multiple(false).required(true))]
+    #[clap(about = "Dump the contents of a mercurial revision")]
     Data {
-        #[structopt(short = "c")]
-        #[structopt(group = "input")]
-        #[structopt(help = "Open changelog")]
+        #[clap(short = 'c')]
+        #[clap(group = "input")]
+        #[clap(help = "Open changelog")]
         changeset: Option<Abbrev<HgChangesetId>>,
-        #[structopt(short = "m")]
-        #[structopt(group = "input")]
-        #[structopt(help = "Open manifest")]
+        #[clap(short = 'm')]
+        #[clap(group = "input")]
+        #[clap(help = "Open manifest")]
         manifest: Option<Abbrev<HgManifestId>>,
-        #[structopt(group = "input")]
-        #[structopt(help = "Open file")]
+        #[clap(group = "input")]
+        #[clap(help = "Open file")]
         file: Option<Abbrev<HgFileId>>,
     },
-    #[structopt(name = "hg2git")]
-    #[structopt(group = ArgGroup::with_name("input").multiple(true).required(true))]
-    #[structopt(about = "Convert mercurial sha1 to corresponding git sha1")]
+    #[clap(name = "hg2git")]
+    #[clap(group = ArgGroup::new("input").multiple(true).required(true))]
+    #[clap(about = "Convert mercurial sha1 to corresponding git sha1")]
     Hg2Git {
-        #[structopt(long)]
-        #[structopt(require_equals = true)]
-        #[structopt(max_values = 1)]
-        #[structopt(help = "Show a partial prefix")]
+        #[clap(long)]
+        #[clap(require_equals = true)]
+        #[clap(max_values = 1)]
+        #[clap(help = "Show a partial prefix")]
         abbrev: Option<Vec<AbbrevSize>>,
-        #[structopt(group = "input")]
-        #[structopt(help = "Mercurial sha1")]
+        #[clap(group = "input")]
+        #[clap(help = "Mercurial sha1")]
         sha1: Vec<Abbrev<HgChangesetId>>,
-        #[structopt(long)]
-        #[structopt(group = "input")]
-        #[structopt(help = "Read sha1s on stdin")]
+        #[clap(long)]
+        #[clap(group = "input")]
+        #[clap(help = "Read sha1s on stdin")]
         batch: bool,
     },
-    #[structopt(name = "git2hg")]
-    #[structopt(group = ArgGroup::with_name("input").multiple(true).required(true))]
-    #[structopt(about = "Convert git sha1 to corresponding mercurial sha1")]
+    #[clap(name = "git2hg")]
+    #[clap(group = ArgGroup::new("input").multiple(true).required(true))]
+    #[clap(about = "Convert git sha1 to corresponding mercurial sha1")]
     Git2Hg {
-        #[structopt(long)]
-        #[structopt(require_equals = true)]
-        #[structopt(max_values = 1)]
-        #[structopt(help = "Show a partial prefix")]
+        #[clap(long)]
+        #[clap(require_equals = true)]
+        #[clap(max_values = 1)]
+        #[clap(help = "Show a partial prefix")]
         abbrev: Option<Vec<AbbrevSize>>,
-        #[structopt(group = "input")]
-        #[structopt(help = "Git sha1/committish")]
-        #[structopt(parse(from_os_str))]
+        #[clap(group = "input")]
+        #[clap(help = "Git sha1/committish")]
+        #[clap(parse(from_os_str))]
+        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
         committish: Vec<OsString>,
-        #[structopt(long)]
-        #[structopt(group = "input")]
-        #[structopt(help = "Read sha1/committish on stdin")]
+        #[clap(long)]
+        #[clap(group = "input")]
+        #[clap(help = "Read sha1/committish on stdin")]
         batch: bool,
     },
-    #[structopt(name = "fetch")]
-    #[structopt(about = "Fetch a changeset from a mercurial remote")]
+    #[clap(name = "fetch")]
+    #[clap(about = "Fetch a changeset from a mercurial remote")]
     Fetch {
-        #[structopt(help = "Mercurial remote name or url")]
-        #[structopt(parse(from_os_str))]
+        #[clap(help = "Mercurial remote name or url")]
+        #[clap(parse(from_os_str))]
+        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
         remote: OsString,
-        #[structopt(required = true)]
-        #[structopt(help = "Mercurial changeset to fetch")]
-        #[structopt(parse(from_os_str))]
+        #[clap(required = true)]
+        #[clap(help = "Mercurial changeset to fetch")]
+        #[clap(parse(from_os_str))]
+        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
         revs: Vec<OsString>,
     },
-    #[structopt(name = "reclone")]
-    #[structopt(about = "Reclone all mercurial remotes")]
+    #[clap(name = "reclone")]
+    #[clap(about = "Reclone all mercurial remotes")]
     Reclone,
-    #[structopt(name = "rollback")]
-    #[structopt(about = "Rollback cinnabar metadata state")]
+    #[clap(name = "rollback")]
+    #[clap(about = "Rollback cinnabar metadata state")]
     Rollback {
-        #[structopt(long)]
-        #[structopt(conflicts_with = "committish")]
-        #[structopt(help = "Show a list of candidates for rollback")]
+        #[clap(long)]
+        #[clap(conflicts_with = "committish")]
+        #[clap(help = "Show a list of candidates for rollback")]
         candidates: bool,
-        #[structopt(long)]
-        #[structopt(conflicts_with = "committish")]
-        #[structopt(conflicts_with = "candidates")]
-        #[structopt(help = "Rollback to the last successful fsck state")]
+        #[clap(long)]
+        #[clap(conflicts_with = "committish")]
+        #[clap(conflicts_with = "candidates")]
+        #[clap(help = "Rollback to the last successful fsck state")]
         fsck: bool,
-        #[structopt(long)]
-        #[structopt(conflicts_with = "candidates")]
-        #[structopt(
+        #[clap(long)]
+        #[clap(conflicts_with = "candidates")]
+        #[clap(
             help = "Force to use the given committish even if it is not in the current metadata's ancestry"
         )]
         force: bool,
-        #[structopt(help = "Git sha1/committish of the state to rollback to")]
-        #[structopt(parse(from_os_str))]
+        #[clap(help = "Git sha1/committish of the state to rollback to")]
+        #[clap(parse(from_os_str))]
+        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
         committish: Option<OsString>,
     },
-    #[structopt(name = "fsck")]
-    #[structopt(about = "Check cinnabar metadata consistency")]
+    #[clap(name = "fsck")]
+    #[clap(about = "Check cinnabar metadata consistency")]
     Fsck {
-        #[structopt(long)]
-        #[structopt(
+        #[clap(long)]
+        #[clap(
             help = "Force check, even when metadata was already checked. Also disables incremental fsck"
         )]
         force: bool,
-        #[structopt(long)]
-        #[structopt(help = "Check more thoroughly")]
+        #[clap(long)]
+        #[clap(help = "Check more thoroughly")]
         full: bool,
-        #[structopt(help = "Specific commit or changeset to check")]
-        #[structopt(parse(from_os_str))]
+        #[clap(help = "Specific commit or changeset to check")]
+        #[clap(parse(from_os_str))]
+        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
         commit: Vec<OsString>,
     },
-    #[structopt(name = "bundle")]
-    #[structopt(about = "Create a mercurial bundle")]
+    #[clap(name = "bundle")]
+    #[clap(about = "Create a mercurial bundle")]
     Bundle {
-        #[structopt(long)]
-        #[structopt(default_value = "2")]
-        #[structopt(possible_values = &["1", "2"])]
-        #[structopt(help = "Bundle version")]
+        #[clap(long)]
+        #[clap(default_value = "2")]
+        #[clap(possible_values = &["1", "2"])]
+        #[clap(help = "Bundle version")]
         version: u8,
-        #[structopt(help = "Path of the bundle")]
-        #[structopt(parse(from_os_str))]
+        #[clap(help = "Path of the bundle")]
+        #[clap(parse(from_os_str))]
+        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
         path: PathBuf,
-        #[structopt(
-            help = "Git revision range (see the Specifying Ranges section of gitrevisions(7))"
-        )]
-        #[structopt(parse(from_os_str))]
+        #[clap(help = "Git revision range (see the Specifying Ranges section of gitrevisions(7))")]
+        #[clap(parse(from_os_str))]
+        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
         revs: Vec<OsString>,
     },
-    #[structopt(name = "unbundle")]
-    #[structopt(about = "Apply a mercurial bundle to the repository")]
+    #[clap(name = "unbundle")]
+    #[clap(about = "Apply a mercurial bundle to the repository")]
     Unbundle {
-        #[structopt(long)]
-        #[structopt(help = "Get clone bundle from given repository")]
+        #[clap(long)]
+        #[clap(help = "Get clone bundle from given repository")]
         clonebundle: bool,
-        #[structopt(help = "Url of the bundle")]
-        #[structopt(parse(from_os_str))]
+        #[clap(help = "Url of the bundle")]
+        #[clap(parse(from_os_str))]
+        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
         url: OsString,
     },
-    #[structopt(name = "upgrade")]
-    #[structopt(about = "Upgrade cinnabar metadata")]
+    #[clap(name = "upgrade")]
+    #[clap(about = "Upgrade cinnabar metadata")]
     Upgrade,
 }
 
 use CinnabarCommand::*;
 
 fn git_cinnabar() -> i32 {
-    let command = match CinnabarCommand::from_args_safe() {
+    let command = match CinnabarCommand::try_parse() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{}", e.message);
+            e.print().unwrap();
             return if e.use_stderr() { 1 } else { 0 };
         }
     };

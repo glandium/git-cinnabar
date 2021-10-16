@@ -30,7 +30,6 @@ once_cell = "1"
 percent-encoding = "2"
 replace_with = "0.1"
 sha-1 = "0.10"
-structopt = "0.3"
 tempfile = "3"
 typenum = "1"
 url = "2"
@@ -42,6 +41,10 @@ rev = "cbe9d7e58a52bb43725dbe2ba0cca0755482b3a9"
 
 [dependencies.cinnabar-py]
 path = "cinnabar"
+
+[dependencies.clap]
+version = "3"
+features = ["cargo", "derive"]
 
 [dependencies.curl-sys]
 version = "0.4"
