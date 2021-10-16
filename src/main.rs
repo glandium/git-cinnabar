@@ -838,17 +838,9 @@ use CinnabarCommand::*;
 fn git_cinnabar() -> i32 {
     let command = match CinnabarCommand::from_args_safe() {
         Ok(c) => c,
-        Err(e) if e.use_stderr() => {
-            eprintln!("{}", e.message);
-            return if e.message.contains("SUBCOMMAND") {
-                128
-            } else {
-                1
-            };
-        }
         Err(e) => {
-            println!("{}", e.message);
-            return 0;
+            eprintln!("{}", e.message);
+            return if e.use_stderr() { 1 } else { 0 };
         }
     };
     let _v = VersionCheck::new();
