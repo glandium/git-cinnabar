@@ -28,7 +28,7 @@ Requirements:
 -------------
 
 - Git (any version should work ; cinnabarclone bundles require 1.4.4).
-- Python 2.7 and/or, experimentally, 3.5 or more.
+- Python 3.5 or more.
 - In order to build from source:
   - Rust 1.51.0 or newer.
   - GCC or clang.
@@ -51,21 +51,6 @@ Setup:
   ```
   $ make
   ```
-
-Experimental support for python 3.x:
-------------------------------------
-
-Experimental support for python 3.5 or more can be enabled by one of the
-following:
-
-- set the `GIT_CINNABAR_EXPERIMENTS` environment variable to `python3`.
-- `git config cinnabar.experiments python3`.
-
-It has been tested mainly with python 3.5 and 3.7. Corner cases may not work
-properly.
-
-It is also possible to replace `python3` in either `GIT_CINNABAR_EXPERIMENTS`
-or `cinnabar.experiments` with `python=/path/to/python`.
 
 Usage:
 ------
