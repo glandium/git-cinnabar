@@ -17,7 +17,7 @@ case "$experiments" in
   fi
   ;;
 esac
-exec $PYTHON $0 "$@"
+exec $PYTHON "$0" "$@"
 exit 1
 '''
 
