@@ -273,6 +273,10 @@ def decision():
     )
 
     for env in ('linux', 'mingw64', 'osx'):
+        # Can't spawn osx workers from pull requests.
+        if env.startswith('osx') and not TC_IS_PUSH:
+            continue
+
         TestTask(
             task_env=env,
             variant='coverage' if env == 'linux' else None,
@@ -311,6 +315,10 @@ def decision():
 
     for cargo_cmd in ('test', 'clippy', 'fmt'):
         for env in ('linux', 'mingw64', 'osx'):
+            # Can't spawn osx workers from pull requests.
+            if env.startswith('osx') and not TC_IS_PUSH:
+                continue
+
             task_env = TaskEnvironment.by_name('{}.build'.format(env))
             desc = 'cargo {}'.format(cargo_cmd)
             if env != 'linux':
