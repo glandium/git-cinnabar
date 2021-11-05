@@ -935,7 +935,7 @@ class VersionCheck(Thread):
             ref = 'refs/heads/next' if extra == 0 else 'refs/heads/master'
             for line in Git.iter('ls-remote', REPO, ref, stderr=devnull):
                 sha1, head = line.split()
-                if head != ref:
+                if fsdecode(head) != ref:
                     continue
                 proc = GitProcess(
                     '-C', parent_dir, 'merge-base', '--is-ancestor', sha1,
@@ -954,7 +954,7 @@ class VersionCheck(Thread):
             for line in Git.iter('ls-remote', REPO, 'refs/tags/*',
                                  stderr=devnull):
                 sha1, tag = line.split()
-                tag = tag.partition('refs/tags/')[-1]
+                tag = fsdecode(tag).partition('refs/tags/')[-1]
                 try:
                     v = StrictVersion(tag)
                 except ValueError:
