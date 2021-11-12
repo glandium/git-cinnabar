@@ -29,7 +29,7 @@ Requirements:
 -------------
 
 - Git (any version should work ; cinnabarclone bundles require 1.4.4)
-- Python 2.7 and/or, experimentally, 3.5 or more.
+- Python 2.7 and/or 3.5 or more.
 - Mercurial version 1.9 or newer
 
 Setup:
@@ -53,20 +53,16 @@ Setup:
 
   If you want to build git along the helper, you can run `make git`.
 
-Experimental support for python 3.x:
-------------------------------------
+Python:
+-------
 
-Experimental support for python 3.5 or more can be enabled by one of the
-following:
+git-cinnabar will use one of `python3`, `python2.7` or `python2`, whichever has
+mercurial libraries. If none of them does, it will use the first that can be
+found.
 
-- set the `GIT_CINNABAR_EXPERIMENTS` environment variable to `python3`.
-- `git config cinnabar.experiments python3`.
+You may force a specific python through the `GIT_CINNABAR_PYTHON` environment
+variable.
 
-It has been tested mainly with python 3.5 and 3.7. Corner cases may not work
-properly.
-
-It is also possible to replace `python3` in either `GIT_CINNABAR_EXPERIMENTS`
-or `cinnabar.experiments` with `python=/path/to/python`.
 
 Usage:
 ------

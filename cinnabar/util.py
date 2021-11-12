@@ -150,7 +150,7 @@ check_enabled = ConfigSetFunc(
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
     ('wire', 'merge', 'store'),
-    ('python3',),
+    (),
 )
 
 
@@ -975,7 +975,6 @@ class VersionCheck(Thread):
 
 def run(func, args):
     reexec = None
-    assert not experiment('python3') or sys.version_info[0] != 2
     if os.environ.pop('GIT_CINNABAR_COVERAGE', None):
         if not reexec:
             reexec = [sys.executable]

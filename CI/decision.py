@@ -246,9 +246,6 @@ def decision():
             dependencies=[
                 Helper.by_name(env),
             ],
-            env={
-                'GIT_CINNABAR_EXPERIMENTS': 'python3',
-            } if env == 'linux' else {},
         )
 
     # Because nothing is using the x86 windows helper, we need to manually
@@ -274,7 +271,6 @@ def decision():
             extra_desc='from-{}'.format(upgrade),
             clone=upgrade,
             env={
-                'GIT_CINNABAR_EXPERIMENTS': 'python3',
                 'GIT_CINNABAR_LOG': 'reexec:3',
                 'UPGRADE_FROM': upgrade,
             },
@@ -367,9 +363,6 @@ def decision():
 
         TestTask(
             task_env=env,
-            env={
-                'GIT_CINNABAR_EXPERIMENTS': 'python3',
-            },
             hg='{}.py3'.format(MERCURIAL_VERSION),
         )
 
@@ -377,7 +370,6 @@ def decision():
             task_env=env,
             short_desc='graft tests',
             env={
-                'GIT_CINNABAR_EXPERIMENTS': 'python3',
                 'GRAFT': '1',
             },
             hg='{}.py3'.format(MERCURIAL_VERSION),
@@ -403,7 +395,7 @@ def decision():
     TestTask(
         extra_desc='experiments',
         env={
-            'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
+            'GIT_CINNABAR_EXPERIMENTS': 'true',
             'GIT_CINNABAR_LOG': 'reexec:3',
         },
         hg='{}.py3'.format(MERCURIAL_VERSION),
@@ -413,7 +405,7 @@ def decision():
         short_desc='graft tests',
         extra_desc='experiments',
         env={
-            'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
+            'GIT_CINNABAR_EXPERIMENTS': 'true',
             'GIT_CINNABAR_LOG': 'reexec:3',
             'GRAFT': '1',
         },
@@ -423,6 +415,7 @@ def decision():
     for variant in ('coverage', 'old'):
         env = {
             'GIT_CINNABAR_CHECK': 'no-mercurial',
+            'GIT_CINNABAR_PYTHON': 'python2.7',
         }
         kwargs = {}
         if variant == 'old':
@@ -489,7 +482,7 @@ def decision():
             env={
                 'GIT_CINNABAR_CHECK': ','.join(
                     ['no-version-check'] + check),
-                'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
+                'GIT_CINNABAR_EXPERIMENTS': 'true',
             },
             hg='{}.py3'.format(MERCURIAL_VERSION),
         )
