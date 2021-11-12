@@ -15,4 +15,8 @@ def python(args):
     env = os.environ.copy()
     env['PYTHONPATH'] = os.pathsep.join(sys.path)
     args.append(env)
-    os.execle(sys.executable, sys.executable, *args)
+    if sys.platform != 'win32':
+        os.execle(sys.executable, sys.executable, *args)
+    else:
+        import subprocess
+        return subprocess.call([sys.executable] + args)
