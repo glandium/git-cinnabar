@@ -92,6 +92,10 @@ class TestTask(Task):
                 ' refs/heads/branches/default/tip',
             ])
             kwargs.setdefault('env', {})['REPO'] = REPO
+        command.extend((
+            'repo/git-cinnabar --version',
+            'GIT_CINNABAR_COVERAGE= repo/git-cinnabar python --version',
+        ))
         if variant == 'coverage':
             command = [
                 'export GIT_CINNABAR_COVERAGE=1',
@@ -466,7 +470,6 @@ def decision():
             extra_desc=' '.join(check),
             clone=False,
             command=pre_command + [
-                'repo/git-cinnabar --version',
                 'cram --verbose repo/tests',
             ],
             env={
@@ -481,7 +484,6 @@ def decision():
             extra_desc=' '.join(check),
             clone=False,
             command=[
-                'repo/git-cinnabar --version',
                 'cram --verbose repo/tests',
             ],
             env={
@@ -509,7 +511,6 @@ def do_hg_version(hg):
         clone=False,
         hg=hg,
         command=[
-            'repo/git-cinnabar --version',
             'cram --verbose repo/tests',
         ],
         env={
