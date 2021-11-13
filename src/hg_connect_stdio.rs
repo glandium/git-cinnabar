@@ -144,7 +144,7 @@ impl HgWireConnection for HgStdioConnection {
         if is_bundle2 {
             let mut response = Vec::new();
             copy_bundle(&mut self.proc_out, &mut response).unwrap();
-            response.into_boxed_slice()
+            response.into()
         } else {
             /* There are two responses, one for output, one for actual response. */
             //TODO: actually handle output here

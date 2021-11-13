@@ -199,7 +199,7 @@ impl HgConnection for Box<dyn HgWireConnection> {
         .iter()
         .map(|b| *b == b'1')
         .collect_vec()
-        .into_boxed_slice()
+        .into()
     }
 
     fn listkeys(&mut self, namespace: &str) -> Box<[u8]> {
@@ -323,7 +323,7 @@ fn unescape_batched_output(out: &[u8]) -> Box<[u8]> {
             break;
         }
     }
-    buf.into_boxed_slice()
+    buf.into()
 }
 
 #[test]

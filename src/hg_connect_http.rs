@@ -478,7 +478,7 @@ impl HgWireConnection for HgHttpConnection {
         self.handle_redirect(&http_resp);
         let mut response = Vec::new();
         http_resp.read_to_end(&mut response).unwrap();
-        response.into_boxed_slice()
+        response.into()
     }
 
     /* The changegroup, changegroupsubset and getbundle commands return a raw
@@ -545,7 +545,7 @@ impl HgWireConnection for HgHttpConnection {
         if header == b"HG20" {
             let mut response = Vec::new();
             http_resp.read_to_end(&mut response).unwrap();
-            response.into_boxed_slice()
+            response.into()
         } else {
             let stderr = stderr();
             let mut buf = header.to_owned();
@@ -554,7 +554,7 @@ impl HgWireConnection for HgHttpConnection {
                 Some([stdout_, stderr_]) => {
                     let mut writer = PrefixWriter::new(b"remote: ", stderr.lock());
                     writer.write_all(stderr_).unwrap();
-                    stdout_.to_vec().into_boxed_slice()
+                    stdout_.to_vec().into()
                 }
                 //TODO: better eror handling.
                 _ => panic!("Bad output from server"),
