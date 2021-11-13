@@ -59,7 +59,7 @@ pub struct HgStdioConnection {
 fn stdio_command_add_param(data: &mut BString, name: &str, value: &str) {
     data.extend(name.as_bytes());
     writeln!(data, " {}", value.len()).unwrap();
-    data.extend(value.as_bytes())
+    data.extend(value.as_bytes());
 }
 
 fn stdio_send_command(conn: &mut HgStdioConnection, command: &str, args: HgArgs) {
@@ -75,7 +75,7 @@ fn stdio_send_command(conn: &mut HgStdioConnection, command: &str, args: HgArgs)
             stdio_command_add_param(&mut data, name, value);
         }
     }
-    conn.proc_in.write_all(&data).unwrap()
+    conn.proc_in.write_all(&data).unwrap();
 }
 
 extern "C" {
@@ -166,7 +166,7 @@ impl Drop for HgStdioConnection {
         unsafe {
             libc::close(self.proc_in.raw());
             libc::close(self.proc_out.get_mut().raw());
-            self.thread.take().map(|t| t.join());
+            self.thread.take().map(JoinHandle::join);
             stdio_finish(self.proc);
         }
     }
@@ -231,8 +231,8 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
     let path = CString::new(path).unwrap();
     let proc = unsafe {
         hg_connect_stdio(
-            userhost.as_ref().map(|s| s.as_ptr()).unwrap_or(ptr::null()),
-            port.as_ref().map(|s| s.as_ptr()).unwrap_or(ptr::null()),
+            userhost.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
+            port.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
             path.as_ref().as_ptr(),
             flags,
         )
@@ -242,7 +242,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
     }
 
     let mut conn = HgStdioConnection {
-        capabilities: Default::default(),
+        capabilities: HgCapabilities::default(),
         proc_in: unsafe { FdFile::from_raw_fd(proc_in(proc)) },
         proc_out: BufReader::new(unsafe { FdFile::from_raw_fd(proc_out(proc)) }),
         is_remote: url.scheme() == "ssh",

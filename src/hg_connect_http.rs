@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::borrow::ToOwned;
 use std::cmp;
 use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString};
@@ -320,7 +321,7 @@ impl Drop for HttpResponse {
     fn drop(&mut self) {
         drop(self.receiver.take());
         if let Some(thread) = self.thread.take() {
-            let _ = thread.join().unwrap();
+            let _result = thread.join().unwrap();
         }
     }
 }
@@ -368,7 +369,7 @@ fn http_send_info(data: &mut HttpThreadData) {
                     CStr::from_ptr(content_type)
                         .to_str()
                         .ok()
-                        .map(|c| c.to_owned())
+                        .map(ToOwned::to_owned)
                 } else {
                     None
                 }
@@ -614,9 +615,10 @@ unsafe extern "C" fn read_from_read<R: Read>(
     read.read(&mut buf).unwrap()
 }
 
+#[allow(clippy::unnecessary_wraps)]
 pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
     let mut conn = HgHttpConnection {
-        capabilities: Default::default(),
+        capabilities: HgCapabilities::default(),
         url: url.clone(),
     };
 

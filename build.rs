@@ -2,6 +2,37 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#![deny(clippy::cloned_instead_of_copied)]
+#![deny(clippy::default_trait_access)]
+#![deny(clippy::flat_map_option)]
+#![deny(clippy::from_iter_instead_of_collect)]
+#![deny(clippy::implicit_clone)]
+#![deny(clippy::inconsistent_struct_constructor)]
+#![deny(clippy::large_types_passed_by_value)]
+#![deny(clippy::let_underscore_drop)]
+#![deny(clippy::let_unit_value)]
+#![deny(clippy::manual_ok_or)]
+#![deny(clippy::map_flatten)]
+#![deny(clippy::map_unwrap_or)]
+#![deny(clippy::needless_bitwise_bool)]
+#![deny(clippy::needless_continue)]
+#![deny(clippy::needless_for_each)]
+#![deny(clippy::option_option)]
+#![deny(clippy::range_minus_one)]
+#![deny(clippy::range_plus_one)]
+#![deny(clippy::redundant_closure_for_method_calls)]
+#![deny(clippy::redundant_else)]
+#![deny(clippy::ref_binding_to_reference)]
+#![deny(clippy::ref_option_ref)]
+#![deny(clippy::semicolon_if_nothing_returned)]
+#![deny(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::transmute_ptr_to_ptr)]
+#![deny(clippy::type_repetition_in_bounds)]
+#![deny(clippy::unicode_not_nfc)]
+#![deny(clippy::unnecessary_wraps)]
+#![deny(clippy::unnested_or_patterns)]
+#![deny(clippy::unused_self)]
+
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -104,7 +135,7 @@ fn main() {
             .ok(),
     ]
     .iter()
-    .filter_map(|v| v.as_deref())
+    .filter_map(Option::as_deref)
     .chain(
         match &*target_os {
             "windows" => &[
@@ -115,7 +146,7 @@ fn main() {
             _ => &[][..],
         }
         .iter()
-        .cloned(),
+        .copied(),
     )
     .join(" ");
     cmd.arg(format!("CFLAGS={}", cflags));

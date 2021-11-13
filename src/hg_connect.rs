@@ -384,9 +384,9 @@ fn do_getbundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write
         }
     };
 
-    let heads = args.next().map(arg_list).unwrap_or_else(Vec::new);
-    let common = args.next().map(arg_list).unwrap_or_else(Vec::new);
-    let bundle2caps = args.next().cloned();
+    let heads = args.next().map_or_else(Vec::new, arg_list);
+    let common = args.next().map_or_else(Vec::new, arg_list);
+    let bundle2caps = args.next().copied();
     assert!(args.next().is_none());
 
     match conn.getbundle(&heads, &common, bundle2caps) {
@@ -448,7 +448,7 @@ fn do_capable(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) 
     send_buffer_to(
         conn.get_capability(name.as_bytes()).map(|b| b.as_bytes()),
         out,
-    )
+    );
 }
 
 fn do_state(conn: &mut dyn HgConnection, args: &[&str], mut out: &mut impl Write) {

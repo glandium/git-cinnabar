@@ -145,7 +145,7 @@ pub struct OidCreator<O: ObjectId>(O::Digest);
 
 impl<O: ObjectId> OidCreator<O> {
     pub fn update<B: AsRef<[u8]>>(&mut self, data: B) {
-        self.0.update(data)
+        self.0.update(data);
     }
 
     pub fn finalize(self) -> O {

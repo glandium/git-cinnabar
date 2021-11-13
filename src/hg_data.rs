@@ -59,7 +59,7 @@ impl Authorship {
             who.push(b'>');
             who
         } else if self.email.is_empty() {
-            self.name.to_owned()
+            self.name.clone()
         } else {
             let mut who = Vec::new();
             who.extend_from_slice(&self.name);

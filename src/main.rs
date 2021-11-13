@@ -5,6 +5,36 @@
 #![allow(clippy::borrowed_box)]
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::new_without_default)]
+#![deny(clippy::cloned_instead_of_copied)]
+#![deny(clippy::default_trait_access)]
+#![deny(clippy::flat_map_option)]
+#![deny(clippy::from_iter_instead_of_collect)]
+#![deny(clippy::implicit_clone)]
+#![deny(clippy::inconsistent_struct_constructor)]
+#![deny(clippy::large_types_passed_by_value)]
+#![deny(clippy::let_underscore_drop)]
+#![deny(clippy::let_unit_value)]
+#![deny(clippy::manual_ok_or)]
+#![deny(clippy::map_flatten)]
+#![deny(clippy::map_unwrap_or)]
+#![deny(clippy::needless_bitwise_bool)]
+#![deny(clippy::needless_continue)]
+#![deny(clippy::needless_for_each)]
+#![deny(clippy::option_option)]
+#![deny(clippy::range_minus_one)]
+#![deny(clippy::range_plus_one)]
+#![deny(clippy::redundant_closure_for_method_calls)]
+#![deny(clippy::redundant_else)]
+#![deny(clippy::ref_binding_to_reference)]
+#![deny(clippy::ref_option_ref)]
+#![deny(clippy::semicolon_if_nothing_returned)]
+#![deny(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::transmute_ptr_to_ptr)]
+#![deny(clippy::type_repetition_in_bounds)]
+#![deny(clippy::unicode_not_nfc)]
+#![deny(clippy::unnecessary_wraps)]
+#![deny(clippy::unnested_or_patterns)]
+#![deny(clippy::unused_self)]
 #![allow(dead_code)]
 
 #[macro_use]
@@ -267,9 +297,9 @@ fn hg_url(url: impl AsRef<OsStr>) -> Option<Url> {
             bytes += 1;
         }
         let (userhost, remainder) = remainder.split_at(bytes);
-        let (scheme, port, remainder) = remainder
-            .strip_prefix(b":")
-            .map(|remainder| {
+        let (scheme, port, remainder) = remainder.strip_prefix(b":").map_or_else(
+            || (&b"https"[..], &b""[..], remainder),
+            |remainder| {
                 let mut bytes = 0;
                 for b in remainder {
                     match b {
@@ -280,15 +310,15 @@ fn hg_url(url: impl AsRef<OsStr>) -> Option<Url> {
                 }
                 let (port, remainder) = remainder.split_at(bytes);
                 let [port, scheme] = port.splitn_exact(b'.').unwrap_or_else(|| {
-                    if port.iter().all(|b| b.is_ascii_digit()) {
+                    if port.iter().all(u8::is_ascii_digit) {
                         [port, b"https"]
                     } else {
                         [b"", port]
                     }
                 });
                 (scheme, port, remainder)
-            })
-            .unwrap_or_else(|| (b"https", b"", remainder));
+            },
+        );
         let mut url = scheme.to_owned();
         if scheme == b"tags" && userhost.is_empty() && port.is_empty() && remainder.is_empty() {
             url.push(b':');
@@ -862,7 +892,7 @@ fn git_cinnabar() -> i32 {
             sha1,
             batch,
         } => do_conversion_cmd(
-            abbrev.map(|v| v.get(0).map(|a| a.0).unwrap_or(12)),
+            abbrev.map(|v| v.get(0).map_or(12, |a| a.0)),
             sha1.iter(),
             batch,
             do_one_hg2git,
@@ -872,7 +902,7 @@ fn git_cinnabar() -> i32 {
             committish,
             batch,
         } => do_conversion_cmd(
-            abbrev.map(|v| v.get(0).map(|a| a.0).unwrap_or(12)),
+            abbrev.map(|v| v.get(0).map_or(12, |a| a.0)),
             committish.iter(),
             batch,
             do_one_git2hg,
@@ -907,6 +937,7 @@ fn git_cinnabar() -> i32 {
 pub fn main() {
     let args: Vec<_> = std::env::args_os().map(prepare_arg).collect();
     let argc = args.len();
+    #[cfg_attr(windows, allow(clippy::redundant_closure_for_method_calls))]
     let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
     argv.push(std::ptr::null());
     // This is circumvoluted, but we need the initialization from wmain.
@@ -1047,7 +1078,7 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
     let exe = std::env::current_exe().map(|e| e.as_os_str().to_cstring());
     init_cinnabar(exe.as_deref().unwrap_or(argv0).as_ptr());
 
-    let ret = match argv0_path.file_stem().and_then(|a| a.to_str()) {
+    let ret = match argv0_path.file_stem().and_then(OsStr::to_str) {
         Some("git-cinnabar") => git_cinnabar(),
         Some("git-cinnabar-helper") => helper_main(0, 1),
         Some("git-remote-hg") => {

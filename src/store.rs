@@ -4,7 +4,7 @@
 
 use std::borrow::Cow;
 use std::io::Write;
-use std::iter::repeat;
+use std::iter::{repeat, IntoIterator};
 use std::mem;
 
 use bstr::ByteSlice;
@@ -58,7 +58,7 @@ impl GitChangesetId {
         let metadata = GitChangesetMetadata::read(self);
         metadata
             .as_ref()
-            .and_then(|m| m.parse())
+            .and_then(GitChangesetMetadata::parse)
             .map(|m| m.changeset_id().clone())
     }
 }
@@ -162,7 +162,7 @@ impl<'a> ChangesetExtra<'a> {
                 return;
             }
         }
-        self.more.push((name, value))
+        self.more.push((name, value));
     }
 
     pub fn dump_into(&self, buf: &mut Vec<u8>) {
@@ -170,7 +170,7 @@ impl<'a> ChangesetExtra<'a> {
             self.buf
                 .split(|c| *c == b'\0')
                 .merge_join_by(&self.more, |e, (n, _v)| {
-                    e.splitn_exact::<2>(b':').map(|e| e[0]).unwrap_or(e).cmp(n)
+                    e.splitn_exact::<2>(b':').map_or(*e, |e| e[0]).cmp(n)
                 })
                 .map(|e| {
                     e.map_left(Cow::Borrowed)
@@ -220,7 +220,7 @@ impl<'a> GitChangesetPatch<'a> {
                 Some(PatchInfo { start, end, data })
             })
             .collect::<Option<Vec<_>>>()
-            .map(|v| v.into_iter())
+            .map(IntoIterator::into_iter)
     }
 
     pub fn apply(&self, input: &[u8]) -> Option<Vec<u8>> {

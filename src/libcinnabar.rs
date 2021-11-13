@@ -125,7 +125,7 @@ extern "C" {
 #[no_mangle]
 pub unsafe extern "C" fn send_buffer(fd: c_int, buf: *const strbuf) {
     let mut out = FdFile::from_raw_fd(fd);
-    send_buffer_to(buf.as_ref().map(strbuf::as_bytes), &mut out)
+    send_buffer_to(buf.as_ref().map(strbuf::as_bytes), &mut out);
 }
 
 pub fn send_buffer_to<'a>(buf: impl Into<Option<&'a [u8]>>, out: &mut impl Write) {

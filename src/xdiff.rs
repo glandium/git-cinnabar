@@ -133,7 +133,7 @@ extern "C" fn hunk_cb(
 fn line_offsets(buf: &[u8]) -> Vec<usize> {
     [0, 0]
         .iter()
-        .cloned()
+        .copied()
         .chain(buf.lines_with_terminator().scan(0, |off, l| {
             *off += l.len();
             Some(*off)
