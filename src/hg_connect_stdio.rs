@@ -26,7 +26,7 @@ use crate::libc::FdFile;
 use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
 use crate::libgit::{child_process, strbuf};
 use crate::store::HgChangesetId;
-use crate::util::{BufferedReader, OsStrExt, PrefixWriter, SeekExt};
+use crate::util::{BufferedReader, ImmutBString, OsStrExt, PrefixWriter, SeekExt};
 
 pub struct HgStdioConnection {
     capabilities: HgCapabilities,
@@ -82,7 +82,7 @@ extern "C" {
     fn strbuf_fread(buf: *mut strbuf, len: usize, file: *mut libc::FILE);
 }
 
-fn stdio_read_response(conn: &mut HgStdioConnection) -> Box<[u8]> {
+fn stdio_read_response(conn: &mut HgStdioConnection) -> ImmutBString {
     let mut length_str = String::new();
     conn.proc_out.read_line(&mut length_str).unwrap();
     let length = usize::from_str(length_str.trim_end_matches('\n')).unwrap();
@@ -92,7 +92,7 @@ fn stdio_read_response(conn: &mut HgStdioConnection) -> Box<[u8]> {
 }
 
 impl HgWireConnection for HgStdioConnection {
-    fn simple_command(&mut self, command: &str, args: HgArgs) -> Box<[u8]> {
+    fn simple_command(&mut self, command: &str, args: HgArgs) -> ImmutBString {
         stdio_send_command(self, command, args);
         stdio_read_response(self)
     }
@@ -115,7 +115,7 @@ impl HgWireConnection for HgStdioConnection {
         }
     }
 
-    fn push_command(&mut self, mut input: File, command: &str, args: HgArgs) -> Box<[u8]> {
+    fn push_command(&mut self, mut input: File, command: &str, args: HgArgs) -> ImmutBString {
         stdio_send_command(self, command, args);
         /* The server normally sends an empty response before reading the data
          * it's sent if not, it's an error (typically, the remote will

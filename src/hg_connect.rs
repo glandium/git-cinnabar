@@ -20,7 +20,7 @@ use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libcinnabar::send_buffer_to;
 use crate::oid::ObjectId;
 use crate::store::HgChangesetId;
-use crate::util::{PrefixWriter, SliceExt};
+use crate::util::{ImmutBString, PrefixWriter, SliceExt};
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
@@ -110,7 +110,7 @@ pub trait HgConnectionBase {
 }
 
 pub trait HgWireConnection: HgConnectionBase {
-    fn simple_command(&mut self, command: &str, args: HgArgs) -> Box<[u8]>;
+    fn simple_command(&mut self, command: &str, args: HgArgs) -> ImmutBString;
 
     fn changegroup_command<'a>(
         &'a mut self,
@@ -118,7 +118,7 @@ pub trait HgWireConnection: HgConnectionBase {
         args: HgArgs,
     ) -> Result<Box<dyn Read + 'a>, BString>;
 
-    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> Box<[u8]>;
+    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> ImmutBString;
 }
 
 pub trait HgConnection: HgConnectionBase {
@@ -130,7 +130,7 @@ pub trait HgConnection: HgConnectionBase {
         unimplemented!();
     }
 
-    fn listkeys(&mut self, _namespace: &str) -> Box<[u8]> {
+    fn listkeys(&mut self, _namespace: &str) -> ImmutBString {
         unimplemented!();
     }
 
@@ -143,35 +143,35 @@ pub trait HgConnection: HgConnectionBase {
         unimplemented!();
     }
 
-    fn unbundle(&mut self, _heads: Option<&[HgChangesetId]>, _input: File) -> Box<[u8]> {
+    fn unbundle(&mut self, _heads: Option<&[HgChangesetId]>, _input: File) -> ImmutBString {
         unimplemented!();
     }
 
-    fn pushkey(&mut self, _namespace: &str, _key: &str, _old: &str, _new: &str) -> Box<[u8]> {
+    fn pushkey(&mut self, _namespace: &str, _key: &str, _old: &str, _new: &str) -> ImmutBString {
         unimplemented!();
     }
 
-    fn branchmap(&mut self) -> Box<[u8]> {
+    fn branchmap(&mut self) -> ImmutBString {
         unimplemented!();
     }
 
-    fn heads(&mut self) -> Box<[u8]> {
+    fn heads(&mut self) -> ImmutBString {
         unimplemented!();
     }
 
-    fn batch(&mut self, _cmds: &str) -> Box<[u8]> {
+    fn batch(&mut self, _cmds: &str) -> ImmutBString {
         unimplemented!();
     }
 
-    fn lookup(&mut self, _key: &str) -> Box<[u8]> {
+    fn lookup(&mut self, _key: &str) -> ImmutBString {
         unimplemented!();
     }
 
-    fn clonebundles(&mut self) -> Box<[u8]> {
+    fn clonebundles(&mut self) -> ImmutBString {
         unimplemented!();
     }
 
-    fn cinnabarclone(&mut self) -> Box<[u8]> {
+    fn cinnabarclone(&mut self) -> ImmutBString {
         unimplemented!();
     }
 }
@@ -202,7 +202,7 @@ impl HgConnection for Box<dyn HgWireConnection> {
         .into()
     }
 
-    fn listkeys(&mut self, namespace: &str) -> Box<[u8]> {
+    fn listkeys(&mut self, namespace: &str) -> ImmutBString {
         self.simple_command("listkeys", args!(namespace: namespace))
     }
 
@@ -234,7 +234,7 @@ impl HgConnection for Box<dyn HgWireConnection> {
         self.changegroup_command("getbundle", args!(*: &args[..]))
     }
 
-    fn unbundle(&mut self, heads: Option<&[HgChangesetId]>, input: File) -> Box<[u8]> {
+    fn unbundle(&mut self, heads: Option<&[HgChangesetId]>, input: File) -> ImmutBString {
         let heads_str = if let Some(heads) = heads {
             if self.get_capability(b"unbundlehash").is_none() {
                 heads.iter().join(" ")
@@ -252,7 +252,7 @@ impl HgConnection for Box<dyn HgWireConnection> {
         self.push_command(input, "unbundle", args!(heads: &heads_str))
     }
 
-    fn pushkey(&mut self, namespace: &str, key: &str, old: &str, new: &str) -> Box<[u8]> {
+    fn pushkey(&mut self, namespace: &str, key: &str, old: &str, new: &str) -> ImmutBString {
         //TODO: handle the response being a mix of return code and output
         self.simple_command(
             "pushkey",
@@ -260,15 +260,15 @@ impl HgConnection for Box<dyn HgWireConnection> {
         )
     }
 
-    fn branchmap(&mut self) -> Box<[u8]> {
+    fn branchmap(&mut self) -> ImmutBString {
         self.simple_command("branchmap", args!())
     }
 
-    fn heads(&mut self) -> Box<[u8]> {
+    fn heads(&mut self) -> ImmutBString {
         self.simple_command("heads", args!())
     }
 
-    fn batch(&mut self, _cmds: &str) -> Box<[u8]> {
+    fn batch(&mut self, _cmds: &str) -> ImmutBString {
         self.simple_command(
             "batch",
             args!(
@@ -278,20 +278,20 @@ impl HgConnection for Box<dyn HgWireConnection> {
         )
     }
 
-    fn lookup(&mut self, key: &str) -> Box<[u8]> {
+    fn lookup(&mut self, key: &str) -> ImmutBString {
         self.simple_command("lookup", args!(key: key))
     }
 
-    fn clonebundles(&mut self) -> Box<[u8]> {
+    fn clonebundles(&mut self) -> ImmutBString {
         self.simple_command("clonebundles", args!())
     }
 
-    fn cinnabarclone(&mut self) -> Box<[u8]> {
+    fn cinnabarclone(&mut self) -> ImmutBString {
         self.simple_command("cinnabarclone", args!())
     }
 }
 
-fn unescape_batched_output(out: &[u8]) -> Box<[u8]> {
+fn unescape_batched_output(out: &[u8]) -> ImmutBString {
     // This will fail if `split` has more than 3 items.
     let mut start = 0;
     let mut out = out;

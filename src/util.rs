@@ -534,3 +534,22 @@ impl<T: AsRawHandle> Duplicate for T {
         DuplicateFd(handle)
     }
 }
+
+pub type ImmutBString = Box<[u8]>;
+pub type ImmutString = Box<str>;
+
+pub trait ToBoxed {
+    fn to_boxed(&self) -> Box<Self>;
+}
+
+impl<T: Clone> ToBoxed for [T] {
+    fn to_boxed(&self) -> Box<Self> {
+        self.to_vec().into()
+    }
+}
+
+impl ToBoxed for str {
+    fn to_boxed(&self) -> Box<Self> {
+        self.to_string().into()
+    }
+}

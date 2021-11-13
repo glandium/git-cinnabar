@@ -18,7 +18,7 @@ use crate::libcinnabar::{generate_manifest, git2hg, hg2git};
 use crate::libgit::{BlobId, CommitId, RawBlob, RawCommit};
 use crate::oid::{HgObjectId, ObjectId};
 use crate::oid_type;
-use crate::util::{FromBytes, SliceExt};
+use crate::util::{FromBytes, ImmutBString, SliceExt};
 use crate::xdiff::{apply, PatchInfo};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
@@ -230,7 +230,7 @@ impl<'a> GitChangesetPatch<'a> {
 
 #[derive(Deref)]
 #[deref(forward)]
-pub struct RawHgChangeset(Box<[u8]>);
+pub struct RawHgChangeset(ImmutBString);
 
 impl RawHgChangeset {
     pub fn read(oid: &GitChangesetId) -> Option<Self> {
@@ -310,7 +310,7 @@ impl RawHgChangeset {
 
 #[derive(Deref)]
 #[deref(forward)]
-pub struct RawHgManifest(Box<[u8]>);
+pub struct RawHgManifest(ImmutBString);
 
 impl RawHgManifest {
     pub fn read(oid: &GitManifestId) -> Option<Self> {
@@ -324,7 +324,7 @@ impl RawHgManifest {
 
 #[derive(Deref)]
 #[deref(forward)]
-pub struct RawHgFile(Box<[u8]>);
+pub struct RawHgFile(ImmutBString);
 
 impl RawHgFile {
     pub fn read(oid: &GitFileId, metadata: Option<&GitFileMetadataId>) -> Option<Self> {

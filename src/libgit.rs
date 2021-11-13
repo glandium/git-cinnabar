@@ -18,7 +18,7 @@ use getset::Getters;
 use once_cell::sync::Lazy;
 
 use crate::oid::{GitObjectId, ObjectId};
-use crate::util::{CStrExt, FromBytes, OptionExt, OsStrExt, SliceExt};
+use crate::util::{CStrExt, FromBytes, ImmutBString, OptionExt, OsStrExt, SliceExt};
 
 const GIT_MAX_RAWSZ: usize = 32;
 const GIT_HASH_SHA1: c_int = 1;
@@ -576,19 +576,19 @@ impl fmt::Debug for FileMode {
 pub enum DiffTreeItem {
     Added {
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
-        path: Box<[u8]>,
+        path: ImmutBString,
         mode: FileMode,
         oid: BlobId,
     },
     Deleted {
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
-        path: Box<[u8]>,
+        path: ImmutBString,
         mode: FileMode,
         oid: BlobId,
     },
     Modified {
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
-        path: Box<[u8]>,
+        path: ImmutBString,
         from_mode: FileMode,
         from_oid: BlobId,
         to_mode: FileMode,
@@ -596,21 +596,21 @@ pub enum DiffTreeItem {
     },
     Renamed {
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
-        to_path: Box<[u8]>,
+        to_path: ImmutBString,
         to_mode: FileMode,
         to_oid: BlobId,
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
-        from_path: Box<[u8]>,
+        from_path: ImmutBString,
         from_mode: FileMode,
         from_oid: BlobId,
     },
     Copied {
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
-        to_path: Box<[u8]>,
+        to_path: ImmutBString,
         to_mode: FileMode,
         to_oid: BlobId,
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
-        from_path: Box<[u8]>,
+        from_path: ImmutBString,
         from_mode: FileMode,
         from_oid: BlobId,
     },
@@ -622,7 +622,7 @@ unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tr
     let item = match item.status {
         DIFF_STATUS_MODIFIED | DIFF_STATUS_TYPE_CHANGED => DiffTreeItem::Modified {
             path: {
-                let a_path: Box<[u8]> = CStr::from_ptr(item.a.path).to_bytes().into();
+                let a_path: ImmutBString = CStr::from_ptr(item.a.path).to_bytes().into();
                 let b_path = CStr::from_ptr(item.b.path).to_bytes();
                 assert_eq!(a_path.as_bstr(), b_path.as_bstr());
                 a_path

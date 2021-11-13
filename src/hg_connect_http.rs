@@ -43,7 +43,7 @@ use crate::libgit::{
     slot_results, HTTP_OK, HTTP_REAUTH,
 };
 use crate::store::HgChangesetId;
-use crate::util::{PrefixWriter, ReadExt, SeekExt, SliceExt};
+use crate::util::{ImmutBString, PrefixWriter, ReadExt, SeekExt, SliceExt, ToBoxed};
 
 use self::git_http_state::{GitHttpStateToken, GIT_HTTP_STATE};
 
@@ -468,7 +468,7 @@ impl HgHttpConnection {
 }
 
 impl HgWireConnection for HgHttpConnection {
-    fn simple_command(&mut self, command: &str, args: HgArgs) -> Box<[u8]> {
+    fn simple_command(&mut self, command: &str, args: HgArgs) -> ImmutBString {
         let mut http_req = self.start_command_request(command, args);
         if command == "pushkey" {
             http_req.header("Content-Type", "application/mercurial-0.1");
@@ -533,7 +533,7 @@ impl HgWireConnection for HgHttpConnection {
         }
     }
 
-    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> Box<[u8]> {
+    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> ImmutBString {
         let mut http_req = self.start_command_request(command, args);
         http_req.post_data(Box::new(input));
         http_req.header("Content-Type", "application/mercurial-0.1");
@@ -554,7 +554,7 @@ impl HgWireConnection for HgHttpConnection {
                 Some([stdout_, stderr_]) => {
                     let mut writer = PrefixWriter::new(b"remote: ", stderr.lock());
                     writer.write_all(stderr_).unwrap();
-                    stdout_.to_vec().into()
+                    stdout_.to_boxed()
                 }
                 //TODO: better eror handling.
                 _ => panic!("Bad output from server"),
