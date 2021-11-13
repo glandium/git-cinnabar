@@ -12,6 +12,7 @@ extern crate derivative;
 #[macro_use]
 extern crate all_asserts;
 
+use itertools::Itertools;
 use structopt::clap::{crate_version, AppSettings, ArgGroup};
 use structopt::StructOpt;
 
@@ -123,7 +124,7 @@ pub fn prepare_arg(arg: OsString) -> CString {
 
 #[cfg(windows)]
 pub fn prepare_arg(arg: OsString) -> Vec<u16> {
-    let mut arg = arg.encode_wide().collect::<Vec<_>>();
+    let mut arg = arg.encode_wide().collect_vec();
     arg.push(0);
     arg
 }
@@ -607,14 +608,14 @@ fn do_rollback(
         let labels = labels
             .iter()
             .filter_map(|(name, cid)| Some((*name, cid.clone()?)))
-            .collect::<Vec<_>>();
+            .collect_vec();
         let mut metadata = metadata;
         while let Some(m) = metadata {
             print!("{}", m);
             let matched_labels = labels
                 .iter()
                 .filter_map(|(name, cid)| (*cid == m).then(|| *name))
-                .collect::<Vec<_>>()
+                .collect_vec()
                 .join(", ");
             if !matched_labels.is_empty() {
                 print!(" ({})", matched_labels);

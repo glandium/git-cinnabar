@@ -28,6 +28,7 @@ use curl_sys::{
 };
 use either::Either;
 use flate2::read::ZlibDecoder;
+use itertools::Itertools;
 use url::{form_urlencoded, Url};
 use zstd::stream::read::Decoder as ZstdDecoder;
 
@@ -405,7 +406,7 @@ impl HgHttpConnection {
             args.extra_args.as_ref().unwrap_or(&&[][..]).iter(),
         )
         .map(|OneHgArg { name, value }| (name, value))
-        .collect::<Vec<_>>();
+        .collect_vec();
 
         let httpheader = self
             .get_capability(b"httpheader")

@@ -130,6 +130,8 @@ fn test_buffered_reader() {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
+    use itertools::Itertools;
+
     struct ArcRead<R: Read>(Arc<Mutex<R>>);
 
     impl<R: Read> Read for ArcRead<R> {
@@ -138,7 +140,7 @@ fn test_buffered_reader() {
         }
     }
 
-    let data = Arc::new(Mutex::new(Cursor::new((1..=200).collect::<Vec<u8>>())));
+    let data = Arc::new(Mutex::new(Cursor::new((1..=200).collect_vec())));
 
     let mut r = ArcRead(Arc::clone(&data));
     let mut reader = BufferedReader::new_::<_, 3>(&mut r);

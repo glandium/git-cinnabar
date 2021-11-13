@@ -13,6 +13,7 @@ use std::str::FromStr;
 use std::thread::{spawn, JoinHandle};
 
 use bstr::{BStr, BString};
+use itertools::Itertools;
 use percent_encoding::percent_decode_str;
 use url::Url;
 
@@ -204,7 +205,7 @@ extern "C" {
 
 pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnection>> {
     let userhost = url.host_str().map(|host| {
-        let username = percent_decode_str(url.username()).collect::<Vec<_>>();
+        let username = percent_decode_str(url.username()).collect_vec();
         let userhost = if username.is_empty() {
             host.as_bytes().to_owned()
         } else {
@@ -219,7 +220,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
         .port()
         .map(|port| CString::new(port.to_string()).unwrap());
     let path = if url.scheme() == "ssh" {
-        percent_decode_str(url.path().trim_start_matches('/')).collect::<Vec<u8>>()
+        percent_decode_str(url.path().trim_start_matches('/')).collect_vec()
     } else {
         let path = url.to_file_path().unwrap();
         if path.metadata().map(|m| m.is_file()).unwrap_or(false) {

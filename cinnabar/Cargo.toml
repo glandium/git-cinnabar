@@ -15,6 +15,7 @@ publish = false
 path = "lib.rs"
 
 [build-dependencies]
+itertools = "0.10"
 tar = "0.4"
 walkdir = "2"
 

@@ -6,6 +6,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs::File;
 use std::path::Path;
 
+use itertools::Itertools;
 use tar::{Builder, EntryType, Header};
 use walkdir::WalkDir;
 
@@ -27,7 +28,7 @@ fn main() {
             e.ok()
                 .filter(|e| e.path().extension() == Some(OsStr::new("py")))
         })
-        .collect::<Vec<_>>();
+        .collect_vec();
     python_files.sort_unstable_by(|a, b| a.path().cmp(b.path()));
 
     for entry in python_files {

@@ -267,7 +267,7 @@ impl RawHgChangeset {
             changeset.push(b' ');
             extra.dump_into(&mut changeset);
         }
-        let mut files = metadata.files().collect::<Vec<_>>();
+        let mut files = metadata.files().collect_vec();
         //TODO: probably don't actually need sorting.
         files.sort();
         for f in &files {

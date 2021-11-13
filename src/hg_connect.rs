@@ -73,7 +73,7 @@ impl HgCapabilities {
             capabilities.push((
                 BString::from(name.to_owned()),
                 if name == b"bundle2" {
-                    BString::from(percent_decode(value).collect::<Vec<_>>())
+                    BString::from(percent_decode(value).collect_vec())
                 } else {
                     BString::from(value.to_owned())
                 },
@@ -198,7 +198,7 @@ impl HgConnection for Box<dyn HgWireConnection> {
         )
         .iter()
         .map(|b| *b == b'1')
-        .collect::<Vec<_>>()
+        .collect_vec()
         .into_boxed_slice()
     }
 
@@ -360,7 +360,7 @@ fn do_known(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
         .known(&nodes)
         .iter()
         .map(|k| if *k { b'1' } else { b'0' })
-        .collect::<Vec<_>>();
+        .collect_vec();
     send_buffer_to(&*result, out);
 }
 
@@ -413,7 +413,7 @@ fn do_unbundle(
         Some(
             args.iter()
                 .map(|a| HgChangesetId::from_str(a).unwrap())
-                .collect::<Vec<_>>(),
+                .collect_vec(),
         )
     };
 
@@ -562,7 +562,7 @@ pub fn connect_main_with(
         if connection.is_none() {
             return Err(format!("Unknown command: {}", command).into());
         }
-        let args = args.collect::<Vec<_>>();
+        let args = args.collect_vec();
         let conn = &mut **connection.as_mut().unwrap();
         match command {
             "known" => do_known(conn, &*args, out),
