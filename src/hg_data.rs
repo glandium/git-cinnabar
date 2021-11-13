@@ -8,8 +8,12 @@ use std::ptr;
 use crate::libgit::{ident_split, split_ident_line};
 use crate::util::{FromBytes, ImmutBString, ToBoxed};
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct Authorship {
+    #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
     name: ImmutBString,
+    #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
     email: ImmutBString,
     timestamp: u64,
     utcoffset: i32,
