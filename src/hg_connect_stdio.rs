@@ -101,7 +101,7 @@ impl HgWireConnection for HgStdioConnection {
         &'a mut self,
         command: &str,
         args: HgArgs,
-    ) -> Result<Box<dyn Read + 'a>, BString> {
+    ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
         stdio_send_command(self, command, args);
 
         /* We assume the caller is only going to read the right amount of data according
@@ -185,7 +185,7 @@ impl HgConnection for HgStdioBundle {
         heads: &[HgChangesetId],
         common: &[HgChangesetId],
         bundle2caps: Option<&str>,
-    ) -> Result<Box<dyn Read + 'a>, BString> {
+    ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
         assert!(heads.is_empty());
         assert!(common.is_empty());
         assert!(bundle2caps.is_none());

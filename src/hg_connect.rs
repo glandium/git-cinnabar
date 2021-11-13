@@ -8,7 +8,7 @@ use std::io::{stderr, BufRead, Read, Write};
 use std::os::raw::c_int;
 use std::str::FromStr;
 
-use bstr::{BStr, BString, ByteSlice};
+use bstr::{BStr, ByteSlice};
 use itertools::Itertools;
 use percent_encoding::percent_decode;
 use sha1::{Digest, Sha1};
@@ -20,7 +20,7 @@ use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libcinnabar::send_buffer_to;
 use crate::oid::ObjectId;
 use crate::store::HgChangesetId;
-use crate::util::{ImmutBString, PrefixWriter, SliceExt};
+use crate::util::{ImmutBString, PrefixWriter, SliceExt, ToBoxed};
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
@@ -54,7 +54,7 @@ macro_rules! args {
 
 #[derive(Default)]
 pub struct HgCapabilities {
-    capabilities: Vec<(BString, BString)>,
+    capabilities: Vec<(ImmutBString, ImmutBString)>,
 }
 
 impl HgCapabilities {
@@ -71,11 +71,11 @@ impl HgCapabilities {
                 None => (item, &b""[..]),
             };
             capabilities.push((
-                BString::from(name.to_owned()),
+                name.to_boxed(),
                 if name == b"bundle2" {
-                    BString::from(percent_decode(value).collect_vec())
+                    percent_decode(value).collect_vec().into()
                 } else {
-                    BString::from(value.to_owned())
+                    value.to_boxed()
                 },
             ));
         }
@@ -84,8 +84,8 @@ impl HgCapabilities {
 
     pub fn get_capability(&self, needle: &[u8]) -> Option<&BStr> {
         for (name, value) in self.capabilities.iter() {
-            if name == needle {
-                return Some(value.as_ref());
+            if &**name == needle {
+                return Some(value.as_bstr());
             }
         }
         None
@@ -116,7 +116,7 @@ pub trait HgWireConnection: HgConnectionBase {
         &'a mut self,
         command: &str,
         args: HgArgs,
-    ) -> Result<Box<dyn Read + 'a>, BString>;
+    ) -> Result<Box<dyn Read + 'a>, ImmutBString>;
 
     fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> ImmutBString;
 }
@@ -139,7 +139,7 @@ pub trait HgConnection: HgConnectionBase {
         _heads: &[HgChangesetId],
         _common: &[HgChangesetId],
         _bundle2caps: Option<&str>,
-    ) -> Result<Box<dyn Read + 'a>, BString> {
+    ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
         unimplemented!();
     }
 
@@ -211,7 +211,7 @@ impl HgConnection for Box<dyn HgWireConnection> {
         heads: &[HgChangesetId],
         common: &[HgChangesetId],
         bundle2caps: Option<&str>,
-    ) -> Result<Box<dyn Read + 'a>, BString> {
+    ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
         let mut args = Vec::new();
         let heads = heads.iter().join(" ");
         let common = common.iter().join(" ");

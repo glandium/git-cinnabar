@@ -16,7 +16,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-use bstr::{BStr, BString, ByteSlice};
+use bstr::{BStr, ByteSlice};
 use byteorder::ReadBytesExt;
 use bzip2::read::BzDecoder;
 use cstr::cstr;
@@ -487,7 +487,7 @@ impl HgWireConnection for HgHttpConnection {
         &'a mut self,
         command: &str,
         args: HgArgs,
-    ) -> Result<Box<dyn Read + 'a>, BString> {
+    ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
         let mut http_req = self.start_command_request(command, args);
         if let Some(media_type) = self
             .get_capability(b"httpmediatype")
@@ -525,9 +525,9 @@ impl HgWireConnection for HgHttpConnection {
                 Ok(reader)
             }
             Some("application/hg-error") => {
-                let mut err = BString::default();
+                let mut err = Vec::new();
                 http_resp.read_to_end(&mut err).unwrap();
-                Err(err)
+                Err(err.into())
             }
             _ => unimplemented!(),
         }
@@ -593,7 +593,7 @@ impl HgConnection for HgHttpBundle {
         heads: &[HgChangesetId],
         common: &[HgChangesetId],
         bundle2caps: Option<&str>,
-    ) -> Result<Box<dyn Read + 'a>, BString> {
+    ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
         assert!(heads.is_empty());
         assert!(common.is_empty());
         assert!(bundle2caps.is_none());
