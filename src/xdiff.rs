@@ -9,6 +9,8 @@ use std::os::raw::{c_char, c_int, c_long, c_ulong};
 
 use bstr::ByteSlice;
 
+use crate::util::ImmutBString;
+
 #[allow(non_camel_case_types)]
 #[repr(C)]
 struct mmfile_t<'a> {
@@ -84,7 +86,10 @@ impl<S: AsRef<[u8]>, R: AsRef<[u8]>> PartialEq<PatchInfo<S>> for PatchInfo<R> {
     }
 }
 
-pub fn apply<S: AsRef<[u8]>>(patch: impl Iterator<Item = PatchInfo<S>>, input: &[u8]) -> Vec<u8> {
+pub fn apply<S: AsRef<[u8]>>(
+    patch: impl Iterator<Item = PatchInfo<S>>,
+    input: &[u8],
+) -> ImmutBString {
     let mut patched = Vec::new();
     let mut last_end = 0;
     for PatchInfo { start, end, data } in patch {
@@ -93,7 +98,7 @@ pub fn apply<S: AsRef<[u8]>>(patch: impl Iterator<Item = PatchInfo<S>>, input: &
         last_end = end;
     }
     patched.extend_from_slice(&input[last_end..]);
-    patched
+    patched.into()
 }
 
 struct HunkContext<'a> {

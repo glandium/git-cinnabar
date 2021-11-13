@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::borrow::ToOwned;
 use std::cmp::min;
 use std::collections::VecDeque;
 use std::convert::TryInto;
@@ -41,14 +40,14 @@ macro_rules! derive_debug_display {
 }
 
 pub struct PrefixWriter<W: Write> {
-    prefix: Vec<u8>,
+    prefix: ImmutBString,
     line_writer: LineWriter<W>,
 }
 
 impl<W: Write> PrefixWriter<W> {
     pub fn new(prefix: &[u8], w: W) -> Self {
         PrefixWriter {
-            prefix: prefix.to_owned(),
+            prefix: prefix.to_boxed(),
             line_writer: LineWriter::new(w),
         }
     }
@@ -71,14 +70,14 @@ impl<W: Write> Write for PrefixWriter<W> {
 
 pub struct BufferedReader<'a> {
     thread: Option<std::thread::JoinHandle<io::Result<()>>>,
-    receiver: Option<Receiver<Vec<u8>>>,
+    receiver: Option<Receiver<ImmutBString>>,
     buf: VecDeque<u8>,
     marker: PhantomData<&'a mut ()>,
 }
 
 impl<'a> BufferedReader<'a> {
     fn new_<R: Read + Send + 'static, const BUFSIZE: usize>(r: &'a mut R) -> Self {
-        let (sender, receiver) = channel::<Vec<u8>>();
+        let (sender, receiver) = channel::<ImmutBString>();
         let r = unsafe { std::mem::transmute::<_, &'static mut R>(r) };
         let thread = std::thread::spawn(move || {
             loop {
@@ -86,8 +85,7 @@ impl<'a> BufferedReader<'a> {
                 let len = r.read_at_most(&mut buf[..])?;
                 if len > 0 {
                     buf.truncate(len);
-                    buf.shrink_to_fit();
-                    sender.send(buf).unwrap();
+                    sender.send(buf.into()).unwrap();
                 } else {
                     break;
                 }
@@ -117,7 +115,7 @@ impl<'a> Read for BufferedReader<'a> {
         if !rest.is_empty() {
             assert!(self.buf.is_empty());
             if let Some(buf) = self.receiver.as_ref().and_then(|r| r.recv().ok()) {
-                self.buf = buf.into();
+                self.buf = buf.to_vec().into();
                 size += self.read(rest)?;
             }
         }

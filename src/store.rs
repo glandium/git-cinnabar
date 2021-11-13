@@ -18,7 +18,7 @@ use crate::libcinnabar::{generate_manifest, git2hg, hg2git};
 use crate::libgit::{BlobId, CommitId, RawBlob, RawCommit};
 use crate::oid::{HgObjectId, ObjectId};
 use crate::oid_type;
-use crate::util::{FromBytes, ImmutBString, SliceExt};
+use crate::util::{FromBytes, ImmutBString, SliceExt, ToBoxed};
 use crate::xdiff::{apply, PatchInfo};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
@@ -223,7 +223,7 @@ impl<'a> GitChangesetPatch<'a> {
             .map(IntoIterator::into_iter)
     }
 
-    pub fn apply(&self, input: &[u8]) -> Option<Vec<u8>> {
+    pub fn apply(&self, input: &[u8]) -> Option<ImmutBString> {
         Some(apply(self.iter()?, input))
     }
 }
@@ -248,7 +248,7 @@ impl RawHgChangeset {
         let metadata = GitChangesetMetadata::read(oid)?;
         let metadata = metadata.parse()?;
         if let Some(author) = metadata.author() {
-            hg_author = author.to_owned();
+            hg_author = author.to_boxed();
         }
         let mut extra = metadata.extra();
         if let Some(hg_committer) = hg_committer {
@@ -278,7 +278,7 @@ impl RawHgChangeset {
         changeset.extend_from_slice(commit.body());
 
         if let Some(patch) = metadata.patch() {
-            let mut patched = patch.apply(&changeset)?;
+            let mut patched = patch.apply(&changeset)?.to_vec();
             mem::swap(&mut changeset, &mut patched);
         }
 

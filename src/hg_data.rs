@@ -6,11 +6,11 @@ use std::os::raw::{c_char, c_int};
 use std::ptr;
 
 use crate::libgit::{ident_split, split_ident_line};
-use crate::util::FromBytes;
+use crate::util::{FromBytes, ImmutBString, ToBoxed};
 
 pub struct Authorship {
-    name: Vec<u8>,
-    email: Vec<u8>,
+    name: ImmutBString,
+    email: ImmutBString,
     timestamp: u64,
     utcoffset: i32,
 }
@@ -44,20 +44,20 @@ impl Authorship {
             let utcoffset = utcoffset.abs();
             let utcoffset = (utcoffset / 100) * 60 + (utcoffset % 100);
             Authorship {
-                name: to_slice(split.name_begin, split.name_end).to_owned(),
-                email: to_slice(split.mail_begin, split.mail_end).to_owned(),
+                name: to_slice(split.name_begin, split.name_end).to_boxed(),
+                email: to_slice(split.mail_begin, split.mail_end).to_boxed(),
                 timestamp: u64::from_bytes(to_slice(split.date_begin, split.date_end)).unwrap(),
                 utcoffset: sign * utcoffset * 60,
             }
         }
     }
 
-    pub fn to_hg_parts(&self) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+    pub fn to_hg_parts(&self) -> (ImmutBString, ImmutBString, ImmutBString) {
         let who = if self.name.is_empty() {
             let mut who = vec![b'<'];
             who.extend_from_slice(&self.email);
             who.push(b'>');
-            who
+            who.into()
         } else if self.email.is_empty() {
             self.name.clone()
         } else {
@@ -66,22 +66,23 @@ impl Authorship {
             who.extend_from_slice(b" <");
             who.extend_from_slice(&self.email);
             who.push(b'>');
-            who
+            who.into()
         };
         (
             who,
-            self.timestamp.to_string().into_bytes(),
-            self.utcoffset.to_string().into_bytes(),
+            self.timestamp.to_string().into_bytes().into(),
+            self.utcoffset.to_string().into_bytes().into(),
         )
     }
 
-    pub fn to_hg_bytes(&self) -> Vec<u8> {
-        let (mut who, mut timestamp, mut utcoffset) = self.to_hg_parts();
+    pub fn to_hg_bytes(&self) -> ImmutBString {
+        let (who, timestamp, utcoffset) = self.to_hg_parts();
+        let mut who = who.to_vec();
         who.push(b' ');
-        who.append(&mut timestamp);
+        who.extend_from_slice(&timestamp);
         who.push(b' ');
-        who.append(&mut utcoffset);
-        who
+        who.extend_from_slice(&utcoffset);
+        who.into()
     }
 }
 
@@ -93,8 +94,8 @@ fn test_authorship_from_git() {
     // last character of the slice if the data section contains digit
     // characters after the string.
     let a = Authorship::from_git_bytes(b"Foo Bar <foo@bar> 0 +0000\n");
-    assert_eq!(a.name, b"Foo Bar");
-    assert_eq!(a.email, b"foo@bar");
+    assert_eq!(&*a.name, b"Foo Bar");
+    assert_eq!(&*a.email, b"foo@bar");
 
     let a = Authorship::from_git_bytes(b"Foo Bar <foo@bar> 1482880019 -0100\n");
     assert_eq!(a.timestamp, 1482880019);

@@ -152,13 +152,13 @@ struct HttpResponseInfo {
 struct HttpResponse {
     info: HttpResponseInfo,
     thread: Option<JoinHandle<Result<(), (c_int, HttpRequest)>>>,
-    cursor: Cursor<Vec<u8>>,
+    cursor: Cursor<ImmutBString>,
     receiver: Option<Receiver<HttpRequestChannelData>>,
     #[derivative(Debug = "ignore")]
     token: Arc<GitHttpStateToken>,
 }
 
-type HttpRequestChannelData = Either<HttpResponseInfo, Vec<u8>>;
+type HttpRequestChannelData = Either<HttpResponseInfo, ImmutBString>;
 
 struct HttpThreadData {
     sender: Sender<HttpRequestChannelData>,
@@ -263,7 +263,7 @@ impl HttpRequest {
             Ok(Either::Left(info)) if info.http_status < 300 => Ok(HttpResponse {
                 info,
                 thread: Some(thread),
-                cursor: Cursor::new(Vec::new()),
+                cursor: Cursor::new(b"".to_boxed()),
                 receiver: Some(receiver),
                 token,
             }),
@@ -394,7 +394,7 @@ unsafe extern "C" fn http_request_execute(
     let data = (data as *mut HttpThreadData).as_mut().unwrap();
     http_send_info(data);
     let buf = std::slice::from_raw_parts(ptr as *const u8, size.checked_mul(nmemb).unwrap());
-    if data.sender.send(Either::Right(buf.to_owned())).is_err() {
+    if data.sender.send(Either::Right(buf.to_boxed())).is_err() {
         return 0;
     }
     nmemb
