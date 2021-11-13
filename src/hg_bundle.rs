@@ -11,7 +11,7 @@ use flate2::read::ZlibDecoder;
 use replace_with::replace_with_or_abort;
 use zstd::stream::read::Decoder as ZstdDecoder;
 
-use crate::util::SliceExt;
+use crate::util::{ReadExt, SliceExt};
 
 pub struct DecompressBundleReader<'a> {
     initial_buf: Option<Cursor<Vec<u8>>>,
@@ -39,9 +39,8 @@ fn decompress_bundlev2_header<R: Read>(
     buf: &mut Vec<u8>,
 ) -> io::Result<Option<Compression>> {
     let params_len = r.read_u32::<BigEndian>()?;
-    let mut params_str = String::new();
-    if r.take(params_len.into()).read_to_string(&mut params_str)? != params_len.try_into().unwrap()
-    {
+    let params_str = r.take(params_len.into()).read_all_to_string()?;
+    if params_str.len() != params_len.try_into().unwrap() {
         return Err(io::Error::new(
             ErrorKind::UnexpectedEof,
             "Premature end of bundle v2 header",
@@ -190,10 +189,9 @@ fn test_decompress_bundle_reader() {
         for chunk_size in 1..12 {
             let mut r = DecompressBundleReader::new(Cursor::new(input));
             for c in expected.chunks(chunk_size) {
-                let mut buf = Vec::new();
-                (&mut r)
+                let buf = (&mut r)
                     .take(chunk_size.try_into().unwrap())
-                    .read_to_end(&mut buf)
+                    .read_all()
                     .unwrap();
                 assert_eq!(c.as_bstr(), buf.as_bstr());
             }

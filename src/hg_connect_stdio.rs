@@ -26,7 +26,7 @@ use crate::libc::FdFile;
 use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
 use crate::libgit::{child_process, strbuf};
 use crate::store::HgChangesetId;
-use crate::util::{BufferedReader, ImmutBString, OsStrExt, PrefixWriter, SeekExt};
+use crate::util::{BufferedReader, ImmutBString, OsStrExt, PrefixWriter, ReadExt, SeekExt};
 
 pub struct HgStdioConnection {
     capabilities: HgCapabilities,
@@ -86,9 +86,7 @@ fn stdio_read_response(conn: &mut HgStdioConnection) -> ImmutBString {
     let mut length_str = String::new();
     conn.proc_out.read_line(&mut length_str).unwrap();
     let length = usize::from_str(length_str.trim_end_matches('\n')).unwrap();
-    let mut response = vec![0; length].into_boxed_slice();
-    conn.proc_out.read_exact(&mut response).unwrap();
-    response
+    conn.proc_out.read_exactly(length).unwrap()
 }
 
 impl HgWireConnection for HgStdioConnection {
@@ -130,10 +128,9 @@ impl HgWireConnection for HgStdioConnection {
         writeln!(self.proc_in, "{}", len).unwrap();
 
         let is_bundle2 = if len > 4 {
-            let mut header = [0u8; 4];
-            input.read_exact(&mut header).unwrap();
+            let header = input.read_exactly(4).unwrap();
             input.seek(SeekFrom::Start(0)).unwrap();
-            &header == b"HG20"
+            &*header == b"HG20"
         } else {
             false
         };

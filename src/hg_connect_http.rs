@@ -476,9 +476,7 @@ impl HgWireConnection for HgHttpConnection {
         }
         let mut http_resp = http_req.execute().unwrap();
         self.handle_redirect(&http_resp);
-        let mut response = Vec::new();
-        http_resp.read_to_end(&mut response).unwrap();
-        response.into()
+        http_resp.read_all().unwrap()
     }
 
     /* The changegroup, changegroupsubset and getbundle commands return a raw
@@ -507,11 +505,7 @@ impl HgWireConnection for HgHttpConnection {
             Some("application/mercurial-0.1") => Ok(Box::new(ZlibDecoder::new(http_resp))),
             Some("application/mercurial-0.2") => {
                 let comp_len = http_resp.read_u8().unwrap() as u64;
-                let mut comp = Vec::new();
-                (&mut http_resp)
-                    .take(comp_len)
-                    .read_to_end(&mut comp)
-                    .unwrap();
+                let comp = (&mut http_resp).take(comp_len).read_all().unwrap();
                 let reader: Box<dyn Read> = match &comp[..] {
                     b"zstd" => Box::new(ZstdDecoder::new(http_resp).unwrap()),
                     b"zlib" => Box::new(ZlibDecoder::new(http_resp)),
@@ -524,11 +518,7 @@ impl HgWireConnection for HgHttpConnection {
                 };
                 Ok(reader)
             }
-            Some("application/hg-error") => {
-                let mut err = Vec::new();
-                http_resp.read_to_end(&mut err).unwrap();
-                Err(err.into())
-            }
+            Some("application/hg-error") => Err(http_resp.read_all().unwrap()),
             _ => unimplemented!(),
         }
     }
@@ -539,16 +529,12 @@ impl HgWireConnection for HgHttpConnection {
         http_req.header("Content-Type", "application/mercurial-0.1");
         let mut http_resp = http_req.execute().unwrap();
         self.handle_redirect(&http_resp);
-        let mut header = [0u8; 4];
-        let len = http_resp.read_at_most(&mut header).unwrap();
-        let header = &header[..len];
-        if header == b"HG20" {
-            let mut response = Vec::new();
-            http_resp.read_to_end(&mut response).unwrap();
-            response.into()
+        let header = (&mut http_resp).take(4).read_all().unwrap();
+        if &*header == b"HG20" {
+            http_resp.read_all().unwrap()
         } else {
             let stderr = stderr();
-            let mut buf = header.to_owned();
+            let mut buf = header.to_vec();
             http_resp.read_to_end(&mut buf).unwrap();
             match buf.splitn_exact(b'\n') {
                 Some([stdout_, stderr_]) => {
@@ -640,18 +626,16 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
     }
     let mut http_resp = http_req.execute().unwrap();
     conn.handle_redirect(&http_resp);
-    let mut header = [0u8; 4];
-    let len = http_resp.read_at_most(&mut header).unwrap();
-    let header = &header[..len];
-    match header {
+    let header = (&mut http_resp).take(4).read_all().unwrap();
+    match &*header {
         b"HG10" | b"HG20" => Some(Box::new(HgHttpBundle {
             conn,
-            header: header.try_into().unwrap(),
+            header: (&*header).try_into().unwrap(),
             http_resp,
         })),
         _ => {
             let mut caps = Vec::<u8>::new();
-            caps.extend_from_slice(header);
+            caps.extend_from_slice(&header);
             copy(&mut http_resp, &mut caps).unwrap();
             mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&caps));
             Some(Box::new(Box::new(conn) as Box<dyn HgWireConnection>))

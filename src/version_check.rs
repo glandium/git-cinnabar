@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::io::Read;
 use std::os::raw::c_int;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
@@ -17,7 +16,7 @@ use shared_child::SharedChild;
 use structopt::clap::crate_version;
 
 use crate::libgit::config_get_value;
-use crate::util::SliceExt;
+use crate::util::{ReadExt, SliceExt};
 use crate::FULL_VERSION;
 
 extern "C" {
@@ -85,8 +84,7 @@ fn version_check_from_repo(when: SystemTime) -> Option<VersionCheck> {
     let thread = child.as_ref().map(move |child| {
         let child = child.clone();
         thread::spawn(move || {
-            let mut output = Vec::new();
-            reader.read_to_end(&mut output).ok()?;
+            let output = reader.read_all().ok()?;
             child.wait().ok()?;
             let mut new_version = None;
             let current_version = Version::parse(CARGO_PKG_VERSION).unwrap();

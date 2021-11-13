@@ -81,11 +81,9 @@ impl<'a> BufferedReader<'a> {
         let r = unsafe { std::mem::transmute::<_, &'static mut R>(r) };
         let thread = std::thread::spawn(move || {
             loop {
-                let mut buf = vec![0; BUFSIZE];
-                let len = r.read_at_most(&mut buf[..])?;
-                if len > 0 {
-                    buf.truncate(len);
-                    sender.send(buf.into()).unwrap();
+                let buf = r.take(BUFSIZE as u64).read_all()?;
+                if !buf.is_empty() {
+                    sender.send(buf).unwrap();
                 } else {
                     break;
                 }
@@ -175,6 +173,38 @@ pub trait ReadExt: Read {
         let mut input = self.take(buf.len().try_into().unwrap());
         let mut buf = Cursor::new(buf);
         copy(&mut input, &mut buf).map(|l| l as usize)
+    }
+
+    fn read_all(&mut self) -> io::Result<ImmutBString> {
+        let mut buf = Vec::new();
+        self.read_to_end(&mut buf)?;
+        Ok(buf.into_boxed_slice())
+    }
+
+    fn read_all_to_string(&mut self) -> io::Result<ImmutString> {
+        let mut buf = String::new();
+        self.read_to_string(&mut buf)?;
+        Ok(buf.into_boxed_str())
+    }
+
+    fn read_exactly(&mut self, len: usize) -> io::Result<ImmutBString> {
+        let mut buf = Vec::with_capacity(len);
+        self.take(len as u64).read_to_end(&mut buf)?;
+        if buf.len() == len {
+            Ok(buf.into_boxed_slice())
+        } else {
+            Err(io::ErrorKind::UnexpectedEof.into())
+        }
+    }
+
+    fn read_exactly_to_string(&mut self, len: usize) -> io::Result<ImmutString> {
+        let mut buf = String::with_capacity(len);
+        self.take(len as u64).read_to_string(&mut buf)?;
+        if buf.len() == len {
+            Ok(buf.into_boxed_str())
+        } else {
+            Err(io::ErrorKind::UnexpectedEof.into())
+        }
     }
 }
 
