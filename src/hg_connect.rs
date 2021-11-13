@@ -394,7 +394,7 @@ fn do_getbundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write
         Err(e) => {
             out.write_all(b"err\n").unwrap();
             let stderr = stderr();
-            let mut writer = PrefixWriter::new(b"remote: ", stderr.lock());
+            let mut writer = PrefixWriter::new("remote: ", stderr.lock());
             writer.write_all(&e).unwrap();
         }
     }

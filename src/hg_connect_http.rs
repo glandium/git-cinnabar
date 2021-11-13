@@ -538,7 +538,7 @@ impl HgWireConnection for HgHttpConnection {
             http_resp.read_to_end(&mut buf).unwrap();
             match buf.splitn_exact(b'\n') {
                 Some([stdout_, stderr_]) => {
-                    let mut writer = PrefixWriter::new(b"remote: ", stderr.lock());
+                    let mut writer = PrefixWriter::new("remote: ", stderr.lock());
                     writer.write_all(stderr_).unwrap();
                     stdout_.to_boxed()
                 }

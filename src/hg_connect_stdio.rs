@@ -255,7 +255,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
          * that std::io::stderr will like on Windows (i.e. not UTF-8 on e.g.
          * Japanese locale) */
         let stderr = unsafe { FdFile::stderr() };
-        let mut writer = PrefixWriter::new(b"remote: ", stderr);
+        let mut writer = PrefixWriter::new("remote: ", stderr);
         copy(&mut proc_err, &mut writer).unwrap();
     }));
 

@@ -40,12 +40,12 @@ macro_rules! derive_debug_display {
 }
 
 pub struct PrefixWriter<W: Write> {
-    prefix: ImmutBString,
+    prefix: ImmutString,
     line_writer: LineWriter<W>,
 }
 
 impl<W: Write> PrefixWriter<W> {
-    pub fn new(prefix: &[u8], w: W) -> Self {
+    pub fn new(prefix: &str, w: W) -> Self {
         PrefixWriter {
             prefix: prefix.to_boxed(),
             line_writer: LineWriter::new(w),
@@ -57,7 +57,7 @@ impl<W: Write> Write for PrefixWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let mut len = 0;
         for line in buf.lines_with_terminator() {
-            self.line_writer.write_all(&self.prefix)?;
+            self.line_writer.write_all(self.prefix.as_bytes())?;
             len += self.line_writer.write(line)?;
         }
         Ok(len)
