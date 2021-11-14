@@ -9,7 +9,7 @@ use std::ffi::{CStr, CString, OsStr};
 use std::fmt;
 use std::io::{self, copy, Cursor, LineWriter, Read, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
-use std::mem::{self, MaybeUninit};
+use std::mem;
 #[cfg(unix)]
 use std::os::unix::ffi;
 #[cfg(unix)]
@@ -226,75 +226,33 @@ pub trait SliceExt<C> {
     fn rsplitn_exact<const N: usize>(&self, c: C) -> Option<[&Self; N]>;
 }
 
-// Ideally, we'd just use array_init::from_iter, but it's not usable
-// both in versions of rustc with stable min_const_generics and versions
-// with unstable min_const_generics.
-fn array_init_from_iter_<
-    'a,
-    T: ?Sized,
-    I: Iterator<Item = &'a T>,
-    const N: usize,
-    const REVERSED: bool,
->(
-    mut iter: I,
-) -> Option<[&'a T; N]> {
-    let mut result: MaybeUninit<[&'a T; N]> = MaybeUninit::uninit();
-    let ptr = result.as_mut_ptr() as *mut &'a T;
-    let mut forward = 0..N;
-    let mut reversed = (0..N).rev();
-    let indices: &mut dyn Iterator<Item = _> = if REVERSED {
-        &mut reversed
-    } else {
-        &mut forward
-    };
-    unsafe {
-        for i in indices {
-            #[allow(clippy::ptr_offset_with_cast)]
-            ptr.offset(i as isize).write(iter.next()?);
-        }
-        Some(result.assume_init())
-    }
-}
-
-fn array_init_from_iter<'a, T: ?Sized, const N: usize>(
-    iter: impl Iterator<Item = &'a T>,
-) -> Option<[&'a T; N]> {
-    array_init_from_iter_::<'a, T, _, N, false>(iter)
-}
-
-fn array_init_from_rev_iter<'a, T: ?Sized, const N: usize>(
-    iter: impl Iterator<Item = &'a T>,
-) -> Option<[&'a T; N]> {
-    array_init_from_iter_::<'a, T, _, N, true>(iter)
-}
-
 impl<T: PartialEq> SliceExt<T> for [T] {
     fn splitn_exact<const N: usize>(&self, x: T) -> Option<[&Self; N]> {
-        array_init_from_iter(self.splitn(N, |i| *i == x))
+        array_init::from_iter(self.splitn(N, |i| *i == x))
     }
 
     fn rsplitn_exact<const N: usize>(&self, x: T) -> Option<[&Self; N]> {
-        array_init_from_rev_iter(self.rsplitn(N, |i| *i == x))
+        array_init::from_iter_reversed(self.rsplitn(N, |i| *i == x))
     }
 }
 
 impl SliceExt<char> for str {
     fn splitn_exact<const N: usize>(&self, c: char) -> Option<[&Self; N]> {
-        array_init_from_iter(self.splitn(N, c))
+        array_init::from_iter(self.splitn(N, c))
     }
 
     fn rsplitn_exact<const N: usize>(&self, c: char) -> Option<[&Self; N]> {
-        array_init_from_rev_iter(self.rsplitn(N, c))
+        array_init::from_iter_reversed(self.rsplitn(N, c))
     }
 }
 
 impl<F: FnMut(&u8) -> bool> SliceExt<F> for [u8] {
     fn splitn_exact<const N: usize>(&self, f: F) -> Option<[&Self; N]> {
-        array_init_from_iter(self.splitn(N, f))
+        array_init::from_iter(self.splitn(N, f))
     }
 
     fn rsplitn_exact<const N: usize>(&self, f: F) -> Option<[&Self; N]> {
-        array_init_from_rev_iter(self.rsplitn(N, f))
+        array_init::from_iter_reversed(self.rsplitn(N, f))
     }
 }
 
@@ -303,12 +261,12 @@ impl SliceExt<&[u8]> for [u8] {
         // Safety: This works around ByteSlice::splitn_str being too restrictive.
         // https://github.com/BurntSushi/bstr/issues/45
         let iter = self.splitn_str(N, unsafe { mem::transmute::<_, &[u8]>(b) });
-        array_init_from_iter(iter)
+        array_init::from_iter(iter)
     }
 
     fn rsplitn_exact<const N: usize>(&self, b: &[u8]) -> Option<[&Self; N]> {
         let iter = self.rsplitn_str(N, unsafe { mem::transmute::<_, &[u8]>(b) });
-        array_init_from_rev_iter(iter)
+        array_init::from_iter_reversed(iter)
     }
 }
 

@@ -36,6 +36,10 @@ typenum = "1"
 url = "2"
 which = "4"
 
+[dependencies.array-init]
+git = "https://github.com/Manishearth/array-init/"
+rev = "cbe9d7e58a52bb43725dbe2ba0cca0755482b3a9"
+
 [dependencies.cinnabar-py]
 path = "cinnabar"
 

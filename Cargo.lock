@@ -24,6 +24,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "array-init"
+version = "2.0.0"
+source = "git+https://github.com/Manishearth/array-init/?rev=cbe9d7e58a52bb43725dbe2ba0cca0755482b3a9#cbe9d7e58a52bb43725dbe2ba0cca0755482b3a9"
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -285,6 +290,7 @@ name = "git-cinnabar"
 version = "0.6.0-a"
 dependencies = [
  "all_asserts",
+ "array-init",
  "bstr",
  "byteorder",
  "bzip2",
