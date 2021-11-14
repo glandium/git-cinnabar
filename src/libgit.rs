@@ -5,12 +5,12 @@
 use std::borrow::{Borrow, Cow};
 use std::convert::{TryFrom, TryInto};
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
-use std::fmt;
 use std::io::{self, Write};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 use std::sync::RwLock;
+use std::{fmt, ptr};
 
-use bstr::ByteSlice;
+use bstr::{BStr, ByteSlice};
 use cstr::cstr;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use derive_more::{Deref, Display};
@@ -1009,6 +1009,56 @@ pub struct ident_split {
     pub tz_end: *const c_char,
 }
 
-extern "C" {
-    pub fn split_ident_line(split: *mut ident_split, line: *const c_char, len: c_int) -> c_int;
+mod ident {
+    use super::*;
+    extern "C" {
+        pub fn split_ident_line(split: *mut ident_split, line: *const c_char, len: c_int) -> c_int;
+    }
+}
+
+pub struct SplitIdent<'a> {
+    pub name: &'a BStr,
+    pub mail: &'a BStr,
+    pub date: &'a BStr,
+    pub tz: &'a BStr,
+}
+
+pub fn split_ident(ident: &BStr) -> Option<SplitIdent> {
+    let mut split = ident_split {
+        name_begin: ptr::null(),
+        name_end: ptr::null(),
+        mail_begin: ptr::null(),
+        mail_end: ptr::null(),
+        date_begin: ptr::null(),
+        date_end: ptr::null(),
+        tz_begin: ptr::null(),
+        tz_end: ptr::null(),
+    };
+    let ident_c = CString::new(ident.to_vec()).unwrap();
+    unsafe {
+        if ident::split_ident_line(&mut split, ident_c.as_ptr(), ident.len() as c_int) != 0 {
+            return None;
+        }
+
+        let to_slice = |begin: *const c_char, end: *const c_char| -> &BStr {
+            assert!(!begin.is_null() && !end.is_null());
+            let begin = begin.offset_from(ident_c.as_ptr()).try_into().unwrap();
+            let end = end.offset_from(ident_c.as_ptr()).try_into().unwrap();
+            &ident[begin..end]
+        };
+        Some(SplitIdent {
+            name: to_slice(split.name_begin, split.name_end),
+            mail: to_slice(split.mail_begin, split.mail_end),
+            date: if split.date_begin.is_null() {
+                b"".as_bstr()
+            } else {
+                to_slice(split.date_begin, split.date_end)
+            },
+            tz: if split.tz_begin.is_null() {
+                b"".as_bstr()
+            } else {
+                to_slice(split.tz_begin, split.tz_end)
+            },
+        })
+    }
 }
