@@ -1,17 +1,17 @@
 diff --git a/run-command.c b/run-command.c
-index f72e72cce7..2faac555e3 100644
+index f40df01c77..adc77a4370 100644
 --- a/run-command.c
 +++ b/run-command.c
-@@ -738,7 +738,7 @@ int start_command(struct child_process *cmd)
+@@ -740,7 +740,7 @@ int start_command(struct child_process *cmd)
  	trace2_child_start(cmd);
  	trace_run_command(cmd);
  
 -	fflush(NULL);
 +	//fflush(NULL);
  
- #ifndef GIT_WINDOWS_NATIVE
- {
-@@ -1220,7 +1220,7 @@ int start_async(struct async *async)
+ 	if (cmd->close_object_store)
+ 		close_object_store(the_repository->objects);
+@@ -1224,7 +1224,7 @@ int start_async(struct async *async)
  
  #ifdef NO_PTHREADS
  	/* Flush stdio before fork() to avoid cloning buffers */

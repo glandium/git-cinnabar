@@ -107,3 +107,10 @@ config.patched.sp config.patched.s config.patched.o: EXTRA_CPPFLAGS = \
 
 # Allow for a smoother transition from helper/ to src/
 $(SOURCE_DIR)/helper/%.c: FORCE ;
+
+# hook.o pulls hook-list.h, which requires these two files (although hook-list.h
+# is not actually used)
+vpath Documentation/githooks.txt $(SOURCE_DIR)/git-core
+
+generate-hooklist.sh: $(SOURCE_DIR)/git-core/generate-hooklist.sh
+	echo "$<" > $@
