@@ -206,7 +206,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	struct strbuf buf = STRBUF_INIT;
 	struct hg_connection *conn = xmalloc(sizeof(*conn));
 	struct child_process *proc = &conn->stdio.proc;
-	string_list_init(&conn->capabilities, 1);
+	string_list_init_dup(&conn->capabilities);
 
 	protocol = parse_connect_url(url, &hostandport, &path);
 
