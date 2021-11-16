@@ -456,7 +456,7 @@ fn do_state(conn: &mut dyn HgConnection, args: &[&str], mut out: &mut impl Write
     let branchmap;
     let heads;
     let bookmarks;
-    if conn.get_capability(b"batch".as_bstr()).is_none() {
+    if conn.get_capability(b"batch").is_none() {
         // TODO: when not batching, check for coherency
         // (see the cinnabar.remote_helper python module)
         branchmap = conn.branchmap();
