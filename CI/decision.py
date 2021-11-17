@@ -490,6 +490,7 @@ def decision():
 
 def do_hg_version(hg):
     TestTask(hg=hg)
+    cram_hg = [hg]
     try:
         # Don't run cram tests for version < 3.6, which would need
         # different tests because of server-side changes in behavior
@@ -497,19 +498,22 @@ def do_hg_version(hg):
         if StrictVersion(hg) < '3.6':
             return
     except ValueError:
-        # `hg` is a sha1 for trunk, which means it's >= 3.6
-        pass
-    TestTask(
-        short_desc='cram',
-        clone=False,
-        hg=hg,
-        command=[
-            'cram --verbose repo/tests',
-        ],
-        env={
-            'GIT_CINNABAR_CHECK': 'no-version-check',
-        },
-    )
+        # `hg` is a sha1 for trunk, which means it's >= 3.6.
+        # For trunk, also run py3 tests
+        TestTask(hg='{}.py3'.format(hg))
+        cram_hg.append('{}.py3'.format(hg))
+    for hg in cram_hg:
+        TestTask(
+            short_desc='cram',
+            clone=False,
+            hg=hg,
+            command=[
+                'cram --verbose repo/tests',
+            ],
+            env={
+                'GIT_CINNABAR_CHECK': 'no-version-check',
+            },
+        )
 
 
 @action('more-hg-versions',
