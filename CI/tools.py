@@ -139,7 +139,7 @@ class Hg(Task, metaclass=Tool):
         if len(version) == 40:
             # Assume it's a sha1
             pretty_version = 'r{}{}'.format(version, suffix)
-            artifact_version = 'unknown'
+            artifact_version = '99.0'
             expire = '2 weeks'
         else:
             pretty_version = 'v{}{}'.format(version, suffix)
@@ -189,8 +189,9 @@ class Hg(Task, metaclass=Tool):
             pre_command.extend([
                 'hg clone https://www.mercurial-scm.org/repo/hg'
                 ' -r {} mercurial-{}'.format(version, version),
-                'rm -rf hg/.hg',
-                'echo tag: unknown > hg/.hg_archival.txt',
+                'rm -rf mercurial-{}/.hg'.format(version),
+                'echo tag: {} > mercurial-{}/.hg_archival.txt'
+                .format(artifact_version, version),
             ])
         # 2.6.2 is the first version available on pypi
         elif parse_version('2.6.2') <= parse_version(version):
