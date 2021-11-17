@@ -626,7 +626,7 @@ def get_clonebundle_url(repo):
             k, _, v = p.partition(b'=')
             params_dict[k] = v
 
-        if 'stream' in params_dict:
+        if b'stream' in params_dict:
             logger.debug('Skip because stream bundles are not supported')
             continue
 
