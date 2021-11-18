@@ -122,6 +122,7 @@ impl<'a> Read for BufferedReader<'a> {
 
 #[test]
 fn test_buffered_reader() {
+    use std::io::Cursor;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
