@@ -169,12 +169,6 @@ fn test_buffered_reader() {
 }
 
 pub trait ReadExt: Read {
-    fn read_at_most(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut input = self.take(buf.len().try_into().unwrap());
-        let mut buf = Cursor::new(buf);
-        copy(&mut input, &mut buf).map(|l| l as usize)
-    }
-
     fn read_all(&mut self) -> io::Result<ImmutBString> {
         let mut buf = Vec::new();
         self.read_to_end(&mut buf)?;
