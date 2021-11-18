@@ -4,10 +4,9 @@
 
 use std::cmp::min;
 use std::collections::VecDeque;
-use std::convert::TryInto;
 use std::ffi::{CStr, CString, OsStr};
 use std::fmt;
-use std::io::{self, copy, Cursor, LineWriter, Read, Seek, SeekFrom, Write};
+use std::io::{self, LineWriter, Read, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
 use std::mem;
 #[cfg(unix)]
