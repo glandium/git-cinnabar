@@ -2,6 +2,7 @@ from __future__ import absolute_import, division, unicode_literals
 from binascii import unhexlify
 import sys
 
+from cinnabar.exceptions import Abort
 from cinnabar.githg import (
     BranchMap,
 )
@@ -80,19 +81,25 @@ class BaseRemoteHelper(object):
                 assert args
                 args = args[0].split(b' ', 1)
 
-            if cmd in (
-                b'capabilities',
-                b'list',
-                b'option',
-                b'import',
-                b'push',
-            ):
-                if cmd == b'import':
-                    # Can't have a method named import
-                    cmd = b'import_'
+            if cmd == b'import':
+                # Can't have a method named import, so we use import_
+                try:
+                    self.import_(*args)
+                except Exception:
+                    # The Exception will eventually get us to return an error
+                    # code, but git actually ignores it. So we send it a
+                    # command it doesn't know over the helper/fast-import
+                    # protocol, so that it emits an error.
+                    # Alternatively, we could send `feature done` before doing
+                    # anything, and on the `done` command not being sent when
+                    # an exception is thrown, triggering an error, but that
+                    # requires git >= 1.7.7.
+                    self._helper.write(b'error\n')
+                    raise
+            else:
                 func = getattr(self, cmd.decode('ascii'), None)
-            assert func
-            func(*args)
+                assert func
+                func(*args)
 
     def option(self, name, value):
         if name == b'progress' and value in (b'true', b'false'):
@@ -121,10 +128,25 @@ class TagsRemoteHelper(BaseRemoteHelper):
         self._helper.flush()
 
     def list(self, arg=None):
-        for tag, ref in sorted(self._store.tags()):
+        tags = sorted(self._store.tags())
+        # git fetch does a check-connection that calls
+        # `git rev-list --objects --stdin --not --all` with the list of
+        # sha1s from the list we're about to give it. With no refs on these
+        # exact sha1s, the rev-list can take a long time on large repos.
+        # So we temporarily create refs to make that rev-list faster.
+        for tag, ref in tags:
+            Git.update_ref(b'refs/cinnabar/refs/tags/' + tag, ref)
+        GitHgHelper.reload()
+        for tag, ref in tags:
             self._helper.write(b'%s refs/tags/%s\n' % (ref, tag))
         self._helper.write(b'\n')
         self._helper.flush()
+
+        # Now remove the refs. The deletion will only actually be committed
+        # on the store close in main(), after git is done doing
+        # check-connection.
+        for tag, _ in tags:
+            Git.delete_ref(b'refs/cinnabar/refs/tags/' + tag)
 
 
 class GitRemoteHelper(BaseRemoteHelper):
@@ -371,7 +393,8 @@ class GitRemoteHelper(BaseRemoteHelper):
         def resolve_head(head):
             resolved = self._refs.get(head)
             if resolved is None:
-                return resolved
+                raise Abort(
+                    "couldn't find remote ref {}".format(head.decode()))
             if resolved.startswith(b'@'):
                 return self._refs.get(resolved[1:])
             return resolved

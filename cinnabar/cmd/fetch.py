@@ -36,14 +36,14 @@ def fetch(args):
                 url = url[4:]
             repo = get_repo(Remote(fsencode(remote), url))
             if repo.capable(b'lookup'):
-                rev = hexlify(repo.lookup(fsencode(rev)))
+                rev = hexlify(repo.lookup(fsencode(rev))).decode('ascii')
             else:
                 print('Remote repository does not support the "lookup" '
                       'command. Please use a non-abbreviated mercurial '
                       'revision.',
                       file=sys.stderr)
                 return 1
-        full_revs.append(rev.decode('ascii'))
+        full_revs.append(rev)
 
     refs = ['hg/revs/%s' % r for r in full_revs]
 

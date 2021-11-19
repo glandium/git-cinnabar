@@ -1,4 +1,6 @@
+struct object_id;
 static void start_packfile();
+static void cinnabar_unregister_shallow(const struct object_id *oid);
 #include "fast-import.patched.c"
 #include "cinnabar-fast-import.h"
 #include "cinnabar-helper.h"
@@ -7,6 +9,7 @@ static void start_packfile();
 #include "hg-data.h"
 #include "list.h"
 #include "oid-array.h"
+#include "shallow.h"
 #include "strslice.h"
 #include "tree-walk.h"
 
@@ -20,6 +23,12 @@ extern const char *tag_type;
 } while (0)
 
 static int initialized = 0;
+static int update_shallow = 0;
+
+void cinnabar_unregister_shallow(const struct object_id *oid) {
+	if (unregister_shallow(oid) == 0)
+		update_shallow = 1;
+}
 
 static void cleanup();
 
@@ -34,6 +43,11 @@ void real_hashwrite(struct hashfile *, const void *, unsigned int);
 void hashwrite(struct hashfile *f, const void *buf, unsigned int count)
 {
 	size_t window_size;
+
+	if (f != pack_file) {
+		real_hashwrite(f, buf, count);
+		return;
+	}
 
 	if (!pack_win) {
 		pack_win = xcalloc(1, sizeof(*pack_data->windows));
@@ -106,6 +120,7 @@ void *get_object_entry(const unsigned char *sha1)
 {
 	struct object_id oid;
 	hashcpy(oid.hash, sha1);
+	oid.algo = GIT_HASH_SHA1;
 	return find_object(&oid);
 }
 
@@ -154,8 +169,17 @@ static void cleanup()
 	end_packfile();
 	reprepare_packed_git(the_repository);
 
-	if (!require_explicit_termination)
+	if (!require_explicit_termination) {
+		if (update_shallow) {
+			struct shallow_lock shallow_lock;
+			const char *alternate_shallow_file;
+			setup_alternate_shallow(
+				&shallow_lock, &alternate_shallow_file,
+				NULL);
+			commit_shallow_file(the_repository, &shallow_lock);
+		}
 		dump_branches();
+	}
 
 	unkeep_all_packs();
 
@@ -220,7 +244,7 @@ static void end_packfile()
 const struct object_id empty_tree = { {
 	0x4b, 0x82, 0x5d, 0xc6, 0x42, 0xcb, 0x6e, 0xb9, 0xa0, 0x60,
 	0xe5, 0x4b, 0xf8, 0xd6, 0x92, 0x88, 0xfb, 0xee, 0x49, 0x04,
-} };
+}, GIT_HASH_SHA1 };
 
 /* Override fast-import.c's parse_mark_ref to allow a syntax for
  * mercurial sha1s, resolved through hg2git. Hack: it uses a fixed
@@ -498,8 +522,8 @@ static void do_set(struct string_list *args)
 	}
 }
 
-int write_object_file(const void *buf, unsigned long len, const char *type,
-                      struct object_id *oid)
+int write_object_file_flags(const void *buf, unsigned long len, const char *type,
+                            struct object_id *oid, unsigned flags)
 {
 	struct strbuf data;
 	enum object_type t;
@@ -1285,7 +1309,7 @@ void store_git_commit(struct strbuf *commit_buf, struct object_id *result)
 const struct object_id empty_blob = { {
 	0xe6, 0x9d, 0xe2, 0x9b, 0xb2, 0xd1, 0xd6, 0x43, 0x4b, 0x8b,
 	0x29, 0xae, 0x77, 0x5a, 0xd8, 0xc2, 0xe4, 0x8c, 0x53, 0x91,
-} };
+}, GIT_HASH_SHA1 };
 
 const struct object_id *ensure_empty_blob() {
 	struct object_entry *oe = find_object((struct object_id *)&empty_blob);

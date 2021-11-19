@@ -202,6 +202,9 @@ def download(args):
 
                 def finish(self):
                     self._proc.wait()
+                    if self._proc.returncode != 0:
+                        raise Exception("tar returned error code %d" %
+                                        self._proc.returncode)
                     self._thread.join()
                     super(UntarProgress, self).finish()
 

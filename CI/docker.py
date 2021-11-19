@@ -27,7 +27,7 @@ def sources_list(snapshot, sections):
 
 DOCKER_IMAGES = {
     'base': '''\
-        FROM debian:stretch-20190812
+        FROM debian:stretch-20210927
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
@@ -43,10 +43,11 @@ DOCKER_IMAGES = {
          unzip\\
          xz-utils\\
          zip\\
-         && apt-get clean
-        RUN pip install pip==19.2.2 --upgrade --ignore-installed
+         && apt-get clean &&\\
+         python2.7 -m pip install pip==20.3.4 --upgrade --ignore-installed&&\\
+         python3 -m pip install pip==20.3.4 --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
-            '20190812T140702Z', (
+            '20210927T204628Z', (
                 ('debian', 'stretch'),
                 ('debian', 'stretch-updates'),
                 ('debian-security', 'stretch/updates'),
@@ -72,13 +73,13 @@ DOCKER_IMAGES = {
         RUN apt-get install -y --no-install-recommends\\
          gcc\\
          git\\
-         python-coverage\\
+         python3-coverage\\
          && apt-get clean
-        RUN ln -s /usr/bin/python-coverage /usr/local/bin/coverage\\
-         && pip install codecov==2.0.15
+        RUN ln -s /usr/bin/python3-coverage /usr/local/bin/coverage\\
+         && python3 -m pip install codecov==2.1.12
         RUN curl -sL {} | tar -C /usr/local/bin -jxf -
         '''.format(
-        'https://github.com/mozilla/grcov/releases/download/v0.5.9'
+        'https://github.com/mozilla/grcov/releases/download/v0.7.1'
         '/grcov-linux-x86_64.tar.bz2'
     ),
 
@@ -92,7 +93,6 @@ DOCKER_IMAGES = {
          python3-flake8\\
          python-nose\\
          python3-nose\\
-         python-requests\\
          python-virtualenv\\
          && apt-get clean\\
          && pip install cram==0.7
@@ -179,10 +179,10 @@ class DockerImageTask(DockerImage, Task, metaclass=TaskEnvironment):
             image='python:3.7',
             dind=True,
             command=Task.checkout() + [
-                'pip install requests-unixsocket zstandard==0.8.1',
-                'python repo/CI/docker.py build {}'
+                'pip install requests-unixsocket==0.2.0 zstandard==0.15.2',
+                'python3 repo/CI/docker.py build {}'
                 .format(name),
-                'python repo/CI/docker.py save {}'
+                'python3 repo/CI/docker.py save {}'
                 ' > $ARTIFACTS/image.tar.zst'.format(name),
             ],
             artifact='image.tar.zst',
@@ -344,7 +344,7 @@ class CommandHandler(object):
     @classmethod
     def load(cls, image):
         import requests
-        import zstd
+        import zstandard as zstd
 
         taskId = Task.by_index[image.index]
         if not isinstance(taskId, Task.by_index.Existing):
@@ -361,7 +361,7 @@ class CommandHandler(object):
 
         r = docker_session().post(
             docker_url('images/load', quiet=0),
-            data=zstd.ZstdDecompressor().read_from(r.raw),
+            data=zstd.ZstdDecompressor().read_to_iter(r.raw),
             stream=True,
             headers={'Content-Type': 'application/x-tar'},
         )
@@ -369,7 +369,7 @@ class CommandHandler(object):
 
     @classmethod
     def save(cls, image):
-        import zstd
+        import zstandard as zstd
 
         r = docker_session().get(
             docker_url('images/{}/get'.format(image.tag)),

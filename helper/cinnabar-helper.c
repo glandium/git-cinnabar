@@ -58,6 +58,7 @@
 #include "exec-cmd.h"
 #include "hashmap.h"
 #include "log-tree.h"
+#include "shallow.h"
 #include "strslice.h"
 #include "strbuf.h"
 #include "string-list.h"
@@ -253,8 +254,7 @@ struct ls_tree_context {
 };
 
 static int fill_ls_tree(const struct object_id *oid, struct strbuf *base,
-			const char *pathname, unsigned mode, int stage,
-			void *context)
+			const char *pathname, unsigned mode, void *context)
 {
 	struct ls_tree_context *ctx = context;
 	struct strbuf *buf = &ctx->buf;
@@ -299,8 +299,7 @@ static void do_ls_tree(struct string_list *args)
 		goto not_found;
 
 	memset(&match_all, 0, sizeof(match_all));
-	read_tree_recursive(the_repository, tree, "", 0, 0, &match_all,
-	                    fill_ls_tree, &ctx);
+	read_tree(the_repository, tree, &match_all, fill_ls_tree, &ctx);
 	send_buffer(&ctx.buf);
 	strbuf_release(&ctx.buf);
 
@@ -353,13 +352,21 @@ static void do_rev_list(struct string_list *args)
 
 	while ((commit = get_revision(&revs)) != NULL) {
 		struct commit_list *parent;
+		struct commit_graft *graft;
 		if (commit->object.flags & BOUNDARY)
 			strbuf_addch(&buf, '-');
 		strbuf_addstr(&buf, oid_to_hex(&commit->object.oid));
 		strbuf_addch(&buf, ' ');
 		strbuf_addstr(&buf, oid_to_hex(get_commit_tree_oid(commit)));
 		parent = commit->parents;
-		while (parent) {
+		if (!parent && is_repository_shallow(the_repository) &&
+		    (graft = lookup_commit_graft(
+			the_repository, &commit->object.oid)) != NULL &&
+		    graft->nr_parent < 0) {
+			strbuf_addstr(&buf, " shallow");
+			if (revs.boundary)
+				strbuf_addstr(&buf, "\n-shallow shallow");
+		} else while (parent) {
 			strbuf_addch(&buf, ' ');
 			strbuf_addstr(&buf, oid_to_hex(
 				&parent->item->object.oid));
@@ -2418,12 +2425,17 @@ static void init_git_config()
 	 * the path we get is empty we'll know it failed. */
 	capture_command(&proc, &path, 0);
 	strbuf_trim_trailing_newline(&path);
-	/* If we couldn't get a path, then so be it. We may just not have
-	 * a complete configuration. */
-	if (!path.len)
+	/* Bail early when GIT_CONFIG_NO_SYSTEM is set. */
+	if (!git_config_system())
 		goto cleanup;
 
-	if (!git_config_system() || access_or_die(path.buf, R_OK, 0))
+	/* Avoid future uses of the git_config infrastructure reading the
+         * config we just read (or the wrong system gitconfig). */
+	putenv("GIT_CONFIG_NOSYSTEM=1");
+
+	/* If we couldn't get a path, then so be it. We may just not have
+	 * a complete configuration. */
+	if (!path.len || access_or_die(path.buf, R_OK, 0))
 		goto cleanup;
 
 	if (the_repository->config)
@@ -2434,9 +2446,6 @@ static void init_git_config()
 
 	git_configset_init(the_repository->config);
 	git_configset_add_file(the_repository->config, path.buf);
-	// Avoid read_early_config reading the config we just read (or the
-	// wrong system gitconfig).
-	putenv("GIT_CONFIG_NOSYSTEM=1");
 	read_early_config(config_set_callback, the_repository->config);
 
 cleanup:

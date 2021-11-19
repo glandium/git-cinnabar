@@ -374,7 +374,7 @@ class Task(object):
         if 'TC_PROXY' not in os.environ:
             return
         url = 'http://taskcluster/api/queue/v1/task/{}'.format(self.id)
-        res = session.put(url, data=json.dumps(self.task))
+        res = session.put(url, json=self.task)
         try:
             res.raise_for_status()
         except Exception:

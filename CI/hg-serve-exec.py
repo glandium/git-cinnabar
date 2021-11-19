@@ -197,7 +197,8 @@ def serve_and_exec(ui, repo, *command):
     service.init()
     service_thread = Thread(target=service.run)
     service_thread.start()
-    ret = subprocess.call(command)
+    ret = subprocess.call(
+        [getattr(os, "fsdecode", lambda a: a)(a) for a in command])
     service.httpd.shutdown()
     service_thread.join()
     if other_server:

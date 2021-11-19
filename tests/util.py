@@ -17,16 +17,16 @@ from cinnabar.util import (
 
 class TestVersionedDict(unittest.TestCase):
     def check_state(self, v, d):
-        self.assertEquals(sorted(v.keys()), sorted(d.keys()))
-        self.assertEquals(sorted(k for k in v), sorted(k for k in d))
-        self.assertEquals(sorted(i for i in v.items()),
-                          sorted(i for i in d.items()))
-        self.assertEquals(sorted(v.values()), sorted(d.values()))
-        self.assertEquals(bool(d), bool(v))
-        self.assertEquals(len(d), len(v))
+        self.assertEqual(sorted(v.keys()), sorted(d.keys()))
+        self.assertEqual(sorted(k for k in v), sorted(k for k in d))
+        self.assertEqual(sorted(i for i in v.items()),
+                         sorted(i for i in d.items()))
+        self.assertEqual(sorted(v.values()), sorted(d.values()))
+        self.assertEqual(bool(d), bool(v))
+        self.assertEqual(len(d), len(v))
         for k, val in d.items():
             self.assertTrue(k in v)
-            self.assertEquals(v[k], val)
+            self.assertEqual(v[k], val)
 
     def test_versioned_dict(self):
         for typ in (dict, VersionedDict):
@@ -39,8 +39,8 @@ class TestVersionedDict(unittest.TestCase):
                 v.update(foo='foo', bar='qux')
                 d.update(foo='foo', bar='qux')
                 self.check_state(v, d)
-                self.assertEquals(v['foo'], 'foo')
-                self.assertEquals(v['bar'], 'qux')
+                self.assertEqual(v['foo'], 'foo')
+                self.assertEqual(v['bar'], 'qux')
                 with self.assertRaises(KeyError):
                     v['qux']
                 with self.assertRaises(KeyError):
@@ -52,9 +52,9 @@ class TestVersionedDict(unittest.TestCase):
                 if 'fuga' in init:
                     self.check_state(v, d)
                     self.assertTrue('fuga' in v)
-                    self.assertEquals(v['fuga'], 'fuga')
+                    self.assertEqual(v['fuga'], 'fuga')
                     if typ == VersionedDict:
-                        self.assertEquals(sorted(v.iterchanges()), [
+                        self.assertEqual(sorted(v.iterchanges()), [
                             (v.CREATED, 'bar', 'qux'),
                             (v.CREATED, 'foo', 'foo'),
                         ])
@@ -63,7 +63,7 @@ class TestVersionedDict(unittest.TestCase):
                     d['fuga'] = 'toto'
                     self.check_state(v, d)
                     if typ == VersionedDict:
-                        self.assertEquals(sorted(v.iterchanges()), [
+                        self.assertEqual(sorted(v.iterchanges()), [
                             (v.CREATED, 'bar', 'qux'),
                             (v.CREATED, 'foo', 'foo'),
                             (v.MODIFIED, 'fuga', 'toto'),
@@ -74,7 +74,7 @@ class TestVersionedDict(unittest.TestCase):
                     self.assertFalse('fuga' in v)
                     self.check_state(v, d)
                     if typ == VersionedDict:
-                        self.assertEquals(sorted(v.iterchanges()), [
+                        self.assertEqual(sorted(v.iterchanges()), [
                             (v.CREATED, 'bar', 'qux'),
                             (v.CREATED, 'foo', 'foo'),
                             (v.REMOVED, 'fuga', 'fuga'),
@@ -82,7 +82,7 @@ class TestVersionedDict(unittest.TestCase):
                 elif 'hoge' in init:
                     self.check_state(v, d)
                     if typ == VersionedDict:
-                        self.assertEquals(sorted(v.iterchanges()), [
+                        self.assertEqual(sorted(v.iterchanges()), [
                             (v.CREATED, 'bar', 'qux'),
                             (v.CREATED, 'foo', 'foo'),
                         ])
@@ -92,7 +92,7 @@ class TestVersionedDict(unittest.TestCase):
                     self.assertFalse('hoge' in v)
                     self.check_state(v, d)
                     if typ == VersionedDict:
-                        self.assertEquals(sorted(v.iterchanges()), [
+                        self.assertEqual(sorted(v.iterchanges()), [
                             (v.CREATED, 'bar', 'qux'),
                             (v.CREATED, 'foo', 'foo'),
                             (v.REMOVED, 'hoge', 'hoge'),
@@ -102,7 +102,7 @@ class TestVersionedDict(unittest.TestCase):
                     d['hoge'] = 'fuga'
                     self.check_state(v, d)
                     if typ == VersionedDict:
-                        self.assertEquals(sorted(v.iterchanges()), [
+                        self.assertEqual(sorted(v.iterchanges()), [
                             (v.CREATED, 'bar', 'qux'),
                             (v.CREATED, 'foo', 'foo'),
                             (v.MODIFIED, 'hoge', 'fuga'),
@@ -113,7 +113,7 @@ class TestVersionedDict(unittest.TestCase):
                     self.assertFalse('hoge' in v)
                     self.check_state(v, d)
                     if typ == VersionedDict:
-                        self.assertEquals(sorted(v.iterchanges()), [
+                        self.assertEqual(sorted(v.iterchanges()), [
                             (v.CREATED, 'bar', 'qux'),
                             (v.CREATED, 'foo', 'foo'),
                             (v.REMOVED, 'hoge', 'hoge'),
@@ -123,7 +123,7 @@ class TestVersionedDict(unittest.TestCase):
                     d['hoge'] = 'hoge'
                     self.check_state(v, d)
                     if typ == VersionedDict:
-                        self.assertEquals(sorted(v.iterchanges()), [
+                        self.assertEqual(sorted(v.iterchanges()), [
                             (v.CREATED, 'bar', 'qux'),
                             (v.CREATED, 'foo', 'foo'),
                         ])
@@ -136,7 +136,7 @@ class TestVersionedDict(unittest.TestCase):
                     self.assertFalse('foo' in v)
                     self.check_state(v, d)
                     if typ == VersionedDict:
-                        self.assertEquals(sorted(v.iterchanges()), [
+                        self.assertEqual(sorted(v.iterchanges()), [
                             (v.CREATED, 'bar', 'qux'),
                         ])
 
@@ -153,16 +153,16 @@ class TestVersionedDict(unittest.TestCase):
         d1 = VersionedDict(**d)
         self.assertIsInstance(d1._previous, dict)
         self.assertIsNot(d1._previous, d)
-        self.assertEquals(d1._previous, d)
+        self.assertEqual(d1._previous, d)
 
         d1 = VersionedDict(d.items())
         self.assertIsInstance(d1._previous, dict)
         self.assertIsNot(d1._previous, d)
-        self.assertEquals(d1._previous, d)
+        self.assertEqual(d1._previous, d)
 
         d1 = VersionedDict(d, bar='bar', hoge='hoge', fuga='toto')
         self.assertIsInstance(d1._previous, VersionedDict)
-        self.assertEquals(sorted(d1._previous.iterchanges()), [
+        self.assertEqual(sorted(d1._previous.iterchanges()), [
             (d1.CREATED, 'fuga', 'toto'),
             (d1.CREATED, 'hoge', 'hoge'),
             (d1.MODIFIED, 'bar', 'bar'),
@@ -174,7 +174,7 @@ class TestVersionedDict(unittest.TestCase):
         d2 = VersionedDict(d1, hoge=42, toto='titi')
         self.assertIsInstance(d2._previous, VersionedDict)
         self.assertIsNot(d2._previous, d1)
-        self.assertEquals(sorted(d2._previous.iterchanges()), [
+        self.assertEqual(sorted(d2._previous.iterchanges()), [
             (d1.CREATED, 'toto', 'titi'),
             (d1.MODIFIED, 'hoge', 42),
         ])
@@ -198,22 +198,22 @@ class TestVersionedDict(unittest.TestCase):
         d1['hoge'] = 'hoge'
         del d1['hoge']
         self.assertTrue('hoge' not in d1)
-        self.assertEquals(sorted(d1.iterchanges()), [])
+        self.assertEqual(sorted(d1.iterchanges()), [])
 
         d['hoge'] = 'fuga'
         self.assertTrue('hoge' not in d1)
-        self.assertEquals(sorted(d1.iterchanges()), [
+        self.assertEqual(sorted(d1.iterchanges()), [
             (d1.REMOVED, 'hoge', 'fuga'),
         ])
 
         d1['foo'] = 'foo'
-        self.assertEquals(sorted(d1.iterchanges()), [
+        self.assertEqual(sorted(d1.iterchanges()), [
             (d1.REMOVED, 'hoge', 'fuga'),
         ])
 
         d['foo'] = 'bar'
         self.assertEqual(d1['foo'], 'foo')
-        self.assertEquals(sorted(d1.iterchanges()), [
+        self.assertEqual(sorted(d1.iterchanges()), [
             (d1.MODIFIED, 'foo', 'foo'),
             (d1.REMOVED, 'hoge', 'fuga'),
         ])
@@ -232,7 +232,7 @@ class TestVersionedDict(unittest.TestCase):
         self.assertTrue('hoge' in d1)
         self.assertTrue('hoge' not in d2)
 
-        self.assertEquals(sorted(d2.iterchanges()), [
+        self.assertEqual(sorted(d2.iterchanges()), [
             (d2.CREATED, 'fuga', 'fuga'),
             (d2.REMOVED, 'hoge', 'hoge'),
         ])
@@ -242,7 +242,7 @@ class TestVersionedDict(unittest.TestCase):
         self.assertTrue('hoge' not in d3)
         self.assertTrue('fuga' in d3)
 
-        self.assertEquals(sorted(d3.iterchanges()), [
+        self.assertEqual(sorted(d3.iterchanges()), [
             (d2.CREATED, 'fuga', 'fuga'),
             (d2.MODIFIED, 'foo', 'foo2'),
             (d2.REMOVED, 'bar', 'qux'),
@@ -333,21 +333,21 @@ class TestSortedMerge(unittest.TestCase):
             ('c', 'C'),
         ]
 
-        self.assertEquals(list(sorted_merge(a, b)), [
+        self.assertEqual(list(sorted_merge(a, b)), [
             ('a', (1,), ()),
             ('b', (2,), ('B',)),
             ('c', (), ('C',)),
             ('d', (4,), ()),
         ])
 
-        self.assertEquals(list(sorted_merge(b, a)), [
+        self.assertEqual(list(sorted_merge(b, a)), [
             ('a', (), (1,)),
             ('b', ('B',), (2,)),
             ('c', ('C',), ()),
             ('d', (), (4,)),
         ])
 
-        self.assertEquals(list(sorted_merge(a[:2], b[:1])), [
+        self.assertEqual(list(sorted_merge(a[:2], b[:1])), [
             ('a', (1,), ()),
             ('b', (2,), ('B',)),
         ])
@@ -362,33 +362,33 @@ class TestLRUCache(unittest.TestCase):
         node = lrucache.node()
         node.insert(top)
 
-        self.assertEquals(top.next, node)
-        self.assertEquals(top.prev, node)
-        self.assertEquals(node.next, top)
-        self.assertEquals(node.prev, top)
+        self.assertEqual(top.next, node)
+        self.assertEqual(top.prev, node)
+        self.assertEqual(node.next, top)
+        self.assertEqual(node.prev, top)
 
         node2 = lrucache.node()
         node2.insert(top)
-        self.assertEquals(node2.next, node)
-        self.assertEquals(node2.prev, top)
-        self.assertEquals(top.next, node2)
-        self.assertEquals(top.prev, node)
-        self.assertEquals(node.next, top)
-        self.assertEquals(node.prev, node2)
+        self.assertEqual(node2.next, node)
+        self.assertEqual(node2.prev, top)
+        self.assertEqual(top.next, node2)
+        self.assertEqual(top.prev, node)
+        self.assertEqual(node.next, top)
+        self.assertEqual(node.prev, node2)
 
         node.insert(top)
-        self.assertEquals(node.next, node2)
-        self.assertEquals(node.prev, top)
-        self.assertEquals(top.next, node)
-        self.assertEquals(top.prev, node2)
-        self.assertEquals(node2.next, top)
-        self.assertEquals(node2.prev, node)
+        self.assertEqual(node.next, node2)
+        self.assertEqual(node.prev, top)
+        self.assertEqual(top.next, node)
+        self.assertEqual(top.prev, node2)
+        self.assertEqual(node2.next, top)
+        self.assertEqual(node2.prev, node)
 
         node2.detach()
-        self.assertEquals(top.next, node)
-        self.assertEquals(top.prev, node)
-        self.assertEquals(node.next, top)
-        self.assertEquals(node.prev, top)
+        self.assertEqual(top.next, node)
+        self.assertEqual(top.prev, node)
+        self.assertEqual(node.next, top)
+        self.assertEqual(node.prev, top)
 
     def test_lru_cache(self):
         cache = lrucache(2)
@@ -400,39 +400,39 @@ class TestLRUCache(unittest.TestCase):
             self.calls += 1
             return value * 2
 
-        self.assertEquals(foo(1), 2)
-        self.assertEquals(self.calls, 1)
-        self.assertEquals(foo(1), 2)
-        self.assertEquals(self.calls, 1)
-        self.assertEquals(len(cache), 1)
+        self.assertEqual(foo(1), 2)
+        self.assertEqual(self.calls, 1)
+        self.assertEqual(foo(1), 2)
+        self.assertEqual(self.calls, 1)
+        self.assertEqual(len(cache), 1)
 
-        self.assertEquals(foo(2), 4)
-        self.assertEquals(self.calls, 2)
-        self.assertEquals(foo(2), 4)
-        self.assertEquals(self.calls, 2)
-        self.assertEquals(len(cache), 2)
+        self.assertEqual(foo(2), 4)
+        self.assertEqual(self.calls, 2)
+        self.assertEqual(foo(2), 4)
+        self.assertEqual(self.calls, 2)
+        self.assertEqual(len(cache), 2)
 
-        self.assertEquals(foo(1), 2)
-        self.assertEquals(self.calls, 2)
+        self.assertEqual(foo(1), 2)
+        self.assertEqual(self.calls, 2)
 
-        self.assertEquals(foo(3), 6)
-        self.assertEquals(self.calls, 3)
-        self.assertEquals(len(cache), 2)
+        self.assertEqual(foo(3), 6)
+        self.assertEqual(self.calls, 3)
+        self.assertEqual(len(cache), 2)
 
-        self.assertEquals(foo(1), 2)
-        self.assertEquals(self.calls, 3)
+        self.assertEqual(foo(1), 2)
+        self.assertEqual(self.calls, 3)
 
-        self.assertEquals(foo(2), 4)
-        self.assertEquals(self.calls, 4)
-        self.assertEquals(len(cache), 2)
+        self.assertEqual(foo(2), 4)
+        self.assertEqual(self.calls, 4)
+        self.assertEqual(len(cache), 2)
 
         foo.invalidate(1)
-        self.assertEquals(foo(1), 2)
-        self.assertEquals(self.calls, 5)
+        self.assertEqual(foo(1), 2)
+        self.assertEqual(self.calls, 5)
 
-        self.assertEquals(foo(2), 4)
-        self.assertEquals(self.calls, 5)
-        self.assertEquals(len(cache), 2)
+        self.assertEqual(foo(2), 4)
+        self.assertEqual(self.calls, 5)
+        self.assertEqual(len(cache), 2)
 
         foo.invalidate(3)
 

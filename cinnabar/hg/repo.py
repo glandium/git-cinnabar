@@ -63,6 +63,7 @@ from cinnabar.util import (
 from collections import (
     defaultdict,
     deque,
+    OrderedDict,
 )
 from .bundle import (
     create_bundle,
@@ -92,7 +93,6 @@ try:
         hg,
         ui,
         url,
-        util,
     )
     try:
         from mercurial.sshpeer import instance as sshpeer
@@ -102,6 +102,10 @@ try:
         from mercurial.utils import procutil
     except ImportError:
         from mercurial import util as procutil
+    try:
+        from mercurial.utils import urlutil
+    except ImportError:
+        from mercurial import util as urlutil
 except ImportError:
     changegroup = unbundle20 = False
 
@@ -166,7 +170,9 @@ if not unbundle20 and not check_enabled('no-bundle2'):
                     break
                 assert length > 0
                 header = readexactly(self.fh, length)
-                yield Part(header, self.fh)
+                part = Part(header, self.fh)
+                yield part
+                part.consume()
 
     class Part(object):
         def __init__(self, rawheader, fh):
@@ -194,9 +200,9 @@ if not unbundle20 and not check_enabled('no-bundle2'):
             self.chunk_size = 0
             self.consumed = False
 
-        def read(self, size):
+        def read(self, size=None):
             ret = b''
-            while size and not self.consumed:
+            while (size is None or size > 0) and not self.consumed:
                 if self.chunk_size == self.chunk_offset:
                     d = readexactly(self.fh, 4)
                     self.chunk_size = struct.unpack('>i', d)[0]
@@ -207,12 +213,19 @@ if not unbundle20 and not check_enabled('no-bundle2'):
                     assert self.chunk_size > 0
                     self.chunk_offset = 0
 
-                data = readexactly(
-                    self.fh, min(size, self.chunk_size - self.chunk_offset))
-                size -= len(data)
+                wanted = self.chunk_size - self.chunk_offset
+                if size is not None:
+                    wanted = min(size, wanted)
+                data = readexactly(self.fh, wanted)
+                if size is not None:
+                    size -= len(data)
                 self.chunk_offset += len(data)
                 ret += data
             return ret
+
+        def consume(self):
+            while not self.consumed:
+                self.read(32768)
 
 
 # The following two functions (readexactly, getchunk) were copied from the
@@ -413,6 +426,9 @@ def findcommon(repo, store, hgheads):
     return [store.hg_changeset(h) for h in dag.heads('known')]
 
 
+getbundle_params = {}
+
+
 class HelperRepo(object):
     __slots__ = "_url", "_branchmap", "_heads", "_bookmarks", "_ui", "remote"
 
@@ -491,9 +507,13 @@ class HelperRepo(object):
         return [b == b'1'[0] for b in result]
 
     def getbundle(self, name, heads, common, *args, **kwargs):
-        data = HgRepoHelper.getbundle((hexlify(h) for h in heads),
-                                      (hexlify(c) for c in common),
-                                      b','.join(kwargs.get('bundlecaps', ())))
+        heads = [hexlify(h) for h in heads]
+        common = [hexlify(c) for c in common]
+        bundlecaps = b','.join(kwargs.get('bundlecaps', ()))
+        getbundle_params["heads"] = heads
+        getbundle_params["common"] = common
+        getbundle_params["bundlecaps"] = bundlecaps
+        data = HgRepoHelper.getbundle(heads, common, bundlecaps)
         header = readexactly(data, 4)
         if header == b'HG20':
             return unbundle20(self.ui, data)
@@ -720,7 +740,7 @@ def get_clonebundle_url(repo):
             k, _, v = p.partition(b'=')
             params_dict[k] = v
 
-        if 'stream' in params_dict:
+        if b'stream' in params_dict:
             logger.debug('Skip because stream bundles are not supported')
             continue
 
@@ -799,6 +819,9 @@ def store_changegroup(changegroup):
             assert False
 
 
+stored_files = OrderedDict()
+
+
 class BundleApplier(object):
     def __init__(self, bundle):
         self._bundle = store_changegroup(bundle)
@@ -812,13 +835,32 @@ class BundleApplier(object):
                 next(self._bundle, None)):
             pass
 
-        def enumerate_files(iter):
+        def enumerate_files(iterator):
+            null_parents = (NULL_NODE_ID, NULL_NODE_ID)
             last_name = None
             count_names = 0
-            for count_chunks, (name, chunk) in enumerate(iter, start=1):
+            for count_chunks, (name, chunk) in enumerate(iterator, start=1):
                 if name != last_name:
                     count_names += 1
                 last_name = name
+                parents = (chunk.parent1, chunk.parent2)
+                # Try to detect issue #207 as early as possible.
+                # Keep track of file roots of files with metadata and at least
+                # one head that can be traced back to each of those roots.
+                # Or, in the case of updates, all heads.
+                if store._has_metadata or chunk.parent1 in stored_files or \
+                        chunk.parent2 in stored_files:
+                    stored_files[chunk.node] = parents
+                    for p in parents:
+                        if p == NULL_NODE_ID:
+                            continue
+                        if stored_files.get(p, null_parents) != null_parents:
+                            del stored_files[p]
+                elif parents == null_parents:
+                    diff = next(iter(chunk.patch), None)
+                    if diff and diff.start == 0 and \
+                            diff.text_data[:2] == b'\1\n':
+                        stored_files[chunk.node] = parents
                 yield (count_chunks, count_names), chunk
 
         for rev_chunk in progress_enum(
@@ -1013,6 +1055,8 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                                             b'--boundary', *h):
             if c[:1] != b'-':
                 continue
+            if c[1:] == b"shallow":
+                raise Exception("Pushing git shallow clones is not supported.")
             yield store.hg_changeset(c[1:])
 
         for w, _, _ in what:
@@ -1021,7 +1065,24 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                 if rev:
                     yield rev
 
-    common = findcommon(repo, store, set(local_bases()))
+    local_bases = set(local_bases())
+    pushing_anything = any(src for src, _, _ in what)
+    force = all(v for _, _, v in what)
+    if pushing_anything and not local_bases and repo_heads:
+        fail = True
+        if store._has_metadata and force:
+            cinnabar_roots = [
+                unhexlify(store.hg_changeset(c))
+                for c, _, _ in GitHgHelper.rev_list(
+                    b'--topo-order', b'--full-history', b'--boundary',
+                    b'--max-parents=0', b'refs/cinnabar/metadata^')
+            ]
+            if any(repo.known(cinnabar_roots)):
+                fail = False
+        if fail:
+            raise Exception(
+                'Cannot push to this remote without pulling/updating first.')
+    common = findcommon(repo, store, local_bases)
     logging.info('common: %s', common)
 
     def revs():
@@ -1035,7 +1096,6 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
     pushed = False
     if push_commits:
         has_root = any(not p for (c, p) in push_commits)
-        force = all(v for _, _, v in what)
         if has_root and repo_heads:
             if not force:
                 raise Exception('Cannot push a new root')
@@ -1082,7 +1142,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
                         message += '\n\n' + hint.decode('utf-8')
                     raise Exception(message)
                 else:
-                    logging.getLogger(b'bundle2').warning(
+                    logging.getLogger('bundle2').warning(
                         'ignoring bundle2 part: %s', part.type)
         pushed = reply != 0
     return gitdag(push_commits) if pushed or dry_run else ()
@@ -1157,19 +1217,19 @@ if changegroup:
     def localpeer(ui, path):
         ui.setconfig(b'ui', b'ssh', b'')
 
-        has_checksafessh = hasattr(util, 'checksafessh')
+        has_checksafessh = hasattr(urlutil, 'checksafessh')
 
         sshargs = procutil.sshargs
         shellquote = procutil.shellquote
         quotecommand = getattr(procutil, 'quotecommand', None)
-        url = util.url
+        url = urlutil.url
         if has_checksafessh:
-            checksafessh = util.checksafessh
+            checksafessh = urlutil.checksafessh
 
         procutil.sshargs = lambda *a: b''
         procutil.shellquote = lambda x: x
         if has_checksafessh:
-            util.checksafessh = lambda x: None
+            urlutil.checksafessh = lambda x: None
 
         # In very old versions of mercurial, shellquote was not used, and
         # double quotes were hardcoded. Remove them by overriding
@@ -1190,13 +1250,13 @@ if changegroup:
                 self.path = path
                 self.user = b'user'
                 self.passwd = None
-        util.url = override_url
+        urlutil.url = override_url
 
         repo = sshpeer(ui, path, False)
 
         if has_checksafessh:
-            util.checksafessh = checksafessh
-        util.url = url
+            urlutil.checksafessh = checksafessh
+        urlutil.url = url
         if quotecommand:
             procutil.quotecommand = quotecommand
         procutil.shellquote = shellquote

@@ -18,9 +18,12 @@ except ImportError:
     )
 from collections import (
     deque,
-    Iterable,
     OrderedDict,
 )
+try:
+    from collections.abc import Iterable
+except ImportError:
+    from collections import Iterable
 from difflib import (
     Match,
     SequenceMatcher,
@@ -147,7 +150,7 @@ check_enabled = ConfigSetFunc(
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
     ('wire', 'merge', 'store'),
-    ('python3',),
+    (),
 )
 
 
@@ -813,15 +816,16 @@ class Process(object):
 
     def _popen(self, cmd, env, **kwargs):
         assert isinstance(env, VersionedDict)
+        logger = logging.getLogger('process')
+        if logger.isEnabledFor(logging.INFO):
+            full_cmd = ' '.join(chain(self._env_strings(env), cmd))
         if not getattr(os, 'supports_bytes_environ', True):
             env = {
                 fsdecode(k): fsdecode(v) for k, v in iteritems(env)
             }
         proc = subprocess.Popen(cmd, env=env, **kwargs)
-        logger = logging.getLogger('process')
         if logger.isEnabledFor(logging.INFO):
-            logger.info('[%d] %s', proc.pid,
-                        ' '.join(chain(self._env_strings(env), cmd)))
+            logger.info('[%d] %s', proc.pid, full_cmd)
         return proc
 
     def wait(self):
@@ -931,7 +935,7 @@ class VersionCheck(Thread):
             ref = 'refs/heads/next' if extra == 0 else 'refs/heads/master'
             for line in Git.iter('ls-remote', REPO, ref, stderr=devnull):
                 sha1, head = line.split()
-                if head != ref:
+                if fsdecode(head) != ref:
                     continue
                 proc = GitProcess(
                     '-C', parent_dir, 'merge-base', '--is-ancestor', sha1,
@@ -950,7 +954,7 @@ class VersionCheck(Thread):
             for line in Git.iter('ls-remote', REPO, 'refs/tags/*',
                                  stderr=devnull):
                 sha1, tag = line.split()
-                tag = tag.partition('refs/tags/')[-1]
+                tag = fsdecode(tag).partition('refs/tags/')[-1]
                 try:
                     v = StrictVersion(tag)
                 except ValueError:
@@ -971,7 +975,6 @@ class VersionCheck(Thread):
 
 def run(func, args):
     reexec = None
-    assert not experiment('python3') or sys.version_info[0] != 2
     if os.environ.pop('GIT_CINNABAR_COVERAGE', None):
         if not reexec:
             reexec = [sys.executable]
@@ -1005,6 +1008,7 @@ def run(func, args):
         # Catch all exceptions and provide a nice message
         retcode = 70  # Internal software error
         message = getattr(e, 'message', None) or getattr(e, 'reason', None)
+        message = message or str(e)
         if check_enabled('traceback') or not message:
             traceback.print_exc()
         else:

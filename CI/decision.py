@@ -87,11 +87,15 @@ class TestTask(Task):
                 .format(Clone.by_name(clone)),
                 'git init repo/hg.old.git',
                 'git -C repo/hg.old.git fetch ../bundle.git refs/*:refs/*',
-                'git -C repo/hg.old.git remote add origin hg::$REPO',
+                'git -C repo/hg.old.git remote add origin hg:${{REPO#https:}}',
                 'git -C repo/hg.old.git symbolic-ref HEAD'
                 ' refs/heads/branches/default/tip',
             ])
             kwargs.setdefault('env', {})['REPO'] = REPO
+        command.extend((
+            'repo/git-cinnabar --version',
+            'GIT_CINNABAR_COVERAGE= repo/git-cinnabar python --version',
+        ))
         if variant == 'coverage':
             command = [
                 'export GIT_CINNABAR_COVERAGE=1',
@@ -167,6 +171,9 @@ class Clone(TestTask, metaclass=Tool):
             hg = '4.3.3'
         else:
             hg = MERCURIAL_VERSION
+        kwargs = {}
+        if parse_version(version) < parse_version('0.5.7'):
+            kwargs['git'] = '2.30.2'
         if REPO == DEFAULT_REPO:
             index = 'bundle.{}'.format(sha1)
         else:
@@ -190,6 +197,7 @@ class Clone(TestTask, metaclass=Tool):
                 'REPO': REPO,
             },
             priority='high',
+            **kwargs,
         )
 
 
@@ -203,7 +211,7 @@ def decision():
             '(cd repo &&'
             ' nosetests --all-modules --with-coverage --cover-tests tests &&'
             ' nosetests3 --all-modules tests)',
-            '(cd repo && python -m flake8 --ignore E402,F405'
+            '(cd repo && python2.7 -m flake8 --ignore E402,F405'
             ' $(git ls-files \\*\\*.py git-cinnabar git-remote-hg'
             ' | grep -v ^CI/))',
             '(cd repo && flake8 --ignore E402,F405'
@@ -238,9 +246,6 @@ def decision():
             dependencies=[
                 Helper.by_name(env),
             ],
-            env={
-                'GIT_CINNABAR_EXPERIMENTS': 'python3',
-            } if env == 'linux' else {},
         )
 
     # Because nothing is using the x86 windows helper, we need to manually
@@ -266,7 +271,6 @@ def decision():
             extra_desc='from-{}'.format(upgrade),
             clone=upgrade,
             env={
-                'GIT_CINNABAR_EXPERIMENTS': 'python3',
                 'GIT_CINNABAR_LOG': 'reexec:3',
                 'UPGRADE_FROM': upgrade,
             },
@@ -296,13 +300,19 @@ def decision():
         },
     )
 
-    TestTask(
-        variant='coverage',
-        short_desc='graft tests',
-        env={
-            'GRAFT': '1',
-        },
-    )
+    for env in ('linux', 'mingw64', 'osx'):
+        # Can't spawn osx workers from pull requests.
+        if env.startswith('osx') and not TC_IS_PUSH:
+            continue
+
+        TestTask(
+            task_env=env,
+            variant='coverage' if env == 'linux' else None,
+            short_desc='graft tests',
+            env={
+                'GRAFT': '1',
+            },
+        )
 
     TestTask(
         variant='old',
@@ -346,21 +356,24 @@ def decision():
         hg='5.4.2',
     )
 
-    TestTask(
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'python3',
-        },
-        hg='{}.py3'.format(MERCURIAL_VERSION),
-    )
+    for env in ('linux', 'mingw64', 'osx'):
+        # Can't spawn osx workers from pull requests.
+        if env.startswith('osx') and not TC_IS_PUSH:
+            continue
 
-    TestTask(
-        short_desc='graft tests',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'python3',
-            'GRAFT': '1',
-        },
-        hg='{}.py3'.format(MERCURIAL_VERSION),
-    )
+        TestTask(
+            task_env=env,
+            hg='{}.py3'.format(MERCURIAL_VERSION),
+        )
+
+        TestTask(
+            task_env=env,
+            short_desc='graft tests',
+            env={
+                'GRAFT': '1',
+            },
+            hg='{}.py3'.format(MERCURIAL_VERSION),
+        )
 
     TestTask(
         extra_desc='experiments',
@@ -382,7 +395,7 @@ def decision():
     TestTask(
         extra_desc='experiments',
         env={
-            'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
+            'GIT_CINNABAR_EXPERIMENTS': 'true',
             'GIT_CINNABAR_LOG': 'reexec:3',
         },
         hg='{}.py3'.format(MERCURIAL_VERSION),
@@ -392,7 +405,7 @@ def decision():
         short_desc='graft tests',
         extra_desc='experiments',
         env={
-            'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
+            'GIT_CINNABAR_EXPERIMENTS': 'true',
             'GIT_CINNABAR_LOG': 'reexec:3',
             'GRAFT': '1',
         },
@@ -402,6 +415,7 @@ def decision():
     for variant in ('coverage', 'old'):
         env = {
             'GIT_CINNABAR_CHECK': 'no-mercurial',
+            'GIT_CINNABAR_PYTHON': 'python2.7',
         }
         kwargs = {}
         if variant == 'old':
@@ -411,7 +425,7 @@ def decision():
             variant=variant,
             extra_desc='no-mercurial',
             pre_command=[
-                'python -m virtualenv venv',
+                'python2.7 -m virtualenv venv',
                 '. venv/bin/activate',
             ],
             command=[
@@ -427,22 +441,35 @@ def decision():
             **kwargs,
         )
 
-    for variant in ('coverage', 'asan'):
-        for check in ([], ['no-mercurial']):
-            TestTask(
-                variant=variant,
-                short_desc='cram',
-                extra_desc=' '.join(check),
-                clone=False,
-                command=[
-                    'repo/git-cinnabar --version',
-                    'cram --verbose repo/tests',
-                ],
-                env={
-                    'GIT_CINNABAR_CHECK': ','.join(
-                        ['no-version-check'] + check),
-                },
-            )
+    for env, variant, check in (
+        ('linux', 'coverage', []),
+        ('linux', 'coverage', ['no-mercurial']),
+        ('linux', 'asan', []),
+        ('linux', 'asan', ['no-mercurial']),
+        ('osx', None, []),
+    ):
+        # Can't spawn osx workers from pull requests.
+        if env.startswith('osx') and not TC_IS_PUSH:
+            continue
+
+        pre_command = []
+        if env != 'linux':
+            pre_command.append('pip install cram==0.7')
+
+        TestTask(
+            task_env=env,
+            variant=variant,
+            short_desc='cram',
+            extra_desc=' '.join(check),
+            clone=False,
+            command=pre_command + [
+                'cram --verbose repo/tests',
+            ],
+            env={
+                'GIT_CINNABAR_CHECK': ','.join(
+                    ['no-version-check'] + check),
+            },
+        )
 
     for check in ([], ['no-mercurial']):
         TestTask(
@@ -450,13 +477,12 @@ def decision():
             extra_desc=' '.join(check),
             clone=False,
             command=[
-                'repo/git-cinnabar --version',
                 'cram --verbose repo/tests',
             ],
             env={
                 'GIT_CINNABAR_CHECK': ','.join(
                     ['no-version-check'] + check),
-                'GIT_CINNABAR_EXPERIMENTS': 'python3,true',
+                'GIT_CINNABAR_EXPERIMENTS': 'true',
             },
             hg='{}.py3'.format(MERCURIAL_VERSION),
         )
@@ -464,6 +490,7 @@ def decision():
 
 def do_hg_version(hg):
     TestTask(hg=hg)
+    cram_hg = [hg]
     try:
         # Don't run cram tests for version < 3.6, which would need
         # different tests because of server-side changes in behavior
@@ -471,20 +498,22 @@ def do_hg_version(hg):
         if StrictVersion(hg) < '3.6':
             return
     except ValueError:
-        # `hg` is a sha1 for trunk, which means it's >= 3.6
-        pass
-    TestTask(
-        short_desc='cram',
-        clone=False,
-        hg=hg,
-        command=[
-            'repo/git-cinnabar --version',
-            'cram --verbose repo/tests',
-        ],
-        env={
-            'GIT_CINNABAR_CHECK': 'no-version-check',
-        },
-    )
+        # `hg` is a sha1 for trunk, which means it's >= 3.6.
+        # For trunk, also run py3 tests
+        TestTask(hg='{}.py3'.format(hg))
+        cram_hg.append('{}.py3'.format(hg))
+    for hg in cram_hg:
+        TestTask(
+            short_desc='cram',
+            clone=False,
+            hg=hg,
+            command=[
+                'cram --verbose repo/tests',
+            ],
+            env={
+                'GIT_CINNABAR_CHECK': 'no-version-check',
+            },
+        )
 
 
 @action('more-hg-versions',
@@ -565,16 +594,16 @@ def main():
                     'set +x',
                     ('export CODECOV_TOKEN=$(curl -sL '
                      'http://taskcluster/api/secrets/v1/secret/project/git-'
-                     'cinnabar/codecov | '
-                     'python -c "import json, sys; print(json.load(sys.stdin)'
+                     'cinnabar/codecov | python2.7'
+                     ' -c "import json, sys; print(json.load(sys.stdin)'
                      '[\\"secret\\"][\\"token\\"])")'),
                     'set -x',
                 ],
                 merge_coverage,
                 [
                     'cd repo',
-                    'codecov --name "taskcluster" --commit {} --branch {}'
-                    .format(TC_COMMIT, TC_BRANCH),
+                    'codecov --required --name "taskcluster" --commit {}'
+                    ' --branch {}'.format(TC_COMMIT, TC_BRANCH),
                 ],
             )),
         )

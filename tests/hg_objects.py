@@ -451,11 +451,11 @@ class TestManifest(unittest.TestCase):
 
         chunk = m2.to_chunk(RawRevChunk02, m)
         m3 = Manifest.from_chunk(chunk, m)
-        self.assertEquals(m2.items, m3.items)
+        self.assertEqual(m2.items, m3.items)
 
         chunk = m.to_chunk(RawRevChunk02, m2)
         m3 = Manifest.from_chunk(chunk, m2)
-        self.assertEquals(m.items, m3.items)
+        self.assertEqual(m.items, m3.items)
 
         m2 = Manifest()
         m2.add(b'fuga', b'a7b3deabf88ddf313b21064bd29051cfbb284b7c')
@@ -463,7 +463,7 @@ class TestManifest(unittest.TestCase):
 
         chunk = m2.to_chunk(RawRevChunk02, m)
         m3 = Manifest.from_chunk(chunk, m)
-        self.assertEquals(m2.items, m3.items)
+        self.assertEqual(m2.items, m3.items)
 
         m = Manifest()
         m.raw_data = (

@@ -22,8 +22,6 @@ class OsxCommon(object):
         command = []
         command.append('export PWD=$(pwd)')
         command.append('export ARTIFACTS=$PWD')
-        command.append('virtualenv venv')
-        command.append('. venv/bin/activate')
         command.extend(params['command'])
         params['command'] = bash_command(*command)
         env = params.setdefault('env', {})
@@ -37,7 +35,7 @@ class OsxCommon(object):
 
 
 class Osx(OsxCommon, metaclass=TaskEnvironment):
-    ITERATION = '3'
+    ITERATION = '4'
     PREFIX = 'osx'
     worker_suffix = ''
     os_version = '10.15'
@@ -45,7 +43,7 @@ class Osx(OsxCommon, metaclass=TaskEnvironment):
 
 class OsxArm64(OsxCommon, metaclass=TaskEnvironment):
     cpu = 'arm64'
-    ITERATION = '1'
+    ITERATION = '2'
     PREFIX = 'arm64-osx'
     worker_suffix = ''
     os_version = '10.15'

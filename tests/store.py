@@ -42,7 +42,7 @@ class TestStoreCG01(unittest.TestCase):
         os.environ['GIT_DIR'] = tmpdir
         os.environ['GIT_CINNABAR_EXPERIMENTS'] = \
             'store' if self.NEW_STORE else ''
-        self.assertEquals(
+        self.assertEqual(
             GitHgHelper.supports((b'store', b'new')), self.NEW_STORE)
 
     def tearDown(self):

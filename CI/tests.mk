@@ -64,10 +64,6 @@ COMPARE_REFS = $(call COMPARE_COMMANDS,$(call GET_REF_SHA1,$1,$(if $3, $(call $3
 HG_INIT = $(HG) init $1
 %.nobundle2: HG_INIT += ; (echo "[experimental]"; echo "bundle2-advertise = false") >> $1/.hg/hgrc
 
-print-version:
-	$(GIT) cinnabar --version
-
-check: print-version
 check: hg.empty.git
 check: hg.git hg.git.nobundle2
 check: hg.unbundle.git
@@ -255,7 +251,7 @@ hg.graft.base.git hg.graft2.base.git: hg.upgraded.git hg.pure.hg
 hg.graft.git: hg.graft.base.git hg.upgraded.git
 	cp -r $< $@
 	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
-	$(GIT) -C $@ filter-branch --msg-filter 'cat ; echo' --original original -- --all
+	$(GIT) -c user.email=foo@bar -C $@ filter-branch --msg-filter 'cat ; echo' --original original -- --all
 	$(GIT) -C $@ -c cinnabar.graft=true remote update
 	$(call COMPARE_REFS, $(word 2,$^), $@, XARGS_GIT2HG)
 	$(GIT) -C $@ cinnabar fsck --full
@@ -271,7 +267,7 @@ hg.graft2.git: hg.graft.git hg.pure.hg hg.graft2.base.git
 hg.graft.replace.git: hg.graft.git hg.upgraded.git
 	cp -r $< $@
 	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
-	$(GIT) -C $@ filter-branch --index-filter 'test $$GIT_COMMIT = '$$($(call GET_ROOTS,$@,--remotes))' && git rm -r --cached -- \* || true' --original original -- --all
+	$(GIT) -c user.email=foo@bar -C $@ filter-branch --index-filter 'test $$GIT_COMMIT = '$$($(call GET_ROOTS,$@,--remotes))' && git rm -r --cached -- \* || true' --original original -- --all
 	$(GIT) -C $@ -c cinnabar.graft=true remote update
 	$(call COMPARE_REFS, $(word 2,$^), $@, XARGS_GIT2HG)
 	$(call COMPARE_COMMANDS,$(call GET_ROOTS,$(word 2,$^),--remotes),$(call GET_ROOTS,$@,--glob=refs/cinnabar/replace))

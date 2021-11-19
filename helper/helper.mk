@@ -166,4 +166,4 @@ config.patched.sp config.patched.s config.patched.o: EXTRA_CPPFLAGS = \
 
 # Bump when CI changes need a new helper build but the helper code itself
 # hasn't changed.
-DUMMY = 5
+DUMMY = 6
