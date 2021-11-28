@@ -56,9 +56,9 @@ Setup:
 Python:
 -------
 
-git-cinnabar will use one of `python3`, `python2.7` or `python2`, whichever has
-mercurial libraries. If none of them does, it will use the first that can be
-found.
+git-cinnabar will use one of `python3`, `python`, `python2.7` or `python2`,
+whichever has mercurial libraries. If none of them does, it will use the first
+that can be found.
 
 You may force a specific python through the `GIT_CINNABAR_PYTHON` environment
 variable.

@@ -2,13 +2,13 @@
 ''':'
 py="$GIT_CINNABAR_PYTHON"
 if test -z "$py"; then
-  for py in python3 python2.7 python2; do
+  for py in python3 python python2.7 python2; do
     "$py" -c "from mercurial import hg" >/dev/null 2>&1 && break
     py=
   done
 fi
 if test -z "$py"; then
-  for py in python3 python2.7 python2; do
+  for py in python3 python python2.7 python2; do
     command -v "$py" > /dev/null && break
     py=python3
   done
