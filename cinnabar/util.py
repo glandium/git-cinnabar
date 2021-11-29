@@ -1008,11 +1008,13 @@ def run(func, args):
         # Catch all exceptions and provide a nice message
         retcode = 70  # Internal software error
         message = getattr(e, 'message', None) or getattr(e, 'reason', None)
+        message = message or ', '.join(
+            fsdecode(a) for a in getattr(e, 'args', []))
         message = message or str(e)
         if check_enabled('traceback') or not message:
             traceback.print_exc()
         else:
-            logging.error(message)
+            logging.error(fsdecode(message))
 
             sys.stderr.write(
                 'Run the command again with '
