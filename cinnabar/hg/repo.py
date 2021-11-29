@@ -1178,7 +1178,7 @@ def munge_url(url):
             path = parsed_url.path
         return ParseResult(
             b'file',
-            b'',
+            parsed_url.netloc,
             path,
             parsed_url.params,
             parsed_url.query,
