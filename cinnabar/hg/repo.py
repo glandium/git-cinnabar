@@ -1288,7 +1288,7 @@ def _get_repo(remote):
         if sys.platform == 'win32':
             # TODO: This probably needs more thought.
             path = path.lstrip(b'/')
-        if not os.path.isdir(path):
+        if os.path.isfile(path):
             return bundlerepo(path)
     ui = get_ui()
     if changegroup and remote.parsed_url.scheme == b'file':
