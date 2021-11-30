@@ -1028,6 +1028,10 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
 
 def munge_url(url):
     parsed_url = urlparse(url)
+    if not parsed_url.scheme:
+        # For urls without a scheme, try again with a normalized url with
+        # no double-slashes.
+        parsed_url = urlparse(re.sub(b'//+', b'/', url))
     # On Windows, assume that a one-letter scheme and no host means we
     # originally had something like c:/foo.
     if not parsed_url.scheme or (
@@ -1039,7 +1043,7 @@ def munge_url(url):
             path = parsed_url.path
         return ParseResult(
             b'file',
-            b'',
+            parsed_url.netloc,
             path,
             parsed_url.params,
             parsed_url.query,
