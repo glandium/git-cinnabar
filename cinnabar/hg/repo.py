@@ -1167,6 +1167,10 @@ def get_ui():
 
 def munge_url(url):
     parsed_url = urlparse(url)
+    if not parsed_url.scheme:
+        # For urls without a scheme, try again with a normalized url with
+        # no double-slashes.
+        parsed_url = urlparse(re.sub(b'//+', b'/', url))
     # On Windows, assume that a one-letter scheme and no host means we
     # originally had something like c:/foo.
     if not parsed_url.scheme or (
