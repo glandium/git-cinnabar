@@ -155,7 +155,7 @@ else:
         return fh
 
 
-if not unbundle20 and not check_enabled('no-bundle2'):
+if not changegroup and not unbundle20 and not check_enabled('no-bundle2'):
     class unbundle20(object):
         def __init__(self, ui, fh):
             self.fh = fh
