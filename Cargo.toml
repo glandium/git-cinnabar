@@ -65,7 +65,7 @@ features = ["static"]
 version = "1"
 
 [dependencies.os_pipe]
-version = "0.9"
+version = "1.0"
 optional = true
 
 [dependencies.semver]
@@ -73,7 +73,7 @@ version = "1.0"
 optional = true
 
 [dependencies.shared_child]
-version = "0.3"
+version = "1.0"
 optional = true
 
 [target.'cfg(windows)'.dependencies.winapi]
