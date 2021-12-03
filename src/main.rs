@@ -170,7 +170,7 @@ fn do_one_hg2git(sha1: &Abbrev<HgChangesetId>) -> String {
 fn do_one_git2hg(committish: &OsString) -> String {
     let note = get_oid_committish(committish.as_bytes())
         .as_ref()
-        .map(|oid| lookup_replace_commit(oid))
+        .map(lookup_replace_commit)
         .and_then(|oid| unsafe { GitChangesetId::from_unchecked(oid.into_owned()).to_hg() });
     format!("{}", note.unwrap_or_else(HgChangesetId::null))
 }

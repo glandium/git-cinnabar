@@ -104,17 +104,17 @@ fn decompress_bundlev1_header<R: Read>(
 impl<'a> Read for DecompressBundleReader<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if let Some(mut initial_buf_) = self.initial_buf.take() {
-            let mut initial_buf = initial_buf_.get_mut();
+            let initial_buf = initial_buf_.get_mut();
             if initial_buf.is_empty() {
-                if (&mut self.inner).take(4).read_to_end(&mut initial_buf)? != 4 {
+                if (&mut self.inner).take(4).read_to_end(initial_buf)? != 4 {
                     return Err(io::Error::new(
                         ErrorKind::Other,
                         "Unrecognized mercurial bundle",
                     ));
                 }
                 let compression = match &initial_buf[..] {
-                    b"HG20" => decompress_bundlev2_header(&mut self.inner, &mut initial_buf)?,
-                    b"HG10" => decompress_bundlev1_header(&mut self.inner, &mut initial_buf)?,
+                    b"HG20" => decompress_bundlev2_header(&mut self.inner, initial_buf)?,
+                    b"HG10" => decompress_bundlev1_header(&mut self.inner, initial_buf)?,
                     _ => {
                         return Err(io::Error::new(
                             ErrorKind::Other,

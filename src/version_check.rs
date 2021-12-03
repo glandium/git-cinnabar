@@ -96,7 +96,7 @@ fn version_check_from_repo(when: SystemTime) -> Option<VersionCheck> {
                     if let Some(version) = r
                         .strip_prefix(b"refs/tags/")
                         .and_then(|tag| std::str::from_utf8(tag).ok())
-                        .and_then(|v| parse_version(v))
+                        .and_then(parse_version)
                         .filter(|v| v > new_version.as_ref().unwrap_or(&current_version))
                     {
                         new_version = Some(version);

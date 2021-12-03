@@ -597,8 +597,8 @@ unsafe extern "C" fn read_from_read<R: Read>(
     data: *const c_void,
 ) -> usize {
     let read = (data as *mut R).as_mut().unwrap();
-    let mut buf = std::slice::from_raw_parts_mut(ptr as *mut u8, size.checked_mul(nmemb).unwrap());
-    read.read(&mut buf).unwrap()
+    let buf = std::slice::from_raw_parts_mut(ptr as *mut u8, size.checked_mul(nmemb).unwrap());
+    read.read(buf).unwrap()
 }
 
 #[allow(clippy::unnecessary_wraps)]
