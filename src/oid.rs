@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 use std::str::{self, FromStr};
 
-use digest::Digest;
+use digest::{Digest, OutputSizeUser};
 use sha1::Sha1;
 
 pub trait ObjectId: Sized {
@@ -20,7 +20,7 @@ pub trait ObjectId: Sized {
     fn abbrev(self, len: usize) -> Abbrev<Self> {
         assert_le!(
             len,
-            2 * <<Self::Digest as Digest>::OutputSize as typenum::marker_traits::Unsigned>::USIZE
+            2 * <<Self::Digest as OutputSizeUser>::OutputSize as typenum::marker_traits::Unsigned>::USIZE
         );
         Abbrev { oid: self, len }
     }
@@ -75,7 +75,7 @@ macro_rules! oid_type {
     ($name:ident for $typ:ty) => {
         #[repr(C)]
         #[derive(Clone, Eq)]
-        pub struct $name([u8; <<$typ as digest::Digest>::OutputSize as typenum::marker_traits::Unsigned>::USIZE]);
+        pub struct $name([u8; <<$typ as digest::OutputSizeUser>::OutputSize as typenum::marker_traits::Unsigned>::USIZE]);
 
         impl $crate::oid::ObjectId for $name {
             type Digest = $typ;
@@ -89,7 +89,7 @@ macro_rules! oid_type {
             }
 
             fn null() -> Self {
-                Self([0; <<$typ as digest::Digest>::OutputSize as typenum::marker_traits::Unsigned>::USIZE])
+                Self([0; <<$typ as digest::OutputSizeUser>::OutputSize as typenum::marker_traits::Unsigned>::USIZE])
             }
 
             fn from_digest(h: Self::Digest) -> Self {
@@ -187,7 +187,8 @@ impl<O: ObjectId> std::fmt::Display for Abbrev<O> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         const BUF_LEN: usize = 40;
         assert!(
-            <<O::Digest as Digest>::OutputSize as typenum::marker_traits::Unsigned>::USIZE * 2
+            <<O::Digest as OutputSizeUser>::OutputSize as typenum::marker_traits::Unsigned>::USIZE
+                * 2
                 <= BUF_LEN
         );
         let mut hex = [0u8; BUF_LEN];
