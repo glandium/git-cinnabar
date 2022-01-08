@@ -161,9 +161,15 @@ class Clone(TestTask, metaclass=Tool):
                 download = Helper.install('linux.old:{}'.format(version))
             expireIn = '26 weeks'
         elif parse_version(version) > parse_version('0.5.0a'):
-            download = ['repo/git-cinnabar download']
+            download = [
+                'python2.7 -m pip install requests',
+                'repo/git-cinnabar download',
+            ]
         elif parse_version(version) == parse_version('0.4.0'):
-            download = ['(cd repo ; ./git-cinnabar download)']
+            download = [
+                'python2.7 -m pip install requests',
+                '(cd repo ; ./git-cinnabar download)',
+            ]
         else:
             download = []
         if (parse_version(version) < parse_version('0.5.0b3') and
