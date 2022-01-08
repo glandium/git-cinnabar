@@ -92,10 +92,11 @@ class TestTask(Task):
                 ' refs/heads/branches/default/tip',
             ])
             kwargs.setdefault('env', {})['REPO'] = REPO
-        command.extend((
-            'repo/git-cinnabar --version',
-            'GIT_CINNABAR_COVERAGE= repo/git-cinnabar python --version',
-        ))
+        if "clone w/ 0.3" not in (desc or ""):
+            command.extend((
+                'repo/git-cinnabar --version',
+                'GIT_CINNABAR_COVERAGE= repo/git-cinnabar python --version',
+            ))
         if variant == 'coverage':
             command = [
                 'export GIT_CINNABAR_COVERAGE=1',
