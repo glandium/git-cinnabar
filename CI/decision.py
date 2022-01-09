@@ -94,8 +94,10 @@ class TestTask(Task):
             kwargs.setdefault('env', {})['REPO'] = REPO
         if "clone w/ 0.3" not in (desc or ""):
             command.extend((
-                'repo/git-cinnabar --version',
-                'GIT_CINNABAR_COVERAGE= repo/git-cinnabar python --version',
+                # 0.4 doesn't support running with CWD outside a git repo.
+                '(cd repo; ./git-cinnabar --version)',
+                '(cd repo; GIT_CINNABAR_COVERAGE='
+                ' ./git-cinnabar python --version)',
             ))
         if variant == 'coverage':
             command = [
