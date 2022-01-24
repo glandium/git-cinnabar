@@ -227,7 +227,7 @@ void pipe_writer(struct writer *writer, const char **argv) {
 
 	writer_close(writer);
 	child_process_init(&context->proc);
-	context->proc.argv = argv;
+	strvec_pushv(&context->proc.args, argv);
 	context->proc.in = -1;
 	context->proc.out = fileno((FILE*)writer->context);
 	context->proc.no_stderr = 1;

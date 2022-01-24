@@ -12,7 +12,7 @@ import msys
 
 
 MERCURIAL_VERSION = '5.9.1'
-GIT_VERSION = '2.34.1'
+GIT_VERSION = '2.35.0'
 
 ALL_MERCURIAL_VERSIONS = (
     '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
@@ -65,7 +65,8 @@ class Git(Task, metaclass=Tool):
                     'v{}'.format(version)
                 ) + [
                     'make -C repo -j$({}) install prefix=/ NO_GETTEXT=1'
-                    ' NO_OPENSSL=1 NO_TCLTK=1 DESTDIR=$PWD/git'.format(
+                    ' NO_OPENSSL=1 NO_TCLTK=1 NO_UNCOMPRESS2=1'
+                    ' DESTDIR=$PWD/git'.format(
                         nproc(build_image)),
                     'tar -Jcf $ARTIFACTS/git-{}.tar.xz git'
                     .format(version),
