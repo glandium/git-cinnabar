@@ -1313,7 +1313,8 @@ class GitHgStore(object):
                 util.iteritems(stored_files)):
             if not GitHgHelper.check_file(node, parent1, parent2):
                 busted = True
-                logging.error("Error in file %s" % node)
+                logging.error(
+                    "Error in file %s" % node.decode('ascii', 'replace'))
         if busted:
             import json
             extra = ""

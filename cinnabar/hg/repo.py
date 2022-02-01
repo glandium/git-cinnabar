@@ -510,9 +510,11 @@ class HelperRepo(object):
         heads = [hexlify(h) for h in heads]
         common = [hexlify(c) for c in common]
         bundlecaps = b','.join(kwargs.get('bundlecaps', ()))
-        getbundle_params["heads"] = heads
-        getbundle_params["common"] = common
-        getbundle_params["bundlecaps"] = bundlecaps
+        getbundle_params["heads"] = [
+            h.decode('ascii', 'replace') for h in heads]
+        getbundle_params["common"] = [
+            c.decode('ascii', 'replace') for c in common]
+        getbundle_params["bundlecaps"] = bundlecaps.decode('utf-8', 'replace')
         data = HgRepoHelper.getbundle(heads, common, bundlecaps)
         header = readexactly(data, 4)
         if header == b'HG20':
