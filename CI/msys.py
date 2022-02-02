@@ -81,13 +81,28 @@ class MsysBase(MsysCommon, Task, metaclass=Tool):
 
     def __init__(self, cpu):
         assert cpu in CPUS
-        _create_command = (
-            'curl -L http://repo.msys2.org/distrib/{cpu}'
-            '/msys2-base-{cpu}-{version}.tar.xz | xz -cd | bzip2 -c'
-            ' > $ARTIFACTS/msys2.tar.bz2'.format(
-                cpu=msys_cpu(cpu), version=MSYS_VERSION)
+        crts = (
+            '{msys}/usr/ssl/cert.pem '
+            '{msys}/usr/ssl/certs/ca-bundle.crt '
+            '{msys}/usr/ssl/certs/ca-bundle.trust.crt'
         )
-        h = hashlib.sha1(_create_command.encode())
+        crts64 = crts.format(msys='msys64')
+        crts = crts.format(msys=msys(cpu))
+        _create_command = [
+            'curl -L http://repo.msys2.org/distrib/{cpu}'
+            '/msys2-base-{cpu}-{version}.tar.xz | xz -cd > msys2.tar'
+            .format(cpu=msys_cpu(cpu), version=MSYS_VERSION),
+            'tar --delete -f msys2.tar {}'.format(crts),
+            'curl -L https://repo.msys2.org/distrib/x86_64/'
+            'msys2-base-x86_64-20220128.tar.xz | tar -Jx {}'.format(crts64),
+        ]
+        if crts64 != crts:
+            _create_command.append('mv msys64 msys32')
+        _create_command += [
+            'tar -rf msys2.tar {}'.format(crts),
+            'bzip2 -c msys2.tar > $ARTIFACTS/msys2.tar.bz2',
+        ]
+        h = hashlib.sha1(';'.join(_create_command).encode())
         self.hexdigest = h.hexdigest()
         self.cpu = cpu
 
@@ -97,7 +112,7 @@ class MsysBase(MsysCommon, Task, metaclass=Tool):
             description='msys2 image: base {}'.format(cpu),
             index=self.index,
             expireIn='26 weeks',
-            command=[_create_command],
+            command=_create_command,
             artifact='msys2.tar.bz2',
         )
 
@@ -113,6 +128,10 @@ class MsysEnvironment(MsysCommon):
             ' /etc/pacman.d/mirrorlist.*',
             'pacman --noconfirm -Sy tar {}'.format(
                 ' '.join(self.packages(name))),
+            '[ -f /{mingw}/ssl/cert.pem ] &&'
+            ' cp /usr/ssl/cert.pem /{mingw}/ssl'.format(mingw=mingw(cpu)),
+            '[ -d /{mingw}/ssl/certs ] &&'
+            ' cp /usr/ssl/certs/* /{mingw}/ssl/certs'.format(mingw=mingw(cpu)),
             'rm -rf /var/cache/pacman/pkg',
             'python2.7 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade',
             'python3 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade',
