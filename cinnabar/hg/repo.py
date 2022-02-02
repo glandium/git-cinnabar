@@ -678,9 +678,34 @@ def unbundler(bundle):
         chunk_type = RawRevChunk01
         cg = bundle
 
+    if check_enabled('unbundler') and "GIT_DIR" in os.environ:
+        class BundleSaver(object):
+            def __init__(self, cg):
+                self.cg = cg
+                self.out = open(os.path.join(
+                    os.environ["GIT_DIR"], "cinnabar-last-bundle"), "wb")
+                self.out.write(b'HG20\0\0\0\0')
+                self.out.write(b'\0\0\0\x1d\x0bCHANGEGROUP\0\0\0\0')
+                self.out.write(b'\x01\x00\x07\x02version')
+                self.out.write(b'01' if chunk_type is RawRevChunk01 else b'02')
+
+            def read(self, length=None):
+                data = self.cg.read(length)
+                self.out.write(struct.pack('>l', len(data)))
+                self.out.write(data)
+                return data
+
+            def end_bundle(self):
+                self.out.write(b'\0\0\0\0\0\0\0\0')
+
+        cg = BundleSaver(cg)
+
     yield chunks_in_changegroup(chunk_type, cg, 'changeset')
     yield chunks_in_changegroup(chunk_type, cg, 'manifest')
     yield iterate_files(chunk_type, cg)
+
+    if hasattr(cg, "end_bundle"):
+        cg.end_bundle()
 
     if unbundle20 and isinstance(bundle, unbundle20):
         for part in parts:
