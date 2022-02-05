@@ -20,5 +20,5 @@ tar = "0.4"
 walkdir = "2"
 
 [build-dependencies.zstd]
-version  = "0.9"
+version  = "0.10"
 default-features = false
