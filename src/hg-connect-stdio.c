@@ -56,7 +56,7 @@ struct child_process *hg_connect_stdio(
 	if (looks_like_command_line_option(path))
 		die("strange pathname '%s' blocked", path);
 
-	proc->env = local_repo_env;
+	strvec_pushv(&proc->env_array, (const char **)local_repo_env);
 	proc->use_shell = 1;
 	proc->in = proc->out = proc->err = -1;
 

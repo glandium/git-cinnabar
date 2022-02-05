@@ -527,7 +527,7 @@ static void do_set(struct string_list *args)
 	}
 }
 
-int write_object_file_flags(const void *buf, unsigned long len, const char *type,
+int write_object_file_flags(const void *buf, size_t len, const char *type,
                             struct object_id *oid, unsigned flags)
 {
 	struct strbuf data;

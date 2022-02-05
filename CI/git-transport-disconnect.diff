@@ -1,17 +1,17 @@
 diff --git a/builtin/clone.c b/builtin/clone.c
-index 66fe66679c..f26fa027c5 100644
+index 8b89158124..ec6147fff9 100644
 --- a/builtin/clone.c
 +++ b/builtin/clone.c
-@@ -1398,7 +1398,7 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
+@@ -1293,7 +1293,7 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
  	submodule_progress = transport->progress;
  
- 	transport_unlock_pack(transport);
+ 	transport_unlock_pack(transport, 0);
 -	transport_disconnect(transport);
 +	err = transport_disconnect(transport);
  
  	if (option_dissociate) {
  		close_object_store(the_repository->objects);
-@@ -1406,7 +1406,8 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
+@@ -1301,7 +1301,8 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
  	}
  
  	junk_mode = JUNK_LEAVE_REPO;
@@ -22,10 +22,10 @@ index 66fe66679c..f26fa027c5 100644
  	free(remote_name);
  	strbuf_release(&reflog_msg);
 diff --git a/builtin/fetch.c b/builtin/fetch.c
-index 25740c13df..66bccf6f50 100644
+index 5f06b21f8e..1c175e1ba7 100644
 --- a/builtin/fetch.c
 +++ b/builtin/fetch.c
-@@ -1886,7 +1886,7 @@ static int fetch_one(struct remote *remote, int argc, const char **argv,
+@@ -1922,7 +1922,7 @@ static int fetch_one(struct remote *remote, int argc, const char **argv,
  {
  	struct refspec rs = REFSPEC_INIT_FETCH;
  	int i;
@@ -34,7 +34,7 @@ index 25740c13df..66bccf6f50 100644
  	int maybe_prune_tags;
  	int remote_via_config = remote_is_configured(remote, 0);
  
-@@ -1952,9 +1952,9 @@ static int fetch_one(struct remote *remote, int argc, const char **argv,
+@@ -1988,9 +1988,9 @@ static int fetch_one(struct remote *remote, int argc, const char **argv,
  	exit_code = do_fetch(gtransport, &rs);
  	sigchain_pop(SIGPIPE);
  	refspec_clear(&rs);

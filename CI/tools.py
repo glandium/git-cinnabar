@@ -13,7 +13,7 @@ import msys
 
 
 MERCURIAL_VERSION = '5.9.1'
-GIT_VERSION = '2.34.0'
+GIT_VERSION = '2.35.1'
 
 ALL_MERCURIAL_VERSIONS = (
     '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
@@ -69,7 +69,8 @@ class Git(Task, metaclass=Tool):
                     'patch -d git -p1 < repo/CI/git-transport-disconnect.diff',
                 ] if version == GIT_VERSION else []) + [
                     'make -C git -j$({}) install prefix=/ NO_GETTEXT=1'
-                    ' NO_OPENSSL=1 NO_TCLTK=1 DESTDIR=$PWD/git'.format(
+                    ' NO_OPENSSL=1 NO_TCLTK=1 NO_UNCOMPRESS2=1'
+                    ' DESTDIR=$PWD/git'.format(
                         nproc(build_image)),
                     'tar -Jcf $ARTIFACTS/git-{}.tar.xz git'
                     .format(version),

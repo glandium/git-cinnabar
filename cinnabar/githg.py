@@ -1275,18 +1275,23 @@ class GitHgStore(object):
                 stored_files.items()):
             if not GitHgHelper.check_file(node, parent1, parent2):
                 busted = True
-                logging.error("Error in file %s" % node)
+                logging.error(
+                    "Error in file %s" % node.decode('ascii', 'replace'))
         if busted:
             import json
-            extra = ""
+            extra = bundle = ""
             if getbundle_params:
                 extra = \
                     "If it failed, please also copy/paste the following:\n"
                 extra += json.dumps(getbundle_params, sort_keys=True, indent=4)
+            if check_enabled('unbundler') and "GIT_DIR" in os.environ:
+                bundle = "Please keep a copy of the "
+                bundle += os.environ["GIT_DIR"] + "/cinnabar-last-bundle file"
+                bundle += " before doing the following.\n"
             raise Abort(
                 "It seems you have hit a known, rare, and difficult to "
                 "reproduce issue.\n"
-                "Your help would be appreciated.\n"
+                "Your help would be appreciated.\n" + bundle +
                 "Please try either `git cinnabar rollback` followed by the "
                 "same command that just\n"
                 "failed, or `git cinnabar reclone`.\n"
@@ -1294,5 +1299,5 @@ class GitHgStore(object):
                 "(https://github.com/glandium/git-cinnabar/issues/new)\n"
                 "mentioning issue #207 and reporting whether the second "
                 "attempt succeeded.\n" + extra + "\n"
-                "Please keep a copy of this repository."
+                "Please read all the above and keep a copy of this repository."
             )
