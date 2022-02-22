@@ -42,7 +42,7 @@ extern crate derivative;
 #[macro_use]
 extern crate all_asserts;
 
-use clap::{crate_version, AppSettings, ArgGroup, ArgSettings, Parser};
+use clap::{crate_version, AppSettings, ArgGroup, Parser};
 use itertools::Itertools;
 
 #[macro_use]
@@ -722,10 +722,10 @@ impl FromStr for AbbrevSize {
 #[clap(name = "git-cinnabar")]
 #[clap(version=crate_version!())]
 #[clap(long_version=FULL_VERSION)]
-#[clap(setting(AppSettings::ArgRequiredElseHelp))]
+#[clap(arg_required_else_help = true)]
 #[clap(setting(AppSettings::DeriveDisplayOrder))]
-#[clap(setting(AppSettings::DontCollapseArgsInUsage))]
-#[clap(setting(AppSettings::SubcommandRequired))]
+#[clap(dont_collapse_args_in_usage = true)]
+#[clap(subcommand_required = true)]
 enum CinnabarCommand {
     #[clap(name = "data")]
     #[clap(group = ArgGroup::new("input").multiple(false).required(true))]
@@ -772,7 +772,7 @@ enum CinnabarCommand {
         #[clap(group = "input")]
         #[clap(help = "Git sha1/committish")]
         #[clap(parse(from_os_str))]
-        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
+        #[clap(allow_invalid_utf8 = true)]
         committish: Vec<OsString>,
         #[clap(long)]
         #[clap(group = "input")]
@@ -784,12 +784,12 @@ enum CinnabarCommand {
     Fetch {
         #[clap(help = "Mercurial remote name or url")]
         #[clap(parse(from_os_str))]
-        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
+        #[clap(allow_invalid_utf8 = true)]
         remote: OsString,
         #[clap(required = true)]
         #[clap(help = "Mercurial changeset to fetch")]
         #[clap(parse(from_os_str))]
-        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
+        #[clap(allow_invalid_utf8 = true)]
         revs: Vec<OsString>,
     },
     #[clap(name = "reclone")]
@@ -815,7 +815,7 @@ enum CinnabarCommand {
         force: bool,
         #[clap(help = "Git sha1/committish of the state to rollback to")]
         #[clap(parse(from_os_str))]
-        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
+        #[clap(allow_invalid_utf8 = true)]
         committish: Option<OsString>,
     },
     #[clap(name = "fsck")]
@@ -831,7 +831,7 @@ enum CinnabarCommand {
         full: bool,
         #[clap(help = "Specific commit or changeset to check")]
         #[clap(parse(from_os_str))]
-        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
+        #[clap(allow_invalid_utf8 = true)]
         commit: Vec<OsString>,
     },
     #[clap(name = "bundle")]
@@ -844,11 +844,11 @@ enum CinnabarCommand {
         version: u8,
         #[clap(help = "Path of the bundle")]
         #[clap(parse(from_os_str))]
-        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
+        #[clap(allow_invalid_utf8 = true)]
         path: PathBuf,
         #[clap(help = "Git revision range (see the Specifying Ranges section of gitrevisions(7))")]
         #[clap(parse(from_os_str))]
-        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
+        #[clap(allow_invalid_utf8 = true)]
         revs: Vec<OsString>,
     },
     #[clap(name = "unbundle")]
@@ -859,7 +859,7 @@ enum CinnabarCommand {
         clonebundle: bool,
         #[clap(help = "Url of the bundle")]
         #[clap(parse(from_os_str))]
-        #[clap(setting(ArgSettings::AllowInvalidUtf8))]
+        #[clap(allow_invalid_utf8 = true)]
         url: OsString,
     },
     #[clap(name = "upgrade")]
