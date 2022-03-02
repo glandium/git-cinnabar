@@ -226,7 +226,7 @@ class Task(object):
             elif k == 'description':
                 task['metadata'][k] = task['metadata']['name'] = v
             elif k == 'index':
-                if TC_IS_PUSH:
+                if TC_IS_PUSH and TC_BRANCH != "try":
                     task['routes'] = [
                         'index.project.git-cinnabar.{}'.format(v)]
             elif k == 'expireIn':
