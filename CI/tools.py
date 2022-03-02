@@ -215,14 +215,25 @@ class Hg(Task, metaclass=Tool):
         if os.startswith('mingw'):
             # Trick setup.py into not doing a python3 version check. Also
             # work around https://bz.mercurial-scm.org/show_bug.cgi?id=6601
+            # and https://bz.mercurial-scm.org/show_bug.cgi?id=6654
             pre_command.append(
                 'sed -i "s/if issetuptools/if False/;'
-                's,(.contrib/win32/hg.bat.),," mercurial-{}/setup.py'
+                's,(.contrib/win32/hg.bat.),,;'
+                's/, output_dir=self.build_temp/, output_dir=self.build_temp'
+                ', extra_postargs=[$EXTRA_FLAGS]/;'
+                '" mercurial-{}/setup.py'
+                .format(version))
+            if python == 'python3':
+                kwargs.setdefault('env', {}).setdefault(
+                    'EXTRA_FLAGS', '"-municode"')
+            pre_command.append(
+                'sed -i "s/ifdef __GNUC__/if 0/"'
+                ' mercurial-{}/mercurial/exewrapper.c'
                 .format(version))
 
         h = hashlib.sha1(env.hexdigest.encode())
         h.update(artifact.encode())
-        h.update(b'v1')
+        h.update(b'v3' if os.startswith('mingw') else b'v1')
 
         Task.__init__(
             self,
