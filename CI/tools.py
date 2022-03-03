@@ -12,7 +12,7 @@ from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '5.9.1'
+MERCURIAL_VERSION = '6.1'
 GIT_VERSION = '2.35.1'
 
 ALL_MERCURIAL_VERSIONS = (
@@ -21,7 +21,8 @@ ALL_MERCURIAL_VERSIONS = (
     '3.3.3', '3.4.2', '3.5.2', '3.6.3', '3.7.3', '3.8.4', '3.9.2',
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
     '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2', '5.3.2',
-    '5.4.2', '5.5.2', '5.6.1', '5.7.1', '5.8.1', '5.9.1',
+    '5.4.2', '5.5.2', '5.6.1', '5.7.1', '5.8.1', '5.9.3', '6.0.3',
+    '6.1',
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -217,9 +218,24 @@ class Hg(Task, metaclass=Tool):
             pre_command.append(
                 'tar -zxf mercurial-{}.tar.gz'.format(version))
 
+        if os.startswith('mingw'):
+            # Work around https://bz.mercurial-scm.org/show_bug.cgi?id=6654
+            pre_command.append(
+                'sed -i "s/, output_dir=self.build_temp/'
+                ', output_dir=self.build_temp, extra_postargs=[$EXTRA_FLAGS]/;'
+                '" mercurial-{}/setup.py'
+                .format(version))
+            if python == 'python3':
+                kwargs.setdefault('env', {}).setdefault(
+                    'EXTRA_FLAGS', '"-municode"')
+            pre_command.append(
+                'sed -i "s/ifdef __GNUC__/if 0/"'
+                ' mercurial-{}/mercurial/exewrapper.c'
+                .format(version))
+
         h = hashlib.sha1(env.hexdigest.encode())
         h.update(artifact.encode())
-        h.update(b'v2' if os.startswith('mingw') else b'v1')
+        h.update(b'v4' if os.startswith('mingw') else b'v1')
 
         Task.__init__(
             self,
