@@ -237,25 +237,26 @@ def decision():
         TestTask(task_env=env)
 
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
-        Task(
-            task_env=task_env,
-            description='download helper {} {}'.format(task_env.os,
-                                                       task_env.cpu),
-            command=list(chain(
-                Git.install('{}.{}'.format(env, GIT_VERSION)),
-                Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
-                Task.checkout(),
-                [
-                    '(cd repo ; ./git-cinnabar download --dev)',
-                    'rm -rf repo/.git',
-                    '(cd repo ; ./git-cinnabar download --dev)',
-                    '(cd repo ; ./git-cinnabar download)',
+        if TC_IS_PUSH and TC_BRANCH != "try":
+            Task(
+                task_env=task_env,
+                description='download helper {} {}'.format(task_env.os,
+                                                           task_env.cpu),
+                command=list(chain(
+                    Git.install('{}.{}'.format(env, GIT_VERSION)),
+                    Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
+                    Task.checkout(),
+                    [
+                        '(cd repo ; ./git-cinnabar download --dev)',
+                        'rm -rf repo/.git',
+                        '(cd repo ; ./git-cinnabar download --dev)',
+                        '(cd repo ; ./git-cinnabar download)',
+                    ],
+                )),
+                dependencies=[
+                    Helper.by_name(env),
                 ],
-            )),
-            dependencies=[
-                Helper.by_name(env),
-            ],
-        )
+            )
 
     # Because nothing is using the x86 windows helper, we need to manually
     # touch it.
