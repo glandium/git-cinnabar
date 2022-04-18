@@ -10,36 +10,30 @@ from tasks import (
 from docker import DockerImage
 
 
-CPUS = ('x86', 'x86_64')
+CPUS = ('x86_64',)
 MSYS_VERSION = {
-    'x86': '20210705',
     'x86_64': '20210725',
 }
 
 
 def mingw(cpu):
     return {
-        'x86': 'MINGW32',
         'x86_64': 'MINGW64',
     }.get(cpu)
 
 
 def msys(cpu):
     return {
-        'x86': 'msys32',
         'x86_64': 'msys64',
     }.get(cpu)
 
 
 def msys_cpu(cpu):
-    return {
-        'x86': 'i686',
-    }.get(cpu, cpu)
+    return cpu
 
 
 def bits(cpu):
     return {
-        'x86': '32',
         'x86_64': '64',
     }.get(cpu)
 
@@ -165,12 +159,6 @@ class MsysEnvironment(MsysCommon):
                 'git',
             ]
         raise Exception('Unknown name: {}'.format(name))
-
-
-class Msys32Environment(MsysEnvironment, Task, metaclass=TaskEnvironment):
-    PREFIX = 'mingw32'
-    cpu = 'x86'
-    __init__ = MsysEnvironment.__init__
 
 
 class Msys64Environment(MsysEnvironment, Task, metaclass=TaskEnvironment):

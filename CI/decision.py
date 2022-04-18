@@ -237,9 +237,6 @@ def decision():
             ],
         )
 
-    # Because nothing is using the x86 windows build, we need to manually
-    # touch it.
-    Build.by_name('mingw32')
     # Same for arm64 mac
     if TC_IS_PUSH:
         Build.by_name('arm64-osx')
