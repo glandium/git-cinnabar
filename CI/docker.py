@@ -204,7 +204,7 @@ class DockerImageTask(DockerImage, Task, metaclass=TaskEnvironment):
             image='python:3.7',
             dind=True,
             command=Task.checkout() + [
-                'pip install requests-unixsocket==0.2.0 zstandard==0.17.0',
+                'pip install requests-unixsocket==0.3.0 zstandard==0.17.0',
                 'python3 repo/CI/docker.py build {}'
                 .format(name),
                 'python3 repo/CI/docker.py save {}'
