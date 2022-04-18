@@ -12,7 +12,7 @@ from docker import DockerImage
 
 CPUS = ('x86_64',)
 MSYS_VERSION = {
-    'x86_64': '20210725',
+    'x86_64': '20220319',
 }
 
 
