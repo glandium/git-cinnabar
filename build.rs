@@ -155,7 +155,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=CFLAGS_{}", env("TARGET"));
     println!(
         "cargo:rerun-if-env-changed=CFLAGS_{}",
-        env("TARGET").replace("-", "_")
+        env("TARGET").replace('-', "_")
     );
     println!("cargo:rerun-if-env-changed=CFLAGS");
     println!("cargo:rerun-if-env-changed=TARGET_CFLAGS");
@@ -165,7 +165,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=CC_{}", env("TARGET"));
     println!(
         "cargo:rerun-if-env-changed=CC_{}",
-        env("TARGET").replace("-", "_")
+        env("TARGET").replace('-', "_")
     );
     println!("cargo:rerun-if-env-changed=CC");
     println!("cargo:rerun-if-env-changed=CRATE_CC_NO_DEFAULTS");
