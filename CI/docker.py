@@ -27,7 +27,7 @@ def sources_list(snapshot, sections):
 
 DOCKER_IMAGES = {
     'base': '''\
-        FROM debian:stretch-20210927
+        FROM debian:stretch-20220328
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
@@ -57,7 +57,7 @@ DOCKER_IMAGES = {
          python2.7 -m pip install pip==20.3.4 --upgrade --ignore-installed&&\\
          python3 -m pip install pip==20.3.4 --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
-            '20210927T204628Z', (
+            '20220328T210210Z', (
                 ('debian', 'stretch'),
                 ('debian', 'stretch-updates'),
                 ('debian-security', 'stretch/updates'),
