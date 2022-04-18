@@ -45,6 +45,7 @@ DOCKER_IMAGES = {
          unzip\\
          xz-utils\\
          zip\\
+         zstd\\
          && apt-get clean
         RUN curl -sO https://apt.llvm.org/llvm-snapshot.gpg.key &&\\
          gpg --no-default-keyring --keyring /usr/share/keyrings/llvm.gpg\\

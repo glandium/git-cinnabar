@@ -79,8 +79,8 @@ class MsysBase(MsysCommon, Task, metaclass=Tool):
         assert cpu in CPUS
         _create_command = (
             'curl -L http://repo.msys2.org/distrib/{cpu}'
-            '/msys2-base-{cpu}-{version}.tar.xz | xz -cd | bzip2 -c'
-            ' > $ARTIFACTS/msys2.tar.bz2'.format(
+            '/msys2-base-{cpu}-{version}.tar.xz | xz -cd | zstd -c'
+            ' > $ARTIFACTS/msys2.tar.zst'.format(
                 cpu=msys_cpu(cpu), version=MSYS_VERSION[cpu])
         )
         h = hashlib.sha1(_create_command.encode())
@@ -94,7 +94,7 @@ class MsysBase(MsysCommon, Task, metaclass=Tool):
             index=self.index,
             expireIn='26 weeks',
             command=[_create_command],
-            artifact='msys2.tar.bz2',
+            artifact='msys2.tar.zst',
         )
 
 
@@ -112,7 +112,8 @@ class MsysEnvironment(MsysCommon):
             'python3 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade',
             'mv {}/{}/bin/{{{{mingw32-,}}}}make.exe'.format(msys(cpu),
                                                             mingw(cpu)),
-            'tar -jcf msys2.tar.bz2 --hard-dereference {}'.format(msys(cpu)),
+            'tar -c --hard-dereference {} | zstd -c > msys2.tar.zst'.format(
+                msys(cpu)),
         ]
 
         env = MsysBase.by_name(cpu)
@@ -128,7 +129,7 @@ class MsysEnvironment(MsysCommon):
             index=self.index,
             expireIn='26 weeks',
             command=create_commands,
-            artifact='msys2.tar.bz2',
+            artifact='msys2.tar.zst',
         )
 
     def packages(self, name):

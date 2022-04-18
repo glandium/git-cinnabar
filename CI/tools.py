@@ -50,7 +50,7 @@ class Git(Task, metaclass=Tool):
             build_image = DockerImage.by_name('build')
         if os == 'linux' or os.startswith('osx'):
             h = hashlib.sha1(build_image.hexdigest.encode())
-            h.update(b'v3' if version == GIT_VERSION else b'v2')
+            h.update(b'v4' if version == GIT_VERSION else b'v3')
             if os == 'linux':
                 description = 'git v{}'.format(version)
             else:
@@ -73,10 +73,10 @@ class Git(Task, metaclass=Tool):
                     ' NO_OPENSSL=1 NO_TCLTK=1 NO_UNCOMPRESS2=1'
                     ' DESTDIR=$PWD/git'.format(
                         nproc(build_image)),
-                    'tar -Jcf $ARTIFACTS/git-{}.tar.xz git'
+                    'tar -c git | zstd -c > $ARTIFACTS/git-{}.tar.zst'
                     .format(version),
                 ],
-                artifact='git-{}.tar.xz'.format(version),
+                artifact='git-{}.tar.zst'.format(version),
             )
         else:
             env = TaskEnvironment.by_name('{}.build'.format(os))
@@ -90,11 +90,13 @@ class Git(Task, metaclass=Tool):
                 min_ver = version[:-len('.windows.1')]
             else:
                 min_ver = version.replace('windows.', '')
+            h = hashlib.sha1(env.hexdigest.encode())
+            h.update(b'v1')
             Task.__init__(
                 self,
                 task_env=build_image,
                 description='git v{} {} {}'.format(version, env.os, env.cpu),
-                index='{}.git.v{}'.format(os, raw_version),
+                index='{}.git.v{}'.format(h.hexdigest(), raw_version),
                 expireIn='26 weeks',
                 command=[
                     'curl -L https://github.com/git-for-windows/git/releases/'
@@ -106,10 +108,10 @@ class Git(Task, metaclass=Tool):
                     'tar -C git -jx {}/libexec/git-core/git-http-backend.exe'
                     .format(version, min_ver, msys.bits(env.cpu),
                             msys.mingw(env.cpu).lower()),
-                    'tar -jcf $ARTIFACTS/git-{}.tar.bz2 git'.format(
+                    'tar -c git | zstd -c > $ARTIFACTS/git-{}.tar.zst'.format(
                         raw_version),
                 ],
-                artifact='git-{}.tar.bz2'.format(raw_version),
+                artifact='git-{}.tar.zst'.format(raw_version),
             )
 
     @classmethod
@@ -117,15 +119,15 @@ class Git(Task, metaclass=Tool):
         url = '{{{}.artifact}}'.format(cls.by_name(name))
         if name.startswith('linux.'):
             return [
-                'curl -L {} | tar -Jxf -'.format(url),
+                'curl -L {} | zstd -cd | tar -x'.format(url),
                 'export PATH=$PWD/git/bin:$PATH',
                 'export GIT_EXEC_PATH=$PWD/git/libexec/git-core',
                 'export GIT_TEMPLATE_DIR=$PWD/git/share/git-core/templates',
             ]
         else:
             return [
-                'curl -L {} -o git.tar.bz2'.format(url),
-                'tar -jxf git.tar.bz2',
+                'curl -L {} -o git.tar.zst'.format(url),
+                'zstd -cd git.tar.zst | tar -x',
             ]
 
 

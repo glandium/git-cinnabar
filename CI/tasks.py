@@ -316,7 +316,7 @@ class Task(object):
                         features['taskclusterProxy'] = True
             elif k == 'mounts':
                 def file_format(url):
-                    for ext in ('rar', 'tar.bz2', 'tar.gz', 'zip'):
+                    for ext in ('rar', 'tar.zst', 'tar.bz2', 'tar.gz', 'zip'):
                         if url.endswith('.{}'.format(ext)):
                             return ext
                     raise Exception(
