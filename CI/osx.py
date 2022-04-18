@@ -25,11 +25,12 @@ class OsxCommon(object):
         command.extend(params['command'])
         params['command'] = bash_command(*command)
         env = params.setdefault('env', {})
-        dev = env.setdefault('DEVELOPER_DIR',
-                             '/Applications/Xcode_11.7.app/Contents/Developer')
+        dev = env.setdefault(
+            'DEVELOPER_DIR',
+            '/Applications/Xcode_13.2.1.app/Contents/Developer')
         env.setdefault(
             'SDKROOT',
-            '{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.15.sdk'
+            '{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk'
             .format(dev))
         return params
 
@@ -50,10 +51,11 @@ class OsxArm64(OsxCommon, metaclass=TaskEnvironment):
 
     def prepare_params(self, params):
         env = params.setdefault('env', {})
-        dev = env.setdefault('DEVELOPER_DIR',
-                             '/Applications/Xcode_12.2.app/Contents/Developer')
+        dev = env.setdefault(
+            'DEVELOPER_DIR',
+            '/Applications/Xcode_13.2.1.app/Contents/Developer')
         env.setdefault(
             'SDKROOT',
-            '{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.0.sdk'
+            '{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk'
             .format(dev))
         return super(OsxArm64, self).prepare_params(params)

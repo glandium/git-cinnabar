@@ -2,7 +2,7 @@ name: taskcluster extra workers
 on: [push]
 jobs:
   osx:
-    runs-on: macos-10.15
+    runs-on: macos-11
     env:
       secret: ${{ secrets.SECRET }}
       TC_WORKER_TYPE: osx
