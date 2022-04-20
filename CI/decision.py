@@ -220,22 +220,23 @@ def decision():
         )
 
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
-        Task(
-            task_env=task_env,
-            description='download build {} {}'.format(task_env.os,
-                                                      task_env.cpu),
-            command=list(chain(
-                Git.install('{}.{}'.format(env, GIT_VERSION)),
-                Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
-                Task.checkout(),
-                [
-                    '(cd repo ; ./download.py)',
+        if TC_IS_PUSH and TC_BRANCH != "try":
+            Task(
+                task_env=task_env,
+                description='download build {} {}'.format(task_env.os,
+                                                          task_env.cpu),
+                command=list(chain(
+                    Git.install('{}.{}'.format(env, GIT_VERSION)),
+                    Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
+                    Task.checkout(),
+                    [
+                        '(cd repo ; ./download.py)',
+                    ],
+                )),
+                dependencies=[
+                    Build.by_name(env),
                 ],
-            )),
-            dependencies=[
-                Build.by_name(env),
-            ],
-        )
+            )
 
     # Same for arm64 mac
     if TC_IS_PUSH:

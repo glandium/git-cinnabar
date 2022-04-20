@@ -527,26 +527,14 @@ static void do_set(struct string_list *args)
 	}
 }
 
-int write_object_file_flags(const void *buf, size_t len, const char *type,
+int write_object_file_flags(const void *buf, size_t len, enum object_type type,
                             struct object_id *oid, unsigned flags)
 {
 	struct strbuf data;
-	enum object_type t;
-	if (type == tree_type) {
-		t = OBJ_TREE;
-	} else if (type == blob_type) {
-		t = OBJ_BLOB;
-	} else if (type == commit_type) {
-		t = OBJ_COMMIT;
-	} else if (type == tag_type) {
-		t = OBJ_TAG;
-	} else {
-		die("Unknown type");
-	}
 	data.buf = (void *)buf;
 	data.len = len;
 	data.alloc = len;
-	store_object(t, &data, NULL, oid, 0);
+	store_object(type, &data, NULL, oid, 0);
 	return 0;
 }
 

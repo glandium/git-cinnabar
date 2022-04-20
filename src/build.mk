@@ -27,6 +27,9 @@ GIT-VERSION-FILE: GIT-VERSION-GEN
 GIT-VERSION-GEN:
 	echo ". $(SOURCE_DIR)/git-core/$@" > $@
 
+shared.mak:
+	echo "include $(SOURCE_DIR)/git-core/shared.mak" > $@
+
 ALL_PROGRAMS += git-cinnabar$X
 ALL_CFLAGS := $(subst -I. ,-I$(SOURCE_DIR)/git-core -I. ,$(ALL_CFLAGS))
 ALL_CFLAGS := $(subst -Icompat,-I$(SOURCE_DIR)/git-core/compat,$(ALL_CFLAGS))
