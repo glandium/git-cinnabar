@@ -961,7 +961,15 @@ enum PythonCommand {
 }
 
 fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
-    let python = which("python3").map_err(|_| "Could not find python 3.x")?;
+    let mut python = if let Ok(p) = which("python3") {
+        Command::new(p)
+    } else if let Ok(p) = which("py") {
+        let mut c = Command::new(p);
+        c.arg("-3");
+        c
+    } else {
+        return Err("Could not find python 3.x".into());
+    };
 
     // We aggregate the various parts of a bootstrap code that reads a
     // tarball from stdin, and use the contents of that tarball as a
@@ -1032,7 +1040,7 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
         ((reader1, writer2), thread)
     };
 
-    let mut child = Command::new(python)
+    let mut child = python
         .arg("-c")
         .arg(bootstrap)
         .args(std::env::args_os())
