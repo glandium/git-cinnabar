@@ -1212,7 +1212,7 @@ class GitHgStore(object):
             self._metadata_sha1 = commit.sha1
             if b'refs/cinnabar/checked' in refresh:
                 Git.update_ref(b'refs/cinnabar/checked', commit.sha1)
-        elif self._metadata_sha1:
+        elif b'refs/cinnabar/checked' in refresh and self._metadata_sha1:
             Git.update_ref(b'refs/cinnabar/checked', self._metadata_sha1)
 
         for c in self._tagcache:
