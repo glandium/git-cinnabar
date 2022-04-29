@@ -569,6 +569,7 @@ class GitHgStore(object):
         self._replace = Git._replace
         self._tagcache_ref = None
         self._metadata_sha1 = None
+        broken = None
         # While doing a for_each_ref, ensure refs/notes/cinnabar is in the
         # cache.
         for sha1, ref in Git.for_each_ref('refs/cinnabar',
@@ -579,6 +580,10 @@ class GitHgStore(object):
                 self._metadata_sha1 = sha1
             elif ref == b'refs/cinnabar/tag_cache':
                 self._tagcache_ref = sha1
+            elif ref == b'refs/cinnabar/broken':
+                broken = sha1
+        self._broken = broken and self._metadata_sha1 and \
+            broken == self._metadata_sha1
         self._replace = VersionedDict(self._replace)
 
         self._tagcache = {}
@@ -1204,6 +1209,7 @@ class GitHgStore(object):
             ) as commit:
                 for sha1, target in self._replace.items():
                     commit.filemodify(sha1, target, b'commit')
+            self._metadata_sha1 = commit.sha1
             if b'refs/cinnabar/checked' in refresh:
                 Git.update_ref(b'refs/cinnabar/checked', commit.sha1)
         elif self._metadata_sha1:
@@ -1288,6 +1294,7 @@ class GitHgStore(object):
                 bundle = "Please keep a copy of the "
                 bundle += os.environ["GIT_DIR"] + "/cinnabar-last-bundle file"
                 bundle += " before doing the following.\n"
+            Git.update_ref(b'refs/cinnabar/broken', self._metadata_sha1)
             raise Abort(
                 "It seems you have hit a known, rare, and difficult to "
                 "reproduce issue.\n"
