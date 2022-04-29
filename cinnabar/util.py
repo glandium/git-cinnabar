@@ -47,14 +47,20 @@ from weakref import WeakKeyDictionary
 from .exceptions import Abort
 
 
-class StreamHandler(logging.StreamHandler):
-    def __init__(self):
-        super(StreamHandler, self).__init__()
-        self._start_time = time.time()
+def gen_handler(cls):
+    class Handler(cls):
+        def __init__(self, start_time, *args):
+            super(Handler, self).__init__(*args)
+            self._start_time = start_time
 
-    def emit(self, record):
-        record.timestamp = record.created - self._start_time
-        super(StreamHandler, self).emit(record)
+        def emit(self, record):
+            record.timestamp = record.created - self._start_time
+            super(Handler, self).emit(record)
+    return Handler
+
+
+StreamHandler = gen_handler(logging.StreamHandler)
+FileHandler = gen_handler(logging.FileHandler)
 
 
 class Formatter(logging.Formatter):
@@ -81,22 +87,34 @@ def init_logging():
     # `git config -l` is never logged.
     from .git import Git
     logger = logging.getLogger()
-    handler = StreamHandler()
-    handler.setFormatter(Formatter())
+    start_time = time.time()
+    handler = StreamHandler(start_time)
+    formatter = Formatter()
+    handler.setFormatter(formatter)
     logger.addHandler(handler)
     log_conf = Git.config('cinnabar.log') or b''
     if not log_conf and not check_enabled('memory') and \
             not check_enabled('cpu'):
         return
+    file_handlers = {}
     for assignment in log_conf.split(b','):
         try:
-            name, value = assignment.split(b':', 1)
-            value = int(value)
+            assignment, _, path = assignment.partition(b'>')
+            name, _, value = assignment.partition(b':')
             name = name.decode('ascii')
             if name == '*':
                 name = ''
-            logging.getLogger(name).setLevel(
-                max(logging.DEBUG, logging.FATAL - value * 10))
+            if path and path not in file_handlers:
+                file_handlers[path] = FileHandler(start_time, path)
+                file_handlers[path].setFormatter(formatter)
+            if path or value:
+                logger = logging.getLogger(name)
+                if value:
+                    logger.setLevel(
+                        max(logging.DEBUG, logging.FATAL - int(value) * 10))
+                if path:
+                    logger.propagate = False
+                    logger.addHandler(file_handlers[path])
         except Exception:
             pass
 
