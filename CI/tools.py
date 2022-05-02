@@ -135,7 +135,10 @@ class Hg(Task, metaclass=Tool):
             python = 'python3'
         else:
             python = 'python2.7'
-        env = TaskEnvironment.by_name('{}.build'.format(os))
+        if os == 'linux':
+            env = TaskEnvironment.by_name('{}.build-buster'.format(os))
+        else:
+            env = TaskEnvironment.by_name('{}.build'.format(os))
         kwargs = {}
 
         if len(version) == 40:
@@ -151,8 +154,8 @@ class Hg(Task, metaclass=Tool):
         if os == 'linux':
             platform_tag = 'linux_x86_64'
             if python == 'python3':
-                python_tag = 'cp35'
-                abi_tag = 'cp35m'
+                python_tag = 'cp37'
+                abi_tag = 'cp37m'
             else:
                 python_tag = 'cp27'
                 abi_tag = 'cp27mu'

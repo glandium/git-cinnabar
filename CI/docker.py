@@ -34,6 +34,7 @@ DOCKER_IMAGES = {
          bzip2\\
          ca-certificates\\
          curl\\
+         libcurl3-gnutls\\
          python-setuptools\\
          python-pip\\
          python3-setuptools\\
@@ -53,13 +54,55 @@ DOCKER_IMAGES = {
                 ('debian-security', 'stretch/updates'),
             )))),
 
+    'base-buster': '''\
+        FROM debian:buster-20220418
+        RUN ({}) > /etc/apt/sources.list
+        RUN apt-get update -o Acquire::Check-Valid-Until=false
+        RUN apt-get install -y --no-install-recommends\\
+         bzip2\\
+         ca-certificates\\
+         curl\\
+         libcurl3-gnutls\\
+         python-setuptools\\
+         python-pip\\
+         python3-setuptools\\
+         python3-pip\\
+         unzip\\
+         xz-utils\\
+         zip\\
+         && apt-get clean &&\\
+         python2.7 -m pip install pip==20.3.4 wheel==0.37.0\\
+         --upgrade --ignore-installed&&\\
+         python3 -m pip install pip==20.3.4 wheel==0.37.0\\
+         --upgrade --ignore-installed
+        '''.format('; '.join('echo ' + l for l in sources_list(
+            '20220418T210440Z', (
+                ('debian', 'buster'),
+                ('debian', 'buster-updates'),
+                ('debian-security', 'buster/updates'),
+            )))),
+
     'build': '''\
         FROM base
         RUN apt-get install -y --no-install-recommends\\
          gcc\\
          git\\
          libc6-dev\\
-         libcurl4-openssl-dev\\
+         libcurl4-gnutls-dev\\
+         make\\
+         patch\\
+         python-dev\\
+         python3-dev\\
+         zlib1g-dev\\
+         && apt-get clean
+        ''',
+
+    'build-buster': '''\
+        FROM base-buster
+        RUN apt-get install -y --no-install-recommends\\
+         gcc\\
+         git\\
+         libc6-dev\\
          make\\
          patch\\
          python-dev\\
@@ -84,7 +127,7 @@ DOCKER_IMAGES = {
     ),
 
     'test': '''\
-        FROM base
+        FROM base-buster
         RUN apt-get install -y --no-install-recommends\\
          flake8\\
          make\\
