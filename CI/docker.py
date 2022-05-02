@@ -27,7 +27,7 @@ def sources_list(snapshot, sections):
 
 DOCKER_IMAGES = {
     'base': '''\
-        FROM debian:stretch-20210927
+        FROM debian:stretch-20220418
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
@@ -36,18 +36,18 @@ DOCKER_IMAGES = {
          curl\\
          python-setuptools\\
          python-pip\\
-         python-wheel\\
          python3-setuptools\\
          python3-pip\\
-         python3-wheel\\
          unzip\\
          xz-utils\\
          zip\\
          && apt-get clean &&\\
-         python2.7 -m pip install pip==20.3.4 --upgrade --ignore-installed&&\\
-         python3 -m pip install pip==20.3.4 --upgrade --ignore-installed
+         python2.7 -m pip install pip==20.3.4 wheel==0.37.0\\
+         --upgrade --ignore-installed&&\\
+         python3 -m pip install pip==20.3.4 wheel==0.37.0\\
+         --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
-            '20210927T204628Z', (
+            '20220418T210440Z', (
                 ('debian', 'stretch'),
                 ('debian', 'stretch-updates'),
                 ('debian-security', 'stretch/updates'),
