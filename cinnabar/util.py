@@ -597,15 +597,15 @@ class chunkbuffer(object):
         self._queue = deque()
         self._chunkoffset = 0
 
-    def read(self, l=None):
+    def read(self, length=None):
         """Read L bytes of data from the iterator of chunks of data.
         Returns less than L bytes if the iterator runs dry.
 
         If size parameter is omitted, read everything"""
-        if l is None:
+        if length is None:
             return b''.join(self.iter)
 
-        left = l
+        left = length
         buf = []
         queue = self._queue
         while left > 0:
@@ -727,10 +727,10 @@ class HTTPReader(object):
             return None
         logging.getLogger('httpreader').debug('Retrying from offset %d', start)
         while start < self.offset:
-            l = len(fh.read(self.offset - start))
-            if not l:
+            length = len(fh.read(self.offset - start))
+            if not length:
                 return None
-            start += l
+            start += length
         return fh
 
     def readable(self):

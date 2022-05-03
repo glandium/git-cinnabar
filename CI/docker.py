@@ -76,7 +76,7 @@ DOCKER_IMAGES = {
          python3 -m pip install pip==20.3.4 wheel==0.37.0\\
          --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
-            '20220418T210440Z', (
+            '20220418T210440Z', (  # noqa: E126
                 ('debian', 'buster'),
                 ('debian', 'buster-updates'),
                 ('debian-security', 'buster/updates'),

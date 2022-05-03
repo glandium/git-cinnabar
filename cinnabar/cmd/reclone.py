@@ -20,7 +20,7 @@ def reclone(args):
     # TODO: Avoid resetting at all, possibly leaving the repo with no metadata
     # if this is interrupted somehow.
     do_rollback(NULL_NODE_ID.decode('ascii'))
-    for line in Git.iter('config', '--get-regexp', 'remote\..*\.url'):
+    for line in Git.iter('config', '--get-regexp', 'remote\\..*\\.url'):
         config, url = line.split()
         name = config[len('remote.'):-len('.url')]
         skip_pref = 'remote.%s.skipDefaultUpdate' % name.decode('ascii')

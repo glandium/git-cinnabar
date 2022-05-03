@@ -220,10 +220,10 @@ def decision():
             '(cd repo &&'
             ' nosetests --all-modules --with-coverage --cover-tests tests &&'
             ' nosetests3 --all-modules tests)',
-            '(cd repo && python2.7 -m flake8 --ignore E402,F405'
+            '(cd repo && python2.7 -m flake8 --ignore E402,F405,W504'
             ' $(git ls-files \\*\\*.py git-cinnabar git-remote-hg'
             ' | grep -v ^CI/))',
-            '(cd repo && flake8 --ignore E402,F405'
+            '(cd repo && flake8 --ignore E402,F405,W504'
             ' $(git ls-files CI/\\*\\*.py)'
             ' $(git grep -l unicode_literals))',
         ],
