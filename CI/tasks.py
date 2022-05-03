@@ -260,6 +260,10 @@ class Task(object):
                             "Don't know how to handle {}".format(unit))
                 else:
                     raise Exception("Don't know how to handle {}".format(v))
+                if not TC_IS_PUSH or TC_BRANCH == "try":
+                    if value * multiplier > 4 * 7 * 24 * 60 * 60:
+                        value = 4
+                        multiplier = 7 * 24 * 60 * 60  # weeks
                 task['expires'] = (now + value * multiplier).format()
             elif k == 'command':
                 resolver = Task.Resolver()

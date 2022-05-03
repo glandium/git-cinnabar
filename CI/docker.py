@@ -27,7 +27,7 @@ def sources_list(snapshot, sections):
 
 DOCKER_IMAGES = {
     'base': '''\
-        FROM debian:stretch-20220328
+        FROM debian:stretch-20220418
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
@@ -36,12 +36,11 @@ DOCKER_IMAGES = {
          ca-certificates\\
          curl\\
          gnupg2\\
+         libcurl3-gnutls\\
          python-setuptools\\
          python-pip\\
-         python-wheel\\
          python3-setuptools\\
          python3-pip\\
-         python3-wheel\\
          unzip\\
          xz-utils\\
          zip\\
@@ -55,13 +54,54 @@ DOCKER_IMAGES = {
            https://apt.llvm.org/stretch/ llvm-toolchain-stretch-13 main"\\
           > /etc/apt/sources.list.d/llvm.list &&\\
          apt-get update -o Acquire::Check-Valid-Until=false&&\\
-         python2.7 -m pip install pip==20.3.4 --upgrade --ignore-installed&&\\
-         python3 -m pip install pip==20.3.4 --upgrade --ignore-installed
+         python2.7 -m pip install pip==20.3.4 wheel==0.37.0\\
+         --upgrade --ignore-installed&&\\
+         python3 -m pip install pip==20.3.4 wheel==0.37.0\\
+         --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
-            '20220328T210210Z', (
+            '20220418T210440Z', (
                 ('debian', 'stretch'),
                 ('debian', 'stretch-updates'),
                 ('debian-security', 'stretch/updates'),
+            )))),
+
+    'base-buster': '''\
+        FROM debian:buster-20220418
+        RUN ({}) > /etc/apt/sources.list
+        RUN apt-get update -o Acquire::Check-Valid-Until=false
+        RUN apt-get install -y --no-install-recommends\\
+         apt-transport-https\\
+         bzip2\\
+         ca-certificates\\
+         curl\\
+         gnupg2\\
+         libcurl3-gnutls\\
+         python-setuptools\\
+         python-pip\\
+         python3-setuptools\\
+         python3-pip\\
+         unzip\\
+         xz-utils\\
+         zip\\
+         zstd\\
+         && apt-get clean
+        RUN curl -sO https://apt.llvm.org/llvm-snapshot.gpg.key &&\\
+         gpg --no-default-keyring --keyring /usr/share/keyrings/llvm.gpg\\
+          --import llvm-snapshot.gpg.key&& rm llvm-snapshot.gpg.key &&\\
+         echo\\
+          "deb [signed-by=/usr/share/keyrings/llvm.gpg]\\
+           https://apt.llvm.org/stretch/ llvm-toolchain-stretch-13 main"\\
+          > /etc/apt/sources.list.d/llvm.list &&\\
+         apt-get update -o Acquire::Check-Valid-Until=false&&\\
+         python2.7 -m pip install pip==20.3.4 wheel==0.37.0\\
+         --upgrade --ignore-installed&&\\
+         python3 -m pip install pip==20.3.4 wheel==0.37.0\\
+         --upgrade --ignore-installed
+        '''.format('; '.join('echo ' + l for l in sources_list(
+            '20220418T210440Z', (  # noqa: E126
+                ('debian', 'buster'),
+                ('debian', 'buster-updates'),
+                ('debian-security', 'buster/updates'),
             )))),
 
     'build': '''\
@@ -78,13 +118,13 @@ DOCKER_IMAGES = {
          python-dev\\
          python3-dev\\
          libc6-dev\\
-         libcurl4-openssl-dev\\
+         libcurl4-gnutls-dev\\
          zlib1g-dev\\
          && echo path-exclude=/usr/bin/curl-config\\
           > /etc/dpkg/dpkg.cfg.d/excludes\\
          && apt-get install -y --no-install-recommends\\
          libc6-dev:arm64\\
-         libcurl4-openssl-dev:arm64\\
+         libcurl4-gnutls-dev:arm64\\
          zlib1g-dev:arm64\\
          libgcc-6-dev:arm64\\
          binutils-aarch64-linux-gnu\\
@@ -92,6 +132,20 @@ DOCKER_IMAGES = {
          && apt-get clean\\
          && ln -s /usr/bin/aarch64-linux-gnu-ld\\
           /usr/bin/aarch64-unknown-linux-gnu-ld
+        ''',
+
+    'build-buster': '''\
+        FROM base-buster
+        RUN apt-get install -y --no-install-recommends\\
+         gcc\\
+         git\\
+         libc6-dev\\
+         make\\
+         patch\\
+         python-dev\\
+         python3-dev\\
+         zlib1g-dev\\
+         && apt-get clean
         ''',
 
     'codecov': '''\
@@ -110,7 +164,7 @@ DOCKER_IMAGES = {
     ),
 
     'test': '''\
-        FROM base
+        FROM base-buster
         RUN apt-get install -y --no-install-recommends\\
          flake8\\
          llvm-13\\

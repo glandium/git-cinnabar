@@ -202,7 +202,7 @@ def decision():
             'PATH=$PWD/repo:$PATH',
             '(cd repo &&'
             ' nosetests3 --all-modules --with-coverage --cover-tests tests)',
-            '(cd repo && flake8 --ignore E402,F405'
+            '(cd repo && flake8 --ignore E402,F405,W504'
             ' $(git ls-files \\*\\*.py | grep -v ^bootstrap/))',
             '(cd repo && flake8 --ignore E402,F405,F821'
             ' $(git ls-files bootstrap/\\*\\*.py))',
@@ -352,8 +352,19 @@ def decision():
 
 
 def do_hg_version(hg):
-    TestTask(hg=hg)
-    cram_hg = [hg]
+    cram_hg = []
+    python2 = False
+    try:
+        # Don't run python2 tests for version >= 6.2, which doesn't support
+        # python2 anymore.
+        if StrictVersion(hg) < '6.2':
+            python2 = True
+    except ValueError:
+        # `hg` is a sha1 for trunk, which means it's >= 6.2
+        pass
+    if python2:
+        TestTask(hg=hg)
+        cram_hg.append(hg)
     try:
         # Don't run cram tests for version < 3.6, which would need
         # different tests because of server-side changes in behavior

@@ -95,7 +95,7 @@ def cinnabar(repo, proto):
 def extsetup(ui):
     try:
         from mercurial import wireproto
-    except:
+    except ImportError:
         from mercurial import wireprotov1server as wireproto
     from mercurial import extensions
 
