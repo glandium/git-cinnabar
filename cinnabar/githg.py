@@ -1192,8 +1192,9 @@ class GitHgStore(object):
         hg_changeset_heads = list(self._hgheads)
         changeset_heads = list(self.changeset_ref(h)
                                for h in hg_changeset_heads)
+        bundle_blob = getattr(self, "bundle_blob", None)
         if (any(self._hgheads.iterchanges()) or
-                b'refs/cinnabar/changesets' in refresh):
+                b'refs/cinnabar/changesets' in refresh or bundle_blob):
             heads = sorted((self._hgheads[h][1], self._hgheads[h][0], h, g)
                            for h, g in zip(hg_changeset_heads,
                                            changeset_heads))
@@ -1202,7 +1203,8 @@ class GitHgStore(object):
                 parents=list(h for _, __, ___, h in heads),
                 message=b'\n'.join(b'%s %s' % (h, b) for _, b, h, __ in heads),
             ) as commit:
-                pass
+                if bundle_blob:
+                    commit.filemodify(b'bundle', bundle_blob)
             update_metadata[b'refs/cinnabar/changesets'] = commit.sha1
 
         changeset_heads = set(changeset_heads)
@@ -1323,20 +1325,16 @@ class GitHgStore(object):
                     "Error in file %s" % node.decode('ascii', 'replace'))
         if busted:
             import json
-            extra = bundle = ""
+            extra = ""
             if getbundle_params:
                 extra = \
                     "If it failed, please also copy/paste the following:\n"
                 extra += json.dumps(getbundle_params, sort_keys=True, indent=4)
-            if check_enabled('unbundler') and "GIT_DIR" in os.environ:
-                bundle = "Please keep a copy of the "
-                bundle += os.environ["GIT_DIR"] + "/cinnabar-last-bundle file"
-                bundle += " before doing the following.\n"
             Git.update_ref(b'refs/cinnabar/broken', self._metadata_sha1)
             raise Abort(
                 "It seems you have hit a known, rare, and difficult to "
                 "reproduce issue.\n"
-                "Your help would be appreciated.\n" + bundle +
+                "Your help would be appreciated.\n"
                 "Please try either `git cinnabar rollback` followed by the "
                 "same command that just\n"
                 "failed, or `git cinnabar reclone`.\n"
