@@ -575,7 +575,8 @@ class GitHgStore(object):
         for sha1, ref in Git.for_each_ref('refs/cinnabar',
                                           'refs/notes/cinnabar'):
             if ref.startswith(b'refs/cinnabar/replace/'):
-                self._replace[ref[22:]] = sha1
+                # Ignore replace refs, we'll fill from the metadata tree.
+                pass
             elif ref == b'refs/cinnabar/metadata':
                 self._metadata_sha1 = sha1
             elif ref == b'refs/cinnabar/tag_cache':
@@ -584,7 +585,6 @@ class GitHgStore(object):
                 broken = sha1
         self._broken = broken and self._metadata_sha1 and \
             broken == self._metadata_sha1
-        self._replace = VersionedDict(self._replace)
 
         self._tagcache = {}
         self._tagfiles = {}
@@ -625,8 +625,14 @@ class GitHgStore(object):
 
             self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
 
+            for line in Git.ls_tree(metadata.tree):
+                mode, typ, sha1, path = line
+                self._replace[path] = sha1
+
             # Delete old tag-cache, which may contain incomplete data.
             Git.delete_ref(b'refs/cinnabar/tag-cache')
+
+        self._replace = VersionedDict(self._replace)
 
     def prepare_graft(self):
         self._graft = Grafter(self)
@@ -1150,8 +1156,9 @@ class GitHgStore(object):
         hg_changeset_heads = list(self._hgheads)
         changeset_heads = list(self.changeset_ref(h)
                                for h in hg_changeset_heads)
+        bundle_blob = getattr(self, "bundle_blob", None)
         if (any(self._hgheads.iterchanges()) or
-                b'refs/cinnabar/changesets' in refresh):
+                b'refs/cinnabar/changesets' in refresh or bundle_blob):
             heads = sorted((self._hgheads[h][1], self._hgheads[h][0], h, g)
                            for h, g in zip(hg_changeset_heads,
                                            changeset_heads))
@@ -1160,7 +1167,8 @@ class GitHgStore(object):
                 parents=list(h for _, __, ___, h in heads),
                 message=b'\n'.join(b'%s %s' % (h, b) for _, b, h, __ in heads),
             ) as commit:
-                pass
+                if bundle_blob:
+                    commit.filemodify(b'bundle', bundle_blob)
             update_metadata[b'refs/cinnabar/changesets'] = commit.sha1
 
         changeset_heads = set(changeset_heads)
@@ -1285,20 +1293,16 @@ class GitHgStore(object):
                     "Error in file %s" % node.decode('ascii', 'replace'))
         if busted:
             import json
-            extra = bundle = ""
+            extra = ""
             if getbundle_params:
                 extra = \
                     "If it failed, please also copy/paste the following:\n"
                 extra += json.dumps(getbundle_params, sort_keys=True, indent=4)
-            if check_enabled('unbundler') and "GIT_DIR" in os.environ:
-                bundle = "Please keep a copy of the "
-                bundle += os.environ["GIT_DIR"] + "/cinnabar-last-bundle file"
-                bundle += " before doing the following.\n"
             Git.update_ref(b'refs/cinnabar/broken', self._metadata_sha1)
             raise Abort(
                 "It seems you have hit a known, rare, and difficult to "
                 "reproduce issue.\n"
-                "Your help would be appreciated.\n" + bundle +
+                "Your help would be appreciated.\n"
                 "Please try either `git cinnabar rollback` followed by the "
                 "same command that just\n"
                 "failed, or `git cinnabar reclone`.\n"

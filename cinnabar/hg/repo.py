@@ -575,8 +575,7 @@ def unbundler(bundle):
         class BundleSaver(object):
             def __init__(self, cg):
                 self.cg = cg
-                self.out = open(os.path.join(
-                    os.environ["GIT_DIR"], "cinnabar-last-bundle"), "wb")
+                self.out = BytesIO()
                 self.out.write(b'HG20\0\0\0\0')
                 self.out.write(b'\0\0\0\x1d\x0bCHANGEGROUP\0\0\0\0')
                 self.out.write(b'\x01\x00\x07\x02version')
@@ -599,6 +598,7 @@ def unbundler(bundle):
 
     if hasattr(cg, "end_bundle"):
         cg.end_bundle()
+        yield GitHgHelper.put_blob(data=cg.out.getvalue())
 
     if isinstance(bundle, unbundle20):
         for part in parts:
@@ -726,6 +726,9 @@ def store_changegroup(changegroup):
 
         yield iter_files(next(changegroup, None))
 
+        if check_enabled('unbundler') and "GIT_DIR" in os.environ:
+            yield next(changegroup)
+
         if next(changegroup, None) is not None:
             assert False
 
@@ -778,6 +781,9 @@ class BundleApplier(object):
                 'Reading and importing {} revisions of {} files',
                 enumerate_files(next(self._bundle, None))):
             pass
+
+        if check_enabled('unbundler') and "GIT_DIR" in os.environ:
+            store.bundle_blob = next(self._bundle)
 
         if next(self._bundle, None) is not None:
             assert False
