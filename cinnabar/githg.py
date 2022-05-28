@@ -607,7 +607,8 @@ class GitHgStore(object):
         for sha1, ref in Git.for_each_ref('refs/cinnabar',
                                           'refs/notes/cinnabar'):
             if ref.startswith(b'refs/cinnabar/replace/'):
-                self._replace[ref[22:]] = sha1
+                # Ignore replace refs, we'll fill from the metadata tree.
+                pass
             elif ref.startswith(b'refs/cinnabar/branches/'):
                 raise OldUpgradeAbort()
             elif ref == b'refs/cinnabar/metadata':
@@ -618,7 +619,6 @@ class GitHgStore(object):
                 broken = sha1
         self._broken = broken and self._metadata_sha1 and \
             broken == self._metadata_sha1
-        self._replace = VersionedDict(self._replace)
 
         self._tagcache = {}
         self._tagfiles = {}
@@ -659,16 +659,14 @@ class GitHgStore(object):
 
             self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
 
-            replace = {}
             for line in Git.ls_tree(metadata.tree):
                 mode, typ, sha1, path = line
-                replace[path] = sha1
-
-            if self._replace and not replace:
-                raise OldUpgradeAbort()
+                self._replace[path] = sha1
 
             # Delete old tag-cache, which may contain incomplete data.
             Git.delete_ref(b'refs/cinnabar/tag-cache')
+
+        self._replace = VersionedDict(self._replace)
 
     def prepare_graft(self):
         self._graft = Grafter(self)
