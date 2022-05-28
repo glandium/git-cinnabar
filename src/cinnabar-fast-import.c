@@ -886,19 +886,45 @@ static void do_store(struct string_list *args)
 		if (!strcmp(args->items[1].string, "hg2git") ||
 		    !strcmp(args->items[1].string, "git2hg") ||
 		    !strcmp(args->items[1].string, "files-meta")) {
-			struct object_id result;
+			struct object_id tree;
+			struct object_id result = {{ 0, }};
 			struct notes_tree *notes = NULL;
+			const char *ref;
+
 			switch (args->items[1].string[0]) {
 			case 'f':
 				notes = &files_meta;
+				ref = FILES_META_REF;
 				break;
 			case 'g':
 				notes = &git2hg;
+				ref = NOTES_REF;
 				break;
 			case 'h':
 				notes = &hg2git;
+				ref = HG2GIT_REF;
 			}
-			store_notes(notes, &result);
+			store_notes(notes, &tree);
+
+			if (is_null_oid(&tree)) {
+				get_oid_committish(ref, &result);
+				if (is_null_oid(&result)) {
+					oidcpy(&tree, &empty_tree);
+				}
+			}
+			if (!is_null_oid(&tree)) {
+				struct strbuf buf = STRBUF_INIT;
+				strbuf_addf(
+					&buf, "tree %s\n",
+					oid_to_hex(&tree));
+				strbuf_addstr(
+					&buf,
+					"author  <cinnabar@git> 0 +0000\n"
+					"committer  <cinnabar@git> 0 +0000\n"
+					"\n");
+				store_git_commit(&buf, &result);
+				strbuf_release(&buf);
+			}
 			write_or_die(cat_blob_fd, oid_to_hex(&result), 40);
 			write_or_die(cat_blob_fd, "\n", 1);
 		} else {

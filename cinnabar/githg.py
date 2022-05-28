@@ -1133,25 +1133,16 @@ class GitHgStore(object):
         if not GitHgHelper._helper:
             return
         update_metadata = {}
-        tree = GitHgHelper.store(b'metadata', b'hg2git')
-        if tree != NULL_NODE_ID:
-            hg2git = self._metadata_refs.get(b'refs/cinnabar/hg2git')
-            with GitHgHelper.commit(
-                ref=b'refs/cinnabar/hg2git',
-            ) as commit:
-                commit.write(b'M 040000 %s \n' % tree)
-            if commit.sha1 != hg2git:
-                update_metadata[b'refs/cinnabar/hg2git'] = commit.sha1
+        new_hg2git = GitHgHelper.store(b'metadata', b'hg2git')
+        hg2git = self._metadata_refs.get(b'refs/cinnabar/hg2git')
+        if hg2git != new_hg2git:
+            update_metadata[b'refs/cinnabar/hg2git'] = new_hg2git
 
-        tree = GitHgHelper.store(b'metadata', b'git2hg')
-        if tree != NULL_NODE_ID:
-            notes = self._metadata_refs.get(b'refs/notes/cinnabar')
-            with GitHgHelper.commit(
-                ref=b'refs/notes/cinnabar',
-            ) as commit:
-                commit.write(b'M 040000 %s \n' % tree)
-            if commit.sha1 != notes:
-                update_metadata[b'refs/notes/cinnabar'] = commit.sha1
+        new_git2hg = GitHgHelper.store(b'metadata', b'git2hg')
+        git2hg = self._metadata_refs.get(b'refs/notes/cinnabar')
+        if git2hg != new_git2hg:
+            update_metadata[b'refs/notes/cinnabar'] = new_git2hg
+            Git.update_ref(b'refs/notes/cinnabar', new_git2hg)
 
         hg_changeset_heads = list(self._hgheads)
         changeset_heads = list(self.changeset_ref(h)
@@ -1184,16 +1175,10 @@ class GitHgStore(object):
                 pass
             update_metadata[b'refs/cinnabar/manifests'] = commit.sha1
 
-        tree = GitHgHelper.store(b'metadata', b'files-meta')
-        files_meta_ref = self._metadata_refs.get(b'refs/cinnabar/files-meta')
-        if update_metadata and (tree != NULL_NODE_ID or not files_meta_ref):
-            with GitHgHelper.commit(
-                ref=b'refs/cinnabar/files-meta',
-            ) as commit:
-                if tree != NULL_NODE_ID:
-                    commit.write(b'M 040000 %s \n' % tree)
-            if commit.sha1 != files_meta_ref:
-                update_metadata[b'refs/cinnabar/files-meta'] = commit.sha1
+        new_files_meta = GitHgHelper.store(b'metadata', b'files-meta')
+        files_meta = self._metadata_refs.get(b'refs/cinnabar/files-meta')
+        if files_meta != new_files_meta:
+            update_metadata[b'refs/cinnabar/files-meta'] = new_files_meta
 
         replace_changed = False
         for status, ref, sha1 in self._replace.iterchanges():
