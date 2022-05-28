@@ -559,7 +559,7 @@ extern "C" {
         argc: c_int,
         argv: *const *const c_char,
         cb: unsafe extern "C" fn(*mut c_void, *const diff_tree_item),
-        context: *const c_void,
+        context: *mut c_void,
     );
 }
 
