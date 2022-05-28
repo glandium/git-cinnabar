@@ -10,7 +10,7 @@ use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 use std::sync::RwLock;
 use std::{fmt, ptr};
 
-use bstr::{BStr, ByteSlice};
+use bstr::{BStr, ByteSlice, ByteVec};
 use cstr::cstr;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use derive_more::{Deref, Display};
@@ -578,7 +578,7 @@ pub enum DiffTreeItem {
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         path: ImmutBString,
         mode: FileMode,
-        oid: BlobId,
+        oid: BlobId, // TODO: Use GitObjectId
     },
     Deleted {
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
@@ -1061,4 +1061,58 @@ pub fn split_ident(ident: &BStr) -> Option<SplitIdent> {
             },
         })
     }
+}
+
+extern "C" {
+    fn iter_tree(
+        oid: *const object_id,
+        cb: unsafe extern "C" fn(
+            *const object_id,
+            *const strbuf,
+            *const c_char,
+            c_uint,
+            *mut c_void,
+        ),
+        context: *mut c_void,
+        recursive: c_int,
+    ) -> c_int;
+}
+
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub struct LsTreeItem {
+    #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
+    pub path: ImmutBString,
+    pub mode: FileMode,
+    pub oid: GitObjectId,
+}
+
+pub struct LsTreeError;
+
+pub fn ls_tree(tree_id: &TreeId) -> Result<impl Iterator<Item = LsTreeItem>, LsTreeError> {
+    unsafe extern "C" fn ls_tree_cb(
+        oid: *const object_id,
+        base: *const strbuf,
+        pathname: *const c_char,
+        mode: c_uint,
+        ctx: *mut c_void,
+    ) {
+        let ls_tree = (ctx as *mut Vec<LsTreeItem>).as_mut().unwrap();
+        let mut path = base.as_ref().unwrap().as_bytes().to_owned();
+        if !path.is_empty() {
+            path.push_byte(b'/');
+        }
+        path.push_str(CStr::from_ptr(pathname).to_bytes());
+        ls_tree.push(LsTreeItem {
+            path: path.into_boxed_slice(),
+            mode: FileMode(mode.try_into().unwrap()),
+            oid: GitObjectId::from(oid.as_ref().unwrap().clone()),
+        });
+    }
+    let mut result = Vec::<LsTreeItem>::new();
+    let oid = object_id::from(tree_id);
+    if unsafe { iter_tree(&oid, ls_tree_cb, &mut result as *mut _ as *mut c_void, 1) } == 0 {
+        return Err(LsTreeError);
+    }
+    Ok(result.into_iter())
 }

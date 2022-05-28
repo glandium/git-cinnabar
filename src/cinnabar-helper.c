@@ -221,26 +221,15 @@ not_found:
 	write_or_die(cat_blob_fd, "\n", 1);
 }
 
-struct ls_tree_context {
-	struct strbuf buf;
-	struct object_list *list;
-	int recursive;
-};
-
-static int fill_ls_tree(const struct object_id *oid, struct strbuf *base,
+static void fill_ls_tree(const struct object_id *oid, struct strbuf *base,
 			const char *pathname, unsigned mode, void *context)
 {
-	struct ls_tree_context *ctx = context;
-	struct strbuf *buf = &ctx->buf;
+	struct strbuf *buf = context;
 	const char *type = blob_type;
 
 	if (S_ISGITLINK(mode)) {
 		type = commit_type;
 	} else if (S_ISDIR(mode)) {
-		object_list_insert((struct object *)lookup_tree(the_repository, oid),
-		                   &ctx->list);
-		if (ctx->recursive)
-			return READ_TREE_RECURSIVE;
 		type = tree_type;
 	}
 
@@ -248,34 +237,45 @@ static int fill_ls_tree(const struct object_id *oid, struct strbuf *base,
 	strbuf_addbuf(buf, base);
 	strbuf_addstr(buf, pathname);
 	strbuf_addch(buf, '\0');
+}
+
+typedef void (*iter_tree_cb)(const struct object_id *oid, struct strbuf *base,
+	                     const char *pathname, unsigned mode, void *context);
+
+struct iter_tree_context {
+	void *ctx;
+	iter_tree_cb callback;
+	struct object_list *list;
+	int recursive;
+};
+
+static int do_iter_tree(const struct object_id *oid, struct strbuf *base,
+			const char *pathname, unsigned mode, void *context)
+{
+	struct iter_tree_context *ctx = context;
+
+	if (S_ISDIR(mode)) {
+		object_list_insert((struct object *)lookup_tree(the_repository, oid),
+		                   &ctx->list);
+		if (ctx->recursive)
+			return READ_TREE_RECURSIVE;
+	}
+
+	ctx->callback(oid, base, pathname, mode, ctx->ctx);
 	return 0;
 }
 
-static void do_ls_tree(struct string_list *args)
-{
-	struct object_id oid;
+int iter_tree(const struct object_id *oid, iter_tree_cb callback, void *context, int recursive) {
 	struct tree *tree = NULL;
-	struct ls_tree_context ctx = { STRBUF_INIT, NULL, 0 };
+	struct iter_tree_context ctx = { context, callback, NULL, recursive };
 	struct pathspec match_all;
 
-	if (args->nr == 2) {
-		if (strcmp(args->items[1].string, "-r"))
-			goto not_found;
-		ctx.recursive = 1;
-	} else if (args->nr != 1)
-		goto not_found;
-
-	if (get_oid(args->items[0].string, &oid))
-		goto not_found;
-
-	tree = parse_tree_indirect(&oid);
+	tree = parse_tree_indirect(oid);
 	if (!tree)
-		goto not_found;
+		return 0;
 
 	memset(&match_all, 0, sizeof(match_all));
-	read_tree(the_repository, tree, &match_all, fill_ls_tree, &ctx);
-	send_buffer(cat_blob_fd, &ctx.buf);
-	strbuf_release(&ctx.buf);
+	read_tree(the_repository, tree, &match_all, do_iter_tree, &ctx);
 
 	while (ctx.list) {
 		struct object *obj = ctx.list->item;
@@ -284,6 +284,30 @@ static void do_ls_tree(struct string_list *args)
 		free(elem);
 		free_tree_buffer((struct tree *)obj);
 	}
+	return 1;
+}
+
+static void do_ls_tree(struct string_list *args)
+{
+	struct object_id oid;
+	struct strbuf buf = STRBUF_INIT;
+	int recursive = 0;
+
+	if (args->nr == 2) {
+		if (strcmp(args->items[1].string, "-r"))
+			goto not_found;
+		recursive = 1;
+	} else if (args->nr != 1)
+		goto not_found;
+
+	if (get_oid(args->items[0].string, &oid))
+		goto not_found;
+
+	if (!iter_tree(&oid, fill_ls_tree, &buf, recursive))
+		goto not_found;
+
+	send_buffer(cat_blob_fd, &buf);
+	strbuf_release(&buf);
 	return;
 not_found:
 	write_or_die(cat_blob_fd, "0\n\n", 3);
