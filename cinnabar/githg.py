@@ -1164,16 +1164,10 @@ class GitHgStore(object):
 
         changeset_heads = set(changeset_heads)
 
-        manifest_heads = GitHgHelper.heads(b'manifests')
-        if (set(manifest_heads) != self._manifest_heads_orig or
-                (b'refs/cinnabar/changesets' in update_metadata and
-                 not manifest_heads) or b'refs/cinnabar/manifests' in refresh):
-            with GitHgHelper.commit(
-                ref=b'refs/cinnabar/manifests',
-                parents=sorted(manifest_heads),
-            ) as commit:
-                pass
-            update_metadata[b'refs/cinnabar/manifests'] = commit.sha1
+        new_manifest = GitHgHelper.store(b'metadata', b'manifests')
+        manifest = self._metadata_refs.get(b'refs/cinnabar/manifests')
+        if manifest != new_manifest:
+            update_metadata[b'refs/cinnabar/manifests'] = new_manifest
 
         new_files_meta = GitHgHelper.store(b'metadata', b'files-meta')
         files_meta = self._metadata_refs.get(b'refs/cinnabar/files-meta')

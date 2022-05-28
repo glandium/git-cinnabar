@@ -331,6 +331,7 @@ void maybe_reset_notes(const char *branch)
 
 struct oid_array changeset_heads = OID_ARRAY_INIT;
 struct oid_array manifest_heads = OID_ARRAY_INIT;
+int manifest_heads_dirty = 0;
 
 static void oid_array_insert(struct oid_array *array, int index,
                              const struct object_id *oid)
@@ -339,12 +340,16 @@ static void oid_array_insert(struct oid_array *array, int index,
 	memmove(&array->oid[index+1], &array->oid[index],
 	        sizeof(array->oid[0]) * (array->nr++ - index));
 	oidcpy(&array->oid[index], oid);
+	if (array == &manifest_heads)
+		manifest_heads_dirty = 1;
 }
 
 static void oid_array_remove(struct oid_array *array, int index)
 {
 	memmove(&array->oid[index], &array->oid[index+1],
 	        sizeof(array->oid[0]) * (--array->nr - index));
+	if (array == &manifest_heads)
+		manifest_heads_dirty = 1;
 }
 
 void ensure_heads(struct oid_array *heads)
@@ -875,19 +880,29 @@ static void for_each_changegroup_chunk(FILE *in, int version,
 
 static void skip_chunk(struct rev_chunk *chunk) {}
 
+static int add_manifests_parent(const struct object_id *oid, void *data)
+{
+	struct strbuf *buf = data;
+	strbuf_addstr(buf, "parent ");
+	strbuf_addstr(buf, oid_to_hex(oid));
+	strbuf_addch(buf, '\n');
+	return 0;
+}
+
 static void do_store(struct string_list *args)
 {
 	if (args->nr < 2)
 		die("store needs at least 3 arguments");
 
 	if (!strcmp(args->items[0].string, "metadata")) {
+		struct object_id result = {{ 0, }};
+
 		if (args->nr != 2)
 			die("store metadata needs 3 arguments");
 		if (!strcmp(args->items[1].string, "hg2git") ||
 		    !strcmp(args->items[1].string, "git2hg") ||
 		    !strcmp(args->items[1].string, "files-meta")) {
 			struct object_id tree;
-			struct object_id result = {{ 0, }};
 			struct notes_tree *notes = NULL;
 			const char *ref;
 
@@ -925,11 +940,31 @@ static void do_store(struct string_list *args)
 				store_git_commit(&buf, &result);
 				strbuf_release(&buf);
 			}
-			write_or_die(cat_blob_fd, oid_to_hex(&result), 40);
-			write_or_die(cat_blob_fd, "\n", 1);
+		} else if (!strcmp(args->items[1].string, "manifests")) {
+			if (manifest_heads_dirty) {
+			        struct strbuf buf = STRBUF_INIT;
+				strbuf_addf(
+					&buf, "tree %s\n",
+					oid_to_hex(&empty_tree));
+				oid_array_sort(&manifest_heads);
+				oid_array_for_each_unique(
+					&manifest_heads, add_manifests_parent,
+					&buf);
+				strbuf_addstr(
+					&buf,
+					"author  <cinnabar@git> 0 +0000\n"
+					"committer  <cinnabar@git> 0 +0000\n"
+					"\n");
+				store_git_commit(&buf, &result);
+				strbuf_release(&buf);
+			} else {
+				get_oid_committish(MANIFESTS_REF, &result);
+			}
 		} else {
 			die("Unknown metadata kind: %s", args->items[1].string);
 		}
+		write_or_die(cat_blob_fd, oid_to_hex(&result), 40);
+		write_or_die(cat_blob_fd, "\n", 1);
 	} else if (!strcmp(args->items[0].string, "file") ||
 		   !strcmp(args->items[0].string, "manifest")) {
 		struct strbuf buf = STRBUF_INIT;
