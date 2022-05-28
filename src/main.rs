@@ -77,7 +77,7 @@ use std::os::raw::c_int;
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::str::{self, FromStr};
+use std::str::{self, from_utf8, FromStr};
 use std::thread::spawn;
 
 #[cfg(unix)]
@@ -96,14 +96,14 @@ use which::which;
 use hg_connect::connect_main_with;
 use libcinnabar::{files_meta, hg2git};
 use libgit::{
-    for_each_ref_in, for_each_remote, get_oid_committish, lookup_replace_commit, remote,
+    for_each_ref_in, for_each_remote, get_oid_committish, lookup_replace_commit, ls_tree, remote,
     resolve_ref, BlobId, CommitId, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use store::{
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
     HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF,
-    NOTES_REF, REFS_PREFIX,
+    NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
 
@@ -499,13 +499,17 @@ fn rollback_to(
     let mut metadata = None;
 
     let mut transaction = RefTransaction::new().unwrap();
-    for (r, oid) in refs.iter() {
-        match (new_metadata, r) {
-            (Some(_), _) if r == METADATA_REF => metadata = Some(oid.clone()),
+    let mut replace_refs = HashMap::new();
+    for (r, oid) in refs.into_iter() {
+        match (new_metadata, &r) {
+            (Some(_), _) if r == METADATA_REF => metadata = Some(oid),
             (Some(_), _) if r == CHECKED_REF => checked = Some(oid),
             (Some(_), _) if r == BROKEN_REF => broken = Some(oid),
+            (Some(_), _) if r.as_bytes().starts_with(REPLACE_REFS_PREFIX.as_bytes()) => {
+                replace_refs.insert(r, oid);
+            }
             _ => {
-                transaction.delete(r, Some(oid), msg)?;
+                transaction.delete(r, Some(&oid), msg)?;
             }
         }
     }
@@ -525,8 +529,8 @@ fn rollback_to(
         }
 
         let mut state = match metadata {
-            Some(ref m) if Some(m) == broken => MetadataState::Broken,
-            Some(ref m) if Some(m) == checked => MetadataState::Checked,
+            Some(ref m) if Some(m) == broken.as_ref() => MetadataState::Broken,
+            Some(ref m) if Some(m) == checked.as_ref() => MetadataState::Checked,
             _ => MetadataState::Unknown,
         };
 
@@ -536,9 +540,9 @@ fn rollback_to(
             m.clone()
         })
         .try_find_(|m| -> Result<_, String> {
-            if Some(m) == broken {
+            if Some(m) == broken.as_ref() {
                 state = MetadataState::Broken;
-            } else if Some(m) == checked {
+            } else if Some(m) == checked.as_ref() {
                 state = MetadataState::Checked;
             } else if state == MetadataState::Broken {
                 // We don't know whether ancestors of broken metadata are broken.
@@ -565,9 +569,10 @@ fn rollback_to(
         assert_eq!(found, *new);
 
         match state {
-            MetadataState::Checked => transaction.update(CHECKED_REF, new, checked, msg)?,
-
-            MetadataState::Broken => transaction.update(BROKEN_REF, new, broken, msg)?,
+            MetadataState::Checked => {
+                transaction.update(CHECKED_REF, new, checked.as_ref(), msg)?;
+            }
+            MetadataState::Broken => transaction.update(BROKEN_REF, new, broken.as_ref(), msg)?,
             MetadataState::Unknown => {}
         }
 
@@ -580,6 +585,25 @@ fn rollback_to(
         }
         transaction.update(METADATA_REF, new, metadata.as_ref(), msg)?;
         transaction.update(NOTES_REF, &commit.parents()[3], notes.as_ref(), msg)?;
+        for item in
+            ls_tree(commit.tree()).map_err(|_| format!("Failed to read metadata: {}", new))?
+        {
+            // TODO: Check mode.
+            // TODO: Check oid is valid.
+            let mut replace_ref = REPLACE_REFS_PREFIX.to_owned();
+            replace_ref.push_str(from_utf8(&item.path).unwrap());
+            let replace_ref = OsString::from(replace_ref);
+            transaction.update(
+                &replace_ref,
+                &unsafe { CommitId::from_unchecked(item.oid) },
+                replace_refs.remove(&replace_ref).as_ref(),
+                msg,
+            )?;
+        }
+        // Remove any remaining replace ref.
+        for (r, oid) in replace_refs.into_iter() {
+            transaction.delete(r, Some(&oid), msg)?;
+        }
     } else if let Some(notes) = notes {
         transaction.delete(NOTES_REF, Some(&notes), msg)?;
     }

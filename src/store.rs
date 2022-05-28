@@ -22,6 +22,7 @@ use crate::util::{FromBytes, ImmutBString, SliceExt, ToBoxed};
 use crate::xdiff::{apply, PatchInfo};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
+pub const REPLACE_REFS_PREFIX: &str = "refs/cinnabar/replace/";
 pub const METADATA_REF: &str = "refs/cinnabar/metadata";
 pub const CHECKED_REF: &str = "refs/cinnabar/checked";
 pub const BROKEN_REF: &str = "refs/cinnabar/broken";
