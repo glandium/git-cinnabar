@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::{Borrow, Cow};
-use std::convert::{TryFrom, TryInto};
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
 use std::io::{self, Write};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};

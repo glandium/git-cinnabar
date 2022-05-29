@@ -66,7 +66,6 @@ pub(crate) mod hg_data;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::convert::TryInto;
 #[cfg(unix)]
 use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};

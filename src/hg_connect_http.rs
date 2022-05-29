@@ -4,7 +4,6 @@
 
 use std::borrow::ToOwned;
 use std::cmp;
-use std::convert::TryInto;
 use std::ffi::{c_void, CStr, CString};
 use std::fs::File;
 use std::io::{self, copy, stderr, Cursor, Read, Seek, SeekFrom, Write};
