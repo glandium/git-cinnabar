@@ -51,7 +51,6 @@ class NoFdHelper(RuntimeError):
 class FdHelper(object):
     def __init__(self, mode):
         env_name = "GIT_CINNABAR_{}_FDS".format(mode.upper())
-        logger_name = "helper-{}".format(mode)
         if env_name not in os.environ:
             raise NoFdHelper
         (reader, writer) = (int(fd) for fd in os.environ[env_name].split(','))
@@ -62,6 +61,9 @@ class FdHelper(object):
         self.pid = 0
         self.stdin = os.fdopen(writer, 'wb')
         self.stdout = os.fdopen(reader, 'rb')
+        if mode == 'wire':
+            return
+        logger_name = "helper-{}".format(mode)
         logger = logging.getLogger(logger_name)
         if logger.isEnabledFor(logging.INFO):
             self.stdin = IOLogger(logger, self.stdout, self.stdin)
@@ -116,10 +118,12 @@ class BaseHelper(object):
                     executable = None
                 command.append('--{}'.format(self.MODE))
 
+                kwargs = {}
+                if self.MODE != 'wire':
+                    kwargs['logger'] = 'helper-{}'.format(self.MODE)
                 self._helper = Process(
                     *command, executable=executable,
-                    stdin=subprocess.PIPE, stderr=None, env=env,
-                    logger='helper-{}'.format(self.MODE))
+                    stdin=subprocess.PIPE, stderr=None, env=env, **kwargs)
 
             atexit.register(self.close, on_atexit=True)
 

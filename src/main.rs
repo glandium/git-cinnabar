@@ -1030,13 +1030,21 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
     };
 
     let (wire_fds, wire_thread) = if cmd == PythonCommand::GitRemoteHg {
-        let (reader1, mut writer1) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
+        let (reader1, writer1) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
         let (reader2, writer2) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
         let reader1 = reader1.dup_inheritable();
         let writer2 = writer2.dup_inheritable();
         extra_env.push(("GIT_CINNABAR_WIRE_FDS", format!("{},{}", reader1, writer2)));
         let thread = spawn(move || {
-            connect_main_with(&mut BufReader::new(reader2), &mut writer1).unwrap();
+            connect_main_with(
+                &mut logging::LoggingBufReader::new(
+                    "helper-wire",
+                    log::Level::Debug,
+                    BufReader::new(reader2),
+                ),
+                &mut logging::LoggingWriter::new("helper-wire", log::Level::Debug, writer1),
+            )
+            .unwrap();
         });
         (Some((reader1, writer2)), Some(thread))
     } else {
