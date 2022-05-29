@@ -53,6 +53,7 @@ mod oid;
 pub mod libgit;
 mod libc;
 mod libcinnabar;
+mod logging;
 pub mod store;
 mod xdiff;
 
@@ -86,6 +87,7 @@ use std::os::unix::io::AsRawFd;
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
+use std::time::Instant;
 
 use bstr::ByteSlice;
 use git_version::git_version;
@@ -1103,6 +1105,8 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
 
 #[no_mangle]
 unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> c_int {
+    let now = Instant::now();
+
     // We look at argv[0] to choose what behavior to take, but it's not
     // guaranteed to have a full path, while init_cinnabar (really, git-core)
     // needs one, so for that we use current_exe().
@@ -1112,6 +1116,7 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
     // If for some reason current_exe() failed, fallback to argv[0].
     let exe = std::env::current_exe().map(|e| e.as_os_str().to_cstring());
     init_cinnabar(exe.as_deref().unwrap_or(argv0).as_ptr());
+    logging::init(now);
 
     let ret = match argv0_path.file_stem().and_then(OsStr::to_str) {
         Some("git-cinnabar") => git_cinnabar(),

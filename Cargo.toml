@@ -67,6 +67,10 @@ features = ["static"]
 [target.'cfg(not(windows))'.dependencies.libz-sys]
 version = "1"
 
+[dependencies.log]
+version = "0.4"
+features = ["std"]
+
 [dependencies.os_pipe]
 version = "1.0"
 optional = true
