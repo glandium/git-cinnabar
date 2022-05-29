@@ -119,16 +119,18 @@ impl Drop for VersionCheck {
     fn drop(&mut self) {
         if let Some(version) = self.take_result() {
             if VERSION_CHECK_REF == ALL_TAG_REFS {
-                eprintln!(
+                warn!(
+                    target: "root",
                     "New git-cinnabar version available: {} (current version: {})",
                     version, CARGO_PKG_VERSION
                 );
             } else {
-                eprintln!(
+                warn!(
+                    target: "root",
                     "The {} branch of git-cinnabar was updated. Please update your copy.",
                     VERSION_CHECK_REF.strip_prefix("refs/heads/").unwrap()
                 );
-                eprintln!("You can switch to the `release` branch if you want to reduce these update notifications.");
+                warn!(target: "root", "You can switch to the `release` branch if you want to reduce these update notifications.");
             }
         }
 

@@ -711,7 +711,7 @@ fn do_upgrade() -> Result<(), String> {
     // If we got here, init_cinnabar_2/init_metadata went through,
     // which means we didn't die because of unusable metadata.
     // There are currently no conditions that will require an upgrade.
-    println!("No metadata to upgrade");
+    warn!(target: "root", "No metadata to upgrade");
     Ok(())
 }
 
@@ -958,7 +958,7 @@ fn git_cinnabar() -> i32 {
     match ret {
         Ok(()) => 0,
         Err(msg) => {
-            eprintln!("{}", msg);
+            error!(target: "root", "{}", msg);
             1
         }
     }
@@ -1164,7 +1164,7 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
             match run_python_command(PythonCommand::GitRemoteHg) {
                 Ok(code) => code,
                 Err(e) => {
-                    eprintln!("{}", e);
+                    error!(target: "root", "{}", e);
                     1
                 }
             }

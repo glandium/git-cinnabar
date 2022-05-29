@@ -145,7 +145,8 @@ Restore the state where it used to be, except we rightfully lost the checked
 state of ee1547d.
 
   $ git -C repo-git cinnabar rollback fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
-  Cannot rollback to fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08, it is not in the ancestry of current metadata.
+  \r (no-eol) (esc)
+  ERROR Cannot rollback to fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08, it is not in the ancestry of current metadata.
   [1]
   $ git -C repo-git cinnabar rollback --force fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
 
@@ -176,27 +177,35 @@ Corner cases
   $ git -C repo-git gc --prune=all 2> /dev/null
 
   $ git -C repo-git cinnabar rollback
-  Nothing to rollback.
+  \r (no-eol) (esc)
+  ERROR Nothing to rollback.
   [1]
   $ git -C repo-git cinnabar rollback fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
-  Invalid revision: fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
+  \r (no-eol) (esc)
+  ERROR Invalid revision: fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
   [1]
   $ git -C repo-git cinnabar rollback --force fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
-  Invalid revision: fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
+  \r (no-eol) (esc)
+  ERROR Invalid revision: fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08
   [1]
   $ git -C repo-git cinnabar rollback foo
-  Invalid revision: foo
+  \r (no-eol) (esc)
+  ERROR Invalid revision: foo
   [1]
   $ git -C repo-git cinnabar rollback --force foo
-  Invalid revision: foo
+  \r (no-eol) (esc)
+  ERROR Invalid revision: foo
   [1]
   $ git -C repo-git cinnabar rollback --fsck
-  No successful fsck has been recorded. Cannot rollback.
+  \r (no-eol) (esc)
+  ERROR No successful fsck has been recorded. Cannot rollback.
   [1]
   $ git -C repo-git cinnabar rollback 0000000000000000000000000000000000000000
   $ git -C repo-git cinnabar rollback main
-  Cannot rollback to 23bcc26b9fea7e37426260465bed35eac54af5e1, it is not in the ancestry of current metadata.
+  \r (no-eol) (esc)
+  ERROR Cannot rollback to 23bcc26b9fea7e37426260465bed35eac54af5e1, it is not in the ancestry of current metadata.
   [1]
   $ git -C repo-git cinnabar rollback --force main
-  Invalid cinnabar metadata: 23bcc26b9fea7e37426260465bed35eac54af5e1
+  \r (no-eol) (esc)
+  ERROR Invalid cinnabar metadata: 23bcc26b9fea7e37426260465bed35eac54af5e1
   [1]
