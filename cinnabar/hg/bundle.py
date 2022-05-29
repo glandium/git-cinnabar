@@ -383,8 +383,8 @@ class PushStore(GitHgStore):
         hg_file.content = GitHgHelper.cat_file(b'blob', sha1)
         node = hg_file.node = hg_file.sha1
         self._pushed.add(node)
-        GitHgHelper.put_blob(hg_file.metadata.to_str(), want_sha1=False)
-        GitHgHelper.set(b'file-meta', node, b':1')
+        meta_sha1 = GitHgHelper.put_blob(hg_file.metadata.to_str())
+        GitHgHelper.set(b'file-meta', node, meta_sha1)
         GitHgHelper.set(b'file', node, sha1)
         return node
 

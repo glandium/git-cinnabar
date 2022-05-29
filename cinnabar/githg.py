@@ -1070,9 +1070,9 @@ class GitHgStore(object):
 
         GitHgHelper.set(b'changeset', instance.node, commit.sha1)
         changeset = Changeset.from_git_commit(commit)
-        GitHgHelper.put_blob(
-            ChangesetPatcher.from_diff(changeset, instance), want_sha1=False)
-        GitHgHelper.set(b'changeset-metadata', instance.node, b':1')
+        sha1 = GitHgHelper.put_blob(
+            ChangesetPatcher.from_diff(changeset, instance))
+        GitHgHelper.set(b'changeset-metadata', instance.node, sha1)
 
         self._branches[instance.node] = instance.branch or b'default'
         self.add_head(instance.node, instance.parent1, instance.parent2)

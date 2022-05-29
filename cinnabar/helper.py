@@ -375,15 +375,14 @@ class GitHgHelper(BaseHelper):
             return sha1[:40]
 
     @classmethod
-    def put_blob(self, data=b'', want_sha1=True):
+    def put_blob(self, data=b''):
         with self.query(b'blob') as io:
             io.write(b'mark :1\n')
             io.write(b'data %d\n' % len(data))
             io.write(data)
             io.write(b'\n')
             io.flush()
-            if want_sha1:
-                return self._get_last()
+            return self._get_last()
 
     @classmethod
     @contextmanager

@@ -454,9 +454,9 @@ def fsck(args):
                        % changeset.decode('ascii'))
             GitHgHelper.set(b'changeset', changeset, NULL_NODE_ID)
             GitHgHelper.set(b'changeset', changeset, node)
-            GitHgHelper.put_blob(patcher, want_sha1=False)
+            sha1 = GitHgHelper.put_blob(patcher)
             GitHgHelper.set(b'changeset-metadata', changeset, NULL_NODE_ID)
-            GitHgHelper.set(b'changeset-metadata', changeset, b':1')
+            GitHgHelper.set(b'changeset-metadata', changeset, sha1)
 
         manifest = changeset_data.manifest
         if GitHgHelper.seen(b'hg2git', manifest) or manifest == NULL_NODE_ID:
