@@ -1089,9 +1089,6 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		}
 		write_or_die(cat_blob_fd, "ok\n", 3);
 		return 2;
-	} else if (!strcmp(command, "feature")) {
-		COMMON_HANDLING();
-		parse_feature(command_buf.buf + sizeof("feature"));
 	} else if (!strcmp(command, "set")) {
 		ENSURE_INIT();
 		do_set(args);
