@@ -41,6 +41,8 @@
 extern crate derivative;
 #[macro_use]
 extern crate all_asserts;
+#[macro_use]
+extern crate log;
 
 use clap::{crate_version, AppSettings, ArgGroup, Parser};
 use itertools::Itertools;

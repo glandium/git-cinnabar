@@ -6,11 +6,12 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fmt::Display;
 use std::fs::{File, OpenOptions};
-use std::io::Write;
+use std::io::{BufRead, Read, Write};
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::Instant;
 
+use bstr::ByteSlice;
 use log::LevelFilter;
 
 use crate::libgit::config_get_value;
@@ -217,5 +218,108 @@ impl log::Log for CinnabarLogger {
         for mut out in self.outputs.iter() {
             out.flush().ok();
         }
+    }
+}
+
+pub struct LoggingBufReader<'a, R: BufRead> {
+    target: &'a str,
+    level: log::Level,
+    reader: R,
+}
+
+impl<'a, R: BufRead> LoggingBufReader<'a, R> {
+    pub fn new(target: &'a str, level: log::Level, r: R) -> Self {
+        LoggingBufReader {
+            target,
+            level,
+            reader: r,
+        }
+    }
+}
+
+impl<'a, R: BufRead> Read for LoggingBufReader<'a, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.reader.read(buf).map(|l| {
+            log!(target: self.target, self.level, "<= {:?}", buf[..l].as_bstr());
+            l
+        })
+    }
+}
+
+impl<'a, R: BufRead> BufRead for LoggingBufReader<'a, R> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        self.reader.fill_buf()
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.reader.consume(amt);
+    }
+
+    fn read_until(&mut self, byte: u8, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+        self.reader.read_until(byte, buf).map(|l| {
+            log!(target: self.target, self.level, "<= {:?}", buf[buf.len() - l..].as_bstr());
+            l
+        })
+    }
+
+    fn read_line(&mut self, buf: &mut String) -> std::io::Result<usize> {
+        self.reader.read_line(buf).map(|l| {
+            log!(target: self.target, self.level, "<= {:?}", buf);
+            l
+        })
+    }
+}
+
+pub struct LoggingReader<'a, R: Read> {
+    target: &'a str,
+    level: log::Level,
+    reader: R,
+}
+
+impl<'a, R: Read> LoggingReader<'a, R> {
+    pub fn new(target: &'a str, level: log::Level, r: R) -> Self {
+        LoggingReader {
+            target,
+            level,
+            reader: r,
+        }
+    }
+}
+
+impl<'a, R: Read> Read for LoggingReader<'a, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.reader.read(buf).map(|l| {
+            log!(target: self.target, self.level, "<= {:?}", buf[..l].as_bstr());
+            l
+        })
+    }
+}
+
+pub struct LoggingWriter<'a, W: Write> {
+    target: &'a str,
+    level: log::Level,
+    writer: W,
+}
+
+impl<'a, W: Write> LoggingWriter<'a, W> {
+    pub fn new(target: &'a str, level: log::Level, w: W) -> Self {
+        LoggingWriter {
+            target,
+            level,
+            writer: w,
+        }
+    }
+}
+
+impl<'a, W: Write> Write for LoggingWriter<'a, W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.writer.write(buf).map(|l| {
+            log!(target: self.target, self.level, "=> {:?}", buf[..l].as_bstr());
+            l
+        })
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.writer.flush()
     }
 }
