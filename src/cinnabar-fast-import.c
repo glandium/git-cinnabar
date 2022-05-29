@@ -1014,6 +1014,21 @@ static void do_store(struct string_list *args)
 			strbuf_release(&buf);
 			for_each_changegroup_chunk(helper_input, version, store_file);
 		}
+	} else if (!strcmp(args->items[0].string, "blob")) {
+		struct object_id result;
+		struct strbuf buf = STRBUF_INIT;
+		size_t length, s;
+		if (args->nr != 2)
+			die("store blob only takes one argument");
+		length = strtol(args->items[1].string, NULL, 10);
+		while (length) {
+			s = strbuf_fread(&buf, length, helper_input);
+			length -= s;
+		}
+		store_object(OBJ_BLOB, &buf, NULL, &result, 0);
+		strbuf_release(&buf);
+		write_or_die(cat_blob_fd, oid_to_hex(&result), 40);
+		write_or_die(cat_blob_fd, "\n", 1);
 	} else {
 		die("Unknown store kind: %s", args->items[0].string);
 	}
@@ -1096,10 +1111,6 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		ENSURE_INIT();
 		require_explicit_termination = 1;
 		do_store(args);
-	} else if (!strcmp(command, "blob")) {
-		COMMON_HANDLING();
-		require_explicit_termination = 1;
-		parse_new_blob();
 	} else if (!strcmp(command, "commit")) {
 		char *arg;
 		COMMON_HANDLING();

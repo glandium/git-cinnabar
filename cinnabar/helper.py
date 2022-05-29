@@ -376,13 +376,12 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def put_blob(self, data=b''):
-        with self.query(b'blob') as io:
-            io.write(b'mark :1\n')
-            io.write(b'data %d\n' % len(data))
-            io.write(data)
-            io.write(b'\n')
-            io.flush()
-            return self._get_last()
+        with self.query(b'store', b'blob', b'%d' % len(data)) as stdout:
+            self._helper.stdin.write(data)
+            self._helper.stdin.flush()
+            sha1 = stdout.read(41)
+            assert sha1[-1:] == b'\n'
+            return sha1[:40]
 
     @classmethod
     @contextmanager
