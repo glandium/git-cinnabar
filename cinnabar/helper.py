@@ -388,7 +388,7 @@ class GitHgHelper(BaseHelper):
     @classmethod
     @contextmanager
     def commit(self, ref, committer=b'<cinnabar@git> 0 +0000', author=None,
-               message=b'', from_commit=None, parents=(), pseudo_mark=None):
+               message=b'', from_commit=None, parents=()):
         if isinstance(parents, GeneratorType):
             parents = tuple(parents)
         from_tree = None
@@ -428,8 +428,7 @@ class GitHgHelper(BaseHelper):
             stdout.write(helper.flush_buffer())
             stdout.flush()
 
-        if not pseudo_mark:
-            helper.sha1 = self._get_last()
+        helper.sha1 = self._get_last()
 
     @classmethod
     def close(self, rollback=True, on_atexit=False):

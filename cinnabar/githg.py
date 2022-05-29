@@ -1058,13 +1058,12 @@ class GitHgStore(object):
                 committer=committer,
                 author=author,
                 parents=parents,
-                pseudo_mark=b':h%s' % instance.node,
             ) as c:
                 c.filemodify(b'', self.git_tree(instance.manifest,
                                                 *instance.parents[:1]),
                              typ=b'tree')
 
-            commit = PseudoGitCommit(b':1')
+            commit = PseudoGitCommit(c.sha1)
             commit.author = author
             commit.committer = committer
             commit.body = body
@@ -1095,7 +1094,6 @@ class GitHgStore(object):
             from_commit=previous,
             parents=parents,
             message=instance.node,
-            pseudo_mark=b':h%s' % instance.node,
         ) as commit:
             if hasattr(instance, 'delta_node'):
                 for name in instance.removed:
@@ -1110,7 +1108,7 @@ class GitHgStore(object):
                 commit.filemodify(self.manifest_metadata_path(name), node,
                                   self.MODE[attr])
 
-        GitHgHelper.set(b'manifest', instance.node, b':1')
+        GitHgHelper.set(b'manifest', instance.node, commit.sha1)
 
         if check_enabled('manifests'):
             if not GitHgHelper.check_manifest(instance.node):
