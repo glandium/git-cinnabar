@@ -1,8 +1,6 @@
 #ifndef CINNABAR_FAST_IMPORT_H
 #define CINNABAR_FAST_IMPORT_H
 
-void record_command(struct strbuf *buf);
-
 int maybe_handle_command(const char *command, struct string_list *args);
 
 void *get_object_entry(const unsigned char *sha1);

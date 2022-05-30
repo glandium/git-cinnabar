@@ -1812,7 +1812,6 @@ int helper_main(int in, int out)
 	while (strbuf_getline(&buf, helper_input) != EOF) {
 		struct string_list args = STRING_LIST_INIT_NODUP;
 		const char *command;
-		record_command(&buf);
 		split_command(buf.buf, &command, &args);
 		if (!initialized) {
 			init_cinnabar_2();

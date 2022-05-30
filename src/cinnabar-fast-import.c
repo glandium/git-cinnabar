@@ -141,7 +141,6 @@ static void init()
 	warn_on_object_refname_ambiguity = 0;
 
 	alloc_objects(object_entry_alloc);
-	strbuf_init(&command_buf, 0);
 	atom_table_sz = 131071;
 	atom_table = xcalloc(atom_table_sz, sizeof(struct atom_str*));
 	branch_table = xcalloc(branch_table_sz, sizeof(struct branch*));
@@ -158,7 +157,6 @@ static void init()
 	rc_free[cmd_save - 1].next = NULL;
 
 	start_packfile();
-	set_die_routine(die_nicely);
 
 	parse_one_feature("force", 0);
 	initialized = 1;
@@ -251,14 +249,6 @@ const struct object_id empty_tree = { {
 	0x4b, 0x82, 0x5d, 0xc6, 0x42, 0xcb, 0x6e, 0xb9, 0xa0, 0x60,
 	0xe5, 0x4b, 0xf8, 0xd6, 0x92, 0x88, 0xfb, 0xee, 0x49, 0x04,
 }, GIT_HASH_SHA1 };
-
-/* Fill fast-import.c's command_buf with what was last recorded with
- * record_command. */
-static void fill_command_buf()
-{
-	strbuf_reset(&command_buf);
-	strbuf_addstr(&command_buf, cmd_tail->buf);
-}
 
 void maybe_reset_notes(const char *branch)
 {
@@ -1068,20 +1058,15 @@ static void do_reset(struct string_list *args) {
 
 int maybe_handle_command(const char *command, struct string_list *args)
 {
-#define COMMON_HANDLING() do { \
-	ENSURE_INIT(); \
-	fill_command_buf(); \
-} while (0)
-
 	if (!strcmp(command, "done")) {
-		COMMON_HANDLING();
+		ENSURE_INIT();
 		require_explicit_termination = 0;
 		cleanup();
 		write_or_die(helper_output, "ok\n", 3);
 		return 2;
 	} else if (!strcmp(command, "rollback")) {
 		if (initialized) {
-			COMMON_HANDLING();
+			ENSURE_INIT();
 			cleanup();
 		}
 		write_or_die(helper_output, "ok\n", 3);
@@ -1096,15 +1081,14 @@ int maybe_handle_command(const char *command, struct string_list *args)
 	} else if (!strcmp(command, "commit")) {
 		struct branch *b;
 		char *arg;
-		COMMON_HANDLING();
+		ENSURE_INIT();
 		require_explicit_termination = 1;
-		arg = strdup(command_buf.buf + sizeof("commit"));
-		parse_new_commit(command_buf.buf + sizeof("commit"));
+		arg = args->items[0].string;
+		parse_new_commit(arg);
 		b = lookup_branch(arg);
 		write_or_die(helper_output, oid_to_hex(&b->oid), 40);
 		write_or_die(helper_output, "\n", 1);
 		maybe_reset_notes(arg);
-		free(arg);
 	} else if (!strcmp(command, "reset")) {
 		ENSURE_INIT();
 		do_reset(args);
@@ -1112,23 +1096,4 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		return 0;
 
 	return 1;
-}
-
-void record_command(struct strbuf *buf) {
-	struct recent_command *rc;
-	// Copied from fast-import.c's run_next_command.
-	rc = rc_free;
-	if (rc)
-		rc_free = rc->next;
-	else {
-		rc = cmd_hist.next;
-		cmd_hist.next = rc->next;
-		cmd_hist.next->prev = &cmd_hist;
-		free(rc->buf);
-	}
-	rc->buf = xstrndup(buf->buf, buf->len);
-	rc->prev = cmd_tail;
-	rc->next = cmd_hist.prev;
-	rc->prev->next = rc;
-	cmd_tail = rc;
 }
