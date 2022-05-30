@@ -5,6 +5,7 @@ static void cinnabar_unregister_shallow(const struct object_id *oid);
 #include <stdio.h>
 extern FILE *helper_input;
 #define stdin helper_input
+extern int helper_output;
 #include "dir.h"
 #define fspathncmp strncmp
 #include "fast-import.patched.c"
@@ -917,8 +918,8 @@ static void do_store(struct string_list *args)
 		} else {
 			die("Unknown metadata kind: %s", args->items[1].string);
 		}
-		write_or_die(cat_blob_fd, oid_to_hex(&result), 40);
-		write_or_die(cat_blob_fd, "\n", 1);
+		write_or_die(helper_output, oid_to_hex(&result), 40);
+		write_or_die(helper_output, "\n", 1);
 	} else if (!strcmp(args->items[0].string, "file") ||
 		   !strcmp(args->items[0].string, "manifest")) {
 		struct strbuf buf = STRBUF_INIT;
@@ -981,8 +982,8 @@ static void do_store(struct string_list *args)
 		}
 		store_object(OBJ_BLOB, &buf, NULL, &result, 0);
 		strbuf_release(&buf);
-		write_or_die(cat_blob_fd, oid_to_hex(&result), 40);
-		write_or_die(cat_blob_fd, "\n", 1);
+		write_or_die(helper_output, oid_to_hex(&result), 40);
+		write_or_die(helper_output, "\n", 1);
 	} else {
 		die("Unknown store kind: %s", args->items[0].string);
 	}
@@ -1076,14 +1077,14 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		COMMON_HANDLING();
 		require_explicit_termination = 0;
 		cleanup();
-		write_or_die(cat_blob_fd, "ok\n", 3);
+		write_or_die(helper_output, "ok\n", 3);
 		return 2;
 	} else if (!strcmp(command, "rollback")) {
 		if (initialized) {
 			COMMON_HANDLING();
 			cleanup();
 		}
-		write_or_die(cat_blob_fd, "ok\n", 3);
+		write_or_die(helper_output, "ok\n", 3);
 		return 2;
 	} else if (!strcmp(command, "set")) {
 		ENSURE_INIT();

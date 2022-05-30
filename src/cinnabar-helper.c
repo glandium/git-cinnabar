@@ -91,7 +91,7 @@ struct oidset hg2git_seen = OIDSET_INIT;
 int metadata_flags = 0;
 int cinnabar_check = CHECK_VERSION;
 FILE *helper_input;
-extern int cat_blob_fd;
+int helper_output;
 
 static int config(const char *name, struct strbuf *result)
 {
@@ -176,7 +176,7 @@ static void send_object(const struct object_id *oid)
 	strbuf_addf(&header, "%s %s %lu\n", oid_to_hex(oid), type_name(type),
 	            sz);
 
-	write_or_die(cat_blob_fd, header.buf, header.len);
+	write_or_die(helper_output, header.buf, header.len);
 
 	strbuf_release(&header);
 
@@ -188,7 +188,7 @@ static void send_object(const struct object_id *oid)
 		if (readlen <= 0)
 			break;
 
-		wrote = write_in_full(cat_blob_fd, buf, readlen);
+		wrote = write_in_full(helper_output, buf, readlen);
 		if (wrote < readlen)
 			break;
 
@@ -198,7 +198,7 @@ static void send_object(const struct object_id *oid)
 	if (sz != 0)
 		die("Failed to write object");
 
-	write_or_die(cat_blob_fd, "\n", 1);
+	write_or_die(helper_output, "\n", 1);
 
 	close_istream(st);
 }
@@ -217,8 +217,8 @@ static void do_cat_file(struct string_list *args)
 	return;
 
 not_found:
-	write_or_die(cat_blob_fd, NULL_NODE, 40);
-	write_or_die(cat_blob_fd, "\n", 1);
+	write_or_die(helper_output, NULL_NODE, 40);
+	write_or_die(helper_output, "\n", 1);
 }
 
 static void fill_ls_tree(const struct object_id *oid, struct strbuf *base,
@@ -306,11 +306,11 @@ static void do_ls_tree(struct string_list *args)
 	if (!iter_tree(&oid, fill_ls_tree, &buf, recursive))
 		goto not_found;
 
-	send_buffer(cat_blob_fd, &buf);
+	send_buffer(helper_output, &buf);
 	strbuf_release(&buf);
 	return;
 not_found:
-	write_or_die(cat_blob_fd, "0\n\n", 3);
+	write_or_die(helper_output, "0\n\n", 3);
 }
 
 static const char **string_list_to_argv(struct string_list *args)
@@ -405,7 +405,7 @@ static void do_rev_list(struct string_list *args)
 			commit->parents = copy_commit_list(parent);
 		}
 	}
-	send_buffer(cat_blob_fd, &buf);
+	send_buffer(helper_output, &buf);
 	strbuf_release(&buf);
 	rev_list_finish(revs);
 }
@@ -508,7 +508,7 @@ static void do_diff_tree(struct string_list *args)
 	diff_tree_(args->nr + 1, argv, strbuf_diff_tree, &buf);
 	free(argv);
 
-	send_buffer(cat_blob_fd, &buf);
+	send_buffer(helper_output, &buf);
 	strbuf_release(&buf);
 }
 
@@ -558,8 +558,8 @@ static void do_get_note(struct notes_tree *t, struct string_list *args)
 	return;
 
 not_found:
-	write_or_die(cat_blob_fd, NULL_NODE, 40);
-	write_or_die(cat_blob_fd, "\n", 1);
+	write_or_die(helper_output, NULL_NODE, 40);
+	write_or_die(helper_output, "\n", 1);
 }
 
 static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1)
@@ -624,14 +624,14 @@ static void do_hg2git(struct string_list *args)
 
 	note = resolve_hg2git(&oid, sha1_len);
 	if (note) {
-		write_or_die(cat_blob_fd, oid_to_hex(note), 40);
-		write_or_die(cat_blob_fd, "\n", 1);
+		write_or_die(helper_output, oid_to_hex(note), 40);
+		write_or_die(helper_output, "\n", 1);
 		return;
 	}
 
 not_found:
-	write_or_die(cat_blob_fd, NULL_NODE, 40);
-	write_or_die(cat_blob_fd, "\n", 1);
+	write_or_die(helper_output, NULL_NODE, 40);
+	write_or_die(helper_output, "\n", 1);
 }
 
 /* The git storage for a mercurial manifest uses not-entirely valid file modes
@@ -971,11 +971,11 @@ static void do_manifest(struct string_list *args)
 	if (!manifest)
 		goto not_found;
 
-	send_buffer(cat_blob_fd, manifest);
+	send_buffer(helper_output, manifest);
 	return;
 
 not_found:
-	write_or_die(cat_blob_fd, "0\n\n", 3);
+	write_or_die(helper_output, "0\n\n", 3);
 }
 
 static void get_manifest_oid(const struct commit *commit, struct hg_object_id *oid)
@@ -1083,10 +1083,10 @@ static void do_check_manifest(struct string_list *args)
 	if (manifest_oid != &oid && !hg_oideq(&stored, &hg_oid))
 		goto error;
 
-	write_or_die(cat_blob_fd, "ok\n", 3);
+	write_or_die(helper_output, "ok\n", 3);
 	return;
 error:
-	write_or_die(cat_blob_fd, "error\n", 6);
+	write_or_die(helper_output, "error\n", 6);
 }
 
 static void do_check_file(struct string_list *args)
@@ -1140,12 +1140,12 @@ static void do_check_file(struct string_list *args)
 		goto error;
 
 ok:
-	write_or_die(cat_blob_fd, "ok\n", 3);
+	write_or_die(helper_output, "ok\n", 3);
 	hg_file_release(&file);
 	return;
 
 error:
-	write_or_die(cat_blob_fd, "error\n", 6);
+	write_or_die(helper_output, "error\n", 6);
 	hg_file_release(&file);
 }
 
@@ -1174,7 +1174,7 @@ static void do_heads(struct string_list *args)
 
 	ensure_heads(heads);
 	oid_array_for_each_unique(heads, add_each_head, &heads_buf);
-	send_buffer(cat_blob_fd, &heads_buf);
+	send_buffer(helper_output, &heads_buf);
 	strbuf_release(&heads_buf);
 }
 
@@ -1405,8 +1405,8 @@ static void do_create_git_tree(struct string_list *args)
 	recurse_create_git_tree(get_commit_tree_oid(commit), ref_tree, NULL,
 	                        &oid, &git_tree_cache);
 
-	write_or_die(cat_blob_fd, oid_to_hex(&oid), 40);
-	write_or_die(cat_blob_fd, "\n", 1);
+	write_or_die(helper_output, oid_to_hex(&oid), 40);
+	write_or_die(helper_output, "\n", 1);
 	return;
 
 not_found:
@@ -1438,9 +1438,9 @@ static void do_seen(struct string_list *args)
 	}
 
 	if (seen)
-		write_or_die(cat_blob_fd, "yes\n", 4);
+		write_or_die(helper_output, "yes\n", 4);
 	else
-		write_or_die(cat_blob_fd, "no\n", 3);
+		write_or_die(helper_output, "no\n", 3);
 }
 
 struct dangling_data {
@@ -1497,7 +1497,7 @@ static void do_dangling(struct string_list *args)
 	ensure_notes(data.notes);
 	for_each_note(data.notes, 0, dangling_note, &data);
 
-	send_buffer(cat_blob_fd, &buf);
+	send_buffer(helper_output, &buf);
 	strbuf_release(&buf);
 }
 
@@ -1663,7 +1663,7 @@ static void do_reload(struct string_list *args)
 	reset_replace_map();
 	init_metadata();
 
-	write_or_die(cat_blob_fd, "ok\n", 3);
+	write_or_die(helper_output, "ok\n", 3);
 }
 
 int configset_add_value(struct config_set *, const char*, const char *);
@@ -1807,7 +1807,7 @@ int helper_main(int in, int out)
 {
 	struct strbuf buf = STRBUF_INIT;
 	helper_input = fdopen(in, "r");
-	cat_blob_fd = out;
+	helper_output = out;
 
 	while (strbuf_getline(&buf, helper_input) != EOF) {
 		struct string_list args = STRING_LIST_INIT_NODUP;

@@ -10,15 +10,6 @@ index 28d3193c38..2b3aeaa4d5 100644
  
  #define PACK_ID_BITS 16
  #define MAX_PACK_ID ((1<<PACK_ID_BITS)-1)
-@@ -257,7 +258,7 @@ static struct string_list sub_marks_to = STRING_LIST_INIT_DUP;
- static kh_oid_map_t *sub_oid_map;
- 
- /* Where to write output of cat-blob commands */
--static int cat_blob_fd = STDOUT_FILENO;
-+int cat_blob_fd = STDOUT_FILENO;
- 
- static void parse_argv(void);
- static void parse_get_mark(const char *p);
 @@ -746,7 +747,7 @@ static struct tree_content *dup_tree_content(struct tree_content *s)
  	return d;
  }
