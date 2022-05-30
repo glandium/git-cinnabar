@@ -1075,6 +1075,29 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
         ((reader1, writer2), thread)
     };
 
+    let (logging_fd, logging_thread) = {
+        let (reader, writer) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
+        let writer = writer.dup_inheritable();
+        extra_env.push(("GIT_CINNABAR_LOG_FD", format!("{}", writer)));
+        let thread = spawn(move || {
+            let reader = BufReader::new(reader);
+            for line in reader.lines() {
+                if let Some([level, target, msg]) = line.unwrap().splitn_exact(' ') {
+                    let level = match level {
+                        "CRITICAL" => log::Level::Error,
+                        "ERROR" => log::Level::Error,
+                        "WARNING" => log::Level::Warn,
+                        "INFO" => log::Level::Info,
+                        "DEBUG" => log::Level::Debug,
+                        _ => log::Level::Trace,
+                    };
+                    log!(target: target, level, "{}", msg);
+                }
+            }
+        });
+        (writer, thread)
+    };
+
     let mut child = python
         .arg("-c")
         .arg(bootstrap)
@@ -1086,6 +1109,7 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
         .map_err(|e| format!("Failed to start python: {}", e))?;
     drop(wire_fds);
     drop(import_fds);
+    drop(logging_fd);
     drop(reader);
 
     let sent_data = if let Some(mut writer) = writer {
@@ -1107,6 +1131,7 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
     };
     drop(wire_thread);
     drop(import_thread);
+    drop(logging_thread);
     sent_data
         .map(|_| 0)
         .map_err(|e| format!("Failed to communicate with python: {}", e))

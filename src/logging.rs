@@ -98,6 +98,8 @@ impl CinnabarLogger {
         let mut output_by_path = HashMap::new();
         let mut default_level = LevelFilter::Warn;
 
+        // Initialize logging from the GIT_CINNABAR_LOG environment variable
+        // or the cinnabar.log configuration, the former taking precedence.
         if let Some(config) =
             std::env::var_os("GIT_CINNABAR_LOG").or_else(|| config_get_value("cinnabar.log"))
         {
@@ -200,7 +202,7 @@ impl log::Log for CinnabarLogger {
                 .copied()
                 .unwrap_or(0);
             if let Some(mut output) = self.outputs.get(index) {
-                let mut line = Vec::new();
+                let mut line = vec![b'\r'];
                 if record.level() > log::Level::Warn {
                     write!(line, "{:.3} ", self.start_time.elapsed().as_secs_f32()).ok();
                 }

@@ -30,74 +30,33 @@ from weakref import WeakKeyDictionary
 from cinnabar.exceptions import Abort
 
 
-def gen_handler(cls):
-    class Handler(cls):
-        def __init__(self, start_time, *args):
-            super(Handler, self).__init__(*args)
-            self._start_time = start_time
-
-        def emit(self, record):
-            record.timestamp = record.created - self._start_time
-            super(Handler, self).emit(record)
-    return Handler
-
-
-StreamHandler = gen_handler(logging.StreamHandler)
-FileHandler = gen_handler(logging.FileHandler)
-
-
-class Formatter(logging.Formatter):
-    def __init__(self):
-        super(Formatter, self).__init__(
-            '\r%(timestamp).3f %(levelname)s [%(name)s] %(message)s')
-        self._root_formatter = logging.Formatter('\r%(levelname)s %(message)s')
-        self._no_timestamp_formatter = logging.Formatter(
-            '\r%(levelname)s [%(name)s] %(message)s')
-
-    def format(self, record):
-        if record.name == 'root':
-            return self._root_formatter.format(record)
-        if record.levelno >= logging.WARNING:
-            return self._no_timestamp_formatter.format(record)
-        return super(Formatter, self).format(record)
-
-
 def init_logging():
-    # Initialize logging from the GIT_CINNABAR_LOG environment variable
-    # or the cinnabar.log configuration, the former taking precedence.
-    # Still read the configuration to force the git config cache being
-    # filled before logging is setup, so that the output of
-    # `git config -l` is never logged.
     from cinnabar.git import Git
     logger = logging.getLogger()
-    start_time = time.time()
-    handler = StreamHandler(start_time)
-    formatter = Formatter()
-    handler.setFormatter(formatter)
+    fd = int(os.environ["GIT_CINNABAR_LOG_FD"])
+    if sys.platform == 'win32':
+        import msvcrt
+        fd = msvcrt.open_osfhandle(fd, os.O_WRONLY)
+    handler = logging.StreamHandler(os.fdopen(fd, 'w'))
+    handler.setFormatter(logging.Formatter(
+        "%(levelname)s %(name)s %(message)s"))
     logger.addHandler(handler)
     log_conf = Git.config('cinnabar.log') or b''
     if not log_conf and not check_enabled('memory') and \
             not check_enabled('cpu'):
         return
-    file_handlers = {}
     for assignment in log_conf.split(b','):
         try:
             assignment, _, path = assignment.partition(b'>')
+            # path is handled by the rust end.
             name, _, value = assignment.partition(b':')
             name = name.decode('ascii')
             if name == '*':
                 name = ''
-            if path and path not in file_handlers:
-                file_handlers[path] = FileHandler(start_time, path)
-                file_handlers[path].setFormatter(formatter)
-            if path or value:
+            if value:
                 logger = logging.getLogger(name)
-                if value:
-                    logger.setLevel(
-                        max(logging.DEBUG, logging.FATAL - int(value) * 10))
-                if path:
-                    logger.propagate = False
-                    logger.addHandler(file_handlers[path])
+                logger.setLevel(
+                    max(logging.DEBUG, logging.FATAL - int(value) * 10))
         except Exception:
             pass
 
