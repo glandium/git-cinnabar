@@ -386,12 +386,8 @@ class GitHgHelper(BaseHelper):
             _from = NULL_NODE_ID
             merges = parents
             if from_commit:
-                with self.query(b'ls', from_commit, b'') as stdout:
-                    line = stdout.readline()
-                    if line.startswith(b'missing '):
-                        from_tree = None
-                    else:
-                        mode, typ, from_tree, path = split_ls_tree(line[:-1])
+                from cinnabar.githg import GitCommit
+                from_tree = GitCommit(from_commit).tree
 
         helper = CommitHelper()
         helper.write(b'mark :1\n')

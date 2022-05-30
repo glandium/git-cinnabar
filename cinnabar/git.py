@@ -98,10 +98,11 @@ class Git(object):
                 else:
                     yield mode, typ, sha1, p
         else:
-            with GitHgHelper.query(b'ls', treeish, path) as stdout:
-                line = stdout.readline()
-                if not line.startswith(b'missing '):
-                    yield split_ls_tree(line[:-1])
+            base, _, path = path.rpartition(b'/')
+            for line in GitHgHelper.ls_tree(b'%s:%s' % (treeish, base)):
+                mode, typ, sha1, p = line
+                if p == path:
+                    yield mode, typ, sha1, p
 
     @classmethod
     def update_ref(self, ref, newvalue):

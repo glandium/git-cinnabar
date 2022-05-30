@@ -1086,7 +1086,7 @@ class GitHgStore(object):
 
     def store_manifest(self, instance):
         if getattr(instance, 'delta_node', NULL_NODE_ID) != NULL_NODE_ID:
-            previous = b':h%s' % instance.delta_node
+            previous = GitHgHelper.hg2git(instance.delta_node)
         else:
             previous = None
         parents = tuple(b':h%s' % p for p in instance.parents)
