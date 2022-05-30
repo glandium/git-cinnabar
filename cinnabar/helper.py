@@ -353,7 +353,7 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def update_ref(self, ref, newvalue):
-        with self.query(b'reset', b'%s\nfrom %s\n' % (ref, newvalue)):
+        with self.query(b'reset', ref, newvalue):
             self._helper.stdin.flush()
 
     @classmethod

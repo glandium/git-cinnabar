@@ -1084,6 +1084,33 @@ const struct object_id *ensure_empty_blob() {
 	return &empty_blob;
 }
 
+static void do_reset(struct string_list *args) {
+	struct branch *b;
+	struct object_id oid;
+
+	if (args->nr != 2)
+		die("reset needs 2 arguments");
+
+	b = lookup_branch(args->items[0].string);
+	if (b) {
+		oidclr(&b->oid);
+		oidclr(&b->branch_tree.versions[0].oid);
+		oidclr(&b->branch_tree.versions[1].oid);
+		if (b->branch_tree.tree) {
+			release_tree_content_recursive(b->branch_tree.tree);
+			b->branch_tree.tree = NULL;
+		}
+	} else {
+		b = new_branch(args->items[0].string);
+	}
+	if (get_sha1_hex(args->items[1].string, b->oid.hash))
+		die("Invalid sha1");
+	parse_from_existing(b);
+	if (is_null_oid(&b->oid))
+		b->delete = 1;
+	maybe_reset_notes(args->items[0].string);
+}
+
 int maybe_handle_command(const char *command, struct string_list *args)
 {
 #define COMMON_HANDLING() do { \
@@ -1120,12 +1147,8 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		maybe_reset_notes(arg);
 		free(arg);
 	} else if (!strcmp(command, "reset")) {
-		char *arg;
-		COMMON_HANDLING();
-		arg = strdup(command_buf.buf + sizeof("reset"));
-		parse_reset_branch(command_buf.buf + sizeof("reset"));
-		maybe_reset_notes(arg);
-		free(arg);
+		ENSURE_INIT();
+		do_reset(args);
 	} else if (!strcmp(command, "get-mark")) {
 		COMMON_HANDLING();
 		parse_get_mark(command_buf.buf + sizeof("get_mark"));
