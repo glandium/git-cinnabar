@@ -1093,19 +1093,20 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		require_explicit_termination = 1;
 		do_store(args);
 	} else if (!strcmp(command, "commit")) {
+		struct branch *b;
 		char *arg;
 		COMMON_HANDLING();
 		require_explicit_termination = 1;
 		arg = strdup(command_buf.buf + sizeof("commit"));
 		parse_new_commit(command_buf.buf + sizeof("commit"));
+		b = lookup_branch(arg);
+		write_or_die(helper_output, oid_to_hex(&b->oid), 40);
+		write_or_die(helper_output, "\n", 1);
 		maybe_reset_notes(arg);
 		free(arg);
 	} else if (!strcmp(command, "reset")) {
 		ENSURE_INIT();
 		do_reset(args);
-	} else if (!strcmp(command, "get-mark")) {
-		COMMON_HANDLING();
-		parse_get_mark(command_buf.buf + sizeof("get_mark"));
 	} else
 		return 0;
 

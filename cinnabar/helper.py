@@ -357,13 +357,6 @@ class GitHgHelper(BaseHelper):
             self._helper.stdin.flush()
 
     @classmethod
-    def _get_last(self):
-        with self.query(b'get-mark', b':1') as stdout:
-            sha1 = stdout.read(41)
-            assert sha1[-1:] == b'\n'
-            return sha1[:40]
-
-    @classmethod
     def put_blob(self, data=b''):
         with self.query(b'store', b'blob', b'%d' % len(data)) as stdout:
             self._helper.stdin.write(data)
@@ -390,7 +383,6 @@ class GitHgHelper(BaseHelper):
                 from_tree = GitCommit(from_commit).tree
 
         helper = CommitHelper()
-        helper.write(b'mark :1\n')
         # TODO: properly handle errors, like from the committer being badly
         # formatted.
         if author:
@@ -410,8 +402,9 @@ class GitHgHelper(BaseHelper):
         with self.query(b'commit', ref) as stdout:
             stdout.write(helper.flush_buffer())
             stdout.flush()
-
-        helper.sha1 = self._get_last()
+            sha1 = stdout.read(41)
+            assert sha1[-1:] == b'\n'
+            helper.sha1 = sha1[:40]
 
     @classmethod
     def close(self, rollback=True, on_atexit=False):
