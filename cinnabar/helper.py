@@ -357,17 +357,6 @@ class GitHgHelper(BaseHelper):
             self._helper.stdin.flush()
 
     @classmethod
-    def cat_blob(self, ref):
-        with self.query(b'cat-blob', ref) as stdout:
-            sha1, blob, size = stdout.readline().split()
-            assert blob == b'blob'
-            size = int(size)
-            content = stdout.read(size)
-            lf = stdout.read(1)
-            assert lf == b'\n'
-            return content
-
-    @classmethod
     def _get_last(self):
         with self.query(b'get-mark', b':1') as stdout:
             sha1 = stdout.read(41)

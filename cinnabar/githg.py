@@ -982,7 +982,8 @@ class GitHgStore(object):
         if sha1 == HG_EMPTY_FILE:
             content = b''
         else:
-            content = GitHgHelper.cat_blob(b':h%s' % sha1)
+            gitsha1 = GitHgHelper.hg2git(sha1)
+            content = GitHgHelper.cat_file(b'blob', gitsha1)
 
         file = File(sha1)
         meta = self.file_meta(sha1)
