@@ -251,52 +251,6 @@ const struct object_id empty_tree = { {
 	0xe5, 0x4b, 0xf8, 0xd6, 0x92, 0x88, 0xfb, 0xee, 0x49, 0x04,
 }, GIT_HASH_SHA1 };
 
-/* Override fast-import.c's parse_mark_ref to allow a syntax for
- * mercurial sha1s, resolved through hg2git. Hack: it uses a fixed
- * mark for this: 2.
- * The added syntax is: :h<sha1>[:path]
- * With :path, a tree is returned. */
-static uintmax_t parse_mark_ref(const char *p, char **endptr)
-{
-	struct hg_object_id oid;
-	struct object_id git_oid;
-	const struct object_id *note;
-	struct object_entry *e;
-
-	assert(*p == ':');
-	if (p[1] != 'h')
-		return real_parse_mark_ref(p, endptr);
-	if (get_sha1_hex(p + 2, oid.hash))
-		die("Invalid sha1");
-
-	ensure_notes(&hg2git);
-	note = get_note_hg(&hg2git, &oid);
-	*endptr = (char *)p + 42;
-	if (**endptr == ':') {
-		char *path_end = strpbrk(++(*endptr), " \n");
-		if (path_end) {
-			unsigned short mode;
-			char *path = xstrndup(*endptr, path_end - *endptr);
-			if (!get_tree_entry(the_repository, note, path,
-			                    &git_oid, &mode))
-				note = &git_oid;
-			else
-				note = &empty_tree;
-			free(path);
-			*endptr = path_end;
-		}
-	}
-	e = find_object((struct object_id *)note);
-	if (!e) {
-		e = insert_object((struct object_id *)note);
-		e->type = oid_object_info(the_repository, note, NULL);
-		e->pack_id = MAX_PACK_ID;
-		e->idx.offset = 1;
-	}
-	insert_mark(&marks, 2, e);
-	return 2;
-}
-
 /* Fill fast-import.c's command_buf with what was last recorded with
  * record_command. */
 static void fill_command_buf()

@@ -1040,7 +1040,7 @@ class GitHgStore(object):
             else:
                 committer = author
 
-            parents = tuple(b':h%s' % p for p in instance.parents)
+            parents = tuple(GitHgHelper.hg2git(p) for p in instance.parents)
 
             body = instance.body
 
@@ -1089,7 +1089,7 @@ class GitHgStore(object):
             previous = GitHgHelper.hg2git(instance.delta_node)
         else:
             previous = None
-        parents = tuple(b':h%s' % p for p in instance.parents)
+        parents = tuple(GitHgHelper.hg2git(p) for p in instance.parents)
         with GitHgHelper.commit(
             ref=b'refs/cinnabar/manifests',
             from_commit=previous,
