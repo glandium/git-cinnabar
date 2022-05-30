@@ -907,10 +907,10 @@ def run(func, args):
         else:
             logging.error(os.fsdecode(message))
 
-            sys.stderr.write(
+            logging.getLogger('stderr').error(
                 'Run the command again with '
                 '`git -c cinnabar.check=traceback <command>` to see the '
-                'full traceback.\n')
+                'full traceback.')
     finally:
         if check_enabled('memory') or check_enabled('cpu'):
             reporter.shutdown()
