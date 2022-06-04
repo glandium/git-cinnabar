@@ -3,11 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::iter::{repeat, IntoIterator};
 use std::mem;
 
-use bstr::ByteSlice;
+use bstr::{BStr, ByteSlice};
 use derive_more::{Deref, Display};
 use getset::Getters;
 use itertools::Itertools;
@@ -137,53 +138,45 @@ impl<'a> ParsedGitChangesetMetadata<'a> {
 }
 
 pub struct ChangesetExtra<'a> {
-    buf: &'a [u8],
-    more: Vec<(&'a [u8], &'a [u8])>,
+    data: BTreeMap<&'a BStr, &'a BStr>,
 }
 
 impl<'a> ChangesetExtra<'a> {
     fn from(buf: &'a [u8]) -> Self {
-        ChangesetExtra {
-            buf,
-            more: Vec::new(),
+        if buf.is_empty() {
+            ChangesetExtra::new()
+        } else {
+            ChangesetExtra {
+                data: buf
+                    .split(|&c| c == b'\0')
+                    .map(|a| {
+                        let [k, v] = a.splitn_exact(b':').unwrap();
+                        (k.as_bstr(), v.as_bstr())
+                    })
+                    .collect(),
+            }
         }
     }
 
     pub fn new() -> Self {
         ChangesetExtra {
-            buf: &b""[..],
-            more: Vec::new(),
+            data: BTreeMap::new(),
         }
     }
 
     pub fn set(&mut self, name: &'a [u8], value: &'a [u8]) {
-        for (n, v) in &mut self.more {
-            if name == *n {
-                *v = value;
-                return;
-            }
-        }
-        self.more.push((name, value));
+        self.data.insert(name.as_bstr(), value.as_bstr());
     }
 
     pub fn dump_into(&self, buf: &mut Vec<u8>) {
         for b in Itertools::intersperse(
-            self.buf
-                .split(|c| *c == b'\0')
-                .merge_join_by(&self.more, |e, (n, _v)| {
-                    e.splitn_exact::<2>(b':').map_or(*e, |e| e[0]).cmp(n)
-                })
-                .map(|e| {
-                    e.map_left(Cow::Borrowed)
-                        .map_right(|(n, v)| {
-                            let mut buf = Vec::new();
-                            buf.extend_from_slice(n);
-                            buf.extend_from_slice(&b": "[..]);
-                            buf.extend_from_slice(v);
-                            Cow::Owned(buf)
-                        })
-                        .reduce(|_, y| y)
-                }),
+            self.data.iter().map(|(&k, &v)| {
+                let mut buf = Vec::new();
+                buf.extend_from_slice(k);
+                buf.push(b':');
+                buf.extend_from_slice(v);
+                Cow::Owned(buf)
+            }),
             Cow::Borrowed(&b"\0"[..]),
         ) {
             buf.extend_from_slice(&b);
@@ -191,6 +184,25 @@ impl<'a> ChangesetExtra<'a> {
     }
 }
 
+#[test]
+fn test_changeset_extra() {
+    let mut extra = ChangesetExtra::new();
+    extra.set(b"foo", b"bar");
+    extra.set(b"bar", b"qux");
+    let mut result = Vec::new();
+    extra.dump_into(&mut result);
+    assert_eq!(result.as_bstr(), b"bar:qux\0foo:bar".as_bstr());
+
+    let mut extra = ChangesetExtra::from(&result);
+    let mut result2 = Vec::new();
+    extra.dump_into(&mut result2);
+    assert_eq!(result.as_bstr(), result2.as_bstr());
+
+    extra.set(b"aaaa", b"bbbb");
+    result2.truncate(0);
+    extra.dump_into(&mut result2);
+    assert_eq!(result2.as_bstr(), b"aaaa:bbbb\0bar:qux\0foo:bar".as_bstr());
+}
 pub struct ChangesetFilesIter<'a>(Option<&'a [u8]>);
 
 impl<'a> Iterator for ChangesetFilesIter<'a> {
