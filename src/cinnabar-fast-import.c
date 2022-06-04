@@ -437,11 +437,7 @@ static void do_set(struct string_list *args)
 	if (get_sha1_hex(args->items[1].string, hg_id.hash))
 		die("Invalid sha1");
 
-	if (args->items[2].string[0] == ':') {
-		uintmax_t mark = parse_mark_ref_eol(args->items[2].string);
-		struct object_entry *oe = find_mark(marks, mark);
-		oidcpy(&git_id, &oe->idx.oid);
-	} else if (get_oid_hex(args->items[2].string, &git_id))
+	if (get_oid_hex(args->items[2].string, &git_id))
 		die("Invalid sha1");
 
 	if (notes == &git2hg) {
