@@ -4,12 +4,12 @@
 
 use std::io::Write;
 use std::ops::Deref;
-use std::os::raw::{c_char, c_int};
+use std::os::raw::{c_char, c_int, c_void};
 
 use libc::FILE;
 
 use crate::libc::FdFile;
-use crate::libgit::{child_process, get_note, notes_tree, object_id, strbuf};
+use crate::libgit::{child_process, object_id, strbuf};
 use crate::oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 
 #[allow(non_camel_case_types)]
@@ -44,29 +44,45 @@ impl From<hg_object_id> for HgObjectId {
     }
 }
 
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct cinnabar_notes_tree {
+    root: *mut c_void,
+    // ...
+}
+
 extern "C" {
     pub static mut git2hg: git_notes_tree;
     pub static mut hg2git: hg_notes_tree;
     pub static mut files_meta: hg_notes_tree;
 
-    fn ensure_notes(t: *mut notes_tree);
+    fn ensure_notes(t: *mut cinnabar_notes_tree);
 
-    fn get_note_hg(notes: *mut notes_tree, oid: *const hg_object_id) -> *const object_id;
+    fn cinnabar_get_note(
+        notes: *mut cinnabar_notes_tree,
+        oid: *const object_id,
+    ) -> *const object_id;
 
-    fn resolve_hg(t: *mut notes_tree, oid: *const hg_object_id, len: usize) -> *const object_id;
+    fn get_note_hg(notes: *mut cinnabar_notes_tree, oid: *const hg_object_id) -> *const object_id;
+
+    fn resolve_hg(
+        t: *mut cinnabar_notes_tree,
+        oid: *const hg_object_id,
+        len: usize,
+    ) -> *const object_id;
 
     pub fn generate_manifest(oid: *const object_id) -> *const strbuf;
 }
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
-pub struct git_notes_tree(notes_tree);
+pub struct git_notes_tree(cinnabar_notes_tree);
 
 impl git_notes_tree {
     pub fn get_note(&mut self, oid: &GitObjectId) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
-            get_note(&mut self.0, &oid.into())
+            cinnabar_get_note(&mut self.0, &oid.into())
                 .as_ref()
                 .cloned()
                 .map(Into::into)
@@ -76,7 +92,7 @@ impl git_notes_tree {
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
-pub struct hg_notes_tree(notes_tree);
+pub struct hg_notes_tree(cinnabar_notes_tree);
 
 impl hg_notes_tree {
     pub fn get_note(&mut self, oid: &HgObjectId) -> Option<GitObjectId> {

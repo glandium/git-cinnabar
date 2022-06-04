@@ -386,20 +386,12 @@ impl RawCommit {
     }
 }
 
-#[repr(C)]
-pub struct notes_tree {
-    root: *mut c_void,
-    oid: object_id,
-}
-
 extern "C" {
     pub static mut the_repository: *mut repository;
 
     fn repo_get_oid_committish(r: *mut repository, s: *const c_char, oid: *mut object_id) -> c_int;
 
     fn repo_lookup_replace_object(r: *mut repository, oid: *const object_id) -> *const object_id;
-
-    pub fn get_note(t: *mut notes_tree, oid: *const object_id) -> *const object_id;
 }
 
 pub fn get_oid_committish(s: &[u8]) -> Option<CommitId> {
