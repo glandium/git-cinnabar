@@ -1655,7 +1655,6 @@ static void do_reload(struct string_list *args)
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
 
 	oid_array_clear(&manifest_heads);
-	oid_array_clear(&changeset_heads);
 
 	dump_branches();
 

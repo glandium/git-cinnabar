@@ -23,7 +23,7 @@ extern int metadata_flags;
 
 extern int cinnabar_check;
 
-extern struct oid_array changeset_heads, manifest_heads;
+extern struct oid_array manifest_heads;
 
 void ensure_heads(struct oid_array *heads);
 

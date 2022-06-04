@@ -275,7 +275,6 @@ void maybe_reset_notes(const char *branch)
 	}
 }
 
-struct oid_array changeset_heads = OID_ARRAY_INIT;
 struct oid_array manifest_heads = OID_ARRAY_INIT;
 int manifest_heads_dirty = 0;
 
@@ -310,9 +309,7 @@ void ensure_heads(struct oid_array *heads)
 		return;
 
 	heads->sorted = 1;
-	if (heads == &changeset_heads)
-		c = lookup_commit_reference_by_name(CHANGESETS_REF);
-	else if (heads == &manifest_heads)
+	if (heads == &manifest_heads)
 		c = lookup_commit_reference_by_name(MANIFESTS_REF);
 	if (c) {
 		const char *msg = get_commit_buffer(c, NULL);
