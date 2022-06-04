@@ -326,7 +326,9 @@ class GitHgHelper(BaseHelper):
     def heads(self, what):
         with self.query(b'heads', what) as stdout:
             data = self._read_data(stdout)
-            return data.split()
+            if what == b'manifests':
+                return data.split()
+            return (l.split() for l in data.splitlines())
 
     @classmethod
     def reset_heads(self, what):

@@ -29,7 +29,6 @@ from cinnabar.util import (
     ConfigSetFunc,
     IOLogger,
     strip_suffix,
-    VersionedDict,
 )
 import cinnabar.util
 
@@ -248,15 +247,17 @@ class GitRemoteHelper(BaseRemoteHelper):
                 }
                 new_heads = set(h for h in branchmap.heads()
                                 if h not in branchmap.unknown_heads())
-                for status, head, (branch, _) in \
-                        self._store._hgheads.iterchanges():
-                    branch_heads = new_branchmap.get(branch)
-                    if status == VersionedDict.REMOVED:
+                heads = dict(GitHgHelper.heads(b'changesets'))
+                for head, branch in self._store._hgheads_orig.items():
+                    if head not in heads:
+                        branch_heads = new_branchmap.get(branch)
                         if branch_heads and head in branch_heads:
                             branch_heads.remove(head)
                         if head in new_heads:
                             new_heads.remove(head)
-                    else:
+                for head, branch in heads.items():
+                    if head not in self._store._hgheads_orig:
+                        branch_heads = new_branchmap.get(branch)
                         if not branch_heads:
                             branch_heads = new_branchmap[branch] = set()
                         branch_heads.add(head)

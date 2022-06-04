@@ -1158,19 +1158,24 @@ static int add_each_head(const struct object_id *oid, void *data)
 	return 0;
 }
 
+extern void changeset_heads(int);
+
 static void do_heads(struct string_list *args)
 {
 	//XXX: Should use hg specific oid array.
-        struct oid_array *heads = NULL;
-        struct strbuf heads_buf = STRBUF_INIT;
+	struct oid_array *heads = NULL;
+	struct strbuf heads_buf = STRBUF_INIT;
 
-        if (args->nr != 1)
-                die("heads needs 1 argument");
+	if (args->nr != 1)
+		die("heads needs 1 argument");
 
-        if (!strcmp(args->items[0].string, "manifests")) {
-                heads = &manifest_heads;
-        } else
-                die("Unknown kind: %s", args->items[0].string);
+	if (!strcmp(args->items[0].string, "manifests")) {
+		heads = &manifest_heads;
+	} else if (!strcmp(args->items[0].string, "changesets")) {
+		changeset_heads(helper_output);
+		return;
+	} else
+		die("Unknown kind: %s", args->items[0].string);
 
 	ensure_heads(heads);
 	oid_array_for_each_unique(heads, add_each_head, &heads_buf);
@@ -1635,6 +1640,8 @@ upgrade:
 
 void dump_branches(void);
 
+extern void reset_changeset_heads();
+
 static void do_reload(struct string_list *args)
 {
         if (args->nr != 0)
@@ -1661,6 +1668,7 @@ static void do_reload(struct string_list *args)
 	metadata_flags = 0;
 	reset_replace_map();
 	init_metadata();
+	reset_changeset_heads();
 
 	write_or_die(helper_output, "ok\n", 3);
 }

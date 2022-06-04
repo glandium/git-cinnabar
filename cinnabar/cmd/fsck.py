@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import re
@@ -578,11 +579,16 @@ def fsck(args):
             for head in computed_heads[branch] - stored_heads:
                 status.fix('Adding missing head %s in branch %s' %
                            (head.decode('ascii'), os.fsdecode(branch)))
-                store.add_head(head)
+                blob = GitHgHelper.git2hg(head)
+                assert blob
+                h = hashlib.sha1(b'blob %d\0' % len(blob))
+                h.update(blob)
+                sha1 = h.hexdigest().encode('ascii')
+                GitHgHelper.set(b'changeset-head', head, sha1)
             for head in stored_heads - computed_heads[branch]:
                 status.fix('Removing non-head reference to %s in branch %s' %
                            (head.decode('ascii'), os.fsdecode(branch)))
-                del store._hgheads[head]
+                GitHgHelper.set(b'changeset-head', head, NULL_NODE_ID)
 
     metadata_commit = Git.resolve_ref('refs/cinnabar/metadata')
     if status('broken'):

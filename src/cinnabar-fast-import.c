@@ -425,6 +425,8 @@ static void do_set_replace(struct string_list *args)
 	}
 }
 
+extern add_changeset_head(struct hg_object_id *cs, struct object_id *meta);
+
 static void do_set(struct string_list *args)
 {
 	enum object_type type;
@@ -433,6 +435,7 @@ static void do_set(struct string_list *args)
 	struct oid_array *heads = NULL;
 	struct notes_tree *notes = &hg2git;
 	int is_changeset = 0;
+	int is_head = 0;
 
 	if (args->nr != 3)
 		die("set needs 3 arguments");
@@ -449,6 +452,8 @@ static void do_set(struct string_list *args)
 	} else if (!strcmp(args->items[0].string, "changeset-metadata")) {
 		type = OBJ_BLOB;
 		notes = &git2hg;
+	} else if (!strcmp(args->items[0].string, "changeset-head")) {
+		is_head = 1;
 	} else if (!strcmp(args->items[0].string, "file-meta")) {
 		type = OBJ_BLOB;
 		notes = &files_meta;
@@ -465,6 +470,10 @@ static void do_set(struct string_list *args)
 	if (get_oid_hex(args->items[2].string, &git_id))
 		die("Invalid sha1");
 
+	if (is_head) {
+		add_changeset_head(&hg_id, &git_id);
+		return;
+	}
 	if (notes == &git2hg) {
 		const struct object_id *note;
 		ensure_notes(&hg2git);

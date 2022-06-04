@@ -7,17 +7,23 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::iter::{repeat, IntoIterator};
 use std::mem;
+use std::os::raw::c_int;
+use std::sync::Mutex;
 
-use bstr::{BStr, ByteSlice};
+use bstr::{BStr, BString, ByteSlice};
 use derive_more::{Deref, Display};
 use getset::Getters;
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use percent_encoding::percent_decode;
 
 use crate::hg_data::Authorship;
-use crate::libcinnabar::{generate_manifest, git2hg, hg2git};
-use crate::libgit::{BlobId, CommitId, RawBlob, RawCommit};
-use crate::oid::{HgObjectId, ObjectId};
+use crate::libc::FdFile;
+use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
+use crate::libgit::{
+    get_oid_committish, lookup_replace_commit, object_id, BlobId, CommitId, RawBlob, RawCommit,
+};
+use crate::oid::{GitObjectId, HgObjectId, ObjectId};
 use crate::oid_type;
 use crate::util::{FromBytes, ImmutBString, SliceExt, ToBoxed};
 use crate::xdiff::{apply, PatchInfo};
@@ -162,6 +168,10 @@ impl<'a> ChangesetExtra<'a> {
         ChangesetExtra {
             data: BTreeMap::new(),
         }
+    }
+
+    pub fn get(&self, name: &'a [u8]) -> Option<&'a [u8]> {
+        self.data.get(name.as_bstr()).map(|b| &***b)
     }
 
     pub fn set(&mut self, name: &'a [u8], value: &'a [u8]) {
@@ -350,4 +360,104 @@ impl RawHgFile {
         result.extend_from_slice(RawBlob::read(oid)?.as_bytes());
         Some(Self(result.into()))
     }
+}
+
+#[derive(Debug)]
+struct ChangesetHeads {
+    generation: usize,
+    heads: BTreeMap<HgChangesetId, (BString, usize)>,
+}
+
+impl ChangesetHeads {
+    fn new() -> Self {
+        get_oid_committish(b"refs/cinnabar/metadata^1").map_or_else(
+            || ChangesetHeads {
+                generation: 0,
+                heads: BTreeMap::new(),
+            },
+            |cid| {
+                let commit = RawCommit::read(&cid).unwrap();
+                let commit = commit.parse().unwrap();
+                let heads = commit
+                    .body()
+                    .lines()
+                    .enumerate()
+                    .map(|(n, l)| {
+                        let [h, b] = l.splitn_exact(b' ').unwrap();
+                        (HgChangesetId::from_bytes(h).unwrap(), (BString::from(b), n))
+                    })
+                    .collect::<BTreeMap<_, _>>();
+                ChangesetHeads {
+                    generation: heads.len(),
+                    heads,
+                }
+            },
+        )
+    }
+}
+
+static CHANGESET_HEADS: Lazy<Mutex<ChangesetHeads>> =
+    Lazy::new(|| Mutex::new(ChangesetHeads::new()));
+
+#[no_mangle]
+pub unsafe extern "C" fn add_changeset_head(cs: *const hg_object_id, oid: *const object_id) {
+    let cs = HgChangesetId::from_unchecked(HgObjectId::from(cs.as_ref().unwrap().clone()));
+
+    // Because we don't keep track of many of these things in the rust side right now,
+    // we do extra work here. Eventually, this will be simplified.
+    let mut heads = CHANGESET_HEADS.lock().unwrap();
+    let oid = GitObjectId::from(oid.as_ref().unwrap().clone());
+    if oid == GitObjectId::null() {
+        heads.heads.remove(&cs);
+    } else {
+        let blob = BlobId::from_unchecked(oid);
+        let cs_meta = GitChangesetMetadata(RawBlob::read(&blob).unwrap());
+        let meta = cs_meta.parse().unwrap();
+        assert_eq!(meta.changeset_id, cs);
+        let branch = meta
+            .extra()
+            .and_then(|e| e.get(b"branch"))
+            .unwrap_or(b"default");
+        let cid = cs.to_git().unwrap();
+        let commit = RawCommit::read(&cid).unwrap();
+        let commit = commit.parse().unwrap();
+        for parent in commit.parents() {
+            let parent = lookup_replace_commit(parent);
+            let parent_cs_meta =
+                GitChangesetMetadata::read(&GitChangesetId::from_unchecked(parent.into_owned()))
+                    .unwrap();
+            let parent_meta = parent_cs_meta.parse().unwrap();
+            let parent_branch = parent_meta
+                .extra()
+                .and_then(|e| e.get(b"branch"))
+                .unwrap_or(b"default");
+            if parent_branch == branch {
+                if let Some((b, _)) = heads.heads.get(&parent_meta.changeset_id) {
+                    assert_eq!(b.as_bstr(), parent_branch.as_bstr());
+                    heads.heads.remove(&parent_meta.changeset_id);
+                }
+            }
+        }
+        let generation = heads.generation;
+        heads.generation += 1;
+        heads.heads.insert(cs, (BString::from(branch), generation));
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn changeset_heads(output: c_int) {
+    let mut output = FdFile::from_raw_fd(output);
+    let heads = CHANGESET_HEADS.lock().unwrap();
+
+    let mut buf = Vec::new();
+    for (_, h, b) in heads.heads.iter().map(|(h, (b, g))| (g, h, b)).sorted() {
+        writeln!(buf, "{} {}", h, b).ok();
+    }
+    send_buffer_to(&*buf, &mut output);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn reset_changeset_heads() {
+    let mut heads = CHANGESET_HEADS.lock().unwrap();
+    *heads = ChangesetHeads::new();
 }

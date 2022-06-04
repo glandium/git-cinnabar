@@ -564,8 +564,7 @@ class GitHgStore(object):
         self._closed = False
         self._graft = None
 
-        self._hgheads = VersionedDict()
-        self._branches = {}
+        self._hgheads_orig = {}
 
         self._replace = Git._replace
         self._tagcache_ref = None
@@ -613,17 +612,8 @@ class GitHgStore(object):
         self._has_metadata = bool(metadata)
         self._metadata_refs = refs if metadata else {}
         self._manifest_heads_orig = set()
-        self._generation = 0
         if metadata:
-            changesets_ref = self._metadata_refs.get(
-                b'refs/cinnabar/changesets')
-            if changesets_ref:
-                commit = GitCommit(changesets_ref)
-                for n, head in enumerate(commit.body.splitlines()):
-                    hghead, branch = head.split(b' ', 1)
-                    self._hgheads._previous[hghead] = (branch, n)
-                    self._generation = n + 1
-
+            self._hgheads_orig = dict(GitHgHelper.heads(b'changesets'))
             self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
 
             for line in Git.ls_tree(metadata.tree):
@@ -792,15 +782,7 @@ class GitHgStore(object):
         metadata, refs = metadata
         self._has_metadata = True
         self._metadata_refs = refs if metadata else {}
-        changesets_ref = self._metadata_refs.get(b'refs/cinnabar/changesets')
-        self._generation = 0
-        if changesets_ref:
-            commit = GitCommit(changesets_ref)
-            for n, head in enumerate(commit.body.splitlines()):
-                hghead, branch = head.split(b' ', 1)
-                self._hgheads._previous[hghead] = (branch, 1)
-                self._generation = n + 1
-
+        self._hgheads_orig = dict(GitHgHelper.heads(b'changesets'))
         self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
 
         for line in Git.ls_tree(metadata.tree):
@@ -811,8 +793,7 @@ class GitHgStore(object):
 
     def tags(self):
         tags = TagSet()
-        heads = sorted((n, h) for h, (b, n) in self._hgheads.items())
-        for _, h in heads:
+        for (h, _) in GitHgHelper.heads(b'changesets'):
             h = self.changeset_ref(h)
             tags.update(self._get_hgtags(h))
         for tag, node in tags:
@@ -860,32 +841,8 @@ class GitHgStore(object):
     def heads(self, branches={}):
         if not isinstance(branches, (dict, set)):
             branches = set(branches)
-        return set(h for h, (b, _) in self._hgheads.items()
+        return set(h for (h, b) in GitHgHelper.heads(b'changesets')
                    if not branches or b in branches)
-
-    def _head_branch(self, head):
-        if head in self._hgheads:
-            return self._hgheads[head][0], head
-        if head in self._branches:
-            return self._branches[head], head
-        branch = self.changeset(head).branch or b'default'
-        self._branches[head] = branch
-        return branch, head
-
-    def add_head(self, head, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
-        branch, head = self._head_branch(head)
-        for p in (parent1, parent2):
-            if p == NULL_NODE_ID:
-                continue
-            parent_branch, parent_head = self._head_branch(p)
-            if parent_branch == branch:
-                if parent_head in self._hgheads:
-                    assert parent_branch == self._hgheads[parent_head][0]
-                    del self._hgheads[parent_head]
-
-        generation = self._generation
-        self._generation += 1
-        self._hgheads[head] = (branch, generation)
 
     def read_changeset_data(self, obj):
         assert obj is not None
@@ -1075,9 +1032,7 @@ class GitHgStore(object):
         sha1 = GitHgHelper.put_blob(
             ChangesetPatcher.from_diff(changeset, instance))
         GitHgHelper.set(b'changeset-metadata', instance.node, sha1)
-
-        self._branches[instance.node] = instance.branch or b'default'
-        self.add_head(instance.node, instance.parent1, instance.parent2)
+        GitHgHelper.set(b'changeset-head', instance.node, sha1)
 
     MODE = {
         b'': b'160644',
@@ -1144,19 +1099,17 @@ class GitHgStore(object):
             update_metadata[b'refs/notes/cinnabar'] = new_git2hg
             Git.update_ref(b'refs/notes/cinnabar', new_git2hg)
 
-        hg_changeset_heads = list(self._hgheads)
+        hg_changeset_heads = list(GitHgHelper.heads(b'changesets'))
         changeset_heads = list(self.changeset_ref(h)
-                               for h in hg_changeset_heads)
+                               for (h, _) in hg_changeset_heads)
         bundle_blob = getattr(self, "bundle_blob", None)
-        if (any(self._hgheads.iterchanges()) or
+        if (dict(hg_changeset_heads) != self._hgheads_orig or
                 b'refs/cinnabar/changesets' in refresh or bundle_blob):
-            heads = sorted((self._hgheads[h][1], self._hgheads[h][0], h, g)
-                           for h, g in zip(hg_changeset_heads,
-                                           changeset_heads))
             with GitHgHelper.commit(
                 ref=b'refs/cinnabar/changesets',
-                parents=list(h for _, __, ___, h in heads),
-                message=b'\n'.join(b'%s %s' % (h, b) for _, b, h, __ in heads),
+                parents=changeset_heads,
+                message=b'\n'.join(b'%s %s' % (h, b)
+                                   for h, b in hg_changeset_heads),
             ) as commit:
                 if bundle_blob:
                     commit.filemodify(b'bundle', bundle_blob)
