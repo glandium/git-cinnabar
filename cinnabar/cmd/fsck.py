@@ -56,6 +56,7 @@ def check_replace(store):
     self_refs = [r for r, s in store._replace.items() if r == s]
     for r in progress_iter('Removing {} self-referencing grafts', self_refs):
         del store._replace[r]
+        GitHgHelper.set(b'replace', r, NULL_NODE_ID)
 
 
 def fsck_quick(force=False):

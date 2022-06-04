@@ -16,6 +16,7 @@ extern int helper_output;
 #include "hg-data.h"
 #include "list.h"
 #include "oid-array.h"
+#include "replace-object.h"
 #include "shallow.h"
 #include "strslice.h"
 #include "tree-walk.h"
@@ -403,6 +404,30 @@ static void handle_changeset_conflict(struct hg_object_id *hg_id,
 
 }
 
+static void do_set_replace(struct string_list *args)
+{
+	struct object_id replaced;
+	struct object_id replace_with;
+	struct replace_object *replace;
+
+	if (get_oid_hex(args->items[1].string, &replaced))
+		die("Invalid sha1");
+	if (get_oid_hex(args->items[2].string, &replace_with))
+		die("Invalid sha1");
+
+	if (is_null_oid(&replace_with)) {
+		oidmap_remove(the_repository->objects->replace_map, &replaced);
+	} else {
+		replace = xmalloc(sizeof(*replace));
+		oidcpy(&replace->original.oid, &replaced);
+		oidcpy(&replace->replacement, &replace_with);
+		struct replace_object *old = oidmap_put(
+			the_repository->objects->replace_map, replace);
+		if (old)
+			free(old);
+	}
+}
+
 static void do_set(struct string_list *args)
 {
 	enum object_type type;
@@ -430,6 +455,9 @@ static void do_set(struct string_list *args)
 	} else if (!strcmp(args->items[0].string, "file-meta")) {
 		type = OBJ_BLOB;
 		notes = &files_meta;
+	} else if (!strcmp(args->items[0].string, "replace")) {
+		do_set_replace(args);
+		return;
 	} else {
 		die("Unknown kind of object: %s", args->items[0].string);
 	}

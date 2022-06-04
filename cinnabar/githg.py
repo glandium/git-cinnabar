@@ -518,6 +518,7 @@ class Grafter(object):
         if is_early_history:
             if result and result.sha1 != commit:
                 store._replace[result.sha1] = commit
+                GitHgHelper.set(b'replace', result.sha1, commit)
             else:
                 self._early_history.add(commit)
         elif not parents:

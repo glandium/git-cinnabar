@@ -286,7 +286,9 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def set(self, *args):
-        if args[0] == b'changeset-metadata':
+        if args[0] == b'replace':
+            pass
+        elif args[0] == b'changeset-metadata':
             self.git2hg.invalidate(self, self.hg2git(args[1]))
         elif args[0] != b'file-meta':
             self.hg2git.invalidate(self, args[1])
