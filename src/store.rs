@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::iter::{repeat, IntoIterator};
 use std::mem;
-use std::os::raw::c_int;
+use std::os::raw::{c_int, c_uint, c_void};
 use std::sync::Mutex;
 
 use bstr::{BStr, BString, ByteSlice};
@@ -21,7 +21,8 @@ use crate::hg_data::Authorship;
 use crate::libc::FdFile;
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
 use crate::libgit::{
-    get_oid_committish, lookup_replace_commit, object_id, BlobId, CommitId, RawBlob, RawCommit,
+    get_oid_committish, lookup_replace_commit, object_id, object_type, BlobId, CommitId, RawBlob,
+    RawCommit,
 };
 use crate::oid::{GitObjectId, HgObjectId, ObjectId};
 use crate::oid_type;
@@ -454,6 +455,54 @@ pub unsafe extern "C" fn changeset_heads(output: c_int) {
         writeln!(buf, "{} {}", h, b).ok();
     }
     send_buffer_to(&*buf, &mut output);
+}
+
+extern "C" {
+    fn write_object_file_flags(
+        buf: *const c_void,
+        len: usize,
+        typ: object_type,
+        oid: *mut object_id,
+        flags: c_uint,
+    ) -> c_int;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn store_changesets_metadata(blob: *const object_id, result: *mut object_id) {
+    let result = result.as_mut().unwrap();
+    let mut tree = vec![];
+    if let Some(blob) = blob.as_ref() {
+        let blob = BlobId::from_unchecked(GitObjectId::from(blob.clone()));
+        tree.extend_from_slice(b"100644 bundle\0");
+        tree.extend_from_slice(blob.as_raw_bytes());
+    }
+    let mut tid = object_id::default();
+    write_object_file_flags(
+        tree.as_ptr() as *const c_void,
+        tree.len(),
+        object_type::OBJ_TREE,
+        &mut tid,
+        0,
+    );
+    drop(tree);
+    let mut commit = vec![];
+    writeln!(commit, "tree {}", GitObjectId::from(tid)).ok();
+    let heads = CHANGESET_HEADS.lock().unwrap();
+    for (_, head) in heads.heads.iter().map(|(h, (_, g))| (g, h)).sorted() {
+        writeln!(commit, "parent {}", head.to_git().unwrap()).ok();
+    }
+    writeln!(commit, "author  <cinnabar@git> 0 +0000").ok();
+    writeln!(commit, "committer  <cinnabar@git> 0 +0000").ok();
+    for (_, head, branch) in heads.heads.iter().map(|(h, (b, g))| (g, h, b)).sorted() {
+        write!(commit, "\n{} {}", head, branch).ok();
+    }
+    write_object_file_flags(
+        commit.as_ptr() as *const c_void,
+        commit.len(),
+        object_type::OBJ_COMMIT,
+        result,
+        0,
+    );
 }
 
 #[no_mangle]

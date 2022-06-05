@@ -1099,23 +1099,14 @@ class GitHgStore(object):
             update_metadata[b'refs/notes/cinnabar'] = new_git2hg
             Git.update_ref(b'refs/notes/cinnabar', new_git2hg)
 
-        hg_changeset_heads = list(GitHgHelper.heads(b'changesets'))
-        changeset_heads = list(self.changeset_ref(h)
-                               for (h, _) in hg_changeset_heads)
+        changeset_heads = set(self.changeset_ref(h)
+                              for (h, _) in GitHgHelper.heads(b'changesets'))
         bundle_blob = getattr(self, "bundle_blob", None)
-        if (dict(hg_changeset_heads) != self._hgheads_orig or
-                b'refs/cinnabar/changesets' in refresh or bundle_blob):
-            with GitHgHelper.commit(
-                ref=b'refs/cinnabar/changesets',
-                parents=changeset_heads,
-                message=b'\n'.join(b'%s %s' % (h, b)
-                                   for h, b in hg_changeset_heads),
-            ) as commit:
-                if bundle_blob:
-                    commit.filemodify(b'bundle', bundle_blob)
-            update_metadata[b'refs/cinnabar/changesets'] = commit.sha1
-
-        changeset_heads = set(changeset_heads)
+        new_changesets = GitHgHelper.store(
+            b'metadata', b'changesets', *[bundle_blob] if bundle_blob else [])
+        changesets = self._metadata_refs.get(b'refs/cinnabar/changesets')
+        if new_changesets != changesets:
+            update_metadata[b'refs/cinnabar/changesets'] = new_changesets
 
         new_manifest = GitHgHelper.store(b'metadata', b'manifests')
         manifest = self._metadata_refs.get(b'refs/cinnabar/manifests')

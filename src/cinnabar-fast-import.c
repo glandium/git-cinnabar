@@ -864,6 +864,9 @@ static int add_manifests_parent(const struct object_id *oid, void *data)
 	return 0;
 }
 
+extern void store_changesets_metadata(const struct object_id *blob,
+                                      struct object_id *result);
+
 static void do_store(struct string_list *args)
 {
 	if (args->nr < 2)
@@ -872,8 +875,6 @@ static void do_store(struct string_list *args)
 	if (!strcmp(args->items[0].string, "metadata")) {
 		struct object_id result = {{ 0, }};
 
-		if (args->nr != 2)
-			die("store metadata needs 3 arguments");
 		if (!strcmp(args->items[1].string, "hg2git") ||
 		    !strcmp(args->items[1].string, "git2hg") ||
 		    !strcmp(args->items[1].string, "files-meta")) {
@@ -881,6 +882,9 @@ static void do_store(struct string_list *args)
 			struct notes_tree *notes = NULL;
 			const char *ref;
 
+			if (args->nr != 2)
+				die("store metadata %s takes no argument",
+				    args->items[1].string);
 			switch (args->items[1].string[0]) {
 			case 'f':
 				notes = &files_meta;
@@ -916,6 +920,9 @@ static void do_store(struct string_list *args)
 				strbuf_release(&buf);
 			}
 		} else if (!strcmp(args->items[1].string, "manifests")) {
+			if (args->nr != 2)
+				die("store metadata %s takes no argument",
+				    args->items[1].string);
 			if (manifest_heads_dirty) {
 			        struct strbuf buf = STRBUF_INIT;
 				strbuf_addf(
@@ -934,6 +941,18 @@ static void do_store(struct string_list *args)
 				strbuf_release(&buf);
 			} else {
 				get_oid_committish(MANIFESTS_REF, &result);
+			}
+		} else if (!strcmp(args->items[1].string, "changesets")) {
+			if (args->nr > 3)
+				die("store metadata %s takes at most one "
+				    "argument", args->items[1].string);
+			if (args->nr == 3) {
+				struct object_id blob;
+				if (get_sha1_hex(args->items[2].string, &blob))
+					die("Invalid sha1");
+				store_changesets_metadata(&blob, &result);
+			} else {
+				store_changesets_metadata(NULL, &result);
 			}
 		} else {
 			die("Unknown metadata kind: %s", args->items[1].string);
