@@ -438,9 +438,6 @@ def bundle_data(store, commits):
         if is_new:
             store.create_hg_metadata(node, parents)
         hg_changeset = store._changeset(node, include_parents=True)
-        if is_new:
-            store.add_head(hg_changeset.node, hg_changeset.parent1,
-                           hg_changeset.parent2)
         yield hg_changeset
         manifest = hg_changeset.manifest
         if manifest not in manifests and manifest != NULL_NODE_ID:
