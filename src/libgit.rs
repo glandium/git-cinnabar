@@ -27,9 +27,15 @@ const GIT_HASH_SHA1: c_int = 1;
 #[derive(Clone)]
 pub struct object_id([u8; GIT_MAX_RAWSZ], c_int);
 
+impl Default for object_id {
+    fn default() -> Self {
+        Self([0; GIT_MAX_RAWSZ], GIT_HASH_SHA1)
+    }
+}
+
 impl<O: Borrow<GitObjectId>> From<O> for object_id {
     fn from(oid: O) -> Self {
-        let mut result = Self([0; GIT_MAX_RAWSZ], GIT_HASH_SHA1);
+        let mut result = object_id::default();
         let oid = oid.borrow().as_raw_bytes();
         result.0[..oid.len()].clone_from_slice(oid);
         result
@@ -399,7 +405,7 @@ pub fn get_oid_committish(s: &[u8]) -> Option<CommitId> {
         let mut s = s.to_vec();
         s.extend_from_slice(b"^{commit}");
         let c = CString::new(s).unwrap();
-        let mut oid = object_id([0; GIT_MAX_RAWSZ], GIT_HASH_SHA1);
+        let mut oid = object_id::default();
         if repo_get_oid_committish(the_repository, c.as_ptr(), &mut oid) == 0 {
             Some(CommitId(oid.into()))
         } else {
@@ -826,7 +832,7 @@ extern "C" {
 
 pub fn resolve_ref<S: AsRef<OsStr>>(refname: S) -> Option<CommitId> {
     let _locked = REFS_LOCK.read().unwrap();
-    let mut oid = object_id([0; GIT_MAX_RAWSZ], GIT_HASH_SHA1);
+    let mut oid = object_id::default();
     unsafe {
         if read_ref(refname.as_ref().to_cstring().as_ptr(), &mut oid) == 0 {
             // We ignore tags. See comment in for_each_ref_in.
