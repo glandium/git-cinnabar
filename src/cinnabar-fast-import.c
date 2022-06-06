@@ -417,7 +417,7 @@ static void do_set_replace(struct string_list *args)
 	}
 }
 
-extern add_changeset_head(struct hg_object_id *cs, struct object_id *meta);
+extern void add_changeset_head(struct hg_object_id *cs, struct object_id *meta);
 
 static void do_set(struct string_list *args)
 {
