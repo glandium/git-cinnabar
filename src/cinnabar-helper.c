@@ -95,7 +95,7 @@ int cinnabar_check = CHECK_VERSION;
 FILE *helper_input;
 int helper_output;
 
-static int config(const char *name, struct strbuf *result)
+int config(const char *name, struct strbuf *result)
 {
 	struct strbuf key = STRBUF_INIT;
 	char *p, *end;
@@ -105,7 +105,11 @@ static int config(const char *name, struct strbuf *result)
 	strbuf_addstr(&key, name);
 	for (p = key.buf + sizeof("git_cinnabar"), end = key.buf + key.len;
 	     p < end; p++)
-		*p = toupper(*p);
+		if (*p == '-') {
+			*p = '_';
+		} else {
+			*p = toupper(*p);
+		}
 	val = getenv(key.buf);
 	if (!val) {
 		strbuf_release(&key);
@@ -1571,6 +1575,7 @@ static void init_metadata()
 		oidcpy(&files_meta_oid, null_oid());
 		return;
 	}
+	oidcpy(&metadata_oid, &c->object.oid);
 	cl = c->parents;
 	if (!cl) die("Invalid metadata?");
 	oidcpy(&changesets_oid, &cl->item->object.oid);

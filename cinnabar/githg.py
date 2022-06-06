@@ -1087,64 +1087,24 @@ class GitHgStore(object):
         # If the helper is not running, we don't have anything to update.
         if not GitHgHelper._helper:
             return
-        update_metadata = {}
-        new_hg2git = GitHgHelper.store(b'metadata', b'hg2git')
-        hg2git = self._metadata_refs.get(b'refs/cinnabar/hg2git')
-        if hg2git != new_hg2git:
-            update_metadata[b'refs/cinnabar/hg2git'] = new_hg2git
-
-        new_git2hg = GitHgHelper.store(b'metadata', b'git2hg')
-        git2hg = self._metadata_refs.get(b'refs/notes/cinnabar')
-        if git2hg != new_git2hg:
-            update_metadata[b'refs/notes/cinnabar'] = new_git2hg
-            Git.update_ref(b'refs/notes/cinnabar', new_git2hg)
-
         changeset_heads = set(self.changeset_ref(h)
                               for (h, _) in GitHgHelper.heads(b'changesets'))
         bundle_blob = getattr(self, "bundle_blob", None)
-        new_changesets = GitHgHelper.store(
-            b'metadata', b'changesets', *[bundle_blob] if bundle_blob else [])
-        changesets = self._metadata_refs.get(b'refs/cinnabar/changesets')
-        if new_changesets != changesets:
-            update_metadata[b'refs/cinnabar/changesets'] = new_changesets
 
-        new_manifest = GitHgHelper.store(b'metadata', b'manifests')
-        manifest = self._metadata_refs.get(b'refs/cinnabar/manifests')
-        if manifest != new_manifest:
-            update_metadata[b'refs/cinnabar/manifests'] = new_manifest
+        self._metadata_sha1 = GitHgHelper.store(
+            b'metadata', *[bundle_blob] if bundle_blob else [])
+        Git.update_ref(b'refs/cinnabar/metadata', self._metadata_sha1)
+        Git.update_ref(b'refs/notes/cinnabar',
+                       GitCommit(self._metadata_sha1).parents[3])
 
-        new_files_meta = GitHgHelper.store(b'metadata', b'files-meta')
-        files_meta = self._metadata_refs.get(b'refs/cinnabar/files-meta')
-        if files_meta != new_files_meta:
-            update_metadata[b'refs/cinnabar/files-meta'] = new_files_meta
+        if b'refs/cinnabar/checked' in refresh:
+            Git.update_ref(b'refs/cinnabar/checked', self._metadata_sha1)
 
-        replace_changed = False
         for status, ref, sha1 in self._replace.iterchanges():
             if status == VersionedDict.REMOVED:
                 Git.delete_ref(b'refs/cinnabar/replace/%s' % ref)
             else:
                 Git.update_ref(b'refs/cinnabar/replace/%s' % ref, sha1)
-            replace_changed = True
-
-        if update_metadata or replace_changed:
-            parents = list(update_metadata.get(r) or self._metadata_refs[r]
-                           for r in self.METADATA_REFS)
-            metadata_sha1 = (Git.config('cinnabar.previous-metadata') or
-                             self._metadata_sha1)
-            if metadata_sha1:
-                parents.append(metadata_sha1)
-            with GitHgHelper.commit(
-                ref=b'refs/cinnabar/metadata',
-                parents=parents,
-                message=b' '.join(sorted(self.FLAGS)),
-            ) as commit:
-                for sha1, target in self._replace.items():
-                    commit.filemodify(sha1, target, b'commit')
-            self._metadata_sha1 = commit.sha1
-            if b'refs/cinnabar/checked' in refresh:
-                Git.update_ref(b'refs/cinnabar/checked', commit.sha1)
-        elif b'refs/cinnabar/checked' in refresh and self._metadata_sha1:
-            Git.update_ref(b'refs/cinnabar/checked', self._metadata_sha1)
 
         for c in self._tagcache:
             if c not in changeset_heads:
@@ -1197,7 +1157,7 @@ class GitHgStore(object):
                     commit.filemodify(f, filesha1, typ)
 
         # refs/notes/cinnabar is kept for convenience
-        for ref in update_metadata:
+        for ref in self.METADATA_REFS:
             if ref not in (b'refs/notes/cinnabar',):
                 Git.delete_ref(ref)
 

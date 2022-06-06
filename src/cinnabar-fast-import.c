@@ -859,100 +859,161 @@ static int add_manifests_parent(const struct object_id *oid, void *data)
 extern void store_changesets_metadata(const struct object_id *blob,
                                       struct object_id *result);
 
+void store_metadata_notes(
+	struct notes_tree *notes, const struct object_id *reference,
+	struct object_id *result)
+{
+	struct object_id tree;
+	oidcpy(result, null_oid());
+	store_notes(notes, &tree);
+
+	if (is_null_oid(&tree)) {
+		oidcpy(result, reference);
+		if (is_null_oid(result)) {
+			oidcpy(&tree, &empty_tree);
+		}
+	}
+	if (!is_null_oid(&tree)) {
+		struct strbuf buf = STRBUF_INIT;
+		strbuf_addf(
+			&buf, "tree %s\n",
+			oid_to_hex(&tree));
+		strbuf_addstr(
+			&buf,
+			"author  <cinnabar@git> 0 +0000\n"
+			"committer  <cinnabar@git> 0 +0000\n"
+			"\n");
+		store_git_commit(&buf, result);
+		strbuf_release(&buf);
+	}
+}
+
+extern int config(const char *name, struct strbuf *result);
+
 static void do_store(struct string_list *args)
 {
+	if (!strcmp(args->items[0].string, "metadata")) {
+		struct object_id changesets, manifests, hg2git_, git2hg_,
+		                 files_meta_, previous;
+		struct object_id result = {{ 0, }};
+		struct strbuf buf = STRBUF_INIT;
+		struct oidmap_iter iter;
+		struct replace_object *replace;
+		struct commit *c;
+		struct commit_list *cl;
+		int has_previous = 0, unchanged = 1;
+
+		if (args->nr > 2)
+			die("store metadata takes at most one argument");
+
+		store_metadata_notes(&hg2git, &hg2git_oid, &hg2git_);
+		store_metadata_notes(&git2hg, &git2hg_oid, &git2hg_);
+		store_metadata_notes(&files_meta, &files_meta_oid, &files_meta_);
+
+		if (manifest_heads_dirty) {
+			strbuf_addf(
+				&buf, "tree %s\n",
+				oid_to_hex(&empty_tree));
+			oid_array_sort(&manifest_heads);
+			oid_array_for_each_unique(
+				&manifest_heads, add_manifests_parent,
+				&buf);
+			strbuf_addstr(
+				&buf,
+				"author  <cinnabar@git> 0 +0000\n"
+				"committer  <cinnabar@git> 0 +0000\n"
+				"\n");
+			store_git_commit(&buf, &manifests);
+			strbuf_release(&buf);
+		} else {
+			oidcpy(&manifests, &manifests_oid);
+		}
+
+		if (args->nr == 2) {
+			struct object_id blob;
+			if (get_oid_hex(args->items[1].string, &blob))
+				die("Invalid oid");
+			store_changesets_metadata(&blob, &changesets);
+		} else {
+			store_changesets_metadata(NULL, &changesets);
+		}
+		config("previous-metadata", &buf);
+		if ((buf.len && !get_oid_hex(buf.buf, &previous))) {
+			has_previous = 1;
+		} else if (!is_null_oid(&metadata_oid)) {
+			oidcpy(&previous, &metadata_oid);
+			has_previous = 1;
+		}
+		strbuf_release(&buf);
+		oidmap_iter_init(the_repository->objects->replace_map, &iter);
+		while ((replace = oidmap_iter_next(&iter))) {
+			strbuf_addf(&buf, "160000 %s%c",
+			            oid_to_hex(&replace->original.oid), '\0');
+			strbuf_add(&buf, replace->replacement.hash, the_hash_algo->rawsz);
+		}
+		store_object(OBJ_TREE, &buf, NULL, &result, 0);
+		strbuf_release(&buf);
+
+		if (has_previous) {
+			c = lookup_commit_reference(the_repository, &previous);
+			parse_commit_or_die(c);
+			cl = c->parents;
+			if (!cl || !cl->item) die("Invalid metadata?");
+			unchanged = unchanged &&
+				!oidcmp(&cl->item->object.oid, &changesets);
+			cl = cl->next;
+			if (!cl || !cl->item) die("Invalid metadata?");
+			unchanged = unchanged &&
+				!oidcmp(&cl->item->object.oid, &manifests);
+			cl = cl->next;
+			if (!cl || !cl->item) die("Invalid metadata?");
+			unchanged = unchanged &&
+				!oidcmp(&cl->item->object.oid, &hg2git_);
+			cl = cl->next;
+			if (!cl || !cl->item) die("Invalid metadata?");
+			unchanged = unchanged &&
+				!oidcmp(&cl->item->object.oid, &git2hg_);
+			cl = cl->next;
+			if (!cl || !cl->item) die("Invalid metadata?");
+			unchanged = unchanged &&
+				!oidcmp(&cl->item->object.oid, &files_meta_);
+			unchanged = unchanged &&
+				!oidcmp(get_commit_tree_oid(c), &result);
+			if (unchanged) {
+				oidcpy(&result, &previous);
+				write_or_die(
+					helper_output, oid_to_hex(&result), 40);
+				write_or_die(helper_output, "\n", 1);
+				return;
+			}
+		}
+
+		strbuf_addf(&buf, "tree %s\n", oid_to_hex(&result));
+		strbuf_addf(&buf, "parent %s\n", oid_to_hex(&changesets));
+		strbuf_addf(&buf, "parent %s\n", oid_to_hex(&manifests));
+		strbuf_addf(&buf, "parent %s\n", oid_to_hex(&hg2git_));
+		strbuf_addf(&buf, "parent %s\n", oid_to_hex(&git2hg_));
+		strbuf_addf(&buf, "parent %s\n", oid_to_hex(&files_meta_));
+		if (has_previous)
+			strbuf_addf(&buf, "parent %s\n", oid_to_hex(&previous));
+		strbuf_addstr(
+			&buf,
+			"author  <cinnabar@git> 0 +0000\n"
+			"committer  <cinnabar@git> 0 +0000\n"
+			"\n"
+			"files-meta unified-manifests-v2");
+		store_git_commit(&buf, &result);
+		strbuf_release(&buf);
+
+		write_or_die(helper_output, oid_to_hex(&result), 40);
+		write_or_die(helper_output, "\n", 1);
+		return;
+	}
 	if (args->nr < 2)
 		die("store needs at least 3 arguments");
 
-	if (!strcmp(args->items[0].string, "metadata")) {
-		struct object_id result = {{ 0, }};
-
-		if (!strcmp(args->items[1].string, "hg2git") ||
-		    !strcmp(args->items[1].string, "git2hg") ||
-		    !strcmp(args->items[1].string, "files-meta")) {
-			struct object_id tree;
-			struct notes_tree *notes = NULL;
-			const struct object_id *meta_oid;
-
-			if (args->nr != 2)
-				die("store metadata %s takes no argument",
-				    args->items[1].string);
-			switch (args->items[1].string[0]) {
-			case 'f':
-				notes = &files_meta;
-				meta_oid = &files_meta_oid;
-				break;
-			case 'g':
-				notes = &git2hg;
-				meta_oid = &git2hg_oid;
-				break;
-			case 'h':
-				notes = &hg2git;
-				meta_oid = &hg2git_oid;
-			}
-			store_notes(notes, &tree);
-
-			if (is_null_oid(&tree)) {
-				oidcpy(&result, meta_oid);
-				if (is_null_oid(&result)) {
-					oidcpy(&tree, &empty_tree);
-				}
-			}
-			if (!is_null_oid(&tree)) {
-				struct strbuf buf = STRBUF_INIT;
-				strbuf_addf(
-					&buf, "tree %s\n",
-					oid_to_hex(&tree));
-				strbuf_addstr(
-					&buf,
-					"author  <cinnabar@git> 0 +0000\n"
-					"committer  <cinnabar@git> 0 +0000\n"
-					"\n");
-				store_git_commit(&buf, &result);
-				strbuf_release(&buf);
-			}
-		} else if (!strcmp(args->items[1].string, "manifests")) {
-			if (args->nr != 2)
-				die("store metadata %s takes no argument",
-				    args->items[1].string);
-			if (manifest_heads_dirty) {
-			        struct strbuf buf = STRBUF_INIT;
-				strbuf_addf(
-					&buf, "tree %s\n",
-					oid_to_hex(&empty_tree));
-				oid_array_sort(&manifest_heads);
-				oid_array_for_each_unique(
-					&manifest_heads, add_manifests_parent,
-					&buf);
-				strbuf_addstr(
-					&buf,
-					"author  <cinnabar@git> 0 +0000\n"
-					"committer  <cinnabar@git> 0 +0000\n"
-					"\n");
-				store_git_commit(&buf, &result);
-				strbuf_release(&buf);
-			} else {
-				oidcpy(&result, &manifests_oid);
-			}
-		} else if (!strcmp(args->items[1].string, "changesets")) {
-			if (args->nr > 3)
-				die("store metadata %s takes at most one "
-				    "argument", args->items[1].string);
-			if (args->nr == 3) {
-				struct object_id blob;
-				if (get_sha1_hex(args->items[2].string, &blob))
-					die("Invalid sha1");
-				store_changesets_metadata(&blob, &result);
-			} else {
-				store_changesets_metadata(NULL, &result);
-			}
-		} else {
-			die("Unknown metadata kind: %s", args->items[1].string);
-		}
-		write_or_die(helper_output, oid_to_hex(&result), 40);
-		write_or_die(helper_output, "\n", 1);
-	} else if (!strcmp(args->items[0].string, "file") ||
-		   !strcmp(args->items[0].string, "manifest")) {
+	if (!strcmp(args->items[0].string, "file") ||
+	    !strcmp(args->items[0].string, "manifest")) {
 		struct strbuf buf = STRBUF_INIT;
 		struct rev_chunk chunk;
 		size_t length;
