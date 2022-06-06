@@ -84,6 +84,8 @@
 static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
 
 struct notes_tree git2hg, hg2git, files_meta;
+struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
+                 hg2git_oid, files_meta_oid;
 
 // XXX: Should use a hg-specific oidset type.
 struct oidset hg2git_seen = OIDSET_INIT;
@@ -515,19 +517,21 @@ static void do_diff_tree(struct string_list *args)
 void ensure_notes(struct notes_tree *notes)
 {
 	if (!notes_initialized(notes)) {
-		const char *ref;
+		const struct object_id *oid;
 		int flags = 0;
 		if (notes == &git2hg)
-			ref = NOTES_REF;
+			oid = &git2hg_oid;
 		else if (notes == &hg2git)
-			ref = HG2GIT_REF;
+			oid = &hg2git_oid;
 		else if (notes == &files_meta) {
-			ref = FILES_META_REF;
+			oid = &files_meta_oid;
 			if (!(metadata_flags & FILES_META))
 				flags = NOTES_INIT_EMPTY;
 		} else
 			die("Unknown notes tree");
-		init_notes(notes, ref, combine_notes_ignore, flags);
+		if (is_null_oid(oid))
+			flags = NOTES_INIT_EMPTY;
+		init_notes(notes, oid_to_hex(oid), combine_notes_ignore, flags);
 	}
 }
 
@@ -1548,6 +1552,7 @@ static int count_refs(const char *refname, const struct object_id *oid,
 static void init_metadata()
 {
 	struct commit *c;
+	struct commit_list *cl;
 	const char *msg, *body;
 	struct strbuf **flags, **f;
 	struct tree *tree;
@@ -1557,8 +1562,31 @@ static void init_metadata()
 	size_t count = 0;
 
 	c = lookup_commit_reference_by_name(METADATA_REF);
-	if (!c)
+	if (!c) {
+		oidcpy(&metadata_oid, null_oid());
+		oidcpy(&changesets_oid, null_oid());
+		oidcpy(&manifests_oid, null_oid());
+		oidcpy(&hg2git_oid, null_oid());
+		oidcpy(&git2hg_oid, null_oid());
+		oidcpy(&files_meta_oid, null_oid());
 		return;
+	}
+	cl = c->parents;
+	if (!cl) die("Invalid metadata?");
+	oidcpy(&changesets_oid, &cl->item->object.oid);
+	cl = cl->next;
+	if (!cl) die("Invalid metadata?");
+	oidcpy(&manifests_oid, &cl->item->object.oid);
+	cl = cl->next;
+	if (!cl) die("Invalid metadata?");
+	oidcpy(&hg2git_oid, &cl->item->object.oid);
+	cl = cl->next;
+	if (!cl) die("Invalid metadata?");
+	oidcpy(&git2hg_oid, &cl->item->object.oid);
+	cl = cl->next;
+	if (!cl) die("Invalid metadata?");
+	oidcpy(&files_meta_oid, &cl->item->object.oid);
+
 	msg = get_commit_buffer(c, NULL);
 	body = strstr(msg, "\n\n") + 2;
 	unuse_commit_buffer(c, msg);

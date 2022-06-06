@@ -308,8 +308,11 @@ void ensure_heads(struct oid_array *heads)
 		return;
 
 	heads->sorted = 1;
-	if (heads == &manifest_heads)
-		c = lookup_commit_reference_by_name(MANIFESTS_REF);
+	if (heads == &manifest_heads) {
+		c = lookup_commit_reference(the_repository, &manifests_oid);
+		if (parse_commit(c))
+			c = NULL;
+	}
 	for (parent = c ? c->parents : NULL; parent;
 	     parent = parent->next) {
 		const struct object_id *parent_sha1 =
@@ -869,7 +872,7 @@ static void do_store(struct string_list *args)
 		    !strcmp(args->items[1].string, "files-meta")) {
 			struct object_id tree;
 			struct notes_tree *notes = NULL;
-			const char *ref;
+			const struct object_id *meta_oid;
 
 			if (args->nr != 2)
 				die("store metadata %s takes no argument",
@@ -877,20 +880,20 @@ static void do_store(struct string_list *args)
 			switch (args->items[1].string[0]) {
 			case 'f':
 				notes = &files_meta;
-				ref = FILES_META_REF;
+				meta_oid = &files_meta_oid;
 				break;
 			case 'g':
 				notes = &git2hg;
-				ref = NOTES_REF;
+				meta_oid = &git2hg_oid;
 				break;
 			case 'h':
 				notes = &hg2git;
-				ref = HG2GIT_REF;
+				meta_oid = &hg2git_oid;
 			}
 			store_notes(notes, &tree);
 
 			if (is_null_oid(&tree)) {
-				get_oid_committish(ref, &result);
+				oidcpy(&result, meta_oid);
 				if (is_null_oid(&result)) {
 					oidcpy(&tree, &empty_tree);
 				}
@@ -929,7 +932,7 @@ static void do_store(struct string_list *args)
 				store_git_commit(&buf, &result);
 				strbuf_release(&buf);
 			} else {
-				get_oid_committish(MANIFESTS_REF, &result);
+				oidcpy(&result, &manifests_oid);
 			}
 		} else if (!strcmp(args->items[1].string, "changesets")) {
 			if (args->nr > 3)

@@ -5,12 +5,9 @@
 #include "cinnabar-notes.h"
 
 #define METADATA_REF "refs/cinnabar/metadata"
-#define CHANGESETS_REF METADATA_REF "^1"
-#define MANIFESTS_REF METADATA_REF "^2"
-#define HG2GIT_REF METADATA_REF "^3"
-#define NOTES_REF METADATA_REF "^4"
-#define FILES_META_REF METADATA_REF "^5"
 
+extern struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
+                        hg2git_oid, files_meta_oid;
 
 #define FILES_META 0x1
 #define UNIFIED_MANIFESTS_v2 0x2
