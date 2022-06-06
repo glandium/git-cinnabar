@@ -301,7 +301,6 @@ void ensure_heads(struct oid_array *heads)
 {
 	struct commit *c = NULL;
 	struct commit_list *parent;
-	const char *body = NULL;
 
 	/* We always keep the array sorted, so if it's not sorted, it's
 	 * not initialized. */
@@ -311,20 +310,10 @@ void ensure_heads(struct oid_array *heads)
 	heads->sorted = 1;
 	if (heads == &manifest_heads)
 		c = lookup_commit_reference_by_name(MANIFESTS_REF);
-	if (c) {
-		const char *msg = get_commit_buffer(c, NULL);
-		body = strstr(msg, "\n\n") + 2;
-		unuse_commit_buffer(c, msg);
-	}
 	for (parent = c ? c->parents : NULL; parent;
 	     parent = parent->next) {
 		const struct object_id *parent_sha1 =
 			&parent->item->object.oid;
-		/* Skip first parent when "has-flat-manifest-tree" is
-		 * there */
-		if (heads == &manifest_heads && body && parent == c->parents &&
-		    !strcmp(body, "has-flat-manifest-tree"))
-			continue;
 		if (!heads->nr || oidcmp(&heads->oid[heads->nr-1],
 		                         parent_sha1)) {
 			oid_array_insert(heads, heads->nr, parent_sha1);
