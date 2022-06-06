@@ -1072,7 +1072,6 @@ const struct object_id *ensure_empty_blob() {
 
 static void do_reset(struct string_list *args) {
 	struct branch *b;
-	struct object_id oid;
 
 	if (args->nr != 2)
 		die("reset needs 2 arguments");
