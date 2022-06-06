@@ -1607,7 +1607,7 @@ static void init_metadata()
 	}
 	strbuf_list_free(flags);
 
-	if (!metadata_flags & (FILES_META | UNIFIED_MANIFESTS_v2))
+	if (!(metadata_flags & (FILES_META | UNIFIED_MANIFESTS_v2)))
 		goto old;
 
 	for_each_ref_in("refs/cinnabar/branches/", count_refs, &count);
