@@ -5,7 +5,6 @@ from cinnabar.githg import (
     FileFindParents,
     GitCommit,
     GitHgStore,
-    GeneratedManifestInfo,
 )
 from cinnabar.helper import GitHgHelper
 from cinnabar.git import (
@@ -27,12 +26,14 @@ from cinnabar.hg.changegroup import (
 )
 from cinnabar.hg.objects import (
     File,
+    Manifest,
     HgObject,
 )
 from collections import (
     OrderedDict,
     defaultdict,
 )
+import functools
 import logging
 import struct
 
@@ -133,7 +134,7 @@ class PushStore(GitHgStore):
         self._merge_warn = 0
 
     def create_hg_manifest(self, commit, parents):
-        manifest = GeneratedManifestInfo(NULL_NODE_ID)
+        manifest = Manifest(NULL_NODE_ID)
         changeset_files = []
 
         if parents:
@@ -152,12 +153,11 @@ class PushStore(GitHgStore):
             for line in Git.ls_tree(commit, recursive=True):
                 mode, typ, sha1, path = line
                 node = self.create_file(sha1)
-                manifest.add(path, node, self.ATTR[mode], modified=True)
+                manifest.add(path, node, self.ATTR[mode])
                 changeset_files.append(path)
 
             manifest.parents = []
-            manifest.delta_node = NULL_NODE_ID
-            return manifest, changeset_files
+            return manifest, changeset_files, NULL_NODE_ID
 
         elif len(parents) == 2:
             if not experiment('merge'):
@@ -197,7 +197,6 @@ class PushStore(GitHgStore):
                 manifest_line_p1, manifest_line_p2 = m
                 if not f:  # File was removed
                     if manifest_line_p1:
-                        manifest.removed.add(path)
                         changeset_files.append(path)
                     continue
                 mode, sha1 = f
@@ -249,13 +248,13 @@ class PushStore(GitHgStore):
 
                 attr_change = (manifest_line_p1 and
                                manifest_line_p1.attr != attr)
-                manifest.add(path, node, attr, modified=merged or attr_change)
+                manifest.add(path, node, attr)
                 if merged or attr_change:
                     changeset_files.append(path)
             if manifest.raw_data == parent_manifest.raw_data:
-                return parent_manifest, []
+                return parent_manifest, [], None
             manifest.parents = (parent_node, parent2_node)
-            return manifest, changeset_files
+            return manifest, changeset_files, parent_node
 
         def process_diff(diff):
             for (mode_before, mode_after, sha1_before, sha1_after, status,
@@ -270,7 +269,7 @@ class PushStore(GitHgStore):
                 parents[0], commit, detect_copy=True))
         )
         if not git_diff:
-            return parent_manifest, []
+            return parent_manifest, [], None
 
         parent_lines = OrderedDict((l.path, l) for l in parent_manifest)
         items = manifest.items
@@ -285,7 +284,6 @@ class PushStore(GitHgStore):
             status = status[:1]
             attr = self.ATTR.get(mode_after)
             if status == b'D':
-                manifest.removed.add(path)
                 changeset_files.append(path)
                 continue
             if status in b'MT':
@@ -303,16 +301,16 @@ class PushStore(GitHgStore):
             else:
                 assert status == b'A'
                 node = self.create_file(sha1_after)
-            manifest.add(path, node, attr, modified=True)
+            manifest.add(path, node, attr)
             changeset_files.append(path)
         manifest.parents = (parent_node,)
-        manifest.delta_node = parent_node
-        return manifest, changeset_files
+        return manifest, changeset_files, parent_node
 
     def create_hg_metadata(self, commit, parents):
         if check_enabled('bundle'):
             real_changeset = self.changeset(self.hg_changeset(commit))
-        manifest, changeset_files = self.create_hg_manifest(commit, parents)
+        manifest, changeset_files, delta_node = \
+            self.create_hg_manifest(commit, parents)
         commit_data = GitCommit(commit)
 
         if manifest.node == NULL_NODE_ID:
@@ -327,7 +325,21 @@ class PushStore(GitHgStore):
                             logging.error(
                                 '%r != %r', bytes(created), bytes(real))
             self._pushed.add(manifest.node)
-            self.store_manifest(manifest)
+            delta_manifest = []
+            if delta_node != NULL_NODE_ID:
+                delta_manifest.append(self.manifest(delta_node))
+            chunk = manifest.to_chunk(RawRevChunk02, *delta_manifest)
+            GitHgHelper.store(b'manifest', chunk)
+            if check_enabled('manifests'):
+                if not GitHgHelper.check_manifest(manifest.node):
+                    raise Exception(
+                        'sha1 mismatch for node %s with parents %s %s and '
+                        'previous %s' %
+                        (manifest.node.decode('ascii'),
+                         manifest.parent1.decode('ascii'),
+                         manifest.parent2.decode('ascii'),
+                         delta_node.decode('ascii'))
+                    )
             self._manifest_git_tree[manifest.node] = commit_data.tree
 
         changeset = Changeset.from_git_commit(commit_data)
@@ -388,6 +400,7 @@ class PushStore(GitHgStore):
         GitHgHelper.set(b'file', node, sha1)
         return node
 
+    @functools.lru_cache(maxsize=3)
     def manifest(self, sha1, include_parents=False):
         if sha1 not in self._pushed:
             include_parents = True
@@ -548,7 +561,7 @@ def create_bundle(store, commits, bundle2caps={}):
 def get_previous(store, sha1, type):
     if issubclass(type, Changeset):
         return store.changeset(sha1)
-    if issubclass(type, GeneratedManifestInfo):
+    if issubclass(type, Manifest):
         return store.manifest(sha1)
     return store.file(sha1)
 

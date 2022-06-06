@@ -21,7 +21,6 @@ from cinnabar.util import (
     HTTPReader,
     Seekable,
     byte_diff,
-    check_enabled,
     one,
     VersionedDict,
 )
@@ -1039,44 +1038,6 @@ class GitHgStore(object):
         b'l': b'160000',
         b'x': b'160755',
     }
-
-    def store_manifest(self, instance):
-        if getattr(instance, 'delta_node', NULL_NODE_ID) != NULL_NODE_ID:
-            previous = GitHgHelper.hg2git(instance.delta_node)
-        else:
-            previous = None
-        parents = tuple(GitHgHelper.hg2git(p) for p in instance.parents)
-        with GitHgHelper.commit(
-            ref=b'refs/cinnabar/manifests',
-            from_commit=previous,
-            parents=parents,
-            message=instance.node,
-        ) as commit:
-            if hasattr(instance, 'delta_node'):
-                for name in instance.removed:
-                    commit.filedelete(self.manifest_metadata_path(name))
-                modified = instance.modified.items()
-            else:
-                # slow
-                modified = ((line.path, (line.sha1, line.attr))
-                            for line in instance)
-            for name, (node, attr) in modified:
-                node = bytes(node)
-                commit.filemodify(self.manifest_metadata_path(name), node,
-                                  self.MODE[attr])
-
-        GitHgHelper.set(b'manifest', instance.node, commit.sha1)
-
-        if check_enabled('manifests'):
-            if not GitHgHelper.check_manifest(instance.node):
-                raise Exception(
-                    'sha1 mismatch for node %s with parents %s %s and '
-                    'previous %s' %
-                    (instance.node.decode('ascii'),
-                     instance.parent1.decode('ascii'),
-                     instance.parent2.decode('ascii'),
-                     instance.delta_node.decode('ascii'))
-                )
 
     def close(self, refresh=()):
         if self._closed:
