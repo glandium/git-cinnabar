@@ -16,8 +16,11 @@ path = "lib.rs"
 
 [build-dependencies]
 itertools = "0.10"
-tar = "0.4"
 walkdir = "2"
+
+[build-dependencies.tar]
+version = "0.4"
+default-features = false
 
 [build-dependencies.zstd]
 version  = "0.11"

@@ -430,7 +430,7 @@ fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
     for rev in revs {
         let result = conn.lookup(rev);
         let [success, data] = result
-            .trim_end()
+            .trim_end_with(|b| b.is_ascii_whitespace())
             .splitn_exact(b' ')
             .expect("lookup command result is malformed");
         if success == b"0" {

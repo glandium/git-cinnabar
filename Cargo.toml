@@ -13,7 +13,6 @@ publish = false
 
 [dependencies]
 all_asserts = "2"
-bstr = "0.2"
 bzip2 = "0.4"
 byteorder = "1"
 cstr = "0.2"
@@ -37,6 +36,11 @@ which = "4"
 [dependencies.array-init]
 git = "https://github.com/Manishearth/array-init/"
 rev = "cbe9d7e58a52bb43725dbe2ba0cca0755482b3a9"
+
+[dependencies.bstr]
+version = "0.2"
+default-features = false
+features = ["std"]
 
 [dependencies.cinnabar-py]
 path = "cinnabar"
