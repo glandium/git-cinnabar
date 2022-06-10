@@ -566,7 +566,6 @@ class GitHgStore(object):
         self._hgheads_orig = {}
 
         self._replace = Git._replace
-        self._tagcache_ref = None
         self._metadata_sha1 = None
         broken = None
         # While doing a for_each_ref, ensure refs/notes/cinnabar is in the
@@ -578,32 +577,12 @@ class GitHgStore(object):
                 pass
             elif ref == b'refs/cinnabar/metadata':
                 self._metadata_sha1 = sha1
-            elif ref == b'refs/cinnabar/tag_cache':
-                self._tagcache_ref = sha1
             elif ref == b'refs/cinnabar/broken':
                 broken = sha1
         self._broken = broken and self._metadata_sha1 and \
             broken == self._metadata_sha1
 
-        self._tagcache = {}
-        self._tagfiles = {}
-        self._tags = {NULL_NODE_ID: {}}
         self._cached_changeset_ref = {}
-        self._tagcache_items = set()
-        if self._tagcache_ref:
-            for line in Git.ls_tree(self._tagcache_ref):
-                mode, typ, sha1, path = line
-                if typ == b'blob':
-                    if self.ATTR[mode] == b'x':
-                        self._tagfiles[path] = sha1
-                    else:
-                        self._tagcache[path] = sha1
-                elif typ == b'commit':
-                    assert sha1 == NULL_NODE_ID
-                    self._tagcache[path] = sha1
-                self._tagcache_items.add(path)
-
-        self.tag_changes = False
 
         metadata = self.metadata()
         if metadata:
@@ -621,8 +600,16 @@ class GitHgStore(object):
 
             # Delete old tag-cache, which may contain incomplete data.
             Git.delete_ref(b'refs/cinnabar/tag-cache')
+            # Delete new-type tag_cache, we don't use it anymore.
+            Git.delete_ref(b'refs/cinnabar/tag_cache')
+
+        self._tags = dict(self.tags())
 
         self._replace = VersionedDict(self._replace)
+
+    @property
+    def tag_changes(self):
+        return dict(self.tags()) != self._tags
 
     def prepare_graft(self):
         self._graft = Grafter(self)
@@ -788,54 +775,44 @@ class GitHgStore(object):
             mode, typ, sha1, path = line
             self._replace[path] = sha1
 
+        self._tags = dict(self.tags())
+
         return True
 
     def tags(self):
         tags = TagSet()
-        for (h, _) in GitHgHelper.heads(b'changesets'):
-            h = self.changeset_ref(h)
-            tags.update(self._get_hgtags(h))
+        if self._has_metadata:
+            for (h, _) in GitHgHelper.heads(b'changesets'):
+                h = self.changeset_ref(h)
+                tags.update(self._get_hgtags(h))
         for tag, node in tags:
             if node != NULL_NODE_ID:
                 yield tag, node
 
     def _get_hgtags(self, head):
         tags = TagSet()
-        if not self._tagcache.get(head):
-            ls = one(Git.ls_tree(head, b'.hgtags'))
-            if not ls:
-                self._tagcache[head] = NULL_NODE_ID
-                return tags
-            mode, typ, self._tagcache[head], path = ls
-        tagfile = self._tagcache[head]
-        if tagfile not in self._tags:
-            if tagfile in self._tagfiles:
-                data = GitHgHelper.cat_file(b'blob', self._tagfiles[tagfile])
-                for line in data.splitlines():
-                    tag, nodes = line.split(b'\0', 1)
-                    nodes = nodes.split(b' ')
-                    for node in reversed(nodes):
-                        tags[tag] = node
-            else:
-                data = GitHgHelper.cat_file(b'blob', tagfile) or b''
-                for line in data.splitlines():
-                    if not line:
-                        continue
-                    try:
-                        node, tag = line.split(b' ', 1)
-                    except ValueError:
-                        continue
-                    tag = tag.strip()
-                    try:
-                        unhexlify(node)
-                    except TypeError:
-                        continue
-                    if node != NULL_NODE_ID:
-                        node = self.cached_changeset_ref(node)
-                    if node:
-                        tags[tag] = node
-            self._tags[tagfile] = tags
-        return self._tags[tagfile]
+        ls = one(Git.ls_tree(head, b'.hgtags'))
+        if not ls:
+            return tags
+        mode, typ, tagfile, path = ls
+        data = GitHgHelper.cat_file(b'blob', tagfile) or b''
+        for line in data.splitlines():
+            if not line:
+                continue
+            try:
+                node, tag = line.split(b' ', 1)
+            except ValueError:
+                continue
+            tag = tag.strip()
+            try:
+                unhexlify(node)
+            except TypeError:
+                continue
+            if node != NULL_NODE_ID:
+                node = self.cached_changeset_ref(node)
+            if node:
+                tags[tag] = node
+        return tags
 
     def heads(self, branches={}):
         if not isinstance(branches, (dict, set)):
@@ -1048,8 +1025,7 @@ class GitHgStore(object):
         # If the helper is not running, we don't have anything to update.
         if not GitHgHelper._helper:
             return
-        changeset_heads = set(self.changeset_ref(h)
-                              for (h, _) in GitHgHelper.heads(b'changesets'))
+
         bundle_blob = getattr(self, "bundle_blob", None)
 
         self._metadata_sha1 = GitHgHelper.store(
@@ -1066,56 +1042,6 @@ class GitHgStore(object):
                 Git.delete_ref(b'refs/cinnabar/replace/%s' % ref)
             else:
                 Git.update_ref(b'refs/cinnabar/replace/%s' % ref, sha1)
-
-        for c in self._tagcache:
-            if c not in changeset_heads:
-                self._tagcache[c] = False
-
-        for c in changeset_heads:
-            if c not in self._tagcache:
-                tags = self._get_hgtags(c)
-
-        files = set(self._tagcache.values())
-        deleted = set()
-        created = {}
-        for f in self._tagcache_items:
-            if (f not in self._tagcache and f not in self._tagfiles or
-                    f not in files and f in self._tagfiles):
-                deleted.add(f)
-
-        def tagset_lines(tags):
-            for tag, value in tags:
-                yield b'%s\0%s %s\n' % (tag, value,
-                                        b' '.join(tags.hist(tag)))
-
-        for f, tags in self._tags.items():
-            if f not in self._tagfiles and f != NULL_NODE_ID:
-                data = b''.join(tagset_lines(tags))
-                mark = GitHgHelper.put_blob(data=data)
-                created[f] = (mark, b'exec')
-
-        if created or deleted:
-            self.tag_changes = True
-
-        for c, f in self._tagcache.items():
-            if (f and c not in self._tagcache_items):
-                if f == NULL_NODE_ID:
-                    created[c] = (f, b'commit')
-                else:
-                    created[c] = (f, b'regular')
-            elif f is False and c in self._tagcache_items:
-                deleted.add(c)
-
-        if created or deleted:
-            with GitHgHelper.commit(
-                ref=b'refs/cinnabar/tag_cache',
-                from_commit=self._tagcache_ref,
-            ) as commit:
-                for f in deleted:
-                    commit.filedelete(f)
-
-                for f, (filesha1, typ) in created.items():
-                    commit.filemodify(f, filesha1, typ)
 
         # refs/notes/cinnabar is kept for convenience
         for ref in self.METADATA_REFS:

@@ -125,8 +125,8 @@ class PushStore(GitHgStore):
         store._init()
 
     def __init__(self, *args, **kwargs):
-        super(PushStore, self).__init__(*args, **kwargs)
         self._init()
+        super(PushStore, self).__init__(*args, **kwargs)
 
     def _init(self):
         self._pushed = set()
