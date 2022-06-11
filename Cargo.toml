@@ -113,5 +113,6 @@ panic = "abort"
 
 [features]
 default = ["version-check"]
+compile_commands = []
 curl-compat = []
 version-check = ["os_pipe", "semver", "shared_child"]

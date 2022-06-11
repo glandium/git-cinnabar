@@ -100,7 +100,9 @@ cinnabar-fast-import.o: fast-import.patched.c
 $(ALL_CINNABAR_OBJECTS): GIT-CFLAGS $(missing_dep_dirs)
 
 $(ALL_CINNABAR_OBJECTS):
-	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
+	$(QUIET_CC)$(CC) -o $@ -c $(dep_args) $(compdb_args) $(ALL_CFLAGS) $(EXTRA_CPPFLAGS) $<
+
+compile_commands.json: $(ALL_CINNABAR_OBJECTS)
 
 config.patched.sp config.patched.s config.patched.o: GIT-PREFIX
 config.patched.sp config.patched.s config.patched.o: EXTRA_CPPFLAGS = \

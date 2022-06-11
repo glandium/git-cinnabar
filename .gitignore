@@ -3,4 +3,5 @@ git-cinnabar.exe
 git-remote-hg
 git-remote-hg.exe
 *.pyc
+compile_commands.json
 target

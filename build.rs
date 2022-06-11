@@ -152,6 +152,13 @@ fn main() {
     cmd.arg(format!("CFLAGS={}", cflags));
     cmd.arg(format!("CC={}", compiler.path().display()));
 
+    let compile_commands =
+        cfg!(feature = "compile_commands") || std::env::var("VSCODE_PID").is_ok();
+    if compile_commands {
+        cmd.arg("GENERATE_COMPILATION_DATABASE=yes");
+        cmd.arg("compile_commands.json");
+    }
+
     println!("cargo:rerun-if-env-changed=CFLAGS_{}", env("TARGET"));
     println!(
         "cargo:rerun-if-env-changed=CFLAGS_{}",
@@ -203,6 +210,14 @@ fn main() {
         .status()
         .expect("Failed to execute GNU make")
         .success());
+
+    if compile_commands {
+        std::fs::copy(
+            out_dir.join("compile_commands.json"),
+            dir.join("compile_commands.json"),
+        )
+        .ok();
+    }
 
     let mut make = gnu_make();
     let output = prepare_make(&mut make)
