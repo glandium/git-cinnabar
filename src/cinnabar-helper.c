@@ -1462,6 +1462,11 @@ static void reset_replace_map()
 	the_repository->objects->replace_map_initialized = 0;
 }
 
+unsigned int replace_map_size()
+{
+	return hashmap_get_size(&the_repository->objects->replace_map->map);
+}
+
 static int count_refs(const char *refname, const struct object_id *oid,
                       int flags, void *cb_dat) {
 	size_t *count = (size_t *)cb_dat;
@@ -1708,6 +1713,8 @@ int remote_skip_default_update(const struct remote *remote)
 }
 
 static int nongit = 0;
+
+extern void do_graft(struct reader *input, int output, struct string_list *args);
 
 void init_cinnabar(const char *argv0)
 {

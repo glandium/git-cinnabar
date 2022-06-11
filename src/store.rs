@@ -15,7 +15,7 @@ use derive_more::{Deref, Display};
 use getset::{CopyGetters, Getters};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use percent_encoding::percent_decode;
+use percent_encoding::{percent_decode, percent_encode, NON_ALPHANUMERIC};
 
 use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libc::FdFile;
@@ -27,7 +27,7 @@ use crate::libgit::{
 use crate::oid::{GitObjectId, HgObjectId, ObjectId};
 use crate::oid_type;
 use crate::util::{FromBytes, ImmutBString, SliceExt, ToBoxed};
-use crate::xdiff::{apply, PatchInfo};
+use crate::xdiff::{apply, textdiff, PatchInfo};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
 pub const REPLACE_REFS_PREFIX: &str = "refs/cinnabar/replace/";
@@ -114,29 +114,37 @@ impl RawGitChangesetMetadata {
     }
 }
 
-#[derive(Getters)]
-pub struct ParsedGitChangesetMetadata<'a> {
+#[derive(CopyGetters, Getters)]
+pub struct GitChangesetMetadata<B: AsRef<[u8]>> {
     #[getset(get = "pub")]
     changeset_id: HgChangesetId,
     #[getset(get = "pub")]
     manifest_id: HgManifestId,
-    author: Option<&'a [u8]>,
-    extra: Option<&'a [u8]>,
-    files: Option<&'a [u8]>,
-    patch: Option<&'a [u8]>,
+    author: Option<B>,
+    extra: Option<B>,
+    files: Option<B>,
+    patch: Option<B>,
 }
 
-impl<'a> ParsedGitChangesetMetadata<'a> {
+pub type ParsedGitChangesetMetadata<'a> = GitChangesetMetadata<&'a [u8]>;
+
+impl<B: AsRef<[u8]>> GitChangesetMetadata<B> {
     pub fn author(&self) -> Option<&[u8]> {
-        self.author
+        self.author.as_ref().map(B::as_ref)
     }
 
     pub fn extra(&self) -> Option<ChangesetExtra> {
-        self.extra.map(ChangesetExtra::from)
+        self.extra
+            .as_ref()
+            .map(|b| ChangesetExtra::from(b.as_ref()))
     }
 
     pub fn files(&self) -> impl Iterator<Item = &[u8]> {
-        let mut split = self.files.unwrap_or(b"").split(|&b| b == b'\0');
+        let mut split = self
+            .files
+            .as_ref()
+            .map_or(&b""[..], B::as_ref)
+            .split(|&b| b == b'\0');
         if self.files.is_none() {
             // b"".split() would return an empty first item, and we want to skip that.
             split.next();
@@ -145,7 +153,45 @@ impl<'a> ParsedGitChangesetMetadata<'a> {
     }
 
     pub fn patch(&self) -> Option<GitChangesetPatch> {
-        self.patch.map(GitChangesetPatch)
+        self.patch.as_ref().map(|b| GitChangesetPatch(b.as_ref()))
+    }
+}
+
+pub type GeneratedGitChangesetMetadata = GitChangesetMetadata<ImmutBString>;
+
+impl GeneratedGitChangesetMetadata {
+    pub fn generate(
+        commit: &Commit,
+        changeset_id: &HgChangesetId,
+        raw_changeset: &RawHgChangeset,
+    ) -> Option<Self> {
+        let changeset = raw_changeset.parse()?;
+        let changeset_id = changeset_id.clone();
+        let manifest_id = changeset.manifest().clone();
+        let author = if commit.author() != changeset.author() {
+            Some(changeset.author().to_vec().into_boxed_slice())
+        } else {
+            None
+        };
+        let extra = changeset.extra.map(|b| b.to_vec().into_boxed_slice());
+        let files = changeset.files.map(|b| b.to_vec().into_boxed_slice());
+        let mut temp = GeneratedGitChangesetMetadata {
+            changeset_id,
+            manifest_id,
+            author,
+            extra,
+            files,
+            patch: None,
+        };
+        let new = RawHgChangeset::from_metadata(commit, &temp)?;
+        if **raw_changeset != *new {
+            // TODO: produce a better patch (byte_diff)
+            temp.patch = Some(GitChangesetPatch::from_patch_info(textdiff(
+                raw_changeset,
+                &new,
+            )));
+        }
+        Some(temp)
     }
 }
 
@@ -240,14 +286,37 @@ impl<'a> GitChangesetPatch<'a> {
     pub fn apply(&self, input: &[u8]) -> Option<ImmutBString> {
         Some(apply(self.iter()?, input))
     }
+
+    pub fn from_patch_info(
+        iter: impl Iterator<Item = PatchInfo<impl AsRef<[u8]>>>,
+    ) -> ImmutBString {
+        let mut result = Vec::new();
+        for (n, part) in iter.enumerate() {
+            if n > 0 {
+                result.push(b'\0');
+            }
+            write!(
+                result,
+                "{},{},{}",
+                part.start,
+                part.end,
+                percent_encode(part.data.as_ref(), NON_ALPHANUMERIC)
+            )
+            .ok();
+        }
+        result.into_boxed_slice()
+    }
 }
 
 #[derive(Deref)]
 #[deref(forward)]
-pub struct RawHgChangeset(ImmutBString);
+pub struct RawHgChangeset(pub ImmutBString);
 
 impl RawHgChangeset {
-    pub fn from_metadata(commit: &Commit, metadata: &ParsedGitChangesetMetadata) -> Option<Self> {
+    pub fn from_metadata<B: AsRef<[u8]>>(
+        commit: &Commit,
+        metadata: &GitChangesetMetadata<B>,
+    ) -> Option<Self> {
         let HgAuthorship {
             author: mut hg_author,
             timestamp: hg_timestamp,

@@ -398,6 +398,8 @@ class Grafter(object):
     __slots__ = "_store", "_graft_trees", "_did_something"
 
     def __init__(self, store):
+        with GitHgHelper.query(b'graft', b'init'):
+            pass
         self._store = store
         self._graft_trees = defaultdict(list)
         self._did_something = False
@@ -416,7 +418,10 @@ class Grafter(object):
 
     @property
     def _grafted(self):
-        return bool(self._store._replace)
+        with GitHgHelper.query(b'graft', b'status') as stdout:
+            res = stdout.readline().strip()
+            assert res in (b'true', b'false')
+            return res == b'true'
 
     def _graft(self, changeset, tree, parents):
         store = self._store
@@ -484,7 +489,7 @@ class Grafter(object):
             raise AmbiguousGraftAbort(
                 'Cannot graft changeset %s. Candidates: %s'
                 % (changeset.node.decode('ascii'),
-                   ', '.join(n.decode('ascii') for n in nodes)))
+                   ', '.join(n.decode('ascii') for n in sorted(nodes))))
 
         if nodes:
             node = nodes[0]
@@ -493,10 +498,40 @@ class Grafter(object):
         return None
 
     def graft(self, changeset, tree):
+        args = [changeset.node, tree]
+        args.extend(changeset.parents)
+        raw_data = changeset.raw_data
+        args.append(str(len(raw_data)).encode('ascii'))
+        with GitHgHelper.query(b'graft', b'changeset', *args) as stdout:
+            stdout.write(raw_data)
+            stdout.flush()
+            response = stdout.readline().strip().split()
+            assert len(response) > 0
+            if response[0] == b"ambiguous":
+                message = (
+                    'Cannot graft changeset %s. Candidates: %s'
+                    % (changeset.node.decode('ascii'),
+                       ', '.join(n.decode('ascii')
+                                 for n in sorted(response[1:]))))
+                sha1 = None
+            else:
+                sha1 = response[0]
+                assert len(sha1) == 40
+                if sha1 == NULL_NODE_ID:
+                    sha1 = None
+
         store = self._store
         parents = tuple(store.changeset_ref(p) for p in changeset.parents)
         assert None not in parents
-        result = self._graft(changeset, tree, parents)
+        try:
+            result = self._graft(changeset, tree, parents)
+            if result:
+                assert result.sha1 == sha1
+            else:
+                assert result == sha1
+        except AmbiguousGraftAbort as e:
+            assert str(e) == message
+            raise
         if result:
             self._did_something = True
             if not self._grafted:

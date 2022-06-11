@@ -53,6 +53,7 @@ mod util;
 mod oid;
 #[macro_use]
 pub mod libgit;
+mod graft;
 mod libc;
 mod libcinnabar;
 mod logging;
@@ -100,6 +101,7 @@ use url::Url;
 use which::which;
 
 use crate::libc::FdFile;
+use graft::do_graft;
 use hg_connect::connect_main_with;
 use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git};
 use libgit::{
@@ -203,13 +205,17 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
         let command = i.next().unwrap();
         let mut nul = [b'\0'];
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
-        if let b"progress" = &*command {
+        if let b"graft" | b"progress" = &*command {
             let args = match args_.split_last().unwrap().1 {
                 b"" => Vec::new(),
                 args => args.split(|&b| b == b' ').collect::<Vec<_>>(),
             };
             let out = unsafe { FdFile::from_raw_fd(out) };
-            do_progress(out, &args);
+            match &*command {
+                b"progress" => do_progress(out, &args),
+                b"graft" => do_graft(input, out, &args),
+                _ => unreachable!(),
+            }
             continue;
         }
 
@@ -1328,8 +1334,6 @@ bitflags! {
         const CINNABARCLONE = 0x800;
         const CLONEBUNDLES = 0x1000;
         const UNBUNDLER = 0x2000;
-
-        const ALL_BASE_CHECKS = Checks::NODEID.bits | Checks::MANIFESTS.bits | Checks::HELPER.bits;
     }
 }
 
@@ -1338,7 +1342,7 @@ static CHECKS: Lazy<Checks> = Lazy::new(|| {
     if let Some(config) = get_config("check") {
         for c in config.as_bytes().split(|&b| b == b',') {
             match c {
-                b"true" | b"all" => checks = Checks::ALL_BASE_CHECKS,
+                b"true" | b"all" => checks = Checks::all(),
                 b"helper" => checks.set(Checks::HELPER, true),
                 b"manifests" => checks.set(Checks::MANIFESTS, true),
                 b"no-version-check" => checks.set(Checks::VERSION, false),
