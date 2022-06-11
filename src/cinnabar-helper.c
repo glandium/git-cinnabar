@@ -1406,10 +1406,10 @@ static void do_create_git_tree(struct string_list *args)
 		const struct object_id *ref_commit_oid;
 		struct commit *ref_commit;
 		if (get_sha1_hex(args->items[1].string, ref_oid.hash))
-			die("invalid argument");
+			die("invalid argument %s", args->items[1].string);
 		ref_commit_oid = resolve_hg2git(&ref_oid, 40);
 		if (!ref_commit_oid)
-			die("invalid argument");
+			die("invalid argument hg2git %s", args->items[1].string);
 		ref_commit = lookup_commit(the_repository, ref_commit_oid);
 		parse_commit_or_die(ref_commit);
 		ref_tree = get_commit_tree_oid(ref_commit);

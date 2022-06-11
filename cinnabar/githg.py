@@ -419,9 +419,8 @@ class Grafter(object):
         data = self._store.read_changeset_data(commit)
         return b'\npatch' not in data if data else False
 
-    def _graft(self, changeset, parents):
+    def _graft(self, changeset, tree, parents):
         store = self._store
-        tree = store.git_tree(changeset.manifest, *changeset.parents[:1])
         do_graft = tree and tree in self._graft_trees
         if not do_graft:
             return None
@@ -494,14 +493,12 @@ class Grafter(object):
             return commits[node]
         return None
 
-    def graft(self, changeset):
+    def graft(self, changeset, tree):
         # TODO: clarify this function because it's hard to follow.
         store = self._store
         parents = tuple(store.changeset_ref(p) for p in changeset.parents)
-        if None in parents:
-            result = None
-        else:
-            result = self._graft(changeset, parents)
+        assert None not in parents
+        result = self._graft(changeset, tree, parents)
         if parents:
             is_early_history = all(p in self._early_history for p in parents)
         else:
@@ -951,8 +948,13 @@ class GitHgStore(object):
     def store_changeset(self, instance, commit=None):
         if commit and not isinstance(commit, GitCommit):
             commit = GitCommit(commit)
+        if not commit:
+            parents = tuple(self.changeset_ref(p) for p in instance.parents)
+            if None in parents:
+                raise NothingToGraftException()
+            tree = self.git_tree(instance.manifest, *instance.parents[:1])
         if commit is None and self._graft:
-            return self._graft.graft(instance)
+            return self._graft.graft(instance, tree)
 
         if not commit:
             author = Authorship.from_hg(instance.author, instance.timestamp,
@@ -974,8 +976,6 @@ class GitHgStore(object):
             else:
                 committer = author
 
-            parents = tuple(GitHgHelper.hg2git(p) for p in instance.parents)
-
             body = instance.body
 
             # There are cases where two changesets would map to the same
@@ -994,9 +994,7 @@ class GitHgStore(object):
                 author=author,
                 parents=parents,
             ) as c:
-                c.filemodify(b'', self.git_tree(instance.manifest,
-                                                *instance.parents[:1]),
-                             typ=b'tree')
+                c.filemodify(b'', tree, typ=b'tree')
 
             commit = PseudoGitCommit(c.sha1)
             commit.author = author
