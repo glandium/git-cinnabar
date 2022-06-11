@@ -914,7 +914,7 @@ static void do_store(struct string_list *args)
 			strbuf_addf(
 				&buf, "tree %s\n",
 				oid_to_hex(&empty_tree));
-			oid_array_sort(&manifest_heads);
+			ensure_heads(&manifest_heads);
 			oid_array_for_each_unique(
 				&manifest_heads, add_manifests_parent,
 				&buf);
