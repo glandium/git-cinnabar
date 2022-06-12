@@ -395,13 +395,12 @@ class BranchMap(object):
 
 
 class Grafter(object):
-    __slots__ = "_store", "_early_history", "_graft_trees", "_grafted"
+    __slots__ = "_store", "_graft_trees", "_did_something"
 
     def __init__(self, store):
         self._store = store
-        self._early_history = set()
         self._graft_trees = defaultdict(list)
-        self._grafted = False
+        self._did_something = False
         refs = [
             b'--exclude=refs/cinnabar/*',
             b'--exclude=refs/notes/cinnabar',
@@ -415,9 +414,9 @@ class Grafter(object):
                 GitHgHelper.rev_list(b'--full-history', *refs)):
             self._graft_trees[tree].append(node)
 
-    def _is_cinnabar_commit(self, commit):
-        data = self._store.read_changeset_data(commit)
-        return b'\npatch' not in data if data else False
+    @property
+    def _grafted(self):
+        return bool(self._store._replace)
 
     def _graft(self, changeset, tree, parents):
         store = self._store
@@ -439,8 +438,8 @@ class Grafter(object):
                    for p1, p2 in zip(commit.parents, parents)):
                 return True
 
-            # Allow to graft if one of the parents is from early history
-            return any(p in self._early_history for p in parents)
+            # Allow to graft if not already grafted
+            return not self._grafted
 
         nodes = tuple(c for c in self._graft_trees[tree] if graftable(c))
 
@@ -494,40 +493,22 @@ class Grafter(object):
         return None
 
     def graft(self, changeset, tree):
-        # TODO: clarify this function because it's hard to follow.
         store = self._store
         parents = tuple(store.changeset_ref(p) for p in changeset.parents)
         assert None not in parents
         result = self._graft(changeset, tree, parents)
-        if parents:
-            is_early_history = all(p in self._early_history for p in parents)
-        else:
-            is_early_history = not result
-        if not (is_early_history or result):
-            raise NothingToGraftException()
-        if is_early_history or not result:
-            commit = store.changeset_ref(changeset.node)
-        else:
-            commit = result
-        store.store_changeset(changeset, commit or False)
-        commit = store.changeset_ref(changeset.node)
-        if is_early_history:
-            if result and result.sha1 != commit:
-                store._replace[result.sha1] = commit
-                GitHgHelper.set(b'replace', result.sha1, commit)
-            else:
-                self._early_history.add(commit)
-        elif not parents:
-            if result:
-                commit = result.sha1
-            if self._is_cinnabar_commit(commit):
-                self._early_history.add(commit)
-
         if result:
-            self._grafted = True
+            self._did_something = True
+            if not self._grafted:
+                cs = Changeset.from_git_commit(result)
+                patcher = ChangesetPatcher.from_diff(cs, changeset)
+                if b"patch" in patcher:
+                    result = PseudoGitCommit(result.sha1)
+                    result.graft = True
+        return result
 
     def close(self):
-        if not self._grafted and self._early_history:
+        if not self._grafted and not self._did_something:
             raise NothingToGraftException()
 
 
@@ -954,9 +935,9 @@ class GitHgStore(object):
                 raise NothingToGraftException()
             tree = self.git_tree(instance.manifest, *instance.parents[:1])
         if commit is None and self._graft:
-            return self._graft.graft(instance, tree)
+            commit = self._graft.graft(instance, tree)
 
-        if not commit:
+        if not commit or getattr(commit, "graft", None):
             author = Authorship.from_hg(instance.author, instance.timestamp,
                                         instance.utcoffset)
             extra = instance.extra
@@ -995,6 +976,10 @@ class GitHgStore(object):
                 parents=parents,
             ) as c:
                 c.filemodify(b'', tree, typ=b'tree')
+
+            if commit and commit.sha1 != c.sha1:
+                self._replace[commit.sha1] = c.sha1
+                GitHgHelper.set(b'replace', commit.sha1, c.sha1)
 
             commit = PseudoGitCommit(c.sha1)
             commit.author = author
