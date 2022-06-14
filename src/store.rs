@@ -21,8 +21,8 @@ use crate::hg_data::Authorship;
 use crate::libc::FdFile;
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
 use crate::libgit::{
-    get_oid_committish, lookup_replace_commit, object_id, object_type, BlobId, CommitId, RawBlob,
-    RawCommit,
+    get_oid_committish, lookup_replace_commit, object_id, object_type, BlobId, Commit, CommitId,
+    RawBlob, RawCommit,
 };
 use crate::oid::{GitObjectId, HgObjectId, ObjectId};
 use crate::oid_type;
@@ -257,9 +257,7 @@ impl<'a> GitChangesetPatch<'a> {
 pub struct RawHgChangeset(ImmutBString);
 
 impl RawHgChangeset {
-    pub fn read(oid: &GitChangesetId) -> Option<Self> {
-        let commit = RawCommit::read(oid)?;
-        let commit = commit.parse()?;
+    pub fn from_metadata(commit: &Commit, metadata: &ParsedGitChangesetMetadata) -> Option<Self> {
         let (mut hg_author, hg_timestamp, hg_utcoffset) =
             Authorship::from_git_bytes(commit.author()).to_hg_parts();
         let hg_committer = if commit.author() != commit.committer() {
@@ -269,8 +267,6 @@ impl RawHgChangeset {
         };
         let hg_committer = hg_committer.as_ref();
 
-        let metadata = GitChangesetMetadata::read(oid)?;
-        let metadata = metadata.parse()?;
         if let Some(author) = metadata.author() {
             hg_author = author.to_boxed();
         }
@@ -329,6 +325,14 @@ impl RawHgChangeset {
             changeset.pop();
         }
         Some(RawHgChangeset(changeset.into()))
+    }
+
+    pub fn read(oid: &GitChangesetId) -> Option<Self> {
+        let commit = RawCommit::read(oid)?;
+        let commit = commit.parse()?;
+        let metadata = GitChangesetMetadata::read(oid)?;
+        let metadata = metadata.parse()?;
+        Self::from_metadata(&commit, &metadata)
     }
 }
 
