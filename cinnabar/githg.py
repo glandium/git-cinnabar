@@ -502,7 +502,7 @@ class Grafter(object):
             if not self._grafted:
                 cs = Changeset.from_git_commit(result)
                 patcher = ChangesetPatcher.from_diff(cs, changeset)
-                if b"patch" in patcher:
+                if b'\npatch' in patcher:
                     result = PseudoGitCommit(result.sha1)
                     result.graft = True
         return result
