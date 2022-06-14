@@ -135,8 +135,13 @@ impl<'a> ParsedGitChangesetMetadata<'a> {
         self.extra.map(ChangesetExtra::from)
     }
 
-    pub fn files(&self) -> ChangesetFilesIter {
-        ChangesetFilesIter(self.files)
+    pub fn files(&self) -> impl Iterator<Item = &[u8]> {
+        let mut split = self.files.unwrap_or(b"").split(|&b| b == b'\0');
+        if self.files.is_none() {
+            // b"".split() would return an empty first item, and we want to skip that.
+            split.next();
+        }
+        split
     }
 
     pub fn patch(&self) -> Option<GitChangesetPatch> {
@@ -213,21 +218,6 @@ fn test_changeset_extra() {
     result2.truncate(0);
     extra.dump_into(&mut result2);
     assert_eq!(result2.as_bstr(), b"aaaa:bbbb\0bar:qux\0foo:bar".as_bstr());
-}
-pub struct ChangesetFilesIter<'a>(Option<&'a [u8]>);
-
-impl<'a> Iterator for ChangesetFilesIter<'a> {
-    type Item = &'a [u8];
-    fn next(&mut self) -> Option<&'a [u8]> {
-        let files = self.0.take()?;
-        match files.splitn_exact(b'\0') {
-            Some([a, b]) => {
-                self.0 = Some(b);
-                Some(a)
-            }
-            None => Some(files),
-        }
-    }
 }
 
 pub struct GitChangesetPatch<'a>(&'a [u8]);
