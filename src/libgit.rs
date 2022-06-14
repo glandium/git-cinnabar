@@ -13,7 +13,7 @@ use bstr::{BStr, ByteSlice, ByteVec};
 use cstr::cstr;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use derive_more::{Deref, Display};
-use getset::Getters;
+use getset::{CopyGetters, Getters};
 use once_cell::sync::Lazy;
 
 use crate::oid::{GitObjectId, ObjectId};
@@ -344,16 +344,16 @@ raw_object!(OBJ_COMMIT | CommitId => RawCommit);
 raw_object!(OBJ_TREE | TreeId => RawTree);
 raw_object!(OBJ_BLOB | BlobId => RawBlob);
 
-#[derive(Getters)]
+#[derive(CopyGetters, Getters)]
 pub struct Commit<'a> {
     #[getset(get = "pub")]
     tree: TreeId,
     parents: Vec<CommitId>,
-    #[getset(get = "pub")]
+    #[getset(get_copy = "pub")]
     author: &'a [u8],
-    #[getset(get = "pub")]
+    #[getset(get_copy = "pub")]
     committer: &'a [u8],
-    #[getset(get = "pub")]
+    #[getset(get_copy = "pub")]
     body: &'a [u8],
 }
 
