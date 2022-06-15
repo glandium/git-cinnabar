@@ -64,17 +64,17 @@ impl GitChangesetId {
     pub fn to_hg(&self) -> Option<HgChangesetId> {
         //TODO: avoid repeatedly reading metadata for a given changeset.
         //The equivalent python code was keeping a LRU cache.
-        let metadata = GitChangesetMetadata::read(self);
+        let metadata = RawGitChangesetMetadata::read(self);
         metadata
             .as_ref()
-            .and_then(GitChangesetMetadata::parse)
+            .and_then(RawGitChangesetMetadata::parse)
             .map(|m| m.changeset_id().clone())
     }
 }
 
-pub struct GitChangesetMetadata(RawBlob);
+pub struct RawGitChangesetMetadata(RawBlob);
 
-impl GitChangesetMetadata {
+impl RawGitChangesetMetadata {
     pub fn read(changeset_id: &GitChangesetId) -> Option<Self> {
         let note = unsafe {
             git2hg
@@ -320,7 +320,7 @@ impl RawHgChangeset {
     pub fn read(oid: &GitChangesetId) -> Option<Self> {
         let commit = RawCommit::read(oid)?;
         let commit = commit.parse()?;
-        let metadata = GitChangesetMetadata::read(oid)?;
+        let metadata = RawGitChangesetMetadata::read(oid)?;
         let metadata = metadata.parse()?;
         Self::from_metadata(&commit, &metadata)
     }
@@ -406,7 +406,7 @@ pub unsafe extern "C" fn add_changeset_head(cs: *const hg_object_id, oid: *const
         heads.heads.remove(&cs);
     } else {
         let blob = BlobId::from_unchecked(oid);
-        let cs_meta = GitChangesetMetadata(RawBlob::read(&blob).unwrap());
+        let cs_meta = RawGitChangesetMetadata(RawBlob::read(&blob).unwrap());
         let meta = cs_meta.parse().unwrap();
         assert_eq!(meta.changeset_id, cs);
         let branch = meta
@@ -419,7 +419,7 @@ pub unsafe extern "C" fn add_changeset_head(cs: *const hg_object_id, oid: *const
         for parent in commit.parents() {
             let parent = lookup_replace_commit(parent);
             let parent_cs_meta =
-                GitChangesetMetadata::read(&GitChangesetId::from_unchecked(parent.into_owned()))
+                RawGitChangesetMetadata::read(&GitChangesetId::from_unchecked(parent.into_owned()))
                     .unwrap();
             let parent_meta = parent_cs_meta.parse().unwrap();
             let parent_branch = parent_meta
