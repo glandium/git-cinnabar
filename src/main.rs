@@ -99,8 +99,8 @@ use which::which;
 use hg_connect::connect_main_with;
 use libcinnabar::{files_meta, hg2git};
 use libgit::{
-    for_each_ref_in, for_each_remote, get_oid_committish, lookup_replace_commit, ls_tree, remote,
-    resolve_ref, BlobId, CommitId, RawCommit, RefTransaction,
+    config_get_value, for_each_ref_in, for_each_remote, get_oid_committish, lookup_replace_commit,
+    ls_tree, remote, resolve_ref, strbuf, BlobId, CommitId, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use store::{
@@ -1173,4 +1173,31 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
     };
     done_cinnabar();
     ret
+}
+
+#[no_mangle]
+unsafe extern "C" fn config(name: *const c_char, result: *mut strbuf) -> c_int {
+    if let Some(res) = get_config(CStr::from_ptr(name).to_str().unwrap()) {
+        result.as_mut().unwrap().extend_from_slice(res.as_bytes());
+        0
+    } else {
+        1
+    }
+}
+
+pub fn get_config(name: &str) -> Option<OsString> {
+    const PREFIX: &str = "GIT_CINNABAR_";
+    let mut env_key = String::with_capacity(name.len() + PREFIX.len());
+    env_key.push_str(PREFIX);
+    env_key.extend(name.chars().map(|c| match c.to_ascii_uppercase() {
+        '-' => '_',
+        c => c,
+    }));
+    std::env::var_os(env_key).or_else(|| {
+        const PREFIX: &str = "cinnabar.";
+        let mut config_key = String::with_capacity(name.len() + PREFIX.len());
+        config_key.push_str(PREFIX);
+        config_key.push_str(name);
+        config_get_value(&config_key)
+    })
 }

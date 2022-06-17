@@ -95,35 +95,7 @@ int cinnabar_check = CHECK_VERSION;
 FILE *helper_input;
 int helper_output;
 
-int config(const char *name, struct strbuf *result)
-{
-	struct strbuf key = STRBUF_INIT;
-	char *p, *end;
-	const char *val;
-
-	strbuf_addstr(&key, "GIT_CINNABAR_");
-	strbuf_addstr(&key, name);
-	for (p = key.buf + sizeof("git_cinnabar"), end = key.buf + key.len;
-	     p < end; p++)
-		if (*p == '-') {
-			*p = '_';
-		} else {
-			*p = toupper(*p);
-		}
-	val = getenv(key.buf);
-	if (!val) {
-		strbuf_release(&key);
-		strbuf_addstr(&key, "cinnabar.");
-		strbuf_addstr(&key, name);
-		if (git_config_get_value(key.buf, &val)) {
-			strbuf_release(&key);
-			return 1;
-		}
-	}
-	strbuf_addstr(result, val);
-	strbuf_release(&key);
-	return 0;
-}
+extern int config(const char *name, struct strbuf *result);
 
 static int cleanup_object_array_entry(struct object_array_entry *entry, void *data)
 {

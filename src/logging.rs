@@ -14,7 +14,7 @@ use std::time::Instant;
 use bstr::ByteSlice;
 use log::LevelFilter;
 
-use crate::libgit::config_get_value;
+use crate::get_config;
 use crate::util::{FromBytes, OsStrExt};
 
 pub fn init(start_time: Instant) {
@@ -100,9 +100,7 @@ impl CinnabarLogger {
 
         // Initialize logging from the GIT_CINNABAR_LOG environment variable
         // or the cinnabar.log configuration, the former taking precedence.
-        if let Some(config) =
-            std::env::var_os("GIT_CINNABAR_LOG").or_else(|| config_get_value("cinnabar.log"))
-        {
+        if let Some(config) = get_config("log") {
             for item in config.as_bytes().split(|&b| b == b',') {
                 let mut iter = item.splitn(2, |&b| b == b'>');
                 let assignment = iter.next().unwrap();
