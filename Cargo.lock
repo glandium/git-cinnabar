@@ -311,6 +311,7 @@ version = "0.6.0-a"
 dependencies = [
  "all_asserts",
  "array-init",
+ "bitflags",
  "bstr",
  "byteorder",
  "bzip2",

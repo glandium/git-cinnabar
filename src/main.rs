@@ -90,8 +90,10 @@ use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 use std::os::windows::io::AsRawHandle;
 use std::time::Instant;
 
+use bitflags::bitflags;
 use bstr::ByteSlice;
 use git_version::git_version;
+use once_cell::sync::Lazy;
 use os_pipe::pipe;
 use url::Url;
 use which::which;
@@ -1200,4 +1202,59 @@ pub fn get_config(name: &str) -> Option<OsString> {
         config_key.push_str(name);
         config_get_value(&config_key)
     })
+}
+
+bitflags! {
+    pub struct Checks: i32 {
+        const HELPER = 0x1;
+        const MANIFESTS = 0x2;
+        const VERSION = 0x4;
+        const NODEID = 0x8;
+        const BUNDLE = 0x10;
+        const FILES = 0x20;
+        const MEMORY = 0x40;
+        const CPU = 0x80;
+        const TIME = 0x100;
+        const TRACEBACK = 0x200;
+        const NO_BUNDLE2 = 0x400;
+        const CINNABARCLONE = 0x800;
+        const CLONEBUNDLES = 0x1000;
+        const UNBUNDLER = 0x2000;
+    }
+}
+
+static CHECKS: Lazy<Checks> = Lazy::new(|| {
+    let mut checks = Checks::VERSION;
+    if let Some(config) = get_config("check") {
+        for c in config.as_bytes().split(|&b| b == b',') {
+            match c {
+                b"true" | b"all" => checks = Checks::all(),
+                b"helper" => checks.set(Checks::HELPER, true),
+                b"manifests" => checks.set(Checks::MANIFESTS, true),
+                b"no-version-check" => checks.set(Checks::VERSION, false),
+                b"nodeid" => checks.set(Checks::NODEID, true),
+                b"bundle" => checks.set(Checks::BUNDLE, true),
+                b"files" => checks.set(Checks::FILES, true),
+                b"memory" => checks.set(Checks::MEMORY, true),
+                b"cpu" => checks.set(Checks::CPU, true),
+                b"time" => checks.set(Checks::TIME, true),
+                b"traceback" => checks.set(Checks::TRACEBACK, true),
+                b"no-bundle2" => checks.set(Checks::NO_BUNDLE2, true),
+                b"cinnabarclone" => checks.set(Checks::CINNABARCLONE, true),
+                b"clonebundles" => checks.set(Checks::CLONEBUNDLES, true),
+                b"unbundler" => checks.set(Checks::UNBUNDLER, true),
+                _ => {}
+            }
+        }
+    }
+    checks
+});
+
+#[no_mangle]
+unsafe extern "C" fn cinnabar_check(flag: c_int) -> c_int {
+    CHECKS.contains(Checks::from_bits(flag).unwrap()) as c_int
+}
+
+pub fn check_enabled(checks: Checks) -> bool {
+    CHECKS.contains(checks)
 }

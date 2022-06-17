@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::os::raw::c_int;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -17,13 +16,7 @@ use shared_child::SharedChild;
 
 use crate::libgit::config_get_value;
 use crate::util::{ReadExt, SliceExt};
-use crate::FULL_VERSION;
-
-extern "C" {
-    static cinnabar_check: c_int;
-}
-
-const CHECK_VERSION: c_int = 0x04;
+use crate::{check_enabled, Checks, FULL_VERSION};
 
 const ALL_TAG_REFS: &str = "refs/tags/*";
 const CARGO_PKG_REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -42,7 +35,7 @@ pub struct VersionCheck {
 
 impl VersionCheck {
     pub fn new() -> Option<Self> {
-        if unsafe { cinnabar_check & CHECK_VERSION } == 0 {
+        if !check_enabled(Checks::VERSION) {
             return None;
         }
         let now = SystemTime::now();

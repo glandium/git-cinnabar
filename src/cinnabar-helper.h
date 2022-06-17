@@ -16,9 +16,8 @@ extern int metadata_flags;
 
 #define CHECK_HELPER 0x1
 #define CHECK_MANIFESTS 0x2
-#define CHECK_VERSION 0x4
 
-extern int cinnabar_check;
+extern int cinnabar_check(int);
 
 extern struct oid_array manifest_heads;
 

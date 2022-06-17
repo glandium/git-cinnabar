@@ -91,11 +91,8 @@ struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
 struct oidset hg2git_seen = OIDSET_INIT;
 
 int metadata_flags = 0;
-int cinnabar_check = CHECK_VERSION;
 FILE *helper_input;
 int helper_output;
-
-extern int config(const char *name, struct strbuf *result);
 
 static int cleanup_object_array_entry(struct object_array_entry *entry, void *data)
 {
@@ -1486,31 +1483,6 @@ static void do_dangling(struct string_list *args)
 	strbuf_release(&buf);
 }
 
-static void init_config()
-{
-	struct strbuf conf = STRBUF_INIT;
-	if (!config("check", &conf)) {
-		struct strbuf **check = strbuf_split(&conf, ',');
-		struct strbuf **c;
-		for (c = check; *c; c++) {
-			// strbuf_split leaves the `,`.
-			if ((*c)->buf[(*c) -> len - 1] == ',')
-				strbuf_setlen(*c, (*c)->len - 1);
-			if (!strcmp((*c)->buf, "true") ||
-			    !strcmp((*c)->buf, "all"))
-				cinnabar_check = -1;
-			else if (!strcmp((*c)->buf, "helper"))
-				cinnabar_check |= CHECK_HELPER;
-			else if (!strcmp((*c)->buf, "manifests"))
-				cinnabar_check |= CHECK_MANIFESTS;
-			else if (!strcmp((*c)->buf, "no-version-check"))
-				cinnabar_check &= ~CHECK_VERSION;
-		}
-		strbuf_list_free(check);
-	}
-	strbuf_release(&conf);
-}
-
 static void reset_replace_map()
 {
 	oidmap_free(the_repository->objects->replace_map, 1);
@@ -1782,7 +1754,6 @@ void init_cinnabar(const char *argv0)
 	init_git_config();
 	setup_git_directory_gently(&nongit);
 	git_config(git_diff_basic_config, NULL);
-	init_config();
 	save_commit_buffer = 0;
 	warn_on_object_refname_ambiguity = 0;
 }
