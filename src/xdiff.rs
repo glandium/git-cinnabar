@@ -145,7 +145,7 @@ fn line_offsets(buf: &[u8]) -> Vec<usize> {
         .collect()
 }
 
-pub fn textdiff<'a>(a: &[u8], b: &'a [u8]) -> Vec<PatchInfo<&'a [u8]>> {
+pub fn textdiff<'a>(a: &[u8], b: &'a [u8]) -> impl Iterator<Item = PatchInfo<&'a [u8]>> {
     let mut ctx = HunkContext {
         patch_info: Vec::new(),
         a_line_offsets: line_offsets(a),
@@ -170,7 +170,7 @@ pub fn textdiff<'a>(a: &[u8], b: &'a [u8]) -> Vec<PatchInfo<&'a [u8]>> {
             panic!("failed to generate diff");
         }
     }
-    ctx.patch_info
+    ctx.patch_info.into_iter()
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn test_textdiff() {
     let b = ["foo", "baz", "hoge", "fuga", "qux"].join("\n");
     let result = textdiff(a.as_bytes(), b.as_bytes());
     assert_eq!(
-        result,
+        result.collect::<Vec<_>>(),
         vec![
             PatchInfo {
                 start: 4,
@@ -197,7 +197,7 @@ fn test_textdiff() {
     let b = ["foo", "hoge", "fuga", "qux"].join("\n");
     let result = textdiff(a.as_bytes(), b.as_bytes());
     assert_eq!(
-        result,
+        result.collect::<Vec<_>>(),
         vec![PatchInfo {
             start: 4,
             end: 12,
@@ -208,7 +208,7 @@ fn test_textdiff() {
     let b = ["foo", "baz", "hoge", "fuga"].join("\n");
     let result = textdiff(a.as_bytes(), b.as_bytes());
     assert_eq!(
-        result,
+        result.collect::<Vec<_>>(),
         vec![
             PatchInfo {
                 start: 4,
