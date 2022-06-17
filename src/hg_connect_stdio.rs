@@ -24,7 +24,7 @@ use crate::hg_connect::{
 };
 use crate::libc::FdFile;
 use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
-use crate::libgit::{child_process, strbuf};
+use crate::libgit::child_process;
 use crate::store::HgChangesetId;
 use crate::util::{BufferedReader, ImmutBString, OsStrExt, PrefixWriter, ReadExt, SeekExt};
 
@@ -76,10 +76,6 @@ fn stdio_send_command(conn: &mut HgStdioConnection, command: &str, args: HgArgs)
         }
     }
     conn.proc_in.write_all(&data).unwrap();
-}
-
-extern "C" {
-    fn strbuf_fread(buf: *mut strbuf, len: usize, file: *mut libc::FILE);
 }
 
 fn stdio_read_response(conn: &mut HgStdioConnection) -> ImmutBString {
