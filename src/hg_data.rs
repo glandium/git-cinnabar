@@ -10,14 +10,17 @@ use bstr::{BStr, ByteSlice};
 use crate::libgit::split_ident;
 use crate::util::{FromBytes, SliceExt};
 
+#[derive(Clone)]
 pub struct GitAuthorship<B: AsRef<[u8]>>(pub B);
 
+#[derive(Clone)]
 pub struct HgAuthorship<B: AsRef<[u8]>> {
     pub author: B,
     pub timestamp: B,
     pub utcoffset: B,
 }
 
+#[derive(Clone)]
 pub struct HgCommitter<B: AsRef<[u8]>>(pub B);
 
 #[derive(Derivative)]

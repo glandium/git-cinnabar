@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use bstr::{BStr, BString, ByteSlice};
 use derive_more::{Deref, Display};
-use getset::Getters;
+use getset::{CopyGetters, Getters};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use percent_encoding::percent_decode;
@@ -21,8 +21,8 @@ use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libc::FdFile;
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
 use crate::libgit::{
-    get_oid_committish, lookup_replace_commit, object_id, object_type, BlobId, Commit, CommitId,
-    RawBlob, RawCommit,
+    get_oid_committish, lookup_replace_commit, object_id, object_type, strbuf, BlobId, Commit,
+    CommitId, RawBlob, RawCommit,
 };
 use crate::oid::{GitObjectId, HgObjectId, ObjectId};
 use crate::oid_type;
@@ -327,6 +327,58 @@ impl RawHgChangeset {
         let metadata = metadata.parse()?;
         Self::from_metadata(&commit, &metadata)
     }
+
+    pub fn parse(&self) -> Option<HgChangeset> {
+        let [header, body] = self.0.splitn_exact(&b"\n\n"[..])?;
+        let mut lines = header.splitn(4, |&b| b == b'\n');
+        let manifest = lines.next()?;
+        let author = lines.next()?;
+        let mut date = lines.next()?.splitn(3, |&b| b == b' ');
+        let timestamp = date.next()?;
+        let utcoffset = date.next()?;
+        let extra = date.next();
+        let files = lines.next();
+        Some(HgChangeset {
+            manifest: HgManifestId::from_bytes(manifest).ok()?,
+            author,
+            timestamp,
+            utcoffset,
+            extra,
+            files,
+            body,
+        })
+    }
+}
+
+#[derive(CopyGetters, Getters)]
+pub struct HgChangeset<'a> {
+    #[getset(get = "pub")]
+    manifest: HgManifestId,
+    #[getset(get_copy = "pub")]
+    author: &'a [u8],
+    #[getset(get_copy = "pub")]
+    timestamp: &'a [u8],
+    #[getset(get_copy = "pub")]
+    utcoffset: &'a [u8],
+    extra: Option<&'a [u8]>,
+    files: Option<&'a [u8]>,
+    #[getset(get_copy = "pub")]
+    body: &'a [u8],
+}
+
+impl<'a> HgChangeset<'a> {
+    pub fn extra(&self) -> Option<ChangesetExtra> {
+        self.extra.map(ChangesetExtra::from)
+    }
+
+    pub fn files(&self) -> impl Iterator<Item = &[u8]> {
+        let mut split = self.files.unwrap_or(b"").split(|&b| b == b'\n');
+        if self.files.is_none() {
+            // b"".split() would return an empty first item, and we want to skip that.
+            split.next();
+        }
+        split
+    }
 }
 
 #[derive(Deref)]
@@ -506,4 +558,66 @@ pub unsafe extern "C" fn store_changesets_metadata(blob: *const object_id, resul
 pub unsafe extern "C" fn reset_changeset_heads() {
     let mut heads = CHANGESET_HEADS.lock().unwrap();
     *heads = ChangesetHeads::new();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn prepare_changeset_commit(
+    changeset_id: *const hg_object_id,
+    tree_id: *const object_id,
+    parent1: *const hg_object_id,
+    parent2: *const hg_object_id,
+    changeset_buf: *const strbuf,
+    commit_buf: *mut strbuf,
+) {
+    let _changeset_id =
+        HgChangesetId::from_unchecked(HgObjectId::from(changeset_id.as_ref().unwrap().clone()));
+    let tree_id = GitObjectId::from(tree_id.as_ref().unwrap().clone());
+    let parent1 = parent1
+        .as_ref()
+        .cloned()
+        .map(|p| HgChangesetId::from_unchecked(HgObjectId::from(p)));
+    let parent2 = parent2
+        .as_ref()
+        .cloned()
+        .map(|p| HgChangesetId::from_unchecked(HgObjectId::from(p)));
+    let changeset = RawHgChangeset(changeset_buf.as_ref().unwrap().as_bytes().into());
+    let changeset = changeset.parse().unwrap();
+    let result = commit_buf.as_mut().unwrap();
+    let author = HgAuthorship {
+        author: changeset.author(),
+        timestamp: changeset.timestamp(),
+        utcoffset: changeset.utcoffset(),
+    };
+    // TODO: reduce the amount of cloning.
+    let git_author = GitAuthorship::from(author.clone());
+    let git_committer = if let Some(extra) = changeset.extra() {
+        if let Some(committer) = extra.get(b"committer") {
+            if committer.ends_with(b">") {
+                GitAuthorship::from(HgAuthorship {
+                    author: committer,
+                    timestamp: author.timestamp,
+                    utcoffset: author.utcoffset,
+                })
+            } else {
+                GitAuthorship::from(HgCommitter(committer))
+            }
+        } else {
+            git_author.clone()
+        }
+    } else {
+        git_author.clone()
+    };
+    result.extend_from_slice(format!("tree {}\n", tree_id).as_bytes());
+    if let Some(parent1) = parent1 {
+        result.extend_from_slice(format!("parent {}\n", parent1.to_git().unwrap()).as_bytes());
+    }
+    if let Some(parent2) = parent2 {
+        result.extend_from_slice(format!("parent {}\n", parent2.to_git().unwrap()).as_bytes());
+    }
+    result.extend_from_slice(b"author ");
+    result.extend_from_slice(&git_author.0);
+    result.extend_from_slice(b"\ncommitter ");
+    result.extend_from_slice(&git_committer.0);
+    result.extend_from_slice(b"\n\n");
+    result.extend_from_slice(changeset.body());
 }

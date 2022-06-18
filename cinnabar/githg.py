@@ -938,6 +938,16 @@ class GitHgStore(object):
             commit = self._graft.graft(instance, tree)
 
         if not commit or getattr(commit, "graft", None):
+            args = [instance.node, tree]
+            args.extend(instance.parents)
+            raw_data = instance.raw_data
+            args.append(str(len(raw_data)).encode('ascii'))
+            with GitHgHelper.query(b'store', b'changeset', *args) as stdout:
+                stdout.write(raw_data)
+                stdout.flush()
+                sha1 = stdout.read(41)
+                assert sha1[-1:] == b'\n'
+                sha1 = sha1[:40]
             author = Authorship.from_hg(instance.author, instance.timestamp,
                                         instance.utcoffset)
             extra = instance.extra
@@ -977,6 +987,7 @@ class GitHgStore(object):
             ) as c:
                 c.filemodify(b'', tree, typ=b'tree')
 
+            assert c.sha1 == sha1
             if commit and commit.sha1 != c.sha1:
                 self._replace[commit.sha1] = c.sha1
                 GitHgHelper.set(b'replace', commit.sha1, c.sha1)
