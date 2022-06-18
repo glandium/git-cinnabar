@@ -2,10 +2,6 @@
 struct object_id;
 static void start_packfile();
 static void cinnabar_unregister_shallow(const struct object_id *oid);
-#include <stdio.h>
-extern FILE *helper_input;
-#define stdin helper_input
-extern int helper_output;
 #include "dir.h"
 #define fspathncmp strncmp
 #include "fast-import.patched.c"
@@ -20,6 +16,8 @@ extern int helper_output;
 #include "shallow.h"
 #include "strslice.h"
 #include "tree-walk.h"
+
+extern int helper_output;
 
 // Including tag.h conflicts with fast-import.c, so manually define what
 // we use.
@@ -898,7 +896,7 @@ extern void prepare_changeset_commit(
 	struct strbuf *changeset_buf,
 	struct strbuf *commit_buf);
 
-static void do_store(struct string_list *args)
+static void do_store(FILE *helper_input, struct string_list *args)
 {
 	if (!strcmp(args->items[0].string, "metadata")) {
 		struct object_id changesets, manifests, hg2git_, git2hg_,
@@ -1204,7 +1202,8 @@ static void do_reset(struct string_list *args) {
 	maybe_reset_notes(args->items[0].string);
 }
 
-int maybe_handle_command(const char *command, struct string_list *args)
+int maybe_handle_command(FILE *helper_input, const char *command,
+                         struct string_list *args)
 {
 	if (!strcmp(command, "done")) {
 		ENSURE_INIT();
@@ -1225,7 +1224,7 @@ int maybe_handle_command(const char *command, struct string_list *args)
 	} else if (!strcmp(command, "store")) {
 		ENSURE_INIT();
 		require_explicit_termination = 1;
-		do_store(args);
+		do_store(helper_input, args);
 	} else if (!strcmp(command, "reset")) {
 		ENSURE_INIT();
 		do_reset(args);

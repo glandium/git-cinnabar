@@ -91,7 +91,6 @@ struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
 struct oidset hg2git_seen = OIDSET_INIT;
 
 int metadata_flags = 0;
-FILE *helper_input;
 int helper_output;
 
 static int cleanup_object_array_entry(struct object_array_entry *entry, void *data)
@@ -1789,7 +1788,7 @@ void done_cinnabar()
 int helper_main(int in, int out)
 {
 	struct strbuf buf = STRBUF_INIT;
-	helper_input = fdopen(in, "r");
+	FILE *helper_input = fdopen(in, "r");
 	helper_output = out;
 
 	while (strbuf_getline(&buf, helper_input) != EOF) {
@@ -1833,7 +1832,7 @@ int helper_main(int in, int out)
 		else if (!strcmp("reload", command))
 			do_reload(&args);
 		else {
-			int res = maybe_handle_command(command, &args);
+			int res = maybe_handle_command(helper_input, command, &args);
 			if (res == 0)
 				die("Unknown command: \"%s\"", command);
 			if (res == 2) {
