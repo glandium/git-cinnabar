@@ -1015,7 +1015,7 @@ mod ident {
 
 pub struct SplitIdent<'a> {
     pub name: &'a BStr,
-    pub mail: &'a BStr,
+    pub email: &'a BStr,
     pub date: &'a BStr,
     pub tz: &'a BStr,
 }
@@ -1045,7 +1045,7 @@ pub fn split_ident(ident: &BStr) -> Option<SplitIdent> {
         };
         Some(SplitIdent {
             name: to_slice(split.name_begin, split.name_end),
-            mail: to_slice(split.mail_begin, split.mail_end),
+            email: to_slice(split.mail_begin, split.mail_end),
             date: if split.date_begin.is_null() {
                 b"".as_bstr()
             } else {

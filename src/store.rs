@@ -17,7 +17,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use percent_encoding::percent_decode;
 
-use crate::hg_data::Authorship;
+use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libc::FdFile;
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
 use crate::libgit::{
@@ -248,10 +248,13 @@ pub struct RawHgChangeset(ImmutBString);
 
 impl RawHgChangeset {
     pub fn from_metadata(commit: &Commit, metadata: &ParsedGitChangesetMetadata) -> Option<Self> {
-        let (mut hg_author, hg_timestamp, hg_utcoffset) =
-            Authorship::from_git_bytes(commit.author()).to_hg_parts();
+        let HgAuthorship {
+            author: mut hg_author,
+            timestamp: hg_timestamp,
+            utcoffset: hg_utcoffset,
+        } = GitAuthorship(commit.author()).into();
         let hg_committer = if commit.author() != commit.committer() {
-            Some(Authorship::from_git_bytes(commit.committer()).to_hg_bytes())
+            Some(HgCommitter::from(GitAuthorship(commit.committer())).0)
         } else {
             None
         };
