@@ -73,7 +73,6 @@ metadata history.
   ee1547daada51509736d29942d8ad9cdd53e5500 commit	refs/cinnabar/checked
   23bcc26b9fea7e37426260465bed35eac54af5e1 commit	refs/cinnabar/hg/revs/312a5a9c675e3ce302a33bd4605205a6be36d561
   fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 commit	refs/cinnabar/metadata
-  23bcc26b9fea7e37426260465bed35eac54af5e1 commit	refs/cinnabar/tip
   0d790d01720127d15c119268277eda391270b588 commit	refs/notes/cinnabar
 
 Fake fsck breakage
@@ -92,7 +91,6 @@ Fake fsck breakage
   ee1547daada51509736d29942d8ad9cdd53e5500 commit	refs/cinnabar/checked
   23bcc26b9fea7e37426260465bed35eac54af5e1 commit	refs/cinnabar/hg/revs/312a5a9c675e3ce302a33bd4605205a6be36d561
   fdc5127c26b6de6ec365bc18e9a4ae2ef2f35c08 commit	refs/cinnabar/metadata
-  23bcc26b9fea7e37426260465bed35eac54af5e1 commit	refs/cinnabar/tip
   0d790d01720127d15c119268277eda391270b588 commit	refs/notes/cinnabar
 
 Rollback to the previous metadata. Its status is not broken but unknown.

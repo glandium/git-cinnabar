@@ -1226,17 +1226,6 @@ int maybe_handle_command(const char *command, struct string_list *args)
 		ENSURE_INIT();
 		require_explicit_termination = 1;
 		do_store(args);
-	} else if (!strcmp(command, "commit")) {
-		struct branch *b;
-		char *arg;
-		ENSURE_INIT();
-		require_explicit_termination = 1;
-		arg = args->items[0].string;
-		parse_new_commit(arg);
-		b = lookup_branch(arg);
-		write_or_die(helper_output, oid_to_hex(&b->oid), 40);
-		write_or_die(helper_output, "\n", 1);
-		maybe_reset_notes(arg);
 	} else if (!strcmp(command, "reset")) {
 		ENSURE_INIT();
 		do_reset(args);

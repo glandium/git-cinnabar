@@ -948,54 +948,12 @@ class GitHgStore(object):
                 sha1 = stdout.read(41)
                 assert sha1[-1:] == b'\n'
                 sha1 = sha1[:40]
-            author = Authorship.from_hg(instance.author, instance.timestamp,
-                                        instance.utcoffset)
-            extra = instance.extra
-            if extra and extra.get(b'committer'):
-                committer = extra[b'committer']
-                if committer[-1:] == b'>':
-                    committer = Authorship.from_hg(
-                        committer, instance.timestamp, instance.utcoffset)
-                else:
-                    committer = Authorship.from_hg_str(
-                        committer, maybe_git_utcoffset=True)
-                    if committer.to_hg() == committer:
-                        extra = dict(instance.extra)
-                        del extra[b'committer']
-                        if not extra:
-                            extra = None
-            else:
-                committer = author
 
-            body = instance.body
+            if commit and commit.sha1 != sha1:
+                self._replace[commit.sha1] = sha1
+                GitHgHelper.set(b'replace', commit.sha1, sha1)
 
-            # There are cases where two changesets would map to the same
-            # git commit because their differences are not in information
-            # stored in the git commit (different manifest node, but
-            # identical tree ; different branches ; etc.)
-            # In that case, add invisible characters to the commit
-            # message until we find a commit that doesn't map to another
-            # changeset.
-            committer = committer.to_git_str()
-            author = author.to_git_str()
-            with GitHgHelper.commit(
-                ref=b'refs/cinnabar/tip',
-                message=body,
-                committer=committer,
-                author=author,
-                parents=parents,
-            ) as c:
-                c.filemodify(b'', tree, typ=b'tree')
-
-            assert c.sha1 == sha1
-            if commit and commit.sha1 != c.sha1:
-                self._replace[commit.sha1] = c.sha1
-                GitHgHelper.set(b'replace', commit.sha1, c.sha1)
-
-            commit = PseudoGitCommit(c.sha1)
-            commit.author = author
-            commit.committer = committer
-            commit.body = body
+            commit = GitCommit(sha1)
 
         GitHgHelper.set(b'changeset', instance.node, commit.sha1)
         changeset = Changeset.from_git_commit(commit)

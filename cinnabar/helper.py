@@ -3,10 +3,8 @@ import logging
 import os
 import subprocess
 import sys
-from types import GeneratorType
 from cinnabar.exceptions import HelperClosedError, HelperFailedError
 from cinnabar.git import (
-    EMPTY_BLOB,
     Git,
     NULL_NODE_ID,
     split_ls_tree,
@@ -370,47 +368,6 @@ class GitHgHelper(BaseHelper):
             return sha1[:40]
 
     @classmethod
-    @contextmanager
-    def commit(self, ref, committer=b'<cinnabar@git> 0 +0000', author=None,
-               message=b'', from_commit=None, parents=()):
-        if isinstance(parents, GeneratorType):
-            parents = tuple(parents)
-        from_tree = None
-        if parents and parents[0] == from_commit:
-            _from = parents[0]
-            merges = parents[1:]
-        else:
-            _from = NULL_NODE_ID
-            merges = parents
-            if from_commit:
-                from cinnabar.githg import GitCommit
-                from_tree = GitCommit(from_commit).tree
-
-        helper = CommitHelper()
-        # TODO: properly handle errors, like from the committer being badly
-        # formatted.
-        if author:
-            helper.write(b'author %s\n' % author)
-        helper.write(b'committer %s\n' % committer)
-        helper.cmd_data(message)
-
-        helper.write(b'from %s\n' % _from)
-        for merge in merges:
-            helper.write(b'merge %s\n' % merge)
-        if from_tree:
-            helper.write(b'M 040000 %s \n' % from_tree)
-
-        yield helper
-        helper.write(b'\n')
-
-        with self.query(b'commit', ref) as stdout:
-            stdout.write(helper.flush_buffer())
-            stdout.flush()
-            sha1 = stdout.read(41)
-            assert sha1[-1:] == b'\n'
-            helper.sha1 = sha1[:40]
-
-    @classmethod
     def close(self, rollback=True, on_atexit=False):
         if self._helper != self:
             command = b'rollback' if rollback else b'done'
@@ -420,54 +377,6 @@ class GitHgHelper(BaseHelper):
             # Cannot reuse the fds when the GitHgHelper is reused.
             os.environ.pop("GIT_CINNABAR_IMPORT_FDS", None)
         super(GitHgHelper, self).close(on_atexit=on_atexit)
-
-
-class CommitHelper(object):
-    __slots__ = '_queue', 'sha1'
-
-    def __init__(self):
-        self._queue = []
-        self.sha1 = None
-
-    def write(self, data):
-        self._queue.append(data)
-
-    def cmd_data(self, data):
-        self._queue.append(b'data %d\n' % len(data))
-        self._queue.append(data)
-        self._queue.append(b'\n')
-
-    def flush_buffer(self):
-        queue = self._queue
-        self._queue = []
-        return b''.join(queue)
-
-    def filedelete(self, path):
-        self.write(b'D %s\n' % path)
-
-    MODE = {
-        b'regular': b'644',
-        b'exec': b'755',
-        b'tree': b'040000',
-        b'symlink': b'120000',
-        b'commit': b'160000',
-    }
-
-    def filemodify(self, path, sha1=None, typ=b'regular', content=None):
-        assert sha1 or (content and typ == b'regular')
-        # We may receive the sha1 for an empty blob, even though there is no
-        # empty blob stored in the repository. So for empty blobs, use an
-        # inline filemodify.
-        dataref = b'inline' if sha1 in (EMPTY_BLOB, None) else sha1
-        self.write(b'M %s %s %s\n' % (
-            self.MODE.get(typ, typ),
-            dataref,
-            path,
-        ))
-        if sha1 == EMPTY_BLOB:
-            self.cmd_data(b'')
-        elif sha1 is None:
-            self.cmd_data(content)
 
 
 class HgRepoHelper(BaseHelper):
