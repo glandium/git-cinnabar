@@ -928,19 +928,13 @@ static void do_manifest(struct string_list *args, int helper_output)
 	if (args->nr != 1)
 		goto not_found;
 
-	if (!strncmp(args->items[0].string, "git:", 4)) {
-		if (get_oid_hex(args->items[0].string + 4, &oid))
-			goto not_found;
-		manifest_oid = &oid;
-	} else {
-		sha1_len = get_abbrev_sha1_hex(args->items[0].string, hg_oid.hash);
-		if (!sha1_len)
-			goto not_found;
+	sha1_len = get_abbrev_sha1_hex(args->items[0].string, hg_oid.hash);
+	if (!sha1_len)
+		goto not_found;
 
-		manifest_oid = resolve_hg2git(&hg_oid, sha1_len);
-		if (!manifest_oid)
-			goto not_found;
-	}
+	manifest_oid = resolve_hg2git(&hg_oid, sha1_len);
+	if (!manifest_oid)
+		goto not_found;
 
 	manifest = generate_manifest(manifest_oid);
 	if (!manifest)
@@ -1039,18 +1033,12 @@ static void do_check_manifest(struct string_list *args, int helper_output)
 	if (args->nr != 1)
 		goto error;
 
-	if (!strncmp(args->items[0].string, "git:", 4)) {
-		if (get_oid_hex(args->items[0].string + 4, &oid))
-			goto error;
-		manifest_oid = &oid;
-	} else {
-		if (get_sha1_hex(args->items[0].string, hg_oid.hash))
-			goto error;
+	if (get_sha1_hex(args->items[0].string, hg_oid.hash))
+		goto error;
 
-		manifest_oid = resolve_hg2git(&hg_oid, 40);
-		if (!manifest_oid)
-			goto error;
-	}
+	manifest_oid = resolve_hg2git(&hg_oid, 40);
+	if (!manifest_oid)
+		goto error;
 
 	if (!check_manifest(manifest_oid, &stored))
 		goto error;
@@ -1351,18 +1339,12 @@ static void do_create_git_tree(struct string_list *args, int helper_output)
 	if (args->nr == 0 || args->nr > 2)
 		die("create-git-tree takes 1 or 2 arguments");
 
-	if (!strncmp(args->items[0].string, "git:", 4)) {
-		if (get_oid_hex(args->items[0].string + 4, &oid))
-			goto not_found;
-		manifest_oid = &oid;
-	} else {
-		if (get_sha1_hex(args->items[0].string, hg_oid.hash))
-			goto not_found;
+	if (get_sha1_hex(args->items[0].string, hg_oid.hash))
+		goto not_found;
 
-		manifest_oid = resolve_hg2git(&hg_oid, 40);
-		if (!manifest_oid)
-			goto not_found;
-	}
+	manifest_oid = resolve_hg2git(&hg_oid, 40);
+	if (!manifest_oid)
+		goto not_found;
 
 	commit = lookup_commit(the_repository, manifest_oid);
 	if (parse_commit(commit))
