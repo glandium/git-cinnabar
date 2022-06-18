@@ -91,7 +91,6 @@ struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
 struct oidset hg2git_seen = OIDSET_INIT;
 
 int metadata_flags = 0;
-int helper_output;
 
 static int cleanup_object_array_entry(struct object_array_entry *entry, void *data)
 {
@@ -135,7 +134,7 @@ static void split_command(char *line, const char **command,
 extern void send_buffer(int fd, struct strbuf *buf);
 
 /* Send git object info and content to stdout, like cat-file --batch does. */
-static void send_object(const struct object_id *oid)
+static void send_object(const struct object_id *oid, int helper_output)
 {
 	struct strbuf header = STRBUF_INIT;
 	enum object_type type;
@@ -177,7 +176,7 @@ static void send_object(const struct object_id *oid)
 	close_istream(st);
 }
 
-static void do_cat_file(struct string_list *args)
+static void do_cat_file(struct string_list *args, int helper_output)
 {
 	struct object_id oid;
 
@@ -187,7 +186,7 @@ static void do_cat_file(struct string_list *args)
 	if (get_oid(args->items[0].string, &oid))
 		goto not_found;
 
-	send_object(&oid);
+	send_object(&oid, helper_output);
 	return;
 
 not_found:
@@ -261,7 +260,7 @@ int iter_tree(const struct object_id *oid, iter_tree_cb callback, void *context,
 	return 1;
 }
 
-static void do_ls_tree(struct string_list *args)
+static void do_ls_tree(struct string_list *args, int helper_output)
 {
 	struct object_id oid;
 	struct strbuf buf = STRBUF_INIT;
@@ -327,7 +326,7 @@ void rev_list_finish(struct rev_info *revs) {
 	free(revs);
 }
 
-static void do_rev_list(struct string_list *args)
+static void do_rev_list(struct string_list *args, int helper_output)
 {
 	struct rev_info *revs;
 	struct commit *commit;
@@ -474,7 +473,7 @@ static void strbuf_diff_tree(void *ctx, struct diff_tree_item *item)
 	strbuf_addch(buf, '\0');
 }
 
-static void do_diff_tree(struct string_list *args)
+static void do_diff_tree(struct string_list *args, int helper_output)
 {
 	struct strbuf buf = STRBUF_INIT;
 	const char **argv = string_list_to_argv(args);
@@ -513,7 +512,7 @@ const struct object_id *repo_lookup_replace_object(
 	return lookup_replace_object(r, oid);
 }
 
-static void do_get_note(struct notes_tree *t, struct string_list *args)
+static void do_get_note(struct notes_tree *t, struct string_list *args, int helper_output)
 {
 	struct object_id oid;
 	const struct object_id *note;
@@ -530,7 +529,7 @@ static void do_get_note(struct notes_tree *t, struct string_list *args)
 	if (!note)
 		goto not_found;
 
-	send_object(note);
+	send_object(note, helper_output);
 	return;
 
 not_found:
@@ -585,7 +584,7 @@ const struct object_id *resolve_hg2git(const struct hg_object_id *oid,
 	return resolve_hg(&hg2git, oid, len);
 }
 
-static void do_hg2git(struct string_list *args)
+static void do_hg2git(struct string_list *args, int helper_output)
 {
         struct hg_object_id oid;
 	const struct object_id *note;
@@ -918,7 +917,7 @@ struct strbuf *generate_manifest(const struct object_id *oid)
 	return &generated_manifest.content;
 }
 
-static void do_manifest(struct string_list *args)
+static void do_manifest(struct string_list *args, int helper_output)
 {
 	struct hg_object_id hg_oid;
 	struct object_id oid;
@@ -1031,7 +1030,7 @@ int check_manifest(const struct object_id *oid,
 	return hg_oideq(&stored, hg_oid);
 }
 
-static void do_check_manifest(struct string_list *args)
+static void do_check_manifest(struct string_list *args, int helper_output)
 {
 	struct hg_object_id hg_oid, stored;
 	struct object_id oid;
@@ -1065,7 +1064,7 @@ error:
 	write_or_die(helper_output, "error\n", 6);
 }
 
-static void do_check_file(struct string_list *args)
+static void do_check_file(struct string_list *args, int helper_output)
 {
 	struct hg_file file;
 	struct hg_object_id oid, parent1, parent2, result;
@@ -1136,7 +1135,7 @@ static int add_each_head(const struct object_id *oid, void *data)
 
 extern void changeset_heads(int);
 
-static void do_heads(struct string_list *args)
+static void do_heads(struct string_list *args, int helper_output)
 {
 	//XXX: Should use hg specific oid array.
 	struct oid_array *heads = NULL;
@@ -1341,7 +1340,7 @@ corrupted:
 
 static struct hashmap git_tree_cache;
 
-static void do_create_git_tree(struct string_list *args)
+static void do_create_git_tree(struct string_list *args, int helper_output)
 {
 	struct hg_object_id hg_oid;
 	struct object_id oid;
@@ -1397,7 +1396,7 @@ not_found:
 // 12th bit is only used by builtin/blame.c, so it should be safe to use.
 #define FSCK_SEEN (1 << 12)
 
-static void do_seen(struct string_list *args)
+static void do_seen(struct string_list *args, int helper_output)
 {
 	struct object_id oid;
 	int seen = 0;
@@ -1456,7 +1455,7 @@ static int dangling_note(const struct object_id *object_oid,
 	return 0;
 }
 
-static void do_dangling(struct string_list *args)
+static void do_dangling(struct string_list *args, int helper_output)
 {
 	struct strbuf buf = STRBUF_INIT;
 	struct dangling_data data = { NULL, &buf, 0 };
@@ -1618,7 +1617,7 @@ void dump_branches(void);
 
 extern void reset_changeset_heads();
 
-static void do_reload(struct string_list *args)
+static void do_reload(struct string_list *args, int helper_output)
 {
         if (args->nr != 0)
                 die("reload takes no arguments");
@@ -1788,7 +1787,6 @@ void done_cinnabar()
 int helper_main(struct reader *helper_input, int out)
 {
 	struct strbuf buf = STRBUF_INIT;
-	helper_output = out;
 
 	while (strbuf_getline_from_reader(&buf, helper_input)) {
 		struct string_list args = STRING_LIST_INIT_NODUP;
@@ -1798,40 +1796,40 @@ int helper_main(struct reader *helper_input, int out)
 			init_cinnabar_2();
 		}
 		if (!strcmp("git2hg", command))
-			do_get_note(&git2hg, &args);
+			do_get_note(&git2hg, &args, out);
 		else if (!strcmp("file-meta", command))
 			// XXX: Should use a different function that reads a hg oid.
-			do_get_note(&files_meta, &args);
+			do_get_note(&files_meta, &args, out);
 		else if (!strcmp("hg2git", command))
-			do_hg2git(&args);
+			do_hg2git(&args, out);
 		else if (!strcmp("manifest", command))
-			do_manifest(&args);
+			do_manifest(&args, out);
 		else if (!strcmp("check-manifest", command))
-			do_check_manifest(&args);
+			do_check_manifest(&args, out);
 		else if (!strcmp("check-file", command))
-			do_check_file(&args);
+			do_check_file(&args, out);
 		else if (!strcmp("cat-file", command))
-			do_cat_file(&args);
+			do_cat_file(&args, out);
 		else if (!strcmp("ls-tree", command))
-			do_ls_tree(&args);
+			do_ls_tree(&args, out);
 		else if (!strcmp("rev-list", command))
-			do_rev_list(&args);
+			do_rev_list(&args, out);
 		else if (!strcmp("diff-tree", command))
-			do_diff_tree(&args);
+			do_diff_tree(&args, out);
 		else if (!strcmp("heads", command))
-			do_heads(&args);
+			do_heads(&args, out);
 		else if (!strcmp("reset-heads", command))
 			do_reset_heads(&args);
 		else if (!strcmp("create-git-tree", command))
-			do_create_git_tree(&args);
+			do_create_git_tree(&args, out);
 		else if (!strcmp("seen", command))
-			do_seen(&args);
+			do_seen(&args, out);
 		else if (!strcmp("dangling", command))
-			do_dangling(&args);
+			do_dangling(&args, out);
 		else if (!strcmp("reload", command))
-			do_reload(&args);
+			do_reload(&args, out);
 		else {
-			int res = maybe_handle_command(helper_input, command, &args);
+			int res = maybe_handle_command(helper_input, out, command, &args);
 			if (res == 0)
 				die("Unknown command: \"%s\"", command);
 			if (res == 2) {

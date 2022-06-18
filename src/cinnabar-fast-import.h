@@ -3,8 +3,8 @@
 
 struct reader;
 
-int maybe_handle_command(struct reader *helper_input, const char *command,
-                         struct string_list *args);
+int maybe_handle_command(struct reader *helper_input, int helper_output,
+                         const char *command, struct string_list *args);
 
 void *get_object_entry(const unsigned char *sha1);
 
