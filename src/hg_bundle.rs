@@ -10,7 +10,10 @@ use flate2::read::ZlibDecoder;
 use replace_with::replace_with_or_abort;
 use zstd::stream::read::Decoder as ZstdDecoder;
 
-use crate::util::{ReadExt, SliceExt};
+use crate::{
+    libgit::strbuf,
+    util::{ReadExt, SliceExt},
+};
 
 pub struct DecompressBundleReader<'a> {
     initial_buf: Option<Cursor<Vec<u8>>>,
@@ -202,6 +205,23 @@ fn test_decompress_bundle_reader() {
     }
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn read_rev_chunk(r: *mut crate::libcinnabar::reader, out: *mut strbuf) {
+    let mut buf = [0; 4];
+    let r = r.as_mut().unwrap();
+    r.0.read_exact(&mut buf).unwrap();
+    let len = BigEndian::read_u32(&buf) as u64;
+    if len == 0 {
+        return;
+    }
+    // TODO: should error out on short read
+    copy(
+        &mut r.0.take(len.checked_sub(4).unwrap()),
+        out.as_mut().unwrap(),
+    )
+    .unwrap();
+}
+
 fn copy_chunk<R: Read + ?Sized, W: Write + ?Sized>(
     adjust: u64,
     input: &mut R,
@@ -214,6 +234,7 @@ fn copy_chunk<R: Read + ?Sized, W: Write + ?Sized>(
     if len == 0 {
         return Ok(0);
     }
+    // TODO: should error out on short read
     copy(&mut input.take(len.checked_sub(adjust).unwrap()), output)
 }
 

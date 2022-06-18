@@ -1785,13 +1785,12 @@ void done_cinnabar()
 	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
 }
 
-int helper_main(int in, int out)
+int helper_main(struct reader *helper_input, int out)
 {
 	struct strbuf buf = STRBUF_INIT;
-	FILE *helper_input = fdopen(in, "r");
 	helper_output = out;
 
-	while (strbuf_getline(&buf, helper_input) != EOF) {
+	while (strbuf_getline_from_reader(&buf, helper_input)) {
 		struct string_list args = STRING_LIST_INIT_NODUP;
 		const char *command;
 		split_command(buf.buf, &command, &args);

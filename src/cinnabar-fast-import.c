@@ -824,7 +824,7 @@ malformed:
 	die("Malformed manifest chunk for %s", hg_oid_to_hex(chunk->node));
 }
 
-static void for_each_changegroup_chunk(FILE *in, int version,
+static void for_each_changegroup_chunk(struct reader *in, int version,
                                        void (*callback)(struct rev_chunk *))
 {
 	int cg2 = version == 2;
@@ -896,7 +896,7 @@ extern void prepare_changeset_commit(
 	struct strbuf *changeset_buf,
 	struct strbuf *commit_buf);
 
-static void do_store(FILE *helper_input, struct string_list *args)
+static void do_store(struct reader *helper_input, struct string_list *args)
 {
 	if (!strcmp(args->items[0].string, "metadata")) {
 		struct object_id changesets, manifests, hg2git_, git2hg_,
@@ -1039,7 +1039,7 @@ static void do_store(FILE *helper_input, struct string_list *args)
 
 		// TODO: Error handling
 		length = strtol(args->items[2].string, NULL, 10);
-		strbuf_fread(&buf, length, helper_input);
+		strbuf_from_reader(&buf, length, helper_input);
 		rev_chunk_from_memory(&chunk, &buf, delta_node);
 		if (args->items[0].string[0] == 'f')
 			store_file(&chunk);
@@ -1075,7 +1075,7 @@ static void do_store(FILE *helper_input, struct string_list *args)
 			die("store blob only takes one argument");
 		length = strtol(args->items[1].string, NULL, 10);
 		while (length) {
-			s = strbuf_fread(&buf, length, helper_input);
+			s = strbuf_from_reader(&buf, length, helper_input);
 			length -= s;
 		}
 		store_object(OBJ_BLOB, &buf, NULL, &result, 0);
@@ -1104,7 +1104,7 @@ static void do_store(FILE *helper_input, struct string_list *args)
 
 		length = strtol(args->items[args->nr - 1].string, NULL, 10);
 		while (length) {
-			s = strbuf_fread(&buf, length, helper_input);
+			s = strbuf_from_reader(&buf, length, helper_input);
 			length -= s;
 		}
 		prepare_changeset_commit(
@@ -1202,7 +1202,7 @@ static void do_reset(struct string_list *args) {
 	maybe_reset_notes(args->items[0].string);
 }
 
-int maybe_handle_command(FILE *helper_input, const char *command,
+int maybe_handle_command(struct reader *helper_input, const char *command,
                          struct string_list *args)
 {
 	if (!strcmp(command, "done")) {

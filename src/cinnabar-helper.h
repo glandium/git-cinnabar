@@ -32,4 +32,11 @@ struct strbuf *generate_manifest(const struct object_id *oid);
 int check_manifest(const struct object_id *oid,
                    struct hg_object_id *hg_oid);
 
+struct reader;
+
+extern size_t strbuf_from_reader(struct strbuf *sb, size_t size,
+                                 struct reader *reader);
+
+extern int strbuf_getline_from_reader(struct strbuf *sb, struct reader *reader);
+
 #endif

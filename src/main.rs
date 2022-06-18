@@ -141,7 +141,8 @@ pub const FULL_VERSION: &str = git_version!(
 );
 
 extern "C" {
-    fn helper_main(in_: c_int, out: c_int) -> c_int;
+    #[allow(improper_ctypes)]
+    fn helper_main(in_: *mut libcinnabar::reader, out: c_int) -> c_int;
 
     #[cfg(windows)]
     fn wmain(argc: c_int, argv: *const *const u16) -> c_int;
@@ -1064,15 +1065,17 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
         ));
         let thread = spawn(move || {
             #[cfg(windows)]
-            let (reader2, writer1) = unsafe {
-                (
-                    ::libc::open_osfhandle(reader2.as_raw_handle() as isize, ::libc::O_RDONLY),
-                    ::libc::open_osfhandle(writer1.as_raw_handle() as isize, ::libc::O_RDONLY),
-                )
+            let writer1 = unsafe {
+                ::libc::open_osfhandle(writer1.as_raw_handle() as isize, ::libc::O_RDONLY)
             };
             #[cfg(unix)]
-            let (reader2, writer1) = (reader2.as_raw_fd(), writer1.as_raw_fd());
-            unsafe { helper_main(reader2, writer1) };
+            let writer1 = writer1.as_raw_fd();
+            unsafe {
+                helper_main(
+                    &mut libcinnabar::reader(&mut BufReader::new(reader2)),
+                    writer1,
+                )
+            };
         });
         ((reader1, writer2), thread)
     };
@@ -1160,7 +1163,9 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
 
     let ret = match argv0_path.file_stem().and_then(OsStr::to_str) {
         Some("git-cinnabar") => git_cinnabar(),
-        Some("git-cinnabar-helper") => helper_main(0, 1),
+        Some("git-cinnabar-helper") => {
+            helper_main(&mut libcinnabar::reader(&mut stdin().lock()), 1)
+        }
         Some("git-remote-hg") => {
             let _v = VersionCheck::new();
             match run_python_command(PythonCommand::GitRemoteHg) {

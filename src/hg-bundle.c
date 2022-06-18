@@ -3,21 +3,6 @@
 #include "hg-bundle.h"
 #include <stdint.h>
 
-void read_rev_chunk(FILE *in, struct strbuf *out)
-{
-	// See copy_bundle2_chunk and copy_changegroup_chunk.
-	char buf[4];
-	uint32_t len;
-
-	//TODO: Check for errors, etc.
-	fread(buf, 1, 4, in);
-	len = get_be32(&buf);
-	if (len <= 4)
-		//TODO: len != 0 is actually invalid
-		return;
-	strbuf_fread(out, len - 4, in);
-}
-
 void rev_chunk_from_memory(struct rev_chunk *result, struct strbuf *buf,
                            const struct hg_object_id *delta_node)
 {

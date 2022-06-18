@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::io::Write;
+use std::io::{copy, BufRead, Read, Write};
 use std::ops::Deref;
 use std::os::raw::{c_char, c_int, c_void};
 
@@ -152,4 +152,29 @@ pub fn send_buffer_to<'a>(buf: impl Into<Option<&'a [u8]>>, out: &mut impl Write
     } else {
         write!(out, "-1\n\n").unwrap();
     }
+}
+
+#[repr(C)]
+pub struct reader<'a>(pub &'a mut dyn BufRead);
+
+#[no_mangle]
+pub unsafe extern "C" fn strbuf_from_reader(sb: *mut strbuf, size: usize, r: *mut reader) -> usize {
+    copy(
+        &mut r.as_mut().unwrap().0.take(size as u64),
+        sb.as_mut().unwrap(),
+    )
+    .unwrap() as usize
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn strbuf_getline_from_reader(sb: *mut strbuf, r: *mut reader) -> c_int {
+    let mut line = Vec::new();
+    let mut len = r.as_mut().unwrap().0.read_until(b'\n', &mut line).unwrap();
+    if len > 0 && line[len - 1] == b'\n' {
+        len -= 1;
+    }
+    let sb = sb.as_mut().unwrap();
+    sb.reset();
+    sb.extend_from_slice(&line[..len]);
+    (len > 0) as c_int
 }

@@ -6,7 +6,7 @@
 #include "hg-data.h"
 #include <stdio.h>
 
-void read_rev_chunk(FILE *in, struct strbuf *out);
+extern void read_rev_chunk(struct reader *in, struct strbuf *out);
 
 struct rev_chunk {
 	struct strbuf raw;
