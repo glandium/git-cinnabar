@@ -1341,6 +1341,8 @@ bitflags! {
         const CINNABARCLONE = 0x800;
         const CLONEBUNDLES = 0x1000;
         const UNBUNDLER = 0x2000;
+
+        const ALL_BASE_CHECKS = Checks::NODEID.bits | Checks::MANIFESTS.bits | Checks::HELPER.bits;
     }
 }
 
@@ -1349,7 +1351,7 @@ static CHECKS: Lazy<Checks> = Lazy::new(|| {
     if let Some(config) = get_config("check") {
         for c in config.as_bytes().split(|&b| b == b',') {
             match c {
-                b"true" | b"all" => checks = Checks::all(),
+                b"true" | b"all" => checks = Checks::ALL_BASE_CHECKS,
                 b"helper" => checks.set(Checks::HELPER, true),
                 b"manifests" => checks.set(Checks::MANIFESTS, true),
                 b"no-version-check" => checks.set(Checks::VERSION, false),
