@@ -56,6 +56,7 @@ pub mod libgit;
 mod libc;
 mod libcinnabar;
 mod logging;
+mod progress;
 pub mod store;
 mod xdiff;
 
@@ -98,6 +99,7 @@ use os_pipe::pipe;
 use url::Url;
 use which::which;
 
+use crate::libc::FdFile;
 use hg_connect::connect_main_with;
 use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git};
 use libgit::{
@@ -105,6 +107,7 @@ use libgit::{
     ls_tree, remote, resolve_ref, strbuf, string_list, BlobId, CommitId, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
+use progress::do_progress;
 use store::{
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
     HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF,
@@ -200,6 +203,16 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
         let command = i.next().unwrap();
         let mut nul = [b'\0'];
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
+        if let b"progress" = &*command {
+            let args = match args_.split_last().unwrap().1 {
+                b"" => Vec::new(),
+                args => args.split(|&b| b == b' ').collect::<Vec<_>>(),
+            };
+            let out = unsafe { FdFile::from_raw_fd(out) };
+            do_progress(out, &args);
+            continue;
+        }
+
         unsafe {
             string_list_init_nodup(args);
             if args_ != b"\0" {

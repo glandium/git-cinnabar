@@ -65,6 +65,7 @@ class BaseRemoteHelper(object):
                 args = []
 
             if cmd in (b'import', b'push'):
+                GitHgHelper.progress(cinnabar.util.progress)
                 while True:
                     line = self._helper.readline().strip()
                     if not line:
@@ -220,6 +221,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                                                 heads)
         self._has_unknown_heads = bool(self._branchmap.unknown_heads())
         if self._graft and self._has_unknown_heads and not arg:
+            GitHgHelper.progress(cinnabar.util.progress)
             self._store.prepare_graft()
             get_heads = set(branchmap.heads()) & branchmap.unknown_heads()
             getbundle(self._repo, self._store, get_heads, branchmap.names())
