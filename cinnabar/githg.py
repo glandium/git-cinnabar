@@ -395,12 +395,9 @@ class BranchMap(object):
 
 
 class Grafter(object):
-    __slots__ = "_did_something",
-
     def __init__(self, store):
         with GitHgHelper.query(b'graft', b'init'):
             pass
-        self._did_something = False
 
     @property
     def _grafted(self):
@@ -429,7 +426,6 @@ class Grafter(object):
             assert len(sha1) == 40
             if sha1 == NULL_NODE_ID:
                 return None
-            self._did_something = True
             if not self._grafted:
                 cs = Changeset.from_git_commit(sha1)
                 patcher = ChangesetPatcher.from_diff(cs, changeset)
@@ -440,8 +436,11 @@ class Grafter(object):
             return GitCommit(sha1)
 
     def close(self):
-        if not self._grafted and not self._did_something:
-            raise NothingToGraftException()
+        with GitHgHelper.query(b'graft', b'finish') as stdout:
+            res = stdout.readline().strip()
+            assert res in (b'ok', b'ko')
+            if res == b'ko':
+                raise NothingToGraftException()
 
 
 class GitHgStore(object):

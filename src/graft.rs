@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::io::{BufRead, Write};
 use std::os::raw::{c_int, c_uint};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use bstr::ByteSlice;
@@ -32,6 +33,8 @@ fn grafted() -> bool {
     unsafe { replace_map_size() != 0 }
 }
 
+static DID_SOMETHING: AtomicBool = AtomicBool::new(false);
+
 static GRAFT_TREES: Lazy<Mutex<BTreeMap<TreeId, Vec<CommitId>>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 
@@ -40,6 +43,13 @@ pub fn do_graft(input: &mut dyn BufRead, mut output: impl Write, args: &[&[u8]])
         Some((&b"init", args)) => do_init(args),
         Some((&b"changeset", args)) => do_changeset(input, output, args),
         Some((&b"status", &[])) => writeln!(output, "{:?}", grafted()).unwrap(),
+        Some((&b"finish", &[])) => {
+            if grafted() || DID_SOMETHING.load(Ordering::Relaxed) {
+                writeln!(output, "ok").unwrap();
+            } else {
+                writeln!(output, "ko").unwrap();
+            }
+        }
         Some((cmd, _)) => die!("unknown graft subcommand: {}", cmd.as_bstr()),
         None => die!("graft expects a subcommand"),
     }
@@ -181,7 +191,10 @@ fn do_changeset(mut input: &mut dyn BufRead, mut output: impl Write, args: &[&[u
     let changeset = RawHgChangeset(buf);
 
     match graft(node, changeset, tree, parents) {
-        Ok(commit) => writeln!(output, "{}", commit),
+        Ok(commit) => {
+            DID_SOMETHING.store(true, Ordering::Relaxed);
+            writeln!(output, "{}", commit)
+        }
         Err(GraftError::NoGraft) => writeln!(output, "{}", CommitId::null()),
         Err(GraftError::Ambiguous(candidates)) => writeln!(
             output,
