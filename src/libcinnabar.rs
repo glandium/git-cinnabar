@@ -165,16 +165,3 @@ pub unsafe extern "C" fn strbuf_from_reader(sb: *mut strbuf, size: usize, r: *mu
     )
     .unwrap() as usize
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn strbuf_getline_from_reader(sb: *mut strbuf, r: *mut reader) -> c_int {
-    let mut line = Vec::new();
-    let mut len = r.as_mut().unwrap().0.read_until(b'\n', &mut line).unwrap();
-    if len > 0 && line[len - 1] == b'\n' {
-        len -= 1;
-    }
-    let sb = sb.as_mut().unwrap();
-    sb.reset();
-    sb.extend_from_slice(&line[..len]);
-    (len > 0) as c_int
-}

@@ -37,6 +37,4 @@ struct reader;
 extern size_t strbuf_from_reader(struct strbuf *sb, size_t size,
                                  struct reader *reader);
 
-extern int strbuf_getline_from_reader(struct strbuf *sb, struct reader *reader);
-
 #endif
