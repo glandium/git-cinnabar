@@ -1093,45 +1093,6 @@ void do_store(struct reader *helper_input, int helper_output,
 		strbuf_release(&buf);
 		write_or_die(helper_output, oid_to_hex(&result), 40);
 		write_or_die(helper_output, "\n", 1);
-	} else if (!strcmp(args->items[0].string, "changeset")) {
-		struct object_id result;
-		struct hg_object_id changeset_id;
-		struct object_id tree_id;
-		struct hg_object_id parent1, parent2;
-		struct strbuf buf = STRBUF_INIT;
-		struct strbuf commit_buf = STRBUF_INIT;
-		size_t length, s;
-		if (args->nr < 4 || args->nr > 6)
-			die("store changeset takes between 3 and 5 arguments");
-
-		if (get_sha1_hex(args->items[1].string, changeset_id.hash))
-				die("Not a sha1: %s", args->items[1].string);
-		if (get_oid_hex(args->items[2].string, &tree_id))
-				die("Not a sha1: %s", args->items[2].string);
-		if ((args->nr > 4) && get_sha1_hex(args->items[3].string, parent1.hash))
-				die("Not a sha1: %s", args->items[3].string);
-		if ((args->nr > 5) && get_sha1_hex(args->items[4].string, parent2.hash))
-				die("Not a sha1: %s", args->items[4].string);
-
-		length = strtol(args->items[args->nr - 1].string, NULL, 10);
-		while (length) {
-			s = strbuf_from_reader(&buf, length, helper_input);
-			length -= s;
-		}
-		prepare_changeset_commit(
-			&changeset_id,
-			&tree_id,
-			(args->nr > 4) ? &parent1 : NULL,
-			(args->nr > 5) ? &parent2 : NULL,
-			&buf,
-			&commit_buf);
-
-		store_git_commit(&commit_buf, &result);
-		strbuf_release(&commit_buf);
-		strbuf_release(&buf);
-
-		write_or_die(helper_output, oid_to_hex(&result), 40);
-		write_or_die(helper_output, "\n", 1);
 	} else {
 		die("Unknown store kind: %s", args->items[0].string);
 	}

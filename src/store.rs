@@ -4,7 +4,7 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::iter::{repeat, IntoIterator};
 use std::mem;
 use std::os::raw::{c_int, c_uint, c_void};
@@ -22,11 +22,11 @@ use crate::libc::FdFile;
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
 use crate::libgit::{
     get_oid_committish, lookup_replace_commit, object_id, object_type, strbuf, BlobId, Commit,
-    CommitId, RawBlob, RawCommit,
+    CommitId, RawBlob, RawCommit, TreeId,
 };
 use crate::oid::{GitObjectId, HgObjectId, ObjectId};
 use crate::oid_type;
-use crate::util::{FromBytes, ImmutBString, SliceExt, ToBoxed};
+use crate::util::{FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::{apply, textdiff, PatchInfo};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
@@ -91,7 +91,7 @@ impl RawGitChangesetMetadata {
         let mut extra = None;
         let mut files = None;
         let mut patch = None;
-        for line in self.0.as_bytes().lines() {
+        for line in ByteSlice::lines(self.0.as_bytes()) {
             match line.splitn_exact(b' ')? {
                 [b"changeset", c] => changeset = Some(HgChangesetId::from_bytes(c).ok()?),
                 [b"manifest", m] => manifest = Some(HgManifestId::from_bytes(m).ok()?),
@@ -497,9 +497,7 @@ impl ChangesetHeads {
             |cid| {
                 let commit = RawCommit::read(&cid).unwrap();
                 let commit = commit.parse().unwrap();
-                let heads = commit
-                    .body()
-                    .lines()
+                let heads = ByteSlice::lines(commit.body())
                     .enumerate()
                     .map(|(n, l)| {
                         let [h, b] = l.splitn_exact(b' ').unwrap();
@@ -629,29 +627,27 @@ pub unsafe extern "C" fn reset_changeset_heads() {
     *heads = ChangesetHeads::new();
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn prepare_changeset_commit(
-    changeset_id: *const hg_object_id,
-    tree_id: *const object_id,
-    parent1: *const hg_object_id,
-    parent2: *const hg_object_id,
-    changeset_buf: *const strbuf,
-    commit_buf: *mut strbuf,
-) {
-    let _changeset_id =
-        HgChangesetId::from_unchecked(HgObjectId::from(changeset_id.as_ref().unwrap().clone()));
-    let tree_id = GitObjectId::from(tree_id.as_ref().unwrap().clone());
-    let parent1 = parent1
-        .as_ref()
-        .cloned()
-        .map(|p| HgChangesetId::from_unchecked(HgObjectId::from(p)));
-    let parent2 = parent2
-        .as_ref()
-        .cloned()
-        .map(|p| HgChangesetId::from_unchecked(HgObjectId::from(p)));
-    let changeset = RawHgChangeset(changeset_buf.as_ref().unwrap().as_bytes().into());
+extern "C" {
+    fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
+}
+
+pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, args: &[&[u8]]) {
+    if args.len() < 3 || args.len() > 5 {
+        die!("store-changeset takes between 3 and 5 arguments");
+    }
+
+    let _changeset_id = HgChangesetId::from_bytes(args[0]).unwrap();
+    let tree_id = TreeId::from_bytes(args[1]).unwrap();
+    let parents = &args[2..args.len() - 1]
+        .iter()
+        .map(|p| HgChangesetId::from_bytes(p).unwrap().to_git().unwrap())
+        .collect::<Vec<_>>();
+    let size = usize::from_bytes(args[args.len() - 1]).unwrap();
+    let buf = input.read_exactly(size).unwrap();
+    let changeset = RawHgChangeset(buf);
+
     let changeset = changeset.parse().unwrap();
-    let result = commit_buf.as_mut().unwrap();
+    let mut result = strbuf::new();
     let author = HgAuthorship {
         author: changeset.author(),
         timestamp: changeset.timestamp(),
@@ -677,11 +673,8 @@ pub unsafe extern "C" fn prepare_changeset_commit(
         git_author.clone()
     };
     result.extend_from_slice(format!("tree {}\n", tree_id).as_bytes());
-    if let Some(parent1) = parent1 {
-        result.extend_from_slice(format!("parent {}\n", parent1.to_git().unwrap()).as_bytes());
-    }
-    if let Some(parent2) = parent2 {
-        result.extend_from_slice(format!("parent {}\n", parent2.to_git().unwrap()).as_bytes());
+    for parent in parents {
+        result.extend_from_slice(format!("parent {}\n", parent).as_bytes());
     }
     result.extend_from_slice(b"author ");
     result.extend_from_slice(&git_author.0);
@@ -689,4 +682,11 @@ pub unsafe extern "C" fn prepare_changeset_commit(
     result.extend_from_slice(&git_committer.0);
     result.extend_from_slice(b"\n\n");
     result.extend_from_slice(changeset.body());
+
+    let mut result_oid = object_id::default();
+    unsafe {
+        store_git_commit(&result, &mut result_oid);
+    }
+
+    writeln!(output, "{}", GitObjectId::from(result_oid)).unwrap();
 }

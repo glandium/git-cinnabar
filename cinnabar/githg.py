@@ -848,7 +848,7 @@ class GitHgStore(object):
             args.extend(instance.parents)
             raw_data = instance.raw_data
             args.append(str(len(raw_data)).encode('ascii'))
-            with GitHgHelper.query(b'store', b'changeset', *args) as stdout:
+            with GitHgHelper.query(b'store-changeset', *args) as stdout:
                 stdout.write(raw_data)
                 stdout.flush()
                 sha1 = stdout.read(41)
