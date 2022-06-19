@@ -395,26 +395,12 @@ class BranchMap(object):
 
 
 class Grafter(object):
-    __slots__ = "_store", "_graft_trees", "_did_something"
+    __slots__ = "_did_something",
 
     def __init__(self, store):
         with GitHgHelper.query(b'graft', b'init'):
             pass
-        self._store = store
-        self._graft_trees = defaultdict(list)
         self._did_something = False
-        refs = [
-            b'--exclude=refs/cinnabar/*',
-            b'--exclude=refs/notes/cinnabar',
-            b'--exclude=refs/original/*',
-            b'--all',
-        ]
-        if store._has_metadata:
-            refs += [b'--not', b'refs/cinnabar/metadata^']
-        for node, tree, parents in progress_iter(
-                'Reading {} graft candidates',
-                GitHgHelper.rev_list(b'--full-history', *refs)):
-            self._graft_trees[tree].append(node)
 
     @property
     def _grafted(self):
