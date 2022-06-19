@@ -423,80 +423,6 @@ class Grafter(object):
             assert res in (b'true', b'false')
             return res == b'true'
 
-    def _graft(self, changeset, tree, parents):
-        store = self._store
-        do_graft = tree and tree in self._graft_trees
-        if not do_graft:
-            return None
-
-        commits = {}
-
-        def graftable(c):
-            commit = commits.get(c)
-            if not commit:
-                commit = commits[c] = GitCommit(c)
-            if (Authorship.from_git_str(commit.author).timestamp !=
-                    int(changeset.timestamp)):
-                return False
-
-            if all(store._replace.get(p1, p1) == store._replace.get(p2, p2)
-                   for p1, p2 in zip(commit.parents, parents)):
-                return True
-
-            # Allow to graft if not already grafted
-            return not self._grafted
-
-        nodes = tuple(c for c in self._graft_trees[tree] if graftable(c))
-
-        if len(nodes) > 1:
-            # Ideally, this should all be tried with fuzziness, and
-            # independently of the number of nodes we got, but the
-            # following is enough to graft github.com/mozilla/gecko-dev
-            # to mozilla-central and related repositories.
-            # Try with commits with the same subject line
-            subject = changeset.body.split(b'\n', 1)[0]
-            possible_nodes = tuple(
-                n for n in nodes
-                if commits[n].body.split(b'\n', 1)[0] == subject
-            )
-            if len(possible_nodes) > 1:
-                # Try with commits with the same author ; this is attempted
-                # separately from checking timestamps because author may
-                # have been munged.
-                possible_nodes = tuple(
-                    n for n in possible_nodes
-                    if (Authorship.from_git_str(commits[n].author)
-                        .to_hg()[0] == changeset.author)
-                )
-            if len(possible_nodes) == 1:
-                nodes = possible_nodes
-
-        # If we still have multiple nodes, check if one of them is one that
-        # cinnabar would have created. If it is, we prefer other commits on
-        # the premise that it means we've been asked to reclone with a graft.
-        # on a repo that was already handled by cinnabar.
-        if len(nodes) > 1:
-            possible_nodes = []
-            for node in nodes:
-                commit = commits[node]
-                cs = Changeset.from_git_commit(commit)
-                patcher = ChangesetPatcher.from_diff(cs, changeset)
-                if b'\npatch' in patcher:
-                    possible_nodes.append(node)
-            nodes = possible_nodes
-
-        if len(nodes) > 1:
-            raise AmbiguousGraftAbort(
-                'Cannot graft changeset %s. Candidates: %s'
-                % (changeset.node.decode('ascii'),
-                   ', '.join(n.decode('ascii') for n in sorted(nodes))))
-
-        if nodes:
-            node = nodes[0]
-            self._graft_trees[tree].remove(node)
-            return commits[node]
-        return None
-
     def graft(self, changeset, tree):
         args = [changeset.node, tree]
         args.extend(changeset.parents)
@@ -508,39 +434,24 @@ class Grafter(object):
             response = stdout.readline().strip().split()
             assert len(response) > 0
             if response[0] == b"ambiguous":
-                message = (
+                raise AmbiguousGraftAbort(
                     'Cannot graft changeset %s. Candidates: %s'
                     % (changeset.node.decode('ascii'),
                        ', '.join(n.decode('ascii')
                                  for n in sorted(response[1:]))))
-                sha1 = None
-            else:
-                sha1 = response[0]
-                assert len(sha1) == 40
-                if sha1 == NULL_NODE_ID:
-                    sha1 = None
-
-        store = self._store
-        parents = tuple(store.changeset_ref(p) for p in changeset.parents)
-        assert None not in parents
-        try:
-            result = self._graft(changeset, tree, parents)
-            if result:
-                assert result.sha1 == sha1
-            else:
-                assert result == sha1
-        except AmbiguousGraftAbort as e:
-            assert str(e) == message
-            raise
-        if result:
+            sha1 = response[0]
+            assert len(sha1) == 40
+            if sha1 == NULL_NODE_ID:
+                return None
             self._did_something = True
             if not self._grafted:
-                cs = Changeset.from_git_commit(result)
+                cs = Changeset.from_git_commit(sha1)
                 patcher = ChangesetPatcher.from_diff(cs, changeset)
                 if b'\npatch' in patcher:
-                    result = PseudoGitCommit(result.sha1)
+                    result = PseudoGitCommit(sha1)
                     result.graft = True
-        return result
+                    return result
+            return GitCommit(sha1)
 
     def close(self):
         if not self._grafted and not self._did_something:
