@@ -81,7 +81,6 @@ fn do_init(args: &[&[u8]]) {
 
 #[derive(Debug)]
 enum GraftError {
-    //TODO: return the candidates.
     Ambiguous(Box<[CommitId]>),
     NoGraft,
 }
