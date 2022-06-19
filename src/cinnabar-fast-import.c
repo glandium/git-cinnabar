@@ -190,6 +190,14 @@ static void cleanup()
 		pack_report();
 }
 
+void do_cleanup(int rollback, int helper_output)
+{
+	if (!rollback)
+		require_explicit_termination = 0;
+	cleanup();
+	write_or_die(helper_output, "ok\n", 3);
+}
+
 static void start_packfile()
 {
 	real_start_packfile();
@@ -415,7 +423,7 @@ static void do_set_replace(struct string_list *args)
 
 extern void add_changeset_head(struct hg_object_id *cs, struct object_id *meta);
 
-static void do_set(struct string_list *args)
+void do_set(struct string_list *args)
 {
 	enum object_type type;
 	struct hg_object_id hg_id;
@@ -895,7 +903,7 @@ extern void prepare_changeset_commit(
 	struct strbuf *changeset_buf,
 	struct strbuf *commit_buf);
 
-static void do_store(struct reader *helper_input, int helper_output,
+void do_store(struct reader *helper_input, int helper_output,
                      struct string_list *args)
 {
 	ENSURE_INIT();
@@ -1179,7 +1187,7 @@ const struct object_id *ensure_empty_blob() {
 	return &empty_blob;
 }
 
-static void do_reset(struct string_list *args) {
+void do_reset(struct string_list *args) {
 	struct branch *b;
 
 	if (args->nr != 2)
@@ -1204,28 +1212,4 @@ static void do_reset(struct string_list *args) {
 	if (is_null_oid(&b->oid))
 		b->delete = 1;
 	maybe_reset_notes(args->items[0].string);
-}
-
-int maybe_handle_command(struct reader *helper_input, int helper_output,
-                         const char *command, struct string_list *args)
-{
-	if (!strcmp(command, "done")) {
-		require_explicit_termination = 0;
-		cleanup();
-		write_or_die(helper_output, "ok\n", 3);
-		return 2;
-	} else if (!strcmp(command, "rollback")) {
-		cleanup();
-		write_or_die(helper_output, "ok\n", 3);
-		return 2;
-	} else if (!strcmp(command, "set")) {
-		do_set(args);
-	} else if (!strcmp(command, "store")) {
-		do_store(helper_input, helper_output, args);
-	} else if (!strcmp(command, "reset")) {
-		do_reset(args);
-	} else
-		return 0;
-
-	return 1;
 }

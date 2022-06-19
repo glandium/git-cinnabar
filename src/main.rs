@@ -73,8 +73,8 @@ use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};
 use std::fmt;
 use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Cursor, Write};
-use std::os::raw::c_char;
 use std::os::raw::c_int;
+use std::os::raw::{c_char, c_void};
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
@@ -99,10 +99,10 @@ use url::Url;
 use which::which;
 
 use hg_connect::connect_main_with;
-use libcinnabar::{files_meta, hg2git};
+use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git};
 use libgit::{
     config_get_value, for_each_ref_in, for_each_remote, get_oid_committish, lookup_replace_commit,
-    ls_tree, remote, resolve_ref, strbuf, BlobId, CommitId, RawCommit, RefTransaction,
+    ls_tree, remote, resolve_ref, strbuf, string_list, BlobId, CommitId, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use store::{
@@ -140,9 +140,37 @@ pub const FULL_VERSION: &str = git_version!(
     fallback = crate_version!(),
 );
 
+#[allow(improper_ctypes)]
 extern "C" {
-    #[allow(improper_ctypes)]
-    fn helper_main(in_: *mut libcinnabar::reader, out: c_int) -> c_int;
+    fn string_list_new() -> *mut string_list;
+    fn string_list_init_nodup(l: *mut string_list);
+    fn string_list_clear(l: *mut string_list, free_util: c_int);
+    fn string_list_split_in_place(
+        l: *mut string_list,
+        s: *mut c_char,
+        delim: c_int,
+        maxsplit: c_int,
+    );
+
+    fn do_get_note(t: *mut cinnabar_notes_tree, l: *const string_list, out: c_int);
+    fn do_hg2git(l: *const string_list, out: c_int);
+    fn do_manifest(l: *const string_list, out: c_int);
+    fn do_check_manifest(l: *const string_list, out: c_int);
+    fn do_check_file(l: *const string_list, out: c_int);
+    fn do_cat_file(l: *const string_list, out: c_int);
+    fn do_ls_tree(l: *const string_list, out: c_int);
+    fn do_rev_list(l: *const string_list, out: c_int);
+    fn do_diff_tree(l: *const string_list, out: c_int);
+    fn do_heads(l: *const string_list, out: c_int);
+    fn do_reset_heads(l: *const string_list);
+    fn do_create_git_tree(l: *const string_list, out: c_int);
+    fn do_seen(l: *const string_list, out: c_int);
+    fn do_dangling(l: *const string_list, out: c_int);
+    fn do_reload(l: *const string_list, out: c_int);
+    fn do_cleanup(rollback: c_int, out: c_int);
+    fn do_set(l: *const string_list);
+    fn do_store(in_: *mut libcinnabar::reader, out: c_int, l: *const string_list);
+    fn do_reset(l: *const string_list);
 
     #[cfg(windows)]
     fn wmain(argc: c_int, argv: *const *const u16) -> c_int;
@@ -150,6 +178,77 @@ extern "C" {
     fn init_cinnabar(argv0: *const c_char);
     fn init_cinnabar_2();
     fn done_cinnabar();
+}
+
+static INIT_CINNABAR_2: Lazy<()> = Lazy::new(|| unsafe { init_cinnabar_2() });
+
+fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
+    let args = unsafe { string_list_new() };
+    let mut line = Vec::new();
+    loop {
+        line.truncate(0);
+        input.read_until(b'\n', &mut line).unwrap();
+        if line.ends_with(b"\n") {
+            line.pop();
+        }
+        if line.is_empty() {
+            break;
+        }
+        Lazy::force(&INIT_CINNABAR_2);
+        line.push(b'\0');
+        let mut i = line.splitn_mut(2, |&b| b == b' ' || b == b'\0');
+        let command = i.next().unwrap();
+        let mut nul = [b'\0'];
+        let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
+        unsafe {
+            string_list_init_nodup(args);
+            if args_ != b"\0" {
+                string_list_split_in_place(
+                    args,
+                    args_.as_bytes_mut().as_mut_ptr() as *mut _,
+                    b' ' as i32,
+                    -1,
+                );
+            }
+            match &*command {
+                b"git2hg" => do_get_note(&mut git2hg as *mut _ as *mut _, args, out),
+                b"file-meta" => do_get_note(&mut files_meta as *mut _ as *mut _, args, out),
+                b"hg2git" => do_hg2git(args, out),
+                b"manifest" => do_manifest(args, out),
+                b"check-manifest" => do_check_manifest(args, out),
+                b"check-file" => do_check_file(args, out),
+                b"cat-file" => do_cat_file(args, out),
+                b"ls-tree" => do_ls_tree(args, out),
+                b"rev-list" => do_rev_list(args, out),
+                b"diff-tree" => do_diff_tree(args, out),
+                b"heads" => do_heads(args, out),
+                b"reset-heads" => do_reset_heads(args),
+                b"create-git-tree" => do_create_git_tree(args, out),
+                b"seen" => do_seen(args, out),
+                b"dangling" => do_dangling(args, out),
+                b"reload" => do_reload(args, out),
+                b"done" => {
+                    do_cleanup(0, out);
+                    string_list_clear(args, 0);
+                    break;
+                }
+                b"rollback" => {
+                    do_cleanup(1, out);
+                    string_list_clear(args, 0);
+                    break;
+                }
+                b"set" => do_set(args),
+                b"store" => do_store(&mut libcinnabar::reader(input), out, args),
+                b"reset" => do_reset(args),
+                _ => die!("Unknown command: {}", command.as_bstr()),
+            }
+            string_list_clear(args, 0);
+        }
+    }
+    unsafe {
+        ::libc::free(args as *mut c_void);
+    }
+    0
 }
 
 #[cfg(unix)]
@@ -908,9 +1007,7 @@ fn git_cinnabar() -> i32 {
         }
     };
     let _v = VersionCheck::new();
-    unsafe {
-        init_cinnabar_2();
-    }
+    Lazy::force(&INIT_CINNABAR_2);
     let ret = match command {
         Data {
             changeset: Some(c), ..
@@ -1070,12 +1167,7 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
             };
             #[cfg(unix)]
             let writer1 = writer1.as_raw_fd();
-            unsafe {
-                helper_main(
-                    &mut libcinnabar::reader(&mut BufReader::new(reader2)),
-                    writer1,
-                )
-            };
+            helper_main(&mut BufReader::new(reader2), writer1);
         });
         ((reader1, writer2), thread)
     };
@@ -1163,9 +1255,7 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
 
     let ret = match argv0_path.file_stem().and_then(OsStr::to_str) {
         Some("git-cinnabar") => git_cinnabar(),
-        Some("git-cinnabar-helper") => {
-            helper_main(&mut libcinnabar::reader(&mut stdin().lock()), 1)
-        }
+        Some("git-cinnabar-helper") => helper_main(&mut stdin().lock(), 1),
         Some("git-remote-hg") => {
             let _v = VersionCheck::new();
             match run_python_command(PythonCommand::GitRemoteHg) {
