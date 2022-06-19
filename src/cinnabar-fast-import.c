@@ -428,6 +428,7 @@ static void do_set(struct string_list *args)
 	if (args->nr != 3)
 		die("set needs 3 arguments");
 
+	ENSURE_INIT();
 	if (!strcmp(args->items[0].string, "file")) {
 		type = OBJ_BLOB;
 	} else if (!strcmp(args->items[0].string, "manifest") ||
@@ -897,6 +898,9 @@ extern void prepare_changeset_commit(
 static void do_store(struct reader *helper_input, int helper_output,
                      struct string_list *args)
 {
+	ENSURE_INIT();
+	require_explicit_termination = 1;
+
 	if (!strcmp(args->items[0].string, "metadata")) {
 		struct object_id changesets, manifests, hg2git_, git2hg_,
 		                 files_meta_, previous;
@@ -1181,6 +1185,7 @@ static void do_reset(struct string_list *args) {
 	if (args->nr != 2)
 		die("reset needs 2 arguments");
 
+	ENSURE_INIT();
 	b = lookup_branch(args->items[0].string);
 	if (b) {
 		oidclr(&b->oid);
@@ -1205,27 +1210,19 @@ int maybe_handle_command(struct reader *helper_input, int helper_output,
                          const char *command, struct string_list *args)
 {
 	if (!strcmp(command, "done")) {
-		ENSURE_INIT();
 		require_explicit_termination = 0;
 		cleanup();
 		write_or_die(helper_output, "ok\n", 3);
 		return 2;
 	} else if (!strcmp(command, "rollback")) {
-		if (initialized) {
-			ENSURE_INIT();
-			cleanup();
-		}
+		cleanup();
 		write_or_die(helper_output, "ok\n", 3);
 		return 2;
 	} else if (!strcmp(command, "set")) {
-		ENSURE_INIT();
 		do_set(args);
 	} else if (!strcmp(command, "store")) {
-		ENSURE_INIT();
-		require_explicit_termination = 1;
 		do_store(helper_input, helper_output, args);
 	} else if (!strcmp(command, "reset")) {
-		ENSURE_INIT();
 		do_reset(args);
 	} else
 		return 0;
