@@ -42,7 +42,6 @@ pub fn do_graft(input: &mut dyn BufRead, mut output: impl Write, args: &[&[u8]])
     match args.split_first() {
         Some((&b"init", args)) => do_init(args),
         Some((&b"changeset", args)) => do_changeset(input, output, args),
-        Some((&b"status", &[])) => writeln!(output, "{:?}", grafted()).unwrap(),
         Some((&b"finish", &[])) => {
             if grafted() || DID_SOMETHING.load(Ordering::Relaxed) {
                 writeln!(output, "ok").unwrap();
@@ -86,14 +85,14 @@ enum GraftError {
 }
 
 fn graft(
-    changeset_id: HgChangesetId,
-    raw_changeset: RawHgChangeset,
-    tree: TreeId,
+    changeset_id: &HgChangesetId,
+    raw_changeset: &RawHgChangeset,
+    tree: &TreeId,
     parents: &[GitChangesetId],
 ) -> Result<CommitId, GraftError> {
     let changeset = raw_changeset.parse().unwrap();
     let mut graft_trees = GRAFT_TREES.lock().unwrap();
-    let graft_trees_entry = graft_trees.get_mut(&tree).ok_or(GraftError::NoGraft)?;
+    let graft_trees_entry = graft_trees.get_mut(tree).ok_or(GraftError::NoGraft)?;
     let candidates = graft_trees_entry
         .iter()
         .map(|c| {
@@ -151,7 +150,7 @@ fn graft(
     // on a repo that was already handled by cinnabar.
     if candidates.len() > 1 {
         candidates.retain(|(_, c)| {
-            GeneratedGitChangesetMetadata::generate(c, &changeset_id, &raw_changeset)
+            GeneratedGitChangesetMetadata::generate(c, changeset_id, raw_changeset)
                 .unwrap()
                 .patch()
                 .is_some()
@@ -189,10 +188,23 @@ fn do_changeset(mut input: &mut dyn BufRead, mut output: impl Write, args: &[&[u
     let buf = input.read_exactly(size).unwrap();
     let changeset = RawHgChangeset(buf);
 
-    match graft(node, changeset, tree, parents) {
+    match graft(&node, &changeset, &tree, parents) {
         Ok(commit) => {
             DID_SOMETHING.store(true, Ordering::Relaxed);
-            writeln!(output, "{}", commit)
+            if !grafted()
+                && GeneratedGitChangesetMetadata::generate(
+                    &RawCommit::read(&commit).unwrap().parse().unwrap(),
+                    &node,
+                    &changeset,
+                )
+                .unwrap()
+                .patch()
+                .is_some()
+            {
+                writeln!(output, "{} transition", commit)
+            } else {
+                writeln!(output, "{}", commit)
+            }
         }
         Err(GraftError::NoGraft) => writeln!(output, "{}", CommitId::null()),
         Err(GraftError::Ambiguous(candidates)) => writeln!(

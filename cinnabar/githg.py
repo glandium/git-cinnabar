@@ -399,13 +399,6 @@ class Grafter(object):
         with GitHgHelper.query(b'graft', b'init'):
             pass
 
-    @property
-    def _grafted(self):
-        with GitHgHelper.query(b'graft', b'status') as stdout:
-            res = stdout.readline().strip()
-            assert res in (b'true', b'false')
-            return res == b'true'
-
     def graft(self, changeset, tree):
         args = [changeset.node, tree]
         args.extend(changeset.parents)
@@ -426,13 +419,10 @@ class Grafter(object):
             assert len(sha1) == 40
             if sha1 == NULL_NODE_ID:
                 return None
-            if not self._grafted:
-                cs = Changeset.from_git_commit(sha1)
-                patcher = ChangesetPatcher.from_diff(cs, changeset)
-                if b'\npatch' in patcher:
-                    result = PseudoGitCommit(sha1)
-                    result.graft = True
-                    return result
+            if len(response) > 1 and response[1] == b"transition":
+                result = PseudoGitCommit(sha1)
+                result.graft = True
+                return result
             return GitCommit(sha1)
 
     def close(self):
