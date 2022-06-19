@@ -394,45 +394,6 @@ class BranchMap(object):
         return self._tips.get(branch, None)
 
 
-class Grafter(object):
-    def __init__(self, store):
-        with GitHgHelper.query(b'graft', b'init'):
-            pass
-
-    def graft(self, changeset, tree):
-        args = [changeset.node, tree]
-        args.extend(changeset.parents)
-        raw_data = changeset.raw_data
-        args.append(str(len(raw_data)).encode('ascii'))
-        with GitHgHelper.query(b'graft', b'changeset', *args) as stdout:
-            stdout.write(raw_data)
-            stdout.flush()
-            response = stdout.readline().strip().split()
-            assert len(response) > 0
-            if response[0] == b"ambiguous":
-                raise AmbiguousGraftAbort(
-                    'Cannot graft changeset %s. Candidates: %s'
-                    % (changeset.node.decode('ascii'),
-                       ', '.join(n.decode('ascii')
-                                 for n in sorted(response[1:]))))
-            sha1 = response[0]
-            assert len(sha1) == 40
-            if sha1 == NULL_NODE_ID:
-                return None
-            if len(response) > 1 and response[1] == b"transition":
-                result = PseudoGitCommit(sha1)
-                result.graft = True
-                return result
-            return GitCommit(sha1)
-
-    def close(self):
-        with GitHgHelper.query(b'graft', b'finish') as stdout:
-            res = stdout.readline().strip()
-            assert res in (b'ok', b'ko')
-            if res == b'ko':
-                raise NothingToGraftException()
-
-
 class GitHgStore(object):
     FLAGS = [
         b'files-meta',
@@ -460,7 +421,7 @@ class GitHgStore(object):
     def __init__(self):
         self._flags = set()
         self._closed = False
-        self._graft = None
+        self._graft = False
 
         self._hgheads_orig = {}
 
@@ -511,7 +472,9 @@ class GitHgStore(object):
         return dict(self.tags()) != self._tags
 
     def prepare_graft(self):
-        self._graft = Grafter(self)
+        with GitHgHelper.query(b'graft', b'init'):
+            pass
+        self._graft = True
 
     @staticmethod
     def _try_merge_branches(repo_url):
@@ -855,10 +818,32 @@ class GitHgStore(object):
             if None in parents:
                 raise NothingToGraftException()
             tree = self.git_tree(instance.manifest, *instance.parents[:1])
+        transition = False
         if commit is None and self._graft:
-            commit = self._graft.graft(instance, tree)
+            args = [instance.node, tree]
+            args.extend(instance.parents)
+            raw_data = instance.raw_data
+            args.append(str(len(raw_data)).encode('ascii'))
+            with GitHgHelper.query(b'graft', b'changeset', *args) as stdout:
+                stdout.write(raw_data)
+                stdout.flush()
+                response = stdout.readline().strip().split()
+                assert len(response) > 0
+                if response[0] == b"ambiguous":
+                    raise AmbiguousGraftAbort(
+                        'Cannot graft changeset %s. Candidates: %s'
+                        % (instance.node.decode('ascii'),
+                           ', '.join(n.decode('ascii')
+                                     for n in sorted(response[1:]))))
+                sha1 = response[0]
+                assert len(sha1) == 40
+                if sha1 == NULL_NODE_ID:
+                    return None
+                if len(response) > 1 and response[1] == b"transition":
+                    transition = True
+                commit = GitCommit(sha1)
 
-        if not commit or getattr(commit, "graft", None):
+        if not commit or transition:
             args = [instance.node, tree]
             args.extend(instance.parents)
             raw_data = instance.raw_data
@@ -893,7 +878,11 @@ class GitHgStore(object):
         if self._closed:
             return
         if self._graft:
-            self._graft.close()
+            with GitHgHelper.query(b'graft', b'finish') as stdout:
+                res = stdout.readline().strip()
+                assert res in (b'ok', b'ko')
+                if res == b'ko':
+                    raise NothingToGraftException()
         self._closed = True
         # If the helper is not running, we don't have anything to update.
         if not GitHgHelper._helper:
