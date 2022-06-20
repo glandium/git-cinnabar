@@ -13,10 +13,15 @@ use bstr::ByteSlice;
 use once_cell::sync::Lazy;
 
 use crate::hg_data::{GitAuthorship, HgAuthorship};
-use crate::libgit::{lookup_replace_commit, rev_list, CommitId, RawCommit, TreeId};
-use crate::oid::ObjectId;
+use crate::libgit::{
+    lookup_replace_commit, object_id, rev_list, strbuf, BlobId, CommitId, RawCommit, TreeId,
+};
+use crate::oid::{GitObjectId, ObjectId};
 use crate::progress::Progress;
-use crate::store::{GeneratedGitChangesetMetadata, GitChangesetId, HgChangesetId, RawHgChangeset};
+use crate::store::{
+    store_git_blob, GeneratedGitChangesetMetadata, GitChangesetId, GitChangesetMetadataId,
+    HgChangesetId, RawHgChangeset,
+};
 use crate::util::{FromBytes, ReadExt};
 
 extern "C" {
@@ -191,22 +196,30 @@ fn do_changeset(mut input: &mut dyn BufRead, mut output: impl Write, args: &[&[u
     match graft(&node, &changeset, &tree, parents) {
         Ok(commit) => {
             DID_SOMETHING.store(true, Ordering::Relaxed);
-            if !grafted()
-                && GeneratedGitChangesetMetadata::generate(
-                    &RawCommit::read(&commit).unwrap().parse().unwrap(),
-                    &node,
-                    &changeset,
-                )
-                .unwrap()
-                .patch()
-                .is_some()
-            {
+            let metadata = GeneratedGitChangesetMetadata::generate(
+                &RawCommit::read(&commit).unwrap().parse().unwrap(),
+                &node,
+                &changeset,
+            )
+            .unwrap();
+            if !grafted() && metadata.patch().is_some() {
                 writeln!(output, "{} transition", commit)
             } else {
-                writeln!(output, "{}", commit)
+                let mut buf = strbuf::new();
+                buf.extend_from_slice(&metadata.serialize());
+                let mut metadata_oid = object_id::default();
+                unsafe {
+                    store_git_blob(&buf, &mut metadata_oid);
+                }
+                let metadata_id = unsafe {
+                    GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(
+                        GitObjectId::from(metadata_oid),
+                    ))
+                };
+                writeln!(output, "{} {}", commit, metadata_id)
             }
         }
-        Err(GraftError::NoGraft) => writeln!(output, "{}", CommitId::null()),
+        Err(GraftError::NoGraft) => writeln!(output, "{} {}", CommitId::null(), CommitId::null()),
         Err(GraftError::Ambiguous(candidates)) => writeln!(
             output,
             "ambiguous {}",

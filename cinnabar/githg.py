@@ -832,12 +832,14 @@ class GitHgStore(object):
                         % (instance.node.decode('ascii'),
                            ', '.join(n.decode('ascii')
                                      for n in sorted(response[1:]))))
-                sha1 = response[0]
+                sha1, blob_sha1 = response
                 assert len(sha1) == 40
                 if sha1 == NULL_NODE_ID:
                     return None
-                if len(response) > 1 and response[1] == b"transition":
+                if blob_sha1 == b"transition":
                     transition = True
+                else:
+                    assert len(blob_sha1) == 40
                 commit = GitCommit(sha1)
 
         if not commit or transition:
@@ -848,9 +850,9 @@ class GitHgStore(object):
             with GitHgHelper.query(b'store-changeset', *args) as stdout:
                 stdout.write(raw_data)
                 stdout.flush()
-                sha1 = stdout.read(41)
-                assert sha1[-1:] == b'\n'
-                sha1 = sha1[:40]
+                sha1, blob_sha1 = stdout.readline().strip().split()
+                assert len(sha1) == 40
+                assert len(blob_sha1) == 40
 
             if commit and commit.sha1 != sha1:
                 self._replace[commit.sha1] = sha1
@@ -862,6 +864,7 @@ class GitHgStore(object):
         changeset = Changeset.from_git_commit(commit)
         sha1 = GitHgHelper.put_blob(
             ChangesetPatcher.from_diff(changeset, instance))
+        assert sha1 == blob_sha1
         GitHgHelper.set(b'changeset-metadata', instance.node, sha1)
         GitHgHelper.set(b'changeset-head', instance.node, sha1)
 

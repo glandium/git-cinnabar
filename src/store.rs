@@ -667,7 +667,7 @@ pub unsafe extern "C" fn reset_changeset_heads() {
 }
 
 extern "C" {
-    fn store_git_blob(blob_buf: *const strbuf, result: *mut object_id);
+    pub fn store_git_blob(blob_buf: *const strbuf, result: *mut object_id);
     fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
 }
 
@@ -676,7 +676,7 @@ pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, a
         die!("store-changeset takes between 3 and 5 arguments");
     }
 
-    let _changeset_id = HgChangesetId::from_bytes(args[0]).unwrap();
+    let changeset_id = HgChangesetId::from_bytes(args[0]).unwrap();
     let tree_id = TreeId::from_bytes(args[1]).unwrap();
     let parents = &args[2..args.len() - 1]
         .iter()
@@ -684,9 +684,9 @@ pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, a
         .collect::<Vec<_>>();
     let size = usize::from_bytes(args[args.len() - 1]).unwrap();
     let buf = input.read_exactly(size).unwrap();
-    let changeset = RawHgChangeset(buf);
+    let raw_changeset = RawHgChangeset(buf);
 
-    let changeset = changeset.parse().unwrap();
+    let changeset = raw_changeset.parse().unwrap();
     let mut result = strbuf::new();
     let author = HgAuthorship {
         author: changeset.author(),
@@ -727,8 +727,27 @@ pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, a
     unsafe {
         store_git_commit(&result, &mut result_oid);
     }
+    let commit_id = unsafe { CommitId::from_unchecked(GitObjectId::from(result_oid)) };
 
-    writeln!(output, "{}", GitObjectId::from(result_oid)).unwrap();
+    let metadata = GeneratedGitChangesetMetadata::generate(
+        &RawCommit::read(&commit_id).unwrap().parse().unwrap(),
+        &changeset_id,
+        &raw_changeset,
+    )
+    .unwrap();
+    let mut buf = strbuf::new();
+    buf.extend_from_slice(&metadata.serialize());
+    let mut metadata_oid = object_id::default();
+    unsafe {
+        store_git_blob(&buf, &mut metadata_oid);
+    }
+    let metadata_id = unsafe {
+        GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(GitObjectId::from(
+            metadata_oid,
+        )))
+    };
+
+    writeln!(output, "{} {}", commit_id, metadata_id).unwrap();
 }
 
 pub fn do_create(input: &mut dyn BufRead, output: impl Write, args: &[&[u8]]) {
