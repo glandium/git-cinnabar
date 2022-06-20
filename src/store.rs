@@ -155,6 +155,28 @@ impl<B: AsRef<[u8]>> GitChangesetMetadata<B> {
     pub fn patch(&self) -> Option<GitChangesetPatch> {
         self.patch.as_ref().map(|b| GitChangesetPatch(b.as_ref()))
     }
+
+    pub fn serialize(&self) -> ImmutBString {
+        // TODO: ideally, this would return a RawGitChangesetMetadata.
+        let mut buf = Vec::new();
+        writeln!(buf, "changeset {}", self.changeset_id()).unwrap();
+        writeln!(buf, "manifest {}", self.manifest_id()).unwrap();
+        for (key, value) in [
+            (&b"author "[..], self.author.as_ref()),
+            (&b"extra "[..], self.extra.as_ref()),
+            (&b"files "[..], self.files.as_ref()),
+            (&b"patch "[..], self.patch.as_ref()),
+        ] {
+            if let Some(value) = value {
+                buf.extend_from_slice(key);
+                buf.extend_from_slice(value.as_ref());
+                buf.extend_from_slice(b" ");
+            }
+        }
+        // Remove final '\n'
+        buf.pop();
+        buf.into()
+    }
 }
 
 pub type GeneratedGitChangesetMetadata = GitChangesetMetadata<ImmutBString>;
@@ -630,6 +652,7 @@ pub unsafe extern "C" fn reset_changeset_heads() {
 }
 
 extern "C" {
+    fn store_git_blob(blob_buf: *const strbuf, result: *mut object_id);
     fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
 }
 
@@ -709,7 +732,7 @@ pub fn do_create_changeset(mut input: &mut dyn BufRead, mut output: impl Write, 
     let manifest_id = HgManifestId::from_bytes(args[1]).unwrap();
     let size = usize::from_bytes(args[2]).unwrap();
     let files = (size != 0).then(|| input.read_exactly(size).unwrap());
-    let metadata = GitChangesetMetadata {
+    let mut metadata = GitChangesetMetadata {
         changeset_id: HgChangesetId::null(),
         manifest_id,
         author: None,
@@ -734,5 +757,15 @@ pub fn do_create_changeset(mut input: &mut dyn BufRead, mut output: impl Write, 
         hash.update(p.as_raw_bytes());
     }
     hash.update(&changeset.0);
-    writeln!(output, "{}", hash.finalize()).unwrap();
+    metadata.changeset_id = hash.finalize();
+    let mut buf = strbuf::new();
+    buf.extend_from_slice(&metadata.serialize());
+    let mut blob_oid = object_id::default();
+    unsafe {
+        store_git_blob(&buf, &mut blob_oid);
+    }
+    let metadata_id = unsafe {
+        GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(GitObjectId::from(blob_oid)))
+    };
+    writeln!(output, "{} {}", metadata.changeset_id, metadata_id).unwrap();
 }

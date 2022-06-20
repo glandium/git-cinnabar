@@ -349,7 +349,8 @@ class PushStore(GitHgStore):
             stdout.write(raw_files)
             stdout.flush()
             res = stdout.readline().strip()
-            assert len(res) == 40
+            assert len(res) == 81
+            res, metadata = res.split()
         changeset = Changeset.from_git_commit(commit_data)
         changeset.parents = tuple(self.hg_changeset(p) for p in parents)
         changeset.manifest = manifest.node
@@ -363,7 +364,7 @@ class PushStore(GitHgStore):
         changeset.node = changeset.sha1
         assert res == changeset.node
         self._pushed.add(changeset.node)
-        self.store_changeset(changeset, commit_data)
+        self.store_changeset(changeset, commit_data, metadata)
 
         if check_enabled('bundle') and real_changeset:
             error = False

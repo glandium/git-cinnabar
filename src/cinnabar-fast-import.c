@@ -1126,6 +1126,12 @@ void store_git_tree(struct strbuf *tree_buf, const struct object_id *reference,
 	}
 }
 
+void store_git_blob(struct strbuf *blob_buf, struct object_id *result)
+{
+	ENSURE_INIT();
+	store_object(OBJ_BLOB, blob_buf, NULL, result, 0);
+}
+
 void store_git_commit(struct strbuf *commit_buf, struct object_id *result)
 {
 	ENSURE_INIT();
