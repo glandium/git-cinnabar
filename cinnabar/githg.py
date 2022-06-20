@@ -810,7 +810,7 @@ class GitHgStore(object):
             return EMPTY_TREE
         return GitHgHelper.create_git_tree(manifest_sha1, ref_changeset)
 
-    def store_changeset(self, instance, commit=None, metadata=None):
+    def store_changeset(self, instance, commit=None):
         if commit and not isinstance(commit, GitCommit):
             commit = GitCommit(commit)
         if not commit:
@@ -867,8 +867,6 @@ class GitHgStore(object):
             ChangesetPatcher.from_diff(changeset, instance))
         GitHgHelper.set(b'changeset-metadata', instance.node, sha1)
         GitHgHelper.set(b'changeset-head', instance.node, sha1)
-        if metadata:
-            assert metadata == sha1
 
     MODE = {
         b'': b'160644',

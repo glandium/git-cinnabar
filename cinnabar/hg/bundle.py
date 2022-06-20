@@ -351,22 +351,26 @@ class PushStore(GitHgStore):
             res = stdout.readline().strip()
             assert len(res) == 81
             res, metadata = res.split()
-        changeset = Changeset.from_git_commit(commit_data)
-        changeset.parents = tuple(self.hg_changeset(p) for p in parents)
-        changeset.manifest = manifest.node
-        changeset.files = changeset_files
 
-        if parents:
-            parent_changeset = self.changeset(changeset.parent1)
-            if parent_changeset.branch:
-                changeset.branch = parent_changeset.branch
-
-        changeset.node = changeset.sha1
-        assert res == changeset.node
-        self._pushed.add(changeset.node)
-        self.store_changeset(changeset, commit_data, metadata)
+        self._pushed.add(res)
+        GitHgHelper.set(b'changeset', res, commit_data.sha1)
+        GitHgHelper.set(b'changeset-metadata', res, metadata)
+        GitHgHelper.set(b'changeset-head', res, metadata)
 
         if check_enabled('bundle') and real_changeset:
+            changeset = Changeset.from_git_commit(commit_data)
+            changeset.parents = tuple(self.hg_changeset(p) for p in parents)
+            changeset.manifest = manifest.node
+            changeset.files = changeset_files
+
+            if parents:
+                parent_changeset = self.changeset(changeset.parent1)
+                if parent_changeset.branch:
+                    changeset.branch = parent_changeset.branch
+
+            changeset.node = changeset.sha1
+            assert res == changeset.node
+
             error = False
             for k in ('files', 'manifest'):
                 if getattr(real_changeset, k, []) != getattr(changeset, k, []):
