@@ -50,7 +50,12 @@ path = "cinnabar"
 version = "3"
 features = ["cargo", "derive"]
 
-[dependencies.curl-sys]
+[target.'cfg(windows)'.dependencies.curl-sys]
+version = "0.4"
+default-features = false
+features = ["ssl", "static-curl", "static-ssl"]
+
+[target.'cfg(not(windows))'.dependencies.curl-sys]
 version = "0.4"
 default-features = false
 

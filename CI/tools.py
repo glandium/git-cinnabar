@@ -387,14 +387,6 @@ class Build(Task, metaclass=Tool):
         if os.startswith('mingw'):
             cpu = msys.msys_cpu(env.cpu)
             rust_target = "{}-pc-windows-gnu".format(cpu)
-            # Statically link libcurl on Windows.
-            # This leaves it to curl-sys build scripts to deal with building
-            # libcurl, instead of us.
-            cargo_features.extend([
-                'curl-sys/ssl',
-                'curl-sys/static-curl',
-                'curl-sys/static-ssl',
-            ])
         elif os.startswith('osx'):
             rust_target = 'x86_64-apple-darwin'
         elif os.startswith('arm64-osx'):
