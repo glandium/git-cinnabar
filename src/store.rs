@@ -170,7 +170,7 @@ impl<B: AsRef<[u8]>> GitChangesetMetadata<B> {
             if let Some(value) = value {
                 buf.extend_from_slice(key);
                 buf.extend_from_slice(value.as_ref());
-                buf.extend_from_slice(b" ");
+                buf.extend_from_slice(b"\n");
             }
         }
         // Remove final '\n'
@@ -190,13 +190,16 @@ impl GeneratedGitChangesetMetadata {
         let changeset = raw_changeset.parse()?;
         let changeset_id = changeset_id.clone();
         let manifest_id = changeset.manifest().clone();
-        let author = if commit.author() != changeset.author() {
+        let author = HgAuthorship::from(GitAuthorship(commit.author())).author;
+        let author = if &*author != changeset.author() {
             Some(changeset.author().to_vec().into_boxed_slice())
         } else {
             None
         };
         let extra = changeset.extra.map(|b| b.to_vec().into_boxed_slice());
-        let files = changeset.files.map(|b| b.to_vec().into_boxed_slice());
+        let files = changeset
+            .files()
+            .map(|files| bstr::join(b"\0", files).into_boxed_slice());
         let mut temp = GeneratedGitChangesetMetadata {
             changeset_id,
             manifest_id,
@@ -464,13 +467,8 @@ impl<'a> HgChangeset<'a> {
         self.extra.map(ChangesetExtra::from)
     }
 
-    pub fn files(&self) -> impl Iterator<Item = &[u8]> {
-        let mut split = self.files.unwrap_or(b"").split(|&b| b == b'\n');
-        if self.files.is_none() {
-            // b"".split() would return an empty first item, and we want to skip that.
-            split.next();
-        }
-        split
+    pub fn files(&self) -> Option<impl Iterator<Item = &[u8]>> {
+        self.files.as_ref().map(|b| b.split(|&b| b == b'\n'))
     }
 }
 
