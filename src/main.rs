@@ -111,9 +111,9 @@ use libgit::{
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::do_progress;
 use store::{
-    do_store_changeset, GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId,
-    HgFileId, HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF, CHECKED_REF,
-    METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    do_create, do_store_changeset, GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId,
+    HgChangesetId, HgFileId, HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF,
+    CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
 
@@ -205,7 +205,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
         let command = i.next().unwrap();
         let mut nul = [b'\0'];
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
-        if let b"graft" | b"progress" | b"store-changeset" = &*command {
+        if let b"graft" | b"progress" | b"store-changeset" | b"create" = &*command {
             let args = match args_.split_last().unwrap().1 {
                 b"" => Vec::new(),
                 args => args.split(|&b| b == b' ').collect::<Vec<_>>(),
@@ -215,6 +215,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"progress" => do_progress(out, &args),
                 b"graft" => do_graft(input, out, &args),
                 b"store-changeset" => do_store_changeset(input, out, &args),
+                b"create" => do_create(input, out, &args),
                 _ => unreachable!(),
             }
             continue;

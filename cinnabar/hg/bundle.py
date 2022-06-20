@@ -342,6 +342,14 @@ class PushStore(GitHgStore):
                     )
             self._manifest_git_tree[manifest.node] = commit_data.tree
 
+        raw_files = b'\0'.join(changeset_files)
+        with GitHgHelper.query(
+                b'create', b'changeset', commit_data.sha1, manifest.node,
+                str(len(raw_files)).encode('ascii')) as stdout:
+            stdout.write(raw_files)
+            stdout.flush()
+            res = stdout.readline().strip()
+            assert len(res) == 40
         changeset = Changeset.from_git_commit(commit_data)
         changeset.parents = tuple(self.hg_changeset(p) for p in parents)
         changeset.manifest = manifest.node
@@ -353,6 +361,7 @@ class PushStore(GitHgStore):
                 changeset.branch = parent_changeset.branch
 
         changeset.node = changeset.sha1
+        assert res == changeset.node
         self._pushed.add(changeset.node)
         self.store_changeset(changeset, commit_data)
 

@@ -375,9 +375,11 @@ impl RawHgChangeset {
                 .parents()
                 .iter()
                 .map(|p| unsafe { GitChangesetId::from_unchecked(p.clone()) }.to_hg())
+                .chain(repeat(Some(HgChangesetId::null())))
+                .take(2)
                 .collect::<Option<Vec<_>>>()?;
             parents.sort();
-            for p in parents.iter().chain(repeat(&HgChangesetId::null())).take(2) {
+            for p in parents {
                 hash.update(p.as_raw_bytes());
             }
             hash.update(&changeset);
@@ -689,4 +691,48 @@ pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, a
     }
 
     writeln!(output, "{}", GitObjectId::from(result_oid)).unwrap();
+}
+
+pub fn do_create(input: &mut dyn BufRead, output: impl Write, args: &[&[u8]]) {
+    match args.split_first() {
+        Some((&b"changeset", args)) => do_create_changeset(input, output, args),
+        Some((typ, _)) => die!("unknown create type: {}", typ.as_bstr()),
+        None => die!("create expects a type"),
+    }
+}
+
+pub fn do_create_changeset(mut input: &mut dyn BufRead, mut output: impl Write, args: &[&[u8]]) {
+    if args.len() != 3 {
+        die!("create changeset takes 3 arguments");
+    }
+    let commit_id = CommitId::from_bytes(args[0]).unwrap();
+    let manifest_id = HgManifestId::from_bytes(args[1]).unwrap();
+    let size = usize::from_bytes(args[2]).unwrap();
+    let files = (size != 0).then(|| input.read_exactly(size).unwrap());
+    let metadata = GitChangesetMetadata {
+        changeset_id: HgChangesetId::null(),
+        manifest_id,
+        author: None,
+        extra: None,
+        files,
+        patch: None,
+    };
+    let commit = RawCommit::read(&commit_id).unwrap();
+    let commit = commit.parse().unwrap();
+    let changeset = RawHgChangeset::from_metadata(&commit, &metadata).unwrap();
+    let mut hash = HgChangesetId::create();
+    let mut parents = commit
+        .parents()
+        .iter()
+        .map(|p| unsafe { GitChangesetId::from_unchecked(p.clone()) }.to_hg())
+        .chain(repeat(Some(HgChangesetId::null())))
+        .take(2)
+        .collect::<Option<Vec<_>>>()
+        .unwrap();
+    parents.sort();
+    for p in parents {
+        hash.update(p.as_raw_bytes());
+    }
+    hash.update(&changeset.0);
+    writeln!(output, "{}", hash.finalize()).unwrap();
 }
