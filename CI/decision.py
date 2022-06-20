@@ -314,7 +314,7 @@ def decision():
             },
         )
 
-    for cargo_cmd in ('test', 'fmt'):
+    for cargo_cmd in ('test',):
         for env in ('linux', 'linux.rust-{}'.format(MSRV), 'mingw64', 'osx'):
             # Can't spawn osx workers from pull requests.
             if env.startswith('osx') and not TC_IS_PUSH:
@@ -343,21 +343,13 @@ def decision():
                         'mingw64': 'x86_64-pc-windows-gnu',
                         'osx': 'x86_64-apple-darwin',
                     }[env]),
-                    {
-                        'fmt': ['rustup component add rustfmt'],
-                    }.get(cargo_cmd, []),
                     Task.checkout(),
-                    ['git -C repo submodule update --init']
-                    if cargo_cmd != 'fmt' else [],
+                    ['git -C repo submodule update --init'],
                     [
-                        '(cd repo ; cargo {})'.format({
-                            'fmt': 'fmt -- --check',
-                        }.get(cargo_cmd, cargo_cmd)),
+                        '(cd repo ; cargo {})'.format(cargo_cmd),
                     ],
                 )),
             )
-            if cargo_cmd == 'fmt':
-                break
 
 
 def do_hg_version(hg):

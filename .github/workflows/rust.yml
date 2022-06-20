@@ -45,3 +45,17 @@ jobs:
       - uses: kristof-mattei/clippy-check@9615027d0d038d93ede0037e3629366a5ba2ecf8
         with:
           args: --profile tools -vv -- -D warnings
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: 1.61.0
+          override: true
+          components: rustfmt
+      - uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: -- --check
