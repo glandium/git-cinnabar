@@ -212,8 +212,8 @@ impl GeneratedGitChangesetMetadata {
         if **raw_changeset != *new {
             // TODO: produce a better patch (byte_diff)
             temp.patch = Some(GitChangesetPatch::from_patch_info(textdiff(
-                raw_changeset,
                 &new,
+                raw_changeset,
             )));
         }
         Some(temp)
