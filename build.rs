@@ -41,6 +41,16 @@ use std::process::Command;
 use itertools::Itertools;
 use make_cmd::gnu_make;
 
+#[cfg(not(windows))]
+fn normalize_path(s: &str) -> &str {
+    s
+}
+
+#[cfg(windows)]
+fn normalize_path(s: &str) -> String {
+    s.replace('\\', "/")
+}
+
 fn env(name: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| panic!("Failed to get {}", name))
 }
@@ -125,13 +135,13 @@ fn main() {
             None
         },
         std::env::var("DEP_CURL_INCLUDE")
-            .map(|i| format!("-I{}", i))
+            .map(|i| format!("-I{}", normalize_path(&i)))
             .ok(),
         std::env::var("DEP_CURL_STATIC")
             .map(|_| "-DCURL_STATICLIB".to_string())
             .ok(),
         std::env::var("DEP_Z_INCLUDE")
-            .map(|i| format!("-I{}", i))
+            .map(|i| format!("-I{}", normalize_path(&i)))
             .ok(),
     ]
     .iter()
@@ -194,7 +204,7 @@ fn main() {
         let curl_dir = PathBuf::from(env_os("OUT_DIR"));
         cmd.arg(curl_dir.join("libcurl.so"));
         if let Ok(include) = std::env::var("DEP_CURL_INCLUDE") {
-            cmd.arg(format!("-I{}", include));
+            cmd.arg(format!("-I{}", normalize_path(&include)));
         }
         match cmd.status() {
             Ok(s) if s.success() => {}
