@@ -810,16 +810,13 @@ class GitHgStore(object):
             return EMPTY_TREE
         return GitHgHelper.create_git_tree(manifest_sha1, ref_changeset)
 
-    def store_changeset(self, instance, commit=None):
-        if commit and not isinstance(commit, GitCommit):
-            commit = GitCommit(commit)
-        if not commit:
-            parents = tuple(self.changeset_ref(p) for p in instance.parents)
-            if None in parents:
-                raise NothingToGraftException()
-            tree = self.git_tree(instance.manifest, *instance.parents[:1])
-        transition = False
-        if commit is None and self._graft:
+    def store_changeset(self, instance):
+        parents = tuple(self.changeset_ref(p) for p in instance.parents)
+        if None in parents:
+            raise NothingToGraftException()
+        tree = self.git_tree(instance.manifest, *instance.parents[:1])
+        commit = transition = False
+        if self._graft:
             args = [instance.node, tree]
             args.extend(instance.parents)
             raw_data = instance.raw_data
