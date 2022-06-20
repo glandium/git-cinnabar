@@ -26,7 +26,6 @@ from tools import (
     SOME_MERCURIAL_VERSIONS,
     MSRV,
     Build,
-    install_rust,
     Git,
     Hg,
     nproc,
@@ -313,43 +312,6 @@ def decision():
                 'GIT_CINNABAR_CHECK': 'no-version-check',
             },
         )
-
-    for cargo_cmd in ('test',):
-        for env in ('linux', 'linux.rust-{}'.format(MSRV), 'mingw64', 'osx'):
-            # Can't spawn osx workers from pull requests.
-            if env.startswith('osx') and not TC_IS_PUSH:
-                continue
-
-            # Run cargo test with the MSRV
-            rust_version = []
-            if env.startswith('linux.rust'):
-                if cargo_cmd != 'test':
-                    continue
-                rust_version = [env[len("linux.rust-"):]]
-                env = 'linux'
-
-            task_env = TaskEnvironment.by_name('{}.build'.format(env))
-            desc = 'cargo {}'.format(cargo_cmd)
-            if env != 'linux':
-                desc = ' '.join((desc, task_env.os, task_env.cpu))
-            if rust_version:
-                desc += ' rust-' + rust_version[0]
-            Task(
-                task_env=task_env,
-                description=desc,
-                command=list(chain(
-                    install_rust(*rust_version, target={
-                        'linux': 'x86_64-unknown-linux-gnu',
-                        'mingw64': 'x86_64-pc-windows-gnu',
-                        'osx': 'x86_64-apple-darwin',
-                    }[env]),
-                    Task.checkout(),
-                    ['git -C repo submodule update --init'],
-                    [
-                        '(cd repo ; cargo {})'.format(cargo_cmd),
-                    ],
-                )),
-            )
 
 
 def do_hg_version(hg):

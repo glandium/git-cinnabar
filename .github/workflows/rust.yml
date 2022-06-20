@@ -59,3 +59,48 @@ jobs:
         with:
           command: fmt
           args: -- --check
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        toolchain: [1.61.0]
+        include:
+          - os: windows-latest
+            toolchain: 1.61.0-x86_64-pc-windows-gnu
+          - os: ubuntu-latest
+            toolchain: 1.57.0
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'Cargo.toml') }}
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          override: true
+      - uses: msys2/setup-msys2@v2
+        with:
+          release: false
+          update: false
+          msystem: MINGW64
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            patch
+        if: runner.os == 'Windows'
+      - name: Update PATH
+        run: |
+          (Resolve-Path c:/msys64/mingw64/bin).Path >> $Env:GITHUB_PATH
+        if: runner.os == 'Windows'
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
