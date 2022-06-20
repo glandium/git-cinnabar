@@ -277,7 +277,7 @@ class Hg(Task, metaclass=Tool):
         ]
 
 
-MSRV = '1.56.0'
+MSRV = '1.57.0'
 
 
 def install_rust(version='1.61.0', target='x86_64-unknown-linux-gnu'):

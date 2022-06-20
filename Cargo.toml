@@ -117,6 +117,10 @@ panic = "abort"
 opt-level = 1
 panic = "abort"
 
+[profile.tools]
+inherits = "dev"
+opt-level = 0
+
 [features]
 default = ["version-check"]
 compile_commands = []

@@ -314,7 +314,7 @@ def decision():
             },
         )
 
-    for cargo_cmd in ('test', 'clippy', 'fmt'):
+    for cargo_cmd in ('test', 'fmt'):
         for env in ('linux', 'linux.rust-{}'.format(MSRV), 'mingw64', 'osx'):
             # Can't spawn osx workers from pull requests.
             if env.startswith('osx') and not TC_IS_PUSH:
@@ -344,7 +344,6 @@ def decision():
                         'osx': 'x86_64-apple-darwin',
                     }[env]),
                     {
-                        'clippy': ['rustup component add clippy'],
                         'fmt': ['rustup component add rustfmt'],
                     }.get(cargo_cmd, []),
                     Task.checkout(),
@@ -352,7 +351,6 @@ def decision():
                     if cargo_cmd != 'fmt' else [],
                     [
                         '(cd repo ; cargo {})'.format({
-                            'clippy': 'clippy -- -D warnings',
                             'fmt': 'fmt -- --check',
                         }.get(cargo_cmd, cargo_cmd)),
                     ],
