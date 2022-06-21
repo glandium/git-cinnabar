@@ -160,7 +160,9 @@ impl<B: AsRef<[u8]>> GitChangesetMetadata<B> {
         // TODO: ideally, this would return a RawGitChangesetMetadata.
         let mut buf = Vec::new();
         writeln!(buf, "changeset {}", self.changeset_id()).unwrap();
-        writeln!(buf, "manifest {}", self.manifest_id()).unwrap();
+        if self.manifest_id() != &HgManifestId::null() {
+            writeln!(buf, "manifest {}", self.manifest_id()).unwrap();
+        }
         for (key, value) in [
             (&b"author "[..], self.author.as_ref()),
             (&b"extra "[..], self.extra.as_ref()),
