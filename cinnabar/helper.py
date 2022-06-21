@@ -332,7 +332,7 @@ class GitHgHelper(BaseHelper):
     @classmethod
     @contextmanager
     def store_changegroup(self, version):
-        with self.query(b'store', b'changegroup', b'%d' % version):
+        with self.query(b'store-changegroup', b'%d' % version):
             yield self._helper.stdin
 
     @classmethod

@@ -3,6 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::io::{self, copy, Cursor, ErrorKind, Read, Write};
+use std::mem::MaybeUninit;
+use std::ptr::NonNull;
 
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use bzip2::read::BzDecoder;
@@ -11,7 +13,9 @@ use replace_with::replace_with_or_abort;
 use zstd::stream::read::Decoder as ZstdDecoder;
 
 use crate::{
+    libcinnabar::hg_object_id,
     libgit::strbuf,
+    oid::{HgObjectId, ObjectId},
     util::{ReadExt, SliceExt},
 };
 
@@ -205,21 +209,54 @@ fn test_decompress_bundle_reader() {
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn read_rev_chunk(r: *mut crate::libcinnabar::reader, out: *mut strbuf) {
+extern "C" {
+    fn rev_chunk_from_memory(
+        result: *mut rev_chunk,
+        buf: *mut strbuf,
+        delta_node: *const hg_object_id,
+    );
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct rev_chunk {
+    raw: strbuf,
+    node: NonNull<hg_object_id>,
+    parent1: NonNull<hg_object_id>,
+    parent2: NonNull<hg_object_id>,
+    delta_node: NonNull<hg_object_id>,
+    diff_data: NonNull<u8>,
+}
+
+impl rev_chunk {
+    pub fn raw(&self) -> &[u8] {
+        self.raw.as_bytes()
+    }
+
+    pub fn node(&self) -> &hg_object_id {
+        unsafe { self.node.as_ref() }
+    }
+
+    pub fn parent1(&self) -> &hg_object_id {
+        unsafe { self.parent1.as_ref() }
+    }
+
+    pub fn delta_node(&self) -> &hg_object_id {
+        unsafe { self.delta_node.as_ref() }
+    }
+
+    // ... we don't need more for now.
+}
+
+pub fn read_rev_chunk<R: Read>(mut r: R, out: &mut strbuf) {
     let mut buf = [0; 4];
-    let r = r.as_mut().unwrap();
-    r.0.read_exact(&mut buf).unwrap();
+    r.read_exact(&mut buf).unwrap();
     let len = BigEndian::read_u32(&buf) as u64;
     if len == 0 {
         return;
     }
     // TODO: should error out on short read
-    copy(
-        &mut r.0.take(len.checked_sub(4).unwrap()),
-        out.as_mut().unwrap(),
-    )
-    .unwrap();
+    copy(&mut r.take(len.checked_sub(4).unwrap()), out).unwrap();
 }
 
 fn copy_chunk<R: Read + ?Sized, W: Write + ?Sized>(
@@ -287,4 +324,58 @@ pub fn copy_bundle<R: Read + ?Sized, W: Write + ?Sized>(
         copy_changegroup(input, output)?;
     }
     Ok(())
+}
+
+pub struct RevChunkIter<R: Read> {
+    version: u8,
+    delta_node: Option<hg_object_id>,
+    next_delta_node: Option<hg_object_id>,
+    reader: R,
+}
+
+impl<R: Read> RevChunkIter<R> {
+    pub fn new(version: u8, reader: R) -> Self {
+        RevChunkIter {
+            version,
+            delta_node: None,
+            next_delta_node: None,
+            reader,
+        }
+    }
+}
+
+impl<R: Read> Iterator for RevChunkIter<R> {
+    type Item = rev_chunk;
+
+    fn next(&mut self) -> Option<rev_chunk> {
+        let first = self.delta_node.take().is_none();
+        self.delta_node = self
+            .next_delta_node
+            .take()
+            .or_else(|| Some(HgObjectId::null().into()));
+        let mut buf = strbuf::new();
+        read_rev_chunk(&mut self.reader, &mut buf);
+        if buf.as_bytes().is_empty() {
+            return None;
+        }
+        let mut chunk = MaybeUninit::zeroed();
+        unsafe {
+            rev_chunk_from_memory(
+                chunk.as_mut_ptr(),
+                &mut buf,
+                (self.version == 1)
+                    .then(|| ())
+                    .and(self.delta_node.as_ref())
+                    .map_or(std::ptr::null(), |d| d as *const _),
+            );
+        }
+        let chunk = unsafe { chunk.assume_init() };
+        if self.version == 1 {
+            if first {
+                self.delta_node = Some(chunk.parent1().clone());
+            }
+            self.next_delta_node = Some(chunk.node().clone());
+        }
+        Some(chunk)
+    }
 }

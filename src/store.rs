@@ -17,6 +17,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use percent_encoding::{percent_decode, percent_encode, NON_ALPHANUMERIC};
 
+use crate::hg_bundle::{read_rev_chunk, rev_chunk, RevChunkIter};
 use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libc::FdFile;
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
@@ -809,4 +810,37 @@ pub fn do_create_changeset(mut input: &mut dyn BufRead, mut output: impl Write, 
         GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(GitObjectId::from(blob_oid)))
     };
     writeln!(output, "{} {}", metadata.changeset_id, metadata_id).unwrap();
+}
+
+extern "C" {
+    fn store_manifest(chunk: *const rev_chunk);
+    fn store_file(chunk: *const rev_chunk);
+}
+
+pub fn do_store_changegroup(input: &mut dyn BufRead, args: &[&[u8]]) {
+    unsafe {
+        ensure_store_init();
+    }
+    let version = match args {
+        [b"1"] => 1,
+        [b"2"] => 2,
+        _ => die!("store-changegroup only takes one argument that is either 1 or 2"),
+    };
+    for _changeset in RevChunkIter::new(version, &mut *input) {}
+    for manifest in RevChunkIter::new(version, &mut *input) {
+        unsafe {
+            store_manifest(&manifest);
+        }
+    }
+    while {
+        let mut buf = strbuf::new();
+        read_rev_chunk(&mut *input, &mut buf);
+        !buf.as_bytes().is_empty()
+    } {
+        for file in RevChunkIter::new(version, &mut *input) {
+            unsafe {
+                store_file(&file);
+            }
+        }
+    }
 }

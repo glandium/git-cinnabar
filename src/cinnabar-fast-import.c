@@ -555,7 +555,7 @@ void hg_file_store(struct hg_file *file, struct hg_file *reference)
 	file->content_oe = find_object(&oid);
 }
 
-static void store_file(struct rev_chunk *chunk)
+void store_file(struct rev_chunk *chunk)
 {
 	static struct hg_file last_file;
 	struct hg_file file;
@@ -670,7 +670,7 @@ static void manifest_metadata_path(struct strbuf *out, struct strslice *in)
 	strbuf_addslice(out, *in);
 }
 
-static void store_manifest(struct rev_chunk *chunk)
+void store_manifest(struct rev_chunk *chunk)
 {
 	static struct hg_object_id last_manifest_oid;
 	static struct branch *last_manifest;
@@ -830,27 +830,6 @@ static void store_manifest(struct rev_chunk *chunk)
 malformed:
 	die("Malformed manifest chunk for %s", hg_oid_to_hex(chunk->node));
 }
-
-static void for_each_changegroup_chunk(struct reader *in, int version,
-                                       void (*callback)(struct rev_chunk *))
-{
-	int cg2 = version == 2;
-	struct strbuf buf = STRBUF_INIT;
-	struct rev_chunk chunk = { STRBUF_INIT, };
-	struct hg_object_id delta_node = {{ 0, }};
-
-	while (read_rev_chunk(in, &buf), buf.len) {
-		rev_chunk_from_memory(&chunk, &buf, cg2 ? NULL : &delta_node);
-		if (!cg2 && is_null_hg_oid(&delta_node))
-			hg_oidcpy(&delta_node, chunk.parent1);
-		callback(&chunk);
-		if (!cg2)
-			hg_oidcpy(&delta_node, chunk.node);
-		rev_chunk_release(&chunk);
-	}
-}
-
-static void skip_chunk(struct rev_chunk *chunk) {}
 
 static int add_manifests_parent(const struct object_id *oid, void *data)
 {
@@ -1053,27 +1032,6 @@ void do_store(struct reader *helper_input, int helper_output,
 		else
 			store_manifest(&chunk);
 		rev_chunk_release(&chunk);
-	} else if (!strcmp(args->items[0].string, "changegroup")) {
-		int version;
-		struct strbuf buf = STRBUF_INIT;
-		if (args->nr != 2)
-			die("store changegroup only takes one argument");
-		if (!strcmp(args->items[1].string, "1"))
-			version = 1;
-		else if (!strcmp(args->items[1].string, "2"))
-			version = 2;
-		else
-			die("unsupported version");
-
-		/* changesets */
-		for_each_changegroup_chunk(helper_input, version, skip_chunk);
-		/* manifests */
-		for_each_changegroup_chunk(helper_input, version, store_manifest);
-		/* files */
-		while (read_rev_chunk(helper_input, &buf), buf.len) {
-			strbuf_release(&buf);
-			for_each_changegroup_chunk(helper_input, version, store_file);
-		}
 	} else if (!strcmp(args->items[0].string, "blob")) {
 		struct object_id result;
 		struct strbuf buf = STRBUF_INIT;
