@@ -861,12 +861,8 @@ class GitHgStore(object):
             commit = GitCommit(sha1)
 
         GitHgHelper.set(b'changeset', instance.node, commit.sha1)
-        changeset = Changeset.from_git_commit(commit)
-        sha1 = GitHgHelper.put_blob(
-            ChangesetPatcher.from_diff(changeset, instance))
-        assert sha1 == blob_sha1
-        GitHgHelper.set(b'changeset-metadata', instance.node, sha1)
-        GitHgHelper.set(b'changeset-head', instance.node, sha1)
+        GitHgHelper.set(b'changeset-metadata', instance.node, blob_sha1)
+        GitHgHelper.set(b'changeset-head', instance.node, blob_sha1)
 
     MODE = {
         b'': b'160644',
