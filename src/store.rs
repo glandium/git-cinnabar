@@ -667,11 +667,15 @@ pub unsafe extern "C" fn reset_changeset_heads() {
 }
 
 extern "C" {
+    fn ensure_store_init();
     pub fn store_git_blob(blob_buf: *const strbuf, result: *mut object_id);
     fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
 }
 
 pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, args: &[&[u8]]) {
+    unsafe {
+        ensure_store_init();
+    }
     if args.len() < 3 || args.len() > 5 {
         die!("store-changeset takes between 3 and 5 arguments");
     }
@@ -759,6 +763,9 @@ pub fn do_create(input: &mut dyn BufRead, output: impl Write, args: &[&[u8]]) {
 }
 
 pub fn do_create_changeset(mut input: &mut dyn BufRead, mut output: impl Write, args: &[&[u8]]) {
+    unsafe {
+        ensure_store_init();
+    }
     if args.len() != 3 {
         die!("create changeset takes 3 arguments");
     }

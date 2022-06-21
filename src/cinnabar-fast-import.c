@@ -895,20 +895,16 @@ void store_metadata_notes(
 
 extern int config(const char *name, struct strbuf *result);
 
-extern void prepare_changeset_commit(
-	struct hg_object_id *changeset_id,
-	struct object_id *tree_id,
-	struct hg_object_id *parent1,
-	struct hg_object_id *parent2,
-	struct strbuf *changeset_buf,
-	struct strbuf *commit_buf);
+void ensure_store_init()
+{
+	ENSURE_INIT();
+	require_explicit_termination = 1;
+}
 
 void do_store(struct reader *helper_input, int helper_output,
                      struct string_list *args)
 {
-	ENSURE_INIT();
-	require_explicit_termination = 1;
-
+	ensure_store_init();
 	if (!strcmp(args->items[0].string, "metadata")) {
 		struct object_id changesets, manifests, hg2git_, git2hg_,
 		                 files_meta_, previous;
