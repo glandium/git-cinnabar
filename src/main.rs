@@ -216,7 +216,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
             let out = unsafe { FdFile::from_raw_fd(out) };
             match &*command {
                 b"progress" => do_progress(out, &args),
-                b"graft" => do_graft(input, out, &args),
+                b"graft" => do_graft(out, &args),
                 b"store-changeset" => do_store_changeset(input, out, &args),
                 b"store-changegroup" => do_store_changegroup(input, &args),
                 b"create" => do_create(input, out, &args),

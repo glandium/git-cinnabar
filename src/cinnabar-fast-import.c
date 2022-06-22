@@ -397,23 +397,17 @@ static void handle_changeset_conflict(struct hg_object_id *hg_id,
 
 }
 
-static void do_set_replace(struct string_list *args)
+void do_set_replace(const struct object_id *replaced,
+                    const struct object_id *replace_with)
 {
-	struct object_id replaced;
-	struct object_id replace_with;
 	struct replace_object *replace;
 
-	if (get_oid_hex(args->items[1].string, &replaced))
-		die("Invalid sha1");
-	if (get_oid_hex(args->items[2].string, &replace_with))
-		die("Invalid sha1");
-
-	if (is_null_oid(&replace_with)) {
-		oidmap_remove(the_repository->objects->replace_map, &replaced);
+	if (is_null_oid(replace_with)) {
+		oidmap_remove(the_repository->objects->replace_map, replaced);
 	} else {
 		replace = xmalloc(sizeof(*replace));
-		oidcpy(&replace->original.oid, &replaced);
-		oidcpy(&replace->replacement, &replace_with);
+		oidcpy(&replace->original.oid, replaced);
+		oidcpy(&replace->replacement, replace_with);
 		struct replace_object *old = oidmap_put(
 			the_repository->objects->replace_map, replace);
 		if (old)
@@ -423,42 +417,92 @@ static void do_set_replace(struct string_list *args)
 
 extern void add_changeset_head(struct hg_object_id *cs, struct object_id *meta);
 
-void do_set(struct string_list *args)
+void do_set_(const char *what, const struct hg_object_id *hg_id,
+             const struct object_id *git_id)
 {
 	enum object_type type;
-	struct hg_object_id hg_id;
-	struct object_id git_id;
 	struct oid_array *heads = NULL;
 	struct notes_tree *notes = &hg2git;
 	int is_changeset = 0;
 	int is_head = 0;
 
-	if (args->nr != 3)
-		die("set needs 3 arguments");
-
 	ENSURE_INIT();
-	if (!strcmp(args->items[0].string, "file")) {
+	if (!strcmp(what, "file")) {
 		type = OBJ_BLOB;
-	} else if (!strcmp(args->items[0].string, "manifest") ||
-	           !strcmp(args->items[0].string, "changeset")) {
+	} else if (!strcmp(what, "manifest") || !strcmp(what, "changeset")) {
 		type = OBJ_COMMIT;
-		if (args->items[0].string[0] == 'm')
+		if (what[0] == 'm')
 			heads = &manifest_heads;
 		else
 			is_changeset = 1;
-	} else if (!strcmp(args->items[0].string, "changeset-metadata")) {
+	} else if (!strcmp(what, "changeset-metadata")) {
 		type = OBJ_BLOB;
 		notes = &git2hg;
-	} else if (!strcmp(args->items[0].string, "changeset-head")) {
+	} else if (!strcmp(what, "changeset-head")) {
 		is_head = 1;
-	} else if (!strcmp(args->items[0].string, "file-meta")) {
+	} else if (!strcmp(what, "file-meta")) {
 		type = OBJ_BLOB;
 		notes = &files_meta;
-	} else if (!strcmp(args->items[0].string, "replace")) {
-		do_set_replace(args);
-		return;
 	} else {
-		die("Unknown kind of object: %s", args->items[0].string);
+		die("Unknown kind of object: %s", what);
+	}
+
+	if (is_head) {
+		add_changeset_head(hg_id, git_id);
+		return;
+	}
+	if (notes == &git2hg) {
+		const struct object_id *note;
+		ensure_notes(&hg2git);
+		note = get_note_hg(&hg2git, hg_id);
+		if (note) {
+			ensure_notes(&git2hg);
+			if (is_null_oid(git_id)) {
+				remove_note(notes, note->hash);
+			} else if (oid_object_info(the_repository, git_id,
+			                           NULL) != OBJ_BLOB) {
+				die("Invalid object");
+			} else {
+				add_note(notes, note, git_id);
+			}
+		} else if (!is_null_oid(git_id))
+			die("Invalid sha1");
+		return;
+	}
+
+	ensure_notes(notes);
+	if (is_null_oid(git_id)) {
+		remove_note_hg(notes, hg_id);
+	} else if (oid_object_info(the_repository, git_id, NULL) != type) {
+		die("Invalid object");
+	} else {
+		if (is_changeset)
+			handle_changeset_conflict(hg_id, git_id);
+		add_note_hg(notes, hg_id, git_id);
+		if (heads)
+			add_head(heads, git_id);
+	}
+}
+
+void do_set(struct string_list *args)
+{
+	struct hg_object_id hg_id;
+	struct object_id git_id;
+
+	if (args->nr != 3)
+		die("set needs 3 arguments");
+
+	if (!strcmp(args->items[0].string, "replace")) {
+		struct object_id replaced;
+		struct object_id replace_with;
+		ENSURE_INIT();
+		if (get_oid_hex(args->items[1].string, &replaced))
+			die("Invalid sha1");
+		if (get_oid_hex(args->items[2].string, &replace_with))
+			die("Invalid sha1");
+
+		do_set_replace(&replaced, &replace_with);
+		return;
 	}
 
 	if (get_sha1_hex(args->items[1].string, hg_id.hash))
@@ -467,41 +511,7 @@ void do_set(struct string_list *args)
 	if (get_oid_hex(args->items[2].string, &git_id))
 		die("Invalid sha1");
 
-	if (is_head) {
-		add_changeset_head(&hg_id, &git_id);
-		return;
-	}
-	if (notes == &git2hg) {
-		const struct object_id *note;
-		ensure_notes(&hg2git);
-		note = get_note_hg(&hg2git, &hg_id);
-		if (note) {
-			ensure_notes(&git2hg);
-			if (is_null_oid(&git_id)) {
-				remove_note(notes, note->hash);
-			} else if (oid_object_info(the_repository, &git_id,
-			                           NULL) != OBJ_BLOB) {
-				die("Invalid object");
-			} else {
-				add_note(notes, note, &git_id);
-			}
-		} else if (!is_null_oid(&git_id))
-			die("Invalid sha1");
-		return;
-	}
-
-	ensure_notes(notes);
-	if (is_null_oid(&git_id)) {
-		remove_note_hg(notes, &hg_id);
-	} else if (oid_object_info(the_repository, &git_id, NULL) != type) {
-		die("Invalid object");
-	} else {
-		if (is_changeset)
-			handle_changeset_conflict(&hg_id, &git_id);
-		add_note_hg(notes, &hg_id, &git_id);
-		if (heads)
-			add_head(heads, &git_id);
-	}
+	do_set_(args->items[0].string, &hg_id, &git_id);
 }
 
 int write_object_file_flags(const void *buf, size_t len, enum object_type type,

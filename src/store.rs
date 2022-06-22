@@ -7,16 +7,18 @@ use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 use std::iter::{repeat, IntoIterator};
 use std::mem;
-use std::os::raw::{c_int, c_uint, c_void};
+use std::os::raw::{c_char, c_int, c_uint, c_void};
 use std::sync::Mutex;
 
 use bstr::{BStr, BString, ByteSlice};
+use cstr::cstr;
 use derive_more::{Deref, Display};
 use getset::{CopyGetters, Getters};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use percent_encoding::{percent_decode, percent_encode, NON_ALPHANUMERIC};
 
+use crate::graft::{graft, grafted, GraftError};
 use crate::hg_bundle::{read_rev_chunk, rev_chunk, RevChunkIter};
 use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libc::FdFile;
@@ -671,6 +673,8 @@ extern "C" {
     fn ensure_store_init();
     pub fn store_git_blob(blob_buf: *const strbuf, result: *mut object_id);
     fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
+    fn do_set_(what: *const c_char, hg_id: *const hg_object_id, git_id: *const object_id);
+    fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
 }
 
 pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, args: &[&[u8]]) {
@@ -691,68 +695,137 @@ pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, a
     let buf = input.read_exactly(size).unwrap();
     let raw_changeset = RawHgChangeset(buf);
 
+    let (commit_id, metadata_id, transition) =
+        match graft(&changeset_id, &raw_changeset, &tree_id, parents) {
+            Ok(Some(commit_id)) => {
+                let metadata = GeneratedGitChangesetMetadata::generate(
+                    &RawCommit::read(&commit_id).unwrap().parse().unwrap(),
+                    &changeset_id,
+                    &raw_changeset,
+                )
+                .unwrap();
+                if !grafted() && metadata.patch().is_some() {
+                    (Some(commit_id), None, true)
+                } else {
+                    let mut buf = strbuf::new();
+                    buf.extend_from_slice(&metadata.serialize());
+                    let mut metadata_oid = object_id::default();
+                    unsafe {
+                        store_git_blob(&buf, &mut metadata_oid);
+                    }
+                    let metadata_id = unsafe {
+                        GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(
+                            GitObjectId::from(metadata_oid),
+                        ))
+                    };
+                    (Some(commit_id), Some(metadata_id), false)
+                }
+            }
+            Ok(None) | Err(GraftError::NoGraft) => (None, None, false),
+            Err(GraftError::Ambiguous(candidates)) => {
+                writeln!(
+                    output,
+                    "ambiguous {}",
+                    itertools::join(candidates.iter(), " ")
+                )
+                .unwrap();
+                return;
+            }
+        };
+
     let changeset = raw_changeset.parse().unwrap();
-    let mut result = strbuf::new();
-    let author = HgAuthorship {
-        author: changeset.author(),
-        timestamp: changeset.timestamp(),
-        utcoffset: changeset.utcoffset(),
-    };
-    // TODO: reduce the amount of cloning.
-    let git_author = GitAuthorship::from(author.clone());
-    let git_committer = if let Some(extra) = changeset.extra() {
-        if let Some(committer) = extra.get(b"committer") {
-            if committer.ends_with(b">") {
-                GitAuthorship::from(HgAuthorship {
-                    author: committer,
-                    timestamp: author.timestamp,
-                    utcoffset: author.utcoffset,
-                })
+
+    let (commit_id, metadata_id, replace) = if commit_id.is_none() || transition {
+        let replace = commit_id;
+        let mut result = strbuf::new();
+        let author = HgAuthorship {
+            author: changeset.author(),
+            timestamp: changeset.timestamp(),
+            utcoffset: changeset.utcoffset(),
+        };
+        // TODO: reduce the amount of cloning.
+        let git_author = GitAuthorship::from(author.clone());
+        let git_committer = if let Some(extra) = changeset.extra() {
+            if let Some(committer) = extra.get(b"committer") {
+                if committer.ends_with(b">") {
+                    GitAuthorship::from(HgAuthorship {
+                        author: committer,
+                        timestamp: author.timestamp,
+                        utcoffset: author.utcoffset,
+                    })
+                } else {
+                    GitAuthorship::from(HgCommitter(committer))
+                }
             } else {
-                GitAuthorship::from(HgCommitter(committer))
+                git_author.clone()
             }
         } else {
             git_author.clone()
+        };
+        result.extend_from_slice(format!("tree {}\n", tree_id).as_bytes());
+        for parent in parents {
+            result.extend_from_slice(format!("parent {}\n", parent).as_bytes());
         }
+        result.extend_from_slice(b"author ");
+        result.extend_from_slice(&git_author.0);
+        result.extend_from_slice(b"\ncommitter ");
+        result.extend_from_slice(&git_committer.0);
+        result.extend_from_slice(b"\n\n");
+        result.extend_from_slice(changeset.body());
+
+        let mut result_oid = object_id::default();
+        unsafe {
+            store_git_commit(&result, &mut result_oid);
+        }
+        let commit_id = unsafe { CommitId::from_unchecked(GitObjectId::from(result_oid)) };
+
+        let metadata = GeneratedGitChangesetMetadata::generate(
+            &RawCommit::read(&commit_id).unwrap().parse().unwrap(),
+            &changeset_id,
+            &raw_changeset,
+        )
+        .unwrap();
+        let mut buf = strbuf::new();
+        buf.extend_from_slice(&metadata.serialize());
+        let mut metadata_oid = object_id::default();
+        unsafe {
+            store_git_blob(&buf, &mut metadata_oid);
+        }
+        let metadata_id = unsafe {
+            GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(GitObjectId::from(
+                metadata_oid,
+            )))
+        };
+        (commit_id, metadata_id, replace)
     } else {
-        git_author.clone()
-    };
-    result.extend_from_slice(format!("tree {}\n", tree_id).as_bytes());
-    for parent in parents {
-        result.extend_from_slice(format!("parent {}\n", parent).as_bytes());
-    }
-    result.extend_from_slice(b"author ");
-    result.extend_from_slice(&git_author.0);
-    result.extend_from_slice(b"\ncommitter ");
-    result.extend_from_slice(&git_committer.0);
-    result.extend_from_slice(b"\n\n");
-    result.extend_from_slice(changeset.body());
-
-    let mut result_oid = object_id::default();
-    unsafe {
-        store_git_commit(&result, &mut result_oid);
-    }
-    let commit_id = unsafe { CommitId::from_unchecked(GitObjectId::from(result_oid)) };
-
-    let metadata = GeneratedGitChangesetMetadata::generate(
-        &RawCommit::read(&commit_id).unwrap().parse().unwrap(),
-        &changeset_id,
-        &raw_changeset,
-    )
-    .unwrap();
-    let mut buf = strbuf::new();
-    buf.extend_from_slice(&metadata.serialize());
-    let mut metadata_oid = object_id::default();
-    unsafe {
-        store_git_blob(&buf, &mut metadata_oid);
-    }
-    let metadata_id = unsafe {
-        GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(GitObjectId::from(
-            metadata_oid,
-        )))
+        (
+            unsafe { commit_id.unwrap_unchecked() },
+            metadata_id.unwrap(),
+            None,
+        )
     };
 
-    writeln!(output, "{} {}", commit_id, metadata_id).unwrap();
+    if let Some(replace) = &replace {
+        writeln!(output, "{} {}", commit_id, replace).unwrap();
+    } else {
+        writeln!(output, "{}", commit_id).unwrap();
+    }
+    let changeset_id = hg_object_id::from(changeset_id);
+    let commit_id = object_id::from(commit_id);
+    let blob_id = object_id::from((*metadata_id).clone());
+    unsafe {
+        if let Some(replace) = replace {
+            let replace = object_id::from(replace);
+            do_set_replace(&replace, &commit_id);
+        }
+        do_set_(cstr!("changeset").as_ptr(), &changeset_id, &commit_id);
+        do_set_(
+            cstr!("changeset-metadata").as_ptr(),
+            &changeset_id,
+            &blob_id,
+        );
+        do_set_(cstr!("changeset-head").as_ptr(), &changeset_id, &blob_id);
+    }
 }
 
 pub fn do_create(input: &mut dyn BufRead, output: impl Write, args: &[&[u8]]) {

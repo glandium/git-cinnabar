@@ -30,7 +30,7 @@ Requirements:
 - Git (any version should work ; cinnabarclone bundles require 1.4.4).
 - Python 3.5 or more.
 - In order to build from source:
-  - Rust 1.57.0 or newer.
+  - Rust 1.58.0 or newer.
   - GCC or clang.
 
 Setup:

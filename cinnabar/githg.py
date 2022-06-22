@@ -815,53 +815,27 @@ class GitHgStore(object):
         if None in parents:
             raise NothingToGraftException()
         tree = self.git_tree(instance.manifest, *instance.parents[:1])
-        commit = transition = False
-        if self._graft:
-            args = [instance.node, tree]
-            args.extend(instance.parents)
-            raw_data = instance.raw_data
-            args.append(str(len(raw_data)).encode('ascii'))
-            with GitHgHelper.query(b'graft', b'changeset', *args) as stdout:
-                stdout.write(raw_data)
-                stdout.flush()
-                response = stdout.readline().strip().split()
-                assert len(response) > 0
-                if response[0] == b"ambiguous":
-                    raise AmbiguousGraftAbort(
-                        'Cannot graft changeset %s. Candidates: %s'
-                        % (instance.node.decode('ascii'),
-                           ', '.join(n.decode('ascii')
-                                     for n in sorted(response[1:]))))
-                sha1, blob_sha1 = response
-                assert len(sha1) == 40
-                if sha1 != NULL_NODE_ID:
-                    if blob_sha1 == b"transition":
-                        transition = True
-                    else:
-                        assert len(blob_sha1) == 40
-                    commit = GitCommit(sha1)
 
-        if not commit or transition:
-            args = [instance.node, tree]
-            args.extend(instance.parents)
-            raw_data = instance.raw_data
-            args.append(str(len(raw_data)).encode('ascii'))
-            with GitHgHelper.query(b'store-changeset', *args) as stdout:
-                stdout.write(raw_data)
-                stdout.flush()
-                sha1, blob_sha1 = stdout.readline().strip().split()
-                assert len(sha1) == 40
-                assert len(blob_sha1) == 40
+        args = [instance.node, tree]
+        args.extend(instance.parents)
+        raw_data = instance.raw_data
+        args.append(str(len(raw_data)).encode('ascii'))
+        with GitHgHelper.query(b'store-changeset', *args) as stdout:
+            stdout.write(raw_data)
+            stdout.flush()
+            response = stdout.readline().strip().split()
+            assert len(response) > 0
 
-            if commit and commit.sha1 != sha1:
-                self._replace[commit.sha1] = sha1
-                GitHgHelper.set(b'replace', commit.sha1, sha1)
+            if response[0] == b"ambiguous":
+                raise AmbiguousGraftAbort(
+                    'Cannot graft changeset %s. Candidates: %s'
+                    % (instance.node.decode('ascii'),
+                       ', '.join(n.decode('ascii')
+                                 for n in sorted(response[1:]))))
 
-            commit = GitCommit(sha1)
-
-        GitHgHelper.set(b'changeset', instance.node, commit.sha1)
-        GitHgHelper.set(b'changeset-metadata', instance.node, blob_sha1)
-        GitHgHelper.set(b'changeset-head', instance.node, blob_sha1)
+            assert len(response) <= 2
+            if len(response) == 2:
+                self._replace[response[1]] = response[0]
 
     MODE = {
         b'': b'160644',
