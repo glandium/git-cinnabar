@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 use std::iter::{repeat, IntoIterator};
@@ -1065,7 +1066,9 @@ pub fn do_store_changegroup(input: &mut dyn BufRead, args: &[&[u8]]) {
         _ => die!("store-changegroup only takes one argument that is either 1 or 2"),
     };
     let mut changesets = Vec::new();
-    for changeset in RevChunkIter::new(version, &mut *input) {
+    for changeset in
+        RevChunkIter::new(version, &mut *input).progress(|n| format!("Reading {n} changesets"))
+    {
         changesets.push(Box::new((
             unsafe {
                 HgChangesetId::from_unchecked(HgObjectId::from(changeset.delta_node().clone()))
@@ -1073,22 +1076,33 @@ pub fn do_store_changegroup(input: &mut dyn BufRead, args: &[&[u8]]) {
             changeset,
         )));
     }
-    for manifest in RevChunkIter::new(version, &mut *input) {
+    for manifest in RevChunkIter::new(version, &mut *input)
+        .progress(|n| format!("Reading and importing {n} manifests"))
+    {
         unsafe {
             store_manifest(&manifest);
         }
     }
+    let files = Cell::new(0);
+    let mut progress = repeat(()).progress(|n| {
+        format!(
+            "Reading and importing {n} revisions of {} files",
+            files.get()
+        )
+    });
     while {
         let mut buf = strbuf::new();
         read_rev_chunk(&mut *input, &mut buf);
         !buf.as_bytes().is_empty()
     } {
-        for file in RevChunkIter::new(version, &mut *input) {
+        files.set(files.get() + 1);
+        for (file, ()) in RevChunkIter::new(version, &mut *input).zip(&mut progress) {
             unsafe {
                 store_file(&file);
             }
         }
     }
+    drop(progress);
 
     let mut previous = (HgChangesetId::null(), RawHgChangeset(Box::new([])));
     for changeset in changesets

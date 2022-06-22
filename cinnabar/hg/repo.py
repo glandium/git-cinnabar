@@ -33,7 +33,6 @@ from cinnabar.util import (
     HTTPReader,
     check_enabled,
     chunkbuffer,
-    progress_enum,
     progress_iter,
 )
 from collections import (
@@ -740,23 +739,15 @@ class BundleApplier(object):
         self._bundle = store_changegroup(bundle)
 
     def __call__(self, store):
-        for rev_chunk in progress_iter(
-                'Reading {} changesets', next(self._bundle, None)):
+        for rev_chunk in next(self._bundle, None):
             pass
 
-        for rev_chunk in progress_iter(
-                'Reading and importing {} manifests',
-                next(self._bundle, None)):
+        for rev_chunk in next(self._bundle, None):
             pass
 
         def enumerate_files(iterator):
             null_parents = (NULL_NODE_ID, NULL_NODE_ID)
-            last_name = None
-            count_names = 0
-            for count_chunks, (name, chunk) in enumerate(iterator, start=1):
-                if name != last_name:
-                    count_names += 1
-                last_name = name
+            for (name, chunk) in iterator:
                 parents = (chunk.parent1, chunk.parent2)
                 # Try to detect issue #207 as early as possible.
                 # Keep track of file roots of files with metadata and at least
@@ -775,11 +766,9 @@ class BundleApplier(object):
                     if diff and diff.start == 0 and \
                             diff.text_data[:2] == b'\1\n':
                         stored_files[chunk.node] = parents
-                yield (count_chunks, count_names), chunk
+                yield chunk
 
-        for rev_chunk in progress_enum(
-                'Reading and importing {} revisions of {} files',
-                enumerate_files(next(self._bundle, None))):
+        for rev_chunk in enumerate_files(next(self._bundle, None)):
             pass
 
         if check_enabled('unbundler') and "GIT_DIR" in os.environ:

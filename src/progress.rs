@@ -76,25 +76,25 @@ impl<I: Iterator, F: Fn(usize) -> String> ProgressIterEnabled<I, F> {
     }
 }
 
+impl<I: Iterator, F: Fn(usize) -> String> Drop for ProgressIterEnabled<I, F> {
+    fn drop(&mut self) {
+        self.display(Instant::now());
+        eprintln!();
+    }
+}
+
 impl<I: Iterator, F: Fn(usize) -> String> Iterator for ProgressIterEnabled<I, F> {
     type Item = I::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter
-            .next()
-            .map(|(n, item)| {
-                let now = Instant::now();
-                self.count = n + 1;
-                if (now - self.last_update).as_millis() > 100 {
-                    self.display(now);
-                }
-                item
-            })
-            .or_else(|| {
-                self.display(Instant::now());
-                eprintln!();
-                None
-            })
+        self.iter.next().map(|(n, item)| {
+            let now = Instant::now();
+            self.count = n + 1;
+            if (now - self.last_update).as_millis() > 100 {
+                self.display(now);
+            }
+            item
+        })
     }
 }
 
