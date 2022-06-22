@@ -3,7 +3,6 @@ import re
 import ssl
 import sys
 from urllib.parse import quote_from_bytes, unquote_to_bytes
-from cinnabar.exceptions import NothingToGraftException
 from cinnabar.githg import Changeset
 from cinnabar.helper import (
     GitHgHelper,
@@ -741,8 +740,9 @@ class BundleApplier(object):
         self._bundle = store_changegroup(bundle)
 
     def __call__(self, store):
-        changeset_chunks = ChunksCollection(progress_iter(
-            'Reading {} changesets', next(self._bundle, None)))
+        for rev_chunk in progress_iter(
+                'Reading {} changesets', next(self._bundle, None)):
+            pass
 
         for rev_chunk in progress_iter(
                 'Reading and importing {} manifests',
@@ -788,15 +788,6 @@ class BundleApplier(object):
         if next(self._bundle, None) is not None:
             assert False
         del self._bundle
-
-        for cs in progress_iter(
-                'Importing {} changesets',
-                changeset_chunks.iter_initialized(lambda x: x, store.changeset,
-                                                  Changeset.from_chunk)):
-            try:
-                store.store_changeset(cs)
-            except NothingToGraftException:
-                logging.debug('Cannot graft %s, not importing.', cs.node)
 
 
 SHA1_RE = re.compile(b'[0-9a-fA-F]{1,40}$')

@@ -4,6 +4,7 @@
 
 use std::io::{self, copy, Cursor, ErrorKind, Read, Write};
 use std::mem::MaybeUninit;
+use std::os::raw::c_int;
 use std::ptr::NonNull;
 
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
@@ -16,7 +17,7 @@ use crate::{
     libcinnabar::hg_object_id,
     libgit::strbuf,
     oid::{HgObjectId, ObjectId},
-    util::{ReadExt, SliceExt},
+    util::{ImmutBString, ReadExt, SliceExt},
 };
 
 pub struct DecompressBundleReader<'a> {
@@ -215,6 +216,10 @@ extern "C" {
         buf: *mut strbuf,
         delta_node: *const hg_object_id,
     );
+
+    fn rev_diff_start_iter(iterator: *mut rev_diff_part, chunk: *const rev_chunk);
+
+    fn rev_diff_iter_next(iterator: *mut rev_diff_part) -> c_int;
 }
 
 #[allow(non_camel_case_types)]
@@ -226,6 +231,15 @@ pub struct rev_chunk {
     parent2: NonNull<hg_object_id>,
     delta_node: NonNull<hg_object_id>,
     diff_data: NonNull<u8>,
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct rev_diff_part<'a> {
+    start: usize,
+    end: usize,
+    data: strbuf,
+    chunk: &'a rev_chunk,
 }
 
 impl rev_chunk {
@@ -241,11 +255,21 @@ impl rev_chunk {
         unsafe { self.parent1.as_ref() }
     }
 
+    pub fn parent2(&self) -> &hg_object_id {
+        unsafe { self.parent2.as_ref() }
+    }
+
     pub fn delta_node(&self) -> &hg_object_id {
         unsafe { self.delta_node.as_ref() }
     }
 
-    // ... we don't need more for now.
+    pub fn iter_diff(&self) -> RevDiffIter {
+        unsafe {
+            let mut part = MaybeUninit::zeroed();
+            rev_diff_start_iter(part.as_mut_ptr(), self);
+            RevDiffIter(part.assume_init())
+        }
+    }
 }
 
 pub fn read_rev_chunk<R: Read>(mut r: R, out: &mut strbuf) {
@@ -377,5 +401,25 @@ impl<R: Read> Iterator for RevChunkIter<R> {
             self.next_delta_node = Some(chunk.node().clone());
         }
         Some(chunk)
+    }
+}
+
+pub struct RevDiffIter<'a>(rev_diff_part<'a>);
+
+pub struct RevDiffPart {
+    pub start: usize,
+    pub end: usize,
+    pub data: ImmutBString,
+}
+
+impl<'a> Iterator for RevDiffIter<'a> {
+    type Item = RevDiffPart;
+
+    fn next(&mut self) -> Option<RevDiffPart> {
+        unsafe { rev_diff_iter_next(&mut self.0) != 0 }.then(|| RevDiffPart {
+            start: self.0.start,
+            end: self.0.end,
+            data: self.0.data.as_bytes().to_vec().into_boxed_slice(),
+        })
     }
 }

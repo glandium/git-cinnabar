@@ -29,6 +29,7 @@ use crate::libgit::{
 };
 use crate::oid::{GitObjectId, HgObjectId, ObjectId};
 use crate::oid_type;
+use crate::progress::Progress;
 use crate::util::{FromBytes, ImmutBString, OsStrExt, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::{apply, textdiff, PatchInfo};
 
@@ -807,21 +808,38 @@ pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, a
     }
 
     let changeset_id = HgChangesetId::from_bytes(args[0]).unwrap();
-    let parents = if let Some(parents) = args[1..args.len() - 1]
+    let parents = args[1..args.len() - 1]
         .iter()
-        .map(|p| HgChangesetId::from_bytes(p).unwrap().to_git())
-        .collect::<Option<Vec<_>>>()
-    {
-        parents
-    } else {
-        // TODO: ideally this should instead hard-error when not grafting.
-        writeln!(output, "no-graft").unwrap();
-        return;
-    };
+        .map(|p| HgChangesetId::from_bytes(p))
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     let size = usize::from_bytes(args[args.len() - 1]).unwrap();
     let buf = input.read_exactly(size).unwrap();
     let raw_changeset = RawHgChangeset(buf);
 
+    match store_changeset(&changeset_id, &parents, &raw_changeset) {
+        Ok((commit_id, None)) => writeln!(output, "{commit_id}"),
+        Ok((commit_id, Some(replace))) => writeln!(output, "{commit_id} {replace}"),
+        Err(GraftError::NoGraft) => writeln!(output, "no-graft"),
+        Err(GraftError::Ambiguous(candidates)) => writeln!(
+            output,
+            "ambiguous {}",
+            itertools::join(candidates.iter(), " ")
+        ),
+    }
+    .unwrap();
+}
+
+fn store_changeset(
+    changeset_id: &HgChangesetId,
+    parents: &[HgChangesetId],
+    raw_changeset: &RawHgChangeset,
+) -> Result<(CommitId, Option<CommitId>), GraftError> {
+    let parents = parents
+        .iter()
+        .map(HgChangesetId::to_git)
+        .collect::<Option<Vec<_>>>()
+        .ok_or(GraftError::NoGraft)?;
     let changeset = raw_changeset.parse().unwrap();
     let manifest_tree_id = match changeset.manifest() {
         m if m == &HgManifestId::null() => unsafe {
@@ -856,12 +874,12 @@ pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, a
     let tree_id = unsafe { TreeId::from_unchecked(GitObjectId::from(tree_id)) };
 
     let (commit_id, metadata_id, transition) =
-        match graft(&changeset_id, &raw_changeset, &tree_id, &parents) {
+        match graft(changeset_id, raw_changeset, &tree_id, &parents) {
             Ok(Some(commit_id)) => {
                 let metadata = GeneratedGitChangesetMetadata::generate(
                     &RawCommit::read(&commit_id).unwrap().parse().unwrap(),
-                    &changeset_id,
-                    &raw_changeset,
+                    changeset_id,
+                    raw_changeset,
                 )
                 .unwrap();
                 if !grafted() && metadata.patch().is_some() {
@@ -882,15 +900,7 @@ pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, a
                 }
             }
             Ok(None) | Err(GraftError::NoGraft) => (None, None, false),
-            Err(GraftError::Ambiguous(candidates)) => {
-                writeln!(
-                    output,
-                    "ambiguous {}",
-                    itertools::join(candidates.iter(), " ")
-                )
-                .unwrap();
-                return;
-            }
+            Err(e) => return Err(e),
         };
 
     let (commit_id, metadata_id, replace) = if commit_id.is_none() || transition {
@@ -939,8 +949,8 @@ pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, a
 
         let metadata = GeneratedGitChangesetMetadata::generate(
             &RawCommit::read(&commit_id).unwrap().parse().unwrap(),
-            &changeset_id,
-            &raw_changeset,
+            changeset_id,
+            raw_changeset,
         )
         .unwrap();
         let mut buf = strbuf::new();
@@ -963,16 +973,12 @@ pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, a
         )
     };
 
-    if let Some(replace) = &replace {
-        writeln!(output, "{} {}", commit_id, replace).unwrap();
-    } else {
-        writeln!(output, "{}", commit_id).unwrap();
-    }
-    let changeset_id = hg_object_id::from(changeset_id);
+    let result = (commit_id.clone(), replace);
+    let changeset_id = hg_object_id::from(changeset_id.clone());
     let commit_id = object_id::from(commit_id);
     let blob_id = object_id::from((*metadata_id).clone());
     unsafe {
-        if let Some(replace) = replace {
+        if let Some(replace) = &result.1 {
             let replace = object_id::from(replace);
             do_set_replace(&replace, &commit_id);
         }
@@ -984,6 +990,7 @@ pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, a
         );
         do_set_(cstr!("changeset-head").as_ptr(), &changeset_id, &blob_id);
     }
+    Ok(result)
 }
 
 pub fn do_create(input: &mut dyn BufRead, output: impl Write, args: &[&[u8]]) {
@@ -1057,7 +1064,15 @@ pub fn do_store_changegroup(input: &mut dyn BufRead, args: &[&[u8]]) {
         [b"2"] => 2,
         _ => die!("store-changegroup only takes one argument that is either 1 or 2"),
     };
-    for _changeset in RevChunkIter::new(version, &mut *input) {}
+    let mut changesets = Vec::new();
+    for changeset in RevChunkIter::new(version, &mut *input) {
+        changesets.push(Box::new((
+            unsafe {
+                HgChangesetId::from_unchecked(HgObjectId::from(changeset.delta_node().clone()))
+            },
+            changeset,
+        )));
+    }
     for manifest in RevChunkIter::new(version, &mut *input) {
         unsafe {
             store_manifest(&manifest);
@@ -1073,5 +1088,59 @@ pub fn do_store_changegroup(input: &mut dyn BufRead, args: &[&[u8]]) {
                 store_file(&file);
             }
         }
+    }
+
+    let mut previous = (HgChangesetId::null(), RawHgChangeset(Box::new([])));
+    for changeset in changesets
+        .drain(..)
+        .progress(|n| format!("Importing {n} changesets"))
+    {
+        let (delta_node, changeset) = &*changeset;
+        let changeset_id =
+            unsafe { HgChangesetId::from_unchecked(HgObjectId::from(changeset.node().clone())) };
+        let parents = [changeset.parent1(), changeset.parent2()]
+            .into_iter()
+            .filter_map(|p| {
+                let p = unsafe { HgChangesetId::from_unchecked(HgObjectId::from(p.clone())) };
+                (p != HgChangesetId::null()).then(|| p)
+            })
+            .collect::<Vec<_>>();
+
+        let reference_cs = if delta_node == &previous.0 {
+            previous.1
+        } else if delta_node == &HgChangesetId::null() {
+            RawHgChangeset(Box::new([]))
+        } else {
+            RawHgChangeset::read(&delta_node.to_git().unwrap()).unwrap()
+        };
+
+        let mut last_end = 0;
+        let mut raw_changeset = Vec::new();
+        for diff in changeset.iter_diff() {
+            if diff.start > reference_cs.len() || diff.start < last_end {
+                die!("Malformed changeset chunk for {changeset_id}");
+            }
+            raw_changeset.extend_from_slice(&reference_cs[last_end..diff.start]);
+            raw_changeset.extend_from_slice(&diff.data);
+            last_end = diff.end;
+        }
+        if reference_cs.len() < last_end {
+            die!("Malformed changeset chunk for {changeset_id}");
+        }
+        raw_changeset.extend_from_slice(&reference_cs[last_end..]);
+        let raw_changeset = RawHgChangeset(raw_changeset.into());
+        match store_changeset(&changeset_id, &parents, &raw_changeset) {
+            Ok(_) => {}
+            Err(GraftError::NoGraft) => {
+                // TODO: ideally this should instead hard-error when not grafting,
+                // but NoGraft can theoretically still be emitted in that case.
+                debug!("Cannot graft changeset {changeset_id}, not importing");
+            }
+            Err(GraftError::Ambiguous(candidates)) => die!(
+                "Cannot graft {changeset_id}. Candidates: {}",
+                itertools::join(candidates.iter(), ", ")
+            ),
+        }
+        previous = (changeset_id, raw_changeset);
     }
 }
