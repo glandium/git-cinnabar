@@ -22,7 +22,6 @@ from cinnabar.util import (
     Seekable,
     byte_diff,
     one,
-    VersionedDict,
 )
 from cinnabar.git import (
     EMPTY_BLOB,
@@ -465,8 +464,6 @@ class GitHgStore(object):
 
         self._tags = dict(self.tags())
 
-        self._replace = VersionedDict(self._replace)
-
     @property
     def tag_changes(self):
         return dict(self.tags()) != self._tags
@@ -853,11 +850,8 @@ class GitHgStore(object):
         if b'refs/cinnabar/checked' in refresh:
             Git.update_ref(b'refs/cinnabar/checked', self._metadata_sha1)
 
-        for status, ref, sha1 in self._replace.iterchanges():
-            if status == VersionedDict.REMOVED:
-                Git.delete_ref(b'refs/cinnabar/replace/%s' % ref)
-            else:
-                Git.update_ref(b'refs/cinnabar/replace/%s' % ref, sha1)
+        with GitHgHelper.query(b'store-replace'):
+            pass
 
         # refs/notes/cinnabar is kept for convenience
         for ref in self.METADATA_REFS:

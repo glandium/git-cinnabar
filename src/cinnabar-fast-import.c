@@ -415,6 +415,17 @@ void do_set_replace(const struct object_id *replaced,
 	}
 }
 
+void for_each_replace(void (*cb)(const struct object_id *replaced,
+                                 const struct object_id *replace_with,
+                                 void *ctx), void *ctx) {
+	struct oidmap_iter iter;
+	struct replace_object *replace;
+	oidmap_iter_init(the_repository->objects->replace_map, &iter);
+	while ((replace = oidmap_iter_next(&iter))) {
+		cb(&replace->original.oid, replace->replacement.hash, ctx);
+	}
+}
+
 extern void add_changeset_head(struct hg_object_id *cs, struct object_id *meta);
 
 void do_set_(const char *what, const struct hg_object_id *hg_id,

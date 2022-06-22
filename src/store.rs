@@ -24,12 +24,12 @@ use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libc::FdFile;
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
 use crate::libgit::{
-    get_oid_committish, lookup_replace_commit, object_id, object_type, strbuf, BlobId, Commit,
-    CommitId, RawBlob, RawCommit, TreeId,
+    for_each_ref_in, get_oid_committish, lookup_replace_commit, object_id, object_type, strbuf,
+    BlobId, Commit, CommitId, RawBlob, RawCommit, RefTransaction, TreeId,
 };
 use crate::oid::{GitObjectId, HgObjectId, ObjectId};
 use crate::oid_type;
-use crate::util::{FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
+use crate::util::{FromBytes, ImmutBString, OsStrExt, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::{apply, textdiff, PatchInfo};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
@@ -708,6 +708,74 @@ pub unsafe extern "C" fn store_changesets_metadata(blob: *const object_id, resul
         result,
         0,
     );
+}
+
+extern "C" {
+    fn for_each_replace(
+        f: unsafe extern "C" fn(*const object_id, *const object_id, *mut c_void),
+        ctxt: *mut c_void,
+    );
+}
+
+unsafe extern "C" fn handle_replace(
+    replaced: *const object_id,
+    replace_with: *const object_id,
+    ctxt: *mut c_void,
+) {
+    let replaces = (ctxt as *mut BTreeMap<CommitId, CommitId>)
+        .as_mut()
+        .unwrap();
+    replaces.insert(
+        CommitId::from_unchecked(GitObjectId::from(replaced.as_ref().unwrap().clone())),
+        CommitId::from_unchecked(GitObjectId::from(replace_with.as_ref().unwrap().clone())),
+    );
+}
+
+pub fn do_store_replace(args: &[&[u8]]) {
+    if !args.is_empty() {
+        die!("store-replace takes no arguments");
+    }
+
+    let mut from_refs = BTreeMap::new();
+    for_each_ref_in(REPLACE_REFS_PREFIX, |r, oid| {
+        if from_refs
+            .insert(CommitId::from_bytes(r.as_bytes()).unwrap(), oid.clone())
+            .is_some()
+        {
+            return Err("Shouldn't have had conflicts in refs hashmap");
+        }
+        Ok(())
+    })
+    .unwrap();
+    let mut replaces = BTreeMap::<CommitId, CommitId>::new();
+    unsafe {
+        for_each_replace(handle_replace, &mut replaces as *mut _ as *mut _);
+    }
+    let mut transaction = RefTransaction::new().unwrap();
+
+    for (replaced, replace_with) in from_refs.iter() {
+        let ref_ = format!("{REPLACE_REFS_PREFIX}{}", replaced);
+        if let Some(r) = replaces.get(replaced) {
+            if r != replace_with {
+                transaction
+                    .update(ref_, r, Some(replace_with), "update")
+                    .unwrap();
+            }
+        } else {
+            transaction
+                .delete(ref_, Some(replace_with), "update")
+                .unwrap();
+        }
+    }
+    for (replaced, replace_with) in replaces.iter() {
+        if !from_refs.contains_key(replaced) {
+            let ref_ = format!("{REPLACE_REFS_PREFIX}{}", replaced);
+            transaction
+                .update(ref_, replace_with, None, "update")
+                .unwrap();
+        }
+    }
+    transaction.commit().unwrap();
 }
 
 #[no_mangle]
