@@ -53,10 +53,17 @@ class FsckStatus(object):
         self.info(message)
 
 
-def check_replace(store):
-    self_refs = [r for r, s in store._replace.items() if r == s]
+def get_replace():
+    replace = {}
+    for line in Git.ls_tree(Git.resolve_ref('refs/cinnabar/metadata')):
+        mode, typ, sha1, path = line
+        replace[path] = sha1
+    return replace
+
+
+def check_replace():
+    self_refs = [r for r, s in get_replace().items() if r == s]
     for r in progress_iter('Removing {} self-referencing grafts', self_refs):
-        del store._replace[r]
         GitHgHelper.set(b'replace', r, NULL_NODE_ID)
 
 
@@ -322,7 +329,7 @@ def fsck_quick(force=False):
             'https://github.com/glandium/git-cinnabar/issues')
         return 1
 
-    check_replace(store)
+    check_replace()
 
     if status('broken'):
         status.info(
@@ -414,9 +421,10 @@ def fsck(args):
 
     full_file_check = FileFindParents.logger.isEnabledFor(logging.DEBUG)
 
+    replace = get_replace()
     for node, tree, parents in progress_iter('Checking {} changesets',
                                              all_git_commits):
-        node = store._replace.get(node, node)
+        node = replace.get(node, node)
         hg_node = store.hg_changeset(node)
         if not hg_node:
             status.report('Missing note for git commit: ' +
@@ -555,7 +563,7 @@ def fsck(args):
         status.fix('Removing dangling note for commit ' + c.decode('ascii'))
         GitHgHelper.set(b'changeset-metadata', c, NULL_NODE_ID)
 
-    check_replace(store)
+    check_replace()
 
     if status('broken'):
         status.info(

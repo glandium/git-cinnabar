@@ -424,7 +424,6 @@ class GitHgStore(object):
 
         self._hgheads_orig = {}
 
-        self._replace = Git._replace
         self._metadata_sha1 = None
         broken = None
         # While doing a for_each_ref, ensure refs/notes/cinnabar is in the
@@ -452,10 +451,6 @@ class GitHgStore(object):
         if metadata:
             self._hgheads_orig = dict(GitHgHelper.heads(b'changesets'))
             self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
-
-            for line in Git.ls_tree(metadata.tree):
-                mode, typ, sha1, path = line
-                self._replace[path] = sha1
 
             # Delete old tag-cache, which may contain incomplete data.
             Git.delete_ref(b'refs/cinnabar/tag-cache')
@@ -629,10 +624,6 @@ class GitHgStore(object):
         self._metadata_refs = refs if metadata else {}
         self._hgheads_orig = dict(GitHgHelper.heads(b'changesets'))
         self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
-
-        for line in Git.ls_tree(metadata.tree):
-            mode, typ, sha1, path = line
-            self._replace[path] = sha1
 
         self._tags = dict(self.tags())
 
@@ -816,8 +807,6 @@ class GitHgStore(object):
                                  for n in sorted(response[1:]))))
 
             assert len(response) <= 2
-            if len(response) == 2:
-                self._replace[response[1]] = response[0]
 
     MODE = {
         b'': b'160644',

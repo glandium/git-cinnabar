@@ -42,7 +42,6 @@ class GitProcess(Process):
 class Git(object):
     _notes_depth = {}
     _config = None
-    _replace = {}
 
     @classmethod
     def iter(self, *args, **kwargs):
