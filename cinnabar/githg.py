@@ -834,13 +834,12 @@ class GitHgStore(object):
                                      for n in sorted(response[1:]))))
                 sha1, blob_sha1 = response
                 assert len(sha1) == 40
-                if sha1 == NULL_NODE_ID:
-                    return None
-                if blob_sha1 == b"transition":
-                    transition = True
-                else:
-                    assert len(blob_sha1) == 40
-                commit = GitCommit(sha1)
+                if sha1 != NULL_NODE_ID:
+                    if blob_sha1 == b"transition":
+                        transition = True
+                    else:
+                        assert len(blob_sha1) == 40
+                    commit = GitCommit(sha1)
 
         if not commit or transition:
             args = [instance.node, tree]
