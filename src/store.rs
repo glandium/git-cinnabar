@@ -675,25 +675,63 @@ extern "C" {
     fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
     fn do_set_(what: *const c_char, hg_id: *const hg_object_id, git_id: *const object_id);
     fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
+    fn create_git_tree(
+        tree_id: *const object_id,
+        ref_tree: *const object_id,
+        result: *mut object_id,
+    );
+    fn ensure_empty_tree() -> *const object_id;
 }
 
 pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, args: &[&[u8]]) {
     unsafe {
         ensure_store_init();
     }
-    if args.len() < 3 || args.len() > 5 {
-        die!("store-changeset takes between 3 and 5 arguments");
+    if args.len() < 2 || args.len() > 4 {
+        die!("store-changeset takes between 2 and 4 arguments");
     }
 
     let changeset_id = HgChangesetId::from_bytes(args[0]).unwrap();
-    let tree_id = TreeId::from_bytes(args[1]).unwrap();
-    let parents = &args[2..args.len() - 1]
+    let parents = &args[1..args.len() - 1]
         .iter()
         .map(|p| HgChangesetId::from_bytes(p).unwrap().to_git().unwrap())
         .collect::<Vec<_>>();
     let size = usize::from_bytes(args[args.len() - 1]).unwrap();
     let buf = input.read_exactly(size).unwrap();
     let raw_changeset = RawHgChangeset(buf);
+
+    let changeset = raw_changeset.parse().unwrap();
+    let manifest_tree_id = match changeset.manifest() {
+        m if m == &HgManifestId::null() => unsafe {
+            TreeId::from_unchecked(GitObjectId::from(
+                ensure_empty_tree().as_ref().unwrap().clone(),
+            ))
+        },
+        m => {
+            let git_manifest_id = m.to_git().unwrap();
+            let manifest_commit = RawCommit::read(&git_manifest_id).unwrap();
+            let manifest_commit = manifest_commit.parse().unwrap();
+            manifest_commit.tree().clone()
+        }
+    };
+
+    let ref_tree = parents.get(0).map(|p| {
+        let ref_commit = RawCommit::read(p).unwrap();
+        let ref_commit = ref_commit.parse().unwrap();
+        object_id::from(ref_commit.tree())
+    });
+
+    let mut tree_id = object_id::default();
+    unsafe {
+        create_git_tree(
+            &object_id::from(manifest_tree_id),
+            ref_tree
+                .as_ref()
+                .map_or(std::ptr::null(), |t| t as *const _),
+            &mut tree_id,
+        );
+    }
+    let tree_id = unsafe { TreeId::from_unchecked(GitObjectId::from(tree_id)) };
 
     let (commit_id, metadata_id, transition) =
         match graft(&changeset_id, &raw_changeset, &tree_id, parents) {
@@ -732,8 +770,6 @@ pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, a
                 return;
             }
         };
-
-    let changeset = raw_changeset.parse().unwrap();
 
     let (commit_id, metadata_id, replace) = if commit_id.is_none() || transition {
         let replace = commit_id;

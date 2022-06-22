@@ -1320,51 +1320,11 @@ corrupted:
 
 static struct hashmap git_tree_cache;
 
-void do_create_git_tree(struct string_list *args, int helper_output)
+void create_git_tree(const struct object_id *tree_id,
+                     const struct object_id *ref_tree,
+                     struct object_id *result)
 {
-	struct hg_object_id hg_oid;
-	struct object_id oid;
-	const struct object_id *manifest_oid;
-	struct commit *commit;
-	struct object_id *ref_tree = NULL;
-
-	if (args->nr == 0 || args->nr > 2)
-		die("create-git-tree takes 1 or 2 arguments");
-
-	if (get_sha1_hex(args->items[0].string, hg_oid.hash))
-		goto not_found;
-
-	manifest_oid = resolve_hg2git(&hg_oid, 40);
-	if (!manifest_oid)
-		goto not_found;
-
-	commit = lookup_commit(the_repository, manifest_oid);
-	if (parse_commit(commit))
-		goto not_found;
-
-	if (args->nr == 2) {
-		struct hg_object_id ref_oid;
-		const struct object_id *ref_commit_oid;
-		struct commit *ref_commit;
-		if (get_sha1_hex(args->items[1].string, ref_oid.hash))
-			die("invalid argument %s", args->items[1].string);
-		ref_commit_oid = resolve_hg2git(&ref_oid, 40);
-		if (!ref_commit_oid)
-			die("invalid argument hg2git %s", args->items[1].string);
-		ref_commit = lookup_commit(the_repository, ref_commit_oid);
-		parse_commit_or_die(ref_commit);
-		ref_tree = get_commit_tree_oid(ref_commit);
-	}
-
-	recurse_create_git_tree(get_commit_tree_oid(commit), ref_tree, NULL,
-	                        &oid, &git_tree_cache);
-
-	write_or_die(helper_output, oid_to_hex(&oid), 40);
-	write_or_die(helper_output, "\n", 1);
-	return;
-
-not_found:
-	die("Couldn't find manifest %s", args->items[0].string);
+	recurse_create_git_tree(tree_id, ref_tree, NULL, result, &git_tree_cache);
 }
 
 // 12th bit is only used by builtin/blame.c, so it should be safe to use.

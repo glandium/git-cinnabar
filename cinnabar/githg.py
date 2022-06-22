@@ -805,18 +805,12 @@ class GitHgStore(object):
             return EMPTY_BLOB
         return self._hg2git(sha1)
 
-    def git_tree(self, manifest_sha1, ref_changeset=None):
-        if manifest_sha1 == NULL_NODE_ID:
-            return EMPTY_TREE
-        return GitHgHelper.create_git_tree(manifest_sha1, ref_changeset)
-
     def store_changeset(self, instance):
         parents = tuple(self.changeset_ref(p) for p in instance.parents)
         if None in parents:
             raise NothingToGraftException()
-        tree = self.git_tree(instance.manifest, *instance.parents[:1])
 
-        args = [instance.node, tree]
+        args = [instance.node]
         args.extend(instance.parents)
         raw_data = instance.raw_data
         args.append(str(len(raw_data)).encode('ascii'))

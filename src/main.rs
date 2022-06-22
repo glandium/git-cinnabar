@@ -248,7 +248,6 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"diff-tree" => do_diff_tree(args, out),
                 b"heads" => do_heads(args, out),
                 b"reset-heads" => do_reset_heads(args),
-                b"create-git-tree" => do_create_git_tree(args, out),
                 b"seen" => do_seen(args, out),
                 b"dangling" => do_dangling(args, out),
                 b"reload" => do_reload(args, out),
