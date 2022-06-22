@@ -425,10 +425,8 @@ class PushStore(GitHgStore):
                             % sha1.decode('ascii'))
         return result
 
-    def changeset(self, sha1, include_parents=True):
-        if sha1 not in self._pushed:
-            include_parents = True
-        result = super(PushStore, self).changeset(sha1, include_parents)
+    def changeset(self, sha1):
+        result = super(PushStore, self).changeset(sha1)
         # Validate changesets we derive from when bundling are not corrupted.
         if sha1 not in self._pushed and result.sha1 != sha1:
             raise Exception('Sha1 mismatch for changeset %s'
@@ -464,7 +462,7 @@ def bundle_data(store, commits):
         is_new = changeset_data is None or check_enabled('bundle')
         if is_new:
             store.create_hg_metadata(node, parents)
-        hg_changeset = store._changeset(node, include_parents=True)
+        hg_changeset = store._changeset(node)
         yield hg_changeset
         manifest = hg_changeset.manifest
         if manifest not in manifests and manifest != NULL_NODE_ID:

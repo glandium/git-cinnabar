@@ -711,27 +711,20 @@ class GitHgStore(object):
             gitsha1 = None
         return gitsha1
 
-    def changeset(self, sha1, include_parents=False):
-        gitsha1 = self.changeset_ref(sha1)
-        assert gitsha1
-        return self._changeset(gitsha1, include_parents)
+    def changeset(self, sha1):
+        return self._changeset_any(sha1)
 
-    def _changeset(self, git_commit, include_parents=False):
-        if not isinstance(git_commit, GitCommit):
-            git_commit = GitCommit(git_commit)
+    def _changeset(self, git_commit):
+        return self._changeset_any(b'git:' + git_commit)
 
-        metadata = self.read_changeset_data(git_commit.sha1)
-        if not metadata:
-            return None
-        changeset = Changeset.from_git_commit(git_commit)
-        changeset = metadata.apply(changeset)
+    def _changeset_any(self, sha1):
+        with GitHgHelper.query(b'raw-changeset', sha1) as stdout:
+            node, parent1, parent2, size = stdout.readline().strip().split()
+            size = int(size)
+            raw_data = stdout.read(size)
 
-        if include_parents:
-            assert len(git_commit.parents) <= 2
-            changeset.parents = tuple(
-                self.hg_changeset(self._replace.get(p, p))
-                for p in git_commit.parents)
-
+        changeset = Changeset(node, parent1, parent2)
+        changeset.raw_data = raw_data
         return changeset
 
     ATTR = {

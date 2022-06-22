@@ -466,6 +466,53 @@ impl RawHgChangeset {
     }
 }
 
+pub fn do_raw_changeset(mut output: impl Write, args: &[&[u8]]) {
+    unsafe {
+        ensure_store_init();
+    }
+    if args.len() != 1 {
+        die!("raw-changeset takes 1 argument");
+    }
+    let oid = if args[0].as_bstr().starts_with(b"git:") {
+        unsafe {
+            GitChangesetId::from_unchecked(
+                lookup_replace_commit(&CommitId::from_bytes(&args[0][4..]).unwrap()).into_owned(),
+            )
+        }
+    } else {
+        HgChangesetId::from_bytes(args[0])
+            .unwrap()
+            .to_git()
+            .unwrap()
+    };
+    let commit = RawCommit::read(&oid).unwrap();
+    let commit = commit.parse().unwrap();
+    let metadata = RawGitChangesetMetadata::read(&oid).unwrap();
+    let metadata = metadata.parse().unwrap();
+    let raw_changeset = RawHgChangeset::from_metadata(&commit, &metadata).unwrap();
+
+    let parents = commit
+        .parents()
+        .iter()
+        .map(|p| {
+            unsafe { GitChangesetId::from_unchecked(lookup_replace_commit(p).into_owned()) }.to_hg()
+        })
+        .chain(repeat(Some(HgChangesetId::null())))
+        .take(2)
+        .collect::<Option<Vec<_>>>()
+        .unwrap();
+    writeln!(
+        output,
+        "{} {} {} {}",
+        metadata.changeset_id(),
+        parents[0],
+        parents[1],
+        raw_changeset.len()
+    )
+    .unwrap();
+    output.write_all(&raw_changeset).unwrap();
+}
+
 #[derive(CopyGetters, Getters)]
 pub struct HgChangeset<'a> {
     #[getset(get = "pub")]

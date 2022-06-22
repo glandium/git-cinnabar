@@ -144,7 +144,7 @@ def fsck_quick(force=False):
                        gitsha1.decode('ascii')))
                 continue
             fix_changeset_heads = True
-        changeset = store._changeset(c, include_parents=True)
+        changeset = store._changeset(c)
         if not changeset:
             status.report(
                 'Missing git2hg metadata for git commit %s'
@@ -440,7 +440,7 @@ def fsck(args):
                              changeset_ref.decode('ascii'),
                              node.decode('ascii')))
 
-        hg_changeset = store.changeset(changeset, include_parents=True)
+        hg_changeset = store.changeset(changeset)
         if hg_changeset.node != hg_changeset.sha1:
             status.report('Sha1 mismatch for changeset %s'
                           % changeset.decode('ascii'))
