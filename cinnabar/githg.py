@@ -806,10 +806,6 @@ class GitHgStore(object):
         return self._hg2git(sha1)
 
     def store_changeset(self, instance):
-        parents = tuple(self.changeset_ref(p) for p in instance.parents)
-        if None in parents:
-            raise NothingToGraftException()
-
         args = [instance.node]
         args.extend(instance.parents)
         raw_data = instance.raw_data
@@ -820,6 +816,8 @@ class GitHgStore(object):
             response = stdout.readline().strip().split()
             assert len(response) > 0
 
+            if response[0] == b"no-graft":
+                raise NothingToGraftException()
             if response[0] == b"ambiguous":
                 raise AmbiguousGraftAbort(
                     'Cannot graft changeset %s. Candidates: %s'

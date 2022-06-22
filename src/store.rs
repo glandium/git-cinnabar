@@ -692,10 +692,17 @@ pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, a
     }
 
     let changeset_id = HgChangesetId::from_bytes(args[0]).unwrap();
-    let parents = &args[1..args.len() - 1]
+    let parents = if let Some(parents) = args[1..args.len() - 1]
         .iter()
-        .map(|p| HgChangesetId::from_bytes(p).unwrap().to_git().unwrap())
-        .collect::<Vec<_>>();
+        .map(|p| HgChangesetId::from_bytes(p).unwrap().to_git())
+        .collect::<Option<Vec<_>>>()
+    {
+        parents
+    } else {
+        // TODO: ideally this should instead hard-error when not grafting.
+        writeln!(output, "no-graft").unwrap();
+        return;
+    };
     let size = usize::from_bytes(args[args.len() - 1]).unwrap();
     let buf = input.read_exactly(size).unwrap();
     let raw_changeset = RawHgChangeset(buf);
@@ -734,7 +741,7 @@ pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, a
     let tree_id = unsafe { TreeId::from_unchecked(GitObjectId::from(tree_id)) };
 
     let (commit_id, metadata_id, transition) =
-        match graft(&changeset_id, &raw_changeset, &tree_id, parents) {
+        match graft(&changeset_id, &raw_changeset, &tree_id, &parents) {
             Ok(Some(commit_id)) => {
                 let metadata = GeneratedGitChangesetMetadata::generate(
                     &RawCommit::read(&commit_id).unwrap().parse().unwrap(),
