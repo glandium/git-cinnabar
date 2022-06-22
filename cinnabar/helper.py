@@ -16,7 +16,6 @@ from cinnabar.hg.changegroup import (
 from cinnabar.util import (
     environ,
     IOLogger,
-    lrucache,
     Process,
 )
 from contextlib import contextmanager
@@ -188,9 +187,6 @@ class GitHgHelper(BaseHelper):
     def reload(self):
         with self.query(b'reload') as stdout:
             return stdout.readline().strip() == b'ok'
-        self.git2hg.invalidate()
-        self.hg2git.invalidate()
-        self._cat_commit.invalidate()
 
     @classmethod
     def progress(self, value=None):
@@ -213,7 +209,6 @@ class GitHgHelper(BaseHelper):
             return self._read_file(typ, stdout)
 
     @classmethod
-    @lrucache(16)
     def _cat_commit(self, sha1):
         return self._cat_file(b'commit', sha1)
 
@@ -224,7 +219,6 @@ class GitHgHelper(BaseHelper):
         return self._cat_file(typ, sha1)
 
     @classmethod
-    @lrucache(16)
     def git2hg(self, sha1):
         assert sha1 != b'changeset'
         with self.query(b'git2hg', sha1) as stdout:
@@ -236,7 +230,6 @@ class GitHgHelper(BaseHelper):
             return self._read_file(b'blob', stdout)
 
     @classmethod
-    @lrucache(16)
     def hg2git(self, hg_sha1):
         with self.query(b'hg2git', hg_sha1) as stdout:
             sha1 = stdout.read(41)
@@ -299,12 +292,6 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def set(self, *args):
-        if args[0] == b'replace':
-            pass
-        elif args[0] == b'changeset-metadata':
-            self.git2hg.invalidate(self, self.hg2git(args[1]))
-        elif args[0] != b'file-meta':
-            self.hg2git.invalidate(self, args[1])
         with self.query(b'set', *args):
             pass
 

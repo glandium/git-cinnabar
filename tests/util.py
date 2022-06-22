@@ -5,7 +5,6 @@ import unittest
 from cinnabar.util import (
     HTTPReader,
     byte_diff,
-    lrucache,
     sorted_merge,
     VersionedDict,
 )
@@ -347,90 +346,6 @@ class TestSortedMerge(unittest.TestCase):
             ('a', (1,), ()),
             ('b', (2,), ('B',)),
         ])
-
-
-class TestLRUCache(unittest.TestCase):
-    def test_node(self):
-        top = lrucache.node()
-        top.next = top
-        top.prev = top
-
-        node = lrucache.node()
-        node.insert(top)
-
-        self.assertEqual(top.next, node)
-        self.assertEqual(top.prev, node)
-        self.assertEqual(node.next, top)
-        self.assertEqual(node.prev, top)
-
-        node2 = lrucache.node()
-        node2.insert(top)
-        self.assertEqual(node2.next, node)
-        self.assertEqual(node2.prev, top)
-        self.assertEqual(top.next, node2)
-        self.assertEqual(top.prev, node)
-        self.assertEqual(node.next, top)
-        self.assertEqual(node.prev, node2)
-
-        node.insert(top)
-        self.assertEqual(node.next, node2)
-        self.assertEqual(node.prev, top)
-        self.assertEqual(top.next, node)
-        self.assertEqual(top.prev, node2)
-        self.assertEqual(node2.next, top)
-        self.assertEqual(node2.prev, node)
-
-        node2.detach()
-        self.assertEqual(top.next, node)
-        self.assertEqual(top.prev, node)
-        self.assertEqual(node.next, top)
-        self.assertEqual(node.prev, top)
-
-    def test_lru_cache(self):
-        cache = lrucache(2)
-
-        self.calls = 0
-
-        @cache
-        def foo(value):
-            self.calls += 1
-            return value * 2
-
-        self.assertEqual(foo(1), 2)
-        self.assertEqual(self.calls, 1)
-        self.assertEqual(foo(1), 2)
-        self.assertEqual(self.calls, 1)
-        self.assertEqual(len(cache), 1)
-
-        self.assertEqual(foo(2), 4)
-        self.assertEqual(self.calls, 2)
-        self.assertEqual(foo(2), 4)
-        self.assertEqual(self.calls, 2)
-        self.assertEqual(len(cache), 2)
-
-        self.assertEqual(foo(1), 2)
-        self.assertEqual(self.calls, 2)
-
-        self.assertEqual(foo(3), 6)
-        self.assertEqual(self.calls, 3)
-        self.assertEqual(len(cache), 2)
-
-        self.assertEqual(foo(1), 2)
-        self.assertEqual(self.calls, 3)
-
-        self.assertEqual(foo(2), 4)
-        self.assertEqual(self.calls, 4)
-        self.assertEqual(len(cache), 2)
-
-        foo.invalidate(1)
-        self.assertEqual(foo(1), 2)
-        self.assertEqual(self.calls, 5)
-
-        self.assertEqual(foo(2), 4)
-        self.assertEqual(self.calls, 5)
-        self.assertEqual(len(cache), 2)
-
-        foo.invalidate(3)
 
 
 class TestHTTPReader(unittest.TestCase):

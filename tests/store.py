@@ -48,9 +48,6 @@ class TestStoreCG01(unittest.TestCase):
     def tearDown(self):
         GitHgHelper.close(rollback=True)
         GitHgHelper._helper = False
-        GitHgHelper.git2hg.invalidate()
-        GitHgHelper.hg2git.invalidate()
-        GitHgHelper._cat_commit.invalidate()
         shutil.rmtree(os.environ['GIT_DIR'])
         if self.git_dir is None:
             del os.environ['GIT_DIR']
