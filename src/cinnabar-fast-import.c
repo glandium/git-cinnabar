@@ -861,8 +861,7 @@ static int add_manifests_parent(const struct object_id *oid, void *data)
 	return 0;
 }
 
-extern void store_changesets_metadata(const struct object_id *blob,
-                                      struct object_id *result);
+extern void store_changesets_metadata(struct object_id *result);
 
 void store_metadata_notes(
 	struct notes_tree *notes, const struct object_id *reference,
@@ -916,8 +915,8 @@ void do_store(struct reader *helper_input, int helper_output,
 		struct commit_list *cl;
 		int has_previous = 0, unchanged = 1;
 
-		if (args->nr > 2)
-			die("store metadata takes at most one argument");
+		if (args->nr != 1)
+			die("store metadata takes no arguments");
 
 		store_metadata_notes(&hg2git, &hg2git_oid, &hg2git_);
 		store_metadata_notes(&git2hg, &git2hg_oid, &git2hg_);
@@ -942,14 +941,7 @@ void do_store(struct reader *helper_input, int helper_output,
 			oidcpy(&manifests, &manifests_oid);
 		}
 
-		if (args->nr == 2) {
-			struct object_id blob;
-			if (get_oid_hex(args->items[1].string, &blob))
-				die("Invalid oid");
-			store_changesets_metadata(&blob, &changesets);
-		} else {
-			store_changesets_metadata(NULL, &changesets);
-		}
+		store_changesets_metadata(&changesets);
 		config("previous-metadata", &buf);
 		if ((buf.len && !get_oid_hex(buf.buf, &previous))) {
 			has_previous = 1;

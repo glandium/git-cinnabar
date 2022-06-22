@@ -423,3 +423,37 @@ impl<'a> Iterator for RevDiffIter<'a> {
         })
     }
 }
+
+pub struct BundleSaver<R: Read, W: Write> {
+    reader: R,
+    writer: W,
+}
+
+impl<R: Read, W: Write> BundleSaver<R, W> {
+    pub fn new(reader: R, mut writer: W, version: u8) -> Self {
+        writer.write_all(b"HG20\0\0\0\0").unwrap();
+        writer
+            .write_all(b"\0\0\0\x1d\x0bCHANGEGROUP\0\0\0\0")
+            .unwrap();
+        writer.write_all(b"\x01\x00\x07\x02version").unwrap();
+        writer
+            .write_all(format!("{:02}", version).as_bytes())
+            .unwrap();
+        BundleSaver { reader, writer }
+    }
+}
+
+impl<R: Read, W: Write> Drop for BundleSaver<R, W> {
+    fn drop(&mut self) {
+        self.writer.write_all(b"\0\0\0\0\0\0\0\0").unwrap();
+    }
+}
+
+impl<R: Read, W: Write> Read for BundleSaver<R, W> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.reader.read(buf)?;
+        self.writer.write_u32::<BigEndian>(n.try_into().unwrap())?;
+        self.writer.write_all(&buf[..n]).unwrap();
+        Ok(n)
+    }
+}

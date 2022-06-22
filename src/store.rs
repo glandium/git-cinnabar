@@ -5,7 +5,8 @@
 use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::BTreeMap;
-use std::io::{BufRead, Write};
+use std::env;
+use std::io::{BufRead, Read, Write};
 use std::iter::{repeat, IntoIterator};
 use std::mem;
 use std::os::raw::{c_char, c_int, c_uint, c_void};
@@ -20,7 +21,7 @@ use once_cell::sync::Lazy;
 use percent_encoding::{percent_decode, percent_encode, NON_ALPHANUMERIC};
 
 use crate::graft::{graft, grafted, GraftError};
-use crate::hg_bundle::{read_rev_chunk, rev_chunk, RevChunkIter};
+use crate::hg_bundle::{read_rev_chunk, rev_chunk, BundleSaver, RevChunkIter};
 use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libc::FdFile;
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
@@ -33,6 +34,7 @@ use crate::oid_type;
 use crate::progress::Progress;
 use crate::util::{FromBytes, ImmutBString, OsStrExt, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::{apply, textdiff, PatchInfo};
+use crate::{check_enabled, Checks};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
 pub const REPLACE_REFS_PREFIX: &str = "refs/cinnabar/replace/";
@@ -674,11 +676,13 @@ extern "C" {
     ) -> c_int;
 }
 
+static BUNDLE_BLOB: Lazy<Mutex<Option<object_id>>> = Lazy::new(|| Mutex::new(None));
+
 #[no_mangle]
-pub unsafe extern "C" fn store_changesets_metadata(blob: *const object_id, result: *mut object_id) {
+pub unsafe extern "C" fn store_changesets_metadata(result: *mut object_id) {
     let result = result.as_mut().unwrap();
     let mut tree = vec![];
-    if let Some(blob) = blob.as_ref() {
+    if let Some(blob) = &*BUNDLE_BLOB.lock().unwrap() {
         let blob = BlobId::from_unchecked(GitObjectId::from(blob.clone()));
         tree.extend_from_slice(b"100644 bundle\0");
         tree.extend_from_slice(blob.as_raw_bytes());
@@ -1056,7 +1060,7 @@ extern "C" {
     fn store_file(chunk: *const rev_chunk);
 }
 
-pub fn do_store_changegroup(input: &mut dyn BufRead, args: &[&[u8]]) {
+pub fn do_store_changegroup(mut input: &mut dyn BufRead, args: &[&[u8]]) {
     unsafe {
         ensure_store_init();
     }
@@ -1065,9 +1069,15 @@ pub fn do_store_changegroup(input: &mut dyn BufRead, args: &[&[u8]]) {
         [b"2"] => 2,
         _ => die!("store-changegroup only takes one argument that is either 1 or 2"),
     };
+    let mut bundle = strbuf::new();
+    let mut input = if check_enabled(Checks::UNBUNDLER) && env::var("GIT_DIR").is_ok() {
+        Box::new(BundleSaver::new(input, &mut bundle, version)) as Box<dyn Read>
+    } else {
+        Box::new(&mut input)
+    };
     let mut changesets = Vec::new();
     for changeset in
-        RevChunkIter::new(version, &mut *input).progress(|n| format!("Reading {n} changesets"))
+        RevChunkIter::new(version, &mut input).progress(|n| format!("Reading {n} changesets"))
     {
         changesets.push(Box::new((
             unsafe {
@@ -1076,7 +1086,7 @@ pub fn do_store_changegroup(input: &mut dyn BufRead, args: &[&[u8]]) {
             changeset,
         )));
     }
-    for manifest in RevChunkIter::new(version, &mut *input)
+    for manifest in RevChunkIter::new(version, &mut input)
         .progress(|n| format!("Reading and importing {n} manifests"))
     {
         unsafe {
@@ -1092,11 +1102,11 @@ pub fn do_store_changegroup(input: &mut dyn BufRead, args: &[&[u8]]) {
     });
     while {
         let mut buf = strbuf::new();
-        read_rev_chunk(&mut *input, &mut buf);
+        read_rev_chunk(&mut input, &mut buf);
         !buf.as_bytes().is_empty()
     } {
         files.set(files.get() + 1);
-        for (file, ()) in RevChunkIter::new(version, &mut *input).zip(&mut progress) {
+        for (file, ()) in RevChunkIter::new(version, &mut input).zip(&mut progress) {
             unsafe {
                 store_file(&file);
             }
@@ -1156,5 +1166,13 @@ pub fn do_store_changegroup(input: &mut dyn BufRead, args: &[&[u8]]) {
             ),
         }
         previous = (changeset_id, raw_changeset);
+    }
+    drop(input);
+    if !bundle.as_bytes().is_empty() {
+        let mut bundle_blob = object_id::default();
+        unsafe {
+            store_git_blob(&bundle, &mut bundle_blob);
+        }
+        *BUNDLE_BLOB.lock().unwrap() = Some(bundle_blob);
     }
 }

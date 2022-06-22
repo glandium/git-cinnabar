@@ -828,10 +828,7 @@ class GitHgStore(object):
         if not GitHgHelper._helper:
             return
 
-        bundle_blob = getattr(self, "bundle_blob", None)
-
-        self._metadata_sha1 = GitHgHelper.store(
-            b'metadata', *[bundle_blob] if bundle_blob else [])
+        self._metadata_sha1 = GitHgHelper.store(b'metadata')
         Git.update_ref(b'refs/cinnabar/metadata', self._metadata_sha1)
         Git.update_ref(b'refs/notes/cinnabar',
                        GitCommit(self._metadata_sha1).parents[3])
