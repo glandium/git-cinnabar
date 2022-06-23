@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::io::Write;
-use std::os::raw::{c_int, c_uint};
+use std::os::raw::c_uint;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
@@ -15,16 +15,12 @@ use once_cell::sync::Lazy;
 use crate::hg_data::{GitAuthorship, HgAuthorship};
 use crate::libgit::{lookup_replace_commit, rev_list, CommitId, RawCommit, TreeId};
 use crate::progress::Progress;
-use crate::store::{GeneratedGitChangesetMetadata, GitChangesetId, HgChangesetId, RawHgChangeset};
+use crate::store::{
+    has_metadata, GeneratedGitChangesetMetadata, GitChangesetId, HgChangesetId, RawHgChangeset,
+};
 
 extern "C" {
-    static metadata_flags: c_int;
-
     fn replace_map_size() -> c_uint;
-}
-
-fn has_metadata() -> bool {
-    unsafe { metadata_flags != 0 }
 }
 
 pub fn grafted() -> bool {

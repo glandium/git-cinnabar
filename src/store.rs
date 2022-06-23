@@ -43,6 +43,14 @@ pub const CHECKED_REF: &str = "refs/cinnabar/checked";
 pub const BROKEN_REF: &str = "refs/cinnabar/broken";
 pub const NOTES_REF: &str = "refs/notes/cinnabar";
 
+extern "C" {
+    static metadata_flags: c_int;
+}
+
+pub fn has_metadata() -> bool {
+    unsafe { metadata_flags != 0 }
+}
+
 macro_rules! hg2git {
     ($h:ident => $g:ident($i:ident)) => {
         oid_type!($g($i));
@@ -1060,6 +1068,21 @@ extern "C" {
     fn store_file(chunk: *const rev_chunk);
 }
 
+static STORED_FILES: Lazy<Mutex<BTreeMap<HgChangesetId, [HgChangesetId; 2]>>> =
+    Lazy::new(|| Mutex::new(BTreeMap::new()));
+
+pub fn do_stored_files(mut output: impl Write, args: &[&[u8]]) {
+    if !args.is_empty() {
+        die!("stored-files takes no arguments");
+    }
+
+    let mut buf = Vec::new();
+    for (node, [p1, p2]) in STORED_FILES.lock().unwrap().iter() {
+        writeln!(&mut buf, "{node} {p1} {p2}").unwrap();
+    }
+    send_buffer_to(&*buf, &mut output);
+}
+
 pub fn do_store_changegroup(mut input: &mut dyn BufRead, args: &[&[u8]]) {
     unsafe {
         ensure_store_init();
@@ -1100,6 +1123,8 @@ pub fn do_store_changegroup(mut input: &mut dyn BufRead, args: &[&[u8]]) {
             files.get()
         )
     });
+    let mut stored_files = STORED_FILES.lock().unwrap();
+    let null_parents = [HgChangesetId::null(), HgChangesetId::null()];
     while {
         let mut buf = strbuf::new();
         read_rev_chunk(&mut input, &mut buf);
@@ -1107,6 +1132,36 @@ pub fn do_store_changegroup(mut input: &mut dyn BufRead, args: &[&[u8]]) {
     } {
         files.set(files.get() + 1);
         for (file, ()) in RevChunkIter::new(version, &mut input).zip(&mut progress) {
+            let node =
+                unsafe { HgChangesetId::from_unchecked(HgObjectId::from(file.node().clone())) };
+            let parents = [
+                unsafe { HgChangesetId::from_unchecked(HgObjectId::from(file.parent1().clone())) },
+                unsafe { HgChangesetId::from_unchecked(HgObjectId::from(file.parent2().clone())) },
+            ];
+            // Try to detect issue #207 as early as possible.
+            // Keep track of file roots of files with metadata and at least
+            // one head that can be traced back to each of those roots.
+            // Or, in the case of updates, all heads.
+            if has_metadata()
+                || stored_files.contains_key(&parents[0])
+                || stored_files.contains_key(&parents[1])
+            {
+                stored_files.insert(node, parents.clone());
+                for p in parents.into_iter() {
+                    if p == HgChangesetId::null() {
+                        continue;
+                    }
+                    if stored_files.get(&p) != Some(&null_parents) {
+                        stored_files.remove(&p);
+                    }
+                }
+            } else if parents == null_parents {
+                if let Some(diff) = file.iter_diff().next() {
+                    if diff.start == 0 && diff.data.get(..2) == Some(b"\x01\n") {
+                        stored_files.insert(node, parents);
+                    }
+                }
+            }
             unsafe {
                 store_file(&file);
             }

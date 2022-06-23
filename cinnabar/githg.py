@@ -844,12 +844,20 @@ class GitHgStore(object):
             if ref not in (b'refs/notes/cinnabar',):
                 Git.delete_ref(ref)
 
+        from .hg.repo import stored_files
+        with GitHgHelper.query(b'stored-files') as stdout:
+            data = GitHgHelper._read_data(stdout)
+            assert stored_files == {
+                node: (p1, p2)
+                for node, p1, p2 in (l.split() for l in data.splitlines())
+            }
+
         GitHgHelper.close(rollback=False)
 
         # Try to detect issue #207 as early as possible.
         GitHgHelper._helper = False
         busted = False
-        from .hg.repo import getbundle_params, stored_files
+        from .hg.repo import getbundle_params
         for (node, (parent1, parent2)) in progress_iter(
                 "Checking {} imported file root and head revisions",
                 stored_files.items()):
