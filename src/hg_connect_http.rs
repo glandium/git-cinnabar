@@ -33,7 +33,7 @@ use url::{form_urlencoded, Url};
 use zstd::stream::read::Decoder as ZstdDecoder;
 
 use crate::args;
-use crate::hg_bundle::DecompressBundleReader;
+use crate::hg_bundle::{BundleConnection, DecompressBundleReader};
 use crate::hg_connect::{
     HgArgs, HgCapabilities, HgConnection, HgConnectionBase, HgWireConnection, OneHgArg,
 };
@@ -41,7 +41,6 @@ use crate::libgit::{
     credential_fill, curl_errorstr, get_active_slot, http_auth, http_follow_config, run_one_slot,
     slot_results, HTTP_OK, HTTP_REAUTH,
 };
-use crate::store::HgChangesetId;
 use crate::util::{ImmutBString, PrefixWriter, ReadExt, SeekExt, SliceExt, ToBoxed};
 
 use self::git_http_state::{GitHttpStateToken, GIT_HTTP_STATE};
@@ -560,32 +559,17 @@ impl Drop for HgHttpConnection {
     }
 }
 
-pub struct HgHttpBundle {
-    header: [u8; 4],
-    http_resp: HttpResponse,
+pub struct HttpConnectionHoldingReader<R: Read> {
+    reader: R,
     // Not used, but needed to guarantee http_cleanup doesn't happen before
     // HttpResponse is dropped.
     #[allow(unused)]
     conn: HgHttpConnection,
 }
 
-// Because we don't support getbundle fully, we don't override get_capability
-// to say we handle it.
-impl HgConnectionBase for HgHttpBundle {}
-impl HgConnection for HgHttpBundle {
-    fn getbundle<'a>(
-        &'a mut self,
-        heads: &[HgChangesetId],
-        common: &[HgChangesetId],
-        bundle2caps: Option<&str>,
-    ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
-        assert!(heads.is_empty());
-        assert!(common.is_empty());
-        assert!(bundle2caps.is_none());
-
-        let reader =
-            DecompressBundleReader::new(Cursor::new(self.header).chain(&mut self.http_resp));
-        Ok(Box::new(reader))
+impl<R: Read> Read for HttpConnectionHoldingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.reader.read(buf)
     }
 }
 
@@ -627,11 +611,13 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
     conn.handle_redirect(&http_resp);
     let header = (&mut http_resp).take(4).read_all().unwrap();
     match &*header {
-        b"HG10" | b"HG20" => Some(Box::new(HgHttpBundle {
-            conn,
-            header: (&*header).try_into().unwrap(),
-            http_resp,
-        })),
+        b"HG10" | b"HG20" => Some(Box::new(BundleConnection::new(
+            HttpConnectionHoldingReader {
+                reader: DecompressBundleReader::new(Cursor::new(header).chain(http_resp)),
+                conn,
+            },
+        ))),
+
         _ => {
             let mut caps = Vec::<u8>::new();
             caps.extend_from_slice(&header);

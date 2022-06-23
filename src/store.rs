@@ -588,11 +588,12 @@ struct DagNode<T> {
     id: NonZeroU32,
     parent1: Option<NonZeroU32>,
     parent2: Option<NonZeroU32>,
+    has_children: bool,
     data: T,
 }
 
 #[derive(Debug)]
-struct ChangesetHeads {
+pub struct ChangesetHeads {
     // 4 billion changesets ought to be enough for anybody.
     // TODO: use refs into the changesets field as key.
     ids: BTreeMap<HgChangesetId, NonZeroU32>,
@@ -601,7 +602,7 @@ struct ChangesetHeads {
 }
 
 impl ChangesetHeads {
-    fn new() -> Self {
+    pub fn new() -> Self {
         ChangesetHeads {
             ids: BTreeMap::new(),
             dag: Vec::new(),
@@ -624,14 +625,16 @@ impl ChangesetHeads {
         })
     }
 
-    fn add(&mut self, cs: &HgChangesetId, parents: &[&HgChangesetId], branch: &BStr) {
+    pub fn add(&mut self, cs: &HgChangesetId, parents: &[&HgChangesetId], branch: &BStr) {
         assert!(parents.len() <= 2);
         let parents = parents
             .iter()
             .filter_map(|p| {
                 let id = self.ids.get(*p).copied();
                 if let Some(id) = id {
-                    let parent_branch = &self.dag[id.get() as usize - 1].data.1;
+                    let node = &mut self.dag[id.get() as usize - 1];
+                    node.has_children = true;
+                    let parent_branch = &node.data.1;
                     if parent_branch == branch {
                         self.heads.remove(&id);
                     }
@@ -645,6 +648,7 @@ impl ChangesetHeads {
             id,
             parent1: parents.get(0).copied(),
             parent2: parents.get(1).copied(),
+            has_children: false,
             data: (cs.clone(), BString::from(branch)),
         });
         self.heads.insert(id);
@@ -656,10 +660,19 @@ impl ChangesetHeads {
         }
     }
 
-    fn iter(&self) -> impl Iterator<Item = (&HgChangesetId, &BStr)> {
+    pub fn branch_heads(&self) -> impl Iterator<Item = (&HgChangesetId, &BStr)> {
         self.heads.iter().map(|id| {
             let data = &self.dag[id.get() as usize - 1].data;
             (&data.0, data.1.as_bstr())
+        })
+    }
+
+    pub fn heads(&self) -> impl Iterator<Item = &HgChangesetId> {
+        self.heads.iter().filter_map(|id| {
+            let node = &self.dag[id.get() as usize - 1];
+            // Branch heads can have children in other branches, in which case
+            // they are not heads.
+            (!node.has_children).then(|| &node.data.0)
         })
     }
 }
@@ -714,7 +727,7 @@ pub unsafe extern "C" fn changeset_heads(output: c_int) {
     let heads = CHANGESET_HEADS.lock().unwrap();
 
     let mut buf = Vec::new();
-    for (h, b) in heads.iter() {
+    for (h, b) in heads.branch_heads() {
         writeln!(buf, "{} {}", h, b).ok();
     }
     send_buffer_to(&*buf, &mut output);
@@ -737,12 +750,12 @@ pub unsafe extern "C" fn store_changesets_metadata(result: *mut object_id) {
     let mut commit = strbuf::new();
     writeln!(commit, "tree {}", GitObjectId::from(tid)).ok();
     let heads = CHANGESET_HEADS.lock().unwrap();
-    for (head, _) in heads.iter() {
+    for (head, _) in heads.branch_heads() {
         writeln!(commit, "parent {}", head.to_git().unwrap()).ok();
     }
     writeln!(commit, "author  <cinnabar@git> 0 +0000").ok();
     writeln!(commit, "committer  <cinnabar@git> 0 +0000").ok();
-    for (head, branch) in heads.iter() {
+    for (head, branch) in heads.branch_heads() {
         write!(commit, "\n{} {}", head, branch).ok();
     }
     store_git_commit(&commit, result);

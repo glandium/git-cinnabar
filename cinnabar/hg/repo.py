@@ -3,7 +3,6 @@ import re
 import ssl
 import sys
 from urllib.parse import quote_from_bytes, unquote_to_bytes
-from cinnabar.githg import Changeset
 from cinnabar.helper import (
     GitHgHelper,
     HgRepoHelper,
@@ -30,13 +29,9 @@ from cinnabar.git import (
     NULL_NODE_ID,
 )
 from cinnabar.util import (
-    HTTPReader,
     check_enabled,
-    chunkbuffer,
-    progress_iter,
 )
 from collections import (
-    defaultdict,
     deque,
 )
 from cinnabar.hg.bundle import (
@@ -48,11 +43,6 @@ from cinnabar.hg.changegroup import (
     RawRevChunk01,
     RawRevChunk02,
 )
-
-
-def cg1unpacker(fh, alg):
-    assert alg == b'UN'
-    return fh
 
 
 class unbundle20(object):
@@ -411,7 +401,7 @@ class HelperRepo(object):
         getbundle_params["common"] = [
             c.decode('ascii', 'replace') for c in common]
         getbundle_params["bundlecaps"] = bundlecaps.decode('utf-8', 'replace')
-        self._helper.get_store_bundle(heads, common, bundlecaps)
+        return self._helper.get_store_bundle(heads, common, bundlecaps)
 
     def pushkey(self, namespace, key, old, new):
         return self._helper.pushkey(namespace, key, old, new)
@@ -422,137 +412,6 @@ class HelperRepo(object):
         if isinstance(data, str) and data.startswith(b'HG20'):
             data = unbundle20(BytesIO(data[4:]))
         return data
-
-
-def unbundle_fh(fh, path):
-    header = readexactly(fh, 4)
-    magic, version = header[0:2], header[2:4]
-    if magic != b'HG':
-        raise Exception('%s: not a Mercurial bundle' % os.fsdecode(path))
-    if version == b'10':
-        alg = readexactly(fh, 2)
-        return cg1unpacker(fh, alg)
-    elif version.startswith(b'2'):
-        return unbundle20(fh)
-    else:
-        raise Exception(
-            '%s: unsupported bundle version %s'
-            % (os.fsdecode(path), version.decode('ascii')))
-
-
-# Mercurial's bundlerepo completely unwraps bundles in $TMPDIR but we can be
-# smarter than that.
-class bundlerepo(object):
-    def __init__(self, path, fh):
-        self._url = path
-        self._bundle = unbundle_fh(fh, path)
-        self._file = os.path.basename(path)
-
-    def url(self):
-        return self._url
-
-    def init(self, store):
-        self._store = store
-
-    def _ensure_ready(self):
-        assert hasattr(self, '_store')
-        if self._store is None:
-            return
-        store = self._store
-        self._store = None
-
-        raw_unbundler = unbundler(self._bundle)
-        self._dag = gitdag()
-        branches = set()
-
-        chunks = []
-
-        def iter_and_store(iterator):
-            for item in iterator:
-                chunks.append(item)
-                yield item
-
-        changeset_chunks = ChunksCollection(progress_iter(
-            'Analyzing {} changesets from ' + os.fsdecode(self._file),
-            iter_and_store(next(raw_unbundler, None))))
-
-        for chunk in changeset_chunks.iter_initialized(lambda x: x,
-                                                       store.changeset,
-                                                       Changeset.from_chunk):
-            extra = chunk.extra or {}
-            branch = extra.get(b'branch', b'default')
-            branches.add(branch)
-            self._dag.add(chunk.node,
-                          tuple(p for p in (chunk.parent1, chunk.parent2)
-                                if p != NULL_NODE_ID), branch)
-        self._heads = tuple(reversed(
-            [unhexlify(h) for h in self._dag.all_heads(with_tags=False)]))
-        self._branchmap = defaultdict(list)
-        for tag, node in self._dag.all_heads():
-            self._branchmap[tag].append(unhexlify(node))
-
-        def repo_unbundler():
-            yield iter(chunks)
-            yield next(raw_unbundler, None)
-            yield next(raw_unbundler, None)
-            if next(raw_unbundler, None) is not None:
-                assert False
-
-        self._unbundler = repo_unbundler()
-
-    def heads(self):
-        self._ensure_ready()
-        return self._heads
-
-    def branchmap(self):
-        self._ensure_ready()
-        return self._branchmap
-
-    def capable(self, capability):
-        return False
-
-    def listkeys(self, namespace):
-        return {}
-
-    def known(self, heads):
-        self._ensure_ready()
-        return [h in self._dag for h in heads]
-
-
-def unbundler(bundle):
-    if isinstance(bundle, unbundle20):
-        parts = iter(bundle.iterparts())
-        for part in parts:
-            if part.type != b'changegroup':
-                logging.getLogger('bundle2').warning(
-                    'ignoring bundle2 part: %s', part.type)
-                continue
-            logging.getLogger('bundle2').debug('part: %s', part.type)
-            logging.getLogger('bundle2').debug('params: %r', part.params)
-            version = part.params.get(b'version', b'01')
-            if version == b'01':
-                chunk_type = RawRevChunk01
-            elif version == b'02':
-                chunk_type = RawRevChunk02
-            else:
-                raise Exception('Unknown changegroup version %s'
-                                % version.decode('ascii'))
-            cg = part
-            break
-        else:
-            raise Exception('No changegroups in the bundle')
-    else:
-        chunk_type = RawRevChunk01
-        cg = bundle
-
-    yield chunks_in_changegroup(chunk_type, cg, 'changeset')
-    yield chunks_in_changegroup(chunk_type, cg, 'manifest')
-    yield iterate_files(chunk_type, cg)
-
-    if isinstance(bundle, unbundle20):
-        for part in parts:
-            logging.getLogger('bundle2').warning(
-                'ignoring bundle2 part: %s', part.type)
 
 
 def get_clonebundle_url(repo):
@@ -609,7 +468,7 @@ def get_clonebundle_url(repo):
         return url
 
 
-def get_clonebundle(repo):
+def get_store_clonebundle(repo):
     url = Git.config('cinnabar.clonebundle', remote=repo.remote)
     limit_schemes = False
     if not url:
@@ -626,16 +485,14 @@ def get_clonebundle(repo):
         return None
 
     sys.stderr.write('Getting clone bundle from %s\n' % os.fsdecode(url))
-    return get_bundle(url)
+    return get_store_bundle(url)
 
 
-def get_bundle(url):
-    reader = BundleHelper.connect(url)
-    if not reader:
-        BundleHelper.close()
-    if not reader:
-        reader = HTTPReader(url)
-    return unbundle_fh(reader, url)
+def get_store_bundle(url):
+    BundleHelper.connect(url)
+    result = HelperRepo(BundleHelper, url).get_store_bundle(b'bundle', [], [])
+    BundleHelper.close()
+    return result
 
 
 # TODO: Get the changegroup stream directly and send it, instead of
@@ -677,25 +534,6 @@ def store_changegroup(changegroup):
 
         if next(changegroup, None) is not None:
             assert False
-
-
-class BundleApplier(object):
-    def __init__(self, bundle):
-        self._bundle = store_changegroup(bundle)
-
-    def __call__(self, store):
-        for rev_chunk in next(self._bundle, None):
-            pass
-
-        for rev_chunk in next(self._bundle, None):
-            pass
-
-        for rev_chunk in next(self._bundle, None):
-            pass
-
-        if next(self._bundle, None) is not None:
-            assert False
-        del self._bundle
 
 
 SHA1_RE = re.compile(b'[0-9a-fA-F]{1,40}$')
@@ -788,72 +626,56 @@ def do_cinnabarclone(repo, manifest, store, limit_schemes=True):
 
 
 def getbundle(repo, store, heads, branch_names):
-    if isinstance(repo, bundlerepo):
-        bundle = repo._unbundler
-        # Manual move semantics
-        apply_bundle = BundleApplier(bundle)
-        del bundle
-        apply_bundle(store)
-    else:
+    common = findcommon(repo, store, store.heads(branch_names))
+    logging.info('common: %s', common)
+    got_partial = False
+    if not common:
+        if not store._has_metadata:
+            manifest = Git.config('cinnabar.clone', remote=repo.remote)
+            limit_schemes = False
+            if manifest is None and repo.capable(b'cinnabarclone'):
+                # If no cinnabar.clone config was given, but a
+                # cinnabar.clonebundle config was, act as if an empty
+                # cinnabar.clone config had been given, and proceed with
+                # the mercurial clonebundle.
+                if not Git.config('cinnabar.clonebundle',
+                                  remote=repo.remote):
+                    manifest = repo._call(b'cinnabarclone')
+                    limit_schemes = True
+            if manifest:
+                got_partial = do_cinnabarclone(repo, manifest, store,
+                                               limit_schemes)
+                if not got_partial:
+                    if check_enabled('cinnabarclone'):
+                        raise Exception('cinnabarclone failed.')
+                    logging.warn('Falling back to normal clone.')
+        if not got_partial and repo.capable(b'clonebundles'):
+            got_partial = bool(get_store_clonebundle(repo))
+            if not got_partial and check_enabled('clonebundles'):
+                raise Exception('clonebundles failed.')
+    if got_partial:
+        # Eliminate the heads that we got from the clonebundle or
+        # cinnabarclone.
+        heads = [h for h in heads if not store.changeset_ref(h)]
+        if not heads:
+            return
         common = findcommon(repo, store, store.heads(branch_names))
         logging.info('common: %s', common)
-        bundle = None
-        got_partial = False
-        if not common:
-            if not store._has_metadata:
-                manifest = Git.config('cinnabar.clone', remote=repo.remote)
-                limit_schemes = False
-                if manifest is None and repo.capable(b'cinnabarclone'):
-                    # If no cinnabar.clone config was given, but a
-                    # cinnabar.clonebundle config was, act as if an empty
-                    # cinnabar.clone config had been given, and proceed with
-                    # the mercurial clonebundle.
-                    if not Git.config('cinnabar.clonebundle',
-                                      remote=repo.remote):
-                        manifest = repo._call(b'cinnabarclone')
-                        limit_schemes = True
-                if manifest:
-                    got_partial = do_cinnabarclone(repo, manifest, store,
-                                                   limit_schemes)
-                    if not got_partial:
-                        if check_enabled('cinnabarclone'):
-                            raise Exception('cinnabarclone failed.')
-                        logging.warn('Falling back to normal clone.')
-            if not got_partial and repo.capable(b'clonebundles'):
-                bundle = get_clonebundle(repo)
-                got_partial = bool(bundle)
-                if not got_partial and check_enabled('clonebundles'):
-                    raise Exception('clonebundles failed.')
-        if bundle:
-            bundle = unbundler(bundle)
-            # Manual move semantics
-            apply_bundle = BundleApplier(bundle)
-            del bundle
-            apply_bundle(store)
-            BundleHelper.close()
-        if got_partial:
-            # Eliminate the heads that we got from the clonebundle or
-            # cinnabarclone.
-            heads = [h for h in heads if not store.changeset_ref(h)]
-            if not heads:
-                return
-            common = findcommon(repo, store, store.heads(branch_names))
-            logging.info('common: %s', common)
 
-        kwargs = {}
-        if repo.capable(b'bundle2'):
-            bundle2caps = {
-                b'HG20': (),
-                b'changegroup': (b'01', b'02'),
-            }
-            kwargs['bundlecaps'] = set((
-                b'HG20',
-                b'bundle2=%s' % quote_from_bytes(
-                    encodecaps(bundle2caps)).encode('ascii')))
+    kwargs = {}
+    if repo.capable(b'bundle2'):
+        bundle2caps = {
+            b'HG20': (),
+            b'changegroup': (b'01', b'02'),
+        }
+        kwargs['bundlecaps'] = set((
+            b'HG20',
+            b'bundle2=%s' % quote_from_bytes(
+                encodecaps(bundle2caps)).encode('ascii')))
 
-        repo.get_store_bundle(
-            b'bundle', heads=[unhexlify(h) for h in heads],
-            common=[unhexlify(h) for h in common], **kwargs)
+    repo.get_store_bundle(
+        b'bundle', heads=[unhexlify(h) for h in heads],
+        common=[unhexlify(h) for h in common], **kwargs)
 
 
 def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
@@ -927,10 +749,6 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
         if b2caps:
             b2caps[b'replycaps'] = encodecaps({b'error': [b'abort']})
         cg = create_bundle(store, push_commits, b2caps)
-        if not isinstance(repo, HelperRepo):
-            cg = chunkbuffer(cg)
-            if not b2caps:
-                cg = cg1unpacker(cg, b'UN')
         reply = repo.unbundle(cg, repo_heads, b'')
         if isinstance(reply, unbundle20):
             parts = iter(reply.iterparts())
@@ -1014,7 +832,5 @@ def get_repo(remote):
 
 
 def _get_repo(remote):
-    stream = HgRepoHelper.connect(remote.url)
-    if stream:
-        return bundlerepo(remote.url, stream)
+    HgRepoHelper.connect(remote.url)
     return HelperRepo(HgRepoHelper, remote.url)

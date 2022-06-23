@@ -124,10 +124,6 @@ pub trait HgWireConnection: HgConnectionBase {
 }
 
 pub trait HgConnection: HgConnectionBase {
-    fn wire(&mut self) -> Option<&mut dyn HgWireConnection> {
-        None
-    }
-
     fn known(&mut self, _nodes: &[HgChangesetId]) -> Box<[bool]> {
         unimplemented!();
     }
@@ -185,10 +181,6 @@ impl HgConnectionBase for Box<dyn HgWireConnection> {
 }
 
 impl HgConnection for Box<dyn HgWireConnection> {
-    fn wire(&mut self) -> Option<&mut dyn HgWireConnection> {
-        Some(&mut **self)
-    }
-
     fn known(&mut self, nodes: &[HgChangesetId]) -> Box<[bool]> {
         let nodes_str = nodes.iter().join(" ");
         self.simple_command(
@@ -520,16 +512,9 @@ pub fn get_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnection>> 
     }
 }
 
-fn hg_connect(url: &str, flags: c_int, out: &mut impl Write) -> Option<Box<dyn HgConnection>> {
+fn hg_connect(url: &str, flags: c_int) -> Option<Box<dyn HgConnection>> {
     let url = Url::parse(url).unwrap();
-    let mut conn = get_connection(&url, flags)?;
-
-    if conn.wire().is_none() {
-        // For now the wire helper just sends the bundle to the given output writer.
-        out.write_all(b"bundle\n").unwrap();
-        copy_bundle(&mut conn.getbundle(&[], &[], None).unwrap(), out).unwrap();
-        return Some(conn);
-    }
+    let conn = get_connection(&url, flags)?;
 
     const REQUIRED_CAPS: [&str; 2] = ["getbundle", "branchmap"];
 
@@ -558,13 +543,9 @@ pub fn connect_main_with(
         if command == "connect" {
             let url = args.next().unwrap();
             assert!(args.next().is_none());
-            match hg_connect(url, 0, out) {
+            match hg_connect(url, 0) {
                 // We allow multiple connect commands.
-                Some(mut conn) => {
-                    // Bundle connections have already been handled in hg_connect.
-                    if conn.wire().is_none() {
-                        continue;
-                    }
+                Some(conn) => {
                     connections.insert(count, conn);
                     writeln!(out, "ok {count}").unwrap();
                     count += 1;

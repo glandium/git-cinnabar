@@ -343,6 +343,7 @@ dependencies = [
  "sha-1",
  "shared_child",
  "target",
+ "tee",
  "tempfile",
  "typenum",
  "url",
@@ -705,6 +706,12 @@ name = "target"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba852e71502340e2eaf2fa51f9b3ec6aa25750da1aa65771491c69d67789b05c"
+
+[[package]]
+name = "tee"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37c12559dba7383625faaff75be24becf35bfc885044375bcab931111799a3da"
 
 [[package]]
 name = "tempfile"

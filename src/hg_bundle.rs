@@ -2,18 +2,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::{self, copy, Chain, Cursor, ErrorKind, Read, Write};
-use std::mem::MaybeUninit;
+use std::mem::{self, MaybeUninit};
 use std::os::raw::c_int;
 use std::ptr::NonNull;
+use std::str::FromStr;
 
+use bstr::ByteSlice;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use bzip2::read::BzDecoder;
 use flate2::read::ZlibDecoder;
+use itertools::Itertools;
 use replace_with::replace_with_or_abort;
+use tee::TeeReader;
 use zstd::stream::read::Decoder as ZstdDecoder;
 
+use crate::hg_connect::{HgConnection, HgConnectionBase};
+use crate::progress::Progress;
+use crate::store::{ChangesetHeads, HgChangesetId, RawHgChangeset};
 use crate::{
     libcinnabar::hg_object_id,
     libgit::strbuf,
@@ -604,5 +611,159 @@ impl<'a, R: Read> Read for BundlePart<'a, R> {
                 Ok(total_read)
             }
         }
+    }
+}
+
+pub struct BundleConnection<R: Read> {
+    reader: R,
+    buf: Vec<u8>,
+    changesets: Option<ChangesetHeads>,
+}
+
+impl<R: Read> BundleConnection<R> {
+    pub fn new(reader: R) -> Self {
+        BundleConnection {
+            reader,
+            buf: Vec::new(),
+            changesets: None,
+        }
+    }
+
+    fn init_changesets(&mut self) {
+        if self.changesets.is_some() {
+            return;
+        }
+        let mut changesets = ChangesetHeads::new();
+        let mut raw_changesets = BTreeMap::new();
+        let tee = TeeReader::new(&mut self.reader, &mut self.buf);
+
+        let mut bundle = BundleReader::new(tee).unwrap();
+        while let Some(part) = bundle.next_part().unwrap() {
+            if &*part.part_type == "changegroup" {
+                let version = part
+                    .params
+                    .get("version")
+                    .map_or(1, |v| u8::from_str(v).unwrap());
+                let empty_cs = RawHgChangeset(Box::new([]));
+                // TODO: share more code with the equivalent loop in store.rs.
+                for chunk in RevChunkIter::new(version, part)
+                    .progress(|n| format!("Analyzing {n} changesets"))
+                {
+                    let node = unsafe {
+                        HgChangesetId::from_unchecked(HgObjectId::from(chunk.node().clone()))
+                    };
+                    let parent1 = unsafe {
+                        HgChangesetId::from_unchecked(HgObjectId::from(chunk.parent1().clone()))
+                    };
+                    let parent2 = unsafe {
+                        HgChangesetId::from_unchecked(HgObjectId::from(chunk.parent2().clone()))
+                    };
+                    let delta_node = unsafe {
+                        HgChangesetId::from_unchecked(HgObjectId::from(chunk.delta_node().clone()))
+                    };
+                    let parents = [parent1, parent2];
+                    let parents = parents
+                        .iter()
+                        .filter(|&p| *p != HgChangesetId::null())
+                        .collect::<Vec<_>>();
+
+                    let reference_cs = if delta_node == HgChangesetId::null() {
+                        &empty_cs
+                    } else {
+                        raw_changesets.get(&delta_node).unwrap()
+                    };
+                    let mut last_end = 0;
+                    let mut raw_changeset = Vec::new();
+                    for diff in chunk.iter_diff() {
+                        if diff.start > reference_cs.len() || diff.start < last_end {
+                            die!("Malformed changeset chunk for {node}");
+                        }
+                        raw_changeset.extend_from_slice(&reference_cs[last_end..diff.start]);
+                        raw_changeset.extend_from_slice(&diff.data);
+                        last_end = diff.end;
+                    }
+                    if reference_cs.len() < last_end {
+                        die!("Malformed changeset chunk for {node}");
+                    }
+                    raw_changeset.extend_from_slice(&reference_cs[last_end..]);
+                    let raw_changeset = RawHgChangeset(raw_changeset.into());
+                    let changeset = raw_changeset.parse().unwrap();
+                    let branch = changeset
+                        .extra()
+                        .and_then(|e| e.get(b"branch"))
+                        .unwrap_or(b"default")
+                        .as_bstr();
+
+                    changesets.add(&node, &parents, branch);
+                    raw_changesets.insert(node, raw_changeset);
+                }
+                break;
+            }
+        }
+        self.changesets = Some(changesets);
+    }
+}
+
+impl<R: Read> HgConnectionBase for BundleConnection<R> {
+    fn get_capability(&self, name: &[u8]) -> Option<&bstr::BStr> {
+        match name {
+            b"getbundle" | b"branchmap" => Some(b"".as_bstr()),
+            _ => None,
+        }
+    }
+}
+
+impl<R: Read> HgConnection for BundleConnection<R> {
+    fn known(&mut self, _nodes: &[HgChangesetId]) -> Box<[bool]> {
+        todo!()
+    }
+
+    fn branchmap(&mut self) -> ImmutBString {
+        self.init_changesets();
+        let mut branchmap = Vec::new();
+        if let Some(changesets) = &self.changesets {
+            for (branch, group) in &changesets
+                .branch_heads()
+                .enumerate()
+                .sorted_by_key(|(n, (_, branch))| (*branch, *n))
+                .group_by(|(_, (_, branch))| *branch)
+            {
+                branchmap.extend_from_slice(branch);
+                writeln!(
+                    &mut branchmap,
+                    " {}",
+                    group.map(|(_, (cs, _))| cs).format(" ")
+                )
+                .unwrap();
+            }
+        }
+        branchmap.into_boxed_slice()
+    }
+
+    fn heads(&mut self) -> ImmutBString {
+        self.init_changesets();
+        let mut heads = Vec::new();
+        if let Some(changesets) = &self.changesets {
+            writeln!(&mut heads, "{}", changesets.heads().format(" ")).unwrap();
+        }
+        heads.into_boxed_slice()
+    }
+
+    fn listkeys(&mut self, _namespace: &str) -> ImmutBString {
+        // TODO: For HG20 bundles, we could actually read the relevant part(s).
+        Box::new([])
+    }
+
+    fn getbundle<'a>(
+        &'a mut self,
+        _heads: &[crate::store::HgChangesetId],
+        common: &[crate::store::HgChangesetId],
+        _bundle2caps: Option<&str>,
+    ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
+        assert!(common.is_empty());
+
+        Ok(Box::new(
+            Cursor::new(mem::take(&mut self.buf)).chain(&mut self.reader),
+        ))
     }
 }

@@ -389,8 +389,6 @@ class HgRepoHelper(BaseHelper):
     def connect(self, url):
         with self.query(b'connect', url) as stdout:
             resp = stdout.readline().rstrip()
-            if resp == b'bundle':
-                return stdout
             if resp[:3] != b'ok ':
                 raise Exception(resp.decode('ascii'))
             self.connected = resp[3:]
@@ -461,7 +459,3 @@ class HgRepoHelper(BaseHelper):
 class BundleHelper(HgRepoHelper):
     _helper = False
     connected = False
-
-    @classmethod
-    def close(self, on_atexit=False):
-        pass

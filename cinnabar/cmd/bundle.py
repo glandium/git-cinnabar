@@ -12,12 +12,10 @@ from cinnabar.hg.bundle import (
     PushStore,
 )
 from cinnabar.hg.repo import (
-    BundleApplier,
-    get_bundle,
-    get_clonebundle,
+    get_store_bundle,
+    get_store_clonebundle,
     get_repo,
     Remote,
-    unbundler,
 )
 
 
@@ -64,14 +62,6 @@ def unbundle(args):
     if remote.parsed_url.scheme not in (b'file', b'http', b'https'):
         logging.error('%s urls are not supported.' % remote.parsed_url.scheme)
         return 1
-    if args.clonebundle:
-        repo = get_repo(remote)
-        if not repo.capable(b'clonebundles'):
-            logging.error('Repository does not support clonebundles')
-            return 1
-        bundle = get_clonebundle(repo)
-    else:
-        bundle = get_bundle(remote.url)
 
     store = GitHgStore()
     GRAFT = {
@@ -86,8 +76,14 @@ def unbundle(args):
         return 1
     if graft:
         store.prepare_graft()
-    bundle = unbundler(bundle)
-    apply_bundle = BundleApplier(bundle)
-    del bundle
-    apply_bundle(store)
+
+    if args.clonebundle:
+        repo = get_repo(remote)
+        if not repo.capable(b'clonebundles'):
+            logging.error('Repository does not support clonebundles')
+            return 1
+        get_store_clonebundle(repo)
+    else:
+        get_store_bundle(remote.url)
+
     store.close()

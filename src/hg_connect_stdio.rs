@@ -7,7 +7,6 @@ use std::fs::File;
 use std::io::{copy, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::c_int;
-use std::path::PathBuf;
 use std::ptr;
 use std::str::FromStr;
 use std::thread::{spawn, JoinHandle};
@@ -18,14 +17,13 @@ use percent_encoding::percent_decode_str;
 use url::Url;
 
 use crate::args;
-use crate::hg_bundle::{copy_bundle, DecompressBundleReader};
+use crate::hg_bundle::{copy_bundle, BundleConnection, DecompressBundleReader};
 use crate::hg_connect::{
     HgArgs, HgCapabilities, HgConnection, HgConnectionBase, HgWireConnection, OneHgArg,
 };
 use crate::libc::FdFile;
 use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
 use crate::libgit::child_process;
-use crate::store::HgChangesetId;
 use crate::util::{BufferedReader, ImmutBString, OsStrExt, PrefixWriter, ReadExt, SeekExt};
 
 pub struct HgStdioConnection {
@@ -165,29 +163,6 @@ impl Drop for HgStdioConnection {
     }
 }
 
-pub struct HgStdioBundle {
-    path: PathBuf,
-}
-
-// Because we don't support getbundle fully, we don't override get_capability
-// to say we handle it.
-impl HgConnectionBase for HgStdioBundle {}
-impl HgConnection for HgStdioBundle {
-    fn getbundle<'a>(
-        &'a mut self,
-        heads: &[HgChangesetId],
-        common: &[HgChangesetId],
-        bundle2caps: Option<&str>,
-    ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
-        assert!(heads.is_empty());
-        assert!(common.is_empty());
-        assert!(bundle2caps.is_none());
-
-        let f = DecompressBundleReader::new(File::open(&self.path).unwrap());
-        Ok(Box::new(f))
-    }
-}
-
 extern "C" {
     fn proc_in(proc: *mut child_process) -> c_int;
 
@@ -217,7 +192,9 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
     } else {
         let path = url.to_file_path().unwrap();
         if path.metadata().map(|m| m.is_file()).unwrap_or(false) {
-            return Some(Box::new(HgStdioBundle { path }));
+            return Some(Box::new(BundleConnection::new(
+                DecompressBundleReader::new(File::open(path).unwrap()),
+            )));
         }
         path.as_os_str().as_bytes().to_owned()
     };

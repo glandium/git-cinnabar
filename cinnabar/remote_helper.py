@@ -9,7 +9,6 @@ from cinnabar.githg import (
 )
 from cinnabar.helper import GitHgHelper
 from cinnabar.hg.repo import (
-    bundlerepo,
     getbundle,
     get_repo,
     push,
@@ -152,8 +151,6 @@ class GitRemoteHelper(BaseRemoteHelper):
         super(GitRemoteHelper, self).__init__(stdin, stdout)
         self._store = store
         self._repo = get_repo(remote)
-        if isinstance(self._repo, bundlerepo):
-            self._repo.init(self._store)
         self._remote = remote
 
         self._head_template = None
