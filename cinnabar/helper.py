@@ -379,8 +379,9 @@ class HgRepoHelper(BaseHelper):
 
     @classmethod
     def close(self, on_atexit=False):
-        if self._helper and self._helper is not self and self.connected:
-            self._helper.stdin.write(b'close')
+        if self._helper and self._helper is not self and \
+                self.connected is not False:
+            self._helper.stdin.write(b'close ' + self.connected)
             self.connected = False
 
     @classmethod
@@ -389,13 +390,13 @@ class HgRepoHelper(BaseHelper):
             resp = stdout.readline().rstrip()
             if resp == b'bundle':
                 return stdout
-            if resp != b'ok':
+            if resp[:3] != b'ok ':
                 raise Exception(resp.decode('ascii'))
-            self.connected = True
+            self.connected = resp[3:]
 
     @classmethod
     def state(self):
-        with self.query(b'state') as stdout:
+        with self.query(b'state', self.connected) as stdout:
             return {
                 'branchmap': self._read_data(stdout),
                 'heads': self._read_data(stdout),
@@ -404,28 +405,28 @@ class HgRepoHelper(BaseHelper):
 
     @classmethod
     def capable(self, name):
-        with self.query(b'capable', name) as stdout:
+        with self.query(b'capable', self.connected, name) as stdout:
             return self._read_data(stdout)
 
     @classmethod
     def known(self, nodes):
-        with self.query(b'known', *nodes) as stdout:
+        with self.query(b'known', self.connected, *nodes) as stdout:
             return self._read_data(stdout)
 
     @classmethod
     def listkeys(self, namespace):
-        with self.query(b'listkeys', namespace) as stdout:
+        with self.query(b'listkeys', self.connected, namespace) as stdout:
             return self._read_data(stdout)
 
     @classmethod
     def getbundle(self, heads, common, bundle2caps=False):
-        with self.query(b'getbundle', b','.join(heads), b','.join(common),
-                        bundle2caps) as stdout:
+        with self.query(b'getbundle', self.connected, b','.join(heads),
+                        b','.join(common), bundle2caps) as stdout:
             return stdout
 
     @classmethod
     def unbundle(self, input_iterator, heads):
-        with self.query(b'unbundle', *heads) as stdout:
+        with self.query(b'unbundle', self.connected, *heads) as stdout:
             for data in input_iterator:
                 self._helper.stdin.write(data)
             self._helper.stdin.flush()
@@ -437,7 +438,8 @@ class HgRepoHelper(BaseHelper):
 
     @classmethod
     def pushkey(self, namespace, key, old, new):
-        with self.query(b'pushkey', namespace, key, old, new) as stdout:
+        with self.query(b'pushkey', self.connected, namespace, key, old,
+                        new) as stdout:
             ret = self._read_data(stdout).rstrip()
             try:
                 return bool(int(ret))
@@ -446,18 +448,18 @@ class HgRepoHelper(BaseHelper):
 
     @classmethod
     def lookup(self, key):
-        with self.query(b'lookup', key) as stdout:
+        with self.query(b'lookup', self.connected, key) as stdout:
             success, data = self._read_data(stdout).rstrip().split(b' ', 1)
             return data if int(success) else None
 
     @classmethod
     def clonebundles(self):
-        with self.query(b'clonebundles') as stdout:
+        with self.query(b'clonebundles', self.connected) as stdout:
             return self._read_data(stdout)
 
     @classmethod
     def cinnabarclone(self):
-        with self.query(b'cinnabarclone') as stdout:
+        with self.query(b'cinnabarclone', self.connected) as stdout:
             return self._read_data(stdout)
 
 

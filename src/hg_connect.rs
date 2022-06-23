@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::collections::BTreeMap;
 use std::ffi::c_void;
 use std::fs::File;
 use std::io::{stderr, BufRead, Read, Write};
@@ -527,7 +528,8 @@ pub fn connect_main_with(
     input: &mut impl BufRead,
     out: &mut impl Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut connection = None;
+    let mut connections = BTreeMap::new();
+    let mut count = 0u32;
     loop {
         let mut line = String::new();
         input.read_line(&mut line)?;
@@ -541,16 +543,15 @@ pub fn connect_main_with(
             let url = args.next().unwrap();
             assert!(args.next().is_none());
             match hg_connect(url, 0, out) {
-                // We allow multiple connect commands, but only one of them should be
-                // wired.
+                // We allow multiple connect commands.
                 Some(mut conn) => {
                     // Bundle connections have already been handled in hg_connect.
                     if conn.wire().is_none() {
                         continue;
                     }
-                    assert!(connection.is_none());
-                    connection = Some(conn);
-                    out.write_all(b"ok\n").unwrap();
+                    connections.insert(count, conn);
+                    writeln!(out, "ok {count}").unwrap();
+                    count += 1;
                 }
                 _ => {
                     out.write_all(b"failed\n").unwrap();
@@ -559,11 +560,15 @@ pub fn connect_main_with(
             out.flush().unwrap();
             continue;
         }
-        if connection.is_none() {
+        if connections.is_empty() {
             return Err(format!("Unknown command: {}", command).into());
         }
+        let (conn_id, connection) = u32::from_str(args.next().ok_or("Missing connection id")?)
+            .ok()
+            .and_then(|c| connections.get_mut(&c).map(|conn| (c, conn)))
+            .ok_or("Invalid connection id")?;
         let args = args.collect_vec();
-        let conn = &mut **connection.as_mut().unwrap();
+        let conn = &mut **connection;
         match command {
             "known" => do_known(conn, &*args, out),
             "listkeys" => do_listkeys(conn, &*args, out),
@@ -576,7 +581,7 @@ pub fn connect_main_with(
             "clonebundles" => do_clonebundles(conn, &*args, out),
             "cinnabarclone" => do_cinnabarclone(conn, &*args, out),
             "close" => {
-                connection = None;
+                connections.remove(&conn_id);
                 continue;
             }
             _ => return Err(format!("Unknown command: {}", command).into()),
