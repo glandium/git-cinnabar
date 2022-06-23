@@ -38,7 +38,6 @@ from cinnabar.util import (
 from collections import (
     defaultdict,
     deque,
-    OrderedDict,
 )
 from cinnabar.hg.bundle import (
     create_bundle,
@@ -703,9 +702,6 @@ def store_changegroup(changegroup):
             assert False
 
 
-stored_files = OrderedDict()
-
-
 class BundleApplier(object):
     def __init__(self, bundle):
         self._bundle = store_changegroup(bundle)
@@ -717,30 +713,7 @@ class BundleApplier(object):
         for rev_chunk in next(self._bundle, None):
             pass
 
-        def enumerate_files(iterator):
-            null_parents = (NULL_NODE_ID, NULL_NODE_ID)
-            for (name, chunk) in iterator:
-                parents = (chunk.parent1, chunk.parent2)
-                # Try to detect issue #207 as early as possible.
-                # Keep track of file roots of files with metadata and at least
-                # one head that can be traced back to each of those roots.
-                # Or, in the case of updates, all heads.
-                if store._has_metadata or chunk.parent1 in stored_files or \
-                        chunk.parent2 in stored_files:
-                    stored_files[chunk.node] = parents
-                    for p in parents:
-                        if p == NULL_NODE_ID:
-                            continue
-                        if stored_files.get(p, null_parents) != null_parents:
-                            del stored_files[p]
-                elif parents == null_parents:
-                    diff = next(iter(chunk.patch), None)
-                    if diff and diff.start == 0 and \
-                            diff.text_data[:2] == b'\1\n':
-                        stored_files[chunk.node] = parents
-                yield chunk
-
-        for rev_chunk in enumerate_files(next(self._bundle, None)):
+        for rev_chunk in next(self._bundle, None):
             pass
 
         if next(self._bundle, None) is not None:
