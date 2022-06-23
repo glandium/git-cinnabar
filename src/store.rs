@@ -9,7 +9,7 @@ use std::env;
 use std::io::{BufRead, Read, Write};
 use std::iter::{repeat, IntoIterator};
 use std::mem;
-use std::os::raw::{c_char, c_int, c_uint, c_void};
+use std::os::raw::{c_char, c_int, c_void};
 use std::sync::Mutex;
 
 use bstr::{BStr, BString, ByteSlice};
@@ -26,8 +26,8 @@ use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libc::FdFile;
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
 use crate::libgit::{
-    for_each_ref_in, get_oid_committish, lookup_replace_commit, object_id, object_type, strbuf,
-    BlobId, Commit, CommitId, RawBlob, RawCommit, RefTransaction, TreeId,
+    for_each_ref_in, get_oid_committish, lookup_replace_commit, object_id, strbuf, BlobId, Commit,
+    CommitId, RawBlob, RawCommit, RefTransaction, TreeId,
 };
 use crate::oid::{GitObjectId, HgObjectId, ObjectId};
 use crate::oid_type;
@@ -674,37 +674,21 @@ pub unsafe extern "C" fn changeset_heads(output: c_int) {
     send_buffer_to(&*buf, &mut output);
 }
 
-extern "C" {
-    fn write_object_file_flags(
-        buf: *const c_void,
-        len: usize,
-        typ: object_type,
-        oid: *mut object_id,
-        flags: c_uint,
-    ) -> c_int;
-}
-
 static BUNDLE_BLOB: Lazy<Mutex<Option<object_id>>> = Lazy::new(|| Mutex::new(None));
 
 #[no_mangle]
 pub unsafe extern "C" fn store_changesets_metadata(result: *mut object_id) {
     let result = result.as_mut().unwrap();
-    let mut tree = vec![];
+    let mut tree = strbuf::new();
     if let Some(blob) = &*BUNDLE_BLOB.lock().unwrap() {
         let blob = BlobId::from_unchecked(GitObjectId::from(blob.clone()));
         tree.extend_from_slice(b"100644 bundle\0");
         tree.extend_from_slice(blob.as_raw_bytes());
     }
     let mut tid = object_id::default();
-    write_object_file_flags(
-        tree.as_ptr() as *const c_void,
-        tree.len(),
-        object_type::OBJ_TREE,
-        &mut tid,
-        0,
-    );
+    store_git_tree(&tree, std::ptr::null(), &mut tid);
     drop(tree);
-    let mut commit = vec![];
+    let mut commit = strbuf::new();
     writeln!(commit, "tree {}", GitObjectId::from(tid)).ok();
     let heads = CHANGESET_HEADS.lock().unwrap();
     for (_, head) in heads.heads.iter().map(|(h, (_, g))| (g, h)).sorted() {
@@ -715,13 +699,7 @@ pub unsafe extern "C" fn store_changesets_metadata(result: *mut object_id) {
     for (_, head, branch) in heads.heads.iter().map(|(h, (b, g))| (g, h, b)).sorted() {
         write!(commit, "\n{} {}", head, branch).ok();
     }
-    write_object_file_flags(
-        commit.as_ptr() as *const c_void,
-        commit.len(),
-        object_type::OBJ_COMMIT,
-        result,
-        0,
-    );
+    store_git_commit(&commit, result);
 }
 
 extern "C" {
@@ -801,6 +779,7 @@ pub unsafe extern "C" fn reset_changeset_heads() {
 extern "C" {
     fn ensure_store_init();
     pub fn store_git_blob(blob_buf: *const strbuf, result: *mut object_id);
+    fn store_git_tree(tree_buf: *const strbuf, reference: *const object_id, result: *mut object_id);
     fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
     fn do_set_(what: *const c_char, hg_id: *const hg_object_id, git_id: *const object_id);
     fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
