@@ -374,7 +374,7 @@ class HelperRepo(object):
                 HgRepoHelper.capable(b'bundle2') or b'').encode('ascii')
         if capability in (b'clonebundles', b'cinnabarclone', b'unbundle'):
             return HgRepoHelper.capable(capability) is not None
-        return capability in (b'getbundle', b'lookup')
+        return capability == b'getbundle'
 
     def batch(self):
         raise NotImplementedError()
@@ -439,12 +439,6 @@ class HelperRepo(object):
         if isinstance(data, str) and data.startswith(b'HG20'):
             data = unbundle20(BytesIO(data[4:]))
         return data
-
-    def lookup(self, key):
-        data = HgRepoHelper.lookup(key)
-        if data:
-            return unhexlify(data)
-        raise Exception('Unknown revision %s' % os.fsdecode(key))
 
 
 def unbundle_fh(fh, path):

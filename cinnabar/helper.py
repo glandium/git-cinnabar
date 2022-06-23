@@ -447,12 +447,6 @@ class HgRepoHelper(BaseHelper):
                 return ret
 
     @classmethod
-    def lookup(self, key):
-        with self.query(b'lookup', self.connected, key) as stdout:
-            success, data = self._read_data(stdout).rstrip().split(b' ', 1)
-            return data if int(success) else None
-
-    @classmethod
     def clonebundles(self):
         with self.query(b'clonebundles', self.connected) as stdout:
             return self._read_data(stdout)
