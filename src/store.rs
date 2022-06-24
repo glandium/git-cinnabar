@@ -4,11 +4,12 @@
 
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::io::{BufRead, Read, Write};
 use std::iter::{repeat, IntoIterator};
 use std::mem;
+use std::num::NonZeroU32;
 use std::os::raw::{c_char, c_int, c_void};
 use std::sync::Mutex;
 
@@ -583,34 +584,51 @@ impl RawHgFile {
 }
 
 #[derive(Debug)]
+struct DagNode<T> {
+    id: NonZeroU32,
+    parent1: Option<NonZeroU32>,
+    parent2: Option<NonZeroU32>,
+    data: T,
+}
+
+#[derive(Debug)]
 struct ChangesetHeads {
-    generation: usize,
-    heads: BTreeMap<HgChangesetId, (BString, usize)>,
+    // 4 billion changesets ought to be enough for anybody.
+    // TODO: use refs into the changesets field as key.
+    ids: BTreeMap<HgChangesetId, NonZeroU32>,
+    dag: Vec<DagNode<(HgChangesetId, BString)>>,
+    heads: BTreeSet<NonZeroU32>,
 }
 
 impl ChangesetHeads {
     fn new() -> Self {
         ChangesetHeads {
-            generation: 0,
-            heads: BTreeMap::new(),
+            ids: BTreeMap::new(),
+            dag: Vec::new(),
+            heads: BTreeSet::new(),
         }
     }
 
     fn from_metadata() -> Self {
         get_oid_committish(b"refs/cinnabar/metadata^1").map_or_else(ChangesetHeads::new, |cid| {
+            let mut result = ChangesetHeads::new();
+
             let commit = RawCommit::read(&cid).unwrap();
             let commit = commit.parse().unwrap();
-            let heads = ByteSlice::lines(commit.body())
-                .enumerate()
-                .map(|(n, l)| {
-                    let [h, b] = l.splitn_exact(b' ').unwrap();
-                    (HgChangesetId::from_bytes(h).unwrap(), (BString::from(b), n))
-                })
-                .collect::<BTreeMap<_, _>>();
-            ChangesetHeads {
-                generation: heads.len(),
-                heads,
+            for (n, l) in ByteSlice::lines(commit.body()).enumerate() {
+                let [h, b] = l.splitn_exact(b' ').unwrap();
+                let cs = HgChangesetId::from_bytes(h).unwrap();
+                let id = NonZeroU32::new(n as u32 + 1).unwrap();
+                assert!(result.ids.insert(cs.clone(), id).is_none());
+                result.dag.push(DagNode {
+                    id,
+                    parent1: None,
+                    parent2: None,
+                    data: (cs, BString::from(b)),
+                });
+                result.heads.insert(id);
             }
+            result
         })
     }
 
@@ -625,40 +643,51 @@ impl ChangesetHeads {
         let cid = cs.to_git().unwrap();
         let commit = RawCommit::read(&cid).unwrap();
         let commit = commit.parse().unwrap();
-        for parent in commit.parents() {
-            let parent = lookup_replace_commit(parent);
-            let parent_cs_meta = RawGitChangesetMetadata::read(&unsafe {
-                GitChangesetId::from_unchecked(parent.into_owned())
-            })
-            .unwrap();
-            let parent_meta = parent_cs_meta.parse().unwrap();
-            let parent_branch = parent_meta
-                .extra()
-                .and_then(|e| e.get(b"branch"))
-                .unwrap_or(b"default");
-            if parent_branch == branch {
-                if let Some((b, _)) = self.heads.get(&parent_meta.changeset_id) {
-                    assert_eq!(b.as_bstr(), parent_branch.as_bstr());
-                    self.force_remove(&parent_meta.changeset_id);
+        let parents = commit
+            .parents()
+            .iter()
+            .filter_map(|p| {
+                let parent = lookup_replace_commit(p);
+                let parent_cs_meta = RawGitChangesetMetadata::read(&unsafe {
+                    GitChangesetId::from_unchecked(parent.into_owned())
+                })
+                .unwrap();
+                let parent_meta = parent_cs_meta.parse().unwrap();
+                let parent_branch = parent_meta
+                    .extra()
+                    .and_then(|e| e.get(b"branch"))
+                    .unwrap_or(b"default");
+                let id = self.ids.get(parent_meta.changeset_id()).copied();
+                if let Some(id) = id {
+                    if parent_branch == branch {
+                        self.heads.remove(&id);
+                    }
                 }
-            }
-        }
-        let generation = self.generation;
-        self.generation += 1;
-        self.heads
-            .insert(cs.clone(), (BString::from(branch), generation));
+                id
+            })
+            .collect::<Vec<_>>();
+        let id = NonZeroU32::new(self.dag.len() as u32 + 1).unwrap();
+        assert!(self.ids.insert(cs.clone(), id).is_none());
+        self.dag.push(DagNode {
+            id,
+            parent1: parents.get(0).copied(),
+            parent2: parents.get(1).copied(),
+            data: (cs.clone(), BString::from(branch)),
+        });
+        self.heads.insert(id);
     }
 
     fn force_remove(&mut self, cs: &HgChangesetId) {
-        self.heads.remove(cs);
+        if let Some(id) = self.ids.get(cs) {
+            self.heads.remove(id);
+        }
     }
 
     fn iter(&self) -> impl Iterator<Item = (&HgChangesetId, &BStr)> {
-        self.heads
-            .iter()
-            .map(|(h, (b, g))| (g, h, b.as_bstr()))
-            .sorted()
-            .map(|(_, h, b)| (h, b))
+        self.heads.iter().map(|id| {
+            let data = &self.dag[id.get() as usize - 1].data;
+            (&data.0, data.1.as_bstr())
+        })
     }
 }
 
