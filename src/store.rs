@@ -615,50 +615,23 @@ impl ChangesetHeads {
 
             let commit = RawCommit::read(&cid).unwrap();
             let commit = commit.parse().unwrap();
-            for (n, l) in ByteSlice::lines(commit.body()).enumerate() {
+            for l in ByteSlice::lines(commit.body()) {
                 let [h, b] = l.splitn_exact(b' ').unwrap();
                 let cs = HgChangesetId::from_bytes(h).unwrap();
-                let id = NonZeroU32::new(n as u32 + 1).unwrap();
-                assert!(result.ids.insert(cs.clone(), id).is_none());
-                result.dag.push(DagNode {
-                    id,
-                    parent1: None,
-                    parent2: None,
-                    data: (cs, BString::from(b)),
-                });
-                result.heads.insert(id);
+                result.add(&cs, &[], b.as_bstr());
             }
             result
         })
     }
 
-    fn add(&mut self, cs: &HgChangesetId) {
-        let cs_meta = RawGitChangesetMetadata::read(&cs.to_git().unwrap()).unwrap();
-        let meta = cs_meta.parse().unwrap();
-        assert_eq!(meta.changeset_id, *cs);
-        let branch = meta
-            .extra()
-            .and_then(|e| e.get(b"branch"))
-            .unwrap_or(b"default");
-        let cid = cs.to_git().unwrap();
-        let commit = RawCommit::read(&cid).unwrap();
-        let commit = commit.parse().unwrap();
-        let parents = commit
-            .parents()
+    fn add(&mut self, cs: &HgChangesetId, parents: &[&HgChangesetId], branch: &BStr) {
+        assert!(parents.len() <= 2);
+        let parents = parents
             .iter()
             .filter_map(|p| {
-                let parent = lookup_replace_commit(p);
-                let parent_cs_meta = RawGitChangesetMetadata::read(&unsafe {
-                    GitChangesetId::from_unchecked(parent.into_owned())
-                })
-                .unwrap();
-                let parent_meta = parent_cs_meta.parse().unwrap();
-                let parent_branch = parent_meta
-                    .extra()
-                    .and_then(|e| e.get(b"branch"))
-                    .unwrap_or(b"default");
-                let id = self.ids.get(parent_meta.changeset_id()).copied();
+                let id = self.ids.get(*p).copied();
                 if let Some(id) = id {
+                    let parent_branch = &self.dag[id.get() as usize - 1].data.1;
                     if parent_branch == branch {
                         self.heads.remove(&id);
                     }
@@ -706,7 +679,32 @@ pub unsafe extern "C" fn add_changeset_head(cs: *const hg_object_id, oid: *const
         heads.force_remove(&cs);
     } else {
         assert_eq!(git2hg.get_note(&cs.to_git().unwrap()).unwrap(), oid);
-        heads.add(&cs);
+        let cs_meta = RawGitChangesetMetadata::read(&cs.to_git().unwrap()).unwrap();
+        let meta = cs_meta.parse().unwrap();
+        assert_eq!(meta.changeset_id, cs);
+        let branch = meta
+            .extra()
+            .and_then(|e| e.get(b"branch"))
+            .unwrap_or(b"default")
+            .as_bstr();
+        let cid = cs.to_git().unwrap();
+        let commit = RawCommit::read(&cid).unwrap();
+        let commit = commit.parse().unwrap();
+        let parents = commit
+            .parents()
+            .iter()
+            .map(|p| {
+                let parent = lookup_replace_commit(p);
+                let parent_cs_meta = RawGitChangesetMetadata::read(
+                    &GitChangesetId::from_unchecked(parent.into_owned()),
+                )
+                .unwrap();
+                let parent_meta = parent_cs_meta.parse().unwrap();
+                parent_meta.changeset_id().clone()
+            })
+            .collect::<Vec<_>>();
+        let parents = parents.iter().collect::<Vec<_>>();
+        heads.add(&cs, &parents, branch);
     }
 }
 
