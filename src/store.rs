@@ -590,32 +590,80 @@ struct ChangesetHeads {
 
 impl ChangesetHeads {
     fn new() -> Self {
-        get_oid_committish(b"refs/cinnabar/metadata^1").map_or_else(
-            || ChangesetHeads {
-                generation: 0,
-                heads: BTreeMap::new(),
-            },
-            |cid| {
-                let commit = RawCommit::read(&cid).unwrap();
-                let commit = commit.parse().unwrap();
-                let heads = ByteSlice::lines(commit.body())
-                    .enumerate()
-                    .map(|(n, l)| {
-                        let [h, b] = l.splitn_exact(b' ').unwrap();
-                        (HgChangesetId::from_bytes(h).unwrap(), (BString::from(b), n))
-                    })
-                    .collect::<BTreeMap<_, _>>();
-                ChangesetHeads {
-                    generation: heads.len(),
-                    heads,
+        ChangesetHeads {
+            generation: 0,
+            heads: BTreeMap::new(),
+        }
+    }
+
+    fn from_metadata() -> Self {
+        get_oid_committish(b"refs/cinnabar/metadata^1").map_or_else(ChangesetHeads::new, |cid| {
+            let commit = RawCommit::read(&cid).unwrap();
+            let commit = commit.parse().unwrap();
+            let heads = ByteSlice::lines(commit.body())
+                .enumerate()
+                .map(|(n, l)| {
+                    let [h, b] = l.splitn_exact(b' ').unwrap();
+                    (HgChangesetId::from_bytes(h).unwrap(), (BString::from(b), n))
+                })
+                .collect::<BTreeMap<_, _>>();
+            ChangesetHeads {
+                generation: heads.len(),
+                heads,
+            }
+        })
+    }
+
+    fn add(&mut self, cs: &HgChangesetId) {
+        let cs_meta = RawGitChangesetMetadata::read(&cs.to_git().unwrap()).unwrap();
+        let meta = cs_meta.parse().unwrap();
+        assert_eq!(meta.changeset_id, *cs);
+        let branch = meta
+            .extra()
+            .and_then(|e| e.get(b"branch"))
+            .unwrap_or(b"default");
+        let cid = cs.to_git().unwrap();
+        let commit = RawCommit::read(&cid).unwrap();
+        let commit = commit.parse().unwrap();
+        for parent in commit.parents() {
+            let parent = lookup_replace_commit(parent);
+            let parent_cs_meta = RawGitChangesetMetadata::read(&unsafe {
+                GitChangesetId::from_unchecked(parent.into_owned())
+            })
+            .unwrap();
+            let parent_meta = parent_cs_meta.parse().unwrap();
+            let parent_branch = parent_meta
+                .extra()
+                .and_then(|e| e.get(b"branch"))
+                .unwrap_or(b"default");
+            if parent_branch == branch {
+                if let Some((b, _)) = self.heads.get(&parent_meta.changeset_id) {
+                    assert_eq!(b.as_bstr(), parent_branch.as_bstr());
+                    self.force_remove(&parent_meta.changeset_id);
                 }
-            },
-        )
+            }
+        }
+        let generation = self.generation;
+        self.generation += 1;
+        self.heads
+            .insert(cs.clone(), (BString::from(branch), generation));
+    }
+
+    fn force_remove(&mut self, cs: &HgChangesetId) {
+        self.heads.remove(cs);
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&HgChangesetId, &BStr)> {
+        self.heads
+            .iter()
+            .map(|(h, (b, g))| (g, h, b.as_bstr()))
+            .sorted()
+            .map(|(_, h, b)| (h, b))
     }
 }
 
 static CHANGESET_HEADS: Lazy<Mutex<ChangesetHeads>> =
-    Lazy::new(|| Mutex::new(ChangesetHeads::new()));
+    Lazy::new(|| Mutex::new(ChangesetHeads::from_metadata()));
 
 #[no_mangle]
 pub unsafe extern "C" fn add_changeset_head(cs: *const hg_object_id, oid: *const object_id) {
@@ -626,39 +674,10 @@ pub unsafe extern "C" fn add_changeset_head(cs: *const hg_object_id, oid: *const
     let mut heads = CHANGESET_HEADS.lock().unwrap();
     let oid = GitObjectId::from(oid.as_ref().unwrap().clone());
     if oid == GitObjectId::null() {
-        heads.heads.remove(&cs);
+        heads.force_remove(&cs);
     } else {
-        let blob = BlobId::from_unchecked(oid);
-        let cs_meta = RawGitChangesetMetadata(RawBlob::read(&blob).unwrap());
-        let meta = cs_meta.parse().unwrap();
-        assert_eq!(meta.changeset_id, cs);
-        let branch = meta
-            .extra()
-            .and_then(|e| e.get(b"branch"))
-            .unwrap_or(b"default");
-        let cid = cs.to_git().unwrap();
-        let commit = RawCommit::read(&cid).unwrap();
-        let commit = commit.parse().unwrap();
-        for parent in commit.parents() {
-            let parent = lookup_replace_commit(parent);
-            let parent_cs_meta =
-                RawGitChangesetMetadata::read(&GitChangesetId::from_unchecked(parent.into_owned()))
-                    .unwrap();
-            let parent_meta = parent_cs_meta.parse().unwrap();
-            let parent_branch = parent_meta
-                .extra()
-                .and_then(|e| e.get(b"branch"))
-                .unwrap_or(b"default");
-            if parent_branch == branch {
-                if let Some((b, _)) = heads.heads.get(&parent_meta.changeset_id) {
-                    assert_eq!(b.as_bstr(), parent_branch.as_bstr());
-                    heads.heads.remove(&parent_meta.changeset_id);
-                }
-            }
-        }
-        let generation = heads.generation;
-        heads.generation += 1;
-        heads.heads.insert(cs, (BString::from(branch), generation));
+        assert_eq!(git2hg.get_note(&cs.to_git().unwrap()).unwrap(), oid);
+        heads.add(&cs);
     }
 }
 
@@ -668,7 +687,7 @@ pub unsafe extern "C" fn changeset_heads(output: c_int) {
     let heads = CHANGESET_HEADS.lock().unwrap();
 
     let mut buf = Vec::new();
-    for (_, h, b) in heads.heads.iter().map(|(h, (b, g))| (g, h, b)).sorted() {
+    for (h, b) in heads.iter() {
         writeln!(buf, "{} {}", h, b).ok();
     }
     send_buffer_to(&*buf, &mut output);
@@ -691,12 +710,12 @@ pub unsafe extern "C" fn store_changesets_metadata(result: *mut object_id) {
     let mut commit = strbuf::new();
     writeln!(commit, "tree {}", GitObjectId::from(tid)).ok();
     let heads = CHANGESET_HEADS.lock().unwrap();
-    for (_, head) in heads.heads.iter().map(|(h, (_, g))| (g, h)).sorted() {
+    for (head, _) in heads.iter() {
         writeln!(commit, "parent {}", head.to_git().unwrap()).ok();
     }
     writeln!(commit, "author  <cinnabar@git> 0 +0000").ok();
     writeln!(commit, "committer  <cinnabar@git> 0 +0000").ok();
-    for (_, head, branch) in heads.heads.iter().map(|(h, (b, g))| (g, h, b)).sorted() {
+    for (head, branch) in heads.iter() {
         write!(commit, "\n{} {}", head, branch).ok();
     }
     store_git_commit(&commit, result);
@@ -773,7 +792,7 @@ pub fn do_store_replace(args: &[&[u8]]) {
 #[no_mangle]
 pub unsafe extern "C" fn reset_changeset_heads() {
     let mut heads = CHANGESET_HEADS.lock().unwrap();
-    *heads = ChangesetHeads::new();
+    *heads = ChangesetHeads::from_metadata();
 }
 
 extern "C" {
