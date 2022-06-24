@@ -16,8 +16,9 @@ checksum = "ca77caf0ca1057c274cda103cda1363d892b7cad5f2e646afde4df0697bea100"
 
 [[package]]
 name = "array-init"
-version = "2.0.0"
-source = "git+https://github.com/Manishearth/array-init/?rev=cbe9d7e58a52bb43725dbe2ba0cca0755482b3a9#cbe9d7e58a52bb43725dbe2ba0cca0755482b3a9"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfb6d71005dc22a708c7496eee5c8dc0300ee47355de6256c3b35b12b5fef596"
 
 [[package]]
 name = "atty"
