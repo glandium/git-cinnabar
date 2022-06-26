@@ -2,7 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::io::{self, copy, Cursor, ErrorKind, Read, Write};
+use std::collections::HashMap;
+use std::io::{self, copy, Chain, Cursor, ErrorKind, Read, Write};
 use std::mem::MaybeUninit;
 use std::os::raw::c_int;
 use std::ptr::NonNull;
@@ -283,6 +284,14 @@ pub fn read_rev_chunk<R: Read>(mut r: R, out: &mut strbuf) {
     copy(&mut r.take(len.checked_sub(4).unwrap()), out).unwrap();
 }
 
+pub fn read_bundle2_chunk<R: Read>(mut r: R) -> io::Result<ImmutBString> {
+    let len = r.read_u32::<BigEndian>()?;
+    if len == 0 {
+        return Ok(vec![].into_boxed_slice());
+    }
+    r.read_exactly(len as usize)
+}
+
 fn copy_chunk<R: Read + ?Sized, W: Write + ?Sized>(
     adjust: u64,
     input: &mut R,
@@ -455,5 +464,145 @@ impl<R: Read, W: Write> Read for BundleSaver<R, W> {
         self.writer.write_u32::<BigEndian>(n.try_into().unwrap())?;
         self.writer.write_all(&buf[..n]).unwrap();
         Ok(n)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BundleVersion {
+    V1,
+    V2,
+}
+
+pub struct BundleReader<R: Read> {
+    reader: Chain<Cursor<ImmutBString>, R>,
+    version: BundleVersion,
+    remaining: Option<u32>,
+}
+
+impl<R: Read> BundleReader<R> {
+    pub fn new(mut reader: R) -> io::Result<Self> {
+        let mut header = [0; 4];
+        reader.read_exact(&mut header)?;
+        if &header == b"HG20" {
+            // Read header
+            let _header = read_bundle2_chunk(&mut reader)?;
+            return Ok(BundleReader {
+                reader: Cursor::new(vec![].into_boxed_slice()).chain(reader),
+                version: BundleVersion::V2,
+                remaining: Some(0),
+            });
+        }
+        assert_ne!(&header, b"HG10");
+        Ok(BundleReader {
+            reader: Cursor::new(header.to_vec().into_boxed_slice()).chain(reader),
+            version: BundleVersion::V1,
+            remaining: Some(0),
+        })
+    }
+
+    pub fn next_part(&mut self) -> io::Result<Option<BundlePart<impl Read>>> {
+        match self.remaining.take() {
+            None => return Ok(None),
+            Some(0) => {}
+            Some(len) => {
+                assert_eq!(self.version, BundleVersion::V2);
+                // Advance past last part if it was not read entirely.
+                copy(&mut (&mut self.reader).take(len.into()), &mut io::sink())?;
+                while copy_bundle2_chunk(&mut self.reader, &mut io::sink())? > 0 {}
+            }
+        }
+        match self.version {
+            BundleVersion::V1 => Ok(Some(BundlePart {
+                mandatory: true,
+                part_type: "changegroup".to_string().into_boxed_str(),
+                part_id: 0,
+                params: HashMap::new(),
+                reader: &mut self.reader,
+                version: self.version,
+                remaining: self.remaining.as_mut(),
+            })),
+            BundleVersion::V2 => {
+                let mut header = match read_bundle2_chunk(&mut self.reader) {
+                    Err(e) => return Err(e),
+                    Ok(header) if header.is_empty() => {
+                        self.remaining = None;
+                        return Ok(None);
+                    }
+                    Ok(header) => Cursor::new(header),
+                };
+                let part_type_len = header.read_u8()?;
+                let part_type = header.read_exactly_to_string(part_type_len.into())?;
+                let mandatory = part_type.chars().next().map_or(false, char::is_uppercase);
+                let part_type = part_type.to_lowercase().into_boxed_str();
+                let part_id = header.read_u32::<BigEndian>()?;
+                let mandatory_params_num = header.read_u8()?;
+                let advisory_params_num = header.read_u8()?;
+                let param_lengths = (0..usize::from(mandatory_params_num + advisory_params_num))
+                    .map(|_| Ok((header.read_u8()?, header.read_u8()?)))
+                    .collect::<io::Result<Vec<(u8, u8)>>>()?;
+                let params = param_lengths
+                    .into_iter()
+                    .map(|(name_len, value_len)| {
+                        Ok((
+                            header.read_exactly_to_string(name_len.into())?,
+                            header.read_exactly_to_string(value_len.into())?,
+                        ))
+                    })
+                    .collect::<io::Result<_>>()?;
+                self.remaining = Some(self.reader.read_u32::<BigEndian>()?);
+                Ok(Some(BundlePart {
+                    mandatory,
+                    part_type,
+                    part_id,
+                    params,
+                    reader: &mut self.reader,
+                    version: self.version,
+                    remaining: self.remaining.as_mut(),
+                }))
+            }
+        }
+    }
+}
+
+pub struct BundlePart<'a, R: Read> {
+    pub mandatory: bool,
+    pub part_type: Box<str>,
+    part_id: u32,
+    pub params: HashMap<Box<str>, Box<str>>,
+    reader: &'a mut R,
+    version: BundleVersion,
+    remaining: Option<&'a mut u32>,
+}
+
+impl<'a, R: Read> Read for BundlePart<'a, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.version {
+            BundleVersion::V1 => {
+                assert!(self.remaining.is_none());
+                self.reader.read(buf)
+            }
+            BundleVersion::V2 => {
+                let remaining = self.remaining.as_mut().expect("Incoherent state");
+                let mut total_read = 0;
+                let mut dest = buf;
+                while **remaining > 0 && !dest.is_empty() {
+                    let read = match self.reader.take((**remaining).into()).read(dest) {
+                        Ok(read) => read,
+                        Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+                        Err(e) => return Err(e),
+                    };
+                    total_read += read;
+                    dest = &mut dest[read..];
+                    **remaining -= read as u32;
+                    if **remaining == 0 {
+                        **remaining = self.reader.read_u32::<BigEndian>()?;
+                    }
+                    if read == 0 {
+                        break;
+                    }
+                }
+                Ok(total_read)
+            }
+        }
     }
 }

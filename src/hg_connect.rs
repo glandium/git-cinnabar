@@ -15,13 +15,14 @@ use percent_encoding::percent_decode;
 use sha1::{Digest, Sha1};
 use url::Url;
 
-use crate::hg_bundle::copy_bundle;
+use crate::hg_bundle::{copy_bundle, BundleReader};
 use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libcinnabar::send_buffer_to;
 use crate::oid::ObjectId;
-use crate::store::HgChangesetId;
+use crate::store::{store_changegroup, HgChangesetId};
 use crate::util::{ImmutBString, PrefixWriter, SliceExt, ToBoxed};
+use crate::HELPER_LOCK;
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
@@ -372,7 +373,7 @@ fn do_listkeys(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write)
     send_buffer_to(&*result, out);
 }
 
-fn do_getbundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
+fn do_get_store_bundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
     let mut args = args.iter();
 
     let arg_list = |a: &&str| {
@@ -391,7 +392,20 @@ fn do_getbundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write
     assert!(args.next().is_none());
 
     match conn.getbundle(&heads, &common, bundle2caps) {
-        Ok(mut r) => copy_bundle(&mut r, out).unwrap(),
+        Ok(r) => {
+            let mut bundle = BundleReader::new(r).unwrap();
+            while let Some(part) = bundle.next_part().unwrap() {
+                if &*part.part_type == "changegroup" {
+                    let version = part
+                        .params
+                        .get("version")
+                        .map_or(1, |v| u8::from_str(v).unwrap());
+                    let _locked = HELPER_LOCK.lock().unwrap();
+                    store_changegroup(part, version);
+                }
+            }
+            out.write_all(b"ok\n").unwrap();
+        }
         Err(e) => {
             out.write_all(b"err\n").unwrap();
             let stderr = stderr();
@@ -572,7 +586,7 @@ pub fn connect_main_with(
         match command {
             "known" => do_known(conn, &*args, out),
             "listkeys" => do_listkeys(conn, &*args, out),
-            "getbundle" => do_getbundle(conn, &*args, out),
+            "get_store_bundle" => do_get_store_bundle(conn, &*args, out),
             "unbundle" => do_unbundle(conn, &*args, input, out),
             "pushkey" => do_pushkey(conn, &*args, out),
             "capable" => do_capable(conn, &*args, out),

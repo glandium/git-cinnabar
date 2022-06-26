@@ -400,7 +400,7 @@ class HelperRepo(object):
         result = HgRepoHelper.known(hexlify(n) for n in nodes)
         return [b == b'1'[0] for b in result]
 
-    def getbundle(self, name, heads, common, *args, **kwargs):
+    def get_store_bundle(self, name, heads, common, *args, **kwargs):
         heads = [hexlify(h) for h in heads]
         common = [hexlify(c) for c in common]
         bundlecaps = b','.join(kwargs.get('bundlecaps', ()))
@@ -409,26 +409,7 @@ class HelperRepo(object):
         getbundle_params["common"] = [
             c.decode('ascii', 'replace') for c in common]
         getbundle_params["bundlecaps"] = bundlecaps.decode('utf-8', 'replace')
-        data = HgRepoHelper.getbundle(heads, common, bundlecaps)
-        header = readexactly(data, 4)
-        if header == b'HG20':
-            return unbundle20(data)
-
-        class Reader(object):
-            def __init__(self, header, data):
-                self.header = header
-                self.data = data
-
-            def read(self, length):
-                result = self.header[:length]
-                self.header = self.header[length:]
-                if length > len(result):
-                    result += self.data.read(length - len(result))
-                return result
-
-        if header == b'err\n':
-            return Reader(b'', BytesIO())
-        return Reader(header, data)
+        HgRepoHelper.get_store_bundle(heads, common, bundlecaps)
 
     def pushkey(self, namespace, key, old, new):
         return HgRepoHelper.pushkey(namespace, key, old, new)
@@ -807,6 +788,10 @@ def do_cinnabarclone(repo, manifest, store, limit_schemes=True):
 def getbundle(repo, store, heads, branch_names):
     if isinstance(repo, bundlerepo):
         bundle = repo._unbundler
+        # Manual move semantics
+        apply_bundle = BundleApplier(bundle)
+        del bundle
+        apply_bundle(store)
     else:
         common = findcommon(repo, store, store.heads(branch_names))
         logging.info('common: %s', common)
@@ -864,16 +849,9 @@ def getbundle(repo, store, heads, branch_names):
                 b'bundle2=%s' % quote_from_bytes(
                     encodecaps(bundle2caps)).encode('ascii')))
 
-        bundle = repo.getbundle(b'bundle', heads=[unhexlify(h) for h in heads],
-                                common=[unhexlify(h) for h in common],
-                                **kwargs)
-
-        bundle = unbundler(bundle)
-
-    # Manual move semantics
-    apply_bundle = BundleApplier(bundle)
-    del bundle
-    apply_bundle(store)
+        repo.get_store_bundle(
+            b'bundle', heads=[unhexlify(h) for h in heads],
+            common=[unhexlify(h) for h in common], **kwargs)
 
 
 def push(repo, store, what, repo_heads, repo_branches, dry_run=False):

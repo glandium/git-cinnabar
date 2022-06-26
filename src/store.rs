@@ -1108,15 +1108,19 @@ pub fn do_stored_files(mut output: impl Write, args: &[&[u8]]) {
     send_buffer_to(&*buf, &mut output);
 }
 
-pub fn do_store_changegroup(mut input: &mut dyn BufRead, args: &[&[u8]]) {
-    unsafe {
-        ensure_store_init();
-    }
+pub fn do_store_changegroup(input: &mut dyn BufRead, args: &[&[u8]]) {
     let version = match args {
         [b"1"] => 1,
         [b"2"] => 2,
         _ => die!("store-changegroup only takes one argument that is either 1 or 2"),
     };
+    store_changegroup(input, version);
+}
+
+pub fn store_changegroup<R: Read>(mut input: R, version: u8) {
+    unsafe {
+        ensure_store_init();
+    }
     let mut bundle = strbuf::new();
     let mut input = if check_enabled(Checks::UNBUNDLER) && env::var("GIT_DIR").is_ok() {
         Box::new(BundleSaver::new(input, &mut bundle, version)) as Box<dyn Read>

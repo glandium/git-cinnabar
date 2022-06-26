@@ -82,6 +82,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::{self, from_utf8, FromStr};
+use std::sync::Mutex;
 use std::thread::spawn;
 
 #[cfg(unix)]
@@ -188,6 +189,8 @@ extern "C" {
 
 static INIT_CINNABAR_2: Lazy<()> = Lazy::new(|| unsafe { init_cinnabar_2() });
 
+static HELPER_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
 fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
     let args = unsafe { string_list_new() };
     let mut line = Vec::new();
@@ -206,6 +209,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
         let command = i.next().unwrap();
         let mut nul = [b'\0'];
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
+        let _locked = HELPER_LOCK.lock().unwrap();
         if let b"graft" | b"progress" | b"store-changeset" | b"store-changegroup" | b"create"
         | b"raw-changeset" | b"store-replace" | b"stored-files" = &*command
         {
