@@ -111,7 +111,7 @@ class Git(Task, metaclass=Tool):
     @classmethod
     def install(cls, name):
         url = '{{{}.artifact}}'.format(cls.by_name(name))
-        if name.startswith('linux.'):
+        if name.startswith(('linux.', 'osx.')):
             return [
                 'curl -L {} | tar -Jxf -'.format(url),
                 'export PATH=$PWD/git/bin:$PATH',
