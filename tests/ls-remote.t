@@ -323,7 +323,6 @@
   23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
 
   $ git -c fetch.prune=true -C repo-git remote update
-  Fetching origin
   From hg::.*/ls-remote.t/repo (re)
    - [deleted]         (none)     -> origin/branches/default/636e60525868096cbdc961870493510558f41d2f
    + 5c5b259...445bd26 branches/default/tip -> origin/branches/default/tip  (forced update)
@@ -450,7 +449,6 @@
   $ cd ..
 
   $ git -c fetch.prune=true -C repo-git remote update
-  Fetching origin
   From hg::.*/ls-remote.t/repo (re)
      445bd26..66e3a05  branches/default/tip -> origin/branches/default/tip
    * [new branch]      bookmarks/@          -> origin/bookmarks/@

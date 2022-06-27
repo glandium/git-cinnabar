@@ -1611,7 +1611,7 @@ static void init_git_config()
 		setup_path();
 	}
 	strvec_pushl(&proc.args, "git", "config", "--system", "-e", NULL);
-	strvec_push(&proc.env_array, "GIT_EDITOR=echo");
+	strvec_push(&proc.env, "GIT_EDITOR=echo");
 	proc.no_stdin = 1;
 	proc.no_stderr = 1;
 	/* We don't really care about the capture_command return value. If
@@ -1723,4 +1723,9 @@ void done_cinnabar()
 	oidset_clear(&hg2git_seen);
 
 	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
+}
+
+int common_exit(const char *file, int line, int code)
+{
+	return code;
 }

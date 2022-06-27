@@ -13,7 +13,7 @@ import msys
 
 
 MERCURIAL_VERSION = '6.1'
-GIT_VERSION = '2.36.1'
+GIT_VERSION = '2.37.0'
 
 ALL_MERCURIAL_VERSIONS = (
     '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
@@ -117,16 +117,16 @@ class Git(Task, metaclass=Tool):
     @classmethod
     def install(cls, name):
         url = '{{{}.artifact}}'.format(cls.by_name(name))
-        if name.startswith('linux.'):
+        if name.startswith(('linux.', 'osx.')):
             return [
-                'curl -L {} | zstd -cd | tar -x'.format(url),
+                'curl --compressed -L {} | zstd -cd | tar -x'.format(url),
                 'export PATH=$PWD/git/bin:$PATH',
                 'export GIT_EXEC_PATH=$PWD/git/libexec/git-core',
                 'export GIT_TEMPLATE_DIR=$PWD/git/share/git-core/templates',
             ]
         else:
             return [
-                'curl -L {} -o git.tar.zst'.format(url),
+                'curl --compressed -L {} -o git.tar.zst'.format(url),
                 'zstd -cd git.tar.zst | tar -x',
             ]
 
