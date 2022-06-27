@@ -113,14 +113,14 @@ class Git(Task, metaclass=Tool):
         url = '{{{}.artifact}}'.format(cls.by_name(name))
         if name.startswith(('linux.', 'osx.')):
             return [
-                'curl -L {} | tar -Jxf -'.format(url),
+                'curl --compressed -L {} | tar -Jxf -'.format(url),
                 'export PATH=$PWD/git/bin:$PATH',
                 'export GIT_EXEC_PATH=$PWD/git/libexec/git-core',
                 'export GIT_TEMPLATE_DIR=$PWD/git/share/git-core/templates',
             ]
         else:
             return [
-                'curl -L {} -o git.tar.bz2'.format(url),
+                'curl --compressed -L {} -o git.tar.bz2'.format(url),
                 'tar -jxf git.tar.bz2',
             ]
 
