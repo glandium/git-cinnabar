@@ -353,6 +353,7 @@ fn test_unescape_batched_output() {
 }
 
 fn do_known(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
+    conn.require_capability(b"known");
     let nodes = args
         .iter()
         .map(|s| HgChangesetId::from_str(s))
@@ -453,6 +454,7 @@ fn do_unbundle(
 fn do_pushkey(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
     assert_eq!(args.len(), 4);
     let (namespace, key, old, new) = (args[0], args[1], args[2], args[3]);
+    conn.require_capability(b"pushkey");
     let response = conn.pushkey(namespace, key, old, new);
     send_buffer_to(&*response, out);
 }
@@ -529,7 +531,7 @@ fn hg_connect(url: &str, flags: c_int, out: &mut impl Write) -> Option<Box<dyn H
         return Some(conn);
     }
 
-    const REQUIRED_CAPS: [&str; 4] = ["getbundle", "branchmap", "known", "pushkey"];
+    const REQUIRED_CAPS: [&str; 2] = ["getbundle", "branchmap"];
 
     for cap in &REQUIRED_CAPS {
         conn.require_capability(cap.as_bytes());
