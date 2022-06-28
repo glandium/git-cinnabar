@@ -330,9 +330,11 @@ getbundle_params = {}
 
 
 class HelperRepo(object):
-    __slots__ = "_url", "_branchmap", "_heads", "_bookmarks", "_ui", "remote"
+    __slots__ = ("_url", "_branchmap", "_heads", "_bookmarks", "_ui", "remote",
+                 "_helper")
 
-    def __init__(self, url):
+    def __init__(self, helper, url):
+        self._helper = helper
         self._url = url
         self._branchmap = None
         self._heads = None
@@ -341,7 +343,7 @@ class HelperRepo(object):
         self.remote = None
 
     def init_state(self):
-        state = HgRepoHelper.state()
+        state = self._helper.state()
         self._branchmap = {
             unquote_to_bytes(branch): [unhexlify(h)
                                        for h in heads.split(b' ')]
@@ -363,17 +365,17 @@ class HelperRepo(object):
 
     def _call(self, command, *args):
         if command == b'clonebundles':
-            return HgRepoHelper.clonebundles()
+            return self._helper.clonebundles()
         if command == b'cinnabarclone':
-            return HgRepoHelper.cinnabarclone()
+            return self._helper.cinnabarclone()
         raise NotImplementedError()
 
     def capable(self, capability):
         if capability == b'bundle2':
             return quote_from_bytes(
-                HgRepoHelper.capable(b'bundle2') or b'').encode('ascii')
+                self._helper.capable(b'bundle2') or b'').encode('ascii')
         if capability in (b'clonebundles', b'cinnabarclone', b'unbundle'):
-            return HgRepoHelper.capable(capability) is not None
+            return self._helper.capable(capability) is not None
         return capability == b'getbundle'
 
     def batch(self):
@@ -394,10 +396,10 @@ class HelperRepo(object):
             if self._bookmarks is None:
                 self.init_state()
             return self._bookmarks
-        return self._decode_keys(HgRepoHelper.listkeys(namespace))
+        return self._decode_keys(self._helper.listkeys(namespace))
 
     def known(self, nodes):
-        result = HgRepoHelper.known(hexlify(n) for n in nodes)
+        result = self._helper.known(hexlify(n) for n in nodes)
         return [b == b'1'[0] for b in result]
 
     def get_store_bundle(self, name, heads, common, *args, **kwargs):
@@ -409,13 +411,13 @@ class HelperRepo(object):
         getbundle_params["common"] = [
             c.decode('ascii', 'replace') for c in common]
         getbundle_params["bundlecaps"] = bundlecaps.decode('utf-8', 'replace')
-        HgRepoHelper.get_store_bundle(heads, common, bundlecaps)
+        self._helper.get_store_bundle(heads, common, bundlecaps)
 
     def pushkey(self, namespace, key, old, new):
-        return HgRepoHelper.pushkey(namespace, key, old, new)
+        return self._helper.pushkey(namespace, key, old, new)
 
     def unbundle(self, cg, heads, *args, **kwargs):
-        data = HgRepoHelper.unbundle(cg, (hexlify(h) if h != b'force' else h
+        data = self._helper.unbundle(cg, (hexlify(h) if h != b'force' else h
                                           for h in heads))
         if isinstance(data, str) and data.startswith(b'HG20'):
             data = unbundle20(BytesIO(data[4:]))
@@ -1015,4 +1017,4 @@ def _get_repo(remote):
     stream = HgRepoHelper.connect(remote.url)
     if stream:
         return bundlerepo(remote.url, stream)
-    return HelperRepo(remote.url)
+    return HelperRepo(HgRepoHelper, remote.url)
