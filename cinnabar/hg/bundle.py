@@ -38,14 +38,6 @@ import logging
 import struct
 
 
-# We used to have a pseudo string class that didn't derive from str, and
-# that was used to distinguish between mercurial sha1s that were already
-# known or not. git-mozreview relies on previously unknown mercurial sha1s
-# not being exactly of str type, so use a subclass to make it happy.
-class PseudoString(bytes):
-    pass
-
-
 # TODO: Avoid a diff-tree when we already have done it to generate the
 # manifest in the first place.
 def manifest_diff(a, b):
@@ -429,13 +421,6 @@ class PushStore(GitHgStore):
         if sha1 not in self._pushed and result.sha1 != sha1:
             raise Exception('Sha1 mismatch for changeset %s'
                             % sha1.decode('ascii'))
-        return result
-
-    def changeset_ref(self, sha1):
-        # See comment about PseudoString at the beginning of this file.
-        result = super(PushStore, self).changeset_ref(sha1)
-        if sha1 in self._pushed:
-            return PseudoString(result)
         return result
 
     def close(self, rollback=False):
