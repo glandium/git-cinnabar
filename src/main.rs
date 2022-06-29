@@ -1346,8 +1346,6 @@ bitflags! {
         const NODEID = 0x8;
         const BUNDLE = 0x10;
         const FILES = 0x20;
-        const MEMORY = 0x40;
-        const CPU = 0x80;
         const TIME = 0x100;
         const TRACEBACK = 0x200;
         const NO_BUNDLE2 = 0x400;
@@ -1371,8 +1369,6 @@ static CHECKS: Lazy<Checks> = Lazy::new(|| {
                 b"nodeid" => checks.set(Checks::NODEID, true),
                 b"bundle" => checks.set(Checks::BUNDLE, true),
                 b"files" => checks.set(Checks::FILES, true),
-                b"memory" => checks.set(Checks::MEMORY, true),
-                b"cpu" => checks.set(Checks::CPU, true),
                 b"time" => checks.set(Checks::TIME, true),
                 b"traceback" => checks.set(Checks::TRACEBACK, true),
                 b"no-bundle2" => checks.set(Checks::NO_BUNDLE2, true),

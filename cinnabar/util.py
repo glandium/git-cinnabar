@@ -19,11 +19,6 @@ from difflib import (
     SequenceMatcher,
 )
 from itertools import chain
-from queue import (
-    Empty,
-    Queue,
-)
-from threading import Thread
 from weakref import WeakKeyDictionary
 
 from cinnabar.exceptions import Abort
@@ -41,9 +36,6 @@ def init_logging():
         "%(levelname)s %(name)s %(message)s"))
     logger.addHandler(handler)
     log_conf = Git.config('cinnabar.log') or b''
-    if not log_conf and not check_enabled('memory') and \
-            not check_enabled('cpu'):
-        return
     for assignment in log_conf.split(b','):
         try:
             assignment, _, path = assignment.partition(b'>')
@@ -102,8 +94,8 @@ class ConfigSetFunc(object):
 check_enabled = ConfigSetFunc(
     'cinnabar.check',
     ('nodeid', 'manifests', 'helper'),
-    ('bundle', 'files', 'memory', 'cpu', 'time', 'traceback', 'no-bundle2',
-     'cinnabarclone', 'clonebundles', 'no-version-check', 'unbundler'),
+    ('bundle', 'files', 'time', 'traceback', 'no-bundle2', 'cinnabarclone',
+     'clonebundles', 'no-version-check', 'unbundler'),
 )
 
 experiment = ConfigSetFunc(
@@ -616,54 +608,8 @@ class TypedProperty(object):
         self.values[obj] = getattr(self.cls, 'from_obj', self.cls)(value)
 
 
-class MemoryCPUReporter(Thread):
-    def __init__(self, memory=False, cpu=False):
-        assert memory or cpu
-        super(MemoryCPUReporter, self).__init__()
-        self._queue = Queue(1)
-        self._logger = logging.getLogger('report')
-        self._logger.setLevel(logging.INFO)
-        self._format = '[%s(%d)] %r'
-        if memory and cpu:
-            self._format += ' %r'
-            self._info = lambda p: (p.memory_info(), p.cpu_times())
-        elif memory:
-            self._info = lambda p: (p.memory_info(),)
-        elif cpu:
-            self._info = lambda p: (p.cpu_times(),)
-        self.start()
-
-    def _report(self, proc):
-        self._logger.info(
-            self._format, proc.name(), proc.pid, *self._info(proc))
-
-    def run(self):
-        import psutil
-        proc = psutil.Process()
-        while True:
-            try:
-                self._queue.get(True, 1)
-                break
-            except Empty:
-                pass
-            except Exception:
-                break
-            finally:
-                children = proc.children(recursive=True)
-                self._report(proc)
-                for p in children:
-                    self._report(p)
-
-    def shutdown(self):
-        self._queue.put(None)
-        self.join()
-
-
 def run(func, args):
     init_logging()
-    if check_enabled('memory') or check_enabled('cpu'):
-        reporter = MemoryCPUReporter(memory=check_enabled('memory'),
-                                     cpu=check_enabled('cpu'))
 
     try:
         from cinnabar.git import Git
@@ -695,9 +641,6 @@ def run(func, args):
                 'Run the command again with '
                 '`git -c cinnabar.check=traceback <command>` to see the '
                 'full traceback.')
-    finally:
-        if check_enabled('memory') or check_enabled('cpu'):
-            reporter.shutdown()
     sys.exit(retcode)
 
 
