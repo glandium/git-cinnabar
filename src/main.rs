@@ -1233,7 +1233,7 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
         .arg("-c")
         .arg(bootstrap)
         .args(std::env::args_os())
-        .env("GIT_CINNABAR_HELPER", std::env::current_exe().unwrap())
+        .env("GIT_CINNABAR", std::env::current_exe().unwrap())
         .envs(extra_env)
         .stdin(std::process::Stdio::inherit())
         .spawn()
@@ -1285,7 +1285,16 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
 
     let ret = match argv0_path.file_stem().and_then(OsStr::to_str) {
         Some("git-cinnabar") => git_cinnabar(),
-        Some("git-cinnabar-helper") => helper_main(&mut stdin().lock(), 1),
+        Some("git-cinnabar-import") => helper_main(&mut stdin().lock(), 1),
+        Some("git-cinnabar-wire") => {
+            match connect_main_with(&mut stdin().lock(), &mut stdout().lock()) {
+                Ok(()) => 0,
+                Err(e) => {
+                    error!(target: "root", "{}", e);
+                    1
+                }
+            }
+        }
         Some("git-remote-hg") => {
             let _v = VersionCheck::new();
             match run_python_command(PythonCommand::GitRemoteHg) {

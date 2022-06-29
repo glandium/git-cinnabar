@@ -5,7 +5,6 @@ import subprocess
 import sys
 from cinnabar.exceptions import HelperClosedError, HelperFailedError
 from cinnabar.git import (
-    Git,
     NULL_NODE_ID,
     split_ls_tree,
 )
@@ -87,39 +86,22 @@ class BaseHelper(object):
         self._helper = self
 
     @classmethod
-    def _helper_command(self):
-        helper_path = Git.config('cinnabar.helper')
-        env = {}
-        for k, v in environ().items():
-            if k.startswith(b'GIT_CINNABAR_'):
-                env[k] = v
-        if helper_path:
-            helper_path = os.fsdecode(helper_path)
-        if helper_path and os.path.exists(helper_path):
-            command = [helper_path]
-        else:
-            command = ['git-cinnabar']
-        return command, env
-
-    @classmethod
     def _ensure_helper(self):
         if self._helper is False:
             try:
                 self._helper = FdHelper(self.MODE)
             except NoFdHelper:
-                command, env = self._helper_command()
-                if len(command) == 1:
-                    executable = command[0]
-                    command[0] = 'git-cinnabar-helper'
-                else:
-                    executable = None
-                command.append('--{}'.format(self.MODE))
-
+                env = {
+                    k: v
+                    for k, v in environ().items()
+                    if k.startswith(b'GIT_CINNABAR_')
+                }
                 kwargs = {}
                 if self.MODE != 'wire':
                     kwargs['logger'] = 'helper-{}'.format(self.MODE)
                 self._helper = Process(
-                    *command, executable=executable,
+                    'git-cinnabar-{}'.format(self.MODE),
+                    executable=os.environ.get("GIT_CINNABAR", "git-cinnabar"),
                     stdin=subprocess.PIPE, stderr=None, env=env, **kwargs)
 
             atexit.register(self.close, on_atexit=True)
