@@ -252,131 +252,6 @@ class OrderedDefaultDict(OrderedDict):
         return value
 
 
-class VersionedDict(object):
-    def __init__(self, content=None, **kwargs):
-        if content:
-            if kwargs:
-                self._previous = VersionedDict(content)
-                for k, v in kwargs.items():
-                    self._previous[k] = v
-            elif isinstance(content, (VersionedDict, dict)):
-                self._previous = content
-            else:
-                self._previous = dict(content)
-        else:
-            self._previous = dict(**kwargs)
-        self._dict = {}
-        self._deleted = set()
-
-    def update(self, content=None, **kwargs):
-        if content:
-            if isinstance(content, (VersionedDict, dict)):
-                content = content.items()
-            for k, v in content:
-                self[k] = v
-        for k, v in kwargs.items():
-            self[k] = v
-
-    def __getitem__(self, key):
-        if key in self._dict:
-            return self._dict[key]
-        return self._previous[key]
-
-    def get(self, key, default=None):
-        try:
-            return self[key]
-        except KeyError:
-            return default
-
-    def __contains__(self, key):
-        if key in self._deleted:
-            return False
-        if key in self._dict:
-            return True
-        return key in self._previous
-
-    def __delitem__(self, key):
-        self._deleted.add(key)
-        if key in self._dict:
-            del self._dict[key]
-        elif key not in self._previous:
-            raise KeyError(key)
-
-    def __setitem__(self, key, value):
-        if key in self._deleted:
-            self._deleted.remove(key)
-        self._dict[key] = value
-
-    def __len__(self):
-        return len(self._dict) + sum(1 for k in self._previous
-                                     if k not in self._deleted and
-                                     k not in self._dict)
-
-    def keys(self):
-        if self._previous:
-            return list(self)
-        return self._dict.keys()
-
-    def values(self):
-        if self._previous:
-            return list(chain(
-                self._dict.values(),
-                (v for k, v in self._previous.items()
-                 if k not in self._deleted and k not in self._dict)))
-        return self._dict.values()
-
-    def __iter__(self):
-        if self._previous:
-            return chain(self._dict,
-                         (k for k in self._previous
-                          if k not in self._deleted and k not in self._dict))
-        return iter(self._dict)
-
-    def items(self):
-        if self._previous:
-            return chain(
-                self._dict.items(),
-                ((k, v) for k, v in self._previous.items()
-                 if k not in self._deleted and k not in self._dict))
-        return self._dict.items()
-
-    CREATED = 1
-    MODIFIED = 2
-    REMOVED = 3
-
-    def iterchanges(self):
-        for k, v in self._dict.items():
-            if k in self._previous:
-                if self._previous[k] == v:
-                    continue
-                status = self.MODIFIED
-            else:
-                status = self.CREATED
-            yield status, k, v
-        for k in self._deleted:
-            if k in self._previous:
-                yield self.REMOVED, k, self._previous[k]
-
-    def flattened(self):
-        previous = self
-        changes = []
-        while isinstance(previous, VersionedDict):
-            changes.append(previous.iterchanges())
-            previous = previous._previous
-
-        ret = VersionedDict(previous)
-
-        # This can probably be optimized, but it shouldn't matter much that
-        # it's not.
-        for c in reversed(changes):
-            for status, k, v in c:
-                if status == self.REMOVED:
-                    del ret[k]
-                else:
-                    ret[k] = v
-        return ret
-
-
 def _iter_diff_blocks(a, b):
     m = SequenceMatcher(a=a, b=b, autojunk=False).get_matching_blocks()
     for start, end in zip(chain((Match(0, 0, 0),), m), m):
@@ -653,8 +528,9 @@ class Process(object):
         else:
             proc_stdin = stdin
 
-        full_env = VersionedDict(environ())
+        full_env = environ()
         if env:
+            full_env = full_env.copy()
             full_env.update(env)
 
         self._proc = self._popen(args, stdin=proc_stdin, stdout=stdout,
@@ -688,17 +564,14 @@ class Process(object):
             yield '%s=%s' % (k, v)
 
     def _popen(self, cmd, env, **kwargs):
-        assert isinstance(env, VersionedDict)
         logger = logging.getLogger('process')
-        if logger.isEnabledFor(logging.INFO):
-            full_cmd = ' '.join(chain(self._env_strings(env), cmd))
         if not getattr(os, 'supports_bytes_environ', True):
             env = {
                 os.fsdecode(k): os.fsdecode(v) for k, v in env.items()
             }
         proc = subprocess.Popen(cmd, env=env, **kwargs)
         if logger.isEnabledFor(logging.INFO):
-            logger.info('[%d] %s', proc.pid, full_cmd)
+            logger.info('[%d] %s', proc.pid, ' '.join(cmd))
         return proc
 
     def wait(self):
