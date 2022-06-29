@@ -252,17 +252,8 @@ class Changeset(Changeset):
 
 
 class GeneratedManifestInfo(Manifest):
-    __slots__ = ('delta_node', 'removed', 'modified')
-
     def __init__(self, node):
         super(GeneratedManifestInfo, self).__init__(node)
-        self.removed = set()
-        self.modified = {}
-
-    def add(self, path, sha1=None, attr=b'', modified=False):
-        super(GeneratedManifestInfo, self).add(path, sha1, attr)
-        if modified:
-            self.modified[path] = (sha1, attr)
 
 
 class TagSet(object):
@@ -325,11 +316,6 @@ class GitCommit(object):
                 assert not hasattr(self, typ)
                 setattr(self, typ, data)
         self.parents = tuple(parents)
-
-
-class PseudoGitCommit(GitCommit):
-    def __init__(self, sha1):
-        self.sha1 = sha1
 
 
 def autohexlify(h):
