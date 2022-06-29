@@ -381,7 +381,8 @@ class HgRepoHelper(BaseHelper):
     def close(self, on_atexit=False):
         if self._helper and self._helper is not self and \
                 self.connected is not False:
-            self._helper.stdin.write(b'close ' + self.connected)
+            self._helper.stdin.write(b'close ' + self.connected + b"\n")
+            self._helper.stdin.flush()
             self.connected = False
 
     @classmethod
