@@ -317,12 +317,6 @@ class GitHgHelper(BaseHelper):
             assert False
 
     @classmethod
-    @contextmanager
-    def store_changegroup(self, version):
-        with self.query(b'store-changegroup', b'%d' % version):
-            yield self._helper.stdin
-
-    @classmethod
     def heads(self, what):
         with self.query(b'heads', what) as stdout:
             data = self._read_data(stdout)

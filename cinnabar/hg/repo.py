@@ -41,7 +41,6 @@ from cinnabar.hg.bundle import (
 )
 from cinnabar.hg.changegroup import (
     RawRevChunk01,
-    RawRevChunk02,
 )
 
 
@@ -493,47 +492,6 @@ def get_store_bundle(url):
     result = HelperRepo(BundleHelper, url).get_store_bundle(b'bundle', [], [])
     BundleHelper.close()
     return result
-
-
-# TODO: Get the changegroup stream directly and send it, instead of
-# recreating a stream we parsed.
-def store_changegroup(changegroup):
-    changesets = next(changegroup, None)
-    first_changeset = next(changesets, None)
-    version = 1
-    if isinstance(first_changeset, RawRevChunk02):
-        version = 2
-    with GitHgHelper.store_changegroup(version) as fh:
-        def iter_chunks(iter):
-            for chunk in iter:
-                fh.write(struct.pack('>l', len(chunk) + 4))
-                fh.write(chunk)
-                yield chunk
-            fh.write(struct.pack('>l', 0))
-
-        yield iter_chunks(chain((first_changeset,), changesets))
-        yield iter_chunks(next(changegroup, None))
-
-        def iter_files(iter):
-            last_name = None
-            for name, chunk in iter:
-                if name != last_name:
-                    if last_name is not None:
-                        fh.write(struct.pack('>l', 0))
-                    fh.write(struct.pack('>l', len(name) + 4))
-                    fh.write(name)
-                last_name = name
-                fh.write(struct.pack('>l', len(chunk) + 4))
-                fh.write(chunk)
-                yield name, chunk
-            if last_name is not None:
-                fh.write(struct.pack('>l', 0))
-            fh.write(struct.pack('>l', 0))
-
-        yield iter_files(next(changegroup, None))
-
-        if next(changegroup, None) is not None:
-            assert False
 
 
 SHA1_RE = re.compile(b'[0-9a-fA-F]{1,40}$')
