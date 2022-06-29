@@ -31,16 +31,10 @@ from cinnabar.git import (
 from cinnabar.util import (
     check_enabled,
 )
-from collections import (
-    deque,
-)
 from cinnabar.hg.bundle import (
     create_bundle,
     encodecaps,
     decodecaps,
-)
-from cinnabar.hg.changegroup import (
-    RawRevChunk01,
 )
 
 
@@ -117,8 +111,7 @@ class Part(object):
             self.read(32768)
 
 
-# The following two functions (readexactly, getchunk) were copied from the
-# mercurial source code.
+# The following function was copied from the # mercurial source code.
 # Copyright 2006 Matt Mackall <mpm@selenic.com> and others
 def readexactly(stream, n):
     '''read n bytes from stream.read and abort if less was available'''
@@ -127,100 +120,6 @@ def readexactly(stream, n):
         raise Exception("stream ended unexpectedly (got %d bytes, expected %d)"
                         % (len(s), n))
     return s
-
-
-def getchunk(stream):
-    """return the next chunk from stream as a string"""
-    d = readexactly(stream, 4)
-    length = struct.unpack(">l", d)[0]
-    if length <= 4:
-        if length:
-            raise Exception("invalid chunk length %d" % length)
-        return ""
-    return readexactly(stream, length - 4)
-
-
-chunks_logger = logging.getLogger('chunks')
-
-
-def chunks_in_changegroup(chunk_type, bundle, category=None):
-    previous_node = None
-    while True:
-        chunk = getchunk(bundle)
-        if not chunk:
-            return
-        chunk = chunk_type(chunk)
-        if isinstance(chunk, RawRevChunk01):
-            chunk.delta_node = previous_node or chunk.parent1
-        if category and chunks_logger.isEnabledFor(logging.DEBUG):
-            chunks_logger.debug(
-                '%s %s',
-                category,
-                chunk.node,
-            )
-        yield chunk
-        previous_node = chunk.node
-
-
-def iter_chunks(chunks, cls):
-    for chunk in chunks:
-        yield cls(chunk)
-
-
-def iterate_files(chunk_type, bundle):
-    while True:
-        name = getchunk(bundle)
-        if not name:
-            return
-        for chunk in chunks_in_changegroup(chunk_type, bundle, name):
-            yield name, chunk
-
-
-def iter_initialized(get_missing, iterable, init=None):
-    previous = None
-    check = check_enabled('nodeid')
-    for instance in iterable:
-        if instance.delta_node != NULL_NODE_ID:
-            if not previous or instance.delta_node != previous.node:
-                previous = get_missing(instance.delta_node)
-            if init:
-                instance = init(instance, previous)
-            else:
-                instance.init(previous)
-        elif init:
-            instance = init(instance)
-        else:
-            instance.init(())
-        if check and instance.node != instance.sha1:
-            raise Exception(
-                'sha1 mismatch for node %s with parents %s %s and '
-                'previous %s' %
-                (instance.node.decode('ascii'),
-                 instance.parent1.decode('ascii'),
-                 instance.parent2.decode('ascii'),
-                 instance.delta_node.decode('ascii'))
-            )
-        yield instance
-        previous = instance
-
-
-class ChunksCollection(object):
-    def __init__(self, iterator):
-        self._chunks = deque()
-
-        for chunk in iterator:
-            self._chunks.append(chunk)
-
-    def __iter__(self):
-        while True:
-            try:
-                yield self._chunks.popleft()
-            except IndexError:
-                return
-
-    def iter_initialized(self, cls, get_missing, init=None):
-        return iter_initialized(get_missing, iter_chunks(self, cls),
-                                init=init)
 
 
 def _sample(l, size):
