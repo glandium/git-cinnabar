@@ -18,14 +18,6 @@ class CLI(object):
     def subcommand(func):
         subparser = CLI.subparsers.add_parser(func.__name__, help=func.__doc__)
         if hasattr(func, 'cli_arguments'):
-            # Because argparse.REMAINDER can't be used as first argument
-            # without making flags emit a "unrecognized argument" error,
-            # treat that specially.
-            if len(func.cli_arguments) == 1:
-                args, kwargs = func.cli_arguments[0]
-                if kwargs.get('nargs') == argparse.REMAINDER:
-                    func.cli_remainder = args[0]
-                    func.cli_arguments = ()
             for args, kwargs in reversed(func.cli_arguments):
                 subparser.add_argument(*args, **kwargs)
             del func.cli_arguments
@@ -33,17 +25,5 @@ class CLI(object):
 
     @staticmethod
     def prepare(argv):
-        args, leftovers = CLI.parser.parse_known_args(argv)
-
-        if not hasattr(args, 'callback'):
-            CLI.parser.print_help()
-            CLI.parser.exit()
-
-        if hasattr(args.callback, 'cli_remainder'):
-            args = argparse.Namespace(**{
-                'callback': args.callback,
-                args.callback.cli_remainder: leftovers,
-            })
-        else:
-            args = CLI.parser.parse_args(argv)
+        args = CLI.parser.parse_args(argv)
         return (args.callback, args)
