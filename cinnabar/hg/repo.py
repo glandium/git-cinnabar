@@ -213,9 +213,6 @@ def findcommon(repo, store, hgheads):
     return [store.hg_changeset(h) for h in dag.heads('known')]
 
 
-getbundle_params = {}
-
-
 class HelperRepo(object):
     __slots__ = ("_url", "_branchmap", "_heads", "_bookmarks", "_ui", "remote",
                  "_helper")
@@ -293,11 +290,6 @@ class HelperRepo(object):
         heads = [hexlify(h) for h in heads]
         common = [hexlify(c) for c in common]
         bundlecaps = b','.join(kwargs.get('bundlecaps', ()))
-        getbundle_params["heads"] = [
-            h.decode('ascii', 'replace') for h in heads]
-        getbundle_params["common"] = [
-            c.decode('ascii', 'replace') for c in common]
-        getbundle_params["bundlecaps"] = bundlecaps.decode('utf-8', 'replace')
         return self._helper.get_store_bundle(heads, common, bundlecaps)
 
     def pushkey(self, namespace, key, old, new):

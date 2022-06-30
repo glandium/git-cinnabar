@@ -842,7 +842,6 @@ class GitHgStore(object):
         # Try to detect issue #207 as early as possible.
         GitHgHelper._helper = False
         busted = False
-        from .hg.repo import getbundle_params
         for (node, (parent1, parent2)) in progress_iter(
                 "Checking {} imported file root and head revisions",
                 stored_files.items()):
@@ -851,12 +850,6 @@ class GitHgStore(object):
                 logging.error(
                     "Error in file %s" % node.decode('ascii', 'replace'))
         if busted:
-            import json
-            extra = ""
-            if getbundle_params:
-                extra = \
-                    "If it failed, please also copy/paste the following:\n"
-                extra += json.dumps(getbundle_params, sort_keys=True, indent=4)
             Git.update_ref(b'refs/cinnabar/broken', self._metadata_sha1)
             raise Abort(
                 "It seems you have hit a known, rare, and difficult to "
@@ -868,6 +861,6 @@ class GitHgStore(object):
                 "Please open a new issue "
                 "(https://github.com/glandium/git-cinnabar/issues/new)\n"
                 "mentioning issue #207 and reporting whether the second "
-                "attempt succeeded.\n" + extra + "\n"
+                "attempt succeeded.\n\n"
                 "Please read all the above and keep a copy of this repository."
             )
