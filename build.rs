@@ -124,7 +124,7 @@ fn main() {
         .arg("FSMONITOR_DAEMON_BACKEND=")
         .args(extra_args);
 
-    let compiler = cc::Build::new().get_compiler();
+    let compiler = cc::Build::new().force_frame_pointer(true).get_compiler();
 
     let cflags = [
         compiler.cflags_env().into_string().ok(),

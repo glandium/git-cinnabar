@@ -101,7 +101,7 @@ version = "0.11"
 default-features = false
 
 [build-dependencies]
-cc = "1"
+cc = "1.0.46"
 itertools = "0.10"
 make-cmd = "0.1"
 target = "2.0"
