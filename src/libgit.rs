@@ -111,20 +111,9 @@ impl Drop for strbuf {
     }
 }
 
-extern "C" {
-    pub fn die(fmt: *const c_char, ...) -> !;
-}
-
-pub(crate) fn _die(s: String) -> ! {
-    unsafe {
-        let s = CString::new(s).unwrap();
-        die(s.as_ptr())
-    }
-}
-
 macro_rules! die {
     ($($e:expr),+) => {
-        $crate::libgit::_die(format!($($e),+))
+        panic!($($e),+)
     }
 }
 

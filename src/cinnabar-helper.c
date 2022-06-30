@@ -1689,8 +1689,19 @@ static int nongit = 0;
 
 extern void do_graft(struct reader *input, int output, struct string_list *args);
 
+extern NORETURN void do_panic(const char *err, size_t len);
+
+static NORETURN void die_panic(const char *err, va_list params)
+{
+	char msg[4096];
+	int len = vsnprintf(msg, sizeof(msg), err, params);
+	do_panic(&msg, (size_t)(len < 0) ? 0 : len);
+}
+
 void init_cinnabar(const char *argv0)
 {
+	set_die_routine(die_panic);
+
 	// Initialization from common-main.c.
 	sanitize_stdfds();
 	restore_sigpipe_to_default();

@@ -1285,6 +1285,24 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
 
     // If for some reason current_exe() failed, fallback to argv[0].
     let exe = std::env::current_exe().map(|e| e.as_os_str().to_cstring());
+    std::panic::set_hook(Box::new(|info| {
+        if let Some(s) = info.payload().downcast_ref::<&str>() {
+            eprintln!("fatal: {s}");
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            eprintln!("fatal: {s}");
+        } else {
+            eprintln!("fatal error");
+        }
+        if check_enabled(Checks::TRACEBACK) {
+            eprintln!("{:#?}", backtrace::Backtrace::new());
+        } else {
+            eprintln!(
+                "Run the command again with \
+                `git -c cinnabar.check=traceback <command>` to see the \
+                full traceback."
+            );
+        }
+    }));
     init_cinnabar(exe.as_deref().unwrap_or(argv0).as_ptr());
     logging::init(now);
 
@@ -1394,4 +1412,9 @@ unsafe extern "C" fn cinnabar_check(flag: c_int) -> c_int {
 
 pub fn check_enabled(checks: Checks) -> bool {
     CHECKS.contains(checks)
+}
+
+#[no_mangle]
+unsafe extern "C" fn do_panic(err: *const u8, len: usize) {
+    panic!("{}", std::slice::from_raw_parts(err, len).as_bstr());
 }
