@@ -837,10 +837,12 @@ class GitHgStore(object):
                 for node, p1, p2 in (l.split() for l in data.splitlines())
             }
 
-        GitHgHelper.close(rollback=False)
+        with GitHgHelper.query(b'done-and-continue') as stdout:
+            resp = stdout.readline().rstrip()
+            assert resp == b'ok'
 
         # Try to detect issue #207 as early as possible.
-        GitHgHelper._helper = False
+        GitHgHelper.reload()
         busted = False
         for (node, (parent1, parent2)) in progress_iter(
                 "Checking {} imported file root and head revisions",

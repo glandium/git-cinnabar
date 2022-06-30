@@ -343,8 +343,6 @@ class GitHgHelper(BaseHelper):
             with self.query(command) as stdout:
                 resp = stdout.readline().rstrip()
                 assert resp == b'ok'
-            # Cannot reuse the fds when the GitHgHelper is reused.
-            os.environ.pop("GIT_CINNABAR_IMPORT_FDS", None)
         super(GitHgHelper, self).close(on_atexit=on_atexit)
 
 

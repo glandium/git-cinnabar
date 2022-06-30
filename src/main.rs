@@ -257,6 +257,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"seen" => do_seen(args, out),
                 b"dangling" => do_dangling(args, out),
                 b"reload" => do_reload(args, out),
+                b"done-and-continue" => do_cleanup(0, out),
                 b"done" => {
                     do_cleanup(0, out);
                     string_list_clear(args, 0);
