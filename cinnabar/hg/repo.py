@@ -321,18 +321,10 @@ def get_clonebundle_url(repo):
 
 def get_store_clonebundle(repo):
     url = Git.config('cinnabar.clonebundle', remote=repo.remote)
-    limit_schemes = False
     if not url:
         url = get_clonebundle_url(repo)
-        limit_schemes = True
 
     if not url:
-        return None
-
-    parsed_url = urlparse(url)
-    if limit_schemes and parsed_url.scheme not in (b'http', b'https'):
-        logging.warn('Server advertizes clone bundle but provided a non '
-                     'http/https url. Skipping.')
         return None
 
     sys.stderr.write('Getting clone bundle from %s\n' % os.fsdecode(url))

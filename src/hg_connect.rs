@@ -503,15 +503,21 @@ fn do_cinnabarclone(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl W
     send_buffer_to(&*result, out);
 }
 
-fn can_use_clonebundle(line: &[u8]) -> Result<&[u8], String> {
+fn can_use_clonebundle(line: &[u8]) -> Result<Option<Url>, String> {
     const SUPPORTED_BUNDLES: [&[u8]; 2] = [b"v1", b"v2"];
     const SUPPORTED_COMPRESSIONS: [&[u8]; 4] = [b"none", b"gzip", b"bzip2", b"zstd"];
 
     let mut line = line.splitn(2, |&b| b == b' ');
     let url = match line.next() {
-        None => return Ok(b""),
-        Some(url) => url.as_bstr(),
+        None => return Ok(None),
+        Some(url) => std::str::from_utf8(url)
+            .ok()
+            .and_then(|url| Url::parse(url).ok())
+            .ok_or("invalid url")?,
     };
+    if !["http", "https"].contains(&url.scheme()) {
+        return Err("non http/https url".to_string());
+    }
     let attributes = line
         .next()
         .map(|l| {
@@ -567,7 +573,7 @@ fn can_use_clonebundle(line: &[u8]) -> Result<&[u8], String> {
     trace!(target: "clonebundle", "{:?}", params);
 
     Ok((!params.contains_key(b"stream".as_bstr()))
-        .then(|| url.as_bytes())
+        .then(|| Some(url))
         .ok_or("stream bundles are not supported")?)
 }
 
@@ -578,9 +584,9 @@ fn do_get_clonebundle_url(conn: &mut dyn HgConnection, args: &[&str], out: &mut 
     for line in ByteSlice::lines(&*bundles) {
         debug!(target: "clonebundle", "{:?}", line.as_bstr());
         match can_use_clonebundle(line) {
-            Ok(b"") => {}
-            Ok(url) => {
-                out.write_all(url).unwrap();
+            Ok(None) => {}
+            Ok(Some(url)) => {
+                write!(out, "{}", url).unwrap();
                 break;
             }
             Err(e) => {
