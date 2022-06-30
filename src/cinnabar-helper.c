@@ -1044,12 +1044,51 @@ error:
 	write_or_die(helper_output, "error\n", 6);
 }
 
-void do_check_file(struct string_list *args, int helper_output)
+int check_file(const struct hg_object_id *oid,
+               const struct hg_object_id *parent1,
+               const struct hg_object_id *parent2)
 {
 	struct hg_file file;
-	struct hg_object_id oid, parent1, parent2, result;
+	struct hg_object_id result;
 
 	hg_file_init(&file);
+	hg_file_load(&file, oid);
+
+	/* We do the quick and dirty thing here, for now.
+	 * See details in cinnabar.githg.FileFindParents._set_parents_fallback
+	 */
+	hg_sha1(&file.file, parent1, parent2, &result);
+	if (hg_oideq(oid, &result))
+		goto ok;
+
+	hg_sha1(&file.file, parent1, NULL, &result);
+	if (hg_oideq(oid, &result))
+		goto ok;
+
+	hg_sha1(&file.file, parent2, NULL, &result);
+	if (hg_oideq(oid, &result))
+		goto ok;
+
+	hg_sha1(&file.file, parent1, parent1, &result);
+	if (hg_oideq(oid, &result))
+		goto ok;
+
+	hg_sha1(&file.file, NULL, NULL, &result);
+	if (!hg_oideq(oid, &result))
+		goto error;
+
+ok:
+	hg_file_release(&file);
+	return 1;
+
+error:
+	hg_file_release(&file);
+	return 0;
+}
+
+void do_check_file(struct string_list *args, int helper_output)
+{
+	struct hg_object_id oid, parent1, parent2;
 
 	if (args->nr < 1 || args->nr > 3)
 		goto error;
@@ -1069,39 +1108,12 @@ void do_check_file(struct string_list *args, int helper_output)
 	} else
 		hg_oidclr(&parent2);
 
-	hg_file_load(&file, &oid);
-
-	/* We do the quick and dirty thing here, for now.
-	 * See details in cinnabar.githg.FileFindParents._set_parents_fallback
-	 */
-	hg_sha1(&file.file, &parent1, &parent2, &result);
-	if (hg_oideq(&oid, &result))
-		goto ok;
-
-	hg_sha1(&file.file, &parent1, NULL, &result);
-	if (hg_oideq(&oid, &result))
-		goto ok;
-
-	hg_sha1(&file.file, &parent2, NULL, &result);
-	if (hg_oideq(&oid, &result))
-		goto ok;
-
-	hg_sha1(&file.file, &parent1, &parent1, &result);
-	if (hg_oideq(&oid, &result))
-		goto ok;
-
-	hg_sha1(&file.file, NULL, NULL, &result);
-	if (!hg_oideq(&oid, &result))
-		goto error;
-
-ok:
-	write_or_die(helper_output, "ok\n", 3);
-	hg_file_release(&file);
-	return;
-
+	if (check_file(&oid, &parent1, &parent2))
+		write_or_die(helper_output, "ok\n", 3);
+	else {
 error:
-	write_or_die(helper_output, "error\n", 6);
-	hg_file_release(&file);
+		write_or_die(helper_output, "error\n", 6);
+	}
 }
 
 static int add_each_head(const struct object_id *oid, void *data)
@@ -1584,7 +1596,8 @@ void do_reload(struct string_list *args, int helper_output)
 	init_metadata();
 	reset_changeset_heads();
 
-	write_or_die(helper_output, "ok\n", 3);
+	if (helper_output != -1)
+		write_or_die(helper_output, "ok\n", 3);
 }
 
 int configset_add_value(struct config_set *, const char*, const char *);

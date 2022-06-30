@@ -1104,21 +1104,33 @@ pub fn do_create_changeset(mut input: &mut dyn BufRead, mut output: impl Write, 
 extern "C" {
     fn store_manifest(chunk: *const rev_chunk);
     fn store_file(chunk: *const rev_chunk);
+
+    fn check_file(
+        oid: *const hg_object_id,
+        parent1: *const hg_object_id,
+        parent2: *const hg_object_id,
+    ) -> c_int;
 }
 
 static STORED_FILES: Lazy<Mutex<BTreeMap<HgChangesetId, [HgChangesetId; 2]>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 
-pub fn do_stored_files(mut output: impl Write, args: &[&[u8]]) {
-    if !args.is_empty() {
-        die!("stored-files takes no arguments");
+pub fn do_check_files(mut output: impl Write) {
+    // Try to detect issue #207 as early as possible.
+    let mut busted = false;
+    for (node, [p1, p2]) in STORED_FILES
+        .lock()
+        .unwrap()
+        .iter()
+        .progress(|n| format!("Checking {n} imported file root and head revisions"))
+    {
+        if unsafe { check_file(&node.clone().into(), &p1.clone().into(), &p2.clone().into()) } == 0
+        {
+            error!(target: "root", "Error in file {node}");
+            busted = true;
+        }
     }
-
-    let mut buf = Vec::new();
-    for (node, [p1, p2]) in STORED_FILES.lock().unwrap().iter() {
-        writeln!(&mut buf, "{node} {p1} {p2}").unwrap();
-    }
-    send_buffer_to(&*buf, &mut output);
+    writeln!(output, "{}", if busted { "busted" } else { "ok" }).unwrap();
 }
 
 pub fn store_changegroup<R: Read>(mut input: R, version: u8) {

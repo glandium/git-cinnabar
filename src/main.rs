@@ -112,7 +112,7 @@ use libgit::{
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::do_progress;
 use store::{
-    do_create, do_raw_changeset, do_store_changeset, do_store_replace, do_stored_files,
+    do_check_files, do_create, do_raw_changeset, do_store_changeset, do_store_replace,
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
     HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF,
     NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
@@ -211,7 +211,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
         let _locked = HELPER_LOCK.lock().unwrap();
         if let b"graft" | b"progress" | b"store-changeset" | b"create" | b"raw-changeset"
-        | b"store-replace" | b"stored-files" = &*command
+        | b"store-replace" = &*command
         {
             let args = match args_.split_last().unwrap().1 {
                 b"" => Vec::new(),
@@ -223,7 +223,6 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"graft" => do_graft(out, &args),
                 b"store-changeset" => do_store_changeset(input, out, &args),
                 b"store-replace" => do_store_replace(&args),
-                b"stored-files" => do_stored_files(out, &args),
                 b"raw-changeset" => do_raw_changeset(out, &args),
                 b"create" => do_create(input, out, &args),
                 _ => unreachable!(),
@@ -257,7 +256,11 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"seen" => do_seen(args, out),
                 b"dangling" => do_dangling(args, out),
                 b"reload" => do_reload(args, out),
-                b"done-and-continue" => do_cleanup(0, out),
+                b"done-and-check" => {
+                    do_cleanup(0, -1);
+                    do_reload(args, -1);
+                    do_check_files(FdFile::from_raw_fd(out));
+                }
                 b"done" => {
                     do_cleanup(0, out);
                     string_list_clear(args, 0);

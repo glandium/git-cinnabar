@@ -195,7 +195,8 @@ void do_cleanup(int rollback, int helper_output)
 	if (!rollback)
 		require_explicit_termination = 0;
 	cleanup();
-	write_or_die(helper_output, "ok\n", 3);
+	if (helper_output != -1)
+		write_or_die(helper_output, "ok\n", 3);
 }
 
 static void start_packfile()

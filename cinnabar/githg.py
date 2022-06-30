@@ -41,7 +41,6 @@ from cinnabar.hg.objects import (
     Manifest,
 )
 from cinnabar.helper import GitHgHelper
-from cinnabar.util import progress_iter
 from cinnabar import util
 
 import logging
@@ -830,39 +829,21 @@ class GitHgStore(object):
             if ref not in (b'refs/notes/cinnabar',):
                 Git.delete_ref(ref)
 
-        with GitHgHelper.query(b'stored-files') as stdout:
-            data = GitHgHelper._read_data(stdout)
-            stored_files = {
-                node: (p1, p2)
-                for node, p1, p2 in (l.split() for l in data.splitlines())
-            }
-
-        with GitHgHelper.query(b'done-and-continue') as stdout:
+        with GitHgHelper.query(b'done-and-check') as stdout:
             resp = stdout.readline().rstrip()
-            assert resp == b'ok'
-
-        # Try to detect issue #207 as early as possible.
-        GitHgHelper.reload()
-        busted = False
-        for (node, (parent1, parent2)) in progress_iter(
-                "Checking {} imported file root and head revisions",
-                stored_files.items()):
-            if not GitHgHelper.check_file(node, parent1, parent2):
-                busted = True
-                logging.error(
-                    "Error in file %s" % node.decode('ascii', 'replace'))
-        if busted:
-            Git.update_ref(b'refs/cinnabar/broken', self._metadata_sha1)
-            raise Abort(
-                "It seems you have hit a known, rare, and difficult to "
-                "reproduce issue.\n"
-                "Your help would be appreciated.\n"
-                "Please try either `git cinnabar rollback` followed by the "
-                "same command that just\n"
-                "failed, or `git cinnabar reclone`.\n"
-                "Please open a new issue "
-                "(https://github.com/glandium/git-cinnabar/issues/new)\n"
-                "mentioning issue #207 and reporting whether the second "
-                "attempt succeeded.\n\n"
-                "Please read all the above and keep a copy of this repository."
-            )
+            if resp != b'ok':
+                Git.update_ref(b'refs/cinnabar/broken', self._metadata_sha1)
+                raise Abort(
+                    "It seems you have hit a known, rare, and difficult to "
+                    "reproduce issue.\n"
+                    "Your help would be appreciated.\n"
+                    "Please try either `git cinnabar rollback` followed by "
+                    "the same command that just\n"
+                    "failed, or `git cinnabar reclone`.\n"
+                    "Please open a new issue "
+                    "(https://github.com/glandium/git-cinnabar/issues/new)\n"
+                    "mentioning issue #207 and reporting whether the second "
+                    "attempt succeeded.\n\n"
+                    "Please read all the above and keep a copy of this "
+                    "repository."
+                )
