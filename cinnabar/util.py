@@ -24,6 +24,18 @@ from weakref import WeakKeyDictionary
 from cinnabar.exceptions import Abort
 
 
+class Formatter(logging.Formatter):
+    def format(self, record):
+        try:
+            if hasattr(record, 'message'):
+                record.message = record.message.replace('\n', '\0')
+            else:
+                record.msg = record.msg.replace('\n', '\0')
+        except Exception:
+            pass
+        return super(Formatter, self).format(record)
+
+
 def init_logging():
     from cinnabar.git import Git
     logger = logging.getLogger()
@@ -32,8 +44,7 @@ def init_logging():
         import msvcrt
         fd = msvcrt.open_osfhandle(fd, os.O_WRONLY)
     handler = logging.StreamHandler(os.fdopen(fd, 'w'))
-    handler.setFormatter(logging.Formatter(
-        "%(levelname)s %(name)s %(message)s"))
+    handler.setFormatter(Formatter("%(levelname)s %(name)s %(message)s"))
     logger.addHandler(handler)
     log_conf = Git.config('cinnabar.log') or b''
     for assignment in log_conf.split(b','):

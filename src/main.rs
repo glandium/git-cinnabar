@@ -1214,6 +1214,7 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
             let reader = BufReader::new(reader);
             for line in reader.lines() {
                 if let Some([level, target, msg]) = line.unwrap().splitn_exact(' ') {
+                    let msg = msg.replace('\0', "\n");
                     if target == "stderr" {
                         eprintln!("{}", msg);
                     } else {
