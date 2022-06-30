@@ -1,6 +1,5 @@
 import os
 import re
-import ssl
 import sys
 from urllib.parse import quote_from_bytes, unquote_to_bytes
 from cinnabar.helper import (
@@ -313,57 +312,11 @@ class HelperRepo(object):
 
 
 def get_clonebundle_url(repo):
-    bundles = repo._call(b'clonebundles')
-
-    supported_bundles = (b'v1', b'v2')
-    supported_compressions = (b'none', b'gzip', b'bzip2', b'zstd')
-
-    has_sni = getattr(ssl, 'HAS_SNI', False)
-
-    logger = logging.getLogger('clonebundle')
-
-    for line in bundles.splitlines():
-        attrs = line.split()
-        if not attrs:
-            continue
-        url = attrs.pop(0)
-        logger.debug(url)
-        attrs = {
-            unquote_to_bytes(k): unquote_to_bytes(v)
-            for k, _, v in (a.partition(b'=') for a in attrs)
-        }
-        logger.debug(attrs)
-        if b'REQUIRESNI' in attrs and not has_sni:
-            logger.debug('Skip because of REQUIRESNI, but SNI unsupported')
-            continue
-
-        spec = attrs.get(b'BUNDLESPEC')
-        if not spec:
-            logger.debug('Skip because missing BUNDLESPEC')
-            continue
-
-        typ, _, params = spec.partition(b';')
-        compression, _, version = typ.partition(b'-')
-
-        if compression not in supported_compressions:
-            logger.debug('Skip because unsupported compression (%s)',
-                         compression)
-            continue
-        if version not in supported_bundles:
-            logger.debug('Skip because unsupported bundle type (%s)',
-                         version)
-            continue
-
-        params_dict = {}
-        for p in params.split(b':'):
-            k, _, v = p.partition(b'=')
-            params_dict[k] = v
-
-        if b'stream' in params_dict:
-            logger.debug('Skip because stream bundles are not supported')
-            continue
-
-        return url
+    with HgRepoHelper.query(
+            b'get_clonebundle_url', HgRepoHelper.connected) as stdout:
+        url = stdout.readline().strip()
+        if url:
+            return url
 
 
 def get_store_clonebundle(repo):

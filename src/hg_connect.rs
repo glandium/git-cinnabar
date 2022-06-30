@@ -2,10 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
 use std::fs::File;
 use std::io::{stderr, BufRead, Read, Write};
+use std::mem;
 use std::os::raw::c_int;
 use std::str::FromStr;
 
@@ -502,6 +503,94 @@ fn do_cinnabarclone(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl W
     send_buffer_to(&*result, out);
 }
 
+fn can_use_clonebundle(line: &[u8]) -> Result<&[u8], String> {
+    const SUPPORTED_BUNDLES: [&[u8]; 2] = [b"v1", b"v2"];
+    const SUPPORTED_COMPRESSIONS: [&[u8]; 4] = [b"none", b"gzip", b"bzip2", b"zstd"];
+
+    let mut line = line.splitn(2, |&b| b == b' ');
+    let url = match line.next() {
+        None => return Ok(b""),
+        Some(url) => url.as_bstr(),
+    };
+    let attributes = line
+        .next()
+        .map(|l| {
+            l.split(|&b| b == b' ')
+                .map(|a| {
+                    a.splitn_exact::<2>(b'=').map(|[a, b]| unsafe {
+                        (
+                            mem::transmute::<_, Box<BStr>>(
+                                percent_decode(a).collect_vec().into_boxed_slice(),
+                            ),
+                            mem::transmute::<_, Box<BStr>>(
+                                percent_decode(b).collect_vec().into_boxed_slice(),
+                            ),
+                        )
+                    })
+                })
+                .collect::<Option<HashMap<_, _>>>()
+                .ok_or("failed to decode")
+        })
+        .transpose()?;
+    trace!(target: "clonebundle", "{:?}", attributes);
+
+    //TODO: should we care about REQUIRESNI, or can we assume curl always supports
+    //SNI? (for now, we assume it does).
+
+    let mut bundlespec = attributes
+        .as_ref()
+        .and_then(|attrs| attrs.get(b"BUNDLESPEC".as_bstr()))
+        .ok_or("missing BUNDLE_SPEC")?
+        .split(|&b| b == b';');
+    if let Some([compression, version]) = bundlespec
+        .next()
+        .ok_or("empty BUNDLESPEC?")?
+        .splitn_exact(b'-')
+    {
+        if !SUPPORTED_COMPRESSIONS.contains(&compression) {
+            return Err(format!(
+                "unsupported compression: {}",
+                compression.as_bstr()
+            ))?;
+        }
+        if !SUPPORTED_BUNDLES.contains(&version) {
+            return Err(format!("unsupported bundle type: {}", version.as_bstr()))?;
+        }
+    }
+    let params = bundlespec
+        .map(|b| {
+            b.splitn_exact::<2>(b'=')
+                .map(|[k, v]| (k.as_bstr(), v.as_bstr()))
+        })
+        .collect::<Option<HashMap<_, _>>>()
+        .ok_or("failed to decode BUNDLESPEC")?;
+    trace!(target: "clonebundle", "{:?}", params);
+
+    Ok((!params.contains_key(b"stream".as_bstr()))
+        .then(|| url.as_bytes())
+        .ok_or("stream bundles are not supported")?)
+}
+
+fn do_get_clonebundle_url(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
+    assert!(args.is_empty());
+    let bundles = conn.clonebundles();
+
+    for line in ByteSlice::lines(&*bundles) {
+        debug!(target: "clonebundle", "{:?}", line.as_bstr());
+        match can_use_clonebundle(line) {
+            Ok(b"") => {}
+            Ok(url) => {
+                out.write_all(url).unwrap();
+                break;
+            }
+            Err(e) => {
+                debug!(target: "clonebundle", " Skipping ({})", e);
+            }
+        }
+    }
+    out.write_all(b"\n").unwrap();
+}
+
 pub fn get_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnection>> {
     if ["http", "https"].contains(&url.scheme()) {
         get_http_connection(url)
@@ -576,6 +665,7 @@ pub fn connect_main_with(
             "state" => do_state(conn, &*args, out),
             "lookup" => do_lookup(conn, &*args, out),
             "clonebundles" => do_clonebundles(conn, &*args, out),
+            "get_clonebundle_url" => do_get_clonebundle_url(conn, &*args, out),
             "cinnabarclone" => do_cinnabarclone(conn, &*args, out),
             "close" => {
                 connections.remove(&conn_id);
