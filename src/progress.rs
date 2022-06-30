@@ -48,14 +48,13 @@ impl<I: Iterator> Progress for I {
         if PROGRESS_ENABLED.load(Ordering::Relaxed) {
             let now = Instant::now();
 
-            let mut this = ProgressIterEnabled {
+            let this = ProgressIterEnabled {
                 iter: self.enumerate(),
                 formatter,
                 start: check_enabled(Checks::TIME).then(|| now),
                 last_update: now,
-                count: 1,
+                count: 0,
             };
-            this.display(now);
             ProgressIter(ProgressIterImpl::Enabled(this))
         } else {
             ProgressIter(ProgressIterImpl::Disabled(self))
@@ -78,8 +77,10 @@ impl<I: Iterator, F: Fn(usize) -> String> ProgressIterEnabled<I, F> {
 
 impl<I: Iterator, F: Fn(usize) -> String> Drop for ProgressIterEnabled<I, F> {
     fn drop(&mut self) {
-        self.display(Instant::now());
-        eprintln!();
+        if self.count > 0 {
+            self.display(Instant::now());
+            eprintln!();
+        }
     }
 }
 
