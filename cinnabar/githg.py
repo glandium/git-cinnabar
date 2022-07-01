@@ -379,11 +379,6 @@ class BranchMap(object):
 
 
 class GitHgStore(object):
-    FLAGS = [
-        b'files-meta',
-        b'unified-manifests-v2',
-    ]
-
     METADATA_REFS = (
         b'refs/cinnabar/changesets',
         b'refs/cinnabar/manifests',
