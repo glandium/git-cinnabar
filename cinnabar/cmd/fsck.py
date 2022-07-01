@@ -417,6 +417,7 @@ def fsck(args):
 
     dag = gitdag()
 
+    store_manifest_heads = set(GitHgHelper.heads(b'manifests'))
     GitHgHelper.reset_heads(b'manifests')
 
     full_file_check = FileFindParents.logger.isEnabledFor(logging.DEBUG)
@@ -520,7 +521,6 @@ def fsck(args):
                            manifest_ref.decode('ascii')))
 
     if not args.commit and not status('broken'):
-        store_manifest_heads = set(store._manifest_heads_orig)
         manifest_heads = set(GitHgHelper.heads(b'manifests'))
         if store_manifest_heads != manifest_heads:
             def iter_manifests(a, b):

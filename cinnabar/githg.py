@@ -417,10 +417,8 @@ class GitHgStore(object):
 
         metadata = self.metadata()
         self._has_metadata = bool(metadata)
-        self._manifest_heads_orig = set()
         if metadata:
             self._hgheads_orig = dict(GitHgHelper.heads(b'changesets'))
-            self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
 
             # Delete old tag-cache, which may contain incomplete data.
             Git.delete_ref(b'refs/cinnabar/tag-cache')
@@ -591,7 +589,6 @@ class GitHgStore(object):
 
         self._has_metadata = True
         self._hgheads_orig = dict(GitHgHelper.heads(b'changesets'))
-        self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
 
         self._tags = dict(self.tags())
 
