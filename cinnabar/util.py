@@ -36,6 +36,24 @@ class Formatter(logging.Formatter):
         return super(Formatter, self).format(record)
 
 
+class PipeHandler(logging.StreamHandler):
+    def flush(self):
+        try:
+            super(PipeHandler, self).flush()
+        except BrokenPipeError:
+            # setStream calls flush, so if we error from there, we're doomed.
+            # in other cases, we've already lost whatever was not flushed
+            # anyways.
+            pass
+
+    def emit(self, record):
+        try:
+            super(PipeHandler, self).emit(record)
+        except BrokenPipeError:
+            self.setStream(sys.stderr)
+            super(PipeHandler, self).emit(record)
+
+
 def init_logging():
     from cinnabar.git import Git
     logger = logging.getLogger()
@@ -43,7 +61,7 @@ def init_logging():
     if sys.platform == 'win32':
         import msvcrt
         fd = msvcrt.open_osfhandle(fd, os.O_WRONLY)
-    handler = logging.StreamHandler(os.fdopen(fd, 'w'))
+    handler = PipeHandler(os.fdopen(fd, 'w'))
     handler.setFormatter(Formatter("%(levelname)s %(name)s %(message)s"))
     logger.addHandler(handler)
     log_conf = Git.config('cinnabar.log') or b''
