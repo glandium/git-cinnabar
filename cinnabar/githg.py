@@ -389,12 +389,9 @@ class GitHgStore(object):
 
     def metadata(self):
         if self._metadata_sha1:
-            metadata = GitCommit(self._metadata_sha1)
-            self._flags = set(metadata.body.split())
-            return metadata
+            return GitCommit(self._metadata_sha1)
 
     def __init__(self):
-        self._flags = set()
         self._closed = False
         self._graft = False
 
