@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
 use std::fs::File;
-use std::io::{stderr, BufRead, Read, Write};
+use std::io::{stderr, BufRead, Cursor, Read, Write};
 use std::mem;
 use std::os::raw::c_int;
 use std::str::FromStr;
@@ -448,7 +448,29 @@ fn do_unbundle(
 
     let file = File::open(path).unwrap();
     let response = conn.unbundle(heads.as_deref(), file);
-    send_buffer_to(&*response, out);
+    if response.starts_with_str("HG20") {
+        let mut bundle = BundleReader::new(Cursor::new(response)).unwrap();
+        while let Some(part) = bundle.next_part().unwrap() {
+            match part.part_type.as_bytes() {
+                b"reply:changegroup" => {
+                    // TODO: should check in-reply-to param.
+                    let response = part.params.get("return").unwrap();
+                    send_buffer_to(response.as_bytes(), out);
+                }
+                b"error:abort" => {
+                    let mut message = part.params.get("message").unwrap().to_string();
+                    if let Some(hint) = part.params.get("hint") {
+                        message.push_str("\n\n");
+                        message.push_str(hint);
+                    }
+                    error!(target: "root", "{}", message);
+                }
+                _ => {}
+            }
+        }
+    } else {
+        send_buffer_to(&*response, out);
+    }
 }
 
 fn do_pushkey(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {

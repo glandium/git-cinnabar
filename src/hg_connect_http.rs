@@ -529,7 +529,7 @@ impl HgWireConnection for HgHttpConnection {
         self.handle_redirect(&http_resp);
         let header = (&mut http_resp).take(4).read_all().unwrap();
         if &*header == b"HG20" {
-            http_resp.read_all().unwrap()
+            Cursor::new(header).chain(http_resp).read_all().unwrap()
         } else {
             let stderr = stderr();
             let mut buf = header.to_vec();

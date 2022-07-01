@@ -12,14 +12,12 @@ from binascii import (
     unhexlify,
 )
 from itertools import chain
-from io import BytesIO
 from urllib.parse import (
     ParseResult,
     urlparse,
     urlunparse,
 )
 import logging
-import struct
 import random
 from cinnabar.dag import gitdag
 from cinnabar.git import (
@@ -35,90 +33,6 @@ from cinnabar.hg.bundle import (
     encodecaps,
     decodecaps,
 )
-
-
-class unbundle20(object):
-    def __init__(self, fh):
-        self.fh = fh
-        params_len = readexactly(fh, 4)
-        assert params_len == b'\0\0\0\0'
-
-    def iterparts(self):
-        while True:
-            d = readexactly(self.fh, 4)
-            length = struct.unpack('>i', d)[0]
-            if length == 0:
-                break
-            assert length > 0
-            header = readexactly(self.fh, length)
-            part = Part(header, self.fh)
-            yield part
-            part.consume()
-
-
-class Part(object):
-    def __init__(self, rawheader, fh):
-        rawheader = memoryview(rawheader)
-        part_type_len = struct.unpack('>B', rawheader[:1])[0]
-        self.type = rawheader[1:part_type_len + 1].tobytes().lower()
-        rawheader = rawheader[part_type_len + 5:]
-        params_count1, params_count2 = struct.unpack('>BB', rawheader[:2])
-        rawheader = rawheader[2:]
-        count = params_count1 + params_count2
-        param_sizes = struct.unpack(
-            '>' + ('BB' * count), rawheader[:2 * count])
-        rawheader = rawheader[2 * count:]
-        data = []
-        for size in param_sizes:
-            data.append(rawheader[:size])
-            rawheader = rawheader[size:]
-        assert len(rawheader) == 0
-        self.params = {
-            k.tobytes(): v.tobytes()
-            for k, v in zip(data[::2], data[1::2])
-        }
-        self.fh = fh
-        self.chunk_offset = 0
-        self.chunk_size = 0
-        self.consumed = False
-
-    def read(self, size=None):
-        ret = b''
-        while (size is None or size > 0) and not self.consumed:
-            if self.chunk_size == self.chunk_offset:
-                d = readexactly(self.fh, 4)
-                self.chunk_size = struct.unpack('>i', d)[0]
-                if self.chunk_size == 0:
-                    self.consumed = True
-                    break
-                # TODO: handle -1, which is a special value
-                assert self.chunk_size > 0
-                self.chunk_offset = 0
-
-            wanted = self.chunk_size - self.chunk_offset
-            if size is not None:
-                wanted = min(size, wanted)
-            data = readexactly(self.fh, wanted)
-            if size is not None:
-                size -= len(data)
-            self.chunk_offset += len(data)
-            ret += data
-        return ret
-
-    def consume(self):
-        while not self.consumed:
-            self.read(32768)
-
-
-# The following function was copied from the # mercurial source code.
-# Copyright 2006 Matt Mackall <mpm@selenic.com> and others
-def readexactly(stream, n):
-    '''read n bytes from stream.read and abort if less was available'''
-    s = stream.read(n)
-    if len(s) < n:
-        raise Exception("stream ended unexpectedly (got %d bytes, expected %d)"
-                        % (len(s), n))
-    return s
 
 
 def _sample(l, size):
@@ -296,11 +210,8 @@ class HelperRepo(object):
         return self._helper.pushkey(namespace, key, old, new)
 
     def unbundle(self, cg, heads, *args, **kwargs):
-        data = self._helper.unbundle(cg, (hexlify(h) if h != b'force' else h
+        return self._helper.unbundle(cg, (hexlify(h) if h != b'force' else h
                                           for h in heads))
-        if isinstance(data, bytes) and data.startswith(b'HG20'):
-            data = unbundle20(BytesIO(data[4:]))
-        return data
 
 
 def get_clonebundle_url(repo):
@@ -544,25 +455,6 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
             b2caps[b'replycaps'] = encodecaps({b'error': [b'abort']})
         cg = create_bundle(store, push_commits, b2caps)
         reply = repo.unbundle(cg, repo_heads, b'')
-        if isinstance(reply, unbundle20):
-            parts = iter(reply.iterparts())
-            for part in parts:
-                logging.getLogger('bundle2').debug('part: %s', part.type)
-                logging.getLogger('bundle2').debug('params: %r', part.params)
-                if part.type == b'output':
-                    sys.stderr.write(os.fsdecode(part.read()))
-                elif part.type == b'reply:changegroup':
-                    # TODO: should check params['in-reply-to']
-                    reply = int(part.params[b'return'])
-                elif part.type == b'error:abort':
-                    message = part.params[b'message'].decode('utf-8')
-                    hint = part.params.get(b'hint')
-                    if hint:
-                        message += '\n\n' + hint.decode('utf-8')
-                    raise Exception(message)
-                else:
-                    logging.getLogger('bundle2').warning(
-                        'ignoring bundle2 part: %s', part.type)
         pushed = reply != 0
     return gitdag(push_commits) if pushed or dry_run else ()
 

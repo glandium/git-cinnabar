@@ -409,10 +409,7 @@ class HgRepoHelper(BaseHelper):
                 self._helper.stdin.write(data)
             self._helper.stdin.flush()
             ret = self._read_data(stdout)
-            try:
-                return int(ret)
-            except ValueError:
-                return ret
+            return int(ret)
 
     @classmethod
     def pushkey(self, namespace, key, old, new):
