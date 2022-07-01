@@ -298,7 +298,7 @@ class HelperRepo(object):
     def unbundle(self, cg, heads, *args, **kwargs):
         data = self._helper.unbundle(cg, (hexlify(h) if h != b'force' else h
                                           for h in heads))
-        if isinstance(data, str) and data.startswith(b'HG20'):
+        if isinstance(data, bytes) and data.startswith(b'HG20'):
             data = unbundle20(BytesIO(data[4:]))
         return data
 
