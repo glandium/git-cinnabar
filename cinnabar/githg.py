@@ -771,36 +771,16 @@ class GitHgStore(object):
     def close(self, refresh=()):
         if self._closed:
             return
-        if self._graft:
-            with GitHgHelper.query(b'graft', b'finish') as stdout:
-                res = stdout.readline().strip()
-                assert res in (b'ok', b'ko')
-                if res == b'ko':
-                    raise NothingToGraftException()
         self._closed = True
         # If the helper is not running, we don't have anything to update.
         if not GitHgHelper._helper:
             return
 
-        self._metadata_sha1 = GitHgHelper.store(b'metadata')
-        Git.update_ref(b'refs/cinnabar/metadata', self._metadata_sha1)
-        Git.update_ref(b'refs/notes/cinnabar',
-                       GitCommit(self._metadata_sha1).parents[3])
-
-        if b'refs/cinnabar/checked' in refresh:
-            Git.update_ref(b'refs/cinnabar/checked', self._metadata_sha1)
-
-        with GitHgHelper.query(b'store-replace'):
-            pass
-
-        # refs/notes/cinnabar is kept for convenience
-        for ref in self.METADATA_REFS:
-            if ref not in (b'refs/notes/cinnabar',):
-                Git.delete_ref(ref)
-
-        with GitHgHelper.query(b'done-and-check') as stdout:
+        with GitHgHelper.query(b'done-and-check', *refresh) as stdout:
             resp = stdout.readline().rstrip()
-            if resp != b'ok':
+            if resp == b'no-graft':
+                raise NothingToGraftException()
+            elif resp != b'ok':
                 raise Abort(
                     "It seems you have hit a known, rare, and difficult to "
                     "reproduce issue.\n"

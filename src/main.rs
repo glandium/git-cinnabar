@@ -103,20 +103,21 @@ use which::which;
 
 use crate::libc::FdFile;
 use crate::util::FromBytes;
-use graft::do_graft;
+use graft::{do_graft, graft_finish};
 use hg_connect::connect_main_with;
 use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git};
 use libgit::{
     config_get_value, for_each_ref_in, for_each_remote, get_oid_committish, lookup_replace_commit,
-    ls_tree, remote, resolve_ref, strbuf, string_list, BlobId, CommitId, RawCommit, RefTransaction,
+    ls_tree, object_id, remote, resolve_ref, strbuf, string_list, BlobId, CommitId, RawCommit,
+    RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::do_progress;
 use store::{
-    do_check_files, do_create, do_raw_changeset, do_store_changeset, do_store_replace,
-    GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
-    HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF,
-    NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    do_check_files, do_create, do_raw_changeset, do_store_changeset, GitChangesetId, GitFileId,
+    GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId, HgManifestId, RawHgChangeset,
+    RawHgFile, RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX,
+    REPLACE_REFS_PREFIX,
 };
 use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
 
@@ -179,6 +180,8 @@ extern "C" {
     fn do_set(l: *const string_list);
     fn do_store(in_: *mut libcinnabar::reader, out: c_int, l: *const string_list);
 
+    fn do_store_metadata(result: *mut object_id);
+
     #[cfg(windows)]
     fn wmain(argc: c_int, argv: *const *const u16) -> c_int;
 
@@ -218,6 +221,38 @@ static INIT_CINNABAR_2: Lazy<()> = Lazy::new(|| unsafe { init_cinnabar_2() });
 
 static HELPER_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
+fn do_done_and_check(mut out: impl Write, args: &[&[u8]]) {
+    unsafe {
+        if graft_finish() == Some(false) {
+            // Rollback
+            do_cleanup(1, -1);
+            writeln!(out, "no-graft").unwrap();
+            return;
+        }
+        let mut new_metadata = object_id::default();
+        do_store_metadata(&mut new_metadata);
+        do_cleanup(0, -1);
+        let new_metadata = CommitId::from_unchecked(new_metadata.into());
+        set_metadata_to(
+            Some(&new_metadata),
+            MetadataFlags::FORCE | MetadataFlags::KEEP_REFS,
+            "update",
+        )
+        .unwrap();
+        if args.contains(&&b"refs/cinnabar/checked"[..]) {
+            let mut transaction = RefTransaction::new().unwrap();
+            transaction
+                .update("refs/cinnabar/checked", &new_metadata, None, "fsck")
+                .unwrap();
+            transaction.commit().unwrap();
+        }
+        let args = string_list_new();
+        do_reload(args, -1);
+        ::libc::free(args as *mut c_void);
+    }
+    do_check_files(out);
+}
+
 fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
     let args = unsafe { string_list_new() };
     let mut line = Vec::new();
@@ -238,7 +273,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
         let _locked = HELPER_LOCK.lock().unwrap();
         if let b"graft" | b"progress" | b"store-changeset" | b"create" | b"raw-changeset"
-        | b"store-replace" | b"reset" = &*command
+        | b"reset" | b"done-and-check" = &*command
         {
             let args = match args_.split_last().unwrap().1 {
                 b"" => Vec::new(),
@@ -247,12 +282,12 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
             let out = unsafe { FdFile::from_raw_fd(out) };
             match &*command {
                 b"progress" => do_progress(out, &args),
-                b"graft" => do_graft(out, &args),
+                b"graft" => do_graft(&args),
                 b"store-changeset" => do_store_changeset(input, out, &args),
-                b"store-replace" => do_store_replace(&args),
                 b"raw-changeset" => do_raw_changeset(out, &args),
                 b"create" => do_create(input, out, &args),
                 b"reset" => do_reset(&args),
+                b"done-and-check" => do_done_and_check(out, &args),
                 _ => unreachable!(),
             }
             continue;
@@ -284,11 +319,6 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"seen" => do_seen(args, out),
                 b"dangling" => do_dangling(args, out),
                 b"reload" => do_reload(args, out),
-                b"done-and-check" => {
-                    do_cleanup(0, -1);
-                    do_reload(args, -1);
-                    do_check_files(FdFile::from_raw_fd(out));
-                }
                 b"done" => {
                     do_cleanup(0, out);
                     string_list_clear(args, 0);
@@ -643,13 +673,27 @@ fn get_previous_metadata(metadata: &CommitId) -> Option<CommitId> {
     }
 }
 
+bitflags! {
+    pub struct MetadataFlags: i32 {
+        const FORCE = 0x1;
+        const KEEP_REFS = 0x2;
+    }
+}
+
 fn set_metadata_to(
     new_metadata: Option<&CommitId>,
-    force: bool,
+    flags: MetadataFlags,
     msg: &str,
 ) -> Result<Option<CommitId>, String> {
     let mut refs = HashMap::new();
     for_each_ref_in(REFS_PREFIX, |r, oid| {
+        if flags.contains(MetadataFlags::KEEP_REFS)
+            && (r.as_bytes().starts_with_str("refs/")
+                || r.as_bytes().starts_with_str("hg/")
+                || r == "HEAD")
+        {
+            return Ok(());
+        }
         let mut full_ref = OsString::from(REFS_PREFIX);
         full_ref.push(r);
         if refs.insert(full_ref, oid.clone()).is_some() {
@@ -701,7 +745,8 @@ fn set_metadata_to(
         };
 
         let mut m = metadata.clone();
-        let found = force
+        let found = flags
+            .contains(MetadataFlags::FORCE)
             .then(|| {
                 state = MetadataState::Unknown;
                 new.clone()
@@ -781,7 +826,7 @@ fn set_metadata_to(
 fn do_reclone() -> Result<(), String> {
     // TODO: Avoid resetting at all, possibly leaving the repo with no metadata
     // if this is interrupted somehow.
-    let mut previous_metadata = set_metadata_to(None, false, "reclone")?;
+    let mut previous_metadata = set_metadata_to(None, MetadataFlags::empty(), "reclone")?;
 
     for_each_remote(|remote| {
         if remote.skip_default_update() || hg_url(remote.get_url()).is_none() {
@@ -867,7 +912,12 @@ fn do_rollback(
     } else {
         return Err("Nothing to rollback.".to_string());
     };
-    set_metadata_to(wanted_metadata.as_ref(), force, "rollback").map(|_| ())
+    let flags = if force {
+        MetadataFlags::FORCE
+    } else {
+        MetadataFlags::empty()
+    };
+    set_metadata_to(wanted_metadata.as_ref(), flags, "rollback").map(|_| ())
 }
 
 #[allow(clippy::unnecessary_wraps)]

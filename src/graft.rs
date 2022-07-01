@@ -4,7 +4,6 @@
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
-use std::io::Write;
 use std::os::raw::c_uint;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -34,16 +33,17 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 static GRAFT_TREES: Lazy<Mutex<BTreeMap<TreeId, Vec<CommitId>>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 
-pub fn do_graft(mut output: impl Write, args: &[&[u8]]) {
+pub fn graft_finish() -> Option<bool> {
+    if !INITIALIZED.load(Ordering::Relaxed) {
+        None
+    } else {
+        Some(grafted() || DID_SOMETHING.load(Ordering::Relaxed))
+    }
+}
+
+pub fn do_graft(args: &[&[u8]]) {
     match args.split_first() {
         Some((&b"init", args)) => do_init(args),
-        Some((&b"finish", &[])) => {
-            if grafted() || DID_SOMETHING.load(Ordering::Relaxed) {
-                writeln!(output, "ok").unwrap();
-            } else {
-                writeln!(output, "ko").unwrap();
-            }
-        }
         Some((cmd, _)) => die!("unknown graft subcommand: {}", cmd.as_bstr()),
         None => die!("graft expects a subcommand"),
     }

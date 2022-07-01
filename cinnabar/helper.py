@@ -287,12 +287,7 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def store(self, what, *args):
-        if what == b'metadata':
-            with self.query(b'store', what, *args) as stdout:
-                sha1 = stdout.read(41)
-                assert sha1[-1:] == b'\n'
-                return sha1[:40]
-        elif what in (b'file', b'manifest'):
+        if what in (b'file', b'manifest'):
             obj = args[0]
             if isinstance(obj, RawRevChunk01):
                 delta_node = obj.delta_node
