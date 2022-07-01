@@ -674,35 +674,36 @@ fn rollback_to(
         };
 
         let mut m = metadata.clone();
-        let found = std::iter::from_fn(move || {
-            m = m.as_ref().and_then(get_previous_metadata);
-            m.clone()
-        })
-        .try_find_(|m| -> Result<_, String> {
-            if Some(m) == broken.as_ref() {
-                state = MetadataState::Broken;
-            } else if Some(m) == checked.as_ref() {
-                state = MetadataState::Checked;
-            } else if state == MetadataState::Broken {
-                // We don't know whether ancestors of broken metadata are broken.
+        let found = force
+            .then(|| {
                 state = MetadataState::Unknown;
-            }
-            Ok(m == new)
-        })?
-        .or_else(|| {
-            if force {
-                state = MetadataState::Unknown;
-                Some(new.clone())
-            } else {
-                None
-            }
-        })
-        .ok_or_else(|| {
-            format!(
-                "Cannot rollback to {}, it is not in the ancestry of current metadata.",
-                new
-            )
-        })?;
+                new.clone()
+            })
+            .or_else(|| {
+                std::iter::from_fn(move || {
+                    m = m.as_ref().and_then(get_previous_metadata);
+                    m.clone()
+                })
+                .try_find_(|m| -> Result<_, String> {
+                    if Some(m) == broken.as_ref() {
+                        state = MetadataState::Broken;
+                    } else if Some(m) == checked.as_ref() {
+                        state = MetadataState::Checked;
+                    } else if state == MetadataState::Broken {
+                        // We don't know whether ancestors of broken metadata are broken.
+                        state = MetadataState::Unknown;
+                    }
+                    Ok(m == new)
+                })
+                .ok()
+                .flatten()
+            })
+            .ok_or_else(|| {
+                format!(
+                    "Cannot rollback to {}, it is not in the ancestry of current metadata.",
+                    new
+                )
+            })?;
         // And just in case, check we got what we were looking for. Any error
         // should already have been returned by the `?` above.
         assert_eq!(found, *new);
