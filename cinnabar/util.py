@@ -641,7 +641,8 @@ def run(func, args):
         retcode = 70  # Internal software error
         message = getattr(e, 'message', None) or getattr(e, 'reason', None)
         message = message or ', '.join(
-            os.fsdecode(a) for a in getattr(e, 'args', []))
+            os.fsdecode(a) if isinstance(a, bytes) else str(a)
+            for a in getattr(e, 'args', []))
         message = message or str(e)
         if check_enabled('traceback') or not message:
             traceback.print_exc()
