@@ -616,7 +616,7 @@ fn get_previous_metadata(metadata: &CommitId) -> Option<CommitId> {
     }
 }
 
-fn rollback_to(
+fn set_metadata_to(
     new_metadata: Option<&CommitId>,
     force: bool,
     msg: &str,
@@ -754,7 +754,7 @@ fn rollback_to(
 fn do_reclone() -> Result<(), String> {
     // TODO: Avoid resetting at all, possibly leaving the repo with no metadata
     // if this is interrupted somehow.
-    let mut previous_metadata = rollback_to(None, false, "reclone")?;
+    let mut previous_metadata = set_metadata_to(None, false, "reclone")?;
 
     for_each_remote(|remote| {
         if remote.skip_default_update() || hg_url(remote.get_url()).is_none() {
@@ -840,7 +840,7 @@ fn do_rollback(
     } else {
         return Err("Nothing to rollback.".to_string());
     };
-    rollback_to(wanted_metadata.as_ref(), force, "rollback").map(|_| ())
+    set_metadata_to(wanted_metadata.as_ref(), force, "rollback").map(|_| ())
 }
 
 #[allow(clippy::unnecessary_wraps)]
