@@ -53,6 +53,10 @@ fn do_init(args: &[&[u8]]) {
     if !args.is_empty() {
         die!("graft init takes no argument");
     }
+    init_graft();
+}
+
+pub fn init_graft() {
     let mut args = vec![
         OsStr::new("--full-history"),
         OsStr::new("--exclude=refs/cinnabar/*"),

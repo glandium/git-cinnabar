@@ -103,8 +103,8 @@ use which::which;
 
 use crate::libc::FdFile;
 use crate::util::FromBytes;
-use graft::{do_graft, graft_finish};
-use hg_connect::connect_main_with;
+use graft::{do_graft, graft_finish, init_graft};
+use hg_connect::{connect_main_with, get_clonebundle_url, get_connection, get_store_bundle};
 use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git};
 use libgit::{
     config_get_value, for_each_ref_in, for_each_remote, get_oid_committish, lookup_replace_commit,
@@ -949,6 +949,40 @@ fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
     }
 }
 
+fn do_unbundle(clonebundle: bool, mut url: Url) -> Result<(), String> {
+    if !["http", "https", "file"].contains(&url.scheme()) {
+        return Err(format!("{} urls are not supported.", url.scheme()));
+    }
+    let graft = get_config("graft")
+        .map(|v| {
+            v.into_string()
+                .and_then(|v| bool::from_str(&v).map_err(|_| v.into()))
+        })
+        .transpose()
+        // TODO: This should report the environment variable is that's what was used.
+        .map_err(|e| format!("Invalid value for cinnabar.graft: {}", e.to_string_lossy()))?
+        .unwrap_or(false);
+    if graft {
+        init_graft();
+    }
+    if clonebundle {
+        let mut conn = get_connection(&url, 0).unwrap();
+        if conn.get_capability(b"clonebundles").is_none() {
+            return Err("Repository does not support clonebundles")?;
+        }
+        url = get_clonebundle_url(&mut *conn).ok_or("Repository didn't provide a clonebundle")?;
+        eprintln!("Getting clone bundle from {}", url);
+    }
+    let mut conn = get_connection(&url, 0).unwrap();
+
+    get_store_bundle(&mut *conn, &[], &[], None)
+        .map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
+
+    do_done_and_check(&[])
+        .then(|| ())
+        .ok_or_else(|| "Fatal error".to_string())
+}
+
 #[derive(Debug)]
 struct AbbrevSize(usize);
 
@@ -1104,9 +1138,8 @@ enum CinnabarCommand {
         #[clap(help = "Get clone bundle from given repository")]
         clonebundle: bool,
         #[clap(help = "Url of the bundle")]
-        #[clap(parse(from_os_str))]
         #[clap(allow_invalid_utf8 = true)]
-        url: OsString,
+        url: Url,
     },
     #[clap(name = "upgrade")]
     #[clap(about = "Upgrade cinnabar metadata")]
@@ -1163,14 +1196,13 @@ fn git_cinnabar() -> i32 {
             committish,
         } => do_rollback(candidates, fsck, force, committish),
         Upgrade => do_upgrade(),
-        Bundle { .. } | Unbundle { .. } | Fsck { .. } => {
-            match run_python_command(PythonCommand::GitCinnabar) {
-                Ok(code) => {
-                    return code;
-                }
-                Err(e) => Err(e),
+        Unbundle { clonebundle, url } => do_unbundle(clonebundle, url),
+        Bundle { .. } | Fsck { .. } => match run_python_command(PythonCommand::GitCinnabar) {
+            Ok(code) => {
+                return code;
             }
-        }
+            Err(e) => Err(e),
+        },
     };
     match ret {
         Ok(()) => 0,

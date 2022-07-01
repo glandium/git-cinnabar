@@ -384,22 +384,8 @@ fn do_get_store_bundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut imp
     let common = args.next().map_or_else(Vec::new, arg_list);
     let bundle2caps = args.next().copied();
     assert!(args.next().is_none());
-
-    match conn.getbundle(&heads, &common, bundle2caps) {
-        Ok(r) => {
-            let mut bundle = BundleReader::new(r).unwrap();
-            while let Some(part) = bundle.next_part().unwrap() {
-                if &*part.part_type == "changegroup" {
-                    let version = part
-                        .params
-                        .get("version")
-                        .map_or(1, |v| u8::from_str(v).unwrap());
-                    let _locked = HELPER_LOCK.lock().unwrap();
-                    store_changegroup(part, version);
-                }
-            }
-            out.write_all(b"ok\n").unwrap();
-        }
+    match get_store_bundle(conn, &heads, &common, bundle2caps) {
+        Ok(()) => out.write_all(b"ok\n").unwrap(),
         Err(e) => {
             out.write_all(b"err\n").unwrap();
             let stderr = stderr();
@@ -407,6 +393,27 @@ fn do_get_store_bundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut imp
             writer.write_all(&e).unwrap();
         }
     }
+}
+
+pub fn get_store_bundle(
+    conn: &mut dyn HgConnection,
+    heads: &[HgChangesetId],
+    common: &[HgChangesetId],
+    bundle2caps: Option<&str>,
+) -> Result<(), ImmutBString> {
+    conn.getbundle(heads, common, bundle2caps).map(|r| {
+        let mut bundle = BundleReader::new(r).unwrap();
+        while let Some(part) = bundle.next_part().unwrap() {
+            if &*part.part_type == "changegroup" {
+                let version = part
+                    .params
+                    .get("version")
+                    .map_or(1, |v| u8::from_str(v).unwrap());
+                let _locked = HELPER_LOCK.lock().unwrap();
+                store_changegroup(part, version);
+            }
+        }
+    })
 }
 
 fn do_unbundle(
@@ -579,6 +586,13 @@ fn can_use_clonebundle(line: &[u8]) -> Result<Option<Url>, String> {
 
 fn do_get_clonebundle_url(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
     assert!(args.is_empty());
+    if let Some(url) = get_clonebundle_url(conn) {
+        write!(out, "{}", url).unwrap();
+    }
+    out.write_all(b"\n").unwrap();
+}
+
+pub fn get_clonebundle_url(conn: &mut dyn HgConnection) -> Option<Url> {
     let bundles = conn.clonebundles();
 
     for line in ByteSlice::lines(&*bundles) {
@@ -586,15 +600,14 @@ fn do_get_clonebundle_url(conn: &mut dyn HgConnection, args: &[&str], out: &mut 
         match can_use_clonebundle(line) {
             Ok(None) => {}
             Ok(Some(url)) => {
-                write!(out, "{}", url).unwrap();
-                break;
+                return Some(url);
             }
             Err(e) => {
                 debug!(target: "clonebundle", " Skipping ({})", e);
             }
         }
     }
-    out.write_all(b"\n").unwrap();
+    None
 }
 
 pub fn get_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnection>> {
