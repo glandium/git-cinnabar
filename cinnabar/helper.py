@@ -86,6 +86,14 @@ class BaseHelper(object):
         self._helper = self
 
     @classmethod
+    def close_atexit(self):
+        try:
+            self.close(on_atexit=True)
+        except BrokenPipeError:
+            # If the helper is gone (crashed), there's not much we can do.
+            pass
+
+    @classmethod
     def _ensure_helper(self):
         if self._helper is False:
             try:
@@ -104,7 +112,7 @@ class BaseHelper(object):
                     executable=os.environ.get("GIT_CINNABAR", "git-cinnabar"),
                     stdin=subprocess.PIPE, stderr=None, env=env, **kwargs)
 
-            atexit.register(self.close, on_atexit=True)
+            atexit.register(self.close_atexit)
 
         if self._helper is self:
             raise HelperClosedError
