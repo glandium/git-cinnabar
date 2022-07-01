@@ -1130,6 +1130,20 @@ pub fn do_check_files(mut output: impl Write) {
             busted = true;
         }
     }
+    if busted {
+        let mut transaction = RefTransaction::new().unwrap();
+        transaction
+            .update(
+                "refs/cinnabar/broken",
+                &unsafe {
+                    CommitId::from_unchecked(GitObjectId::from(crate::libgit::metadata_oid.clone()))
+                },
+                None,
+                "post-pull check",
+            )
+            .unwrap();
+        transaction.commit().unwrap();
+    }
     writeln!(output, "{}", if busted { "busted" } else { "ok" }).unwrap();
 }
 

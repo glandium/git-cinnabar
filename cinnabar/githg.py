@@ -801,7 +801,6 @@ class GitHgStore(object):
         with GitHgHelper.query(b'done-and-check') as stdout:
             resp = stdout.readline().rstrip()
             if resp != b'ok':
-                Git.update_ref(b'refs/cinnabar/broken', self._metadata_sha1)
                 raise Abort(
                     "It seems you have hit a known, rare, and difficult to "
                     "reproduce issue.\n"

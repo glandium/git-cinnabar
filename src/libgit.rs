@@ -51,6 +51,10 @@ impl From<object_id> for GitObjectId {
     }
 }
 
+extern "C" {
+    pub static metadata_oid: object_id;
+}
+
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct strbuf {
