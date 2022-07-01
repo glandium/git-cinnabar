@@ -94,7 +94,7 @@ use std::os::windows::io::AsRawHandle;
 use std::time::Instant;
 
 use bitflags::bitflags;
-use bstr::ByteSlice;
+use bstr::{BStr, ByteSlice};
 use git_version::git_version;
 use once_cell::sync::Lazy;
 use os_pipe::pipe;
@@ -102,6 +102,7 @@ use url::Url;
 use which::which;
 
 use crate::libc::FdFile;
+use crate::util::FromBytes;
 use graft::do_graft;
 use hg_connect::connect_main_with;
 use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git};
@@ -177,7 +178,6 @@ extern "C" {
     fn do_cleanup(rollback: c_int, out: c_int);
     fn do_set(l: *const string_list);
     fn do_store(in_: *mut libcinnabar::reader, out: c_int, l: *const string_list);
-    fn do_reset(l: *const string_list);
 
     #[cfg(windows)]
     fn wmain(argc: c_int, argv: *const *const u16) -> c_int;
@@ -185,6 +185,33 @@ extern "C" {
     fn init_cinnabar(argv0: *const c_char);
     fn init_cinnabar_2();
     fn done_cinnabar();
+}
+
+static REF_UPDATES: Lazy<Mutex<HashMap<Box<BStr>, CommitId>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+#[no_mangle]
+unsafe extern "C" fn dump_ref_updates() {
+    let mut transaction = RefTransaction::new().unwrap();
+    for (refname, oid) in REF_UPDATES.lock().unwrap().drain() {
+        let refname = OsStr::from_bytes(&*refname);
+        if oid == CommitId::null() {
+            transaction.delete(refname, None, "update").unwrap();
+        } else {
+            transaction.update(refname, &oid, None, "update").unwrap();
+        }
+    }
+    transaction.commit().unwrap();
+}
+
+fn do_reset(args: &[&[u8]]) {
+    assert_eq!(args.len(), 2);
+    let refname = args[0];
+    let oid = CommitId::from_bytes(args[1]).unwrap();
+    REF_UPDATES.lock().unwrap().insert(
+        unsafe { std::mem::transmute(refname.to_vec().into_boxed_slice()) },
+        oid,
+    );
 }
 
 static INIT_CINNABAR_2: Lazy<()> = Lazy::new(|| unsafe { init_cinnabar_2() });
@@ -211,7 +238,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
         let _locked = HELPER_LOCK.lock().unwrap();
         if let b"graft" | b"progress" | b"store-changeset" | b"create" | b"raw-changeset"
-        | b"store-replace" = &*command
+        | b"store-replace" | b"reset" = &*command
         {
             let args = match args_.split_last().unwrap().1 {
                 b"" => Vec::new(),
@@ -225,6 +252,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"store-replace" => do_store_replace(&args),
                 b"raw-changeset" => do_raw_changeset(out, &args),
                 b"create" => do_create(input, out, &args),
+                b"reset" => do_reset(&args),
                 _ => unreachable!(),
             }
             continue;
@@ -273,7 +301,6 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 }
                 b"set" => do_set(args),
                 b"store" => do_store(&mut libcinnabar::reader(input), out, args),
-                b"reset" => do_reset(args),
                 _ => die!("Unknown command: {}", command.as_bstr()),
             }
             string_list_clear(args, 0);

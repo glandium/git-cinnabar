@@ -46,15 +46,6 @@ index 28d3193c38..2b3aeaa4d5 100644
  		return 1;
  	}
  
-@@ -1648,7 +1653,7 @@ static int update_branch(struct branch *b)
- 	return 0;
- }
- 
--static void dump_branches(void)
-+void dump_branches(void)
- {
- 	unsigned int i;
- 	struct branch *b;
 @@ -2281,9 +2286,8 @@ static void file_change_m(const char *p, struct branch *b)
  	case S_IFDIR:
  	case S_IFGITLINK:

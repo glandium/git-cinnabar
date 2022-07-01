@@ -1564,7 +1564,7 @@ upgrade:
 #endif
 }
 
-void dump_branches(void);
+void dump_ref_updates(void);
 
 extern void reset_changeset_heads();
 
@@ -1589,7 +1589,7 @@ void do_reload(struct string_list *args, int helper_output)
 
 	oid_array_clear(&manifest_heads);
 
-	dump_branches();
+	dump_ref_updates();
 
 	metadata_flags = 0;
 	reset_replace_map();

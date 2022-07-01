@@ -160,6 +160,8 @@ static void init()
 	atexit(cleanup);
 }
 
+extern void dump_ref_updates();
+
 static void cleanup()
 {
 	if (!initialized)
@@ -179,7 +181,7 @@ static void cleanup()
 				NULL);
 			commit_shallow_file(the_repository, &shallow_lock);
 		}
-		dump_branches();
+		dump_ref_updates();
 	}
 
 	unkeep_all_packs();
@@ -1131,31 +1133,4 @@ const struct object_id *ensure_empty_tree() {
 		assert(oidcmp(&hash, &empty_tree) == 0);
 	}
 	return &empty_tree;
-}
-
-void do_reset(struct string_list *args) {
-	struct branch *b;
-
-	if (args->nr != 2)
-		die("reset needs 2 arguments");
-
-	ENSURE_INIT();
-	b = lookup_branch(args->items[0].string);
-	if (b) {
-		oidclr(&b->oid);
-		oidclr(&b->branch_tree.versions[0].oid);
-		oidclr(&b->branch_tree.versions[1].oid);
-		if (b->branch_tree.tree) {
-			release_tree_content_recursive(b->branch_tree.tree);
-			b->branch_tree.tree = NULL;
-		}
-	} else {
-		b = new_branch(args->items[0].string);
-	}
-	if (get_sha1_hex(args->items[1].string, b->oid.hash))
-		die("Invalid sha1");
-	parse_from_existing(b);
-	if (is_null_oid(&b->oid))
-		b->delete = 1;
-	maybe_reset_notes(args->items[0].string);
 }
