@@ -391,11 +391,7 @@ class GitHgStore(object):
         if self._metadata_sha1:
             metadata = GitCommit(self._metadata_sha1)
             self._flags = set(metadata.body.split())
-            refs = self.METADATA_REFS
-            if b'files-meta' not in self._flags:
-                refs = list(refs)
-                refs.remove(b'refs/cinnabar/files-meta')
-            return metadata, dict(zip(refs, metadata.parents))
+            return metadata
 
     def __init__(self):
         self._flags = set()
@@ -423,10 +419,7 @@ class GitHgStore(object):
         self._cached_changeset_ref = {}
 
         metadata = self.metadata()
-        if metadata:
-            metadata, refs = metadata
         self._has_metadata = bool(metadata)
-        self._metadata_refs = refs if metadata else {}
         self._manifest_heads_orig = set()
         if metadata:
             self._hgheads_orig = dict(GitHgHelper.heads(b'changesets'))
@@ -599,9 +592,7 @@ class GitHgStore(object):
             GitHgHelper.reload()
             return False
 
-        metadata, refs = metadata
         self._has_metadata = True
-        self._metadata_refs = refs if metadata else {}
         self._hgheads_orig = dict(GitHgHelper.heads(b'changesets'))
         self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
 
