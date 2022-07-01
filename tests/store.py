@@ -29,6 +29,13 @@ from cinnabar.helper import GitHgHelper
 from cinnabar.util import one
 
 
+MODE = {
+    b'': b'160644',
+    b'l': b'160000',
+    b'x': b'160755',
+}
+
+
 def git_hash(type, data):
     h = hashlib.sha1(b'%s %d\0' % (type, len(data)))
     h.update(data)
@@ -154,7 +161,7 @@ class TestStoreCG01(unittest.TestCase):
             path = item.path.split(b'/')
             for p in path[:-1]:
                 t = t.setdefault(p, OrderedDict())
-            t[path[-1]] = (GitHgStore.MODE[item.attr], item.sha1)
+            t[path[-1]] = (MODE[item.attr], item.sha1)
 
         def recurse(t):
             tree = b''

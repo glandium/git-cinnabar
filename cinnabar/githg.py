@@ -768,12 +768,6 @@ class GitHgStore(object):
 
             assert len(response) <= 2
 
-    MODE = {
-        b'': b'160644',
-        b'l': b'160000',
-        b'x': b'160755',
-    }
-
     def close(self, refresh=()):
         if self._closed:
             return
