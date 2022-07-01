@@ -1061,7 +1061,7 @@ extern "C" {
 static STORED_FILES: Lazy<Mutex<BTreeMap<HgChangesetId, [HgChangesetId; 2]>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 
-pub fn do_check_files(mut output: impl Write) {
+pub fn do_check_files() -> bool {
     // Try to detect issue #207 as early as possible.
     let mut busted = false;
     for (node, [p1, p2]) in STORED_FILES
@@ -1089,8 +1089,23 @@ pub fn do_check_files(mut output: impl Write) {
             )
             .unwrap();
         transaction.commit().unwrap();
+        error!(
+            target: "root",
+            "It seems you have hit a known, rare, and difficult to \
+             reproduce issue.\n\
+             Your help would be appreciated.\n\
+             Please try either `git cinnabar rollback` followed by \
+             the same command that just\n\
+             failed, or `git cinnabar reclone`.\n\
+             Please open a new issue \
+             (https://github.com/glandium/git-cinnabar/issues/new)\n\
+             mentioning issue #207 and reporting whether the second \
+             attempt succeeded.\n\n\
+             Please read all the above and keep a copy of this \
+             repository."
+        );
     }
-    writeln!(output, "{}", if busted { "busted" } else { "ok" }).unwrap();
+    !busted
 }
 
 pub fn store_changegroup<R: Read>(mut input: R, version: u8) {

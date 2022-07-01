@@ -221,13 +221,13 @@ static INIT_CINNABAR_2: Lazy<()> = Lazy::new(|| unsafe { init_cinnabar_2() });
 
 static HELPER_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
-fn do_done_and_check(mut out: impl Write, args: &[&[u8]]) {
+fn do_done_and_check(args: &[&[u8]]) -> bool {
     unsafe {
         if graft_finish() == Some(false) {
             // Rollback
             do_cleanup(1, -1);
-            writeln!(out, "no-graft").unwrap();
-            return;
+            error!(target: "root", "Nothing to graft");
+            return false;
         }
         let mut new_metadata = object_id::default();
         do_store_metadata(&mut new_metadata);
@@ -250,7 +250,7 @@ fn do_done_and_check(mut out: impl Write, args: &[&[u8]]) {
         do_reload(args, -1);
         ::libc::free(args as *mut c_void);
     }
-    do_check_files(out);
+    do_check_files()
 }
 
 fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
@@ -279,7 +279,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"" => Vec::new(),
                 args => args.split(|&b| b == b' ').collect::<Vec<_>>(),
             };
-            let out = unsafe { FdFile::from_raw_fd(out) };
+            let mut out = unsafe { FdFile::from_raw_fd(out) };
             match &*command {
                 b"progress" => do_progress(out, &args),
                 b"graft" => do_graft(&args),
@@ -287,7 +287,12 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"raw-changeset" => do_raw_changeset(out, &args),
                 b"create" => do_create(input, out, &args),
                 b"reset" => do_reset(&args),
-                b"done-and-check" => do_done_and_check(out, &args),
+                b"done-and-check" => writeln!(
+                    out,
+                    "{}",
+                    if do_done_and_check(&args) { "ok" } else { "ko" }
+                )
+                .unwrap(),
                 _ => unreachable!(),
             }
             continue;

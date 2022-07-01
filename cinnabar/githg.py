@@ -13,9 +13,9 @@ from collections.abc import Sequence
 from urllib.error import URLError
 from urllib.parse import urlparse
 from cinnabar.exceptions import (
-    Abort,
     AmbiguousGraftAbort,
     NothingToGraftException,
+    SilentlyAbort,
 )
 from cinnabar.util import (
     HTTPReader,
@@ -778,20 +778,5 @@ class GitHgStore(object):
 
         with GitHgHelper.query(b'done-and-check', *refresh) as stdout:
             resp = stdout.readline().rstrip()
-            if resp == b'no-graft':
-                raise NothingToGraftException()
-            elif resp != b'ok':
-                raise Abort(
-                    "It seems you have hit a known, rare, and difficult to "
-                    "reproduce issue.\n"
-                    "Your help would be appreciated.\n"
-                    "Please try either `git cinnabar rollback` followed by "
-                    "the same command that just\n"
-                    "failed, or `git cinnabar reclone`.\n"
-                    "Please open a new issue "
-                    "(https://github.com/glandium/git-cinnabar/issues/new)\n"
-                    "mentioning issue #207 and reporting whether the second "
-                    "attempt succeeded.\n\n"
-                    "Please read all the above and keep a copy of this "
-                    "repository."
-                )
+            if resp != b'ok':
+                raise SilentlyAbort()

@@ -16,3 +16,7 @@ class NothingToGraftException(Exception):
 
 class AmbiguousGraftAbort(Abort):
     """Cannot graft the changeset."""
+
+
+class SilentlyAbort(Abort):
+    """Native side expected to print an error."""
