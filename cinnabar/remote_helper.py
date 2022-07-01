@@ -218,6 +218,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                                                 heads)
         self._has_unknown_heads = bool(self._branchmap.unknown_heads())
         if self._graft and self._has_unknown_heads and not arg:
+            orig_heads = dict(GitHgHelper.heads(b'changesets'))
             GitHgHelper.progress(cinnabar.util.progress)
             self._store.prepare_graft()
             get_heads = set(branchmap.heads()) & branchmap.unknown_heads()
@@ -247,7 +248,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                 new_heads = set(h for h in branchmap.heads()
                                 if h not in branchmap.unknown_heads())
                 heads = dict(GitHgHelper.heads(b'changesets'))
-                for head, branch in self._store._hgheads_orig.items():
+                for head, branch in orig_heads.items():
                     if head not in heads:
                         branch_heads = new_branchmap.get(branch)
                         if branch_heads and head in branch_heads:
@@ -255,7 +256,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                         if head in new_heads:
                             new_heads.remove(head)
                 for head, branch in heads.items():
-                    if head not in self._store._hgheads_orig:
+                    if head not in orig_heads:
                         branch_heads = new_branchmap.get(branch)
                         if not branch_heads:
                             branch_heads = new_branchmap[branch] = set()

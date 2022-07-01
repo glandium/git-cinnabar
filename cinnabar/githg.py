@@ -395,8 +395,6 @@ class GitHgStore(object):
         self._closed = False
         self._graft = False
 
-        self._hgheads_orig = {}
-
         self._metadata_sha1 = None
         broken = None
         # While doing a for_each_ref, ensure refs/notes/cinnabar is in the
@@ -418,8 +416,6 @@ class GitHgStore(object):
         metadata = self.metadata()
         self._has_metadata = bool(metadata)
         if metadata:
-            self._hgheads_orig = dict(GitHgHelper.heads(b'changesets'))
-
             # Delete old tag-cache, which may contain incomplete data.
             Git.delete_ref(b'refs/cinnabar/tag-cache')
             # Delete new-type tag_cache, we don't use it anymore.
@@ -588,7 +584,6 @@ class GitHgStore(object):
             return False
 
         self._has_metadata = True
-        self._hgheads_orig = dict(GitHgHelper.heads(b'changesets'))
 
         self._tags = dict(self.tags())
 
