@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
 use std::fs::File;
 use std::io::{stderr, BufRead, Cursor, Read, Write};
-use std::mem;
 use std::os::raw::c_int;
 use std::str::FromStr;
 
@@ -552,14 +551,11 @@ fn can_use_clonebundle(line: &[u8]) -> Result<Option<Url>, String> {
         .map(|l| {
             l.split(|&b| b == b' ')
                 .map(|a| {
-                    a.splitn_exact::<2>(b'=').map(|[a, b]| unsafe {
+                    a.splitn_exact::<2>(b'=').map(|[a, b]| {
                         (
-                            mem::transmute::<_, Box<BStr>>(
-                                percent_decode(a).collect_vec().into_boxed_slice(),
-                            ),
-                            mem::transmute::<_, Box<BStr>>(
-                                percent_decode(b).collect_vec().into_boxed_slice(),
-                            ),
+                            // TODO: Ideally, we'd avoid the extra allocations here.
+                            percent_decode(a).collect_vec().as_bstr().to_boxed(),
+                            percent_decode(b).collect_vec().as_bstr().to_boxed(),
                         )
                     })
                 })

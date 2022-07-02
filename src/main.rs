@@ -102,7 +102,7 @@ use url::Url;
 use which::which;
 
 use crate::libc::FdFile;
-use crate::util::FromBytes;
+use crate::util::{FromBytes, ToBoxed};
 use graft::{do_graft, graft_finish, init_graft};
 use hg_connect::{connect_main_with, get_clonebundle_url, get_connection, get_store_bundle};
 use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git};
@@ -211,10 +211,10 @@ fn do_reset(args: &[&[u8]]) {
     assert_eq!(args.len(), 2);
     let refname = args[0];
     let oid = CommitId::from_bytes(args[1]).unwrap();
-    REF_UPDATES.lock().unwrap().insert(
-        unsafe { std::mem::transmute(refname.to_vec().into_boxed_slice()) },
-        oid,
-    );
+    REF_UPDATES
+        .lock()
+        .unwrap()
+        .insert(refname.as_bstr().to_boxed(), oid);
 }
 
 static INIT_CINNABAR_2: Lazy<()> = Lazy::new(|| unsafe { init_cinnabar_2() });

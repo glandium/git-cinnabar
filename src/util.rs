@@ -20,7 +20,7 @@ use std::os::windows::io::{AsRawHandle, RawHandle};
 use std::str::{self, FromStr};
 use std::sync::mpsc::{channel, Receiver};
 
-use bstr::ByteSlice;
+use bstr::{BStr, ByteSlice};
 
 #[macro_export]
 macro_rules! derive_debug_display {
@@ -525,6 +525,12 @@ pub trait ToBoxed {
 impl<T: Clone> ToBoxed for [T] {
     fn to_boxed(&self) -> Box<Self> {
         self.to_vec().into()
+    }
+}
+
+impl ToBoxed for BStr {
+    fn to_boxed(&self) -> Box<BStr> {
+        unsafe { mem::transmute(self.to_vec().into_boxed_slice()) }
     }
 }
 
