@@ -1,33 +1,22 @@
 from binascii import hexlify, unhexlify
-import io
-import os
-import shutil
-import subprocess
-import sys
 from urllib.parse import quote_from_bytes, unquote_to_bytes
 from collections import (
     OrderedDict,
     defaultdict,
 )
 from collections.abc import Sequence
-from urllib.error import URLError
-from urllib.parse import urlparse
 from cinnabar.exceptions import (
     AmbiguousGraftAbort,
     NothingToGraftException,
     SilentlyAbort,
 )
 from cinnabar.util import (
-    HTTPReader,
-    Seekable,
     byte_diff,
     one,
 )
 from cinnabar.git import (
     EMPTY_BLOB,
-    EMPTY_TREE,
     Git,
-    GitProcess,
     NULL_NODE_ID,
 )
 from cinnabar.hg.changegroup import (
@@ -41,7 +30,6 @@ from cinnabar.hg.objects import (
     Manifest,
 )
 from cinnabar.helper import GitHgHelper
-from cinnabar import util
 
 import logging
 
@@ -432,162 +420,12 @@ class GitHgStore(object):
             pass
         self._graft = True
 
-    @staticmethod
-    def _try_merge_branches(repo_url):
-        parsed_url = urlparse(repo_url)
-        branches = []
-        path = parsed_url.path.lstrip(b'/').rstrip(b'/')
-        if path:
-            parts = list(reversed(path.split(b'/')))
-        else:
-            parts = []
-        host = parsed_url.netloc.split(b':', 1)[0]
-        if host:
-            parts.append(host)
-        last_path = b''
-        for part in parts:
-            if last_path:
-                last_path = b'%s/%s' % (part, last_path)
-            else:
-                last_path = part
-            branches.append(last_path)
-        branches.append(b'metadata')
-        return branches
-
-    @staticmethod
-    def _find_branch(branches, remote_refs):
-        for branch in branches:
-            if branch in remote_refs:
-                return branch
-            if b'refs/cinnabar/%s' % branch in remote_refs:
-                return b'refs/cinnabar/%s' % branch
-            if b'refs/heads/%s' % branch in remote_refs:
-                return b'refs/heads/%s' % branch
-
     def merge(self, git_repo_url, hg_repo_url, branch=None):
-        # Eventually we'll want to handle a full merge, but for now, we only
-        # handle the case where we don't have metadata to begin with.
-        # The caller should avoid calling this function otherwise.
-        assert not self._has_metadata
-        remote_refs = OrderedDict()
-        for line in Git.iter('ls-remote', os.fsdecode(git_repo_url),
-                             stderr=open(os.devnull, 'wb')):
-            sha1, ref = line.split(None, 1)
-            remote_refs[ref] = sha1
-        bundle = None
-        if not remote_refs and urlparse(git_repo_url).scheme in (b'http',
-                                                                 b'https'):
-            try:
-                bundle = HTTPReader(git_repo_url)
-            except URLError as e:
-                logging.error(e.reason)
-                return False
-            if bundle.fh.headers.get('Content-Encoding', 'identity') == 'gzip':
-                from gzip import GzipFile
-                bundle = Seekable(bundle, bundle.length)
-                bundle = GzipFile(mode='rb', fileobj=bundle)
-            BUNDLE_SIGNATURE = b'# v2 git bundle\n'
-            signature = bundle.read(len(BUNDLE_SIGNATURE))
-            if signature != BUNDLE_SIGNATURE:
-                logging.error('Could not find cinnabar metadata')
-                return False
-            bundle = io.BufferedReader(bundle)
-            while True:
-                line = bundle.readline().rstrip()
-                if not line:
-                    break
-                sha1, ref = line.split(b' ', 1)
-                remote_refs[ref] = sha1
-        if branch:
-            branches = [branch]
-        else:
-            branches = self._try_merge_branches(hg_repo_url)
-
-        ref = self._find_branch(branches, remote_refs)
-        if ref is None:
-            logging.error('Could not find cinnabar metadata')
-            return False
-
-        if bundle:
-            args = ('-v',) if util.progress else ()
-            proc = GitProcess('index-pack', '--stdin', '--fix-thin', *args,
-                              stdin=subprocess.PIPE,
-                              stdout=open(os.devnull, 'wb'))
-            shutil.copyfileobj(bundle, proc.stdin)
-        else:
-            fetch = ['fetch', '--no-tags', '--no-recurse-submodules', '-q']
-            fetch.append('--progress' if util.progress else '--no-progress')
-            fetch.append(os.fsdecode(git_repo_url))
-            cmd = fetch + [os.fsdecode(ref) + ':refs/cinnabar/fetch']
-            proc = GitProcess(*cmd, stdout=sys.stdout)
-        if proc.wait():
-            logging.error('Failed to fetch cinnabar metadata.')
-            return False
-
-        # Do some basic validation on the metadata we just got.
-        commit = GitCommit(remote_refs[ref])
-        if b'cinnabar@git' not in commit.author:
-            logging.error('Invalid cinnabar metadata.')
-            return False
-
-        flags = set(commit.body.split())
-        if b'files-meta' not in flags or b'unified-manifests-v2' not in flags \
-                or len(commit.parents) != len(self.METADATA_REFS):
-            logging.error('Invalid cinnabar metadata.')
-            return False
-
-        # At this point, we'll just assume this is good enough.
-
-        # Get replace refs.
-        if commit.tree != EMPTY_TREE:
-            errors = False
-            by_sha1 = {}
-            for k, v in remote_refs.items():
-                if v not in by_sha1:
-                    by_sha1[v] = k
-            needed = []
-            for line in Git.ls_tree(commit.tree):
-                mode, typ, sha1, path = line
-                if sha1 in by_sha1:
-                    ref = b'refs/cinnabar/replace/%s' % path
-                    if bundle:
-                        Git.update_ref(ref, sha1)
-                    else:
-                        needed.append(
-                            os.fsdecode(b':'.join((by_sha1[sha1], ref))))
-                else:
-                    logging.error('Missing commit: %s', sha1)
-                    errors = True
-            if errors:
-                return False
-
-            if not bundle:
-                cmd = fetch + needed
-                proc = GitProcess(*cmd, stdout=sys.stdout)
-                if proc.wait():
-                    logging.error('Failed to fetch cinnabar metadata.')
-                    return False
-
-        Git.update_ref(b'refs/cinnabar/metadata', commit.sha1)
-        self._metadata_sha1 = commit.sha1
-        GitHgHelper.reload()
-        Git.delete_ref(b'refs/cinnabar/fetch')
-
-        # TODO: avoid the duplication of code with __init__
-        metadata = self.metadata()
-
-        if not metadata:
-            # This should never happen, but just in case.
-            logging.warn('Could not find cinnabar metadata')
-            Git.delete_ref(b'refs/cinnabar/metadata')
-            GitHgHelper.reload()
-            return False
-
-        self._has_metadata = True
-
-        self._tags = dict(self.tags())
-
-        return True
+        branch = [branch] if branch else []
+        with GitHgHelper.query(
+                b'merge-metadata', git_repo_url, hg_repo_url,
+                *branch) as stdout:
+            return stdout.readline().strip() == b'ok'
 
     def tags(self):
         tags = TagSet()

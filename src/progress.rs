@@ -13,6 +13,10 @@ use crate::{check_enabled, Checks};
 
 static PROGRESS_ENABLED: AtomicBool = AtomicBool::new(true);
 
+pub fn progress_enabled() -> bool {
+    PROGRESS_ENABLED.load(Ordering::Relaxed)
+}
+
 pub fn do_progress(mut out: impl Write, args: &[&[u8]]) {
     match args {
         [b"true"] => PROGRESS_ENABLED.store(true, Ordering::Relaxed),

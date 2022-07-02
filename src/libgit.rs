@@ -1077,6 +1077,7 @@ pub struct LsTreeItem {
     pub oid: GitObjectId,
 }
 
+#[derive(Debug)]
 pub struct LsTreeError;
 
 pub fn ls_tree(tree_id: &TreeId) -> Result<impl Iterator<Item = LsTreeItem>, LsTreeError> {

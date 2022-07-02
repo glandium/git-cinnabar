@@ -114,10 +114,10 @@ use libgit::{
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::do_progress;
 use store::{
-    do_check_files, do_create, do_raw_changeset, do_store_changeset, GitChangesetId, GitFileId,
-    GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId, HgManifestId, RawHgChangeset,
-    RawHgFile, RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX,
-    REPLACE_REFS_PREFIX,
+    do_check_files, do_create, do_raw_changeset, do_store_changeset, merge_metadata,
+    GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
+    HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF,
+    NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
 
@@ -273,7 +273,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
         let _locked = HELPER_LOCK.lock().unwrap();
         if let b"graft" | b"progress" | b"store-changeset" | b"create" | b"raw-changeset"
-        | b"reset" | b"done-and-check" = &*command
+        | b"reset" | b"done-and-check" | b"merge-metadata" = &*command
         {
             let args = match args_.split_last().unwrap().1 {
                 b"" => Vec::new(),
@@ -293,6 +293,23 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                     if do_done_and_check(&args) { "ok" } else { "ko" }
                 )
                 .unwrap(),
+                b"merge-metadata" => {
+                    assert!(args.len() >= 2 && args.len() <= 3);
+                    if merge_metadata(
+                        Url::parse(args[0].to_str().unwrap()).unwrap(),
+                        Url::parse(args[1].to_str().unwrap()).unwrap(),
+                        args.get(2).copied(),
+                    ) {
+                        unsafe {
+                            let args = string_list_new();
+                            do_reload(args, -1);
+                            ::libc::free(args as *mut c_void);
+                        }
+                        writeln!(out, "ok").unwrap();
+                    } else {
+                        writeln!(out, "ko").unwrap();
+                    }
+                }
                 _ => unreachable!(),
             }
             continue;

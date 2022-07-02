@@ -4,13 +4,16 @@
 
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
-use std::io::{BufRead, Read, Write};
+use std::ffi::OsStr;
+use std::io::{copy, BufRead, BufReader, Read, Write};
 use std::iter::{repeat, IntoIterator};
 use std::mem;
 use std::num::NonZeroU32;
 use std::os::raw::{c_char, c_int, c_void};
+use std::process::{Command, Stdio};
+use std::str::FromStr;
 use std::sync::Mutex;
 
 use bstr::{BStr, BString, ByteSlice};
@@ -20,22 +23,24 @@ use getset::{CopyGetters, Getters};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use percent_encoding::{percent_decode, percent_encode, NON_ALPHANUMERIC};
+use url::{Host, Url};
 
 use crate::graft::{graft, grafted, GraftError};
 use crate::hg_bundle::{read_rev_chunk, rev_chunk, BundleSaver, RevChunkIter};
+use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libc::FdFile;
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
 use crate::libgit::{
-    get_oid_committish, lookup_replace_commit, object_id, strbuf, BlobId, Commit, CommitId,
-    RawBlob, RawCommit, RefTransaction, TreeId,
+    get_oid_committish, lookup_replace_commit, ls_tree, object_id, strbuf, BlobId, Commit,
+    CommitId, RawBlob, RawCommit, RefTransaction, TreeId,
 };
 use crate::oid::{GitObjectId, HgObjectId, ObjectId};
-use crate::oid_type;
-use crate::progress::Progress;
-use crate::util::{FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
+use crate::progress::{progress_enabled, Progress};
+use crate::util::{FromBytes, ImmutBString, OsStrExt, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::{apply, textdiff, PatchInfo};
 use crate::{check_enabled, Checks};
+use crate::{oid_type, set_metadata_to, MetadataFlags};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
 pub const REPLACE_REFS_PREFIX: &str = "refs/cinnabar/replace/";
@@ -1250,4 +1255,271 @@ pub fn store_changegroup<R: Read>(mut input: R, version: u8) {
         }
         *BUNDLE_BLOB.lock().unwrap() = Some(bundle_blob);
     }
+}
+
+fn branches_for_url(url: Url) -> Vec<Box<BStr>> {
+    let mut parts = url.path_segments().unwrap().rev().collect_vec();
+    if let Some(Host::Domain(host)) = url.host() {
+        parts.push(host);
+    }
+    let mut branches = parts.into_iter().fold(Vec::<Box<BStr>>::new(), |mut v, p| {
+        if !p.is_empty() {
+            v.push(
+                bstr::join(
+                    b"/",
+                    Some(p.as_bytes().as_bstr())
+                        .into_iter()
+                        .chain(v.last().map(|s| &**s)),
+                )
+                .as_bstr()
+                .to_boxed(),
+            );
+        }
+        v
+    });
+    branches.push(b"metadata".as_bstr().to_boxed());
+    branches
+}
+
+#[test]
+fn test_branches_for_url() {
+    assert_eq!(
+        branches_for_url(Url::parse("https://server/").unwrap()),
+        vec![
+            b"server".as_bstr().to_boxed(),
+            b"metadata".as_bstr().to_boxed()
+        ]
+    );
+    assert_eq!(
+        branches_for_url(Url::parse("https://server:443/").unwrap()),
+        vec![
+            b"server".as_bstr().to_boxed(),
+            b"metadata".as_bstr().to_boxed()
+        ]
+    );
+    assert_eq!(
+        branches_for_url(Url::parse("https://server:443/repo").unwrap()),
+        vec![
+            b"repo".as_bstr().to_boxed(),
+            b"server/repo".as_bstr().to_boxed(),
+            b"metadata".as_bstr().to_boxed()
+        ]
+    );
+    assert_eq!(
+        branches_for_url(Url::parse("https://server:443/dir_a/repo").unwrap()),
+        vec![
+            b"repo".as_bstr().to_boxed(),
+            b"dir_a/repo".as_bstr().to_boxed(),
+            b"server/dir_a/repo".as_bstr().to_boxed(),
+            b"metadata".as_bstr().to_boxed()
+        ]
+    );
+    assert_eq!(
+        branches_for_url(Url::parse("https://server:443/dir_a/dir_b/repo").unwrap()),
+        vec![
+            b"repo".as_bstr().to_boxed(),
+            b"dir_b/repo".as_bstr().to_boxed(),
+            b"dir_a/dir_b/repo".as_bstr().to_boxed(),
+            b"server/dir_a/dir_b/repo".as_bstr().to_boxed(),
+            b"metadata".as_bstr().to_boxed()
+        ]
+    );
+}
+
+pub fn merge_metadata(git_url: Url, hg_url: Url, branch: Option<&[u8]>) -> bool {
+    // Eventually we'll want to handle a full merge, but for now, we only
+    // handle the case where we don't have metadata to begin with.
+    // The caller should avoid calling this function otherwise.
+    assert!(!has_metadata());
+    let mut remote_refs = Command::new("git")
+        .arg("ls-remote")
+        .arg(OsStr::new(git_url.as_ref()))
+        .stderr(Stdio::null())
+        .output()
+        .unwrap()
+        .stdout
+        .split(|&b| b == b'\n')
+        .filter_map(|l| {
+            let [sha1, refname] = l.splitn_exact(|&b: &u8| b == b'\t')?;
+            Some((
+                refname.as_bstr().to_boxed(),
+                CommitId::from_bytes(sha1).unwrap(),
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut bundle = if remote_refs.is_empty() && ["http", "https"].contains(&git_url.scheme()) {
+        let mut req = HttpRequest::new(git_url.clone());
+        req.follow_redirects(true);
+        // We let curl handle Content-Encoding: gzip via Accept-Encoding.
+        let mut bundle = match req.execute() {
+            Ok(bundle) => bundle,
+            Err(e) => {
+                error!(target: "root", "{}", e);
+                return false;
+            }
+        };
+        const BUNDLE_SIGNATURE: &str = "# v2 git bundle\n";
+        let signature = (&mut bundle)
+            .take(BUNDLE_SIGNATURE.len() as u64)
+            .read_all()
+            .unwrap();
+        if &*signature != BUNDLE_SIGNATURE.as_bytes() {
+            error!(target: "root", "Could not find cinnabar metadata");
+            return false;
+        }
+        let mut bundle = BufReader::new(bundle);
+        let mut line = Vec::new();
+        loop {
+            line.truncate(0);
+            bundle.read_until(b'\n', &mut line).unwrap();
+            if line.ends_with(b"\n") {
+                line.pop();
+            }
+            if line.is_empty() {
+                break;
+            }
+            let [sha1, refname] = line.splitn_exact(b' ').unwrap();
+            remote_refs.insert(
+                refname.as_bstr().to_boxed(),
+                CommitId::from_bytes(sha1).unwrap(),
+            );
+        }
+        Some(bundle)
+    } else {
+        None
+    };
+
+    let branches = branch.map_or_else(
+        || branches_for_url(hg_url),
+        |b| vec![b.as_bstr().to_boxed()],
+    );
+
+    let refname = if let Some(refname) = branches.into_iter().find_map(|branch| {
+        if remote_refs.contains_key(&*branch) {
+            return Some(branch);
+        }
+        let cinnabar_refname = bstr::join(b"", [b"refs/cinnabar/".as_bstr(), &branch])
+            .as_bstr()
+            .to_boxed();
+        if remote_refs.contains_key(&cinnabar_refname) {
+            return Some(cinnabar_refname);
+        }
+        let head_refname = bstr::join(b"", [b"refs/heads/".as_bstr(), &branch])
+            .as_bstr()
+            .to_boxed();
+        if remote_refs.contains_key(&head_refname) {
+            return Some(head_refname);
+        }
+        None
+    }) {
+        refname
+    } else {
+        error!(target: "root", "Could not find cinnabar metadata");
+        return false;
+    };
+
+    let mut proc = if let Some(mut bundle) = bundle.as_mut() {
+        let mut command = Command::new("git");
+        command
+            .arg("index-pack")
+            .arg("--stdin")
+            .arg("--fix-thin")
+            .stdout(Stdio::null())
+            .stdin(Stdio::piped());
+        if progress_enabled() {
+            command.arg("-v");
+        }
+        let mut proc = command.spawn().unwrap();
+        let stdin = proc.stdin.as_mut().unwrap();
+        copy(&mut bundle, stdin).unwrap();
+        proc
+    } else {
+        let mut command = Command::new("git");
+        command
+            .arg("fetch")
+            .arg("--no-tags")
+            .arg("--no-recurse-submodules")
+            .arg("-q");
+        if progress_enabled() {
+            command.arg("--progress");
+        } else {
+            command.arg("--no-progress");
+        }
+        command.arg(OsStr::new(git_url.as_ref()));
+        command.arg(OsStr::from_bytes(&bstr::join(
+            b":",
+            [&**refname, b"refs/cinnabar/fetch"],
+        )));
+        command.spawn().unwrap()
+    };
+    if !proc.wait().unwrap().success() {
+        error!(target: "root", "Failed to fetch cinnabar metadata.");
+        return false;
+    }
+
+    // Do some basic validation on the metadata we just got.
+    let cid = remote_refs.get(&refname).unwrap().clone();
+    let commit = RawCommit::read(&cid).unwrap();
+    let commit = commit.parse().unwrap();
+    if !commit.author().contains_str("cinnabar@git")
+        || !String::from_utf8_lossy(commit.body())
+            .split_ascii_whitespace()
+            .sorted()
+            .eq(["files-meta", "unified-manifests-v2"].into_iter())
+    {
+        error!(target: "root", "Invalid cinnabar metadata.");
+        return false;
+    }
+
+    // At this point, we'll just assume this is good enough.
+
+    // Get replace refs.
+    if commit.tree() != &TreeId::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap() {
+        let mut errors = false;
+        let by_sha1 = remote_refs
+            .into_iter()
+            .map(|(a, b)| (b, a))
+            .collect::<BTreeMap<_, _>>();
+        let mut needed = Vec::new();
+        for item in ls_tree(commit.tree()).unwrap() {
+            let cid = unsafe { CommitId::from_unchecked(item.oid) };
+            if let Some(refname) = by_sha1.get(&cid) {
+                let replace_ref = bstr::join(b"/", [b"refs/cinnabar/replace", &*item.path]);
+                needed.push(
+                    bstr::join(b":", [&**refname, replace_ref.as_bstr()])
+                        .as_bstr()
+                        .to_boxed(),
+                );
+            } else {
+                error!(target: "root", "Missing commit: {}", cid);
+                errors = true;
+            }
+        }
+        if errors {
+            return false;
+        }
+
+        if bundle.is_none() {
+            let mut command = Command::new("git");
+            command
+                .arg("fetch")
+                .arg("--no-tags")
+                .arg("--no-recurse-submodules")
+                .arg("-q");
+            if progress_enabled() {
+                command.arg("--progress");
+            } else {
+                command.arg("--no-progress");
+            }
+            command.arg(OsStr::new(git_url.as_ref()));
+            command.args(needed.iter().map(|n| OsStr::from_bytes(&**n)));
+            if !command.status().unwrap().success() {
+                error!(target: "root", "Failed to fetch cinnabar metadata.");
+                return false;
+            }
+        }
+    }
+
+    set_metadata_to(Some(&cid), MetadataFlags::FORCE, "cinnabarclone").unwrap();
+    true
 }

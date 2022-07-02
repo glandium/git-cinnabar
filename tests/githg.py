@@ -4,9 +4,7 @@ from cinnabar.githg import (
     Changeset,
     ChangesetPatcher,
     GitCommit,
-    GitHgStore,
 )
-from cinnabar.helper import GitHgHelper
 
 
 class FakeGitCommit(GitCommit):
@@ -257,42 +255,3 @@ class TestChangesetPatcher(unittest.TestCase):
         changeset.body += b'\0'
         changeset2 = patcher.apply(changeset)
         self.assertEqual(changeset2.sha1, changeset2.node)
-
-
-class TestMergeBranches(unittest.TestCase):
-    def tearDown(self):
-        GitHgHelper.close(rollback=True)
-        GitHgHelper._helper = False
-
-    def test_merge_branches(self):
-        self.assertEqual(GitHgStore._try_merge_branches(
-            b'https://server/'), [
-                b'server',
-                b'metadata',
-        ])
-        self.assertEqual(GitHgStore._try_merge_branches(
-            b'https://server:443/'), [
-                b'server',
-                b'metadata',
-        ])
-        self.assertEqual(GitHgStore._try_merge_branches(
-            b'https://server:443/repo'), [
-                b'repo',
-                b'server/repo',
-                b'metadata',
-        ])
-        self.assertEqual(GitHgStore._try_merge_branches(
-            b'https://server:443/dir_a/repo'), [
-                b'repo',
-                b'dir_a/repo',
-                b'server/dir_a/repo',
-                b'metadata',
-        ])
-        self.assertEqual(GitHgStore._try_merge_branches(
-            b'https://server:443/dir_a/dir_b/repo'), [
-                b'repo',
-                b'dir_b/repo',
-                b'dir_a/dir_b/repo',
-                b'server/dir_a/dir_b/repo',
-                b'metadata',
-        ])

@@ -22,9 +22,9 @@ use cstr::cstr;
 use curl_sys::{
     curl_easy_getinfo, curl_easy_setopt, curl_slist_append, curl_slist_free_all, CURL,
     CURLINFO_CONTENT_TYPE, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT, CURLINFO_RESPONSE_CODE,
-    CURLOPT_FAILONERROR, CURLOPT_FILE, CURLOPT_FOLLOWLOCATION, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER,
-    CURLOPT_NOBODY, CURLOPT_POST, CURLOPT_POSTFIELDSIZE_LARGE, CURLOPT_READDATA,
-    CURLOPT_READFUNCTION, CURLOPT_URL, CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
+    CURLOPT_ACCEPT_ENCODING, CURLOPT_FAILONERROR, CURLOPT_FILE, CURLOPT_FOLLOWLOCATION,
+    CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY, CURLOPT_POST, CURLOPT_POSTFIELDSIZE_LARGE,
+    CURLOPT_READDATA, CURLOPT_READFUNCTION, CURLOPT_URL, CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
 };
 use either::Either;
 use flate2::read::ZlibDecoder;
@@ -130,7 +130,7 @@ trait ReadAndSeek: Read + Seek {}
 
 impl<T: Read + Seek> ReadAndSeek for T {}
 
-struct HttpRequest {
+pub struct HttpRequest {
     url: Url,
     headers: Vec<(String, String)>,
     body: Option<Box<dyn ReadAndSeek + Send>>,
@@ -147,7 +147,7 @@ struct HttpResponseInfo {
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-struct HttpResponse {
+pub struct HttpResponse {
     info: HttpResponseInfo,
     thread: Option<JoinHandle<Result<(), (c_int, HttpRequest)>>>,
     cursor: Cursor<ImmutBString>,
@@ -165,7 +165,7 @@ struct HttpThreadData {
 }
 
 impl HttpRequest {
-    fn new(url: Url) -> Self {
+    pub fn new(url: Url) -> Self {
         let token = GIT_HTTP_STATE.lock().unwrap().take(&url);
         HttpRequest {
             url,
@@ -176,7 +176,7 @@ impl HttpRequest {
         }
     }
 
-    fn follow_redirects(&mut self, enable: bool) {
+    pub fn follow_redirects(&mut self, enable: bool) {
         self.follow_redirects = enable;
     }
 
@@ -246,6 +246,7 @@ impl HttpRequest {
                 headers = curl_slist_append(headers, header_line.as_ptr());
             }
             curl_easy_setopt(slot.curl, CURLOPT_HTTPHEADER, headers);
+            curl_easy_setopt(slot.curl, CURLOPT_ACCEPT_ENCODING, b"\0");
             let mut results = slot_results::new();
             let result = run_one_slot(slot, &mut results);
             curl_slist_free_all(headers);
@@ -258,13 +259,15 @@ impl HttpRequest {
         });
 
         match receiver.recv() {
-            Ok(Either::Left(info)) if info.http_status < 300 => Ok(HttpResponse {
-                info,
-                thread: Some(thread),
-                cursor: Cursor::new(b"".to_boxed()),
-                receiver: Some(receiver),
-                token,
-            }),
+            Ok(Either::Left(info)) if info.http_status >= 100 && info.http_status < 300 => {
+                Ok(HttpResponse {
+                    info,
+                    thread: Some(thread),
+                    cursor: Cursor::new(b"".to_boxed()),
+                    receiver: Some(receiver),
+                    token,
+                })
+            }
             Ok(Either::Right(_)) => unreachable!(),
             _ => {
                 while receiver.recv().is_ok() {}
@@ -275,7 +278,7 @@ impl HttpRequest {
         }
     }
 
-    fn execute(self) -> Result<HttpResponse, ()> {
+    pub fn execute(self) -> Result<HttpResponse, String> {
         self.execute_once()
             .or_else(|(result, this)| {
                 if result == HTTP_REAUTH {
@@ -287,11 +290,11 @@ impl HttpRequest {
             })
             .map_err(|(_, mut this)| unsafe {
                 this.url.set_query(None);
-                die!(
+                format!(
                     "unable to access '{}': {}",
                     this.url,
                     CStr::from_ptr(curl_errorstr.as_ptr()).to_bytes().as_bstr()
-                );
+                )
             })
     }
 }
