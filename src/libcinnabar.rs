@@ -14,7 +14,7 @@ use crate::oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct hg_object_id([u8; 20]);
 
 impl From<HgObjectId> for hg_object_id {

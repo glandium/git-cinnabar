@@ -46,6 +46,7 @@ extern crate log;
 
 use clap::{crate_version, AppSettings, ArgGroup, Parser};
 use itertools::Itertools;
+use sha1::{Digest, Sha1};
 
 #[macro_use]
 mod util;
@@ -69,12 +70,13 @@ pub(crate) mod hg_connect_stdio;
 pub(crate) mod hg_data;
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::cell::Cell;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[cfg(unix)]
 use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};
-use std::fmt;
 use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Cursor, Write};
+use std::iter::repeat;
 use std::os::raw::c_int;
 use std::os::raw::{c_char, c_void};
 #[cfg(unix)]
@@ -84,6 +86,7 @@ use std::process::Command;
 use std::str::{self, from_utf8, FromStr};
 use std::sync::Mutex;
 use std::thread::spawn;
+use std::{cmp, fmt};
 
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
@@ -91,7 +94,7 @@ use std::os::unix::io::AsRawFd;
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use bitflags::bitflags;
 use bstr::{BStr, ByteSlice};
@@ -102,22 +105,24 @@ use url::Url;
 use which::which;
 
 use crate::libc::FdFile;
+use crate::store::do_set_replace;
 use crate::util::{FromBytes, ToBoxed};
 use graft::{do_graft, graft_finish, init_graft};
 use hg_connect::{connect_main_with, get_clonebundle_url, get_connection, get_store_bundle};
-use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git};
+use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
-    config_get_value, for_each_ref_in, for_each_remote, get_oid_committish, lookup_replace_commit,
-    ls_tree, object_id, remote, resolve_ref, strbuf, string_list, BlobId, CommitId, RawCommit,
+    config_get_value, config_set_value, diff_tree, for_each_ref_in, for_each_remote,
+    get_oid_committish, lookup_replace_commit, ls_tree, metadata_oid, object_id, remote,
+    resolve_ref, rev_list, strbuf, string_list, BlobId, CommitId, DiffTreeItem, RawCommit,
     RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
-use progress::do_progress;
+use progress::{do_progress, Progress};
 use store::{
-    do_check_files, do_create, do_raw_changeset, do_store_changeset, merge_metadata,
+    do_check_files, do_create, do_raw_changeset, do_store_changeset, has_metadata, merge_metadata,
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
-    HgManifestId, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF,
-    NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF,
+    CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
 
@@ -1000,6 +1005,611 @@ fn do_unbundle(clonebundle: bool, mut url: Url) -> Result<(), String> {
         .ok_or_else(|| "Fatal error".to_string())
 }
 
+extern "C" {
+    fn check_manifest(oid: *const object_id, hg_oid: *mut hg_object_id) -> c_int;
+    fn check_file(
+        oid: *const hg_object_id,
+        parent1: *const hg_object_id,
+        parent2: *const hg_object_id,
+    ) -> c_int;
+}
+
+fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, String> {
+    if !has_metadata() {
+        eprintln!(
+            "There does not seem to be any git-cinnabar metadata.\n\
+             Is this a git-cinnabar clone?"
+        );
+        return Ok(1);
+    }
+    let metadata_cid = unsafe { CommitId::from_unchecked(GitObjectId::from(metadata_oid.clone())) };
+    let checked_cid = if force {
+        None
+    } else {
+        let broken_cid = resolve_ref(BROKEN_REF);
+        let checked_cid = match resolve_ref(CHECKED_REF) {
+            checked_cid if checked_cid == broken_cid => None,
+            checked_cid => checked_cid,
+        };
+        if checked_cid.as_ref() == Some(&metadata_cid) {
+            eprintln!(
+                "The git-cinnabar metadata was already checked and is \
+                 presumable clean.\n\
+                 Try `--force` if you want to check anyway."
+            );
+            return Ok(0);
+        }
+        checked_cid
+    };
+    let commit = RawCommit::read(&metadata_cid).unwrap();
+    let commit = commit.parse().unwrap();
+    if !String::from_utf8_lossy(commit.body())
+        .split_ascii_whitespace()
+        .sorted()
+        .eq(["files-meta", "unified-manifests-v2"].into_iter())
+    {
+        eprintln!(
+            "The git-cinnabar metadata is incompatible with this version.\n\
+             Please use the git-cinnabar version it was used with last."
+        );
+        return Ok(1);
+    }
+    if !(5..=6).contains(&commit.parents().len()) {
+        return Err(
+            "The git-cinnabar metadata seems to be corrupted in unexpected ways.".to_string(),
+        );
+    }
+    let [changesets_cid, manifests_cid] = <&[_; 2]>::try_from(&commit.parents()[..2]).unwrap();
+    let commit = RawCommit::read(changesets_cid).unwrap();
+    let commit = commit.parse().unwrap();
+    let heads = commit
+        .body()
+        .split(|&b| b == b'\n')
+        .filter_map(|l| {
+            l.splitn_exact(b' ').and_then(|[node, branch]| {
+                Some((HgChangesetId::from_bytes(node).ok()?, branch.as_bstr()))
+            })
+        })
+        .collect::<Vec<_>>();
+    if heads.len() != commit.parents().len() {
+        return Err(
+            "The git-cinnabar metadata seems to be corrupted in unexpected ways.".to_string(),
+        );
+    }
+
+    if full || !commits.is_empty() {
+        return run_python_command(PythonCommand::GitCinnabar);
+    }
+
+    let [checked_changesets_cid, checked_manifests_cid] =
+        checked_cid.as_ref().map_or([None, None], |c| {
+            let commit = RawCommit::read(c).unwrap();
+            let commit = commit.parse().unwrap();
+            let mut parents = commit.parents().iter();
+            [parents.next().cloned(), parents.next().cloned()]
+        });
+    let raw_checked = array_init::from_iter::<_, _, 2>(
+        [&checked_changesets_cid, &checked_manifests_cid]
+            .iter()
+            .map(|c| c.as_ref().and_then(RawCommit::read)),
+    )
+    .unwrap();
+    let [checked_changesets, checked_manifests] = array_init::from_iter(
+        raw_checked
+            .iter()
+            .map(|r| r.as_ref().and_then(RawCommit::parse)),
+    )
+    .unwrap();
+
+    let broken = Cell::new(false);
+    let report = |s| {
+        eprintln!("\r{}", s);
+        broken.set(true);
+    };
+
+    let mut heads_set = None;
+    let mut parents = None;
+    let mut manifest_nodes = Vec::new();
+
+    for (c, (changeset_node, branch)) in commit
+        .parents()
+        .iter()
+        .zip(heads.iter())
+        .filter(|(c, _)| match &checked_changesets {
+            Some(checked) => !checked.parents().contains(c),
+            None => true,
+        })
+        .progress(|n| format!("Checking {n} changeset heads"))
+    {
+        let git_cid = changeset_node.to_git();
+        let git_cid = if let Some(git_cid) = git_cid {
+            git_cid
+        } else {
+            report(format!(
+                "Missing hg2git metadata for changeset {}",
+                changeset_node
+            ));
+            continue;
+        };
+        if &*git_cid != c {
+            let parents = parents.get_or_insert_with(|| BTreeSet::from_iter(commit.parents()));
+            if !parents.contains(&*git_cid) {
+                report(format!(
+                    "Inconsistent metadata:\n\
+                     \x20 Head metadata says changeset {} maps to {}\n
+                     \x20 but hg2git metadata says it maps to {}",
+                    changeset_node, c, git_cid
+                ));
+                continue;
+            }
+        }
+        let commit = RawCommit::read(c).unwrap();
+        let commit = commit.parse().unwrap();
+        let metadata = if let Some(metadata) = RawGitChangesetMetadata::read(&git_cid) {
+            metadata
+        } else {
+            report(format!("Missing git2hg metadata for git commit {}", c));
+            continue;
+        };
+        let metadata = metadata.parse().unwrap();
+        if metadata.changeset_id() != changeset_node {
+            let heads_map = heads_set
+                .get_or_insert_with(|| heads.iter().map(|(a, _)| a).collect::<BTreeSet<_>>());
+            if !heads_map.contains(metadata.changeset_id()) {
+                report(format!(
+                    "Inconsistent metadata:\n\
+                     \x20 Head metadata says {} maps to changeset {}\n
+                     \x20 but git2hg metadata says it maps to changeset {}",
+                    c,
+                    changeset_node,
+                    metadata.changeset_id()
+                ));
+                continue;
+            }
+        }
+        let raw_changeset = RawHgChangeset::from_metadata(&commit, &metadata).unwrap();
+        let mut sha1 = Sha1::new();
+        commit
+            .parents()
+            .iter()
+            .map(|p| {
+                unsafe { GitChangesetId::from_unchecked(lookup_replace_commit(p).into_owned()) }
+                    .to_hg()
+                    .unwrap()
+            })
+            .chain(repeat(HgChangesetId::null()))
+            .take(2)
+            .sorted()
+            .for_each(|p| sha1.update(p.as_raw_bytes()));
+        sha1.update(&*raw_changeset);
+        let sha1 = sha1.finalize();
+        if changeset_node.as_raw_bytes() != sha1.as_slice() {
+            report(format!("Sha1 mismatch for changeset {}", changeset_node,));
+            continue;
+        }
+        let changeset = raw_changeset.parse().unwrap();
+        let changeset_branch = changeset
+            .extra()
+            .and_then(|e| e.get(b"branch"))
+            .unwrap_or(b"default")
+            .as_bstr();
+        if *branch != changeset_branch {
+            report(format!(
+                "Inconsistent metadata:\n\
+                 \x20 Head metadata says changeset {} is in branch {}\n\
+                 \x20 but git2hg metadata says it is in branch {}",
+                changeset_node, branch, changeset_branch
+            ));
+            continue;
+        }
+        manifest_nodes.push(changeset.manifest().clone());
+    }
+
+    if broken.get() {
+        return Ok(1);
+    }
+
+    // Rebuilding manifests benefits from limiting the difference with
+    // the last rebuilt manifest. Similarly, building the list of unique
+    // files in all manifests benefits from that too.
+    // Unfortunately, the manifest heads are not ordered in a topological
+    // relevant manner, and the differences between two consecutive manifests
+    // can be much larger than they could be. The consequence is spending a
+    // large amount of time rebuilding the manifests and gathering the files
+    // list. It's actually faster to attempt to reorder them according to
+    // some heuristics first, such that the differences are smaller.
+    // Here, we use the depth from the root node(s) to reorder the manifests.
+    // This doesn't give the most optimal ordering, but it's already much
+    // faster. On a clone of multiple mozilla-* repositories with > 1400 heads,
+    // it's close to an order of magnitude difference on the "Checking
+    // manifests" loop.
+    let mut depths = BTreeMap::new();
+    let mut roots = BTreeSet::new();
+    let mut manifest_queue = Vec::new();
+    let manifests_arg = format!("{}^@", manifests_cid);
+    let checked_manifests_arg = checked_manifests_cid.map(|c| format!("^{}^@", c));
+    let mut args = vec![
+        OsStr::from_bytes(b"--topo-order"),
+        OsStr::from_bytes(b"--reverse"),
+        OsStr::from_bytes(b"--full-history"),
+        OsStr::from_bytes(manifests_arg.as_bytes()),
+    ];
+    if let Some(a) = &checked_manifests_arg {
+        args.push(OsStr::from_bytes(a.as_bytes()));
+    }
+    for mid in rev_list(&args).progress(|n| format!("Loading {n} manifests")) {
+        let commit = RawCommit::read(&mid).unwrap();
+        let commit = commit.parse().unwrap();
+        manifest_queue.push((mid.clone(), commit.parents().to_boxed()));
+        for p in commit.parents() {
+            if !depths.contains_key(p) {
+                roots.insert(p.clone());
+            }
+            depths.insert(
+                mid.clone(),
+                cmp::max(
+                    depths.get(p).copied().unwrap_or(0) + 1,
+                    depths.get(&mid).copied().unwrap_or(0),
+                ),
+            );
+        }
+    }
+
+    // TODO: check that all manifest_nodes gathered above are available in the
+    // manifests dag, and that the dag heads are the recorded heads.
+    let commit = RawCommit::read(manifests_cid).unwrap();
+    let commit = commit.parse().unwrap();
+
+    let mut previous = None;
+    let mut all_interesting = BTreeSet::new();
+    for mid in commit
+        .parents()
+        .iter()
+        .filter(|p| match &checked_manifests {
+            Some(checked) => !checked.parents().contains(p),
+            None => true,
+        })
+        .sorted_by_key(|p| depths.get(*p).copied().unwrap_or(0))
+        .progress(|n| format!("Checking {n} manifest heads"))
+    {
+        let commit = RawCommit::read(mid).unwrap();
+        let commit = commit.parse().unwrap();
+        let hg_manifest_id = if let Ok(id) = HgManifestId::from_bytes(commit.body()) {
+            id
+        } else {
+            report(format!("Invalid manifest metadata in git commit {}", mid));
+            continue;
+        };
+        let git_mid = if let Some(id) = hg_manifest_id.to_git() {
+            id
+        } else {
+            report(format!(
+                "Missing hg2git metadata for manifest {}",
+                hg_manifest_id
+            ));
+            continue;
+        };
+        if mid != &*git_mid {
+            report(format!(
+                "Inconsistent metadata:\n\
+                 \x20 Manifest DAG contains {} for manifest {}\n
+                 \x20 but hg2git metadata says the manifest maps to {}",
+                mid, hg_manifest_id, git_mid
+            ));
+        }
+        if unsafe {
+            check_manifest(
+                &object_id::from((*git_mid).clone()),
+                &mut hg_object_id::default(),
+            )
+        } != 1
+        {
+            report(format!("Sha1 mismatch for manifest {}", git_mid));
+        }
+        let files = if let Some(previous) = previous {
+            diff_tree(previous, mid)
+                .filter_map(|item| match item {
+                    DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid).clone())),
+                    DiffTreeItem::Modified {
+                        path,
+                        from_oid,
+                        to_oid,
+                        ..
+                    } if from_oid != to_oid => Some((path, (*to_oid).clone())),
+                    _ => None,
+                })
+                .filter(|pair| !all_interesting.contains(pair))
+                .collect_vec()
+        } else {
+            ls_tree(commit.tree())
+                .unwrap()
+                .map(|item| (item.path, item.oid))
+                .filter(|pair| !all_interesting.contains(pair))
+                .collect_vec()
+        };
+        all_interesting.extend(files);
+        previous = Some(mid);
+    }
+
+    // Don't check files that were already there in the previously checked
+    // manifests.
+    let mut previous = None;
+    for r in roots {
+        if let Some(previous) = &previous {
+            diff_tree(previous, &r)
+                .filter_map(|item| match item {
+                    DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid).clone())),
+                    DiffTreeItem::Modified {
+                        path,
+                        from_oid,
+                        to_oid,
+                        ..
+                    } if from_oid != to_oid => Some((path, (*to_oid).clone())),
+                    _ => None,
+                })
+                .for_each(|item| {
+                    all_interesting.remove(&item);
+                });
+        } else {
+            // Yes, this is ridiculous.
+            let commit = RawCommit::read(&r).unwrap();
+            let commit = commit.parse().unwrap();
+            for item in ls_tree(commit.tree()).unwrap() {
+                all_interesting.remove(&(item.path, item.oid));
+            }
+        }
+        previous = Some(r);
+    }
+
+    let mut progress = repeat(()).progress(|n| format!("Checking {n} files"));
+    while !all_interesting.is_empty() && !manifest_queue.is_empty() {
+        let (mid, parents) = manifest_queue.pop().unwrap();
+        for (path, hg_file, hg_fileparents) in get_changes(&mid, &parents) {
+            if hg_fileparents.iter().any(|p| *p == hg_file) {
+                continue;
+            }
+            // Reaching here means the file received a modification compared
+            // to its parents. If it's a file we're going to check below,
+            // it means we don't need to check its parents if somehow they were
+            // going to be checked. If it's not a file we're going to check
+            // below, it's because it's either a file we weren't interested in
+            // in the first place, or it's the parent of a file we have checked.
+            // Either way, we aren't interested in the parents.
+            for p in hg_fileparents.iter() {
+                all_interesting.remove(&(path.clone(), p.clone()));
+            }
+            if let Some((path, hg_file)) = all_interesting.take(&(path, hg_file)) {
+                if unsafe {
+                    check_file(
+                        // TODO: This is gross.
+                        &hg_object_id::from(
+                            HgObjectId::from_bytes(format!("{}", hg_file).as_bytes()).unwrap(),
+                        ),
+                        &hg_fileparents.get(0).map_or_else(
+                            || hg_object_id::from(HgObjectId::null()),
+                            |p| {
+                                hg_object_id::from(
+                                    HgObjectId::from_bytes(format!("{}", p).as_bytes()).unwrap(),
+                                )
+                            },
+                        ),
+                        &hg_fileparents.get(1).map_or_else(
+                            || hg_object_id::from(HgObjectId::null()),
+                            |p| {
+                                hg_object_id::from(
+                                    HgObjectId::from_bytes(format!("{}", p).as_bytes()).unwrap(),
+                                )
+                            },
+                        ),
+                    )
+                } != 1
+                {
+                    report(format!(
+                        "Sha1 mismatch for file {}\n\
+                         \x20 revision {}",
+                        manifest_path(&path),
+                        hg_file
+                    ));
+                    let print_parents = hg_fileparents
+                        .iter()
+                        .filter(|p| **p != GitObjectId::null())
+                        .join(" ");
+                    if !print_parents.is_empty() {
+                        report(format!(
+                            "  with parent{} {}",
+                            if print_parents.len() > 41 { "s" } else { "" },
+                            print_parents
+                        ));
+                    }
+                }
+                progress.next();
+            }
+        }
+    }
+    drop(progress);
+    if !all_interesting.is_empty() {
+        eprintln!("\rCould not find the following files:");
+        for (path, oid) in all_interesting.iter().sorted() {
+            eprintln!(" . {} {}", oid, manifest_path(path));
+        }
+        eprintln!(
+            "This might be a bug in `git cinnabar fsck`. Please open \
+             an issue, with the message above, on\n\
+             https://github.com/glandium/git-cinnabar/issues"
+        );
+        return Ok(1);
+    }
+
+    check_replace(&metadata_cid);
+
+    if broken.get() {
+        eprintln!(
+            "\rYour git-cinnabar repository appears to be corrupted.\n\
+             Please open an issue, with the information above, on\n\
+             https://github.com/glandium/git-cinnabar/issues"
+        );
+        let mut transaction = RefTransaction::new().unwrap();
+        transaction
+            .update("refs/cinnabar/broken", &metadata_cid, None, "fsck")
+            .unwrap();
+        transaction.commit().unwrap();
+        if checked_cid.is_some() {
+            eprintln!(
+                "\nThen please try to run `git cinnabar rollback --fsck` to \
+                 restore last known state, and to update from the mercurial \
+                 repository."
+            );
+        } else {
+            eprintln!("\nThen please try to run `git cinnabar reclone`.");
+        }
+        eprintln!(
+            "\nPlease note this may affect the commit sha1s of mercurial \
+             changesets, and may require to rebase your local branches."
+        );
+        eprintln!(
+            "\nAlternatively, you may start afresh with a new clone. In any \
+             case, please keep this corrupted repository around for further \
+             debugging."
+        );
+        return Ok(1);
+    }
+
+    config_set_value(
+        "cinnabar.fsck",
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
+    );
+
+    if do_done_and_check(&[b"refs/cinnabar/checked"]) {
+        Ok(0)
+    } else {
+        Ok(1)
+    }
+}
+
+fn check_replace(metadata_cid: &CommitId) {
+    let commit = RawCommit::read(metadata_cid).unwrap();
+    let commit = commit.parse().unwrap();
+    for r in ls_tree(commit.tree())
+        .unwrap()
+        .filter_map(|item| {
+            let r = GitObjectId::from_bytes(&item.path).unwrap();
+            (item.oid == r).then(|| r)
+        })
+        .progress(|n| format!("Removing {n} self-referencing grafts"))
+    {
+        unsafe {
+            do_set_replace(&object_id::from(r), &object_id::default());
+        }
+    }
+}
+
+fn manifest_path(p: &[u8]) -> Box<BStr> {
+    p.strip_prefix(b"_")
+        .unwrap()
+        .replace("/_", "/")
+        .as_bstr()
+        .to_boxed()
+}
+
+fn get_changes(
+    cid: &CommitId,
+    parents: &[CommitId],
+) -> impl Iterator<Item = (Box<[u8]>, GitObjectId, Box<[GitObjectId]>)> {
+    if parents.is_empty() {
+        // Yes, this is ridiculous.
+        let commit = RawCommit::read(cid).unwrap();
+        let commit = commit.parse().unwrap();
+        return ls_tree(commit.tree())
+            .unwrap()
+            .map(|item| (item.path, item.oid, [].to_boxed()))
+            .collect::<Vec<_>>()
+            .into_iter();
+    } else if parents.len() == 1 {
+        return manifest_diff(&parents[0], cid)
+            .map(|(path, node, parent)| (path, node, [parent].to_boxed()))
+            .collect::<Vec<_>>()
+            .into_iter();
+    }
+    manifest_diff2_all(&parents[0], &parents[1], cid)
+        .map(|(path, node, parents)| (path, node, parents.to_boxed()))
+        .collect_vec()
+        .into_iter()
+}
+
+fn manifest_diff(
+    a: &CommitId,
+    b: &CommitId,
+) -> impl Iterator<Item = (Box<[u8]>, GitObjectId, GitObjectId)> {
+    diff_tree(a, b).filter_map(|item| match item {
+        DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid).clone(), GitObjectId::null())),
+        DiffTreeItem::Modified {
+            path,
+            from_oid,
+            to_oid,
+            ..
+        } if from_oid != to_oid => Some((path, (*to_oid).clone(), (*from_oid).clone())),
+        DiffTreeItem::Deleted { path, oid, .. } => {
+            Some((path, GitObjectId::null(), (*oid).clone()))
+        }
+        _ => None,
+    })
+}
+
+fn manifest_diff2_all(
+    a: &CommitId,
+    b: &CommitId,
+    c: &CommitId,
+) -> impl Iterator<Item = (Box<[u8]>, GitObjectId, [GitObjectId; 2])> {
+    let mut iter1 = manifest_diff(a, c);
+    let mut iter2 = manifest_diff(b, c);
+    let mut item1 = iter1.next();
+    let mut item2 = iter2.next();
+    let mut result = Vec::new();
+    loop {
+        while let Some((path, oid, parent_oid)) = item1.as_ref() {
+            if let Some((path2, ..)) = &item2 {
+                if path >= path2 {
+                    break;
+                }
+            }
+            result.push((path.clone(), oid.clone(), [parent_oid.clone(), oid.clone()]));
+            item1 = iter1.next();
+        }
+        while let Some((path, oid, parent_oid)) = item2.as_ref() {
+            if let Some((path1, ..)) = &item1 {
+                if path >= path1 {
+                    break;
+                }
+            }
+            result.push((path.clone(), oid.clone(), [oid.clone(), parent_oid.clone()]));
+            item2 = iter2.next();
+        }
+        if item1.is_none() && item2.is_none() {
+            break;
+        }
+        if item1.is_some()
+            && item2.is_some()
+            && item1.as_ref().unwrap().0 == item2.as_ref().unwrap().0
+        {
+            let (_, oid1, parent_oid1) = item1.as_ref().unwrap();
+            let (path, oid2, parent_oid2) = item2.as_ref().unwrap();
+            assert_eq!(oid1, oid2);
+            result.push((
+                path.clone(),
+                oid1.clone(),
+                [parent_oid1.clone(), parent_oid2.clone()],
+            ));
+
+            item1 = iter1.next();
+            item2 = iter2.next();
+        }
+    }
+    result.into_iter()
+}
+
 #[derive(Debug)]
 struct AbbrevSize(usize);
 
@@ -1214,10 +1824,16 @@ fn git_cinnabar() -> i32 {
         } => do_rollback(candidates, fsck, force, committish),
         Upgrade => do_upgrade(),
         Unbundle { clonebundle, url } => do_unbundle(clonebundle, url),
-        Bundle { .. } | Fsck { .. } => match run_python_command(PythonCommand::GitCinnabar) {
-            Ok(code) => {
-                return code;
-            }
+        Fsck {
+            force,
+            full,
+            commit,
+        } => match do_fsck(force, full, commit) {
+            Ok(code) => return code,
+            Err(e) => Err(e),
+        },
+        Bundle { .. } => match run_python_command(PythonCommand::GitCinnabar) {
+            Ok(code) => return code,
             Err(e) => Err(e),
         },
     };

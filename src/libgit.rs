@@ -977,6 +977,7 @@ impl Drop for RefTransaction {
 
 extern "C" {
     fn git_config_get_value(key: *const c_char, value: *mut *const c_char) -> c_int;
+    fn git_config_set(key: *const c_char, value: *const c_char);
 }
 
 pub fn config_get_value(key: &str) -> Option<OsString> {
@@ -984,6 +985,14 @@ pub fn config_get_value(key: &str) -> Option<OsString> {
     let key = CString::new(key).unwrap();
     (unsafe { git_config_get_value(key.as_ptr(), &mut value) } == 0)
         .then(|| unsafe { CStr::from_ptr(value) }.to_osstr().to_os_string())
+}
+
+pub fn config_set_value<S: ToString>(key: &str, value: S) {
+    let key = CString::new(key).unwrap();
+    let value = CString::new(value.to_string()).unwrap();
+    unsafe {
+        git_config_set(key.as_ptr(), value.as_ptr());
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -1090,9 +1099,7 @@ pub fn ls_tree(tree_id: &TreeId) -> Result<impl Iterator<Item = LsTreeItem>, LsT
     ) {
         let ls_tree = (ctx as *mut Vec<LsTreeItem>).as_mut().unwrap();
         let mut path = base.as_ref().unwrap().as_bytes().to_owned();
-        if !path.is_empty() {
-            path.push_byte(b'/');
-        }
+        assert!(path.is_empty() || path.ends_with_str("/"));
         path.push_str(CStr::from_ptr(pathname).to_bytes());
         ls_tree.push(LsTreeItem {
             path: path.into_boxed_slice(),

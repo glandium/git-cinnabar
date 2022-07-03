@@ -792,7 +792,7 @@ extern "C" {
     fn store_git_tree(tree_buf: *const strbuf, reference: *const object_id, result: *mut object_id);
     fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
     fn do_set_(what: *const c_char, hg_id: *const hg_object_id, git_id: *const object_id);
-    fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
+    pub fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
     fn create_git_tree(
         tree_id: *const object_id,
         ref_tree: *const object_id,
