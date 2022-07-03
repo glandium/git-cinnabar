@@ -1,14 +1,9 @@
 import logging
 import os
-import socket
 import subprocess
 import sys
 import time
 import traceback
-from urllib.request import (
-    Request,
-    urlopen,
-)
 from collections import (
     deque,
     OrderedDict,
@@ -404,134 +399,6 @@ class chunkbuffer(object):
                 left -= chunkremaining
 
         return b''.join(buf)
-
-
-class HTTPReader(object):
-    def __init__(self, url):
-        url = os.fsdecode(url)
-        self.fh = urlopen(url)
-        # If the url was redirected, get the final url for possible future
-        # range requests.
-        self.url = self.fh.geturl()
-        try:
-            length = self.fh.headers['content-length']
-            self.length = None if length is None else int(length)
-        except (ValueError, KeyError):
-            self.length = None
-        self.can_recover = \
-            self.fh.headers.get('Accept-Ranges') == 'bytes'
-        self.backoff_period = 0
-        self.offset = 0
-        self.closed = False
-
-    def read(self, size):
-        result = []
-        length = 0
-        while length < size:
-            try:
-                buf = self.fh.read(size - length)
-            except socket.error:
-                buf = b''
-            if not buf:
-                # When self.length is None, self.offset < self.length is always
-                # false.
-                if self.can_recover and self.offset < self.length:
-                    while True:
-                        # Linear backoff.
-                        self.backoff_period += 1
-                        time.sleep(self.backoff_period)
-                        try:
-                            self.fh = self._reopen()
-                            break
-                        except Exception:
-                            if self.backoff_period >= 10:
-                                raise
-                    if self.fh:
-                        continue
-                break
-            length += len(buf)
-            self.offset += len(buf)
-            result.append(buf)
-        return b''.join(result)
-
-    def _reopen(self):
-        # This reopens the network connection with a HTTP Range request
-        # starting from self.offset.
-        req = Request(self.url)
-        req.add_header('Range', 'bytes=%d-' % self.offset)
-        fh = urlopen(req)
-        if fh.getcode() != 206:
-            return None
-        range = fh.headers.get('Content-Range') or ''
-        unit, _, range = range.partition(' ')
-        if unit != 'bytes':
-            return None
-        start, _, end = range.lstrip().partition('-')
-        try:
-            start = int(start)
-        except (TypeError, ValueError):
-            start = 0
-        if start > self.offset:
-            return None
-        logging.getLogger('httpreader').debug('Retrying from offset %d', start)
-        while start < self.offset:
-            length = len(fh.read(self.offset - start))
-            if not length:
-                return None
-            start += length
-        return fh
-
-    def readable(self):
-        return True
-
-    def readinto(self, b):
-        buf = self.read(len(b))
-        b[:len(buf)] = buf
-        return len(buf)
-
-
-# Transforms a File object without seek() or tell() into one that has.
-# This only implements enough to make GzipFile happy. It wants to seek to
-# the end of the file and back ; it also rewinds 8 bytes for the CRC.
-class Seekable(object):
-    def __init__(self, reader, length):
-        self._reader = reader
-        self._length = length
-        self._read = 0
-        self._pos = 0
-        self._buf = b''
-
-    def read(self, length):
-        if self._pos < self._read:
-            assert self._read - self._pos <= 8
-            assert length <= len(self._buf)
-            data = self._buf[:length]
-            self._buf = self._buf[length:]
-            self._pos += length
-        else:
-            assert self._read == self._pos
-            data = self._reader.read(length)
-            self._read += len(data)
-            self._pos = self._read
-            # Keep the last 8 bytes we read for GzipFile
-            self._buf = data[-8:]
-        return data
-
-    def tell(self):
-        return self._pos
-
-    def seek(self, pos, how=os.SEEK_SET):
-        if how == os.SEEK_END:
-            if pos:
-                raise NotImplementedError()
-            self._pos = self._length
-        elif how == os.SEEK_SET:
-            self._pos = pos
-        elif how == os.SEEK_CUR:
-            self._pos += pos
-        else:
-            raise NotImplementedError()
-        return self._pos
 
 
 class Process(object):
