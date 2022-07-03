@@ -178,7 +178,7 @@ def download(args):
         def finish(self):
             self._progress.finish()
 
-    encoding = reader.fh.headers.get('Content-Encoding', 'identity')
+    encoding = reader.headers.get('Content-Encoding', 'identity')
     progress = ReaderProgress(reader, reader.length)
     binary_content = Seekable(progress, reader.length)
     if encoding == 'gzip':
