@@ -85,6 +85,7 @@ def fsck(args):
         all_git_commits = {}
 
         for c in args.commit:
+            c = c.encode('ascii')
             cs = store.hg_changeset(c)
             if cs:
                 commits.add(c)

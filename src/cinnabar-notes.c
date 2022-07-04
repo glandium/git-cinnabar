@@ -202,11 +202,19 @@ void consolidate_notes(struct cinnabar_notes_tree *t) {
 		t->additions.initialized = 0;
 		init_notes(&t->additions, notes_ref, combine_notes_ignore,
 		           NOTES_INIT_EMPTY);
-	} else {
-		/* Reinitialize current */
-		combine_notes_fn combine_notes = t->current.combine_notes;
-		free_notes(&t->current);
-		init_notes(&t->current, notes_ref, combine_notes, t->init_flags);
+	} else if (memcmp(t->additions.root, &empty_node, sizeof(empty_node)) != 0) {
+		/* If there are additions, combine them with current */
+
+		/* Reinitialize current if it's not dirty, so that we
+		 * avoid the problem mentioned in cinnabar-notes.h.
+		 * If it's dirty, it means we've already combined additions,
+		 * and reinitializing would lose them. */
+		if (!t->current.dirty) {
+			combine_notes_fn combine_notes = t->current.combine_notes;
+			free_notes(&t->current);
+			init_notes(&t->current, notes_ref, combine_notes, t->init_flags);
+		}
+
 		/* Merge additions */
 		for_each_note(&t->additions, FOR_EACH_NOTE_DONT_UNPACK_SUBTREES,
 		              merge_note, &t->current);
