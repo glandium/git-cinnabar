@@ -76,10 +76,6 @@ def fsck(args):
 
     store = GitHgStore()
 
-    if args.full and args.commit:
-        logging.error('Cannot pass both --full and a commit')
-        return 1
-
     if args.commit:
         commits = set()
         all_git_commits = {}

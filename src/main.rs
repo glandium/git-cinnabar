@@ -1735,6 +1735,7 @@ enum CinnabarCommand {
         force: bool,
         #[clap(long)]
         #[clap(help = "Check more thoroughly")]
+        #[clap(conflicts_with = "commit")]
         full: bool,
         #[clap(help = "Specific commit or changeset to check")]
         #[clap(parse(from_os_str))]
