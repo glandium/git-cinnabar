@@ -417,7 +417,8 @@ def fsck(args):
 
     dag = gitdag()
 
-    GitHgHelper.reset_heads(b'manifests')
+    if not args.commit:
+        GitHgHelper.reset_heads(b'manifests')
 
     full_file_check = FileFindParents.logger.isEnabledFor(logging.DEBUG)
 
@@ -484,7 +485,8 @@ def fsck(args):
 
         # This doesn't change the value but makes the helper track the manifest
         # dag.
-        GitHgHelper.set(b'manifest', manifest, manifest_ref)
+        if not args.commit:
+            GitHgHelper.set(b'manifest', manifest, manifest_ref)
 
         if not GitHgHelper.check_manifest(manifest):
             status.report('Sha1 mismatch for manifest %s'
