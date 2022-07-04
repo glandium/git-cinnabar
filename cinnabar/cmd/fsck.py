@@ -118,7 +118,6 @@ def fsck_quick(force=False):
     manifest_nodes = []
 
     parents = None
-    fix_changeset_heads = False
 
     def get_checked_metadata(num):
         if not checked_metadata:
@@ -150,7 +149,6 @@ def fsck_quick(force=False):
                     % (changeset_node.decode('ascii'), c.decode('ascii'),
                        gitsha1.decode('ascii')))
                 continue
-            fix_changeset_heads = True
         changeset = store._changeset(c)
         if not changeset:
             status.report(
@@ -166,7 +164,6 @@ def fsck_quick(force=False):
                     % (c.decode('ascii'), changeset_node.decode('ascii'),
                        changeset.node.decode('ascii')))
                 continue
-            fix_changeset_heads = True
         if changeset.node != changeset.sha1:
             status.report(
                 'Sha1 mismatch for changeset %s'
@@ -353,12 +350,8 @@ def fsck_quick(force=False):
             'debugging.')
         return 1
 
-    refresh = [b'refs/cinnabar/checked']
-    if fix_changeset_heads:
-        status.fix('Fixing changeset heads metadata order.')
-        refresh.append(b'refs/cinnabar/changesets')
     interval_expired('fsck', 0)
-    store.close(refresh=refresh)
+    store.close(refresh=[b'refs/cinnabar/checked'])
     return 0
 
 
