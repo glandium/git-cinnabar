@@ -312,6 +312,8 @@ void maybe_reset_notes(const char *branch)
 		notes = &hg2git;
 	} else if (!strcmp(branch, "refs/notes/cinnabar")) {
 		notes = &git2hg;
+	} else if (!strcmp(branch, "refs/cinnabar/files-meta")) {
+		notes = &files_meta;
 	}
 	if (notes) {
 		struct branch *b = lookup_branch(branch);
