@@ -6,9 +6,13 @@ use std::borrow::Cow;
 use std::io::Write;
 
 use bstr::{BStr, ByteSlice};
+use once_cell::sync::Lazy;
+use regex::bytes::Regex;
 
-use crate::libgit::split_ident;
 use crate::util::{FromBytes, SliceExt};
+
+// TODO: This doesn't actually need to be a regexp
+static WHO_RE: Lazy<Regex> = Lazy::new(|| Regex::new("^(?-u)(.*?) ?(?:<(.*?)>)").unwrap());
 
 #[derive(Clone)]
 pub struct GitAuthorship<B: AsRef<[u8]>>(pub B);
@@ -43,13 +47,16 @@ fn utcoffset_from_git_tz(tz: i32) -> i32 {
 
 impl<'a, B: AsRef<[u8]>> From<&'a GitAuthorship<B>> for Authorship<'a> {
     fn from(a: &'a GitAuthorship<B>) -> Self {
-        let ident = split_ident(a.0.as_ref().as_bstr()).unwrap();
-        let tz = i32::from_bytes(ident.tz).unwrap();
+        // We don't ever expect a git `who` information not to match the
+        // split+regexp, as git is very conservative in what it accepts.
+        let [who, timestamp, tz] = a.0.as_ref().rsplitn_exact(b' ').unwrap();
+        let caps = WHO_RE.captures(who).unwrap();
+        let tz = i32::from_bytes(tz).unwrap();
         let utcoffset = utcoffset_from_git_tz(tz);
         Authorship {
-            name: Cow::Borrowed(ident.name),
-            email: Cow::Borrowed(ident.email),
-            timestamp: u64::from_bytes(ident.date).unwrap(),
+            name: Cow::Borrowed(caps.get(1).unwrap().as_bytes()),
+            email: Cow::Borrowed(caps.get(2).unwrap().as_bytes()),
+            timestamp: u64::from_bytes(timestamp).unwrap(),
             utcoffset,
         }
     }
@@ -88,8 +95,11 @@ fn normalize_hg_author(author: &[u8]) -> (Cow<[u8]>, Cow<[u8]>) {
         }
     }
     let author = author.as_bstr();
-    let (name, mail) = if let Some(ident) = split_ident(author) {
-        (ident.name, ident.email)
+    let (name, mail) = if let Some(caps) = WHO_RE.captures(author) {
+        (
+            caps.get(1).unwrap().as_bytes().as_bstr(),
+            caps.get(2).unwrap().as_bytes().as_bstr(),
+        )
     } else if author.find_byte(b'@').is_some() {
         (b"".as_bstr(), author)
     } else {
@@ -273,6 +283,14 @@ fn test_authorship_from_hg() {
     assert_eq!(a.email.as_bstr(), b"foo@bar".as_bstr());
 
     let a = Authorship::from(&HgAuthorship {
+        author: "Foo Bar  <foo@bar>",
+        timestamp: "0",
+        utcoffset: "0",
+    });
+    assert_eq!(a.name.as_bstr(), b"Foo Bar ".as_bstr());
+    assert_eq!(a.email.as_bstr(), b"foo@bar".as_bstr());
+
+    let a = Authorship::from(&HgAuthorship {
         author: "Foo Bar <foo@bar>, Bar Baz <bar@baz>",
         timestamp: "0",
         utcoffset: "0",
@@ -328,8 +346,12 @@ fn test_authorship_from_hg() {
 #[test]
 fn test_authorship_from_git() {
     let a = Authorship::from(&GitAuthorship(b"Foo Bar <foo@bar> 0 +0000"));
-    assert_eq!(&*a.name, b"Foo Bar");
-    assert_eq!(&*a.email, b"foo@bar");
+    assert_eq!(a.name.as_bstr(), b"Foo Bar".as_bstr());
+    assert_eq!(a.email.as_bstr(), b"foo@bar".as_bstr());
+
+    let a = Authorship::from(&GitAuthorship(b"Foo Bar  <foo@bar> 0 +0000"));
+    assert_eq!(a.name.as_bstr(), b"Foo Bar ".as_bstr());
+    assert_eq!(a.email.as_bstr(), b"foo@bar".as_bstr());
 
     let a = Authorship::from(&GitAuthorship(b"Foo Bar <foo@bar> 1482880019 -0100"));
     assert_eq!(a.timestamp, 1482880019);
@@ -347,7 +369,12 @@ fn test_authorship_to_hg() {
     assert_eq!(a.timestamp.as_bstr(), b"1482880019".as_bstr());
     assert_eq!(a.utcoffset.as_bstr(), b"-7200".as_bstr());
 
-    for author in ["Foo Bar", "<foo@bar>", "Foo Bar <foo@bar>"] {
+    for author in [
+        "Foo Bar",
+        "<foo@bar>",
+        "Foo Bar <foo@bar>",
+        "Foo Bar  <foo@bar>",
+    ] {
         let a = HgAuthorship {
             author,
             timestamp: "0",
@@ -380,6 +407,13 @@ fn test_authorship_to_git() {
         utcoffset: "0",
     });
     assert_eq!(a.0.as_bstr(), b"Foo Bar <foo@bar> 0 +0000".as_bstr());
+
+    let a = GitAuthorship::from(HgAuthorship {
+        author: "Foo Bar  <foo@bar>",
+        timestamp: "0",
+        utcoffset: "0",
+    });
+    assert_eq!(a.0.as_bstr(), b"Foo Bar  <foo@bar> 0 +0000".as_bstr());
 
     let a = GitAuthorship::from(HgAuthorship {
         author: "Foo Bar <foo@bar>",

@@ -236,6 +236,10 @@ class TestAuthorship(unittest.TestCase):
         self.assertEqual(a.name, b'Foo Bar')
         self.assertEqual(a.email, b'foo@bar')
 
+        a = Authorship.from_hg(b'Foo Bar  <foo@bar>', 0, 0)
+        self.assertEqual(a.name, b'Foo Bar ')
+        self.assertEqual(a.email, b'foo@bar')
+
         a = Authorship.from_hg(b'Foo Bar <foo@bar>, Bar Baz <bar@baz>', 0, 0)
         self.assertEqual(a.name, b'Foo Bar')
         self.assertEqual(a.email, b'foo@bar')
@@ -271,6 +275,10 @@ class TestAuthorship(unittest.TestCase):
         self.assertEqual(a.name, b'Foo Bar')
         self.assertEqual(a.email, b'foo@bar')
 
+        a = Authorship.from_git(b'Foo Bar  <foo@bar>', 0, 0)
+        self.assertEqual(a.name, b'Foo Bar ')
+        self.assertEqual(a.email, b'foo@bar')
+
         a = Authorship.from_git(b'Foo Bar <foo@bar>', b'1482880019', b'-0100')
         self.assertEqual(a.timestamp, 1482880019)
         self.assertEqual(a.utcoffset, 3600)
@@ -290,6 +298,7 @@ class TestAuthorship(unittest.TestCase):
             b'Foo Bar',
             b'<foo@bar>',
             b'Foo Bar <foo@bar>',
+            b'Foo Bar  <foo@bar>',
         ):
             a = Authorship.from_hg(who, 0, 0)
             self.assertEqual(who, a.to_hg()[0])
@@ -303,6 +312,9 @@ class TestAuthorship(unittest.TestCase):
 
         a = Authorship.from_hg(b'Foo Bar <foo@bar>', 0, 0)
         self.assertEqual(a.to_git()[0], b'Foo Bar <foo@bar>')
+
+        a = Authorship.from_hg(b'Foo Bar  <foo@bar>', 0, 0)
+        self.assertEqual(a.to_git()[0], b'Foo Bar  <foo@bar>')
 
         a = Authorship.from_hg(b'Foo Bar <foo@bar>', b'1482880019', b'-7200')
         who, timestamp, utcoffset = a.to_git()
