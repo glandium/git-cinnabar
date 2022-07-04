@@ -258,32 +258,6 @@ const struct object_id empty_tree = { {
 	0xe5, 0x4b, 0xf8, 0xd6, 0x92, 0x88, 0xfb, 0xee, 0x49, 0x04,
 }, GIT_HASH_SHA1 };
 
-void maybe_reset_notes(const char *branch)
-{
-	struct notes_tree *notes = NULL;
-
-	// The python frontend will use fast-import commands to commit the
-	// hg2git and git2hg trees as separate temporary branches, and then
-	// remove them. We want to update the notes tree on the temporary
-	// branches, and keep them there when they are removed.
-	if (!strcmp(branch, "refs/cinnabar/hg2git")) {
-		notes = &hg2git;
-	} else if (!strcmp(branch, "refs/notes/cinnabar")) {
-		notes = &git2hg;
-	} else if (!strcmp(branch, "refs/cinnabar/files-meta")) {
-		notes = &files_meta;
-	}
-	if (notes) {
-		struct branch *b = lookup_branch(branch);
-		if (!is_null_oid(&b->oid)) {
-			if (notes_initialized(notes))
-				free_notes(notes);
-			init_notes(notes, oid_to_hex(&b->oid),
-				   combine_notes_ignore, 0);
-		}
-	}
-}
-
 struct oid_array manifest_heads = OID_ARRAY_INIT;
 int manifest_heads_dirty = 0;
 
