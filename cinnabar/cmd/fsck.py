@@ -452,21 +452,21 @@ def fsck(args):
         if hg_changeset.node != hg_changeset.sha1:
             status.report('Sha1 mismatch for changeset %s'
                           % changeset.decode('ascii'))
+        else:
+            raw_changeset = Changeset.from_git_commit(node)
+            patcher = ChangesetPatcher.from_diff(raw_changeset, changeset_data)
+            if patcher != store.read_changeset_data(node):
+                status.fix('Adjusted changeset metadata for %s'
+                           % changeset.decode('ascii'))
+                GitHgHelper.set(b'changeset', changeset, NULL_NODE_ID)
+                GitHgHelper.set(b'changeset', changeset, node)
+                GitHgHelper.put_blob(patcher, want_sha1=False)
+                GitHgHelper.set(b'changeset-metadata', changeset, NULL_NODE_ID)
+                GitHgHelper.set(b'changeset-metadata', changeset, b':1')
 
         dag.add(hg_changeset.node,
                 (hg_changeset.parent1, hg_changeset.parent2),
                 changeset_data.branch or b'default')
-
-        raw_changeset = Changeset.from_git_commit(node)
-        patcher = ChangesetPatcher.from_diff(raw_changeset, changeset_data)
-        if patcher != store.read_changeset_data(node):
-            status.fix('Adjusted changeset metadata for %s'
-                       % changeset.decode('ascii'))
-            GitHgHelper.set(b'changeset', changeset, NULL_NODE_ID)
-            GitHgHelper.set(b'changeset', changeset, node)
-            GitHgHelper.put_blob(patcher, want_sha1=False)
-            GitHgHelper.set(b'changeset-metadata', changeset, NULL_NODE_ID)
-            GitHgHelper.set(b'changeset-metadata', changeset, b':1')
 
         manifest = changeset_data.manifest
         if GitHgHelper.seen(b'hg2git', manifest) or manifest == NULL_NODE_ID:
