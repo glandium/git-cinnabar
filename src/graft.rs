@@ -28,17 +28,11 @@ pub fn grafted() -> bool {
 
 static DID_SOMETHING: AtomicBool = AtomicBool::new(false);
 
-static INITIALIZED: AtomicBool = AtomicBool::new(false);
-
 static GRAFT_TREES: Lazy<Mutex<BTreeMap<TreeId, Vec<CommitId>>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 
 pub fn graft_finish() -> Option<bool> {
-    if !INITIALIZED.load(Ordering::Relaxed) {
-        None
-    } else {
-        Some(grafted() || DID_SOMETHING.load(Ordering::Relaxed))
-    }
+    Lazy::get(&GRAFT_TREES).map(|_| grafted() || DID_SOMETHING.load(Ordering::Relaxed))
 }
 
 pub fn do_graft(args: &[&[u8]]) {
@@ -75,7 +69,6 @@ pub fn init_graft() {
         let cids_for_tree = graft_trees.entry(c.tree().clone()).or_insert(Vec::new());
         cids_for_tree.push(cid);
     }
-    INITIALIZED.store(true, Ordering::Relaxed);
 }
 
 #[derive(Debug)]
@@ -90,7 +83,7 @@ pub fn graft(
     tree: &TreeId,
     parents: &[GitChangesetId],
 ) -> Result<Option<CommitId>, GraftError> {
-    if !INITIALIZED.load(Ordering::Relaxed) {
+    if Lazy::get(&GRAFT_TREES).is_none() {
         return Ok(None);
     }
 
