@@ -385,22 +385,21 @@ impl RawHgChangeset {
             timestamp: hg_timestamp,
             utcoffset: hg_utcoffset,
         } = GitAuthorship(commit.author()).into();
-        let hg_committer = if commit.author() != commit.committer() {
-            Some(HgCommitter::from(GitAuthorship(commit.committer())).0)
-        } else {
-            None
-        };
-        let hg_committer = hg_committer.as_ref();
 
         if let Some(author) = metadata.author() {
             hg_author = author.to_boxed();
         }
         let mut extra = metadata.extra();
-        if let Some(hg_committer) = hg_committer {
+        let hg_committer = (extra.as_ref().and_then(|e| e.get(b"committer")).is_none()
+            && (commit.author() != commit.committer()))
+        .then(|| HgCommitter::from(GitAuthorship(commit.committer())).0);
+
+        if let Some(hg_committer) = hg_committer.as_ref() {
             extra
                 .get_or_insert_with(ChangesetExtra::new)
                 .set(b"committer", hg_committer);
-        };
+        }
+
         let mut changeset = Vec::new();
         writeln!(changeset, "{}", metadata.manifest_id()).ok()?;
         changeset.extend_from_slice(&hg_author);
