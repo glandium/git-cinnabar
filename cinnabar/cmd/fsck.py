@@ -392,7 +392,7 @@ def fsck(args):
             cs = store.hg_changeset(c)
             if cs:
                 commits.add(c)
-                c = cs.node
+                c = cs
             commit = GitHgHelper.hg2git(c)
             if commit == NULL_NODE_ID and not cs:
                 status.info('Unknown commit or changeset: %s'
