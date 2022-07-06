@@ -1062,6 +1062,21 @@ pub fn do_create_changeset(mut input: &mut dyn BufRead, mut output: impl Write, 
     };
     let commit = RawCommit::read(&commit_id).unwrap();
     let commit = commit.parse().unwrap();
+    let branch = commit.parents().get(0).and_then(|p| {
+        let metadata =
+            RawGitChangesetMetadata::read(&GitChangesetId::from_unchecked(p.clone())).unwrap();
+        let metadata = metadata.parse().unwrap();
+        metadata
+            .extra()
+            .and_then(|e| e.get(b"branch").map(ToBoxed::to_boxed))
+    });
+    if let Some(branch) = branch {
+        let mut extra = ChangesetExtra::new();
+        extra.set(b"branch", &branch);
+        let mut buf = Vec::new();
+        extra.dump_into(&mut buf);
+        metadata.extra = Some(buf.into_boxed_slice());
+    }
     let changeset = RawHgChangeset::from_metadata(&commit, &metadata).unwrap();
     let mut hash = HgChangesetId::create();
     let mut parents = commit
