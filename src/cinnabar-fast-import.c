@@ -330,7 +330,7 @@ void add_head(struct oid_array *heads, const struct object_id *oid)
 	oid_array_insert(heads, -pos - 1, oid);
 }
 
-static void handle_changeset_conflict(struct hg_object_id *hg_id,
+static void handle_changeset_conflict(const struct hg_object_id *hg_id,
                                       struct object_id *git_id)
 {
 	/* There are cases where two changesets would map to the same git
@@ -444,11 +444,13 @@ void do_set_(const char *what, const struct hg_object_id *hg_id,
 	} else if (oid_object_info(the_repository, git_id, NULL) != type) {
 		die("Invalid object");
 	} else {
+		struct object_id git_id_;
+		oidcpy(&git_id_, git_id);
 		if (is_changeset)
-			handle_changeset_conflict(hg_id, git_id);
-		add_note_hg(notes, hg_id, git_id);
+			handle_changeset_conflict(hg_id, &git_id_);
+		add_note_hg(notes, hg_id, &git_id_);
 		if (heads)
-			add_head(heads, git_id);
+			add_head(heads, &git_id_);
 	}
 }
 

@@ -1532,7 +1532,7 @@ static NORETURN void die_panic(const char *err, va_list params)
 {
 	char msg[4096];
 	int len = vsnprintf(msg, sizeof(msg), err, params);
-	do_panic(&msg, (size_t)(len < 0) ? 0 : len);
+	do_panic(msg, (size_t)(len < 0) ? 0 : len);
 }
 
 void init_cinnabar(const char *argv0)
