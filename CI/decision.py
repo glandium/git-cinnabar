@@ -196,12 +196,10 @@ class Clone(TestTask, metaclass=Tool):
 def decision():
     TestTask(
         description='python lint & tests',
-        variant='coverage',
         clone=False,
         command=[
             'PATH=$PWD/repo:$PATH',
-            '(cd repo &&'
-            ' nosetests3 --all-modules --with-coverage --cover-tests tests)',
+            '(cd repo && nosetests3 --all-modules tests)',
             '(cd repo && flake8 --ignore E402,F405,W504'
             ' $(git ls-files \\*\\*.py | grep -v ^bootstrap/))',
             '(cd repo && flake8 --ignore E402,F405,F821'
