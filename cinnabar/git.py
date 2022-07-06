@@ -130,6 +130,12 @@ class Git(object):
                         self._config[k] += b'\0' + v
                     else:
                         self._config[k] = v
+            if self._config.pop(b'cinnabar.fsck', None):
+                # We used to set cinnabar.fsck globally, then locally.
+                # Remove both.
+                Git.run('config', '--global', '--unset', 'cinnabar.fsck')
+                Git.run('config', '--local', '--unset', 'cinnabar.fsck')
+
         var = name.encode('ascii')
         value = None
         if name.startswith('cinnabar.'):
