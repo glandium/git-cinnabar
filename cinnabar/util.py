@@ -129,22 +129,6 @@ experiment = ConfigSetFunc(
 )
 
 
-def interval_expired(config_key, interval, globl=False):
-    from cinnabar.git import Git
-    config_key = 'cinnabar.{}'.format(config_key)
-    try:
-        last = int(Git.config(config_key))
-    except (ValueError, TypeError):
-        last = None
-    now = time.time()
-    if last:
-        if last + interval > now:
-            return False
-    Git.run('config', '--global' if globl else '--local',
-            config_key, str(int(now)))
-    return bool(last)
-
-
 progress = True
 
 
