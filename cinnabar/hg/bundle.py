@@ -345,9 +345,6 @@ class PushStore(GitHgStore):
             res, metadata = res.split()
 
         self._pushed.add(res)
-        GitHgHelper.set(b'changeset', res, commit_data.sha1)
-        GitHgHelper.set(b'changeset-metadata', res, metadata)
-        GitHgHelper.set(b'changeset-head', res, metadata)
 
         if check_enabled('bundle') and real_changeset:
             changeset = Changeset.from_git_commit(commit_data)

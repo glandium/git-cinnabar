@@ -713,47 +713,6 @@ static CHANGESET_HEADS: Lazy<Mutex<ChangesetHeads>> =
     Lazy::new(|| Mutex::new(ChangesetHeads::from_stored_metadata()));
 
 #[no_mangle]
-pub unsafe extern "C" fn add_changeset_head(cs: *const hg_object_id, oid: *const object_id) {
-    let cs = HgChangesetId::from_unchecked(HgObjectId::from(cs.as_ref().unwrap().clone()));
-
-    // Because we don't keep track of many of these things in the rust side right now,
-    // we do extra work here. Eventually, this will be simplified.
-    let mut heads = CHANGESET_HEADS.lock().unwrap();
-    let oid = GitObjectId::from(oid.as_ref().unwrap().clone());
-    if oid == GitObjectId::null() {
-        heads.force_remove(&cs);
-    } else {
-        assert_eq!(git2hg.get_note(&cs.to_git().unwrap()).unwrap(), oid);
-        let cs_meta = RawGitChangesetMetadata::read(&cs.to_git().unwrap()).unwrap();
-        let meta = cs_meta.parse().unwrap();
-        assert_eq!(meta.changeset_id, cs);
-        let branch = meta
-            .extra()
-            .and_then(|e| e.get(b"branch"))
-            .unwrap_or(b"default")
-            .as_bstr();
-        let cid = cs.to_git().unwrap();
-        let commit = RawCommit::read(&cid).unwrap();
-        let commit = commit.parse().unwrap();
-        let parents = commit
-            .parents()
-            .iter()
-            .map(|p| {
-                let parent = lookup_replace_commit(p);
-                let parent_cs_meta = RawGitChangesetMetadata::read(
-                    &GitChangesetId::from_unchecked(parent.into_owned()),
-                )
-                .unwrap();
-                let parent_meta = parent_cs_meta.parse().unwrap();
-                parent_meta.changeset_id().clone()
-            })
-            .collect::<Vec<_>>();
-        let parents = parents.iter().collect::<Vec<_>>();
-        heads.add(&cs, &parents, branch);
-    }
-}
-
-#[no_mangle]
 pub unsafe extern "C" fn changeset_heads(output: c_int) {
     let mut output = FdFile::from_raw_fd(output);
     let heads = CHANGESET_HEADS.lock().unwrap();
@@ -1070,25 +1029,29 @@ pub fn do_create_changeset(mut input: &mut dyn BufRead, mut output: impl Write, 
             .extra()
             .and_then(|e| e.get(b"branch").map(ToBoxed::to_boxed))
     });
-    if let Some(branch) = branch {
+    if let Some(branch) = &branch {
         let mut extra = ChangesetExtra::new();
-        extra.set(b"branch", &branch);
+        extra.set(b"branch", branch);
         let mut buf = Vec::new();
         extra.dump_into(&mut buf);
         metadata.extra = Some(buf.into_boxed_slice());
     }
     let changeset = RawHgChangeset::from_metadata(&commit, &metadata).unwrap();
     let mut hash = HgChangesetId::create();
-    let mut parents = commit
+    let parents = commit
         .parents()
         .iter()
         .map(|p| GitChangesetId::from_unchecked(p.clone()).to_hg())
-        .chain(repeat(Some(HgChangesetId::null())))
-        .take(2)
         .collect::<Option<Vec<_>>>()
         .unwrap();
-    parents.sort();
-    for p in parents {
+    for p in parents
+        .iter()
+        .cloned()
+        .chain(repeat(HgChangesetId::null()))
+        .take(2)
+        .sorted()
+        .collect_vec()
+    {
         hash.update(p.as_raw_bytes());
     }
     hash.update(&changeset.0);
@@ -1097,8 +1060,23 @@ pub fn do_create_changeset(mut input: &mut dyn BufRead, mut output: impl Write, 
     buf.extend_from_slice(&metadata.serialize());
     let mut blob_oid = object_id::default();
     unsafe {
+        let changeset_id = hg_object_id::from(metadata.changeset_id.clone());
         store_git_blob(&buf, &mut blob_oid);
+        do_set_(
+            cstr!("changeset").as_ptr(),
+            &changeset_id,
+            &object_id::from(commit_id),
+        );
+        do_set_(
+            cstr!("changeset-metadata").as_ptr(),
+            &changeset_id,
+            &blob_oid,
+        );
     }
+    let mut heads = CHANGESET_HEADS.lock().unwrap();
+    let branch = branch.as_deref().unwrap_or(b"default").as_bstr();
+    let parents = parents.iter().collect::<Vec<_>>();
+    heads.add(&metadata.changeset_id, &parents, branch);
     let metadata_id =
         GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(GitObjectId::from(blob_oid)));
     writeln!(output, "{} {}", metadata.changeset_id, metadata_id).unwrap();

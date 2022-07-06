@@ -394,8 +394,6 @@ void do_set_replace(const struct object_id *replaced,
 	}
 }
 
-extern void add_changeset_head(struct hg_object_id *cs, struct object_id *meta);
-
 void do_set_(const char *what, const struct hg_object_id *hg_id,
              const struct object_id *git_id)
 {
@@ -403,7 +401,6 @@ void do_set_(const char *what, const struct hg_object_id *hg_id,
 	struct oid_array *heads = NULL;
 	struct notes_tree *notes = &hg2git;
 	int is_changeset = 0;
-	int is_head = 0;
 
 	ENSURE_INIT();
 	if (!strcmp(what, "file")) {
@@ -417,8 +414,6 @@ void do_set_(const char *what, const struct hg_object_id *hg_id,
 	} else if (!strcmp(what, "changeset-metadata")) {
 		type = OBJ_BLOB;
 		notes = &git2hg;
-	} else if (!strcmp(what, "changeset-head")) {
-		is_head = 1;
 	} else if (!strcmp(what, "file-meta")) {
 		type = OBJ_BLOB;
 		notes = &files_meta;
@@ -426,10 +421,6 @@ void do_set_(const char *what, const struct hg_object_id *hg_id,
 		die("Unknown kind of object: %s", what);
 	}
 
-	if (is_head) {
-		add_changeset_head(hg_id, git_id);
-		return;
-	}
 	if (notes == &git2hg) {
 		const struct object_id *note;
 		ensure_notes(&hg2git);
