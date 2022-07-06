@@ -17,7 +17,6 @@ from cinnabar.git import (
     NULL_NODE_ID,
 )
 from cinnabar.util import (
-    interval_expired,
     progress_iter,
 )
 from cinnabar.helper import GitHgHelper
@@ -85,7 +84,7 @@ def fsck(args):
             cs = store.hg_changeset(c)
             if cs:
                 commits.add(c)
-                c = cs.node
+                c = cs
             commit = GitHgHelper.hg2git(c)
             if commit == NULL_NODE_ID and not cs:
                 status.info('Unknown commit or changeset: %s'
@@ -201,8 +200,8 @@ def fsck(args):
         changes = get_changes(manifest_ref, git_parents)
         for path, hg_file, hg_fileparents in changes:
             if hg_file != NULL_NODE_ID and (hg_file == HG_EMPTY_FILE or
-                                            GitHgHelper.seen(b'hg2git',
-                                                             hg_file)):
+                                            not GitHgHelper.seen(b'hg2git',
+                                                                 hg_file)):
                 if full_file_check:
                     file = store.file(hg_file, hg_fileparents)
                     valid = file.node == file.sha1
@@ -256,7 +255,8 @@ def fsck(args):
         dangling = GitHgHelper.dangling(b'git2hg')
     for c in dangling:
         status.fix('Removing dangling note for commit ' + c.decode('ascii'))
-        GitHgHelper.set(b'changeset-metadata', c, NULL_NODE_ID)
+        GitHgHelper.set(
+            b'changeset-metadata', store.hg_changeset(c), NULL_NODE_ID)
 
     check_replace()
 
@@ -300,7 +300,6 @@ def fsck(args):
 
     if args.full:
         Git.update_ref(b'refs/cinnabar/checked', metadata_commit)
-    interval_expired('fsck', 0)
     store.close()
 
     if status('fixed'):

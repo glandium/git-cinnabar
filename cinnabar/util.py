@@ -140,10 +140,6 @@ def interval_expired(config_key, interval, globl=False):
     if last:
         if last + interval > now:
             return False
-    # cinnabar.fsck used to be global and is now local.
-    # Remove the global value.
-    if globl is not True and config_key == 'cinnabar.fsck':
-        Git.run('config', '--global', '--unset', config_key)
     Git.run('config', '--global' if globl else '--local',
             config_key, str(int(now)))
     return bool(last)
