@@ -260,7 +260,7 @@ impl GeneratedGitChangesetMetadata {
                     PatchInfo {
                         start: p.start + common_prefix,
                         end: p.end - common_suffix,
-                        data: &p.data[common_prefix..][..common_suffix],
+                        data: &p.data[common_prefix..p.data.len() - common_suffix],
                     }
                 }),
             ));
