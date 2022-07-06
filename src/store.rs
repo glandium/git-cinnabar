@@ -29,7 +29,6 @@ use crate::graft::{graft, grafted, GraftError};
 use crate::hg_bundle::{read_rev_chunk, rev_chunk, BundleSaver, RevChunkIter};
 use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
-use crate::libc::FdFile;
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
 use crate::libgit::{
     get_oid_committish, lookup_replace_commit, ls_tree, object_id, strbuf, BlobId, Commit,
@@ -712,9 +711,9 @@ impl ChangesetHeads {
 static CHANGESET_HEADS: Lazy<Mutex<ChangesetHeads>> =
     Lazy::new(|| Mutex::new(ChangesetHeads::from_stored_metadata()));
 
-#[no_mangle]
-pub unsafe extern "C" fn changeset_heads(output: c_int) {
-    let mut output = FdFile::from_raw_fd(output);
+pub fn do_heads(mut output: impl Write, args: &[&[u8]]) {
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].as_bstr(), b"changesets".as_bstr());
     let heads = CHANGESET_HEADS.lock().unwrap();
 
     let mut buf = Vec::new();

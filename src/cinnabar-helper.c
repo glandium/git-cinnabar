@@ -1086,40 +1086,6 @@ error:
 	return 0;
 }
 
-static int add_each_head(const struct object_id *oid, void *data)
-{
-	struct strbuf *buf = data;
-
-	strbuf_addstr(buf, oid_to_hex(oid));
-	strbuf_addch(buf, '\n');
-	return 0;
-}
-
-extern void changeset_heads(int);
-
-void do_heads(struct string_list *args, int helper_output)
-{
-	//XXX: Should use hg specific oid array.
-	struct oid_array *heads = NULL;
-	struct strbuf heads_buf = STRBUF_INIT;
-
-	if (args->nr != 1)
-		die("heads needs 1 argument");
-
-	if (!strcmp(args->items[0].string, "manifests")) {
-		heads = &manifest_heads;
-	} else if (!strcmp(args->items[0].string, "changesets")) {
-		changeset_heads(helper_output);
-		return;
-	} else
-		die("Unknown kind: %s", args->items[0].string);
-
-	ensure_heads(heads);
-	oid_array_for_each_unique(heads, add_each_head, &heads_buf);
-	send_buffer(helper_output, &heads_buf);
-	strbuf_release(&heads_buf);
-}
-
 static void reset_heads(struct oid_array *heads)
 {
 	oid_array_clear(heads);

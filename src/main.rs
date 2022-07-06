@@ -118,11 +118,11 @@ use libgit::{
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::{do_progress, Progress};
 use store::{
-    do_check_files, do_create, do_raw_changeset, do_set_, do_store_changeset, has_metadata,
-    merge_metadata, store_git_blob, ChangesetHeads, GeneratedGitChangesetMetadata, GitChangesetId,
-    GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId, HgManifestId,
-    RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF, CHECKED_REF,
-    METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    do_check_files, do_create, do_heads, do_raw_changeset, do_set_, do_store_changeset,
+    has_metadata, merge_metadata, store_git_blob, ChangesetHeads, GeneratedGitChangesetMetadata,
+    GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
+    HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF,
+    CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
 
@@ -174,7 +174,6 @@ extern "C" {
     fn do_ls_tree(l: *const string_list, out: c_int);
     fn do_rev_list(l: *const string_list, out: c_int);
     fn do_diff_tree(l: *const string_list, out: c_int);
-    fn do_heads(l: *const string_list, out: c_int);
     fn do_create_git_tree(l: *const string_list, out: c_int);
     fn do_reload(l: *const string_list, out: c_int);
     fn do_cleanup(rollback: c_int, out: c_int);
@@ -274,7 +273,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
         let _locked = HELPER_LOCK.lock().unwrap();
         if let b"graft" | b"progress" | b"store-changeset" | b"create" | b"raw-changeset"
-        | b"reset" | b"done-and-check" | b"merge-metadata" = &*command
+        | b"reset" | b"done-and-check" | b"merge-metadata" | b"heads" = &*command
         {
             let args = match args_.split_last().unwrap().1 {
                 b"" => Vec::new(),
@@ -288,6 +287,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"raw-changeset" => do_raw_changeset(out, &args),
                 b"create" => do_create(input, out, &args),
                 b"reset" => do_reset(&args),
+                b"heads" => do_heads(out, &args),
                 b"done-and-check" => writeln!(
                     out,
                     "{}",
@@ -336,7 +336,6 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"ls-tree" => do_ls_tree(args, out),
                 b"rev-list" => do_rev_list(args, out),
                 b"diff-tree" => do_diff_tree(args, out),
-                b"heads" => do_heads(args, out),
                 b"reload" => do_reload(args, out),
                 b"done" => {
                     do_cleanup(0, out);
