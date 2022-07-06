@@ -1,5 +1,4 @@
 from binascii import hexlify, unhexlify
-from urllib.parse import quote_from_bytes, unquote_to_bytes
 from collections import (
     OrderedDict,
     defaultdict,
@@ -10,18 +9,11 @@ from cinnabar.exceptions import (
     NothingToGraftException,
     SilentlyAbort,
 )
-from cinnabar.util import (
-    byte_diff,
-    one,
-)
+from cinnabar.util import one
 from cinnabar.git import (
     EMPTY_BLOB,
     Git,
     NULL_NODE_ID,
-)
-from cinnabar.hg.changegroup import (
-    RawRevChunk,
-    RevDiff,
 )
 from cinnabar.hg.objects import (
     Authorship,
@@ -110,112 +102,6 @@ class FileFindParents(object):
     def _try_parents(file, *parents):
         file.parents = parents
         return file.node == file.sha1
-
-
-class ChangesetPatcher(bytes):
-    class ChangesetPatch(RawRevChunk):
-        __slots__ = ('patch', '_changeset')
-
-        class Patch(RevDiff):
-            class Part(object):
-                __slots__ = ('start', 'end', 'text_data')
-
-            def __init__(self, buf):
-                self._buf = buf
-
-            def __str__(self):
-                raise RuntimeError('Use to_str()')
-
-            def to_str(self):
-                return self._buf
-
-            def __iter__(self):
-                for line in self._buf.split(b'\0'):
-                    if line:
-                        part = self.Part()
-                        start, end, text_data = line.split(b',')
-                        part.start = int(start)
-                        part.end = int(end)
-                        part.text_data = unquote_to_bytes(text_data)
-                        yield part
-
-            @classmethod
-            def from_items(cls, items):
-                return cls(b'\0'.join(
-                    b','.join((b'%d,%d' % (start, end),
-                               quote_from_bytes(text_data).encode('ascii')))
-                    for start, end, text_data in items))
-
-        def __init__(self, changeset, patch_data):
-            self._changeset = changeset
-            self.patch = self.Patch(patch_data)
-
-        def __getattr__(self, name):
-            if name == 'delta_node':
-                name = 'node'
-            return getattr(self._changeset, name)
-
-    def apply(self, changeset):
-        # Sneaky way to create a copy of the changeset
-        chunk = self.ChangesetPatch(changeset, b'')
-        changeset = Changeset.from_chunk(chunk, changeset)
-
-        for k, v in (l.split(b' ', 1) for l in self.splitlines()):
-            if k == b'changeset':
-                changeset.node = v
-            elif k == b'manifest':
-                changeset.manifest = v
-            elif k == b'author':
-                changeset.author = v
-            elif k == b'extra':
-                extra = changeset.extra
-                changeset.extra = v
-                if extra is not None:
-                    changeset.extra.update(
-                        (k, v) for k, v in extra.items()
-                        if k not in changeset.extra)
-            elif k == b'files':
-                changeset.files = v.split(b'\0')
-            elif k == b'patch':
-                chunk = self.ChangesetPatch(changeset, v)
-                changeset = Changeset.from_chunk(chunk, changeset)
-
-        # This should not occur in normal changeset bodies. If it occurs,
-        # it likely comes from our handling of conflicting commits.
-        # So in that case, adjust until we have the right sha1.
-        while changeset.body.endswith(b'\0') and \
-                changeset.sha1 != changeset.node:
-            changeset.body = changeset.body[:-1]
-
-        return changeset
-
-    @classmethod
-    def from_diff(cls, changeset1, changeset2):
-        items = []
-        if changeset1.node != changeset2.node:
-            items.append(b'changeset %s' % changeset2.node)
-        if changeset1.manifest != changeset2.manifest:
-            items.append(b'manifest %s' % changeset2.manifest)
-        if changeset1.author != changeset2.author:
-            items.append(b'author %s' % changeset2.author)
-        if changeset1.extra != changeset2.extra:
-            if changeset2.extra is not None:
-                items.append(b'extra %s' % Changeset.ExtraData({
-                    k: v
-                    for k, v in changeset2.extra.items()
-                    if not changeset1.extra or changeset1.extra.get(k) != v
-                }).to_str())
-        if changeset1.files != changeset2.files:
-            items.append(b'files %s' % b'\0'.join(changeset2.files))
-
-        this = cls(b'\n'.join(items))
-        new = this.apply(changeset1)
-        if new.raw_data != changeset2.raw_data:
-            items.append(b'patch %s' % cls.ChangesetPatch.Patch.from_items(
-                byte_diff(new.raw_data, changeset2.raw_data)).to_str())
-            this = cls(b'\n'.join(items))
-
-        return this
 
 
 class Changeset(Changeset):
@@ -474,8 +360,7 @@ class GitHgStore(object):
         data = GitHgHelper.git2hg(obj)
         if data is None:
             return None
-        ret = ChangesetPatcher(data)
-        return ret
+        return data
 
     def hg_changeset(self, sha1):
         data = self.read_changeset_data(sha1)
