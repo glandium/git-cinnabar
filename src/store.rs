@@ -870,7 +870,7 @@ fn store_changeset(
     parents: &[HgChangesetId],
     raw_changeset: &RawHgChangeset,
 ) -> Result<(CommitId, Option<CommitId>), GraftError> {
-    let parents = parents
+    let git_parents = parents
         .iter()
         .map(HgChangesetId::to_git)
         .collect::<Option<Vec<_>>>()
@@ -890,7 +890,7 @@ fn store_changeset(
         }
     };
 
-    let ref_tree = parents.get(0).map(|p| {
+    let ref_tree = git_parents.get(0).map(|p| {
         let ref_commit = RawCommit::read(p).unwrap();
         let ref_commit = ref_commit.parse().unwrap();
         object_id::from(ref_commit.tree())
@@ -909,7 +909,7 @@ fn store_changeset(
     let tree_id = TreeId::from_unchecked(GitObjectId::from(tree_id));
 
     let (commit_id, metadata_id, transition) =
-        match graft(changeset_id, raw_changeset, &tree_id, &parents) {
+        match graft(changeset_id, raw_changeset, &tree_id, &git_parents) {
             Ok(Some(commit_id)) => {
                 let metadata = GeneratedGitChangesetMetadata::generate(
                     &RawCommit::read(&commit_id).unwrap().parse().unwrap(),
@@ -964,7 +964,7 @@ fn store_changeset(
             git_author.clone()
         };
         result.extend_from_slice(format!("tree {}\n", tree_id).as_bytes());
-        for parent in parents {
+        for parent in git_parents {
             result.extend_from_slice(format!("parent {}\n", parent).as_bytes());
         }
         result.extend_from_slice(b"author ");
@@ -1006,10 +1006,10 @@ fn store_changeset(
     };
 
     let result = (commit_id.clone(), replace);
-    let changeset_id = hg_object_id::from(changeset_id.clone());
-    let commit_id = object_id::from(commit_id);
-    let blob_id = object_id::from((*metadata_id).clone());
     unsafe {
+        let changeset_id = hg_object_id::from(changeset_id.clone());
+        let commit_id = object_id::from(commit_id);
+        let blob_id = object_id::from((*metadata_id).clone());
         if let Some(replace) = &result.1 {
             let replace = object_id::from(replace);
             do_set_replace(&replace, &commit_id);
@@ -1020,8 +1020,16 @@ fn store_changeset(
             &changeset_id,
             &blob_id,
         );
-        do_set_(cstr!("changeset-head").as_ptr(), &changeset_id, &blob_id);
     }
+
+    let mut heads = CHANGESET_HEADS.lock().unwrap();
+    let branch = changeset
+        .extra()
+        .and_then(|e| e.get(b"branch"))
+        .unwrap_or(b"default")
+        .as_bstr();
+    let parents = parents.iter().collect::<Vec<_>>();
+    heads.add(changeset_id, &parents, branch);
     Ok(result)
 }
 
