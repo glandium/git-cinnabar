@@ -219,7 +219,18 @@ impl GeneratedGitChangesetMetadata {
         } else {
             None
         };
-        let extra = changeset.extra.map(|b| b.to_vec().into_boxed_slice());
+        let extra = changeset.extra().and_then(|mut e| {
+            let mut buf = Vec::new();
+            if e.get(b"committer") == Some(&HgCommitter::from(GitAuthorship(commit.committer())).0)
+            {
+                e.unset(b"committer");
+                if e.is_empty() {
+                    return None;
+                }
+            }
+            e.dump_into(&mut buf);
+            Some(buf.into_boxed_slice())
+        });
         let files = changeset
             .files()
             .map(|files| bstr::join(b"\0", files).into_boxed_slice());
@@ -285,8 +296,12 @@ impl<'a> ChangesetExtra<'a> {
         }
     }
 
-    pub fn get(&self, name: &'a [u8]) -> Option<&'a [u8]> {
+    pub fn get(&self, name: &[u8]) -> Option<&'a [u8]> {
         self.data.get(name.as_bstr()).map(|b| &***b)
+    }
+
+    pub fn unset(&mut self, name: &[u8]) {
+        self.data.remove(name.as_bstr());
     }
 
     pub fn set(&mut self, name: &'a [u8], value: &'a [u8]) {
@@ -306,6 +321,10 @@ impl<'a> ChangesetExtra<'a> {
         ) {
             buf.extend_from_slice(&b);
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
     }
 }
 
