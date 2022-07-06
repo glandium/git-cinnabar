@@ -1086,36 +1086,6 @@ error:
 	return 0;
 }
 
-void do_check_file(struct string_list *args, int helper_output)
-{
-	struct hg_object_id oid, parent1, parent2;
-
-	if (args->nr < 1 || args->nr > 3)
-		goto error;
-
-	if (get_sha1_hex(args->items[0].string, oid.hash))
-		goto error;
-
-	if (args->nr > 1) {
-		if (get_sha1_hex(args->items[1].string, parent1.hash))
-			goto error;
-	} else
-		hg_oidclr(&parent1);
-
-	if (args->nr > 2) {
-		if (get_sha1_hex(args->items[2].string, parent2.hash))
-			goto error;
-	} else
-		hg_oidclr(&parent2);
-
-	if (check_file(&oid, &parent1, &parent2))
-		write_or_die(helper_output, "ok\n", 3);
-	else {
-error:
-		write_or_die(helper_output, "error\n", 6);
-	}
-}
-
 static int add_each_head(const struct object_id *oid, void *data)
 {
 	struct strbuf *buf = data;
@@ -1158,20 +1128,9 @@ static void reset_heads(struct oid_array *heads)
 	heads->sorted = 1;
 }
 
-void do_reset_heads(struct string_list *args)
+void reset_manifest_heads()
 {
-        struct oid_array *heads = NULL;
-
-        if (args->nr != 1)
-                die("reset-heads needs 1 argument");
-
-        if (!strcmp(args->items[0].string, "manifests")) {
-                heads = &manifest_heads;
-        } else
-                die("Unknown kind: %s", args->items[0].string);
-
-	ensure_heads(heads);
-	reset_heads(heads);
+	reset_heads(&manifest_heads);
 }
 
 static struct name_entry *
@@ -1337,94 +1296,6 @@ void create_git_tree(const struct object_id *tree_id,
                      struct object_id *result)
 {
 	recurse_create_git_tree(tree_id, ref_tree, NULL, result, &git_tree_cache);
-}
-
-// 12th bit is only used by builtin/blame.c, so it should be safe to use.
-#define FSCK_SEEN (1 << 12)
-
-void do_seen(struct string_list *args, int helper_output)
-{
-	struct object_id oid;
-	int seen = 0;
-
-	if (args->nr != 2)
-		die("seen takes two argument");
-
-	if (get_oid_hex(args->items[1].string, &oid))
-		die("Invalid sha1");
-
-	if (!strcmp(args->items[0].string, "hg2git"))
-		seen = oidset_insert(&hg2git_seen, &oid);
-	else if (!strcmp(args->items[0].string, "git2hg")) {
-		struct commit *c = lookup_commit(the_repository, &oid);
-		if (!c)
-			die("Unknown commit");
-		seen = c->object.flags & FSCK_SEEN;
-		c->object.flags |= FSCK_SEEN;
-	}
-
-	if (seen)
-		write_or_die(helper_output, "yes\n", 4);
-	else
-		write_or_die(helper_output, "no\n", 3);
-}
-
-struct dangling_data {
-	struct notes_tree *notes;
-	struct strbuf *buf;
-	int exclude_blobs;
-};
-
-static int dangling_note(const struct object_id *object_oid,
-                         const struct object_id *note_oid, char *note_path,
-                         void *cb_data)
-{
-	struct dangling_data *data = cb_data;
-	struct object_id oid;
-	int is_dangling = 0;
-
-	oidcpy(&oid, object_oid);
-	if (data->notes == &hg2git) {
-		if (!data->exclude_blobs ||
-		    (oid_object_info(the_repository, note_oid, NULL) != OBJ_BLOB))
-			is_dangling = !oidset_contains(&hg2git_seen, &oid);
-	} else if (data->notes == &git2hg) {
-		struct commit *c = lookup_commit(the_repository, &oid);
-		is_dangling = !c || !(c->object.flags & FSCK_SEEN);
-	}
-
-	if (is_dangling) {
-		strbuf_add(data->buf, oid_to_hex(&oid), 40);
-		strbuf_addch(data->buf, '\n');
-	}
-
-	return 0;
-}
-
-void do_dangling(struct string_list *args, int helper_output)
-{
-	struct strbuf buf = STRBUF_INIT;
-	struct dangling_data data = { NULL, &buf, 0 };
-
-        if (args->nr != 1)
-                die("dangling takes one argument");
-
-	if (!strcmp(args->items[0].string, "hg2git-no-blobs")) {
-		data.notes = &hg2git;
-		data.exclude_blobs = 1;
-	} else if (!strcmp(args->items[0].string, "hg2git")) {
-		data.notes = &hg2git;
-	} else if (!strcmp(args->items[0].string, "git2hg")) {
-		data.notes = &git2hg;
-	} else {
-		die("Unknown argument");
-	}
-
-	ensure_notes(data.notes);
-	for_each_note(data.notes, 0, dangling_note, &data);
-
-	send_buffer(helper_output, &buf);
-	strbuf_release(&buf);
 }
 
 static void reset_replace_map()

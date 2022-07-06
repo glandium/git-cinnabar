@@ -135,7 +135,7 @@ impl RawGitChangesetMetadata {
     }
 }
 
-#[derive(CopyGetters, Getters)]
+#[derive(CopyGetters, Eq, Getters)]
 pub struct GitChangesetMetadata<B: AsRef<[u8]>> {
     #[getset(get = "pub")]
     changeset_id: HgChangesetId,
@@ -145,6 +145,19 @@ pub struct GitChangesetMetadata<B: AsRef<[u8]>> {
     extra: Option<B>,
     files: Option<B>,
     patch: Option<B>,
+}
+
+impl<B: AsRef<[u8]>, B2: AsRef<[u8]>> PartialEq<GitChangesetMetadata<B>>
+    for GitChangesetMetadata<B2>
+{
+    fn eq(&self, other: &GitChangesetMetadata<B>) -> bool {
+        self.changeset_id == other.changeset_id
+            && self.manifest_id == other.manifest_id
+            && self.author.as_ref().map(B2::as_ref) == other.author.as_ref().map(B::as_ref)
+            && self.extra.as_ref().map(B2::as_ref) == other.extra.as_ref().map(B::as_ref)
+            && self.files.as_ref().map(B2::as_ref) == other.files.as_ref().map(B::as_ref)
+            && self.patch.as_ref().map(B2::as_ref) == other.patch.as_ref().map(B::as_ref)
+    }
 }
 
 pub type ParsedGitChangesetMetadata<'a> = GitChangesetMetadata<&'a [u8]>;
@@ -633,19 +646,23 @@ impl ChangesetHeads {
         }
     }
 
-    fn from_metadata() -> Self {
-        get_oid_committish(b"refs/cinnabar/metadata^1").map_or_else(ChangesetHeads::new, |cid| {
-            let mut result = ChangesetHeads::new();
+    fn from_stored_metadata() -> Self {
+        get_oid_committish(b"refs/cinnabar/metadata^1")
+            .as_ref()
+            .map_or_else(ChangesetHeads::new, ChangesetHeads::from_metadata)
+    }
 
-            let commit = RawCommit::read(&cid).unwrap();
-            let commit = commit.parse().unwrap();
-            for l in ByteSlice::lines(commit.body()) {
-                let [h, b] = l.splitn_exact(b' ').unwrap();
-                let cs = HgChangesetId::from_bytes(h).unwrap();
-                result.add(&cs, &[], b.as_bstr());
-            }
-            result
-        })
+    pub fn from_metadata(cid: &CommitId) -> Self {
+        let mut result = ChangesetHeads::new();
+
+        let commit = RawCommit::read(cid).unwrap();
+        let commit = commit.parse().unwrap();
+        for l in ByteSlice::lines(commit.body()) {
+            let [h, b] = l.splitn_exact(b' ').unwrap();
+            let cs = HgChangesetId::from_bytes(h).unwrap();
+            result.add(&cs, &[], b.as_bstr());
+        }
+        result
     }
 
     pub fn add(&mut self, cs: &HgChangesetId, parents: &[&HgChangesetId], branch: &BStr) {
@@ -701,7 +718,7 @@ impl ChangesetHeads {
 }
 
 static CHANGESET_HEADS: Lazy<Mutex<ChangesetHeads>> =
-    Lazy::new(|| Mutex::new(ChangesetHeads::from_metadata()));
+    Lazy::new(|| Mutex::new(ChangesetHeads::from_stored_metadata()));
 
 #[no_mangle]
 pub unsafe extern "C" fn add_changeset_head(cs: *const hg_object_id, oid: *const object_id) {
@@ -801,7 +818,12 @@ unsafe extern "C" fn handle_replace(
 #[no_mangle]
 pub unsafe extern "C" fn reset_changeset_heads() {
     let mut heads = CHANGESET_HEADS.lock().unwrap();
-    *heads = ChangesetHeads::from_metadata();
+    *heads = ChangesetHeads::from_stored_metadata();
+}
+
+pub fn set_changeset_heads(new_heads: ChangesetHeads) {
+    let mut heads = CHANGESET_HEADS.lock().unwrap();
+    *heads = new_heads;
 }
 
 extern "C" {
@@ -809,13 +831,14 @@ extern "C" {
     pub fn store_git_blob(blob_buf: *const strbuf, result: *mut object_id);
     fn store_git_tree(tree_buf: *const strbuf, reference: *const object_id, result: *mut object_id);
     fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
-    fn do_set_(what: *const c_char, hg_id: *const hg_object_id, git_id: *const object_id);
+    pub fn do_set_(what: *const c_char, hg_id: *const hg_object_id, git_id: *const object_id);
     pub fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
     fn create_git_tree(
         tree_id: *const object_id,
         ref_tree: *const object_id,
         result: *mut object_id,
     );
+    pub fn reset_manifest_heads();
     fn ensure_empty_tree() -> *const object_id;
 }
 

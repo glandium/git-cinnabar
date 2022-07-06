@@ -32,7 +32,6 @@ Independent of the core.ignorecase config, the repo should be cloned correctly.
 
   $ hg -R $REPO serve-and-exec -- git -c core.ignorecase=true -c fetch.prune=true clone -n -q hg::http://localhost:8000/ $REPO-git
   $ git -C $REPO-git cinnabar fsck --full 2>/dev/null
-  Checking head references...
 
 Likewise for incremental updates
 
@@ -43,4 +42,3 @@ Likewise for incremental updates
    * branch            hg/revs/f92470d7f6966a39dfbced6a525fe81ebf5c37b9 -> FETCH_HEAD
   $ hg -R $REPO serve-and-exec -- git -C $REPO-git -c core.ignorecase=true fetch -q hg::http://localhost:8000/
   $ git -C $REPO-git cinnabar fsck --full 2>/dev/null
-  Checking head references...

@@ -471,19 +471,6 @@ void do_set(struct string_list *args)
 	if (args->nr != 3)
 		die("set needs 3 arguments");
 
-	if (!strcmp(args->items[0].string, "replace")) {
-		struct object_id replaced;
-		struct object_id replace_with;
-		ENSURE_INIT();
-		if (get_oid_hex(args->items[1].string, &replaced))
-			die("Invalid sha1");
-		if (get_oid_hex(args->items[2].string, &replace_with))
-			die("Invalid sha1");
-
-		do_set_replace(&replaced, &replace_with);
-		return;
-	}
-
 	if (get_sha1_hex(args->items[1].string, hg_id.hash))
 		die("Invalid sha1");
 

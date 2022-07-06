@@ -11,6 +11,7 @@ use libc::FILE;
 use crate::libc::FdFile;
 use crate::libgit::{child_process, object_id, strbuf};
 use crate::oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
+use crate::util::FromBytes;
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -72,6 +73,57 @@ extern "C" {
     ) -> *const object_id;
 
     pub fn generate_manifest(oid: *const object_id) -> *const strbuf;
+
+    fn cinnabar_for_each_note(
+        notes: *mut cinnabar_notes_tree,
+        flags: c_int,
+        cb: unsafe extern "C" fn(
+            oid: *const object_id,
+            note_oid: *const object_id,
+            note_path: *const c_char,
+            cb_data: *mut c_void,
+        ) -> c_int,
+        cb_data: *mut c_void,
+    ) -> c_int;
+}
+
+fn for_each_note_in<O: ObjectId + FromBytes, N: ObjectId + FromBytes, F: FnMut(&O, &N)>(
+    notes: &mut cinnabar_notes_tree,
+    mut f: F,
+) {
+    unsafe extern "C" fn each_note_cb<
+        O: ObjectId + FromBytes,
+        N: ObjectId + FromBytes,
+        F: FnMut(&O, &N),
+    >(
+        oid: *const object_id,
+        note_oid: *const object_id,
+        _note_path: *const c_char,
+        cb_data: *mut c_void,
+    ) -> c_int {
+        let cb = (cb_data as *mut F).as_mut().unwrap();
+        let o = O::from_bytes(
+            format!("{}", GitObjectId::from(oid.as_ref().unwrap().clone())).as_bytes(),
+        )
+        .map_err(|_| ())
+        .unwrap();
+        let n = N::from_bytes(
+            format!("{}", GitObjectId::from(note_oid.as_ref().unwrap().clone())).as_bytes(),
+        )
+        .map_err(|_| ())
+        .unwrap();
+        cb(&o, &n);
+        0
+    }
+
+    unsafe {
+        cinnabar_for_each_note(
+            notes,
+            0,
+            each_note_cb::<O, N, F>,
+            &mut f as *mut F as *mut c_void,
+        );
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -87,6 +139,10 @@ impl git_notes_tree {
                 .cloned()
                 .map(Into::into)
         }
+    }
+
+    pub fn for_each<F: FnMut(&GitObjectId, &GitObjectId)>(&mut self, f: F) {
+        for_each_note_in(&mut self.0, f);
     }
 }
 
@@ -116,6 +172,10 @@ impl hg_notes_tree {
                 .cloned()
                 .map(Into::into)
         }
+    }
+
+    pub fn for_each<F: FnMut(&HgObjectId, &GitObjectId)>(&mut self, f: F) {
+        for_each_note_in(&mut self.0, f);
     }
 }
 

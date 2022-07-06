@@ -237,11 +237,6 @@ class GitHgHelper(BaseHelper):
             return stdout.readline().strip() == b'ok'
 
     @classmethod
-    def check_file(self, hg_sha1, *parents):
-        with self.query(b'check-file', hg_sha1, *parents) as stdout:
-            return stdout.readline().strip() == b'ok'
-
-    @classmethod
     def ls_tree(self, sha1, recursive=False):
         extra = () if not recursive else (b'-r',)
         with self.query(b'ls-tree', sha1, *extra) as stdout:
@@ -308,22 +303,6 @@ class GitHgHelper(BaseHelper):
             if what == b'manifests':
                 return data.split()
             return (l.split() for l in data.splitlines())
-
-    @classmethod
-    def reset_heads(self, what):
-        with self.query(b'reset-heads', what):
-            pass
-
-    @classmethod
-    def seen(self, typ, sha1):
-        with self.query(b'seen', typ, sha1) as stdout:
-            return stdout.readline().strip() == b'yes'
-
-    @classmethod
-    def dangling(self, typ):
-        with self.query(b'dangling', typ) as stdout:
-            data = self._read_data(stdout)
-            return data.splitlines()
 
     @classmethod
     def update_ref(self, ref, newvalue):

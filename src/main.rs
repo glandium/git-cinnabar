@@ -94,7 +94,7 @@ use std::os::unix::io::AsRawFd;
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
-use std::time::{Instant, SystemTime};
+use std::time::Instant;
 
 use bitflags::bitflags;
 use bstr::{BStr, ByteSlice};
@@ -105,24 +105,24 @@ use url::Url;
 use which::which;
 
 use crate::libc::FdFile;
-use crate::store::do_set_replace;
+use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads};
 use crate::util::{FromBytes, ToBoxed};
 use graft::{do_graft, graft_finish, init_graft};
 use hg_connect::{connect_main_with, get_clonebundle_url, get_connection, get_store_bundle};
 use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
-    config_get_value, config_set_value, diff_tree, for_each_ref_in, for_each_remote,
-    get_oid_committish, lookup_replace_commit, ls_tree, metadata_oid, object_id, remote,
-    resolve_ref, rev_list, strbuf, string_list, BlobId, CommitId, DiffTreeItem, RawCommit,
-    RefTransaction,
+    config_get_value, diff_tree, for_each_ref_in, for_each_remote, get_oid_committish,
+    lookup_replace_commit, ls_tree, metadata_oid, object_id, remote, resolve_ref, rev_list, strbuf,
+    string_list, BlobId, CommitId, DiffTreeItem, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::{do_progress, Progress};
 use store::{
-    do_check_files, do_create, do_raw_changeset, do_store_changeset, has_metadata, merge_metadata,
-    GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
-    HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF,
-    CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    do_check_files, do_create, do_raw_changeset, do_set_, do_store_changeset, has_metadata,
+    merge_metadata, store_git_blob, ChangesetHeads, GeneratedGitChangesetMetadata, GitChangesetId,
+    GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId, HgManifestId,
+    RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF, CHECKED_REF,
+    METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
 
@@ -170,16 +170,12 @@ extern "C" {
     fn do_hg2git(l: *const string_list, out: c_int);
     fn do_manifest(l: *const string_list, out: c_int);
     fn do_check_manifest(l: *const string_list, out: c_int);
-    fn do_check_file(l: *const string_list, out: c_int);
     fn do_cat_file(l: *const string_list, out: c_int);
     fn do_ls_tree(l: *const string_list, out: c_int);
     fn do_rev_list(l: *const string_list, out: c_int);
     fn do_diff_tree(l: *const string_list, out: c_int);
     fn do_heads(l: *const string_list, out: c_int);
-    fn do_reset_heads(l: *const string_list);
     fn do_create_git_tree(l: *const string_list, out: c_int);
-    fn do_seen(l: *const string_list, out: c_int);
-    fn do_dangling(l: *const string_list, out: c_int);
     fn do_reload(l: *const string_list, out: c_int);
     fn do_cleanup(rollback: c_int, out: c_int);
     fn do_set(l: *const string_list);
@@ -336,15 +332,11 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"hg2git" => do_hg2git(args, out),
                 b"manifest" => do_manifest(args, out),
                 b"check-manifest" => do_check_manifest(args, out),
-                b"check-file" => do_check_file(args, out),
                 b"cat-file" => do_cat_file(args, out),
                 b"ls-tree" => do_ls_tree(args, out),
                 b"rev-list" => do_rev_list(args, out),
                 b"diff-tree" => do_diff_tree(args, out),
                 b"heads" => do_heads(args, out),
-                b"reset-heads" => do_reset_heads(args),
-                b"seen" => do_seen(args, out),
-                b"dangling" => do_dangling(args, out),
                 b"reload" => do_reload(args, out),
                 b"done" => {
                     do_cleanup(0, out);
@@ -1078,7 +1070,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
     }
 
     if full || !commits.is_empty() {
-        return run_python_command(PythonCommand::GitCinnabar);
+        return do_fsck_full(commits, &metadata_cid, changesets_cid, manifests_cid);
     }
 
     let [checked_changesets_cid, checked_manifests_cid] =
@@ -1297,12 +1289,8 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
                 mid, hg_manifest_id, git_mid
             ));
         }
-        if unsafe {
-            check_manifest(
-                &object_id::from((*git_mid).clone()),
-                &mut hg_object_id::default(),
-            )
-        } != 1
+        if unsafe { check_manifest(&object_id::from((*git_mid).clone()), std::ptr::null_mut()) }
+            != 1
         {
             report(format!("Sha1 mismatch for manifest {}", git_mid));
         }
@@ -1364,7 +1352,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
     let mut progress = repeat(()).progress(|n| format!("Checking {n} files"));
     while !all_interesting.is_empty() && !manifest_queue.is_empty() {
         let (mid, parents) = manifest_queue.pop().unwrap();
-        for (path, hg_file, hg_fileparents) in get_changes(&mid, &parents) {
+        for (path, hg_file, hg_fileparents) in get_changes(&mid, &parents, true) {
             if hg_fileparents.iter().any(|p| *p == hg_file) {
                 continue;
             }
@@ -1474,16 +1462,483 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         return Ok(1);
     }
 
-    config_set_value(
-        "cinnabar.fsck",
-        SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
-    );
-
     if do_done_and_check(&[b"refs/cinnabar/checked"]) {
         Ok(0)
+    } else {
+        Ok(1)
+    }
+}
+
+fn do_fsck_full(
+    commits: Vec<OsString>,
+    metadata_cid: &CommitId,
+    changesets_cid: &CommitId,
+    manifests_cid: &CommitId,
+) -> Result<i32, String> {
+    let full_fsck = commits.is_empty();
+    let commit_queue = if full_fsck {
+        let changesets_arg = format!("{}^@", changesets_cid);
+
+        Box::new(rev_list(&[
+            OsStr::new("--topo-order"),
+            OsStr::new("--full-history"),
+            OsStr::new("--reverse"),
+            OsStr::new(&changesets_arg),
+        ])) as Box<dyn Iterator<Item = _>>
+    } else {
+        Box::new(
+            commits
+                .into_iter()
+                .map(|c| {
+                    let git_cs = GitChangesetId::from_bytes(c.as_bytes()).map_err(|_| {
+                        format!("Invalid commit or changeset: {}", c.to_string_lossy())
+                    })?;
+                    if git_cs.to_hg().is_some() {
+                        return Ok((*git_cs).clone());
+                    }
+                    let cs = HgChangesetId::from_bytes(c.as_bytes()).map_err(|_| {
+                        format!("Invalid commit or changeset: {}", c.to_string_lossy())
+                    })?;
+
+                    if let Some(git_cs) = cs.to_git() {
+                        Ok((*git_cs).clone())
+                    } else {
+                        Err(format!(
+                            "Unknown commit or changeset: {}",
+                            c.to_str().unwrap()
+                        ))
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter(),
+        )
+    };
+
+    let broken = Cell::new(false);
+    let report = |s| {
+        eprintln!("\r{}", s);
+        broken.set(true);
+    };
+    let fixed = Cell::new(false);
+    let fix = |s| {
+        eprintln!("\r{}", s);
+        fixed.set(true);
+    };
+
+    let mut seen_git2hg = BTreeSet::new();
+    let mut seen_changesets = BTreeSet::new();
+    let mut seen_manifests = BTreeSet::new();
+    let mut seen_files = BTreeSet::new();
+    let mut changeset_heads = ChangesetHeads::new();
+    let mut manifest_heads = BTreeSet::new();
+    let empty_file = HgFileId::from_str("b80de5d138758541c5f05265ad144ab9fa86d1db").unwrap();
+
+    for cid in commit_queue.progress(|n| format!("Checking {n} changesets")) {
+        let cid = lookup_replace_commit(&cid);
+        let cid = unsafe { GitChangesetId::from_unchecked(cid.into_owned()) };
+        let metadata = if let Some(metadata) = RawGitChangesetMetadata::read(&cid) {
+            metadata
+        } else {
+            report(format!("Missing note for git commit: {}", cid));
+            continue;
+        };
+        seen_git2hg.insert(cid.clone());
+
+        let commit = RawCommit::read(&cid).unwrap();
+        let commit = commit.parse().unwrap();
+        let metadata = if let Some(metadata) = metadata.parse() {
+            metadata
+        } else {
+            report(format!("Cannot parse note for git commit: {}", cid));
+            continue;
+        };
+        let changeset_id = metadata.changeset_id();
+        match changeset_id.to_git() {
+            Some(oid) if oid == cid => {}
+            Some(oid) => {
+                report(format!(
+                    "Commit mismatch for changeset {}\n\
+                     \x20 hg2git: {}\n\
+                     \x20 commit: {}",
+                    changeset_id, oid, cid
+                ));
+            }
+            None => {
+                report(format!(
+                    "Missing changeset in hg2git branch: {}",
+                    changeset_id
+                ));
+                continue;
+            }
+        }
+        seen_changesets.insert(changeset_id.clone());
+        let raw_changeset =
+            if let Some(raw_changeset) = RawHgChangeset::from_metadata(&commit, &metadata) {
+                raw_changeset
+            } else {
+                report(format!(
+                    "Failed to recreate changeset {} from git commit {}",
+                    metadata.changeset_id(),
+                    cid
+                ));
+                continue;
+            };
+        let mut sha1 = Sha1::new();
+        let hg_parents = commit
+            .parents()
+            .iter()
+            .map(|p| {
+                unsafe { GitChangesetId::from_unchecked(lookup_replace_commit(p).into_owned()) }
+                    .to_hg()
+                    .unwrap()
+            })
+            .collect_vec();
+        hg_parents
+            .iter()
+            .cloned()
+            .chain(repeat(HgChangesetId::null()))
+            .take(2)
+            .sorted()
+            .for_each(|p| sha1.update(p.as_raw_bytes()));
+        sha1.update(&*raw_changeset);
+        let sha1 = sha1.finalize();
+        if changeset_id.as_raw_bytes() != sha1.as_slice() {
+            report(format!("Sha1 mismatch for changeset {}", changeset_id));
+            continue;
+        }
+
+        let branch = metadata
+            .extra()
+            .and_then(|e| e.get(b"branch"))
+            .unwrap_or(b"default");
+        changeset_heads.add(
+            changeset_id,
+            &hg_parents.iter().collect_vec(),
+            branch.as_bstr(),
+        );
+
+        let fresh_metadata =
+            GeneratedGitChangesetMetadata::generate(&commit, changeset_id, &raw_changeset).unwrap();
+        if fresh_metadata != metadata {
+            fix(format!("Adjusted changeset metadata for {}", changeset_id));
+            unsafe {
+                do_set_(
+                    cstr::cstr!("changeset").as_ptr(),
+                    &hg_object_id::from(changeset_id.clone()),
+                    &object_id::from(CommitId::null()),
+                );
+                do_set_(
+                    cstr::cstr!("changeset").as_ptr(),
+                    &hg_object_id::from(changeset_id.clone()),
+                    &object_id::from((*cid).clone()),
+                );
+                let mut metadata_id = object_id::default();
+                let mut buf = strbuf::new();
+                buf.extend_from_slice(&fresh_metadata.serialize());
+                store_git_blob(&buf, &mut metadata_id);
+                do_set_(
+                    cstr::cstr!("changeset-metadata").as_ptr(),
+                    &hg_object_id::from(changeset_id.clone()),
+                    &object_id::from(CommitId::null()),
+                );
+                do_set_(
+                    cstr::cstr!("changeset-metadata").as_ptr(),
+                    &hg_object_id::from(changeset_id.clone()),
+                    &metadata_id,
+                );
+            }
+        }
+
+        let changeset = raw_changeset.parse().unwrap();
+        let manifest_id = changeset.manifest();
+        if !seen_manifests.insert(manifest_id.clone()) {
+            // We've already seen the manifest.
+            continue;
+        }
+        let manifest_cid = if let Some(manifest_cid) = manifest_id.to_git() {
+            manifest_cid
+        } else {
+            report(format!(
+                "Missing manifest in hg2git branch: {}",
+                manifest_id
+            ));
+            continue;
+        };
+
+        let checked = unsafe {
+            let manifest_cid = object_id::from((*manifest_cid).clone());
+            check_manifest(&manifest_cid, std::ptr::null_mut()) == 1
+        };
+        if !checked {
+            report(format!("Sha1 mismatch for manifest {}", manifest_id));
+        }
+
+        let hg_manifest_parents = hg_parents
+            .iter()
+            .map(|p| {
+                let metadata = RawGitChangesetMetadata::read(&p.to_git().unwrap()).unwrap();
+                let metadata = metadata.parse().unwrap();
+                metadata.manifest_id().clone()
+            })
+            .collect_vec();
+        let git_manifest_parents = hg_manifest_parents
+            .iter()
+            .filter_map(|p| p.to_git().map(|p| (*p).clone()))
+            .sorted()
+            .collect_vec();
+
+        let manifest_commit = RawCommit::read(&manifest_cid).unwrap();
+        let manifest_commit = manifest_commit.parse().unwrap();
+        if manifest_commit
+            .parents()
+            .iter()
+            .sorted()
+            .ne(git_manifest_parents.iter())
+        {
+            // TODO: better error
+            report(format!(
+                "{}({}) [{}] != [{}]",
+                manifest_id,
+                manifest_cid,
+                manifest_commit.parents().iter().join(", "),
+                git_manifest_parents.iter().join(", ")
+            ));
+        }
+
+        if full_fsck {
+            manifest_heads.insert((*manifest_cid).clone());
+            for p in manifest_commit.parents() {
+                manifest_heads.remove(p);
+            }
+        }
+
+        // TODO: check that manifest content matches changeset content.
+        for (path, hg_file, hg_fileparents) in
+            get_changes(&manifest_cid, &git_manifest_parents, false)
+        {
+            // TODO: This is gross.
+            let hg_file = HgFileId::from_bytes(format!("{}", hg_file).as_bytes()).unwrap();
+            if hg_file == HgFileId::null()
+                || hg_file == empty_file
+                || !seen_files.insert(hg_file.clone())
+            {
+                continue;
+            }
+            if unsafe {
+                // TODO: add FileFindParents logging.
+                check_file(
+                    &hg_object_id::from(hg_file.clone()),
+                    &hg_fileparents.get(0).map_or_else(
+                        || hg_object_id::from(HgObjectId::null()),
+                        |p| {
+                            hg_object_id::from(
+                                HgObjectId::from_bytes(format!("{}", p).as_bytes()).unwrap(),
+                            )
+                        },
+                    ),
+                    &hg_fileparents.get(1).map_or_else(
+                        || hg_object_id::from(HgObjectId::null()),
+                        |p| {
+                            hg_object_id::from(
+                                HgObjectId::from_bytes(format!("{}", p).as_bytes()).unwrap(),
+                            )
+                        },
+                    ),
+                )
+            } != 1
+            {
+                report(format!(
+                    "Sha1 mismatch for file {}\n\
+                     \x20 revision {}",
+                    manifest_path(&path),
+                    hg_file
+                ));
+                let print_parents = hg_fileparents
+                    .iter()
+                    .filter(|p| **p != GitObjectId::null())
+                    .join(" ");
+                if !print_parents.is_empty() {
+                    report(format!(
+                        "  with parent{} {}",
+                        if print_parents.len() > 41 { "s" } else { "" },
+                        print_parents
+                    ));
+                }
+            }
+        }
+    }
+
+    if full_fsck && !broken.get() {
+        let manifests_commit = RawCommit::read(manifests_cid).unwrap();
+        let manifests_commit = manifests_commit.parse().unwrap();
+        let store_manifest_heads = manifests_commit
+            .parents()
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+
+        if manifest_heads != store_manifest_heads {
+            let args = ["--topo-order", "--full-history", "--reverse"];
+
+            fn iter_manifests<'a>(
+                a: &'a BTreeSet<CommitId>,
+                b: &'a BTreeSet<CommitId>,
+            ) -> impl Iterator<Item = String> + 'a {
+                a.difference(b)
+                    .map(|x| format!("{}", x))
+                    .chain(b.iter().map(|x| format!("^{}", x)))
+            }
+            let all_args = args
+                .into_iter()
+                .map(str::to_string)
+                .chain(iter_manifests(&manifest_heads, &store_manifest_heads))
+                .map(OsString::from)
+                .collect_vec();
+            for m in rev_list(&all_args.iter().map(|s| &**s).collect_vec()) {
+                fix(format!("Missing manifest commit in manifest branch: {}", m));
+            }
+
+            let all_args = args
+                .into_iter()
+                .map(str::to_string)
+                .chain(iter_manifests(&store_manifest_heads, &manifest_heads))
+                .map(OsString::from)
+                .collect_vec();
+            for m in rev_list(&all_args.iter().map(|s| &**s).collect_vec()) {
+                fix(format!(
+                    "Removing manifest commit {} with no corresponding changeset",
+                    m
+                ));
+            }
+
+            for h in store_manifest_heads.difference(&manifest_heads) {
+                // TODO: This is gross.
+                let m = RawCommit::read(h).unwrap();
+                let m = m.parse().unwrap();
+                let m = HgManifestId::from_bytes(m.body()).unwrap();
+                if seen_manifests.contains(&m) {
+                    fix(format!(
+                        "Remove non-head reference to {} in manifests metadata",
+                        h
+                    ));
+                }
+            }
+
+            unsafe {
+                reset_manifest_heads();
+                for h in manifest_heads {
+                    // TODO: This is gross.
+                    let m = RawCommit::read(&h).unwrap();
+                    let m = m.parse().unwrap();
+                    let m = HgManifestId::from_bytes(m.body()).unwrap();
+                    do_set_(
+                        cstr::cstr!("manifest").as_ptr(),
+                        &hg_object_id::from(m),
+                        &object_id::from(h),
+                    );
+                }
+            }
+        }
+    }
+
+    if full_fsck && !broken.get() {
+        unsafe { &mut hg2git }.for_each(|h, _| {
+            if seen_changesets.contains(&unsafe { HgChangesetId::from_unchecked(h.clone()) })
+                || seen_manifests.contains(&unsafe { HgManifestId::from_unchecked(h.clone()) })
+                || seen_files.contains(&unsafe { HgFileId::from_unchecked(h.clone()) })
+            {
+                return;
+            }
+            fix(format!("Removing dangling metadata for {}", h));
+            // Theoretically, we should figure out if they are files, manifests
+            // or changesets and set the right variable accordingly, but in
+            // practice, it makes no difference. Reevaluate when refactoring,
+            // though.
+            unsafe {
+                do_set_(
+                    cstr::cstr!("file").as_ptr(),
+                    &hg_object_id::from(h.clone()),
+                    &object_id::default(),
+                );
+                do_set_(
+                    cstr::cstr!("file-meta").as_ptr(),
+                    &hg_object_id::from(h.clone()),
+                    &object_id::default(),
+                );
+            }
+        });
+        unsafe { &mut git2hg }.for_each(|g, _| {
+            // TODO: this is gross.
+            let cid =
+                unsafe { GitChangesetId::from_unchecked(CommitId::from_unchecked(g.clone())) };
+            if seen_git2hg.contains(&cid) {
+                return;
+            }
+            fix(format!("Removing dangling note for commit {}", g));
+            let metadata = RawGitChangesetMetadata::read(&cid).unwrap();
+            let metadata = metadata.parse().unwrap();
+            unsafe {
+                do_set_(
+                    cstr::cstr!("changeset-metadata").as_ptr(),
+                    &hg_object_id::from(metadata.changeset_id().clone()),
+                    &object_id::default(),
+                );
+            }
+        });
+    }
+
+    check_replace(metadata_cid);
+
+    if full_fsck {
+        eprintln!("\rChecking head references...");
+        let original_heads = ChangesetHeads::from_metadata(changesets_cid);
+        let original_heads = original_heads.branch_heads().collect::<BTreeSet<_>>();
+        let computed_heads = changeset_heads.branch_heads().collect::<BTreeSet<_>>();
+        for (cid, branch) in computed_heads
+            .difference(&original_heads)
+            .sorted_by_key(|(_, branch)| branch)
+        {
+            fix(format!("Adding missing head {} in branch {}", cid, branch));
+        }
+        for (cid, branch) in original_heads
+            .difference(&computed_heads)
+            .sorted_by_key(|(_, branch)| branch)
+        {
+            fix(format!(
+                "Removing non-head reference to {} in branch {}",
+                cid, branch
+            ));
+        }
+        if original_heads != computed_heads {
+            set_changeset_heads(changeset_heads);
+        }
+    }
+
+    if broken.get() {
+        eprintln!(
+            "\rYour git-cinnabar repository appears to be corrupted. There\n\
+             are known issues in older revisions that have been fixed.\n\
+             Please try running the following command to reset:\n\
+             \x20  git cinnabar reclone\n\n\
+             Please note this command may change the commit sha1s. Your\n\
+             local branches will however stay untouched.\n\
+             Please report any corruption that fsck would detect after a\n\
+             reclone."
+        );
+        let mut transaction = RefTransaction::new().unwrap();
+        transaction
+            .update("refs/cinnabar/broken", metadata_cid, None, "fsck")
+            .unwrap();
+        transaction.commit().unwrap();
+        return Ok(1);
+    }
+
+    if do_done_and_check(&[b"refs/cinnabar/checked"]) {
+        if fixed.get() {
+            Ok(2)
+        } else {
+            Ok(0)
+        }
     } else {
         Ok(1)
     }
@@ -1517,26 +1972,28 @@ fn manifest_path(p: &[u8]) -> Box<BStr> {
 fn get_changes(
     cid: &CommitId,
     parents: &[CommitId],
+    all: bool,
 ) -> impl Iterator<Item = (Box<[u8]>, GitObjectId, Box<[GitObjectId]>)> {
     if parents.is_empty() {
         // Yes, this is ridiculous.
         let commit = RawCommit::read(cid).unwrap();
         let commit = commit.parse().unwrap();
-        return ls_tree(commit.tree())
+        ls_tree(commit.tree())
             .unwrap()
             .map(|item| (item.path, item.oid, [].to_boxed()))
-            .collect::<Vec<_>>()
-            .into_iter();
+            .collect_vec()
+            .into_iter()
     } else if parents.len() == 1 {
-        return manifest_diff(&parents[0], cid)
+        manifest_diff(&parents[0], cid)
             .map(|(path, node, parent)| (path, node, [parent].to_boxed()))
-            .collect::<Vec<_>>()
-            .into_iter();
+            .collect_vec()
+            .into_iter()
+    } else {
+        manifest_diff2(&parents[0], &parents[1], cid, all)
+            .map(|(path, node, parents)| (path, node, parents.to_boxed()))
+            .collect_vec()
+            .into_iter()
     }
-    manifest_diff2_all(&parents[0], &parents[1], cid)
-        .map(|(path, node, parents)| (path, node, parents.to_boxed()))
-        .collect_vec()
-        .into_iter()
 }
 
 fn manifest_diff(
@@ -1558,10 +2015,11 @@ fn manifest_diff(
     })
 }
 
-fn manifest_diff2_all(
+fn manifest_diff2(
     a: &CommitId,
     b: &CommitId,
     c: &CommitId,
+    all: bool,
 ) -> impl Iterator<Item = (Box<[u8]>, GitObjectId, [GitObjectId; 2])> {
     let mut iter1 = manifest_diff(a, c);
     let mut iter2 = manifest_diff(b, c);
@@ -1575,7 +2033,9 @@ fn manifest_diff2_all(
                     break;
                 }
             }
-            result.push((path.clone(), oid.clone(), [parent_oid.clone(), oid.clone()]));
+            if all {
+                result.push((path.clone(), oid.clone(), [parent_oid.clone(), oid.clone()]));
+            }
             item1 = iter1.next();
         }
         while let Some((path, oid, parent_oid)) = item2.as_ref() {
@@ -1584,7 +2044,9 @@ fn manifest_diff2_all(
                     break;
                 }
             }
-            result.push((path.clone(), oid.clone(), [oid.clone(), parent_oid.clone()]));
+            if all {
+                result.push((path.clone(), oid.clone(), [oid.clone(), parent_oid.clone()]));
+            }
             item2 = iter2.next();
         }
         if item1.is_none() && item2.is_none() {
