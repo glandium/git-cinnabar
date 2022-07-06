@@ -639,66 +639,62 @@ impl<R: Read> BundleConnection<R> {
 
         let mut bundle = BundleReader::new(tee).unwrap();
         while let Some(part) = bundle.next_part().unwrap() {
-            if &*part.part_type == "changegroup" {
-                let version = part
-                    .params
-                    .get("version")
-                    .map_or(1, |v| u8::from_str(v).unwrap());
-                let empty_cs = RawHgChangeset(Box::new([]));
-                // TODO: share more code with the equivalent loop in store.rs.
-                for chunk in RevChunkIter::new(version, part)
-                    .progress(|n| format!("Analyzing {n} changesets"))
-                {
-                    let node = unsafe {
-                        HgChangesetId::from_unchecked(HgObjectId::from(chunk.node().clone()))
-                    };
-                    let parent1 = unsafe {
-                        HgChangesetId::from_unchecked(HgObjectId::from(chunk.parent1().clone()))
-                    };
-                    let parent2 = unsafe {
-                        HgChangesetId::from_unchecked(HgObjectId::from(chunk.parent2().clone()))
-                    };
-                    let delta_node = unsafe {
-                        HgChangesetId::from_unchecked(HgObjectId::from(chunk.delta_node().clone()))
-                    };
-                    let parents = [parent1, parent2];
-                    let parents = parents
-                        .iter()
-                        .filter(|&p| *p != HgChangesetId::null())
-                        .collect::<Vec<_>>();
+            if &*part.part_type != "changegroup" {
+                continue;
+            }
+            let version = part
+                .params
+                .get("version")
+                .map_or(1, |v| u8::from_str(v).unwrap());
+            let empty_cs = RawHgChangeset(Box::new([]));
+            // TODO: share more code with the equivalent loop in store.rs.
+            for chunk in
+                RevChunkIter::new(version, part).progress(|n| format!("Analyzing {n} changesets"))
+            {
+                let node = HgChangesetId::from_unchecked(HgObjectId::from(chunk.node().clone()));
+                let parent1 =
+                    HgChangesetId::from_unchecked(HgObjectId::from(chunk.parent1().clone()));
+                let parent2 =
+                    HgChangesetId::from_unchecked(HgObjectId::from(chunk.parent2().clone()));
+                let delta_node =
+                    HgChangesetId::from_unchecked(HgObjectId::from(chunk.delta_node().clone()));
+                let parents = [parent1, parent2];
+                let parents = parents
+                    .iter()
+                    .filter(|&p| *p != HgChangesetId::null())
+                    .collect::<Vec<_>>();
 
-                    let reference_cs = if delta_node == HgChangesetId::null() {
-                        &empty_cs
-                    } else {
-                        raw_changesets.get(&delta_node).unwrap()
-                    };
-                    let mut last_end = 0;
-                    let mut raw_changeset = Vec::new();
-                    for diff in chunk.iter_diff() {
-                        if diff.start > reference_cs.len() || diff.start < last_end {
-                            die!("Malformed changeset chunk for {node}");
-                        }
-                        raw_changeset.extend_from_slice(&reference_cs[last_end..diff.start]);
-                        raw_changeset.extend_from_slice(&diff.data);
-                        last_end = diff.end;
-                    }
-                    if reference_cs.len() < last_end {
+                let reference_cs = if delta_node == HgChangesetId::null() {
+                    &empty_cs
+                } else {
+                    raw_changesets.get(&delta_node).unwrap()
+                };
+                let mut last_end = 0;
+                let mut raw_changeset = Vec::new();
+                for diff in chunk.iter_diff() {
+                    if diff.start > reference_cs.len() || diff.start < last_end {
                         die!("Malformed changeset chunk for {node}");
                     }
-                    raw_changeset.extend_from_slice(&reference_cs[last_end..]);
-                    let raw_changeset = RawHgChangeset(raw_changeset.into());
-                    let changeset = raw_changeset.parse().unwrap();
-                    let branch = changeset
-                        .extra()
-                        .and_then(|e| e.get(b"branch"))
-                        .unwrap_or(b"default")
-                        .as_bstr();
-
-                    changesets.add(&node, &parents, branch);
-                    raw_changesets.insert(node, raw_changeset);
+                    raw_changeset.extend_from_slice(&reference_cs[last_end..diff.start]);
+                    raw_changeset.extend_from_slice(&diff.data);
+                    last_end = diff.end;
                 }
-                break;
+                if reference_cs.len() < last_end {
+                    die!("Malformed changeset chunk for {node}");
+                }
+                raw_changeset.extend_from_slice(&reference_cs[last_end..]);
+                let raw_changeset = RawHgChangeset(raw_changeset.into());
+                let changeset = raw_changeset.parse().unwrap();
+                let branch = changeset
+                    .extra()
+                    .and_then(|e| e.get(b"branch"))
+                    .unwrap_or(b"default")
+                    .as_bstr();
+
+                changesets.add(&node, &parents, branch);
+                raw_changesets.insert(node, raw_changeset);
             }
+            break;
         }
         self.changesets = Some(changesets);
     }

@@ -385,7 +385,7 @@ fn do_one_git2hg(committish: &OsString) -> String {
     let note = get_oid_committish(committish.as_bytes())
         .as_ref()
         .map(lookup_replace_commit)
-        .and_then(|oid| unsafe { GitChangesetId::from_unchecked(oid.into_owned()).to_hg() });
+        .and_then(|oid| GitChangesetId::from_unchecked(oid.into_owned()).to_hg());
     format!("{}", note.unwrap_or_else(HgChangesetId::null))
 }
 
@@ -826,7 +826,7 @@ fn set_metadata_to(
             let replace_ref = OsString::from(replace_ref);
             transaction.update(
                 &replace_ref,
-                &unsafe { CommitId::from_unchecked(item.oid) },
+                &CommitId::from_unchecked(item.oid),
                 replace_refs.remove(&replace_ref).as_ref(),
                 msg,
             )?;
@@ -1165,7 +1165,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             .parents()
             .iter()
             .map(|p| {
-                unsafe { GitChangesetId::from_unchecked(lookup_replace_commit(p).into_owned()) }
+                GitChangesetId::from_unchecked(lookup_replace_commit(p).into_owned())
                     .to_hg()
                     .unwrap()
             })
@@ -1535,7 +1535,7 @@ fn do_fsck_full(
 
     for cid in commit_queue.progress(|n| format!("Checking {n} changesets")) {
         let cid = lookup_replace_commit(&cid);
-        let cid = unsafe { GitChangesetId::from_unchecked(cid.into_owned()) };
+        let cid = GitChangesetId::from_unchecked(cid.into_owned());
         let metadata = if let Some(metadata) = RawGitChangesetMetadata::read(&cid) {
             metadata
         } else {
@@ -1588,7 +1588,7 @@ fn do_fsck_full(
             .parents()
             .iter()
             .map(|p| {
-                unsafe { GitChangesetId::from_unchecked(lookup_replace_commit(p).into_owned()) }
+                GitChangesetId::from_unchecked(lookup_replace_commit(p).into_owned())
                     .to_hg()
                     .unwrap()
             })
@@ -1843,9 +1843,9 @@ fn do_fsck_full(
 
     if full_fsck && !broken.get() {
         unsafe { &mut hg2git }.for_each(|h, _| {
-            if seen_changesets.contains(&unsafe { HgChangesetId::from_unchecked(h.clone()) })
-                || seen_manifests.contains(&unsafe { HgManifestId::from_unchecked(h.clone()) })
-                || seen_files.contains(&unsafe { HgFileId::from_unchecked(h.clone()) })
+            if seen_changesets.contains(&HgChangesetId::from_unchecked(h.clone()))
+                || seen_manifests.contains(&HgManifestId::from_unchecked(h.clone()))
+                || seen_files.contains(&HgFileId::from_unchecked(h.clone()))
             {
                 return;
             }
@@ -1869,8 +1869,7 @@ fn do_fsck_full(
         });
         unsafe { &mut git2hg }.for_each(|g, _| {
             // TODO: this is gross.
-            let cid =
-                unsafe { GitChangesetId::from_unchecked(CommitId::from_unchecked(g.clone())) };
+            let cid = GitChangesetId::from_unchecked(CommitId::from_unchecked(g.clone()));
             if seen_git2hg.contains(&cid) {
                 return;
             }

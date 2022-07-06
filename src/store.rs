@@ -97,11 +97,7 @@ pub struct RawGitChangesetMetadata(RawBlob);
 
 impl RawGitChangesetMetadata {
     pub fn read(changeset_id: &GitChangesetId) -> Option<Self> {
-        let note = unsafe {
-            git2hg
-                .get_note(changeset_id)
-                .map(|o| BlobId::from_unchecked(o))?
-        };
+        let note = unsafe { git2hg.get_note(changeset_id).map(BlobId::from_unchecked)? };
         RawBlob::read(&note).map(Self)
     }
 
@@ -468,7 +464,7 @@ impl RawHgChangeset {
             let mut parents = commit
                 .parents()
                 .iter()
-                .map(|p| unsafe { GitChangesetId::from_unchecked(p.clone()) }.to_hg())
+                .map(|p| GitChangesetId::from_unchecked(p.clone()).to_hg())
                 .chain(repeat(Some(HgChangesetId::null())))
                 .take(2)
                 .collect::<Option<Vec<_>>>()?;
@@ -523,11 +519,9 @@ pub fn do_raw_changeset(mut output: impl Write, args: &[&[u8]]) {
         die!("raw-changeset takes 1 argument");
     }
     let oid = if args[0].as_bstr().starts_with(b"git:") {
-        unsafe {
-            GitChangesetId::from_unchecked(
-                lookup_replace_commit(&CommitId::from_bytes(&args[0][4..]).unwrap()).into_owned(),
-            )
-        }
+        GitChangesetId::from_unchecked(
+            lookup_replace_commit(&CommitId::from_bytes(&args[0][4..]).unwrap()).into_owned(),
+        )
     } else {
         HgChangesetId::from_bytes(args[0])
             .unwrap()
@@ -543,9 +537,7 @@ pub fn do_raw_changeset(mut output: impl Write, args: &[&[u8]]) {
     let parents = commit
         .parents()
         .iter()
-        .map(|p| {
-            unsafe { GitChangesetId::from_unchecked(lookup_replace_commit(p).into_owned()) }.to_hg()
-        })
+        .map(|p| GitChangesetId::from_unchecked(lookup_replace_commit(p).into_owned()).to_hg())
         .chain(repeat(Some(HgChangesetId::null())))
         .take(2)
         .collect::<Option<Vec<_>>>()
@@ -914,7 +906,7 @@ fn store_changeset(
             &mut tree_id,
         );
     }
-    let tree_id = unsafe { TreeId::from_unchecked(GitObjectId::from(tree_id)) };
+    let tree_id = TreeId::from_unchecked(GitObjectId::from(tree_id));
 
     let (commit_id, metadata_id, transition) =
         match graft(changeset_id, raw_changeset, &tree_id, &parents) {
@@ -934,11 +926,9 @@ fn store_changeset(
                     unsafe {
                         store_git_blob(&buf, &mut metadata_oid);
                     }
-                    let metadata_id = unsafe {
-                        GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(
-                            GitObjectId::from(metadata_oid),
-                        ))
-                    };
+                    let metadata_id = GitChangesetMetadataId::from_unchecked(
+                        BlobId::from_unchecked(GitObjectId::from(metadata_oid)),
+                    );
                     (Some(commit_id), Some(metadata_id), false)
                 }
             }
@@ -988,7 +978,7 @@ fn store_changeset(
         unsafe {
             store_git_commit(&result, &mut result_oid);
         }
-        let commit_id = unsafe { CommitId::from_unchecked(GitObjectId::from(result_oid)) };
+        let commit_id = CommitId::from_unchecked(GitObjectId::from(result_oid));
 
         let metadata = GeneratedGitChangesetMetadata::generate(
             &RawCommit::read(&commit_id).unwrap().parse().unwrap(),
@@ -1002,11 +992,10 @@ fn store_changeset(
         unsafe {
             store_git_blob(&buf, &mut metadata_oid);
         }
-        let metadata_id = unsafe {
-            GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(GitObjectId::from(
-                metadata_oid,
-            )))
-        };
+        let metadata_id = GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(
+            GitObjectId::from(metadata_oid),
+        ));
+
         (commit_id, metadata_id, replace)
     } else {
         (
@@ -1070,7 +1059,7 @@ pub fn do_create_changeset(mut input: &mut dyn BufRead, mut output: impl Write, 
     let mut parents = commit
         .parents()
         .iter()
-        .map(|p| unsafe { GitChangesetId::from_unchecked(p.clone()) }.to_hg())
+        .map(|p| GitChangesetId::from_unchecked(p.clone()).to_hg())
         .chain(repeat(Some(HgChangesetId::null())))
         .take(2)
         .collect::<Option<Vec<_>>>()
@@ -1087,9 +1076,8 @@ pub fn do_create_changeset(mut input: &mut dyn BufRead, mut output: impl Write, 
     unsafe {
         store_git_blob(&buf, &mut blob_oid);
     }
-    let metadata_id = unsafe {
-        GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(GitObjectId::from(blob_oid)))
-    };
+    let metadata_id =
+        GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(GitObjectId::from(blob_oid)));
     writeln!(output, "{} {}", metadata.changeset_id, metadata_id).unwrap();
 }
 
@@ -1169,9 +1157,7 @@ pub fn store_changegroup<R: Read>(mut input: R, version: u8) {
         RevChunkIter::new(version, &mut input).progress(|n| format!("Reading {n} changesets"))
     {
         changesets.push(Box::new((
-            unsafe {
-                HgChangesetId::from_unchecked(HgObjectId::from(changeset.delta_node().clone()))
-            },
+            HgChangesetId::from_unchecked(HgObjectId::from(changeset.delta_node().clone())),
             changeset,
         )));
     }
@@ -1198,11 +1184,10 @@ pub fn store_changegroup<R: Read>(mut input: R, version: u8) {
     } {
         files.set(files.get() + 1);
         for (file, ()) in RevChunkIter::new(version, &mut input).zip(&mut progress) {
-            let node =
-                unsafe { HgChangesetId::from_unchecked(HgObjectId::from(file.node().clone())) };
+            let node = HgChangesetId::from_unchecked(HgObjectId::from(file.node().clone()));
             let parents = [
-                unsafe { HgChangesetId::from_unchecked(HgObjectId::from(file.parent1().clone())) },
-                unsafe { HgChangesetId::from_unchecked(HgObjectId::from(file.parent2().clone())) },
+                HgChangesetId::from_unchecked(HgObjectId::from(file.parent1().clone())),
+                HgChangesetId::from_unchecked(HgObjectId::from(file.parent2().clone())),
             ];
             // Try to detect issue #207 as early as possible.
             // Keep track of file roots of files with metadata and at least
@@ -1242,11 +1227,11 @@ pub fn store_changegroup<R: Read>(mut input: R, version: u8) {
     {
         let (delta_node, changeset) = &*changeset;
         let changeset_id =
-            unsafe { HgChangesetId::from_unchecked(HgObjectId::from(changeset.node().clone())) };
+            HgChangesetId::from_unchecked(HgObjectId::from(changeset.node().clone()));
         let parents = [changeset.parent1(), changeset.parent2()]
             .into_iter()
             .filter_map(|p| {
-                let p = unsafe { HgChangesetId::from_unchecked(HgObjectId::from(p.clone())) };
+                let p = HgChangesetId::from_unchecked(HgObjectId::from(p.clone()));
                 (p != HgChangesetId::null()).then(|| p)
             })
             .collect::<Vec<_>>();
@@ -1523,7 +1508,7 @@ pub fn merge_metadata(git_url: Url, hg_url: Url, branch: Option<&[u8]>) -> bool 
             .collect::<BTreeMap<_, _>>();
         let mut needed = Vec::new();
         for item in ls_tree(commit.tree()).unwrap() {
-            let cid = unsafe { CommitId::from_unchecked(item.oid) };
+            let cid = CommitId::from_unchecked(item.oid);
             if let Some(refname) = by_sha1.get(&cid) {
                 let replace_ref = bstr::join(b"/", [b"refs/cinnabar/replace", &*item.path]);
                 needed.push(

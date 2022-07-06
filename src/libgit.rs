@@ -325,7 +325,7 @@ macro_rules! raw_object {
             type Error = ();
             fn try_from(oid: GitObjectId) -> std::result::Result<Self, ()> {
                 match RawObject::get_type(&oid).ok_or(())? {
-                    object_type::$t => Ok(unsafe { $oid_type::from_unchecked(oid) }),
+                    object_type::$t => Ok($oid_type::from_unchecked(oid)),
                     _ => Err(()),
                 }
             }
