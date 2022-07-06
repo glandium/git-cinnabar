@@ -562,7 +562,8 @@ def fsck(args):
         dangling = GitHgHelper.dangling(b'git2hg')
     for c in dangling:
         status.fix('Removing dangling note for commit ' + c.decode('ascii'))
-        GitHgHelper.set(b'changeset-metadata', c, NULL_NODE_ID)
+        GitHgHelper.set(
+            b'changeset-metadata', store.hg_changeset(c), NULL_NODE_ID)
 
     check_replace(store)
 
