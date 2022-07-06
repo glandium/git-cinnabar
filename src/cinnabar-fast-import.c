@@ -192,13 +192,11 @@ static void cleanup()
 		pack_report();
 }
 
-void do_cleanup(int rollback, int helper_output)
+void do_cleanup(int rollback)
 {
 	if (!rollback)
 		require_explicit_termination = 0;
 	cleanup();
-	if (helper_output != -1)
-		write_or_die(helper_output, "ok\n", 3);
 }
 
 static void start_packfile()

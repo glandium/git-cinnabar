@@ -176,7 +176,7 @@ extern "C" {
     fn do_diff_tree(l: *const string_list, out: c_int);
     fn do_create_git_tree(l: *const string_list, out: c_int);
     fn do_reload(l: *const string_list, out: c_int);
-    fn do_cleanup(rollback: c_int, out: c_int);
+    fn do_cleanup(rollback: c_int);
     fn do_set(l: *const string_list);
     fn do_store(in_: *mut libcinnabar::reader, out: c_int, l: *const string_list);
 
@@ -225,13 +225,13 @@ fn do_done_and_check(args: &[&[u8]]) -> bool {
     unsafe {
         if graft_finish() == Some(false) {
             // Rollback
-            do_cleanup(1, -1);
+            do_cleanup(1);
             error!(target: "root", "Nothing to graft");
             return false;
         }
         let mut new_metadata = object_id::default();
         do_store_metadata(&mut new_metadata);
-        do_cleanup(0, -1);
+        do_cleanup(0);
         let new_metadata = CommitId::from_unchecked(new_metadata.into());
         set_metadata_to(
             Some(&new_metadata),
@@ -273,7 +273,8 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
         let _locked = HELPER_LOCK.lock().unwrap();
         if let b"graft" | b"progress" | b"store-changeset" | b"create" | b"raw-changeset"
-        | b"reset" | b"done-and-check" | b"merge-metadata" | b"heads" = &*command
+        | b"reset" | b"done-and-check" | b"merge-metadata" | b"heads" | b"done"
+        | b"rollback" = &*command
         {
             let args = match args_.split_last().unwrap().1 {
                 b"" => Vec::new(),
@@ -288,6 +289,14 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"create" => do_create(input, out, &args),
                 b"reset" => do_reset(&args),
                 b"heads" => do_heads(out, &args),
+                b"done" => unsafe {
+                    do_cleanup(0);
+                    writeln!(out, "ok").unwrap();
+                },
+                b"rollback" => unsafe {
+                    do_cleanup(1);
+                    writeln!(out, "ok").unwrap();
+                },
                 b"done-and-check" => writeln!(
                     out,
                     "{}",
@@ -337,16 +346,6 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"rev-list" => do_rev_list(args, out),
                 b"diff-tree" => do_diff_tree(args, out),
                 b"reload" => do_reload(args, out),
-                b"done" => {
-                    do_cleanup(0, out);
-                    string_list_clear(args, 0);
-                    break;
-                }
-                b"rollback" => {
-                    do_cleanup(1, out);
-                    string_list_clear(args, 0);
-                    break;
-                }
                 b"set" => do_set(args),
                 b"store" => do_store(&mut libcinnabar::reader(input), out, args),
                 _ => die!("Unknown command: {}", command.as_bstr()),
