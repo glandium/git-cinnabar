@@ -506,8 +506,8 @@ def fsck(args):
         changes = get_changes(manifest_ref, git_parents)
         for path, hg_file, hg_fileparents in changes:
             if hg_file != NULL_NODE_ID and (hg_file == HG_EMPTY_FILE or
-                                            GitHgHelper.seen(b'hg2git',
-                                                             hg_file)):
+                                            not GitHgHelper.seen(b'hg2git',
+                                                                 hg_file)):
                 if full_file_check:
                     file = store.file(hg_file, hg_fileparents)
                     valid = file.node == file.sha1
