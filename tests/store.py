@@ -1,3 +1,4 @@
+import copy
 import hashlib
 import os
 import shutil
@@ -451,8 +452,7 @@ class TestStoreCG01(unittest.TestCase):
         # Corner case: identical changeset with a difference that wouldn't
         # appear in the git commit without adjustment (which is: cinnabar adds
         # a nul character to the commit message..
-        chunk = c2.to_chunk(RawRevChunk02)
-        c5 = Changeset.from_chunk(chunk)
+        c5 = copy.copy(c2)
         c5.branch = b'branched'
         c5.node = c5.sha1
 
