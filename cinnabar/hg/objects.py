@@ -19,16 +19,6 @@ class HgObject(ParentsTrait):
         (self.node, self.parent1, self.parent2, self.changeset) = (
             node, parent1, parent2, changeset)
 
-    @classmethod
-    def from_chunk(cls, raw_chunk, delta_object=None):
-        assert isinstance(raw_chunk, RawRevChunk)
-        assert \
-            (delta_object is None and raw_chunk.delta_node == NULL_NODE_ID) or\
-            (isinstance(delta_object, cls) and
-             raw_chunk.delta_node == delta_object.node)
-        return cls(raw_chunk.node, raw_chunk.parent1, raw_chunk.parent2,
-                   raw_chunk.changeset)
-
     def to_chunk(self, raw_chunk_type, delta_object=None):
         assert delta_object is None or isinstance(delta_object, type(self))
         assert issubclass(raw_chunk_type, RawRevChunk)
@@ -78,13 +68,6 @@ class File(HgObject):
         super(File, self).__init__(*args, **kwargs)
         self.content = b''
         self.metadata = {}
-
-    @classmethod
-    def from_chunk(cls, raw_chunk, delta_file=None):
-        this = super(File, cls).from_chunk(raw_chunk, delta_file)
-        this.raw_data = raw_chunk.patch.apply(
-            delta_file.raw_data if delta_file else b'')
-        return this
 
     @HgObject.raw_data.setter
     def raw_data(self, data):
@@ -143,13 +126,6 @@ class Changeset(HgObject):
         self.utcoffset = b''
         self.files = []
         self.body = b''
-
-    @classmethod
-    def from_chunk(cls, raw_chunk, delta_cs=None):
-        this = super(Changeset, cls).from_chunk(raw_chunk, delta_cs)
-        this.raw_data = raw_chunk.patch.apply(
-            delta_cs.raw_data if delta_cs else b'')
-        return this
 
     @HgObject.raw_data.setter
     def raw_data(self, data):
@@ -307,32 +283,6 @@ class Manifest(HgObject):
         for item in self:
             yield item
             yield b'\n'
-
-    @classmethod
-    def from_chunk(cls, raw_chunk, delta_mn=None):
-        this = super(Manifest, cls).from_chunk(raw_chunk, delta_mn)
-        items = iter(delta_mn)
-        offset = 0
-        item = b''
-        for part in raw_chunk.patch:
-            while offset < part.start:
-                item = next(items, None)
-                if item is None:
-                    break
-                this._items.append(item)
-                offset += len(item) + 1
-            assert offset == part.start
-            for item in part.text_data.tobytes().splitlines():
-                item = this.ManifestItem(item)
-                this._items.append(item)
-            while offset < part.end:
-                item = next(items, None)
-                if item is None:
-                    break
-                offset += len(item) + 1
-        for item in items:
-            this._items.append(item)
-        return this
 
     @property
     def raw_data(self):
