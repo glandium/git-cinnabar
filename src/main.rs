@@ -987,8 +987,7 @@ fn do_unbundle(clonebundle: bool, mut url: Url) -> Result<(), String> {
     }
     let mut conn = get_connection(&url, 0).unwrap();
 
-    get_store_bundle(&mut *conn, &[], &[], None)
-        .map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
+    get_store_bundle(&mut *conn, &[], &[]).map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
 
     do_done_and_check(&[])
         .then(|| ())

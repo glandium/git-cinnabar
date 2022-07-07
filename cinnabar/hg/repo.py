@@ -203,8 +203,7 @@ class HelperRepo(object):
     def get_store_bundle(self, name, heads, common, *args, **kwargs):
         heads = [hexlify(h) for h in heads]
         common = [hexlify(c) for c in common]
-        bundlecaps = b','.join(kwargs.get('bundlecaps', ()))
-        return self._helper.get_store_bundle(heads, common, bundlecaps)
+        return self._helper.get_store_bundle(heads, common)
 
     def pushkey(self, namespace, key, old, new):
         return self._helper.pushkey(namespace, key, old, new)
@@ -367,20 +366,9 @@ def getbundle(repo, store, heads, branch_names):
         common = findcommon(repo, store, store.heads(branch_names))
         logging.info('common: %s', common)
 
-    kwargs = {}
-    if repo.capable(b'bundle2'):
-        bundle2caps = {
-            b'HG20': (),
-            b'changegroup': (b'01', b'02'),
-        }
-        kwargs['bundlecaps'] = set((
-            b'HG20',
-            b'bundle2=%s' % quote_from_bytes(
-                encodecaps(bundle2caps)).encode('ascii')))
-
     repo.get_store_bundle(
         b'bundle', heads=[unhexlify(h) for h in heads],
-        common=[unhexlify(h) for h in common], **kwargs)
+        common=[unhexlify(h) for h in common])
 
 
 def push(repo, store, what, repo_heads, repo_branches, dry_run=False):

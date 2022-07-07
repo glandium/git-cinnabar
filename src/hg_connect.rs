@@ -11,7 +11,7 @@ use std::str::FromStr;
 
 use bstr::{BStr, ByteSlice};
 use itertools::Itertools;
-use percent_encoding::percent_decode;
+use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use sha1::{Digest, Sha1};
 use url::Url;
 
@@ -386,9 +386,8 @@ fn do_get_store_bundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut imp
 
     let heads = args.next().map_or_else(Vec::new, arg_list);
     let common = args.next().map_or_else(Vec::new, arg_list);
-    let bundle2caps = args.next().copied();
     assert!(args.next().is_none());
-    match get_store_bundle(conn, &heads, &common, bundle2caps) {
+    match get_store_bundle(conn, &heads, &common) {
         Ok(()) => out.write_all(b"ok\n").unwrap(),
         Err(e) => {
             out.write_all(b"err\n").unwrap();
@@ -399,25 +398,113 @@ fn do_get_store_bundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut imp
     }
 }
 
+const PYTHON_QUOTE_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'-')
+    .remove(b'~');
+
+fn encodecaps(
+    caps: impl IntoIterator<
+        Item = (
+            impl AsRef<str>,
+            Option<impl IntoIterator<Item = impl AsRef<str>>>,
+        ),
+    >,
+) -> Box<str> {
+    caps.into_iter()
+        .map(|(k, v)| {
+            let k = percent_encode(k.as_ref().as_bytes(), PYTHON_QUOTE_SET).to_string();
+            match v {
+                Some(v) => format!(
+                "{}={}",
+                k,
+                v.into_iter()
+                    .map(|v| percent_encode(v.as_ref().as_bytes(), PYTHON_QUOTE_SET).to_string())
+                    .join(",")
+            ),
+                None => k,
+            }
+        })
+        .join("\n")
+        .into_boxed_str()
+}
+
+#[test]
+fn test_encodecaps() {
+    let caps = [("HG20", None), ("changegroup", Some(&["01", "02"]))];
+    assert_eq!(&*encodecaps(caps), "HG20\nchangegroup=01,02");
+
+    // Real case
+    let caps = [
+        ("HG20", None),
+        ("bookmarks", None),
+        ("changegroup", Some(&["01", "02"][..])),
+        ("digests", Some(&["md5", "sha1", "sha512"])),
+        (
+            "error",
+            Some(&["abort", "unsupportedcontent", "pushraced", "pushkey"]),
+        ),
+        ("hgtagsfnodes", None),
+        ("listkeys", None),
+        ("phases", Some(&["heads"])),
+        ("pushkey", None),
+        ("remote-changegroup", Some(&["http", "https"])),
+    ];
+    assert_eq!(
+        &*encodecaps(caps),
+        "HG20\n\
+         bookmarks\n\
+         changegroup=01,02\n\
+         digests=md5,sha1,sha512\n\
+         error=abort,unsupportedcontent,pushraced,pushkey\n\
+         hgtagsfnodes\n\
+         listkeys\n\
+         phases=heads\n\
+         pushkey\n\
+         remote-changegroup=http,https"
+    );
+
+    // Hypothetical case
+    let caps = [
+        ("ab%d", Some(&["foo\nbar"][..])),
+        ("qux\n", None),
+        ("hoge", Some(&["fuga,", "toto"])),
+    ];
+    assert_eq!(
+        &*encodecaps(caps),
+        "ab%25d=foo%0Abar\n\
+         qux%0A\n\
+         hoge=fuga%2C,toto"
+    );
+}
+
 pub fn get_store_bundle(
     conn: &mut dyn HgConnection,
     heads: &[HgChangesetId],
     common: &[HgChangesetId],
-    bundle2caps: Option<&str>,
 ) -> Result<(), ImmutBString> {
-    conn.getbundle(heads, common, bundle2caps).map(|r| {
-        let mut bundle = BundleReader::new(r).unwrap();
-        while let Some(part) = bundle.next_part().unwrap() {
-            if &*part.part_type == "changegroup" {
-                let version = part
-                    .params
-                    .get("version")
-                    .map_or(1, |v| u8::from_str(v).unwrap());
-                let _locked = HELPER_LOCK.lock().unwrap();
-                store_changegroup(part, version);
+    let bundle2caps = conn.get_capability(b"bundle2").map(|_| {
+        let bundle2caps = [("HG20", None), ("changegroup", Some(&["01", "02"]))];
+        format!(
+            "HG20,bundle2={}",
+            percent_encode(encodecaps(bundle2caps).as_bytes(), PYTHON_QUOTE_SET)
+        )
+    });
+    conn.getbundle(heads, common, bundle2caps.as_deref())
+        .map(|r| {
+            let mut bundle = BundleReader::new(r).unwrap();
+            while let Some(part) = bundle.next_part().unwrap() {
+                if &*part.part_type == "changegroup" {
+                    let version = part
+                        .params
+                        .get("version")
+                        .map_or(1, |v| u8::from_str(v).unwrap());
+                    let _locked = HELPER_LOCK.lock().unwrap();
+                    store_changegroup(part, version);
+                }
             }
-        }
-    })
+        })
 }
 
 fn do_unbundle(
