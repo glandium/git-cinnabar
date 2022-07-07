@@ -107,7 +107,7 @@ use which::which;
 use crate::libc::FdFile;
 use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads};
 use crate::util::{FromBytes, ToBoxed};
-use graft::{do_graft, graft_finish, init_graft};
+use graft::{do_graft, graft_finish, grafted, init_graft};
 use hg_connect::{connect_main_with, get_clonebundle_url, get_connection, get_store_bundle};
 use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
@@ -119,10 +119,11 @@ use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::{do_progress, Progress};
 use store::{
     do_check_files, do_create, do_heads, do_raw_changeset, do_set_, do_store_changeset,
-    has_metadata, merge_metadata, store_git_blob, ChangesetHeads, GeneratedGitChangesetMetadata,
-    GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
-    HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF,
-    CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    has_metadata, merge_metadata, raw_commit_for_changeset, store_git_blob, ChangesetHeads,
+    GeneratedGitChangesetMetadata, GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId,
+    HgChangesetId, HgFileId, HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile,
+    RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX,
+    REPLACE_REFS_PREFIX,
 };
 use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
 
@@ -1604,6 +1605,33 @@ fn do_fsck_full(
             continue;
         }
 
+        let changeset = raw_changeset.parse().unwrap();
+
+        if !grafted() {
+            let fresh_commit = raw_commit_for_changeset(
+                &changeset,
+                commit.tree(),
+                &commit
+                    .parents()
+                    .iter()
+                    .cloned()
+                    .map(GitChangesetId::from_unchecked)
+                    .collect_vec(),
+            );
+            let mut hash = GitChangesetId::create();
+            hash.update(format!("commit {}\0", fresh_commit.as_bytes().len()));
+            hash.update(fresh_commit.as_bytes());
+            let fresh_cid = hash.finalize();
+            if cid != fresh_cid {
+                eprintln!(
+                    "\nCommit mismatch for changeset {}\n\
+                     \x20 it is commit {} here\n\
+                     \x20 but would be {} on a fresh clone",
+                    changeset_id, cid, fresh_cid
+                );
+            }
+        }
+
         let branch = metadata
             .extra()
             .and_then(|e| e.get(b"branch"))
@@ -1646,7 +1674,6 @@ fn do_fsck_full(
             }
         }
 
-        let changeset = raw_changeset.parse().unwrap();
         let manifest_id = changeset.manifest();
         if !seen_manifests.insert(manifest_id.clone()) {
             // We've already seen the manifest.

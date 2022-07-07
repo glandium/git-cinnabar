@@ -896,42 +896,7 @@ fn store_changeset(
 
     let (commit_id, metadata_id, replace) = if commit_id.is_none() || transition {
         let replace = commit_id;
-        let mut result = strbuf::new();
-        let author = HgAuthorship {
-            author: changeset.author(),
-            timestamp: changeset.timestamp(),
-            utcoffset: changeset.utcoffset(),
-        };
-        // TODO: reduce the amount of cloning.
-        let git_author = GitAuthorship::from(author.clone());
-        let git_committer = if let Some(extra) = changeset.extra() {
-            if let Some(committer) = extra.get(b"committer") {
-                if committer.ends_with(b">") {
-                    GitAuthorship::from(HgAuthorship {
-                        author: committer,
-                        timestamp: author.timestamp,
-                        utcoffset: author.utcoffset,
-                    })
-                } else {
-                    GitAuthorship::from(HgCommitter(committer))
-                }
-            } else {
-                git_author.clone()
-            }
-        } else {
-            git_author.clone()
-        };
-        result.extend_from_slice(format!("tree {}\n", tree_id).as_bytes());
-        for parent in git_parents {
-            result.extend_from_slice(format!("parent {}\n", parent).as_bytes());
-        }
-        result.extend_from_slice(b"author ");
-        result.extend_from_slice(&git_author.0);
-        result.extend_from_slice(b"\ncommitter ");
-        result.extend_from_slice(&git_committer.0);
-        result.extend_from_slice(b"\n\n");
-        result.extend_from_slice(changeset.body());
-
+        let result = raw_commit_for_changeset(&changeset, &tree_id, &git_parents);
         let mut result_oid = object_id::default();
         unsafe {
             store_git_commit(&result, &mut result_oid);
@@ -989,6 +954,49 @@ fn store_changeset(
     let parents = parents.iter().collect::<Vec<_>>();
     heads.add(changeset_id, &parents, branch);
     Ok(result)
+}
+
+pub fn raw_commit_for_changeset(
+    changeset: &HgChangeset,
+    tree_id: &TreeId,
+    parents: &[GitChangesetId],
+) -> strbuf {
+    let mut result = strbuf::new();
+    let author = HgAuthorship {
+        author: changeset.author(),
+        timestamp: changeset.timestamp(),
+        utcoffset: changeset.utcoffset(),
+    };
+    // TODO: reduce the amount of cloning.
+    let git_author = GitAuthorship::from(author.clone());
+    let git_committer = if let Some(extra) = changeset.extra() {
+        if let Some(committer) = extra.get(b"committer") {
+            if committer.ends_with(b">") {
+                GitAuthorship::from(HgAuthorship {
+                    author: committer,
+                    timestamp: author.timestamp,
+                    utcoffset: author.utcoffset,
+                })
+            } else {
+                GitAuthorship::from(HgCommitter(committer))
+            }
+        } else {
+            git_author.clone()
+        }
+    } else {
+        git_author.clone()
+    };
+    result.extend_from_slice(format!("tree {}\n", tree_id).as_bytes());
+    for parent in parents {
+        result.extend_from_slice(format!("parent {}\n", parent).as_bytes());
+    }
+    result.extend_from_slice(b"author ");
+    result.extend_from_slice(&git_author.0);
+    result.extend_from_slice(b"\ncommitter ");
+    result.extend_from_slice(&git_committer.0);
+    result.extend_from_slice(b"\n\n");
+    result.extend_from_slice(changeset.body());
+    result
 }
 
 pub fn do_create(input: &mut dyn BufRead, output: impl Write, args: &[&[u8]]) {
