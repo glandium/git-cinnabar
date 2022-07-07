@@ -16,7 +16,6 @@ from cinnabar.git import (
     NULL_NODE_ID,
 )
 from cinnabar.hg.objects import (
-    Authorship,
     Changeset,
     File,
     Manifest,
@@ -102,26 +101,6 @@ class FileFindParents(object):
     def _try_parents(file, *parents):
         file.parents = parents
         return file.node == file.sha1
-
-
-class Changeset(Changeset):
-    @classmethod
-    def from_git_commit(cls, git_commit):
-        if not isinstance(git_commit, GitCommit):
-            git_commit = GitCommit(git_commit)
-
-        changeset = cls()
-
-        (changeset.author, changeset.timestamp, changeset.utcoffset) = \
-            Authorship.from_git_str(git_commit.author).to_hg()
-
-        if git_commit.committer != git_commit.author:
-            changeset.committer = Authorship.from_git_str(
-                git_commit.committer).to_hg_str()
-
-        changeset.body = git_commit.body
-
-        return changeset
 
 
 class GeneratedManifestInfo(Manifest):
