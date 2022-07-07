@@ -85,7 +85,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::{self, from_utf8, FromStr};
 use std::sync::Mutex;
-use std::thread::spawn;
+use std::thread;
 use std::{cmp, fmt};
 
 #[cfg(unix)]
@@ -2377,17 +2377,20 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
         let reader1 = reader1.dup_inheritable();
         let writer2 = writer2.dup_inheritable();
         extra_env.push(("GIT_CINNABAR_WIRE_FDS", format!("{},{}", reader1, writer2)));
-        let thread = spawn(move || {
-            connect_main_with(
-                &mut logging::LoggingBufReader::new(
-                    "helper-wire",
-                    log::Level::Debug,
-                    BufReader::new(reader2),
-                ),
-                &mut logging::LoggingWriter::new("helper-wire", log::Level::Debug, writer1),
-            )
+        let thread = thread::Builder::new()
+            .name("helper-wire".into())
+            .spawn(move || {
+                connect_main_with(
+                    &mut logging::LoggingBufReader::new(
+                        "helper-wire",
+                        log::Level::Debug,
+                        BufReader::new(reader2),
+                    ),
+                    &mut logging::LoggingWriter::new("helper-wire", log::Level::Debug, writer1),
+                )
+                .unwrap();
+            })
             .unwrap();
-        });
         (Some((reader1, writer2)), Some(thread))
     } else {
         (None, None)
@@ -2402,15 +2405,18 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
             "GIT_CINNABAR_IMPORT_FDS",
             format!("{},{}", reader1, writer2),
         ));
-        let thread = spawn(move || {
-            #[cfg(windows)]
-            let writer1 = unsafe {
-                ::libc::open_osfhandle(writer1.as_raw_handle() as isize, ::libc::O_RDONLY)
-            };
-            #[cfg(unix)]
-            let writer1 = writer1.as_raw_fd();
-            helper_main(&mut BufReader::new(reader2), writer1);
-        });
+        let thread = thread::Builder::new()
+            .name("helper-import".into())
+            .spawn(move || {
+                #[cfg(windows)]
+                let writer1 = unsafe {
+                    ::libc::open_osfhandle(writer1.as_raw_handle() as isize, ::libc::O_RDONLY)
+                };
+                #[cfg(unix)]
+                let writer1 = writer1.as_raw_fd();
+                helper_main(&mut BufReader::new(reader2), writer1);
+            })
+            .unwrap();
         ((reader1, writer2), thread)
     };
 
@@ -2418,27 +2424,30 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
         let (reader, writer) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
         let writer = writer.dup_inheritable();
         extra_env.push(("GIT_CINNABAR_LOG_FD", format!("{}", writer)));
-        let thread = spawn(move || {
-            let reader = BufReader::new(reader);
-            for line in reader.lines() {
-                if let Some([level, target, msg]) = line.unwrap().splitn_exact(' ') {
-                    let msg = msg.replace('\0', "\n");
-                    if target == "stderr" {
-                        eprintln!("{}", msg);
-                    } else {
-                        let level = match level {
-                            "CRITICAL" => log::Level::Error,
-                            "ERROR" => log::Level::Error,
-                            "WARNING" => log::Level::Warn,
-                            "INFO" => log::Level::Info,
-                            "DEBUG" => log::Level::Debug,
-                            _ => log::Level::Trace,
-                        };
-                        log!(target: target, level, "{}", msg);
+        let thread = thread::Builder::new()
+            .name("py-logger".into())
+            .spawn(move || {
+                let reader = BufReader::new(reader);
+                for line in reader.lines() {
+                    if let Some([level, target, msg]) = line.unwrap().splitn_exact(' ') {
+                        let msg = msg.replace('\0', "\n");
+                        if target == "stderr" {
+                            eprintln!("{}", msg);
+                        } else {
+                            let level = match level {
+                                "CRITICAL" => log::Level::Error,
+                                "ERROR" => log::Level::Error,
+                                "WARNING" => log::Level::Warn,
+                                "INFO" => log::Level::Info,
+                                "DEBUG" => log::Level::Debug,
+                                _ => log::Level::Trace,
+                            };
+                            log!(target: target, level, "{}", msg);
+                        }
                     }
                 }
-            }
-        });
+            })
+            .unwrap();
         (writer, thread)
     };
 

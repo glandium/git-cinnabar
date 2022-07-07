@@ -191,72 +191,75 @@ impl HttpRequest {
     fn execute_once(mut self) -> Result<HttpResponse, (c_int, Self)> {
         let (sender, receiver) = channel::<HttpRequestChannelData>();
         let token = self.token.clone();
-        let thread = thread::spawn(move || unsafe {
-            let url = CString::new(self.url.to_string()).unwrap();
-            let slot = get_active_slot().as_mut().unwrap();
-            curl_easy_setopt(slot.curl, CURLOPT_URL, url.as_ptr());
-            curl_easy_setopt(slot.curl, CURLOPT_FAILONERROR, 0);
-            curl_easy_setopt(slot.curl, CURLOPT_NOBODY, 0);
-            /* Strictly speaking, this is not necessary, but bitbucket does
-             * user-agent sniffing, and git's user-agent gets 404 on mercurial
-             * urls. */
-            curl_easy_setopt(
-                slot.curl,
-                CURLOPT_USERAGENT,
-                cstr!("mercurial/proto-1.0").as_ptr(),
-            );
-            let mut data = HttpThreadData {
-                sender,
-                curl: slot.curl,
-                first: true,
-            };
-            curl_easy_setopt(slot.curl, CURLOPT_FILE, &mut data);
-            curl_easy_setopt(
-                slot.curl,
-                CURLOPT_WRITEFUNCTION,
-                http_request_execute as *const c_void,
-            );
-            let mut headers = ptr::null_mut();
-            if let Some(ref mut body) = self.body {
-                curl_easy_setopt(slot.curl, CURLOPT_POST, 1);
+        let thread = thread::Builder::new()
+            .name("HTTP".into())
+            .spawn(move || unsafe {
+                let url = CString::new(self.url.to_string()).unwrap();
+                let slot = get_active_slot().as_mut().unwrap();
+                curl_easy_setopt(slot.curl, CURLOPT_URL, url.as_ptr());
+                curl_easy_setopt(slot.curl, CURLOPT_FAILONERROR, 0);
+                curl_easy_setopt(slot.curl, CURLOPT_NOBODY, 0);
+                /* Strictly speaking, this is not necessary, but bitbucket does
+                 * user-agent sniffing, and git's user-agent gets 404 on mercurial
+                 * urls. */
                 curl_easy_setopt(
                     slot.curl,
-                    CURLOPT_POSTFIELDSIZE_LARGE,
-                    body.stream_len_().unwrap(),
+                    CURLOPT_USERAGENT,
+                    cstr!("mercurial/proto-1.0").as_ptr(),
                 );
-                /* Ensure we have no state from a previous attempt that failed because
-                 * of authentication (401). */
-                body.seek(SeekFrom::Start(0)).unwrap();
-                curl_easy_setopt(slot.curl, CURLOPT_READDATA, &mut *body);
+                let mut data = HttpThreadData {
+                    sender,
+                    curl: slot.curl,
+                    first: true,
+                };
+                curl_easy_setopt(slot.curl, CURLOPT_FILE, &mut data);
                 curl_easy_setopt(
                     slot.curl,
-                    CURLOPT_READFUNCTION,
-                    read_from_read::<&mut (dyn ReadAndSeek + Send)> as *const c_void,
+                    CURLOPT_WRITEFUNCTION,
+                    http_request_execute as *const c_void,
                 );
-                curl_easy_setopt(slot.curl, CURLOPT_FOLLOWLOCATION, 0);
-                headers = curl_slist_append(headers, cstr!("Expect:").as_ptr());
-            } else {
-                if self.follow_redirects {
-                    curl_easy_setopt(slot.curl, CURLOPT_FOLLOWLOCATION, 1);
+                let mut headers = ptr::null_mut();
+                if let Some(ref mut body) = self.body {
+                    curl_easy_setopt(slot.curl, CURLOPT_POST, 1);
+                    curl_easy_setopt(
+                        slot.curl,
+                        CURLOPT_POSTFIELDSIZE_LARGE,
+                        body.stream_len_().unwrap(),
+                    );
+                    /* Ensure we have no state from a previous attempt that failed because
+                     * of authentication (401). */
+                    body.seek(SeekFrom::Start(0)).unwrap();
+                    curl_easy_setopt(slot.curl, CURLOPT_READDATA, &mut *body);
+                    curl_easy_setopt(
+                        slot.curl,
+                        CURLOPT_READFUNCTION,
+                        read_from_read::<&mut (dyn ReadAndSeek + Send)> as *const c_void,
+                    );
+                    curl_easy_setopt(slot.curl, CURLOPT_FOLLOWLOCATION, 0);
+                    headers = curl_slist_append(headers, cstr!("Expect:").as_ptr());
+                } else {
+                    if self.follow_redirects {
+                        curl_easy_setopt(slot.curl, CURLOPT_FOLLOWLOCATION, 1);
+                    }
+                    curl_easy_setopt(slot.curl, CURLOPT_HTTPGET, 1);
                 }
-                curl_easy_setopt(slot.curl, CURLOPT_HTTPGET, 1);
-            }
-            for (name, value) in self.headers.iter() {
-                let header_line = CString::new(format!("{}: {}", name, value)).unwrap();
-                headers = curl_slist_append(headers, header_line.as_ptr());
-            }
-            curl_easy_setopt(slot.curl, CURLOPT_HTTPHEADER, headers);
-            curl_easy_setopt(slot.curl, CURLOPT_ACCEPT_ENCODING, b"\0");
-            let mut results = slot_results::new();
-            let result = run_one_slot(slot, &mut results);
-            curl_slist_free_all(headers);
-            http_send_info(&mut data);
-            if result == HTTP_OK {
-                Ok(())
-            } else {
-                Err((result, self))
-            }
-        });
+                for (name, value) in self.headers.iter() {
+                    let header_line = CString::new(format!("{}: {}", name, value)).unwrap();
+                    headers = curl_slist_append(headers, header_line.as_ptr());
+                }
+                curl_easy_setopt(slot.curl, CURLOPT_HTTPHEADER, headers);
+                curl_easy_setopt(slot.curl, CURLOPT_ACCEPT_ENCODING, b"\0");
+                let mut results = slot_results::new();
+                let result = run_one_slot(slot, &mut results);
+                curl_slist_free_all(headers);
+                http_send_info(&mut data);
+                if result == HTTP_OK {
+                    Ok(())
+                } else {
+                    Err((result, self))
+                }
+            })
+            .unwrap();
 
         match receiver.recv() {
             Ok(Either::Left(info)) if info.http_status >= 100 && info.http_status < 300 => {

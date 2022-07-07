@@ -76,30 +76,33 @@ fn version_check_from_repo(when: SystemTime) -> Option<VersionCheck> {
     let child = SharedChild::spawn(&mut cmd).ok().map(Arc::new);
     let thread = child.as_ref().map(move |child| {
         let child = child.clone();
-        thread::spawn(move || {
-            let output = reader.read_all().ok()?;
-            child.wait().ok()?;
-            let mut new_version = None;
-            let current_version = Version::parse(CARGO_PKG_VERSION).unwrap();
-            for [sha1, r] in output
-                .lines()
-                .filter_map(|line| line.splitn_exact(u8::is_ascii_whitespace))
-            {
-                if VERSION_CHECK_REF == ALL_TAG_REFS {
-                    if let Some(version) = r
-                        .strip_prefix(b"refs/tags/")
-                        .and_then(|tag| std::str::from_utf8(tag).ok())
-                        .and_then(parse_version)
-                        .filter(|v| v > new_version.as_ref().unwrap_or(&current_version))
-                    {
-                        new_version = Some(version);
+        thread::Builder::new()
+            .name("version-check".into())
+            .spawn(move || {
+                let output = reader.read_all().ok()?;
+                child.wait().ok()?;
+                let mut new_version = None;
+                let current_version = Version::parse(CARGO_PKG_VERSION).unwrap();
+                for [sha1, r] in output
+                    .lines()
+                    .filter_map(|line| line.splitn_exact(u8::is_ascii_whitespace))
+                {
+                    if VERSION_CHECK_REF == ALL_TAG_REFS {
+                        if let Some(version) = r
+                            .strip_prefix(b"refs/tags/")
+                            .and_then(|tag| std::str::from_utf8(tag).ok())
+                            .and_then(parse_version)
+                            .filter(|v| v > new_version.as_ref().unwrap_or(&current_version))
+                        {
+                            new_version = Some(version);
+                        }
+                    } else if r == VERSION_CHECK_REF.as_bytes() && sha1 != build_commit.as_bytes() {
+                        return std::str::from_utf8(sha1).map(String::from).ok();
                     }
-                } else if r == VERSION_CHECK_REF.as_bytes() && sha1 != build_commit.as_bytes() {
-                    return std::str::from_utf8(sha1).map(String::from).ok();
                 }
-            }
-            new_version.as_ref().map(Version::to_string)
-        })
+                new_version.as_ref().map(Version::to_string)
+            })
+            .unwrap()
     });
     Some(VersionCheck {
         child,

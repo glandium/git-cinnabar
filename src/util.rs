@@ -78,17 +78,20 @@ impl<'a> BufferedReader<'a> {
     fn new_<R: Read + Send + 'static, const BUFSIZE: usize>(r: &'a mut R) -> Self {
         let (sender, receiver) = channel::<ImmutBString>();
         let r = unsafe { std::mem::transmute::<_, &'static mut R>(r) };
-        let thread = std::thread::spawn(move || {
-            loop {
-                let buf = r.take(BUFSIZE as u64).read_all()?;
-                if !buf.is_empty() {
-                    sender.send(buf).unwrap();
-                } else {
-                    break;
+        let thread = std::thread::Builder::new()
+            .name("buffered-reader".into())
+            .spawn(move || {
+                loop {
+                    let buf = r.take(BUFSIZE as u64).read_all()?;
+                    if !buf.is_empty() {
+                        sender.send(buf).unwrap();
+                    } else {
+                        break;
+                    }
                 }
-            }
-            Ok(())
-        });
+                Ok(())
+            })
+            .unwrap();
         BufferedReader {
             thread: Some(thread),
             receiver: Some(receiver),

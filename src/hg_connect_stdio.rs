@@ -9,7 +9,7 @@ use std::mem;
 use std::os::raw::c_int;
 use std::ptr;
 use std::str::FromStr;
-use std::thread::{spawn, JoinHandle};
+use std::thread::{self, JoinHandle};
 
 use bstr::{BStr, BString};
 use itertools::Itertools;
@@ -222,15 +222,20 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
 
     let mut proc_err = unsafe { FdFile::from_raw_fd(proc_err(proc)) };
 
-    conn.thread = Some(spawn(move || {
-        /* Because we read from a raw fd for a pipe, we need to use a raw fd
-         * to send data verbatim to stderr, because it's not necessarily data
-         * that std::io::stderr will like on Windows (i.e. not UTF-8 on e.g.
-         * Japanese locale) */
-        let stderr = unsafe { FdFile::stderr() };
-        let mut writer = PrefixWriter::new("remote: ", stderr);
-        copy(&mut proc_err, &mut writer).unwrap();
-    }));
+    conn.thread = Some(
+        thread::Builder::new()
+            .name("remote-stderr".into())
+            .spawn(move || {
+                /* Because we read from a raw fd for a pipe, we need to use a raw fd
+                 * to send data verbatim to stderr, because it's not necessarily data
+                 * that std::io::stderr will like on Windows (i.e. not UTF-8 on e.g.
+                 * Japanese locale) */
+                let stderr = unsafe { FdFile::stderr() };
+                let mut writer = PrefixWriter::new("remote: ", stderr);
+                copy(&mut proc_err, &mut writer).unwrap();
+            })
+            .unwrap(),
+    );
 
     /* Very old versions of the mercurial server (< 0.9) would ignore
      * unknown commands, and didn't know the "capabilities" command we want
