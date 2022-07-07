@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
 use std::fs::File;
-use std::io::{stderr, BufRead, Cursor, Read, Write};
+use std::io::{stderr, BufRead, Read, Write};
 use std::os::raw::c_int;
 use std::str::FromStr;
 
@@ -94,6 +94,11 @@ impl HgCapabilities {
     }
 }
 
+pub enum UnbundleResponse<'a> {
+    Raw(ImmutBString),
+    Bundlev2(Box<dyn Read + 'a>),
+}
+
 pub trait HgConnectionBase {
     fn get_capability(&self, _name: &[u8]) -> Option<&BStr> {
         None
@@ -120,7 +125,7 @@ pub trait HgWireConnection: HgConnectionBase {
         args: HgArgs,
     ) -> Result<Box<dyn Read + 'a>, ImmutBString>;
 
-    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> ImmutBString;
+    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> UnbundleResponse;
 }
 
 pub trait HgConnection: HgConnectionBase {
@@ -141,7 +146,7 @@ pub trait HgConnection: HgConnectionBase {
         unimplemented!();
     }
 
-    fn unbundle(&mut self, _heads: Option<&[HgChangesetId]>, _input: File) -> ImmutBString {
+    fn unbundle(&mut self, _heads: Option<&[HgChangesetId]>, _input: File) -> UnbundleResponse {
         unimplemented!();
     }
 
@@ -228,7 +233,7 @@ impl HgConnection for Box<dyn HgWireConnection> {
         self.changegroup_command("getbundle", args!(*: &args[..]))
     }
 
-    fn unbundle(&mut self, heads: Option<&[HgChangesetId]>, input: File) -> ImmutBString {
+    fn unbundle(&mut self, heads: Option<&[HgChangesetId]>, input: File) -> UnbundleResponse {
         let heads_str = if let Some(heads) = heads {
             if self.get_capability(b"unbundlehash").is_none() {
                 heads.iter().join(" ")
@@ -447,28 +452,31 @@ fn do_unbundle(
 
     let file = File::open(path).unwrap();
     let response = conn.unbundle(heads.as_deref(), file);
-    if response.starts_with_str("HG20") {
-        let mut bundle = BundleReader::new(Cursor::new(response)).unwrap();
-        while let Some(part) = bundle.next_part().unwrap() {
-            match part.part_type.as_bytes() {
-                b"reply:changegroup" => {
-                    // TODO: should check in-reply-to param.
-                    let response = part.params.get("return").unwrap();
-                    send_buffer_to(response.as_bytes(), out);
-                }
-                b"error:abort" => {
-                    let mut message = part.params.get("message").unwrap().to_string();
-                    if let Some(hint) = part.params.get("hint") {
-                        message.push_str("\n\n");
-                        message.push_str(hint);
+    match response {
+        UnbundleResponse::Bundlev2(data) => {
+            let mut bundle = BundleReader::new(data).unwrap();
+            while let Some(part) = bundle.next_part().unwrap() {
+                match part.part_type.as_bytes() {
+                    b"reply:changegroup" => {
+                        // TODO: should check in-reply-to param.
+                        let response = part.params.get("return").unwrap();
+                        send_buffer_to(response.as_bytes(), out);
                     }
-                    error!(target: "root", "{}", message);
+                    b"error:abort" => {
+                        let mut message = part.params.get("message").unwrap().to_string();
+                        if let Some(hint) = part.params.get("hint") {
+                            message.push_str("\n\n");
+                            message.push_str(hint);
+                        }
+                        error!(target: "root", "{}", message);
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
-    } else {
-        send_buffer_to(&*response, out);
+        UnbundleResponse::Raw(response) => {
+            send_buffer_to(&*response, out);
+        }
     }
 }
 

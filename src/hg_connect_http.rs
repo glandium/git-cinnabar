@@ -36,6 +36,7 @@ use crate::args;
 use crate::hg_bundle::{BundleConnection, DecompressBundleReader};
 use crate::hg_connect::{
     HgArgs, HgCapabilities, HgConnection, HgConnectionBase, HgWireConnection, OneHgArg,
+    UnbundleResponse,
 };
 use crate::libgit::{
     credential_fill, curl_errorstr, get_active_slot, http_auth, http_follow_config, run_one_slot,
@@ -527,7 +528,7 @@ impl HgWireConnection for HgHttpConnection {
         }
     }
 
-    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> ImmutBString {
+    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> UnbundleResponse {
         let mut http_req = self.start_command_request(command, args);
         http_req.post_data(Box::new(input));
         http_req.header("Content-Type", "application/mercurial-0.1");
@@ -535,7 +536,7 @@ impl HgWireConnection for HgHttpConnection {
         self.handle_redirect(&http_resp);
         let header = (&mut http_resp).take(4).read_all().unwrap();
         if &*header == b"HG20" {
-            Cursor::new(header).chain(http_resp).read_all().unwrap()
+            UnbundleResponse::Bundlev2(Box::new(Cursor::new(header).chain(http_resp)))
         } else {
             let stderr = stderr();
             let mut buf = header.to_vec();
@@ -544,7 +545,7 @@ impl HgWireConnection for HgHttpConnection {
                 Some([stdout_, stderr_]) => {
                     let mut writer = PrefixWriter::new("remote: ", stderr.lock());
                     writer.write_all(stderr_).unwrap();
-                    stdout_.to_boxed()
+                    UnbundleResponse::Raw(stdout_.to_boxed())
                 }
                 //TODO: better eror handling.
                 _ => panic!("Bad output from server"),

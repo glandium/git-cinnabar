@@ -17,9 +17,10 @@ use percent_encoding::percent_decode_str;
 use url::Url;
 
 use crate::args;
-use crate::hg_bundle::{copy_bundle, BundleConnection, DecompressBundleReader};
+use crate::hg_bundle::{BundleConnection, DecompressBundleReader};
 use crate::hg_connect::{
     HgArgs, HgCapabilities, HgConnection, HgConnectionBase, HgWireConnection, OneHgArg,
+    UnbundleResponse,
 };
 use crate::libc::FdFile;
 use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
@@ -107,7 +108,7 @@ impl HgWireConnection for HgStdioConnection {
         }
     }
 
-    fn push_command(&mut self, mut input: File, command: &str, args: HgArgs) -> ImmutBString {
+    fn push_command(&mut self, mut input: File, command: &str, args: HgArgs) -> UnbundleResponse {
         stdio_send_command(self, command, args);
         /* The server normally sends an empty response before reading the data
          * it's sent if not, it's an error (typically, the remote will
@@ -133,14 +134,12 @@ impl HgWireConnection for HgStdioConnection {
 
         self.proc_in.write_all(b"0\n").unwrap();
         if is_bundle2 {
-            let mut response = Vec::new();
-            copy_bundle(&mut self.proc_out, &mut response).unwrap();
-            response.into()
+            UnbundleResponse::Bundlev2(Box::new(&mut self.proc_out))
         } else {
             /* There are two responses, one for output, one for actual response. */
             //TODO: actually handle output here
             drop(stdio_read_response(self));
-            stdio_read_response(self)
+            UnbundleResponse::Raw(stdio_read_response(self))
         }
     }
 }
