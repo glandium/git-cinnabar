@@ -103,11 +103,6 @@ class FileFindParents(object):
         return file.node == file.sha1
 
 
-class GeneratedManifestInfo(Manifest):
-    def __init__(self, node):
-        super(GeneratedManifestInfo, self).__init__(node)
-
-
 class TagSet(object):
     def __init__(self):
         self._tags = OrderedDict()
@@ -392,7 +387,7 @@ class GitHgStore(object):
         return path[1:].replace(b'/_', b'/')
 
     def manifest(self, sha1, include_parents=False):
-        manifest = GeneratedManifestInfo(sha1)
+        manifest = Manifest(sha1)
         manifest.raw_data = GitHgHelper.manifest(sha1)
         if include_parents:
             git_sha1 = self.manifest_ref(sha1)
