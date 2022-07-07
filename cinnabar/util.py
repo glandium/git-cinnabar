@@ -9,11 +9,6 @@ from collections import (
     OrderedDict,
 )
 from collections.abc import Iterable
-from difflib import (
-    Match,
-    SequenceMatcher,
-)
-from itertools import chain
 from weakref import WeakKeyDictionary
 
 from cinnabar.exceptions import Abort, SilentlyAbort
@@ -246,31 +241,6 @@ class OrderedDefaultDict(OrderedDict):
     def __missing__(self, key):
         value = self[key] = self._default_factory()
         return value
-
-
-def _iter_diff_blocks(a, b):
-    m = SequenceMatcher(a=a, b=b, autojunk=False).get_matching_blocks()
-    for start, end in zip(chain((Match(0, 0, 0),), m), m):
-        if start.a + start.size != end.a or start.b + start.size != end.b:
-            yield start.a + start.size, end.a, start.b + start.size, end.b
-
-
-def byte_diff(a, b):
-    '''Given two strings, returns the diff between them, at the byte level.
-
-    Yields start offset in a, end offset in a and replacement string for
-    each difference. Far from optimal results, but works well enough.'''
-    a = tuple(a.splitlines(True))
-    b = tuple(b.splitlines(True))
-    offset = 0
-    last = 0
-    for start_a, end_a, start_b, end_b in _iter_diff_blocks(a, b):
-        a2 = b''.join(a[start_a:end_a])
-        b2 = b''.join(b[start_b:end_b])
-        offset += sum(len(i) for i in a[last:start_a])
-        last = start_a
-        for start2_a, end2_a, start2_b, end2_b in _iter_diff_blocks(a2, b2):
-            yield offset + start2_a, offset + end2_a, b2[start2_b:end2_b]
 
 
 def sorted_merge(iter_a, iter_b, key=lambda i: i[0], non_key=lambda i: i[1:]):
