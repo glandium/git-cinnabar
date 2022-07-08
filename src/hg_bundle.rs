@@ -370,15 +370,23 @@ impl<'a> BundleReader<'a> {
         })
     }
 
-    pub fn next_part(&mut self) -> io::Result<Option<BundlePart<impl Read + 'a>>> {
+    pub fn next_part(&mut self) -> io::Result<Option<BundlePart>> {
+        let reader = {
+            let (cursor, _) = self.reader.get_mut();
+            if cursor.position() >= cursor.get_ref().as_ref().len() as u64 {
+                &mut **self.reader.get_mut().1
+            } else {
+                &mut self.reader
+            }
+        };
         match self.remaining.take() {
             None => return Ok(None),
             Some(0) => {}
             Some(len) => {
                 assert_eq!(self.version, BundleVersion::V2);
                 // Advance past last part if it was not read entirely.
-                copy(&mut (&mut self.reader).take(len.into()), &mut io::sink())?;
-                while copy_bundle2_chunk(&mut self.reader, &mut io::sink())? > 0 {}
+                copy(&mut reader.take(len.into()), &mut io::sink())?;
+                while copy_bundle2_chunk(reader, &mut io::sink())? > 0 {}
             }
         }
         match self.version {
@@ -387,12 +395,12 @@ impl<'a> BundleReader<'a> {
                 part_type: "changegroup".to_string().into_boxed_str(),
                 part_id: 0,
                 params: HashMap::new(),
-                reader: &mut self.reader,
+                reader,
                 version: self.version,
                 remaining: self.remaining.as_mut(),
             })),
             BundleVersion::V2 => {
-                let mut header = match read_bundle2_chunk(&mut self.reader) {
+                let mut header = match read_bundle2_chunk(&mut *reader) {
                     Err(e) => return Err(e),
                     Ok(header) if header.is_empty() => {
                         self.remaining = None;
@@ -419,13 +427,13 @@ impl<'a> BundleReader<'a> {
                         ))
                     })
                     .collect::<io::Result<_>>()?;
-                self.remaining = Some(self.reader.read_u32::<BigEndian>()?);
+                self.remaining = Some(reader.read_u32::<BigEndian>()?);
                 Ok(Some(BundlePart {
                     mandatory,
                     part_type,
                     part_id,
                     params,
-                    reader: &mut self.reader,
+                    reader,
                     version: self.version,
                     remaining: self.remaining.as_mut(),
                 }))
@@ -434,17 +442,17 @@ impl<'a> BundleReader<'a> {
     }
 }
 
-pub struct BundlePart<'a, R: Read> {
+pub struct BundlePart<'a> {
     pub mandatory: bool,
     pub part_type: Box<str>,
     part_id: u32,
     pub params: HashMap<Box<str>, Box<str>>,
-    reader: &'a mut R,
+    reader: &'a mut dyn Read,
     version: BundleVersion,
     remaining: Option<&'a mut u32>,
 }
 
-impl<'a, R: Read> Read for BundlePart<'a, R> {
+impl<'a> Read for BundlePart<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self.version {
             BundleVersion::V1 => {
