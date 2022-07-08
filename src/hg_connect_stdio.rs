@@ -17,7 +17,7 @@ use percent_encoding::percent_decode_str;
 use url::Url;
 
 use crate::args;
-use crate::hg_bundle::{BundleConnection, DecompressBundleReader};
+use crate::hg_bundle::BundleConnection;
 use crate::hg_connect::{
     HgArgs, HgCapabilities, HgConnection, HgConnectionBase, HgWireConnection, OneHgArg,
     UnbundleResponse,
@@ -191,9 +191,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
     } else {
         let path = url.to_file_path().unwrap();
         if path.metadata().map(|m| m.is_file()).unwrap_or(false) {
-            return Some(Box::new(BundleConnection::new(
-                DecompressBundleReader::new(File::open(path).unwrap()),
-            )));
+            return Some(Box::new(BundleConnection::new(File::open(path).unwrap())));
         }
         path.as_os_str().as_bytes().to_owned()
     };

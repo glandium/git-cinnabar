@@ -33,7 +33,7 @@ use url::{form_urlencoded, Url};
 use zstd::stream::read::Decoder as ZstdDecoder;
 
 use crate::args;
-use crate::hg_bundle::{BundleConnection, DecompressBundleReader};
+use crate::hg_bundle::BundleConnection;
 use crate::hg_connect::{
     HgArgs, HgCapabilities, HgConnection, HgConnectionBase, HgWireConnection, OneHgArg,
     UnbundleResponse,
@@ -620,7 +620,7 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
     match &*header {
         b"HG10" | b"HG20" => Some(Box::new(BundleConnection::new(
             HttpConnectionHoldingReader {
-                reader: DecompressBundleReader::new(Cursor::new(header).chain(http_resp)),
+                reader: Cursor::new(header).chain(http_resp),
                 conn,
             },
         ))),
