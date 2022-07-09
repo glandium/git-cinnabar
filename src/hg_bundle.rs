@@ -599,8 +599,8 @@ impl<'a> Drop for BundleWriter<'a> {
     fn drop(&mut self) {
         if self.version == BundleVersion::V2 {
             write_bundle2_chunk(&mut *self.writer, &[]).unwrap();
-            self.writer.flush().unwrap();
         }
+        self.writer.flush().unwrap();
     }
 }
 
@@ -634,8 +634,8 @@ impl<'a, const CHUNK_SIZE: usize> Drop for BundlePartWriter<'a, CHUNK_SIZE> {
         self.flush_buf_as_chunk().unwrap();
         if self.bundle2_buf.is_some() {
             write_bundle2_chunk(&mut *self.writer, &[]).unwrap();
-            self.writer.flush().unwrap();
         }
+        self.writer.flush().unwrap();
     }
 }
 
