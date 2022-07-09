@@ -23,10 +23,13 @@ use getset::{CopyGetters, Getters};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use percent_encoding::{percent_decode, percent_encode, NON_ALPHANUMERIC};
+use tee::TeeReader;
 use url::{Host, Url};
 
 use crate::graft::{graft, grafted, GraftError};
-use crate::hg_bundle::{read_rev_chunk, rev_chunk, BundleSaver, RevChunkIter};
+use crate::hg_bundle::{
+    read_rev_chunk, rev_chunk, BundlePartInfo, BundleSpec, BundleWriter, RevChunkIter,
+};
 use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
@@ -1155,8 +1158,14 @@ pub fn store_changegroup<R: Read>(mut input: R, version: u8) {
         ensure_store_init();
     }
     let mut bundle = strbuf::new();
+    let mut bundle_writer = None;
     let mut input = if check_enabled(Checks::UNBUNDLER) && env::var("GIT_DIR").is_ok() {
-        Box::new(BundleSaver::new(input, &mut bundle, version)) as Box<dyn Read>
+        bundle_writer = Some(BundleWriter::new(BundleSpec::V2None, &mut bundle).unwrap());
+        let bundle_writer = bundle_writer.as_mut().unwrap();
+        let info =
+            BundlePartInfo::new(0, "changegroup").set_param("version", &format!("{:02}", version));
+        let part = bundle_writer.new_part(info).unwrap();
+        Box::new(TeeReader::new(input, part)) as Box<dyn Read>
     } else {
         Box::new(&mut input)
     };
@@ -1282,6 +1291,7 @@ pub fn store_changegroup<R: Read>(mut input: R, version: u8) {
         previous = (changeset_id, raw_changeset);
     }
     drop(input);
+    drop(bundle_writer);
     if !bundle.as_bytes().is_empty() {
         let mut bundle_blob = object_id::default();
         unsafe {

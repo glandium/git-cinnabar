@@ -12,12 +12,15 @@ use std::str::FromStr;
 use bstr::ByteSlice;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use bzip2::read::BzDecoder;
+use bzip2::write::BzEncoder;
 use derive_more::Deref;
 use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use tee::TeeReader;
 use zstd::stream::read::Decoder as ZstdDecoder;
+use zstd::stream::write::Encoder as ZstdEncoder;
 
 use crate::hg_connect::{HgConnection, HgConnectionBase};
 use crate::progress::Progress;
@@ -109,6 +112,11 @@ pub fn read_bundle2_chunk<R: Read>(mut r: R) -> io::Result<ImmutBString> {
         return Ok(vec![].into_boxed_slice());
     }
     r.read_exactly(len as usize)
+}
+
+pub fn write_bundle2_chunk<W: Write>(mut w: W, chunk: &[u8]) -> io::Result<()> {
+    w.write_u32::<BigEndian>(chunk.len().try_into().unwrap())?;
+    w.write_all(chunk)
 }
 
 fn copy_chunk<R: Read + ?Sized, W: Write + ?Sized>(
@@ -249,40 +257,6 @@ impl<'a> Iterator for RevDiffIter<'a> {
             end: self.0.end,
             data: self.0.data.as_bytes().to_vec().into_boxed_slice(),
         })
-    }
-}
-
-pub struct BundleSaver<R: Read, W: Write> {
-    reader: R,
-    writer: W,
-}
-
-impl<R: Read, W: Write> BundleSaver<R, W> {
-    pub fn new(reader: R, mut writer: W, version: u8) -> Self {
-        writer.write_all(b"HG20\0\0\0\0").unwrap();
-        writer
-            .write_all(b"\0\0\0\x1d\x0bCHANGEGROUP\0\0\0\0")
-            .unwrap();
-        writer.write_all(b"\x01\x00\x07\x02version").unwrap();
-        writer
-            .write_all(format!("{:02}", version).as_bytes())
-            .unwrap();
-        BundleSaver { reader, writer }
-    }
-}
-
-impl<R: Read, W: Write> Drop for BundleSaver<R, W> {
-    fn drop(&mut self) {
-        self.writer.write_all(b"\0\0\0\0\0\0\0\0").unwrap();
-    }
-}
-
-impl<R: Read, W: Write> Read for BundleSaver<R, W> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = self.reader.read(buf)?;
-        self.writer.write_u32::<BigEndian>(n.try_into().unwrap())?;
-        self.writer.write_all(&buf[..n]).unwrap();
-        Ok(n)
     }
 }
 
@@ -603,6 +577,207 @@ impl<'a> Read for BundlePartReader<'a> {
             }
         }
     }
+}
+
+pub struct BundleWriter<'a> {
+    writer: Box<dyn Write + 'a>,
+    version: BundleVersion,
+    last_part_id: Option<u32>,
+}
+
+impl<'a> BundleWriter<'a> {
+    pub fn new(spec: BundleSpec, mut writer: impl Write + 'a) -> io::Result<Self> {
+        match spec {
+            BundleSpec::V1None => writer.write_all(b"HG10UN")?,
+            BundleSpec::V1Gzip => writer.write_all(b"HG10GZ")?,
+            BundleSpec::V1Bzip => writer.write_all(b"HG10")?, // The BzEncoder will add the "BZ".
+            BundleSpec::V2None => writer.write_all(b"HG20\0\0\0\0")?,
+            BundleSpec::V2Gzip => writer.write_all(b"HG20\0\0\0\x0eCompression=GZ")?,
+            BundleSpec::V2Bzip => writer.write_all(b"HG20\0\0\0\x0eCompression=BZ")?,
+            BundleSpec::V2Zstd => writer.write_all(b"HG20\0\0\0\x0eCompression=ZS")?,
+        }
+        let writer = match spec {
+            BundleSpec::V1None | BundleSpec::V2None => Box::from(writer) as Box<dyn Write>,
+            BundleSpec::V1Gzip | BundleSpec::V2Gzip => {
+                Box::new(ZlibEncoder::new(writer, flate2::Compression::default()))
+            }
+            BundleSpec::V1Bzip | BundleSpec::V2Bzip => {
+                Box::new(BzEncoder::new(writer, bzip2::Compression::default()))
+            }
+            BundleSpec::V2Zstd => Box::from(ZstdEncoder::new(writer, 0).unwrap()),
+        };
+        Ok(BundleWriter {
+            writer,
+            version: match spec {
+                BundleSpec::V1None | BundleSpec::V1Gzip | BundleSpec::V1Bzip => BundleVersion::V1,
+                BundleSpec::V2None
+                | BundleSpec::V2Gzip
+                | BundleSpec::V2Bzip
+                | BundleSpec::V2Zstd => BundleVersion::V2,
+            },
+            last_part_id: None,
+        })
+    }
+
+    pub fn new_part(&mut self, info: BundlePartInfo) -> io::Result<BundlePartWriter<32768>> {
+        match self.version {
+            BundleVersion::V1 => {
+                assert!(self.last_part_id.is_none());
+                assert_eq!(&*info.part_type, "changegroup");
+                assert_eq!(info.get_param("version"), Some("01"));
+                assert_eq!(info.params.len(), 1);
+            }
+            BundleVersion::V2 => {
+                assert_ge!(
+                    info.part_id,
+                    self.last_part_id.as_ref().map_or(0, |i| i + 1)
+                );
+                let mut header = Vec::new();
+                info.write_into(&mut header)?;
+                write_bundle2_chunk(&mut *self.writer, &header)?;
+            }
+        };
+        self.last_part_id = Some(info.part_id);
+        Ok(BundlePartWriter::new(&mut self.writer, self.version))
+    }
+}
+
+impl<'a> Drop for BundleWriter<'a> {
+    fn drop(&mut self) {
+        if self.version == BundleVersion::V2 {
+            write_bundle2_chunk(&mut *self.writer, &[]).unwrap();
+            self.writer.flush().unwrap();
+        }
+    }
+}
+
+pub struct BundlePartWriter<'a, const CHUNK_SIZE: usize> {
+    writer: &'a mut dyn Write,
+    bundle2_buf: Option<Vec<u8>>,
+}
+
+impl<'a, const CHUNK_SIZE: usize> BundlePartWriter<'a, CHUNK_SIZE> {
+    fn new(writer: &'a mut dyn Write, version: BundleVersion) -> Self {
+        BundlePartWriter {
+            writer,
+            bundle2_buf: match version {
+                BundleVersion::V1 => None,
+                BundleVersion::V2 => Some(Vec::new()),
+            },
+        }
+    }
+
+    fn flush_buf_as_chunk(&mut self) -> io::Result<()> {
+        if let Some(bundle2_buf) = self.bundle2_buf.as_mut() {
+            write_bundle2_chunk(&mut *self.writer, bundle2_buf)?;
+            bundle2_buf.truncate(0);
+        }
+        Ok(())
+    }
+}
+
+impl<'a, const CHUNK_SIZE: usize> Drop for BundlePartWriter<'a, CHUNK_SIZE> {
+    fn drop(&mut self) {
+        self.flush_buf_as_chunk().unwrap();
+        if self.bundle2_buf.is_some() {
+            write_bundle2_chunk(&mut *self.writer, &[]).unwrap();
+            self.writer.flush().unwrap();
+        }
+    }
+}
+
+impl<'a, const CHUNK_SIZE: usize> Write for BundlePartWriter<'a, CHUNK_SIZE> {
+    fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
+        if let Some(bundle2_buf) = self.bundle2_buf.as_mut() {
+            let full_len = buf.len();
+            while bundle2_buf.len() + buf.len() >= CHUNK_SIZE {
+                self.writer.write_u32::<BigEndian>(CHUNK_SIZE as u32)?;
+                if !bundle2_buf.is_empty() {
+                    self.writer.write_all(bundle2_buf)?;
+                }
+                let remaining = CHUNK_SIZE - bundle2_buf.len();
+                bundle2_buf.truncate(0);
+                self.writer.write_all(&buf[..remaining])?;
+                buf = &buf[remaining..];
+            }
+            bundle2_buf.extend_from_slice(buf);
+            Ok(full_len)
+        } else {
+            self.writer.write(buf)
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.flush_buf_as_chunk()?;
+        self.writer.flush()
+    }
+}
+
+#[test]
+fn test_bundle_part_writer() {
+    fn fill<W: Write>(mut writer: W, flush: bool) {
+        assert_eq!(writer.write(b"a").unwrap(), 1);
+        if flush {
+            writer.flush().unwrap();
+        }
+        assert_eq!(writer.write(b"bcd").unwrap(), 3);
+        if flush {
+            writer.flush().unwrap();
+        }
+        assert_eq!(writer.write(b"efg").unwrap(), 3);
+        assert_eq!(writer.write(b"hijk").unwrap(), 4);
+        assert_eq!(writer.write(b"lmnop").unwrap(), 5);
+        if flush {
+            writer.flush().unwrap();
+        }
+        assert_eq!(writer.write(b"qrstuvwxyz").unwrap(), 10);
+        assert_eq!(writer.write(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ").unwrap(), 26);
+    }
+
+    let mut buf = Vec::new();
+    let writer = BundlePartWriter::<8>::new(&mut buf, BundleVersion::V1);
+    fill(writer, true);
+
+    assert_eq!(
+        buf.as_bstr(),
+        b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".as_bstr(),
+    );
+
+    buf.truncate(0);
+    let writer = BundlePartWriter::<8>::new(&mut buf, BundleVersion::V2);
+    fill(writer, false);
+
+    assert_eq!(
+        buf.as_bstr(),
+        b"\0\0\0\x08abcdefgh\
+          \0\0\0\x08ijklmnop\
+          \0\0\0\x08qrstuvwx\
+          \0\0\0\x08yzABCDEF\
+          \0\0\0\x08GHIJKLMN\
+          \0\0\0\x08OPQRSTUV\
+          \0\0\0\x04WXYZ\
+          \0\0\0\0"
+            .as_bstr()
+    );
+
+    buf.truncate(0);
+    let writer = BundlePartWriter::<8>::new(&mut buf, BundleVersion::V2);
+    fill(writer, true);
+
+    assert_eq!(
+        buf.as_bstr(),
+        b"\0\0\0\x01a\
+          \0\0\0\x03bcd\
+          \0\0\0\x08efghijkl\
+          \0\0\0\x04mnop\
+          \0\0\0\x08qrstuvwx\
+          \0\0\0\x08yzABCDEF\
+          \0\0\0\x08GHIJKLMN\
+          \0\0\0\x08OPQRSTUV\
+          \0\0\0\x04WXYZ\
+          \0\0\0\0"
+            .as_bstr()
+    );
 }
 
 pub struct BundleConnection<R: Read> {
