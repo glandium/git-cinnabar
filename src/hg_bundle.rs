@@ -223,33 +223,42 @@ pub enum BundleSpec {
     V2Zstd,
 }
 
+impl FromStr for BundleSpec {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "none-v1" => BundleSpec::V1None,
+            "gzip-v1" => BundleSpec::V1Gzip,
+            "bzip2-v1" => BundleSpec::V1Bzip,
+            "none-v2" => BundleSpec::V2None,
+            "gzip-v2" => BundleSpec::V2Gzip,
+            "bzip2-v2" => BundleSpec::V2Bzip,
+            "zstd-v2" => BundleSpec::V2Zstd,
+            _ => {
+                if let Some([compression, version]) = s.splitn_exact('-') {
+                    if !["none", "gzip", "bzip2", "zstd"].contains(&compression) {
+                        return Err(format!("unsupported compression: {}", compression));
+                    }
+                    if !["v1", "v2"].contains(&version) {
+                        return Err(format!("unsupported bundle version: {}", version));
+                    }
+                }
+                return Err(format!("unsupported bundle spec: {}", s));
+            }
+        })
+    }
+}
+
 impl TryFrom<&[u8]> for BundleSpec {
     type Error = String;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        Ok(match value {
-            b"none-v1" => BundleSpec::V1None,
-            b"gzip-v1" => BundleSpec::V1Gzip,
-            b"bzip2-v1" => BundleSpec::V1Bzip,
-            b"none-v2" => BundleSpec::V2None,
-            b"gzip-v2" => BundleSpec::V2Gzip,
-            b"bzip2-v2" => BundleSpec::V2Bzip,
-            b"zstd-v2" => BundleSpec::V2Zstd,
-            _ => {
-                if let Some([compression, version]) = value.splitn_exact(b'-') {
-                    if ![&b"none"[..], b"gzip", b"bzip2", b"zstd"].contains(&compression) {
-                        return Err(format!(
-                            "unsupported compression: {}",
-                            compression.as_bstr()
-                        ));
-                    }
-                    if ![&b"v1"[..], b"v2"].contains(&version) {
-                        return Err(format!("unsupported bundle version: {}", version.as_bstr()));
-                    }
-                }
-                return Err(format!("unsupported bundle spec: {}", value.as_bstr()));
-            }
-        })
+        BundleSpec::from_str(
+            value
+                .to_str()
+                .map_err(|_| format!("unsupported bundle spec: {}", value.as_bstr()))?,
+        )
     }
 }
 

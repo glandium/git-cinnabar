@@ -45,6 +45,7 @@ extern crate all_asserts;
 extern crate log;
 
 use clap::{crate_version, AppSettings, ArgGroup, Parser};
+use hg_bundle::BundleSpec;
 use itertools::Itertools;
 use sha1::{Digest, Sha1};
 
@@ -2235,6 +2236,11 @@ enum CinnabarCommand {
         #[clap(possible_values = &["1", "2"])]
         #[clap(help = "Bundle version")]
         version: u8,
+        #[clap(long)]
+        #[clap(short)]
+        #[clap(help = "Type of bundle (bundlespec)")]
+        #[clap(conflicts_with = "version")]
+        r#type: Option<BundleSpec>,
         #[clap(help = "Path of the bundle")]
         #[clap(parse(from_os_str))]
         #[clap(allow_invalid_utf8 = true)]

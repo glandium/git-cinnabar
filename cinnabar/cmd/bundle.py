@@ -11,6 +11,7 @@ from cinnabar.hg.bundle import (
 @CLI.argument('--version', choices=(1, 2), type=int,
               default=2,
               help='bundle version')
+@CLI.argument('-t', '--type', help='bundlespec')
 @CLI.argument('path', help='path of the bundle')
 @CLI.argument('rev', nargs='+',
               help='git revision range (see the Specifying Ranges'
@@ -28,11 +29,15 @@ def bundle(args):
         kwargs = {
             'path': args.path,
         }
-        if args.version == 1:
+        if args.type:
+            kwargs['bundlespec'] = args.type.encode('ascii')
+        elif args.version == 1:
             kwargs['bundlespec'] = b'none-v1'
-            kwargs['cg_version'] = b'01'
         elif args.version == 2:
             kwargs['bundlespec'] = b'none-v2'
+        if b'-v1' in kwargs['bundlespec']:
+            kwargs['cg_version'] = b'01'
+        else:
             kwargs['cg_version'] = b'02'
         create_bundle(store, bundle_commits, **kwargs)
         store.close(rollback=True)
