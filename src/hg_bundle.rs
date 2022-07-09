@@ -370,7 +370,7 @@ impl<'a> BundleReader<'a> {
         })
     }
 
-    pub fn next_part(&mut self) -> io::Result<Option<BundlePart>> {
+    pub fn next_part(&mut self) -> io::Result<Option<BundlePartReader>> {
         let reader = {
             let (cursor, _) = self.reader.get_mut();
             if cursor.position() >= cursor.get_ref().as_ref().len() as u64 {
@@ -390,7 +390,7 @@ impl<'a> BundleReader<'a> {
             }
         }
         match self.version {
-            BundleVersion::V1 => Ok(Some(BundlePart {
+            BundleVersion::V1 => Ok(Some(BundlePartReader {
                 mandatory: true,
                 part_type: "changegroup".to_string().into_boxed_str(),
                 part_id: 0,
@@ -428,7 +428,7 @@ impl<'a> BundleReader<'a> {
                     })
                     .collect::<io::Result<_>>()?;
                 self.remaining = Some(reader.read_u32::<BigEndian>()?);
-                Ok(Some(BundlePart {
+                Ok(Some(BundlePartReader {
                     mandatory,
                     part_type,
                     part_id,
@@ -442,7 +442,7 @@ impl<'a> BundleReader<'a> {
     }
 }
 
-pub struct BundlePart<'a> {
+pub struct BundlePartReader<'a> {
     pub mandatory: bool,
     pub part_type: Box<str>,
     part_id: u32,
@@ -452,7 +452,7 @@ pub struct BundlePart<'a> {
     remaining: Option<&'a mut u32>,
 }
 
-impl<'a> Read for BundlePart<'a> {
+impl<'a> Read for BundlePartReader<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self.version {
             BundleVersion::V1 => {
