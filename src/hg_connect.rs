@@ -15,7 +15,7 @@ use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERI
 use sha1::{Digest, Sha1};
 use url::Url;
 
-use crate::hg_bundle::{copy_bundle, BundleReader};
+use crate::hg_bundle::{copy_bundle, BundleReader, BundleSpec};
 use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libcinnabar::send_buffer_to;
@@ -626,9 +626,6 @@ fn do_cinnabarclone(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl W
 }
 
 fn can_use_clonebundle(line: &[u8]) -> Result<Option<Url>, String> {
-    const SUPPORTED_BUNDLES: [&[u8]; 2] = [b"v1", b"v2"];
-    const SUPPORTED_COMPRESSIONS: [&[u8]; 4] = [b"none", b"gzip", b"bzip2", b"zstd"];
-
     let mut line = line.splitn(2, |&b| b == b' ');
     let url = match line.next() {
         None => return Ok(None),
@@ -667,21 +664,7 @@ fn can_use_clonebundle(line: &[u8]) -> Result<Option<Url>, String> {
         .and_then(|attrs| attrs.get(b"BUNDLESPEC".as_bstr()))
         .ok_or("missing BUNDLE_SPEC")?
         .split(|&b| b == b';');
-    if let Some([compression, version]) = bundlespec
-        .next()
-        .ok_or("empty BUNDLESPEC?")?
-        .splitn_exact(b'-')
-    {
-        if !SUPPORTED_COMPRESSIONS.contains(&compression) {
-            return Err(format!(
-                "unsupported compression: {}",
-                compression.as_bstr()
-            ))?;
-        }
-        if !SUPPORTED_BUNDLES.contains(&version) {
-            return Err(format!("unsupported bundle type: {}", version.as_bstr()))?;
-        }
-    }
+    BundleSpec::try_from(bundlespec.next().ok_or("empty BUNDLESPEC?")?)?;
     let params = bundlespec
         .map(|b| {
             b.splitn_exact::<2>(b'=')

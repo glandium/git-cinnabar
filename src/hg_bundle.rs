@@ -292,6 +292,46 @@ pub enum BundleVersion {
     V2,
 }
 
+pub enum BundleSpec {
+    V1None,
+    V1Gzip,
+    V1Bzip,
+    V2None,
+    V2Gzip,
+    V2Bzip,
+    V2Zstd,
+}
+
+impl TryFrom<&[u8]> for BundleSpec {
+    type Error = String;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        Ok(match value {
+            b"none-v1" => BundleSpec::V1None,
+            b"gzip-v1" => BundleSpec::V1Gzip,
+            b"bzip2-v1" => BundleSpec::V1Bzip,
+            b"none-v2" => BundleSpec::V2None,
+            b"gzip-v2" => BundleSpec::V2Gzip,
+            b"bzip2-v2" => BundleSpec::V2Bzip,
+            b"zstd-v2" => BundleSpec::V2Zstd,
+            _ => {
+                if let Some([compression, version]) = value.splitn_exact(b'-') {
+                    if ![&b"none"[..], b"gzip", b"bzip2", b"zstd"].contains(&compression) {
+                        return Err(format!(
+                            "unsupported compression: {}",
+                            compression.as_bstr()
+                        ));
+                    }
+                    if ![&b"v1"[..], b"v2"].contains(&version) {
+                        return Err(format!("unsupported bundle version: {}", version.as_bstr()));
+                    }
+                }
+                return Err(format!("unsupported bundle spec: {}", value.as_bstr()));
+            }
+        })
+    }
+}
+
 pub struct BundleReader<'a> {
     reader: Chain<Cursor<ImmutBString>, Box<dyn Read + 'a>>,
     version: BundleVersion,
