@@ -1160,7 +1160,7 @@ pub fn store_changegroup<R: Read>(mut input: R, version: u8) {
     let mut bundle = strbuf::new();
     let mut bundle_writer = None;
     let mut input = if check_enabled(Checks::UNBUNDLER) && env::var("GIT_DIR").is_ok() {
-        bundle_writer = Some(BundleWriter::new(BundleSpec::V2None, &mut bundle).unwrap());
+        bundle_writer = Some(BundleWriter::new(BundleSpec::V2Zstd, &mut bundle).unwrap());
         let bundle_writer = bundle_writer.as_mut().unwrap();
         let info =
             BundlePartInfo::new(0, "changegroup").set_param("version", &format!("{:02}", version));
