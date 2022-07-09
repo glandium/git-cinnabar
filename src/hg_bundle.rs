@@ -419,7 +419,7 @@ pub struct BundlePartInfo {
     pub mandatory: bool,
     pub part_type: Box<str>,
     part_id: u32,
-    pub params: HashMap<Box<str>, Box<str>>,
+    params: HashMap<Box<str>, Box<str>>,
 }
 
 impl BundlePartInfo {
@@ -458,6 +458,10 @@ impl BundlePartInfo {
             part_id,
             params,
         })
+    }
+
+    pub fn get_param(&self, name: &str) -> Option<&str> {
+        self.params.get(name).map(|v| &**v)
     }
 }
 
@@ -532,8 +536,7 @@ impl<R: Read> BundleConnection<R> {
                 continue;
             }
             let version = part
-                .params
-                .get("version")
+                .get_param("version")
                 .map_or(1, |v| u8::from_str(v).unwrap());
             let empty_cs = RawHgChangeset(Box::new([]));
             // TODO: share more code with the equivalent loop in store.rs.

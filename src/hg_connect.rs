@@ -497,8 +497,7 @@ pub fn get_store_bundle(
             while let Some(part) = bundle.next_part().unwrap() {
                 if &*part.part_type == "changegroup" {
                     let version = part
-                        .params
-                        .get("version")
+                        .get_param("version")
                         .map_or(1, |v| u8::from_str(v).unwrap());
                     let _locked = HELPER_LOCK.lock().unwrap();
                     store_changegroup(part, version);
@@ -546,12 +545,12 @@ fn do_unbundle(
                 match part.part_type.as_bytes() {
                     b"reply:changegroup" => {
                         // TODO: should check in-reply-to param.
-                        let response = part.params.get("return").unwrap();
+                        let response = part.get_param("return").unwrap();
                         send_buffer_to(response.as_bytes(), out);
                     }
                     b"error:abort" => {
-                        let mut message = part.params.get("message").unwrap().to_string();
-                        if let Some(hint) = part.params.get("hint") {
+                        let mut message = part.get_param("message").unwrap().to_string();
+                        if let Some(hint) = part.get_param("hint") {
                             message.push_str("\n\n");
                             message.push_str(hint);
                         }
