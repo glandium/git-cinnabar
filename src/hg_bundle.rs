@@ -123,27 +123,13 @@ pub fn write_bundle2_chunk<W: Write>(mut w: W, chunk: &[u8]) -> io::Result<()> {
     w.write_all(chunk)
 }
 
-fn copy_chunk<R: Read + ?Sized, W: Write + ?Sized>(
-    adjust: u64,
-    input: &mut R,
-    output: &mut W,
-) -> io::Result<u64> {
-    let mut buf = [0; 4];
-    input.read_exact(&mut buf)?;
-    output.write_all(&buf)?;
-    let len = BigEndian::read_u32(&buf) as u64;
+fn skip_bundle2_chunk<R: Read>(mut r: R) -> io::Result<u64> {
+    let len = r.read_u32::<BigEndian>()? as u64;
     if len == 0 {
         return Ok(0);
     }
     // TODO: should error out on short read
-    copy(&mut input.take(len.checked_sub(adjust).unwrap()), output)
-}
-
-fn copy_bundle2_chunk<R: Read + ?Sized, W: Write + ?Sized>(
-    input: &mut R,
-    output: &mut W,
-) -> io::Result<u64> {
-    copy_chunk(0, input, output)
+    copy(&mut r.take(len.checked_sub(0).unwrap()), &mut io::sink())
 }
 
 pub struct RevChunkIter<R: Read> {
@@ -364,7 +350,7 @@ impl<'a> BundleReader<'a> {
                 assert_eq!(self.version, BundleVersion::V2);
                 // Advance past last part if it was not read entirely.
                 copy(&mut reader.take(len.into()), &mut io::sink())?;
-                while copy_bundle2_chunk(reader, &mut io::sink())? > 0 {}
+                while skip_bundle2_chunk(&mut *reader)? > 0 {}
             }
         }
         match self.version {
