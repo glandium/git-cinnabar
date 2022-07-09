@@ -453,29 +453,23 @@ def bundle_data(store, commits):
     yield None
 
 
-def create_bundle(store, commits, bundle2caps={}, path=None):
-    bundlespec = b'none-v1' if path else b'raw'
-    version = b'01'
-    chunk_type = RawRevChunk01
-    if bundle2caps:
-        bundlespec = b'none-v2'
-        versions = bundle2caps.get(b'changegroup')
-        if versions:
-            if b'02' in versions:
-                chunk_type = RawRevChunk02
-                version = b'02'
+def create_bundle(store, commits, bundlespec=b'raw', cg_version=b'01',
+                  replycaps=None, path=None):
+    if cg_version == b'01':
+        chunk_type = RawRevChunk01
+    elif cg_version == b'02':
+        chunk_type = RawRevChunk02
+
     cg = create_changegroup(store, bundle_data(store, commits), chunk_type)
     with BundleHelper.query(b'create-bundle', bundlespec) as stdout:
         if path:
             stdout.write(b'output %s\0' % path.encode('utf-8'))
-        if bundle2caps:
-            replycaps = bundle2caps.get(b'replycaps')
-            if replycaps:
-                stdout.write(b'part replycaps\0')
-                stdout.write(b'%d\0' % len(replycaps))
-                stdout.write(replycaps)
-                stdout.write(b'0\0')
-        stdout.write(b'part changegroup version %s\0' % version)
+        if replycaps:
+            stdout.write(b'part replycaps\0')
+            stdout.write(b'%d\0' % len(replycaps))
+            stdout.write(replycaps)
+            stdout.write(b'0\0')
+        stdout.write(b'part changegroup version %s\0' % cg_version)
         for chunk in cg:
             stdout.write(b'%d\0' % len(chunk))
             stdout.write(chunk)

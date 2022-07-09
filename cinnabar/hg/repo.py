@@ -439,9 +439,19 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
         if b2caps:
             b2caps = decodecaps(unquote_to_bytes(b2caps))
         logging.getLogger('bundle2').debug('%r', b2caps)
+        kwargs = {}
         if b2caps:
-            b2caps[b'replycaps'] = encodecaps({b'error': [b'abort']})
-        create_bundle(store, push_commits, b2caps)
+            kwargs['bundlespec'] = b'none-v2'
+            versions = b2caps.get(b'changegroup')
+            if versions and b'02' in versions:
+                kwargs['cg_version'] = b'02'
+            else:
+                kwargs['cg_version'] = b'01'
+            kwargs['replycaps'] = encodecaps({b'error': [b'abort']})
+        else:
+            kwargs['bundlespec'] = b'raw'
+            kwargs['cg_version'] = b'01'
+        create_bundle(store, push_commits, **kwargs)
         reply = repo.unbundle(repo_heads, b'')
         pushed = reply != 0
     return gitdag(push_commits) if pushed or dry_run else ()

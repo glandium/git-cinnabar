@@ -25,12 +25,14 @@ def bundle(args):
         # TODO: better UX. For instance, this will fail with an exception when
         # the parent commit doesn't have mercurial metadata.
         store = PushStore()
+        kwargs = {
+            'path': args.path,
+        }
         if args.version == 1:
-            b2caps = {}
+            kwargs['bundlespec'] = b'none-v1'
+            kwargs['cg_version'] = b'01'
         elif args.version == 2:
-            b2caps = {
-                b'HG20': (),
-                b'changegroup': (b'01', b'02'),
-            }
-        create_bundle(store, bundle_commits, b2caps, args.path)
+            kwargs['bundlespec'] = b'none-v2'
+            kwargs['cg_version'] = b'02'
+        create_bundle(store, bundle_commits, **kwargs)
         store.close(rollback=True)
