@@ -32,9 +32,5 @@ def bundle(args):
                 b'HG20': (),
                 b'changegroup': (b'01', b'02'),
             }
-        with open(args.path, 'wb') as fh:
-            if not b2caps:
-                fh.write(b'HG10UN')
-            for data in create_bundle(store, bundle_commits, b2caps):
-                fh.write(data)
+        create_bundle(store, bundle_commits, b2caps, args.path)
         store.close(rollback=True)

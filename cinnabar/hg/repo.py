@@ -208,9 +208,9 @@ class HelperRepo(object):
     def pushkey(self, namespace, key, old, new):
         return self._helper.pushkey(namespace, key, old, new)
 
-    def unbundle(self, cg, heads, *args, **kwargs):
-        return self._helper.unbundle(cg, (hexlify(h) if h != b'force' else h
-                                          for h in heads))
+    def unbundle(self, heads, *args, **kwargs):
+        return self._helper.unbundle((hexlify(h) if h != b'force' else h
+                                      for h in heads))
 
 
 def get_clonebundle_url(repo):
@@ -441,8 +441,8 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
         logging.getLogger('bundle2').debug('%r', b2caps)
         if b2caps:
             b2caps[b'replycaps'] = encodecaps({b'error': [b'abort']})
-        cg = create_bundle(store, push_commits, b2caps)
-        reply = repo.unbundle(cg, repo_heads, b'')
+        create_bundle(store, push_commits, b2caps)
+        reply = repo.unbundle(repo_heads, b'')
         pushed = reply != 0
     return gitdag(push_commits) if pushed or dry_run else ()
 

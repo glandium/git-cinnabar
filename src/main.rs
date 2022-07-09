@@ -2397,7 +2397,7 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
         (None, None)
     };
 
-    let (wire_fds, wire_thread) = if cmd == PythonCommand::GitRemoteHg {
+    let (wire_fds, wire_thread) = {
         let (reader1, writer1) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
         let (reader2, writer2) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
         let reader1 = reader1.dup_inheritable();
@@ -2417,9 +2417,7 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
                 .unwrap();
             })
             .unwrap();
-        (Some((reader1, writer2)), Some(thread))
-    } else {
-        (None, None)
+        ((reader1, writer2), thread)
     };
 
     let (import_fds, import_thread) = {

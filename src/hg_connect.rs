@@ -15,7 +15,7 @@ use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERI
 use sha1::{Digest, Sha1};
 use url::Url;
 
-use crate::hg_bundle::{copy_bundle, BundleReader, BundleSpec};
+use crate::hg_bundle::{do_create_bundle, BundleReader, BundleSpec, BUNDLE_PATH};
 use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libcinnabar::send_buffer_to;
@@ -506,12 +506,7 @@ pub fn get_store_bundle(
         })
 }
 
-fn do_unbundle(
-    conn: &mut dyn HgConnection,
-    args: &[&str],
-    input: &mut impl Read,
-    out: &mut impl Write,
-) {
+fn do_unbundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
     conn.require_capability(b"unbundle");
     let heads = if args.is_empty() || args[..] == ["force"] {
         None
@@ -525,17 +520,9 @@ fn do_unbundle(
 
     /* Neither the stdio nor the HTTP protocols can handle a stream for
      * push commands, so store the data as a temporary file. */
+    // The file was stored earlier via a call to do_create_bundle.
     //TODO: error checking
-    let tempfile = tempfile::Builder::new()
-        .prefix("hg-bundle-")
-        .suffix(".hg")
-        .rand_bytes(6)
-        .tempfile()
-        .unwrap();
-    let (mut f, path) = tempfile.into_parts();
-    copy_bundle(input, &mut f).unwrap();
-    drop(f);
-
+    let path = BUNDLE_PATH.lock().unwrap().take().unwrap();
     let file = File::open(path).unwrap();
     let response = conn.unbundle(heads.as_deref(), file);
     match response {
@@ -759,6 +746,13 @@ pub fn connect_main_with(
             }
             out.flush().unwrap();
             continue;
+        } else if command == "create-bundle" {
+            do_create_bundle(
+                input,
+                &mut *out,
+                &line.as_bytes().split(|&b| b == b' ').skip(1).collect_vec(),
+            );
+            continue;
         }
         if connections.is_empty() {
             return Err(format!("Unknown command: {}", command).into());
@@ -773,7 +767,7 @@ pub fn connect_main_with(
             "known" => do_known(conn, &*args, out),
             "listkeys" => do_listkeys(conn, &*args, out),
             "get_store_bundle" => do_get_store_bundle(conn, &*args, out),
-            "unbundle" => do_unbundle(conn, &*args, input, out),
+            "unbundle" => do_unbundle(conn, &*args, out),
             "pushkey" => do_pushkey(conn, &*args, out),
             "capable" => do_capable(conn, &*args, out),
             "state" => do_state(conn, &*args, out),

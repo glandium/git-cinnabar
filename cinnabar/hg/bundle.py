@@ -6,7 +6,7 @@ from cinnabar.githg import (
     GitCommit,
     GitHgStore,
 )
-from cinnabar.helper import GitHgHelper
+from cinnabar.helper import GitHgHelper, BundleHelper
 from cinnabar.git import (
     EMPTY_BLOB,
     Git,
@@ -14,7 +14,6 @@ from cinnabar.git import (
 )
 from cinnabar.util import (
     check_enabled,
-    chunkbuffer,
     experiment,
     progress_enum,
     progress_iter,
@@ -454,63 +453,36 @@ def bundle_data(store, commits):
     yield None
 
 
-_bundlepart_id = 0
-
-
-def bundlepart_header(name, advisoryparams=()):
-    global _bundlepart_id
-    yield struct.pack('>B', len(name))
-    yield name
-    yield struct.pack('>I', _bundlepart_id)
-    _bundlepart_id += 1
-    yield struct.pack('>BB', 0, len(advisoryparams))
-    for key, value in advisoryparams:
-        yield struct.pack('>BB', len(key), len(value))
-    for key, value in advisoryparams:
-        yield key
-        yield value
-
-
-def bundlepart(name, advisoryparams=(), data=None):
-    header = b''.join(bundlepart_header(name, advisoryparams))
-    yield struct.pack('>i', len(header))
-    yield header
-    while data:
-        chunk = data.read(4096)
-        if chunk:
-            yield struct.pack('>i', len(chunk))
-            yield chunk
-        else:
-            break
-    yield b'\0' * 4  # Empty chunk ending the part
-
-
-def create_bundle(store, commits, bundle2caps={}):
+def create_bundle(store, commits, bundle2caps={}, path=None):
+    bundlespec = b'none-v1' if path else b'raw'
     version = b'01'
     chunk_type = RawRevChunk01
     if bundle2caps:
+        bundlespec = b'none-v2'
         versions = bundle2caps.get(b'changegroup')
         if versions:
             if b'02' in versions:
                 chunk_type = RawRevChunk02
                 version = b'02'
     cg = create_changegroup(store, bundle_data(store, commits), chunk_type)
-    if bundle2caps:
-        yield b'HG20'
-        yield b'\0' * 4  # bundle parameters length: no params
-        replycaps = bundle2caps.get(b'replycaps')
-        if replycaps:
-            for chunk in bundlepart(b'REPLYCAPS',
-                                    data=chunkbuffer([replycaps])):
-                yield chunk
-        for chunk in bundlepart(b'CHANGEGROUP',
-                                advisoryparams=((b'version', version),),
-                                data=chunkbuffer(cg)):
-            yield chunk
-        yield b'\0' * 4  # End of bundle
-    else:
+    with BundleHelper.query(b'create-bundle', bundlespec) as stdout:
+        if path:
+            stdout.write(b'output %s\0' % path.encode('utf-8'))
+        if bundle2caps:
+            replycaps = bundle2caps.get(b'replycaps')
+            if replycaps:
+                stdout.write(b'part replycaps\0')
+                stdout.write(b'%d\0' % len(replycaps))
+                stdout.write(replycaps)
+                stdout.write(b'0\0')
+        stdout.write(b'part changegroup version %s\0' % version)
         for chunk in cg:
-            yield chunk
+            stdout.write(b'%d\0' % len(chunk))
+            stdout.write(chunk)
+        stdout.write(b'0\0EOF\0')
+        stdout.flush()
+        res = stdout.readline().strip()
+        assert res == b'done'
 
 
 def get_previous(store, sha1, type):

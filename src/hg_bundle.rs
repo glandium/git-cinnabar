@@ -3,11 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::collections::BTreeMap;
-use std::io::{self, copy, Chain, Cursor, ErrorKind, Read, Write};
+use std::ffi::OsStr;
+use std::fs::File;
+use std::io::{self, copy, BufRead, Chain, Cursor, ErrorKind, Read, Write};
 use std::mem::{self, MaybeUninit};
 use std::os::raw::c_int;
 use std::ptr::NonNull;
 use std::str::FromStr;
+use std::sync::Mutex;
 
 use bstr::ByteSlice;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
@@ -18,6 +21,7 @@ use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use tee::TeeReader;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
@@ -25,7 +29,7 @@ use zstd::stream::write::Encoder as ZstdEncoder;
 use crate::hg_connect::{HgConnection, HgConnectionBase};
 use crate::progress::Progress;
 use crate::store::{ChangesetHeads, HgChangesetId, RawHgChangeset};
-use crate::util::ToBoxed;
+use crate::util::{OsStrExt, ToBoxed};
 use crate::{
     libcinnabar::hg_object_id,
     libgit::strbuf,
@@ -135,55 +139,11 @@ fn copy_chunk<R: Read + ?Sized, W: Write + ?Sized>(
     copy(&mut input.take(len.checked_sub(adjust).unwrap()), output)
 }
 
-fn copy_changegroup_chunk<R: Read + ?Sized, W: Write + ?Sized>(
-    input: &mut R,
-    output: &mut W,
-) -> io::Result<u64> {
-    copy_chunk(4, input, output)
-}
-
-fn copy_changegroup<R: Read + ?Sized, W: Write + ?Sized>(
-    input: &mut R,
-    output: &mut W,
-) -> io::Result<()> {
-    // changesets
-    while copy_changegroup_chunk(input, output)? > 0 {}
-    // manifests
-    while copy_changegroup_chunk(input, output)? > 0 {}
-    // files
-    while copy_changegroup_chunk(input, output)? > 0 {
-        while copy_changegroup_chunk(input, output)? > 0 {}
-    }
-    Ok(())
-}
-
 fn copy_bundle2_chunk<R: Read + ?Sized, W: Write + ?Sized>(
     input: &mut R,
     output: &mut W,
 ) -> io::Result<u64> {
     copy_chunk(0, input, output)
-}
-
-pub fn copy_bundle<R: Read + ?Sized, W: Write + ?Sized>(
-    input: &mut R,
-    output: &mut W,
-) -> io::Result<()> {
-    let mut buf = [0; 4];
-    input.read_exact(&mut buf)?;
-    output.write_all(&buf)?;
-    if &buf == b"HG20" {
-        // bundle2 parameters
-        copy_bundle2_chunk(input, output)?;
-        // bundle2 parts
-        while copy_bundle2_chunk(input, output)? > 0 {
-            while copy_bundle2_chunk(input, output)? > 0 {}
-        }
-    } else {
-        let len = BigEndian::read_u32(&buf) as u64;
-        copy(&mut input.take(len - 4), output)?;
-        copy_changegroup(input, output)?;
-    }
-    Ok(())
 }
 
 pub struct RevChunkIter<R: Read> {
@@ -267,6 +227,7 @@ pub enum BundleVersion {
 }
 
 pub enum BundleSpec {
+    ChangegroupV1,
     V1None,
     V1Gzip,
     V1Bzip,
@@ -588,6 +549,7 @@ pub struct BundleWriter<'a> {
 impl<'a> BundleWriter<'a> {
     pub fn new(spec: BundleSpec, mut writer: impl Write + 'a) -> io::Result<Self> {
         match spec {
+            BundleSpec::ChangegroupV1 => { /* No header */ }
             BundleSpec::V1None => writer.write_all(b"HG10UN")?,
             BundleSpec::V1Gzip => writer.write_all(b"HG10GZ")?,
             BundleSpec::V1Bzip => writer.write_all(b"HG10")?, // The BzEncoder will add the "BZ".
@@ -597,7 +559,9 @@ impl<'a> BundleWriter<'a> {
             BundleSpec::V2Zstd => writer.write_all(b"HG20\0\0\0\x0eCompression=ZS")?,
         }
         let writer = match spec {
-            BundleSpec::V1None | BundleSpec::V2None => Box::from(writer) as Box<dyn Write>,
+            BundleSpec::ChangegroupV1 | BundleSpec::V1None | BundleSpec::V2None => {
+                Box::from(writer) as Box<dyn Write>
+            }
             BundleSpec::V1Gzip | BundleSpec::V2Gzip => {
                 Box::new(ZlibEncoder::new(writer, flate2::Compression::default()))
             }
@@ -609,7 +573,10 @@ impl<'a> BundleWriter<'a> {
         Ok(BundleWriter {
             writer,
             version: match spec {
-                BundleSpec::V1None | BundleSpec::V1Gzip | BundleSpec::V1Bzip => BundleVersion::V1,
+                BundleSpec::ChangegroupV1
+                | BundleSpec::V1None
+                | BundleSpec::V1Gzip
+                | BundleSpec::V1Bzip => BundleVersion::V1,
                 BundleSpec::V2None
                 | BundleSpec::V2Gzip
                 | BundleSpec::V2Bzip
@@ -927,4 +894,76 @@ impl<R: Read> HgConnection for BundleConnection<R> {
             Cursor::new(mem::take(&mut self.buf)).chain(&mut self.reader),
         ))
     }
+}
+
+pub static BUNDLE_PATH: Lazy<Mutex<Option<tempfile::TempPath>>> = Lazy::new(|| Mutex::new(None));
+
+pub fn do_create_bundle(input: &mut dyn BufRead, mut out: impl Write, args: &[&[u8]]) {
+    let bundlespec = match args[0] {
+        b"raw" => BundleSpec::ChangegroupV1,
+        arg => BundleSpec::try_from(arg).unwrap(),
+    };
+    let mut output = None;
+    let mut bundle_writer = None;
+    let mut part_id = 0;
+    let mut buf = Vec::new();
+    loop {
+        input.read_until(b'\0', &mut buf).unwrap();
+        if buf.ends_with(b"\0") {
+            buf.pop();
+        }
+        if buf.starts_with(b"output ") {
+            output = Some(File::create(OsStr::from_bytes(&buf[b"output ".len()..])).unwrap());
+            buf.truncate(0);
+        } else {
+            break;
+        }
+    }
+    let bundle_writer = bundle_writer.get_or_insert_with(|| {
+        let output = output.get_or_insert_with(|| {
+            let tempfile = tempfile::Builder::new()
+                .prefix("hg-bundle-")
+                .suffix(".hg")
+                .rand_bytes(6)
+                .tempfile()
+                .unwrap();
+            let (f, p) = tempfile.into_parts();
+            *BUNDLE_PATH.lock().unwrap() = Some(p);
+            f
+        });
+        BundleWriter::new(bundlespec, output).unwrap()
+    });
+    loop {
+        let mut args = buf.split(|&b| b == b' ');
+        match args.next().unwrap() {
+            b"part" => {
+                let mut info = BundlePartInfo::new(part_id, args.next().unwrap().to_str().unwrap());
+                part_id += 1;
+                while let (Some(k), Some(v)) = (args.next(), args.next()) {
+                    info = info.set_param(k.to_str().unwrap(), v.to_str().unwrap());
+                }
+                let mut bundle_part_writer = bundle_writer.new_part(info).unwrap();
+                loop {
+                    buf.truncate(0);
+                    input.read_until(b'\0', &mut buf).unwrap();
+                    if buf.ends_with(b"\0") {
+                        buf.pop();
+                    }
+                    let len = u64::from_str(buf.to_str().unwrap()).unwrap();
+                    if len == 0 {
+                        break;
+                    }
+                    copy(&mut input.take(len), &mut bundle_part_writer).unwrap();
+                }
+            }
+            b"EOF" => break,
+            c => panic!("unknown command: {}", c.as_bstr()),
+        }
+        buf.truncate(0);
+        input.read_until(b'\0', &mut buf).unwrap();
+        if buf.ends_with(b"\0") {
+            buf.pop();
+        }
+    }
+    writeln!(out, "done").unwrap();
 }

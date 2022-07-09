@@ -4,10 +4,7 @@ import subprocess
 import sys
 import time
 import traceback
-from collections import (
-    deque,
-    OrderedDict,
-)
+from collections import OrderedDict
 from collections.abc import Iterable
 from weakref import WeakKeyDictionary
 
@@ -264,91 +261,6 @@ def sorted_merge(iter_a, iter_b, key=lambda i: i[0], non_key=lambda i: i[1:]):
             yield key_a, non_key(item_a), non_key(item_b)
             item_a = next(iter_a, None)
             item_b = next(iter_b, None)
-
-
-# The following class was copied from mercurial.
-#  Copyright 2005 K. Thananchayan <thananck@yahoo.com>
-#  Copyright 2005-2007 Matt Mackall <mpm@selenic.com>
-#  Copyright 2006 Vadim Gelfer <vadim.gelfer@gmail.com>
-class chunkbuffer(object):
-    """Allow arbitrary sized chunks of data to be efficiently read from an
-    iterator over chunks of arbitrary size."""
-
-    def __init__(self, in_iter):
-        """in_iter is the iterator that's iterating over the input chunks."""
-        def splitbig(chunks):
-            for chunk in chunks:
-                if len(chunk) > 2 ** 20:
-                    pos = 0
-                    while pos < len(chunk):
-                        end = pos + 2 ** 18
-                        yield chunk[pos:end]
-                        pos = end
-                else:
-                    yield chunk
-        self.iter = splitbig(in_iter)
-        self._queue = deque()
-        self._chunkoffset = 0
-
-    def read(self, length=None):
-        """Read L bytes of data from the iterator of chunks of data.
-        Returns less than L bytes if the iterator runs dry.
-
-        If size parameter is omitted, read everything"""
-        if length is None:
-            return b''.join(self.iter)
-
-        left = length
-        buf = []
-        queue = self._queue
-        while left > 0:
-            # refill the queue
-            if not queue:
-                target = 2 ** 18
-                for chunk in self.iter:
-                    queue.append(chunk)
-                    target -= len(chunk)
-                    if target <= 0:
-                        break
-                if not queue:
-                    break
-
-            # The easy way to do this would be to queue.popleft(), modify the
-            # chunk (if necessary), then queue.appendleft(). However, for cases
-            # where we read partial chunk content, this incurs 2 dequeue
-            # mutations and creates a new str for the remaining chunk in the
-            # queue. Our code below avoids this overhead.
-
-            chunk = queue[0]
-            chunkl = len(chunk)
-            offset = self._chunkoffset
-
-            # Use full chunk.
-            if offset == 0 and left >= chunkl:
-                left -= chunkl
-                queue.popleft()
-                buf.append(chunk)
-                # self._chunkoffset remains at 0.
-                continue
-
-            chunkremaining = chunkl - offset
-
-            # Use all of unconsumed part of chunk.
-            if left >= chunkremaining:
-                left -= chunkremaining
-                queue.popleft()
-                # offset == 0 is enabled by block above, so this won't merely
-                # copy via ``chunk[0:]``.
-                buf.append(chunk[offset:])
-                self._chunkoffset = 0
-
-            # Partial chunk needed.
-            else:
-                buf.append(chunk[offset:offset + left])
-                self._chunkoffset += left
-                left -= chunkremaining
-
-        return b''.join(buf)
 
 
 class Process(object):

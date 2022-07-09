@@ -382,11 +382,8 @@ class HgRepoHelper(BaseHelper):
             return stdout.readline().rstrip() == b'ok'
 
     @classmethod
-    def unbundle(self, input_iterator, heads):
+    def unbundle(self, heads):
         with self.query(b'unbundle', self.connected, *heads) as stdout:
-            for data in input_iterator:
-                self._helper.stdin.write(data)
-            self._helper.stdin.flush()
             ret = self._read_data(stdout)
             return int(ret)
 
