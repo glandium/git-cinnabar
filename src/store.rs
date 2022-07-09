@@ -1153,7 +1153,7 @@ pub fn do_check_files() -> bool {
     !busted
 }
 
-pub fn store_changegroup<R: Read>(mut input: R, version: u8) {
+pub fn store_changegroup<R: Read>(input: R, version: u8) {
     unsafe {
         ensure_store_init();
     }
@@ -1167,7 +1167,7 @@ pub fn store_changegroup<R: Read>(mut input: R, version: u8) {
         let part = bundle_writer.new_part(info).unwrap();
         Box::new(TeeReader::new(input, part)) as Box<dyn Read>
     } else {
-        Box::new(&mut input)
+        Box::from(input)
     };
     let mut changesets = Vec::new();
     for changeset in
