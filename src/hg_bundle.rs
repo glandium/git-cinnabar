@@ -12,6 +12,7 @@ use std::str::FromStr;
 use bstr::ByteSlice;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use bzip2::read::BzDecoder;
+use derive_more::Deref;
 use flate2::read::ZlibDecoder;
 use itertools::Itertools;
 use tee::TeeReader;
@@ -391,48 +392,20 @@ impl<'a> BundleReader<'a> {
         }
         match self.version {
             BundleVersion::V1 => Ok(Some(BundlePartReader {
-                mandatory: true,
-                part_type: "changegroup".to_string().into_boxed_str(),
-                part_id: 0,
-                params: HashMap::new(),
+                info: BundlePartInfo::new(0, "changegroup"),
                 reader,
                 version: self.version,
                 remaining: self.remaining.as_mut(),
             })),
             BundleVersion::V2 => {
-                let mut header = match read_bundle2_chunk(&mut *reader) {
-                    Err(e) => return Err(e),
-                    Ok(header) if header.is_empty() => {
-                        self.remaining = None;
-                        return Ok(None);
-                    }
-                    Ok(header) => Cursor::new(header),
-                };
-                let part_type_len = header.read_u8()?;
-                let part_type = header.read_exactly_to_string(part_type_len.into())?;
-                let mandatory = part_type.chars().next().map_or(false, char::is_uppercase);
-                let part_type = part_type.to_lowercase().into_boxed_str();
-                let part_id = header.read_u32::<BigEndian>()?;
-                let mandatory_params_num = header.read_u8()?;
-                let advisory_params_num = header.read_u8()?;
-                let param_lengths = (0..usize::from(mandatory_params_num + advisory_params_num))
-                    .map(|_| Ok((header.read_u8()?, header.read_u8()?)))
-                    .collect::<io::Result<Vec<(u8, u8)>>>()?;
-                let params = param_lengths
-                    .into_iter()
-                    .map(|(name_len, value_len)| {
-                        Ok((
-                            header.read_exactly_to_string(name_len.into())?,
-                            header.read_exactly_to_string(value_len.into())?,
-                        ))
-                    })
-                    .collect::<io::Result<_>>()?;
+                let header = read_bundle2_chunk(&mut *reader)?;
+                if header.is_empty() {
+                    self.remaining = None;
+                    return Ok(None);
+                }
                 self.remaining = Some(reader.read_u32::<BigEndian>()?);
                 Ok(Some(BundlePartReader {
-                    mandatory,
-                    part_type,
-                    part_id,
-                    params,
+                    info: BundlePartInfo::read_from(&*header)?,
                     reader,
                     version: self.version,
                     remaining: self.remaining.as_mut(),
@@ -442,11 +415,56 @@ impl<'a> BundleReader<'a> {
     }
 }
 
-pub struct BundlePartReader<'a> {
+pub struct BundlePartInfo {
     pub mandatory: bool,
     pub part_type: Box<str>,
     part_id: u32,
     pub params: HashMap<Box<str>, Box<str>>,
+}
+
+impl BundlePartInfo {
+    pub fn new(part_id: u32, part_type: &str) -> Self {
+        BundlePartInfo {
+            mandatory: true,
+            part_type: part_type.to_lowercase().into_boxed_str(),
+            part_id,
+            params: HashMap::new(),
+        }
+    }
+
+    pub fn read_from(mut reader: impl Read) -> io::Result<Self> {
+        let part_type_len = reader.read_u8()?;
+        let part_type = reader.read_exactly_to_string(part_type_len.into())?;
+        let mandatory = part_type.chars().next().map_or(false, char::is_uppercase);
+        let part_type = part_type.to_lowercase().into_boxed_str();
+        let part_id = reader.read_u32::<BigEndian>()?;
+        let mandatory_params_num = reader.read_u8()?;
+        let advisory_params_num = reader.read_u8()?;
+        let param_lengths = (0..usize::from(mandatory_params_num + advisory_params_num))
+            .map(|_| Ok((reader.read_u8()?, reader.read_u8()?)))
+            .collect::<io::Result<Vec<(u8, u8)>>>()?;
+        let params = param_lengths
+            .into_iter()
+            .map(|(name_len, value_len)| {
+                Ok((
+                    reader.read_exactly_to_string(name_len.into())?,
+                    reader.read_exactly_to_string(value_len.into())?,
+                ))
+            })
+            .collect::<io::Result<_>>()?;
+        Ok(BundlePartInfo {
+            mandatory,
+            part_type,
+            part_id,
+            params,
+        })
+    }
+}
+
+#[derive(Deref)]
+pub struct BundlePartReader<'a> {
+    #[deref]
+    info: BundlePartInfo,
     reader: &'a mut dyn Read,
     version: BundleVersion,
     remaining: Option<&'a mut u32>,
