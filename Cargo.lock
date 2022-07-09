@@ -361,6 +361,7 @@ dependencies = [
  "getset",
  "git-version",
  "hex",
+ "indexmap",
  "itertools",
  "libc",
  "libz-sys",

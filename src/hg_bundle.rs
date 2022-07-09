@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::io::{self, copy, Chain, Cursor, ErrorKind, Read, Write};
 use std::mem::{self, MaybeUninit};
 use std::os::raw::c_int;
@@ -14,6 +14,7 @@ use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use bzip2::read::BzDecoder;
 use derive_more::Deref;
 use flate2::read::ZlibDecoder;
+use indexmap::IndexMap;
 use itertools::Itertools;
 use tee::TeeReader;
 use zstd::stream::read::Decoder as ZstdDecoder;
@@ -21,6 +22,7 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 use crate::hg_connect::{HgConnection, HgConnectionBase};
 use crate::progress::Progress;
 use crate::store::{ChangesetHeads, HgChangesetId, RawHgChangeset};
+use crate::util::ToBoxed;
 use crate::{
     libcinnabar::hg_object_id,
     libgit::strbuf,
@@ -415,11 +417,12 @@ impl<'a> BundleReader<'a> {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct BundlePartInfo {
     pub mandatory: bool,
     pub part_type: Box<str>,
     part_id: u32,
-    params: HashMap<Box<str>, Box<str>>,
+    params: IndexMap<Box<str>, Box<str>>,
 }
 
 impl BundlePartInfo {
@@ -428,7 +431,7 @@ impl BundlePartInfo {
             mandatory: true,
             part_type: part_type.to_lowercase().into_boxed_str(),
             part_id,
-            params: HashMap::new(),
+            params: IndexMap::new(),
         }
     }
 
@@ -460,9 +463,64 @@ impl BundlePartInfo {
         })
     }
 
+    pub fn write_into(&self, mut writer: impl Write) -> io::Result<()> {
+        assert_lt!(self.part_type.len(), 256);
+        assert_lt!(self.params.len(), 256);
+        writer.write_u8(self.part_type.len() as u8)?;
+        if self.mandatory {
+            writer.write_all(self.part_type.to_uppercase().as_bytes())?;
+        } else {
+            writer.write_all(self.part_type.to_lowercase().as_bytes())?;
+        }
+        writer.write_u32::<BigEndian>(self.part_id)?;
+        writer.write_u8(self.params.len() as u8)?;
+        writer.write_u8(0 /* number of advisory params */)?;
+        for (k, v) in &self.params {
+            assert_lt!(k.len(), 256);
+            writer.write_u8(k.len() as u8)?;
+            assert_lt!(v.len(), 256);
+            writer.write_u8(v.len() as u8)?;
+        }
+        for (k, v) in &self.params {
+            writer.write_all(k.as_bytes())?;
+            writer.write_all(v.as_bytes())?;
+        }
+        Ok(())
+    }
+
     pub fn get_param(&self, name: &str) -> Option<&str> {
         self.params.get(name).map(|v| &**v)
     }
+
+    pub fn set_param(mut self, name: &str, value: &str) -> Self {
+        self.params.insert(name.to_boxed(), value.to_boxed());
+        self
+    }
+}
+
+#[test]
+fn test_bundle_part_info() {
+    let info = BundlePartInfo::new(0x12345678, "foobar");
+    let mut buf = Vec::new();
+    info.write_into(&mut buf).unwrap();
+    assert_eq!(buf.as_bstr(), b"\x06FOOBAR\x12\x34\x56\x78\0\0".as_bstr());
+    assert_eq!(BundlePartInfo::read_from(Cursor::new(buf)).unwrap(), info);
+
+    let info = BundlePartInfo::new(0x12345678, "foobar")
+        .set_param("name", "value")
+        .set_param("name2", "value2")
+        .set_param("name3", "value3");
+    let mut buf = Vec::new();
+    info.write_into(&mut buf).unwrap();
+    assert_eq!(
+        buf.as_bstr(),
+        b"\x06FOOBAR\x12\x34\x56\x78\
+          \x03\x00\
+          \x04\x05\x05\x06\x05\x06\
+          namevaluename2value2name3value3"
+            .as_bstr()
+    );
+    assert_eq!(BundlePartInfo::read_from(Cursor::new(buf)).unwrap(), info);
 }
 
 #[derive(Deref)]
