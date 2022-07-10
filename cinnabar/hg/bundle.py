@@ -24,7 +24,6 @@ from cinnabar.hg.changegroup import (
 from cinnabar.hg.objects import (
     File,
     Manifest,
-    HgObject,
 )
 from collections import (
     OrderedDict,
@@ -402,7 +401,8 @@ def bundle_data(store, commits):
         if is_new:
             store.create_hg_metadata(node, parents)
         hg_changeset = store._changeset(node)
-        yield hg_changeset
+        yield (b"changeset", hg_changeset.node, hg_changeset.parent1,
+               hg_changeset.parent2, hg_changeset.changeset)
         manifest = hg_changeset.manifest
         if manifest not in manifests and manifest != NULL_NODE_ID:
             if manifest not in (store.changeset(p).manifest
@@ -411,14 +411,20 @@ def bundle_data(store, commits):
 
     yield None
 
+    def get_parent(parents, num):
+        try:
+            return parents[num]
+        except IndexError:
+            return NULL_NODE_ID
+
     for manifest, changeset in progress_iter('Bundling {} manifests',
                                              manifests.items()):
-        hg_manifest = store.manifest(manifest, include_parents=True)
-        hg_manifest.changeset = changeset
-        yield hg_manifest
         manifest_ref = store.manifest_ref(manifest)
-        parents = tuple(store.manifest_ref(p) for p in hg_manifest.parents)
-        changes = get_changes(manifest_ref, parents)
+        mn_commit = GitCommit(manifest_ref)
+        hg_parents = list(store.hg_manifest(p) for p in mn_commit.parents)
+        yield (b"manifest", manifest, get_parent(hg_parents, 0),
+               get_parent(hg_parents, 1), changeset)
+        changes = get_changes(manifest_ref, mn_commit.parents)
         for path, hg_file, hg_fileparents in changes:
             if hg_file != NULL_NODE_ID:
                 files[store.manifest_path(path)].append(
@@ -436,10 +442,9 @@ def bundle_data(store, commits):
                     continue
                 count_chunks += 1
                 nodes.add(node)
-                file = store.file(node, parents)
-                file.changeset = changeset
-                assert file.node == file.sha1
-                yield (count_chunks, count_names), file
+                yield (count_chunks, count_names), (
+                    b"file", node, get_parent(parents, 0),
+                    get_parent(parents, 1), changeset)
 
             yield (count_chunks, count_names), None
 
@@ -461,10 +466,8 @@ def create_bundle(store, commits, bundlespec=b'raw', cg_version=b'01',
             stdout.write(replycaps)
         stdout.write(b'part changegroup version %s\0' % cg_version)
         for chunk in bundle_data(store, commits):
-            if isinstance(chunk, HgObject):
-                stdout.write(b'%s %s %s %s %s\0' % (
-                    type(chunk).__name__.lower().encode('ascii'),
-                    chunk.node, chunk.parent1, chunk.parent2, chunk.changeset))
+            if isinstance(chunk, tuple):
+                stdout.write(b'%s %s %s %s %s\0' % chunk)
             elif isinstance(chunk, bytes):
                 stdout.write(b'path %s\0' % chunk)
             else:

@@ -9,7 +9,10 @@ use bstr::{BStr, ByteSlice};
 use once_cell::sync::Lazy;
 use regex::bytes::Regex;
 
-use crate::util::{FromBytes, SliceExt};
+use crate::{
+    oid::{HgObjectId, ObjectId},
+    util::{FromBytes, SliceExt},
+};
 
 // TODO: This doesn't actually need to be a regexp
 static WHO_RE: Lazy<Regex> = Lazy::new(|| Regex::new("^(?-u)(.*?) ?(?:<(.*?)>)").unwrap());
@@ -424,4 +427,47 @@ fn test_authorship_to_git() {
         a.0.as_bstr(),
         b"Foo Bar <foo@bar> 1482880019 +0200".as_bstr()
     );
+}
+
+pub fn hash_data(
+    parent1: Option<&HgObjectId>,
+    parent2: Option<&HgObjectId>,
+    data: &[u8],
+) -> HgObjectId {
+    let mut hash = HgObjectId::create();
+    let null_oid = HgObjectId::null();
+    let parent1 = parent1.unwrap_or(&null_oid);
+    let parent2 = parent2.unwrap_or(&null_oid);
+    let mut parents = [parent1, parent2];
+    parents.sort();
+    hash.update(parents[0].as_raw_bytes());
+    hash.update(parents[1].as_raw_bytes());
+    hash.update(data);
+    hash.finalize()
+}
+
+pub fn find_parents<'a>(
+    node: &HgObjectId,
+    parent1: Option<&'a HgObjectId>,
+    parent2: Option<&'a HgObjectId>,
+    data: &[u8],
+) -> [Option<&'a HgObjectId>; 2] {
+    for [parent1, parent2] in [
+        [parent1, parent2],
+        // In some cases, only one parent is stored in a merge, because
+        // the other parent is actually an ancestor of the first one, but
+        // checking that is likely more expensive than to check if the
+        // sha1 matches with either parent.
+        [parent1, None],
+        [parent2, None],
+        // Some mercurial versions store the first parent twice in merges.
+        [parent1, parent1],
+        // As last resord, try without any parents.
+        [None, None],
+    ] {
+        if &hash_data(parent1, parent2, data) == node {
+            return [parent1, parent2];
+        }
+    }
+    panic!("Failed to create file. Please open an issue with details");
 }

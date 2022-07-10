@@ -27,6 +27,7 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
 use crate::hg_connect::{HgConnection, HgConnectionBase};
+use crate::hg_data::find_parents;
 use crate::libcinnabar::files_meta;
 use crate::libgit::BlobId;
 use crate::progress::Progress;
@@ -1086,30 +1087,37 @@ pub fn do_create_bundle(input: &mut dyn BufRead, mut out: impl Write, args: &[&[
                                     .unwrap();
                                 }
                                 b"file" => {
+                                    let generate = |node: &HgObjectId| {
+                                        let node = HgFileId::from_unchecked(node.clone());
+                                        let metadata =
+                                            unsafe { files_meta.get_note(&node) }.map(|oid| {
+                                                GitFileMetadataId::from_unchecked(
+                                                    BlobId::from_unchecked(oid),
+                                                )
+                                            });
+
+                                        let file = RawHgFile::read(
+                                            &node.to_git().unwrap(),
+                                            metadata.as_ref(),
+                                        )
+                                        .unwrap();
+                                        file.0
+                                    };
+                                    let [parent1, parent2] = find_parents(
+                                        &node,
+                                        Some(&parent1),
+                                        Some(&parent2),
+                                        &generate(&node),
+                                    );
                                     write_chunk(
                                         &mut bundle_part_writer,
                                         version.as_ref().copied().unwrap(),
                                         &node,
-                                        &parent1,
-                                        &parent2,
+                                        parent1.unwrap_or(&HgObjectId::null()),
+                                        parent2.unwrap_or(&HgObjectId::null()),
                                         &changeset,
                                         &mut previous,
-                                        |node| {
-                                            let node = HgFileId::from_unchecked(node.clone());
-                                            let metadata = unsafe { files_meta.get_note(&node) }
-                                                .map(|oid| {
-                                                    GitFileMetadataId::from_unchecked(
-                                                        BlobId::from_unchecked(oid),
-                                                    )
-                                                });
-
-                                            let file = RawHgFile::read(
-                                                &node.to_git().unwrap(),
-                                                metadata.as_ref(),
-                                            )
-                                            .unwrap();
-                                            file.0
-                                        },
+                                        generate,
                                     )
                                     .unwrap();
                                 }
