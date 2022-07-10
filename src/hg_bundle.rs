@@ -27,9 +27,16 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
 use crate::hg_connect::{HgConnection, HgConnectionBase};
+use crate::libcinnabar::files_meta;
+use crate::libgit::BlobId;
 use crate::progress::Progress;
-use crate::store::{ChangesetHeads, HgChangesetId, RawHgChangeset};
-use crate::util::{OsStrExt, ToBoxed};
+use crate::store::{
+    ChangesetHeads, GitFileMetadataId, HgChangesetId, HgFileId, HgManifestId, RawHgChangeset,
+    RawHgFile, RawHgManifest,
+};
+use crate::util::{FromBytes, OsStrExt, ToBoxed};
+use crate::xdiff::textdiff;
+use crate::HELPER_LOCK;
 use crate::{
     libcinnabar::hg_object_id,
     libgit::strbuf,
@@ -879,8 +886,8 @@ impl<R: Read> HgConnection for BundleConnection<R> {
 
     fn getbundle<'a>(
         &'a mut self,
-        _heads: &[crate::store::HgChangesetId],
-        common: &[crate::store::HgChangesetId],
+        _heads: &[HgChangesetId],
+        common: &[HgChangesetId],
         _bundle2caps: Option<&str>,
     ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
         assert!(common.is_empty());
@@ -892,6 +899,76 @@ impl<R: Read> HgConnection for BundleConnection<R> {
 }
 
 pub static BUNDLE_PATH: Lazy<Mutex<Option<tempfile::TempPath>>> = Lazy::new(|| Mutex::new(None));
+
+fn create_chunk_data(a: &[u8], b: &[u8]) -> Box<[u8]> {
+    let mut buf = Vec::new();
+    for patch in textdiff(a, b) {
+        buf.write_u32::<BigEndian>(patch.start.try_into().unwrap())
+            .unwrap();
+        buf.write_u32::<BigEndian>(patch.end.try_into().unwrap())
+            .unwrap();
+        buf.write_u32::<BigEndian>(patch.data.len().try_into().unwrap())
+            .unwrap();
+        buf.write_all(patch.data).unwrap();
+    }
+    buf.into_boxed_slice()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_chunk(
+    mut writer: impl Write,
+    version: u8,
+    node: &HgObjectId,
+    parent1: &HgObjectId,
+    parent2: &HgObjectId,
+    changeset: &HgChangesetId,
+    previous: &mut Option<(HgObjectId, Box<[u8]>)>,
+    mut f: impl FnMut(&HgObjectId) -> Box<[u8]>,
+) -> io::Result<()> {
+    let raw_object = f(node);
+    let (previous_node, raw_previous) = match previous.take() {
+        Some((a, b)) => (Some(a), Some(b)),
+        None => (None, None),
+    };
+    let (delta_node, chunk) = if version == 1 {
+        let previous =
+            raw_previous.or_else(|| (parent1 != &HgObjectId::null()).then(|| f(parent1)));
+        let previous = previous.as_deref().unwrap_or(b"");
+        (None, create_chunk_data(previous, &raw_object))
+    } else {
+        let mut chunk_data = [parent1, parent2]
+            .into_iter()
+            .filter(|&p| p != &HgObjectId::null())
+            .dedup()
+            .map(|p| {
+                if previous_node.as_ref() == Some(p) {
+                    let previous = raw_previous.as_ref().unwrap();
+                    (Some(p), create_chunk_data(previous, &raw_object))
+                } else {
+                    (Some(p), create_chunk_data(&f(p), &raw_object))
+                }
+            })
+            .collect_vec();
+        if chunk_data.is_empty() {
+            chunk_data.push((None, create_chunk_data(b"", &raw_object)));
+        }
+        chunk_data.into_iter().min_by_key(|(_, d)| d.len()).unwrap()
+    };
+    *previous = Some((node.clone(), raw_object));
+    writer.write_u32::<BigEndian>(
+        (4 + chunk.len() + 80 + if version == 2 { 20 } else { 0 })
+            .try_into()
+            .unwrap(),
+    )?;
+    writer.write_all(node.as_raw_bytes())?;
+    writer.write_all(parent1.as_raw_bytes())?;
+    writer.write_all(parent2.as_raw_bytes())?;
+    if version == 2 {
+        writer.write_all(delta_node.unwrap_or(&HgObjectId::null()).as_raw_bytes())?;
+    }
+    writer.write_all(changeset.as_raw_bytes())?;
+    writer.write_all(&chunk)
+}
 
 pub fn do_create_bundle(input: &mut dyn BufRead, mut out: impl Write, args: &[&[u8]]) {
     let bundlespec = match args[0] {
@@ -937,27 +1014,128 @@ pub fn do_create_bundle(input: &mut dyn BufRead, mut out: impl Write, args: &[&[
                 while let (Some(k), Some(v)) = (args.next(), args.next()) {
                     info = info.set_param(k.to_str().unwrap(), v.to_str().unwrap());
                 }
+                let version = (&*info.part_type == "changegroup")
+                    .then(|| u8::from_str(info.get_param("version").unwrap_or("01")).unwrap());
                 let mut bundle_part_writer = bundle_writer.new_part(info).unwrap();
+                let mut previous = None;
                 loop {
                     buf.truncate(0);
                     input.read_until(b'\0', &mut buf).unwrap();
                     if buf.ends_with(b"\0") {
                         buf.pop();
                     }
-                    let len = u64::from_str(buf.to_str().unwrap()).unwrap();
-                    if len == 0 {
-                        break;
+                    let mut args = buf.splitn(2, |&b| b == b' ');
+                    let kind = args.next().unwrap();
+                    match kind {
+                        b"data" => {
+                            let len =
+                                u64::from_str(args.next().unwrap().to_str().unwrap()).unwrap();
+                            copy(&mut input.take(len), &mut bundle_part_writer).unwrap();
+                            buf.truncate(0);
+                            input.read_until(b'\0', &mut buf).unwrap();
+                            if buf.ends_with(b"\0") {
+                                buf.pop();
+                            }
+                            break;
+                        }
+                        b"changeset" | b"manifest" | b"file" => {
+                            let [node, parent1, parent2, changeset] =
+                                args.next().unwrap().splitn_exact(b' ').unwrap();
+                            let node = HgObjectId::from_bytes(node).unwrap();
+                            let parent1 = HgObjectId::from_bytes(parent1).unwrap();
+                            let parent2 = HgObjectId::from_bytes(parent2).unwrap();
+                            let changeset = HgChangesetId::from_bytes(changeset).unwrap();
+                            let _lock = HELPER_LOCK.lock().unwrap();
+                            match kind {
+                                b"changeset" => {
+                                    write_chunk(
+                                        &mut bundle_part_writer,
+                                        version.as_ref().copied().unwrap(),
+                                        &node,
+                                        &parent1,
+                                        &parent2,
+                                        &changeset,
+                                        &mut previous,
+                                        |node| {
+                                            let node = HgChangesetId::from_unchecked(node.clone());
+                                            let changeset =
+                                                RawHgChangeset::read(&node.to_git().unwrap())
+                                                    .unwrap();
+                                            changeset.0
+                                        },
+                                    )
+                                    .unwrap();
+                                }
+                                b"manifest" => {
+                                    write_chunk(
+                                        &mut bundle_part_writer,
+                                        version.as_ref().copied().unwrap(),
+                                        &node,
+                                        &parent1,
+                                        &parent2,
+                                        &changeset,
+                                        &mut previous,
+                                        |node| {
+                                            let node = HgManifestId::from_unchecked(node.clone());
+                                            let manifest =
+                                                RawHgManifest::read(&node.to_git().unwrap())
+                                                    .unwrap();
+                                            manifest.0
+                                        },
+                                    )
+                                    .unwrap();
+                                }
+                                b"file" => {
+                                    write_chunk(
+                                        &mut bundle_part_writer,
+                                        version.as_ref().copied().unwrap(),
+                                        &node,
+                                        &parent1,
+                                        &parent2,
+                                        &changeset,
+                                        &mut previous,
+                                        |node| {
+                                            let node = HgFileId::from_unchecked(node.clone());
+                                            let metadata = unsafe { files_meta.get_note(&node) }
+                                                .map(|oid| {
+                                                    GitFileMetadataId::from_unchecked(
+                                                        BlobId::from_unchecked(oid),
+                                                    )
+                                                });
+
+                                            let file = RawHgFile::read(
+                                                &node.to_git().unwrap(),
+                                                metadata.as_ref(),
+                                            )
+                                            .unwrap();
+                                            file.0
+                                        },
+                                    )
+                                    .unwrap();
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        b"path" => {
+                            let path = args.next().unwrap();
+                            bundle_part_writer
+                                .write_u32::<BigEndian>((4 + path.len()).try_into().unwrap())
+                                .unwrap();
+                            bundle_part_writer.write_all(path).unwrap();
+                        }
+                        b"null" => {
+                            bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
+                            previous = None;
+                        }
+                        _ => {
+                            break;
+                        }
                     }
-                    copy(&mut input.take(len), &mut bundle_part_writer).unwrap();
                 }
+                continue;
             }
             b"EOF" => break,
             c => panic!("unknown command: {}", c.as_bstr()),
-        }
-        buf.truncate(0);
-        input.read_until(b'\0', &mut buf).unwrap();
-        if buf.ends_with(b"\0") {
-            buf.pop();
         }
     }
     writeln!(out, "done").unwrap();

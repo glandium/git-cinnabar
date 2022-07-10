@@ -1,7 +1,6 @@
 from urllib.parse import quote_from_bytes, unquote_to_bytes
 from cinnabar.dag import gitdag
 from cinnabar.githg import (
-    Changeset,
     FileFindParents,
     GitCommit,
     GitHgStore,
@@ -20,7 +19,6 @@ from cinnabar.util import (
     sorted_merge,
 )
 from cinnabar.hg.changegroup import (
-    RawRevChunk01,
     RawRevChunk02,
 )
 from cinnabar.hg.objects import (
@@ -34,7 +32,6 @@ from collections import (
 )
 import functools
 import logging
-import struct
 
 
 # TODO: Avoid a diff-tree when we already have done it to generate the
@@ -455,74 +452,28 @@ def bundle_data(store, commits):
 
 def create_bundle(store, commits, bundlespec=b'raw', cg_version=b'01',
                   replycaps=None, path=None):
-    if cg_version == b'01':
-        chunk_type = RawRevChunk01
-    elif cg_version == b'02':
-        chunk_type = RawRevChunk02
-
-    cg = create_changegroup(store, bundle_data(store, commits), chunk_type)
     with BundleHelper.query(b'create-bundle', bundlespec) as stdout:
         if path:
             stdout.write(b'output %s\0' % path.encode('utf-8'))
         if replycaps:
             stdout.write(b'part replycaps\0')
-            stdout.write(b'%d\0' % len(replycaps))
+            stdout.write(b'data %d\0' % len(replycaps))
             stdout.write(replycaps)
-            stdout.write(b'0\0')
         stdout.write(b'part changegroup version %s\0' % cg_version)
-        for chunk in cg:
-            stdout.write(b'%d\0' % len(chunk))
-            stdout.write(chunk)
-        stdout.write(b'0\0EOF\0')
+        for chunk in bundle_data(store, commits):
+            if isinstance(chunk, HgObject):
+                stdout.write(b'%s %s %s %s %s\0' % (
+                    type(chunk).__name__.lower().encode('ascii'),
+                    chunk.node, chunk.parent1, chunk.parent2, chunk.changeset))
+            elif isinstance(chunk, bytes):
+                stdout.write(b'path %s\0' % chunk)
+            else:
+                assert chunk is None
+                stdout.write(b'null\0')
+        stdout.write(b'EOF\0')
         stdout.flush()
         res = stdout.readline().strip()
         assert res == b'done'
-
-
-def get_previous(store, sha1, type):
-    if issubclass(type, Changeset):
-        return store.changeset(sha1)
-    if issubclass(type, Manifest):
-        return store.manifest(sha1)
-    return store.file(sha1)
-
-
-def prepare_chunk(store, chunk, previous, chunk_type):
-    if chunk_type == RawRevChunk01:
-        if previous is None and chunk.parent1 != NULL_NODE_ID:
-            previous = get_previous(store, chunk.parent1, type(chunk))
-        return chunk.to_chunk(chunk_type, previous)
-    elif chunk_type == RawRevChunk02:
-        if isinstance(chunk, Changeset):
-            parents = (previous if previous
-                       else get_previous(store, p, type(chunk))
-                       for p in chunk.parents[:1])
-        else:
-            parents = (previous if previous and p == previous.node
-                       else get_previous(store, p, type(chunk))
-                       for p in chunk.parents)
-        deltas = sorted((chunk.to_chunk(chunk_type, p) for p in parents),
-                        key=len)
-        if len(deltas):
-            return deltas[0]
-        return chunk.to_chunk(chunk_type)
-    else:
-        assert False
-
-
-def create_changegroup(store, bundle_data, type=RawRevChunk01):
-    previous = None
-    for chunk in bundle_data:
-        if isinstance(chunk, HgObject):
-            data = prepare_chunk(store, chunk, previous, type)
-        else:
-            data = chunk
-        size = 0 if data is None else len(data) + 4
-        yield struct.pack(">l", size)
-        if data:
-            yield bytes(data)
-        if isinstance(chunk, HgObject) or chunk is None:
-            previous = chunk
 
 
 def encodecaps(caps):

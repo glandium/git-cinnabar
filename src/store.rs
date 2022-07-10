@@ -584,7 +584,7 @@ impl<'a> HgChangeset<'a> {
 
 #[derive(Deref)]
 #[deref(forward)]
-pub struct RawHgManifest(ImmutBString);
+pub struct RawHgManifest(pub ImmutBString);
 
 impl RawHgManifest {
     pub fn read(oid: &GitManifestId) -> Option<Self> {
@@ -598,7 +598,7 @@ impl RawHgManifest {
 
 #[derive(Deref)]
 #[deref(forward)]
-pub struct RawHgFile(ImmutBString);
+pub struct RawHgFile(pub ImmutBString);
 
 impl RawHgFile {
     pub fn read(oid: &GitFileId, metadata: Option<&GitFileMetadataId>) -> Option<Self> {
