@@ -11,7 +11,8 @@ from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '6.1'
+MERCURIAL_VERSION = '6.1.4'
+PY3_MERCURIAL_VERSION = '6.2'
 GIT_VERSION = '2.37.0'
 
 ALL_MERCURIAL_VERSIONS = (
@@ -21,7 +22,7 @@ ALL_MERCURIAL_VERSIONS = (
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
     '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2', '5.3.2',
     '5.4.2', '5.5.2', '5.6.1', '5.7.1', '5.8.1', '5.9.3', '6.0.3',
-    '6.1',
+    '6.1.4', '6.2'
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -29,6 +30,7 @@ SOME_MERCURIAL_VERSIONS = (
 )
 
 assert MERCURIAL_VERSION in ALL_MERCURIAL_VERSIONS
+assert PY3_MERCURIAL_VERSION in ALL_MERCURIAL_VERSIONS
 assert all(v in ALL_MERCURIAL_VERSIONS for v in SOME_MERCURIAL_VERSIONS)
 
 
@@ -199,7 +201,9 @@ class Hg(Task, metaclass=Tool):
                 .format(artifact_version, version),
             ])
         # 2.6.2 is the first version available on pypi
-        elif parse_version('2.6.2') <= parse_version(version):
+        elif parse_version('2.6.2') <= parse_version(version) and \
+                (parse_version(version) < parse_version('6.1') or
+                 not os.startswith('mingw')):
             # Always download with python2.7 because pip download does more
             # than download, and one of the things it does, namely requirements
             # validation, breaks on Windows with python3 < 3.7 (because

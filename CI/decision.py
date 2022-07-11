@@ -22,6 +22,7 @@ from tasks import (
 from tools import (
     GIT_VERSION,
     MERCURIAL_VERSION,
+    PY3_MERCURIAL_VERSION,
     ALL_MERCURIAL_VERSIONS,
     SOME_MERCURIAL_VERSIONS,
     Git,
@@ -380,7 +381,8 @@ def decision():
 
         TestTask(
             task_env=env,
-            hg='{}.py3'.format(MERCURIAL_VERSION),
+            hg='{}.py3'.format(MERCURIAL_VERSION if env == 'mingw64' else
+                               PY3_MERCURIAL_VERSION),
         )
 
         TestTask(
@@ -389,7 +391,8 @@ def decision():
             env={
                 'GRAFT': '1',
             },
-            hg='{}.py3'.format(MERCURIAL_VERSION),
+            hg='{}.py3'.format(MERCURIAL_VERSION if env == 'mingw64' else
+                               PY3_MERCURIAL_VERSION),
         )
 
     TestTask(
@@ -415,7 +418,7 @@ def decision():
             'GIT_CINNABAR_EXPERIMENTS': 'true',
             'GIT_CINNABAR_LOG': 'reexec:3',
         },
-        hg='{}.py3'.format(MERCURIAL_VERSION),
+        hg='{}.py3'.format(PY3_MERCURIAL_VERSION),
     )
 
     TestTask(
@@ -426,7 +429,7 @@ def decision():
             'GIT_CINNABAR_LOG': 'reexec:3',
             'GRAFT': '1',
         },
-        hg='{}.py3'.format(MERCURIAL_VERSION),
+        hg='{}.py3'.format(PY3_MERCURIAL_VERSION),
     )
 
     for variant in ('coverage', 'old'):
@@ -501,7 +504,7 @@ def decision():
                     ['no-version-check'] + check),
                 'GIT_CINNABAR_EXPERIMENTS': 'true',
             },
-            hg='{}.py3'.format(MERCURIAL_VERSION),
+            hg='{}.py3'.format(PY3_MERCURIAL_VERSION),
         )
 
 
@@ -548,7 +551,8 @@ def do_hg_version(hg):
         description='Trigger tests against more mercurial versions')
 def more_hg_versions():
     for hg in ALL_MERCURIAL_VERSIONS:
-        if hg != MERCURIAL_VERSION and hg not in SOME_MERCURIAL_VERSIONS:
+        if hg not in (MERCURIAL_VERSION, PY3_MERCURIAL_VERSION) and \
+                hg not in SOME_MERCURIAL_VERSIONS:
             do_hg_version(hg)
 
 
