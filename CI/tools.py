@@ -137,7 +137,8 @@ class Hg(Task, metaclass=Tool):
     def __init__(self, os_and_version):
         (os, version) = os_and_version.split('.', 1)
         (version, suffix, _) = version.partition('.py3')
-        if suffix:
+        if suffix or len(version) == 40 or \
+                parse_version(version) >= parse_version('6.2'):
             python = 'python3'
         else:
             python = 'python2.7'
@@ -266,11 +267,11 @@ class Hg(Task, metaclass=Tool):
     @classmethod
     def install(cls, name):
         hg = cls.by_name(name)
-        if name.endswith('.py3'):
+        filename = os.path.basename(hg.artifacts[0])
+        if 'cp3' in filename:
             python = 'python3'
         else:
             python = 'python2.7'
-        filename = os.path.basename(hg.artifacts[0])
         return [
             'curl -L {{{}.artifact}} -o {}'.format(hg, filename),
             '{} -m pip install {}'.format(python, filename)
