@@ -205,8 +205,8 @@ class Hg(Task, metaclass=Tool):
             # validation, breaks on Windows with python3 < 3.7 (because
             # mercurial declares it's not compatible with those).
             pre_command.append(
-                'python2.7 -m pip download --no-binary mercurial --no-deps'
-                ' --progress-bar off mercurial=={}'.format(version))
+                '{} -m pip download --no-binary mercurial --no-deps'
+                ' --progress-bar off mercurial=={}'.format(python, version))
         else:
             url = 'https://mercurial-scm.org/release/mercurial-{}.tar.gz'
             pre_command.append(
