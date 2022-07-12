@@ -157,9 +157,16 @@ class Clone(TestTask, metaclass=Tool):
     def __init__(self, version):
         sha1 = git_rev_parse(version)
         expireIn = '26 weeks'
-        if version == TC_COMMIT or len(version) == 40:
+        if version == TC_COMMIT or len(version) == 40 or \
+                version in ('0.5.0b2', '0.5.0b3'):
             if version == TC_COMMIT:
                 download = Helper.install('linux')
+            elif version == '0.5.0b2':
+                download = Helper.install(
+                    'linux.old:419f4d2de0f1f0229ca0900774a576db5668e60e')
+            elif version == '0.5.0b3':
+                download = Helper.install(
+                    'linux.old:e47124aa510a3b01409c260c2659666d885ae62f')
             else:
                 download = Helper.install('linux.old:{}'.format(version))
             expireIn = '26 weeks'
