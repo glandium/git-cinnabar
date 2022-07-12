@@ -12,7 +12,7 @@ from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '6.1'
+MERCURIAL_VERSION = '6.2'
 GIT_VERSION = '2.37.0'
 
 ALL_MERCURIAL_VERSIONS = (
@@ -22,7 +22,7 @@ ALL_MERCURIAL_VERSIONS = (
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
     '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2', '5.3.2',
     '5.4.2', '5.5.2', '5.6.1', '5.7.1', '5.8.1', '5.9.3', '6.0.3',
-    '6.1',
+    '6.1.4', '6.2'
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -212,8 +212,8 @@ class Hg(Task, metaclass=Tool):
             # validation, breaks on Windows with python3 < 3.7 (because
             # mercurial declares it's not compatible with those).
             pre_command.append(
-                'python2.7 -m pip download --no-binary mercurial --no-deps'
-                ' --progress-bar off mercurial=={}'.format(version))
+                '{} -m pip download --no-binary mercurial --no-deps'
+                ' --progress-bar off mercurial=={}'.format(python, version))
         else:
             url = 'https://mercurial-scm.org/release/mercurial-{}.tar.gz'
             pre_command.append(
