@@ -207,11 +207,11 @@ class Hg(Task, metaclass=Tool):
                 .format(artifact_version, version),
             ])
         # 2.6.2 is the first version available on pypi
-        elif parse_version('2.6.2') <= parse_version(version):
-            # Always download with python2.7 because pip download does more
-            # than download, and one of the things it does, namely requirements
-            # validation, breaks on Windows with python3 < 3.7 (because
-            # mercurial declares it's not compatible with those).
+        elif parse_version('2.6.2') <= parse_version(version) and \
+                parse_version(version) < parse_version('6.2'):
+            # pip download does more than download, and while it runs setup.py
+            # for version 6.2, a DistutilsPlatformError exception is thrown on
+            # Windows.
             pre_command.append(
                 '{} -m pip download --no-binary mercurial --no-deps'
                 ' --progress-bar off mercurial=={}'.format(python, version))
