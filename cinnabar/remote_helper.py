@@ -161,23 +161,6 @@ class GitRemoteHelper(BaseRemoteHelper):
         self._bookmarks = {}
         self._has_unknown_heads = False
 
-        GRAFT = {
-            None: False,
-            b'false': False,
-            b'true': True,
-        }
-        try:
-            self._graft = Git.config('cinnabar.graft', remote=remote.name,
-                                     values=GRAFT)
-        except InvalidConfig as e:
-            logging.error(str(e))
-            return 1
-        if Git.config('cinnabar.graft-refs') is not None:
-            logging.warn(
-                'The cinnabar.graft-refs configuration is deprecated.\n'
-                'Please unset it.'
-            )
-
     def capabilities(self):
         self._helper.write(
             b'option\n'
@@ -217,55 +200,6 @@ class GitRemoteHelper(BaseRemoteHelper):
         branchmap = self._branchmap = BranchMap(self._store, branchmap,
                                                 heads)
         self._has_unknown_heads = bool(self._branchmap.unknown_heads())
-        if self._graft and self._has_unknown_heads and not arg:
-            orig_heads = dict(GitHgHelper.heads(b'changesets'))
-            GitHgHelper.progress(cinnabar.util.progress)
-            self._store.prepare_graft()
-            get_heads = set(branchmap.heads()) & branchmap.unknown_heads()
-            getbundle(self._repo, self._store, get_heads, branchmap.names())
-            # We may have failed to graft all changesets, in which case we
-            # skipped them. If that's what happened, we want to create a
-            # new branchmap containing all we do know about, so that we can
-            # avoid telling git about things we don't know, because if we
-            # didn't, it would ask for them, and subsequently fail because
-            # they are missing.
-            # Since we can't know for sure what the right tips might be for
-            # each branch, we won't expose the tips. This means we don't
-            # need to care about the order of the heads for the new
-            # branchmap.
-            self._has_unknown_heads = any(not(self._store.changeset_ref(h))
-                                          for h in get_heads)
-            if self._has_unknown_heads:
-                new_branchmap = {
-                    branch: set(h for h in branchmap.heads(branch))
-                    for branch in branchmap.names()
-                }
-                new_branchmap = {
-                    branch: set(h for h in branchmap.heads(branch)
-                                if h not in branchmap.unknown_heads())
-                    for branch in branchmap.names()
-                }
-                new_heads = set(h for h in branchmap.heads()
-                                if h not in branchmap.unknown_heads())
-                heads = dict(GitHgHelper.heads(b'changesets'))
-                for head, branch in orig_heads.items():
-                    if head not in heads:
-                        branch_heads = new_branchmap.get(branch)
-                        if branch_heads and head in branch_heads:
-                            branch_heads.remove(head)
-                        if head in new_heads:
-                            new_heads.remove(head)
-                for head, branch in heads.items():
-                    if head not in orig_heads:
-                        branch_heads = new_branchmap.get(branch)
-                        if not branch_heads:
-                            branch_heads = new_branchmap[branch] = set()
-                        branch_heads.add(head)
-                        new_heads.add(head)
-
-                branchmap = self._branchmap = BranchMap(
-                    self._store, new_branchmap, list(new_heads))
-
         refs_style = None
         refs_styles = ('bookmarks', 'heads', 'tips')
         if not fetch and branchmap.heads():
@@ -313,9 +247,6 @@ class GitRemoteHelper(BaseRemoteHelper):
             for name, sha1 in sorted(bookmarks.items()):
                 if sha1 == NULL_NODE_ID:
                     continue
-                ref = self._store.changeset_ref(sha1)
-                if self._graft and not ref:
-                    continue
                 refs[self._bookmark_template % name] = sha1
 
         for f in fetch:
@@ -332,8 +263,6 @@ class GitRemoteHelper(BaseRemoteHelper):
 
         if head_ref:
             head = refs.get(head_ref)
-            if self._graft and head:
-                head = self._store.changeset_ref(head)
             if head:
                 refs[b'HEAD'] = b'@%s' % head_ref
 
@@ -346,8 +275,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                 v = self._store.changeset_ref(v) or self._branchmap.git_sha1(v)
             elif not v.startswith(b'@'):
                 v = self._store.changeset_ref(v) or b'?'
-            if not self._graft or v != b'?':
-                self._helper.write(b'%s %s\n' % (v, k))
+            self._helper.write(b'%s %s\n' % (v, k))
 
         self._helper.write(b'\n')
         self._helper.flush()
@@ -378,6 +306,26 @@ class GitRemoteHelper(BaseRemoteHelper):
         heads = wanted_refs.values()
         if not heads:
             heads = self._branchmap.heads()
+
+        GRAFT = {
+            None: False,
+            b'false': False,
+            b'true': True,
+        }
+        try:
+            graft = Git.config('cinnabar.graft', remote=self._remote.name,
+                               values=GRAFT)
+        except InvalidConfig as e:
+            logging.error(str(e))
+            return 1
+        if Git.config('cinnabar.graft-refs') is not None:
+            logging.warn(
+                'The cinnabar.graft-refs configuration is deprecated.\n'
+                'Please unset it.'
+            )
+
+        if graft:
+            self._store.prepare_graft()
 
         try:
             # Mercurial can be an order of magnitude slower when creating
