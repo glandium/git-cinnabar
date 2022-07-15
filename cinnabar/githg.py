@@ -601,19 +601,24 @@ class GitHgStore(object):
         self._replace = Git._replace
         self._tagcache_ref = None
         self._metadata_sha1 = None
+        broken = None
         # While doing a for_each_ref, ensure refs/notes/cinnabar is in the
         # cache.
         for sha1, ref in Git.for_each_ref('refs/cinnabar',
                                           'refs/notes/cinnabar'):
             if ref.startswith(b'refs/cinnabar/replace/'):
-                self._replace[ref[22:]] = sha1
+                # Ignore replace refs, we'll fill from the metadata tree.
+                pass
             elif ref.startswith(b'refs/cinnabar/branches/'):
                 raise OldUpgradeAbort()
             elif ref == b'refs/cinnabar/metadata':
                 self._metadata_sha1 = sha1
             elif ref == b'refs/cinnabar/tag_cache':
                 self._tagcache_ref = sha1
-        self._replace = VersionedDict(self._replace)
+            elif ref == b'refs/cinnabar/broken':
+                broken = sha1
+        self._broken = broken and self._metadata_sha1 and \
+            broken == self._metadata_sha1
 
         self._tagcache = {}
         self._tagfiles = {}
@@ -654,16 +659,14 @@ class GitHgStore(object):
 
             self._manifest_heads_orig = set(GitHgHelper.heads(b'manifests'))
 
-            replace = {}
             for line in Git.ls_tree(metadata.tree):
                 mode, typ, sha1, path = line
-                replace[path] = sha1
-
-            if self._replace and not replace:
-                raise OldUpgradeAbort()
+                self._replace[path] = sha1
 
             # Delete old tag-cache, which may contain incomplete data.
             Git.delete_ref(b'refs/cinnabar/tag-cache')
+
+        self._replace = VersionedDict(self._replace)
 
     def prepare_graft(self):
         self._graft = Grafter(self)
@@ -1187,8 +1190,9 @@ class GitHgStore(object):
         hg_changeset_heads = list(self._hgheads)
         changeset_heads = list(self.changeset_ref(h)
                                for h in hg_changeset_heads)
+        bundle_blob = getattr(self, "bundle_blob", None)
         if (any(self._hgheads.iterchanges()) or
-                b'refs/cinnabar/changesets' in refresh):
+                b'refs/cinnabar/changesets' in refresh or bundle_blob):
             heads = sorted((self._hgheads[h][1], self._hgheads[h][0], h, g)
                            for h, g in zip(hg_changeset_heads,
                                            changeset_heads))
@@ -1197,7 +1201,8 @@ class GitHgStore(object):
                 parents=list(h for _, __, ___, h in heads),
                 message=b'\n'.join(b'%s %s' % (h, b) for _, b, h, __ in heads),
             ) as commit:
-                pass
+                if bundle_blob:
+                    commit.filemodify(b'bundle', bundle_blob)
             update_metadata[b'refs/cinnabar/changesets'] = commit.sha1
 
         changeset_heads = set(changeset_heads)
@@ -1246,6 +1251,7 @@ class GitHgStore(object):
             ) as commit:
                 for sha1, target in util.iteritems(self._replace):
                     commit.filemodify(sha1, target, b'commit')
+            self._metadata_sha1 = commit.sha1
 
         for c in self._tagcache:
             if c not in changeset_heads:
@@ -1313,7 +1319,8 @@ class GitHgStore(object):
                 util.iteritems(stored_files)):
             if not GitHgHelper.check_file(node, parent1, parent2):
                 busted = True
-                logging.error("Error in file %s" % node)
+                logging.error(
+                    "Error in file %s" % node.decode('ascii', 'replace'))
         if busted:
             import json
             extra = ""
@@ -1321,6 +1328,7 @@ class GitHgStore(object):
                 extra = \
                     "If it failed, please also copy/paste the following:\n"
                 extra += json.dumps(getbundle_params, sort_keys=True, indent=4)
+            Git.update_ref(b'refs/cinnabar/broken', self._metadata_sha1)
             raise Abort(
                 "It seems you have hit a known, rare, and difficult to "
                 "reproduce issue.\n"
@@ -1332,5 +1340,5 @@ class GitHgStore(object):
                 "(https://github.com/glandium/git-cinnabar/issues/new)\n"
                 "mentioning issue #207 and reporting whether the second "
                 "attempt succeeded.\n" + extra + "\n"
-                "Please keep a copy of this repository."
+                "Please read all the above and keep a copy of this repository."
             )

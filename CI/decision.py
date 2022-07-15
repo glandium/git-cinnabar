@@ -22,6 +22,7 @@ from tasks import (
 from tools import (
     GIT_VERSION,
     MERCURIAL_VERSION,
+    PY3_MERCURIAL_VERSION,
     ALL_MERCURIAL_VERSIONS,
     SOME_MERCURIAL_VERSIONS,
     Git,
@@ -92,10 +93,13 @@ class TestTask(Task):
                 ' refs/heads/branches/default/tip',
             ])
             kwargs.setdefault('env', {})['REPO'] = REPO
-        command.extend((
-            'repo/git-cinnabar --version',
-            'GIT_CINNABAR_COVERAGE= repo/git-cinnabar python --version',
-        ))
+        if "clone w/ 0.3" not in (desc or ""):
+            command.extend((
+                # 0.4 doesn't support running with CWD outside a git repo.
+                '(cd repo; ./git-cinnabar --version)',
+                '(cd repo; GIT_CINNABAR_COVERAGE='
+                ' ./git-cinnabar python --version)',
+            ))
         if variant == 'coverage':
             command = [
                 'export GIT_CINNABAR_COVERAGE=1',
@@ -154,16 +158,29 @@ class Clone(TestTask, metaclass=Tool):
     def __init__(self, version):
         sha1 = git_rev_parse(version)
         expireIn = '26 weeks'
-        if version == TC_COMMIT or len(version) == 40:
+        if version == TC_COMMIT or len(version) == 40 or \
+                version in ('0.5.0b2', '0.5.0b3'):
             if version == TC_COMMIT:
                 download = Helper.install('linux')
+            elif version == '0.5.0b2':
+                download = Helper.install(
+                    'linux.old:419f4d2de0f1f0229ca0900774a576db5668e60e')
+            elif version == '0.5.0b3':
+                download = Helper.install(
+                    'linux.old:e47124aa510a3b01409c260c2659666d885ae62f')
             else:
                 download = Helper.install('linux.old:{}'.format(version))
             expireIn = '26 weeks'
         elif parse_version(version) > parse_version('0.5.0a'):
-            download = ['repo/git-cinnabar download']
+            download = [
+                'python2.7 -m pip install requests',
+                'repo/git-cinnabar download',
+            ]
         elif parse_version(version) == parse_version('0.4.0'):
-            download = ['(cd repo ; ./git-cinnabar download)']
+            download = [
+                'python2.7 -m pip install requests',
+                '(cd repo ; ./git-cinnabar download)',
+            ]
         else:
             download = []
         if (parse_version(version) < parse_version('0.5.0b3') and
@@ -211,10 +228,10 @@ def decision():
             '(cd repo &&'
             ' nosetests --all-modules --with-coverage --cover-tests tests &&'
             ' nosetests3 --all-modules tests)',
-            '(cd repo && python2.7 -m flake8 --ignore E402,F405'
+            '(cd repo && python2.7 -m flake8 --ignore E402,F405,W504'
             ' $(git ls-files \\*\\*.py git-cinnabar git-remote-hg'
             ' | grep -v ^CI/))',
-            '(cd repo && flake8 --ignore E402,F405'
+            '(cd repo && flake8 --ignore E402,F405,W504'
             ' $(git ls-files CI/\\*\\*.py)'
             ' $(git grep -l unicode_literals))',
         ],
@@ -228,25 +245,26 @@ def decision():
         TestTask(task_env=env)
 
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
-        Task(
-            task_env=task_env,
-            description='download helper {} {}'.format(task_env.os,
-                                                       task_env.cpu),
-            command=list(chain(
-                Git.install('{}.{}'.format(env, GIT_VERSION)),
-                Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
-                Task.checkout(),
-                [
-                    '(cd repo ; ./git-cinnabar download --dev)',
-                    'rm -rf repo/.git',
-                    '(cd repo ; ./git-cinnabar download --dev)',
-                    '(cd repo ; ./git-cinnabar download)',
+        if TC_IS_PUSH and TC_BRANCH != "try":
+            Task(
+                task_env=task_env,
+                description='download helper {} {}'.format(task_env.os,
+                                                           task_env.cpu),
+                command=list(chain(
+                    Git.install('{}.{}'.format(env, GIT_VERSION)),
+                    Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
+                    Task.checkout(),
+                    [
+                        '(cd repo ; ./git-cinnabar download --dev)',
+                        'rm -rf repo/.git',
+                        '(cd repo ; ./git-cinnabar download --dev)',
+                        '(cd repo ; ./git-cinnabar download)',
+                    ],
+                )),
+                dependencies=[
+                    Helper.by_name(env),
                 ],
-            )),
-            dependencies=[
-                Helper.by_name(env),
-            ],
-        )
+            )
 
     # Because nothing is using the x86 windows helper, we need to manually
     # touch it.
@@ -363,7 +381,8 @@ def decision():
 
         TestTask(
             task_env=env,
-            hg='{}.py3'.format(MERCURIAL_VERSION),
+            hg='{}.py3'.format(MERCURIAL_VERSION if env == 'mingw64' else
+                               PY3_MERCURIAL_VERSION),
         )
 
         TestTask(
@@ -372,7 +391,8 @@ def decision():
             env={
                 'GRAFT': '1',
             },
-            hg='{}.py3'.format(MERCURIAL_VERSION),
+            hg='{}.py3'.format(MERCURIAL_VERSION if env == 'mingw64' else
+                               PY3_MERCURIAL_VERSION),
         )
 
     TestTask(
@@ -398,7 +418,7 @@ def decision():
             'GIT_CINNABAR_EXPERIMENTS': 'true',
             'GIT_CINNABAR_LOG': 'reexec:3',
         },
-        hg='{}.py3'.format(MERCURIAL_VERSION),
+        hg='{}.py3'.format(PY3_MERCURIAL_VERSION),
     )
 
     TestTask(
@@ -409,7 +429,7 @@ def decision():
             'GIT_CINNABAR_LOG': 'reexec:3',
             'GRAFT': '1',
         },
-        hg='{}.py3'.format(MERCURIAL_VERSION),
+        hg='{}.py3'.format(PY3_MERCURIAL_VERSION),
     )
 
     for variant in ('coverage', 'old'):
@@ -484,13 +504,24 @@ def decision():
                     ['no-version-check'] + check),
                 'GIT_CINNABAR_EXPERIMENTS': 'true',
             },
-            hg='{}.py3'.format(MERCURIAL_VERSION),
+            hg='{}.py3'.format(PY3_MERCURIAL_VERSION),
         )
 
 
 def do_hg_version(hg):
-    TestTask(hg=hg)
-    cram_hg = [hg]
+    cram_hg = []
+    python2 = False
+    try:
+        # Don't run python2 tests for version >= 6.2, which doesn't support
+        # python2 anymore.
+        if StrictVersion(hg) < '6.2':
+            python2 = True
+    except ValueError:
+        # `hg` is a sha1 for trunk, which means it's >= 6.2
+        pass
+    if python2:
+        TestTask(hg=hg)
+        cram_hg.append(hg)
     try:
         # Don't run cram tests for version < 3.6, which would need
         # different tests because of server-side changes in behavior
@@ -498,8 +529,7 @@ def do_hg_version(hg):
         if StrictVersion(hg) < '3.6':
             return
     except ValueError:
-        # `hg` is a sha1 for trunk, which means it's >= 3.6.
-        # For trunk, also run py3 tests
+        # `hg` is a sha1 for trunk, which means it's >= 3.6
         TestTask(hg='{}.py3'.format(hg))
         cram_hg.append('{}.py3'.format(hg))
     for hg in cram_hg:
@@ -521,7 +551,8 @@ def do_hg_version(hg):
         description='Trigger tests against more mercurial versions')
 def more_hg_versions():
     for hg in ALL_MERCURIAL_VERSIONS:
-        if hg != MERCURIAL_VERSION and hg not in SOME_MERCURIAL_VERSIONS:
+        if hg not in (MERCURIAL_VERSION, PY3_MERCURIAL_VERSION) and \
+                hg not in SOME_MERCURIAL_VERSIONS:
             do_hg_version(hg)
 
 

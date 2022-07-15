@@ -27,30 +27,59 @@ def sources_list(snapshot, sections):
 
 DOCKER_IMAGES = {
     'base': '''\
-        FROM debian:stretch-20210927
+        FROM debian:stretch-20220418
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
          bzip2\\
          ca-certificates\\
          curl\\
+         libcurl3-gnutls\\
          python-setuptools\\
          python-pip\\
-         python-wheel\\
          python3-setuptools\\
          python3-pip\\
-         python3-wheel\\
          unzip\\
          xz-utils\\
          zip\\
          && apt-get clean &&\\
-         python2.7 -m pip install pip==20.3.4 --upgrade --ignore-installed&&\\
-         python3 -m pip install pip==20.3.4 --upgrade --ignore-installed
+         python2.7 -m pip install pip==20.3.4 wheel==0.37.0\\
+         --upgrade --ignore-installed&&\\
+         python3 -m pip install pip==20.3.4 wheel==0.37.0\\
+         --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
-            '20210927T204628Z', (
+            '20220418T210440Z', (
                 ('debian', 'stretch'),
                 ('debian', 'stretch-updates'),
                 ('debian-security', 'stretch/updates'),
+            )))),
+
+    'base-buster': '''\
+        FROM debian:buster-20220418
+        RUN ({}) > /etc/apt/sources.list
+        RUN apt-get update -o Acquire::Check-Valid-Until=false
+        RUN apt-get install -y --no-install-recommends\\
+         bzip2\\
+         ca-certificates\\
+         curl\\
+         libcurl3-gnutls\\
+         python-setuptools\\
+         python-pip\\
+         python3-setuptools\\
+         python3-pip\\
+         unzip\\
+         xz-utils\\
+         zip\\
+         && apt-get clean &&\\
+         python2.7 -m pip install pip==20.3.4 wheel==0.37.0\\
+         --upgrade --ignore-installed&&\\
+         python3 -m pip install pip==20.3.4 wheel==0.37.0\\
+         --upgrade --ignore-installed
+        '''.format('; '.join('echo ' + l for l in sources_list(
+            '20220418T210440Z', (  # noqa: E126
+                ('debian', 'buster'),
+                ('debian', 'buster-updates'),
+                ('debian-security', 'buster/updates'),
             )))),
 
     'build': '''\
@@ -59,7 +88,21 @@ DOCKER_IMAGES = {
          gcc\\
          git\\
          libc6-dev\\
-         libcurl4-openssl-dev\\
+         libcurl4-gnutls-dev\\
+         make\\
+         patch\\
+         python-dev\\
+         python3-dev\\
+         zlib1g-dev\\
+         && apt-get clean
+        ''',
+
+    'build-buster': '''\
+        FROM base-buster
+        RUN apt-get install -y --no-install-recommends\\
+         gcc\\
+         git\\
+         libc6-dev\\
          make\\
          patch\\
          python-dev\\
@@ -84,7 +127,7 @@ DOCKER_IMAGES = {
     ),
 
     'test': '''\
-        FROM base
+        FROM base-buster
         RUN apt-get install -y --no-install-recommends\\
          flake8\\
          make\\

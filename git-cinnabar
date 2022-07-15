@@ -2,18 +2,26 @@
 ''':'
 py="$GIT_CINNABAR_PYTHON"
 if test -z "$py"; then
-  for py in python3 python2.7 python2; do
+  for py in python3 python python2.7 python2; do
     "$py" -c "from mercurial import hg" >/dev/null 2>&1 && break
     py=
   done
 fi
 if test -z "$py"; then
-  for py in python3 python2.7 python2; do
-    command -v "$py" > /dev/null && break
+  for py in python3 python python2.7 python2 "py -3" "py -2"; do
+    # Make sure this Python actually works. On Windows, python.exe, etc. might
+    # try to run the Windows Store app even if it's not installed.
+    $py -c "import sys" >/dev/null 2>&1 && break
     py=python3
   done
 fi
-exec "$py" "$0" "$@"
+if test -n "$GIT_CINNABAR_PYTHON"; then
+  # $GIT_CINNABAR_PYTHON is an executable which might contain spaces.
+  exec "$GIT_CINNABAR_PYTHON" "$0" "$@"
+else
+  # If $py contains spaces, these will be arguments.
+  exec $py "$0" "$@"
+fi
 exit 1
 '''
 

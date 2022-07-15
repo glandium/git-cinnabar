@@ -18,7 +18,6 @@ from cinnabar.git import (
 )
 from cinnabar.util import (
     fsdecode,
-    interval_expired,
     iteritems,
     Progress,
     progress_iter,
@@ -353,7 +352,6 @@ def fsck_quick(force=False):
     if fix_changeset_heads:
         status.fix('Fixing changeset heads metadata order.')
         refresh.append('refs/cinnabar/changesets')
-    interval_expired('fsck', 0)
     store.close(refresh=refresh)
     GitHgHelper._helper = False
     metadata_commit = Git.resolve_ref('refs/cinnabar/metadata')
@@ -388,10 +386,11 @@ def fsck(args):
         all_git_commits = {}
 
         for c in args.commit:
+            c = c.encode('ascii')
             cs = store.hg_changeset(c)
             if cs:
                 commits.add(c)
-                c = cs.node
+                c = cs
             commit = GitHgHelper.hg2git(c)
             if commit == NULL_NODE_ID and not cs:
                 status.info('Unknown commit or changeset: %s'
@@ -416,7 +415,8 @@ def fsck(args):
 
     dag = gitdag()
 
-    GitHgHelper.reset_heads(b'manifests')
+    if not args.commit:
+        GitHgHelper.reset_heads(b'manifests')
 
     full_file_check = FileFindParents.logger.isEnabledFor(logging.DEBUG)
 
@@ -450,21 +450,21 @@ def fsck(args):
         if hg_changeset.node != hg_changeset.sha1:
             status.report('Sha1 mismatch for changeset %s'
                           % changeset.decode('ascii'))
+        else:
+            raw_changeset = Changeset.from_git_commit(node)
+            patcher = ChangesetPatcher.from_diff(raw_changeset, changeset_data)
+            if patcher != store.read_changeset_data(node):
+                status.fix('Adjusted changeset metadata for %s'
+                           % changeset.decode('ascii'))
+                GitHgHelper.set(b'changeset', changeset, NULL_NODE_ID)
+                GitHgHelper.set(b'changeset', changeset, node)
+                GitHgHelper.put_blob(patcher, want_sha1=False)
+                GitHgHelper.set(b'changeset-metadata', changeset, NULL_NODE_ID)
+                GitHgHelper.set(b'changeset-metadata', changeset, b':1')
 
         dag.add(hg_changeset.node,
                 (hg_changeset.parent1, hg_changeset.parent2),
                 changeset_data.branch or b'default')
-
-        raw_changeset = Changeset.from_git_commit(node)
-        patcher = ChangesetPatcher.from_diff(raw_changeset, changeset_data)
-        if patcher != store.read_changeset_data(node):
-            status.fix('Adjusted changeset metadata for %s'
-                       % changeset.decode('ascii'))
-            GitHgHelper.set(b'changeset', changeset, NULL_NODE_ID)
-            GitHgHelper.set(b'changeset', changeset, node)
-            GitHgHelper.put_blob(patcher, want_sha1=False)
-            GitHgHelper.set(b'changeset-metadata', changeset, NULL_NODE_ID)
-            GitHgHelper.set(b'changeset-metadata', changeset, b':1')
 
         manifest = changeset_data.manifest
         if GitHgHelper.seen(b'hg2git', manifest) or manifest == NULL_NODE_ID:
@@ -483,7 +483,8 @@ def fsck(args):
 
         # This doesn't change the value but makes the helper track the manifest
         # dag.
-        GitHgHelper.set(b'manifest', manifest, manifest_ref)
+        if not args.commit:
+            GitHgHelper.set(b'manifest', manifest, manifest_ref)
 
         if not GitHgHelper.check_manifest(manifest):
             status.report('Sha1 mismatch for manifest %s'
@@ -503,8 +504,8 @@ def fsck(args):
         changes = get_changes(manifest_ref, git_parents)
         for path, hg_file, hg_fileparents in changes:
             if hg_file != NULL_NODE_ID and (hg_file == HG_EMPTY_FILE or
-                                            GitHgHelper.seen(b'hg2git',
-                                                             hg_file)):
+                                            not GitHgHelper.seen(b'hg2git',
+                                                                 hg_file)):
                 if full_file_check:
                     file = store.file(hg_file, hg_fileparents)
                     valid = file.node == file.sha1
@@ -559,7 +560,8 @@ def fsck(args):
         dangling = GitHgHelper.dangling(b'git2hg')
     for c in dangling:
         status.fix('Removing dangling note for commit ' + c.decode('ascii'))
-        GitHgHelper.set(b'changeset-metadata', c, NULL_NODE_ID)
+        GitHgHelper.set(
+            b'changeset-metadata', store.hg_changeset(c), NULL_NODE_ID)
 
     check_replace(store)
 
@@ -598,7 +600,6 @@ def fsck(args):
 
     if args.full:
         Git.update_ref(b'refs/cinnabar/checked', metadata_commit)
-    interval_expired('fsck', 0)
     store.close()
 
     if status('fixed'):

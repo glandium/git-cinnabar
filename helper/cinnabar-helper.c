@@ -2411,14 +2411,11 @@ static void init_git_config()
 	 * might be important configuration items there (like http.sslcainfo
 	 * on git for windows).
 	 * Trick git into giving us the path to it system gitconfig. */
-	const char *argv[] = {
-		"git", "config", "--system", "-e", NULL
-	};
 	if (env && *env) {
 		setup_path();
 	}
-	proc.argv = argv;
-	strvec_push(&proc.env_array, "GIT_EDITOR=echo");
+	strvec_pushl(&proc.args, "git", "config", "--system", "-e", NULL);
+	strvec_push(&proc.env, "GIT_EDITOR=echo");
 	proc.no_stdin = 1;
 	proc.no_stderr = 1;
 	/* We don't really care about the capture_command return value. If
@@ -2585,4 +2582,9 @@ int main(int argc, const char *argv[])
 	oidset_clear(&hg2git_seen);
 	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
 	return 0;
+}
+
+int common_exit(const char *file, int line, int code)
+{
+	return code;
 }

@@ -155,7 +155,7 @@ else:
         return fh
 
 
-if not unbundle20 and not check_enabled('no-bundle2'):
+if not changegroup and not unbundle20 and not check_enabled('no-bundle2'):
     class unbundle20(object):
         def __init__(self, ui, fh):
             self.fh = fh
@@ -510,9 +510,11 @@ class HelperRepo(object):
         heads = [hexlify(h) for h in heads]
         common = [hexlify(c) for c in common]
         bundlecaps = b','.join(kwargs.get('bundlecaps', ()))
-        getbundle_params["heads"] = heads
-        getbundle_params["common"] = common
-        getbundle_params["bundlecaps"] = bundlecaps
+        getbundle_params["heads"] = [
+            h.decode('ascii', 'replace') for h in heads]
+        getbundle_params["common"] = [
+            c.decode('ascii', 'replace') for c in common]
+        getbundle_params["bundlecaps"] = bundlecaps.decode('utf-8', 'replace')
         data = HgRepoHelper.getbundle(heads, common, bundlecaps)
         header = readexactly(data, 4)
         if header == b'HG20':
@@ -540,7 +542,7 @@ class HelperRepo(object):
     def unbundle(self, cg, heads, *args, **kwargs):
         data = HgRepoHelper.unbundle(cg, (hexlify(h) if h != b'force' else h
                                           for h in heads))
-        if isinstance(data, str) and data.startswith(b'HG20'):
+        if isinstance(data, bytes) and data.startswith(b'HG20'):
             data = unbundle20(self.ui, BytesIO(data[4:]))
         return data
 
@@ -676,9 +678,34 @@ def unbundler(bundle):
         chunk_type = RawRevChunk01
         cg = bundle
 
+    if check_enabled('unbundler') and "GIT_DIR" in os.environ:
+        class BundleSaver(object):
+            def __init__(self, cg):
+                self.cg = cg
+                self.out = BytesIO()
+                self.out.write(b'HG20\0\0\0\0')
+                self.out.write(b'\0\0\0\x1d\x0bCHANGEGROUP\0\0\0\0')
+                self.out.write(b'\x01\x00\x07\x02version')
+                self.out.write(b'01' if chunk_type is RawRevChunk01 else b'02')
+
+            def read(self, length=None):
+                data = self.cg.read(length)
+                self.out.write(struct.pack('>l', len(data)))
+                self.out.write(data)
+                return data
+
+            def end_bundle(self):
+                self.out.write(b'\0\0\0\0\0\0\0\0')
+
+        cg = BundleSaver(cg)
+
     yield chunks_in_changegroup(chunk_type, cg, 'changeset')
     yield chunks_in_changegroup(chunk_type, cg, 'manifest')
     yield iterate_files(chunk_type, cg)
+
+    if hasattr(cg, "end_bundle"):
+        cg.end_bundle()
+        yield GitHgHelper.put_blob(data=cg.out.getvalue())
 
     if unbundle20 and isinstance(bundle, unbundle20):
         for part in parts:
@@ -815,6 +842,9 @@ def store_changegroup(changegroup):
 
         yield iter_files(next(changegroup, None))
 
+        if check_enabled('unbundler') and "GIT_DIR" in os.environ:
+            yield next(changegroup)
+
         if next(changegroup, None) is not None:
             assert False
 
@@ -867,6 +897,9 @@ class BundleApplier(object):
                 'Reading and importing {} revisions of {} files',
                 enumerate_files(next(self._bundle, None))):
             pass
+
+        if check_enabled('unbundler') and "GIT_DIR" in os.environ:
+            store.bundle_blob = next(self._bundle)
 
         if next(self._bundle, None) is not None:
             assert False
@@ -1167,6 +1200,10 @@ def get_ui():
 
 def munge_url(url):
     parsed_url = urlparse(url)
+    if not parsed_url.scheme:
+        # For urls without a scheme, try again with a normalized url with
+        # no double-slashes.
+        parsed_url = urlparse(re.sub(b'//+', b'/', url))
     # On Windows, assume that a one-letter scheme and no host means we
     # originally had something like c:/foo.
     if not parsed_url.scheme or (
@@ -1178,7 +1215,7 @@ def munge_url(url):
             path = parsed_url.path
         return ParseResult(
             b'file',
-            b'',
+            parsed_url.netloc,
             path,
             parsed_url.params,
             parsed_url.query,
@@ -1288,7 +1325,7 @@ def _get_repo(remote):
         if sys.platform == 'win32':
             # TODO: This probably needs more thought.
             path = path.lstrip(b'/')
-        if not os.path.isdir(path):
+        if os.path.isfile(path):
             return bundlerepo(path)
     ui = get_ui()
     if changegroup and remote.parsed_url.scheme == b'file':

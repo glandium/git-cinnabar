@@ -47,14 +47,20 @@ from weakref import WeakKeyDictionary
 from .exceptions import Abort
 
 
-class StreamHandler(logging.StreamHandler):
-    def __init__(self):
-        super(StreamHandler, self).__init__()
-        self._start_time = time.time()
+def gen_handler(cls):
+    class Handler(cls):
+        def __init__(self, start_time, *args):
+            super(Handler, self).__init__(*args)
+            self._start_time = start_time
 
-    def emit(self, record):
-        record.timestamp = record.created - self._start_time
-        super(StreamHandler, self).emit(record)
+        def emit(self, record):
+            record.timestamp = record.created - self._start_time
+            super(Handler, self).emit(record)
+    return Handler
+
+
+StreamHandler = gen_handler(logging.StreamHandler)
+FileHandler = gen_handler(logging.FileHandler)
 
 
 class Formatter(logging.Formatter):
@@ -81,22 +87,34 @@ def init_logging():
     # `git config -l` is never logged.
     from .git import Git
     logger = logging.getLogger()
-    handler = StreamHandler()
-    handler.setFormatter(Formatter())
+    start_time = time.time()
+    handler = StreamHandler(start_time)
+    formatter = Formatter()
+    handler.setFormatter(formatter)
     logger.addHandler(handler)
     log_conf = Git.config('cinnabar.log') or b''
     if not log_conf and not check_enabled('memory') and \
             not check_enabled('cpu'):
         return
+    file_handlers = {}
     for assignment in log_conf.split(b','):
         try:
-            name, value = assignment.split(b':', 1)
-            value = int(value)
+            assignment, _, path = assignment.partition(b'>')
+            name, _, value = assignment.partition(b':')
             name = name.decode('ascii')
             if name == '*':
                 name = ''
-            logging.getLogger(name).setLevel(
-                max(logging.DEBUG, logging.FATAL - value * 10))
+            if path and path not in file_handlers:
+                file_handlers[path] = FileHandler(start_time, path)
+                file_handlers[path].setFormatter(formatter)
+            if path or value:
+                logger = logging.getLogger(name)
+                if value:
+                    logger.setLevel(
+                        max(logging.DEBUG, logging.FATAL - int(value) * 10))
+                if path:
+                    logger.propagate = False
+                    logger.addHandler(file_handlers[path])
         except Exception:
             pass
 
@@ -144,7 +162,8 @@ check_enabled = ConfigSetFunc(
     'cinnabar.check',
     ('nodeid', 'manifests', 'helper'),
     ('bundle', 'files', 'memory', 'cpu', 'time', 'traceback', 'no-mercurial',
-     'no-bundle2', 'cinnabarclone', 'clonebundles', 'no-version-check'),
+     'no-bundle2', 'cinnabarclone', 'clonebundles', 'no-version-check',
+     'unbundler'),
 )
 
 experiment = ConfigSetFunc(
@@ -165,10 +184,6 @@ def interval_expired(config_key, interval, globl=False):
     if last:
         if last + interval > now:
             return False
-    # cinnabar.fsck used to be global and is now local.
-    # Remove the global value.
-    if globl is not True and config_key == 'cinnabar.fsck':
-        Git.run('config', '--global', '--unset', config_key)
     Git.run('config', '--global' if globl else '--local',
             config_key, str(int(now)))
     return bool(last)
@@ -578,15 +593,15 @@ class chunkbuffer(object):
         self._queue = deque()
         self._chunkoffset = 0
 
-    def read(self, l=None):
+    def read(self, length=None):
         """Read L bytes of data from the iterator of chunks of data.
         Returns less than L bytes if the iterator runs dry.
 
         If size parameter is omitted, read everything"""
-        if l is None:
+        if length is None:
             return b''.join(self.iter)
 
-        left = l
+        left = length
         buf = []
         queue = self._queue
         while left > 0:
@@ -708,10 +723,10 @@ class HTTPReader(object):
             return None
         logging.getLogger('httpreader').debug('Retrying from offset %d', start)
         while start < self.offset:
-            l = len(fh.read(self.offset - start))
-            if not l:
+            length = len(fh.read(self.offset - start))
+            if not length:
                 return None
-            start += l
+            start += length
         return fh
 
     def readable(self):
@@ -1008,11 +1023,13 @@ def run(func, args):
         # Catch all exceptions and provide a nice message
         retcode = 70  # Internal software error
         message = getattr(e, 'message', None) or getattr(e, 'reason', None)
+        message = message or ', '.join(
+            fsdecode(a) for a in getattr(e, 'args', []))
         message = message or str(e)
         if check_enabled('traceback') or not message:
             traceback.print_exc()
         else:
-            logging.error(message)
+            logging.error(fsdecode(message))
 
             sys.stderr.write(
                 'Run the command again with '

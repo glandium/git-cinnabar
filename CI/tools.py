@@ -11,8 +11,9 @@ from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '5.9.1'
-GIT_VERSION = '2.34.0'
+MERCURIAL_VERSION = '6.1.4'
+PY3_MERCURIAL_VERSION = '6.2'
+GIT_VERSION = '2.37.1'
 
 ALL_MERCURIAL_VERSIONS = (
     '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
@@ -20,7 +21,8 @@ ALL_MERCURIAL_VERSIONS = (
     '3.3.3', '3.4.2', '3.5.2', '3.6.3', '3.7.3', '3.8.4', '3.9.2',
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
     '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2', '5.3.2',
-    '5.4.2', '5.5.2', '5.6.1', '5.7.1', '5.8.1', '5.9.1',
+    '5.4.2', '5.5.2', '5.6.1', '5.7.1', '5.8.1', '5.9.3', '6.0.3',
+    '6.1.4', '6.2'
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -28,6 +30,7 @@ SOME_MERCURIAL_VERSIONS = (
 )
 
 assert MERCURIAL_VERSION in ALL_MERCURIAL_VERSIONS
+assert PY3_MERCURIAL_VERSION in ALL_MERCURIAL_VERSIONS
 assert all(v in ALL_MERCURIAL_VERSIONS for v in SOME_MERCURIAL_VERSIONS)
 
 
@@ -65,7 +68,8 @@ class Git(Task, metaclass=Tool):
                     'v{}'.format(version)
                 ) + [
                     'make -C repo -j$({}) install prefix=/ NO_GETTEXT=1'
-                    ' NO_OPENSSL=1 NO_TCLTK=1 DESTDIR=$PWD/git'.format(
+                    ' NO_OPENSSL=1 NO_TCLTK=1 NO_UNCOMPRESS2=1'
+                    ' DESTDIR=$PWD/git'.format(
                         nproc(build_image)),
                     'tar -Jcf $ARTIFACTS/git-{}.tar.xz git'
                     .format(version),
@@ -109,16 +113,16 @@ class Git(Task, metaclass=Tool):
     @classmethod
     def install(cls, name):
         url = '{{{}.artifact}}'.format(cls.by_name(name))
-        if name.startswith('linux.'):
+        if name.startswith(('linux.', 'osx.')):
             return [
-                'curl -L {} | tar -Jxf -'.format(url),
+                'curl --compressed -L {} | tar -Jxf -'.format(url),
                 'export PATH=$PWD/git/bin:$PATH',
                 'export GIT_EXEC_PATH=$PWD/git/libexec/git-core',
                 'export GIT_TEMPLATE_DIR=$PWD/git/share/git-core/templates',
             ]
         else:
             return [
-                'curl -L {} -o git.tar.bz2'.format(url),
+                'curl --compressed -L {} -o git.tar.bz2'.format(url),
                 'tar -jxf git.tar.bz2',
             ]
 
@@ -133,13 +137,16 @@ class Hg(Task, metaclass=Tool):
             python = 'python3'
         else:
             python = 'python2.7'
-        env = TaskEnvironment.by_name('{}.build'.format(os))
+        if os == 'linux':
+            env = TaskEnvironment.by_name('{}.build-buster'.format(os))
+        else:
+            env = TaskEnvironment.by_name('{}.build'.format(os))
         kwargs = {}
 
         if len(version) == 40:
             # Assume it's a sha1
             pretty_version = 'r{}{}'.format(version, suffix)
-            artifact_version = 'unknown'
+            artifact_version = '99.0'
             expire = '2 weeks'
         else:
             pretty_version = 'v{}{}'.format(version, suffix)
@@ -149,8 +156,8 @@ class Hg(Task, metaclass=Tool):
         if os == 'linux':
             platform_tag = 'linux_x86_64'
             if python == 'python3':
-                python_tag = 'cp35'
-                abi_tag = 'cp35m'
+                python_tag = 'cp37'
+                abi_tag = 'cp37m'
             else:
                 python_tag = 'cp27'
                 abi_tag = 'cp27mu'
@@ -189,18 +196,21 @@ class Hg(Task, metaclass=Tool):
             pre_command.extend([
                 'hg clone https://www.mercurial-scm.org/repo/hg'
                 ' -r {} mercurial-{}'.format(version, version),
-                'rm -rf hg/.hg',
-                'echo tag: unknown > hg/.hg_archival.txt',
+                'rm -rf mercurial-{}/.hg'.format(version),
+                'echo tag: {} > mercurial-{}/.hg_archival.txt'
+                .format(artifact_version, version),
             ])
         # 2.6.2 is the first version available on pypi
-        elif parse_version('2.6.2') <= parse_version(version):
+        elif parse_version('2.6.2') <= parse_version(version) and \
+                (parse_version(version) < parse_version('6.1') or
+                 not os.startswith('mingw')):
             # Always download with python2.7 because pip download does more
             # than download, and one of the things it does, namely requirements
             # validation, breaks on Windows with python3 < 3.7 (because
             # mercurial declares it's not compatible with those).
             pre_command.append(
-                'python2.7 -m pip download --no-binary mercurial --no-deps'
-                ' --progress-bar off mercurial=={}'.format(version))
+                '{} -m pip download --no-binary mercurial --no-deps'
+                ' --progress-bar off mercurial=={}'.format(python, version))
         else:
             url = 'https://mercurial-scm.org/release/mercurial-{}.tar.gz'
             pre_command.append(
@@ -212,15 +222,24 @@ class Hg(Task, metaclass=Tool):
 
         if os.startswith('mingw'):
             # Trick setup.py into not doing a python3 version check. Also
-            # work around https://bz.mercurial-scm.org/show_bug.cgi?id=6601
+            # work around https://bz.mercurial-scm.org/show_bug.cgi?id=6654
             pre_command.append(
                 'sed -i "s/if issetuptools/if False/;'
-                's,(.contrib/win32/hg.bat.),," mercurial-{}/setup.py'
+                's/, output_dir=self.build_temp/, output_dir=self.build_temp'
+                ', extra_postargs=[$EXTRA_FLAGS]/;'
+                '" mercurial-{}/setup.py'
+                .format(version))
+            if python == 'python3':
+                kwargs.setdefault('env', {}).setdefault(
+                    'EXTRA_FLAGS', '"-municode"')
+            pre_command.append(
+                'sed -i "s/ifdef __GNUC__/if 0/"'
+                ' mercurial-{}/mercurial/exewrapper.c'
                 .format(version))
 
         h = hashlib.sha1(env.hexdigest.encode())
         h.update(artifact.encode())
-        h.update(b'v1')
+        h.update(b'v4' if os.startswith('mingw') else b'v1')
 
         Task.__init__(
             self,

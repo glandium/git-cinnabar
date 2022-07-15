@@ -383,6 +383,10 @@ class GitRemoteHelper(BaseRemoteHelper):
         self._helper.flush()
 
     def import_(self, *refs):
+        if self._store._broken:
+            raise Abort('Cannot fetch with broken metadata. '
+                        'Please fix your clone first.\n')
+
         # If anything wrong happens at any time, we risk git picking
         # the existing refs/cinnabar refs, so remove them preventively.
         for sha1, ref in Git.for_each_ref('refs/cinnabar/refs/heads',
@@ -421,7 +425,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                     heads = set(self._branchmap.heads()) & unknown_heads
                 getbundle(self._repo, self._store, heads,
                           self._branchmap.names())
-        except:
+        except:  # noqa: E722
             wanted_refs = {}
             raise
         finally:
@@ -470,11 +474,16 @@ class GitRemoteHelper(BaseRemoteHelper):
         pushes = list((Git.resolve_ref(fsdecode(s.lstrip(b'+'))), d,
                        s.startswith(b'+'))
                       for s, d in (r.split(b':', 1) for r in refspecs))
-        if not self._repo.capable(b'unbundle'):
+        if self._store._broken or not self._repo.capable(b'unbundle'):
             for source, dest, force in pushes:
-                self._helper.write(
-                    b'error %s Remote does not support the "unbundle" '
-                    b'capability\n' % dest)
+                if self._store._broken:
+                    self._helper.write(
+                        b'error %s Remote does not support the "unbundle" '
+                        b'capability\n' % dest)
+                else:
+                    self._helper.write(
+                        b'error %s Cannot push with broken metadata. '
+                        b'Please fix your clone first.\n' % dest)
             self._helper.write(b'\n')
             self._helper.flush()
         else:

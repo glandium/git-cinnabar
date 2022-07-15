@@ -215,7 +215,7 @@ struct hg_connection *hg_connect_stdio(const char *url, int flags)
 	if (looks_like_command_line_option(path))
 		die("strange pathname '%s' blocked", path);
 
-	proc->env = local_repo_env;
+	strvec_pushv(&proc->env, (const char **)local_repo_env);
 	proc->use_shell = 1;
 	proc->in = proc->out = proc->err = -1;
 
