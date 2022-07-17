@@ -162,8 +162,6 @@ class HelperRepo(object):
         )
 
     def _call(self, command, *args):
-        if command == b'clonebundles':
-            return self._helper.clonebundles()
         if command == b'cinnabarclone':
             return self._helper.cinnabarclone()
         raise NotImplementedError()

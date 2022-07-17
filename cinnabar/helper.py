@@ -393,11 +393,6 @@ class HgRepoHelper(BaseHelper):
                 return ret
 
     @classmethod
-    def clonebundles(self):
-        with self.query(b'clonebundles', self.connected) as stdout:
-            return self._read_data(stdout)
-
-    @classmethod
     def cinnabarclone(self):
         with self.query(b'cinnabarclone', self.connected) as stdout:
             return self._read_data(stdout)
