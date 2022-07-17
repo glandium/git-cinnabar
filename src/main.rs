@@ -1985,7 +1985,7 @@ fn check_replace(metadata_cid: &CommitId) {
     }
 }
 
-fn manifest_path(p: &[u8]) -> Box<BStr> {
+pub fn manifest_path(p: &[u8]) -> Box<BStr> {
     p.strip_prefix(b"_")
         .unwrap()
         .replace("/_", "/")

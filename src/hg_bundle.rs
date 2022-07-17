@@ -2,10 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::collections::BTreeMap;
+use std::cell::Cell;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{self, copy, BufRead, Chain, Cursor, ErrorKind, Read, Write};
+use std::iter::repeat;
 use std::mem::{self, MaybeUninit};
 use std::os::raw::c_int;
 use std::ptr::NonNull;
@@ -30,6 +32,7 @@ use crate::hg_connect::{HgConnection, HgConnectionBase};
 use crate::hg_data::find_parents;
 use crate::libcinnabar::files_meta;
 use crate::libgit::BlobId;
+use crate::oid::GitObjectId;
 use crate::progress::Progress;
 use crate::store::{
     ChangesetHeads, GitFileMetadataId, HgChangesetId, HgFileId, HgManifestId, RawHgChangeset,
@@ -37,7 +40,7 @@ use crate::store::{
 };
 use crate::util::{FromBytes, OsStrExt, ToBoxed};
 use crate::xdiff::textdiff;
-use crate::HELPER_LOCK;
+use crate::{get_changes, manifest_path, HELPER_LOCK};
 use crate::{
     libcinnabar::hg_object_id,
     libgit::strbuf,
@@ -1019,6 +1022,7 @@ pub fn do_create_bundle(input: &mut dyn BufRead, mut out: impl Write, args: &[&[
                     .then(|| u8::from_str(info.get_param("version").unwrap_or("01")).unwrap());
                 let mut bundle_part_writer = bundle_writer.new_part(info).unwrap();
                 let mut previous = None;
+                let mut files = HashMap::new();
                 loop {
                     buf.truncate(0);
                     input.read_until(b'\0', &mut buf).unwrap();
@@ -1039,7 +1043,7 @@ pub fn do_create_bundle(input: &mut dyn BufRead, mut out: impl Write, args: &[&[
                             }
                             break;
                         }
-                        b"changeset" | b"manifest" | b"file" => {
+                        b"changeset" | b"manifest" => {
                             let [node, parent1, parent2, changeset] =
                                 args.next().unwrap().splitn_exact(b' ').unwrap();
                             let node = HgObjectId::from_bytes(node).unwrap();
@@ -1085,55 +1089,78 @@ pub fn do_create_bundle(input: &mut dyn BufRead, mut out: impl Write, args: &[&[
                                         },
                                     )
                                     .unwrap();
-                                }
-                                b"file" => {
-                                    let generate = |node: &HgObjectId| {
-                                        let node = HgFileId::from_unchecked(node.clone());
-                                        let metadata =
-                                            unsafe { files_meta.get_note(&node) }.map(|oid| {
-                                                GitFileMetadataId::from_unchecked(
-                                                    BlobId::from_unchecked(oid),
-                                                )
-                                            });
-
-                                        let file = RawHgFile::read(
-                                            &node.to_git().unwrap(),
-                                            metadata.as_ref(),
-                                        )
+                                    let git_node = HgManifestId::from_unchecked(node.clone())
+                                        .to_git()
                                         .unwrap();
-                                        file.0
-                                    };
-                                    let [parent1, parent2] = find_parents(
-                                        &node,
-                                        Some(&parent1),
-                                        Some(&parent2),
-                                        &generate(&node),
-                                    );
-                                    write_chunk(
-                                        &mut bundle_part_writer,
-                                        version.as_ref().copied().unwrap(),
-                                        &node,
-                                        parent1.unwrap_or(&HgObjectId::null()),
-                                        parent2.unwrap_or(&HgObjectId::null()),
-                                        &changeset,
-                                        &mut previous,
-                                        generate,
-                                    )
-                                    .unwrap();
+                                    let git_parents = [parent1, parent2]
+                                        .into_iter()
+                                        .filter_map(|p| {
+                                            (p != HgObjectId::null()).then(|| {
+                                                (*HgManifestId::from_unchecked(p).to_git().unwrap())
+                                                    .clone()
+                                            })
+                                        })
+                                        .collect_vec();
+                                    for (path, hg_file, hg_fileparents) in
+                                        get_changes(&git_node, &git_parents, false)
+                                    {
+                                        if hg_file != GitObjectId::null() {
+                                            files
+                                                .entry(path)
+                                                .or_insert_with(IndexMap::new)
+                                                .entry(
+                                                    HgFileId::from_bytes(
+                                                        format!("{}", hg_file).as_bytes(),
+                                                    )
+                                                    .unwrap(),
+                                                )
+                                                .or_insert_with(|| {
+                                                    (
+                                                        HgFileId::from_bytes(
+                                                            format!(
+                                                                "{}",
+                                                                hg_fileparents
+                                                                    .get(0)
+                                                                    .cloned()
+                                                                    .unwrap_or_else(
+                                                                        GitObjectId::null
+                                                                    )
+                                                            )
+                                                            .as_bytes(),
+                                                        )
+                                                        .unwrap(),
+                                                        HgFileId::from_bytes(
+                                                            format!(
+                                                                "{}",
+                                                                hg_fileparents
+                                                                    .get(1)
+                                                                    .cloned()
+                                                                    .unwrap_or_else(
+                                                                        GitObjectId::null
+                                                                    )
+                                                            )
+                                                            .as_bytes(),
+                                                        )
+                                                        .unwrap(),
+                                                        changeset.clone(),
+                                                    )
+                                                });
+                                        }
+                                    }
                                 }
                                 _ => unreachable!(),
                             }
                         }
-                        b"path" => {
-                            let path = args.next().unwrap();
-                            bundle_part_writer
-                                .write_u32::<BigEndian>((4 + path.len()).try_into().unwrap())
-                                .unwrap();
-                            bundle_part_writer.write_all(path).unwrap();
-                        }
                         b"null" => {
                             bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
                             previous = None;
+                            if !files.is_empty() {
+                                bundle_files(
+                                    &mut bundle_part_writer,
+                                    version.unwrap(),
+                                    files.drain(),
+                                );
+                            }
                         }
                         _ => {
                             break;
@@ -1147,4 +1174,53 @@ pub fn do_create_bundle(input: &mut dyn BufRead, mut out: impl Write, args: &[&[
         }
     }
     writeln!(out, "done").unwrap();
+}
+
+fn bundle_files<const CHUNK_SIZE: usize>(
+    bundle_part_writer: &mut BundlePartWriter<CHUNK_SIZE>,
+    version: u8,
+    files: impl IntoIterator<
+        Item = (
+            Box<[u8]>,
+            IndexMap<HgFileId, (HgFileId, HgFileId, HgChangesetId)>,
+        ),
+    >,
+) {
+    let count = Cell::new(0);
+    let mut progress =
+        repeat(()).progress(|n| format!("Bundling {n} revisions of {} files", count.get()));
+    for (path, data) in files.into_iter().sorted_by(|a, b| a.0.cmp(&b.0)) {
+        let path = manifest_path(&path);
+        bundle_part_writer
+            .write_u32::<BigEndian>((4 + path.len()).try_into().unwrap())
+            .unwrap();
+        bundle_part_writer.write_all(&path).unwrap();
+        count.set(count.get() + 1);
+        let mut previous = None;
+        for ((node, (parent1, parent2, changeset)), ()) in data.into_iter().zip(&mut progress) {
+            let generate = |node: &HgObjectId| {
+                let node = HgFileId::from_unchecked(node.clone());
+                let metadata = unsafe { files_meta.get_note(&node) }
+                    .map(|oid| GitFileMetadataId::from_unchecked(BlobId::from_unchecked(oid)));
+
+                let file = RawHgFile::read(&node.to_git().unwrap(), metadata.as_ref()).unwrap();
+                file.0
+            };
+            let [parent1, parent2] =
+                find_parents(&node, Some(&parent1), Some(&parent2), &generate(&node));
+            write_chunk(
+                &mut *bundle_part_writer,
+                version,
+                &node,
+                parent1.unwrap_or(&HgObjectId::null()),
+                parent2.unwrap_or(&HgObjectId::null()),
+                &changeset,
+                &mut previous,
+                generate,
+            )
+            .unwrap();
+        }
+        bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
+    }
+    bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
 }

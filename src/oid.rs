@@ -30,7 +30,7 @@ pub trait ObjectId: Sized {
 macro_rules! oid_type {
     ($name:ident($base_type:ident)) => {
         #[repr(transparent)]
-        #[derive(Clone, Deref, Display, Eq, Ord, PartialEq, PartialOrd)]
+        #[derive(Clone, Deref, Display, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct $name($base_type);
 
         impl $crate::oid::ObjectId for $name {
@@ -74,7 +74,7 @@ macro_rules! oid_type {
     };
     ($name:ident for $typ:ty) => {
         #[repr(C)]
-        #[derive(Clone, Eq)]
+        #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct $name([u8; <<$typ as digest::OutputSizeUser>::OutputSize as typenum::marker_traits::Unsigned>::USIZE]);
 
         impl $crate::oid::ObjectId for $name {
@@ -107,23 +107,6 @@ macro_rules! oid_type {
                     write!(f, "{:02x}", x)?;
                 }
                 Ok(())
-            }
-        }
-        impl PartialEq for $name {
-            fn eq(&self, other: &Self) -> bool {
-                self.as_raw_bytes() == other.as_raw_bytes()
-            }
-        }
-
-        impl PartialOrd for $name {
-            fn partial_cmp(&self, other: &Self) -> Option<::std::cmp::Ordering> {
-                Some(self.as_raw_bytes().cmp(other.as_raw_bytes()))
-            }
-        }
-
-        impl Ord for $name {
-            fn cmp(&self, other: &Self) -> ::std::cmp::Ordering {
-                self.as_raw_bytes().cmp(other.as_raw_bytes())
             }
         }
     };

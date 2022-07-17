@@ -14,7 +14,6 @@ from cinnabar.git import (
 from cinnabar.util import (
     check_enabled,
     experiment,
-    progress_enum,
     progress_iter,
     sorted_merge,
 )
@@ -25,10 +24,7 @@ from cinnabar.hg.objects import (
     File,
     Manifest,
 )
-from collections import (
-    OrderedDict,
-    defaultdict,
-)
+from collections import OrderedDict
 import functools
 import logging
 
@@ -40,41 +36,6 @@ def manifest_diff(a, b):
         mode_before, mode_after, sha1_before, sha1_after, status, path = line
         if sha1_before != sha1_after:
             yield path, sha1_after, sha1_before
-
-
-def manifest_diff2(a, b, c):
-    iter1 = iter(list(manifest_diff(a, c)))
-    iter2 = iter(list(manifest_diff(b, c)))
-    item1 = next(iter1, None)
-    item2 = next(iter2, None)
-    while True:
-        while item1 and item2 and item1[0] < item2[0]:
-            item1 = next(iter1, None)
-        while item2 and item1 and item2[0] < item1[0]:
-            item2 = next(iter2, None)
-        if item1 is None or item2 is None:
-            break
-        if item1[0] == item2[0]:
-            path, sha1_after1, sha1_before1 = item1
-            path, sha1_after2, sha1_before2 = item2
-            assert sha1_after1 == sha1_after2
-            yield path, sha1_after1, (sha1_before1, sha1_before2)
-            item1 = next(iter1, None)
-            item2 = next(iter2, None)
-
-
-def get_changes(tree, parents):
-    if not parents:
-        for line in Git.ls_tree(tree, recursive=True):
-            mode, typ, sha1, path = line
-            yield path, sha1, ()
-    elif len(parents) == 1:
-        for path, node, parent in manifest_diff(parents[0], tree):
-            yield path, node, (parent,)
-    else:
-        for path, node, parents in \
-                manifest_diff2(parents[0], parents[1], tree):
-            yield path, node, parents
 
 
 class PushStore(GitHgStore):
@@ -389,7 +350,6 @@ class PushStore(GitHgStore):
 
 def bundle_data(store, commits):
     manifests = OrderedDict()
-    files = defaultdict(list)
 
     for node, parents in progress_iter('Bundling {} changesets', commits):
         if len(parents) > 2:
@@ -424,33 +384,6 @@ def bundle_data(store, commits):
         hg_parents = list(store.hg_manifest(p) for p in mn_commit.parents)
         yield (b"manifest", manifest, get_parent(hg_parents, 0),
                get_parent(hg_parents, 1), changeset)
-        changes = get_changes(manifest_ref, mn_commit.parents)
-        for path, hg_file, hg_fileparents in changes:
-            if hg_file != NULL_NODE_ID:
-                files[store.manifest_path(path)].append(
-                    (hg_file, hg_fileparents, changeset))
-
-    yield None
-
-    def iter_files(files):
-        count_chunks = 0
-        for count_names, path in enumerate(sorted(files), 1):
-            yield (count_chunks, count_names), path
-            nodes = set()
-            for node, parents, changeset in files[path]:
-                if node in nodes:
-                    continue
-                count_chunks += 1
-                nodes.add(node)
-                yield (count_chunks, count_names), (
-                    b"file", node, get_parent(parents, 0),
-                    get_parent(parents, 1), changeset)
-
-            yield (count_chunks, count_names), None
-
-    for chunk in progress_enum('Bundling {} revisions of {} files',
-                               iter_files(files)):
-        yield chunk
 
     yield None
 
@@ -468,8 +401,6 @@ def create_bundle(store, commits, bundlespec=b'raw', cg_version=b'01',
         for chunk in bundle_data(store, commits):
             if isinstance(chunk, tuple):
                 stdout.write(b'%s %s %s %s %s\0' % chunk)
-            elif isinstance(chunk, bytes):
-                stdout.write(b'path %s\0' % chunk)
             else:
                 assert chunk is None
                 stdout.write(b'null\0')
