@@ -932,16 +932,18 @@ class VersionCheck(Thread):
     def __init__(self):
         super(VersionCheck, self).__init__()
         self.message = None
+        self.parent_dir = os.path.dirname(os.path.dirname(__file__))
+        self.skip_check = (
+            not os.path.exists(os.path.join(self.parent_dir, '.git')) or
+            check_enabled('no-version-check') or
+            not interval_expired('version-check', 86400, globl=True))
         self.start()
 
     def run(self):
         from cinnabar import VERSION
         from cinnabar.git import Git, GitProcess
         from distutils.version import StrictVersion
-        parent_dir = os.path.dirname(os.path.dirname(__file__))
-        if not os.path.exists(os.path.join(parent_dir, '.git')) or \
-                check_enabled('no-version-check') or \
-                not interval_expired('version-check', 86400, globl=True):
+        if self.skip_check:
             return
         REPO = 'https://github.com/glandium/git-cinnabar'
         devnull = open(os.devnull, 'wb')
@@ -953,7 +955,7 @@ class VersionCheck(Thread):
                 if fsdecode(head) != ref:
                     continue
                 proc = GitProcess(
-                    '-C', parent_dir, 'merge-base', '--is-ancestor', sha1,
+                    '-C', self.parent_dir, 'merge-base', '--is-ancestor', sha1,
                     'HEAD', stdout=devnull, stderr=devnull)
                 if proc.wait() != 0:
                     self.message = (
