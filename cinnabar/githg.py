@@ -37,23 +37,18 @@ class FileFindParents(object):
     logger = logging.getLogger('generated_file')
 
     @staticmethod
-    def _invalid_if_new(file):
-        if file.node == NULL_NODE_ID:
-            raise Exception('Trying to create an invalid file. '
-                            'Please open an issue with details.')
-
-    @staticmethod
     def set_parents(file, parent1=NULL_NODE_ID, parent2=NULL_NODE_ID):
+        assert file.node == NULL_NODE_ID
         # Remove null nodes
         parents = tuple(p for p in (parent1, parent2) if p != NULL_NODE_ID)
-        orig_parents = parents
 
         # On merges, a file with copy metadata has either no parent, or only
         # one. In that latter case, the parent is always set as second parent.
         # On non-merges, a file with copy metadata doesn't have a parent.
         if file.metadata or file.content.startswith(b'\1\n'):
             if len(parents) == 2:
-                FileFindParents._invalid_if_new(file)
+                raise Exception('Trying to create an invalid file. '
+                                'Please open an issue with details.')
             elif len(parents) == 1:
                 parents = (NULL_NODE_ID, parents[0])
         elif len(parents) == 2:
@@ -61,45 +56,6 @@ class FileFindParents(object):
                 parents = parents[:1]
 
         file.parents = parents
-        if file.node != NULL_NODE_ID and file.node != file.sha1:
-            if parents != orig_parents:
-                if FileFindParents._try_parents(file, *orig_parents):
-                    FileFindParents.logger.debug(
-                        'Right parents given for %s, but they don\'t match '
-                        'what modern mercurial normally would do', file.node)
-                    return
-            FileFindParents._set_parents_fallback(file, parent1, parent2)
-
-    @staticmethod
-    def _set_parents_fallback(file, parent1=NULL_NODE_ID,
-                              parent2=NULL_NODE_ID):
-        result = (  # In some cases, only one parent is stored in a merge,
-                    # because the other parent is actually an ancestor of the
-                    # first one, but checking that is likely more expensive
-                    # than to check if the sha1 matches with either parent.
-                    FileFindParents._try_parents(file, parent1) or
-                    FileFindParents._try_parents(file, parent2) or
-                    # Some mercurial versions stores the first parent twice in
-                    # merges.
-                    FileFindParents._try_parents(file, parent1, parent1) or
-                    # As last resort, try without any parents.
-                    FileFindParents._try_parents(file))
-
-        FileFindParents.logger.debug('Wrong parents given for %s', file.node)
-        FileFindParents.logger.debug('  Got: %s %s', parent1, parent2)
-        if result:
-            FileFindParents.logger.debug('  Expected: %s %s', file.parent1,
-                                         file.parent2)
-
-        # If none of the above worked, we failed big time
-        if not result:
-            raise Exception('Failed to create file. '
-                            'Please open an issue with details.')
-
-    @staticmethod
-    def _try_parents(file, *parents):
-        file.parents = parents
-        return file.node == file.sha1
 
 
 class TagSet(object):
