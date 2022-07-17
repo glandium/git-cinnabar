@@ -250,16 +250,6 @@ class PushStore(GitHgStore):
                 delta_manifest.append(self.manifest(delta_node))
             chunk = manifest.to_chunk(RawRevChunk02, *delta_manifest)
             GitHgHelper.store(b'manifest', chunk)
-            if check_enabled('manifests'):
-                if not GitHgHelper.check_manifest(manifest.node):
-                    raise Exception(
-                        'sha1 mismatch for node %s with parents %s %s and '
-                        'previous %s' %
-                        (manifest.node.decode('ascii'),
-                         manifest.parent1.decode('ascii'),
-                         manifest.parent2.decode('ascii'),
-                         delta_node.decode('ascii'))
-                    )
 
         raw_files = b'\0'.join(changeset_files)
         with GitHgHelper.query(
