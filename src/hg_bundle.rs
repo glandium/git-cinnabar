@@ -35,8 +35,8 @@ use crate::libgit::BlobId;
 use crate::oid::GitObjectId;
 use crate::progress::Progress;
 use crate::store::{
-    ChangesetHeads, GitFileMetadataId, HgChangesetId, HgFileId, HgManifestId, RawHgChangeset,
-    RawHgFile, RawHgManifest,
+    ChangesetHeads, GitFileMetadataId, HgChangesetId, HgFileId, HgManifestId,
+    RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest,
 };
 use crate::util::{FromBytes, OsStrExt, ToBoxed};
 use crate::xdiff::textdiff;
@@ -1022,7 +1022,7 @@ pub fn do_create_bundle(input: &mut dyn BufRead, mut out: impl Write, args: &[&[
                     .then(|| u8::from_str(info.get_param("version").unwrap_or("01")).unwrap());
                 let mut bundle_part_writer = bundle_writer.new_part(info).unwrap();
                 let mut previous = None;
-                let mut files = HashMap::new();
+                let mut manifests = IndexMap::new();
                 loop {
                     buf.truncate(0);
                     input.read_until(b'\0', &mut buf).unwrap();
@@ -1043,7 +1043,7 @@ pub fn do_create_bundle(input: &mut dyn BufRead, mut out: impl Write, args: &[&[
                             }
                             break;
                         }
-                        b"changeset" | b"manifest" => {
+                        b"changeset" => {
                             let [node, parent1, parent2, changeset] =
                                 args.next().unwrap().splitn_exact(b' ').unwrap();
                             let node = HgObjectId::from_bytes(node).unwrap();
@@ -1051,116 +1051,61 @@ pub fn do_create_bundle(input: &mut dyn BufRead, mut out: impl Write, args: &[&[
                             let parent2 = HgObjectId::from_bytes(parent2).unwrap();
                             let changeset = HgChangesetId::from_bytes(changeset).unwrap();
                             let _lock = HELPER_LOCK.lock().unwrap();
-                            match kind {
-                                b"changeset" => {
-                                    write_chunk(
-                                        &mut bundle_part_writer,
-                                        version.as_ref().copied().unwrap(),
-                                        &node,
-                                        &parent1,
-                                        &parent2,
-                                        &changeset,
-                                        &mut previous,
-                                        |node| {
-                                            let node = HgChangesetId::from_unchecked(node.clone());
-                                            let changeset =
-                                                RawHgChangeset::read(&node.to_git().unwrap())
-                                                    .unwrap();
-                                            changeset.0
-                                        },
-                                    )
-                                    .unwrap();
+                            write_chunk(
+                                &mut bundle_part_writer,
+                                version.as_ref().copied().unwrap(),
+                                &node,
+                                &parent1,
+                                &parent2,
+                                &changeset,
+                                &mut previous,
+                                |node| {
+                                    let node = HgChangesetId::from_unchecked(node.clone());
+                                    let changeset =
+                                        RawHgChangeset::read(&node.to_git().unwrap()).unwrap();
+                                    changeset.0
+                                },
+                            )
+                            .unwrap();
+                            let get_manifest = |node: HgObjectId| {
+                                let metadata = RawGitChangesetMetadata::read(
+                                    &HgChangesetId::from_unchecked(node).to_git().unwrap(),
+                                )
+                                .unwrap();
+                                let metadata = metadata.parse().unwrap();
+                                metadata.manifest_id().clone()
+                            };
+                            let manifest = get_manifest(node.clone());
+                            if manifest != HgManifestId::null()
+                                && !manifests.contains_key(&manifest)
+                            {
+                                let mn_parent1 = (parent1 != HgObjectId::null())
+                                    .then(|| get_manifest(parent1))
+                                    .unwrap_or_else(HgManifestId::null);
+                                let mn_parent2 = (parent2 != HgObjectId::null())
+                                    .then(|| get_manifest(parent2))
+                                    .unwrap_or_else(HgManifestId::null);
+                                if ![&mn_parent1, &mn_parent2].contains(&&manifest) {
+                                    manifests.insert(
+                                        manifest,
+                                        (
+                                            mn_parent1,
+                                            mn_parent2,
+                                            HgChangesetId::from_unchecked(node),
+                                        ),
+                                    );
                                 }
-                                b"manifest" => {
-                                    write_chunk(
-                                        &mut bundle_part_writer,
-                                        version.as_ref().copied().unwrap(),
-                                        &node,
-                                        &parent1,
-                                        &parent2,
-                                        &changeset,
-                                        &mut previous,
-                                        |node| {
-                                            let node = HgManifestId::from_unchecked(node.clone());
-                                            let manifest =
-                                                RawHgManifest::read(&node.to_git().unwrap())
-                                                    .unwrap();
-                                            manifest.0
-                                        },
-                                    )
-                                    .unwrap();
-                                    let git_node = HgManifestId::from_unchecked(node.clone())
-                                        .to_git()
-                                        .unwrap();
-                                    let git_parents = [parent1, parent2]
-                                        .into_iter()
-                                        .filter_map(|p| {
-                                            (p != HgObjectId::null()).then(|| {
-                                                (*HgManifestId::from_unchecked(p).to_git().unwrap())
-                                                    .clone()
-                                            })
-                                        })
-                                        .collect_vec();
-                                    for (path, hg_file, hg_fileparents) in
-                                        get_changes(&git_node, &git_parents, false)
-                                    {
-                                        if hg_file != GitObjectId::null() {
-                                            files
-                                                .entry(path)
-                                                .or_insert_with(IndexMap::new)
-                                                .entry(
-                                                    HgFileId::from_bytes(
-                                                        format!("{}", hg_file).as_bytes(),
-                                                    )
-                                                    .unwrap(),
-                                                )
-                                                .or_insert_with(|| {
-                                                    (
-                                                        HgFileId::from_bytes(
-                                                            format!(
-                                                                "{}",
-                                                                hg_fileparents
-                                                                    .get(0)
-                                                                    .cloned()
-                                                                    .unwrap_or_else(
-                                                                        GitObjectId::null
-                                                                    )
-                                                            )
-                                                            .as_bytes(),
-                                                        )
-                                                        .unwrap(),
-                                                        HgFileId::from_bytes(
-                                                            format!(
-                                                                "{}",
-                                                                hg_fileparents
-                                                                    .get(1)
-                                                                    .cloned()
-                                                                    .unwrap_or_else(
-                                                                        GitObjectId::null
-                                                                    )
-                                                            )
-                                                            .as_bytes(),
-                                                        )
-                                                        .unwrap(),
-                                                        changeset.clone(),
-                                                    )
-                                                });
-                                        }
-                                    }
-                                }
-                                _ => unreachable!(),
                             }
                         }
                         b"null" => {
                             bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
                             previous = None;
-                            if !files.is_empty() {
-                                bundle_files(
-                                    &mut bundle_part_writer,
-                                    version.unwrap(),
-                                    files.drain(),
-                                );
-                            }
+                            let files = bundle_manifest(
+                                &mut bundle_part_writer,
+                                version.unwrap(),
+                                manifests.drain(..),
+                            );
+                            bundle_files(&mut bundle_part_writer, version.unwrap(), files);
                         }
                         _ => {
                             break;
@@ -1174,6 +1119,81 @@ pub fn do_create_bundle(input: &mut dyn BufRead, mut out: impl Write, args: &[&[
         }
     }
     writeln!(out, "done").unwrap();
+}
+
+fn bundle_manifest<const CHUNK_SIZE: usize>(
+    bundle_part_writer: &mut BundlePartWriter<CHUNK_SIZE>,
+    version: u8,
+    manifests: impl IntoIterator<Item = (HgManifestId, (HgManifestId, HgManifestId, HgChangesetId))>,
+) -> impl IntoIterator<
+    Item = (
+        Box<[u8]>,
+        IndexMap<HgFileId, (HgFileId, HgFileId, HgChangesetId)>,
+    ),
+> {
+    let mut previous = None;
+    let mut files = HashMap::new();
+    for (node, (parent1, parent2, changeset)) in
+        manifests.into_iter().progress(|n| format!("Bundling {n} manifests"))
+    {
+        write_chunk(
+            &mut *bundle_part_writer,
+            version,
+            &node,
+            &parent1,
+            &parent2,
+            &changeset,
+            &mut previous,
+            |node| {
+                let node = HgManifestId::from_unchecked(node.clone());
+                let manifest = RawHgManifest::read(&node.to_git().unwrap()).unwrap();
+                manifest.0
+            },
+        )
+        .unwrap();
+        let git_node = node.to_git().unwrap();
+        let git_parents = [parent1, parent2]
+            .into_iter()
+            .filter_map(|p| (p != HgManifestId::null()).then(|| (*p.to_git().unwrap()).clone()))
+            .collect_vec();
+        for (path, hg_file, hg_fileparents) in get_changes(&git_node, &git_parents, false) {
+            if hg_file != GitObjectId::null() {
+                files
+                    .entry(path)
+                    .or_insert_with(IndexMap::new)
+                    .entry(HgFileId::from_bytes(format!("{}", hg_file).as_bytes()).unwrap())
+                    .or_insert_with(|| {
+                        (
+                            HgFileId::from_bytes(
+                                format!(
+                                    "{}",
+                                    hg_fileparents
+                                        .get(0)
+                                        .cloned()
+                                        .unwrap_or_else(GitObjectId::null)
+                                )
+                                .as_bytes(),
+                            )
+                            .unwrap(),
+                            HgFileId::from_bytes(
+                                format!(
+                                    "{}",
+                                    hg_fileparents
+                                        .get(1)
+                                        .cloned()
+                                        .unwrap_or_else(GitObjectId::null)
+                                )
+                                .as_bytes(),
+                            )
+                            .unwrap(),
+                            changeset.clone(),
+                        )
+                    });
+            }
+        }
+    }
+    bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
+    files
 }
 
 fn bundle_files<const CHUNK_SIZE: usize>(

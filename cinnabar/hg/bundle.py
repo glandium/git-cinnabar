@@ -349,8 +349,6 @@ class PushStore(GitHgStore):
 
 
 def bundle_data(store, commits):
-    manifests = OrderedDict()
-
     for node, parents in progress_iter('Bundling {} changesets', commits):
         if len(parents) > 2:
             raise Exception(
@@ -363,27 +361,6 @@ def bundle_data(store, commits):
         hg_changeset = store._changeset(node)
         yield (b"changeset", hg_changeset.node, hg_changeset.parent1,
                hg_changeset.parent2, hg_changeset.changeset)
-        manifest = hg_changeset.manifest
-        if manifest not in manifests and manifest != NULL_NODE_ID:
-            if manifest not in (store.changeset(p).manifest
-                                for p in hg_changeset.parents):
-                manifests[manifest] = hg_changeset.node
-
-    yield None
-
-    def get_parent(parents, num):
-        try:
-            return parents[num]
-        except IndexError:
-            return NULL_NODE_ID
-
-    for manifest, changeset in progress_iter('Bundling {} manifests',
-                                             manifests.items()):
-        manifest_ref = store.manifest_ref(manifest)
-        mn_commit = GitCommit(manifest_ref)
-        hg_parents = list(store.hg_manifest(p) for p in mn_commit.parents)
-        yield (b"manifest", manifest, get_parent(hg_parents, 0),
-               get_parent(hg_parents, 1), changeset)
 
     yield None
 
