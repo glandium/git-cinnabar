@@ -51,7 +51,6 @@ class PushStore(GitHgStore):
 
     def _init(self):
         self._pushed = set()
-        self._manifest_git_tree = {}
         self._merge_warn = 0
 
     def create_hg_manifest(self, commit, parents):
@@ -261,7 +260,6 @@ class PushStore(GitHgStore):
                          manifest.parent2.decode('ascii'),
                          delta_node.decode('ascii'))
                     )
-            self._manifest_git_tree[manifest.node] = commit_data.tree
 
         raw_files = b'\0'.join(changeset_files)
         with GitHgHelper.query(
