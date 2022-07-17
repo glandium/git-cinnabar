@@ -378,10 +378,6 @@ class GitHgStore(object):
     }
 
     @staticmethod
-    def manifest_metadata_path(path):
-        return b'_' + path.replace(b'/', b'/_')
-
-    @staticmethod
     def manifest_path(path):
         return path[1:].replace(b'/_', b'/')
 
