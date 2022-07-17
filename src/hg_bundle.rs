@@ -1133,8 +1133,9 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
 > {
     let mut previous = None;
     let mut files = HashMap::new();
-    for (node, (parent1, parent2, changeset)) in
-        manifests.into_iter().progress(|n| format!("Bundling {n} manifests"))
+    for (node, (parent1, parent2, changeset)) in manifests
+        .into_iter()
+        .progress(|n| format!("Bundling {n} manifests"))
     {
         write_chunk(
             &mut *bundle_part_writer,
@@ -1217,14 +1218,19 @@ fn bundle_files<const CHUNK_SIZE: usize>(
         bundle_part_writer.write_all(&path).unwrap();
         count.set(count.get() + 1);
         let mut previous = None;
+        let empty_file = HgFileId::from_str("b80de5d138758541c5f05265ad144ab9fa86d1db").unwrap();
         for ((node, (parent1, parent2, changeset)), ()) in data.into_iter().zip(&mut progress) {
             let generate = |node: &HgObjectId| {
                 let node = HgFileId::from_unchecked(node.clone());
-                let metadata = unsafe { files_meta.get_note(&node) }
-                    .map(|oid| GitFileMetadataId::from_unchecked(BlobId::from_unchecked(oid)));
+                if node == empty_file {
+                    vec![].into_boxed_slice()
+                } else {
+                    let metadata = unsafe { files_meta.get_note(&node) }
+                        .map(|oid| GitFileMetadataId::from_unchecked(BlobId::from_unchecked(oid)));
 
-                let file = RawHgFile::read(&node.to_git().unwrap(), metadata.as_ref()).unwrap();
-                file.0
+                    let file = RawHgFile::read(&node.to_git().unwrap(), metadata.as_ref()).unwrap();
+                    file.0
+                }
             };
             let [parent1, parent2] =
                 find_parents(&node, Some(&parent1), Some(&parent2), &generate(&node));
