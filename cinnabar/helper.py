@@ -215,11 +215,6 @@ class GitHgHelper(BaseHelper):
             return self._read_file(b'blob', stdout)
 
     @classmethod
-    def file_meta(self, sha1):
-        with self.query(b'file-meta', sha1) as stdout:
-            return self._read_file(b'blob', stdout)
-
-    @classmethod
     def hg2git(self, hg_sha1):
         with self.query(b'hg2git', hg_sha1) as stdout:
             sha1 = stdout.read(41)
@@ -282,7 +277,7 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def store(self, what, *args):
-        if what in (b'file', b'manifest'):
+        if what in (b'manifest',):
             obj = args[0]
             if isinstance(obj, RawRevChunk01):
                 delta_node = obj.delta_node

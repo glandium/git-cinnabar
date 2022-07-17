@@ -795,37 +795,6 @@ extern "C" {
     fn ensure_empty_tree() -> *const object_id;
 }
 
-pub fn do_store_changeset(mut input: &mut dyn BufRead, mut output: impl Write, args: &[&[u8]]) {
-    unsafe {
-        ensure_store_init();
-    }
-    if args.len() < 2 || args.len() > 4 {
-        die!("store-changeset takes between 2 and 4 arguments");
-    }
-
-    let changeset_id = HgChangesetId::from_bytes(args[0]).unwrap();
-    let parents = args[1..args.len() - 1]
-        .iter()
-        .map(|p| HgChangesetId::from_bytes(p))
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    let size = usize::from_bytes(args[args.len() - 1]).unwrap();
-    let buf = input.read_exactly(size).unwrap();
-    let raw_changeset = RawHgChangeset(buf);
-
-    match store_changeset(&changeset_id, &parents, &raw_changeset) {
-        Ok((commit_id, None)) => writeln!(output, "{commit_id}"),
-        Ok((commit_id, Some(replace))) => writeln!(output, "{commit_id} {replace}"),
-        Err(GraftError::NoGraft) => writeln!(output, "no-graft"),
-        Err(GraftError::Ambiguous(candidates)) => writeln!(
-            output,
-            "ambiguous {}",
-            itertools::join(candidates.iter(), " ")
-        ),
-    }
-    .unwrap();
-}
-
 fn store_changeset(
     changeset_id: &HgChangesetId,
     parents: &[HgChangesetId],

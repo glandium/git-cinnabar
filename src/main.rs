@@ -119,12 +119,11 @@ use libgit::{
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::{do_progress, Progress};
 use store::{
-    do_check_files, do_create, do_heads, do_raw_changeset, do_set_, do_store_changeset,
-    has_metadata, merge_metadata, raw_commit_for_changeset, store_git_blob, ChangesetHeads,
-    GeneratedGitChangesetMetadata, GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId,
-    HgChangesetId, HgFileId, HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile,
-    RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX,
-    REPLACE_REFS_PREFIX,
+    do_check_files, do_create, do_heads, do_raw_changeset, do_set_, has_metadata, merge_metadata,
+    raw_commit_for_changeset, store_git_blob, ChangesetHeads, GeneratedGitChangesetMetadata,
+    GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
+    HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF,
+    CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
 
@@ -274,9 +273,8 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
         let mut nul = [b'\0'];
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
         let _locked = HELPER_LOCK.lock().unwrap();
-        if let b"graft" | b"progress" | b"store-changeset" | b"create" | b"raw-changeset"
-        | b"reset" | b"done-and-check" | b"merge-metadata" | b"heads" | b"done"
-        | b"rollback" = &*command
+        if let b"graft" | b"progress" | b"create" | b"raw-changeset" | b"reset"
+        | b"done-and-check" | b"merge-metadata" | b"heads" | b"done" | b"rollback" = &*command
         {
             let args = match args_.split_last().unwrap().1 {
                 b"" => Vec::new(),
@@ -286,7 +284,6 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
             match &*command {
                 b"progress" => do_progress(out, &args),
                 b"graft" => do_graft(&args),
-                b"store-changeset" => do_store_changeset(input, out, &args),
                 b"raw-changeset" => do_raw_changeset(out, &args),
                 b"create" => do_create(input, out, &args),
                 b"reset" => do_reset(&args),

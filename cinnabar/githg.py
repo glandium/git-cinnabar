@@ -5,8 +5,6 @@ from collections import (
 )
 from collections.abc import Sequence
 from cinnabar.exceptions import (
-    AmbiguousGraftAbort,
-    NothingToGraftException,
     SilentlyAbort,
 )
 from cinnabar.util import one
@@ -374,28 +372,6 @@ class GitHgStore(object):
         if sha1 == HG_EMPTY_FILE:
             return EMPTY_BLOB
         return self._hg2git(sha1)
-
-    def store_changeset(self, instance):
-        args = [instance.node]
-        args.extend(instance.parents)
-        raw_data = instance.raw_data
-        args.append(str(len(raw_data)).encode('ascii'))
-        with GitHgHelper.query(b'store-changeset', *args) as stdout:
-            stdout.write(raw_data)
-            stdout.flush()
-            response = stdout.readline().strip().split()
-            assert len(response) > 0
-
-            if response[0] == b"no-graft":
-                raise NothingToGraftException()
-            if response[0] == b"ambiguous":
-                raise AmbiguousGraftAbort(
-                    'Cannot graft changeset %s. Candidates: %s'
-                    % (instance.node.decode('ascii'),
-                       ', '.join(n.decode('ascii')
-                                 for n in sorted(response[1:]))))
-
-            assert len(response) <= 2
 
     def close(self, refresh=()):
         if self._closed:
