@@ -17,7 +17,6 @@ from cinnabar.git import (
 )
 from cinnabar.hg.objects import (
     Changeset,
-    File,
     Manifest,
 )
 from cinnabar.helper import GitHgHelper
@@ -408,25 +407,6 @@ class GitHgStore(object):
         except KeyError:
             res = self._cached_changeset_ref[sha1] = self.changeset_ref(sha1)
             return res
-
-    def file_meta(self, sha1):
-        return GitHgHelper.file_meta(sha1)
-
-    def file(self, sha1, file_parents=None):
-        if sha1 == HG_EMPTY_FILE:
-            content = b''
-        else:
-            gitsha1 = GitHgHelper.hg2git(sha1)
-            content = GitHgHelper.cat_file(b'blob', gitsha1)
-
-        file = File(sha1)
-        meta = self.file_meta(sha1)
-        if meta:
-            file.metadata = meta
-        file.content = content
-        if file_parents is not None:
-            FileFindParents.set_parents(file, *file_parents)
-        return file
 
     def git_file_ref(self, sha1):
         # Because an empty file and an empty manifest, both with no parents,
