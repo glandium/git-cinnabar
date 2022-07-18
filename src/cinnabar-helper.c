@@ -1405,11 +1405,8 @@ void dump_ref_updates(void);
 
 extern void reset_changeset_heads();
 
-void do_reload(struct string_list *args, int helper_output)
+void do_reload()
 {
-        if (args->nr != 0)
-                die("reload takes no arguments");
-
 	if (notes_initialized(&git2hg))
 		free_notes(&git2hg);
 
@@ -1432,9 +1429,6 @@ void do_reload(struct string_list *args, int helper_output)
 	reset_replace_map();
 	init_metadata();
 	reset_changeset_heads();
-
-	if (helper_output != -1)
-		write_or_die(helper_output, "ok\n", 3);
 }
 
 int configset_add_value(struct config_set *, const char*, const char *);

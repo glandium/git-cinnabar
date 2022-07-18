@@ -175,8 +175,8 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def reload(self):
-        with self.query(b'reload') as stdout:
-            return stdout.readline().strip() == b'ok'
+        with self.query(b'reload'):
+            pass
 
     @classmethod
     def progress(self, value=None):

@@ -176,7 +176,7 @@ extern "C" {
     fn do_rev_list(l: *const string_list, out: c_int);
     fn do_diff_tree(l: *const string_list, out: c_int);
     fn do_create_git_tree(l: *const string_list, out: c_int);
-    fn do_reload(l: *const string_list, out: c_int);
+    fn do_reload();
     fn do_cleanup(rollback: c_int);
     fn do_set(l: *const string_list);
     fn do_store(in_: *mut libcinnabar::reader, out: c_int, l: *const string_list);
@@ -247,9 +247,7 @@ fn do_done_and_check(args: &[&[u8]]) -> bool {
                 .unwrap();
             transaction.commit().unwrap();
         }
-        let args = string_list_new();
-        do_reload(args, -1);
-        ::libc::free(args as *mut c_void);
+        do_reload();
     }
     do_check_files()
 }
@@ -310,9 +308,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                         args.get(2).copied(),
                     ) {
                         unsafe {
-                            let args = string_list_new();
-                            do_reload(args, -1);
-                            ::libc::free(args as *mut c_void);
+                            do_reload();
                         }
                         writeln!(out, "ok").unwrap();
                     } else {
@@ -344,7 +340,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"ls-tree" => do_ls_tree(args, out),
                 b"rev-list" => do_rev_list(args, out),
                 b"diff-tree" => do_diff_tree(args, out),
-                b"reload" => do_reload(args, out),
+                b"reload" => do_reload(),
                 b"set" => do_set(args),
                 b"store" => do_store(&mut libcinnabar::reader(input), out, args),
                 _ => die!("Unknown command: {}", command.as_bstr()),
