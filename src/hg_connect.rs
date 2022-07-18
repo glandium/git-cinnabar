@@ -21,9 +21,9 @@ use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libcinnabar::send_buffer_to;
 use crate::libgit::{rev_list, CommitId};
 use crate::oid::{GitObjectId, ObjectId};
-use crate::store::{store_changegroup, HgChangesetId};
-use crate::util::{FromBytes, ImmutBString, PrefixWriter, ReadExt, SliceExt, ToBoxed};
-use crate::{graft_config_enabled, HELPER_LOCK};
+use crate::store::{merge_metadata, store_changegroup, HgChangesetId};
+use crate::util::{FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed};
+use crate::{check_enabled, get_config_remote, graft_config_enabled, Checks, HELPER_LOCK};
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
@@ -101,6 +101,10 @@ pub enum UnbundleResponse<'a> {
 }
 
 pub trait HgConnectionBase {
+    fn get_url(&self) -> Option<&Url> {
+        None
+    }
+
     fn get_capability(&self, _name: &[u8]) -> Option<&BStr> {
         None
     }
@@ -181,6 +185,10 @@ pub trait HgConnection: HgConnectionBase {
 }
 
 impl HgConnectionBase for Box<dyn HgWireConnection> {
+    fn get_url(&self) -> Option<&Url> {
+        (**self).get_url()
+    }
+
     fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
         (**self).get_capability(name)
     }
@@ -601,16 +609,82 @@ fn do_lookup(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
     send_buffer_to(&*result, out);
 }
 
-fn do_clonebundles(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
+fn do_get_initial_bundle(
+    conn: &mut dyn HgConnection,
+    args: &[&str],
+    out: &mut impl Write,
+    remote: Option<&str>,
+) {
     assert!(args.is_empty());
-    let result = conn.clonebundles();
-    send_buffer_to(&*result, out);
-}
 
-fn do_cinnabarclone(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
-    assert!(args.is_empty());
-    let result = conn.cinnabarclone();
-    send_buffer_to(&*result, out);
+    if let Some((manifest, limit_schemes)) = get_config_remote("clone", remote)
+        .map(|m| (m.as_bytes().to_boxed(), false))
+        .or_else(|| {
+            // If no cinnabar.clone config was given, but a
+            // cinnabar.clonebundle config was, act as if an empty
+            // cinnabar.clone config had been given, and proceed with
+            // the mercurial clonebundle.
+            (conn.get_capability(b"cinnabarclone").is_some()
+                && get_config_remote("clonebundle", remote)
+                    .filter(|c| !c.is_empty())
+                    .is_none())
+            .then(|| (conn.cinnabarclone(), true))
+        })
+        .filter(|(m, _)| !m.is_empty())
+    {
+        match get_cinnabarclone_url(&manifest).ok_or(Some(
+            "Server advertizes cinnabarclone but didn't provide a git repository url to fetch from."
+        )).and_then(|(url, branch)| {
+            if limit_schemes && !["http", "https", "git"].contains(&url.scheme()) {
+                Err(Some("Server advertizes cinnabarclone but provided a non http/https git repository. Skipping."))
+            } else {
+                eprintln!("Fetching cinnabar metadata from {}", url);
+                merge_metadata(url, conn.get_url().cloned(), branch.as_deref()).then(|| ()).ok_or(None)
+            }
+        }) {
+            Ok(()) => {
+                writeln!(out, "yes").unwrap();
+                return;
+            }
+            Err(e) => {
+                if let Some(e) = e {
+                    warn!(target: "root", "{}", e);
+                }
+                if check_enabled(Checks::CINNABARCLONE) {
+                    writeln!(out, "cinnabarclone failed").unwrap();
+                    return;
+                }
+                warn!(target: "root", "Falling back to normal clone.");
+            }
+        }
+    }
+
+    if conn.get_capability(b"clonebundles").is_some() {
+        if let Some(url) = get_config_remote("clonebundle", remote)
+            .map(|url| (!url.is_empty()).then(|| Url::parse(url.to_str().unwrap()).unwrap()))
+            .or_else(|| Some(get_clonebundle_url(conn)))
+            .flatten()
+        {
+            eprintln!("Getting clone bundle from {}", url);
+            let mut bundle_conn = hg_connect(url.as_str(), 0).unwrap();
+            match get_store_bundle(&mut *bundle_conn, &[], &[]) {
+                Ok(()) => {
+                    writeln!(out, "yes").unwrap();
+                    return;
+                }
+                Err(e) => {
+                    let stderr = stderr();
+                    let mut writer = PrefixWriter::new("remote: ", stderr.lock());
+                    writer.write_all(&e).unwrap();
+                    if check_enabled(Checks::CLONEBUNDLES) {
+                        writeln!(out, "clonebundles failed").unwrap();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    writeln!(out, "no").unwrap();
 }
 
 fn can_use_clonebundle(line: &[u8]) -> Result<Option<Url>, String> {
@@ -665,14 +739,6 @@ fn can_use_clonebundle(line: &[u8]) -> Result<Option<Url>, String> {
     Ok((!params.contains_key(b"stream".as_bstr()))
         .then(|| Some(url))
         .ok_or("stream bundles are not supported")?)
-}
-
-fn do_get_clonebundle_url(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
-    assert!(args.is_empty());
-    if let Some(url) = get_clonebundle_url(conn) {
-        write!(out, "{}", url).unwrap();
-    }
-    out.write_all(b"\n").unwrap();
 }
 
 pub fn get_clonebundle_url(conn: &mut dyn HgConnection) -> Option<Url> {
@@ -746,20 +812,6 @@ fn cinnabar_clone_info(line: &[u8]) -> Result<Option<CinnabarCloneInfo>, String>
         return Err("Unknown parameters".into());
     }
     Ok(Some(CinnabarCloneInfo { url, branch, graft }))
-}
-
-fn do_get_cinnabarclone_url(input: &mut impl BufRead, args: &[&str], out: &mut impl Write) {
-    assert!(args.is_empty());
-    let mut buf = String::new();
-    input.read_line(&mut buf).unwrap();
-    let len = usize::from_str(buf.trim_end()).unwrap();
-    let manifest = input.read_exactly(len).unwrap();
-    if let Some((url, branch)) = get_cinnabarclone_url(&manifest) {
-        writeln!(out, "{}", url).unwrap();
-        writeln!(out, "{}", branch.as_deref().unwrap_or(b"").as_bstr()).unwrap();
-    } else {
-        out.write_all(b"\n\n").unwrap();
-    }
 }
 
 pub fn get_cinnabarclone_url(manifest: &[u8]) -> Option<(Url, Option<Box<[u8]>>)> {
@@ -910,7 +962,7 @@ pub fn connect_main_with(
         if connections.is_empty() {
             return Err(format!("Unknown command: {}", command).into());
         }
-        let (conn_id, (connection, _remote)) =
+        let (conn_id, (connection, remote)) =
             u32::from_str(args.next().ok_or("Missing connection id")?)
                 .ok()
                 .and_then(|c| connections.get_mut(&c).map(|conn| (c, conn)))
@@ -926,10 +978,7 @@ pub fn connect_main_with(
             "capable" => do_capable(conn, &*args, out),
             "state" => do_state(conn, &*args, out),
             "lookup" => do_lookup(conn, &*args, out),
-            "clonebundles" => do_clonebundles(conn, &*args, out),
-            "get_clonebundle_url" => do_get_clonebundle_url(conn, &*args, out),
-            "get_cinnabarclone_url" => do_get_cinnabarclone_url(input, &*args, out),
-            "cinnabarclone" => do_cinnabarclone(conn, &*args, out),
+            "get_initial_bundle" => do_get_initial_bundle(conn, &*args, out, remote.as_deref()),
             "close" => {
                 connections.remove(&conn_id);
                 continue;

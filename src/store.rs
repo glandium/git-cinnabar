@@ -41,7 +41,7 @@ use crate::oid::{GitObjectId, HgObjectId, ObjectId};
 use crate::progress::{progress_enabled, Progress};
 use crate::util::{FromBytes, ImmutBString, OsStrExt, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::{apply, textdiff, PatchInfo};
-use crate::{check_enabled, Checks};
+use crate::{check_enabled, do_reload, Checks};
 use crate::{oid_type, set_metadata_to, MetadataFlags};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
@@ -1339,7 +1339,7 @@ fn test_branches_for_url() {
     );
 }
 
-pub fn merge_metadata(git_url: Url, hg_url: Url, branch: Option<&[u8]>) -> bool {
+pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) -> bool {
     // Eventually we'll want to handle a full merge, but for now, we only
     // handle the case where we don't have metadata to begin with.
     // The caller should avoid calling this function otherwise.
@@ -1403,7 +1403,7 @@ pub fn merge_metadata(git_url: Url, hg_url: Url, branch: Option<&[u8]>) -> bool 
     };
 
     let branches = branch.map_or_else(
-        || branches_for_url(hg_url),
+        || hg_url.map(branches_for_url).unwrap_or_default(),
         |b| vec![b.as_bstr().to_boxed()],
     );
 
@@ -1534,5 +1534,8 @@ pub fn merge_metadata(git_url: Url, hg_url: Url, branch: Option<&[u8]>) -> bool 
     }
 
     set_metadata_to(Some(&cid), MetadataFlags::FORCE, "cinnabarclone").unwrap();
+    unsafe {
+        do_reload();
+    }
     true
 }

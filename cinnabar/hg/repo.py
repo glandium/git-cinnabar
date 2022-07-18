@@ -1,11 +1,9 @@
-import os
 import re
 import sys
 from urllib.parse import quote_from_bytes, unquote_to_bytes
 from cinnabar.helper import (
     GitHgHelper,
     HgRepoHelper,
-    BundleHelper,
 )
 from binascii import (
     hexlify,
@@ -20,13 +18,7 @@ from urllib.parse import (
 import logging
 import random
 from cinnabar.dag import gitdag
-from cinnabar.git import (
-    Git,
-    NULL_NODE_ID,
-)
-from cinnabar.util import (
-    check_enabled,
-)
+from cinnabar.git import NULL_NODE_ID
 from cinnabar.hg.bundle import (
     create_bundle,
     encodecaps,
@@ -160,11 +152,6 @@ class HelperRepo(object):
             for line in data.splitlines()
         )
 
-    def _call(self, command, *args):
-        if command == b'cinnabarclone':
-            return self._helper.cinnabarclone()
-        raise NotImplementedError()
-
     def capable(self, capability):
         if capability == b'bundle2':
             return quote_from_bytes(
@@ -210,85 +197,20 @@ class HelperRepo(object):
                                       for h in heads))
 
 
-def get_clonebundle_url(repo):
-    with HgRepoHelper.query(
-            b'get_clonebundle_url', HgRepoHelper.connected) as stdout:
-        url = stdout.readline().strip()
-        if url:
-            return url
-
-
-def get_store_clonebundle(repo):
-    url = Git.config('cinnabar.clonebundle', remote=repo.remote)
-    if not url:
-        url = get_clonebundle_url(repo)
-
-    if not url:
-        return None
-
-    sys.stderr.write('Getting clone bundle from %s\n' % os.fsdecode(url))
-    return get_store_bundle(url)
-
-
-def get_store_bundle(url):
-    BundleHelper.connect(url)
-    result = HelperRepo(BundleHelper, url).get_store_bundle(b'bundle', [], [])
-    BundleHelper.close()
-    return result
-
-
-def do_cinnabarclone(repo, manifest, store, limit_schemes=True):
-    with HgRepoHelper.query(
-            b'get_cinnabarclone_url', HgRepoHelper.connected) as stdout:
-        stdout.write(b"%d\n" % len(manifest))
-        stdout.write(manifest)
-        stdout.flush()
-        url = stdout.readline().strip()
-        branch = stdout.readline().strip()
-
-    if not url:
-        logging.warn('Server advertizes cinnabarclone but didn\'t provide '
-                     'a git repository url to fetch from.')
-        return False
-
-    parsed_url = urlparse(url)
-    if limit_schemes and parsed_url.scheme not in (b'http', b'https', b'git'):
-        logging.warn('Server advertizes cinnabarclone but provided a non '
-                     'http/https git repository. Skipping.')
-        return False
-    sys.stderr.write('Fetching cinnabar metadata from %s\n' % os.fsdecode(url))
-    sys.stderr.flush()
-    return store.merge(url, repo.url(), branch)
-
-
 def getbundle(repo, store, heads, branch_names):
     common = findcommon(repo, store, store.heads(branch_names))
     logging.info('common: %s', common)
     got_partial = False
-    if not common:
-        if not store._has_metadata:
-            manifest = Git.config('cinnabar.clone', remote=repo.remote)
-            limit_schemes = False
-            if manifest is None and repo.capable(b'cinnabarclone'):
-                # If no cinnabar.clone config was given, but a
-                # cinnabar.clonebundle config was, act as if an empty
-                # cinnabar.clone config had been given, and proceed with
-                # the mercurial clonebundle.
-                if not Git.config('cinnabar.clonebundle',
-                                  remote=repo.remote):
-                    manifest = repo._call(b'cinnabarclone')
-                    limit_schemes = True
-            if manifest:
-                got_partial = do_cinnabarclone(repo, manifest, store,
-                                               limit_schemes)
-                if not got_partial:
-                    if check_enabled('cinnabarclone'):
-                        raise Exception('cinnabarclone failed.')
-                    logging.warn('Falling back to normal clone.')
-        if not got_partial and repo.capable(b'clonebundles'):
-            got_partial = bool(get_store_clonebundle(repo))
-            if not got_partial and check_enabled('clonebundles'):
-                raise Exception('clonebundles failed.')
+    if not common and not store._has_metadata:
+        with HgRepoHelper.query(
+                b'get_initial_bundle', HgRepoHelper.connected) as stdout:
+            res = stdout.readline().strip()
+            if res == b'yes':
+                got_partial = True
+            elif res == b'no':
+                got_partial = False
+            else:
+                raise Exception(res)
     if got_partial:
         # Eliminate the heads that we got from the clonebundle or
         # cinnabarclone.

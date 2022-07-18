@@ -34,6 +34,7 @@ pub struct HgStdioConnection {
     is_remote: bool,
     proc: *mut child_process,
     thread: Option<JoinHandle<()>>,
+    url: Url,
 }
 
 /* The mercurial "stdio" protocol is used for both local repositories and
@@ -145,6 +146,10 @@ impl HgWireConnection for HgStdioConnection {
 }
 
 impl HgConnectionBase for HgStdioConnection {
+    fn get_url(&self) -> Option<&Url> {
+        Some(&self.url)
+    }
+
     fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
         self.capabilities.get_capability(name)
     }
@@ -215,6 +220,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
         is_remote: url.scheme() == "ssh",
         proc,
         thread: None,
+        url: url.clone(),
     };
 
     let mut proc_err = unsafe { FdFile::from_raw_fd(proc_err(proc)) };

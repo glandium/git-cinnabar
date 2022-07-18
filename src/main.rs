@@ -119,7 +119,7 @@ use libgit::{
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::{do_progress, Progress};
 use store::{
-    do_check_files, do_create, do_heads, do_raw_changeset, do_set_, has_metadata, merge_metadata,
+    do_check_files, do_create, do_heads, do_raw_changeset, do_set_, has_metadata,
     raw_commit_for_changeset, store_git_blob, ChangesetHeads, GeneratedGitChangesetMetadata,
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
     HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF,
@@ -176,7 +176,7 @@ extern "C" {
     fn do_rev_list(l: *const string_list, out: c_int);
     fn do_diff_tree(l: *const string_list, out: c_int);
     fn do_create_git_tree(l: *const string_list, out: c_int);
-    fn do_reload();
+    pub fn do_reload();
     fn do_cleanup(rollback: c_int);
     fn do_set(l: *const string_list);
     fn do_store(in_: *mut libcinnabar::reader, out: c_int, l: *const string_list);
@@ -272,7 +272,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
         let _locked = HELPER_LOCK.lock().unwrap();
         if let b"graft" | b"progress" | b"create" | b"raw-changeset" | b"reset"
-        | b"done-and-check" | b"merge-metadata" | b"heads" | b"done" | b"rollback" = &*command
+        | b"done-and-check" | b"heads" | b"done" | b"rollback" = &*command
         {
             let args = match args_.split_last().unwrap().1 {
                 b"" => Vec::new(),
@@ -300,21 +300,6 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                     if do_done_and_check(&args) { "ok" } else { "ko" }
                 )
                 .unwrap(),
-                b"merge-metadata" => {
-                    assert!(args.len() >= 2 && args.len() <= 3);
-                    if merge_metadata(
-                        Url::parse(args[0].to_str().unwrap()).unwrap(),
-                        Url::parse(args[1].to_str().unwrap()).unwrap(),
-                        args.get(2).copied(),
-                    ) {
-                        unsafe {
-                            do_reload();
-                        }
-                        writeln!(out, "ok").unwrap();
-                    } else {
-                        writeln!(out, "ko").unwrap();
-                    }
-                }
                 _ => unreachable!(),
             }
             continue;
@@ -2587,6 +2572,10 @@ unsafe extern "C" fn config(name: *const c_char, result: *mut strbuf) -> c_int {
 }
 
 pub fn get_config(name: &str) -> Option<OsString> {
+    get_config_remote(name, None)
+}
+
+pub fn get_config_remote(name: &str, remote: Option<&str>) -> Option<OsString> {
     const PREFIX: &str = "GIT_CINNABAR_";
     let mut env_key = String::with_capacity(name.len() + PREFIX.len());
     env_key.push_str(PREFIX);
@@ -2594,13 +2583,28 @@ pub fn get_config(name: &str) -> Option<OsString> {
         '-' => '_',
         c => c,
     }));
-    std::env::var_os(env_key).or_else(|| {
-        const PREFIX: &str = "cinnabar.";
-        let mut config_key = String::with_capacity(name.len() + PREFIX.len());
-        config_key.push_str(PREFIX);
-        config_key.push_str(name);
-        config_get_value(&config_key)
-    })
+    std::env::var_os(env_key)
+        .or_else(|| {
+            remote.and_then(|remote| {
+                const PREFIX: &str = "remote.";
+                const KEY_PREFIX: &str = ".cinnabar-";
+                let mut config_key = String::with_capacity(
+                    name.len() + PREFIX.len() + KEY_PREFIX.len() + remote.len(),
+                );
+                config_key.push_str(PREFIX);
+                config_key.push_str(remote);
+                config_key.push_str(KEY_PREFIX);
+                config_key.push_str(name);
+                config_get_value(&config_key)
+            })
+        })
+        .or_else(|| {
+            const PREFIX: &str = "cinnabar.";
+            let mut config_key = String::with_capacity(name.len() + PREFIX.len());
+            config_key.push_str(PREFIX);
+            config_key.push_str(name);
+            config_get_value(&config_key)
+        })
 }
 
 bitflags! {

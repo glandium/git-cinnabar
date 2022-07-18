@@ -555,6 +555,10 @@ impl HgWireConnection for HgHttpConnection {
 }
 
 impl HgConnectionBase for HgHttpConnection {
+    fn get_url(&self) -> Option<&Url> {
+        Some(&self.url)
+    }
+
     fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
         self.capabilities.get_capability(name)
     }

@@ -392,11 +392,6 @@ class HgRepoHelper(BaseHelper):
             except ValueError:
                 return ret
 
-    @classmethod
-    def cinnabarclone(self):
-        with self.query(b'cinnabarclone', self.connected) as stdout:
-            return self._read_data(stdout)
-
 
 class BundleHelper(HgRepoHelper):
     _helper = False

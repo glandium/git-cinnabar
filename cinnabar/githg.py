@@ -233,13 +233,6 @@ class GitHgStore(object):
             pass
         self._graft = True
 
-    def merge(self, git_repo_url, hg_repo_url, branch=None):
-        branch = [branch] if branch else []
-        with GitHgHelper.query(
-                b'merge-metadata', git_repo_url, hg_repo_url,
-                *branch) as stdout:
-            return stdout.readline().strip() == b'ok'
-
     def tags(self):
         tags = TagSet()
         if self._has_metadata:
