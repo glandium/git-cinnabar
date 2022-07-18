@@ -1016,34 +1016,6 @@ int check_manifest(const struct object_id *oid,
 	return hg_oideq(&stored, hg_oid);
 }
 
-void do_check_manifest(struct string_list *args, int helper_output)
-{
-	struct hg_object_id hg_oid, stored;
-	struct object_id oid;
-	const struct object_id *manifest_oid;
-
-	if (args->nr != 1)
-		goto error;
-
-	if (get_sha1_hex(args->items[0].string, hg_oid.hash))
-		goto error;
-
-	manifest_oid = resolve_hg2git(&hg_oid, 40);
-	if (!manifest_oid)
-		goto error;
-
-	if (!check_manifest(manifest_oid, &stored))
-		goto error;
-
-	if (manifest_oid != &oid && !hg_oideq(&stored, &hg_oid))
-		goto error;
-
-	write_or_die(helper_output, "ok\n", 3);
-	return;
-error:
-	write_or_die(helper_output, "error\n", 6);
-}
-
 int check_file(const struct hg_object_id *oid,
                const struct hg_object_id *parent1,
                const struct hg_object_id *parent2)

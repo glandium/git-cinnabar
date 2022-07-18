@@ -170,7 +170,6 @@ extern "C" {
     fn do_get_note(t: *mut cinnabar_notes_tree, l: *const string_list, out: c_int);
     fn do_hg2git(l: *const string_list, out: c_int);
     fn do_manifest(l: *const string_list, out: c_int);
-    fn do_check_manifest(l: *const string_list, out: c_int);
     fn do_cat_file(l: *const string_list, out: c_int);
     fn do_ls_tree(l: *const string_list, out: c_int);
     fn do_rev_list(l: *const string_list, out: c_int);
@@ -320,7 +319,6 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
                 b"file-meta" => do_get_note(&mut files_meta as *mut _ as *mut _, args, out),
                 b"hg2git" => do_hg2git(args, out),
                 b"manifest" => do_manifest(args, out),
-                b"check-manifest" => do_check_manifest(args, out),
                 b"cat-file" => do_cat_file(args, out),
                 b"ls-tree" => do_ls_tree(args, out),
                 b"rev-list" => do_rev_list(args, out),

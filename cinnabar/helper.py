@@ -227,11 +227,6 @@ class GitHgHelper(BaseHelper):
             return self._read_data(stdout)
 
     @classmethod
-    def check_manifest(self, hg_sha1):
-        with self.query(b'check-manifest', hg_sha1) as stdout:
-            return stdout.readline().strip() == b'ok'
-
-    @classmethod
     def ls_tree(self, sha1, recursive=False):
         extra = () if not recursive else (b'-r',)
         with self.query(b'ls-tree', sha1, *extra) as stdout:
