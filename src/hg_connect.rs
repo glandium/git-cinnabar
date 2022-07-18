@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::collections::{BTreeMap, HashMap};
-use std::ffi::c_void;
+use std::ffi::{c_void, OsStr};
 use std::fs::File;
 use std::io::{stderr, BufRead, Read, Write};
 use std::os::raw::c_int;
@@ -19,10 +19,11 @@ use crate::hg_bundle::{do_create_bundle, BundleReader, BundleSpec, BUNDLE_PATH};
 use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libcinnabar::send_buffer_to;
-use crate::oid::ObjectId;
+use crate::libgit::{rev_list, CommitId};
+use crate::oid::{GitObjectId, ObjectId};
 use crate::store::{store_changegroup, HgChangesetId};
-use crate::util::{ImmutBString, PrefixWriter, SliceExt, ToBoxed};
-use crate::HELPER_LOCK;
+use crate::util::{FromBytes, ImmutBString, PrefixWriter, ReadExt, SliceExt, ToBoxed};
+use crate::{graft_config_enabled, HELPER_LOCK};
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
@@ -692,6 +693,157 @@ pub fn get_clonebundle_url(conn: &mut dyn HgConnection) -> Option<Url> {
     None
 }
 
+struct CinnabarCloneInfo<'a> {
+    url: Url,
+    branch: Option<&'a [u8]>,
+    graft: Vec<GitObjectId>,
+}
+
+fn cinnabar_clone_info(line: &[u8]) -> Result<Option<CinnabarCloneInfo>, String> {
+    let mut line = line.splitn(2, |&b| b == b' ');
+    let (url, branch) = match line.next() {
+        None => return Ok(None),
+        Some(spec) => {
+            let mut spec = spec.splitn(2, |&b| b == b'#');
+            let url = match spec.next() {
+                None => return Ok(None),
+                Some(url) => std::str::from_utf8(url)
+                    .ok()
+                    .and_then(|url| {
+                        Url::parse(url)
+                            .or_else(|_| Url::parse(&format!("file://{}", url)))
+                            .ok()
+                    })
+                    .ok_or("invalid url")?,
+            };
+            (url, spec.next())
+        }
+    };
+    let mut params = line
+        .next()
+        .map(|p| {
+            p.split(u8::is_ascii_whitespace)
+                .filter(|b| !b.is_empty())
+                .map(|b| b.splitn_exact(b'=').map(|[a, b]| (a, b)))
+                .collect::<Option<HashMap<_, _>>>()
+                .ok_or("Parsing Error")
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let graft = params
+        .remove(&b"graft"[..])
+        .map(|b| {
+            b.split(|&b| b == b',')
+                .map(GitObjectId::from_bytes)
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+    if !params.is_empty() {
+        // Future proofing: ignore lines with unknown params, even if we support
+        // some that are preset.
+        return Err("Unknown parameters".into());
+    }
+    Ok(Some(CinnabarCloneInfo { url, branch, graft }))
+}
+
+fn do_get_cinnabarclone_url(input: &mut impl BufRead, args: &[&str], out: &mut impl Write) {
+    assert!(args.is_empty());
+    let mut buf = String::new();
+    input.read_line(&mut buf).unwrap();
+    let len = usize::from_str(buf.trim_end()).unwrap();
+    let manifest = input.read_exactly(len).unwrap();
+    if let Some((url, branch)) = get_cinnabarclone_url(&manifest) {
+        writeln!(out, "{}", url).unwrap();
+        writeln!(out, "{}", branch.as_deref().unwrap_or(b"").as_bstr()).unwrap();
+    } else {
+        out.write_all(b"\n\n").unwrap();
+    }
+}
+
+pub fn get_cinnabarclone_url(manifest: &[u8]) -> Option<(Url, Option<Box<[u8]>>)> {
+    let graft = graft_config_enabled().unwrap();
+    let mut candidates = Vec::new();
+
+    for line in ByteSlice::lines(manifest) {
+        if line.is_empty() {
+            continue;
+        }
+        debug!(target: "cinnabarclone", "{:?}", line.as_bstr());
+        match cinnabar_clone_info(line) {
+            Ok(None) => {}
+            Ok(Some(info)) => {
+                // When grafting, ignore lines without a graft revision.
+                if graft == Some(true) && info.graft.is_empty() {
+                    debug!(target: "cinnabarclone", " Skipping (graft enabled but not a graft)");
+                    continue;
+                }
+                // When explicitly disabling graft, ignore lines with a graft revision.
+                if graft == Some(false) && !info.graft.is_empty() {
+                    debug!(target: "cinnabarclone", " Skipping (graft disabled)");
+                    continue;
+                }
+                if !info.graft.is_empty() {
+                    if !info
+                        .graft
+                        .iter()
+                        .all(|g| CommitId::try_from(g.clone()).is_ok())
+                    {
+                        debug!(target: "cinnabarclone", " Skipping (missing commit(s) for graft)");
+                        continue;
+                    }
+                    // We apparently have all the grafted revisions locally, ensure
+                    // they're actually reachable.
+                    let args = [
+                        "--branches",
+                        "--tags",
+                        "--remotes",
+                        "--max-count=1",
+                        "--ancestry-path",
+                    ];
+                    let other_args = info.graft.iter().map(|c| format!("^{}^@", c)).collect_vec();
+                    if rev_list(
+                        &args
+                            .into_iter()
+                            .chain(other_args.iter().map(|x| &**x))
+                            .map(OsStr::new)
+                            .collect_vec(),
+                    )
+                    .next()
+                    .is_none()
+                    {
+                        debug!(target: "cinnabarclone", " Skipping (graft commit(s) unreachable)");
+                        continue;
+                    }
+                }
+                candidates.push(info);
+            }
+            Err(e) => {
+                debug!(target: "cinnabarclone", " Skipping ({})", e);
+            }
+        }
+    }
+    // When graft is not explicitly enabled or disabled, pick any kind of bundle,
+    // but prefer a grafted one, even if it appears after.
+    let graft_filters = if graft != Some(false) {
+        &[true, false][..]
+    } else {
+        &[false]
+    };
+    for graft_filter in graft_filters {
+        for candidate in &candidates {
+            if candidate.graft.is_empty() != *graft_filter {
+                return Some((
+                    candidate.url.clone(),
+                    candidate.branch.map(ToBoxed::to_boxed),
+                ));
+            }
+        }
+    }
+    None
+}
+
 pub fn get_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnection>> {
     if ["http", "https"].contains(&url.scheme()) {
         get_http_connection(url)
@@ -774,6 +926,7 @@ pub fn connect_main_with(
             "lookup" => do_lookup(conn, &*args, out),
             "clonebundles" => do_clonebundles(conn, &*args, out),
             "get_clonebundle_url" => do_get_clonebundle_url(conn, &*args, out),
+            "get_cinnabarclone_url" => do_get_cinnabarclone_url(input, &*args, out),
             "cinnabarclone" => do_cinnabarclone(conn, &*args, out),
             "close" => {
                 connections.remove(&conn_id);

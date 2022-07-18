@@ -960,20 +960,22 @@ fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
     }
 }
 
-fn do_unbundle(clonebundle: bool, mut url: Url) -> Result<(), String> {
-    if !["http", "https", "file"].contains(&url.scheme()) {
-        return Err(format!("{} urls are not supported.", url.scheme()));
-    }
-    let graft = get_config("graft")
+pub fn graft_config_enabled() -> Result<Option<bool>, String> {
+    get_config("graft")
         .map(|v| {
             v.into_string()
                 .and_then(|v| bool::from_str(&v).map_err(|_| v.into()))
         })
         .transpose()
         // TODO: This should report the environment variable is that's what was used.
-        .map_err(|e| format!("Invalid value for cinnabar.graft: {}", e.to_string_lossy()))?
-        .unwrap_or(false);
-    if graft {
+        .map_err(|e| format!("Invalid value for cinnabar.graft: {}", e.to_string_lossy()))
+}
+
+fn do_unbundle(clonebundle: bool, mut url: Url) -> Result<(), String> {
+    if !["http", "https", "file"].contains(&url.scheme()) {
+        return Err(format!("{} urls are not supported.", url.scheme()));
+    }
+    if graft_config_enabled()?.unwrap_or(false) {
         init_graft();
     }
     if clonebundle {
