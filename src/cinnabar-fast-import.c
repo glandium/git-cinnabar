@@ -950,13 +950,6 @@ void do_store(struct reader *helper_input, int helper_output,
                      struct string_list *args)
 {
 	ensure_store_init();
-	if (!strcmp(args->items[0].string, "metadata")) {
-		struct object_id result = {{ 0, }};
-		do_store_metadata(&result);
-		write_or_die(helper_output, oid_to_hex(&result), 40);
-		write_or_die(helper_output, "\n", 1);
-		return;
-	}
 	if (args->nr < 2)
 		die("store needs at least 3 arguments");
 
