@@ -884,11 +884,12 @@ pub fn connect_main_with(
         let command = args.next().ok_or("Missing command")?;
         if command == "connect" {
             let url = args.next().unwrap();
+            let remote = args.next();
             assert!(args.next().is_none());
             match hg_connect(url, 0) {
                 // We allow multiple connect commands.
                 Some(conn) => {
-                    connections.insert(count, conn);
+                    connections.insert(count, (conn, remote.map(ToString::to_string)));
                     writeln!(out, "ok {count}").unwrap();
                     count += 1;
                 }
@@ -909,10 +910,11 @@ pub fn connect_main_with(
         if connections.is_empty() {
             return Err(format!("Unknown command: {}", command).into());
         }
-        let (conn_id, connection) = u32::from_str(args.next().ok_or("Missing connection id")?)
-            .ok()
-            .and_then(|c| connections.get_mut(&c).map(|conn| (c, conn)))
-            .ok_or("Invalid connection id")?;
+        let (conn_id, (connection, _remote)) =
+            u32::from_str(args.next().ok_or("Missing connection id")?)
+                .ok()
+                .and_then(|c| connections.get_mut(&c).map(|conn| (c, conn)))
+                .ok_or("Invalid connection id")?;
         let args = args.collect_vec();
         let conn = &mut **connection;
         match command {

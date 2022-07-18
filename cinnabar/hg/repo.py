@@ -130,14 +130,14 @@ class HelperRepo(object):
     __slots__ = ("_url", "_branchmap", "_heads", "_bookmarks", "_ui", "remote",
                  "_helper")
 
-    def __init__(self, helper, url):
+    def __init__(self, helper, url, remote=None):
         self._helper = helper
         self._url = url
         self._branchmap = None
         self._heads = None
         self._bookmarks = None
         self._ui = None
-        self.remote = None
+        self.remote = remote
 
     def init_state(self):
         state = self._helper.state()
@@ -442,11 +442,8 @@ class Remote(object):
 
 
 def get_repo(remote):
-    repo = _get_repo(remote)
-    repo.remote = remote.name
-    return repo
-
-
-def _get_repo(remote):
-    HgRepoHelper.connect(remote.url)
-    return HelperRepo(HgRepoHelper, remote.url)
+    if remote.name:
+        HgRepoHelper.connect(remote.url, remote.name)
+    else:
+        HgRepoHelper.connect(remote.url)
+    return HelperRepo(HgRepoHelper, remote.url, remote.name)

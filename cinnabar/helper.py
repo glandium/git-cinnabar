@@ -339,8 +339,8 @@ class HgRepoHelper(BaseHelper):
             self.connected = False
 
     @classmethod
-    def connect(self, url):
-        with self.query(b'connect', url) as stdout:
+    def connect(self, url, *args):
+        with self.query(b'connect', url, *args) as stdout:
             resp = stdout.readline().rstrip()
             if resp[:3] != b'ok ':
                 raise Exception(resp.decode('ascii'))
