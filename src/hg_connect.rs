@@ -10,8 +10,10 @@ use std::os::raw::c_int;
 use std::str::FromStr;
 
 use bstr::{BStr, ByteSlice};
+use either::Either;
 use itertools::Itertools;
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
+use rand::prelude::IteratorRandom;
 use sha1::{Digest, Sha1};
 use url::Url;
 
@@ -19,9 +21,11 @@ use crate::hg_bundle::{do_create_bundle, BundleReader, BundleSpec, BUNDLE_PATH};
 use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libcinnabar::send_buffer_to;
-use crate::libgit::{rev_list, CommitId};
+use crate::libgit::{rev_list, CommitId, RawCommit};
 use crate::oid::{GitObjectId, ObjectId};
-use crate::store::{merge_metadata, store_changegroup, HgChangesetId};
+use crate::store::{
+    merge_metadata, store_changegroup, Dag, GitChangesetId, HgChangesetId, Traversal,
+};
 use crate::util::{FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed};
 use crate::{check_enabled, get_config_remote, graft_config_enabled, Checks, HELPER_LOCK};
 
@@ -609,6 +613,183 @@ fn do_lookup(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
     send_buffer_to(&*result, out);
 }
 
+fn take_sample<R: rand::Rng + ?Sized, T, const SIZE: usize>(
+    rng: &mut R,
+    data: &mut Vec<T>,
+) -> Vec<T> {
+    if data.len() <= SIZE {
+        std::mem::take(data)
+    } else {
+        for (i, j) in rand::seq::index::sample(rng, data.len(), SIZE)
+            .into_iter()
+            .sorted()
+            .enumerate()
+        {
+            if i != j {
+                data.swap(i, j);
+            }
+        }
+        data.drain(..SIZE).collect()
+    }
+}
+
+const SAMPLE_SIZE: usize = 100;
+
+fn do_find_common(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
+    let hgheads = args
+        .iter()
+        .map(|arg| HgChangesetId::from_str(arg).unwrap())
+        .collect_vec();
+    writeln!(out, "{}", find_common(conn, hgheads).iter().join(" ")).unwrap();
+}
+
+#[derive(Default, Debug)]
+struct FindCommonInfo {
+    hg_node: Option<HgChangesetId>,
+    known: Option<bool>,
+    has_known_children: bool,
+}
+
+fn find_common(
+    conn: &mut dyn HgConnection,
+    hgheads: impl Into<Vec<HgChangesetId>>,
+) -> Vec<HgChangesetId> {
+    let _lock = HELPER_LOCK.lock();
+    let mut rng = rand::thread_rng();
+    let mut undetermined = hgheads.into();
+    if undetermined.is_empty() {
+        return vec![];
+    }
+    let sample = take_sample::<_, _, SAMPLE_SIZE>(&mut rng, &mut undetermined);
+
+    let (known, unknown): (Vec<_>, Vec<_>) = conn
+        .known(&sample)
+        .iter()
+        .zip(sample.into_iter())
+        .partition_map(|(&known, head)| {
+            if known {
+                Either::Left(head)
+            } else {
+                Either::Right(head)
+            }
+        });
+
+    if undetermined.is_empty() && unknown.is_empty() {
+        return known;
+    }
+
+    let known = known
+        .into_iter()
+        .filter_map(|cs| cs.to_git().map(|c| (cs, c)))
+        .collect_vec();
+    let mut undetermined = undetermined
+        .into_iter()
+        .filter_map(|cs| cs.to_git().map(|c| (cs, c)))
+        .collect_vec();
+    let unknown = unknown
+        .into_iter()
+        .filter_map(|cs| cs.to_git().map(|c| (cs, c)))
+        .collect_vec();
+
+    let mut args = vec![
+        "--reverse".to_string(),
+        "--topo-order".to_string(),
+        "--full-history".to_string(),
+    ];
+    args.extend(known.iter().map(|(_, k)| format!("^{}^@", k)));
+    args.extend(
+        undetermined
+            .iter()
+            .chain(unknown.iter())
+            .chain(known.iter())
+            .map(|(_, c)| c.to_string()),
+    );
+
+    let mut dag = Dag::new();
+    let mut undetermined_count = 0;
+    for cid in rev_list(&args.iter().map(OsStr::new).collect_vec()) {
+        let commit = RawCommit::read(&cid).unwrap();
+        let commit = commit.parse().unwrap();
+        dag.add(
+            &cid,
+            &commit.parents().iter().collect_vec(),
+            FindCommonInfo::default(),
+            |_, _| {},
+        );
+        undetermined_count += 1;
+    }
+    for (cs, c) in known {
+        if let Some((_, mut data)) = dag.get_mut(&*c) {
+            data.hg_node = Some(cs.clone());
+            data.known = Some(true);
+            undetermined_count -= 1;
+        }
+    }
+    for (_, c) in unknown {
+        if let Some((_, mut data)) = dag.get_mut(&*c) {
+            data.known = Some(false);
+            undetermined_count -= 1;
+        }
+    }
+    for (cs, c) in &undetermined {
+        if let Some((_, mut data)) = dag.get_mut(&*c) {
+            data.hg_node = Some(cs.clone());
+        }
+    }
+
+    while undetermined_count > 0 {
+        if undetermined.len() < SAMPLE_SIZE {
+            undetermined.extend(
+                // TODO: this would or maybe would not be faster if traversing the dag instead.
+                dag.iter_mut()
+                    .filter(|(_, data)| data.known.is_none())
+                    .choose_multiple(&mut rng, SAMPLE_SIZE - undetermined.len())
+                    .into_iter()
+                    .map(|(c, data)| {
+                        let git_cs = GitChangesetId::from_unchecked(c.clone());
+                        (
+                            data.hg_node
+                                .get_or_insert_with(|| git_cs.to_hg().unwrap())
+                                .clone(),
+                            git_cs,
+                        )
+                    }),
+            );
+        }
+        let (sample_hg, sample_git): (Vec<_>, Vec<_>) =
+            take_sample::<_, _, SAMPLE_SIZE>(&mut rng, &mut undetermined)
+                .into_iter()
+                .unzip();
+        for (&known, c) in conn.known(&sample_hg).iter().zip(sample_git.iter()) {
+            let direction = if known {
+                Traversal::Parents
+            } else {
+                Traversal::Children
+            };
+            let mut first = Some(());
+            dag.traverse_mut(c, direction, |_, data| {
+                if known && first.take().is_none() {
+                    data.has_known_children = true;
+                }
+                if data.known.is_none() {
+                    data.known = Some(known);
+                    undetermined_count -= 1;
+                    true
+                } else {
+                    assert_eq!(data.known, Some(known));
+                    false
+                }
+            });
+        }
+    }
+    dag.iter()
+        .filter_map(|(_, data)| {
+            (data.known == Some(true) && !data.has_known_children)
+                .then(|| data.hg_node.clone().unwrap())
+        })
+        .collect_vec()
+}
+
 fn do_get_initial_bundle(
     conn: &mut dyn HgConnection,
     args: &[&str],
@@ -978,6 +1159,7 @@ pub fn connect_main_with(
             "capable" => do_capable(conn, &*args, out),
             "state" => do_state(conn, &*args, out),
             "lookup" => do_lookup(conn, &*args, out),
+            "find_common" => do_find_common(conn, &*args, out),
             "get_initial_bundle" => do_get_initial_bundle(conn, &*args, out, remote.as_deref()),
             "close" => {
                 connections.remove(&conn_id);

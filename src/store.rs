@@ -4,7 +4,7 @@
 
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::env;
 use std::ffi::OsStr;
 use std::io::{copy, BufRead, BufReader, Read, Write};
@@ -16,6 +16,7 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::sync::Mutex;
 
+use bit_vec::BitVec;
 use bstr::{BStr, BString, ByteSlice};
 use cstr::cstr;
 use derive_more::{Deref, Display};
@@ -613,29 +614,164 @@ impl RawHgFile {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, Ord, PartialEq, PartialOrd)]
+pub struct DagNodeId(NonZeroU32);
+
+impl DagNodeId {
+    fn try_from_offset(offset: usize) -> Option<Self> {
+        u32::try_from(offset + 1)
+            .ok()
+            .and_then(NonZeroU32::new)
+            .map(Self)
+    }
+
+    fn to_offset(self) -> usize {
+        self.0.get() as usize - 1
+    }
+}
+
 #[derive(Debug)]
-struct DagNode<T> {
-    id: NonZeroU32,
-    parent1: Option<NonZeroU32>,
-    parent2: Option<NonZeroU32>,
-    has_children: bool,
+struct DagNode<N, T> {
+    node: N,
+    parent1: Option<DagNodeId>,
+    parent2: Option<DagNodeId>,
     data: T,
 }
 
 #[derive(Debug)]
+struct ChangesetInfo {
+    has_children: bool,
+    branch: BString,
+}
+
+#[derive(Debug)]
+pub struct Dag<N, T> {
+    // 4 billion nodes ought to be enough for anybody.
+    ids: BTreeMap<N, DagNodeId>,
+    dag: Vec<DagNode<N, T>>,
+}
+
+pub enum Traversal {
+    Parents,
+    Children,
+}
+
+impl<N: Ord + Clone, T> Dag<N, T> {
+    pub fn new() -> Self {
+        Dag {
+            ids: BTreeMap::new(),
+            dag: Vec::new(),
+        }
+    }
+
+    pub fn add<F: FnMut(DagNodeId, &mut T)>(
+        &mut self,
+        node: &N,
+        parents: &[&N],
+        data: T,
+        mut cb: F,
+    ) -> DagNodeId {
+        assert!(parents.len() <= 2);
+        let parents = parents
+            .iter()
+            .filter_map(|p| {
+                self.get_mut(p).map(|(id, data)| {
+                    cb(id, data);
+                    id
+                })
+            })
+            .collect_vec();
+        let id = DagNodeId::try_from_offset(self.dag.len()).unwrap();
+        assert!(self.ids.insert(node.clone(), id).is_none());
+        self.dag.push(DagNode {
+            node: node.clone(),
+            parent1: parents.get(0).copied(),
+            parent2: parents.get(1).copied(),
+            data,
+        });
+        id
+    }
+
+    pub fn get(&self, node: &N) -> Option<(DagNodeId, &T)> {
+        self.ids
+            .get(node)
+            .map(|id| (*id, &self.dag[id.to_offset()].data))
+    }
+
+    pub fn get_mut(&mut self, node: &N) -> Option<(DagNodeId, &mut T)> {
+        self.ids
+            .get(node)
+            .map(|id| (*id, &mut self.dag[id.to_offset()].data))
+    }
+
+    pub fn get_by_id(&self, id: DagNodeId) -> (&N, &T) {
+        let node = &self.dag[id.to_offset()];
+        (&node.node, &node.data)
+    }
+
+    pub fn traverse_mut(
+        &mut self,
+        start: &N,
+        direction: Traversal,
+        cb: impl FnMut(&N, &mut T) -> bool,
+    ) {
+        match (direction, self.ids.get(start)) {
+            (Traversal::Parents, Some(&start)) => self.traverse_parents_mut(start, cb),
+            (Traversal::Children, Some(&start)) => self.traverse_children_mut(start, cb),
+            _ => {}
+        }
+    }
+
+    fn traverse_parents_mut(&mut self, start: DagNodeId, mut cb: impl FnMut(&N, &mut T) -> bool) {
+        let mut queue = VecDeque::from([start]);
+        let mut seen = BitVec::from_elem(self.ids.len(), false);
+        while let Some(id) = queue.pop_front() {
+            seen.set(id.to_offset(), true);
+            let node = &mut self.dag[id.to_offset()];
+            if cb(&node.node, &mut node.data) {
+                for id in [node.parent1, node.parent2].into_iter().flatten() {
+                    if !seen[id.to_offset()] {
+                        queue.push_back(id);
+                    }
+                }
+            }
+        }
+    }
+
+    fn traverse_children_mut(&mut self, start: DagNodeId, mut cb: impl FnMut(&N, &mut T) -> bool) {
+        let mut seen = BitVec::from_elem(self.ids.len() - start.to_offset(), false);
+        for (idx, node) in self.dag[start.to_offset()..].iter_mut().enumerate() {
+            if (idx == 0
+                || [node.parent1, node.parent2]
+                    .into_iter()
+                    .flatten()
+                    .any(|id| id >= start && seen[id.to_offset() - start.to_offset()]))
+                && cb(&node.node, &mut node.data)
+            {
+                seen.set(idx, true);
+            }
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&N, &T)> {
+        self.dag.iter().map(|node| (&node.node, &node.data))
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&N, &mut T)> {
+        self.dag.iter_mut().map(|node| (&node.node, &mut node.data))
+    }
+}
+
+#[derive(Debug)]
 pub struct ChangesetHeads {
-    // 4 billion changesets ought to be enough for anybody.
-    // TODO: use refs into the changesets field as key.
-    ids: BTreeMap<HgChangesetId, NonZeroU32>,
-    dag: Vec<DagNode<(HgChangesetId, BString)>>,
-    heads: BTreeSet<NonZeroU32>,
+    dag: Dag<HgChangesetId, ChangesetInfo>,
+    heads: BTreeSet<DagNodeId>,
 }
 
 impl ChangesetHeads {
     pub fn new() -> Self {
         ChangesetHeads {
-            ids: BTreeMap::new(),
-            dag: Vec::new(),
+            dag: Dag::new(),
             heads: BTreeSet::new(),
         }
     }
@@ -660,53 +796,38 @@ impl ChangesetHeads {
     }
 
     pub fn add(&mut self, cs: &HgChangesetId, parents: &[&HgChangesetId], branch: &BStr) {
-        assert!(parents.len() <= 2);
-        let parents = parents
-            .iter()
-            .filter_map(|p| {
-                let id = self.ids.get(*p).copied();
-                if let Some(id) = id {
-                    let node = &mut self.dag[id.get() as usize - 1];
-                    node.has_children = true;
-                    let parent_branch = &node.data.1;
-                    if parent_branch == branch {
-                        self.heads.remove(&id);
-                    }
-                }
-                id
-            })
-            .collect::<Vec<_>>();
-        let id = NonZeroU32::new(self.dag.len() as u32 + 1).unwrap();
-        assert!(self.ids.insert(cs.clone(), id).is_none());
-        self.dag.push(DagNode {
-            id,
-            parent1: parents.get(0).copied(),
-            parent2: parents.get(1).copied(),
+        let data = ChangesetInfo {
             has_children: false,
-            data: (cs.clone(), BString::from(branch)),
+            branch: BString::from(branch),
+        };
+        let id = self.dag.add(cs, parents, data, |parent_id, parent_data| {
+            parent_data.has_children = true;
+            if parent_data.branch == branch {
+                self.heads.remove(&parent_id);
+            }
         });
         self.heads.insert(id);
     }
 
     fn force_remove(&mut self, cs: &HgChangesetId) {
-        if let Some(id) = self.ids.get(cs) {
-            self.heads.remove(id);
+        if let Some((id, _)) = self.dag.get(cs) {
+            self.heads.remove(&id);
         }
     }
 
     pub fn branch_heads(&self) -> impl Iterator<Item = (&HgChangesetId, &BStr)> {
         self.heads.iter().map(|id| {
-            let data = &self.dag[id.get() as usize - 1].data;
-            (&data.0, data.1.as_bstr())
+            let (node, data) = self.dag.get_by_id(*id);
+            (node, data.branch.as_bstr())
         })
     }
 
     pub fn heads(&self) -> impl Iterator<Item = &HgChangesetId> {
         self.heads.iter().filter_map(|id| {
-            let node = &self.dag[id.get() as usize - 1];
+            let (node, data) = self.dag.get_by_id(*id);
             // Branch heads can have children in other branches, in which case
             // they are not heads.
-            (!node.has_children).then(|| &node.data.0)
+            (!data.has_children).then(|| node)
         })
     }
 }

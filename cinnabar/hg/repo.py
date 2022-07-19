@@ -16,7 +16,6 @@ from urllib.parse import (
     urlunparse,
 )
 import logging
-import random
 from cinnabar.dag import gitdag
 from cinnabar.git import NULL_NODE_ID
 from cinnabar.hg.bundle import (
@@ -24,98 +23,6 @@ from cinnabar.hg.bundle import (
     encodecaps,
     decodecaps,
 )
-
-
-def _sample(l, size):
-    if len(l) <= size:
-        return l
-    return random.sample(l, size)
-
-
-# TODO: this algorithm is not very smart and might as well be completely wrong
-def findcommon(repo, store, hgheads):
-    logger = logging.getLogger('findcommon')
-    logger.debug(hgheads)
-    if not hgheads:
-        logger.info('no requests')
-        return set()
-
-    sample_size = 100
-
-    sample = _sample(hgheads, sample_size)
-    requests = 1
-    known = repo.known(unhexlify(h) for h in sample)
-    known = set(h for h, k in zip(sample, known) if k)
-
-    logger.debug('initial sample size: %d', len(sample))
-
-    if len(known) == len(hgheads):
-        logger.debug('all heads known')
-        logger.info('1 request')
-        return hgheads
-
-    git_heads = set(store.changeset_ref(h) for h in hgheads)
-    git_known = set(store.changeset_ref(h) for h in known)
-
-    if logger.isEnabledFor(logging.DEBUG):
-        logger.debug('known (sub)set: (%d) %s', len(known), sorted(git_known))
-
-    args = [b'--topo-order', b'--full-history', b'--parents']
-
-    def revs():
-        for h in git_known:
-            yield b'^%s' % h
-        for h in git_heads:
-            if h not in git_known:
-                yield h
-
-    args.extend(revs())
-    revs = ((c, parents) for c, t, parents in GitHgHelper.rev_list(*args))
-    dag = gitdag(chain(revs, ((k, ()) for k in git_known)))
-    dag.tag_nodes_and_parents(git_known, 'known')
-
-    def log_dag(tag):
-        if not logger.isEnabledFor(logging.DEBUG):
-            return
-        logger.debug('%s dag size: %d', tag,
-                     sum(1 for n in dag.iternodes(tag)))
-        heads = sorted(dag.heads(tag))
-        logger.debug('%s dag heads: (%d) %s', tag, len(heads), heads)
-        roots = sorted(dag.roots(tag))
-        logger.debug('%s dag roots: (%d) %s', tag, len(roots), roots)
-
-    log_dag('unknown')
-    log_dag('known')
-
-    while True:
-        unknown = set(chain(dag.heads(), dag.roots()))
-        if not unknown:
-            break
-
-        sample = set(_sample(unknown, sample_size))
-        if len(sample) < sample_size:
-            sample |= set(_sample(set(dag.iternodes()),
-                                  sample_size - len(sample)))
-
-        sample = list(sample)
-        hg_sample = [store.hg_changeset(h) for h in sample]
-        requests += 1
-        known = repo.known(unhexlify(h) for h in hg_sample)
-        unknown = set(h for h, k in zip(sample, known) if not k)
-        known = set(h for h, k in zip(sample, known) if k)
-        logger.debug('next sample size: %d', len(sample))
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug('known (sub)set: (%d) %s', len(known), sorted(known))
-            logger.debug('unknown (sub)set: (%d) %s', len(unknown),
-                         sorted(unknown))
-
-        dag.tag_nodes_and_parents(known, 'known')
-        dag.tag_nodes_and_children(unknown, 'unknown')
-        log_dag('unknown')
-        log_dag('known')
-
-    logger.info('%d requests', requests)
-    return [store.hg_changeset(h) for h in dag.heads('known')]
 
 
 class HelperRepo(object):
@@ -196,9 +103,12 @@ class HelperRepo(object):
         return self._helper.unbundle((hexlify(h) if h != b'force' else h
                                       for h in heads))
 
+    def find_common(self, heads):
+        return self._helper.find_common(heads)
+
 
 def getbundle(repo, store, heads, branch_names):
-    common = findcommon(repo, store, store.heads(branch_names))
+    common = repo.find_common(store.heads(branch_names))
     logging.info('common: %s', common)
     got_partial = False
     if not common and not store._has_metadata:
@@ -217,7 +127,7 @@ def getbundle(repo, store, heads, branch_names):
         heads = [h for h in heads if not store.changeset_ref(h)]
         if not heads:
             return
-        common = findcommon(repo, store, store.heads(branch_names))
+        common = repo.find_common(store.heads(branch_names))
         logging.info('common: %s', common)
 
     repo.get_store_bundle(
@@ -263,7 +173,7 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
         if fail:
             raise Exception(
                 'Cannot push to this remote without pulling/updating first.')
-    common = findcommon(repo, store, local_bases)
+    common = repo.find_common(local_bases)
     logging.info('common: %s', common)
 
     def revs():

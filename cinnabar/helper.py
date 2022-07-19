@@ -387,6 +387,11 @@ class HgRepoHelper(BaseHelper):
             except ValueError:
                 return ret
 
+    @classmethod
+    def find_common(self, heads):
+        with self.query(b'find_common', self.connected, *heads) as stdout:
+            return stdout.readline().split()
+
 
 class BundleHelper(HgRepoHelper):
     _helper = False
