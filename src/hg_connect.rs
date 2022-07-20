@@ -595,13 +595,6 @@ fn do_state(conn: &mut dyn HgConnection, args: &[&str], mut out: &mut impl Write
     send_buffer_to(&*bookmarks, &mut out);
 }
 
-fn do_lookup(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
-    assert_eq!(args.len(), 1);
-    let key = args[0];
-    let result = conn.lookup(key);
-    send_buffer_to(&*result, out);
-}
-
 fn take_sample<R: rand::Rng + ?Sized, T, const SIZE: usize>(
     rng: &mut R,
     data: &mut Vec<T>,
@@ -1142,7 +1135,6 @@ pub fn connect_main_with(
             "pushkey" => do_pushkey(conn, &*args, out),
             "capable" => do_capable(conn, &*args, out),
             "state" => do_state(conn, &*args, out),
-            "lookup" => do_lookup(conn, &*args, out),
             "find_common" => do_find_common(conn, &*args, out),
             "get_initial_bundle" => do_get_initial_bundle(conn, &*args, out, remote.as_deref()),
             "close" => {
