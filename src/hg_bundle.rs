@@ -28,7 +28,7 @@ use tee::TeeReader;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
-use crate::hg_connect::{HgConnection, HgConnectionBase};
+use crate::hg_connect::{HgConnection, HgConnectionBase, HgRepo};
 use crate::hg_data::find_parents;
 use crate::libcinnabar::files_meta;
 use crate::libgit::BlobId;
@@ -852,6 +852,21 @@ impl<R: Read> HgConnection for BundleConnection<R> {
         todo!()
     }
 
+    fn getbundle<'a>(
+        &'a mut self,
+        _heads: &[HgChangesetId],
+        common: &[HgChangesetId],
+        _bundle2caps: Option<&str>,
+    ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
+        assert!(common.is_empty());
+
+        Ok(Box::new(
+            Cursor::new(mem::take(&mut self.buf)).chain(&mut self.reader),
+        ))
+    }
+}
+
+impl<R: Read> HgRepo for BundleConnection<R> {
     fn branchmap(&mut self) -> ImmutBString {
         self.init_changesets();
         let mut branchmap = Vec::new();
@@ -883,22 +898,13 @@ impl<R: Read> HgConnection for BundleConnection<R> {
         heads.into_boxed_slice()
     }
 
-    fn listkeys(&mut self, _namespace: &str) -> ImmutBString {
+    fn bookmarks(&mut self) -> ImmutBString {
         // TODO: For HG20 bundles, we could actually read the relevant part(s).
         Box::new([])
     }
 
-    fn getbundle<'a>(
-        &'a mut self,
-        _heads: &[HgChangesetId],
-        common: &[HgChangesetId],
-        _bundle2caps: Option<&str>,
-    ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
-        assert!(common.is_empty());
-
-        Ok(Box::new(
-            Cursor::new(mem::take(&mut self.buf)).chain(&mut self.reader),
-        ))
+    fn phases(&mut self) -> ImmutBString {
+        Box::new([])
     }
 }
 

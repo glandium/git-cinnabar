@@ -35,7 +35,7 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 use crate::args;
 use crate::hg_bundle::BundleConnection;
 use crate::hg_connect::{
-    HgArgs, HgCapabilities, HgConnection, HgConnectionBase, HgWireConnection, OneHgArg,
+    HgArgs, HgCapabilities, HgConnectionBase, HgRepo, HgWireConnection, HgWired, OneHgArg,
     UnbundleResponse,
 };
 use crate::libgit::{
@@ -596,7 +596,7 @@ unsafe extern "C" fn read_from_read<R: Read>(
 }
 
 #[allow(clippy::unnecessary_wraps)]
-pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
+pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
     let mut conn = HgHttpConnection {
         capabilities: HgCapabilities::default(),
         url: url.clone(),
@@ -633,8 +633,9 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
             let mut caps = Vec::<u8>::new();
             caps.extend_from_slice(&header);
             copy(&mut http_resp, &mut caps).unwrap();
+            drop(http_resp);
             mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&caps));
-            Some(Box::new(conn) as Box<dyn HgConnection>)
+            Some(Box::new(HgWired::new(conn)) as Box<dyn HgRepo>)
         }
     }
 }

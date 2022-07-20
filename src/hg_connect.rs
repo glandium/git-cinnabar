@@ -141,10 +141,6 @@ pub trait HgConnection: HgConnectionBase {
         unimplemented!();
     }
 
-    fn listkeys(&mut self, _namespace: &str) -> ImmutBString {
-        unimplemented!();
-    }
-
     fn getbundle<'a>(
         &'a mut self,
         _heads: &[HgChangesetId],
@@ -159,18 +155,6 @@ pub trait HgConnection: HgConnectionBase {
     }
 
     fn pushkey(&mut self, _namespace: &str, _key: &str, _old: &str, _new: &str) -> ImmutBString {
-        unimplemented!();
-    }
-
-    fn branchmap(&mut self) -> ImmutBString {
-        unimplemented!();
-    }
-
-    fn heads(&mut self) -> ImmutBString {
-        unimplemented!();
-    }
-
-    fn batch(&mut self, _cmds: &str) -> ImmutBString {
         unimplemented!();
     }
 
@@ -201,10 +185,6 @@ impl<T: HgWireConnection> HgConnection for T {
         .map(|b| *b == b'1')
         .collect_vec()
         .into()
-    }
-
-    fn listkeys(&mut self, namespace: &str) -> ImmutBString {
-        self.simple_command("listkeys", args!(namespace: namespace))
     }
 
     fn getbundle<'a>(
@@ -261,24 +241,6 @@ impl<T: HgWireConnection> HgConnection for T {
         )
     }
 
-    fn branchmap(&mut self) -> ImmutBString {
-        self.simple_command("branchmap", args!())
-    }
-
-    fn heads(&mut self) -> ImmutBString {
-        self.simple_command("heads", args!())
-    }
-
-    fn batch(&mut self, _cmds: &str) -> ImmutBString {
-        self.simple_command(
-            "batch",
-            args!(
-                cmds: "branchmap ;heads ;listkeys namespace=bookmarks",
-                *: &[]
-            ),
-        )
-    }
-
     fn lookup(&mut self, key: &str) -> ImmutBString {
         self.simple_command("lookup", args!(key: key))
     }
@@ -289,6 +251,128 @@ impl<T: HgWireConnection> HgConnection for T {
 
     fn cinnabarclone(&mut self) -> ImmutBString {
         self.simple_command("cinnabarclone", args!())
+    }
+}
+
+pub trait HgRepo: HgConnection {
+    fn branchmap(&mut self) -> ImmutBString;
+
+    fn heads(&mut self) -> ImmutBString;
+
+    fn bookmarks(&mut self) -> ImmutBString;
+
+    fn phases(&mut self) -> ImmutBString;
+}
+
+pub struct HgWired<C: HgWireConnection> {
+    branchmap: ImmutBString,
+    heads: ImmutBString,
+    bookmarks: ImmutBString,
+    conn: C,
+}
+
+impl<C: HgWireConnection> HgWired<C> {
+    pub fn new(mut conn: C) -> Self {
+        let branchmap;
+        let heads;
+        let bookmarks;
+
+        const REQUIRED_CAPS: [&str; 2] = ["getbundle", "branchmap"];
+
+        for cap in &REQUIRED_CAPS {
+            conn.require_capability(cap.as_bytes());
+        }
+
+        if conn.get_capability(b"batch").is_none() {
+            // TODO: when not batching, check for coherency
+            // (see the cinnabar.remote_helper python module)
+            branchmap = conn.simple_command("branchmap", args!());
+            heads = conn.simple_command("heads", args!());
+            bookmarks = conn.simple_command("listkeys", args!(namespace: "bookmarks"));
+        } else {
+            let out = conn.simple_command(
+                "batch",
+                args!(
+                    cmds: "branchmap ;heads ;listkeys namespace=bookmarks",
+                    *: &[]
+                ),
+            );
+            let split: [_; 3] = out.splitn_exact(b';').unwrap();
+            branchmap = unescape_batched_output(split[0]);
+            heads = unescape_batched_output(split[1]);
+            bookmarks = unescape_batched_output(split[2]);
+        }
+
+        HgWired {
+            branchmap,
+            heads,
+            bookmarks,
+            conn,
+        }
+    }
+}
+
+impl<C: HgWireConnection> HgConnectionBase for HgWired<C> {
+    fn get_url(&self) -> Option<&Url> {
+        self.conn.get_url()
+    }
+
+    fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
+        self.conn.get_capability(name)
+    }
+}
+
+impl<C: HgWireConnection> HgConnection for HgWired<C> {
+    fn known(&mut self, nodes: &[HgChangesetId]) -> Box<[bool]> {
+        self.conn.known(nodes)
+    }
+
+    fn getbundle<'a>(
+        &'a mut self,
+        heads: &[HgChangesetId],
+        common: &[HgChangesetId],
+        bundle2caps: Option<&str>,
+    ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
+        self.conn.getbundle(heads, common, bundle2caps)
+    }
+
+    fn unbundle(&mut self, heads: Option<&[HgChangesetId]>, input: File) -> UnbundleResponse {
+        self.conn.unbundle(heads, input)
+    }
+
+    fn pushkey(&mut self, namespace: &str, key: &str, old: &str, new: &str) -> ImmutBString {
+        self.conn.pushkey(namespace, key, old, new)
+    }
+
+    fn lookup(&mut self, key: &str) -> ImmutBString {
+        self.conn.lookup(key)
+    }
+
+    fn clonebundles(&mut self) -> ImmutBString {
+        self.conn.clonebundles()
+    }
+
+    fn cinnabarclone(&mut self) -> ImmutBString {
+        self.conn.cinnabarclone()
+    }
+}
+
+impl<C: HgWireConnection> HgRepo for HgWired<C> {
+    fn branchmap(&mut self) -> ImmutBString {
+        self.branchmap.clone()
+    }
+
+    fn heads(&mut self) -> ImmutBString {
+        self.heads.clone()
+    }
+
+    fn bookmarks(&mut self) -> ImmutBString {
+        self.bookmarks.clone()
+    }
+
+    fn phases(&mut self) -> ImmutBString {
+        self.conn
+            .simple_command("listkeys", args!(namespace: "phases"))
     }
 }
 
@@ -351,7 +435,7 @@ fn test_unescape_batched_output() {
     assert_eq!(buf.as_bstr(), b"abc=def:;=,z".as_bstr());
 }
 
-fn do_known(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
+fn do_known(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
     conn.require_capability(b"known");
     let nodes = args
         .iter()
@@ -366,14 +450,18 @@ fn do_known(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
     send_buffer_to(&*result, out);
 }
 
-fn do_listkeys(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
+fn do_listkeys(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
     assert_eq!(args.len(), 1);
     let namespace = args[0];
-    let result = conn.listkeys(namespace);
+    let result = match namespace {
+        "bookmarks" => conn.bookmarks(),
+        "phases" => conn.phases(),
+        _ => unimplemented!(),
+    };
     send_buffer_to(&*result, out);
 }
 
-fn do_get_store_bundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
+fn do_get_store_bundle(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
     let mut args = args.iter();
 
     let arg_list = |a: &&str| {
@@ -482,7 +570,7 @@ fn test_encodecaps() {
 }
 
 pub fn get_store_bundle(
-    conn: &mut dyn HgConnection,
+    conn: &mut dyn HgRepo,
     heads: &[HgChangesetId],
     common: &[HgChangesetId],
 ) -> Result<(), ImmutBString> {
@@ -508,7 +596,7 @@ pub fn get_store_bundle(
         })
 }
 
-fn do_unbundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
+fn do_unbundle(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
     conn.require_capability(b"unbundle");
     let heads = if args.is_empty() || args[..] == ["force"] {
         None
@@ -555,7 +643,7 @@ fn do_unbundle(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write)
     }
 }
 
-fn do_pushkey(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
+fn do_pushkey(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
     assert_eq!(args.len(), 4);
     let (namespace, key, old, new) = (args[0], args[1], args[2], args[3]);
     conn.require_capability(b"pushkey");
@@ -563,7 +651,7 @@ fn do_pushkey(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) 
     send_buffer_to(&*response, out);
 }
 
-fn do_capable(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
+fn do_capable(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
     assert_eq!(args.len(), 1);
     let name = args[0];
     send_buffer_to(
@@ -572,27 +660,11 @@ fn do_capable(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) 
     );
 }
 
-fn do_state(conn: &mut dyn HgConnection, args: &[&str], mut out: &mut impl Write) {
+fn do_state(conn: &mut dyn HgRepo, args: &[&str], mut out: &mut impl Write) {
     assert!(args.is_empty());
-    let branchmap;
-    let heads;
-    let bookmarks;
-    if conn.get_capability(b"batch").is_none() {
-        // TODO: when not batching, check for coherency
-        // (see the cinnabar.remote_helper python module)
-        branchmap = conn.branchmap();
-        heads = conn.heads();
-        bookmarks = conn.listkeys("bookmarks");
-    } else {
-        let out = conn.batch("branchmap ;heads ;listkeys namespace=bookmarks");
-        let split: [_; 3] = out.splitn_exact(b';').unwrap();
-        branchmap = unescape_batched_output(split[0]);
-        heads = unescape_batched_output(split[1]);
-        bookmarks = unescape_batched_output(split[2]);
-    }
-    send_buffer_to(&*branchmap, &mut out);
-    send_buffer_to(&*heads, &mut out);
-    send_buffer_to(&*bookmarks, &mut out);
+    send_buffer_to(&*conn.branchmap(), &mut out);
+    send_buffer_to(&*conn.heads(), &mut out);
+    send_buffer_to(&*conn.bookmarks(), &mut out);
 }
 
 fn take_sample<R: rand::Rng + ?Sized, T, const SIZE: usize>(
@@ -617,7 +689,7 @@ fn take_sample<R: rand::Rng + ?Sized, T, const SIZE: usize>(
 
 const SAMPLE_SIZE: usize = 100;
 
-fn do_find_common(conn: &mut dyn HgConnection, args: &[&str], out: &mut impl Write) {
+fn do_find_common(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
     let hgheads = args
         .iter()
         .map(|arg| HgChangesetId::from_str(arg).unwrap())
@@ -633,7 +705,7 @@ struct FindCommonInfo {
 }
 
 fn find_common(
-    conn: &mut dyn HgConnection,
+    conn: &mut dyn HgRepo,
     hgheads: impl Into<Vec<HgChangesetId>>,
 ) -> Vec<HgChangesetId> {
     let _lock = HELPER_LOCK.lock();
@@ -773,7 +845,7 @@ fn find_common(
 }
 
 fn do_get_initial_bundle(
-    conn: &mut dyn HgConnection,
+    conn: &mut dyn HgRepo,
     args: &[&str],
     out: &mut impl Write,
     remote: Option<&str>,
@@ -904,7 +976,7 @@ fn can_use_clonebundle(line: &[u8]) -> Result<Option<Url>, String> {
         .ok_or("stream bundles are not supported")?)
 }
 
-pub fn get_clonebundle_url(conn: &mut dyn HgConnection) -> Option<Url> {
+pub fn get_clonebundle_url(conn: &mut dyn HgRepo) -> Option<Url> {
     let bundles = conn.clonebundles();
 
     for line in ByteSlice::lines(&*bundles) {
@@ -1059,7 +1131,7 @@ pub fn get_cinnabarclone_url(manifest: &[u8]) -> Option<(Url, Option<Box<[u8]>>)
     None
 }
 
-pub fn get_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
+pub fn get_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
     let conn = if ["http", "https"].contains(&url.scheme()) {
         get_http_connection(url)?
     } else if ["ssh", "file"].contains(&url.scheme()) {
