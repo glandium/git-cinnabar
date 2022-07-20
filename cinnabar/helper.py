@@ -366,12 +366,6 @@ class HgRepoHelper(BaseHelper):
             return self._read_data(stdout)
 
     @classmethod
-    def get_store_bundle(self, heads, common):
-        with self.query(b'get_store_bundle', self.connected, b','.join(heads),
-                        b','.join(common)) as stdout:
-            return stdout.readline().rstrip() == b'ok'
-
-    @classmethod
     def unbundle(self, heads):
         with self.query(b'unbundle', self.connected, *heads) as stdout:
             ret = self._read_data(stdout)

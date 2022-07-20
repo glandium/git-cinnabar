@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::{c_void, OsStr};
 use std::fs::File;
 use std::io::{stderr, BufRead, Read, Write};
@@ -23,7 +23,8 @@ use crate::libcinnabar::send_buffer_to;
 use crate::libgit::{rev_list, CommitId, RawCommit};
 use crate::oid::{GitObjectId, ObjectId};
 use crate::store::{
-    merge_metadata, store_changegroup, Dag, GitChangesetId, HgChangesetId, Traversal,
+    has_metadata, merge_metadata, store_changegroup, Dag, GitChangesetId, HgChangesetId, Traversal,
+    CHANGESET_HEADS,
 };
 use crate::util::{FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed};
 use crate::{check_enabled, get_config_remote, graft_config_enabled, Checks, HELPER_LOCK};
@@ -456,33 +457,6 @@ fn do_listkeys(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
     send_buffer_to(&*result, out);
 }
 
-fn do_get_store_bundle(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
-    let mut args = args.iter();
-
-    let arg_list = |a: &&str| {
-        if a.is_empty() {
-            Vec::new()
-        } else {
-            a.split(',')
-                .map(|s| HgChangesetId::from_str(s).unwrap())
-                .collect()
-        }
-    };
-
-    let heads = args.next().map_or_else(Vec::new, arg_list);
-    let common = args.next().map_or_else(Vec::new, arg_list);
-    assert!(args.next().is_none());
-    match get_store_bundle(conn, &heads, &common) {
-        Ok(()) => out.write_all(b"ok\n").unwrap(),
-        Err(e) => {
-            out.write_all(b"err\n").unwrap();
-            let stderr = stderr();
-            let mut writer = PrefixWriter::new("remote: ", stderr.lock());
-            writer.write_all(&e).unwrap();
-        }
-    }
-}
-
 const PYTHON_QUOTE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'.')
@@ -839,14 +813,65 @@ fn find_common(
         .collect_vec()
 }
 
-fn do_get_initial_bundle(
-    conn: &mut dyn HgRepo,
-    args: &[&str],
-    out: &mut impl Write,
-    remote: Option<&str>,
-) {
-    assert!(args.is_empty());
+fn do_get_bundle(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write, remote: Option<&str>) {
+    let (heads, branch_names) = args.split_first().unwrap();
+    let mut heads = heads
+        .split(',')
+        .map(|s| HgChangesetId::from_str(s).unwrap())
+        .collect_vec();
+    let branch_names = branch_names
+        .iter()
+        .map(|s| s.as_bytes())
+        .collect::<HashSet<_>>();
 
+    let known_branch_heads = || {
+        CHANGESET_HEADS
+            .lock()
+            .unwrap()
+            .branch_heads()
+            .filter_map(|(h, b)| {
+                (branch_names.is_empty() || branch_names.contains(&**b)).then(|| h.clone())
+            })
+            .collect_vec()
+    };
+
+    let mut common = find_common(conn, known_branch_heads());
+    if common.is_empty() && !has_metadata() {
+        match get_initial_bundle(conn, remote) {
+            Ok(true) => {
+                // Eliminate the heads that we got from the clonebundle or
+                // cinnabarclone
+                let lock = HELPER_LOCK.lock();
+                heads = heads
+                    .into_iter()
+                    .filter(|h| h.to_git().is_none())
+                    .collect_vec();
+                drop(lock);
+                if heads.is_empty() {
+                    writeln!(out, "ok").unwrap();
+                    return;
+                }
+                common = find_common(conn, known_branch_heads());
+            }
+            Ok(false) => {}
+            Err(e) => {
+                writeln!(out, "{}", e).unwrap();
+                return;
+            }
+        }
+    }
+
+    match get_store_bundle(conn, &heads, &common) {
+        Ok(()) => writeln!(out, "ok").unwrap(),
+        Err(e) => {
+            let stderr = stderr();
+            let mut writer = PrefixWriter::new("remote: ", stderr.lock());
+            writer.write_all(&e).unwrap();
+        }
+    }
+}
+
+fn get_initial_bundle(conn: &mut dyn HgRepo, remote: Option<&str>) -> Result<bool, String> {
     if let Some((manifest, limit_schemes)) = get_config_remote("clone", remote)
         .map(|m| (m.as_bytes().to_boxed(), false))
         .or_else(|| {
@@ -873,16 +898,14 @@ fn do_get_initial_bundle(
             }
         }) {
             Ok(()) => {
-                writeln!(out, "yes").unwrap();
-                return;
+                return Ok(true);
             }
             Err(e) => {
                 if let Some(e) = e {
                     warn!(target: "root", "{}", e);
                 }
                 if check_enabled(Checks::CINNABARCLONE) {
-                    writeln!(out, "cinnabarclone failed").unwrap();
-                    return;
+                    return Err("cinnabarclone failed".to_string());
                 }
                 warn!(target: "root", "Falling back to normal clone.");
             }
@@ -899,22 +922,20 @@ fn do_get_initial_bundle(
             let mut bundle_conn = get_connection(&url).unwrap();
             match get_store_bundle(&mut *bundle_conn, &[], &[]) {
                 Ok(()) => {
-                    writeln!(out, "yes").unwrap();
-                    return;
+                    return Ok(true);
                 }
                 Err(e) => {
                     let stderr = stderr();
                     let mut writer = PrefixWriter::new("remote: ", stderr.lock());
                     writer.write_all(&e).unwrap();
                     if check_enabled(Checks::CLONEBUNDLES) {
-                        writeln!(out, "clonebundles failed").unwrap();
-                        return;
+                        return Err("clonebundles failed".to_string());
                     }
                 }
             }
         }
     }
-    writeln!(out, "no").unwrap();
+    Ok(false)
 }
 
 fn can_use_clonebundle(line: &[u8]) -> Result<Option<Url>, String> {
@@ -1200,13 +1221,12 @@ pub fn connect_main_with(
         match command {
             "known" => do_known(conn, &*args, out),
             "listkeys" => do_listkeys(conn, &*args, out),
-            "get_store_bundle" => do_get_store_bundle(conn, &*args, out),
             "unbundle" => do_unbundle(conn, &*args, out),
             "pushkey" => do_pushkey(conn, &*args, out),
             "capable" => do_capable(conn, &*args, out),
             "state" => do_state(conn, &*args, out),
             "find_common" => do_find_common(conn, &*args, out),
-            "get_initial_bundle" => do_get_initial_bundle(conn, &*args, out, remote.as_deref()),
+            "get_bundle" => do_get_bundle(conn, &*args, out, remote.as_deref()),
             "close" => {
                 connections.remove(&conn_id);
                 continue;

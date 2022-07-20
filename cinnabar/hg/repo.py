@@ -91,11 +91,6 @@ class HelperRepo(object):
         result = self._helper.known(hexlify(n) for n in nodes)
         return [b == b'1'[0] for b in result]
 
-    def get_store_bundle(self, name, heads, common, *args, **kwargs):
-        heads = [hexlify(h) for h in heads]
-        common = [hexlify(c) for c in common]
-        return self._helper.get_store_bundle(heads, common)
-
     def pushkey(self, namespace, key, old, new):
         return self._helper.pushkey(namespace, key, old, new)
 
@@ -107,32 +102,12 @@ class HelperRepo(object):
         return self._helper.find_common(heads)
 
 
-def getbundle(repo, store, heads, branch_names):
-    common = repo.find_common(store.heads(branch_names))
-    logging.info('common: %s', common)
-    got_partial = False
-    if not common and not store._has_metadata:
-        with HgRepoHelper.query(
-                b'get_initial_bundle', HgRepoHelper.connected) as stdout:
-            res = stdout.readline().strip()
-            if res == b'yes':
-                got_partial = True
-            elif res == b'no':
-                got_partial = False
-            else:
-                raise Exception(res)
-    if got_partial:
-        # Eliminate the heads that we got from the clonebundle or
-        # cinnabarclone.
-        heads = [h for h in heads if not store.changeset_ref(h)]
-        if not heads:
-            return
-        common = repo.find_common(store.heads(branch_names))
-        logging.info('common: %s', common)
-
-    repo.get_store_bundle(
-        b'bundle', heads=[unhexlify(h) for h in heads],
-        common=[unhexlify(h) for h in common])
+def getbundle(repo, heads, branch_names):
+    with repo._helper.query(b"get_bundle", repo._helper.connected,
+                            b','.join(heads), *branch_names) as stdout:
+        res = stdout.readline().strip()
+        if res != b'ok':
+            raise Exception(res)
 
 
 def push(repo, store, what, repo_heads, repo_branches, dry_run=False):

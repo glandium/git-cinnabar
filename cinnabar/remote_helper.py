@@ -341,8 +341,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                 unknown_heads = self._branchmap.unknown_heads()
                 if set(heads).issuperset(unknown_heads):
                     heads = set(self._branchmap.heads()) & unknown_heads
-                getbundle(self._repo, self._store, heads,
-                          self._branchmap.names())
+                getbundle(self._repo, heads, self._branchmap.names())
         except:  # noqa: E722
             wanted_refs = {}
             raise

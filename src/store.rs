@@ -832,7 +832,7 @@ impl ChangesetHeads {
     }
 }
 
-static CHANGESET_HEADS: Lazy<Mutex<ChangesetHeads>> =
+pub static CHANGESET_HEADS: Lazy<Mutex<ChangesetHeads>> =
     Lazy::new(|| Mutex::new(ChangesetHeads::from_stored_metadata()));
 
 pub fn do_heads(mut output: impl Write, args: &[&[u8]]) {
