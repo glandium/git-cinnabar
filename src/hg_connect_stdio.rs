@@ -266,5 +266,5 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnect
         stdio_read_response(&mut conn);
     }
 
-    Some(Box::new(Box::new(conn) as Box<dyn HgWireConnection>))
+    Some(Box::new(conn) as Box<dyn HgConnection>)
 }

@@ -188,17 +188,7 @@ pub trait HgConnection: HgConnectionBase {
     }
 }
 
-impl HgConnectionBase for Box<dyn HgWireConnection> {
-    fn get_url(&self) -> Option<&Url> {
-        (**self).get_url()
-    }
-
-    fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
-        (**self).get_capability(name)
-    }
-}
-
-impl HgConnection for Box<dyn HgWireConnection> {
+impl<T: HgWireConnection> HgConnection for T {
     fn known(&mut self, nodes: &[HgChangesetId]) -> Box<[bool]> {
         let nodes_str = nodes.iter().join(" ");
         self.simple_command(
