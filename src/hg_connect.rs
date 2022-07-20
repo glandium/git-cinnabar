@@ -836,7 +836,7 @@ fn do_get_initial_bundle(
             .flatten()
         {
             eprintln!("Getting clone bundle from {}", url);
-            let mut bundle_conn = hg_connect(url.as_str()).unwrap();
+            let mut bundle_conn = get_connection(&url).unwrap();
             match get_store_bundle(&mut *bundle_conn, &[], &[]) {
                 Ok(()) => {
                     writeln!(out, "yes").unwrap();
@@ -1067,18 +1067,13 @@ pub fn get_cinnabarclone_url(manifest: &[u8]) -> Option<(Url, Option<Box<[u8]>>)
 }
 
 pub fn get_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
-    if ["http", "https"].contains(&url.scheme()) {
-        get_http_connection(url)
+    let conn = if ["http", "https"].contains(&url.scheme()) {
+        get_http_connection(url)?
     } else if ["ssh", "file"].contains(&url.scheme()) {
-        get_stdio_connection(url, 0)
+        get_stdio_connection(url, 0)?
     } else {
         die!("protocol '{}' is not supported", url.scheme());
-    }
-}
-
-fn hg_connect(url: &str) -> Option<Box<dyn HgConnection>> {
-    let url = Url::parse(url).unwrap();
-    let conn = get_connection(&url)?;
+    };
 
     const REQUIRED_CAPS: [&str; 2] = ["getbundle", "branchmap"];
 
@@ -1105,10 +1100,10 @@ pub fn connect_main_with(
         let mut args = line.split(' ');
         let command = args.next().ok_or("Missing command")?;
         if command == "connect" {
-            let url = args.next().unwrap();
+            let url = Url::parse(args.next().unwrap()).unwrap();
             let remote = args.next();
             assert!(args.next().is_none());
-            match hg_connect(url) {
+            match get_connection(&url) {
                 // We allow multiple connect commands.
                 Some(conn) => {
                     connections.insert(count, (conn, remote.map(ToString::to_string)));
