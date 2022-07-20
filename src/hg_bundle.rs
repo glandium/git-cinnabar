@@ -848,10 +848,6 @@ impl<R: Read> HgConnectionBase for BundleConnection<R> {
 }
 
 impl<R: Read> HgConnection for BundleConnection<R> {
-    fn known(&mut self, _nodes: &[HgChangesetId]) -> Box<[bool]> {
-        todo!()
-    }
-
     fn getbundle<'a>(
         &'a mut self,
         _heads: &[HgChangesetId],
@@ -905,6 +901,10 @@ impl<R: Read> HgRepo for BundleConnection<R> {
 
     fn phases(&mut self) -> ImmutBString {
         Box::new([])
+    }
+
+    fn known(&mut self, _nodes: &[HgChangesetId]) -> Box<[bool]> {
+        todo!()
     }
 }
 

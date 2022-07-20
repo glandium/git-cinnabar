@@ -137,10 +137,6 @@ pub trait HgWireConnection: HgConnectionBase {
 }
 
 pub trait HgConnection: HgConnectionBase {
-    fn known(&mut self, _nodes: &[HgChangesetId]) -> Box<[bool]> {
-        unimplemented!();
-    }
-
     fn getbundle<'a>(
         &'a mut self,
         _heads: &[HgChangesetId],
@@ -172,21 +168,6 @@ pub trait HgConnection: HgConnectionBase {
 }
 
 impl<T: HgWireConnection> HgConnection for T {
-    fn known(&mut self, nodes: &[HgChangesetId]) -> Box<[bool]> {
-        let nodes_str = nodes.iter().join(" ");
-        self.simple_command(
-            "known",
-            args!(
-                nodes: &nodes_str,
-                *: &[]
-            ),
-        )
-        .iter()
-        .map(|b| *b == b'1')
-        .collect_vec()
-        .into()
-    }
-
     fn getbundle<'a>(
         &'a mut self,
         heads: &[HgChangesetId],
@@ -262,6 +243,8 @@ pub trait HgRepo: HgConnection {
     fn bookmarks(&mut self) -> ImmutBString;
 
     fn phases(&mut self) -> ImmutBString;
+
+    fn known(&mut self, _nodes: &[HgChangesetId]) -> Box<[bool]>;
 }
 
 pub struct HgWired<C: HgWireConnection> {
@@ -323,10 +306,6 @@ impl<C: HgWireConnection> HgConnectionBase for HgWired<C> {
 }
 
 impl<C: HgWireConnection> HgConnection for HgWired<C> {
-    fn known(&mut self, nodes: &[HgChangesetId]) -> Box<[bool]> {
-        self.conn.known(nodes)
-    }
-
     fn getbundle<'a>(
         &'a mut self,
         heads: &[HgChangesetId],
@@ -373,6 +352,22 @@ impl<C: HgWireConnection> HgRepo for HgWired<C> {
     fn phases(&mut self) -> ImmutBString {
         self.conn
             .simple_command("listkeys", args!(namespace: "phases"))
+    }
+
+    fn known(&mut self, nodes: &[HgChangesetId]) -> Box<[bool]> {
+        let nodes_str = nodes.iter().join(" ");
+        self.conn
+            .simple_command(
+                "known",
+                args!(
+                    nodes: &nodes_str,
+                    *: &[]
+                ),
+            )
+            .iter()
+            .map(|b| *b == b'1')
+            .collect_vec()
+            .into()
     }
 }
 
