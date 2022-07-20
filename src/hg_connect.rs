@@ -867,7 +867,7 @@ fn do_get_initial_bundle(
         })
         .filter(|(m, _)| !m.is_empty())
     {
-        match get_cinnabarclone_url(&manifest).ok_or(Some(
+        match get_cinnabarclone_url(&manifest, remote).ok_or(Some(
             "Server advertizes cinnabarclone but didn't provide a git repository url to fetch from."
         )).and_then(|(url, branch)| {
             if limit_schemes && !["http", "https", "git"].contains(&url.scheme()) {
@@ -1049,8 +1049,11 @@ fn cinnabar_clone_info(line: &[u8]) -> Result<Option<CinnabarCloneInfo>, String>
     Ok(Some(CinnabarCloneInfo { url, branch, graft }))
 }
 
-pub fn get_cinnabarclone_url(manifest: &[u8]) -> Option<(Url, Option<Box<[u8]>>)> {
-    let graft = graft_config_enabled().unwrap();
+pub fn get_cinnabarclone_url(
+    manifest: &[u8],
+    remote: Option<&str>,
+) -> Option<(Url, Option<Box<[u8]>>)> {
+    let graft = graft_config_enabled(remote).unwrap();
     let mut candidates = Vec::new();
 
     for line in ByteSlice::lines(manifest) {

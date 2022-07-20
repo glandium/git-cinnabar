@@ -939,8 +939,8 @@ fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
     }
 }
 
-pub fn graft_config_enabled() -> Result<Option<bool>, String> {
-    get_config("graft")
+pub fn graft_config_enabled(remote: Option<&str>) -> Result<Option<bool>, String> {
+    get_config_remote("graft", remote)
         .map(|v| {
             v.into_string()
                 .and_then(|v| bool::from_str(&v).map_err(|_| v.into()))
@@ -954,7 +954,7 @@ fn do_unbundle(clonebundle: bool, mut url: Url) -> Result<(), String> {
     if !["http", "https", "file"].contains(&url.scheme()) {
         return Err(format!("{} urls are not supported.", url.scheme()));
     }
-    if graft_config_enabled()?.unwrap_or(false) {
+    if graft_config_enabled(None)?.unwrap_or(false) {
         init_graft();
     }
     if clonebundle {
