@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::ffi::{c_void, OsStr};
 use std::fs::File;
 use std::io::{stderr, BufRead, Read, Write};
-use std::os::raw::c_int;
 use std::str::FromStr;
 
 use bstr::{BStr, ByteSlice};
@@ -837,7 +836,7 @@ fn do_get_initial_bundle(
             .flatten()
         {
             eprintln!("Getting clone bundle from {}", url);
-            let mut bundle_conn = hg_connect(url.as_str(), 0).unwrap();
+            let mut bundle_conn = hg_connect(url.as_str()).unwrap();
             match get_store_bundle(&mut *bundle_conn, &[], &[]) {
                 Ok(()) => {
                     writeln!(out, "yes").unwrap();
@@ -1067,19 +1066,19 @@ pub fn get_cinnabarclone_url(manifest: &[u8]) -> Option<(Url, Option<Box<[u8]>>)
     None
 }
 
-pub fn get_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgConnection>> {
+pub fn get_connection(url: &Url) -> Option<Box<dyn HgConnection>> {
     if ["http", "https"].contains(&url.scheme()) {
         get_http_connection(url)
     } else if ["ssh", "file"].contains(&url.scheme()) {
-        get_stdio_connection(url, flags)
+        get_stdio_connection(url, 0)
     } else {
         die!("protocol '{}' is not supported", url.scheme());
     }
 }
 
-fn hg_connect(url: &str, flags: c_int) -> Option<Box<dyn HgConnection>> {
+fn hg_connect(url: &str) -> Option<Box<dyn HgConnection>> {
     let url = Url::parse(url).unwrap();
-    let conn = get_connection(&url, flags)?;
+    let conn = get_connection(&url)?;
 
     const REQUIRED_CAPS: [&str; 2] = ["getbundle", "branchmap"];
 
@@ -1109,7 +1108,7 @@ pub fn connect_main_with(
             let url = args.next().unwrap();
             let remote = args.next();
             assert!(args.next().is_none());
-            match hg_connect(url, 0) {
+            match hg_connect(url) {
                 // We allow multiple connect commands.
                 Some(conn) => {
                     connections.insert(count, (conn, remote.map(ToString::to_string)));

@@ -598,8 +598,8 @@ fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
     let url = remote::get(remote).get_url();
     let url =
         hg_url(url).ok_or_else(|| format!("Invalid mercurial url: {}", url.to_string_lossy()))?;
-    let mut conn = hg_connect::get_connection(&url, 0)
-        .ok_or_else(|| format!("Failed to connect to {}", url))?;
+    let mut conn =
+        hg_connect::get_connection(&url).ok_or_else(|| format!("Failed to connect to {}", url))?;
     if conn.get_capability(b"lookup").is_none() {
         return Err(
             "Remote repository does not support the \"lookup\" command. \
@@ -958,14 +958,14 @@ fn do_unbundle(clonebundle: bool, mut url: Url) -> Result<(), String> {
         init_graft();
     }
     if clonebundle {
-        let mut conn = get_connection(&url, 0).unwrap();
+        let mut conn = get_connection(&url).unwrap();
         if conn.get_capability(b"clonebundles").is_none() {
             return Err("Repository does not support clonebundles")?;
         }
         url = get_clonebundle_url(&mut *conn).ok_or("Repository didn't provide a clonebundle")?;
         eprintln!("Getting clone bundle from {}", url);
     }
-    let mut conn = get_connection(&url, 0).unwrap();
+    let mut conn = get_connection(&url).unwrap();
 
     get_store_bundle(&mut *conn, &[], &[]).map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
 
