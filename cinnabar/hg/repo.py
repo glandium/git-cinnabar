@@ -243,9 +243,7 @@ class Remote(object):
             self.name = None
         else:
             self.name = remote
-        self.parsed_url = munge_url(url)
-        self.url = urlunparse(self.parsed_url)
-        self.git_url = url if url.startswith(b'hg://') else b'hg::%s' % url
+        self.url = urlunparse(munge_url(url))
 
 
 def get_repo(remote):
