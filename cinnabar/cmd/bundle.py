@@ -35,9 +35,5 @@ def bundle(args):
             kwargs['bundlespec'] = b'none-v1'
         elif args.version == 2:
             kwargs['bundlespec'] = b'none-v2'
-        if b'-v1' in kwargs['bundlespec']:
-            kwargs['cg_version'] = b'01'
-        else:
-            kwargs['cg_version'] = b'02'
         create_bundle(store, bundle_commits, **kwargs)
         store.close(rollback=True)

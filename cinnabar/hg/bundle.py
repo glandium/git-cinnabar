@@ -1,4 +1,3 @@
-from urllib.parse import quote_from_bytes, unquote_to_bytes
 from cinnabar.dag import gitdag
 from cinnabar.githg import (
     FileFindParents,
@@ -347,47 +346,23 @@ def bundle_data(store, commits):
         if is_new:
             store.create_hg_metadata(node, parents)
         hg_changeset = store._changeset(node)
-        yield (b"changeset", hg_changeset.node, hg_changeset.parent1,
-               hg_changeset.parent2, hg_changeset.changeset)
+        yield (hg_changeset.node, hg_changeset.parent1, hg_changeset.parent2,
+               hg_changeset.changeset)
 
     yield None
 
 
-def create_bundle(store, commits, bundlespec=b'raw', cg_version=b'01',
-                  replycaps=None, path=None):
-    with BundleHelper.query(b'create-bundle', bundlespec) as stdout:
-        if path:
-            stdout.write(b'output %s\0' % path.encode('utf-8'))
-        if replycaps:
-            stdout.write(b'part replycaps\0')
-            stdout.write(b'data %d\0' % len(replycaps))
-            stdout.write(replycaps)
-        stdout.write(b'part changegroup version %s\0' % cg_version)
+def create_bundle(store, commits, bundlespec=b'raw', path=None):
+    args = []
+    if path:
+        args.append(path.encode('utf-8'))
+    with BundleHelper.query(b'create-bundle', bundlespec, *args) as stdout:
         for chunk in bundle_data(store, commits):
             if isinstance(chunk, tuple):
-                stdout.write(b'%s %s %s %s %s\0' % chunk)
+                stdout.write(b'%s %s %s %s\0' % chunk)
             else:
                 assert chunk is None
                 stdout.write(b'null\0')
-        stdout.write(b'EOF\0')
         stdout.flush()
         res = stdout.readline().strip()
         assert res == b'done'
-
-
-def encodecaps(caps):
-    return b'\n'.join(
-        b'%s=%s' % (
-            quote_from_bytes(k).encode('ascii'),
-            b','.join(quote_from_bytes(v).encode('ascii') for v in values))
-        if values else quote_from_bytes(k).encode('ascii')
-        for k, values in sorted(caps.items())
-    )
-
-
-def decodecaps(caps):
-    return {
-        unquote_to_bytes(key): [unquote_to_bytes(v)
-                                for v in val.split(b',')] if val else []
-        for key, eq, val in (l.partition(b'=') for l in caps.splitlines())
-    }

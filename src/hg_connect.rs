@@ -463,7 +463,7 @@ const PYTHON_QUOTE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
     .remove(b'~');
 
-fn encodecaps(
+pub fn encodecaps(
     caps: impl IntoIterator<
         Item = (
             impl AsRef<str>,
@@ -489,10 +489,56 @@ fn encodecaps(
         .into_boxed_str()
 }
 
+pub fn decodecaps(
+    caps: &BStr,
+) -> impl '_ + Iterator<Item = Option<(Box<str>, Option<Box<[Box<str>]>>)>> {
+    ByteSlice::lines(&**caps).map(|l| {
+        let mut l = l.splitn(2, |&b| b == b'=');
+        l.next().and_then(|k| {
+            let k = percent_decode(k).decode_utf8().ok()?;
+            let v = l
+                .next()
+                .map(|v| {
+                    v.split(|&b| b == b',')
+                        .map(|v| {
+                            percent_decode(v)
+                                .decode_utf8()
+                                .map(|v| v.into_owned().into_boxed_str())
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                        .map(Vec::into_boxed_slice)
+                })
+                .transpose()
+                .ok()?;
+            Some((k.into_owned().into_boxed_str(), v))
+        })
+    })
+}
+
 #[test]
-fn test_encodecaps() {
-    let caps = [("HG20", None), ("changegroup", Some(&["01", "02"]))];
-    assert_eq!(&*encodecaps(caps), "HG20\nchangegroup=01,02");
+fn test_encode_decode_caps() {
+    fn test_one<const N: usize>(caps: [(&str, Option<&[&str]>); N], expected: &str) {
+        let encoded = encodecaps(caps);
+        let caps = HashMap::from(caps);
+        assert_eq!(&*encoded, expected);
+
+        let decoded = decodecaps(expected.as_bytes().as_bstr())
+            .collect::<Option<HashMap<_, _>>>()
+            .unwrap();
+        assert_eq!(
+            caps.keys().copied().sorted().collect_vec(),
+            decoded.keys().map(|k| &**k).sorted().collect_vec()
+        );
+        for (k, v) in decoded {
+            assert_eq!(caps[&*k].is_none(), v.is_none());
+            if let Some(v) = v {
+                assert_eq!(caps[&*k].unwrap(), &v.iter().map(|v| &**v).collect_vec());
+            }
+        }
+    }
+
+    let caps = [("HG20", None), ("changegroup", Some(&["01", "02"][..]))];
+    test_one(caps, "HG20\nchangegroup=01,02");
 
     // Real case
     let caps = [
@@ -510,8 +556,8 @@ fn test_encodecaps() {
         ("pushkey", None),
         ("remote-changegroup", Some(&["http", "https"])),
     ];
-    assert_eq!(
-        &*encodecaps(caps),
+    test_one(
+        caps,
         "HG20\n\
          bookmarks\n\
          changegroup=01,02\n\
@@ -521,7 +567,7 @@ fn test_encodecaps() {
          listkeys\n\
          phases=heads\n\
          pushkey\n\
-         remote-changegroup=http,https"
+         remote-changegroup=http,https",
     );
 
     // Hypothetical case
@@ -530,11 +576,20 @@ fn test_encodecaps() {
         ("qux\n", None),
         ("hoge", Some(&["fuga,", "toto"])),
     ];
-    assert_eq!(
-        &*encodecaps(caps),
+    test_one(
+        caps,
         "ab%25d=foo%0Abar\n\
          qux%0A\n\
-         hoge=fuga%2C,toto"
+         hoge=fuga%2C,toto",
+    );
+
+    assert_eq!(
+        decodecaps(b"\xfe".as_bstr()).collect::<Option<Vec<_>>>(),
+        None
+    );
+    assert_eq!(
+        decodecaps(b"foo=\xfe".as_bstr()).collect::<Option<Vec<_>>>(),
+        None
     );
 }
 
@@ -1202,6 +1257,7 @@ pub fn connect_main_with(
             continue;
         } else if command == "create-bundle" {
             do_create_bundle(
+                connection.as_mut(),
                 input,
                 &mut *out,
                 &line.as_bytes().split(|&b| b == b' ').skip(1).collect_vec(),

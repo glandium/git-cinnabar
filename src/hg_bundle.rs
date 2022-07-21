@@ -24,11 +24,12 @@ use flate2::write::ZlibEncoder;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
+use percent_encoding::percent_decode;
 use tee::TeeReader;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
-use crate::hg_connect::{HgConnection, HgConnectionBase, HgRepo};
+use crate::hg_connect::{decodecaps, encodecaps, HgConnection, HgConnectionBase, HgRepo};
 use crate::hg_data::find_parents;
 use crate::libcinnabar::files_meta;
 use crate::libgit::BlobId;
@@ -980,27 +981,59 @@ fn write_chunk(
     writer.write_all(&chunk)
 }
 
-pub fn do_create_bundle(input: &mut dyn BufRead, mut out: impl Write, args: &[&[u8]]) {
-    let bundlespec = match args[0] {
-        b"raw" => BundleSpec::ChangegroupV1,
-        arg => BundleSpec::try_from(arg).unwrap(),
+pub fn do_create_bundle(
+    conn: Option<&mut Box<dyn HgRepo>>,
+    input: &mut dyn BufRead,
+    mut out: impl Write,
+    args: &[&[u8]],
+) {
+    let mut replycaps = None;
+    let (bundlespec, version) = match args[0] {
+        b"raw" => (BundleSpec::ChangegroupV1, "01"),
+        b"connection" => {
+            let b2caps = conn
+                .unwrap()
+                .get_capability(b"bundle2")
+                .and_then(|caps| {
+                    decodecaps(
+                        percent_decode(caps)
+                            .decode_utf8()
+                            .ok()?
+                            .as_bytes()
+                            .as_bstr(),
+                    )
+                    .collect::<Option<HashMap<_, _>>>()
+                })
+                .unwrap_or_default();
+            if b2caps.is_empty() {
+                (BundleSpec::ChangegroupV1, "01")
+            } else {
+                let version = b2caps
+                    .get("changegroup")
+                    .and_then(|cg| cg.iter().flat_map(|cg| cg.iter()).find(|cg| &***cg == "02"))
+                    .and(Some("02"))
+                    .unwrap_or("01");
+                replycaps = Some(encodecaps([("error", Some(&["abort"]))]));
+                (BundleSpec::V2None, version)
+            }
+        }
+        arg => match BundleSpec::try_from(arg).unwrap() {
+            s @ (BundleSpec::ChangegroupV1
+            | BundleSpec::V1Bzip
+            | BundleSpec::V1Gzip
+            | BundleSpec::V1None) => (s, "01"),
+            s @ (BundleSpec::V2Bzip
+            | BundleSpec::V2Gzip
+            | BundleSpec::V2None
+            | BundleSpec::V2Zstd) => (s, "02"),
+        },
     };
-    let mut output = None;
+    let mut output = args
+        .get(1)
+        .map(|o| File::create(OsStr::from_bytes(o)).unwrap());
     let mut bundle_writer = None;
     let mut part_id = 0;
     let mut buf = Vec::new();
-    loop {
-        input.read_until(b'\0', &mut buf).unwrap();
-        if buf.ends_with(b"\0") {
-            buf.pop();
-        }
-        if buf.starts_with(b"output ") {
-            output = Some(File::create(OsStr::from_bytes(&buf[b"output ".len()..])).unwrap());
-            buf.truncate(0);
-        } else {
-            break;
-        }
-    }
     let bundle_writer = bundle_writer.get_or_insert_with(|| {
         let output = output.get_or_insert_with(|| {
             let tempfile = tempfile::Builder::new()
@@ -1015,113 +1048,75 @@ pub fn do_create_bundle(input: &mut dyn BufRead, mut out: impl Write, args: &[&[
         });
         BundleWriter::new(bundlespec, output).unwrap()
     });
+
+    if let Some(replycaps) = replycaps {
+        let info = BundlePartInfo::new(part_id, "replycaps");
+        let mut bundle_part_writer = bundle_writer.new_part(info).unwrap();
+        bundle_part_writer.write_all(replycaps.as_bytes()).unwrap();
+        part_id += 1;
+    }
+
+    let info = BundlePartInfo::new(part_id, "changegroup").set_param("version", version);
+    let version = u8::from_str(version).unwrap();
+    let mut bundle_part_writer = bundle_writer.new_part(info).unwrap();
+    let mut previous = None;
+    let mut manifests = IndexMap::new();
     loop {
-        let mut args = buf.split(|&b| b == b' ');
-        match args.next().unwrap() {
-            b"part" => {
-                let mut info = BundlePartInfo::new(part_id, args.next().unwrap().to_str().unwrap());
-                part_id += 1;
-                while let (Some(k), Some(v)) = (args.next(), args.next()) {
-                    info = info.set_param(k.to_str().unwrap(), v.to_str().unwrap());
+        buf.truncate(0);
+        input.read_until(b'\0', &mut buf).unwrap();
+        if buf.ends_with(b"\0") {
+            buf.pop();
+        }
+        if let Some([node, parent1, parent2, changeset]) = buf.splitn_exact(b' ') {
+            let node = HgObjectId::from_bytes(node).unwrap();
+            let parent1 = HgObjectId::from_bytes(parent1).unwrap();
+            let parent2 = HgObjectId::from_bytes(parent2).unwrap();
+            let changeset = HgChangesetId::from_bytes(changeset).unwrap();
+            let _lock = HELPER_LOCK.lock().unwrap();
+            write_chunk(
+                &mut bundle_part_writer,
+                version,
+                &node,
+                &parent1,
+                &parent2,
+                &changeset,
+                &mut previous,
+                |node| {
+                    let node = HgChangesetId::from_unchecked(node.clone());
+                    let changeset = RawHgChangeset::read(&node.to_git().unwrap()).unwrap();
+                    changeset.0
+                },
+            )
+            .unwrap();
+            let get_manifest = |node: HgObjectId| {
+                let metadata = RawGitChangesetMetadata::read(
+                    &HgChangesetId::from_unchecked(node).to_git().unwrap(),
+                )
+                .unwrap();
+                let metadata = metadata.parse().unwrap();
+                metadata.manifest_id().clone()
+            };
+            let manifest = get_manifest(node.clone());
+            if manifest != HgManifestId::null() && !manifests.contains_key(&manifest) {
+                let mn_parent1 = (parent1 != HgObjectId::null())
+                    .then(|| get_manifest(parent1))
+                    .unwrap_or_else(HgManifestId::null);
+                let mn_parent2 = (parent2 != HgObjectId::null())
+                    .then(|| get_manifest(parent2))
+                    .unwrap_or_else(HgManifestId::null);
+                if ![&mn_parent1, &mn_parent2].contains(&&manifest) {
+                    manifests.insert(
+                        manifest,
+                        (mn_parent1, mn_parent2, HgChangesetId::from_unchecked(node)),
+                    );
                 }
-                let version = (&*info.part_type == "changegroup")
-                    .then(|| u8::from_str(info.get_param("version").unwrap_or("01")).unwrap());
-                let mut bundle_part_writer = bundle_writer.new_part(info).unwrap();
-                let mut previous = None;
-                let mut manifests = IndexMap::new();
-                loop {
-                    buf.truncate(0);
-                    input.read_until(b'\0', &mut buf).unwrap();
-                    if buf.ends_with(b"\0") {
-                        buf.pop();
-                    }
-                    let mut args = buf.splitn(2, |&b| b == b' ');
-                    let kind = args.next().unwrap();
-                    match kind {
-                        b"data" => {
-                            let len =
-                                u64::from_str(args.next().unwrap().to_str().unwrap()).unwrap();
-                            copy(&mut input.take(len), &mut bundle_part_writer).unwrap();
-                            buf.truncate(0);
-                            input.read_until(b'\0', &mut buf).unwrap();
-                            if buf.ends_with(b"\0") {
-                                buf.pop();
-                            }
-                            break;
-                        }
-                        b"changeset" => {
-                            let [node, parent1, parent2, changeset] =
-                                args.next().unwrap().splitn_exact(b' ').unwrap();
-                            let node = HgObjectId::from_bytes(node).unwrap();
-                            let parent1 = HgObjectId::from_bytes(parent1).unwrap();
-                            let parent2 = HgObjectId::from_bytes(parent2).unwrap();
-                            let changeset = HgChangesetId::from_bytes(changeset).unwrap();
-                            let _lock = HELPER_LOCK.lock().unwrap();
-                            write_chunk(
-                                &mut bundle_part_writer,
-                                version.as_ref().copied().unwrap(),
-                                &node,
-                                &parent1,
-                                &parent2,
-                                &changeset,
-                                &mut previous,
-                                |node| {
-                                    let node = HgChangesetId::from_unchecked(node.clone());
-                                    let changeset =
-                                        RawHgChangeset::read(&node.to_git().unwrap()).unwrap();
-                                    changeset.0
-                                },
-                            )
-                            .unwrap();
-                            let get_manifest = |node: HgObjectId| {
-                                let metadata = RawGitChangesetMetadata::read(
-                                    &HgChangesetId::from_unchecked(node).to_git().unwrap(),
-                                )
-                                .unwrap();
-                                let metadata = metadata.parse().unwrap();
-                                metadata.manifest_id().clone()
-                            };
-                            let manifest = get_manifest(node.clone());
-                            if manifest != HgManifestId::null()
-                                && !manifests.contains_key(&manifest)
-                            {
-                                let mn_parent1 = (parent1 != HgObjectId::null())
-                                    .then(|| get_manifest(parent1))
-                                    .unwrap_or_else(HgManifestId::null);
-                                let mn_parent2 = (parent2 != HgObjectId::null())
-                                    .then(|| get_manifest(parent2))
-                                    .unwrap_or_else(HgManifestId::null);
-                                if ![&mn_parent1, &mn_parent2].contains(&&manifest) {
-                                    manifests.insert(
-                                        manifest,
-                                        (
-                                            mn_parent1,
-                                            mn_parent2,
-                                            HgChangesetId::from_unchecked(node),
-                                        ),
-                                    );
-                                }
-                            }
-                        }
-                        b"null" => {
-                            bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
-                            previous = None;
-                            let files = bundle_manifest(
-                                &mut bundle_part_writer,
-                                version.unwrap(),
-                                manifests.drain(..),
-                            );
-                            bundle_files(&mut bundle_part_writer, version.unwrap(), files);
-                        }
-                        _ => {
-                            break;
-                        }
-                    }
-                }
-                continue;
             }
-            b"EOF" => break,
-            c => panic!("unknown command: {}", c.as_bstr()),
+        } else {
+            assert_eq!(buf, b"null");
+            bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
+            let files = bundle_manifest(&mut bundle_part_writer, version, manifests.drain(..));
+            bundle_files(&mut bundle_part_writer, version, files);
+            break;
         }
     }
     writeln!(out, "done").unwrap();
