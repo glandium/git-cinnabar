@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::ffi::{c_void, OsStr};
 use std::fs::File;
 use std::io::{stderr, BufRead, Read, Write};
@@ -1172,8 +1172,8 @@ pub fn connect_main_with(
     input: &mut impl BufRead,
     out: &mut impl Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut connections = BTreeMap::new();
-    let mut count = 0u32;
+    let mut connection = None;
+    let mut remote = None;
     loop {
         let mut line = String::new();
         input.read_line(&mut line)?;
@@ -1184,15 +1184,15 @@ pub fn connect_main_with(
         let mut args = line.split(' ');
         let command = args.next().ok_or("Missing command")?;
         if command == "connect" {
+            assert!(connection.is_none());
             let url = hg_url(args.next().unwrap()).unwrap();
-            let remote = args.next();
+            remote = args.next().map(ToString::to_string);
             assert!(args.next().is_none());
             match get_connection(&url) {
-                // We allow multiple connect commands.
+                // We only allow one connect command.
                 Some(conn) => {
-                    connections.insert(count, (conn, remote.map(ToString::to_string)));
-                    writeln!(out, "ok {count}").unwrap();
-                    count += 1;
+                    connection = Some(conn);
+                    writeln!(out, "ok").unwrap();
                 }
                 _ => {
                     out.write_all(b"failed\n").unwrap();
@@ -1208,16 +1208,12 @@ pub fn connect_main_with(
             );
             continue;
         }
-        if connections.is_empty() {
+        let conn = if let Some(conn) = &mut connection {
+            &mut **conn
+        } else {
             return Err(format!("Unknown command: {}", command).into());
-        }
-        let (conn_id, (connection, remote)) =
-            u32::from_str(args.next().ok_or("Missing connection id")?)
-                .ok()
-                .and_then(|c| connections.get_mut(&c).map(|conn| (c, conn)))
-                .ok_or("Invalid connection id")?;
+        };
         let args = args.collect_vec();
-        let conn = &mut **connection;
         match command {
             "known" => do_known(conn, &*args, out),
             "listkeys" => do_listkeys(conn, &*args, out),
@@ -1228,7 +1224,7 @@ pub fn connect_main_with(
             "find_common" => do_find_common(conn, &*args, out),
             "get_bundle" => do_get_bundle(conn, &*args, out, remote.as_deref()),
             "close" => {
-                connections.remove(&conn_id);
+                connection.take();
                 continue;
             }
             _ => return Err(format!("Unknown command: {}", command).into()),

@@ -327,9 +327,8 @@ class HgRepoHelper(BaseHelper):
 
     @classmethod
     def close(self, on_atexit=False):
-        if self._helper and self._helper is not self and \
-                self.connected is not False:
-            self._helper.stdin.write(b'close ' + self.connected + b"\n")
+        if self._helper and self._helper is not self and self.connected:
+            self._helper.stdin.write(b'close\n')
             self._helper.stdin.flush()
             self.connected = False
 
@@ -337,13 +336,13 @@ class HgRepoHelper(BaseHelper):
     def connect(self, url, *args):
         with self.query(b'connect', url, *args) as stdout:
             resp = stdout.readline().rstrip()
-            if resp[:3] != b'ok ':
+            if resp != b'ok':
                 raise Exception(resp.decode('ascii'))
-            self.connected = resp[3:]
+            self.connected = True
 
     @classmethod
     def state(self):
-        with self.query(b'state', self.connected) as stdout:
+        with self.query(b'state') as stdout:
             return {
                 'branchmap': self._read_data(stdout),
                 'heads': self._read_data(stdout),
@@ -352,28 +351,28 @@ class HgRepoHelper(BaseHelper):
 
     @classmethod
     def capable(self, name):
-        with self.query(b'capable', self.connected, name) as stdout:
+        with self.query(b'capable', name) as stdout:
             return self._read_data(stdout)
 
     @classmethod
     def known(self, nodes):
-        with self.query(b'known', self.connected, *nodes) as stdout:
+        with self.query(b'known', *nodes) as stdout:
             return self._read_data(stdout)
 
     @classmethod
     def listkeys(self, namespace):
-        with self.query(b'listkeys', self.connected, namespace) as stdout:
+        with self.query(b'listkeys', namespace) as stdout:
             return self._read_data(stdout)
 
     @classmethod
     def unbundle(self, heads):
-        with self.query(b'unbundle', self.connected, *heads) as stdout:
+        with self.query(b'unbundle', *heads) as stdout:
             ret = self._read_data(stdout)
             return int(ret)
 
     @classmethod
     def pushkey(self, namespace, key, old, new):
-        with self.query(b'pushkey', self.connected, namespace, key, old,
+        with self.query(b'pushkey', namespace, key, old,
                         new) as stdout:
             ret = self._read_data(stdout).rstrip()
             try:
@@ -383,7 +382,7 @@ class HgRepoHelper(BaseHelper):
 
     @classmethod
     def find_common(self, heads):
-        with self.query(b'find_common', self.connected, *heads) as stdout:
+        with self.query(b'find_common', *heads) as stdout:
             return stdout.readline().split()
 
 

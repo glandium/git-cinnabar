@@ -96,8 +96,8 @@ class HelperRepo(object):
 
 
 def getbundle(repo, heads, branch_names):
-    with repo._helper.query(b"get_bundle", repo._helper.connected,
-                            b','.join(heads), *branch_names) as stdout:
+    with repo._helper.query(b"get_bundle", b','.join(heads),
+                            *branch_names) as stdout:
         res = stdout.readline().strip()
         if res != b'ok':
             raise Exception(res)
