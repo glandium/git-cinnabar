@@ -25,13 +25,6 @@ class gitdag(object):
         if tag:
             self._tags[node] = tag
 
-    def roots(self, tag=None):
-        for node, parents in self._parents.items():
-            if self._tags.get(node) == tag:
-                if all(p not in self._parents or self._tags.get(p) != tag
-                       for p in parents):
-                    yield node
-
     def heads(self, tag=None):
         for node in self._parents:
             if self._tags.get(node) == tag:
@@ -41,12 +34,6 @@ class gitdag(object):
                     yield node
 
     def tag_nodes_and_parents(self, nodes, tag):
-        self._tag_nodes_and_other(self._parents, nodes, tag)
-
-    def tag_nodes_and_children(self, nodes, tag):
-        self._tag_nodes_and_other(self._children, nodes, tag)
-
-    def _tag_nodes_and_other(self, other, nodes, tag):
         assert tag
         queue = deque(nodes)
         while queue:
@@ -54,24 +41,8 @@ class gitdag(object):
             if node in self._tags:
                 continue
             self._tags[node] = tag
-            for o in other.get(node, ()):
+            for o in self._parents.get(node, ()):
                 queue.append(o)
-
-    def iternodes(self, tag=None):
-        if tag is None:
-            for n in self._parents:
-                if n not in self._tags:
-                    yield n
-        else:
-            for n, t in self._tags.items():
-                if t == tag:
-                    yield n
 
     def __len__(self):
         return len(self._parents)
-
-    def __contains__(self, node):
-        return node in self._parents
-
-    def tags(self):
-        return set(self._tags.values())
