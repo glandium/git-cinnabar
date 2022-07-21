@@ -27,7 +27,7 @@ use crate::store::{
     CHANGESET_HEADS,
 };
 use crate::util::{FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed};
-use crate::{check_enabled, get_config_remote, graft_config_enabled, Checks, HELPER_LOCK};
+use crate::{check_enabled, get_config_remote, graft_config_enabled, hg_url, Checks, HELPER_LOCK};
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
@@ -1184,7 +1184,7 @@ pub fn connect_main_with(
         let mut args = line.split(' ');
         let command = args.next().ok_or("Missing command")?;
         if command == "connect" {
-            let url = Url::parse(args.next().unwrap()).unwrap();
+            let url = hg_url(args.next().unwrap()).unwrap();
             let remote = args.next();
             assert!(args.next().is_none());
             match get_connection(&url) {

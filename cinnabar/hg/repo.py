@@ -1,5 +1,3 @@
-import re
-import sys
 from urllib.parse import quote_from_bytes, unquote_to_bytes
 from cinnabar.helper import (
     GitHgHelper,
@@ -10,11 +8,6 @@ from binascii import (
     unhexlify,
 )
 from itertools import chain
-from urllib.parse import (
-    ParseResult,
-    urlparse,
-    urlunparse,
-)
 import logging
 from cinnabar.dag import gitdag
 from cinnabar.git import NULL_NODE_ID
@@ -196,54 +189,16 @@ def push(repo, store, what, repo_heads, repo_branches, dry_run=False):
     return gitdag(push_commits) if pushed or dry_run else ()
 
 
-def munge_url(url):
-    parsed_url = urlparse(url)
-    if not parsed_url.scheme:
-        # For urls without a scheme, try again with a normalized url with
-        # no double-slashes.
-        parsed_url = urlparse(re.sub(b'//+', b'/', url))
-    # On Windows, assume that a one-letter scheme and no host means we
-    # originally had something like c:/foo.
-    if not parsed_url.scheme or (
-            sys.platform == 'win32' and not parsed_url.netloc and
-            len(parsed_url.scheme) == 1):
-        if parsed_url.scheme:
-            path = b'%s:%s' % (parsed_url.scheme, parsed_url.path)
-        else:
-            path = parsed_url.path
-        return ParseResult(
-            b'file',
-            parsed_url.netloc,
-            path,
-            parsed_url.params,
-            parsed_url.query,
-            parsed_url.fragment)
-
-    if parsed_url.scheme != b'hg':
-        return parsed_url
-
-    proto = b'https'
-    host = parsed_url.netloc
-    if b':' in host:
-        host, port = host.rsplit(b':', 1)
-        if b'.' in port:
-            port, proto = port.split(b'.', 1)
-        if not port.isdigit():
-            proto = port
-            port = None
-        if port:
-            host = host + b':' + port
-    return ParseResult(proto, host, parsed_url.path, parsed_url.params,
-                       parsed_url.query, parsed_url.fragment)
-
-
 class Remote(object):
     def __init__(self, remote, url):
         if remote.startswith((b'hg::', b'hg://')):
             self.name = None
         else:
             self.name = remote
-        self.url = urlunparse(munge_url(url))
+        if not url.startswith(b'hg:'):
+            self.url = b'hg::' + url
+        else:
+            self.url = url
 
 
 def get_repo(remote):
