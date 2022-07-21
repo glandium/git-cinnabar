@@ -221,7 +221,10 @@ fn do_reset(args: &[&[u8]]) {
 
 static INIT_CINNABAR_2: Lazy<()> = Lazy::new(|| unsafe { init_cinnabar_2() });
 
-static HELPER_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+static HELPER_LOCK: Lazy<Mutex<()>> = Lazy::new(|| {
+    Lazy::force(&INIT_CINNABAR_2);
+    Mutex::new(())
+});
 
 fn do_done_and_check(args: &[&[u8]]) -> bool {
     unsafe {
