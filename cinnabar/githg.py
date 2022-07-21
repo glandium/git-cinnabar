@@ -1,4 +1,3 @@
-from binascii import hexlify, unhexlify
 from collections import (
     OrderedDict,
     defaultdict,
@@ -118,20 +117,12 @@ class GitCommit(object):
         self.parents = tuple(parents)
 
 
-def autohexlify(h):
-    if len(h) == 40:
-        return h
-    elif len(h) == 20:
-        return hexlify(h)
-    assert False
-
-
 class BranchMap(object):
     __slots__ = "_heads", "_all_heads", "_tips", "_git_sha1s", "_unknown_heads"
 
     def __init__(self, store, remote_branchmap, remote_heads):
         self._heads = {}
-        self._all_heads = tuple(autohexlify(h) for h in remote_heads)
+        self._all_heads = tuple(remote_heads)
         self._tips = {}
         self._git_sha1s = {}
         self._unknown_heads = set()
@@ -140,7 +131,6 @@ class BranchMap(object):
             sequenced = isinstance(heads, Sequence) or len(heads) == 1
             branch_heads = []
             for head in heads:
-                head = autohexlify(head)
                 branch_heads.append(head)
                 sha1 = store.changeset_ref(head)
                 if not sha1:
@@ -258,10 +248,6 @@ class GitHgStore(object):
             except ValueError:
                 continue
             tag = tag.strip()
-            try:
-                unhexlify(node)
-            except TypeError:
-                continue
             if node != NULL_NODE_ID:
                 node = self.cached_changeset_ref(node)
             if node:

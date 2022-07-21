@@ -1,4 +1,3 @@
-from binascii import unhexlify
 import os
 import sys
 
@@ -178,7 +177,7 @@ class GitRemoteHelper(BaseRemoteHelper):
 
         fetch = (Git.config('cinnabar.fetch') or b'').split()
         if fetch:
-            heads = [unhexlify(f) for f in fetch]
+            heads = fetch
             branchmap = {None: heads}
             bookmarks = {}
 
@@ -186,7 +185,7 @@ class GitRemoteHelper(BaseRemoteHelper):
             while True:
                 branchmap = self._repo.branchmap()
                 heads = self._repo.heads()
-                if heads == [b'\0' * 20]:
+                if heads == [NULL_NODE_ID]:
                     heads = []
                 # Some branch heads can be non-heads topologically, but if
                 # some heads don't appear in the branchmap, then something
