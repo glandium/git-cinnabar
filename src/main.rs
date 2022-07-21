@@ -2354,7 +2354,7 @@ enum PythonCommand {
 
 fn run_python_command(
     cmd: PythonCommand,
-    handler: Option<fn(&mut Child)>,
+    handler: Option<Box<dyn FnMut(&mut Child)>>,
     args: Option<&[&OsStr]>,
     conn: Option<Box<dyn HgRepo + Send>>,
     remote: Option<OsString>,
@@ -2510,7 +2510,7 @@ fn run_python_command(
     } else {
         Ok(())
     };
-    if let Some(handler) = handler {
+    if let Some(mut handler) = handler {
         handler(&mut child);
     }
     let status = child.wait().expect("Python command wasn't running?!");
@@ -2533,7 +2533,7 @@ fn run_python_command(
         .map_err(|e| format!("Failed to communicate with python: {}", e))
 }
 
-fn remote_helper(python: &mut Child) {
+fn remote_helper(python: &mut Child, url: &Url) {
     let stdin = stdin();
     let mut stdin = LoggingBufReader::new("remote-helper", log::Level::Info, stdin.lock());
     let stdout = stdout();
@@ -2575,18 +2575,22 @@ fn remote_helper(python: &mut Child) {
                 stdout.flush().unwrap();
             }
             b"capabilities" => {
-                assert!(args.is_empty());
-                writeln!(python_in, "capabilities").unwrap();
-                python_in.flush().unwrap();
-                let mut buf = String::new();
-                loop {
-                    buf.truncate(0);
-                    python_out.read_line(&mut buf).unwrap();
-                    stdout.write_all(buf.as_bytes()).unwrap();
-                    if buf == "\n" || buf.is_empty() {
-                        break;
-                    }
+                stdout.write_all("option\nimport\n".as_bytes()).unwrap();
+                if url.scheme() != "tags" {
+                    stdout
+                        .write_all(
+                            "push\n\
+                             refspec refs/heads/*:refs/cinnabar/refs/heads/*\n\
+                             refspec hg/*:refs/cinnabar/hg/*\n\
+                             "
+                            .as_bytes(),
+                        )
+                        .unwrap();
                 }
+                stdout
+                    .write_all("refspec HEAD:refs/cinnabar/HEAD\n\n".as_bytes())
+                    .unwrap();
+
                 stdout.flush().unwrap();
             }
             b"list" => {
@@ -2667,7 +2671,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
     let conn = (url_url.scheme() != "tags").then(|| get_connection(&url_url).unwrap());
     run_python_command(
         PythonCommand::GitRemoteHg,
-        Some(remote_helper),
+        Some(Box::new(move |child| remote_helper(child, &url_url))),
         Some(&[&remote.clone(), &url]),
         conn,
         Some(remote),

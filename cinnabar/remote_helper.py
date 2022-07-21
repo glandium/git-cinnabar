@@ -106,15 +106,6 @@ class TagsRemoteHelper(BaseRemoteHelper):
         super(TagsRemoteHelper, self).__init__(stdin, stdout)
         self._store = store
 
-    def capabilities(self):
-        self._helper.write(
-            b'option\n'
-            b'import\n'
-            b'refspec HEAD:refs/cinnabar/HEAD\n'
-            b'\n'
-        )
-        self._helper.flush()
-
     def list(self, arg=None):
         tags = sorted(self._store.tags())
         # git fetch does a check-connection that calls
@@ -151,18 +142,6 @@ class GitRemoteHelper(BaseRemoteHelper):
         self._branchmap = None
         self._bookmarks = {}
         self._has_unknown_heads = False
-
-    def capabilities(self):
-        self._helper.write(
-            b'option\n'
-            b'import\n'
-            b'push\n'
-            b'refspec refs/heads/*:refs/cinnabar/refs/heads/*\n'
-            b'refspec hg/*:refs/cinnabar/hg/*\n'
-            b'refspec HEAD:refs/cinnabar/HEAD\n'
-            b'\n'
-        )
-        self._helper.flush()
 
     def list(self, arg=None):
         assert not arg or arg == b'for-push'
