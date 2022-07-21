@@ -3,6 +3,7 @@ import logging
 import os
 import subprocess
 import sys
+from urllib.parse import unquote_to_bytes
 from cinnabar.exceptions import HelperClosedError, HelperFailedError
 from cinnabar.git import (
     NULL_NODE_ID,
@@ -333,8 +334,9 @@ class HgRepoHelper(BaseHelper):
             self.connected = False
 
     @classmethod
-    def connect(self, url, *args):
-        with self.query(b'connect', url, *args) as stdout:
+    def connect(self, url, remote=None):
+        with self.query(
+                b'connect', url, *([remote] if remote else [])) as stdout:
             resp = stdout.readline().rstrip()
             if resp != b'ok':
                 raise Exception(resp.decode('ascii'))
@@ -344,9 +346,16 @@ class HgRepoHelper(BaseHelper):
     def state(self):
         with self.query(b'state') as stdout:
             return {
-                'branchmap': self._read_data(stdout),
-                'heads': self._read_data(stdout),
-                'bookmarks': self._read_data(stdout),
+                'branchmap': {
+                    unquote_to_bytes(branch): heads.split(b' ')
+                    for line in self._read_data(stdout).splitlines()
+                    for branch, heads in (line.split(b' ', 1),)
+                },
+                'heads': self._read_data(stdout)[:-1].split(b' '),
+                'bookmarks': dict(
+                    line.split(b'\t', 1)
+                    for line in self._read_data(stdout).splitlines()
+                ),
             }
 
     @classmethod
@@ -362,7 +371,10 @@ class HgRepoHelper(BaseHelper):
     @classmethod
     def listkeys(self, namespace):
         with self.query(b'listkeys', namespace) as stdout:
-            return self._read_data(stdout)
+            return dict(
+                line.split(b'\t', 1)
+                for line in self._read_data(stdout).splitlines()
+            )
 
     @classmethod
     def unbundle(self, heads):

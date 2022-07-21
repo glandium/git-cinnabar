@@ -6,10 +6,9 @@ from cinnabar.githg import (
     BranchMap,
     GitHgStore,
 )
-from cinnabar.helper import GitHgHelper
+from cinnabar.helper import GitHgHelper, HgRepoHelper
 from cinnabar.hg.repo import (
     getbundle,
-    get_repo,
     push,
     Remote,
 )
@@ -148,7 +147,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                  stdout=sys.stdout.buffer):
         super(GitRemoteHelper, self).__init__(stdin, stdout)
         self._store = store
-        self._repo = get_repo(remote)
+        HgRepoHelper.connect(remote.url)
         self._remote = remote
 
         self._head_template = None
@@ -181,11 +180,12 @@ class GitRemoteHelper(BaseRemoteHelper):
             bookmarks = {}
 
         else:
-            branchmap = self._repo.branchmap()
-            heads = self._repo.heads()
+            state = HgRepoHelper.state()
+            branchmap = state['branchmap']
+            heads = state['heads']
             if heads == [NULL_NODE_ID]:
                 heads = []
-            bookmarks = self._repo.listkeys(b'bookmarks')
+            bookmarks = state['bookmarks']
 
         self._bookmarks = bookmarks
         branchmap = self._branchmap = BranchMap(self._store, branchmap,
@@ -332,7 +332,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                 unknown_heads = self._branchmap.unknown_heads()
                 if set(heads).issuperset(unknown_heads):
                     heads = set(self._branchmap.heads()) & unknown_heads
-                getbundle(self._repo, heads, self._branchmap.names())
+                getbundle(heads, self._branchmap.names())
         except:  # noqa: E722
             wanted_refs = {}
             raise
@@ -381,7 +381,7 @@ class GitRemoteHelper(BaseRemoteHelper):
         pushes = list((Git.resolve_ref(os.fsdecode(s.lstrip(b'+'))), d,
                        s.startswith(b'+'))
                       for s, d in (r.split(b':', 1) for r in refspecs))
-        if self._store._broken or not self._repo.capable(b'unbundle'):
+        if self._store._broken or not HgRepoHelper.capable(b'unbundle'):
             for source, dest, force in pushes:
                 if self._store._broken:
                     self._helper.write(
@@ -396,7 +396,7 @@ class GitRemoteHelper(BaseRemoteHelper):
         else:
             repo_heads = self._branchmap.heads()
             PushStore.adopt(self._store)
-            pushed = push(self._repo, self._store, pushes, repo_heads,
+            pushed = push(self._store, pushes, repo_heads,
                           self._branchmap.names(), self._dry_run)
 
             status = {}
@@ -420,7 +420,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                 name = unquote_to_bytes(dest[len(bookmark_prefix):])
                 if source:
                     source = self._store.hg_changeset(source)
-                status[dest] = self._repo.pushkey(
+                status[dest] = HgRepoHelper.pushkey(
                     b'bookmarks', name, self._bookmarks.get(name, b''),
                     source or b'')
 
@@ -440,7 +440,7 @@ class GitRemoteHelper(BaseRemoteHelper):
             elif data == b'always':
                 data = True
             elif data == b'phase':
-                phases = self._repo.listkeys(b'phases')
+                phases = HgRepoHelper.listkeys(b'phases')
                 drafts = {}
                 if not phases.get(b'publishing', False):
                     drafts = set(p for p, is_draft in phases.items()
