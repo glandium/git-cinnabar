@@ -2600,6 +2600,7 @@ fn remote_helper(python: &mut Child, url: &Url) {
                     _ => panic!("unknown argument(s) to list command"),
                 };
                 if for_push {
+                    assert_ne!(url.scheme(), "tags");
                     writeln!(python_in, "list for-push").unwrap();
                 } else {
                     writeln!(python_in, "list").unwrap();
@@ -2617,6 +2618,7 @@ fn remote_helper(python: &mut Child, url: &Url) {
                 stdout.flush().unwrap();
             }
             b"import" | b"push" => {
+                assert_ne!(url.scheme(), "tags");
                 python_in.write_all(cmd).unwrap();
                 for arg in args {
                     python_in.write_all(b" ").unwrap();
