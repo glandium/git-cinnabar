@@ -180,21 +180,6 @@ class GitHgHelper(BaseHelper):
             pass
 
     @classmethod
-    def progress(self, value=None):
-        assert value in (None, True, False)
-        if value is True:
-            with self.query(b'progress', b'true'):
-                pass
-        elif value is False:
-            with self.query(b'progress', b'false'):
-                pass
-        else:
-            with self.query(b'progress') as stdout:
-                ret = stdout.readline().strip()
-                assert ret in (b'true', b'false')
-                return ret == b'true'
-
-    @classmethod
     def _cat_file(self, typ, sha1):
         with self.query(b'cat-file', sha1) as stdout:
             return self._read_file(typ, stdout)

@@ -107,6 +107,7 @@ use url::Url;
 use which::which;
 
 use crate::libc::FdFile;
+use crate::progress::set_progress;
 use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads};
 use crate::util::{FromBytes, ToBoxed};
 use graft::{do_graft, graft_finish, grafted, init_graft};
@@ -118,7 +119,7 @@ use libgit::{
     string_list, BlobId, CommitId, DiffTreeItem, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
-use progress::{do_progress, Progress};
+use progress::Progress;
 use store::{
     do_check_files, do_create, do_heads, do_raw_changeset, do_set_, has_metadata,
     raw_commit_for_changeset, store_git_blob, ChangesetHeads, GeneratedGitChangesetMetadata,
@@ -271,8 +272,8 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
         let mut nul = [b'\0'];
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
         let _locked = HELPER_LOCK.lock().unwrap();
-        if let b"graft" | b"progress" | b"create" | b"raw-changeset" | b"reset"
-        | b"done-and-check" | b"heads" | b"done" | b"rollback" = &*command
+        if let b"graft" | b"create" | b"raw-changeset" | b"reset" | b"done-and-check" | b"heads"
+        | b"done" | b"rollback" = &*command
         {
             let args = match args_.split_last().unwrap().1 {
                 b"" => Vec::new(),
@@ -280,7 +281,6 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
             };
             let mut out = unsafe { FdFile::from_raw_fd(out) };
             match &*command {
-                b"progress" => do_progress(out, &args),
                 b"graft" => do_graft(&args),
                 b"raw-changeset" => do_raw_changeset(out, &args),
                 b"create" => do_create(input, out, &args),
@@ -2533,12 +2533,7 @@ fn remote_helper(python: &mut Child) {
             b"option" => {
                 match &args[..] {
                     [b"progress", value @ (b"true" | b"false")] => {
-                        let value = bool::from_bytes(value).unwrap();
-                        writeln!(python_in, "option progress {}", value).unwrap();
-                        python_in.flush().unwrap();
-                        let mut buf = String::new();
-                        python_out.read_line(&mut buf).unwrap();
-                        assert_eq!(buf, "ok\n");
+                        set_progress(bool::from_bytes(value).unwrap());
                         writeln!(stdout, "ok").unwrap();
                     }
                     [b"dry-run", value @ (b"true" | b"false")] => {

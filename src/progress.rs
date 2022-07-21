@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::{
-    io::Write,
     iter::Enumerate,
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
@@ -17,15 +16,8 @@ pub fn progress_enabled() -> bool {
     PROGRESS_ENABLED.load(Ordering::Relaxed)
 }
 
-pub fn do_progress(mut out: impl Write, args: &[&[u8]]) {
-    match args {
-        [b"true"] => PROGRESS_ENABLED.store(true, Ordering::Relaxed),
-        [b"false"] => PROGRESS_ENABLED.store(false, Ordering::Relaxed),
-        [] => writeln!(out, "{:?}", PROGRESS_ENABLED.load(Ordering::Relaxed)).unwrap(),
-        _ => {
-            die!("progress only takes 'true', 'false' or no argument");
-        }
-    }
+pub fn set_progress(value: bool) {
+    PROGRESS_ENABLED.store(value, Ordering::Relaxed);
 }
 
 pub trait Progress: Iterator + Sized {

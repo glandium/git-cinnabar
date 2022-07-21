@@ -42,7 +42,6 @@ def sanitize_branch_name(name):
 class BaseRemoteHelper(object):
     def __init__(self, stdin=sys.stdin.buffer, stdout=sys.stdout.buffer):
         self._dry_run = False
-        self._progress = True
         self._helper_in = stdin
         self._helper = stdout
 
@@ -60,7 +59,7 @@ class BaseRemoteHelper(object):
                 args = []
 
             if cmd in (b'import', b'push'):
-                GitHgHelper.progress(self._progress)
+                GitHgHelper._ensure_helper()
                 while True:
                     line = self._helper_in.readline().strip()
                     if not line:
@@ -93,10 +92,7 @@ class BaseRemoteHelper(object):
                 func(*args)
 
     def option(self, name, value):
-        if name == b'progress' and value in (b'true', b'false'):
-            self._progress = value == b'true'
-            self._helper.write(b'ok\n')
-        elif name == b'dry-run' and value in (b'true', b'false'):
+        if name == b'dry-run' and value in (b'true', b'false'):
             self._dry_run = value == b'true'
             self._helper.write(b'ok\n')
         else:
