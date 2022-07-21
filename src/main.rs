@@ -111,7 +111,9 @@ use crate::progress::set_progress;
 use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads};
 use crate::util::{FromBytes, ToBoxed};
 use graft::{do_graft, graft_finish, grafted, init_graft};
-use hg_connect::{connect_main_with, get_clonebundle_url, get_connection, get_store_bundle};
+use hg_connect::{
+    connect_main_with, get_clonebundle_url, get_connection, get_store_bundle, HgRepo,
+};
 use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
     config_get_value, diff_tree, for_each_ref_in, for_each_remote, get_oid_committish,
@@ -2317,10 +2319,12 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             Ok(code) => return Ok(code),
             Err(e) => Err(e),
         },
-        Bundle { .. } => match run_python_command(PythonCommand::GitCinnabar, None, None) {
-            Ok(code) => return Ok(code),
-            Err(e) => Err(e),
-        },
+        Bundle { .. } => {
+            match run_python_command(PythonCommand::GitCinnabar, None, None, None, None) {
+                Ok(code) => return Ok(code),
+                Err(e) => Err(e),
+            }
+        }
     };
     ret.map(|_| 0)
 }
@@ -2352,6 +2356,8 @@ fn run_python_command(
     cmd: PythonCommand,
     handler: Option<fn(&mut Child)>,
     args: Option<&[&OsStr]>,
+    conn: Option<Box<dyn HgRepo + Send>>,
+    remote: Option<OsString>,
 ) -> Result<c_int, String> {
     let mut python = if let Ok(p) = which("python3") {
         Command::new(p)
@@ -2410,6 +2416,8 @@ fn run_python_command(
                         BufReader::new(reader2),
                     ),
                     &mut logging::LoggingWriter::new("helper-wire", log::Level::Debug, writer1),
+                    conn.map(|c| c as _),
+                    remote,
                 )
                 .unwrap();
             })
@@ -2649,11 +2657,20 @@ fn remote_helper(python: &mut Child) {
     }
 }
 
-fn git_remote_hg(remote: OsString, url: OsString) -> Result<c_int, String> {
+fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
+    if !url.as_bytes().starts_with(b"hg:") {
+        let mut new_url = OsString::from("hg::");
+        new_url.push(url);
+        url = new_url;
+    }
+    let url_url = hg_url(&url).unwrap();
+    let conn = (url_url.scheme() != "tags").then(|| get_connection(&url_url).unwrap());
     run_python_command(
         PythonCommand::GitRemoteHg,
         Some(remote_helper),
-        Some(&[&remote, &url]),
+        Some(&[&remote.clone(), &url]),
+        conn,
+        Some(remote),
     )
 }
 
@@ -2696,9 +2713,11 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
             helper_main(&mut stdin().lock(), 1);
             Ok(0)
         }
-        Some("git-cinnabar-wire") => connect_main_with(&mut stdin().lock(), &mut stdout().lock())
-            .map(|_| 0)
-            .map_err(|e| e.to_string()),
+        Some("git-cinnabar-wire") => {
+            connect_main_with(&mut stdin().lock(), &mut stdout().lock(), None, None)
+                .map(|_| 0)
+                .map_err(|e| e.to_string())
+        }
         Some("git-remote-hg") => git_cinnabar(Some(
             &[OsStr::new("git-cinnabar"), OsStr::new("remote-hg")]
                 .into_iter()

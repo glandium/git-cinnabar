@@ -37,6 +37,8 @@ pub struct HgStdioConnection {
     url: Url,
 }
 
+unsafe impl Send for HgStdioConnection {}
+
 /* The mercurial "stdio" protocol is used for both local repositories and
  * remote ssh repositories.
  * A mercurial client sends commands in the following form:
@@ -175,7 +177,7 @@ extern "C" {
     fn proc_err(proc: *mut child_process) -> c_int;
 }
 
-pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> {
+pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo + Send>> {
     let userhost = url.host_str().map(|host| {
         let username = percent_decode_str(url.username()).collect_vec();
         let userhost = if username.is_empty() {
@@ -266,5 +268,5 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
         stdio_read_response(&mut conn);
     }
 
-    Some(Box::new(HgWired::new(conn)) as Box<dyn HgRepo>)
+    Some(Box::new(HgWired::new(conn)) as Box<dyn HgRepo + Send>)
 }

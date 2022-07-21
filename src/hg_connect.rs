@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::collections::{HashMap, HashSet};
-use std::ffi::{c_void, OsStr};
+use std::ffi::{c_void, OsStr, OsString};
 use std::fs::File;
 use std::io::{stderr, BufRead, Read, Write};
 use std::str::FromStr;
@@ -27,7 +27,7 @@ use crate::store::{
     CHANGESET_HEADS,
 };
 use crate::util::{FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed};
-use crate::{check_enabled, get_config_remote, graft_config_enabled, hg_url, Checks, HELPER_LOCK};
+use crate::{check_enabled, get_config_remote, graft_config_enabled, Checks, HELPER_LOCK};
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
@@ -1223,7 +1223,7 @@ pub fn get_cinnabarclone_url(
     None
 }
 
-pub fn get_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
+pub fn get_connection(url: &Url) -> Option<Box<dyn HgRepo + Send>> {
     let conn = if ["http", "https"].contains(&url.scheme()) {
         get_http_connection(url)?
     } else if ["ssh", "file"].contains(&url.scheme()) {
@@ -1244,9 +1244,10 @@ pub fn get_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
 pub fn connect_main_with(
     input: &mut impl BufRead,
     out: &mut impl Write,
+    mut connection: Option<Box<dyn HgRepo>>,
+    remote: Option<OsString>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut connection = None;
-    let mut remote = None;
+    let remote = remote.map(|r| r.to_str().unwrap().to_owned());
     loop {
         let mut line = String::new();
         input.read_line(&mut line)?;
@@ -1256,24 +1257,7 @@ pub fn connect_main_with(
         }
         let mut args = line.split(' ');
         let command = args.next().ok_or("Missing command")?;
-        if command == "connect" {
-            assert!(connection.is_none());
-            let url = hg_url(args.next().unwrap()).unwrap();
-            remote = args.next().map(ToString::to_string);
-            assert!(args.next().is_none());
-            match get_connection(&url) {
-                // We only allow one connect command.
-                Some(conn) => {
-                    connection = Some(conn);
-                    writeln!(out, "ok").unwrap();
-                }
-                _ => {
-                    out.write_all(b"failed\n").unwrap();
-                }
-            }
-            out.flush().unwrap();
-            continue;
-        } else if command == "create-bundle" {
+        if command == "create-bundle" {
             do_create_bundle(
                 connection.as_mut(),
                 input,

@@ -142,7 +142,6 @@ class GitRemoteHelper(BaseRemoteHelper):
                  stdout=sys.stdout.buffer):
         super(GitRemoteHelper, self).__init__(stdin, stdout)
         self._store = store
-        HgRepoHelper.connect(remote.url)
         self._remote = remote
 
         self._head_template = None

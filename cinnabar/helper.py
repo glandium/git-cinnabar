@@ -309,7 +309,7 @@ class GitHgHelper(BaseHelper):
 class HgRepoHelper(BaseHelper):
     MODE = 'wire'
     _helper = False
-    connected = False
+    connected = True
 
     @classmethod
     def close(self, on_atexit=False):
@@ -317,15 +317,6 @@ class HgRepoHelper(BaseHelper):
             self._helper.stdin.write(b'close\n')
             self._helper.stdin.flush()
             self.connected = False
-
-    @classmethod
-    def connect(self, url, remote=None):
-        with self.query(
-                b'connect', url, *([remote] if remote else [])) as stdout:
-            resp = stdout.readline().rstrip()
-            if resp != b'ok':
-                raise Exception(resp.decode('ascii'))
-            self.connected = True
 
     @classmethod
     def state(self):

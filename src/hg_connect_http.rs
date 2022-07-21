@@ -596,7 +596,7 @@ unsafe extern "C" fn read_from_read<R: Read>(
 }
 
 #[allow(clippy::unnecessary_wraps)]
-pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
+pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgRepo + Send>> {
     let mut conn = HgHttpConnection {
         capabilities: HgCapabilities::default(),
         url: url.clone(),
@@ -635,7 +635,7 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
             copy(&mut http_resp, &mut caps).unwrap();
             drop(http_resp);
             mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&caps));
-            Some(Box::new(HgWired::new(conn)) as Box<dyn HgRepo>)
+            Some(Box::new(HgWired::new(conn)) as Box<dyn HgRepo + Send>)
         }
     }
 }
