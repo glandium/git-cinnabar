@@ -256,7 +256,7 @@ fn do_done_and_check(args: &[&[u8]]) -> bool {
     do_check_files()
 }
 
-fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
+fn helper_main(input: &mut dyn BufRead, out: c_int) {
     let args = unsafe { string_list_new() };
     let mut line = Vec::new();
     loop {
@@ -338,7 +338,6 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) -> c_int {
     unsafe {
         ::libc::free(args as *mut c_void);
     }
-    0
 }
 
 #[cfg(unix)]
@@ -2102,6 +2101,9 @@ impl FromStr for AbbrevSize {
 #[clap(dont_collapse_args_in_usage = true)]
 #[clap(subcommand_required = true)]
 enum CinnabarCommand {
+    #[clap(name = "remote-hg")]
+    #[clap(setting(AppSettings::Hidden))]
+    RemoteHg { remote: OsString, url: OsString },
     #[clap(name = "data")]
     #[clap(group = ArgGroup::new("input").multiple(false).required(true))]
     #[clap(about = "Dump the contents of a mercurial revision")]
@@ -2249,17 +2251,26 @@ enum CinnabarCommand {
 
 use CinnabarCommand::*;
 
-fn git_cinnabar() -> i32 {
-    let command = match CinnabarCommand::try_parse() {
+fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
+    let command = if let Some(args) = args {
+        CinnabarCommand::try_parse_from(args)
+    } else {
+        CinnabarCommand::try_parse()
+    };
+    let command = match command {
         Ok(c) => c,
         Err(e) => {
             e.print().unwrap();
-            return if e.use_stderr() { 1 } else { 0 };
+            return if e.use_stderr() { Ok(1) } else { Ok(0) };
         }
     };
     let _v = VersionCheck::new();
+    if let RemoteHg { remote, url } = command {
+        return git_remote_hg(remote, url);
+    }
     Lazy::force(&INIT_CINNABAR_2);
     let ret = match command {
+        RemoteHg { .. } => unreachable!(),
         Data {
             changeset: Some(c), ..
         } => do_data_changeset(c),
@@ -2303,21 +2314,15 @@ fn git_cinnabar() -> i32 {
             full,
             commit,
         } => match do_fsck(force, full, commit) {
-            Ok(code) => return code,
+            Ok(code) => return Ok(code),
             Err(e) => Err(e),
         },
-        Bundle { .. } => match run_python_command(PythonCommand::GitCinnabar, None) {
-            Ok(code) => return code,
+        Bundle { .. } => match run_python_command(PythonCommand::GitCinnabar, None, None) {
+            Ok(code) => return Ok(code),
             Err(e) => Err(e),
         },
     };
-    match ret {
-        Ok(()) => 0,
-        Err(msg) => {
-            error!(target: "root", "{}", msg);
-            1
-        }
-    }
+    ret.map(|_| 0)
 }
 
 pub fn main() {
@@ -2346,6 +2351,7 @@ enum PythonCommand {
 fn run_python_command(
     cmd: PythonCommand,
     handler: Option<fn(&mut Child)>,
+    args: Option<&[&OsStr]>,
 ) -> Result<c_int, String> {
     let mut python = if let Ok(p) = which("python3") {
         Command::new(p)
@@ -2466,10 +2472,17 @@ fn run_python_command(
         (writer, thread)
     };
 
-    let command = python
-        .arg("-c")
-        .arg(bootstrap)
-        .args(std::env::args_os())
+    let args_os = std::env::args_os().collect_vec();
+
+    let command = python.arg("-c").arg(bootstrap).arg(&args_os[0]);
+
+    if let Some(args) = args {
+        command.args(args);
+    } else {
+        command.args(&args_os[1..]);
+    }
+
+    command
         .env("GIT_CINNABAR", std::env::current_exe().unwrap())
         .envs(extra_env);
     if handler.is_some() {
@@ -2636,6 +2649,14 @@ fn remote_helper(python: &mut Child) {
     }
 }
 
+fn git_remote_hg(remote: OsString, url: OsString) -> Result<c_int, String> {
+    run_python_command(
+        PythonCommand::GitRemoteHg,
+        Some(remote_helper),
+        Some(&[&remote, &url]),
+    )
+}
+
 #[no_mangle]
 unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> c_int {
     let now = Instant::now();
@@ -2670,31 +2691,36 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
     logging::init(now);
 
     let ret = match argv0_path.file_stem().and_then(OsStr::to_str) {
-        Some("git-cinnabar") => git_cinnabar(),
-        Some("git-cinnabar-import") => helper_main(&mut stdin().lock(), 1),
-        Some("git-cinnabar-wire") => {
-            match connect_main_with(&mut stdin().lock(), &mut stdout().lock()) {
-                Ok(()) => 0,
-                Err(e) => {
-                    error!(target: "root", "{}", e);
-                    1
-                }
-            }
+        Some("git-cinnabar") => git_cinnabar(None),
+        Some("git-cinnabar-import") => {
+            helper_main(&mut stdin().lock(), 1);
+            Ok(0)
         }
-        Some("git-remote-hg") => {
-            let _v = VersionCheck::new();
-            match run_python_command(PythonCommand::GitRemoteHg, Some(remote_helper)) {
-                Ok(code) => code,
-                Err(e) => {
-                    error!(target: "root", "{}", e);
-                    1
-                }
-            }
-        }
-        Some(_) | None => 1,
+        Some("git-cinnabar-wire") => connect_main_with(&mut stdin().lock(), &mut stdout().lock())
+            .map(|_| 0)
+            .map_err(|e| e.to_string()),
+        Some("git-remote-hg") => git_cinnabar(Some(
+            &[OsStr::new("git-cinnabar"), OsStr::new("remote-hg")]
+                .into_iter()
+                .chain(
+                    std::env::args_os()
+                        .skip(1)
+                        .collect_vec()
+                        .iter()
+                        .map(|a| &**a),
+                )
+                .collect_vec(),
+        )),
+        Some(_) | None => Ok(1),
     };
     done_cinnabar();
-    ret
+    match ret {
+        Ok(code) => code,
+        Err(msg) => {
+            error!(target: "root", "{}", msg);
+            1
+        }
+    }
 }
 
 #[no_mangle]
