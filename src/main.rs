@@ -47,6 +47,7 @@ extern crate log;
 use clap::{crate_version, AppSettings, ArgGroup, Parser};
 use hg_bundle::BundleSpec;
 use itertools::Itertools;
+use logging::{LoggingBufReader, LoggingWriter};
 use sha1::{Digest, Sha1};
 
 #[macro_use]
@@ -83,7 +84,7 @@ use std::os::raw::{c_char, c_void};
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command};
 use std::str::{self, from_utf8, FromStr};
 use std::sync::Mutex;
 use std::thread;
@@ -2302,7 +2303,7 @@ fn git_cinnabar() -> i32 {
             Ok(code) => return code,
             Err(e) => Err(e),
         },
-        Bundle { .. } => match run_python_command(PythonCommand::GitCinnabar) {
+        Bundle { .. } => match run_python_command(PythonCommand::GitCinnabar, None) {
             Ok(code) => return code,
             Err(e) => Err(e),
         },
@@ -2339,7 +2340,10 @@ enum PythonCommand {
     GitCinnabar,
 }
 
-fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
+fn run_python_command(
+    cmd: PythonCommand,
+    handler: Option<fn(&mut Child)>,
+) -> Result<c_int, String> {
     let mut python = if let Ok(p) = which("python3") {
         Command::new(p)
     } else if let Ok(p) = which("py") {
@@ -2459,13 +2463,17 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
         (writer, thread)
     };
 
-    let mut child = python
+    let command = python
         .arg("-c")
         .arg(bootstrap)
         .args(std::env::args_os())
         .env("GIT_CINNABAR", std::env::current_exe().unwrap())
-        .envs(extra_env)
-        .stdin(std::process::Stdio::inherit())
+        .envs(extra_env);
+    if handler.is_some() {
+        command.stdin(std::process::Stdio::piped());
+        command.stdout(std::process::Stdio::piped());
+    }
+    let mut child = command
         .spawn()
         .map_err(|e| format!("Failed to start python: {}", e))?;
     drop(wire_fds);
@@ -2478,6 +2486,9 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
     } else {
         Ok(())
     };
+    if let Some(handler) = handler {
+        handler(&mut child);
+    }
     let status = child.wait().expect("Python command wasn't running?!");
     match status.code() {
         Some(0) => {}
@@ -2496,6 +2507,135 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
     sent_data
         .map(|_| 0)
         .map_err(|e| format!("Failed to communicate with python: {}", e))
+}
+
+fn remote_helper(python: &mut Child) {
+    let stdin = stdin();
+    let mut stdin = LoggingBufReader::new("remote-helper", log::Level::Info, stdin.lock());
+    let stdout = stdout();
+    let mut stdout = LoggingWriter::new("remote-helper", log::Level::Info, stdout.lock());
+    let mut python_in = python.stdin.take().unwrap();
+    let mut python_out = BufReader::new(python.stdout.take().unwrap());
+    let mut buf = Vec::new();
+    while python.try_wait().is_ok() {
+        buf.truncate(0);
+        stdin.read_until(b'\n', &mut buf).unwrap();
+        if buf.ends_with(b"\n") {
+            buf.pop();
+        }
+        if buf.is_empty() {
+            break;
+        }
+        let mut args = buf.split(|&b| b == b' ');
+        let cmd = args.next().unwrap();
+        let args = args.collect_vec();
+        match cmd {
+            b"option" => {
+                match &args[..] {
+                    [b"progress", value @ (b"true" | b"false")] => {
+                        let value = bool::from_bytes(value).unwrap();
+                        writeln!(python_in, "option progress {}", value).unwrap();
+                        python_in.flush().unwrap();
+                        let mut buf = String::new();
+                        python_out.read_line(&mut buf).unwrap();
+                        assert_eq!(buf, "ok\n");
+                        writeln!(stdout, "ok").unwrap();
+                    }
+                    [b"dry-run", value @ (b"true" | b"false")] => {
+                        writeln!(python_in, "option dry-run {}", value.as_bstr()).unwrap();
+                        python_in.flush().unwrap();
+                        let mut buf = String::new();
+                        python_out.read_line(&mut buf).unwrap();
+                        assert_eq!(buf, "ok\n");
+                        writeln!(stdout, "ok").unwrap();
+                    }
+                    _ => {
+                        writeln!(stdout, "unsupported").unwrap();
+                    }
+                }
+                stdout.flush().unwrap();
+            }
+            b"capabilities" => {
+                assert!(args.is_empty());
+                writeln!(python_in, "capabilities").unwrap();
+                python_in.flush().unwrap();
+                let mut buf = String::new();
+                loop {
+                    buf.truncate(0);
+                    python_out.read_line(&mut buf).unwrap();
+                    stdout.write_all(buf.as_bytes()).unwrap();
+                    if buf == "\n" || buf.is_empty() {
+                        break;
+                    }
+                }
+                stdout.flush().unwrap();
+            }
+            b"list" => {
+                let for_push = match &args[..] {
+                    [b"for-push"] => true,
+                    [] => false,
+                    _ => panic!("unknown argument(s) to list command"),
+                };
+                if for_push {
+                    writeln!(python_in, "list for-push").unwrap();
+                } else {
+                    writeln!(python_in, "list").unwrap();
+                }
+                python_in.flush().unwrap();
+                let mut buf = String::new();
+                loop {
+                    buf.truncate(0);
+                    python_out.read_line(&mut buf).unwrap();
+                    stdout.write_all(buf.as_bytes()).unwrap();
+                    if buf == "\n" || buf.is_empty() {
+                        break;
+                    }
+                }
+                stdout.flush().unwrap();
+            }
+            b"import" | b"push" => {
+                python_in.write_all(cmd).unwrap();
+                for arg in args {
+                    python_in.write_all(b" ").unwrap();
+                    python_in.write_all(arg).unwrap();
+                    python_in.write_all(b"\n").unwrap();
+                }
+                let mut buf = Vec::new();
+                loop {
+                    buf.truncate(0);
+                    stdin.read_until(b'\n', &mut buf).unwrap();
+                    python_in.write_all(&buf).unwrap();
+                    if buf == b"\n" || buf.is_empty() {
+                        break;
+                    }
+                }
+                python_in.flush().unwrap();
+                if cmd == b"import" {
+                    let mut buf = String::new();
+                    python_out.read_line(&mut buf).unwrap();
+                    assert!(["done\n", "error\n"].contains(&&*buf));
+                    stdout.write_all(buf.as_bytes()).unwrap();
+                } else {
+                    let mut did_something = false;
+                    loop {
+                        buf.truncate(0);
+                        python_out.read_until(b'\n', &mut buf).unwrap();
+                        stdout.write_all(&buf).unwrap();
+                        if buf == b"\n" || buf.is_empty() {
+                            break;
+                        }
+                        did_something = true;
+                    }
+                    // The python side probably raised an Exception.
+                    if !did_something {
+                        break;
+                    }
+                }
+                stdout.flush().unwrap();
+            }
+            _ => panic!("unknown command: {}", cmd.as_bstr()),
+        }
+    }
 }
 
 #[no_mangle]
@@ -2545,7 +2685,7 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
         }
         Some("git-remote-hg") => {
             let _v = VersionCheck::new();
-            match run_python_command(PythonCommand::GitRemoteHg) {
+            match run_python_command(PythonCommand::GitRemoteHg, Some(remote_helper)) {
                 Ok(code) => code,
                 Err(e) => {
                     error!(target: "root", "{}", e);

@@ -23,7 +23,6 @@ from cinnabar.git import (
 )
 from cinnabar.util import (
     ConfigSetFunc,
-    IOLogger,
     strip_suffix,
 )
 
@@ -44,12 +43,12 @@ class BaseRemoteHelper(object):
     def __init__(self, stdin=sys.stdin.buffer, stdout=sys.stdout.buffer):
         self._dry_run = False
         self._progress = True
-        self._helper = IOLogger(logging.getLogger('remote-helper'),
-                                stdin, stdout)
+        self._helper_in = stdin
+        self._helper = stdout
 
     def run(self):
         while True:
-            line = self._helper.readline().strip()
+            line = self._helper_in.readline().strip()
             if not line:
                 break
 
@@ -63,7 +62,7 @@ class BaseRemoteHelper(object):
             if cmd in (b'import', b'push'):
                 GitHgHelper.progress(self._progress)
                 while True:
-                    line = self._helper.readline().strip()
+                    line = self._helper_in.readline().strip()
                     if not line:
                         break
                     _, arg = line.split(b' ', 1)
