@@ -26,7 +26,6 @@ from cinnabar.util import (
     IOLogger,
     strip_suffix,
 )
-import cinnabar.util
 
 from urllib.parse import unquote_to_bytes
 
@@ -44,6 +43,7 @@ def sanitize_branch_name(name):
 class BaseRemoteHelper(object):
     def __init__(self, stdin=sys.stdin.buffer, stdout=sys.stdout.buffer):
         self._dry_run = False
+        self._progress = True
         self._helper = IOLogger(logging.getLogger('remote-helper'),
                                 stdin, stdout)
 
@@ -61,7 +61,7 @@ class BaseRemoteHelper(object):
                 args = []
 
             if cmd in (b'import', b'push'):
-                GitHgHelper.progress(cinnabar.util.progress)
+                GitHgHelper.progress(self._progress)
                 while True:
                     line = self._helper.readline().strip()
                     if not line:
@@ -95,7 +95,7 @@ class BaseRemoteHelper(object):
 
     def option(self, name, value):
         if name == b'progress' and value in (b'true', b'false'):
-            cinnabar.util.progress = value == b'true'
+            self._progress = value == b'true'
             self._helper.write(b'ok\n')
         elif name == b'dry-run' and value in (b'true', b'false'):
             self._dry_run = value == b'true'

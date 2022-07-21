@@ -13,7 +13,6 @@ from cinnabar.git import (
 from cinnabar.util import (
     check_enabled,
     experiment,
-    progress_iter,
     sorted_merge,
 )
 from cinnabar.hg.changegroup import (
@@ -336,7 +335,7 @@ class PushStore(GitHgStore):
 
 
 def bundle_data(store, commits):
-    for node, parents in progress_iter('Bundling {} changesets', commits):
+    for node, parents in commits:
         if len(parents) > 2:
             raise Exception(
                 'Pushing octopus merges to mercurial is not supported')

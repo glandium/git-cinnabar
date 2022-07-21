@@ -1061,6 +1061,7 @@ pub fn do_create_bundle(
     let mut bundle_part_writer = bundle_writer.new_part(info).unwrap();
     let mut previous = None;
     let mut manifests = IndexMap::new();
+    let mut progress = repeat(()).progress(|n| format!("Bundling {n} changesets"));
     loop {
         buf.truncate(0);
         input.read_until(b'\0', &mut buf).unwrap();
@@ -1068,6 +1069,7 @@ pub fn do_create_bundle(
             buf.pop();
         }
         if let Some([node, parent1, parent2, changeset]) = buf.splitn_exact(b' ') {
+            progress.next();
             let node = HgObjectId::from_bytes(node).unwrap();
             let parent1 = HgObjectId::from_bytes(parent1).unwrap();
             let parent2 = HgObjectId::from_bytes(parent2).unwrap();
@@ -1113,6 +1115,7 @@ pub fn do_create_bundle(
             }
         } else {
             assert_eq!(buf, b"null");
+            drop(progress);
             bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
             let files = bundle_manifest(&mut bundle_part_writer, version, manifests.drain(..));
             bundle_files(&mut bundle_part_writer, version, files);
