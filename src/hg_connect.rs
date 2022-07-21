@@ -257,8 +257,8 @@ pub struct HgWired<C: HgWireConnection> {
 
 impl<C: HgWireConnection> HgWired<C> {
     pub fn new(mut conn: C) -> Self {
-        let branchmap;
-        let heads;
+        let mut branchmap;
+        let mut heads;
         let bookmarks;
 
         const REQUIRED_CAPS: [&str; 2] = ["getbundle", "branchmap"];
@@ -268,11 +268,29 @@ impl<C: HgWireConnection> HgWired<C> {
         }
 
         if conn.get_capability(b"batch").is_none() {
-            // TODO: when not batching, check for coherency
-            // (see the cinnabar.remote_helper python module)
-            branchmap = conn.simple_command("branchmap", args!());
-            heads = conn.simple_command("heads", args!());
+            // Get bookmarks first because if we get them last and they have been
+            // updated after we got the heads, they may contain changesets we won't
+            // be pulling.
             bookmarks = conn.simple_command("listkeys", args!(namespace: "bookmarks"));
+            loop {
+                branchmap = conn.simple_command("branchmap", args!());
+                heads = conn.simple_command("heads", args!());
+                // Some heads in the branchmap can be non-heads topologically, and
+                // won't appear in the heads list, but if the opposite happens, then
+                // the repo was updated between both calls and we need to try again
+                // for coherency.
+                if heads
+                    .split(|&b| b == b' ')
+                    .collect::<HashSet<_>>()
+                    .is_subset(
+                        &ByteSlice::lines(&*branchmap)
+                            .flat_map(|l| l.split(|&b| b == b' ').skip(1))
+                            .collect::<HashSet<_>>(),
+                    )
+                {
+                    break;
+                }
+            }
         } else {
             let out = conn.simple_command(
                 "batch",

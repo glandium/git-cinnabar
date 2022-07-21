@@ -16,7 +16,6 @@ from cinnabar.hg.repo import (
 from cinnabar.hg.bundle import (
     PushStore,
 )
-from itertools import chain
 import logging
 from cinnabar.git import (
     Git,
@@ -182,17 +181,10 @@ class GitRemoteHelper(BaseRemoteHelper):
             bookmarks = {}
 
         else:
-            while True:
-                branchmap = self._repo.branchmap()
-                heads = self._repo.heads()
-                if heads == [NULL_NODE_ID]:
-                    heads = []
-                # Some branch heads can be non-heads topologically, but if
-                # some heads don't appear in the branchmap, then something
-                # was pushed to the repo between branchmap() and heads()
-                if set(heads).issubset(
-                        set(chain(*(v for _, v in branchmap.items())))):
-                    break
+            branchmap = self._repo.branchmap()
+            heads = self._repo.heads()
+            if heads == [NULL_NODE_ID]:
+                heads = []
             bookmarks = self._repo.listkeys(b'bookmarks')
 
         self._bookmarks = bookmarks
