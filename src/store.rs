@@ -908,12 +908,15 @@ pub fn do_tags(mut output: impl Write, args: &[&[u8]]) {
     let mut buf = Vec::new();
 
     let mut tags = TagSet::default();
+    let mut tags_files = HashSet::new();
     for head in CHANGESET_HEADS.lock().unwrap().heads() {
         (|| -> Option<()> {
             let head = head.to_git()?;
             let tags_file = get_oid_blob(format!("{}:.hgtags", head).as_bytes())?;
-            let tags_blob = RawBlob::read(&tags_file).unwrap();
-            tags.merge(TagSet::from_buf(tags_blob.as_bytes())?);
+            if tags_files.insert(tags_file.clone()) {
+                let tags_blob = RawBlob::read(&tags_file).unwrap();
+                tags.merge(TagSet::from_buf(tags_blob.as_bytes())?);
+            }
             Some(())
         })();
     }
