@@ -209,7 +209,7 @@ impl log::Log for CinnabarLogger {
                     write!(line, "[{}] ", record.target()).ok();
                 }
                 writeln!(line, "{}", record.args()).ok();
-                output.write(&line).ok();
+                output.write_all(&line).ok();
             }
         }
     }
