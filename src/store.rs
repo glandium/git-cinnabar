@@ -1303,7 +1303,7 @@ pub fn do_check_files() -> bool {
         let mut transaction = RefTransaction::new().unwrap();
         transaction
             .update(
-                "refs/cinnabar/broken",
+                BROKEN_REF,
                 &unsafe {
                     CommitId::from_unchecked(GitObjectId::from(crate::libgit::metadata_oid.clone()))
                 },

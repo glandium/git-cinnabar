@@ -253,10 +253,10 @@ fn do_done_and_check(args: &[&[u8]]) -> bool {
             "update",
         )
         .unwrap();
-        if args.contains(&&b"refs/cinnabar/checked"[..]) {
+        if args.contains(&CHECKED_REF.as_bytes()) {
             let mut transaction = RefTransaction::new().unwrap();
             transaction
-                .update("refs/cinnabar/checked", &new_metadata, None, "fsck")
+                .update(CHECKED_REF, &new_metadata, None, "fsck")
                 .unwrap();
             transaction.commit().unwrap();
         }
@@ -1431,7 +1431,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         );
         let mut transaction = RefTransaction::new().unwrap();
         transaction
-            .update("refs/cinnabar/broken", &metadata_cid, None, "fsck")
+            .update(BROKEN_REF, &metadata_cid, None, "fsck")
             .unwrap();
         transaction.commit().unwrap();
         if checked_cid.is_some() {
@@ -1455,7 +1455,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         return Ok(1);
     }
 
-    if do_done_and_check(&[b"refs/cinnabar/checked"]) {
+    if do_done_and_check(&[CHECKED_REF.as_bytes()]) {
         Ok(0)
     } else {
         Ok(1)
@@ -1945,13 +1945,13 @@ fn do_fsck_full(
         );
         let mut transaction = RefTransaction::new().unwrap();
         transaction
-            .update("refs/cinnabar/broken", metadata_cid, None, "fsck")
+            .update(BROKEN_REF, metadata_cid, None, "fsck")
             .unwrap();
         transaction.commit().unwrap();
         return Ok(1);
     }
 
-    if do_done_and_check(&[b"refs/cinnabar/checked"]) {
+    if do_done_and_check(&[CHECKED_REF.as_bytes()]) {
         if fixed.get() {
             Ok(2)
         } else {
