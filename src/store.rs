@@ -908,7 +908,7 @@ pub fn do_tags(mut output: impl Write, args: &[&[u8]]) {
     let mut buf = Vec::new();
 
     let mut tags = TagSet::default();
-    for (head, _) in CHANGESET_HEADS.lock().unwrap().branch_heads() {
+    for head in CHANGESET_HEADS.lock().unwrap().heads() {
         (|| -> Option<()> {
             let head = head.to_git()?;
             let tags_file = get_oid_blob(format!("{}:.hgtags", head).as_bytes())?;
