@@ -164,14 +164,6 @@ class GitHgStore(object):
             # Delete new-type tag_cache, we don't use it anymore.
             Git.delete_ref(b'refs/cinnabar/tag_cache')
 
-            self._tags = dict(GitHgHelper.tags())
-        else:
-            self._tags = {}
-
-    @property
-    def tag_changes(self):
-        return dict(GitHgHelper.tags()) != self._tags
-
     def prepare_graft(self):
         with GitHgHelper.query(b'graft', b'init'):
             pass

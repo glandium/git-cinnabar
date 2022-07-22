@@ -9,14 +9,6 @@ from cinnabar.git import NULL_NODE_ID
 from cinnabar.hg.bundle import create_bundle
 
 
-def getbundle(heads, branch_names):
-    with HgRepoHelper.query(b"get_bundle", b','.join(heads),
-                            *branch_names) as stdout:
-        res = stdout.readline().strip()
-        if res != b'ok':
-            raise Exception(res)
-
-
 def push(store, what, repo_heads, repo_branches, dry_run=False):
     def heads():
         for sha1 in store.heads(repo_branches):

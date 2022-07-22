@@ -44,6 +44,7 @@ extern crate all_asserts;
 #[macro_use]
 extern crate log;
 
+use bstr::io::BufReadExt;
 use clap::{crate_version, AppSettings, ArgGroup, Parser};
 use hg_bundle::BundleSpec;
 use itertools::Itertools;
@@ -74,10 +75,11 @@ pub(crate) mod hg_data;
 
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 #[cfg(unix)]
 use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};
+use std::hash::Hash;
 use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Cursor, Write};
 use std::iter::repeat;
 use std::ops::{Deref, DerefMut};
@@ -114,7 +116,7 @@ use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads};
 use crate::util::{FromBytes, ToBoxed};
 use graft::{do_graft, graft_finish, grafted, init_graft};
 use hg_connect::{
-    connect_main_with, get_clonebundle_url, get_connection, get_store_bundle, HgRepo,
+    connect_main_with, get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo,
 };
 use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
@@ -125,12 +127,11 @@ use libgit::{
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::Progress;
 use store::{
-    do_check_files, do_create, do_heads, do_raw_changeset, do_set_, do_tags, get_tags,
-    has_metadata, raw_commit_for_changeset, store_git_blob, ChangesetHeads,
-    GeneratedGitChangesetMetadata, GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId,
-    HgChangesetId, HgFileId, HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile,
-    RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX,
-    REPLACE_REFS_PREFIX,
+    do_check_files, do_create, do_heads, do_raw_changeset, do_set_, get_tags, has_metadata,
+    raw_commit_for_changeset, store_git_blob, ChangesetHeads, GeneratedGitChangesetMetadata,
+    GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
+    HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF,
+    CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
 
@@ -285,7 +286,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) {
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
         let _locked = HELPER_LOCK.lock().unwrap();
         if let b"graft" | b"create" | b"raw-changeset" | b"reset" | b"done-and-check" | b"heads"
-        | b"done" | b"rollback" | b"tags" = &*command
+        | b"done" | b"rollback" = &*command
         {
             let args = match args_.split_last().unwrap().1 {
                 b"" => Vec::new(),
@@ -298,7 +299,6 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) {
                 b"create" => do_create(input, out, &args),
                 b"reset" => do_reset(&args),
                 b"heads" => do_heads(out, &args),
-                b"tags" => do_tags(out, &args),
                 b"done" => unsafe {
                     do_cleanup(0);
                     writeln!(out, "ok").unwrap();
@@ -2388,7 +2388,6 @@ fn start_python_command(
     piped: bool,
     args: Option<&[&OsStr]>,
     conn: Option<Arc<Mutex<dyn HgRepo + Send>>>,
-    remote: Option<String>,
 ) -> Result<PythonChild, String> {
     let mut python = if let Ok(p) = which("python3") {
         Command::new(p)
@@ -2448,7 +2447,6 @@ fn start_python_command(
                     ),
                     &mut logging::LoggingWriter::new("helper-wire", log::Level::Debug, writer1),
                     conn,
-                    remote,
                 )
                 .unwrap();
             })
@@ -2579,7 +2577,7 @@ fn finish_python_command(child: PythonChild) -> Result<i32, String> {
 }
 
 fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
-    let child = start_python_command(cmd, false, None, None, None)?;
+    let child = start_python_command(cmd, false, None, None)?;
     finish_python_command(child)
 }
 
@@ -2657,12 +2655,19 @@ impl RefsStyle {
     }
 }
 
+struct RemoteInfo {
+    refs: HashMap<Box<BStr>, (HgChangesetId, Option<GitChangesetId>)>,
+    topological_heads: Vec<HgChangesetId>,
+    branch_names: Vec<Box<BStr>>,
+    refs_style: RefsStyle,
+}
+
 fn remote_helper_repo_list(
     conn: &mut dyn HgRepo,
     remote: Option<&str>,
     mut stdout: impl Write,
     for_push: bool,
-) {
+) -> RemoteInfo {
     let _lock = HELPER_LOCK.lock().unwrap();
     let refs_style = (for_push)
         .then(|| RefsStyle::from_config("pushrefs", remote))
@@ -2696,9 +2701,10 @@ fn remote_helper_repo_list(
         buf.as_bstr().to_boxed()
     };
 
-    let mut add_ref = |template: Option<&[&str]>, values: &[&BStr], cid: Option<GitChangesetId>| {
+    let mut add_ref = |template: Option<&[&str]>, values: &[&BStr], csid: HgChangesetId| {
         if let Some(template) = template {
-            refs.insert(apply_template(template, values), cid);
+            let cid = csid.to_git();
+            refs.insert(apply_template(template, values), (csid, cid));
         }
     };
 
@@ -2778,7 +2784,7 @@ fn remote_helper_repo_list(
                 if &***branch == b"default" {
                     default_tip = Some(tip);
                 }
-                add_ref(tip_template, &[branch], tip.to_git());
+                add_ref(tip_template, &[branch], tip.clone());
             }
 
             for head in heads.iter() {
@@ -2786,7 +2792,7 @@ fn remote_helper_repo_list(
                     add_ref(
                         head_template,
                         &[branch, head.to_string().as_bytes().as_bstr()],
-                        head.to_git(),
+                        head.clone(),
                     );
                 }
             }
@@ -2804,7 +2810,7 @@ fn remote_helper_repo_list(
         );
         for (name, cid) in bookmarks.iter() {
             if cid != &HgChangesetId::null() {
-                add_ref(bookmark_template, &[&**name], cid.to_git());
+                add_ref(bookmark_template, &[&**name], cid.clone());
             }
         }
     }
@@ -2813,7 +2819,7 @@ fn remote_helper_repo_list(
         add_ref(
             Some(&["hg/revs/", ""]),
             &[f.to_string().as_bytes().as_bstr()],
-            f.to_git(),
+            f.clone(),
         );
     }
 
@@ -2838,18 +2844,24 @@ fn remote_helper_repo_list(
     };
 
     if let Some(head_ref) = head_ref {
-        if refs.contains_key(&head_ref) {
+        if let Some((csid, cid)) = refs.get(&head_ref) {
             let mut buf = b"@".to_vec();
             buf.extend_from_slice(&**head_ref);
             buf.push(b' ');
             buf.extend_from_slice(b"HEAD\n");
             stdout.write_all(&buf).unwrap();
+            refs.insert(b"HEAD".as_bstr().to_boxed(), (csid.clone(), cid.clone()));
         }
     }
 
-    for (refname, cid) in refs.into_iter().sorted() {
+    for (refname, (_, cid)) in refs
+        .iter()
+        .filter(|(r, _)| &***r != b"HEAD".as_bstr())
+        .sorted()
+    {
         let mut buf = cid
-            .map_or_else(|| "?".to_string(), |c| c.to_string())
+            .as_ref()
+            .map_or_else(|| "?".to_string(), ToString::to_string)
             .into_bytes();
         buf.push(b' ');
         buf.extend_from_slice(&**refname);
@@ -2859,6 +2871,174 @@ fn remote_helper_repo_list(
 
     stdout.write_all(b"\n").unwrap();
     stdout.flush().unwrap();
+    RemoteInfo {
+        refs,
+        topological_heads: fetches
+            .is_none()
+            .then(|| {
+                conn.heads()
+                    .trim_end_with(|c| c == '\n')
+                    .split(|&b| b == b' ')
+                    .map(HgChangesetId::from_bytes)
+                    .collect::<Result<_, _>>()
+            })
+            .transpose()
+            .unwrap()
+            .unwrap_or_default(),
+        branch_names: branchmap.into_keys().collect(),
+        refs_style,
+    }
+}
+
+fn remote_helper_import(
+    conn: &mut dyn HgRepo,
+    remote: Option<&str>,
+    wanted_refs: &[&BStr],
+    info: RemoteInfo,
+    mut stdout: impl Write,
+) -> Result<(), String> {
+    if let Some(metadata) = resolve_ref(METADATA_REF) {
+        if Some(metadata) == resolve_ref(BROKEN_REF) {
+            return Err(
+                "Cannot fetch with broken metadata. Please fix your clone first.".to_string(),
+            );
+        }
+    }
+
+    // If anything wrong happens at any time, we risk git picking the existing
+    // refs/cinnabar refs, so remove them preventively.
+    let mut transaction = RefTransaction::new().unwrap();
+    for_each_ref_in(REFS_PREFIX, |r, cid| {
+        if r.as_bytes().starts_with_str("refs/")
+            || r.as_bytes().starts_with_str("hg/")
+            || r == "HEAD"
+        {
+            let mut full_ref = OsString::from(REFS_PREFIX);
+            full_ref.push(r);
+            transaction.delete(full_ref, Some(cid), "pre-import")
+        } else {
+            Ok(())
+        }
+    })?;
+    transaction.commit()?;
+
+    if get_config("graft-refs").is_some() {
+        warn!(
+            target: "root",
+            "The cinnabar.graft-refs configuration is deprecated.\n\
+             Please unset it."
+        );
+    }
+
+    let wanted_refs = wanted_refs
+        .iter()
+        .map(|refname| {
+            info.refs
+                .get_key_value(*refname)
+                .map(|(k, (h, g))| (k.as_bstr(), h, g.as_ref()))
+                .ok_or_else(|| refname.to_boxed())
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|refname| format!("couldn't find remote ref {}", refname.as_bstr()))?;
+
+    let mut tags = None;
+    let mut unknown_wanted_heads = wanted_refs
+        .iter()
+        .filter_map(|(_, csid, cid)| cid.is_none().then(|| (*csid).clone()))
+        .unique()
+        .collect_vec();
+    if !unknown_wanted_heads.is_empty() {
+        tags = Some(get_tags());
+        if graft_config_enabled(remote)?.unwrap_or(false) {
+            init_graft();
+        }
+        // TODO: Mercurial can be an order of magnitude slower when
+        // creating a bundle when not giving topological heads, which
+        // some of the branch heads might not be.
+        // http://bz.selenic.com/show_bug.cgi?id=4595
+        // The heads we've been asked for either come from the repo
+        // branchmap, and are a superset of its topological heads,
+        // or from `hg/revs/*` fetch refs, in which case we want specific
+        // things anyways. In the former case, that means if the heads
+        // we don't know in those we were asked for are a superset of the
+        // topological heads we don't know, then we should use those
+        // instead.
+        // In the case of `hg/revs/*` fetch refs, we don't have any branch
+        // names, as per the branchmap initialization in
+        // remote_helper_repo_list.
+        if !info.branch_names.is_empty() {
+            let unknown_topological_heads = info
+                .topological_heads
+                .into_iter()
+                .filter(|h| h.to_git().is_none())
+                .collect::<Vec<_>>();
+            if unknown_wanted_heads
+                .iter()
+                .collect::<HashSet<_>>()
+                .is_superset(&unknown_topological_heads.iter().collect())
+            {
+                unknown_wanted_heads = unknown_topological_heads;
+            }
+        }
+        let branch_names = info
+            .branch_names
+            .iter()
+            .map(|b| &**b)
+            .collect::<HashSet<_>>();
+        get_bundle(conn, &unknown_wanted_heads, &branch_names, remote)?;
+    }
+
+    do_done_and_check(&[])
+        .then(|| ())
+        .ok_or_else(|| "Fatal error".to_string())?;
+
+    let mut transaction = RefTransaction::new().unwrap();
+    for (refname, csid, cid) in wanted_refs.iter().unique() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(REFS_PREFIX.as_bytes());
+        buf.extend(&***refname);
+        transaction
+            .update(
+                OsStr::from_bytes(&buf),
+                &cid.cloned().unwrap_or_else(|| csid.to_git().unwrap()),
+                None,
+                "import",
+            )
+            .unwrap();
+    }
+    transaction.commit().unwrap();
+
+    writeln!(stdout, "done").unwrap();
+    stdout.flush().unwrap();
+
+    if info.refs_style.contains(RefsStyle::HEADS) {
+        if let Some(remote) = remote {
+            let remote_prune = format!("remote.{remote}.prune");
+            if config_get_value("fetch.prune")
+                .or_else(|| config_get_value(&remote_prune))
+                .as_deref()
+                != Some(OsStr::new("true"))
+            {
+                eprintln!(
+                    "It is recommended that you set \"{remote_prune}\" or \
+                     \"fetch.prune\" to \"true\".\n\
+                     \x20 git config {remote_prune} true\n\
+                     or\n\
+                     \x20 git config fetch.prune true"
+                );
+            }
+        }
+    }
+
+    if let Some(old_tags) = tags {
+        if old_tags != get_tags() {
+            eprintln!(
+                "\nRun the following command to update tags:\n\
+                 \x20 git fetch --tags hg::tag: tag \"*\""
+            );
+        }
+    }
+    Ok(())
 }
 
 fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
@@ -2879,7 +3059,6 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
             true,
             Some(&[&raw_remote, &url]),
             conn.clone(),
-            remote.clone(),
         )
     });
     let url = url_url;
@@ -2890,6 +3069,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
     let mut stdout = LoggingWriter::new("remote-helper", log::Level::Info, stdout.lock());
     let mut buf = Vec::new();
     let mut dry_run = false;
+    let mut info = None;
     loop {
         buf.truncate(0);
         stdin.read_until(b'\n', &mut buf).unwrap();
@@ -2949,16 +3129,61 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                     remote_helper_tags_list(&mut stdout);
                 } else {
                     let mut conn = conn.as_ref().unwrap().lock().unwrap();
-                    remote_helper_repo_list(&mut *conn, remote.as_deref(), &mut stdout, for_push);
+                    info = Some(remote_helper_repo_list(
+                        &mut *conn,
+                        remote.as_deref(),
+                        &mut stdout,
+                        for_push,
+                    ));
                 }
             }
-            b"import" | b"push" => {
+            b"import" => {
+                assert_ne!(url.scheme(), "tags");
+                let mut conn = conn.as_ref().unwrap().lock().unwrap();
+                let wanted_refs = args
+                    .into_iter()
+                    .map(|a| a.as_bstr().to_boxed())
+                    .chain(
+                        (&mut stdin)
+                            .byte_lines()
+                            .take_while(|l| l.as_ref().map(|l| !l.is_empty()).unwrap_or(true))
+                            .map(|line| {
+                                let line = line.unwrap();
+                                assert!(line.starts_with(b"import "));
+                                line[b"import ".len()..].as_bstr().to_boxed()
+                            }),
+                    )
+                    .collect_vec();
+                match remote_helper_import(
+                    &mut *conn,
+                    remote.as_deref(),
+                    &wanted_refs.iter().map(|r| &**r).collect_vec(),
+                    info.take().unwrap(),
+                    &mut stdout,
+                ) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        // die will eventually get us to return an error code, but git
+                        // actually ignores it. So we send it a command it doesn't know
+                        // over the helper/fast-import protocol, so that it emits an
+                        // error.
+                        // Alternatively, we could send `feature done` before doing
+                        // anything, and on the `done` command not being sent when
+                        // we die, git would catch it, but that requires git >= 1.7.7
+                        // and may trigger a more confusing error.
+                        writeln!(stdout, "error").unwrap();
+                        stdout.flush().unwrap();
+                        die!("{}", e);
+                    }
+                }
+            }
+            b"push" => {
                 let p = python.as_mut().map_err(|s| s.clone())?;
                 let mut python_in = p.stdin.take().unwrap();
                 let mut python_out = BufReader::new(p.stdout.take().unwrap());
 
                 assert_ne!(url.scheme(), "tags");
-                if dry_run && cmd == b"push" {
+                if dry_run {
                     writeln!(python_in, "option dry-run true").unwrap();
                     python_in.flush().unwrap();
                     let mut buf = String::new();
@@ -2981,26 +3206,19 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                     }
                 }
                 python_in.flush().unwrap();
-                if cmd == b"import" {
-                    let mut buf = String::new();
-                    python_out.read_line(&mut buf).unwrap();
-                    assert!(["done\n", "error\n"].contains(&&*buf));
-                    stdout.write_all(buf.as_bytes()).unwrap();
-                } else {
-                    let mut did_something = false;
-                    loop {
-                        buf.truncate(0);
-                        python_out.read_until(b'\n', &mut buf).unwrap();
-                        stdout.write_all(&buf).unwrap();
-                        if buf == b"\n" || buf.is_empty() {
-                            break;
-                        }
-                        did_something = true;
-                    }
-                    // The python side probably raised an Exception.
-                    if !did_something {
+                let mut did_something = false;
+                loop {
+                    buf.truncate(0);
+                    python_out.read_until(b'\n', &mut buf).unwrap();
+                    stdout.write_all(&buf).unwrap();
+                    if buf == b"\n" || buf.is_empty() {
                         break;
                     }
+                    did_something = true;
+                }
+                // The python side probably raised an Exception.
+                if !did_something {
+                    break;
                 }
                 stdout.flush().unwrap();
                 p.stdin = Some(python_in);
@@ -3057,7 +3275,7 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
             Ok(0)
         }
         Some("git-cinnabar-wire") => {
-            connect_main_with(&mut stdin().lock(), &mut stdout().lock(), None, None)
+            connect_main_with(&mut stdin().lock(), &mut stdout().lock(), None)
                 .map(|_| 0)
                 .map_err(|e| e.to_string())
         }

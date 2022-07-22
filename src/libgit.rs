@@ -785,7 +785,7 @@ static REFS_LOCK: Lazy<RwLock<()>> = Lazy::new(|| RwLock::new(()));
 pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, &CommitId) -> Result<(), E>>(
     prefix: S,
     f: F,
-) -> Result<(), Option<E>> {
+) -> Result<(), E> {
     let _locked = REFS_LOCK.read().unwrap();
     let mut cb_data = (f, None);
     let prefix = prefix.as_ref().to_cstring();
@@ -821,7 +821,7 @@ pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, &CommitId) -> Result
         ) {
             Ok(())
         } else {
-            Err(cb_data.1.take())
+            Err(cb_data.1.unwrap())
         }
     }
 }

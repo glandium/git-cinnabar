@@ -903,6 +903,12 @@ impl TagSet {
     }
 }
 
+impl PartialEq for TagSet {
+    fn eq(&self, other: &Self) -> bool {
+        self.iter().sorted().collect_vec() == other.iter().sorted().collect_vec()
+    }
+}
+
 pub fn get_tags() -> TagSet {
     let mut tags = TagSet::default();
     let mut tags_files = HashSet::new();
@@ -918,21 +924,6 @@ pub fn get_tags() -> TagSet {
         })();
     }
     tags
-}
-
-pub fn do_tags(mut output: impl Write, args: &[&[u8]]) {
-    assert!(args.is_empty());
-    let mut buf = Vec::new();
-
-    for (tag, node) in get_tags().iter() {
-        if let Some(node) = node.to_git() {
-            buf.extend_from_slice(tag);
-            buf.push(b' ');
-            writeln!(&mut buf, "{}", node).unwrap();
-        }
-    }
-
-    send_buffer_to(&*buf, &mut output);
 }
 
 static BUNDLE_BLOB: Lazy<Mutex<Option<object_id>>> = Lazy::new(|| Mutex::new(None));

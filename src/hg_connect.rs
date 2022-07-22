@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{c_void, OsStr};
 use std::fs::File;
@@ -887,62 +888,49 @@ fn find_common(
         .collect_vec()
 }
 
-fn do_get_bundle(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write, remote: Option<&str>) {
-    let (heads, branch_names) = args.split_first().unwrap();
-    let mut heads = heads
-        .split(',')
-        .map(|s| HgChangesetId::from_str(s).unwrap())
-        .collect_vec();
-    let branch_names = branch_names
-        .iter()
-        .map(|s| s.as_bytes())
-        .collect::<HashSet<_>>();
-
+pub fn get_bundle(
+    conn: &mut dyn HgRepo,
+    heads: &[HgChangesetId],
+    branch_names: &HashSet<&BStr>,
+    remote: Option<&str>,
+) -> Result<(), String> {
     let known_branch_heads = || {
         CHANGESET_HEADS
             .lock()
             .unwrap()
             .branch_heads()
             .filter_map(|(h, b)| {
-                (branch_names.is_empty() || branch_names.contains(&**b)).then(|| h.clone())
+                (branch_names.is_empty() || branch_names.contains(b)).then(|| h.clone())
             })
             .collect_vec()
     };
 
+    let mut heads = Cow::Borrowed(heads);
     let mut common = find_common(conn, known_branch_heads());
-    if common.is_empty() && !has_metadata() {
-        match get_initial_bundle(conn, remote) {
-            Ok(true) => {
-                // Eliminate the heads that we got from the clonebundle or
-                // cinnabarclone
-                let lock = HELPER_LOCK.lock();
-                heads = heads
-                    .into_iter()
-                    .filter(|h| h.to_git().is_none())
-                    .collect_vec();
-                drop(lock);
-                if heads.is_empty() {
-                    writeln!(out, "ok").unwrap();
-                    return;
-                }
-                common = find_common(conn, known_branch_heads());
-            }
-            Ok(false) => {}
-            Err(e) => {
-                writeln!(out, "{}", e).unwrap();
-                return;
-            }
+    if common.is_empty() && !has_metadata() && get_initial_bundle(conn, remote)? {
+        // Eliminate the heads that we got from the clonebundle or
+        // cinnabarclone
+        let lock = HELPER_LOCK.lock();
+        heads = Cow::Owned(
+            heads
+                .iter()
+                .filter(|h| h.to_git().is_none())
+                .cloned()
+                .collect_vec(),
+        );
+        drop(lock);
+        if heads.is_empty() {
+            return Ok(());
         }
+        common = find_common(conn, known_branch_heads());
     }
 
-    match get_store_bundle(conn, &heads, &common) {
-        Ok(()) => writeln!(out, "ok").unwrap(),
-        Err(e) => {
-            let stderr = stderr();
-            let mut writer = PrefixWriter::new("remote: ", stderr.lock());
-            writer.write_all(&e).unwrap();
-        }
-    }
+    get_store_bundle(conn, &heads, &common).map_err(|e| {
+        let stderr = stderr();
+        let mut writer = PrefixWriter::new("remote: ", stderr.lock());
+        writer.write_all(&e).unwrap();
+        "".to_string()
+    })
 }
 
 fn get_initial_bundle(conn: &mut dyn HgRepo, remote: Option<&str>) -> Result<bool, String> {
@@ -1249,7 +1237,6 @@ pub fn connect_main_with(
     input: &mut impl BufRead,
     out: &mut impl Write,
     mut connection: Option<Arc<Mutex<dyn HgRepo + Send>>>,
-    remote: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let mut line = String::new();
@@ -1284,7 +1271,6 @@ pub fn connect_main_with(
             "capable" => do_capable(&mut *conn, &*args, out),
             "state" => do_state(&mut *conn, &*args, out),
             "find_common" => do_find_common(&mut *conn, &*args, out),
-            "get_bundle" => do_get_bundle(&mut *conn, &*args, out, remote.as_deref()),
             "close" => {
                 drop(conn);
                 connection.take();

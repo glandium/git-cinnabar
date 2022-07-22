@@ -1,14 +1,12 @@
 import os
 import sys
 
-from cinnabar.exceptions import Abort
 from cinnabar.githg import (
     BranchMap,
     GitHgStore,
 )
 from cinnabar.helper import GitHgHelper, HgRepoHelper
 from cinnabar.hg.repo import (
-    getbundle,
     push,
     Remote,
 )
@@ -27,16 +25,6 @@ from cinnabar.util import (
 )
 
 from urllib.parse import unquote_to_bytes
-
-
-def sanitize_branch_name(name):
-    '''Valid characters in mercurial branch names are not necessarily valid
-    in git ref names. This function replaces unsupported characters with a
-    urlquote escape such that the name can be reversed straightforwardly with
-    urllib.unquote.'''
-    # TODO: Actually sanitize all the conflicting cases, see
-    # git-check-ref-format(1).
-    return name.replace(b'%', b'%25').replace(b' ', b'%20')
 
 
 class BaseRemoteHelper(object):
@@ -107,16 +95,13 @@ class GitRemoteHelper(BaseRemoteHelper):
         self._store = store
         self._remote = remote
 
-        self._head_template = None
-        self._tip_template = None
         self._bookmark_template = None
 
         self._branchmap = None
         self._bookmarks = {}
-        self._has_unknown_heads = False
 
     def list(self, arg=None):
-        assert not arg or arg == b'for-push'
+        assert arg == b'for-push'
 
         fetch = (Git.config('cinnabar.fetch') or b'').split()
         if fetch:
@@ -135,7 +120,6 @@ class GitRemoteHelper(BaseRemoteHelper):
         self._bookmarks = bookmarks
         branchmap = self._branchmap = BranchMap(self._store, branchmap,
                                                 heads)
-        self._has_unknown_heads = bool(self._branchmap.unknown_heads())
         refs_style = None
         refs_styles = ('bookmarks', 'heads', 'tips')
         if not fetch and branchmap.heads():
@@ -149,154 +133,12 @@ class GitRemoteHelper(BaseRemoteHelper):
                                        default='all')
 
         refs_style = refs_style or (lambda x: True)
-        self._refs_style = refs_style
-
-        refs = {}
-        if refs_style('heads') or refs_style('tips'):
-            if refs_style('heads') and refs_style('tips'):
-                self._head_template = b'refs/heads/branches/%s/%s'
-                self._tip_template = b'refs/heads/branches/%s/tip'
-            elif refs_style('heads') and refs_style('bookmarks'):
-                self._head_template = b'refs/heads/branches/%s/%s'
-            elif refs_style('heads'):
-                self._head_template = b'refs/heads/%s/%s'
-            elif refs_style('tips') and refs_style('bookmarks'):
-                self._tip_template = b'refs/heads/branches/%s'
-            elif refs_style('tips'):
-                self._tip_template = b'refs/heads/%s'
-
-            for branch in sorted(branchmap.names()):
-                branch_tip = branchmap.tip(branch)
-                if refs_style('heads'):
-                    for head in sorted(branchmap.heads(branch)):
-                        if head == branch_tip and refs_style('tips'):
-                            continue
-                        refs[self._head_template % (branch, head)] = head
-                if branch_tip and refs_style('tips'):
-                    refs[self._tip_template % branch] = branch_tip
 
         if refs_style('bookmarks'):
             if refs_style('heads') or refs_style('tips'):
                 self._bookmark_template = b'refs/heads/bookmarks/%s'
             else:
                 self._bookmark_template = b'refs/heads/%s'
-            for name, sha1 in sorted(bookmarks.items()):
-                if sha1 == NULL_NODE_ID:
-                    continue
-                refs[self._bookmark_template % name] = sha1
-
-        for f in fetch:
-            refs[b'hg/revs/%s' % f] = f
-
-        head_ref = None
-        if refs_style('bookmarks') and b'@' in bookmarks:
-            head_ref = self._bookmark_template % b'@'
-        elif refs_style('tips'):
-            head_ref = self._tip_template % b'default'
-        elif refs_style('heads'):
-            head_ref = self._head_template % (
-                b'default', branchmap.tip(b'default'))
-
-        if head_ref:
-            head = refs.get(head_ref)
-            if head:
-                refs[b'HEAD'] = b'@%s' % head_ref
-
-        self._refs = {sanitize_branch_name(k): v
-                      for k, v in refs.items()}
-
-    def import_(self, *refs):
-        self.list()
-        if self._store._broken:
-            raise Abort('Cannot fetch with broken metadata. '
-                        'Please fix your clone first.\n')
-
-        # If anything wrong happens at any time, we risk git picking
-        # the existing refs/cinnabar refs, so remove them preventively.
-        for sha1, ref in Git.for_each_ref('refs/cinnabar/refs/heads',
-                                          'refs/cinnabar/hg',
-                                          'refs/cinnabar/HEAD'):
-            Git.delete_ref(ref)
-
-        def resolve_head(head):
-            resolved = self._refs.get(head)
-            if resolved is None:
-                raise Abort(
-                    "couldn't find remote ref {}".format(head.decode()))
-            if resolved.startswith(b'@'):
-                return self._refs.get(resolved[1:])
-            return resolved
-
-        wanted_refs = {k: v for k, v in (
-                       (h, resolve_head(h)) for h in refs) if v}
-        heads = wanted_refs.values()
-        if not heads:
-            heads = self._branchmap.heads()
-
-        GRAFT = {
-            None: False,
-            b'false': False,
-            b'true': True,
-        }
-        try:
-            graft = Git.config('cinnabar.graft', remote=self._remote.name,
-                               values=GRAFT)
-        except InvalidConfig as e:
-            logging.error(str(e))
-            return 1
-        if Git.config('cinnabar.graft-refs') is not None:
-            logging.warn(
-                'The cinnabar.graft-refs configuration is deprecated.\n'
-                'Please unset it.'
-            )
-
-        if graft:
-            self._store.prepare_graft()
-
-        try:
-            # Mercurial can be an order of magnitude slower when creating
-            # a bundle when not giving topological heads, which some of
-            # the branch heads might not be.
-            # http://bz.selenic.com/show_bug.cgi?id=4595
-            # So, when we're pulling all branch heads, just ask for the
-            # topological heads instead.
-            # `heads` might contain known heads, if e.g. the remote has
-            # never been pulled from, but we happen to have some of its
-            # heads locally already.
-            if self._has_unknown_heads:
-                unknown_heads = self._branchmap.unknown_heads()
-                if set(heads).issuperset(unknown_heads):
-                    heads = set(self._branchmap.heads()) & unknown_heads
-                getbundle(heads, self._branchmap.names())
-        except:  # noqa: E722
-            wanted_refs = {}
-            raise
-        finally:
-            for ref, value in wanted_refs.items():
-                ref = b'refs/cinnabar/' + ref
-                Git.update_ref(ref, self._store.changeset_ref(value))
-
-        self._store.close()
-
-        self._helper.write(b'done\n')
-        self._helper.flush()
-
-        if self._remote.name and self._refs_style('heads'):
-            if Git.config('fetch.prune', self._remote.name) != b'true':
-                prune = 'remote.%s.prune' % os.fsdecode(self._remote.name)
-                sys.stderr.write(
-                    'It is recommended that you set "%(conf)s" or '
-                    '"fetch.prune" to "true".\n'
-                    '  git config %(conf)s true\n'
-                    'or\n'
-                    '  git config fetch.prune true\n'
-                    % {'conf': prune}
-                )
-
-        if self._store.tag_changes:
-            sys.stderr.write(
-                '\nRun the following command to update tags:\n')
-            sys.stderr.write('  git fetch --tags hg::tags: tag "*"\n')
 
     def push(self, *refspecs):
         self.list(b'for-push')
