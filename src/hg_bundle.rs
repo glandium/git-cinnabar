@@ -1028,14 +1028,8 @@ pub fn do_create_bundle(
             | BundleSpec::V2Zstd) => (s, "02"),
         },
     };
-    let mut output = args
-        .get(1)
-        .map(|o| File::create(OsStr::from_bytes(o)).unwrap());
-    let mut bundle_writer = None;
-    let mut part_id = 0;
-    let mut buf = Vec::new();
-    let bundle_writer = bundle_writer.get_or_insert_with(|| {
-        let output = output.get_or_insert_with(|| {
+    let output = args.get(1).map_or_else(
+        || {
             let tempfile = tempfile::Builder::new()
                 .prefix("hg-bundle-")
                 .suffix(".hg")
@@ -1045,9 +1039,12 @@ pub fn do_create_bundle(
             let (f, p) = tempfile.into_parts();
             *BUNDLE_PATH.lock().unwrap() = Some(p);
             f
-        });
-        BundleWriter::new(bundlespec, output).unwrap()
-    });
+        },
+        |o| File::create(OsStr::from_bytes(o)).unwrap(),
+    );
+    let mut part_id = 0;
+    let mut buf = Vec::new();
+    let mut bundle_writer = BundleWriter::new(bundlespec, output).unwrap();
 
     if let Some(replycaps) = replycaps {
         let info = BundlePartInfo::new(part_id, "replycaps");
