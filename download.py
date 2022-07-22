@@ -14,11 +14,9 @@ import sys
 import argparse
 import platform
 import tempfile
+import time
 import errno
 from CI.util import build_commit
-from cinnabar.util import (
-    Progress,
-)
 from gzip import GzipFile
 from shutil import copyfileobj, copyfile
 from urllib.request import urlopen
@@ -163,20 +161,24 @@ def download(args):
             self._reader = reader
             self._length = length
             self._read = 0
-            self._progress = Progress(' {}%' if self._length else ' {} bytes')
+            self._start = self._t0 = time.monotonic()
 
         def read(self, length):
             data = self._reader.read(length)
             self._read += len(data)
-            if self._length:
-                count = self._read * 100 // self._length
-            else:
-                count = self._read
-            self._progress.progress(count)
+            t1 = time.monotonic()
+            if t1 - self._t0 > 0.1:
+                if self._length:
+                    count = f'\r {self._read * 100 // self._length}%'
+                else:
+                    count = f'\r {self._read} bytes'
+                sys.stderr.write(count)
+                sys.stderr.flush()
             return data
 
         def finish(self):
-            self._progress.finish()
+            sys.stderr.write('\n')
+            sys.stderr.flush()
 
     encoding = reader.headers.get('Content-Encoding', 'identity')
     progress = ReaderProgress(reader, reader.length)
