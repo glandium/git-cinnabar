@@ -2572,6 +2572,30 @@ fn remote_helper_tags_list(mut stdout: impl Write) {
     stdout.flush().unwrap();
 }
 
+fn remote_helper_repo_list(
+    mut stdout: impl Write,
+    for_push: bool,
+    mut python_in: impl Write,
+    mut python_out: impl BufRead,
+) {
+    if for_push {
+        writeln!(python_in, "list for-push").unwrap();
+    } else {
+        writeln!(python_in, "list").unwrap();
+    }
+    python_in.flush().unwrap();
+    let mut buf = String::new();
+    loop {
+        buf.truncate(0);
+        python_out.read_line(&mut buf).unwrap();
+        stdout.write_all(buf.as_bytes()).unwrap();
+        if buf == "\n" || buf.is_empty() {
+            break;
+        }
+    }
+    stdout.flush().unwrap();
+}
+
 fn remote_helper(python: &mut Child, url: &Url) {
     let stdin = stdin();
     let mut stdin = LoggingBufReader::new("remote-helper", log::Level::Info, stdin.lock());
@@ -2638,26 +2662,12 @@ fn remote_helper(python: &mut Child, url: &Url) {
                     [] => false,
                     _ => panic!("unknown argument(s) to list command"),
                 };
-                if for_push {
-                    assert_ne!(url.scheme(), "tags");
-                    writeln!(python_in, "list for-push").unwrap();
-                } else if url.scheme() == "tags" {
+                if url.scheme() == "tags" {
+                    assert!(!for_push);
                     remote_helper_tags_list(&mut stdout);
-                    continue;
                 } else {
-                    writeln!(python_in, "list").unwrap();
+                    remote_helper_repo_list(&mut stdout, for_push, &mut python_in, &mut python_out);
                 }
-                python_in.flush().unwrap();
-                let mut buf = String::new();
-                loop {
-                    buf.truncate(0);
-                    python_out.read_line(&mut buf).unwrap();
-                    stdout.write_all(buf.as_bytes()).unwrap();
-                    if buf == "\n" || buf.is_empty() {
-                        break;
-                    }
-                }
-                stdout.flush().unwrap();
             }
             b"import" | b"push" => {
                 assert_ne!(url.scheme(), "tags");
