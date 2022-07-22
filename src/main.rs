@@ -2604,6 +2604,7 @@ fn remote_helper(python: &mut Child, url: &Url) {
     let mut python_in = python.stdin.take().unwrap();
     let mut python_out = BufReader::new(python.stdout.take().unwrap());
     let mut buf = Vec::new();
+    let mut dry_run = false;
     while python.try_wait().is_ok() {
         buf.truncate(0);
         stdin.read_until(b'\n', &mut buf).unwrap();
@@ -2624,11 +2625,7 @@ fn remote_helper(python: &mut Child, url: &Url) {
                         writeln!(stdout, "ok").unwrap();
                     }
                     [b"dry-run", value @ (b"true" | b"false")] => {
-                        writeln!(python_in, "option dry-run {}", value.as_bstr()).unwrap();
-                        python_in.flush().unwrap();
-                        let mut buf = String::new();
-                        python_out.read_line(&mut buf).unwrap();
-                        assert_eq!(buf, "ok\n");
+                        dry_run = bool::from_bytes(value).unwrap();
                         writeln!(stdout, "ok").unwrap();
                     }
                     _ => {
@@ -2671,6 +2668,13 @@ fn remote_helper(python: &mut Child, url: &Url) {
             }
             b"import" | b"push" => {
                 assert_ne!(url.scheme(), "tags");
+                if dry_run && cmd == b"push" {
+                    writeln!(python_in, "option dry-run true").unwrap();
+                    python_in.flush().unwrap();
+                    let mut buf = String::new();
+                    python_out.read_line(&mut buf).unwrap();
+                    assert_eq!(buf, "ok\n");
+                }
                 python_in.write_all(cmd).unwrap();
                 for arg in args {
                     python_in.write_all(b" ").unwrap();
