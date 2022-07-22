@@ -79,6 +79,7 @@ use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};
 use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Cursor, Write};
 use std::iter::repeat;
+use std::ops::{Deref, DerefMut};
 use std::os::raw::c_int;
 use std::os::raw::{c_char, c_void};
 #[cfg(unix)]
@@ -87,7 +88,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::str::{self, from_utf8, FromStr};
 use std::sync::Mutex;
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::{cmp, fmt};
 
 #[cfg(unix)]
@@ -2321,12 +2322,10 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             Ok(code) => return Ok(code),
             Err(e) => Err(e),
         },
-        Bundle { .. } => {
-            match run_python_command(PythonCommand::GitCinnabar, None, None, None, None) {
-                Ok(code) => return Ok(code),
-                Err(e) => Err(e),
-            }
-        }
+        Bundle { .. } => match run_python_command(PythonCommand::GitCinnabar, None, None, None) {
+            Ok(code) => return Ok(code),
+            Err(e) => Err(e),
+        },
     };
     ret.map(|_| 0)
 }
@@ -2354,13 +2353,35 @@ enum PythonCommand {
     GitCinnabar,
 }
 
-fn run_python_command(
+struct PythonChild {
+    child: Child,
+    wire_thread: JoinHandle<()>,
+    import_thread: JoinHandle<()>,
+    logging_thread: JoinHandle<()>,
+    sent_data: std::io::Result<()>,
+}
+
+impl Deref for PythonChild {
+    type Target = Child;
+
+    fn deref(&self) -> &Self::Target {
+        &self.child
+    }
+}
+
+impl DerefMut for PythonChild {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.child
+    }
+}
+
+fn start_python_command(
     cmd: PythonCommand,
-    handler: Option<Box<dyn FnMut(&mut Child)>>,
+    piped: bool,
     args: Option<&[&OsStr]>,
     conn: Option<Box<dyn HgRepo + Send>>,
     remote: Option<OsString>,
-) -> Result<c_int, String> {
+) -> Result<PythonChild, String> {
     let mut python = if let Ok(p) = which("python3") {
         Command::new(p)
     } else if let Ok(p) = which("py") {
@@ -2495,11 +2516,11 @@ fn run_python_command(
     command
         .env("GIT_CINNABAR", std::env::current_exe().unwrap())
         .envs(extra_env);
-    if handler.is_some() {
+    if piped {
         command.stdin(std::process::Stdio::piped());
         command.stdout(std::process::Stdio::piped());
     }
-    let mut child = command
+    let child = command
         .spawn()
         .map_err(|e| format!("Failed to start python: {}", e))?;
     drop(wire_fds);
@@ -2512,9 +2533,23 @@ fn run_python_command(
     } else {
         Ok(())
     };
-    if let Some(mut handler) = handler {
-        handler(&mut child);
-    }
+    Ok(PythonChild {
+        child,
+        wire_thread,
+        import_thread,
+        logging_thread,
+        sent_data,
+    })
+}
+
+fn finish_python_command(child: PythonChild) -> Result<i32, String> {
+    let PythonChild {
+        mut child,
+        wire_thread,
+        import_thread,
+        logging_thread,
+        sent_data,
+    } = child;
     let status = child.wait().expect("Python command wasn't running?!");
     match status.code() {
         Some(0) => {}
@@ -2533,6 +2568,16 @@ fn run_python_command(
     sent_data
         .map(|_| 0)
         .map_err(|e| format!("Failed to communicate with python: {}", e))
+}
+
+fn run_python_command(
+    cmd: PythonCommand,
+    args: Option<&[&OsStr]>,
+    conn: Option<Box<dyn HgRepo + Send>>,
+    remote: Option<OsString>,
+) -> Result<c_int, String> {
+    let child = start_python_command(cmd, false, args, conn, remote)?;
+    finish_python_command(child)
 }
 
 fn remote_helper_tags_list(mut stdout: impl Write) {
@@ -2596,7 +2641,23 @@ fn remote_helper_repo_list(
     stdout.flush().unwrap();
 }
 
-fn remote_helper(python: &mut Child, url: &Url) {
+fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
+    if !url.as_bytes().starts_with(b"hg:") {
+        let mut new_url = OsString::from("hg::");
+        new_url.push(url);
+        url = new_url;
+    }
+    let url_url = hg_url(&url).unwrap();
+    let conn = (url_url.scheme() != "tags").then(|| get_connection(&url_url).unwrap());
+    let mut python = start_python_command(
+        PythonCommand::GitRemoteHg,
+        true,
+        Some(&[&remote.clone(), &url]),
+        conn,
+        Some(remote),
+    )?;
+    let url = url_url;
+
     let stdin = stdin();
     let mut stdin = LoggingBufReader::new("remote-helper", log::Level::Info, stdin.lock());
     let stdout = stdout();
@@ -2717,23 +2778,9 @@ fn remote_helper(python: &mut Child, url: &Url) {
             _ => panic!("unknown command: {}", cmd.as_bstr()),
         }
     }
-}
-
-fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
-    if !url.as_bytes().starts_with(b"hg:") {
-        let mut new_url = OsString::from("hg::");
-        new_url.push(url);
-        url = new_url;
-    }
-    let url_url = hg_url(&url).unwrap();
-    let conn = (url_url.scheme() != "tags").then(|| get_connection(&url_url).unwrap());
-    run_python_command(
-        PythonCommand::GitRemoteHg,
-        Some(Box::new(move |child| remote_helper(child, &url_url))),
-        Some(&[&remote.clone(), &url]),
-        conn,
-        Some(remote),
-    )
+    drop(python_in);
+    drop(python_out);
+    finish_python_command(python)
 }
 
 #[no_mangle]
