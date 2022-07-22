@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::collections::{HashMap, HashSet};
-use std::ffi::{c_void, OsStr, OsString};
+use std::ffi::{c_void, OsStr};
 use std::fs::File;
 use std::io::{stderr, BufRead, Read, Write};
 use std::str::FromStr;
@@ -1249,9 +1249,8 @@ pub fn connect_main_with(
     input: &mut impl BufRead,
     out: &mut impl Write,
     mut connection: Option<Arc<Mutex<dyn HgRepo + Send>>>,
-    remote: Option<OsString>,
+    remote: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let remote = remote.map(|r| r.to_str().unwrap().to_owned());
     loop {
         let mut line = String::new();
         input.read_line(&mut line)?;

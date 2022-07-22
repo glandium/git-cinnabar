@@ -48,6 +48,7 @@ use clap::{crate_version, AppSettings, ArgGroup, Parser};
 use hg_bundle::BundleSpec;
 use itertools::Itertools;
 use logging::{LoggingBufReader, LoggingWriter};
+use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
 use sha1::{Digest, Sha1};
 
 #[macro_use]
@@ -192,7 +193,7 @@ extern "C" {
     fn wmain(argc: c_int, argv: *const *const u16) -> c_int;
 
     fn init_cinnabar(argv0: *const c_char);
-    fn init_cinnabar_2();
+    fn init_cinnabar_2() -> c_int;
     fn done_cinnabar();
 }
 
@@ -223,10 +224,14 @@ fn do_reset(args: &[&[u8]]) {
         .insert(refname.as_bstr().to_boxed(), oid);
 }
 
-static INIT_CINNABAR_2: Lazy<()> = Lazy::new(|| unsafe { init_cinnabar_2() });
+static MAYBE_INIT_CINNABAR_2: Lazy<Option<()>> =
+    Lazy::new(|| unsafe { (init_cinnabar_2() != 0).then(|| ()) });
+
+static INIT_CINNABAR_2: Lazy<()> =
+    Lazy::new(|| MAYBE_INIT_CINNABAR_2.unwrap_or_else(|| panic!("not a git repository")));
 
 static HELPER_LOCK: Lazy<Mutex<()>> = Lazy::new(|| {
-    Lazy::force(&INIT_CINNABAR_2);
+    Lazy::force(&MAYBE_INIT_CINNABAR_2);
     Mutex::new(())
 });
 
@@ -2383,7 +2388,7 @@ fn start_python_command(
     piped: bool,
     args: Option<&[&OsStr]>,
     conn: Option<Arc<Mutex<dyn HgRepo + Send>>>,
-    remote: Option<OsString>,
+    remote: Option<String>,
 ) -> Result<PythonChild, String> {
     let mut python = if let Ok(p) = which("python3") {
         Command::new(p)
@@ -2579,6 +2584,7 @@ fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
 }
 
 fn remote_helper_tags_list(mut stdout: impl Write) {
+    Lazy::force(&INIT_CINNABAR_2);
     let _lock = HELPER_LOCK.lock().unwrap();
     let tags = get_tags();
     let tags = tags
@@ -2615,27 +2621,243 @@ fn remote_helper_tags_list(mut stdout: impl Write) {
     stdout.flush().unwrap();
 }
 
-fn remote_helper_repo_list(
-    mut stdout: impl Write,
-    for_push: bool,
-    mut python_in: impl Write,
-    mut python_out: impl BufRead,
-) {
-    if for_push {
-        writeln!(python_in, "list for-push").unwrap();
-    } else {
-        writeln!(python_in, "list").unwrap();
+bitflags! {
+    pub struct RefsStyle: i32 {
+        const HEADS = 0x1;
+        const BOOKMARKS = 0x2;
+        const TIPS = 0x4;
     }
-    python_in.flush().unwrap();
-    let mut buf = String::new();
-    loop {
-        buf.truncate(0);
-        python_out.read_line(&mut buf).unwrap();
-        stdout.write_all(buf.as_bytes()).unwrap();
-        if buf == "\n" || buf.is_empty() {
-            break;
+}
+
+impl RefsStyle {
+    fn from_config(name: &str, remote: Option<&str>) -> Option<Self> {
+        match get_config_remote(name, remote)
+            .as_deref()
+            .map(OsStrExt::as_bytes)
+        {
+            Some(b"") => None,
+            None => None,
+            Some(config) => {
+                let mut styles = RefsStyle::empty();
+                for c in config.split(|&b| b == b',') {
+                    match c {
+                        b"true" | b"all" => styles = RefsStyle::all(),
+                        b"heads" => styles.set(RefsStyle::HEADS, true),
+                        b"bookmarks" => styles.set(RefsStyle::BOOKMARKS, true),
+                        b"tips" => styles.set(RefsStyle::TIPS, true),
+                        _ => die!(
+                            "`{}` is not one of `heads`, `bookmarks` or `tips`",
+                            c.as_bstr()
+                        ),
+                    }
+                }
+                Some(styles)
+            }
         }
     }
+}
+
+fn remote_helper_repo_list(
+    conn: &mut dyn HgRepo,
+    remote: Option<&str>,
+    mut stdout: impl Write,
+    for_push: bool,
+) {
+    let _lock = HELPER_LOCK.lock().unwrap();
+    let refs_style = (for_push)
+        .then(|| RefsStyle::from_config("pushrefs", remote))
+        .flatten()
+        .or_else(|| RefsStyle::from_config("refs", remote))
+        .unwrap_or(RefsStyle::all());
+
+    let mut refs = HashMap::new();
+
+    // Valid characters in mercurial branch names are not necessarily valid
+    // in git ref names. This function replaces unsupported characters with a
+    // url-like escape such that the name can be reversed straightforwardly.
+    // TODO: Actually sanitize all the conflicting cases, see
+    // git-check-ref-format(1).
+    const BRANCH_QUOTE_SET: &AsciiSet = &CONTROLS.add(b'%').add(b' ');
+
+    let apply_template = |template: &[&str], values: &[&BStr]| {
+        let mut buf = Vec::new();
+        let mut values = values.iter();
+        for part in template {
+            if part.is_empty() {
+                buf.extend_from_slice(values.next().unwrap());
+            } else {
+                buf.extend_from_slice(
+                    percent_encode(part.as_bytes(), BRANCH_QUOTE_SET)
+                        .to_string()
+                        .as_bytes(),
+                );
+            }
+        }
+        buf.as_bstr().to_boxed()
+    };
+
+    let mut add_ref = |template: Option<&[&str]>, values: &[&BStr], cid: Option<GitChangesetId>| {
+        if let Some(template) = template {
+            refs.insert(apply_template(template, values), cid);
+        }
+    };
+
+    let fetches;
+    let branchmap;
+    let bookmarks;
+    if let Some(fetch) = get_config("fetch").and_then(|f| (!f.is_empty()).then(|| f)) {
+        fetches = Some(
+            fetch
+                .to_str()
+                .unwrap()
+                .split(' ')
+                .map(HgChangesetId::from_str)
+                .collect::<Result<Box<[_]>, _>>()
+                .unwrap(),
+        );
+        branchmap = HashMap::new();
+        bookmarks = HashMap::new();
+    } else {
+        fetches = None;
+        branchmap = ByteSlice::lines(&*conn.branchmap())
+            .map(|l| {
+                let [b, h] = l.splitn_exact(b' ').unwrap();
+                (
+                    b.as_bstr().to_boxed(),
+                    h.split(|&b| b == b' ')
+                        .map(HgChangesetId::from_bytes)
+                        .collect::<Result<Box<[_]>, _>>()
+                        .unwrap(),
+                )
+            })
+            .collect();
+        bookmarks = ByteSlice::lines(&*conn.bookmarks())
+            .map(|l| {
+                let [b, h] = l.splitn_exact(b'\t').unwrap();
+                (
+                    b.as_bstr().to_boxed(),
+                    HgChangesetId::from_bytes(h).unwrap(),
+                )
+            })
+            .collect();
+    }
+
+    let mut head_template = None;
+    let mut tip_template = None;
+    let mut default_tip = None;
+    if refs_style.intersects(RefsStyle::HEADS | RefsStyle::TIPS) {
+        if refs_style.contains(RefsStyle::HEADS | RefsStyle::TIPS) {
+            head_template = Some(&["refs/heads/branches/", "", "/", ""][..]);
+            tip_template = Some(&["refs/heads/branches/", "", "/tip"][..]);
+        } else if refs_style.contains(RefsStyle::HEADS | RefsStyle::BOOKMARKS) {
+            head_template = Some(&["refs/heads/branches/", "", "/", ""]);
+        } else if refs_style.contains(RefsStyle::HEADS) {
+            head_template = Some(&["refs/heads/", "", "/", ""]);
+        } else if refs_style.contains(RefsStyle::TIPS | RefsStyle::BOOKMARKS) {
+            tip_template = Some(&["refs/heads/branches/", ""]);
+        } else if refs_style.contains(RefsStyle::TIPS) {
+            tip_template = Some(&["refs/heads/", ""]);
+        }
+
+        for (branch, heads) in branchmap.iter() {
+            // Use the last non-closed head as tip if there's more than one head.
+            // Caveat: we don't know a head is closed until we've pulled it.
+            let mut tip = None;
+            for head in heads.iter().rev() {
+                tip = Some(head);
+                if let Some(git_head) = head.to_git() {
+                    let metadata = RawGitChangesetMetadata::read(&git_head).unwrap();
+                    let metadata = metadata.parse().unwrap();
+                    if metadata.extra().and_then(|e| e.get(b"close")).is_some() {
+                        continue;
+                    }
+                }
+                break;
+            }
+            if let Some(tip) = tip {
+                if &***branch == b"default" {
+                    default_tip = Some(tip);
+                }
+                add_ref(tip_template, &[branch], tip.to_git());
+            }
+
+            for head in heads.iter() {
+                if tip_template.is_none() || Some(head) != tip {
+                    add_ref(
+                        head_template,
+                        &[branch, head.to_string().as_bytes().as_bstr()],
+                        head.to_git(),
+                    );
+                }
+            }
+        }
+    }
+
+    let mut bookmark_template = None;
+    if refs_style.contains(RefsStyle::BOOKMARKS) {
+        bookmark_template = Some(
+            if refs_style.intersects(RefsStyle::HEADS | RefsStyle::TIPS) {
+                &["refs/heads/bookmarks/", ""][..]
+            } else {
+                &["refs/heads/", ""]
+            },
+        );
+        for (name, cid) in bookmarks.iter() {
+            if cid != &HgChangesetId::null() {
+                add_ref(bookmark_template, &[&**name], cid.to_git());
+            }
+        }
+    }
+
+    for f in fetches.iter().flat_map(|f| f.iter()) {
+        add_ref(
+            Some(&["hg/revs/", ""]),
+            &[f.to_string().as_bytes().as_bstr()],
+            f.to_git(),
+        );
+    }
+
+    let head_ref = if let Some(bookmark_template) = bookmarks
+        .contains_key(b"@".as_bstr())
+        .then(|| ())
+        .and(bookmark_template)
+    {
+        Some(apply_template(bookmark_template, &[b"@".as_bstr()]))
+    } else if let Some(tip_template) = tip_template {
+        Some(apply_template(tip_template, &[b"default".as_bstr()]))
+    } else if let Some((head_template, default_tip)) = head_template.zip(default_tip) {
+        Some(apply_template(
+            head_template,
+            &[
+                b"default".as_bstr(),
+                format!("{}", default_tip).as_bytes().as_bstr(),
+            ],
+        ))
+    } else {
+        None
+    };
+
+    if let Some(head_ref) = head_ref {
+        if refs.contains_key(&head_ref) {
+            let mut buf = b"@".to_vec();
+            buf.extend_from_slice(&**head_ref);
+            buf.push(b' ');
+            buf.extend_from_slice(b"HEAD\n");
+            stdout.write_all(&buf).unwrap();
+        }
+    }
+
+    for (refname, cid) in refs.into_iter().sorted() {
+        let mut buf = cid
+            .map_or_else(|| "?".to_string(), |c| c.to_string())
+            .into_bytes();
+        buf.push(b' ');
+        buf.extend_from_slice(&**refname);
+        buf.push(b'\n');
+        stdout.write_all(&buf).unwrap();
+    }
+
+    stdout.write_all(b"\n").unwrap();
     stdout.flush().unwrap();
 }
 
@@ -2646,15 +2868,18 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
         new_url.push(url);
         url = new_url;
     }
+    let raw_remote = remote;
+    let remote = Some(raw_remote.to_str().unwrap().to_owned())
+        .and_then(|r| (!r.starts_with("hg://") && !r.starts_with("hg::")).then(|| r));
     let url_url = hg_url(&url).unwrap();
     let conn = (url_url.scheme() != "tags").then(|| get_connection(&url_url).unwrap());
     let mut python = Lazy::new(|| {
         start_python_command(
             PythonCommand::GitRemoteHg,
             true,
-            Some(&[&remote.clone(), &url]),
+            Some(&[&raw_remote, &url]),
             conn.clone(),
-            Some(remote),
+            remote.clone(),
         )
     });
     let url = url_url;
@@ -2723,12 +2948,8 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                     assert!(!for_push);
                     remote_helper_tags_list(&mut stdout);
                 } else {
-                    let p = python.as_mut().map_err(|s| s.clone())?;
-                    let mut python_in = p.stdin.take().unwrap();
-                    let mut python_out = BufReader::new(p.stdout.take().unwrap());
-                    remote_helper_repo_list(&mut stdout, for_push, &mut python_in, &mut python_out);
-                    p.stdin = Some(python_in);
-                    p.stdout = Some(python_out.into_inner());
+                    let mut conn = conn.as_ref().unwrap().lock().unwrap();
+                    remote_helper_repo_list(&mut *conn, remote.as_deref(), &mut stdout, for_push);
                 }
             }
             b"import" | b"push" => {

@@ -1526,14 +1526,15 @@ void init_cinnabar(const char *argv0)
 
 static int initialized = 0;
 
-void init_cinnabar_2()
+int init_cinnabar_2()
 {
 	if (nongit) {
-		die("not a git repository");
+		return 0;
 	}
 	init_metadata();
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
 	initialized = 1;
+	return 1;
 }
 
 void done_cinnabar()

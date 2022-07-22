@@ -205,18 +205,8 @@ class GitRemoteHelper(BaseRemoteHelper):
         self._refs = {sanitize_branch_name(k): v
                       for k, v in refs.items()}
 
-        head_prefix = strip_suffix((self._head_template or b''), b'%s/%s')
-        for k, v in sorted(self._refs.items()):
-            if head_prefix and k.startswith(head_prefix):
-                v = self._store.changeset_ref(v) or self._branchmap.git_sha1(v)
-            elif not v.startswith(b'@'):
-                v = self._store.changeset_ref(v) or b'?'
-            self._helper.write(b'%s %s\n' % (v, k))
-
-        self._helper.write(b'\n')
-        self._helper.flush()
-
     def import_(self, *refs):
+        self.list()
         if self._store._broken:
             raise Abort('Cannot fetch with broken metadata. '
                         'Please fix your clone first.\n')
@@ -309,6 +299,7 @@ class GitRemoteHelper(BaseRemoteHelper):
             sys.stderr.write('  git fetch --tags hg::tags: tag "*"\n')
 
     def push(self, *refspecs):
+        self.list(b'for-push')
         try:
             values = {
                 None: b'phase',
