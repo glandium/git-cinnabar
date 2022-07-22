@@ -87,7 +87,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::str::{self, from_utf8, FromStr};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::{cmp, fmt};
 
@@ -606,8 +606,9 @@ fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
     let url = remote::get(remote).get_url();
     let url =
         hg_url(url).ok_or_else(|| format!("Invalid mercurial url: {}", url.to_string_lossy()))?;
-    let mut conn =
+    let conn =
         hg_connect::get_connection(&url).ok_or_else(|| format!("Failed to connect to {}", url))?;
+    let mut conn = conn.lock().unwrap();
     if conn.get_capability(b"lookup").is_none() {
         return Err(
             "Remote repository does not support the \"lookup\" command. \
@@ -966,16 +967,18 @@ fn do_unbundle(clonebundle: bool, mut url: Url) -> Result<(), String> {
         init_graft();
     }
     if clonebundle {
-        let mut conn = get_connection(&url).unwrap();
+        let conn = get_connection(&url).unwrap();
+        let mut conn = conn.lock().unwrap();
         if conn.get_capability(b"clonebundles").is_none() {
             return Err("Repository does not support clonebundles")?;
         }
         url = get_clonebundle_url(&mut *conn).ok_or("Repository didn't provide a clonebundle")?;
         eprintln!("Getting clone bundle from {}", url);
     }
-    let mut conn = get_connection(&url).unwrap();
+    let conn = get_connection(&url).unwrap();
 
-    get_store_bundle(&mut *conn, &[], &[]).map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
+    get_store_bundle(&mut *conn.lock().unwrap(), &[], &[])
+        .map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
 
     do_done_and_check(&[])
         .then(|| ())
@@ -2379,7 +2382,7 @@ fn start_python_command(
     cmd: PythonCommand,
     piped: bool,
     args: Option<&[&OsStr]>,
-    conn: Option<Box<dyn HgRepo + Send>>,
+    conn: Option<Arc<Mutex<dyn HgRepo + Send>>>,
     remote: Option<OsString>,
 ) -> Result<PythonChild, String> {
     let mut python = if let Ok(p) = which("python3") {
@@ -2439,7 +2442,7 @@ fn start_python_command(
                         BufReader::new(reader2),
                     ),
                     &mut logging::LoggingWriter::new("helper-wire", log::Level::Debug, writer1),
-                    conn.map(|c| c as _),
+                    conn,
                     remote,
                 )
                 .unwrap();
@@ -2650,7 +2653,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
             PythonCommand::GitRemoteHg,
             true,
             Some(&[&remote.clone(), &url]),
-            conn,
+            conn.clone(),
             Some(remote),
         )
     });

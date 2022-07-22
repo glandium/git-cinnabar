@@ -982,7 +982,7 @@ fn write_chunk(
 }
 
 pub fn do_create_bundle(
-    conn: Option<&mut Box<dyn HgRepo>>,
+    conn: Option<&mut dyn HgRepo>,
     input: &mut dyn BufRead,
     mut out: impl Write,
     args: &[&[u8]],

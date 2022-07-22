@@ -7,6 +7,7 @@ use std::ffi::{c_void, OsStr, OsString};
 use std::fs::File;
 use std::io::{stderr, BufRead, Read, Write};
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
 
 use bstr::{BStr, ByteSlice};
 use either::Either;
@@ -992,8 +993,8 @@ fn get_initial_bundle(conn: &mut dyn HgRepo, remote: Option<&str>) -> Result<boo
             .flatten()
         {
             eprintln!("Getting clone bundle from {}", url);
-            let mut bundle_conn = get_connection(&url).unwrap();
-            match get_store_bundle(&mut *bundle_conn, &[], &[]) {
+            let bundle_conn = get_connection(&url).unwrap();
+            match get_store_bundle(&mut *bundle_conn.lock().unwrap(), &[], &[]) {
                 Ok(()) => {
                     return Ok(true);
                 }
@@ -1005,7 +1006,7 @@ fn get_initial_bundle(conn: &mut dyn HgRepo, remote: Option<&str>) -> Result<boo
                         return Err("clonebundles failed".to_string());
                     }
                 }
-            }
+            };
         }
     }
     Ok(false)
@@ -1223,7 +1224,7 @@ pub fn get_cinnabarclone_url(
     None
 }
 
-pub fn get_connection(url: &Url) -> Option<Box<dyn HgRepo + Send>> {
+pub fn get_connection(url: &Url) -> Option<Arc<Mutex<dyn HgRepo + Send>>> {
     let conn = if ["http", "https"].contains(&url.scheme()) {
         get_http_connection(url)?
     } else if ["ssh", "file"].contains(&url.scheme()) {
@@ -1234,8 +1235,11 @@ pub fn get_connection(url: &Url) -> Option<Box<dyn HgRepo + Send>> {
 
     const REQUIRED_CAPS: [&str; 2] = ["getbundle", "branchmap"];
 
-    for cap in &REQUIRED_CAPS {
-        conn.require_capability(cap.as_bytes());
+    {
+        let conn = conn.lock().unwrap();
+        for cap in &REQUIRED_CAPS {
+            conn.require_capability(cap.as_bytes());
+        }
     }
 
     Some(conn)
@@ -1244,7 +1248,7 @@ pub fn get_connection(url: &Url) -> Option<Box<dyn HgRepo + Send>> {
 pub fn connect_main_with(
     input: &mut impl BufRead,
     out: &mut impl Write,
-    mut connection: Option<Box<dyn HgRepo>>,
+    mut connection: Option<Arc<Mutex<dyn HgRepo + Send>>>,
     remote: Option<OsString>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let remote = remote.map(|r| r.to_str().unwrap().to_owned());
@@ -1258,30 +1262,32 @@ pub fn connect_main_with(
         let mut args = line.split(' ');
         let command = args.next().ok_or("Missing command")?;
         if command == "create-bundle" {
+            let mut conn = connection.as_ref().map(|c| c.lock().unwrap());
             do_create_bundle(
-                connection.as_mut(),
+                conn.as_deref_mut().map(|c| c as _),
                 input,
                 &mut *out,
                 &line.as_bytes().split(|&b| b == b' ').skip(1).collect_vec(),
             );
             continue;
         }
-        let conn = if let Some(conn) = &mut connection {
-            &mut **conn
+        let mut conn = if let Some(conn) = &connection {
+            conn.lock().unwrap()
         } else {
             return Err(format!("Unknown command: {}", command).into());
         };
         let args = args.collect_vec();
         match command {
-            "known" => do_known(conn, &*args, out),
-            "listkeys" => do_listkeys(conn, &*args, out),
-            "unbundle" => do_unbundle(conn, &*args, out),
-            "pushkey" => do_pushkey(conn, &*args, out),
-            "capable" => do_capable(conn, &*args, out),
-            "state" => do_state(conn, &*args, out),
-            "find_common" => do_find_common(conn, &*args, out),
-            "get_bundle" => do_get_bundle(conn, &*args, out, remote.as_deref()),
+            "known" => do_known(&mut *conn, &*args, out),
+            "listkeys" => do_listkeys(&mut *conn, &*args, out),
+            "unbundle" => do_unbundle(&mut *conn, &*args, out),
+            "pushkey" => do_pushkey(&mut *conn, &*args, out),
+            "capable" => do_capable(&mut *conn, &*args, out),
+            "state" => do_state(&mut *conn, &*args, out),
+            "find_common" => do_find_common(&mut *conn, &*args, out),
+            "get_bundle" => do_get_bundle(&mut *conn, &*args, out, remote.as_deref()),
             "close" => {
+                drop(conn);
                 connection.take();
                 continue;
             }
