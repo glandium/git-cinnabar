@@ -2322,7 +2322,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             Ok(code) => return Ok(code),
             Err(e) => Err(e),
         },
-        Bundle { .. } => match run_python_command(PythonCommand::GitCinnabar, None, None, None) {
+        Bundle { .. } => match run_python_command(PythonCommand::GitCinnabar) {
             Ok(code) => return Ok(code),
             Err(e) => Err(e),
         },
@@ -2570,13 +2570,8 @@ fn finish_python_command(child: PythonChild) -> Result<i32, String> {
         .map_err(|e| format!("Failed to communicate with python: {}", e))
 }
 
-fn run_python_command(
-    cmd: PythonCommand,
-    args: Option<&[&OsStr]>,
-    conn: Option<Box<dyn HgRepo + Send>>,
-    remote: Option<OsString>,
-) -> Result<c_int, String> {
-    let child = start_python_command(cmd, false, args, conn, remote)?;
+fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
+    let child = start_python_command(cmd, false, None, None, None)?;
     finish_python_command(child)
 }
 
