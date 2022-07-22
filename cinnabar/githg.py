@@ -1,12 +1,7 @@
-from collections import (
-    OrderedDict,
-    defaultdict,
-)
 from collections.abc import Sequence
 from cinnabar.exceptions import (
     SilentlyAbort,
 )
-from cinnabar.util import one
 from cinnabar.git import (
     EMPTY_BLOB,
     Git,
@@ -53,47 +48,6 @@ class FileFindParents(object):
                 parents = parents[:1]
 
         file.parents = parents
-
-
-class TagSet(object):
-    def __init__(self):
-        self._tags = OrderedDict()
-        self._taghist = defaultdict(set)
-
-    def __setitem__(self, key, value):
-        old = self._tags.get(key)
-        if old:
-            self._taghist[key].add(old)
-        self._tags[key] = value
-
-    def __getitem__(self, key):
-        return self._tags[key]
-
-    def update(self, other):
-        if not other:
-            return
-        assert isinstance(other, TagSet)
-        for key, anode in other._tags.items():
-            # derived from mercurial's _updatetags
-            ahist = other._taghist[key]
-            if key not in self._tags:
-                self._tags[key] = anode
-                self._taghist[key] = set(ahist)
-                continue
-            bnode = self._tags[key]
-            bhist = self._taghist[key]
-            if (bnode != anode and anode in bhist and
-                    (bnode not in ahist or len(bhist) > len(ahist))):
-                anode = bnode
-            self._tags[key] = anode
-            self._taghist[key] = ahist | set(
-                n for n in bhist if n not in ahist)
-
-    def __iter__(self):
-        return iter(self._tags.items())
-
-    def hist(self, key):
-        return iter(sorted(self._taghist[key]))
 
 
 class GitCommit(object):
@@ -202,8 +156,6 @@ class GitHgStore(object):
         self._broken = broken and self._metadata_sha1 and \
             broken == self._metadata_sha1
 
-        self._cached_changeset_ref = {}
-
         metadata = self.metadata()
         self._has_metadata = bool(metadata)
         if metadata:
@@ -212,47 +164,18 @@ class GitHgStore(object):
             # Delete new-type tag_cache, we don't use it anymore.
             Git.delete_ref(b'refs/cinnabar/tag_cache')
 
-        self._tags = dict(self.tags())
+            self._tags = dict(GitHgHelper.tags())
+        else:
+            self._tags = {}
 
     @property
     def tag_changes(self):
-        return dict(self.tags()) != self._tags
+        return dict(GitHgHelper.tags()) != self._tags
 
     def prepare_graft(self):
         with GitHgHelper.query(b'graft', b'init'):
             pass
         self._graft = True
-
-    def tags(self):
-        tags = TagSet()
-        if self._has_metadata:
-            for (h, _) in GitHgHelper.heads(b'changesets'):
-                h = self.changeset_ref(h)
-                tags.update(self._get_hgtags(h))
-        for tag, node in tags:
-            if node != NULL_NODE_ID:
-                yield tag, node
-
-    def _get_hgtags(self, head):
-        tags = TagSet()
-        ls = one(Git.ls_tree(head, b'.hgtags'))
-        if not ls:
-            return tags
-        mode, typ, tagfile, path = ls
-        data = GitHgHelper.cat_file(b'blob', tagfile) or b''
-        for line in data.splitlines():
-            if not line:
-                continue
-            try:
-                node, tag = line.split(b' ', 1)
-            except ValueError:
-                continue
-            tag = tag.strip()
-            if node != NULL_NODE_ID:
-                node = self.cached_changeset_ref(node)
-            if node:
-                tags[tag] = node
-        return tags
 
     def heads(self, branches={}):
         if not isinstance(branches, (dict, set)):
@@ -329,13 +252,6 @@ class GitHgStore(object):
 
     def changeset_ref(self, sha1):
         return self._hg2git(sha1)
-
-    def cached_changeset_ref(self, sha1):
-        try:
-            return self._cached_changeset_ref[sha1]
-        except KeyError:
-            res = self._cached_changeset_ref[sha1] = self.changeset_ref(sha1)
-            return res
 
     def git_file_ref(self, sha1):
         # Because an empty file and an empty manifest, both with no parents,

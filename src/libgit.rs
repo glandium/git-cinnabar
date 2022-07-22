@@ -390,6 +390,8 @@ extern "C" {
 
     fn repo_get_oid_committish(r: *mut repository, s: *const c_char, oid: *mut object_id) -> c_int;
 
+    fn repo_get_oid_blob(repo: *mut repository, name: *const c_char, oid: *mut object_id) -> c_int;
+
     fn repo_lookup_replace_object(r: *mut repository, oid: *const object_id) -> *const object_id;
 }
 
@@ -399,11 +401,16 @@ pub fn get_oid_committish(s: &[u8]) -> Option<CommitId> {
         s.extend_from_slice(b"^{commit}");
         let c = CString::new(s).unwrap();
         let mut oid = object_id::default();
-        if repo_get_oid_committish(the_repository, c.as_ptr(), &mut oid) == 0 {
-            Some(CommitId(oid.into()))
-        } else {
-            None
-        }
+        (repo_get_oid_committish(the_repository, c.as_ptr(), &mut oid) == 0)
+            .then(|| CommitId(oid.into()))
+    }
+}
+
+pub fn get_oid_blob(s: &[u8]) -> Option<BlobId> {
+    unsafe {
+        let c = CString::new(s).unwrap();
+        let mut oid = object_id::default();
+        (repo_get_oid_blob(the_repository, c.as_ptr(), &mut oid) == 0).then(|| BlobId(oid.into()))
     }
 }
 

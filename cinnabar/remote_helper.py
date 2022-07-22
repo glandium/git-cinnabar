@@ -107,7 +107,7 @@ class TagsRemoteHelper(BaseRemoteHelper):
         self._store = store
 
     def list(self, arg=None):
-        tags = sorted(self._store.tags())
+        tags = sorted(GitHgHelper.tags())
         # git fetch does a check-connection that calls
         # `git rev-list --objects --stdin --not --all` with the list of
         # sha1s from the list we're about to give it. With no refs on these

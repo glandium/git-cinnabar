@@ -123,7 +123,7 @@ use libgit::{
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::Progress;
 use store::{
-    do_check_files, do_create, do_heads, do_raw_changeset, do_set_, has_metadata,
+    do_check_files, do_create, do_heads, do_raw_changeset, do_set_, do_tags, has_metadata,
     raw_commit_for_changeset, store_git_blob, ChangesetHeads, GeneratedGitChangesetMetadata,
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
     HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF,
@@ -278,7 +278,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) {
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
         let _locked = HELPER_LOCK.lock().unwrap();
         if let b"graft" | b"create" | b"raw-changeset" | b"reset" | b"done-and-check" | b"heads"
-        | b"done" | b"rollback" = &*command
+        | b"done" | b"rollback" | b"tags" = &*command
         {
             let args = match args_.split_last().unwrap().1 {
                 b"" => Vec::new(),
@@ -291,6 +291,7 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) {
                 b"create" => do_create(input, out, &args),
                 b"reset" => do_reset(&args),
                 b"heads" => do_heads(out, &args),
+                b"tags" => do_tags(out, &args),
                 b"done" => unsafe {
                     do_cleanup(0);
                     writeln!(out, "ok").unwrap();

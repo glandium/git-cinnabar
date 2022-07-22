@@ -281,6 +281,12 @@ class GitHgHelper(BaseHelper):
             return (l.split() for l in data.splitlines())
 
     @classmethod
+    def tags(self):
+        with self.query(b'tags') as stdout:
+            data = self._read_data(stdout)
+            return (l.split() for l in data.splitlines())
+
+    @classmethod
     def update_ref(self, ref, newvalue):
         with self.query(b'reset', ref, newvalue):
             self._helper.stdin.flush()

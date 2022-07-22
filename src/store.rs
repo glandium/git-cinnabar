@@ -4,7 +4,7 @@
 
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::env;
 use std::ffi::OsStr;
 use std::io::{copy, BufRead, BufReader, Read, Write};
@@ -21,6 +21,7 @@ use bstr::{BStr, BString, ByteSlice};
 use cstr::cstr;
 use derive_more::{Deref, Display};
 use getset::{CopyGetters, Getters};
+use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use percent_encoding::{percent_decode, percent_encode, NON_ALPHANUMERIC};
@@ -35,8 +36,8 @@ use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
 use crate::libgit::{
-    get_oid_committish, lookup_replace_commit, ls_tree, object_id, strbuf, BlobId, Commit,
-    CommitId, RawBlob, RawCommit, RefTransaction, TreeId,
+    get_oid_blob, get_oid_committish, lookup_replace_commit, ls_tree, object_id, strbuf, BlobId,
+    Commit, CommitId, RawBlob, RawCommit, RefTransaction, TreeId,
 };
 use crate::oid::{GitObjectId, HgObjectId, ObjectId};
 use crate::progress::{progress_enabled, Progress};
@@ -844,6 +845,87 @@ pub fn do_heads(mut output: impl Write, args: &[&[u8]]) {
     for (h, b) in heads.branch_heads() {
         writeln!(buf, "{} {}", h, b).ok();
     }
+    send_buffer_to(&*buf, &mut output);
+}
+
+#[derive(Default)]
+struct TagSet {
+    tags: IndexMap<Box<[u8]>, (HgChangesetId, HashSet<HgChangesetId>)>,
+}
+
+impl TagSet {
+    fn from_buf(buf: &[u8]) -> Option<Self> {
+        let mut tags = IndexMap::new();
+        for line in ByteSlice::lines(buf) {
+            if line.is_empty() {
+                continue;
+            }
+            let [node, tag] = line.splitn_exact(b' ')?;
+            let tag = tag.trim_with(|b| b.is_ascii_whitespace());
+            let node = HgChangesetId::from_bytes(node).ok()?;
+            tags.entry(tag.to_boxed())
+                .and_modify(|e: &mut (HgChangesetId, HashSet<HgChangesetId>)| {
+                    let mut node = node.clone();
+                    mem::swap(&mut e.0, &mut node);
+                    e.1.insert(node);
+                })
+                .or_insert_with(|| (node, HashSet::new()));
+        }
+        Some(TagSet { tags })
+    }
+
+    fn merge(&mut self, other: TagSet) {
+        if self.tags.is_empty() {
+            self.tags = other.tags;
+            return;
+        }
+        for (tag, (anode, ahist)) in other.tags.into_iter() {
+            // Derived from mercurial's _updatetags.
+            self.tags
+                .entry(tag)
+                .and_modify(|(bnode, bhist)| {
+                    if !(bnode != &anode
+                        && bhist.contains(&anode)
+                        && (!ahist.contains(bnode) || bhist.len() > ahist.len()))
+                    {
+                        *bnode = anode.clone();
+                    }
+                    bhist.extend(ahist.iter().cloned());
+                })
+                .or_insert((anode, ahist));
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&[u8], &HgChangesetId)> {
+        self.tags
+            .iter()
+            .filter_map(|(tag, (node, _))| (node != &HgChangesetId::null()).then(|| (&**tag, node)))
+    }
+}
+
+pub fn do_tags(mut output: impl Write, args: &[&[u8]]) {
+    assert!(args.is_empty());
+    let mut buf = Vec::new();
+
+    let mut tags = TagSet::default();
+    for (head, _) in CHANGESET_HEADS.lock().unwrap().branch_heads() {
+        (|| -> Option<()> {
+            let head = head.to_git()?;
+            let tags_file = get_oid_blob(format!("{}:.hgtags", head).as_bytes())?;
+            let tags_blob = RawBlob::read(&tags_file).unwrap();
+            tags.merge(TagSet::from_buf(tags_blob.as_bytes())?);
+            Some(())
+        })();
+    }
+
+    for (tag, node) in tags.iter() {
+        if let Some(node) = node.to_git() {
+            buf.extend_from_slice(tag);
+            buf.push(b' ');
+            writeln!(&mut buf, "{}", node).unwrap();
+        }
+    }
+
     send_buffer_to(&*buf, &mut output);
 }
 
