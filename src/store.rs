@@ -849,12 +849,12 @@ pub fn do_heads(mut output: impl Write, args: &[&[u8]]) {
 }
 
 #[derive(Default)]
-struct TagSet {
+pub struct TagSet {
     tags: IndexMap<Box<[u8]>, (HgChangesetId, HashSet<HgChangesetId>)>,
 }
 
 impl TagSet {
-    fn from_buf(buf: &[u8]) -> Option<Self> {
+    pub fn from_buf(buf: &[u8]) -> Option<Self> {
         let mut tags = IndexMap::new();
         for line in ByteSlice::lines(buf) {
             if line.is_empty() {
@@ -874,7 +874,7 @@ impl TagSet {
         Some(TagSet { tags })
     }
 
-    fn merge(&mut self, other: TagSet) {
+    pub fn merge(&mut self, other: TagSet) {
         if self.tags.is_empty() {
             self.tags = other.tags;
             return;
@@ -896,17 +896,14 @@ impl TagSet {
         }
     }
 
-    fn iter(&self) -> impl Iterator<Item = (&[u8], &HgChangesetId)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&[u8], &HgChangesetId)> {
         self.tags
             .iter()
             .filter_map(|(tag, (node, _))| (node != &HgChangesetId::null()).then(|| (&**tag, node)))
     }
 }
 
-pub fn do_tags(mut output: impl Write, args: &[&[u8]]) {
-    assert!(args.is_empty());
-    let mut buf = Vec::new();
-
+pub fn get_tags() -> TagSet {
     let mut tags = TagSet::default();
     let mut tags_files = HashSet::new();
     for head in CHANGESET_HEADS.lock().unwrap().heads() {
@@ -920,8 +917,14 @@ pub fn do_tags(mut output: impl Write, args: &[&[u8]]) {
             Some(())
         })();
     }
+    tags
+}
 
-    for (tag, node) in tags.iter() {
+pub fn do_tags(mut output: impl Write, args: &[&[u8]]) {
+    assert!(args.is_empty());
+    let mut buf = Vec::new();
+
+    for (tag, node) in get_tags().iter() {
         if let Some(node) = node.to_git() {
             buf.extend_from_slice(tag);
             buf.push(b' ');

@@ -123,11 +123,12 @@ use libgit::{
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::Progress;
 use store::{
-    do_check_files, do_create, do_heads, do_raw_changeset, do_set_, do_tags, has_metadata,
-    raw_commit_for_changeset, store_git_blob, ChangesetHeads, GeneratedGitChangesetMetadata,
-    GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
-    HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF,
-    CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    do_check_files, do_create, do_heads, do_raw_changeset, do_set_, do_tags, get_tags,
+    has_metadata, raw_commit_for_changeset, store_git_blob, ChangesetHeads,
+    GeneratedGitChangesetMetadata, GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId,
+    HgChangesetId, HgFileId, HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile,
+    RawHgManifest, BROKEN_REF, CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX,
+    REPLACE_REFS_PREFIX,
 };
 use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
 
@@ -2534,6 +2535,43 @@ fn run_python_command(
         .map_err(|e| format!("Failed to communicate with python: {}", e))
 }
 
+fn remote_helper_tags_list(mut stdout: impl Write) {
+    let _lock = HELPER_LOCK.lock().unwrap();
+    let tags = get_tags();
+    let tags = tags
+        .iter()
+        .filter_map(|(t, h)| h.to_git().map(|g| (t, g)))
+        .sorted()
+        .collect_vec();
+    // git fetch does a check-connection that calls
+    // `git rev-list --objects --stdin --not --all` with the list of
+    // sha1s from the list we're about to give it. With no refs on these
+    // exact sha1s, the rev-list can take a long time on large repos.
+    // So we temporarily create refs to make that rev-list faster.
+    let mut ref_updates = REF_UPDATES.lock().unwrap();
+    let mut transaction = RefTransaction::new().unwrap();
+    for (tag, cid) in &tags {
+        let mut buf = b"refs/cinnabar/refs/tags/".to_vec();
+        buf.extend_from_slice(tag);
+        transaction
+            .update(OsStr::from_bytes(&buf), &*cid, None, "tags")
+            .unwrap();
+        // Queue the deletions for after the helper closes, by which time git
+        // will have finished with check-connection.
+        ref_updates.insert(buf.as_bstr().to_boxed(), CommitId::null());
+    }
+    transaction.commit().unwrap();
+
+    for (tag, cid) in &tags {
+        let mut buf = format!("{} refs/tags/", cid).into_bytes();
+        buf.extend_from_slice(tag);
+        buf.push(b'\n');
+        stdout.write_all(&buf).unwrap();
+    }
+    stdout.write_all(b"\n").unwrap();
+    stdout.flush().unwrap();
+}
+
 fn remote_helper(python: &mut Child, url: &Url) {
     let stdin = stdin();
     let mut stdin = LoggingBufReader::new("remote-helper", log::Level::Info, stdin.lock());
@@ -2603,6 +2641,9 @@ fn remote_helper(python: &mut Child, url: &Url) {
                 if for_push {
                     assert_ne!(url.scheme(), "tags");
                     writeln!(python_in, "list for-push").unwrap();
+                } else if url.scheme() == "tags" {
+                    remote_helper_tags_list(&mut stdout);
+                    continue;
                 } else {
                     writeln!(python_in, "list").unwrap();
                 }
