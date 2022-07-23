@@ -3091,10 +3091,9 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
         }
         let mut args = buf.split(|&b| b == b' ');
         let cmd = args.next().unwrap();
-        let args = args.collect_vec();
         match cmd {
             b"option" => {
-                match &args[..] {
+                match &args.collect_vec()[..] {
                     [b"progress", value @ (b"true" | b"false")] => {
                         set_progress(bool::from_bytes(value).unwrap());
                         writeln!(stdout, "ok").unwrap();
@@ -3108,6 +3107,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                     }
                 }
                 stdout.flush().unwrap();
+                continue;
             }
             b"capabilities" => {
                 stdout.write_all("option\nimport\n".as_bytes()).unwrap();
@@ -3127,9 +3127,10 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                     .unwrap();
 
                 stdout.flush().unwrap();
+                continue;
             }
             b"list" => {
-                let for_push = match &args[..] {
+                let for_push = match &args.collect_vec()[..] {
                     [b"for-push"] => true,
                     [] => false,
                     _ => panic!("unknown argument(s) to list command"),
@@ -3146,28 +3147,37 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                         for_push,
                     ));
                 }
+                continue;
             }
+            _ => {}
+        }
+        let args = match cmd {
+            b"import" | b"push" => args
+                .map(|a| a.as_bstr().to_boxed())
+                .chain(
+                    (&mut stdin)
+                        .byte_lines()
+                        .take_while(|l| l.as_ref().map(|l| !l.is_empty()).unwrap_or(true))
+                        .map(|line| {
+                            line.unwrap()
+                                .strip_prefix(cmd)
+                                .and_then(|l| l.strip_prefix(b" "))
+                                .unwrap()
+                                .as_bstr()
+                                .to_boxed()
+                        }),
+                )
+                .collect_vec(),
+            _ => panic!("unknown command: {}", cmd.as_bstr()),
+        };
+        match cmd {
             b"import" => {
                 assert_ne!(url.scheme(), "tags");
                 let mut conn = conn.as_ref().unwrap().lock().unwrap();
-                let wanted_refs = args
-                    .into_iter()
-                    .map(|a| a.as_bstr().to_boxed())
-                    .chain(
-                        (&mut stdin)
-                            .byte_lines()
-                            .take_while(|l| l.as_ref().map(|l| !l.is_empty()).unwrap_or(true))
-                            .map(|line| {
-                                let line = line.unwrap();
-                                assert!(line.starts_with(b"import "));
-                                line[b"import ".len()..].as_bstr().to_boxed()
-                            }),
-                    )
-                    .collect_vec();
                 match remote_helper_import(
                     &mut *conn,
                     remote.as_deref(),
-                    &wanted_refs.iter().map(|r| &**r).collect_vec(),
+                    &args.iter().map(|r| &**r).collect_vec(),
                     info.take().unwrap(),
                     &mut stdout,
                 ) {
@@ -3201,21 +3211,33 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                     python_out.read_line(&mut buf).unwrap();
                     assert_eq!(buf, "ok\n");
                 }
-                python_in.write_all(cmd).unwrap();
-                for arg in args {
-                    python_in.write_all(b" ").unwrap();
-                    python_in.write_all(arg).unwrap();
+                let push_refs = args
+                    .iter()
+                    .map(|p| {
+                        let [source, dest] = p.splitn_exact(b':').unwrap();
+                        let (source, force) = source
+                            .strip_prefix(b"+")
+                            .map_or((source, false), |s| (s, true));
+                        (
+                            source.as_bstr(),
+                            get_oid_committish(source),
+                            dest.as_bstr(),
+                            force,
+                        )
+                    })
+                    .collect_vec();
+
+                for (source, _, dest, force) in push_refs {
+                    python_in.write_all(b"push ").unwrap();
+                    if force {
+                        python_in.write_all(b"+").unwrap();
+                    }
+                    python_in.write_all(source).unwrap();
+                    python_in.write_all(b":").unwrap();
+                    python_in.write_all(dest).unwrap();
                     python_in.write_all(b"\n").unwrap();
                 }
-                let mut buf = Vec::new();
-                loop {
-                    buf.truncate(0);
-                    stdin.read_until(b'\n', &mut buf).unwrap();
-                    python_in.write_all(&buf).unwrap();
-                    if buf == b"\n" || buf.is_empty() {
-                        break;
-                    }
-                }
+                python_in.write_all(b"\n").unwrap();
                 python_in.flush().unwrap();
                 let mut did_something = false;
                 loop {
