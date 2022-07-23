@@ -5,10 +5,7 @@ import subprocess
 import sys
 from urllib.parse import unquote_to_bytes
 from cinnabar.exceptions import HelperClosedError, HelperFailedError
-from cinnabar.git import (
-    NULL_NODE_ID,
-    split_ls_tree,
-)
+from cinnabar.git import NULL_NODE_ID
 from cinnabar.hg.changegroup import (
     RawRevChunk01,
     RawRevChunk02,
@@ -213,7 +210,9 @@ class GitHgHelper(BaseHelper):
         with self.query(b'ls-tree', sha1, *extra) as stdout:
             for line in self._read_data(stdout).split(b'\0'):
                 if line:
-                    yield split_ls_tree(line)
+                    mode, typ, remainder = line.split(b' ', 2)
+                    sha1, path = remainder.split(b'\t', 1)
+                    yield mode, typ, sha1, path
 
     @classmethod
     def rev_list(self, *args):

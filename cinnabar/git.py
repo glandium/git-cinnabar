@@ -1,6 +1,5 @@
 import logging
 import os
-import posixpath
 import time
 from cinnabar.util import (
     environ,
@@ -18,12 +17,6 @@ EMPTY_BLOB = b'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
 
 class InvalidConfig(Exception):
     pass
-
-
-def split_ls_tree(line):
-    mode, typ, remainder = line.split(b' ', 2)
-    sha1, path = remainder.split(b'\t', 1)
-    return mode, typ, sha1, path
 
 
 class GitProcess(Process):
@@ -81,27 +74,6 @@ class Git(object):
     def resolve_ref(self, ref):
         return one(Git.iter('rev-parse', '--revs-only', ref,
                             stderr=open(os.devnull, 'wb')))
-
-    @classmethod
-    def ls_tree(self, treeish, path=b'', recursive=False):
-        from cinnabar.helper import GitHgHelper
-        assert not treeish.startswith(b'refs/')
-
-        if path.endswith(b'/') or recursive or path == b'':
-            path = path.rstrip(b'/')
-            for line in GitHgHelper.ls_tree(b'%s:%s' % (treeish, path),
-                                            recursive):
-                mode, typ, sha1, p = line
-                if path:
-                    yield mode, typ, sha1, posixpath.join(path, p)
-                else:
-                    yield mode, typ, sha1, p
-        else:
-            base, _, path = path.rpartition(b'/')
-            for line in GitHgHelper.ls_tree(b'%s:%s' % (treeish, base)):
-                mode, typ, sha1, p = line
-                if p == path:
-                    yield mode, typ, sha1, p
 
     @classmethod
     def update_ref(self, ref, newvalue):

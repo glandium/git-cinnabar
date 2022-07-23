@@ -7,7 +7,6 @@ from cinnabar.githg import (
 from cinnabar.helper import GitHgHelper, BundleHelper
 from cinnabar.git import (
     EMPTY_BLOB,
-    Git,
     NULL_NODE_ID,
 )
 from cinnabar.util import (
@@ -59,7 +58,7 @@ class PushStore(GitHgStore):
                 parents = parents[:1]
 
         if not parents:
-            for line in Git.ls_tree(commit, recursive=True):
+            for line in GitHgHelper.ls_tree(b'%s:' % commit, recursive=True):
                 mode, typ, sha1, path = line
                 node = self.create_file(sha1)
                 manifest.add(path, node, self.ATTR[mode])
@@ -96,7 +95,7 @@ class PushStore(GitHgStore):
                         else:
                             dag.add(sha1_after, (sha1_before,))
             files = [(p, mode, sha1) for mode, _, sha1, p in
-                     Git.ls_tree(commit, recursive=True)]
+                     GitHgHelper.ls_tree(b'%s:' % commit, recursive=True)]
             manifests = sorted_merge(parent_manifest, parent2_manifest,
                                      key=lambda i: i.path, non_key=lambda i: i)
             for line in sorted_merge(files, manifests):
