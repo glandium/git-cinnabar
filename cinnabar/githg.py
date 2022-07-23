@@ -22,9 +22,6 @@ import logging
 HG_EMPTY_FILE = b'b80de5d138758541c5f05265ad144ab9fa86d1db'
 
 
-revchunk_log = logging.getLogger('revchunks')
-
-
 class FileFindParents(object):
     logger = logging.getLogger('generated_file')
 
@@ -111,14 +108,6 @@ class BranchMap(object):
 
 
 class GitHgStore(object):
-    METADATA_REFS = (
-        b'refs/cinnabar/changesets',
-        b'refs/cinnabar/manifests',
-        b'refs/cinnabar/hg2git',
-        b'refs/notes/cinnabar',
-        b'refs/cinnabar/files-meta',
-    )
-
     def metadata(self):
         if self._metadata_sha1:
             return GitCommit(self._metadata_sha1)
