@@ -5,6 +5,7 @@
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
+use std::fmt::Display;
 use std::fs::File;
 use std::io::{self, copy, BufRead, Chain, Cursor, ErrorKind, Read, Write};
 use std::iter::repeat;
@@ -259,6 +260,22 @@ impl FromStr for BundleSpec {
                 return Err(format!("unsupported bundle spec: {}", s));
             }
         })
+    }
+}
+
+impl Display for BundleSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
+            BundleSpec::ChangegroupV1 => "raw",
+            BundleSpec::V1None => "none-v1",
+            BundleSpec::V1Gzip => "gzip-v1",
+            BundleSpec::V1Bzip => "bzip2-v1",
+            BundleSpec::V2None => "none-v2",
+            BundleSpec::V2Gzip => "gzip-v2",
+            BundleSpec::V2Bzip => "bzip2-v2",
+            BundleSpec::V2Zstd => "zstd-v2",
+        };
+        f.write_str(value)
     }
 }
 

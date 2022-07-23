@@ -11,6 +11,7 @@ from cinnabar.hg.repo import (
 )
 from cinnabar.hg.bundle import (
     PushStore,
+    create_bundle,
 )
 import logging
 from cinnabar.git import (
@@ -61,9 +62,27 @@ class GitRemoteHelper(object):
                 assert args
                 args = args[0].split(b' ', 1)
 
+            elif cmd == b'bundle':
+                assert args
+                args = args[0].split(b' ', 2)
+
             func = getattr(self, cmd.decode('ascii'), None)
             assert func
             func(*args)
+
+    def bundle(self, bundlespec, path):
+        bundle_commits = []
+        while True:
+            line = self._helper_in.readline().strip()
+            if not line:
+                break
+            commit, _, parents = line.partition(b' ')
+            bundle_commits.append(
+                (commit, parents.split(b' ') if parents else []))
+
+        create_bundle(
+            self._store, bundle_commits, bundlespec=bundlespec, path=path)
+        self._store.close(rollback=True)
 
     def option(self, name, value):
         if name == b'dry-run' and value in (b'true', b'false'):
@@ -217,13 +236,14 @@ def main(args):
         # the calling git process won't recognize in our answers.
         import msvcrt
         msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
-    assert len(args) == 2
-    remote = Remote(*(os.fsencode(a) for a in args))
+    if args:
+        remote = Remote(*(os.fsencode(a) for a in args))
+        assert remote.url != b'hg::tags:'
+    else:
+        remote = None
 
     store = PushStore()
 
-    assert remote.url != b'hg::tags:'
-    helper = GitRemoteHelper(store, remote)
-    helper.run()
+    GitRemoteHelper(store, remote).run()
 
     store.close()

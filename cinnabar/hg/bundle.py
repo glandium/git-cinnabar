@@ -345,7 +345,7 @@ def bundle_data(store, commits):
 def create_bundle(store, commits, bundlespec=b'raw', path=None):
     args = []
     if path:
-        args.append(path.encode('utf-8'))
+        args.append(path)
     with BundleHelper.query(b'create-bundle', bundlespec, *args) as stdout:
         for chunk in bundle_data(store, commits):
             if isinstance(chunk, tuple):

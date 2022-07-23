@@ -989,6 +989,38 @@ fn do_unbundle(clonebundle: bool, mut url: Url) -> Result<(), String> {
         .ok_or_else(|| "Fatal error".to_string())
 }
 
+fn do_bundle(
+    version: u8,
+    bundlespec: Option<BundleSpec>,
+    path: PathBuf,
+    mut revs: Vec<OsString>,
+) -> Result<i32, String> {
+    let bundlespec = bundlespec.unwrap_or(match version {
+        1 => BundleSpec::V1None,
+        2 => BundleSpec::V2None,
+        v => return Err(format!("Unknown version {v}")),
+    });
+    let mut python = start_python_command(&[], None)?;
+    let mut python_in = python.child.stdin.take().unwrap();
+    write!(python_in, "bundle {} ", bundlespec).unwrap();
+    python_in.write_all(path.as_os_str().as_bytes()).unwrap();
+    python_in.write_all(b"\n").unwrap();
+    revs.extend([
+        "--topo-order".into(),
+        "--full-history".into(),
+        "--reverse".into(),
+    ]);
+    for cid in rev_list(&revs.iter().map(|a| &**a).collect_vec()) {
+        let commit = RawCommit::read(&cid).unwrap();
+        let commit = commit.parse().unwrap();
+        writeln!(python_in, "{} {}", cid, commit.parents().iter().join(" ")).unwrap();
+    }
+    writeln!(python_in).unwrap();
+    python_in.flush().unwrap();
+    drop(python_in);
+    finish_python_command(python)
+}
+
 extern "C" {
     fn check_manifest(oid: *const object_id, hg_oid: *mut hg_object_id) -> c_int;
     fn check_file(
@@ -2329,7 +2361,12 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             Ok(code) => return Ok(code),
             Err(e) => Err(e),
         },
-        Bundle { .. } => match run_python_command(PythonCommand::GitCinnabar) {
+        Bundle {
+            version,
+            r#type,
+            path,
+            revs,
+        } => match do_bundle(version, r#type, path, revs) {
             Ok(code) => return Ok(code),
             Err(e) => Err(e),
         },
@@ -2352,12 +2389,6 @@ pub fn main() {
     let ret = unsafe { cinnabar_main_(argc.try_into().unwrap(), &argv[0]) };
     drop(args);
     std::process::exit(ret);
-}
-
-#[derive(PartialEq)]
-enum PythonCommand {
-    GitRemoteHg,
-    GitCinnabar,
 }
 
 struct PythonChild {
@@ -2383,9 +2414,7 @@ impl DerefMut for PythonChild {
 }
 
 fn start_python_command(
-    cmd: PythonCommand,
-    piped: bool,
-    args: Option<&[&OsStr]>,
+    args: &[&OsStr],
     conn: Option<Arc<Mutex<dyn HgRepo + Send>>>,
 ) -> Result<PythonChild, String> {
     let mut python = if let Ok(p) = which("python3") {
@@ -2414,10 +2443,7 @@ fn start_python_command(
     if std::env::var("GIT_CINNABAR_COVERAGE").is_ok() {
         bootstrap.push_str(include_str!("../bootstrap/coverage.py"));
     }
-    bootstrap.push_str(match cmd {
-        PythonCommand::GitRemoteHg => include_str!("../bootstrap/git-remote-hg.py"),
-        PythonCommand::GitCinnabar => include_str!("../bootstrap/git-cinnabar.py"),
-    });
+    bootstrap.push_str(include_str!("../bootstrap/git-remote-hg.py"));
 
     let mut extra_env = Vec::new();
     let (reader, writer) = if internal_python {
@@ -2510,22 +2536,15 @@ fn start_python_command(
 
     let args_os = std::env::args_os().collect_vec();
 
-    let command = python.arg("-c").arg(bootstrap).arg(&args_os[0]);
-
-    if let Some(args) = args {
-        command.args(args);
-    } else {
-        command.args(&args_os[1..]);
-    }
-
-    command
+    let child = python
+        .arg("-c")
+        .arg(bootstrap)
+        .arg(&args_os[0])
+        .args(args)
         .env("GIT_CINNABAR", std::env::current_exe().unwrap())
-        .envs(extra_env);
-    if piped {
-        command.stdin(std::process::Stdio::piped());
-        command.stdout(std::process::Stdio::piped());
-    }
-    let child = command
+        .envs(extra_env)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to start python: {}", e))?;
     drop(wire_fds);
@@ -2573,11 +2592,6 @@ fn finish_python_command(child: PythonChild) -> Result<i32, String> {
     sent_data
         .map(|_| 0)
         .map_err(|e| format!("Failed to communicate with python: {}", e))
-}
-
-fn run_python_command(cmd: PythonCommand) -> Result<c_int, String> {
-    let child = start_python_command(cmd, false, None, None)?;
-    finish_python_command(child)
 }
 
 fn remote_helper_tags_list(mut stdout: impl Write) {
@@ -3052,14 +3066,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
         .and_then(|r| (!r.starts_with("hg://") && !r.starts_with("hg::")).then(|| r));
     let url_url = hg_url(&url).unwrap();
     let conn = (url_url.scheme() != "tags").then(|| get_connection(&url_url).unwrap());
-    let mut python = Lazy::new(|| {
-        start_python_command(
-            PythonCommand::GitRemoteHg,
-            true,
-            Some(&[&raw_remote, &url]),
-            conn.clone(),
-        )
-    });
+    let mut python = Lazy::new(|| start_python_command(&[&raw_remote, &url], conn.clone()));
     let url = url_url;
 
     let stdin = stdin();
