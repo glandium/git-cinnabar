@@ -1136,6 +1136,13 @@ pub fn do_create_bundle(
             break;
         }
     }
+    // The thread this is invoked from may be killed (it's dropped, not joined) because
+    // we're not entirely sure the python side won't dead-lock us. If we communicate
+    // we're done before flushing the bundle writer, the python side may actually close
+    // before the function returns, and before the bundle writer is dropped.
+    // So drop it manually first.
+    drop(bundle_part_writer);
+    drop(bundle_writer);
     writeln!(out, "done").unwrap();
 }
 
