@@ -46,14 +46,3 @@ index 28d3193c38..2b3aeaa4d5 100644
  		return 1;
  	}
  
-@@ -2281,9 +2286,8 @@ static void file_change_m(const char *p, struct branch *b)
- 	case S_IFDIR:
- 	case S_IFGITLINK:
- 		/* ok */
--		break;
- 	default:
--		die("Corrupt mode: %s", command_buf.buf);
-+		break;
- 	}
- 
- 	if (*p == ':') {
