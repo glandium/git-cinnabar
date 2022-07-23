@@ -74,7 +74,6 @@ class GitHgStore(object):
 
     def __init__(self):
         self._closed = False
-        self._graft = False
 
         self._metadata_sha1 = None
         broken = None
@@ -94,11 +93,6 @@ class GitHgStore(object):
 
         metadata = self.metadata()
         self._has_metadata = bool(metadata)
-
-    def prepare_graft(self):
-        with GitHgHelper.query(b'graft', b'init'):
-            pass
-        self._graft = True
 
     def heads(self, branches={}):
         if not isinstance(branches, (dict, set)):
