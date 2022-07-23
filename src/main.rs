@@ -3062,7 +3062,6 @@ fn remote_helper_import(
 }
 
 fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
-    use once_cell::unsync::Lazy;
     if !url.as_bytes().starts_with(b"hg:") {
         let mut new_url = OsString::from("hg::");
         new_url.push(url);
@@ -3071,10 +3070,8 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
     let raw_remote = remote;
     let remote = Some(raw_remote.to_str().unwrap().to_owned())
         .and_then(|r| (!r.starts_with("hg://") && !r.starts_with("hg::")).then(|| r));
-    let url_url = hg_url(&url).unwrap();
-    let conn = (url_url.scheme() != "tags").then(|| get_connection(&url_url).unwrap());
-    let mut python = Lazy::new(|| start_python_command(&[&raw_remote, &url], conn.clone()));
-    let url = url_url;
+    let url = hg_url(&url).unwrap();
+    let conn = (url.scheme() != "tags").then(|| get_connection(&url).unwrap());
 
     let stdin = stdin();
     let mut stdin = LoggingBufReader::new("remote-helper", log::Level::Info, stdin.lock());
@@ -3191,9 +3188,10 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                 }
             }
             b"push" => {
-                let p = python.as_mut().map_err(|s| s.clone())?;
-                let mut python_in = p.stdin.take().unwrap();
-                let mut python_out = BufReader::new(p.stdout.take().unwrap());
+                let mut python =
+                    start_python_command(&[&raw_remote, OsStr::new(url.as_str())], conn.clone())?;
+                let mut python_in = python.stdin.take().unwrap();
+                let mut python_out = BufReader::new(python.stdout.take().unwrap());
 
                 assert_ne!(url.scheme(), "tags");
                 if dry_run {
@@ -3234,18 +3232,17 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                     break;
                 }
                 stdout.flush().unwrap();
-                p.stdin = Some(python_in);
-                p.stdout = Some(python_out.into_inner());
+                drop(python_in);
+                drop(python_out);
+                let code = finish_python_command(python)?;
+                if code > 0 {
+                    return Ok(code);
+                }
             }
             _ => panic!("unknown command: {}", cmd.as_bstr()),
         }
     }
-    Lazy::into_value(python).ok().map_or(Ok(0), |python| {
-        let mut python = python?;
-        drop(python.stdin.take());
-        drop(python.stdout.take());
-        finish_python_command(python)
-    })
+    Ok(0)
 }
 
 #[no_mangle]
