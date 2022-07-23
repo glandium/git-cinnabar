@@ -72,14 +72,12 @@ class GitCommit(object):
 
 
 class BranchMap(object):
-    __slots__ = "_heads", "_all_heads", "_tips", "_git_sha1s", "_unknown_heads"
+    __slots__ = "_heads", "_all_heads"
 
     def __init__(self, store, remote_branchmap, remote_heads):
         self._heads = {}
         self._all_heads = tuple(remote_heads)
-        self._tips = {}
-        self._git_sha1s = {}
-        self._unknown_heads = set()
+        git_sha1s = {}
         for branch, heads in remote_branchmap.items():
             # We can't keep track of tips if the list of heads is not sequenced
             sequenced = isinstance(heads, Sequence) or len(heads) == 1
@@ -88,16 +86,14 @@ class BranchMap(object):
                 branch_heads.append(head)
                 sha1 = store.changeset_ref(head)
                 if not sha1:
-                    self._unknown_heads.add(head)
                     continue
-                assert head not in self._git_sha1s
-                self._git_sha1s[head] = sha1
+                assert head not in git_sha1s
+                git_sha1s[head] = sha1
             # Use last non-closed head as tip if there's more than one head.
             # Caveat: we don't know a head is closed until we've pulled it.
             if branch and heads and sequenced:
                 for head in reversed(branch_heads):
-                    self._tips[branch] = head
-                    if head in self._git_sha1s:
+                    if head in git_sha1s:
                         changeset = store.changeset(head)
                         if changeset.close:
                             continue
@@ -112,15 +108,6 @@ class BranchMap(object):
         if branch:
             return self._heads.get(branch, ())
         return self._all_heads
-
-    def unknown_heads(self):
-        return self._unknown_heads
-
-    def git_sha1(self, head):
-        return self._git_sha1s.get(head, b'?')
-
-    def tip(self, branch):
-        return self._tips.get(branch, None)
 
 
 class GitHgStore(object):
