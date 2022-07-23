@@ -118,9 +118,6 @@ class Git(object):
                 var = b'remote.%s.%s' % (
                     remote, name.replace('.', '-').encode('ascii'))
                 value = self._config.get(var.lower())
-        elif name == 'fetch.prune' and remote:
-            var = b'remote.%s.prune' % remote
-            value = self._config.get(var.lower())
         if value is None:
             var = name.encode('ascii')
             value = self._config.get(var.lower())
