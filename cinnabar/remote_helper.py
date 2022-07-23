@@ -3,7 +3,6 @@ import sys
 
 from cinnabar.githg import (
     BranchMap,
-    GitHgStore,
 )
 from cinnabar.helper import GitHgHelper, HgRepoHelper
 from cinnabar.hg.repo import (
@@ -27,8 +26,11 @@ from cinnabar.util import (
 from urllib.parse import unquote_to_bytes
 
 
-class BaseRemoteHelper(object):
-    def __init__(self, stdin=sys.stdin.buffer, stdout=sys.stdout.buffer):
+class GitRemoteHelper(object):
+    def __init__(self, store, remote, stdin=sys.stdin.buffer,
+                 stdout=sys.stdout.buffer):
+        self._store = store
+        self._remote = remote
         self._dry_run = False
         self._helper_in = stdin
         self._helper = stdout
@@ -46,7 +48,7 @@ class BaseRemoteHelper(object):
                 cmd = line
                 args = []
 
-            if cmd in (b'import', b'push'):
+            if cmd == b'push':
                 GitHgHelper._ensure_helper()
                 while True:
                     line = self._helper_in.readline().strip()
@@ -59,25 +61,9 @@ class BaseRemoteHelper(object):
                 assert args
                 args = args[0].split(b' ', 1)
 
-            if cmd == b'import':
-                # Can't have a method named import, so we use import_
-                try:
-                    self.import_(*args)
-                except Exception:
-                    # The Exception will eventually get us to return an error
-                    # code, but git actually ignores it. So we send it a
-                    # command it doesn't know over the helper/fast-import
-                    # protocol, so that it emits an error.
-                    # Alternatively, we could send `feature done` before doing
-                    # anything, and on the `done` command not being sent when
-                    # an exception is thrown, triggering an error, but that
-                    # requires git >= 1.7.7.
-                    self._helper.write(b'error\n')
-                    raise
-            else:
-                func = getattr(self, cmd.decode('ascii'), None)
-                assert func
-                func(*args)
+            func = getattr(self, cmd.decode('ascii'), None)
+            assert func
+            func(*args)
 
     def option(self, name, value):
         if name == b'dry-run' and value in (b'true', b'false'):
@@ -87,46 +73,21 @@ class BaseRemoteHelper(object):
             self._helper.write(b'unsupported\n')
         self._helper.flush()
 
+    def push(self, *refspecs):
+        state = HgRepoHelper.state()
+        branchmap = state['branchmap']
+        heads = state['heads']
+        if heads == [NULL_NODE_ID]:
+            heads = []
+        bookmarks = state['bookmarks']
 
-class GitRemoteHelper(BaseRemoteHelper):
-    def __init__(self, store, remote, stdin=sys.stdin.buffer,
-                 stdout=sys.stdout.buffer):
-        super(GitRemoteHelper, self).__init__(stdin, stdout)
-        self._store = store
-        self._remote = remote
-
-        self._bookmark_template = None
-
-        self._branchmap = None
-        self._bookmarks = {}
-
-    def list(self, arg=None):
-        assert arg == b'for-push'
-
-        fetch = (Git.config('cinnabar.fetch') or b'').split()
-        if fetch:
-            heads = fetch
-            branchmap = {None: heads}
-            bookmarks = {}
-
-        else:
-            state = HgRepoHelper.state()
-            branchmap = state['branchmap']
-            heads = state['heads']
-            if heads == [NULL_NODE_ID]:
-                heads = []
-            bookmarks = state['bookmarks']
-
-        self._bookmarks = bookmarks
-        branchmap = self._branchmap = BranchMap(self._store, branchmap,
-                                                heads)
+        branchmap = branchmap = BranchMap(self._store, branchmap, heads)
         refs_style = None
         refs_styles = ('bookmarks', 'heads', 'tips')
-        if not fetch and branchmap.heads():
+        if branchmap.heads():
             refs_config = 'cinnabar.refs'
-            if arg == b'for-push':
-                if Git.config('cinnabar.pushrefs', remote=self._remote.name):
-                    refs_config = 'cinnabar.pushrefs'
+            if Git.config('cinnabar.pushrefs', remote=self._remote.name):
+                refs_config = 'cinnabar.pushrefs'
 
             refs_style = ConfigSetFunc(refs_config, refs_styles,
                                        remote=self._remote.name,
@@ -136,12 +97,12 @@ class GitRemoteHelper(BaseRemoteHelper):
 
         if refs_style('bookmarks'):
             if refs_style('heads') or refs_style('tips'):
-                self._bookmark_template = b'refs/heads/bookmarks/%s'
+                bookmark_template = b'refs/heads/bookmarks/%s'
             else:
-                self._bookmark_template = b'refs/heads/%s'
+                bookmark_template = b'refs/heads/%s'
+        else:
+            bookmark_template = b''
 
-    def push(self, *refspecs):
-        self.list(b'for-push')
         try:
             values = {
                 None: b'phase',
@@ -172,10 +133,9 @@ class GitRemoteHelper(BaseRemoteHelper):
             self._helper.write(b'\n')
             self._helper.flush()
         else:
-            repo_heads = self._branchmap.heads()
-            PushStore.adopt(self._store)
+            repo_heads = branchmap.heads()
             pushed = push(self._store, pushes, repo_heads,
-                          self._branchmap.names(), self._dry_run)
+                          branchmap.names(), self._dry_run)
 
             status = {}
             for source, dest, _ in pushes:
@@ -186,8 +146,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                         status[dest] = \
                             b'Deleting remote tags is unsupported'
                     continue
-                bookmark_prefix = strip_suffix(
-                    (self._bookmark_template or b''), b'%s')
+                bookmark_prefix = strip_suffix(bookmark_template, b'%s')
                 if not bookmark_prefix or not dest.startswith(bookmark_prefix):
                     if source:
                         status[dest] = bool(len(pushed))
@@ -199,7 +158,7 @@ class GitRemoteHelper(BaseRemoteHelper):
                 if source:
                     source = self._store.hg_changeset(source)
                 status[dest] = HgRepoHelper.pushkey(
-                    b'bookmarks', name, self._bookmarks.get(name, b''),
+                    b'bookmarks', name, bookmarks.get(name, b''),
                     source or b'')
 
             for source, dest, force in pushes:
@@ -261,12 +220,10 @@ def main(args):
     assert len(args) == 2
     remote = Remote(*(os.fsencode(a) for a in args))
 
-    store = GitHgStore()
+    store = PushStore()
 
-    if remote.url == b'hg::tags:':
-        helper = BaseRemoteHelper()
-    else:
-        helper = GitRemoteHelper(store, remote)
+    assert remote.url != b'hg::tags:'
+    helper = GitRemoteHelper(store, remote)
     helper.run()
 
     store.close()

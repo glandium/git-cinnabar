@@ -37,19 +37,10 @@ def manifest_diff(a, b):
 
 
 class PushStore(GitHgStore):
-    @classmethod
-    def adopt(cls, store):
-        assert isinstance(store, GitHgStore)
-        store.__class__ = cls
-        store._init()
-
     def __init__(self, *args, **kwargs):
-        self._init()
-        super(PushStore, self).__init__(*args, **kwargs)
-
-    def _init(self):
         self._pushed = set()
         self._merge_warn = 0
+        super(PushStore, self).__init__(*args, **kwargs)
 
     def create_hg_manifest(self, commit, parents):
         manifest = Manifest(NULL_NODE_ID)

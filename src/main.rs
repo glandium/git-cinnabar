@@ -337,7 +337,6 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) {
                 b"ls-tree" => do_ls_tree(args, out),
                 b"rev-list" => do_rev_list(args, out),
                 b"diff-tree" => do_diff_tree(args, out),
-                b"reload" => do_reload(),
                 b"set" => do_set(args),
                 b"store" => do_store(&mut libcinnabar::reader(input), out, args),
                 _ => die!("Unknown command: {}", command.as_bstr()),

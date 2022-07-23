@@ -175,11 +175,6 @@ class GitHgHelper(BaseHelper):
     _helper = False
 
     @classmethod
-    def reload(self):
-        with self.query(b'reload'):
-            pass
-
-    @classmethod
     def _cat_file(self, typ, sha1):
         with self.query(b'cat-file', sha1) as stdout:
             return self._read_file(typ, stdout)
