@@ -1,9 +1,6 @@
 import os
 import sys
 
-from cinnabar.githg import (
-    BranchMap,
-)
 from cinnabar.helper import GitHgHelper, HgRepoHelper
 from cinnabar.hg.repo import (
     push,
@@ -100,10 +97,9 @@ class GitRemoteHelper(object):
             heads = []
         bookmarks = state['bookmarks']
 
-        branchmap = branchmap = BranchMap(self._store, branchmap, heads)
         refs_style = None
         refs_styles = ('bookmarks', 'heads', 'tips')
-        if branchmap.heads():
+        if heads:
             refs_config = 'cinnabar.refs'
             if Git.config('cinnabar.pushrefs', remote=self._remote.name):
                 refs_config = 'cinnabar.pushrefs'
@@ -152,9 +148,8 @@ class GitRemoteHelper(object):
             self._helper.write(b'\n')
             self._helper.flush()
         else:
-            repo_heads = branchmap.heads()
-            pushed = push(self._store, pushes, repo_heads,
-                          branchmap.names(), self._dry_run)
+            pushed = push(self._store, pushes, heads,
+                          branchmap.keys(), self._dry_run)
 
             status = {}
             for source, dest, _ in pushes:

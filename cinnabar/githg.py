@@ -1,4 +1,3 @@
-from collections.abc import Sequence
 from cinnabar.exceptions import (
     SilentlyAbort,
 )
@@ -66,45 +65,6 @@ class GitCommit(object):
                 assert not hasattr(self, typ)
                 setattr(self, typ, data)
         self.parents = tuple(parents)
-
-
-class BranchMap(object):
-    __slots__ = "_heads", "_all_heads"
-
-    def __init__(self, store, remote_branchmap, remote_heads):
-        self._heads = {}
-        self._all_heads = tuple(remote_heads)
-        git_sha1s = {}
-        for branch, heads in remote_branchmap.items():
-            # We can't keep track of tips if the list of heads is not sequenced
-            sequenced = isinstance(heads, Sequence) or len(heads) == 1
-            branch_heads = []
-            for head in heads:
-                branch_heads.append(head)
-                sha1 = store.changeset_ref(head)
-                if not sha1:
-                    continue
-                assert head not in git_sha1s
-                git_sha1s[head] = sha1
-            # Use last non-closed head as tip if there's more than one head.
-            # Caveat: we don't know a head is closed until we've pulled it.
-            if branch and heads and sequenced:
-                for head in reversed(branch_heads):
-                    if head in git_sha1s:
-                        changeset = store.changeset(head)
-                        if changeset.close:
-                            continue
-                    break
-            if branch:
-                self._heads[branch] = tuple(branch_heads)
-
-    def names(self):
-        return self._heads.keys()
-
-    def heads(self, branch=None):
-        if branch:
-            return self._heads.get(branch, ())
-        return self._all_heads
 
 
 class GitHgStore(object):
