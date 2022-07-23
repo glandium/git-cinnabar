@@ -134,11 +134,6 @@ class GitHgStore(object):
 
         metadata = self.metadata()
         self._has_metadata = bool(metadata)
-        if metadata:
-            # Delete old tag-cache, which may contain incomplete data.
-            Git.delete_ref(b'refs/cinnabar/tag-cache')
-            # Delete new-type tag_cache, we don't use it anymore.
-            Git.delete_ref(b'refs/cinnabar/tag_cache')
 
     def prepare_graft(self):
         with GitHgHelper.query(b'graft', b'init'):

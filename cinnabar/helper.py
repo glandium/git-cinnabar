@@ -275,11 +275,6 @@ class GitHgHelper(BaseHelper):
             return (l.split() for l in data.splitlines())
 
     @classmethod
-    def update_ref(self, ref, newvalue):
-        with self.query(b'reset', ref, newvalue):
-            self._helper.stdin.flush()
-
-    @classmethod
     def put_blob(self, data=b''):
         with self.query(b'store', b'blob', b'%d' % len(data)) as stdout:
             self._helper.stdin.write(data)

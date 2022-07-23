@@ -76,16 +76,6 @@ class Git(object):
                             stderr=open(os.devnull, 'wb')))
 
     @classmethod
-    def update_ref(self, ref, newvalue):
-        assert not newvalue.startswith(b'refs/')
-        from cinnabar.helper import GitHgHelper
-        GitHgHelper.update_ref(ref, newvalue)
-
-    @classmethod
-    def delete_ref(self, ref):
-        self.update_ref(ref, NULL_NODE_ID)
-
-    @classmethod
     def config(self, name, remote=None, values={}, multiple=False):
         assert not (values and multiple)
         if self._config is None:

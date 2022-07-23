@@ -215,18 +215,26 @@ unsafe extern "C" fn dump_ref_updates() {
     transaction.commit().unwrap();
 }
 
-fn do_reset(args: &[&[u8]]) {
-    assert_eq!(args.len(), 2);
-    let refname = args[0];
-    let oid = CommitId::from_bytes(args[1]).unwrap();
-    REF_UPDATES
-        .lock()
-        .unwrap()
-        .insert(refname.as_bstr().to_boxed(), oid);
-}
-
-static MAYBE_INIT_CINNABAR_2: Lazy<Option<()>> =
-    Lazy::new(|| unsafe { (init_cinnabar_2() != 0).then(|| ()) });
+static MAYBE_INIT_CINNABAR_2: Lazy<Option<()>> = Lazy::new(|| unsafe {
+    (init_cinnabar_2() != 0).then(|| {
+        if let Some(refs) = [
+            // Delete old tag-cache, which may contain incomplete data.
+            "refs/cinnabar/tag-cache",
+            // Delete new-type tag_cache, we don't use it anymore.
+            "refs/cinnabar/tag_cache",
+        ]
+        .iter()
+        .map(|r| resolve_ref(r).map(|cid| (*r, cid)))
+        .collect::<Option<Vec<_>>>()
+        {
+            let mut transaction = RefTransaction::new().unwrap();
+            for (refname, cid) in refs {
+                transaction.delete(refname, Some(&cid), "cleanup").unwrap();
+            }
+            transaction.commit().unwrap();
+        }
+    })
+});
 
 static INIT_CINNABAR_2: Lazy<()> =
     Lazy::new(|| MAYBE_INIT_CINNABAR_2.unwrap_or_else(|| panic!("not a git repository")));
@@ -297,7 +305,6 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) {
                 b"graft" => do_graft(&args),
                 b"raw-changeset" => do_raw_changeset(out, &args),
                 b"create" => do_create(input, out, &args),
-                b"reset" => do_reset(&args),
                 b"heads" => do_heads(out, &args),
                 b"done" => unsafe {
                     do_cleanup(0);
