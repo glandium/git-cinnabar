@@ -16,10 +16,7 @@ from cinnabar.git import (
     InvalidConfig,
     NULL_NODE_ID,
 )
-from cinnabar.util import (
-    ConfigSetFunc,
-    strip_suffix,
-)
+from cinnabar.util import ConfigSetFunc
 
 from urllib.parse import unquote_to_bytes
 
@@ -112,11 +109,11 @@ class GitRemoteHelper(object):
 
         if refs_style('bookmarks'):
             if refs_style('heads') or refs_style('tips'):
-                bookmark_template = b'refs/heads/bookmarks/%s'
+                bookmark_prefix = b'refs/heads/bookmarks/'
             else:
-                bookmark_template = b'refs/heads/%s'
+                bookmark_prefix = b'refs/heads/'
         else:
-            bookmark_template = b''
+            bookmark_prefix = b''
 
         try:
             values = {
@@ -160,7 +157,6 @@ class GitRemoteHelper(object):
                         status[dest] = \
                             b'Deleting remote tags is unsupported'
                     continue
-                bookmark_prefix = strip_suffix(bookmark_template, b'%s')
                 if not bookmark_prefix or not dest.startswith(bookmark_prefix):
                     if source:
                         status[dest] = bool(len(pushed))
