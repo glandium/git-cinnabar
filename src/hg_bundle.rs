@@ -13,7 +13,7 @@ use std::mem::{self, MaybeUninit};
 use std::os::raw::c_int;
 use std::ptr::NonNull;
 use std::str::FromStr;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use bstr::ByteSlice;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
@@ -999,7 +999,7 @@ fn write_chunk(
 }
 
 pub fn do_create_bundle(
-    conn: Option<&mut dyn HgRepo>,
+    conn: Option<Arc<Mutex<dyn HgRepo>>>,
     input: &mut dyn BufRead,
     mut out: impl Write,
     args: &[&[u8]],
@@ -1009,6 +1009,8 @@ pub fn do_create_bundle(
         b"raw" => (BundleSpec::ChangegroupV1, "01"),
         b"connection" => {
             let b2caps = conn
+                .unwrap()
+                .lock()
                 .unwrap()
                 .get_capability(b"bundle2")
                 .and_then(|caps| {

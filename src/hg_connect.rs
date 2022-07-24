@@ -18,7 +18,7 @@ use rand::prelude::IteratorRandom;
 use sha1::{Digest, Sha1};
 use url::Url;
 
-use crate::hg_bundle::{do_create_bundle, BundleReader, BundleSpec, BUNDLE_PATH};
+use crate::hg_bundle::{BundleReader, BundleSpec, BUNDLE_PATH};
 use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libcinnabar::send_buffer_to;
@@ -1238,16 +1238,6 @@ pub fn connect_main_with(
         }
         let mut args = line.split(' ');
         let command = args.next().ok_or("Missing command")?;
-        if command == "create-bundle" {
-            let mut conn = connection.as_ref().map(|c| c.lock().unwrap());
-            do_create_bundle(
-                conn.as_deref_mut().map(|c| c as _),
-                input,
-                &mut *out,
-                &line.as_bytes().split(|&b| b == b' ').skip(1).collect_vec(),
-            );
-            continue;
-        }
         let mut conn = if let Some(conn) = &connection {
             conn.lock().unwrap()
         } else {

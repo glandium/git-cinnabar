@@ -1,7 +1,7 @@
 import os
 import sys
 
-from cinnabar.helper import GitHgHelper, HgRepoHelper
+from cinnabar.helper import BundleHelper, FdHelper, GitHgHelper, HgRepoHelper
 from cinnabar.hg.repo import (
     push,
     Remote,
@@ -29,6 +29,7 @@ class GitRemoteHelper(object):
         self._dry_run = False
         self._helper_in = stdin
         self._helper = stdout
+        BundleHelper._helper = FdHelper(BundleHelper.MODE, stdin, stdout)
 
     def run(self):
         while True:

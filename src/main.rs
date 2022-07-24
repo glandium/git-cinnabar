@@ -46,7 +46,7 @@ extern crate log;
 
 use bstr::io::BufReadExt;
 use clap::{crate_version, AppSettings, ArgGroup, Parser};
-use hg_bundle::BundleSpec;
+use hg_bundle::{do_create_bundle, BundleSpec};
 use itertools::Itertools;
 use logging::{LoggingBufReader, LoggingWriter};
 use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
@@ -1024,6 +1024,7 @@ fn do_bundle(
     });
     let mut python = start_python_command(&[], None)?;
     let mut python_in = python.child.stdin.take().unwrap();
+    let mut python_out = BufReader::new(python.child.stdout.take().unwrap());
     write!(python_in, "bundle {} ", bundlespec).unwrap();
     python_in.write_all(path.as_os_str().as_bytes()).unwrap();
     python_in.write_all(b"\n").unwrap();
@@ -1039,6 +1040,13 @@ fn do_bundle(
     }
     writeln!(python_in).unwrap();
     python_in.flush().unwrap();
+    if let Some(line) = (&mut python_out).byte_lines().next() {
+        let line = line.unwrap();
+        let mut args = line.split(|&b| b == b' ');
+        assert_eq!(args.next().unwrap().as_bstr(), b"create-bundle".as_bstr());
+        let args = args.collect_vec();
+        do_create_bundle(None, &mut python_out, &mut python_in, &args);
+    }
     drop(python_in);
     finish_python_command(python)
 }
@@ -3161,6 +3169,15 @@ fn remote_helper_push(
     loop {
         buf.truncate(0);
         python_out.read_until(b'\n', &mut buf).unwrap();
+        if let Some(args) = buf.strip_prefix(b"create-bundle ") {
+            let args = args
+                .strip_suffix(b"\n")
+                .unwrap_or(args)
+                .split(|&b| b == b' ');
+            let args = args.collect_vec();
+            do_create_bundle(Some(conn.clone()), &mut python_out, &mut python_in, &args);
+            continue;
+        }
         stdout.write_all(&buf).unwrap();
         if buf == b"\n" || buf.is_empty() {
             break;

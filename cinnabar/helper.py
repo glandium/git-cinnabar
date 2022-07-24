@@ -38,18 +38,23 @@ class NoFdHelper(RuntimeError):
 
 
 class FdHelper(object):
-    def __init__(self, mode):
-        env_name = "GIT_CINNABAR_{}_FDS".format(mode.upper())
-        if env_name not in os.environ:
-            raise NoFdHelper
-        (reader, writer) = (int(fd) for fd in os.environ[env_name].split(','))
-        if sys.platform == 'win32':
-            import msvcrt
-            reader = msvcrt.open_osfhandle(reader, os.O_RDONLY)
-            writer = msvcrt.open_osfhandle(writer, os.O_WRONLY)
-        self.pid = 0
-        self.stdin = os.fdopen(writer, 'wb')
-        self.stdout = os.fdopen(reader, 'rb')
+    def __init__(self, mode, reader=None, writer=None):
+        if reader:
+            assert writer
+            self.stdin = writer
+            self.stdout = reader
+        else:
+            env_name = "GIT_CINNABAR_{}_FDS".format(mode.upper())
+            if env_name not in os.environ:
+                raise NoFdHelper
+            (reader, writer) = (
+                int(fd) for fd in os.environ[env_name].split(','))
+            if sys.platform == 'win32':
+                import msvcrt
+                reader = msvcrt.open_osfhandle(reader, os.O_RDONLY)
+                writer = msvcrt.open_osfhandle(writer, os.O_WRONLY)
+            self.stdin = os.fdopen(writer, 'wb')
+            self.stdout = os.fdopen(reader, 'rb')
         if mode == 'wire':
             return
         logger_name = "helper-{}".format(mode)
@@ -102,8 +107,7 @@ class BaseHelper(object):
         helper = self._helper
         logger = logging.getLogger(name.decode('ascii'))
         if logger.isEnabledFor(logging.INFO):
-            wrapper = IOLogger(logger, helper.stdout, helper.stdin,
-                               prefix='[%d]' % helper.pid)
+            wrapper = IOLogger(logger, helper.stdout, helper.stdin)
         else:
             wrapper = helper.stdin
 
@@ -339,5 +343,6 @@ class HgRepoHelper(BaseHelper):
 
 
 class BundleHelper(HgRepoHelper):
+    MODE = 'bundle'
     _helper = False
     connected = False
