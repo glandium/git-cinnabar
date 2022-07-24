@@ -1,10 +1,8 @@
 import logging
 import os
-import subprocess
 import sys
 import traceback
 from collections import OrderedDict
-from collections.abc import Iterable
 from weakref import WeakKeyDictionary
 
 from cinnabar.exceptions import Abort, SilentlyAbort
@@ -161,14 +159,6 @@ class IOLogger(object):
             yield line
 
 
-def one(iterable):
-    lst = list(iterable)
-    if lst:
-        assert len(lst) == 1
-        return lst[0]
-    return None
-
-
 class OrderedDefaultDict(OrderedDict):
     def __init__(self, default_factory, *args, **kwargs):
         OrderedDict.__init__(self, *args, **kwargs)
@@ -200,95 +190,6 @@ def sorted_merge(iter_a, iter_b, key=lambda i: i[0], non_key=lambda i: i[1:]):
             yield key_a, non_key(item_a), non_key(item_b)
             item_a = next(iter_a, None)
             item_b = next(iter_b, None)
-
-
-class Process(object):
-    def __init__(self, *args, **kwargs):
-        stdin = kwargs.pop('stdin', None)
-        stdout = kwargs.pop('stdout', subprocess.PIPE)
-        stderr = kwargs.pop('stderr', None)
-        logger = kwargs.pop('logger', args[0])
-        env = kwargs.pop('env', {})
-        cwd = kwargs.pop('cwd', None)
-        executable = kwargs.pop('executable', None)
-        assert not kwargs
-        if isinstance(stdin, (str, Iterable)):
-            proc_stdin = subprocess.PIPE
-        else:
-            proc_stdin = stdin
-
-        full_env = environ()
-        if env:
-            full_env = full_env.copy()
-            full_env.update(env)
-
-        self._proc = self._popen(args, stdin=proc_stdin, stdout=stdout,
-                                 stderr=stderr, env=full_env, cwd=cwd,
-                                 executable=executable)
-
-        logger = logging.getLogger(logger)
-        if logger.isEnabledFor(logging.INFO):
-            self._stdin = IOLogger(logger, self._proc.stdout, self._proc.stdin,
-                                   prefix='[%d]' % self.pid)
-        else:
-            self._stdin = self._proc.stdin
-
-        if logger.isEnabledFor(logging.DEBUG):
-            self._stdout = self._stdin
-        else:
-            self._stdout = self._proc.stdout
-
-        if proc_stdin == subprocess.PIPE:
-            if isinstance(stdin, str):
-                self._stdin.write(stdin)
-            elif isinstance(stdin, Iterable):
-                for line in stdin:
-                    self._stdin.write(b'%s\n' % line)
-            if proc_stdin != stdin:
-                self._proc.stdin.close()
-
-    def _env_strings(self, env):
-        for k, v in sorted((k, v) for s, k, v in env.iterchanges()
-                           if s != env.REMOVED):
-            yield '%s=%s' % (k, v)
-
-    def _popen(self, cmd, env, **kwargs):
-        logger = logging.getLogger('process')
-        if not getattr(os, 'supports_bytes_environ', True):
-            env = {
-                os.fsdecode(k): os.fsdecode(v) for k, v in env.items()
-            }
-        proc = subprocess.Popen(cmd, env=env, **kwargs)
-        if logger.isEnabledFor(logging.INFO):
-            logger.info('[%d] %s', proc.pid, ' '.join(cmd))
-        return proc
-
-    def wait(self):
-        for fh in (self._proc.stdin, self._proc.stdout, self._proc.stderr):
-            if fh:
-                fh.close()
-        pid = self._proc.pid
-        retcode = self._proc.wait()
-        logger = logging.getLogger('process')
-        if logger.isEnabledFor(logging.INFO):
-            logger.info('[%d] Exited with code %d', pid, retcode)
-        return retcode
-
-    @property
-    def pid(self):
-        return self._proc.pid
-
-    @property
-    def stdin(self):
-        return self._stdin
-
-    @property
-    def stdout(self):
-        return self._stdout
-
-    @property
-    def stderr(self):
-        return self._proc.stderr
 
 
 class TypedProperty(object):

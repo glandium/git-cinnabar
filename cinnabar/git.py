@@ -1,11 +1,7 @@
 import logging
 import os
-import time
-from cinnabar.util import (
-    environ,
-    Process,
-)
-from itertools import chain
+import subprocess
+from cinnabar.util import environ
 
 NULL_NODE_ID = b'0' * 40
 # An empty git tree has a fixed sha1 which is that of "tree 0\0"
@@ -18,53 +14,14 @@ class InvalidConfig(Exception):
     pass
 
 
-class GitProcess(Process):
-    def __init__(self, *args, **kwargs):
-        config = kwargs.pop('config', {})
-
-        command = ['git']
-        command += chain(*(['-c', '%s=%s' % (n, v)]
-                           for n, v in config.items()))
-        command += args
-
-        kwargs.setdefault('logger', args[0])
-        super(GitProcess, self).__init__(*command, **kwargs)
-
-
 class Git(object):
-    _notes_depth = {}
     _config = None
-
-    @classmethod
-    def iter(self, *args, **kwargs):
-        start = time.time()
-
-        if args[0] == 'config':
-            self._config = None
-
-        proc = GitProcess(*args, **kwargs)
-        try:
-            for line in proc.stdout or ():
-                line = line.rstrip(b'\n')
-                yield line
-
-        finally:
-            proc.wait()
-            logging.getLogger(args[0]).info('[%d] wall time: %.3fs',
-                                            proc.pid, time.time() - start)
-
-    @classmethod
-    def run(self, *args, **kwargs):
-        stdout = kwargs.pop('stdout', None)
-        return tuple(self.iter(*args, stdout=stdout, **kwargs))
 
     @classmethod
     def config(self, name, remote=None, values={}, multiple=False):
         assert not (values and multiple)
         if self._config is None:
-            proc = GitProcess('config', '-l', '-z')
-            data = proc.stdout.read()
-            proc.wait()
+            data = subprocess.check_output(['git', 'config', '-l', '-z'])
             self._config = {}
             for l in data.split(b'\0'):
                 if l:
