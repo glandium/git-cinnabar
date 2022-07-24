@@ -14,8 +14,10 @@ Test repository setup.
 
   $ hg init abc
   $ hg init def
+  $ hg init xyz
   $ ABC=$(pwd)/abc
   $ DEF=$(pwd)/def
+  $ XYZ=$(pwd)/xyz
 
   $ cd abc
   $ for f in a b c; do create $f; done
@@ -43,6 +45,8 @@ Create git clones of the above repositories.
 
   $ git -c fetch.prune=true clone -n -q hg::$ABC abc-git
   $ git -c fetch.prune=true clone -n -q hg::$DEF def-git
+  $ git -c fetch.prune=true clone -n -q hg::$XYZ xyz-git
+  warning: You appear to have cloned an empty repository.
 
 Ensure the repositories look like what we assume further below.
 
@@ -222,3 +226,86 @@ supported and makes it unshallowed.
   remote: added 3 changesets with 3 changes to 3 files
   To hg::.*/push.t/repo (re)
    * [new branch]      687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip
+
+Phase and cinnabar.data tests.
+
+  $ git -C xyz-git fetch ../abc-git 687e015f9f646bb19797d991f2f53087297fbe14
+  From ../abc-git
+   * branch            687e015f9f646bb19797d991f2f53087297fbe14 -> FETCH_HEAD
+
+  $ git -C xyz-git fetch ../def-git 62326f34fea5b80510f57599da9fd6e5997c0ca4
+  From ../def-git
+   * branch            62326f34fea5b80510f57599da9fd6e5997c0ca4 -> FETCH_HEAD
+
+  $ git -c cinnabar.data=never -C xyz-git push origin 8b86a58578d5270969543e287634e3a2f122a338:refs/heads/branches/default/tip
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 1 changesets with 1 changes to 1 files
+  To hg::.*/push.t/xyz (re)
+   * [new branch]      8b86a58578d5270969543e287634e3a2f122a338 -> branches/default/tip
+
+  $ git -C xyz-git cinnabar rollback --candidates
+
+  $ git -c fetch.prune=true -C xyz-git remote update origin
+  Fetching origin
+  $ git -C xyz-git cinnabar rollback --candidates
+  2836e453f32b1ecccd3acca412f75b07c88176bf (current)
+
+  $ git -c cinnabar.data=phase -C xyz-git push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/branches/default/tip
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 1 changesets with 1 changes to 1 files
+  To hg::.*/push.t/xyz (re)
+     8b86a58..d04f6df  d04f6df4abe2870ceb759263ee6aaa9241c4f93c -> branches/default/tip
+
+Server is publishing, so metadata was stored.
+
+  $ git -C xyz-git cinnabar rollback --candidates
+  8b8194eefb69ec89edc35dafb965311fe48c49d0 (current)
+  2836e453f32b1ecccd3acca412f75b07c88176bf
+
+  $ cat >> $XYZ/.hg/hgrc <<EOF
+  > [phases]
+  > publish = False
+  > EOF
+
+  $ git -c cinnabar.data=phase -C xyz-git push origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 1 changesets with 1 changes to 1 files
+  To hg::.*/push.t/xyz (re)
+     d04f6df..687e015  687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip
+
+Server is now non-publishing, so metadata is unchanged.
+
+  $ git -C xyz-git cinnabar rollback --candidates
+  8b8194eefb69ec89edc35dafb965311fe48c49d0 (current)
+  2836e453f32b1ecccd3acca412f75b07c88176bf
+
+  $ git -c fetch.prune=true -C xyz-git remote update origin
+  Fetching origin
+  $ git -C xyz-git cinnabar rollback --candidates
+  a2341d430e5acddf9481eabcad901fda12d023d3 (current)
+  8b8194eefb69ec89edc35dafb965311fe48c49d0
+  2836e453f32b1ecccd3acca412f75b07c88176bf
+
+  $ git -c cinnabar.data=always -C xyz-git push -f origin 7ca6a3c32ec0dbcbcd155b2be6e2f4505012c273:refs/heads/branches/default/tip
+  \r (no-eol) (esc)
+  WARNING Pushing a new root
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 1 changesets with 1 changes to 1 files (+1 heads)
+  To hg::.*/push.t/xyz (re)
+   + 687e015...7ca6a3c 7ca6a3c32ec0dbcbcd155b2be6e2f4505012c273 -> branches/default/tip (forced update)
+
+Server is still non-publishing, but we opted in to store the metadata.
+
+  $ git -C xyz-git cinnabar rollback --candidates
+  4305cef3fa610b3370f64ce10d2b50693a904278 (current)
+  a2341d430e5acddf9481eabcad901fda12d023d3
+  8b8194eefb69ec89edc35dafb965311fe48c49d0
+  2836e453f32b1ecccd3acca412f75b07c88176bf
