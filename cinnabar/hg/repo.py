@@ -76,15 +76,3 @@ def push(store, what, repo_heads, repo_branches, dry_run=False):
         reply = HgRepoHelper.unbundle(repo_heads)
         pushed = reply != 0
     return gitdag(push_commits) if pushed or dry_run else ()
-
-
-class Remote(object):
-    def __init__(self, remote, url):
-        if remote.startswith((b'hg::', b'hg://')):
-            self.name = None
-        else:
-            self.name = remote
-        if not url.startswith(b'hg:'):
-            self.url = b'hg::' + url
-        else:
-            self.url = url

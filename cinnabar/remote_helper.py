@@ -2,10 +2,7 @@ import os
 import sys
 
 from cinnabar.helper import GitHgHelper, HgRepoHelper
-from cinnabar.hg.repo import (
-    push,
-    Remote,
-)
+from cinnabar.hg.repo import push
 from cinnabar.hg.bundle import (
     PushStore,
     create_bundle,
@@ -38,11 +35,7 @@ class GitRemoteHelper(object):
 
     def push(self, dry_run=None):
         GitHgHelper._ensure_helper()
-        name = self._helper_in.readline().strip()
-        url = self._helper_in.readline().strip()
         bookmark_prefix = self._helper_in.readline().strip()
-        remote = Remote(name, url)
-        assert remote.url != b'hg::tags:'
 
         refspecs = []
         while True:

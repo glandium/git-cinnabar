@@ -3097,7 +3097,6 @@ fn remote_helper_import(
 fn remote_helper_push(
     conn: Arc<Mutex<dyn HgRepo + Send>>,
     remote: Option<&str>,
-    url: &Url,
     push_refs: &[&BStr],
     info: RemoteInfo,
     mut stdout: impl Write,
@@ -3149,12 +3148,6 @@ fn remote_helper_push(
     let mut python_in = python.stdin.take().unwrap();
     let mut python_out = BufReader::new(python.stdout.take().unwrap());
 
-    python_in
-        .write_all(remote.unwrap_or("hg::").as_bytes())
-        .unwrap();
-    python_in.write_all(b"\n").unwrap();
-    python_in.write_all(url.as_str().as_bytes()).unwrap();
-    python_in.write_all(b"\n").unwrap();
     if info.refs_style.contains(RefsStyle::BOOKMARKS) {
         if info
             .refs_style
@@ -3433,7 +3426,6 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                 let code = remote_helper_push(
                     conn.clone().unwrap(),
                     remote.as_deref(),
-                    &url,
                     &args.iter().map(|r| &**r).collect_vec(),
                     info.take().unwrap(),
                     &mut stdout,
