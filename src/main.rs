@@ -49,7 +49,7 @@ use clap::{crate_version, AppSettings, ArgGroup, Parser};
 use hg_bundle::{do_create_bundle, BundleSpec};
 use itertools::Itertools;
 use logging::{LoggingBufReader, LoggingWriter};
-use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
+use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
 use sha1::{Digest, Sha1};
 
 #[macro_use]
@@ -2712,6 +2712,7 @@ struct RemoteInfo {
     refs: HashMap<Box<BStr>, (HgChangesetId, Option<GitChangesetId>)>,
     topological_heads: Vec<HgChangesetId>,
     branch_names: Vec<Box<BStr>>,
+    bookmarks: HashMap<Box<BStr>, HgChangesetId>,
     refs_style: RefsStyle,
 }
 
@@ -2939,6 +2940,7 @@ fn remote_helper_repo_list(
             .unwrap()
             .unwrap_or_default(),
         branch_names: branchmap.into_keys().collect(),
+        bookmarks,
         refs_style,
     }
 }
@@ -3148,21 +3150,19 @@ fn remote_helper_push(
     let mut python_in = python.stdin.take().unwrap();
     let mut python_out = BufReader::new(python.stdout.take().unwrap());
 
-    if info.refs_style.contains(RefsStyle::BOOKMARKS) {
+    let bookmark_prefix = info.refs_style.contains(RefsStyle::BOOKMARKS).then(|| {
         if info
             .refs_style
             .intersects(RefsStyle::HEADS | RefsStyle::TIPS)
         {
-            python_in.write_all(b"refs/heads/bookmarks/\n").unwrap();
+            b"refs/heads/bookmarks/".as_bstr()
         } else {
-            python_in.write_all(b"refs/heads/\n").unwrap();
+            b"refs/heads/".as_bstr()
         }
-    } else {
-        python_in.write_all(b"\n").unwrap();
-    }
+    });
 
-    for (_, cid, dest, force) in push_refs {
-        if force {
+    for (_, cid, dest, force) in &push_refs {
+        if *force {
             python_in.write_all(b"+").unwrap();
         }
         if let Some(cid) = cid {
@@ -3175,28 +3175,93 @@ fn remote_helper_push(
     python_in.write_all(b"\n").unwrap();
     python_in.flush().unwrap();
     let mut pushed = ChangesetHeads::new();
-    let mut buf = Vec::new();
-    loop {
-        buf.truncate(0);
-        python_out.read_until(b'\n', &mut buf).unwrap();
-        if let Some(args) = buf.strip_prefix(b"create-bundle ") {
+    if let Some(buf) = (&mut python_out).byte_lines().next() {
+        if let Some(args) = buf.unwrap().strip_prefix(b"create-bundle ") {
             let args = args
                 .strip_suffix(b"\n")
                 .unwrap_or(args)
                 .split(|&b| b == b' ');
             let args = args.collect_vec();
             pushed = do_create_bundle(Some(conn.clone()), &mut python_out, &mut python_in, &args);
-            continue;
-        }
-        stdout.write_all(&buf).unwrap();
-        if buf == b"\n" || buf.is_empty() {
-            break;
         }
     }
-    stdout.flush().unwrap();
     drop(python_in);
     drop(python_out);
     let result = finish_python_command(python);
+
+    // Collect all the responses before sending anything back through
+    // the remote-helper protocol, so that if something fails, we don't
+    // send partial information to the remote-helper (although at this point,
+    // the push has happened).
+    let status = (result == Ok(0))
+        .then(|| &push_refs[..])
+        .into_iter()
+        .flatten()
+        .map(|(_, source_cid, dest, _)| {
+            let status = if dest.starts_with(b"refs/tags/") {
+                Err(if source_cid.is_some() {
+                    "Pushing tags is unsupported"
+                } else {
+                    "Deleting remote tags is unsupported"
+                })
+            } else if let Some(name) =
+                bookmark_prefix.and_then(|prefix| dest.strip_prefix(&**prefix))
+            {
+                let name = percent_decode(name).decode_utf8().unwrap();
+                let csid = source_cid
+                    .as_ref()
+                    .map(|cid| GitChangesetId::from_unchecked(cid.clone()).to_hg().unwrap());
+                let mut conn = conn.lock().unwrap();
+                conn.require_capability(b"pushkey");
+                let response = conn.pushkey(
+                    "bookmarks",
+                    &name,
+                    &info
+                        .bookmarks
+                        .get(name.as_bytes().as_bstr())
+                        .map(ToString::to_string)
+                        .unwrap_or_default(),
+                    &csid.as_ref().map(ToString::to_string).unwrap_or_default(),
+                );
+                Ok(u32::from_bytes(response.trim_end_with(|c| c == '\n'))
+                    .map(|n| n > 0)
+                    .unwrap_or_default())
+            } else if source_cid.is_some() {
+                Ok(!pushed.is_empty())
+            } else {
+                Err("Deleting remote branches is unsupported")
+            };
+            (*dest, status)
+        })
+        .collect::<HashMap<_, _>>();
+
+    if !status.is_empty() {
+        for (_, _, dest, _) in push_refs {
+            let mut buf = Vec::new();
+            match status[dest] {
+                Ok(true) => {
+                    buf.extend_from_slice(b"ok ");
+                    buf.extend_from_slice(dest);
+                }
+                Ok(false) => {
+                    buf.extend_from_slice(b"error ");
+                    buf.extend_from_slice(dest);
+                    buf.extend_from_slice(b" nothing changed on remote");
+                }
+                Err(e) => {
+                    buf.extend_from_slice(b"error ");
+                    buf.extend_from_slice(dest);
+                    buf.push(b' ');
+                    buf.extend_from_slice(e.as_bytes());
+                }
+            }
+            buf.push(b'\n');
+            stdout.write_all(&buf).unwrap();
+        }
+        stdout.write_all(b"\n").unwrap();
+        stdout.flush().unwrap();
+    }
+
     let data = get_config_remote("data", remote);
     let data = data
         .as_deref()
@@ -3213,7 +3278,7 @@ fn remote_helper_push(
             data.as_bytes().as_bstr()
         );
     }
-    let rollback = if pushed.is_empty() || dry_run {
+    let rollback = if status.is_empty() || pushed.is_empty() || dry_run {
         true
     } else {
         match data.to_str().unwrap() {

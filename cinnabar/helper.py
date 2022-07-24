@@ -269,16 +269,6 @@ class HgRepoHelper(BaseHelper):
             return int(ret)
 
     @classmethod
-    def pushkey(self, namespace, key, old, new):
-        with self.query(b'pushkey', namespace, key, old,
-                        new) as stdout:
-            ret = self._read_data(stdout).rstrip()
-            try:
-                return bool(int(ret))
-            except ValueError:
-                return ret
-
-    @classmethod
     def find_common(self, heads):
         with self.query(b'find_common', *heads) as stdout:
             return stdout.readline().split()

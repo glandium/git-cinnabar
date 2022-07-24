@@ -74,4 +74,4 @@ def push(store, what, repo_heads, repo_branches, dry_run=False):
         create_bundle(store, push_commits, b'connection')
         reply = HgRepoHelper.unbundle(repo_heads)
         pushed = reply != 0
-    return bool(push_commits) if pushed or dry_run else False
+    return bool(push_commits) if pushed or dry_run else True
