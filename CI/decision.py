@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import subprocess
 import sys
 
 
@@ -34,10 +35,9 @@ from variables import *  # noqa: F403
 
 
 def git_rev_parse(committish):
-    from cinnabar.git import Git
-    from cinnabar.util import one
-    return one(Git.iter('rev-parse', committish,
-                        cwd=os.path.join(BASE_DIR, '..'))).decode()
+    return subprocess.check_output(
+        ['git', 'rev-parse', committish], text=True,
+        cwd=os.path.join(BASE_DIR, '..')).strip()
 
 
 UPGRADE_FROM = ()  # ('0.5.0',)
