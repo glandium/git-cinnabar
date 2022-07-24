@@ -2,7 +2,6 @@ import logging
 import os
 import sys
 from urllib.parse import unquote_to_bytes
-from cinnabar.exceptions import HelperClosedError
 from cinnabar.git import NULL_NODE_ID
 from cinnabar.hg.changegroup import (
     RawRevChunk01,
@@ -65,16 +64,9 @@ class FdHelper(object):
 
 class BaseHelper(object):
     @classmethod
-    def close(self):
-        self._helper = self
-
-    @classmethod
     def _ensure_helper(self):
         if self._helper is False:
             self._helper = FdHelper(self.MODE)
-
-        if self._helper is self:
-            raise HelperClosedError
 
     @classmethod
     @contextmanager
@@ -243,29 +235,11 @@ class GitHgHelper(BaseHelper):
             assert sha1[-1:] == b'\n'
             return sha1[:40]
 
-    @classmethod
-    def close(self, rollback=True):
-        if self._helper != self:
-            command = b'rollback' if rollback else b'done'
-            with self.query(command) as stdout:
-                resp = stdout.readline().rstrip()
-                assert resp == b'ok'
-            # Cannot reuse the fds when the GitHgHelper is reused.
-            os.environ.pop("GIT_CINNABAR_IMPORT_FDS", None)
-        super(GitHgHelper, self).close()
-
 
 class HgRepoHelper(BaseHelper):
     MODE = 'wire'
     _helper = False
     connected = True
-
-    @classmethod
-    def close(self):
-        if self._helper and self._helper is not self and self.connected:
-            self._helper.stdin.write(b'close\n')
-            self._helper.stdin.flush()
-            self.connected = False
 
     @classmethod
     def state(self):

@@ -1,6 +1,3 @@
-from cinnabar.exceptions import (
-    SilentlyAbort,
-)
 from cinnabar.git import (
     EMPTY_BLOB,
     NULL_NODE_ID,
@@ -163,16 +160,3 @@ class GitHgStore(object):
         if sha1 == HG_EMPTY_FILE:
             return EMPTY_BLOB
         return self._hg2git(sha1)
-
-    def close(self, refresh=()):
-        if self._closed:
-            return
-        self._closed = True
-        # If the helper is not running, we don't have anything to update.
-        if not GitHgHelper._helper:
-            return
-
-        with GitHgHelper.query(b'done-and-check', *refresh) as stdout:
-            resp = stdout.readline().rstrip()
-            if resp != b'ok':
-                raise SilentlyAbort()

@@ -315,14 +315,6 @@ class PushStore(GitHgStore):
                             % sha1.decode('ascii'))
         return result
 
-    def close(self, rollback=False):
-        if rollback:
-            GitHgHelper.close(rollback)
-            self._closed = True
-        if self._closed:
-            return
-        super(PushStore, self).close()
-
 
 def bundle_data(store, commits):
     for node, parents in commits:
