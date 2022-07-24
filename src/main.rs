@@ -2423,7 +2423,7 @@ pub fn main() {
 
 struct PythonChild {
     child: Child,
-    wire_thread: JoinHandle<()>,
+    wire_thread: Option<JoinHandle<()>>,
     import_thread: JoinHandle<()>,
     logging_thread: JoinHandle<()>,
     sent_data: std::io::Result<()>,
@@ -2485,7 +2485,7 @@ fn start_python_command(
         (None, None)
     };
 
-    let (wire_fds, wire_thread) = {
+    let (wire_fds, wire_thread) = if let Some(conn) = conn {
         let (reader1, writer1) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
         let (reader2, writer2) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
         let reader1 = reader1.dup_inheritable();
@@ -2506,7 +2506,9 @@ fn start_python_command(
                 .unwrap();
             })
             .unwrap();
-        ((reader1, writer2), thread)
+        (Some((reader1, writer2)), Some(thread))
+    } else {
+        (None, None)
     };
 
     let (import_fds, import_thread) = {
@@ -3383,11 +3385,6 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
         Some("git-cinnabar-import") => {
             helper_main(&mut stdin().lock(), 1);
             Ok(0)
-        }
-        Some("git-cinnabar-wire") => {
-            connect_main_with(&mut stdin().lock(), &mut stdout().lock(), None)
-                .map(|_| 0)
-                .map_err(|e| e.to_string())
         }
         Some("git-remote-hg") => git_cinnabar(Some(
             &[OsStr::new("git-cinnabar"), OsStr::new("remote-hg")]

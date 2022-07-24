@@ -1227,7 +1227,7 @@ pub fn get_connection(url: &Url) -> Option<Arc<Mutex<dyn HgRepo + Send>>> {
 pub fn connect_main_with(
     input: &mut impl BufRead,
     out: &mut impl Write,
-    mut connection: Option<Arc<Mutex<dyn HgRepo + Send>>>,
+    connection: Arc<Mutex<dyn HgRepo + Send>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let mut line = String::new();
@@ -1238,11 +1238,7 @@ pub fn connect_main_with(
         }
         let mut args = line.split(' ');
         let command = args.next().ok_or("Missing command")?;
-        let mut conn = if let Some(conn) = &connection {
-            conn.lock().unwrap()
-        } else {
-            return Err(format!("Unknown command: {}", command).into());
-        };
+        let mut conn = connection.lock().unwrap();
         let args = args.collect_vec();
         match command {
             "known" => do_known(&mut *conn, &*args, out),
@@ -1252,9 +1248,7 @@ pub fn connect_main_with(
             "state" => do_state(&mut *conn, &*args, out),
             "find_common" => do_find_common(&mut *conn, &*args, out),
             "close" => {
-                drop(conn);
-                connection.take();
-                continue;
+                return Ok(());
             }
             _ => return Err(format!("Unknown command: {}", command).into()),
         }
