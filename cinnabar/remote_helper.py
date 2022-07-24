@@ -40,7 +40,6 @@ class GitRemoteHelper(object):
         create_bundle(
             self._store, bundle_commits, bundlespec=bundlespec.encode('ascii'),
             path=os.fsencode(path))
-        self._store.close(rollback=True)
 
     def push(self, dry_run=None):
         GitHgHelper._ensure_helper()
@@ -164,5 +163,3 @@ def main(args):
     helper = GitRemoteHelper(store)
 
     getattr(helper, args[0])(*args[1:])
-
-    store.close()

@@ -1052,7 +1052,11 @@ fn do_bundle(
         do_create_bundle(None, &mut python_out, &mut python_in, &args);
     }
     drop(python_in);
-    finish_python_command(python)
+    let result = finish_python_command(python);
+    unsafe {
+        do_cleanup(1);
+    }
+    result
 }
 
 extern "C" {
