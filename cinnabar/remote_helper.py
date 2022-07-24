@@ -132,93 +132,80 @@ class GitRemoteHelper(object):
         pushes = list((Git.resolve_ref(os.fsdecode(s.lstrip(b'+'))), d,
                        s.startswith(b'+'))
                       for s, d in (r.split(b':', 1) for r in refspecs))
-        if self._store._broken or not HgRepoHelper.capable(b'unbundle'):
-            for source, dest, force in pushes:
-                if self._store._broken:
-                    self._helper.write(
-                        b'error %s Cannot push with broken metadata. '
-                        b'Please fix your clone first.\n' % dest)
-                else:
-                    self._helper.write(
-                        b'error %s Remote does not support the "unbundle" '
-                        b'capability\n' % dest)
-            self._helper.write(b'\n')
-            self._helper.flush()
-        else:
-            pushed = push(self._store, pushes, heads,
-                          branchmap.keys(), self._dry_run)
+        pushed = push(self._store, pushes, heads,
+                      branchmap.keys(), self._dry_run)
 
-            status = {}
-            for source, dest, _ in pushes:
-                if dest.startswith(b'refs/tags/'):
-                    if source:
-                        status[dest] = b'Pushing tags is unsupported'
-                    else:
-                        status[dest] = \
-                            b'Deleting remote tags is unsupported'
-                    continue
-                if not bookmark_prefix or not dest.startswith(bookmark_prefix):
-                    if source:
-                        status[dest] = bool(len(pushed))
-                    else:
-                        status[dest] = \
-                            b'Deleting remote branches is unsupported'
-                    continue
-                name = unquote_to_bytes(dest[len(bookmark_prefix):])
+        status = {}
+        for source, dest, _ in pushes:
+            if dest.startswith(b'refs/tags/'):
                 if source:
-                    source = self._store.hg_changeset(source)
-                status[dest] = HgRepoHelper.pushkey(
-                    b'bookmarks', name, bookmarks.get(name, b''),
-                    source or b'')
-
-            for source, dest, force in pushes:
-                if status[dest] is True:
-                    self._helper.write(b'ok %s\n' % dest)
-                elif status[dest]:
-                    self._helper.write(b'error %s %s\n' % (dest, status[dest]))
+                    status[dest] = b'Pushing tags is unsupported'
                 else:
-                    self._helper.write(b'error %s nothing changed on remote\n'
-                                       % dest)
-            self._helper.write(b'\n')
-            self._helper.flush()
+                    status[dest] = \
+                        b'Deleting remote tags is unsupported'
+                continue
+            if not bookmark_prefix or not dest.startswith(bookmark_prefix):
+                if source:
+                    status[dest] = bool(len(pushed))
+                else:
+                    status[dest] = \
+                        b'Deleting remote branches is unsupported'
+                continue
+            name = unquote_to_bytes(dest[len(bookmark_prefix):])
+            if source:
+                source = self._store.hg_changeset(source)
+            status[dest] = HgRepoHelper.pushkey(
+                b'bookmarks', name, bookmarks.get(name, b''),
+                source or b'')
 
-            if not pushed or self._dry_run:
-                data = False
-            elif data == b'always':
+        for source, dest, force in pushes:
+            if status[dest] is True:
+                self._helper.write(b'ok %s\n' % dest)
+            elif status[dest]:
+                self._helper.write(b'error %s %s\n' % (dest, status[dest]))
+            else:
+                self._helper.write(b'error %s nothing changed on remote\n'
+                                   % dest)
+        self._helper.write(b'\n')
+        self._helper.flush()
+
+        if not pushed or self._dry_run:
+            data = False
+        elif data == b'always':
+            data = True
+        elif data == b'phase':
+            phases = HgRepoHelper.listkeys(b'phases')
+            drafts = {}
+            if not phases.get(b'publishing', False):
+                drafts = set(p for p, is_draft in phases.items()
+                             if int(is_draft))
+            if not drafts:
                 data = True
-            elif data == b'phase':
-                phases = HgRepoHelper.listkeys(b'phases')
-                drafts = {}
-                if not phases.get(b'publishing', False):
-                    drafts = set(p for p, is_draft in phases.items()
-                                 if int(is_draft))
-                if not drafts:
-                    data = True
-                else:
-                    def draft_commits():
-                        for d in drafts:
-                            c = self._store.changeset_ref(d)
-                            if c:
-                                yield b'^%s^@' % c
-                        for h in pushed.heads():
-                            yield h
+            else:
+                def draft_commits():
+                    for d in drafts:
+                        c = self._store.changeset_ref(d)
+                        if c:
+                            yield b'^%s^@' % c
+                    for h in pushed.heads():
+                        yield h
 
-                    args = [b'--ancestry-path', b'--topo-order']
-                    args.extend(draft_commits())
+                args = [b'--ancestry-path', b'--topo-order']
+                args.extend(draft_commits())
 
-                    pushed_drafts = tuple(
-                        c for c, t, p in GitHgHelper.rev_list(*args))
+                pushed_drafts = tuple(
+                    c for c, t, p in GitHgHelper.rev_list(*args))
 
-                    # Theoretically, we could have commits with no
-                    # metadata that the remote declares are public, while
-                    # the rest of our push is in a draft state. That is
-                    # however so unlikely that it's not worth the effort
-                    # to support partial metadata storage.
-                    data = not bool(pushed_drafts)
-            elif data == b'never':
-                data = False
+                # Theoretically, we could have commits with no
+                # metadata that the remote declares are public, while
+                # the rest of our push is in a draft state. That is
+                # however so unlikely that it's not worth the effort
+                # to support partial metadata storage.
+                data = not bool(pushed_drafts)
+        elif data == b'never':
+            data = False
 
-            self._store.close(rollback=not data)
+        self._store.close(rollback=not data)
 
 
 def main(args):

@@ -695,15 +695,6 @@ fn do_pushkey(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
     send_buffer_to(&*response, out);
 }
 
-fn do_capable(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
-    assert_eq!(args.len(), 1);
-    let name = args[0];
-    send_buffer_to(
-        conn.get_capability(name.as_bytes()).map(|b| b.as_bytes()),
-        out,
-    );
-}
-
 fn do_state(conn: &mut dyn HgRepo, args: &[&str], mut out: &mut impl Write) {
     assert!(args.is_empty());
     send_buffer_to(&*conn.branchmap(), &mut out);
@@ -1268,7 +1259,6 @@ pub fn connect_main_with(
             "listkeys" => do_listkeys(&mut *conn, &*args, out),
             "unbundle" => do_unbundle(&mut *conn, &*args, out),
             "pushkey" => do_pushkey(&mut *conn, &*args, out),
-            "capable" => do_capable(&mut *conn, &*args, out),
             "state" => do_state(&mut *conn, &*args, out),
             "find_common" => do_find_common(&mut *conn, &*args, out),
             "close" => {

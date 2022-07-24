@@ -3070,6 +3070,46 @@ fn remote_helper_push(
     mut stdout: impl Write,
     dry_run: bool,
 ) -> Result<i32, String> {
+    let push_refs = push_refs
+        .iter()
+        .map(|p| {
+            let [source, dest] = p.splitn_exact(b':').unwrap();
+            let (source, force) = source
+                .strip_prefix(b"+")
+                .map_or((source, false), |s| (s, true));
+            (
+                source.as_bstr(),
+                get_oid_committish(source),
+                dest.as_bstr(),
+                force,
+            )
+        })
+        .collect_vec();
+
+    let broken = resolve_ref(METADATA_REF).map(|m| resolve_ref(BROKEN_REF) == Some(m));
+    if broken == Some(true) || conn.lock().unwrap().get_capability(b"unbundle").is_none() {
+        for (_, _, dest, _) in &push_refs {
+            let mut buf = b"error ".to_vec();
+            buf.extend_from_slice(dest);
+            buf.extend_from_slice(if broken == Some(true) {
+                b" Cannot push with broken metadata. Please fix your clone first.\n"
+            } else {
+                b" Remote does not support the \"unbundle\" capability.\n"
+            });
+            stdout.write_all(&buf).unwrap();
+        }
+        stdout.write_all(b"\n").unwrap();
+        stdout.flush().unwrap();
+        return Ok(0);
+    }
+    if let Some(metadata) = resolve_ref(METADATA_REF) {
+        if Some(metadata) == resolve_ref(BROKEN_REF) {
+            return Err(
+                "Cannot fetch with broken metadata. Please fix your clone first.".to_string(),
+            );
+        }
+    }
+
     let mut python = start_python_command(
         &[
             OsStr::new(remote.unwrap_or("hg::")),
@@ -3087,21 +3127,6 @@ fn remote_helper_push(
         python_out.read_line(&mut buf).unwrap();
         assert_eq!(buf, "ok\n");
     }
-    let push_refs = push_refs
-        .iter()
-        .map(|p| {
-            let [source, dest] = p.splitn_exact(b':').unwrap();
-            let (source, force) = source
-                .strip_prefix(b"+")
-                .map_or((source, false), |s| (s, true));
-            (
-                source.as_bstr(),
-                get_oid_committish(source),
-                dest.as_bstr(),
-                force,
-            )
-        })
-        .collect_vec();
 
     for (source, _, dest, force) in push_refs {
         python_in.write_all(b"push ").unwrap();

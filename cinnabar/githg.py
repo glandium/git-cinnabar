@@ -76,7 +76,6 @@ class GitHgStore(object):
         self._closed = False
 
         self._metadata_sha1 = None
-        broken = None
         # While doing a for_each_ref, ensure refs/notes/cinnabar is in the
         # cache.
         for sha1, ref in Git.for_each_ref('refs/cinnabar',
@@ -86,10 +85,6 @@ class GitHgStore(object):
                 pass
             elif ref == b'refs/cinnabar/metadata':
                 self._metadata_sha1 = sha1
-            elif ref == b'refs/cinnabar/broken':
-                broken = sha1
-        self._broken = broken and self._metadata_sha1 and \
-            broken == self._metadata_sha1
 
         metadata = self.metadata()
         self._has_metadata = bool(metadata)
