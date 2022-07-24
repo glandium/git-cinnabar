@@ -65,7 +65,7 @@ class GitRemoteHelper(object):
                 continue
             if not bookmark_prefix or not dest.startswith(bookmark_prefix):
                 if source:
-                    status[dest] = bool(len(pushed))
+                    status[dest] = pushed
                 else:
                     status[dest] = \
                         b'Deleting remote branches is unsupported'

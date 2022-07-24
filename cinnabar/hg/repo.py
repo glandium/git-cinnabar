@@ -4,7 +4,6 @@ from cinnabar.helper import (
 )
 from itertools import chain
 import logging
-from cinnabar.dag import gitdag
 from cinnabar.git import NULL_NODE_ID
 from cinnabar.hg.bundle import create_bundle
 
@@ -75,4 +74,4 @@ def push(store, what, repo_heads, repo_branches, dry_run=False):
         create_bundle(store, push_commits, b'connection')
         reply = HgRepoHelper.unbundle(repo_heads)
         pushed = reply != 0
-    return gitdag(push_commits) if pushed or dry_run else ()
+    return bool(push_commits) if pushed or dry_run else False
