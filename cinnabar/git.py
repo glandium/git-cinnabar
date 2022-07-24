@@ -73,14 +73,6 @@ class Git(object):
                         self._config[k] += b'\0' + v
                     else:
                         self._config[k] = v
-            if self._config.pop(b'cinnabar.fsck', None):
-                # Git.run('config') will reset self._config ; avoid that.
-                config = self._config
-                # We used to set cinnabar.fsck globally, then locally.
-                # Remove both.
-                Git.run('config', '--global', '--unset', 'cinnabar.fsck')
-                Git.run('config', '--local', '--unset', 'cinnabar.fsck')
-                self._config = config
 
         var = name.encode('ascii')
         value = None
