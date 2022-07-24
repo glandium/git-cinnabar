@@ -1,5 +1,4 @@
 import logging
-import os
 import subprocess
 from cinnabar.util import environ
 
@@ -10,16 +9,11 @@ EMPTY_TREE = b'4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 EMPTY_BLOB = b'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
 
 
-class InvalidConfig(Exception):
-    pass
-
-
 class Git(object):
     _config = None
 
     @classmethod
-    def config(self, name, remote=None, values={}, multiple=False):
-        assert not (values and multiple)
+    def config(self, name):
         if self._config is None:
             data = subprocess.check_output(['git', 'config', '-l', '-z'])
             self._config = {}
@@ -36,32 +30,10 @@ class Git(object):
         if name.startswith('cinnabar.'):
             var = ('GIT_%s' % name.replace('.', '_').upper()).encode('ascii')
             value = environ(var)
-            if value is None and remote:
-                var = b'remote.%s.%s' % (
-                    remote, name.replace('.', '-').encode('ascii'))
-                value = self._config.get(var.lower())
         if value is None:
             var = name.encode('ascii')
             value = self._config.get(var.lower())
         if value:
-            value = value.split(b'\0')
-            if not multiple:
-                value = value[-1]
+            value = value.split(b'\0')[-1]
         logging.getLogger('config').info('%s = %r', var, value)
-        if values:
-            if value in values:
-                if isinstance(values, dict):
-                    value = values[value]
-            else:
-                values = ', '.join(sorted('"%s"' % v.decode('ascii')
-                                          for v in values
-                                          if v is not None))
-                if value is None:
-                    raise InvalidConfig(
-                        '%s must be set to one of %s' % (
-                            var.decode('ascii'), values))
-                else:
-                    raise InvalidConfig(
-                        'Invalid value for %s: "%s". Valid values: %s' % (
-                            var.decode('ascii'), os.fsdecode(value), values))
         return value

@@ -66,21 +66,17 @@ def init_logging():
 
 
 class ConfigSetFunc(object):
-    def __init__(self, key, values, extra_values=(), default='', remote=None):
+    def __init__(self, key, values, extra_values=(), default=''):
         self._config = None
         self._key = key
         self._values = values
         self._extra_values = extra_values
         self._default = default.encode('ascii')
-        self._remote = remote
 
     def __call__(self, name):
         if self._config is None:
             from cinnabar.git import Git
-            if self._remote:
-                config = Git.config(self._key, self._remote) or self._default
-            else:
-                config = Git.config(self._key) or self._default
+            config = Git.config(self._key) or self._default
             if config:
                 config = config.decode('ascii').split(',')
             self._config = set()
