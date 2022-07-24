@@ -1,9 +1,8 @@
-import atexit
 import logging
 import os
 import sys
 from urllib.parse import unquote_to_bytes
-from cinnabar.exceptions import HelperClosedError, HelperFailedError
+from cinnabar.exceptions import HelperClosedError
 from cinnabar.git import NULL_NODE_ID
 from cinnabar.hg.changegroup import (
     RawRevChunk01,
@@ -66,35 +65,13 @@ class FdHelper(object):
 
 class BaseHelper(object):
     @classmethod
-    def close(self, on_atexit=False):
-        if self._helper and self._helper is not self \
-                and not isinstance(self._helper, FdHelper):
-            if self._helper.wait() != 0:
-                try:
-                    raise HelperFailedError
-                except HelperFailedError:
-                    if on_atexit:
-                        # Raising an exception during atexit handlers doesn't
-                        # alter the exit code. So print and exit manually.
-                        import traceback
-                        traceback.print_exc()
-                        os._exit(1)
-                    raise
+    def close(self):
         self._helper = self
-
-    @classmethod
-    def close_atexit(self):
-        try:
-            self.close(on_atexit=True)
-        except BrokenPipeError:
-            # If the helper is gone (crashed), there's not much we can do.
-            pass
 
     @classmethod
     def _ensure_helper(self):
         if self._helper is False:
             self._helper = FdHelper(self.MODE)
-            atexit.register(self.close_atexit)
 
         if self._helper is self:
             raise HelperClosedError
@@ -267,7 +244,7 @@ class GitHgHelper(BaseHelper):
             return sha1[:40]
 
     @classmethod
-    def close(self, rollback=True, on_atexit=False):
+    def close(self, rollback=True):
         if self._helper != self:
             command = b'rollback' if rollback else b'done'
             with self.query(command) as stdout:
@@ -275,7 +252,7 @@ class GitHgHelper(BaseHelper):
                 assert resp == b'ok'
             # Cannot reuse the fds when the GitHgHelper is reused.
             os.environ.pop("GIT_CINNABAR_IMPORT_FDS", None)
-        super(GitHgHelper, self).close(on_atexit=on_atexit)
+        super(GitHgHelper, self).close()
 
 
 class HgRepoHelper(BaseHelper):
@@ -284,7 +261,7 @@ class HgRepoHelper(BaseHelper):
     connected = True
 
     @classmethod
-    def close(self, on_atexit=False):
+    def close(self):
         if self._helper and self._helper is not self and self.connected:
             self._helper.stdin.write(b'close\n')
             self._helper.stdin.flush()

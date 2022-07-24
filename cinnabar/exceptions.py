@@ -6,9 +6,5 @@ class HelperClosedError(RuntimeError):
     """Running a query with a closed helper."""
 
 
-class HelperFailedError(RuntimeError):
-    """Helper returned an error code."""
-
-
 class SilentlyAbort(Abort):
     """Native side expected to print an error."""
