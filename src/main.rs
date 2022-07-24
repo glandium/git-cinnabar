@@ -253,6 +253,12 @@ static HELPER_LOCK: Lazy<Mutex<()>> = Lazy::new(|| {
     Mutex::new(())
 });
 
+#[no_mangle]
+unsafe extern "C" fn locked_rollback() {
+    let _lock = HELPER_LOCK.lock().unwrap();
+    do_cleanup(1);
+}
+
 fn do_done_and_check(args: &[&[u8]]) -> bool {
     unsafe {
         if graft_finish() == Some(false) {

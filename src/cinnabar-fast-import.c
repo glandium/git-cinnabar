@@ -34,7 +34,7 @@ void cinnabar_unregister_shallow(const struct object_id *oid) {
 		update_shallow = 1;
 }
 
-static void cleanup();
+extern void locked_rollback();
 
 /* Divert fast-import.c's calls to hashwrite so as to keep a fake pack window
  * on the last written bits, avoiding munmap/mmap cycles from
@@ -157,7 +157,7 @@ static void init()
 
 	parse_one_feature("force", 0);
 	initialized = 1;
-	atexit(cleanup);
+	atexit(locked_rollback);
 }
 
 extern void dump_ref_updates();
