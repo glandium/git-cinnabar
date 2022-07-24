@@ -60,17 +60,6 @@ class Git(object):
         return tuple(self.iter(*args, stdout=stdout, **kwargs))
 
     @classmethod
-    def for_each_ref(self, *patterns):
-        if not patterns:
-            return
-        # Ideally, this would not actually call for-each-ref if all refs
-        # matching the given patterns are already known.
-        for line in self.iter('for-each-ref', '--format',
-                              '%(objectname) %(refname)', *patterns,
-                              stderr=open(os.devnull, 'wb')):
-            yield line.split(b' ', 1)
-
-    @classmethod
     def resolve_ref(self, ref):
         return one(Git.iter('rev-parse', '--revs-only', ref,
                             stderr=open(os.devnull, 'wb')))

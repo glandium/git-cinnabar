@@ -3,7 +3,6 @@ from cinnabar.exceptions import (
 )
 from cinnabar.git import (
     EMPTY_BLOB,
-    Git,
     NULL_NODE_ID,
 )
 from cinnabar.hg.objects import (
@@ -68,26 +67,11 @@ class GitCommit(object):
 
 
 class GitHgStore(object):
-    def metadata(self):
-        if self._metadata_sha1:
-            return GitCommit(self._metadata_sha1)
-
     def __init__(self):
         self._closed = False
 
-        self._metadata_sha1 = None
-        # While doing a for_each_ref, ensure refs/notes/cinnabar is in the
-        # cache.
-        for sha1, ref in Git.for_each_ref('refs/cinnabar',
-                                          'refs/notes/cinnabar'):
-            if ref.startswith(b'refs/cinnabar/replace/'):
-                # Ignore replace refs, we'll fill from the metadata tree.
-                pass
-            elif ref == b'refs/cinnabar/metadata':
-                self._metadata_sha1 = sha1
-
-        metadata = self.metadata()
-        self._has_metadata = bool(metadata)
+        self._has_metadata = bool(
+            GitHgHelper.cat_file(b'commit', b'refs/cinnabar/metadata'))
 
     def heads(self, branches={}):
         if not isinstance(branches, (dict, set)):

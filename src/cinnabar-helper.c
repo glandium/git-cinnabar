@@ -175,7 +175,7 @@ void do_cat_file(struct string_list *args, int helper_output)
 	if (args->nr != 1)
 		goto not_found;
 
-	if (get_oid(args->items[0].string, &oid))
+	if (get_oid_committish(args->items[0].string, &oid))
 		goto not_found;
 
 	send_object(&oid, helper_output);
