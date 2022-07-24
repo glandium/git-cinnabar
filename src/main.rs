@@ -3061,14 +3061,82 @@ fn remote_helper_import(
     Ok(())
 }
 
+fn remote_helper_push(
+    conn: Arc<Mutex<dyn HgRepo + Send>>,
+    remote: Option<&str>,
+    url: &Url,
+    push_refs: &[&BStr],
+    _info: RemoteInfo,
+    mut stdout: impl Write,
+    dry_run: bool,
+) -> Result<i32, String> {
+    let mut python = start_python_command(
+        &[
+            OsStr::new(remote.unwrap_or("hg::")),
+            OsStr::new(url.as_str()),
+        ],
+        Some(conn.clone()),
+    )?;
+    let mut python_in = python.stdin.take().unwrap();
+    let mut python_out = BufReader::new(python.stdout.take().unwrap());
+
+    if dry_run {
+        writeln!(python_in, "option dry-run true").unwrap();
+        python_in.flush().unwrap();
+        let mut buf = String::new();
+        python_out.read_line(&mut buf).unwrap();
+        assert_eq!(buf, "ok\n");
+    }
+    let push_refs = push_refs
+        .iter()
+        .map(|p| {
+            let [source, dest] = p.splitn_exact(b':').unwrap();
+            let (source, force) = source
+                .strip_prefix(b"+")
+                .map_or((source, false), |s| (s, true));
+            (
+                source.as_bstr(),
+                get_oid_committish(source),
+                dest.as_bstr(),
+                force,
+            )
+        })
+        .collect_vec();
+
+    for (source, _, dest, force) in push_refs {
+        python_in.write_all(b"push ").unwrap();
+        if force {
+            python_in.write_all(b"+").unwrap();
+        }
+        python_in.write_all(source).unwrap();
+        python_in.write_all(b":").unwrap();
+        python_in.write_all(dest).unwrap();
+        python_in.write_all(b"\n").unwrap();
+    }
+    python_in.write_all(b"\n").unwrap();
+    python_in.flush().unwrap();
+    let mut buf = Vec::new();
+    loop {
+        buf.truncate(0);
+        python_out.read_until(b'\n', &mut buf).unwrap();
+        stdout.write_all(&buf).unwrap();
+        if buf == b"\n" || buf.is_empty() {
+            break;
+        }
+    }
+    stdout.flush().unwrap();
+    drop(python_in);
+    drop(python_out);
+    finish_python_command(python)
+}
+
 fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
     if !url.as_bytes().starts_with(b"hg:") {
         let mut new_url = OsString::from("hg::");
         new_url.push(url);
         url = new_url;
     }
-    let raw_remote = remote;
-    let remote = Some(raw_remote.to_str().unwrap().to_owned())
+    let remote = Some(remote.to_str().unwrap().to_owned())
         .and_then(|r| (!r.starts_with("hg://") && !r.starts_with("hg::")).then(|| r));
     let url = hg_url(&url).unwrap();
     let conn = (url.scheme() != "tags").then(|| get_connection(&url).unwrap());
@@ -3198,65 +3266,16 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                 }
             }
             b"push" => {
-                let mut python =
-                    start_python_command(&[&raw_remote, OsStr::new(url.as_str())], conn.clone())?;
-                let mut python_in = python.stdin.take().unwrap();
-                let mut python_out = BufReader::new(python.stdout.take().unwrap());
-
                 assert_ne!(url.scheme(), "tags");
-                if dry_run {
-                    writeln!(python_in, "option dry-run true").unwrap();
-                    python_in.flush().unwrap();
-                    let mut buf = String::new();
-                    python_out.read_line(&mut buf).unwrap();
-                    assert_eq!(buf, "ok\n");
-                }
-                let push_refs = args
-                    .iter()
-                    .map(|p| {
-                        let [source, dest] = p.splitn_exact(b':').unwrap();
-                        let (source, force) = source
-                            .strip_prefix(b"+")
-                            .map_or((source, false), |s| (s, true));
-                        (
-                            source.as_bstr(),
-                            get_oid_committish(source),
-                            dest.as_bstr(),
-                            force,
-                        )
-                    })
-                    .collect_vec();
-
-                for (source, _, dest, force) in push_refs {
-                    python_in.write_all(b"push ").unwrap();
-                    if force {
-                        python_in.write_all(b"+").unwrap();
-                    }
-                    python_in.write_all(source).unwrap();
-                    python_in.write_all(b":").unwrap();
-                    python_in.write_all(dest).unwrap();
-                    python_in.write_all(b"\n").unwrap();
-                }
-                python_in.write_all(b"\n").unwrap();
-                python_in.flush().unwrap();
-                let mut did_something = false;
-                loop {
-                    buf.truncate(0);
-                    python_out.read_until(b'\n', &mut buf).unwrap();
-                    stdout.write_all(&buf).unwrap();
-                    if buf == b"\n" || buf.is_empty() {
-                        break;
-                    }
-                    did_something = true;
-                }
-                // The python side probably raised an Exception.
-                if !did_something {
-                    break;
-                }
-                stdout.flush().unwrap();
-                drop(python_in);
-                drop(python_out);
-                let code = finish_python_command(python)?;
+                let code = remote_helper_push(
+                    conn.clone().unwrap(),
+                    remote.as_deref(),
+                    &url,
+                    &args.iter().map(|r| &**r).collect_vec(),
+                    info.take().unwrap(),
+                    &mut stdout,
+                    dry_run,
+                )?;
                 if code > 0 {
                     return Ok(code);
                 }
