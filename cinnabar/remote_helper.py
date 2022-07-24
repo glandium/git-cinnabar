@@ -10,12 +10,7 @@ from cinnabar.hg.bundle import (
     PushStore,
     create_bundle,
 )
-import logging
-from cinnabar.git import (
-    Git,
-    InvalidConfig,
-    NULL_NODE_ID,
-)
+from cinnabar.git import NULL_NODE_ID
 
 from urllib.parse import unquote_to_bytes
 
@@ -62,19 +57,6 @@ class GitRemoteHelper(object):
             heads = []
         bookmarks = state['bookmarks']
 
-        try:
-            values = {
-                None: b'phase',
-                b'': b'phase',
-                b'never': b'never',
-                b'phase': b'phase',
-                b'always': b'always',
-            }
-            data = Git.config('cinnabar.data', remote.name, values=values)
-        except InvalidConfig as e:
-            logging.error(str(e))
-            return 1
-
         pushes = list((s.lstrip(b'+'), d, s.startswith(b'+'))
                       for s, d in (r.split(b':', 1) for r in refspecs))
         pushed = push(self._store, pushes, heads, branchmap.keys(), dry_run)
@@ -112,44 +94,6 @@ class GitRemoteHelper(object):
                                    % dest)
         self._helper.write(b'\n')
         self._helper.flush()
-
-        if not pushed or dry_run:
-            data = False
-        elif data == b'always':
-            data = True
-        elif data == b'phase':
-            phases = HgRepoHelper.listkeys(b'phases')
-            drafts = {}
-            if not phases.get(b'publishing', False):
-                drafts = set(p for p, is_draft in phases.items()
-                             if int(is_draft))
-            if not drafts:
-                data = True
-            else:
-                def draft_commits():
-                    for d in drafts:
-                        c = self._store.changeset_ref(d)
-                        if c:
-                            yield b'^%s^@' % c
-                    for h in pushed.heads():
-                        yield h
-
-                args = [b'--ancestry-path', b'--topo-order']
-                args.extend(draft_commits())
-
-                pushed_drafts = tuple(
-                    c for c, t, p in GitHgHelper.rev_list(*args))
-
-                # Theoretically, we could have commits with no
-                # metadata that the remote declares are public, while
-                # the rest of our push is in a draft state. That is
-                # however so unlikely that it's not worth the effort
-                # to support partial metadata storage.
-                data = not bool(pushed_drafts)
-        elif data == b'never':
-            data = False
-
-        self._store.close(rollback=not data)
 
 
 def main(args):

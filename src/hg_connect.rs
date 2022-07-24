@@ -466,17 +466,6 @@ fn do_known(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
     send_buffer_to(&*result, out);
 }
 
-fn do_listkeys(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
-    assert_eq!(args.len(), 1);
-    let namespace = args[0];
-    let result = match namespace {
-        "bookmarks" => conn.bookmarks(),
-        "phases" => conn.phases(),
-        _ => unimplemented!(),
-    };
-    send_buffer_to(&*result, out);
-}
-
 const PYTHON_QUOTE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'.')
@@ -1242,7 +1231,6 @@ pub fn connect_main_with(
         let args = args.collect_vec();
         match command {
             "known" => do_known(&mut *conn, &*args, out),
-            "listkeys" => do_listkeys(&mut *conn, &*args, out),
             "unbundle" => do_unbundle(&mut *conn, &*args, out),
             "pushkey" => do_pushkey(&mut *conn, &*args, out),
             "state" => do_state(&mut *conn, &*args, out),

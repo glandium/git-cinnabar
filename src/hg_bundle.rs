@@ -1003,7 +1003,7 @@ pub fn do_create_bundle(
     input: &mut dyn BufRead,
     mut out: impl Write,
     args: &[&[u8]],
-) {
+) -> ChangesetHeads {
     let mut replycaps = None;
     let (bundlespec, version) = match args[0] {
         b"raw" => (BundleSpec::ChangegroupV1, "01"),
@@ -1064,6 +1064,7 @@ pub fn do_create_bundle(
     let mut part_id = 0;
     let mut buf = Vec::new();
     let mut bundle_writer = BundleWriter::new(bundlespec, output).unwrap();
+    let mut changeset_heads = ChangesetHeads::new();
 
     if let Some(replycaps) = replycaps {
         let info = BundlePartInfo::new(part_id, "replycaps");
@@ -1086,10 +1087,14 @@ pub fn do_create_bundle(
         }
         if let Some([node, parent1, parent2, changeset]) = buf.splitn_exact(b' ') {
             progress.next();
-            let node = HgObjectId::from_bytes(node).unwrap();
-            let parent1 = HgObjectId::from_bytes(parent1).unwrap();
-            let parent2 = HgObjectId::from_bytes(parent2).unwrap();
+            let node = HgChangesetId::from_bytes(node).unwrap();
+            let parent1 = HgChangesetId::from_bytes(parent1).unwrap();
+            let parent2 = HgChangesetId::from_bytes(parent2).unwrap();
             let changeset = HgChangesetId::from_bytes(changeset).unwrap();
+
+            // TODO: add branch.
+            changeset_heads.add(&node, &[&parent1, &parent2], b"".as_bstr());
+
             let _lock = HELPER_LOCK.lock().unwrap();
             write_chunk(
                 &mut bundle_part_writer,
@@ -1106,27 +1111,21 @@ pub fn do_create_bundle(
                 },
             )
             .unwrap();
-            let get_manifest = |node: HgObjectId| {
-                let metadata = RawGitChangesetMetadata::read(
-                    &HgChangesetId::from_unchecked(node).to_git().unwrap(),
-                )
-                .unwrap();
+            let get_manifest = |node: HgChangesetId| {
+                let metadata = RawGitChangesetMetadata::read(&node.to_git().unwrap()).unwrap();
                 let metadata = metadata.parse().unwrap();
                 metadata.manifest_id().clone()
             };
             let manifest = get_manifest(node.clone());
             if manifest != HgManifestId::null() && !manifests.contains_key(&manifest) {
-                let mn_parent1 = (parent1 != HgObjectId::null())
+                let mn_parent1 = (parent1 != HgChangesetId::null())
                     .then(|| get_manifest(parent1))
                     .unwrap_or_else(HgManifestId::null);
-                let mn_parent2 = (parent2 != HgObjectId::null())
+                let mn_parent2 = (parent2 != HgChangesetId::null())
                     .then(|| get_manifest(parent2))
                     .unwrap_or_else(HgManifestId::null);
                 if ![&mn_parent1, &mn_parent2].contains(&&manifest) {
-                    manifests.insert(
-                        manifest,
-                        (mn_parent1, mn_parent2, HgChangesetId::from_unchecked(node)),
-                    );
+                    manifests.insert(manifest, (mn_parent1, mn_parent2, node));
                 }
             }
         } else {
@@ -1146,6 +1145,7 @@ pub fn do_create_bundle(
     drop(bundle_part_writer);
     drop(bundle_writer);
     writeln!(out, "done").unwrap();
+    changeset_heads
 }
 
 fn bundle_manifest<const CHUNK_SIZE: usize>(

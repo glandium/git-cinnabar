@@ -831,6 +831,10 @@ impl ChangesetHeads {
             (!data.has_children).then(|| node)
         })
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.heads.is_empty()
+    }
 }
 
 pub static CHANGESET_HEADS: Lazy<Mutex<ChangesetHeads>> =

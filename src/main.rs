@@ -3181,6 +3181,7 @@ fn remote_helper_push(
     }
     python_in.write_all(b"\n").unwrap();
     python_in.flush().unwrap();
+    let mut pushed = ChangesetHeads::new();
     let mut buf = Vec::new();
     loop {
         buf.truncate(0);
@@ -3191,7 +3192,7 @@ fn remote_helper_push(
                 .unwrap_or(args)
                 .split(|&b| b == b' ');
             let args = args.collect_vec();
-            do_create_bundle(Some(conn.clone()), &mut python_out, &mut python_in, &args);
+            pushed = do_create_bundle(Some(conn.clone()), &mut python_out, &mut python_in, &args);
             continue;
         }
         stdout.write_all(&buf).unwrap();
@@ -3202,7 +3203,94 @@ fn remote_helper_push(
     stdout.flush().unwrap();
     drop(python_in);
     drop(python_out);
-    finish_python_command(python)
+    let result = finish_python_command(python);
+    let data = get_config_remote("data", remote);
+    let data = data
+        .as_deref()
+        .and_then(|d| (!d.is_empty()).then(|| d))
+        .unwrap_or_else(|| OsStr::new("phase"));
+    let valid = [
+        OsStr::new("never"),
+        OsStr::new("phase"),
+        OsStr::new("always"),
+    ];
+    if !valid.contains(&data) {
+        die!(
+            "`{}` is not one of `never`, `phase` or `always`",
+            data.as_bytes().as_bstr()
+        );
+    }
+    let rollback = if pushed.is_empty() || dry_run {
+        true
+    } else {
+        match data.to_str().unwrap() {
+            "always" => false,
+            "never" => true,
+            "phase" => {
+                let phases = conn.lock().unwrap().phases();
+                let phases = ByteSlice::lines(&*phases)
+                    .filter_map(|l| {
+                        l.splitn_exact(b'\t')
+                            .map(|[k, v]| (k.as_bstr(), v.as_bstr()))
+                    })
+                    .collect::<HashMap<_, _>>();
+                let drafts = (!phases.contains_key(b"publishing".as_bstr()))
+                    .then(|| {
+                        phases
+                            .into_iter()
+                            .filter_map(|(phase, is_draft)| {
+                                u32::from_bytes(is_draft).ok().and_then(|is_draft| {
+                                    (is_draft > 0).then(|| HgChangesetId::from_bytes(phase))
+                                })
+                            })
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .transpose()
+                    .unwrap()
+                    .unwrap_or_default();
+                if drafts.is_empty() {
+                    false
+                } else {
+                    let args = [
+                        OsString::from("--ancestry-path"),
+                        OsString::from("--topo-order"),
+                    ]
+                    .into_iter()
+                    .chain(
+                        drafts
+                            .iter()
+                            .filter_map(HgChangesetId::to_git)
+                            .map(|csid| format!("^{}^@", csid).into()),
+                    )
+                    .chain(
+                        pushed
+                            .heads()
+                            .filter_map(HgChangesetId::to_git)
+                            .map(|csid| csid.to_string().into()),
+                    )
+                    .collect_vec();
+                    let args = args.iter().map(|a| &**a).collect_vec();
+                    // Theoretically, we could have commits with no
+                    // metadata that the remote declares are public, while
+                    // the rest of our push is in a draft state. That is
+                    // however so unlikely that it's not worth the effort
+                    // to support partial metadata storage.
+                    rev_list(&args).any(|_| true)
+                }
+            }
+            _ => unreachable!(),
+        }
+    };
+    if rollback {
+        unsafe {
+            do_cleanup(1);
+        }
+    } else {
+        do_done_and_check(&[])
+            .then(|| ())
+            .ok_or_else(|| "Fatal error".to_string())?;
+    }
+    result
 }
 
 fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {

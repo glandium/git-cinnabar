@@ -289,14 +289,6 @@ class HgRepoHelper(BaseHelper):
             return self._read_data(stdout)
 
     @classmethod
-    def listkeys(self, namespace):
-        with self.query(b'listkeys', namespace) as stdout:
-            return dict(
-                line.split(b'\t', 1)
-                for line in self._read_data(stdout).splitlines()
-            )
-
-    @classmethod
     def unbundle(self, heads):
         with self.query(b'unbundle', *heads) as stdout:
             ret = self._read_data(stdout)
