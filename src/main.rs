@@ -233,6 +233,15 @@ static MAYBE_INIT_CINNABAR_2: Lazy<Option<()>> = Lazy::new(|| unsafe {
             }
             transaction.commit().unwrap();
         }
+        if let Some(objectformat) = config_get_value("extensions.objectformat") {
+            if objectformat != OsStr::new("sha1") {
+                // Ideally, we'd return error code 65 (Data format error).
+                die!(
+                    "Git repository uses unsupported {} object format",
+                    objectformat.to_string_lossy()
+                );
+            }
+        }
     })
 });
 

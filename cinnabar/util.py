@@ -210,15 +210,7 @@ def run(func, args):
     init_logging()
 
     try:
-        from cinnabar.git import Git
-        objectformat = Git.config('extensions.objectformat') or 'sha1'
-        if objectformat != 'sha1':
-            sys.stderr.write(
-                'Git repository uses unsupported %s object format\n'
-                % objectformat)
-            retcode = 65  # Data format error
-        else:
-            retcode = func(args)
+        retcode = func(args)
     except Abort as e:
         # These exceptions are normal abort and require no traceback
         retcode = 1
