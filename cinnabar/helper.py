@@ -1,7 +1,6 @@
 import atexit
 import logging
 import os
-import subprocess
 import sys
 from urllib.parse import unquote_to_bytes
 from cinnabar.exceptions import HelperClosedError, HelperFailedError
@@ -10,11 +9,7 @@ from cinnabar.hg.changegroup import (
     RawRevChunk01,
     RawRevChunk02,
 )
-from cinnabar.util import (
-    environ,
-    IOLogger,
-    Process,
-)
+from cinnabar.util import IOLogger
 from contextlib import contextmanager
 
 
@@ -94,22 +89,7 @@ class BaseHelper(object):
     @classmethod
     def _ensure_helper(self):
         if self._helper is False:
-            try:
-                self._helper = FdHelper(self.MODE)
-            except NoFdHelper:
-                env = {
-                    k: v
-                    for k, v in environ().items()
-                    if k.startswith(b'GIT_CINNABAR_')
-                }
-                kwargs = {}
-                if self.MODE != 'wire':
-                    kwargs['logger'] = 'helper-{}'.format(self.MODE)
-                self._helper = Process(
-                    'git-cinnabar-{}'.format(self.MODE),
-                    executable=os.environ.get("GIT_CINNABAR", "git-cinnabar"),
-                    stdin=subprocess.PIPE, stderr=None, env=env, **kwargs)
-
+            self._helper = FdHelper(self.MODE)
             atexit.register(self.close_atexit)
 
         if self._helper is self:
