@@ -129,8 +129,7 @@ class GitRemoteHelper(object):
             logging.error(str(e))
             return 1
 
-        pushes = list((Git.resolve_ref(os.fsdecode(s.lstrip(b'+'))), d,
-                       s.startswith(b'+'))
+        pushes = list((s.lstrip(b'+'), d, s.startswith(b'+'))
                       for s, d in (r.split(b':', 1) for r in refspecs))
         pushed = push(self._store, pushes, heads,
                       branchmap.keys(), self._dry_run)

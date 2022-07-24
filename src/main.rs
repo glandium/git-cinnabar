@@ -3079,7 +3079,7 @@ fn remote_helper_push(
                 .map_or((source, false), |s| (s, true));
             (
                 source.as_bstr(),
-                get_oid_committish(source),
+                (!source.is_empty()).then(|| get_oid_committish(source).unwrap()),
                 dest.as_bstr(),
                 force,
             )
@@ -3128,12 +3128,14 @@ fn remote_helper_push(
         assert_eq!(buf, "ok\n");
     }
 
-    for (source, _, dest, force) in push_refs {
+    for (_, cid, dest, force) in push_refs {
         python_in.write_all(b"push ").unwrap();
         if force {
             python_in.write_all(b"+").unwrap();
         }
-        python_in.write_all(source).unwrap();
+        if let Some(cid) = cid {
+            python_in.write_all(cid.to_string().as_bytes()).unwrap();
+        }
         python_in.write_all(b":").unwrap();
         python_in.write_all(dest).unwrap();
         python_in.write_all(b"\n").unwrap();

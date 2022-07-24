@@ -3,7 +3,6 @@ import os
 import time
 from cinnabar.util import (
     environ,
-    one,
     Process,
 )
 from itertools import chain
@@ -58,11 +57,6 @@ class Git(object):
     def run(self, *args, **kwargs):
         stdout = kwargs.pop('stdout', None)
         return tuple(self.iter(*args, stdout=stdout, **kwargs))
-
-    @classmethod
-    def resolve_ref(self, ref):
-        return one(Git.iter('rev-parse', '--revs-only', ref,
-                            stderr=open(os.devnull, 'wb')))
 
     @classmethod
     def config(self, name, remote=None, values={}, multiple=False):
