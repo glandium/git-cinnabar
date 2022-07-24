@@ -38,11 +38,10 @@ class NoFdHelper(RuntimeError):
 
 
 class FdHelper(object):
-    def __init__(self, mode, reader=None, writer=None):
-        if reader:
-            assert writer
-            self.stdin = writer
-            self.stdout = reader
+    def __init__(self, mode):
+        if mode == 'bundle':
+            self.stdin = sys.stdout.buffer
+            self.stdout = sys.stdin.buffer
         else:
             env_name = "GIT_CINNABAR_{}_FDS".format(mode.upper())
             if env_name not in os.environ:

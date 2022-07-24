@@ -1022,12 +1022,16 @@ fn do_bundle(
         2 => BundleSpec::V2None,
         v => return Err(format!("Unknown version {v}")),
     });
-    let mut python = start_python_command(&[], None)?;
+    let mut python = start_python_command(
+        &[
+            OsStr::new("bundle"),
+            OsStr::new(&format!("{}", bundlespec)),
+            path.as_os_str(),
+        ],
+        None,
+    )?;
     let mut python_in = python.child.stdin.take().unwrap();
     let mut python_out = BufReader::new(python.child.stdout.take().unwrap());
-    write!(python_in, "bundle {} ", bundlespec).unwrap();
-    python_in.write_all(path.as_os_str().as_bytes()).unwrap();
-    python_in.write_all(b"\n").unwrap();
     revs.extend([
         "--topo-order".into(),
         "--full-history".into(),
@@ -3135,26 +3139,20 @@ fn remote_helper_push(
         }
     }
 
-    let mut python = start_python_command(
-        &[
-            OsStr::new(remote.unwrap_or("hg::")),
-            OsStr::new(url.as_str()),
-        ],
-        Some(conn.clone()),
-    )?;
+    let args = [OsStr::new("push"), OsStr::new("dry-run")];
+    let mut python =
+        start_python_command(if dry_run { &args } else { &args[..1] }, Some(conn.clone()))?;
     let mut python_in = python.stdin.take().unwrap();
     let mut python_out = BufReader::new(python.stdout.take().unwrap());
 
-    if dry_run {
-        writeln!(python_in, "option dry-run true").unwrap();
-        python_in.flush().unwrap();
-        let mut buf = String::new();
-        python_out.read_line(&mut buf).unwrap();
-        assert_eq!(buf, "ok\n");
-    }
+    python_in
+        .write_all(remote.unwrap_or("hg::").as_bytes())
+        .unwrap();
+    python_in.write_all(b"\n").unwrap();
+    python_in.write_all(url.as_str().as_bytes()).unwrap();
+    python_in.write_all(b"\n").unwrap();
 
     for (_, cid, dest, force) in push_refs {
-        python_in.write_all(b"push ").unwrap();
         if force {
             python_in.write_all(b"+").unwrap();
         }
