@@ -3095,7 +3095,7 @@ fn remote_helper_push(
     remote: Option<&str>,
     url: &Url,
     push_refs: &[&BStr],
-    _info: RemoteInfo,
+    info: RemoteInfo,
     mut stdout: impl Write,
     dry_run: bool,
 ) -> Result<i32, String> {
@@ -3151,6 +3151,18 @@ fn remote_helper_push(
     python_in.write_all(b"\n").unwrap();
     python_in.write_all(url.as_str().as_bytes()).unwrap();
     python_in.write_all(b"\n").unwrap();
+    if info.refs_style.contains(RefsStyle::BOOKMARKS) {
+        if info
+            .refs_style
+            .intersects(RefsStyle::HEADS | RefsStyle::TIPS)
+        {
+            python_in.write_all(b"refs/heads/bookmarks/\n").unwrap();
+        } else {
+            python_in.write_all(b"refs/heads/\n").unwrap();
+        }
+    } else {
+        python_in.write_all(b"\n").unwrap();
+    }
 
     for (_, cid, dest, force) in push_refs {
         if force {

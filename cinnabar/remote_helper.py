@@ -16,7 +16,6 @@ from cinnabar.git import (
     InvalidConfig,
     NULL_NODE_ID,
 )
-from cinnabar.util import ConfigSetFunc
 
 from urllib.parse import unquote_to_bytes
 
@@ -47,6 +46,7 @@ class GitRemoteHelper(object):
         GitHgHelper._ensure_helper()
         name = self._helper_in.readline().strip()
         url = self._helper_in.readline().strip()
+        bookmark_prefix = self._helper_in.readline().strip()
         remote = Remote(name, url)
         assert remote.url != b'hg::tags:'
 
@@ -62,27 +62,6 @@ class GitRemoteHelper(object):
         if heads == [NULL_NODE_ID]:
             heads = []
         bookmarks = state['bookmarks']
-
-        refs_style = None
-        refs_styles = ('bookmarks', 'heads', 'tips')
-        if heads:
-            refs_config = 'cinnabar.refs'
-            if Git.config('cinnabar.pushrefs', remote=remote.name):
-                refs_config = 'cinnabar.pushrefs'
-
-            refs_style = ConfigSetFunc(refs_config, refs_styles,
-                                       remote=remote.name,
-                                       default='all')
-
-        refs_style = refs_style or (lambda x: True)
-
-        if refs_style('bookmarks'):
-            if refs_style('heads') or refs_style('tips'):
-                bookmark_prefix = b'refs/heads/bookmarks/'
-            else:
-                bookmark_prefix = b'refs/heads/'
-        else:
-            bookmark_prefix = b''
 
         try:
             values = {
