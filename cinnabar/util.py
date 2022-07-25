@@ -37,7 +37,6 @@ class PipeHandler(logging.StreamHandler):
 
 
 def init_logging():
-    from cinnabar.git import Git
     logger = logging.getLogger()
     fd = int(os.environ["GIT_CINNABAR_LOG_FD"])
     if sys.platform == 'win32':
@@ -46,7 +45,7 @@ def init_logging():
     handler = PipeHandler(os.fdopen(fd, 'w'))
     handler.setFormatter(Formatter("%(levelname)s %(name)s %(message)s"))
     logger.addHandler(handler)
-    log_conf = Git.config('cinnabar.log') or b''
+    log_conf = environ(b'GIT_CINNABAR_LOG') or b''
     for assignment in log_conf.split(b','):
         try:
             assignment, _, path = assignment.partition(b'>')

@@ -2526,6 +2526,14 @@ fn start_bundle_helper() -> Result<BundleHelper, String> {
             .into(),
     ));
 
+    extra_env.push((
+        "GIT_CINNABAR_LOG",
+        get_config("log")
+            .as_ref()
+            .map_or("", |l| l.to_str().unwrap())
+            .to_string(),
+    ));
+
     let args_os = std::env::args_os().collect_vec();
 
     let child = python
