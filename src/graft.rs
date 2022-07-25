@@ -34,21 +34,6 @@ pub fn graft_finish() -> Option<bool> {
     Lazy::get(&GRAFT_TREES).map(|_| grafted() || DID_SOMETHING.load(Ordering::Relaxed))
 }
 
-pub fn do_graft(args: &[&[u8]]) {
-    match args.split_first() {
-        Some((&b"init", args)) => do_init(args),
-        Some((cmd, _)) => die!("unknown graft subcommand: {}", cmd.as_bstr()),
-        None => die!("graft expects a subcommand"),
-    }
-}
-
-fn do_init(args: &[&[u8]]) {
-    if !args.is_empty() {
-        die!("graft init takes no argument");
-    }
-    init_graft();
-}
-
 pub fn init_graft() {
     let mut args = vec![
         "--full-history",

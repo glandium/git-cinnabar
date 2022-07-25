@@ -70,12 +70,6 @@ class GitHgStore(object):
         self._has_metadata = bool(
             GitHgHelper.cat_file(b'commit', b'refs/cinnabar/metadata'))
 
-    def heads(self, branches={}):
-        if not isinstance(branches, (dict, set)):
-            branches = set(branches)
-        return set(h for (h, b) in GitHgHelper.heads(b'changesets')
-                   if not branches or b in branches)
-
     def read_changeset_data(self, obj):
         assert obj is not None
         obj = bytes(obj)

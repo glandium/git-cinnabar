@@ -116,7 +116,7 @@ use crate::libc::FdFile;
 use crate::progress::set_progress;
 use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads};
 use crate::util::{FromBytes, ToBoxed};
-use graft::{do_graft, graft_finish, grafted, init_graft};
+use graft::{graft_finish, grafted, init_graft};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
 use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
@@ -128,7 +128,7 @@ use libgit::{
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::Progress;
 use store::{
-    do_check_files, do_create, do_heads, do_raw_changeset, do_set_, get_tags, has_metadata,
+    do_check_files, do_create, do_raw_changeset, do_set_, get_tags, has_metadata,
     raw_commit_for_changeset, store_git_blob, ChangesetHeads, GeneratedGitChangesetMetadata,
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
     HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF,
@@ -308,33 +308,15 @@ fn helper_main(input: &mut dyn BufRead, out: c_int) {
         let mut nul = [b'\0'];
         let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
         let _locked = HELPER_LOCK.lock().unwrap();
-        if let b"graft" | b"create" | b"raw-changeset" | b"reset" | b"done-and-check" | b"heads"
-        | b"done" | b"rollback" = &*command
-        {
+        if let b"create" | b"raw-changeset" = &*command {
             let args = match args_.split_last().unwrap().1 {
                 b"" => Vec::new(),
                 args => args.split(|&b| b == b' ').collect::<Vec<_>>(),
             };
-            let mut out = unsafe { FdFile::from_raw_fd(out) };
+            let out = unsafe { FdFile::from_raw_fd(out) };
             match &*command {
-                b"graft" => do_graft(&args),
                 b"raw-changeset" => do_raw_changeset(out, &args),
                 b"create" => do_create(input, out, &args),
-                b"heads" => do_heads(out, &args),
-                b"done" => unsafe {
-                    do_cleanup(0);
-                    writeln!(out, "ok").unwrap();
-                },
-                b"rollback" => unsafe {
-                    do_cleanup(1);
-                    writeln!(out, "ok").unwrap();
-                },
-                b"done-and-check" => writeln!(
-                    out,
-                    "{}",
-                    if do_done_and_check(&args) { "ok" } else { "ko" }
-                )
-                .unwrap(),
                 _ => unreachable!(),
             }
             continue;

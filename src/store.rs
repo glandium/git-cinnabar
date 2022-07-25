@@ -34,7 +34,7 @@ use crate::hg_bundle::{
 };
 use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
-use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id, send_buffer_to};
+use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id};
 use crate::libgit::{
     get_oid_blob, get_oid_committish, lookup_replace_commit, ls_tree, object_id, strbuf, BlobId,
     Commit, CommitId, RawBlob, RawCommit, RefTransaction, TreeId,
@@ -833,18 +833,6 @@ impl ChangesetHeads {
 
 pub static CHANGESET_HEADS: Lazy<Mutex<ChangesetHeads>> =
     Lazy::new(|| Mutex::new(ChangesetHeads::from_stored_metadata()));
-
-pub fn do_heads(mut output: impl Write, args: &[&[u8]]) {
-    assert_eq!(args.len(), 1);
-    assert_eq!(args[0].as_bstr(), b"changesets".as_bstr());
-    let heads = CHANGESET_HEADS.lock().unwrap();
-
-    let mut buf = Vec::new();
-    for (h, b) in heads.branch_heads() {
-        writeln!(buf, "{} {}", h, b).ok();
-    }
-    send_buffer_to(&*buf, &mut output);
-}
 
 #[derive(Default)]
 pub struct TagSet {

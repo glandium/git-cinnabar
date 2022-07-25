@@ -1539,8 +1539,6 @@ int remote_skip_default_update(const struct remote *remote)
 
 static int nongit = 0;
 
-extern void do_graft(struct reader *input, int output, struct string_list *args);
-
 extern NORETURN void do_panic(const char *err, size_t len);
 
 static NORETURN void die_panic(const char *err, va_list params)

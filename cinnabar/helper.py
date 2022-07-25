@@ -214,14 +214,6 @@ class GitHgHelper(BaseHelper):
             assert False
 
     @classmethod
-    def heads(self, what):
-        with self.query(b'heads', what) as stdout:
-            data = self._read_data(stdout)
-            if what == b'manifests':
-                return data.split()
-            return (l.split() for l in data.splitlines())
-
-    @classmethod
     def put_blob(self, data=b''):
         with self.query(b'store', b'blob', b'%d' % len(data)) as stdout:
             self._helper.stdin.write(data)
