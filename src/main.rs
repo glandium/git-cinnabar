@@ -47,7 +47,7 @@ use bstr::io::BufReadExt;
 use clap::{crate_version, AppSettings, ArgGroup, Parser};
 use hg_bundle::{create_bundle, BundleSpec};
 use itertools::Itertools;
-use logging::{LoggingBufReader, LoggingWriter};
+use logging::{LoggingReader, LoggingWriter};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
 use sha1::{Digest, Sha1};
 
@@ -3466,7 +3466,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
     let conn = (url.scheme() != "tags").then(|| get_connection(&url).unwrap());
 
     let stdin = stdin();
-    let mut stdin = LoggingBufReader::new("remote-helper", log::Level::Info, stdin.lock());
+    let mut stdin = LoggingReader::new("remote-helper", log::Level::Info, stdin.lock());
     let stdout = stdout();
     let mut stdout = LoggingWriter::new("remote-helper", log::Level::Info, stdout.lock());
     let mut buf = Vec::new();

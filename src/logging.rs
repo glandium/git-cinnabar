@@ -221,15 +221,15 @@ impl log::Log for CinnabarLogger {
     }
 }
 
-pub struct LoggingBufReader<'a, R: BufRead> {
+pub struct LoggingReader<'a, R: Read> {
     target: &'a str,
     level: log::Level,
     reader: R,
 }
 
-impl<'a, R: BufRead> LoggingBufReader<'a, R> {
+impl<'a, R: Read> LoggingReader<'a, R> {
     pub fn new(target: &'a str, level: log::Level, r: R) -> Self {
-        LoggingBufReader {
+        LoggingReader {
             target,
             level,
             reader: r,
@@ -237,7 +237,7 @@ impl<'a, R: BufRead> LoggingBufReader<'a, R> {
     }
 }
 
-impl<'a, R: BufRead> Read for LoggingBufReader<'a, R> {
+impl<'a, R: Read> Read for LoggingReader<'a, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.reader.read(buf).map(|l| {
             log!(target: self.target, self.level, "<= {:?}", buf[..l].as_bstr());
@@ -246,7 +246,7 @@ impl<'a, R: BufRead> Read for LoggingBufReader<'a, R> {
     }
 }
 
-impl<'a, R: BufRead> BufRead for LoggingBufReader<'a, R> {
+impl<'a, R: BufRead> BufRead for LoggingReader<'a, R> {
     fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
         self.reader.fill_buf()
     }
@@ -265,32 +265,6 @@ impl<'a, R: BufRead> BufRead for LoggingBufReader<'a, R> {
     fn read_line(&mut self, buf: &mut String) -> std::io::Result<usize> {
         self.reader.read_line(buf).map(|l| {
             log!(target: self.target, self.level, "<= {:?}", buf);
-            l
-        })
-    }
-}
-
-pub struct LoggingReader<'a, R: Read> {
-    target: &'a str,
-    level: log::Level,
-    reader: R,
-}
-
-impl<'a, R: Read> LoggingReader<'a, R> {
-    #[allow(dead_code)]
-    pub fn new(target: &'a str, level: log::Level, r: R) -> Self {
-        LoggingReader {
-            target,
-            level,
-            reader: r,
-        }
-    }
-}
-
-impl<'a, R: Read> Read for LoggingReader<'a, R> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.reader.read(buf).map(|l| {
-            log!(target: self.target, self.level, "<= {:?}", buf[..l].as_bstr());
             l
         })
     }
