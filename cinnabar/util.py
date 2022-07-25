@@ -200,11 +200,11 @@ class TypedProperty(object):
         self.values[obj] = getattr(self.cls, 'from_obj', self.cls)(value)
 
 
-def run(func, args):
+def run(func):
     init_logging()
 
     try:
-        retcode = func(args)
+        retcode = func()
     except Exception as e:
         # Catch all exceptions and provide a nice message
         retcode = 70  # Internal software error

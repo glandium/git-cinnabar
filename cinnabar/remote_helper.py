@@ -6,7 +6,7 @@ from cinnabar.hg.bundle import (
 )
 
 
-def main(args):
+def main():
     store = PushStore()
 
     bundle_commits = []

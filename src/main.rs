@@ -1004,7 +1004,7 @@ fn do_bundle(
         2 => BundleSpec::V2None,
         v => return Err(format!("Unknown version {v}")),
     });
-    let mut python = start_python_command(&[OsStr::new("bundle")])?;
+    let mut python = start_bundle_helper()?;
     let mut python_in = python.child.stdin.take().unwrap();
     let mut python_out = BufReader::new(python.child.stdout.take().unwrap());
     revs.extend([
@@ -1022,7 +1022,7 @@ fn do_bundle(
     drop(python_in);
     let file = File::create(path).unwrap();
     create_bundle(&mut python_out, bundlespec, version, &file, false);
-    let result = finish_python_command(python);
+    let result = finish_bundle_helper(python);
     unsafe {
         do_cleanup(1);
     }
@@ -2395,14 +2395,14 @@ pub fn main() {
     std::process::exit(ret);
 }
 
-struct PythonChild {
+struct BundleHelper {
     child: Child,
     import_thread: JoinHandle<()>,
     logging_thread: JoinHandle<()>,
     sent_data: std::io::Result<u64>,
 }
 
-impl Deref for PythonChild {
+impl Deref for BundleHelper {
     type Target = Child;
 
     fn deref(&self) -> &Self::Target {
@@ -2410,13 +2410,13 @@ impl Deref for PythonChild {
     }
 }
 
-impl DerefMut for PythonChild {
+impl DerefMut for BundleHelper {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.child
     }
 }
 
-fn start_python_command(args: &[&OsStr]) -> Result<PythonChild, String> {
+fn start_bundle_helper() -> Result<BundleHelper, String> {
     let mut python = if let Ok(p) = which("python3") {
         Command::new(p)
     } else if let Ok(p) = which("py") {
@@ -2516,7 +2516,6 @@ fn start_python_command(args: &[&OsStr]) -> Result<PythonChild, String> {
         .arg("-c")
         .arg(bootstrap)
         .arg(&args_os[0])
-        .args(args)
         .envs(extra_env)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -2531,7 +2530,7 @@ fn start_python_command(args: &[&OsStr]) -> Result<PythonChild, String> {
     } else {
         Ok(0)
     };
-    Ok(PythonChild {
+    Ok(BundleHelper {
         child,
         import_thread,
         logging_thread,
@@ -2539,8 +2538,8 @@ fn start_python_command(args: &[&OsStr]) -> Result<PythonChild, String> {
     })
 }
 
-fn finish_python_command(child: PythonChild) -> Result<i32, String> {
-    let PythonChild {
+fn finish_bundle_helper(child: BundleHelper) -> Result<i32, String> {
+    let BundleHelper {
         mut child,
         import_thread,
         logging_thread,
@@ -3219,7 +3218,7 @@ fn remote_helper_push(
                 .tempfile()
                 .unwrap();
             let (file, path) = tempfile.into_parts();
-            let mut python = start_python_command(&[OsStr::new("bundle")])?;
+            let mut python = start_bundle_helper()?;
             let mut python_in = python.child.stdin.take().unwrap();
             let mut python_out = BufReader::new(python.child.stdout.take().unwrap());
             for (cid, parents) in &push_commits {
@@ -3231,7 +3230,7 @@ fn remote_helper_push(
             pushed = create_bundle(&mut python_out, bundlespec, version, &file, version == 2);
             drop(file);
             drop(python_out);
-            if finish_python_command(python)? > 0 {
+            if finish_bundle_helper(python)? > 0 {
                 return Ok(1);
             }
             let file = File::open(path).unwrap();
