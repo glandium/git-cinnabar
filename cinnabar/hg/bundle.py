@@ -331,15 +331,11 @@ def bundle_data(store, commits):
         yield (hg_changeset.node, hg_changeset.parent1, hg_changeset.parent2,
                hg_changeset.changeset)
 
-    yield None
-
 
 def create_bundle(store, commits):
     stdout = sys.stdout.buffer
     for chunk in bundle_data(store, commits):
         if isinstance(chunk, tuple):
             stdout.write(b'%s %s %s %s\0' % chunk)
-        else:
-            assert chunk is None
-            stdout.write(b'null\0')
+    stdout.write(b'null\0')
     stdout.flush()
