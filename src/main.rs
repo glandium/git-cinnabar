@@ -3708,7 +3708,6 @@ bitflags! {
         const MANIFESTS = 0x2;
         const VERSION = 0x4;
         const NODEID = 0x8;
-        const BUNDLE = 0x10;
         const FILES = 0x20;
         const TIME = 0x100;
         const TRACEBACK = 0x200;
@@ -3731,7 +3730,6 @@ static CHECKS: Lazy<Checks> = Lazy::new(|| {
                 b"manifests" => checks.set(Checks::MANIFESTS, true),
                 b"no-version-check" => checks.set(Checks::VERSION, false),
                 b"nodeid" => checks.set(Checks::NODEID, true),
-                b"bundle" => checks.set(Checks::BUNDLE, true),
                 b"files" => checks.set(Checks::FILES, true),
                 b"time" => checks.set(Checks::TIME, true),
                 b"traceback" => checks.set(Checks::TRACEBACK, true),

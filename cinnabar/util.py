@@ -101,7 +101,7 @@ class ConfigSetFunc(object):
 check_enabled = ConfigSetFunc(
     'cinnabar.check',
     ('nodeid', 'manifests', 'helper'),
-    ('bundle', 'files', 'time', 'traceback', 'no-bundle2', 'cinnabarclone',
+    ('files', 'time', 'traceback', 'no-bundle2', 'cinnabarclone',
      'clonebundles', 'no-version-check', 'unbundler'),
 )
 

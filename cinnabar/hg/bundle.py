@@ -10,7 +10,6 @@ from cinnabar.git import (
     NULL_NODE_ID,
 )
 from cinnabar.util import (
-    check_enabled,
     experiment,
     sorted_merge,
 )
@@ -216,23 +215,12 @@ class PushStore(GitHgStore):
         return manifest, changeset_files, parent_node
 
     def create_hg_metadata(self, commit, parents):
-        if check_enabled('bundle'):
-            real_changeset = self.changeset(self.hg_changeset(commit))
         manifest, changeset_files, delta_node = \
             self.create_hg_manifest(commit, parents)
         commit_data = GitCommit(commit)
 
         if manifest.node == NULL_NODE_ID:
             manifest.node = manifest.sha1
-            if check_enabled('bundle'):
-                if real_changeset and (
-                        manifest.node != real_changeset.manifest):
-                    for path, created, real in sorted_merge(
-                            manifest, self.manifest(real_changeset.manifest),
-                            key=lambda i: i.path, non_key=lambda i: i):
-                        if bytes(created) != bytes(real):
-                            logging.error(
-                                '%r != %r', bytes(created), bytes(real))
             self._pushed.add(manifest.node)
             delta_manifest = []
             if delta_node != NULL_NODE_ID:
@@ -251,20 +239,6 @@ class PushStore(GitHgStore):
             res, metadata = res.split()
 
         self._pushed.add(res)
-
-        if check_enabled('bundle') and real_changeset:
-            changeset = self.changeset(res)
-            assert res == changeset.node
-
-            error = False
-            for k in ('files', 'manifest'):
-                if getattr(real_changeset, k, []) != getattr(changeset, k, []):
-                    logging.error('(%s) %r != %r', k,
-                                  getattr(real_changeset, k, None),
-                                  getattr(changeset, k, None))
-                    error = True
-            if error:
-                raise Exception('Changeset mismatch')
 
     def _create_file_internal(self, sha1, parent1=NULL_NODE_ID,
                               parent2=NULL_NODE_ID):
@@ -324,8 +298,7 @@ def bundle_data(store, commits):
                 'Pushing octopus merges to mercurial is not supported')
 
         changeset_data = store.read_changeset_data(node)
-        is_new = changeset_data is None or check_enabled('bundle')
-        if is_new:
+        if changeset_data is None:
             store.create_hg_metadata(node, parents)
         hg_changeset = store._changeset(node)
         yield (hg_changeset.node, hg_changeset.parent1, hg_changeset.parent2,
