@@ -4,7 +4,7 @@ from cinnabar.githg import (
     GitCommit,
     GitHgStore,
 )
-from cinnabar.helper import GitHgHelper, BundleHelper
+from cinnabar.helper import GitHgHelper
 from cinnabar.git import (
     EMPTY_BLOB,
     NULL_NODE_ID,
@@ -24,6 +24,7 @@ from cinnabar.hg.objects import (
 from collections import OrderedDict
 import functools
 import logging
+import sys
 
 
 # TODO: Avoid a diff-tree when we already have done it to generate the
@@ -334,13 +335,11 @@ def bundle_data(store, commits):
 
 
 def create_bundle(store, commits):
-    with BundleHelper.query(b'create-bundle') as stdout:
-        for chunk in bundle_data(store, commits):
-            if isinstance(chunk, tuple):
-                stdout.write(b'%s %s %s %s\0' % chunk)
-            else:
-                assert chunk is None
-                stdout.write(b'null\0')
-        stdout.flush()
-        res = stdout.readline().strip()
-        assert res == b'done'
+    stdout = sys.stdout.buffer
+    for chunk in bundle_data(store, commits):
+        if isinstance(chunk, tuple):
+            stdout.write(b'%s %s %s %s\0' % chunk)
+        else:
+            assert chunk is None
+            stdout.write(b'null\0')
+    stdout.flush()

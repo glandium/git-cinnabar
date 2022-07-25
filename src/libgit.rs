@@ -14,6 +14,7 @@ use cstr::cstr;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use derive_more::{Deref, Display};
 use getset::{CopyGetters, Getters};
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 
 use crate::oid::{GitObjectId, ObjectId};
@@ -489,6 +490,8 @@ extern "C" {
     fn rev_list_new(argc: c_int, argv: *const *const c_char) -> *mut rev_info;
 
     fn rev_list_finish(revs: *mut rev_info);
+
+    fn maybe_boundary(revs: *const rev_info, c: *const commit) -> c_int;
 }
 
 pub struct RevList {
@@ -521,6 +524,44 @@ impl Iterator for RevList {
         unsafe {
             get_revision(self.revs).as_ref().map(|c| {
                 CommitId::from_unchecked(GitObjectId::from(commit_oid(c).as_ref().unwrap().clone()))
+            })
+        }
+    }
+}
+
+pub struct RevListWithBoundaries(RevList);
+
+pub fn rev_list_with_boundaries(
+    args: impl IntoIterator<Item = impl AsRef<OsStr>>,
+) -> RevListWithBoundaries {
+    let args = args.into_iter().collect_vec();
+    let args = args
+        .iter()
+        .map(AsRef::as_ref)
+        .chain([OsStr::new("--boundary")]);
+    RevListWithBoundaries(rev_list(args))
+}
+
+pub enum MaybeBoundary {
+    Commit(CommitId),
+    Boundary(CommitId),
+    Shallow,
+}
+
+impl Iterator for RevListWithBoundaries {
+    type Item = MaybeBoundary;
+    fn next(&mut self) -> Option<Self::Item> {
+        unsafe {
+            get_revision(self.0.revs).as_ref().map(|c| {
+                let cid = CommitId::from_unchecked(GitObjectId::from(
+                    commit_oid(c).as_ref().unwrap().clone(),
+                ));
+                match maybe_boundary(self.0.revs, c) {
+                    0 => MaybeBoundary::Commit(cid),
+                    1 => MaybeBoundary::Boundary(cid),
+                    2 => MaybeBoundary::Shallow,
+                    _ => unreachable!(),
+                }
             })
         }
     }

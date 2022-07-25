@@ -12,7 +12,6 @@ use std::mem::{self, MaybeUninit};
 use std::os::raw::c_int;
 use std::ptr::NonNull;
 use std::str::FromStr;
-use std::sync::Mutex;
 
 use bstr::ByteSlice;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
@@ -23,7 +22,6 @@ use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use tee::TeeReader;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
@@ -920,8 +918,6 @@ impl<R: Read> HgRepo for BundleConnection<R> {
     }
 }
 
-pub static BUNDLE_PATH: Lazy<Mutex<Option<tempfile::TempPath>>> = Lazy::new(|| Mutex::new(None));
-
 fn create_chunk_data(a: &[u8], b: &[u8]) -> Box<[u8]> {
     let mut buf = Vec::new();
     for patch in textdiff(a, b) {
@@ -994,7 +990,6 @@ fn write_chunk(
 
 pub fn create_bundle(
     input: &mut dyn BufRead,
-    mut out: impl Write,
     bundlespec: BundleSpec,
     version: u8,
     output: &File,
@@ -1085,7 +1080,6 @@ pub fn create_bundle(
     // So drop it manually first.
     drop(bundle_part_writer);
     drop(bundle_writer);
-    writeln!(out, "done").unwrap();
     changeset_heads
 }
 

@@ -105,7 +105,6 @@ requires pulling first.
   $ git -C abc-git push origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
   \r (no-eol) (esc)
   ERROR Cannot push to this remote without pulling/updating first.
-  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
 
@@ -114,7 +113,6 @@ Same, even when forced.
   $ git -C abc-git push -f origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
   \r (no-eol) (esc)
   ERROR Cannot push to this remote without pulling/updating first.
-  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
 
@@ -138,7 +136,6 @@ with different contents requires pulling first.
   $ git -C def-git push origin 62326f34fea5b80510f57599da9fd6e5997c0ca4:refs/heads/branches/default/tip
   \r (no-eol) (esc)
   ERROR Cannot push to this remote without pulling/updating first.
-  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
 
@@ -147,7 +144,6 @@ Same, even when forced.
   $ git -C def-git push -f origin 62326f34fea5b80510f57599da9fd6e5997c0ca4:refs/heads/branches/default/tip
   \r (no-eol) (esc)
   ERROR Cannot push to this remote without pulling/updating first.
-  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
 
@@ -191,13 +187,11 @@ Similarly, when pushing from a shallow git repository.
   $ git -C abc-shallow push origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
   \r (no-eol) (esc)
   ERROR Pushing git shallow clones is not supported.
-  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
   $ git -C abc-shallow push -f origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
   \r (no-eol) (esc)
   ERROR Pushing git shallow clones is not supported.
-  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
 
@@ -209,7 +203,6 @@ After pulling from a different repo, we still recognize we have a shallow clone.
   $ git -C abc-shallow push -f origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
   \r (no-eol) (esc)
   ERROR Pushing git shallow clones is not supported.
-  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
 

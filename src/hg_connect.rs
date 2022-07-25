@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{stderr, BufRead, Read, Write};
+use std::io::{stderr, Read, Write};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
@@ -17,10 +17,9 @@ use rand::prelude::IteratorRandom;
 use sha1::{Digest, Sha1};
 use url::Url;
 
-use crate::hg_bundle::{BundleReader, BundleSpec, BUNDLE_PATH};
+use crate::hg_bundle::{BundleReader, BundleSpec};
 use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
-use crate::libcinnabar::send_buffer_to;
 use crate::libgit::{rev_list, CommitId, RawCommit};
 use crate::oid::{GitObjectId, ObjectId};
 use crate::store::{
@@ -446,21 +445,6 @@ fn test_unescape_batched_output() {
     assert_eq!(buf.as_bstr(), b"abc=def:;=,z".as_bstr());
 }
 
-fn do_known(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
-    conn.require_capability(b"known");
-    let nodes = args
-        .iter()
-        .map(|s| HgChangesetId::from_str(s))
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    let result = conn
-        .known(&nodes)
-        .iter()
-        .map(|k| if *k { b'1' } else { b'0' })
-        .collect_vec();
-    send_buffer_to(&*result, out);
-}
-
 const PYTHON_QUOTE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'.')
@@ -624,60 +608,6 @@ pub fn get_store_bundle(
         })
 }
 
-fn do_unbundle(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
-    conn.require_capability(b"unbundle");
-    let heads = if args.is_empty() || args[..] == ["force"] {
-        None
-    } else {
-        Some(
-            args.iter()
-                .map(|a| HgChangesetId::from_str(a).unwrap())
-                .collect_vec(),
-        )
-    };
-
-    /* Neither the stdio nor the HTTP protocols can handle a stream for
-     * push commands, so store the data as a temporary file. */
-    // The file was stored earlier via a call to do_create_bundle.
-    //TODO: error checking
-    let path = BUNDLE_PATH.lock().unwrap().take().unwrap();
-    let file = File::open(path).unwrap();
-    let response = conn.unbundle(heads.as_deref(), file);
-    match response {
-        UnbundleResponse::Bundlev2(data) => {
-            let mut bundle = BundleReader::new(data).unwrap();
-            while let Some(part) = bundle.next_part().unwrap() {
-                match part.part_type.as_bytes() {
-                    b"reply:changegroup" => {
-                        // TODO: should check in-reply-to param.
-                        let response = part.get_param("return").unwrap();
-                        send_buffer_to(response.as_bytes(), out);
-                    }
-                    b"error:abort" => {
-                        let mut message = part.get_param("message").unwrap().to_string();
-                        if let Some(hint) = part.get_param("hint") {
-                            message.push_str("\n\n");
-                            message.push_str(hint);
-                        }
-                        error!(target: "root", "{}", message);
-                    }
-                    _ => {}
-                }
-            }
-        }
-        UnbundleResponse::Raw(response) => {
-            send_buffer_to(&*response, out);
-        }
-    }
-}
-
-fn do_state(conn: &mut dyn HgRepo, args: &[&str], mut out: &mut impl Write) {
-    assert!(args.is_empty());
-    send_buffer_to(&*conn.branchmap(), &mut out);
-    send_buffer_to(&*conn.heads(), &mut out);
-    send_buffer_to(&*conn.bookmarks(), &mut out);
-}
-
 fn take_sample<R: rand::Rng + ?Sized, T, const SIZE: usize>(
     rng: &mut R,
     data: &mut Vec<T>,
@@ -700,14 +630,6 @@ fn take_sample<R: rand::Rng + ?Sized, T, const SIZE: usize>(
 
 const SAMPLE_SIZE: usize = 100;
 
-fn do_find_common(conn: &mut dyn HgRepo, args: &[&str], out: &mut impl Write) {
-    let hgheads = args
-        .iter()
-        .map(|arg| HgChangesetId::from_str(arg).unwrap())
-        .collect_vec();
-    writeln!(out, "{}", find_common(conn, hgheads).iter().join(" ")).unwrap();
-}
-
 #[derive(Default, Debug)]
 struct FindCommonInfo {
     hg_node: Option<HgChangesetId>,
@@ -715,7 +637,7 @@ struct FindCommonInfo {
     has_known_children: bool,
 }
 
-fn find_common(
+pub fn find_common(
     conn: &mut dyn HgRepo,
     hgheads: impl Into<Vec<HgChangesetId>>,
 ) -> Vec<HgChangesetId> {
@@ -1193,34 +1115,4 @@ pub fn get_connection(url: &Url) -> Option<Arc<Mutex<dyn HgRepo + Send>>> {
     }
 
     Some(conn)
-}
-
-pub fn connect_main_with(
-    input: &mut impl BufRead,
-    out: &mut impl Write,
-    connection: Arc<Mutex<dyn HgRepo + Send>>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    loop {
-        let mut line = String::new();
-        input.read_line(&mut line)?;
-        let line = line.trim_matches('\n');
-        if line.is_empty() {
-            return Ok(());
-        }
-        let mut args = line.split(' ');
-        let command = args.next().ok_or("Missing command")?;
-        let mut conn = connection.lock().unwrap();
-        let args = args.collect_vec();
-        match command {
-            "known" => do_known(&mut *conn, &*args, out),
-            "unbundle" => do_unbundle(&mut *conn, &*args, out),
-            "state" => do_state(&mut *conn, &*args, out),
-            "find_common" => do_find_common(&mut *conn, &*args, out),
-            "close" => {
-                return Ok(());
-            }
-            _ => return Err(format!("Unknown command: {}", command).into()),
-        }
-        out.flush().unwrap();
-    }
 }

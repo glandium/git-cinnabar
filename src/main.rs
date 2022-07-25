@@ -110,21 +110,20 @@ use os_pipe::pipe;
 use url::Url;
 use which::which;
 
-use crate::hg_bundle::BUNDLE_PATH;
-use crate::hg_connect::decodecaps;
+use crate::hg_bundle::BundleReader;
+use crate::hg_connect::{decodecaps, find_common, UnbundleResponse};
 use crate::libc::FdFile;
 use crate::progress::set_progress;
 use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads};
 use crate::util::{FromBytes, ToBoxed};
 use graft::{do_graft, graft_finish, grafted, init_graft};
-use hg_connect::{
-    connect_main_with, get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo,
-};
+use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
 use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
     config_get_value, diff_tree, for_each_ref_in, for_each_remote, get_oid_committish,
-    lookup_replace_commit, ls_tree, metadata_oid, object_id, remote, resolve_ref, rev_list, strbuf,
-    string_list, BlobId, CommitId, DiffTreeItem, RawCommit, RefTransaction,
+    lookup_replace_commit, ls_tree, metadata_oid, object_id, remote, resolve_ref, rev_list,
+    rev_list_with_boundaries, strbuf, string_list, BlobId, CommitId, DiffTreeItem, MaybeBoundary,
+    RawCommit, RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::Progress;
@@ -133,7 +132,7 @@ use store::{
     raw_commit_for_changeset, store_git_blob, ChangesetHeads, GeneratedGitChangesetMetadata,
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
     HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF,
-    CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    CHANGESET_HEADS, CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
 
@@ -1023,7 +1022,7 @@ fn do_bundle(
         2 => BundleSpec::V2None,
         v => return Err(format!("Unknown version {v}")),
     });
-    let mut python = start_python_command(&[OsStr::new("bundle")], None)?;
+    let mut python = start_python_command(&[OsStr::new("bundle")])?;
     let mut python_in = python.child.stdin.take().unwrap();
     let mut python_out = BufReader::new(python.child.stdout.take().unwrap());
     revs.extend([
@@ -1038,20 +1037,9 @@ fn do_bundle(
     }
     writeln!(python_in).unwrap();
     python_in.flush().unwrap();
-    if let Some(line) = (&mut python_out).byte_lines().next() {
-        let line = line.unwrap();
-        assert_eq!(line.as_bstr(), b"create-bundle".as_bstr());
-        let file = File::create(path).unwrap();
-        create_bundle(
-            &mut python_out,
-            &mut python_in,
-            bundlespec,
-            version,
-            &file,
-            false,
-        );
-    }
     drop(python_in);
+    let file = File::create(path).unwrap();
+    create_bundle(&mut python_out, bundlespec, version, &file, false);
     let result = finish_python_command(python);
     unsafe {
         do_cleanup(1);
@@ -2427,7 +2415,6 @@ pub fn main() {
 
 struct PythonChild {
     child: Child,
-    wire_thread: Option<JoinHandle<()>>,
     import_thread: JoinHandle<()>,
     logging_thread: JoinHandle<()>,
     sent_data: std::io::Result<()>,
@@ -2447,10 +2434,7 @@ impl DerefMut for PythonChild {
     }
 }
 
-fn start_python_command(
-    args: &[&OsStr],
-    conn: Option<Arc<Mutex<dyn HgRepo + Send>>>,
-) -> Result<PythonChild, String> {
+fn start_python_command(args: &[&OsStr]) -> Result<PythonChild, String> {
     let mut python = if let Ok(p) = which("python3") {
         Command::new(p)
     } else if let Ok(p) = which("py") {
@@ -2485,32 +2469,6 @@ fn start_python_command(
         let reader = reader.dup_inheritable();
         extra_env.push(("GIT_CINNABAR_BOOTSTRAP_FD", format!("{}", reader)));
         (Some(reader), Some(writer))
-    } else {
-        (None, None)
-    };
-
-    let (wire_fds, wire_thread) = if let Some(conn) = conn {
-        let (reader1, writer1) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
-        let (reader2, writer2) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
-        let reader1 = reader1.dup_inheritable();
-        let writer2 = writer2.dup_inheritable();
-        extra_env.push(("GIT_CINNABAR_WIRE_FDS", format!("{},{}", reader1, writer2)));
-        let thread = thread::Builder::new()
-            .name("helper-wire".into())
-            .spawn(move || {
-                connect_main_with(
-                    &mut logging::LoggingBufReader::new(
-                        "helper-wire",
-                        log::Level::Debug,
-                        BufReader::new(reader2),
-                    ),
-                    &mut logging::LoggingWriter::new("helper-wire", log::Level::Debug, writer1),
-                    conn,
-                )
-                .unwrap();
-            })
-            .unwrap();
-        (Some((reader1, writer2)), Some(thread))
     } else {
         (None, None)
     };
@@ -2583,7 +2541,6 @@ fn start_python_command(
         .stdout(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to start python: {}", e))?;
-    drop(wire_fds);
     drop(import_fds);
     drop(logging_fd);
     drop(reader);
@@ -2595,7 +2552,6 @@ fn start_python_command(
     };
     Ok(PythonChild {
         child,
-        wire_thread,
         import_thread,
         logging_thread,
         sent_data,
@@ -2605,7 +2561,6 @@ fn start_python_command(
 fn finish_python_command(child: PythonChild) -> Result<i32, String> {
     let PythonChild {
         mut child,
-        wire_thread,
         import_thread,
         logging_thread,
         sent_data,
@@ -2622,7 +2577,6 @@ fn finish_python_command(child: PythonChild) -> Result<i32, String> {
             return Ok(1);
         }
     };
-    drop(wire_thread);
     drop(import_thread);
     drop(logging_thread);
     sent_data
@@ -3140,12 +3094,6 @@ fn remote_helper_push(
         }
     }
 
-    let args = [OsStr::new("push"), OsStr::new("dry-run")];
-    let mut python =
-        start_python_command(if dry_run { &args } else { &args[..1] }, Some(conn.clone()))?;
-    let mut python_in = python.stdin.take().unwrap();
-    let mut python_out = BufReader::new(python.stdout.take().unwrap());
-
     let bookmark_prefix = info.refs_style.contains(RefsStyle::BOOKMARKS).then(|| {
         if info
             .refs_style
@@ -3157,68 +3105,198 @@ fn remote_helper_push(
         }
     });
 
-    for (_, cid, dest, force) in &push_refs {
-        if *force {
-            python_in.write_all(b"+").unwrap();
-        }
-        if let Some(cid) = cid {
-            python_in.write_all(cid.to_string().as_bytes()).unwrap();
-        }
-        python_in.write_all(b":").unwrap();
-        python_in.write_all(dest).unwrap();
-        python_in.write_all(b"\n").unwrap();
-    }
-    python_in.write_all(b"\n").unwrap();
-    python_in.flush().unwrap();
     let mut pushed = ChangesetHeads::new();
-    if let Some(buf) = (&mut python_out).byte_lines().next() {
-        let buf = buf.unwrap();
-        assert_eq!(buf.as_bstr(), b"create-bundle".as_bstr());
-        let b2caps = conn
-            .lock()
-            .unwrap()
-            .get_capability(b"bundle2")
-            .and_then(|caps| {
-                decodecaps(
-                    percent_decode(caps)
-                        .decode_utf8()
-                        .ok()?
-                        .as_bytes()
-                        .as_bstr(),
+    let result = (|| {
+        let branch_names = info.branch_names.into_iter().collect::<HashSet<_>>();
+        let push_commits = push_refs
+            .iter()
+            .filter_map(|(_, c, _, _)| c.clone())
+            .collect_vec();
+        let local_bases = rev_list_with_boundaries(
+            CHANGESET_HEADS
+                .lock()
+                .unwrap()
+                .branch_heads()
+                .filter_map(|(h, b)| {
+                    branch_names
+                        .contains(b)
+                        .then(|| format!("^{}", h.to_git().unwrap()))
+                })
+                .chain(push_commits.iter().map(ToString::to_string))
+                .chain(["--topo-order".to_string(), "--full-history".to_string()]),
+        )
+        .filter_map(|b| match b {
+            MaybeBoundary::Boundary(c) => Some(Ok(c)),
+            MaybeBoundary::Shallow => Some(Err(
+                "Pushing git shallow clones is not supported.".to_string()
+            )),
+            MaybeBoundary::Commit(_) => None,
+        })
+        .chain(push_commits.into_iter().map(Ok))
+        .map(|c| c.map(GitChangesetId::from_unchecked))
+        .filter_map(|c| c.map(|c| c.to_hg()).transpose())
+        .unique()
+        .collect::<Result<Vec<_>, _>>()?;
+
+        let pushing_anything = push_refs.iter().any(|(_, c, _, _)| c.is_some());
+        let force = push_refs.iter().all(|(_, _, _, force)| *force);
+        let no_topological_heads = info
+            .topological_heads
+            .iter()
+            .all(|h| h == &HgChangesetId::null());
+        if pushing_anything && local_bases.is_empty() && !no_topological_heads {
+            let mut fail = true;
+            if has_metadata() && force {
+                let cinnabar_roots = rev_list([
+                    "--topo-order",
+                    "--full-history",
+                    "--max-parents=0",
+                    "refs/cinnabar/metadata^",
+                ])
+                .filter_map(|c| GitChangesetId::from_unchecked(c).to_hg())
+                .collect_vec();
+                fail = !conn
+                    .lock()
+                    .unwrap()
+                    .known(&cinnabar_roots)
+                    .iter()
+                    .any(|k| *k);
+            }
+            if fail {
+                return Err(
+                    "Cannot push to this remote without pulling/updating first.".to_string()
+                );
+            }
+        }
+
+        let common = find_common(&mut *conn.lock().unwrap(), local_bases);
+
+        let push_commits = rev_list(
+            ["--topo-order", "--full-history", "--reverse"]
+                .iter()
+                .map(ToString::to_string)
+                .chain(
+                    common
+                        .into_iter()
+                        .map(|c| format!("^{}", c.to_git().unwrap())),
                 )
-                .collect::<Option<HashMap<_, _>>>()
-            })
-            .unwrap_or_default();
-        let (bundlespec, version) = if b2caps.is_empty() {
-            (BundleSpec::ChangegroupV1, 1)
+                .chain(
+                    push_refs
+                        .iter()
+                        .filter_map(|(_, c, _, _)| c.as_ref().map(ToString::to_string)),
+                ),
+        )
+        .map(|c| {
+            let commit = RawCommit::read(&c).unwrap();
+            let commit = commit.parse().unwrap();
+            (c, commit.parents().to_boxed())
+        })
+        .collect_vec();
+
+        if !push_commits.is_empty() {
+            let has_root = push_commits.iter().any(|(_, p)| p.is_empty());
+            if has_root && !no_topological_heads {
+                if !force {
+                    return Err("Cannot push a new root".to_string());
+                }
+                warn!(target: "root", "Pushing a new root");
+            }
+        }
+
+        let mut result = None;
+        if !push_commits.is_empty() && !dry_run {
+            let mut conn = conn.lock().unwrap();
+            conn.require_capability(b"unbundle");
+
+            let mut python = start_python_command(&[OsStr::new("bundle")])?;
+            let mut python_in = python.child.stdin.take().unwrap();
+            let mut python_out = BufReader::new(python.child.stdout.take().unwrap());
+            for (cid, parents) in &push_commits {
+                writeln!(python_in, "{} {}", cid, parents.iter().join(" ")).unwrap();
+            }
+            writeln!(python_in).unwrap();
+            python_in.flush().unwrap();
+            drop(python_in);
+            let b2caps = conn
+                .get_capability(b"bundle2")
+                .and_then(|caps| {
+                    decodecaps(
+                        percent_decode(caps)
+                            .decode_utf8()
+                            .ok()?
+                            .as_bytes()
+                            .as_bstr(),
+                    )
+                    .collect::<Option<HashMap<_, _>>>()
+                })
+                .unwrap_or_default();
+            let (bundlespec, version) = if b2caps.is_empty() {
+                (BundleSpec::ChangegroupV1, 1)
+            } else {
+                let version = b2caps
+                    .get("changegroup")
+                    .and_then(|cg| cg.iter().flat_map(|cg| cg.iter()).find(|cg| &***cg == "02"))
+                    .and(Some(2))
+                    .unwrap_or(1);
+                (BundleSpec::V2None, version)
+            };
+            let tempfile = tempfile::Builder::new()
+                .prefix("hg-bundle-")
+                .suffix(".hg")
+                .rand_bytes(6)
+                .tempfile()
+                .unwrap();
+            let (file, path) = tempfile.into_parts();
+            pushed = create_bundle(&mut python_out, bundlespec, version, &file, version == 2);
+            drop(file);
+            let file = File::open(path).unwrap();
+            let empty_heads = [HgChangesetId::null()];
+            let heads = if force {
+                None
+            } else if no_topological_heads {
+                Some(&empty_heads[..])
+            } else {
+                Some(&info.topological_heads[..])
+            };
+            let response = conn.unbundle(heads, file);
+            match response {
+                UnbundleResponse::Bundlev2(data) => {
+                    let mut bundle = BundleReader::new(data).unwrap();
+                    while let Some(part) = bundle.next_part().unwrap() {
+                        match part.part_type.as_bytes() {
+                            b"reply:changegroup" => {
+                                // TODO: should check in-reply-to param.
+                                let response = part.get_param("return").unwrap();
+                                result = u32::from_str(response).ok();
+                            }
+                            b"error:abort" => {
+                                let mut message = part.get_param("message").unwrap().to_string();
+                                if let Some(hint) = part.get_param("hint") {
+                                    message.push_str("\n\n");
+                                    message.push_str(hint);
+                                }
+                                error!(target: "root", "{}", message);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                UnbundleResponse::Raw(response) => {
+                    result = u32::from_bytes(&*response).ok();
+                }
+            }
+            drop(python_out);
+            if finish_python_command(python)? > 0 {
+                return Ok(1);
+            }
+        }
+
+        if (result.unwrap_or(0) > 0 || dry_run) && push_commits.is_empty() {
+            Ok(1)
         } else {
-            let version = b2caps
-                .get("changegroup")
-                .and_then(|cg| cg.iter().flat_map(|cg| cg.iter()).find(|cg| &***cg == "02"))
-                .and(Some(2))
-                .unwrap_or(1);
-            (BundleSpec::V2None, version)
-        };
-        let tempfile = tempfile::Builder::new()
-            .prefix("hg-bundle-")
-            .suffix(".hg")
-            .rand_bytes(6)
-            .tempfile()
-            .unwrap();
-        let (file, path) = tempfile.into_parts();
-        *BUNDLE_PATH.lock().unwrap() = Some(path);
-        pushed = create_bundle(
-            &mut python_out,
-            &mut python_in,
-            bundlespec,
-            version,
-            &file,
-            version == 2,
-        );
-    }
-    drop(python_in);
-    drop(python_out);
-    let result = finish_python_command(python);
+            Ok(0)
+        }
+    })();
 
     // Collect all the responses before sending anything back through
     // the remote-helper protocol, so that if something fails, we don't

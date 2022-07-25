@@ -318,6 +318,24 @@ void rev_list_finish(struct rev_info *revs) {
 	free(revs);
 }
 
+int maybe_boundary(struct rev_info *revs, struct commit *commit) {
+	struct commit_list *parent;
+	struct commit_graft *graft;
+
+	if (commit->object.flags & BOUNDARY)
+		return 1;
+
+	parent = commit->parents;
+	if (revs->boundary && !parent &&
+		is_repository_shallow(the_repository) &&
+		(graft = lookup_commit_graft(
+			the_repository, &commit->object.oid)) != NULL &&
+		graft->nr_parent < 0) {
+		return 2;
+	}
+	return 0;
+}
+
 void do_rev_list(struct string_list *args, int helper_output)
 {
 	struct rev_info *revs;

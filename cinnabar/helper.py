@@ -1,7 +1,6 @@
 import logging
 import os
 import sys
-from urllib.parse import unquote_to_bytes
 from cinnabar.git import NULL_NODE_ID
 from cinnabar.hg.changegroup import (
     RawRevChunk01,
@@ -37,21 +36,17 @@ class NoFdHelper(RuntimeError):
 
 class FdHelper(object):
     def __init__(self, mode):
-        if mode == 'bundle':
-            self.stdin = sys.stdout.buffer
-            self.stdout = sys.stdin.buffer
-        else:
-            env_name = "GIT_CINNABAR_{}_FDS".format(mode.upper())
-            if env_name not in os.environ:
-                raise NoFdHelper
-            (reader, writer) = (
-                int(fd) for fd in os.environ[env_name].split(','))
-            if sys.platform == 'win32':
-                import msvcrt
-                reader = msvcrt.open_osfhandle(reader, os.O_RDONLY)
-                writer = msvcrt.open_osfhandle(writer, os.O_WRONLY)
-            self.stdin = os.fdopen(writer, 'wb')
-            self.stdout = os.fdopen(reader, 'rb')
+        env_name = "GIT_CINNABAR_{}_FDS".format(mode.upper())
+        if env_name not in os.environ:
+            raise NoFdHelper
+        (reader, writer) = (
+            int(fd) for fd in os.environ[env_name].split(','))
+        if sys.platform == 'win32':
+            import msvcrt
+            reader = msvcrt.open_osfhandle(reader, os.O_RDONLY)
+            writer = msvcrt.open_osfhandle(writer, os.O_WRONLY)
+        self.stdin = os.fdopen(writer, 'wb')
+        self.stdout = os.fdopen(reader, 'rb')
         if mode == 'wire':
             return
         logger_name = "helper-{}".format(mode)
@@ -234,47 +229,3 @@ class GitHgHelper(BaseHelper):
             sha1 = stdout.read(41)
             assert sha1[-1:] == b'\n'
             return sha1[:40]
-
-
-class HgRepoHelper(BaseHelper):
-    MODE = 'wire'
-    _helper = False
-    connected = True
-
-    @classmethod
-    def state(self):
-        with self.query(b'state') as stdout:
-            return {
-                'branchmap': {
-                    unquote_to_bytes(branch): heads.split(b' ')
-                    for line in self._read_data(stdout).splitlines()
-                    for branch, heads in (line.split(b' ', 1),)
-                },
-                'heads': self._read_data(stdout)[:-1].split(b' '),
-                'bookmarks': dict(
-                    line.split(b'\t', 1)
-                    for line in self._read_data(stdout).splitlines()
-                ),
-            }
-
-    @classmethod
-    def known(self, nodes):
-        with self.query(b'known', *nodes) as stdout:
-            return self._read_data(stdout)
-
-    @classmethod
-    def unbundle(self, heads):
-        with self.query(b'unbundle', *heads) as stdout:
-            ret = self._read_data(stdout)
-            return int(ret)
-
-    @classmethod
-    def find_common(self, heads):
-        with self.query(b'find_common', *heads) as stdout:
-            return stdout.readline().split()
-
-
-class BundleHelper(HgRepoHelper):
-    MODE = 'bundle'
-    _helper = False
-    connected = False
