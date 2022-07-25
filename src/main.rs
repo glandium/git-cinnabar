@@ -2517,7 +2517,6 @@ fn start_python_command(args: &[&OsStr]) -> Result<PythonChild, String> {
         .arg(bootstrap)
         .arg(&args_os[0])
         .args(args)
-        .env("GIT_CINNABAR", std::env::current_exe().unwrap())
         .envs(extra_env)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
