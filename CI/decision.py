@@ -121,8 +121,8 @@ class TestTask(Task):
             kwargs['command'].extend([
                 'shopt -s nullglob',
                 'cd repo',
-                'zip $ARTIFACTS/coverage.zip .coverage'
-                ' $(find . -name "*.gcda")',
+                'zip $ARTIFACTS/coverage.zip'
+                ' $(find . -name .coverage -o -name "*.gcda")',
                 'cd ..',
                 'shopt -u nullglob',
             ])
@@ -401,8 +401,9 @@ def main():
 
         for task in TestTask.coverage:
             merge_coverage.extend([
-                'unzip -d cov-{{{}.id}} cov-{{{}.id}}.zip .coverage'.format(
-                    task, task),
+                'unzip -d cov-{{{}.id}} cov-{{{}.id}}.zip .coverage'
+                ' || touch cov-{{{}.id}}/.coverage'.format(
+                    task, task, task),
             ])
 
         merge_coverage.extend([

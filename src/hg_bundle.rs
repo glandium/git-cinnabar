@@ -6,14 +6,13 @@ use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::fs::File;
-use std::io::{self, copy, BufRead, Chain, Cursor, ErrorKind, Read, Write};
+use std::io::{self, copy, Chain, Cursor, ErrorKind, Read, Write};
 use std::iter::repeat;
 use std::mem::{self, MaybeUninit};
 use std::os::raw::c_int;
 use std::ptr::NonNull;
 use std::str::FromStr;
 
-use bstr::io::BufReadExt;
 use bstr::ByteSlice;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use bzip2::read::BzDecoder;
@@ -990,7 +989,7 @@ fn write_chunk(
 }
 
 pub fn create_bundle(
-    input: &mut dyn BufRead,
+    changesets: impl Iterator<Item = [HgChangesetId; 3]>,
     bundlespec: BundleSpec,
     version: u8,
     output: &File,
@@ -1015,16 +1014,6 @@ pub fn create_bundle(
     let mut previous = None;
     let mut manifests = IndexMap::new();
 
-    let changesets = input.byte_lines().filter_map(|line| {
-        line.unwrap()
-            .splitn_exact(b' ')
-            .map(|[node, parent1, parent2]| {
-                let node = HgChangesetId::from_bytes(node).unwrap();
-                let parent1 = HgChangesetId::from_bytes(parent1).unwrap();
-                let parent2 = HgChangesetId::from_bytes(parent2).unwrap();
-                [node, parent1, parent2]
-            })
-    });
     for [node, parent1, parent2] in changesets.progress(|n| format!("Bundling {n} changesets")) {
         // TODO: add branch.
         changeset_heads.add(&node, &[&parent1, &parent2], b"".as_bstr());

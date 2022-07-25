@@ -82,13 +82,11 @@ use std::fs::File;
 use std::hash::Hash;
 use std::io::{copy, stdin, stdout, BufRead, BufReader, BufWriter, Cursor, Write};
 use std::iter::repeat;
-use std::ops::{Deref, DerefMut};
-use std::os::raw::c_int;
-use std::os::raw::{c_char, c_void};
+use std::os::raw::{c_char, c_int, c_void};
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::{Child, ChildStdin, ChildStdout, Command};
 use std::str::{self, from_utf8, FromStr};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -1004,29 +1002,52 @@ fn do_bundle(
         2 => BundleSpec::V2None,
         v => return Err(format!("Unknown version {v}")),
     });
-    let mut python = start_bundle_helper()?;
-    let mut python_in = python.child.stdin.take().unwrap();
-    let mut python_out = BufReader::new(python.child.stdout.take().unwrap());
     revs.extend([
         "--topo-order".into(),
         "--full-history".into(),
         "--reverse".into(),
     ]);
-    for cid in rev_list(&revs) {
-        let commit = RawCommit::read(&cid).unwrap();
+    let commits = rev_list(revs).map(|c| {
+        let commit = RawCommit::read(&c).unwrap();
         let commit = commit.parse().unwrap();
-        writeln!(python_in, "{} {}", cid, commit.parents().iter().join(" ")).unwrap();
-    }
-    writeln!(python_in).unwrap();
-    python_in.flush().unwrap();
-    drop(python_in);
+        (c, commit.parents().to_boxed())
+    });
     let file = File::create(path).unwrap();
-    create_bundle(&mut python_out, bundlespec, version, &file, false);
-    let result = finish_bundle_helper(python);
+    let result = do_create_bundle(commits, bundlespec, version, &file, false).map(|_| 0);
     unsafe {
         do_cleanup(1);
     }
     result
+}
+
+pub fn do_create_bundle(
+    commits: impl Iterator<Item = (CommitId, Box<[CommitId]>)>,
+    bundlespec: BundleSpec,
+    version: u8,
+    output: &File,
+    replycaps: bool,
+) -> Result<ChangesetHeads, String> {
+    let mut helper = Lazy::new(|| BundleHelper::start().unwrap());
+    let changesets = commits.map(|(cid, parents)| {
+        if let Some(csid) = GitChangesetId::from_unchecked(cid.clone()).to_hg() {
+            let mut parents = parents.iter().cloned();
+            let parent1 = parents.next().map_or_else(HgChangesetId::null, |p| {
+                GitChangesetId::from_unchecked(p).to_hg().unwrap()
+            });
+            let parent2 = parents.next().map_or_else(HgChangesetId::null, |p| {
+                GitChangesetId::from_unchecked(p).to_hg().unwrap()
+            });
+            assert!(parents.next().is_none());
+            [csid, parent1, parent2]
+        } else {
+            helper.handle(&cid, &parents)
+        }
+    });
+    let pushed = create_bundle(changesets, bundlespec, version, output, replycaps);
+    if let Ok(helper) = Lazy::into_value(helper) {
+        helper.finish()?;
+    }
+    Ok(pushed)
 }
 
 extern "C" {
@@ -2397,195 +2418,211 @@ pub fn main() {
 
 struct BundleHelper {
     child: Child,
+    stdin: Option<ChildStdin>,
+    stdout: BufReader<ChildStdout>,
     import_thread: JoinHandle<()>,
     logging_thread: JoinHandle<()>,
     sent_data: std::io::Result<u64>,
 }
 
-impl Deref for BundleHelper {
-    type Target = Child;
+impl BundleHelper {
+    fn start() -> Result<Self, String> {
+        let mut python = if let Ok(p) = which("python3") {
+            Command::new(p)
+        } else if let Ok(p) = which("py") {
+            let mut c = Command::new(p);
+            c.arg("-3");
+            c
+        } else {
+            return Err("Could not find python 3.x".into());
+        };
 
-    fn deref(&self) -> &Self::Target {
-        &self.child
-    }
-}
+        // We aggregate the various parts of a bootstrap code that reads a
+        // tarball from stdin, and use the contents of that tarball as a
+        // source of python modules, using a custom loader.
+        // The tarball itself is included compressed in this binary, and
+        // we decompress it before sending.
+        let mut bootstrap = String::new();
+        let internal_python = cfg!(profile = "release")
+            || std::env::var_os("GIT_CINNABAR_NO_INTERNAL_PYTHON").is_none();
+        if internal_python {
+            bootstrap.push_str(include_str!("../bootstrap/loader.py"));
+        } else {
+            bootstrap.push_str("import sys\n");
+        }
+        if std::env::var("GIT_CINNABAR_COVERAGE").is_ok() {
+            bootstrap.push_str(include_str!("../bootstrap/coverage.py"));
+        }
+        bootstrap.push_str(include_str!("../bootstrap/git-remote-hg.py"));
 
-impl DerefMut for BundleHelper {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.child
-    }
-}
+        let mut extra_env = Vec::new();
+        let (reader, writer) = if internal_python {
+            let (reader, writer) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
+            let reader = reader.dup_inheritable();
+            extra_env.push(("GIT_CINNABAR_BOOTSTRAP_FD", format!("{}", reader)));
+            (Some(reader), Some(writer))
+        } else {
+            (None, None)
+        };
 
-fn start_bundle_helper() -> Result<BundleHelper, String> {
-    let mut python = if let Ok(p) = which("python3") {
-        Command::new(p)
-    } else if let Ok(p) = which("py") {
-        let mut c = Command::new(p);
-        c.arg("-3");
-        c
-    } else {
-        return Err("Could not find python 3.x".into());
-    };
+        let (import_fds, import_thread) = {
+            let (reader1, writer1) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
+            let (reader2, writer2) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
+            let reader1 = reader1.dup_inheritable();
+            let writer2 = writer2.dup_inheritable();
+            extra_env.push((
+                "GIT_CINNABAR_IMPORT_FDS",
+                format!("{},{}", reader1, writer2),
+            ));
+            let thread = thread::Builder::new()
+                .name("helper-import".into())
+                .spawn(move || {
+                    #[cfg(windows)]
+                    let writer1 = unsafe {
+                        ::libc::open_osfhandle(writer1.as_raw_handle() as isize, ::libc::O_RDONLY)
+                    };
+                    #[cfg(unix)]
+                    let writer1 = writer1.as_raw_fd();
+                    helper_main(&mut BufReader::new(reader2), writer1);
+                })
+                .unwrap();
+            ((reader1, writer2), thread)
+        };
 
-    // We aggregate the various parts of a bootstrap code that reads a
-    // tarball from stdin, and use the contents of that tarball as a
-    // source of python modules, using a custom loader.
-    // The tarball itself is included compressed in this binary, and
-    // we decompress it before sending.
-    let mut bootstrap = String::new();
-    let internal_python =
-        cfg!(profile = "release") || std::env::var_os("GIT_CINNABAR_NO_INTERNAL_PYTHON").is_none();
-    if internal_python {
-        bootstrap.push_str(include_str!("../bootstrap/loader.py"));
-    } else {
-        bootstrap.push_str("import sys\n");
-    }
-    if std::env::var("GIT_CINNABAR_COVERAGE").is_ok() {
-        bootstrap.push_str(include_str!("../bootstrap/coverage.py"));
-    }
-    bootstrap.push_str(include_str!("../bootstrap/git-remote-hg.py"));
-
-    let mut extra_env = Vec::new();
-    let (reader, writer) = if internal_python {
-        let (reader, writer) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
-        let reader = reader.dup_inheritable();
-        extra_env.push(("GIT_CINNABAR_BOOTSTRAP_FD", format!("{}", reader)));
-        (Some(reader), Some(writer))
-    } else {
-        (None, None)
-    };
-
-    let (import_fds, import_thread) = {
-        let (reader1, writer1) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
-        let (reader2, writer2) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
-        let reader1 = reader1.dup_inheritable();
-        let writer2 = writer2.dup_inheritable();
-        extra_env.push((
-            "GIT_CINNABAR_IMPORT_FDS",
-            format!("{},{}", reader1, writer2),
-        ));
-        let thread = thread::Builder::new()
-            .name("helper-import".into())
-            .spawn(move || {
-                #[cfg(windows)]
-                let writer1 = unsafe {
-                    ::libc::open_osfhandle(writer1.as_raw_handle() as isize, ::libc::O_RDONLY)
-                };
-                #[cfg(unix)]
-                let writer1 = writer1.as_raw_fd();
-                helper_main(&mut BufReader::new(reader2), writer1);
-            })
-            .unwrap();
-        ((reader1, writer2), thread)
-    };
-
-    let (logging_fd, logging_thread) = {
-        let (reader, writer) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
-        let writer = writer.dup_inheritable();
-        extra_env.push(("GIT_CINNABAR_LOG_FD", format!("{}", writer)));
-        let thread = thread::Builder::new()
-            .name("py-logger".into())
-            .spawn(move || {
-                let reader = BufReader::new(reader);
-                for line in reader.lines() {
-                    if let Some([level, target, msg]) = line.unwrap().splitn_exact(' ') {
-                        let msg = msg.replace('\0', "\n");
-                        if target == "stderr" {
-                            eprintln!("{}", msg);
-                        } else {
-                            let level = match level {
-                                "CRITICAL" => log::Level::Error,
-                                "ERROR" => log::Level::Error,
-                                "WARNING" => log::Level::Warn,
-                                "INFO" => log::Level::Info,
-                                "DEBUG" => log::Level::Debug,
-                                _ => log::Level::Trace,
-                            };
-                            log!(target: target, level, "{}", msg);
+        let (logging_fd, logging_thread) = {
+            let (reader, writer) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
+            let writer = writer.dup_inheritable();
+            extra_env.push(("GIT_CINNABAR_LOG_FD", format!("{}", writer)));
+            let thread = thread::Builder::new()
+                .name("py-logger".into())
+                .spawn(move || {
+                    let reader = BufReader::new(reader);
+                    for line in reader.lines() {
+                        if let Some([level, target, msg]) = line.unwrap().splitn_exact(' ') {
+                            let msg = msg.replace('\0', "\n");
+                            if target == "stderr" {
+                                eprintln!("{}", msg);
+                            } else {
+                                let level = match level {
+                                    "CRITICAL" => log::Level::Error,
+                                    "ERROR" => log::Level::Error,
+                                    "WARNING" => log::Level::Warn,
+                                    "INFO" => log::Level::Info,
+                                    "DEBUG" => log::Level::Debug,
+                                    _ => log::Level::Trace,
+                                };
+                                log!(target: target, level, "{}", msg);
+                            }
                         }
                     }
-                }
+                })
+                .unwrap();
+            (writer, thread)
+        };
+
+        extra_env.push((
+            "GIT_CINNABAR_TRACEBACK",
+            check_enabled(Checks::TRACEBACK)
+                .then(|| "1")
+                .unwrap_or("")
+                .into(),
+        ));
+
+        extra_env.push((
+            "GIT_CINNABAR_MERGE",
+            experiment(Experiments::MERGE)
+                .then(|| "1")
+                .unwrap_or("")
+                .into(),
+        ));
+
+        extra_env.push((
+            "GIT_CINNABAR_LOG",
+            get_config("log")
+                .as_ref()
+                .map_or("", |l| l.to_str().unwrap())
+                .to_string(),
+        ));
+
+        let args_os = std::env::args_os().collect_vec();
+
+        let mut child = python
+            .arg("-c")
+            .arg(bootstrap)
+            .arg(&args_os[0])
+            .envs(extra_env)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to start python: {}", e))?;
+        drop(import_fds);
+        drop(logging_fd);
+        drop(reader);
+
+        let sent_data = if let Some(mut writer) = writer {
+            copy(&mut Cursor::new(cinnabar_py::CINNABAR_PY), &mut writer)
+        } else {
+            Ok(0)
+        };
+        let stdin = child.stdin.take().unwrap();
+        let stdout = BufReader::new(child.stdout.take().unwrap());
+        Ok(BundleHelper {
+            child,
+            stdin: Some(stdin),
+            stdout,
+            import_thread,
+            logging_thread,
+            sent_data,
+        })
+    }
+
+    fn handle(&mut self, commit: &CommitId, parents: &[CommitId]) -> [HgChangesetId; 3] {
+        let stdin = self.stdin.as_mut().unwrap();
+        writeln!(stdin, "{} {}", commit, parents.iter().join(" ")).unwrap();
+        stdin.flush().unwrap();
+        (&mut self.stdout)
+            .byte_lines()
+            .next()
+            .unwrap()
+            .unwrap()
+            .splitn_exact(b' ')
+            .map(|[node, parent1, parent2]| {
+                let node = HgChangesetId::from_bytes(node).unwrap();
+                let parent1 = HgChangesetId::from_bytes(parent1).unwrap();
+                let parent2 = HgChangesetId::from_bytes(parent2).unwrap();
+                [node, parent1, parent2]
             })
-            .unwrap();
-        (writer, thread)
-    };
+            .unwrap()
+    }
 
-    extra_env.push((
-        "GIT_CINNABAR_TRACEBACK",
-        check_enabled(Checks::TRACEBACK)
-            .then(|| "1")
-            .unwrap_or("")
-            .into(),
-    ));
-
-    extra_env.push((
-        "GIT_CINNABAR_MERGE",
-        experiment(Experiments::MERGE)
-            .then(|| "1")
-            .unwrap_or("")
-            .into(),
-    ));
-
-    extra_env.push((
-        "GIT_CINNABAR_LOG",
-        get_config("log")
-            .as_ref()
-            .map_or("", |l| l.to_str().unwrap())
-            .to_string(),
-    ));
-
-    let args_os = std::env::args_os().collect_vec();
-
-    let child = python
-        .arg("-c")
-        .arg(bootstrap)
-        .arg(&args_os[0])
-        .envs(extra_env)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to start python: {}", e))?;
-    drop(import_fds);
-    drop(logging_fd);
-    drop(reader);
-
-    let sent_data = if let Some(mut writer) = writer {
-        copy(&mut Cursor::new(cinnabar_py::CINNABAR_PY), &mut writer)
-    } else {
-        Ok(0)
-    };
-    Ok(BundleHelper {
-        child,
-        import_thread,
-        logging_thread,
-        sent_data,
-    })
-}
-
-fn finish_bundle_helper(child: BundleHelper) -> Result<i32, String> {
-    let BundleHelper {
-        mut child,
-        import_thread,
-        logging_thread,
-        sent_data,
-    } = child;
-    let status = child.wait().expect("Python command wasn't running?!");
-    match status.code() {
-        Some(0) => {}
-        Some(code) => return Ok(code),
-        None => {
-            #[cfg(unix)]
-            if let Some(signal) = status.signal() {
-                return Ok(-signal);
+    fn finish(self) -> Result<i32, String> {
+        let BundleHelper {
+            mut child,
+            stdin,
+            import_thread,
+            logging_thread,
+            sent_data,
+            ..
+        } = self;
+        drop(stdin);
+        let status = child.wait().expect("Python command wasn't running?!");
+        match status.code() {
+            Some(0) => {}
+            Some(code) => return Ok(code),
+            None => {
+                #[cfg(unix)]
+                if let Some(signal) = status.signal() {
+                    return Ok(-signal);
+                }
+                return Ok(1);
             }
-            return Ok(1);
-        }
-    };
-    drop(import_thread);
-    drop(logging_thread);
-    sent_data
-        .map(|_| 0)
-        .map_err(|e| format!("Failed to communicate with python: {}", e))
+        };
+        drop(import_thread);
+        drop(logging_thread);
+        sent_data
+            .map(|_| 0)
+            .map_err(|e| format!("Failed to communicate with python: {}", e))
+    }
 }
 
 fn remote_helper_tags_list(mut stdout: impl Write) {
@@ -3242,21 +3279,14 @@ fn remote_helper_push(
                 .tempfile()
                 .unwrap();
             let (file, path) = tempfile.into_parts();
-            let mut python = start_bundle_helper()?;
-            let mut python_in = python.child.stdin.take().unwrap();
-            let mut python_out = BufReader::new(python.child.stdout.take().unwrap());
-            for (cid, parents) in &push_commits {
-                writeln!(python_in, "{} {}", cid, parents.iter().join(" ")).unwrap();
-            }
-            writeln!(python_in).unwrap();
-            python_in.flush().unwrap();
-            drop(python_in);
-            pushed = create_bundle(&mut python_out, bundlespec, version, &file, version == 2);
+            pushed = do_create_bundle(
+                push_commits.iter().cloned(),
+                bundlespec,
+                version,
+                &file,
+                version == 2,
+            )?;
             drop(file);
-            drop(python_out);
-            if finish_bundle_helper(python)? > 0 {
-                return Ok(1);
-            }
             let file = File::open(path).unwrap();
             let empty_heads = [HgChangesetId::null()];
             let heads = if force {
