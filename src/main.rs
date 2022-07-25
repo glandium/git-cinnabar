@@ -3189,15 +3189,6 @@ fn remote_helper_push(
             let mut conn = conn.lock().unwrap();
             conn.require_capability(b"unbundle");
 
-            let mut python = start_python_command(&[OsStr::new("bundle")])?;
-            let mut python_in = python.child.stdin.take().unwrap();
-            let mut python_out = BufReader::new(python.child.stdout.take().unwrap());
-            for (cid, parents) in &push_commits {
-                writeln!(python_in, "{} {}", cid, parents.iter().join(" ")).unwrap();
-            }
-            writeln!(python_in).unwrap();
-            python_in.flush().unwrap();
-            drop(python_in);
             let b2caps = conn
                 .get_capability(b"bundle2")
                 .and_then(|caps| {
@@ -3228,8 +3219,21 @@ fn remote_helper_push(
                 .tempfile()
                 .unwrap();
             let (file, path) = tempfile.into_parts();
+            let mut python = start_python_command(&[OsStr::new("bundle")])?;
+            let mut python_in = python.child.stdin.take().unwrap();
+            let mut python_out = BufReader::new(python.child.stdout.take().unwrap());
+            for (cid, parents) in &push_commits {
+                writeln!(python_in, "{} {}", cid, parents.iter().join(" ")).unwrap();
+            }
+            writeln!(python_in).unwrap();
+            python_in.flush().unwrap();
+            drop(python_in);
             pushed = create_bundle(&mut python_out, bundlespec, version, &file, version == 2);
             drop(file);
+            drop(python_out);
+            if finish_python_command(python)? > 0 {
+                return Ok(1);
+            }
             let file = File::open(path).unwrap();
             let empty_heads = [HgChangesetId::null()];
             let heads = if force {
@@ -3265,10 +3269,6 @@ fn remote_helper_push(
                 UnbundleResponse::Raw(response) => {
                     result = u32::from_bytes(&*response).ok();
                 }
-            }
-            drop(python_out);
-            if finish_python_command(python)? > 0 {
-                return Ok(1);
             }
         }
 
