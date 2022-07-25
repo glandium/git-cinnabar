@@ -2510,6 +2510,14 @@ fn start_bundle_helper() -> Result<BundleHelper, String> {
         (writer, thread)
     };
 
+    extra_env.push((
+        "GIT_CINNABAR_TRACEBACK",
+        check_enabled(Checks::TRACEBACK)
+            .then(|| "1")
+            .unwrap_or("")
+            .into(),
+    ));
+
     let args_os = std::env::args_os().collect_vec();
 
     let child = python

@@ -98,13 +98,6 @@ class ConfigSetFunc(object):
         return name in self._config
 
 
-check_enabled = ConfigSetFunc(
-    'cinnabar.check',
-    ('nodeid', 'manifests', 'helper'),
-    ('files', 'time', 'traceback', 'no-bundle2', 'cinnabarclone',
-     'clonebundles', 'no-version-check', 'unbundler'),
-)
-
 experiment = ConfigSetFunc(
     'cinnabar.experiments',
     ('merge',),
@@ -213,7 +206,7 @@ def run(func):
             os.fsdecode(a) if isinstance(a, bytes) else str(a)
             for a in getattr(e, 'args', []))
         message = message or str(e)
-        if check_enabled('traceback') or not message:
+        if environ(b"GIT_CINNABAR_TRACEBACK") or not message:
             traceback.print_exc()
         else:
             logging.error(os.fsdecode(message))
