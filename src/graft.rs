@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::collections::BTreeMap;
-use std::ffi::OsStr;
 use std::os::raw::c_uint;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -52,15 +51,15 @@ fn do_init(args: &[&[u8]]) {
 
 pub fn init_graft() {
     let mut args = vec![
-        OsStr::new("--full-history"),
-        OsStr::new("--exclude=refs/cinnabar/*"),
-        OsStr::new("--exclude=refs/notes/cinnabar"),
-        OsStr::new("--exclude=refs/original/*"),
-        OsStr::new("--all"),
+        "--full-history",
+        "--exclude=refs/cinnabar/*",
+        "--exclude=refs/notes/cinnabar",
+        "--exclude=refs/original/*",
+        "--all",
     ];
     if has_metadata() {
-        args.push(OsStr::new("--not"));
-        args.push(OsStr::new("refs/cinnabar/metadata^"));
+        args.push("--not");
+        args.push("refs/cinnabar/metadata^");
     }
     let mut graft_trees = GRAFT_TREES.lock().unwrap();
     for cid in rev_list(&args).progress(|n| format!("Reading {} graft candidates", n)) {

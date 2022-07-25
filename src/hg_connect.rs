@@ -4,7 +4,7 @@
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::ffi::{c_void, OsStr};
+use std::ffi::c_void;
 use std::fs::File;
 use std::io::{stderr, BufRead, Read, Write};
 use std::str::FromStr;
@@ -761,13 +761,14 @@ fn find_common(
         .filter_map(|cs| cs.to_git().map(|c| (cs, c)))
         .collect_vec();
 
-    let mut args = vec![
+    let args = [
         "--reverse".to_string(),
         "--topo-order".to_string(),
         "--full-history".to_string(),
-    ];
-    args.extend(known.iter().map(|(_, k)| format!("^{}^@", k)));
-    args.extend(
+    ]
+    .into_iter()
+    .chain(known.iter().map(|(_, k)| format!("^{}^@", k)))
+    .chain(
         undetermined
             .iter()
             .chain(unknown.iter())
@@ -777,7 +778,7 @@ fn find_common(
 
     let mut dag = Dag::new();
     let mut undetermined_count = 0;
-    for cid in rev_list(&args.iter().map(OsStr::new).collect_vec()) {
+    for cid in rev_list(args) {
         let commit = RawCommit::read(&cid).unwrap();
         let commit = commit.parse().unwrap();
         dag.add(
@@ -1143,15 +1144,9 @@ pub fn get_cinnabarclone_url(
                         "--ancestry-path",
                     ];
                     let other_args = info.graft.iter().map(|c| format!("^{}^@", c)).collect_vec();
-                    if rev_list(
-                        &args
-                            .into_iter()
-                            .chain(other_args.iter().map(|x| &**x))
-                            .map(OsStr::new)
-                            .collect_vec(),
-                    )
-                    .next()
-                    .is_none()
+                    if rev_list(args.into_iter().chain(other_args.iter().map(|x| &**x)))
+                        .next()
+                        .is_none()
                     {
                         debug!(target: "cinnabarclone", " Skipping (graft commit(s) unreachable)");
                         continue;

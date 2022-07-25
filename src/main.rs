@@ -1037,7 +1037,7 @@ fn do_bundle(
         "--full-history".into(),
         "--reverse".into(),
     ]);
-    for cid in rev_list(&revs.iter().map(|a| &**a).collect_vec()) {
+    for cid in rev_list(&revs) {
         let commit = RawCommit::read(&cid).unwrap();
         let commit = commit.parse().unwrap();
         writeln!(python_in, "{} {}", cid, commit.parents().iter().join(" ")).unwrap();
@@ -1283,15 +1283,15 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
     let manifests_arg = format!("{}^@", manifests_cid);
     let checked_manifests_arg = checked_manifests_cid.map(|c| format!("^{}^@", c));
     let mut args = vec![
-        OsStr::from_bytes(b"--topo-order"),
-        OsStr::from_bytes(b"--reverse"),
-        OsStr::from_bytes(b"--full-history"),
-        OsStr::from_bytes(manifests_arg.as_bytes()),
+        "--topo-order",
+        "--reverse",
+        "--full-history",
+        &manifests_arg,
     ];
     if let Some(a) = &checked_manifests_arg {
-        args.push(OsStr::from_bytes(a.as_bytes()));
+        args.push(a);
     }
-    for mid in rev_list(&args).progress(|n| format!("Loading {n} manifests")) {
+    for mid in rev_list(args).progress(|n| format!("Loading {n} manifests")) {
         let commit = RawCommit::read(&mid).unwrap();
         let commit = commit.parse().unwrap();
         manifest_queue.push((mid.clone(), commit.parents().to_boxed()));
@@ -1541,11 +1541,11 @@ fn do_fsck_full(
     let commit_queue = if full_fsck {
         let changesets_arg = format!("{}^@", changesets_cid);
 
-        Box::new(rev_list(&[
-            OsStr::new("--topo-order"),
-            OsStr::new("--full-history"),
-            OsStr::new("--reverse"),
-            OsStr::new(&changesets_arg),
+        Box::new(rev_list([
+            "--topo-order",
+            "--full-history",
+            "--reverse",
+            &changesets_arg,
         ])) as Box<dyn Iterator<Item = _>>
     } else {
         Box::new(
@@ -1879,20 +1879,16 @@ fn do_fsck_full(
             let all_args = args
                 .into_iter()
                 .map(str::to_string)
-                .chain(iter_manifests(&manifest_heads, &store_manifest_heads))
-                .map(OsString::from)
-                .collect_vec();
-            for m in rev_list(&all_args.iter().map(|s| &**s).collect_vec()) {
+                .chain(iter_manifests(&manifest_heads, &store_manifest_heads));
+            for m in rev_list(all_args) {
                 fix(format!("Missing manifest commit in manifest branch: {}", m));
             }
 
             let all_args = args
                 .into_iter()
                 .map(str::to_string)
-                .chain(iter_manifests(&store_manifest_heads, &manifest_heads))
-                .map(OsString::from)
-                .collect_vec();
-            for m in rev_list(&all_args.iter().map(|s| &**s).collect_vec()) {
+                .chain(iter_manifests(&store_manifest_heads, &manifest_heads));
+            for m in rev_list(all_args) {
                 fix(format!(
                     "Removing manifest commit {} with no corresponding changeset",
                     m
@@ -3325,15 +3321,13 @@ fn remote_helper_push(
                             .heads()
                             .filter_map(HgChangesetId::to_git)
                             .map(|csid| csid.to_string().into()),
-                    )
-                    .collect_vec();
-                    let args = args.iter().map(|a| &**a).collect_vec();
+                    );
                     // Theoretically, we could have commits with no
                     // metadata that the remote declares are public, while
                     // the rest of our push is in a draft state. That is
                     // however so unlikely that it's not worth the effort
                     // to support partial metadata storage.
-                    rev_list(&args).any(|_| true)
+                    rev_list(args).any(|_| true)
                 }
             }
             _ => unreachable!(),

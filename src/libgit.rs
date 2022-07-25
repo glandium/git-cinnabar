@@ -495,11 +495,10 @@ pub struct RevList {
     revs: *mut rev_info,
 }
 
-pub fn rev_list(args: &[&OsStr]) -> RevList {
-    let args: Vec<_> = Some(OsStr::new(""))
-        .iter()
-        .chain(args)
-        .map(|a| a.to_cstring())
+pub fn rev_list(args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> RevList {
+    let args: Vec<_> = Some(OsStr::new("").to_cstring())
+        .into_iter()
+        .chain(args.into_iter().map(|a| a.as_ref().to_cstring()))
         .collect();
     let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
     argv.push(std::ptr::null());
