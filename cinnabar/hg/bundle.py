@@ -301,13 +301,12 @@ def bundle_data(store, commits):
         if changeset_data is None:
             store.create_hg_metadata(node, parents)
         hg_changeset = store._changeset(node)
-        yield (hg_changeset.node, hg_changeset.parent1, hg_changeset.parent2,
-               hg_changeset.changeset)
+        yield (hg_changeset.node, hg_changeset.parent1, hg_changeset.parent2)
 
 
 def create_bundle(store, commits):
     stdout = sys.stdout.buffer
     for chunk in bundle_data(store, commits):
         if isinstance(chunk, tuple):
-            stdout.write(b'%s %s %s %s\n' % chunk)
+            stdout.write(b'%s %s %s\n' % chunk)
     stdout.flush()

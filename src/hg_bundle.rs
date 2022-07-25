@@ -1018,17 +1018,14 @@ pub fn create_bundle(
     let changesets = input.byte_lines().filter_map(|line| {
         line.unwrap()
             .splitn_exact(b' ')
-            .map(|[node, parent1, parent2, changeset]| {
+            .map(|[node, parent1, parent2]| {
                 let node = HgChangesetId::from_bytes(node).unwrap();
                 let parent1 = HgChangesetId::from_bytes(parent1).unwrap();
                 let parent2 = HgChangesetId::from_bytes(parent2).unwrap();
-                let changeset = HgChangesetId::from_bytes(changeset).unwrap();
-                [node, parent1, parent2, changeset]
+                [node, parent1, parent2]
             })
     });
-    for [node, parent1, parent2, changeset] in
-        changesets.progress(|n| format!("Bundling {n} changesets"))
-    {
+    for [node, parent1, parent2] in changesets.progress(|n| format!("Bundling {n} changesets")) {
         // TODO: add branch.
         changeset_heads.add(&node, &[&parent1, &parent2], b"".as_bstr());
 
@@ -1039,7 +1036,7 @@ pub fn create_bundle(
             &node,
             &parent1,
             &parent2,
-            &changeset,
+            &node,
             &mut previous,
             |node| {
                 let node = HgChangesetId::from_unchecked(node.clone());
