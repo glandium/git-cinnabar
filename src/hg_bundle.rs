@@ -4,7 +4,6 @@
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
-use std::ffi::OsStr;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{self, copy, BufRead, Chain, Cursor, ErrorKind, Read, Write};
@@ -13,7 +12,7 @@ use std::mem::{self, MaybeUninit};
 use std::os::raw::c_int;
 use std::ptr::NonNull;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use bstr::ByteSlice;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
@@ -25,12 +24,11 @@ use flate2::write::ZlibEncoder;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use percent_encoding::percent_decode;
 use tee::TeeReader;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
-use crate::hg_connect::{decodecaps, encodecaps, HgConnection, HgConnectionBase, HgRepo};
+use crate::hg_connect::{encodecaps, HgConnection, HgConnectionBase, HgRepo};
 use crate::hg_data::find_parents;
 use crate::libcinnabar::files_meta;
 use crate::libgit::BlobId;
@@ -40,7 +38,7 @@ use crate::store::{
     ChangesetHeads, GitFileMetadataId, HgChangesetId, HgFileId, HgManifestId,
     RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest,
 };
-use crate::util::{FromBytes, OsStrExt, ToBoxed};
+use crate::util::{FromBytes, ToBoxed};
 use crate::xdiff::textdiff;
 use crate::{get_changes, manifest_path, HELPER_LOCK};
 use crate::{
@@ -998,83 +996,30 @@ fn write_chunk(
     writer.write_all(&chunk)
 }
 
-pub fn do_create_bundle(
-    conn: Option<Arc<Mutex<dyn HgRepo>>>,
+pub fn create_bundle(
     input: &mut dyn BufRead,
     mut out: impl Write,
-    args: &[&[u8]],
+    bundlespec: BundleSpec,
+    version: u8,
+    output: &File,
+    replycaps: bool,
 ) -> ChangesetHeads {
-    let mut replycaps = None;
-    let (bundlespec, version) = match args[0] {
-        b"raw" => (BundleSpec::ChangegroupV1, "01"),
-        b"connection" => {
-            let b2caps = conn
-                .unwrap()
-                .lock()
-                .unwrap()
-                .get_capability(b"bundle2")
-                .and_then(|caps| {
-                    decodecaps(
-                        percent_decode(caps)
-                            .decode_utf8()
-                            .ok()?
-                            .as_bytes()
-                            .as_bstr(),
-                    )
-                    .collect::<Option<HashMap<_, _>>>()
-                })
-                .unwrap_or_default();
-            if b2caps.is_empty() {
-                (BundleSpec::ChangegroupV1, "01")
-            } else {
-                let version = b2caps
-                    .get("changegroup")
-                    .and_then(|cg| cg.iter().flat_map(|cg| cg.iter()).find(|cg| &***cg == "02"))
-                    .and(Some("02"))
-                    .unwrap_or("01");
-                replycaps = Some(encodecaps([("error", Some(&["abort"]))]));
-                (BundleSpec::V2None, version)
-            }
-        }
-        arg => match BundleSpec::try_from(arg).unwrap() {
-            s @ (BundleSpec::ChangegroupV1
-            | BundleSpec::V1Bzip
-            | BundleSpec::V1Gzip
-            | BundleSpec::V1None) => (s, "01"),
-            s @ (BundleSpec::V2Bzip
-            | BundleSpec::V2Gzip
-            | BundleSpec::V2None
-            | BundleSpec::V2Zstd) => (s, "02"),
-        },
-    };
-    let output = args.get(1).map_or_else(
-        || {
-            let tempfile = tempfile::Builder::new()
-                .prefix("hg-bundle-")
-                .suffix(".hg")
-                .rand_bytes(6)
-                .tempfile()
-                .unwrap();
-            let (f, p) = tempfile.into_parts();
-            *BUNDLE_PATH.lock().unwrap() = Some(p);
-            f
-        },
-        |o| File::create(OsStr::from_bytes(o)).unwrap(),
-    );
     let mut part_id = 0;
     let mut buf = Vec::new();
     let mut bundle_writer = BundleWriter::new(bundlespec, output).unwrap();
     let mut changeset_heads = ChangesetHeads::new();
 
-    if let Some(replycaps) = replycaps {
+    if replycaps {
         let info = BundlePartInfo::new(part_id, "replycaps");
         let mut bundle_part_writer = bundle_writer.new_part(info).unwrap();
-        bundle_part_writer.write_all(replycaps.as_bytes()).unwrap();
+        bundle_part_writer
+            .write_all(encodecaps([("error", Some(&["abort"]))]).as_bytes())
+            .unwrap();
         part_id += 1;
     }
 
-    let info = BundlePartInfo::new(part_id, "changegroup").set_param("version", version);
-    let version = u8::from_str(version).unwrap();
+    let info = BundlePartInfo::new(part_id, "changegroup")
+        .set_param("version", &format!("{:02}", version));
     let mut bundle_part_writer = bundle_writer.new_part(info).unwrap();
     let mut previous = None;
     let mut manifests = IndexMap::new();

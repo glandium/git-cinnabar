@@ -46,7 +46,7 @@ extern crate log;
 
 use bstr::io::BufReadExt;
 use clap::{crate_version, AppSettings, ArgGroup, Parser};
-use hg_bundle::{do_create_bundle, BundleSpec};
+use hg_bundle::{create_bundle, BundleSpec};
 use itertools::Itertools;
 use logging::{LoggingBufReader, LoggingWriter};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
@@ -79,6 +79,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 #[cfg(unix)]
 use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};
+use std::fs::File;
 use std::hash::Hash;
 use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Cursor, Write};
 use std::iter::repeat;
@@ -110,6 +111,8 @@ use os_pipe::pipe;
 use url::Url;
 use which::which;
 
+use crate::hg_bundle::BUNDLE_PATH;
+use crate::hg_connect::decodecaps;
 use crate::libc::FdFile;
 use crate::progress::set_progress;
 use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads};
@@ -1022,14 +1025,7 @@ fn do_bundle(
         2 => BundleSpec::V2None,
         v => return Err(format!("Unknown version {v}")),
     });
-    let mut python = start_python_command(
-        &[
-            OsStr::new("bundle"),
-            OsStr::new(&format!("{}", bundlespec)),
-            path.as_os_str(),
-        ],
-        None,
-    )?;
+    let mut python = start_python_command(&[OsStr::new("bundle")], None)?;
     let mut python_in = python.child.stdin.take().unwrap();
     let mut python_out = BufReader::new(python.child.stdout.take().unwrap());
     revs.extend([
@@ -1046,10 +1042,16 @@ fn do_bundle(
     python_in.flush().unwrap();
     if let Some(line) = (&mut python_out).byte_lines().next() {
         let line = line.unwrap();
-        let mut args = line.split(|&b| b == b' ');
-        assert_eq!(args.next().unwrap().as_bstr(), b"create-bundle".as_bstr());
-        let args = args.collect_vec();
-        do_create_bundle(None, &mut python_out, &mut python_in, &args);
+        assert_eq!(line.as_bstr(), b"create-bundle".as_bstr());
+        let file = File::create(path).unwrap();
+        create_bundle(
+            &mut python_out,
+            &mut python_in,
+            bundlespec,
+            version,
+            &file,
+            false,
+        );
     }
     drop(python_in);
     let result = finish_python_command(python);
@@ -3172,14 +3174,49 @@ fn remote_helper_push(
     python_in.flush().unwrap();
     let mut pushed = ChangesetHeads::new();
     if let Some(buf) = (&mut python_out).byte_lines().next() {
-        if let Some(args) = buf.unwrap().strip_prefix(b"create-bundle ") {
-            let args = args
-                .strip_suffix(b"\n")
-                .unwrap_or(args)
-                .split(|&b| b == b' ');
-            let args = args.collect_vec();
-            pushed = do_create_bundle(Some(conn.clone()), &mut python_out, &mut python_in, &args);
-        }
+        let buf = buf.unwrap();
+        assert_eq!(buf.as_bstr(), b"create-bundle".as_bstr());
+        let b2caps = conn
+            .lock()
+            .unwrap()
+            .get_capability(b"bundle2")
+            .and_then(|caps| {
+                decodecaps(
+                    percent_decode(caps)
+                        .decode_utf8()
+                        .ok()?
+                        .as_bytes()
+                        .as_bstr(),
+                )
+                .collect::<Option<HashMap<_, _>>>()
+            })
+            .unwrap_or_default();
+        let (bundlespec, version) = if b2caps.is_empty() {
+            (BundleSpec::ChangegroupV1, 1)
+        } else {
+            let version = b2caps
+                .get("changegroup")
+                .and_then(|cg| cg.iter().flat_map(|cg| cg.iter()).find(|cg| &***cg == "02"))
+                .and(Some(2))
+                .unwrap_or(1);
+            (BundleSpec::V2None, version)
+        };
+        let tempfile = tempfile::Builder::new()
+            .prefix("hg-bundle-")
+            .suffix(".hg")
+            .rand_bytes(6)
+            .tempfile()
+            .unwrap();
+        let (file, path) = tempfile.into_parts();
+        *BUNDLE_PATH.lock().unwrap() = Some(path);
+        pushed = create_bundle(
+            &mut python_out,
+            &mut python_in,
+            bundlespec,
+            version,
+            &file,
+            version == 2,
+        );
     }
     drop(python_in);
     drop(python_out);

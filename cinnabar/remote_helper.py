@@ -18,7 +18,7 @@ class GitRemoteHelper(object):
         self._helper_in = stdin
         self._helper = stdout
 
-    def bundle(self, bundlespec, path):
+    def bundle(self):
         bundle_commits = []
         while True:
             line = self._helper_in.readline().strip()
@@ -28,9 +28,7 @@ class GitRemoteHelper(object):
             bundle_commits.append(
                 (commit, parents.split(b' ') if parents else []))
 
-        create_bundle(
-            self._store, bundle_commits, bundlespec=bundlespec.encode('ascii'),
-            path=os.fsencode(path))
+        create_bundle(self._store, bundle_commits)
 
     def push(self, dry_run=None):
         GitHgHelper._ensure_helper()
@@ -117,7 +115,7 @@ class GitRemoteHelper(object):
                 if not repo_heads:
                     repo_heads = [NULL_NODE_ID]
         if push_commits and not dry_run:
-            create_bundle(store, push_commits, b'connection')
+            create_bundle(store, push_commits)
             reply = HgRepoHelper.unbundle(repo_heads)
             pushed = reply != 0
 

@@ -333,11 +333,8 @@ def bundle_data(store, commits):
     yield None
 
 
-def create_bundle(store, commits, bundlespec=b'raw', path=None):
-    args = []
-    if path:
-        args.append(path)
-    with BundleHelper.query(b'create-bundle', bundlespec, *args) as stdout:
+def create_bundle(store, commits):
+    with BundleHelper.query(b'create-bundle') as stdout:
         for chunk in bundle_data(store, commits):
             if isinstance(chunk, tuple):
                 stdout.write(b'%s %s %s %s\0' % chunk)
