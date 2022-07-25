@@ -63,48 +63,6 @@ def init_logging():
             pass
 
 
-class ConfigSetFunc(object):
-    def __init__(self, key, values, extra_values=(), default=''):
-        self._config = None
-        self._key = key
-        self._values = values
-        self._extra_values = extra_values
-        self._default = default.encode('ascii')
-
-    def __call__(self, name):
-        if self._config is None:
-            from cinnabar.git import Git
-            config = Git.config(self._key) or self._default
-            if config:
-                config = config.decode('ascii').split(',')
-            self._config = set()
-            for c in config:
-                if c in ('true', 'all'):
-                    self._config |= set(self._values)
-                elif c.startswith('-'):
-                    c = c[1:]
-                    try:
-                        self._config.remove(c.decode('ascii'))
-                    except KeyError:
-                        logging.getLogger('config').warn(
-                            '%s: %s is not one of (%s)',
-                            self._key, c, ', '.join(self._config))
-                elif c in self._values or c in self._extra_values:
-                    self._config.add(c)
-                else:
-                    logging.getLogger('config').warn(
-                        '%s: %s is not one of (%s)',
-                        self._key, c, ', '.join(self._values))
-        return name in self._config
-
-
-experiment = ConfigSetFunc(
-    'cinnabar.experiments',
-    ('merge',),
-    (),
-)
-
-
 class IOLogger(object):
     def __init__(self, logger, reader, writer=None, prefix=''):
         self._reader = reader

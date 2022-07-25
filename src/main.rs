@@ -2518,6 +2518,14 @@ fn start_bundle_helper() -> Result<BundleHelper, String> {
             .into(),
     ));
 
+    extra_env.push((
+        "GIT_CINNABAR_MERGE",
+        experiment(Experiments::MERGE)
+            .then(|| "1")
+            .unwrap_or("")
+            .into(),
+    ));
+
     let args_os = std::env::args_os().collect_vec();
 
     let child = python
@@ -3759,6 +3767,30 @@ unsafe extern "C" fn cinnabar_check(flag: c_int) -> c_int {
 
 pub fn check_enabled(checks: Checks) -> bool {
     CHECKS.contains(checks)
+}
+
+bitflags! {
+    pub struct Experiments: i32 {
+        const MERGE = 0x1;
+    }
+}
+
+static EXPERIMENTS: Lazy<Experiments> = Lazy::new(|| {
+    let mut experiments = Experiments::empty();
+    if let Some(config) = get_config("experiments") {
+        for c in config.as_bytes().split(|&b| b == b',') {
+            match c {
+                b"true" | b"all" => experiments = Experiments::all(),
+                b"merge" => experiments.set(Experiments::MERGE, true),
+                _ => {}
+            }
+        }
+    }
+    experiments
+});
+
+pub fn experiment(experiments: Experiments) -> bool {
+    EXPERIMENTS.contains(experiments)
 }
 
 #[no_mangle]

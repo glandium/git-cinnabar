@@ -10,7 +10,7 @@ from cinnabar.git import (
     NULL_NODE_ID,
 )
 from cinnabar.util import (
-    experiment,
+    environ,
     sorted_merge,
 )
 from cinnabar.hg.changegroup import (
@@ -68,7 +68,7 @@ class PushStore(GitHgStore):
             return manifest, changeset_files, NULL_NODE_ID
 
         elif len(parents) == 2:
-            if not experiment('merge'):
+            if not environ(b'GIT_CINNABAR_MERGE'):
                 raise Exception('Pushing merges is not supported yet')
             if not self._merge_warn:
                 logging.warning('Pushing merges is experimental.')
