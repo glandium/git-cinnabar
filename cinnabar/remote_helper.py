@@ -6,17 +6,14 @@ from cinnabar.hg.bundle import PushStore
 def main():
     store = PushStore()
 
-    bundle_commits = []
+    stdout = sys.stdout.buffer
     while True:
         line = sys.stdin.buffer.readline().strip()
         if not line:
             break
-        commit, _, parents = line.partition(b' ')
-        bundle_commits.append(
-            (commit, parents.split(b' ') if parents else []))
+        node, _, parents = line.partition(b' ')
+        parents = parents.split(b' ') if parents else []
 
-    stdout = sys.stdout.buffer
-    for node, parents in bundle_commits:
         if len(parents) > 2:
             raise Exception(
                 'Pushing octopus merges to mercurial is not supported')
