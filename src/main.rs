@@ -3113,8 +3113,8 @@ fn remote_helper_push(
             MaybeBoundary::Commit(_) => None,
         })
         .chain(push_commits.into_iter().map(Ok))
-        .map(|c| c.map(GitChangesetId::from_unchecked))
-        .filter_map(|c| c.map(|c| c.to_hg()).transpose())
+        .map_ok(GitChangesetId::from_unchecked)
+        .filter_map_ok(|c| c.to_hg())
         .unique()
         .collect::<Result<Vec<_>, _>>()?;
 
