@@ -5,8 +5,6 @@ import traceback
 from collections import OrderedDict
 from weakref import WeakKeyDictionary
 
-from cinnabar.exceptions import Abort
-
 
 class Formatter(logging.Formatter):
     def format(self, record):
@@ -207,10 +205,6 @@ def run(func, args):
 
     try:
         retcode = func(args)
-    except Abort as e:
-        # These exceptions are normal abort and require no traceback
-        retcode = 1
-        logging.error(str(e))
     except Exception as e:
         # Catch all exceptions and provide a nice message
         retcode = 70  # Internal software error
