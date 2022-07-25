@@ -18,30 +18,6 @@
  * - cat-file <object>
  *     Returns the contents of the given git object, in a `cat-file
  *     --batch`-like format.
- *  - connect <url>
- *     Connects to the mercurial repository at the given url. The helper then
- *     expects one of the following commands:
- *     - state
- *       This prints out three blocks of data, being the result of the
- *       following commands on the repository: branchmap, heads, bookmarks.
- *     - known <node>+
- *       Calls the "known" command on the repository and returns the
- *       corresponding result.
- *     - listkeys <namespace>
- *     	 Calls the "listkeys" command on the repository and returns the
- *     	 corresponding result.
- *     - getbundle <heads> <common> <bundle2caps>
- *       Calls the "getbundle" command on the repository and streams a
- *       changegroup in result. `heads` and `common` are comma separated
- *       lists of changesets.
- *     - unbundle <head>+
- *       Calls the "unbundle command on the repository.
- *     - pushkey <namespace> <key> <old> <new>
- *     	 Calls the "pushkey" command on the repository and returns the
- *     	 corresponding result.
- *     - lookup <key>
- *       Calls the "lookup" command on the repository and returns the
- *     	 corresponding result.
  */
 
 #include <stdio.h>
