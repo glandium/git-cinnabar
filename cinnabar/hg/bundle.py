@@ -336,6 +336,5 @@ def create_bundle(store, commits):
     stdout = sys.stdout.buffer
     for chunk in bundle_data(store, commits):
         if isinstance(chunk, tuple):
-            stdout.write(b'%s %s %s %s\0' % chunk)
-    stdout.write(b'null\0')
+            stdout.write(b'%s %s %s %s\n' % chunk)
     stdout.flush()

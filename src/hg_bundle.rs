@@ -13,6 +13,7 @@ use std::os::raw::c_int;
 use std::ptr::NonNull;
 use std::str::FromStr;
 
+use bstr::io::BufReadExt;
 use bstr::ByteSlice;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use bzip2::read::BzDecoder;
@@ -996,7 +997,6 @@ pub fn create_bundle(
     replycaps: bool,
 ) -> ChangesetHeads {
     let mut part_id = 0;
-    let mut buf = Vec::new();
     let mut bundle_writer = BundleWriter::new(bundlespec, output).unwrap();
     let mut changeset_heads = ChangesetHeads::new();
 
@@ -1014,72 +1014,61 @@ pub fn create_bundle(
     let mut bundle_part_writer = bundle_writer.new_part(info).unwrap();
     let mut previous = None;
     let mut manifests = IndexMap::new();
-    let mut progress = repeat(()).progress(|n| format!("Bundling {n} changesets"));
-    loop {
-        buf.truncate(0);
-        input.read_until(b'\0', &mut buf).unwrap();
-        if buf.ends_with(b"\0") {
-            buf.pop();
-        }
-        if let Some([node, parent1, parent2, changeset]) = buf.splitn_exact(b' ') {
-            progress.next();
-            let node = HgChangesetId::from_bytes(node).unwrap();
-            let parent1 = HgChangesetId::from_bytes(parent1).unwrap();
-            let parent2 = HgChangesetId::from_bytes(parent2).unwrap();
-            let changeset = HgChangesetId::from_bytes(changeset).unwrap();
 
-            // TODO: add branch.
-            changeset_heads.add(&node, &[&parent1, &parent2], b"".as_bstr());
+    let changesets = input.byte_lines().filter_map(|line| {
+        line.unwrap()
+            .splitn_exact(b' ')
+            .map(|[node, parent1, parent2, changeset]| {
+                let node = HgChangesetId::from_bytes(node).unwrap();
+                let parent1 = HgChangesetId::from_bytes(parent1).unwrap();
+                let parent2 = HgChangesetId::from_bytes(parent2).unwrap();
+                let changeset = HgChangesetId::from_bytes(changeset).unwrap();
+                [node, parent1, parent2, changeset]
+            })
+    });
+    for [node, parent1, parent2, changeset] in
+        changesets.progress(|n| format!("Bundling {n} changesets"))
+    {
+        // TODO: add branch.
+        changeset_heads.add(&node, &[&parent1, &parent2], b"".as_bstr());
 
-            let _lock = HELPER_LOCK.lock().unwrap();
-            write_chunk(
-                &mut bundle_part_writer,
-                version,
-                &node,
-                &parent1,
-                &parent2,
-                &changeset,
-                &mut previous,
-                |node| {
-                    let node = HgChangesetId::from_unchecked(node.clone());
-                    let changeset = RawHgChangeset::read(&node.to_git().unwrap()).unwrap();
-                    changeset.0
-                },
-            )
-            .unwrap();
-            let get_manifest = |node: HgChangesetId| {
-                let metadata = RawGitChangesetMetadata::read(&node.to_git().unwrap()).unwrap();
-                let metadata = metadata.parse().unwrap();
-                metadata.manifest_id().clone()
-            };
-            let manifest = get_manifest(node.clone());
-            if manifest != HgManifestId::null() && !manifests.contains_key(&manifest) {
-                let mn_parent1 = (parent1 != HgChangesetId::null())
-                    .then(|| get_manifest(parent1))
-                    .unwrap_or_else(HgManifestId::null);
-                let mn_parent2 = (parent2 != HgChangesetId::null())
-                    .then(|| get_manifest(parent2))
-                    .unwrap_or_else(HgManifestId::null);
-                if ![&mn_parent1, &mn_parent2].contains(&&manifest) {
-                    manifests.insert(manifest, (mn_parent1, mn_parent2, node));
-                }
+        let _lock = HELPER_LOCK.lock().unwrap();
+        write_chunk(
+            &mut bundle_part_writer,
+            version,
+            &node,
+            &parent1,
+            &parent2,
+            &changeset,
+            &mut previous,
+            |node| {
+                let node = HgChangesetId::from_unchecked(node.clone());
+                let changeset = RawHgChangeset::read(&node.to_git().unwrap()).unwrap();
+                changeset.0
+            },
+        )
+        .unwrap();
+        let get_manifest = |node: HgChangesetId| {
+            let metadata = RawGitChangesetMetadata::read(&node.to_git().unwrap()).unwrap();
+            let metadata = metadata.parse().unwrap();
+            metadata.manifest_id().clone()
+        };
+        let manifest = get_manifest(node.clone());
+        if manifest != HgManifestId::null() && !manifests.contains_key(&manifest) {
+            let mn_parent1 = (parent1 != HgChangesetId::null())
+                .then(|| get_manifest(parent1))
+                .unwrap_or_else(HgManifestId::null);
+            let mn_parent2 = (parent2 != HgChangesetId::null())
+                .then(|| get_manifest(parent2))
+                .unwrap_or_else(HgManifestId::null);
+            if ![&mn_parent1, &mn_parent2].contains(&&manifest) {
+                manifests.insert(manifest, (mn_parent1, mn_parent2, node));
             }
-        } else {
-            assert_eq!(buf, b"null");
-            drop(progress);
-            bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
-            let files = bundle_manifest(&mut bundle_part_writer, version, manifests.drain(..));
-            bundle_files(&mut bundle_part_writer, version, files);
-            break;
         }
     }
-    // The thread this is invoked from may be killed (it's dropped, not joined) because
-    // we're not entirely sure the python side won't dead-lock us. If we communicate
-    // we're done before flushing the bundle writer, the python side may actually close
-    // before the function returns, and before the bundle writer is dropped.
-    // So drop it manually first.
-    drop(bundle_part_writer);
-    drop(bundle_writer);
+    bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
+    let files = bundle_manifest(&mut bundle_part_writer, version, manifests.drain(..));
+    bundle_files(&mut bundle_part_writer, version, files);
     changeset_heads
 }
 
