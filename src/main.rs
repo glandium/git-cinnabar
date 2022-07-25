@@ -80,7 +80,7 @@ use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};
 use std::fs::File;
 use std::hash::Hash;
-use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Cursor, Write};
+use std::io::{copy, stdin, stdout, BufRead, BufReader, BufWriter, Cursor, Write};
 use std::iter::repeat;
 use std::ops::{Deref, DerefMut};
 use std::os::raw::c_int;
@@ -2399,7 +2399,7 @@ struct PythonChild {
     child: Child,
     import_thread: JoinHandle<()>,
     logging_thread: JoinHandle<()>,
-    sent_data: std::io::Result<()>,
+    sent_data: std::io::Result<u64>,
 }
 
 impl Deref for PythonChild {
@@ -2527,9 +2527,9 @@ fn start_python_command(args: &[&OsStr]) -> Result<PythonChild, String> {
     drop(reader);
 
     let sent_data = if let Some(mut writer) = writer {
-        zstd::stream::copy_decode(&mut Cursor::new(cinnabar_py::CINNABAR_PY), &mut writer)
+        copy(&mut Cursor::new(cinnabar_py::CINNABAR_PY), &mut writer)
     } else {
-        Ok(())
+        Ok(0)
     };
     Ok(PythonChild {
         child,

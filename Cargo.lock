@@ -140,7 +140,6 @@ dependencies = [
  "itertools",
  "tar",
  "walkdir",
- "zstd",
 ]
 
 [[package]]
