@@ -23,7 +23,6 @@ from cinnabar.hg.objects import (
 from collections import OrderedDict
 import functools
 import logging
-import sys
 
 
 # TODO: Avoid a diff-tree when we already have done it to generate the
@@ -289,24 +288,3 @@ class PushStore(GitHgStore):
             raise Exception('Sha1 mismatch for changeset %s'
                             % sha1.decode('ascii'))
         return result
-
-
-def bundle_data(store, commits):
-    for node, parents in commits:
-        if len(parents) > 2:
-            raise Exception(
-                'Pushing octopus merges to mercurial is not supported')
-
-        changeset_data = store.read_changeset_data(node)
-        if changeset_data is None:
-            store.create_hg_metadata(node, parents)
-        hg_changeset = store._changeset(node)
-        yield (hg_changeset.node, hg_changeset.parent1, hg_changeset.parent2)
-
-
-def create_bundle(store, commits):
-    stdout = sys.stdout.buffer
-    for chunk in bundle_data(store, commits):
-        if isinstance(chunk, tuple):
-            stdout.write(b'%s %s %s\n' % chunk)
-    stdout.flush()
