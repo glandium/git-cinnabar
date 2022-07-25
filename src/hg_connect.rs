@@ -4,7 +4,6 @@
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::ffi::c_void;
 use std::fs::File;
 use std::io::{stderr, BufRead, Read, Write};
 use std::str::FromStr;
@@ -30,10 +29,6 @@ use crate::store::{
 };
 use crate::util::{FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed};
 use crate::{check_enabled, get_config_remote, graft_config_enabled, Checks, HELPER_LOCK};
-
-#[allow(non_camel_case_types)]
-#[repr(transparent)]
-struct hg_connection(c_void);
 
 pub struct OneHgArg<'a> {
     pub name: &'a str,

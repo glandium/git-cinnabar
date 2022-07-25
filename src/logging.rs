@@ -277,6 +277,7 @@ pub struct LoggingReader<'a, R: Read> {
 }
 
 impl<'a, R: Read> LoggingReader<'a, R> {
+    #[allow(dead_code)]
     pub fn new(target: &'a str, level: log::Level, r: R) -> Self {
         LoggingReader {
             target,

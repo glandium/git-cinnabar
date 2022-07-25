@@ -153,6 +153,7 @@ pub struct HttpResponse {
     thread: Option<JoinHandle<Result<(), (c_int, HttpRequest)>>>,
     cursor: Cursor<ImmutBString>,
     receiver: Option<Receiver<HttpRequestChannelData>>,
+    #[allow(dead_code)]
     #[derivative(Debug = "ignore")]
     token: Arc<GitHttpStateToken>,
 }

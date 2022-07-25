@@ -13,10 +13,6 @@ impl FdFile {
         FdFile(fd)
     }
 
-    pub unsafe fn stdout() -> Self {
-        FdFile(1)
-    }
-
     pub unsafe fn stderr() -> Self {
         FdFile(2)
     }

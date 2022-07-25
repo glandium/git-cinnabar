@@ -68,6 +68,7 @@ impl<W: Write> Write for PrefixWriter<W> {
 }
 
 pub struct BufferedReader<'a> {
+    #[allow(dead_code)]
     thread: Option<std::thread::JoinHandle<io::Result<()>>>,
     receiver: Option<Receiver<ImmutBString>>,
     buf: VecDeque<u8>,

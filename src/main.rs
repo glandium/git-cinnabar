@@ -35,7 +35,6 @@
 #![deny(clippy::unnecessary_wraps)]
 #![deny(clippy::unnested_or_patterns)]
 #![deny(clippy::unused_self)]
-#![allow(dead_code)]
 
 #[macro_use]
 extern crate derivative;
@@ -185,7 +184,6 @@ extern "C" {
     fn do_ls_tree(l: *const string_list, out: c_int);
     fn do_rev_list(l: *const string_list, out: c_int);
     fn do_diff_tree(l: *const string_list, out: c_int);
-    fn do_create_git_tree(l: *const string_list, out: c_int);
     pub fn do_reload();
     fn do_cleanup(rollback: c_int);
     fn do_set(l: *const string_list);

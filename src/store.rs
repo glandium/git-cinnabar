@@ -11,7 +11,7 @@ use std::io::{copy, BufRead, BufReader, Read, Write};
 use std::iter::{repeat, IntoIterator};
 use std::mem;
 use std::num::NonZeroU32;
-use std::os::raw::{c_char, c_int, c_void};
+use std::os::raw::{c_char, c_int};
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::sync::Mutex;
@@ -810,12 +810,6 @@ impl ChangesetHeads {
         self.heads.insert(id);
     }
 
-    fn force_remove(&mut self, cs: &HgChangesetId) {
-        if let Some((id, _)) = self.dag.get(cs) {
-            self.heads.remove(&id);
-        }
-    }
-
     pub fn branch_heads(&self) -> impl Iterator<Item = (&HgChangesetId, &BStr)> {
         self.heads.iter().map(|id| {
             let (node, data) = self.dag.get_by_id(*id);
@@ -956,20 +950,6 @@ pub unsafe extern "C" fn store_changesets_metadata(result: *mut object_id) {
         write!(commit, "\n{} {}", head, branch).ok();
     }
     store_git_commit(&commit, result);
-}
-
-unsafe extern "C" fn handle_replace(
-    replaced: *const object_id,
-    replace_with: *const object_id,
-    ctxt: *mut c_void,
-) {
-    let replaces = (ctxt as *mut BTreeMap<CommitId, CommitId>)
-        .as_mut()
-        .unwrap();
-    replaces.insert(
-        CommitId::from_unchecked(GitObjectId::from(replaced.as_ref().unwrap().clone())),
-        CommitId::from_unchecked(GitObjectId::from(replace_with.as_ref().unwrap().clone())),
-    );
 }
 
 #[no_mangle]

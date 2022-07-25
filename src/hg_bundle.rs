@@ -81,10 +81,6 @@ pub struct rev_diff_part<'a> {
 }
 
 impl rev_chunk {
-    pub fn raw(&self) -> &[u8] {
-        self.raw.as_bytes()
-    }
-
     pub fn node(&self) -> &hg_object_id {
         unsafe { self.node.as_ref() }
     }
