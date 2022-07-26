@@ -14,10 +14,6 @@ def main():
         node, _, parents = line.partition(b' ')
         parents = parents.split(b' ') if parents else []
 
-        if len(parents) > 2:
-            raise Exception(
-                'Pushing octopus merges to mercurial is not supported')
-
         changeset_data = store.read_changeset_data(node)
         assert changeset_data is None
         store.create_hg_metadata(node, parents)

@@ -47,7 +47,8 @@ use bstr::io::BufReadExt;
 use byteorder::{BigEndian, WriteBytesExt};
 use clap::{crate_version, AppSettings, ArgGroup, Parser};
 use hg_bundle::{create_bundle, create_chunk_data, BundleSpec, RevChunkIter};
-use itertools::Itertools;
+use indexmap::IndexSet;
+use itertools::{EitherOrBoth, Itertools};
 use logging::{LoggingReader, LoggingWriter};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
 use sha1::{Digest, Sha1};
@@ -73,7 +74,7 @@ pub(crate) mod hg_connect_http;
 pub(crate) mod hg_connect_stdio;
 pub(crate) mod hg_data;
 
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 #[cfg(unix)]
@@ -121,8 +122,8 @@ use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git, hg_object_id}
 use libgit::{
     config_get_value, diff_tree, for_each_ref_in, for_each_remote, get_oid_committish,
     lookup_replace_commit, ls_tree, metadata_oid, object_id, remote, resolve_ref, rev_list,
-    rev_list_with_boundaries, strbuf, string_list, BlobId, CommitId, DiffTreeItem, MaybeBoundary,
-    RawBlob, RawCommit, RefTransaction,
+    rev_list_with_boundaries, strbuf, string_list, BlobId, CommitId, DiffTreeItem, FileMode,
+    MaybeBoundary, RawBlob, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::Progress;
@@ -1022,55 +1023,89 @@ fn do_bundle(
     result
 }
 
-fn create_root_changeset(cid: &CommitId) -> HgChangesetId {
-    // TODO: this is all very suboptimal in what it does, how it does it,
-    // and what the code looks like.
+fn hg_attr(mode: FileMode) -> &'static [u8] {
+    match mode.0 {
+        0o100644 => b"",
+        0o100755 => b"x",
+        0o120000 => b"l",
+        _ => die!("Unexpected file mode"),
+    }
+}
+
+fn create_file(blobid: &BlobId, parent: Option<&HgFileId>) -> HgFileId {
+    let blob = RawBlob::read(blobid).unwrap();
+    let mut hash = HgFileId::create();
+    hash.update(HgFileId::null().as_raw_bytes());
+    hash.update(parent.unwrap_or(&HgFileId::null()).as_raw_bytes());
+    hash.update(blob.as_bytes());
+    let fid = hash.finalize();
     unsafe {
-        ensure_store_init();
+        do_set_(
+            cstr::cstr!("file").as_ptr(),
+            &hg_object_id::from(fid.clone()),
+            &object_id::from(blobid),
+        );
     }
-    let commit = RawCommit::read(cid).unwrap();
-    let commit = commit.parse().unwrap();
-    let mut manifest = Vec::new();
-    let mut paths = Vec::new();
-    for item in ls_tree(commit.tree()).unwrap() {
-        let blob = RawBlob::read(&BlobId::from_unchecked(item.oid.clone())).unwrap();
-        let mut hash = HgFileId::create();
-        hash.update(HgFileId::null().as_raw_bytes());
-        hash.update(HgFileId::null().as_raw_bytes());
-        hash.update(blob.as_bytes());
-        let fid = hash.finalize();
-        unsafe {
-            do_set_(
-                cstr::cstr!("file").as_ptr(),
-                &hg_object_id::from(fid.clone()),
-                &object_id::from(item.oid),
-            );
-        }
-        manifest.extend_from_slice(&item.path);
-        manifest.push(b'\0');
-        write!(&mut manifest, "{}", fid).unwrap();
-        manifest.extend_from_slice(match item.mode.0 {
-            0o100644 => b"",
-            0o100755 => b"x",
-            0o120000 => b"l",
-            _ => die!("Unexpected file mode"),
-        });
-        manifest.push(b'\n');
-        paths.extend_from_slice(&item.path);
-        paths.push(b'\0');
+    fid
+}
+
+fn create_copy(blobid: &BlobId, source_path: &BStr, source_fid: &HgFileId) -> HgFileId {
+    let blob = RawBlob::read(blobid).unwrap();
+    let mut metadata = strbuf::new();
+    metadata.extend_from_slice(b"copy: ");
+    metadata.extend_from_slice(source_path);
+    metadata.extend_from_slice(b"\ncopyrev: ");
+    write!(metadata, "{}", source_fid).unwrap();
+    metadata.extend_from_slice(b"\n");
+
+    let mut hash = HgFileId::create();
+    hash.update(HgFileId::null().as_raw_bytes());
+    hash.update(HgFileId::null().as_raw_bytes());
+    hash.update(b"\x01\n");
+    hash.update(metadata.as_bytes());
+    hash.update(b"\x01\n");
+    hash.update(blob.as_bytes());
+    let fid = hash.finalize();
+
+    let mut oid = object_id::default();
+    unsafe {
+        store_git_blob(&metadata, &mut oid);
+        do_set_(
+            cstr::cstr!("file-meta").as_ptr(),
+            &hg_object_id::from(fid.clone()),
+            &oid,
+        );
+        do_set_(
+            cstr::cstr!("file").as_ptr(),
+            &hg_object_id::from(fid.clone()),
+            &object_id::from(blobid),
+        );
     }
+    fid
+}
+
+fn create_manifest(content: &[u8], parent: Option<&HgManifestId>) -> HgManifestId {
+    let parent_manifest = parent.map(|p| RawHgManifest::read(&p.to_git().unwrap()).unwrap());
+    let parent = parent.cloned().unwrap_or_else(HgManifestId::null);
     let mut hash = HgManifestId::create();
     hash.update(HgManifestId::null().as_raw_bytes());
-    hash.update(HgManifestId::null().as_raw_bytes());
-    hash.update(&manifest);
+    hash.update(parent.as_raw_bytes());
+    hash.update(&content);
     let mid = hash.finalize();
-    let data = create_chunk_data(b"", &manifest);
+    let data = create_chunk_data(
+        parent_manifest
+            .as_ref()
+            .map(|m| m.as_bstr())
+            .unwrap_or_default(),
+        content,
+    );
     let mut manifest_chunk = Vec::new();
     manifest_chunk.extend_from_slice(b"\0\0\0\0");
     manifest_chunk.extend_from_slice(mid.as_raw_bytes());
-    for _ in 0..4 {
-        manifest_chunk.extend_from_slice(HgManifestId::null().as_raw_bytes());
-    }
+    manifest_chunk.extend_from_slice(parent.as_raw_bytes());
+    manifest_chunk.extend_from_slice(HgManifestId::null().as_raw_bytes());
+    manifest_chunk.extend_from_slice(parent.as_raw_bytes());
+    manifest_chunk.extend_from_slice(HgManifestId::null().as_raw_bytes());
     manifest_chunk.extend_from_slice(&data);
     let len = manifest_chunk.len();
     (&mut manifest_chunk[..4])
@@ -1082,9 +1117,297 @@ fn create_root_changeset(cid: &CommitId) -> HgChangesetId {
             store_manifest(&chunk);
         }
     }
+    mid
+}
+
+fn create_root_changeset(cid: &CommitId) -> HgChangesetId {
+    // TODO: this is all very suboptimal in what it does, how it does it,
+    // and what the code looks like.
+    unsafe {
+        ensure_store_init();
+    }
+    let commit = RawCommit::read(cid).unwrap();
+    let commit = commit.parse().unwrap();
+    let mut manifest = Vec::new();
+    let mut paths = Vec::new();
+    for item in ls_tree(commit.tree()).unwrap() {
+        let fid = create_file(&BlobId::from_unchecked(item.oid), None);
+        ManifestLine::from((&*item.path, fid, item.mode)).write_into(&mut manifest);
+        paths.extend_from_slice(&item.path);
+        paths.push(b'\0');
+    }
     paths.pop();
+    let mid = create_manifest(&manifest, None);
     let (csid, _) = create_changeset(cid, &mid, Some(paths.to_boxed()));
     csid
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum ManifestLine<'a> {
+    Line {
+        line: &'a BStr,
+        path_len: usize,
+    },
+    Content {
+        path: &'a BStr,
+        fid: HgFileId,
+        mode: FileMode,
+    },
+}
+
+impl<'a> From<&'a [u8]> for ManifestLine<'a> {
+    fn from(line: &'a [u8]) -> Self {
+        ManifestLine::Line {
+            line: line.as_bstr(),
+            path_len: line.find_byte(b'\0').unwrap(),
+        }
+    }
+}
+
+impl<'a> From<(&'a [u8], HgFileId, FileMode)> for ManifestLine<'a> {
+    fn from((path, fid, mode): (&'a [u8], HgFileId, FileMode)) -> Self {
+        ManifestLine::Content {
+            path: path.as_bstr(),
+            fid,
+            mode,
+        }
+    }
+}
+impl<'a> ManifestLine<'a> {
+    fn path(&self) -> &BStr {
+        match self {
+            ManifestLine::Line { line, path_len } => line[..*path_len].as_bstr(),
+            ManifestLine::Content { path, .. } => path,
+        }
+    }
+
+    fn fid(&self) -> HgFileId {
+        match self {
+            ManifestLine::Line { line, path_len } => {
+                HgFileId::from_bytes(&line[path_len + 1..][..40]).unwrap()
+            }
+            ManifestLine::Content { fid, .. } => fid.clone(),
+        }
+    }
+
+    fn write_into(&self, buf: &mut Vec<u8>) {
+        match self {
+            ManifestLine::Line { line, .. } => buf.extend_from_slice(line),
+            ManifestLine::Content { path, fid, mode } => {
+                buf.extend_from_slice(path);
+                buf.push(b'\0');
+                write!(buf, "{}", fid).unwrap();
+                buf.extend_from_slice(hg_attr(*mode));
+            }
+        }
+        buf.push(b'\n');
+    }
+}
+
+impl<'a> Hash for ManifestLine<'a> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.path().hash(state);
+    }
+}
+
+impl<'a> Borrow<[u8]> for ManifestLine<'a> {
+    fn borrow(&self) -> &[u8] {
+        self.path()
+    }
+}
+
+fn create_simple_manifest(cid: &CommitId, parent: &CommitId) -> (HgManifestId, Option<Box<[u8]>>) {
+    // TODO: this is all very suboptimal in what it does, how it does it,
+    // and what the code looks like. And code should be shared with
+    // `create_root_changeset`.
+    let parent = GitChangesetId::from_unchecked(parent.clone());
+    let parent_metadata = RawGitChangesetMetadata::read(&parent).unwrap();
+    let parent_mid = parent_metadata.parse().unwrap().manifest_id().clone();
+    let parent_manifest = RawHgManifest::read(&parent_mid.to_git().unwrap()).unwrap();
+    let mut extra_diff = Vec::new();
+    let empty_blob = BlobId::from_str("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391").unwrap();
+    let mut diff = diff_tree(&*parent, cid, true)
+        .map(|item| match item {
+            DiffTreeItem::Renamed {
+                to_path,
+                to_oid,
+                to_mode,
+                ..
+            }
+            | DiffTreeItem::Copied {
+                to_path,
+                to_oid,
+                to_mode,
+                ..
+            } if to_oid == empty_blob => DiffTreeItem::Added {
+                path: to_path,
+                mode: to_mode,
+                oid: to_oid,
+            },
+            item => item,
+        })
+        .inspect(|item| {
+            if let DiffTreeItem::Renamed {
+                from_path,
+                from_mode,
+                from_oid,
+                ..
+            } = item
+            {
+                extra_diff.push(DiffTreeItem::Deleted {
+                    path: from_path.clone(),
+                    mode: *from_mode,
+                    oid: from_oid.clone(),
+                });
+            }
+        })
+        .collect_vec();
+    if diff.is_empty() {
+        return (parent_mid, None);
+    }
+    diff.append(&mut extra_diff);
+    diff.sort_by(|a, b| a.path().cmp(b.path()));
+    let parent_lines = ByteSlice::lines(&*parent_manifest)
+        .map(ManifestLine::from)
+        .collect::<IndexSet<_>>();
+    let mut manifest = Vec::new();
+    let mut paths = Vec::new();
+    for either_or_both in parent_lines
+        .iter()
+        .merge_join_by(diff, |parent_line, diff_item| {
+            (parent_line.path()).cmp(diff_item.path())
+        })
+    {
+        let (path, fid, mode) = match either_or_both {
+            EitherOrBoth::Left(manifest_line) => {
+                manifest_line.write_into(&mut manifest);
+                continue;
+            }
+            EitherOrBoth::Both(_, DiffTreeItem::Deleted { path, .. }) => {
+                paths.extend_from_slice(&path);
+                paths.push(b'\0');
+                continue;
+            }
+            EitherOrBoth::Both(
+                manifest_line,
+                DiffTreeItem::Modified {
+                    path,
+                    from_oid,
+                    to_mode,
+                    to_oid,
+                    ..
+                },
+            ) => {
+                let mut fid = manifest_line.fid();
+                if from_oid != to_oid {
+                    fid = create_file(&to_oid, Some(&fid));
+                }
+                (path, fid, to_mode)
+            }
+            EitherOrBoth::Both(
+                _,
+                DiffTreeItem::Renamed {
+                    to_path,
+                    to_mode,
+                    to_oid,
+                    from_path,
+                    ..
+                }
+                | DiffTreeItem::Copied {
+                    to_path,
+                    to_mode,
+                    to_oid,
+                    from_path,
+                    ..
+                },
+            )
+            | EitherOrBoth::Right(
+                DiffTreeItem::Renamed {
+                    to_path,
+                    to_mode,
+                    to_oid,
+                    from_path,
+                    ..
+                }
+                | DiffTreeItem::Copied {
+                    to_path,
+                    to_mode,
+                    to_oid,
+                    from_path,
+                    ..
+                },
+            ) => (
+                to_path,
+                create_copy(
+                    &to_oid,
+                    from_path.as_bstr(),
+                    &parent_lines.get(&*from_path).unwrap().fid(),
+                ),
+                to_mode,
+            ),
+            EitherOrBoth::Right(DiffTreeItem::Added { path, mode, oid }) => {
+                (path, create_file(&oid, None), mode)
+            }
+
+            thing => die!("Something went wrong {:?}", thing),
+        };
+        ManifestLine::from((&*path, fid, mode)).write_into(&mut manifest);
+        paths.extend_from_slice(&path);
+        paths.push(b'\0');
+    }
+    paths.pop();
+    let mid = create_manifest(&manifest, Some(&parent_mid));
+    (mid, Some(paths.into_boxed_slice()))
+}
+
+fn create_simple_changeset(cid: &CommitId, parent: &CommitId) -> [HgChangesetId; 2] {
+    unsafe {
+        ensure_store_init();
+    }
+    let parent_csid = GitChangesetId::from_unchecked(parent.clone())
+        .to_hg()
+        .unwrap();
+    let (mid, paths) = create_simple_manifest(cid, parent);
+    let (csid, _) = create_changeset(cid, &mid, paths);
+    [csid, parent_csid]
+}
+
+fn create_merge_changeset(
+    cid: &CommitId,
+    parent1: &CommitId,
+    parent2: &CommitId,
+) -> Option<[HgChangesetId; 3]> {
+    static EXPERIMENTAL: std::sync::Once = std::sync::Once::new();
+
+    EXPERIMENTAL.call_once(|| {
+        if experiment(Experiments::MERGE) {
+            warn!(target: "root", "Pushing merges is experimental.");
+            warn!(target: "root", "This may irremediably push bad state to the mercurial server!");
+        } else {
+            die!("Pushing merges is not supported yet");
+        }
+    });
+    unsafe {
+        ensure_store_init();
+    }
+    let cs_mn = |c: &CommitId| {
+        let csid = GitChangesetId::from_unchecked(c.clone());
+        let metadata = RawGitChangesetMetadata::read(&csid).unwrap();
+        let metadata = metadata.parse().unwrap();
+        (
+            metadata.changeset_id().clone(),
+            metadata.manifest_id().clone(),
+        )
+    };
+    let (parent1_csid, parent1_mid) = cs_mn(parent1);
+    let (parent2_csid, parent2_mid) = cs_mn(parent2);
+    if parent1_mid == parent2_mid {
+        let (mid, paths) = create_simple_manifest(cid, parent1);
+        let (csid, _) = create_changeset(cid, &mid, paths);
+        Some([csid, parent1_csid, parent2_csid])
+    } else {
+        None
+    }
 }
 
 pub fn do_create_bundle(
@@ -1112,8 +1435,14 @@ pub fn do_create_bundle(
                 HgChangesetId::null(),
                 HgChangesetId::null(),
             ]
+        } else if parents.len() == 1 {
+            let [csid, parent1] = create_simple_changeset(&cid, &parents[0]);
+            [csid, parent1, HgChangesetId::null()]
+        } else if parents.len() == 2 {
+            create_merge_changeset(&cid, parents.get(0).unwrap(), parents.get(1).unwrap())
+                .unwrap_or_else(|| helper.handle(&cid, &parents))
         } else {
-            helper.handle(&cid, &parents)
+            die!("Pushing octopus merges to mercurial is not supported");
         }
     });
     let pushed = create_bundle(changesets, bundlespec, version, output, replycaps);
@@ -1421,7 +1750,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             report(format!("Sha1 mismatch for manifest {}", git_mid));
         }
         let files = if let Some(previous) = previous {
-            diff_tree(previous, mid)
+            diff_tree(previous, mid, false)
                 .filter_map(|item| match item {
                     DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid).clone())),
                     DiffTreeItem::Modified {
@@ -1450,7 +1779,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
     let mut previous = None;
     for r in roots {
         if let Some(previous) = &previous {
-            diff_tree(previous, &r)
+            diff_tree(previous, &r, false)
                 .filter_map(|item| match item {
                     DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid).clone())),
                     DiffTreeItem::Modified {
@@ -2147,7 +2476,7 @@ fn manifest_diff(
     a: &CommitId,
     b: &CommitId,
 ) -> impl Iterator<Item = (Box<[u8]>, GitObjectId, GitObjectId)> {
-    diff_tree(a, b).filter_map(|item| match item {
+    diff_tree(a, b, false).filter_map(|item| match item {
         DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid).clone(), GitObjectId::null())),
         DiffTreeItem::Modified {
             path,
@@ -2596,14 +2925,6 @@ impl BundleHelper {
         extra_env.push((
             "GIT_CINNABAR_TRACEBACK",
             check_enabled(Checks::TRACEBACK)
-                .then(|| "1")
-                .unwrap_or("")
-                .into(),
-        ));
-
-        extra_env.push((
-            "GIT_CINNABAR_MERGE",
-            experiment(Experiments::MERGE)
                 .then(|| "1")
                 .unwrap_or("")
                 .into(),

@@ -9,7 +9,7 @@ use std::io::{self, Write};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 use std::sync::RwLock;
 
-use bstr::{ByteSlice, ByteVec};
+use bstr::{BStr, ByteSlice, ByteVec};
 use cstr::cstr;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use derive_more::{Deref, Display};
@@ -600,6 +600,7 @@ extern "C" {
     );
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct FileMode(pub u16);
 
 impl fmt::Debug for FileMode {
@@ -651,6 +652,18 @@ pub enum DiffTreeItem {
         from_mode: FileMode,
         from_oid: BlobId,
     },
+}
+
+impl DiffTreeItem {
+    pub fn path(&self) -> &BStr {
+        match &self {
+            DiffTreeItem::Added { path, .. } => path.as_bstr(),
+            DiffTreeItem::Copied { to_path, .. } => to_path.as_bstr(),
+            DiffTreeItem::Deleted { path, .. } => path.as_bstr(),
+            DiffTreeItem::Modified { path, .. } => path.as_bstr(),
+            DiffTreeItem::Renamed { to_path, .. } => to_path.as_bstr(),
+        }
+    }
 }
 
 unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tree_item) {
@@ -706,22 +719,24 @@ unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tr
     diff_tree.push(item);
 }
 
-pub fn diff_tree(a: &CommitId, b: &CommitId) -> impl Iterator<Item = DiffTreeItem> {
+pub fn diff_tree(
+    a: &CommitId,
+    b: &CommitId,
+    detect_copy: bool,
+) -> impl Iterator<Item = DiffTreeItem> {
     let a = CString::new(format!("{}", a)).unwrap();
     let b = CString::new(format!("{}", b)).unwrap();
-    let args = [
-        cstr!(""),
-        &a,
-        &b,
-        cstr!("--ignore-submodules=dirty"),
-        cstr!("--"),
-    ];
+    let args = [cstr!(""), &a, &b, cstr!("--ignore-submodules=dirty")];
     let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
+    if detect_copy {
+        argv.extend([cstr!("-C").as_ptr(), cstr!("-C").as_ptr()]);
+    }
+    argv.push(cstr!("--").as_ptr());
     argv.push(std::ptr::null());
     let mut result = Vec::<DiffTreeItem>::new();
     unsafe {
         diff_tree_(
-            args.len().try_into().unwrap(),
+            (argv.len() - 1).try_into().unwrap(),
             &argv[0],
             diff_tree_fill,
             &mut result as *mut _ as *mut c_void,
