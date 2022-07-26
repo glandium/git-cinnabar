@@ -600,7 +600,7 @@ extern "C" {
     );
 }
 
-pub struct FileMode(u16);
+pub struct FileMode(pub u16);
 
 impl fmt::Debug for FileMode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

@@ -44,8 +44,9 @@ extern crate all_asserts;
 extern crate log;
 
 use bstr::io::BufReadExt;
+use byteorder::{BigEndian, WriteBytesExt};
 use clap::{crate_version, AppSettings, ArgGroup, Parser};
-use hg_bundle::{create_bundle, BundleSpec};
+use hg_bundle::{create_bundle, create_chunk_data, BundleSpec, RevChunkIter};
 use itertools::Itertools;
 use logging::{LoggingReader, LoggingWriter};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
@@ -121,16 +122,17 @@ use libgit::{
     config_get_value, diff_tree, for_each_ref_in, for_each_remote, get_oid_committish,
     lookup_replace_commit, ls_tree, metadata_oid, object_id, remote, resolve_ref, rev_list,
     rev_list_with_boundaries, strbuf, string_list, BlobId, CommitId, DiffTreeItem, MaybeBoundary,
-    RawCommit, RefTransaction,
+    RawBlob, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::Progress;
 use store::{
-    do_check_files, do_create, do_raw_changeset, do_set_, get_tags, has_metadata,
-    raw_commit_for_changeset, store_git_blob, ChangesetHeads, GeneratedGitChangesetMetadata,
-    GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId,
-    HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, BROKEN_REF,
-    CHANGESET_HEADS, CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    create_changeset, do_check_files, do_create, do_raw_changeset, do_set_, ensure_store_init,
+    get_tags, has_metadata, raw_commit_for_changeset, store_git_blob, store_manifest,
+    ChangesetHeads, GeneratedGitChangesetMetadata, GitChangesetId, GitFileId, GitFileMetadataId,
+    GitManifestId, HgChangesetId, HgFileId, HgManifestId, RawGitChangesetMetadata, RawHgChangeset,
+    RawHgFile, RawHgManifest, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF, METADATA_REF, NOTES_REF,
+    REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
 
@@ -1020,6 +1022,71 @@ fn do_bundle(
     result
 }
 
+fn create_root_changeset(cid: &CommitId) -> HgChangesetId {
+    // TODO: this is all very suboptimal in what it does, how it does it,
+    // and what the code looks like.
+    unsafe {
+        ensure_store_init();
+    }
+    let commit = RawCommit::read(cid).unwrap();
+    let commit = commit.parse().unwrap();
+    let mut manifest = Vec::new();
+    let mut paths = Vec::new();
+    for item in ls_tree(commit.tree()).unwrap() {
+        let blob = RawBlob::read(&BlobId::from_unchecked(item.oid.clone())).unwrap();
+        let mut hash = HgFileId::create();
+        hash.update(HgFileId::null().as_raw_bytes());
+        hash.update(HgFileId::null().as_raw_bytes());
+        hash.update(blob.as_bytes());
+        let fid = hash.finalize();
+        unsafe {
+            do_set_(
+                cstr::cstr!("file").as_ptr(),
+                &hg_object_id::from(fid.clone()),
+                &object_id::from(item.oid),
+            );
+        }
+        manifest.extend_from_slice(&item.path);
+        manifest.push(b'\0');
+        write!(&mut manifest, "{}", fid).unwrap();
+        manifest.extend_from_slice(match item.mode.0 {
+            0o100644 => b"",
+            0o100755 => b"x",
+            0o120000 => b"l",
+            _ => die!("Unexpected file mode"),
+        });
+        manifest.push(b'\n');
+        paths.extend_from_slice(&item.path);
+        paths.push(b'\0');
+    }
+    let mut hash = HgManifestId::create();
+    hash.update(HgManifestId::null().as_raw_bytes());
+    hash.update(HgManifestId::null().as_raw_bytes());
+    hash.update(&manifest);
+    let mid = hash.finalize();
+    let data = create_chunk_data(b"", &manifest);
+    let mut manifest_chunk = Vec::new();
+    manifest_chunk.extend_from_slice(b"\0\0\0\0");
+    manifest_chunk.extend_from_slice(mid.as_raw_bytes());
+    for _ in 0..4 {
+        manifest_chunk.extend_from_slice(HgManifestId::null().as_raw_bytes());
+    }
+    manifest_chunk.extend_from_slice(&data);
+    let len = manifest_chunk.len();
+    (&mut manifest_chunk[..4])
+        .write_u32::<BigEndian>(len as u32)
+        .unwrap();
+    manifest_chunk.extend_from_slice(b"\0\0\0\0");
+    for chunk in RevChunkIter::new(2, manifest_chunk.as_bytes()) {
+        unsafe {
+            store_manifest(&chunk);
+        }
+    }
+    paths.pop();
+    let (csid, _) = create_changeset(cid, &mid, Some(paths.to_boxed()));
+    csid
+}
+
 pub fn do_create_bundle(
     commits: impl Iterator<Item = (CommitId, Box<[CommitId]>)>,
     bundlespec: BundleSpec,
@@ -1039,6 +1106,12 @@ pub fn do_create_bundle(
             });
             assert!(parents.next().is_none());
             [csid, parent1, parent2]
+        } else if parents.is_empty() {
+            [
+                create_root_changeset(&cid),
+                HgChangesetId::null(),
+                HgChangesetId::null(),
+            ]
         } else {
             helper.handle(&cid, &parents)
         }

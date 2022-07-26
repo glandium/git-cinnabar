@@ -952,7 +952,7 @@ pub fn set_changeset_heads(new_heads: ChangesetHeads) {
 }
 
 extern "C" {
-    fn ensure_store_init();
+    pub fn ensure_store_init();
     pub fn store_git_blob(blob_buf: *const strbuf, result: *mut object_id);
     fn store_git_tree(tree_buf: *const strbuf, reference: *const object_id, result: *mut object_id);
     fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
@@ -1162,15 +1162,24 @@ pub fn do_create_changeset(mut input: &mut dyn BufRead, mut output: impl Write, 
     let manifest_id = HgManifestId::from_bytes(args[1]).unwrap();
     let size = usize::from_bytes(args[2]).unwrap();
     let files = (size != 0).then(|| input.read_exactly(size).unwrap());
+    let (changeset_id, metadata_id) = create_changeset(&commit_id, &manifest_id, files);
+    writeln!(output, "{} {}", changeset_id, metadata_id).unwrap();
+}
+
+pub fn create_changeset(
+    commit_id: &CommitId,
+    manifest_id: &HgManifestId,
+    files: Option<Box<[u8]>>,
+) -> (HgChangesetId, GitChangesetMetadataId) {
     let mut metadata = GitChangesetMetadata {
         changeset_id: HgChangesetId::null(),
-        manifest_id,
+        manifest_id: manifest_id.clone(),
         author: None,
         extra: None,
         files,
         patch: None,
     };
-    let commit = RawCommit::read(&commit_id).unwrap();
+    let commit = RawCommit::read(commit_id).unwrap();
     let commit = commit.parse().unwrap();
     let branch = commit.parents().get(0).and_then(|p| {
         let metadata =
@@ -1230,11 +1239,11 @@ pub fn do_create_changeset(mut input: &mut dyn BufRead, mut output: impl Write, 
     heads.add(&metadata.changeset_id, &parents, branch);
     let metadata_id =
         GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(GitObjectId::from(blob_oid)));
-    writeln!(output, "{} {}", metadata.changeset_id, metadata_id).unwrap();
+    (metadata.changeset_id, metadata_id)
 }
 
 extern "C" {
-    fn store_manifest(chunk: *const rev_chunk);
+    pub fn store_manifest(chunk: *const rev_chunk);
     fn store_file(chunk: *const rev_chunk);
 
     fn check_file(

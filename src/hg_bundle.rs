@@ -918,7 +918,7 @@ impl<R: Read> HgRepo for BundleConnection<R> {
     }
 }
 
-fn create_chunk_data(a: &[u8], b: &[u8]) -> Box<[u8]> {
+pub fn create_chunk_data(a: &[u8], b: &[u8]) -> Box<[u8]> {
     let mut buf = Vec::new();
     for patch in textdiff(a, b) {
         buf.write_u32::<BigEndian>(patch.start.try_into().unwrap())

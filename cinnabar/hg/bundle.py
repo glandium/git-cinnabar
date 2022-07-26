@@ -44,10 +44,11 @@ class PushStore(GitHgStore):
         manifest = Manifest(NULL_NODE_ID)
         changeset_files = []
 
-        if parents:
-            parent_changeset = self.changeset(self.hg_changeset(parents[0]))
-            parent_manifest = self.manifest(parent_changeset.manifest)
-            parent_node = parent_manifest.node
+        assert parents
+
+        parent_changeset = self.changeset(self.hg_changeset(parents[0]))
+        parent_manifest = self.manifest(parent_changeset.manifest)
+        parent_node = parent_manifest.node
 
         if len(parents) == 2:
             parent2_changeset = self.changeset(self.hg_changeset(parents[1]))
@@ -56,17 +57,7 @@ class PushStore(GitHgStore):
             if parent_node == parent2_node:
                 parents = parents[:1]
 
-        if not parents:
-            for line in GitHgHelper.ls_tree(b'%s:' % commit, recursive=True):
-                mode, typ, sha1, path = line
-                node = self.create_file(sha1)
-                manifest.add(path, node, self.ATTR[mode])
-                changeset_files.append(path)
-
-            manifest.parents = []
-            return manifest, changeset_files, NULL_NODE_ID
-
-        elif len(parents) == 2:
+        if len(parents) == 2:
             if not environ(b'GIT_CINNABAR_MERGE'):
                 raise Exception('Pushing merges is not supported yet')
             if not self._merge_warn:
