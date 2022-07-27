@@ -9,7 +9,6 @@ use std::mem;
 use std::os::raw::c_int;
 use std::ptr;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use bstr::{BStr, BString};
@@ -178,7 +177,7 @@ extern "C" {
     fn proc_err(proc: *mut child_process) -> c_int;
 }
 
-pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Arc<Mutex<dyn HgRepo + Send>>> {
+pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> {
     let userhost = url.host_str().map(|host| {
         let username = percent_decode_str(url.username()).collect_vec();
         let userhost = if username.is_empty() {
@@ -199,9 +198,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Arc<Mutex<dyn HgR
     } else {
         let path = url.to_file_path().unwrap();
         if path.metadata().map(|m| m.is_file()).unwrap_or(false) {
-            return Some(Arc::new(Mutex::new(BundleConnection::new(
-                File::open(path).unwrap(),
-            ))));
+            return Some(Box::new(BundleConnection::new(File::open(path).unwrap())));
         }
         path.as_os_str().as_bytes().to_owned()
     };
@@ -271,5 +268,5 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Arc<Mutex<dyn HgR
         stdio_read_response(&mut conn);
     }
 
-    Some(Arc::new(Mutex::new(HgWired::new(conn))))
+    Some(Box::new(HgWired::new(conn)))
 }

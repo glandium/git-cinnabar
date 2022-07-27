@@ -7,7 +7,6 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{stderr, Read, Write};
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
 
 use bstr::{BStr, ByteSlice};
 use either::Either;
@@ -871,8 +870,8 @@ fn get_initial_bundle(conn: &mut dyn HgRepo, remote: Option<&str>) -> Result<boo
             .flatten()
         {
             eprintln!("Getting clone bundle from {}", url);
-            let bundle_conn = get_connection(&url).unwrap();
-            match get_store_bundle(&mut *bundle_conn.lock().unwrap(), &[], &[]) {
+            let mut bundle_conn = get_connection(&url).unwrap();
+            match get_store_bundle(&mut *bundle_conn, &[], &[]) {
                 Ok(()) => {
                     return Ok(true);
                 }
@@ -1096,7 +1095,7 @@ pub fn get_cinnabarclone_url(
     None
 }
 
-pub fn get_connection(url: &Url) -> Option<Arc<Mutex<dyn HgRepo + Send>>> {
+pub fn get_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
     let conn = if ["http", "https"].contains(&url.scheme()) {
         get_http_connection(url)?
     } else if ["ssh", "file"].contains(&url.scheme()) {
@@ -1107,11 +1106,8 @@ pub fn get_connection(url: &Url) -> Option<Arc<Mutex<dyn HgRepo + Send>>> {
 
     const REQUIRED_CAPS: [&str; 2] = ["getbundle", "branchmap"];
 
-    {
-        let conn = conn.lock().unwrap();
-        for cap in &REQUIRED_CAPS {
-            conn.require_capability(cap.as_bytes());
-        }
+    for cap in &REQUIRED_CAPS {
+        conn.require_capability(cap.as_bytes());
     }
 
     Some(conn)

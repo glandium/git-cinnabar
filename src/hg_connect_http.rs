@@ -12,7 +12,7 @@ use std::os::raw::{c_char, c_int, c_long};
 use std::ptr;
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use bstr::{BStr, ByteSlice};
@@ -597,7 +597,7 @@ unsafe extern "C" fn read_from_read<R: Read>(
 }
 
 #[allow(clippy::unnecessary_wraps)]
-pub fn get_http_connection(url: &Url) -> Option<Arc<Mutex<dyn HgRepo + Send>>> {
+pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
     let mut conn = HgHttpConnection {
         capabilities: HgCapabilities::default(),
         url: url.clone(),
@@ -623,12 +623,12 @@ pub fn get_http_connection(url: &Url) -> Option<Arc<Mutex<dyn HgRepo + Send>>> {
     conn.handle_redirect(&http_resp);
     let header = (&mut http_resp).take(4).read_all().unwrap();
     match &*header {
-        b"HG10" | b"HG20" => Some(Arc::new(Mutex::new(BundleConnection::new(
+        b"HG10" | b"HG20" => Some(Box::new(BundleConnection::new(
             HttpConnectionHoldingReader {
                 reader: Cursor::new(header).chain(http_resp),
                 conn,
             },
-        )))),
+        ))),
 
         _ => {
             let mut caps = Vec::<u8>::new();
@@ -636,7 +636,7 @@ pub fn get_http_connection(url: &Url) -> Option<Arc<Mutex<dyn HgRepo + Send>>> {
             copy(&mut http_resp, &mut caps).unwrap();
             drop(http_resp);
             mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&caps));
-            Some(Arc::new(Mutex::new(HgWired::new(conn))))
+            Some(Box::new(HgWired::new(conn)))
         }
     }
 }

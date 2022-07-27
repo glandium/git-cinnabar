@@ -88,7 +88,7 @@ use std::os::raw::{c_char, c_int};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::{self, from_utf8, FromStr};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::{cmp, fmt};
 
 #[cfg(windows)]
@@ -522,9 +522,8 @@ fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
     let url = remote::get(remote).get_url();
     let url =
         hg_url(url).ok_or_else(|| format!("Invalid mercurial url: {}", url.to_string_lossy()))?;
-    let conn =
+    let mut conn =
         hg_connect::get_connection(&url).ok_or_else(|| format!("Failed to connect to {}", url))?;
-    let mut conn = conn.lock().unwrap();
     if conn.get_capability(b"lookup").is_none() {
         return Err(
             "Remote repository does not support the \"lookup\" command. \
@@ -883,18 +882,16 @@ fn do_unbundle(clonebundle: bool, mut url: Url) -> Result<(), String> {
         init_graft();
     }
     if clonebundle {
-        let conn = get_connection(&url).unwrap();
-        let mut conn = conn.lock().unwrap();
+        let mut conn = get_connection(&url).unwrap();
         if conn.get_capability(b"clonebundles").is_none() {
             return Err("Repository does not support clonebundles")?;
         }
         url = get_clonebundle_url(&mut *conn).ok_or("Repository didn't provide a clonebundle")?;
         eprintln!("Getting clone bundle from {}", url);
     }
-    let conn = get_connection(&url).unwrap();
+    let mut conn = get_connection(&url).unwrap();
 
-    get_store_bundle(&mut *conn.lock().unwrap(), &[], &[])
-        .map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
+    get_store_bundle(&mut *conn, &[], &[]).map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
 
     do_done_and_check(&[])
         .then(|| ())
@@ -3358,7 +3355,7 @@ fn remote_helper_import(
 }
 
 fn remote_helper_push(
-    conn: Arc<Mutex<dyn HgRepo + Send>>,
+    conn: &mut dyn HgRepo,
     remote: Option<&str>,
     push_refs: &[&BStr],
     info: RemoteInfo,
@@ -3382,7 +3379,7 @@ fn remote_helper_push(
         .collect_vec();
 
     let broken = resolve_ref(METADATA_REF).map(|m| resolve_ref(BROKEN_REF) == Some(m));
-    if broken == Some(true) || conn.lock().unwrap().get_capability(b"unbundle").is_none() {
+    if broken == Some(true) || conn.get_capability(b"unbundle").is_none() {
         for (_, _, dest, _) in &push_refs {
             let mut buf = b"error ".to_vec();
             buf.extend_from_slice(dest);
@@ -3466,12 +3463,7 @@ fn remote_helper_push(
                 ])
                 .filter_map(|c| GitChangesetId::from_unchecked(c).to_hg())
                 .collect_vec();
-                fail = !conn
-                    .lock()
-                    .unwrap()
-                    .known(&cinnabar_roots)
-                    .iter()
-                    .any(|k| *k);
+                fail = !conn.known(&cinnabar_roots).iter().any(|k| *k);
             }
             if fail {
                 return Err(
@@ -3480,7 +3472,7 @@ fn remote_helper_push(
             }
         }
 
-        let common = find_common(&mut *conn.lock().unwrap(), local_bases);
+        let common = find_common(conn, local_bases);
 
         let push_commits = rev_list(
             ["--topo-order", "--full-history", "--reverse"]
@@ -3516,7 +3508,6 @@ fn remote_helper_push(
 
         let mut result = None;
         if !push_commits.is_empty() && !dry_run {
-            let mut conn = conn.lock().unwrap();
             conn.require_capability(b"unbundle");
 
             let b2caps = conn
@@ -3624,7 +3615,6 @@ fn remote_helper_push(
                 let csid = source_cid
                     .as_ref()
                     .map(|cid| GitChangesetId::from_unchecked(cid.clone()).to_hg().unwrap());
-                let mut conn = conn.lock().unwrap();
                 conn.require_capability(b"pushkey");
                 let response = conn.pushkey(
                     "bookmarks",
@@ -3698,7 +3688,7 @@ fn remote_helper_push(
             "always" => false,
             "never" => true,
             "phase" => {
-                let phases = conn.lock().unwrap().phases();
+                let phases = conn.phases();
                 let phases = ByteSlice::lines(&*phases)
                     .filter_map(|l| {
                         l.splitn_exact(b'\t')
@@ -3771,7 +3761,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
     let remote = Some(remote.to_str().unwrap().to_owned())
         .and_then(|r| (!r.starts_with("hg://") && !r.starts_with("hg::")).then(|| r));
     let url = hg_url(&url).unwrap();
-    let conn = (url.scheme() != "tags").then(|| get_connection(&url).unwrap());
+    let mut conn = (url.scheme() != "tags").then(|| get_connection(&url).unwrap());
 
     let stdin = stdin();
     let mut stdin = LoggingReader::new("remote-helper", log::Level::Info, stdin.lock());
@@ -3839,9 +3829,8 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                     assert!(!for_push);
                     remote_helper_tags_list(&mut stdout);
                 } else {
-                    let mut conn = conn.as_ref().unwrap().lock().unwrap();
                     info = Some(remote_helper_repo_list(
-                        &mut *conn,
+                        conn.as_deref_mut().unwrap(),
                         remote.as_deref(),
                         &mut stdout,
                         for_push,
@@ -3873,9 +3862,8 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
         match cmd {
             b"import" => {
                 assert_ne!(url.scheme(), "tags");
-                let mut conn = conn.as_ref().unwrap().lock().unwrap();
                 match remote_helper_import(
-                    &mut *conn,
+                    conn.as_deref_mut().unwrap(),
                     remote.as_deref(),
                     &args.iter().map(|r| &**r).collect_vec(),
                     info.take().unwrap(),
@@ -3900,7 +3888,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
             b"push" => {
                 assert_ne!(url.scheme(), "tags");
                 let code = remote_helper_push(
-                    conn.clone().unwrap(),
+                    conn.as_deref_mut().unwrap(),
                     remote.as_deref(),
                     &args.iter().map(|r| &**r).collect_vec(),
                     info.take().unwrap(),
