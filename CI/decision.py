@@ -188,16 +188,6 @@ class Clone(TestTask, metaclass=Tool):
 
 @action('decision')
 def decision():
-    TestTask(
-        description='python lint',
-        clone=False,
-        command=[
-            'PATH=$PWD/repo:$PATH',
-            '(cd repo && flake8 --ignore E402,F405,W504'
-            ' $(git ls-files \\*\\*.py))',
-        ],
-    )
-
     for env in ('linux', 'mingw64', 'osx'):
         # Can't spawn osx workers from pull requests.
         if env.startswith('osx') and not TC_IS_PUSH:
