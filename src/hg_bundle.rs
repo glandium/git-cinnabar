@@ -968,7 +968,10 @@ fn write_chunk(
             })
             .collect_vec();
         if chunk_data.is_empty() {
-            chunk_data.push((None, create_chunk_data(b"", &raw_object)));
+            chunk_data.push((
+                previous_node.as_ref(),
+                create_chunk_data(raw_previous.as_deref().unwrap_or(b""), &raw_object),
+            ));
         }
         chunk_data.into_iter().min_by_key(|(_, d)| d.len()).unwrap()
     };
