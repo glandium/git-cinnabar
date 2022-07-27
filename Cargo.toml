@@ -117,12 +117,7 @@ codegen-units = 1
 panic = "abort"
 
 [profile.dev]
-opt-level = 0
 panic = "abort"
-
-[profile.tools]
-inherits = "dev"
-opt-level = 0
 
 [features]
 default = ["version-check"]
