@@ -166,13 +166,8 @@ DOCKER_IMAGES = {
     'test': '''\
         FROM base-buster
         RUN apt-get install -y --no-install-recommends\\
-         flake8\\
          llvm-13\\
          make\\
-         python3-coverage\\
-         python3-flake8\\
-         python3-nose\\
-         python-virtualenv\\
          && apt-get clean\\
          && pip3 install cram==0.7\\
          && ln -s llvm-symbolizer-13 /usr/bin/llvm-symbolizer
