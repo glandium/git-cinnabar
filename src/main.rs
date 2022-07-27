@@ -912,6 +912,13 @@ fn do_bundle(
         2 => BundleSpec::V2None,
         v => return Err(format!("Unknown version {v}")),
     });
+    let version = match bundlespec {
+        BundleSpec::ChangegroupV1
+        | BundleSpec::V1None
+        | BundleSpec::V1Gzip
+        | BundleSpec::V1Bzip => 1,
+        BundleSpec::V2None | BundleSpec::V2Gzip | BundleSpec::V2Bzip | BundleSpec::V2Zstd => 2,
+    };
     revs.extend([
         "--topo-order".into(),
         "--full-history".into(),
