@@ -710,8 +710,18 @@ static void old_store_manifest(struct rev_chunk *chunk)
 	if (!last_manifest) {
 		last_manifest = new_branch("refs/cinnabar/manifests");
 	}
-	if (!is_null_hg_oid(chunk->delta_node) &&
-	    !hg_oideq(chunk->delta_node, &last_manifest_oid)) {
+	if (is_null_hg_oid(chunk->delta_node)) {
+		if (last_manifest->branch_tree.tree) {
+			release_tree_content_recursive(
+				last_manifest->branch_tree.tree);
+			last_manifest->branch_tree.tree = NULL;
+		}
+		oidclr(&last_manifest->branch_tree.versions[0].oid);
+		oidclr(&last_manifest->branch_tree.versions[1].oid);
+		hg_oidclr(&last_manifest_oid);
+		oidclr(&last_manifest->oid);
+		strbuf_reset(&last_manifest_content);
+	} else if (!hg_oideq(chunk->delta_node, &last_manifest_oid)) {
 		const struct object_id *note;
 		ensure_notes(&hg2git);
 		note = get_note_hg(&hg2git, chunk->delta_node);
