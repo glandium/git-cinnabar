@@ -82,60 +82,50 @@ use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};
 use std::fs::File;
 use std::hash::Hash;
-use std::io::{copy, stdin, stdout, BufRead, BufReader, BufWriter, Cursor, Write};
+use std::io::{stdin, stdout, BufRead, BufWriter, Write};
 use std::iter::repeat;
-use std::os::raw::{c_char, c_int, c_void};
-#[cfg(unix)]
-use std::os::unix::process::ExitStatusExt;
+use std::os::raw::{c_char, c_int};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command};
+use std::process::Command;
 use std::str::{self, from_utf8, FromStr};
 use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
 use std::{cmp, fmt};
 
-#[cfg(unix)]
-use std::os::unix::io::AsRawFd;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
-#[cfg(windows)]
-use std::os::windows::io::AsRawHandle;
 use std::time::Instant;
 
 use bitflags::bitflags;
 use bstr::{BStr, ByteSlice};
 use git_version::git_version;
 use once_cell::sync::Lazy;
-use os_pipe::pipe;
 use url::Url;
-use which::which;
 
 use crate::hg_bundle::BundleReader;
 use crate::hg_connect::{decodecaps, find_common, UnbundleResponse};
-use crate::libc::FdFile;
 use crate::progress::set_progress;
-use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads};
+use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads, Dag, Traversal};
 use crate::util::{FromBytes, ToBoxed};
 use graft::{graft_finish, grafted, init_graft};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
-use libcinnabar::{cinnabar_notes_tree, files_meta, git2hg, hg2git, hg_object_id};
+use libcinnabar::{files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
     config_get_value, diff_tree, for_each_ref_in, for_each_remote, get_oid_committish,
     lookup_replace_commit, ls_tree, metadata_oid, object_id, remote, resolve_ref, rev_list,
-    rev_list_with_boundaries, strbuf, string_list, BlobId, CommitId, DiffTreeItem, FileMode,
-    MaybeBoundary, RawBlob, RawCommit, RefTransaction,
+    rev_list_with_boundaries, strbuf, BlobId, CommitId, DiffTreeItem, FileMode, MaybeBoundary,
+    RawBlob, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::Progress;
 use store::{
-    create_changeset, do_check_files, do_create, do_raw_changeset, do_set_, ensure_store_init,
-    get_tags, has_metadata, raw_commit_for_changeset, store_git_blob, store_manifest,
-    ChangesetHeads, GeneratedGitChangesetMetadata, GitChangesetId, GitFileId, GitFileMetadataId,
-    GitManifestId, HgChangesetId, HgFileId, HgManifestId, RawGitChangesetMetadata, RawHgChangeset,
-    RawHgFile, RawHgManifest, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF, METADATA_REF, NOTES_REF,
-    REFS_PREFIX, REPLACE_REFS_PREFIX,
+    create_changeset, do_check_files, do_set, ensure_store_init, get_tags, has_metadata,
+    raw_commit_for_changeset, store_git_blob, store_manifest, ChangesetHeads,
+    GeneratedGitChangesetMetadata, GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId,
+    HgChangesetId, HgFileId, HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile,
+    RawHgManifest, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX,
+    REPLACE_REFS_PREFIX,
 };
-use util::{CStrExt, Duplicate, IteratorExt, OsStrExt, SliceExt};
+use util::{CStrExt, IteratorExt, OsStrExt, SliceExt};
 
 #[cfg(feature = "version-check")]
 mod version_check;
@@ -167,27 +157,8 @@ pub const FULL_VERSION: &str = git_version!(
 
 #[allow(improper_ctypes)]
 extern "C" {
-    fn string_list_new() -> *mut string_list;
-    fn string_list_init_nodup(l: *mut string_list);
-    fn string_list_clear(l: *mut string_list, free_util: c_int);
-    fn string_list_split_in_place(
-        l: *mut string_list,
-        s: *mut c_char,
-        delim: c_int,
-        maxsplit: c_int,
-    );
-
-    fn do_get_note(t: *mut cinnabar_notes_tree, l: *const string_list, out: c_int);
-    fn do_hg2git(l: *const string_list, out: c_int);
-    fn do_manifest(l: *const string_list, out: c_int);
-    fn do_cat_file(l: *const string_list, out: c_int);
-    fn do_ls_tree(l: *const string_list, out: c_int);
-    fn do_rev_list(l: *const string_list, out: c_int);
-    fn do_diff_tree(l: *const string_list, out: c_int);
     pub fn do_reload();
     fn do_cleanup(rollback: c_int);
-    fn do_set(l: *const string_list);
-    fn do_store(in_: *mut libcinnabar::reader, out: c_int, l: *const string_list);
 
     fn do_store_metadata(result: *mut object_id);
 
@@ -288,70 +259,6 @@ fn do_done_and_check(args: &[&[u8]]) -> bool {
         do_reload();
     }
     do_check_files()
-}
-
-fn helper_main(input: &mut dyn BufRead, out: c_int) {
-    let args = unsafe { string_list_new() };
-    let mut line = Vec::new();
-    loop {
-        line.truncate(0);
-        input.read_until(b'\n', &mut line).unwrap();
-        if line.ends_with(b"\n") {
-            line.pop();
-        }
-        if line.is_empty() {
-            break;
-        }
-        Lazy::force(&INIT_CINNABAR_2);
-        line.push(b'\0');
-        let mut i = line.splitn_mut(2, |&b| b == b' ' || b == b'\0');
-        let command = i.next().unwrap();
-        let mut nul = [b'\0'];
-        let args_ = i.next().filter(|a| !a.is_empty()).unwrap_or(&mut nul);
-        let _locked = HELPER_LOCK.lock().unwrap();
-        if let b"create" | b"raw-changeset" = &*command {
-            let args = match args_.split_last().unwrap().1 {
-                b"" => Vec::new(),
-                args => args.split(|&b| b == b' ').collect::<Vec<_>>(),
-            };
-            let out = unsafe { FdFile::from_raw_fd(out) };
-            match &*command {
-                b"raw-changeset" => do_raw_changeset(out, &args),
-                b"create" => do_create(input, out, &args),
-                _ => unreachable!(),
-            }
-            continue;
-        }
-
-        unsafe {
-            string_list_init_nodup(args);
-            if args_ != b"\0" {
-                string_list_split_in_place(
-                    args,
-                    args_.as_bytes_mut().as_mut_ptr() as *mut _,
-                    b' ' as i32,
-                    -1,
-                );
-            }
-            match &*command {
-                b"git2hg" => do_get_note(&mut git2hg as *mut _ as *mut _, args, out),
-                b"file-meta" => do_get_note(&mut files_meta as *mut _ as *mut _, args, out),
-                b"hg2git" => do_hg2git(args, out),
-                b"manifest" => do_manifest(args, out),
-                b"cat-file" => do_cat_file(args, out),
-                b"ls-tree" => do_ls_tree(args, out),
-                b"rev-list" => do_rev_list(args, out),
-                b"diff-tree" => do_diff_tree(args, out),
-                b"set" => do_set(args),
-                b"store" => do_store(&mut libcinnabar::reader(input), out, args),
-                _ => die!("Unknown command: {}", command.as_bstr()),
-            }
-            string_list_clear(args, 0);
-        }
-    }
-    unsafe {
-        ::libc::free(args as *mut c_void);
-    }
 }
 
 #[cfg(unix)]
@@ -1032,15 +939,31 @@ fn hg_attr(mode: FileMode) -> &'static [u8] {
     }
 }
 
-fn create_file(blobid: &BlobId, parent: Option<&HgFileId>) -> HgFileId {
+fn git_mode(attr: &[u8]) -> FileMode {
+    match attr {
+        b"" => FileMode(0o100644),
+        b"x" => FileMode(0o100755),
+        b"l" => FileMode(0o120000),
+        _ => die!("Unexpected attribute"),
+    }
+}
+
+fn create_file(blobid: &BlobId, parents: &[HgFileId]) -> HgFileId {
     let blob = RawBlob::read(blobid).unwrap();
     let mut hash = HgFileId::create();
-    hash.update(HgFileId::null().as_raw_bytes());
-    hash.update(parent.unwrap_or(&HgFileId::null()).as_raw_bytes());
+    if parents.len() < 2 {
+        hash.update(HgFileId::null().as_raw_bytes());
+        hash.update(parents.get(0).unwrap_or(&HgFileId::null()).as_raw_bytes());
+    } else {
+        assert_eq!(parents.len(), 2);
+        for parent in parents.iter().sorted() {
+            hash.update(parent.as_raw_bytes());
+        }
+    }
     hash.update(blob.as_bytes());
     let fid = hash.finalize();
     unsafe {
-        do_set_(
+        do_set(
             cstr::cstr!("file").as_ptr(),
             &hg_object_id::from(fid.clone()),
             &object_id::from(blobid),
@@ -1070,12 +993,12 @@ fn create_copy(blobid: &BlobId, source_path: &BStr, source_fid: &HgFileId) -> Hg
     let mut oid = object_id::default();
     unsafe {
         store_git_blob(&metadata, &mut oid);
-        do_set_(
+        do_set(
             cstr::cstr!("file-meta").as_ptr(),
             &hg_object_id::from(fid.clone()),
             &oid,
         );
-        do_set_(
+        do_set(
             cstr::cstr!("file").as_ptr(),
             &hg_object_id::from(fid.clone()),
             &object_id::from(blobid),
@@ -1084,12 +1007,21 @@ fn create_copy(blobid: &BlobId, source_path: &BStr, source_fid: &HgFileId) -> Hg
     fid
 }
 
-fn create_manifest(content: &[u8], parent: Option<&HgManifestId>) -> HgManifestId {
-    let parent_manifest = parent.map(|p| RawHgManifest::read(&p.to_git().unwrap()).unwrap());
-    let parent = parent.cloned().unwrap_or_else(HgManifestId::null);
+fn create_manifest(content: &[u8], parents: &[HgManifestId]) -> HgManifestId {
+    let parent_manifest = parents
+        .get(0)
+        .map(|p| RawHgManifest::read(&p.to_git().unwrap()).unwrap());
+    let parent1 = parents.get(0).cloned().unwrap_or_else(HgManifestId::null);
     let mut hash = HgManifestId::create();
-    hash.update(HgManifestId::null().as_raw_bytes());
-    hash.update(parent.as_raw_bytes());
+    if parents.len() < 2 {
+        hash.update(HgManifestId::null().as_raw_bytes());
+        hash.update(parent1.as_raw_bytes());
+    } else {
+        assert_eq!(parents.len(), 2);
+        for parent in parents.iter().sorted() {
+            hash.update(parent.as_raw_bytes());
+        }
+    }
     hash.update(&content);
     let mid = hash.finalize();
     let data = create_chunk_data(
@@ -1102,9 +1034,14 @@ fn create_manifest(content: &[u8], parent: Option<&HgManifestId>) -> HgManifestI
     let mut manifest_chunk = Vec::new();
     manifest_chunk.extend_from_slice(b"\0\0\0\0");
     manifest_chunk.extend_from_slice(mid.as_raw_bytes());
-    manifest_chunk.extend_from_slice(parent.as_raw_bytes());
-    manifest_chunk.extend_from_slice(HgManifestId::null().as_raw_bytes());
-    manifest_chunk.extend_from_slice(parent.as_raw_bytes());
+    manifest_chunk.extend_from_slice(parent1.as_raw_bytes());
+    manifest_chunk.extend_from_slice(
+        parents
+            .get(1)
+            .unwrap_or(&HgManifestId::null())
+            .as_raw_bytes(),
+    );
+    manifest_chunk.extend_from_slice(parent1.as_raw_bytes());
     manifest_chunk.extend_from_slice(HgManifestId::null().as_raw_bytes());
     manifest_chunk.extend_from_slice(&data);
     let len = manifest_chunk.len();
@@ -1131,18 +1068,18 @@ fn create_root_changeset(cid: &CommitId) -> HgChangesetId {
     let mut manifest = Vec::new();
     let mut paths = Vec::new();
     for item in ls_tree(commit.tree()).unwrap() {
-        let fid = create_file(&BlobId::from_unchecked(item.oid), None);
+        let fid = create_file(&BlobId::from_unchecked(item.oid), &[]);
         ManifestLine::from((&*item.path, fid, item.mode)).write_into(&mut manifest);
         paths.extend_from_slice(&item.path);
         paths.push(b'\0');
     }
     paths.pop();
-    let mid = create_manifest(&manifest, None);
+    let mid = create_manifest(&manifest, &[]);
     let (csid, _) = create_changeset(cid, &mid, Some(paths.to_boxed()));
     csid
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum ManifestLine<'a> {
     Line {
         line: &'a BStr,
@@ -1187,6 +1124,13 @@ impl<'a> ManifestLine<'a> {
                 HgFileId::from_bytes(&line[path_len + 1..][..40]).unwrap()
             }
             ManifestLine::Content { fid, .. } => fid.clone(),
+        }
+    }
+
+    fn mode(&self) -> FileMode {
+        match self {
+            ManifestLine::Line { line, path_len } => git_mode(&line[path_len + 41..]),
+            ManifestLine::Content { mode, .. } => *mode,
         }
     }
 
@@ -1300,7 +1244,7 @@ fn create_simple_manifest(cid: &CommitId, parent: &CommitId) -> (HgManifestId, O
             ) => {
                 let mut fid = manifest_line.fid();
                 if from_oid != to_oid {
-                    fid = create_file(&to_oid, Some(&fid));
+                    fid = create_file(&to_oid, &[fid]);
                 }
                 (path, fid, to_mode)
             }
@@ -1346,7 +1290,7 @@ fn create_simple_manifest(cid: &CommitId, parent: &CommitId) -> (HgManifestId, O
                 to_mode,
             ),
             EitherOrBoth::Right(DiffTreeItem::Added { path, mode, oid }) => {
-                (path, create_file(&oid, None), mode)
+                (path, create_file(&oid, &[]), mode)
             }
 
             thing => die!("Something went wrong {:?}", thing),
@@ -1356,7 +1300,7 @@ fn create_simple_manifest(cid: &CommitId, parent: &CommitId) -> (HgManifestId, O
         paths.push(b'\0');
     }
     paths.pop();
-    let mid = create_manifest(&manifest, Some(&parent_mid));
+    let mid = create_manifest(&manifest, &[parent_mid]);
     (mid, Some(paths.into_boxed_slice()))
 }
 
@@ -1376,7 +1320,7 @@ fn create_merge_changeset(
     cid: &CommitId,
     parent1: &CommitId,
     parent2: &CommitId,
-) -> Option<[HgChangesetId; 3]> {
+) -> [HgChangesetId; 3] {
     static EXPERIMENTAL: std::sync::Once = std::sync::Once::new();
 
     EXPERIMENTAL.call_once(|| {
@@ -1404,9 +1348,139 @@ fn create_merge_changeset(
     if parent1_mid == parent2_mid {
         let (mid, paths) = create_simple_manifest(cid, parent1);
         let (csid, _) = create_changeset(cid, &mid, paths);
-        Some([csid, parent1_csid, parent2_csid])
+        [csid, parent1_csid, parent2_csid]
     } else {
-        None
+        let parent1_mn_cid = parent1_mid.to_git().unwrap();
+        let parent2_mn_cid = parent2_mid.to_git().unwrap();
+        let range = format!("{}...{}", &parent1_mn_cid, &parent2_mn_cid);
+        let mut file_dags = HashMap::new();
+        for cid in rev_list(["--topo-order", "--full-history", "--reverse", &range]) {
+            let commit = RawCommit::read(&cid).unwrap();
+            let commit = commit.parse().unwrap();
+            for (path, oid, parents) in get_changes(&cid, commit.parents(), true) {
+                let oid = HgFileId::from_str(&oid.to_string()).unwrap();
+                let path = manifest_path(&path);
+                let parents = parents
+                    .iter()
+                    .filter(|p| **p != GitObjectId::null())
+                    .map(|p| HgFileId::from_str(&p.to_string()).unwrap())
+                    .collect_vec();
+                let parents = parents.iter().collect_vec();
+                let dag = file_dags.entry(path).or_insert_with(Dag::new);
+                for parent in &parents {
+                    if dag.get(*parent).is_none() {
+                        dag.add(*parent, &[], (), |_, _| ());
+                    }
+                }
+                if dag.get(&oid).is_none() {
+                    dag.add(&oid, &parents, (), |_, _| ());
+                }
+            }
+        }
+
+        let commit = RawCommit::read(cid).unwrap();
+        let commit = commit.parse().unwrap();
+        let files = ls_tree(commit.tree()).unwrap();
+        let raw_parent1_manifest = RawHgManifest::read(&parent1_mn_cid).unwrap();
+        let parent1_manifest = ByteSlice::lines(&*raw_parent1_manifest).map(ManifestLine::from);
+        let parent2_manifest = RawHgManifest::read(&parent2_mn_cid).unwrap();
+        let parent2_manifest = ByteSlice::lines(&*parent2_manifest).map(ManifestLine::from);
+        let manifests =
+            parent1_manifest.merge_join_by(parent2_manifest, |a, b| a.path().cmp(b.path()));
+
+        let mut manifest = Vec::new();
+        let mut paths = Vec::new();
+        for item in files.merge_join_by(manifests, |a, b| {
+            (*a.path).cmp(match b {
+                EitherOrBoth::Both(b, _) | EitherOrBoth::Left(b) | EitherOrBoth::Right(b) => {
+                    b.path()
+                }
+            })
+        }) {
+            let (l, parents, p1_mode) = match item {
+                EitherOrBoth::Right(EitherOrBoth::Both(p1, _) | EitherOrBoth::Left(p1)) => {
+                    // File was removed and was on the first parent, it's marked
+                    // as affecting the changeset.
+                    paths.extend_from_slice(p1.path());
+                    paths.push(b'\0');
+                    continue;
+                }
+                EitherOrBoth::Right(EitherOrBoth::Right(_)) => {
+                    // File was removed, but was only on the second parent, it's
+                    // not marked.
+                    continue;
+                }
+                EitherOrBoth::Left(l) => {
+                    // Weird case, where the file was added in the merge (it's in
+                    // neither parents).
+                    (l, Vec::new().into_boxed_slice(), None)
+                }
+                EitherOrBoth::Both(l, EitherOrBoth::Left(p1)) => {
+                    (l, vec![p1.clone()].into_boxed_slice(), Some(p1.mode()))
+                }
+                EitherOrBoth::Both(l, EitherOrBoth::Right(p2)) => {
+                    (l, vec![p2].into_boxed_slice(), None)
+                }
+                EitherOrBoth::Both(l, EitherOrBoth::Both(p1, p2)) => {
+                    if p1.fid() == p2.fid() {
+                        (l, vec![p1.clone()].into_boxed_slice(), Some(p1.mode()))
+                    } else {
+                        static WARN: std::sync::Once = std::sync::Once::new();
+                        WARN.call_once(|| warn!(target: "root", "This may take a while..."));
+                        let parents = file_dags
+                            .remove(l.path.as_bstr())
+                            .and_then(|mut dag| {
+                                let mut is_ancestor = |a: &HgFileId, b| {
+                                    let mut result = false;
+                                    dag.traverse_mut(b, Traversal::Parents, |p, _| {
+                                        if p == a {
+                                            result = true;
+                                        }
+                                        !result
+                                    });
+                                    result
+                                };
+                                let p1_fid = p1.fid();
+                                let p2_fid = p2.fid();
+                                if is_ancestor(&p1_fid, &p2_fid) {
+                                    Some(vec![p2.clone()])
+                                } else if is_ancestor(&p2_fid, &p1_fid) {
+                                    Some(vec![p1.clone()])
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or_else(|| vec![p1.clone(), p2]);
+                        (l, parents.into_boxed_slice(), Some(p1.mode()))
+                    }
+                }
+            };
+            let unchanged = parents.len() == 1 && **parents[0].fid().to_git().unwrap() == l.oid;
+            let fid = if unchanged {
+                parents[0].fid()
+            } else {
+                let parents = parents.iter().map(ManifestLine::fid).collect_vec();
+                create_file(&BlobId::from_unchecked(l.oid), &parents)
+            };
+
+            let line = ManifestLine::from((&*l.path, fid, l.mode));
+            line.write_into(&mut manifest);
+            if !unchanged || p1_mode.map(|mode| mode != l.mode).unwrap_or_default() {
+                paths.extend_from_slice(&l.path);
+                paths.push(b'\0');
+            }
+        }
+        paths.pop();
+        let (mid, paths) = if *manifest == *raw_parent1_manifest {
+            (parent1_mid, None)
+        } else {
+            (
+                create_manifest(&manifest, &[parent1_mid, parent2_mid]),
+                Some(paths.into_boxed_slice()),
+            )
+        };
+        let (csid, _) = create_changeset(cid, &mid, paths);
+        [csid, parent1_csid, parent2_csid]
     }
 }
 
@@ -1417,7 +1491,6 @@ pub fn do_create_bundle(
     output: &File,
     replycaps: bool,
 ) -> Result<ChangesetHeads, String> {
-    let mut helper = Lazy::new(|| BundleHelper::start().unwrap());
     let changesets = commits.map(|(cid, parents)| {
         if let Some(csid) = GitChangesetId::from_unchecked(cid.clone()).to_hg() {
             let mut parents = parents.iter().cloned();
@@ -1440,16 +1513,13 @@ pub fn do_create_bundle(
             [csid, parent1, HgChangesetId::null()]
         } else if parents.len() == 2 {
             create_merge_changeset(&cid, parents.get(0).unwrap(), parents.get(1).unwrap())
-                .unwrap_or_else(|| helper.handle(&cid, &parents))
         } else {
             die!("Pushing octopus merges to mercurial is not supported");
         }
     });
-    let pushed = create_bundle(changesets, bundlespec, version, output, replycaps);
-    if let Ok(helper) = Lazy::into_value(helper) {
-        helper.finish()?;
-    }
-    Ok(pushed)
+    Ok(create_bundle(
+        changesets, bundlespec, version, output, replycaps,
+    ))
 }
 
 extern "C" {
@@ -2104,12 +2174,12 @@ fn do_fsck_full(
         if fresh_metadata != metadata {
             fix(format!("Adjusted changeset metadata for {}", changeset_id));
             unsafe {
-                do_set_(
+                do_set(
                     cstr::cstr!("changeset").as_ptr(),
                     &hg_object_id::from(changeset_id.clone()),
                     &object_id::from(CommitId::null()),
                 );
-                do_set_(
+                do_set(
                     cstr::cstr!("changeset").as_ptr(),
                     &hg_object_id::from(changeset_id.clone()),
                     &object_id::from((*cid).clone()),
@@ -2118,12 +2188,12 @@ fn do_fsck_full(
                 let mut buf = strbuf::new();
                 buf.extend_from_slice(&fresh_metadata.serialize());
                 store_git_blob(&buf, &mut metadata_id);
-                do_set_(
+                do_set(
                     cstr::cstr!("changeset-metadata").as_ptr(),
                     &hg_object_id::from(changeset_id.clone()),
                     &object_id::from(CommitId::null()),
                 );
-                do_set_(
+                do_set(
                     cstr::cstr!("changeset-metadata").as_ptr(),
                     &hg_object_id::from(changeset_id.clone()),
                     &metadata_id,
@@ -2308,7 +2378,7 @@ fn do_fsck_full(
                     let m = RawCommit::read(&h).unwrap();
                     let m = m.parse().unwrap();
                     let m = HgManifestId::from_bytes(m.body()).unwrap();
-                    do_set_(
+                    do_set(
                         cstr::cstr!("manifest").as_ptr(),
                         &hg_object_id::from(m),
                         &object_id::from(h),
@@ -2332,12 +2402,12 @@ fn do_fsck_full(
             // practice, it makes no difference. Reevaluate when refactoring,
             // though.
             unsafe {
-                do_set_(
+                do_set(
                     cstr::cstr!("file").as_ptr(),
                     &hg_object_id::from(h.clone()),
                     &object_id::default(),
                 );
-                do_set_(
+                do_set(
                     cstr::cstr!("file-meta").as_ptr(),
                     &hg_object_id::from(h.clone()),
                     &object_id::default(),
@@ -2354,7 +2424,7 @@ fn do_fsck_full(
             let metadata = RawGitChangesetMetadata::read(&cid).unwrap();
             let metadata = metadata.parse().unwrap();
             unsafe {
-                do_set_(
+                do_set(
                     cstr::cstr!("changeset-metadata").as_ptr(),
                     &hg_object_id::from(metadata.changeset_id().clone()),
                     &object_id::default(),
@@ -2816,207 +2886,6 @@ pub fn main() {
     let ret = unsafe { cinnabar_main_(argc.try_into().unwrap(), &argv[0]) };
     drop(args);
     std::process::exit(ret);
-}
-
-struct BundleHelper {
-    child: Child,
-    stdin: Option<ChildStdin>,
-    stdout: BufReader<ChildStdout>,
-    import_thread: JoinHandle<()>,
-    logging_thread: JoinHandle<()>,
-    sent_data: std::io::Result<u64>,
-}
-
-impl BundleHelper {
-    fn start() -> Result<Self, String> {
-        let mut python = if let Ok(p) = which("python3") {
-            Command::new(p)
-        } else if let Ok(p) = which("py") {
-            let mut c = Command::new(p);
-            c.arg("-3");
-            c
-        } else {
-            return Err("Could not find python 3.x".into());
-        };
-
-        // We aggregate the various parts of a bootstrap code that reads a
-        // tarball from stdin, and use the contents of that tarball as a
-        // source of python modules, using a custom loader.
-        // The tarball itself is included compressed in this binary, and
-        // we decompress it before sending.
-        let mut bootstrap = String::new();
-        let internal_python = cfg!(profile = "release")
-            || std::env::var_os("GIT_CINNABAR_NO_INTERNAL_PYTHON").is_none();
-        if internal_python {
-            bootstrap.push_str(include_str!("../bootstrap/loader.py"));
-        } else {
-            bootstrap.push_str("import sys\n");
-        }
-        if std::env::var("GIT_CINNABAR_COVERAGE").is_ok() {
-            bootstrap.push_str(include_str!("../bootstrap/coverage.py"));
-        }
-        bootstrap.push_str(include_str!("../bootstrap/git-remote-hg.py"));
-
-        let mut extra_env = Vec::new();
-        let (reader, writer) = if internal_python {
-            let (reader, writer) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
-            let reader = reader.dup_inheritable();
-            extra_env.push(("GIT_CINNABAR_BOOTSTRAP_FD", format!("{}", reader)));
-            (Some(reader), Some(writer))
-        } else {
-            (None, None)
-        };
-
-        let (import_fds, import_thread) = {
-            let (reader1, writer1) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
-            let (reader2, writer2) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
-            let reader1 = reader1.dup_inheritable();
-            let writer2 = writer2.dup_inheritable();
-            extra_env.push((
-                "GIT_CINNABAR_IMPORT_FDS",
-                format!("{},{}", reader1, writer2),
-            ));
-            let thread = thread::Builder::new()
-                .name("helper-import".into())
-                .spawn(move || {
-                    #[cfg(windows)]
-                    let writer1 = unsafe {
-                        ::libc::open_osfhandle(writer1.as_raw_handle() as isize, ::libc::O_RDONLY)
-                    };
-                    #[cfg(unix)]
-                    let writer1 = writer1.as_raw_fd();
-                    helper_main(&mut BufReader::new(reader2), writer1);
-                })
-                .unwrap();
-            ((reader1, writer2), thread)
-        };
-
-        let (logging_fd, logging_thread) = {
-            let (reader, writer) = pipe().map_err(|e| format!("Failed to create pipe: {}", e))?;
-            let writer = writer.dup_inheritable();
-            extra_env.push(("GIT_CINNABAR_LOG_FD", format!("{}", writer)));
-            let thread = thread::Builder::new()
-                .name("py-logger".into())
-                .spawn(move || {
-                    let reader = BufReader::new(reader);
-                    for line in reader.lines() {
-                        if let Some([level, target, msg]) = line.unwrap().splitn_exact(' ') {
-                            let msg = msg.replace('\0', "\n");
-                            if target == "stderr" {
-                                eprintln!("{}", msg);
-                            } else {
-                                let level = match level {
-                                    "CRITICAL" => log::Level::Error,
-                                    "ERROR" => log::Level::Error,
-                                    "WARNING" => log::Level::Warn,
-                                    "INFO" => log::Level::Info,
-                                    "DEBUG" => log::Level::Debug,
-                                    _ => log::Level::Trace,
-                                };
-                                log!(target: target, level, "{}", msg);
-                            }
-                        }
-                    }
-                })
-                .unwrap();
-            (writer, thread)
-        };
-
-        extra_env.push((
-            "GIT_CINNABAR_TRACEBACK",
-            check_enabled(Checks::TRACEBACK)
-                .then(|| "1")
-                .unwrap_or("")
-                .into(),
-        ));
-
-        extra_env.push((
-            "GIT_CINNABAR_LOG",
-            get_config("log")
-                .as_ref()
-                .map_or("", |l| l.to_str().unwrap())
-                .to_string(),
-        ));
-
-        let args_os = std::env::args_os().collect_vec();
-
-        let mut child = python
-            .arg("-c")
-            .arg(bootstrap)
-            .arg(&args_os[0])
-            .envs(extra_env)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Failed to start python: {}", e))?;
-        drop(import_fds);
-        drop(logging_fd);
-        drop(reader);
-
-        let sent_data = if let Some(mut writer) = writer {
-            copy(&mut Cursor::new(cinnabar_py::CINNABAR_PY), &mut writer)
-        } else {
-            Ok(0)
-        };
-        let stdin = child.stdin.take().unwrap();
-        let stdout = BufReader::new(child.stdout.take().unwrap());
-        Ok(BundleHelper {
-            child,
-            stdin: Some(stdin),
-            stdout,
-            import_thread,
-            logging_thread,
-            sent_data,
-        })
-    }
-
-    fn handle(&mut self, commit: &CommitId, parents: &[CommitId]) -> [HgChangesetId; 3] {
-        let stdin = self.stdin.as_mut().unwrap();
-        writeln!(stdin, "{} {}", commit, parents.iter().join(" ")).unwrap();
-        stdin.flush().unwrap();
-        (&mut self.stdout)
-            .byte_lines()
-            .next()
-            .unwrap()
-            .unwrap()
-            .splitn_exact(b' ')
-            .map(|[node, parent1, parent2]| {
-                let node = HgChangesetId::from_bytes(node).unwrap();
-                let parent1 = HgChangesetId::from_bytes(parent1).unwrap();
-                let parent2 = HgChangesetId::from_bytes(parent2).unwrap();
-                [node, parent1, parent2]
-            })
-            .unwrap()
-    }
-
-    fn finish(self) -> Result<i32, String> {
-        let BundleHelper {
-            mut child,
-            stdin,
-            import_thread,
-            logging_thread,
-            sent_data,
-            ..
-        } = self;
-        drop(stdin);
-        let status = child.wait().expect("Python command wasn't running?!");
-        match status.code() {
-            Some(0) => {}
-            Some(code) => return Ok(code),
-            None => {
-                #[cfg(unix)]
-                if let Some(signal) = status.signal() {
-                    return Ok(-signal);
-                }
-                return Ok(1);
-            }
-        };
-        drop(import_thread);
-        drop(logging_thread);
-        sent_data
-            .map(|_| 0)
-            .map_err(|e| format!("Failed to communicate with python: {}", e))
-    }
 }
 
 fn remote_helper_tags_list(mut stdout: impl Write) {
@@ -4076,10 +3945,6 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
 
     let ret = match argv0_path.file_stem().and_then(OsStr::to_str) {
         Some("git-cinnabar") => git_cinnabar(None),
-        Some("git-cinnabar-import") => {
-            helper_main(&mut stdin().lock(), 1);
-            Ok(0)
-        }
         Some("git-remote-hg") => git_cinnabar(Some(
             &[OsStr::new("git-cinnabar"), OsStr::new("remote-hg")]
                 .into_iter()

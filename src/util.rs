@@ -11,12 +11,8 @@ use std::marker::PhantomData;
 use std::mem;
 #[cfg(unix)]
 use std::os::unix::ffi;
-#[cfg(unix)]
-use std::os::unix::io::{AsRawFd, RawFd};
 #[cfg(windows)]
 use std::os::windows::ffi;
-#[cfg(windows)]
-use std::os::windows::io::{AsRawHandle, RawHandle};
 use std::str::{self, FromStr};
 use std::sync::mpsc::{channel, Receiver};
 
@@ -443,81 +439,6 @@ pub trait IteratorExt: Iterator {
 }
 
 impl<I: Iterator> IteratorExt for I {}
-
-pub trait Duplicate {
-    fn dup_inheritable(&self) -> DuplicateFd;
-}
-
-#[cfg(unix)]
-pub struct DuplicateFd(RawFd);
-
-#[cfg(windows)]
-pub struct DuplicateFd(RawHandle);
-
-impl Drop for DuplicateFd {
-    fn drop(&mut self) {
-        unsafe {
-            #[cfg(unix)]
-            libc::close(self.0);
-            #[cfg(windows)]
-            winapi::um::handleapi::CloseHandle(self.0);
-        }
-    }
-}
-
-impl fmt::Display for DuplicateFd {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0 as usize)
-    }
-}
-
-#[cfg(unix)]
-impl AsRawFd for DuplicateFd {
-    fn as_raw_fd(&self) -> RawFd {
-        self.0
-    }
-}
-
-#[cfg(unix)]
-impl<T: AsRawFd> Duplicate for T {
-    fn dup_inheritable(&self) -> DuplicateFd {
-        let fd = unsafe { libc::dup(self.as_raw_fd()) };
-        if fd < 0 {
-            panic!("Failed to duplicate file descriptor");
-        }
-        DuplicateFd(fd)
-    }
-}
-
-#[cfg(windows)]
-impl AsRawHandle for DuplicateFd {
-    fn as_raw_handle(&self) -> RawHandle {
-        self.0
-    }
-}
-
-#[cfg(windows)]
-impl<T: AsRawHandle> Duplicate for T {
-    fn dup_inheritable(&self) -> DuplicateFd {
-        let mut handle: RawHandle = std::ptr::null_mut();
-        unsafe {
-            let curproc = winapi::um::processthreadsapi::GetCurrentProcess();
-            if winapi::um::handleapi::DuplicateHandle(
-                curproc,
-                self.as_raw_handle(),
-                curproc,
-                &mut handle,
-                /* dwDesiredAccess */ 0,
-                /* bInheritHandle */ 1,
-                winapi::um::winnt::DUPLICATE_SAME_ACCESS,
-            ) == 0
-            {
-                panic!("Failed to duplicate handle");
-            }
-        }
-        DuplicateFd(handle)
-    }
-}
 
 pub type ImmutBString = Box<[u8]>;
 pub type ImmutString = Box<str>;

@@ -36,8 +36,8 @@ use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id};
 use crate::libgit::{
-    get_oid_blob, get_oid_committish, lookup_replace_commit, ls_tree, object_id, strbuf, BlobId,
-    Commit, CommitId, RawBlob, RawCommit, RefTransaction, TreeId,
+    get_oid_blob, get_oid_committish, ls_tree, object_id, strbuf, BlobId, Commit, CommitId,
+    RawBlob, RawCommit, RefTransaction, TreeId,
 };
 use crate::oid::{GitObjectId, HgObjectId, ObjectId};
 use crate::progress::{progress_enabled, Progress};
@@ -515,49 +515,6 @@ impl RawHgChangeset {
     }
 }
 
-pub fn do_raw_changeset(mut output: impl Write, args: &[&[u8]]) {
-    unsafe {
-        ensure_store_init();
-    }
-    if args.len() != 1 {
-        die!("raw-changeset takes 1 argument");
-    }
-    let oid = if args[0].as_bstr().starts_with(b"git:") {
-        GitChangesetId::from_unchecked(
-            lookup_replace_commit(&CommitId::from_bytes(&args[0][4..]).unwrap()).into_owned(),
-        )
-    } else {
-        HgChangesetId::from_bytes(args[0])
-            .unwrap()
-            .to_git()
-            .unwrap()
-    };
-    let commit = RawCommit::read(&oid).unwrap();
-    let commit = commit.parse().unwrap();
-    let metadata = RawGitChangesetMetadata::read(&oid).unwrap();
-    let metadata = metadata.parse().unwrap();
-    let raw_changeset = RawHgChangeset::from_metadata(&commit, &metadata).unwrap();
-
-    let parents = commit
-        .parents()
-        .iter()
-        .map(|p| GitChangesetId::from_unchecked(lookup_replace_commit(p).into_owned()).to_hg())
-        .chain(repeat(Some(HgChangesetId::null())))
-        .take(2)
-        .collect::<Option<Vec<_>>>()
-        .unwrap();
-    writeln!(
-        output,
-        "{} {} {} {}",
-        metadata.changeset_id(),
-        parents[0],
-        parents[1],
-        raw_changeset.len()
-    )
-    .unwrap();
-    output.write_all(&raw_changeset).unwrap();
-}
-
 #[derive(CopyGetters, Getters)]
 pub struct HgChangeset<'a> {
     #[getset(get = "pub")]
@@ -956,7 +913,7 @@ extern "C" {
     pub fn store_git_blob(blob_buf: *const strbuf, result: *mut object_id);
     fn store_git_tree(tree_buf: *const strbuf, reference: *const object_id, result: *mut object_id);
     fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
-    pub fn do_set_(what: *const c_char, hg_id: *const hg_object_id, git_id: *const object_id);
+    pub fn do_set(what: *const c_char, hg_id: *const hg_object_id, git_id: *const object_id);
     pub fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
     fn create_git_tree(
         tree_id: *const object_id,
@@ -1081,8 +1038,8 @@ fn store_changeset(
             let replace = object_id::from(replace);
             do_set_replace(&replace, &commit_id);
         }
-        do_set_(cstr!("changeset").as_ptr(), &changeset_id, &commit_id);
-        do_set_(
+        do_set(cstr!("changeset").as_ptr(), &changeset_id, &commit_id);
+        do_set(
             cstr!("changeset-metadata").as_ptr(),
             &changeset_id,
             &blob_id,
@@ -1143,29 +1100,6 @@ pub fn raw_commit_for_changeset(
     result
 }
 
-pub fn do_create(input: &mut dyn BufRead, output: impl Write, args: &[&[u8]]) {
-    match args.split_first() {
-        Some((&b"changeset", args)) => do_create_changeset(input, output, args),
-        Some((typ, _)) => die!("unknown create type: {}", typ.as_bstr()),
-        None => die!("create expects a type"),
-    }
-}
-
-pub fn do_create_changeset(mut input: &mut dyn BufRead, mut output: impl Write, args: &[&[u8]]) {
-    unsafe {
-        ensure_store_init();
-    }
-    if args.len() != 3 {
-        die!("create changeset takes 3 arguments");
-    }
-    let commit_id = CommitId::from_bytes(args[0]).unwrap();
-    let manifest_id = HgManifestId::from_bytes(args[1]).unwrap();
-    let size = usize::from_bytes(args[2]).unwrap();
-    let files = (size != 0).then(|| input.read_exactly(size).unwrap());
-    let (changeset_id, metadata_id) = create_changeset(&commit_id, &manifest_id, files);
-    writeln!(output, "{} {}", changeset_id, metadata_id).unwrap();
-}
-
 pub fn create_changeset(
     commit_id: &CommitId,
     manifest_id: &HgManifestId,
@@ -1176,7 +1110,7 @@ pub fn create_changeset(
         manifest_id: manifest_id.clone(),
         author: None,
         extra: None,
-        files,
+        files: files.and_then(|f| (!f.is_empty()).then(|| f)),
         patch: None,
     };
     let commit = RawCommit::read(commit_id).unwrap();
@@ -1222,12 +1156,12 @@ pub fn create_changeset(
     unsafe {
         let changeset_id = hg_object_id::from(metadata.changeset_id.clone());
         store_git_blob(&buf, &mut blob_oid);
-        do_set_(
+        do_set(
             cstr!("changeset").as_ptr(),
             &changeset_id,
             &object_id::from(commit_id),
         );
-        do_set_(
+        do_set(
             cstr!("changeset-metadata").as_ptr(),
             &changeset_id,
             &blob_oid,

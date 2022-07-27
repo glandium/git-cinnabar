@@ -28,7 +28,6 @@ Requirements:
 -------------
 
 - Git (any version should work ; cinnabarclone bundles require 1.4.4).
-- Python 3.5 or more.
 - In order to build from source:
   - Rust 1.58.0 or newer.
   - GCC or clang.
@@ -40,7 +39,7 @@ Setup:
   your PATH already, make sure the git-cinnabar path comes before.
 
 - Download a prebuilt binary with the following command (assuming one is
-  available for your system):
+  available for your system ; requires python 3.5 or newer):
 
   ```
   $ ./download.py

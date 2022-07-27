@@ -1,25 +1,3 @@
-/* Helper program for git-cinnabar
- *
- * It receives commands on stdin and outputs results on stdout.
- * The following commands are supported:
- * - git2hg <committish>
- *     Returns the contents of the git note containing git->hg metadata
- *     for the given commit in a `cat-file --batch`-like format.
- * - hg2git <hg_sha1>
- *     Returns the sha1 of the git object corresponding to the given
- *     mercurial sha1.
- * - manifest <hg_sha1>
- *     Returns the contents of the mercurial manifest with the given
- *     mercurial sha1, preceded by its length in text form, and followed
- *     by a carriage return.
- * - check-manifest <hg_sha1>
- *     Returns 'ok' when the sha1 of the contents of the mercurial manifest
- *     matches the manifest sha1, otherwise returns 'error'.
- * - cat-file <object>
- *     Returns the contents of the given git object, in a `cat-file
- *     --batch`-like format.
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,8 +35,6 @@
 #define _STRINGIFY(s) # s
 #define STRINGIFY(s) _STRINGIFY(s)
 
-static const char NULL_NODE[] = "0000000000000000000000000000000000000000";
-
 struct notes_tree git2hg, hg2git, files_meta;
 struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
                  hg2git_oid, files_meta_oid;
@@ -93,91 +69,6 @@ static void rev_info_release(struct rev_info *revs)
 		if (revs->treesame.entries[i].base)
 			free(revs->treesame.entries[i].decoration);
 	free(revs->treesame.entries);
-}
-
-struct string_list *string_list_new() {
-	return calloc(1, sizeof(struct string_list));
-}
-
-extern void send_buffer(int fd, struct strbuf *buf);
-
-/* Send git object info and content to stdout, like cat-file --batch does. */
-static void send_object(const struct object_id *oid, int helper_output)
-{
-	struct strbuf header = STRBUF_INIT;
-	enum object_type type;
-	unsigned long sz;
-	struct git_istream *st;
-
-	st = open_istream(the_repository, oid, &type, &sz, NULL);
-
-	if (!st)
-		die("open_istream failed for %s", oid_to_hex(oid));
-
-	strbuf_addf(&header, "%s %s %lu\n", oid_to_hex(oid), type_name(type),
-	            sz);
-
-	write_or_die(helper_output, header.buf, header.len);
-
-	strbuf_release(&header);
-
-	for (;;) {
-		char buf[1024 * 16];
-		ssize_t wrote;
-		ssize_t readlen = read_istream(st, buf, sizeof(buf));
-
-		if (readlen <= 0)
-			break;
-
-		wrote = write_in_full(helper_output, buf, readlen);
-		if (wrote < readlen)
-			break;
-
-		sz -= wrote;
-	}
-
-	if (sz != 0)
-		die("Failed to write object");
-
-	write_or_die(helper_output, "\n", 1);
-
-	close_istream(st);
-}
-
-void do_cat_file(struct string_list *args, int helper_output)
-{
-	struct object_id oid;
-
-	if (args->nr != 1)
-		goto not_found;
-
-	if (get_oid_committish(args->items[0].string, &oid))
-		goto not_found;
-
-	send_object(&oid, helper_output);
-	return;
-
-not_found:
-	write_or_die(helper_output, NULL_NODE, 40);
-	write_or_die(helper_output, "\n", 1);
-}
-
-static void fill_ls_tree(const struct object_id *oid, struct strbuf *base,
-			const char *pathname, unsigned mode, void *context)
-{
-	struct strbuf *buf = context;
-	const char *type = blob_type;
-
-	if (S_ISGITLINK(mode)) {
-		type = commit_type;
-	} else if (S_ISDIR(mode)) {
-		type = tree_type;
-	}
-
-	strbuf_addf(buf, "%06o %s %s\t", mode, type, oid_to_hex(oid));
-	strbuf_addbuf(buf, base);
-	strbuf_addstr(buf, pathname);
-	strbuf_addch(buf, '\0');
 }
 
 typedef void (*iter_tree_cb)(const struct object_id *oid, struct strbuf *base,
@@ -228,46 +119,6 @@ int iter_tree(const struct object_id *oid, iter_tree_cb callback, void *context,
 	return 1;
 }
 
-void do_ls_tree(struct string_list *args, int helper_output)
-{
-	struct object_id oid;
-	struct strbuf buf = STRBUF_INIT;
-	int recursive = 0;
-
-	if (args->nr == 2) {
-		if (strcmp(args->items[1].string, "-r"))
-			goto not_found;
-		recursive = 1;
-	} else if (args->nr != 1)
-		goto not_found;
-
-	if (get_oid(args->items[0].string, &oid))
-		goto not_found;
-
-	if (!iter_tree(&oid, fill_ls_tree, &buf, recursive))
-		goto not_found;
-
-	send_buffer(helper_output, &buf);
-	strbuf_release(&buf);
-	return;
-not_found:
-	write_or_die(helper_output, "0\n\n", 3);
-}
-
-static const char **string_list_to_argv(struct string_list *args)
-{
-	const char **argv = malloc(sizeof(char *) * (args->nr + 2));
-	int i;
-
-	argv[0] = "";
-	for (i = 0; i < args->nr; i++) {
-		argv[i + 1] = args->items[i].string;
-	}
-	argv[args->nr + 1] = NULL;
-
-	return argv;
-}
-
 struct object_id *commit_oid(struct commit *c) {
 	return &c->object.oid;
 }
@@ -310,63 +161,6 @@ int maybe_boundary(struct rev_info *revs, struct commit *commit) {
 		return 2;
 	}
 	return 0;
-}
-
-void do_rev_list(struct string_list *args, int helper_output)
-{
-	struct rev_info *revs;
-	struct commit *commit;
-	struct strbuf buf = STRBUF_INIT;
-	const char **argv = string_list_to_argv(args);
-
-	revs = rev_list_new(args->nr + 1, argv);
-	free(argv);
-
-	// Hack to force simplify_commit to save parents. full_diff is only
-	// checked for there or in setup_revisions so there is no other side
-	// effect.
-	revs->full_diff = 1;
-
-	while ((commit = get_revision(revs)) != NULL) {
-		struct commit_list *parent;
-		struct commit_graft *graft;
-		if (commit->object.flags & BOUNDARY)
-			strbuf_addch(&buf, '-');
-		strbuf_addstr(&buf, oid_to_hex(&commit->object.oid));
-		strbuf_addch(&buf, ' ');
-		strbuf_addstr(&buf, oid_to_hex(get_commit_tree_oid(commit)));
-		parent = commit->parents;
-		if (!parent && is_repository_shallow(the_repository) &&
-		    (graft = lookup_commit_graft(
-			the_repository, &commit->object.oid)) != NULL &&
-		    graft->nr_parent < 0) {
-			strbuf_addstr(&buf, " shallow");
-			if (revs->boundary)
-				strbuf_addstr(&buf, "\n-shallow shallow");
-		} else while (parent) {
-			strbuf_addch(&buf, ' ');
-			strbuf_addstr(&buf, oid_to_hex(
-				&parent->item->object.oid));
-			parent = parent->next;
-		}
-		strbuf_addch(&buf, '\n');
-
-		// If parents were altered by simplify_commit, we want to
-		// restore them for any subsequent operation on the commit.
-		//
-		// get_saved_parents returning NULL means there is no saved
-		// parents for the commit. If there was a saved value of null,
-		// it would mean the commit was a root in the first place, but
-		// then why would it have been saved?
-		parent = get_saved_parents(revs, commit);
-		if (parent && parent != commit->parents) {
-			free_commit_list(commit->parents);
-			commit->parents = copy_commit_list(parent);
-		}
-	}
-	send_buffer(helper_output, &buf);
-	strbuf_release(&buf);
-	rev_list_finish(revs);
 }
 
 struct diff_tree_file {
@@ -434,43 +228,6 @@ void diff_tree_(int argc, const char **argv, void (*cb)(void *, struct diff_tree
 	rev_info_release(&revs);
 }
 
-static void strbuf_diff_tree(void *ctx, struct diff_tree_item *item)
-{
-	struct strbuf *buf = ctx;
-	strbuf_addf(buf, "%06o %06o %s %s %c",
-	            item->a.mode,
-	            item->b.mode,
-	            oid_to_hex(item->a.oid),
-	            oid_to_hex(item->b.oid),
-	            item->status);
-	if (item->score)
-		strbuf_addf(buf, "%03d",
-		            (int)(item->score * 100 / MAX_SCORE));
-	strbuf_addch(buf, '\t');
-	if (item->status == DIFF_STATUS_COPIED ||
-	    item->status == DIFF_STATUS_RENAMED) {
-		strbuf_addstr(buf, item->a.path);
-		strbuf_addch(buf, '\0');
-		strbuf_addstr(buf, item->b.path);
-	} else {
-		strbuf_addstr(buf, item->a.mode ? item->a.path
-		                                : item->b.path);
-	}
-	strbuf_addch(buf, '\0');
-}
-
-void do_diff_tree(struct string_list *args, int helper_output)
-{
-	struct strbuf buf = STRBUF_INIT;
-	const char **argv = string_list_to_argv(args);
-
-	diff_tree_(args->nr + 1, argv, strbuf_diff_tree, &buf);
-	free(argv);
-
-	send_buffer(helper_output, &buf);
-	strbuf_release(&buf);
-}
-
 void ensure_notes(struct notes_tree *notes)
 {
 	if (!notes_initialized(notes)) {
@@ -498,56 +255,6 @@ const struct object_id *repo_lookup_replace_object(
 	return lookup_replace_object(r, oid);
 }
 
-void do_get_note(struct notes_tree *t, struct string_list *args, int helper_output)
-{
-	struct object_id oid;
-	const struct object_id *note;
-
-	if (args->nr != 1)
-		goto not_found;
-
-	ensure_notes(t);
-
-	if (get_oid_committish(args->items[0].string, &oid))
-		goto not_found;
-
-	note = get_note(t, lookup_replace_object(the_repository, &oid));
-	if (!note)
-		goto not_found;
-
-	send_object(note, helper_output);
-	return;
-
-not_found:
-	write_or_die(helper_output, NULL_NODE, 40);
-	write_or_die(helper_output, "\n", 1);
-}
-
-static size_t get_abbrev_sha1_hex(const char *hex, unsigned char *sha1)
-{
-	const char *hex_start = hex;
-	unsigned char *end = sha1 + 20;
-	while (sha1 < end) {
-		unsigned int val;
-		if (!hex[0])
-			val = 0xff;
-		else if (!hex[1])
-			val = (hexval(hex[0]) << 4) | 0xf;
-		else
-			val = (hexval(hex[0]) << 4) | hexval(hex[1]);
-		if (val & ~0xff)
-			return 0;
-		*sha1++ = val;
-		if (!hex[0] || !hex[1])
-			break;
-		hex += 2;
-	}
-	while (sha1 < end) {
-		*sha1++ = 0xff;
-	}
-	return hex - hex_start + !!hex[0];
-}
-
 const struct object_id *resolve_hg(
 	struct notes_tree* tree, const struct hg_object_id *oid, size_t len)
 {
@@ -568,31 +275,6 @@ const struct object_id *resolve_hg2git(const struct hg_object_id *oid,
                                        size_t len)
 {
 	return resolve_hg(&hg2git, oid, len);
-}
-
-void do_hg2git(struct string_list *args, int helper_output)
-{
-        struct hg_object_id oid;
-	const struct object_id *note;
-	size_t sha1_len;
-
-	if (args->nr != 1)
-		goto not_found;
-
-	sha1_len =  get_abbrev_sha1_hex(args->items[0].string, oid.hash);
-	if (!sha1_len)
-		goto not_found;
-
-	note = resolve_hg2git(&oid, sha1_len);
-	if (note) {
-		write_or_die(helper_output, oid_to_hex(note), 40);
-		write_or_die(helper_output, "\n", 1);
-		return;
-	}
-
-not_found:
-	write_or_die(helper_output, NULL_NODE, 40);
-	write_or_die(helper_output, "\n", 1);
 }
 
 /* The git storage for a mercurial manifest uses not-entirely valid file modes
@@ -901,36 +583,6 @@ struct strbuf *generate_manifest(const struct object_id *oid)
 			free_tree_buffer((struct tree *)obj);
 	}
 	return &generated_manifest.content;
-}
-
-void do_manifest(struct string_list *args, int helper_output)
-{
-	struct hg_object_id hg_oid;
-	struct object_id oid;
-	const struct object_id *manifest_oid;
-	struct strbuf *manifest = NULL;
-	size_t sha1_len;
-
-	if (args->nr != 1)
-		goto not_found;
-
-	sha1_len = get_abbrev_sha1_hex(args->items[0].string, hg_oid.hash);
-	if (!sha1_len)
-		goto not_found;
-
-	manifest_oid = resolve_hg2git(&hg_oid, sha1_len);
-	if (!manifest_oid)
-		goto not_found;
-
-	manifest = generate_manifest(manifest_oid);
-	if (!manifest)
-		goto not_found;
-
-	send_buffer(helper_output, manifest);
-	return;
-
-not_found:
-	write_or_die(helper_output, "0\n\n", 3);
 }
 
 static void get_manifest_oid(const struct commit *commit, struct hg_object_id *oid)

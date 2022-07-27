@@ -392,8 +392,8 @@ void do_set_replace(const struct object_id *replaced,
 	}
 }
 
-void do_set_(const char *what, const struct hg_object_id *hg_id,
-             const struct object_id *git_id)
+void do_set(const char *what, const struct hg_object_id *hg_id,
+            const struct object_id *git_id)
 {
 	enum object_type type;
 	struct oid_array *heads = NULL;
@@ -452,23 +452,6 @@ void do_set_(const char *what, const struct hg_object_id *hg_id,
 		if (heads)
 			add_head(heads, &git_id_);
 	}
-}
-
-void do_set(struct string_list *args)
-{
-	struct hg_object_id hg_id;
-	struct object_id git_id;
-
-	if (args->nr != 3)
-		die("set needs 3 arguments");
-
-	if (get_sha1_hex(args->items[1].string, hg_id.hash))
-		die("Invalid sha1");
-
-	if (get_oid_hex(args->items[2].string, &git_id))
-		die("Invalid sha1");
-
-	do_set_(args->items[0].string, &hg_id, &git_id);
 }
 
 int write_object_file_flags(const void *buf, size_t len, enum object_type type,
@@ -944,61 +927,6 @@ void do_store_metadata(struct object_id *result) {
 		"files-meta unified-manifests-v2");
 	store_git_commit(&buf, result);
 	strbuf_release(&buf);
-}
-
-void do_store(struct reader *helper_input, int helper_output,
-                     struct string_list *args)
-{
-	ensure_store_init();
-	if (args->nr < 2)
-		die("store needs at least 3 arguments");
-
-	if (!strcmp(args->items[0].string, "file") ||
-	    !strcmp(args->items[0].string, "manifest")) {
-		struct strbuf buf = STRBUF_INIT;
-		struct rev_chunk chunk;
-		size_t length;
-		struct hg_object_id oid;
-		struct hg_object_id *delta_node;
-
-		if (args->nr != 3)
-			die("store file needs 4 arguments");
-		if (!strcmp(args->items[1].string, "cg2")) {
-			delta_node = NULL;
-		} else {
-			if (get_sha1_hex(args->items[1].string, oid.hash))
-				die("Neither 'cg2' nor a sha1: %s",
-				    args->items[1].string);
-			delta_node = &oid;
-		}
-
-		// TODO: Error handling
-		length = strtol(args->items[2].string, NULL, 10);
-		strbuf_from_reader(&buf, length, helper_input);
-		rev_chunk_from_memory(&chunk, &buf, delta_node);
-		if (args->items[0].string[0] == 'f')
-			store_file(&chunk);
-		else
-			store_manifest(&chunk);
-		rev_chunk_release(&chunk);
-	} else if (!strcmp(args->items[0].string, "blob")) {
-		struct object_id result;
-		struct strbuf buf = STRBUF_INIT;
-		size_t length, s;
-		if (args->nr != 2)
-			die("store blob only takes one argument");
-		length = strtol(args->items[1].string, NULL, 10);
-		while (length) {
-			s = strbuf_from_reader(&buf, length, helper_input);
-			length -= s;
-		}
-		store_object(OBJ_BLOB, &buf, NULL, &result, 0);
-		strbuf_release(&buf);
-		write_or_die(helper_output, oid_to_hex(&result), 40);
-		write_or_die(helper_output, "\n", 1);
-	} else {
-		die("Unknown store kind: %s", args->items[0].string);
-	}
 }
 
 void store_git_tree(struct strbuf *tree_buf, const struct object_id *reference,

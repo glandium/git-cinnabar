@@ -95,12 +95,6 @@ class TestTask(Task):
         command.extend((
             'repo/git-cinnabar --version',
         ))
-        if variant == 'coverage':
-            command = [
-                'export GIT_CINNABAR_COVERAGE=1',
-                'export COVERAGE_FILE=$PWD/repo/.coverage',
-            ] + command
-
         if 'command' in kwargs:
             kwargs['command'] = command + kwargs['command']
         else:
@@ -122,7 +116,7 @@ class TestTask(Task):
                 'shopt -s nullglob',
                 'cd repo',
                 'zip $ARTIFACTS/coverage.zip'
-                ' $(find . -name .coverage -o -name "*.gcda")',
+                ' $(find . -name "*.gcda")',
                 'cd ..',
                 'shopt -u nullglob',
             ])
@@ -195,15 +189,12 @@ class Clone(TestTask, metaclass=Tool):
 @action('decision')
 def decision():
     TestTask(
-        description='python lint & tests',
+        description='python lint',
         clone=False,
         command=[
             'PATH=$PWD/repo:$PATH',
-            '(cd repo && nosetests3 --all-modules tests)',
             '(cd repo && flake8 --ignore E402,F405,W504'
-            ' $(git ls-files \\*\\*.py | grep -v ^bootstrap/))',
-            '(cd repo && flake8 --ignore E402,F405,F821'
-            ' $(git ls-files bootstrap/\\*\\*.py))',
+            ' $(git ls-files \\*\\*.py))',
         ],
     )
 
@@ -399,25 +390,11 @@ def main():
             '(' + '& '.join(download_coverage) + '& wait)',
         )
 
-        for task in TestTask.coverage:
-            merge_coverage.extend([
-                'unzip -d cov-{{{}.id}} cov-{{{}.id}}.zip .coverage'
-                ' || touch cov-{{{}.id}}/.coverage'.format(
-                    task, task, task),
-            ])
-
         merge_coverage.extend([
             'grcov -s repo -t lcov -o repo/coverage.lcov gcno-build.zip ' +
             ' '.join(
                 'cov-{{{}.id}}.zip'.format(task)
                 for task in TestTask.coverage),
-            'cd repo',
-            '(echo "[paths]"; echo "source ="; echo "  $PWD/cinnabar";'
-            ' echo "  /git-cinnabar::cinnabar") > .coveragerc',
-            'coverage combine --append {}'.format(' '.join(
-                '../cov-{{{}.id}}/.coverage'.format(task)
-                for task in TestTask.coverage)),
-            'cd ..',
         ])
 
     if merge_coverage:

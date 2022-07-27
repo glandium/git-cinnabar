@@ -38,15 +38,11 @@ tee = "0.1"
 tempfile = "3"
 typenum = "1"
 url = "2"
-which = "4"
 
 [dependencies.bstr]
 version = "0.2"
 default-features = false
 features = ["std"]
-
-[dependencies.cinnabar-py]
-path = "cinnabar"
 
 [dependencies.clap]
 version = "3"
