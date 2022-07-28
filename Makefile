@@ -6,7 +6,11 @@ all:
 install:
 	$(error Not a supported target)
 
-include git-core/config.mak.uname
+-include git-core/config.mak.uname
+
+git-core/config.mak.uname:
+	git submodule sync
+	git submodule update --init
 
 all: git-cinnabar$X git-remote-hg$X
 
