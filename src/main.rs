@@ -1175,6 +1175,21 @@ fn create_simple_manifest(cid: &CommitId, parent: &CommitId) -> (HgManifestId, O
     let mut extra_diff = Vec::new();
     let empty_blob = BlobId::from_str("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391").unwrap();
     let mut diff = diff_tree(&*parent, cid, true)
+        .inspect(|item| {
+            if let DiffTreeItem::Renamed {
+                from_path,
+                from_mode,
+                from_oid,
+                ..
+            } = item
+            {
+                extra_diff.push(DiffTreeItem::Deleted {
+                    path: from_path.clone(),
+                    mode: *from_mode,
+                    oid: from_oid.clone(),
+                });
+            }
+        })
         .map(|item| match item {
             DiffTreeItem::Renamed {
                 to_path,
@@ -1193,21 +1208,6 @@ fn create_simple_manifest(cid: &CommitId, parent: &CommitId) -> (HgManifestId, O
                 oid: to_oid,
             },
             item => item,
-        })
-        .inspect(|item| {
-            if let DiffTreeItem::Renamed {
-                from_path,
-                from_mode,
-                from_oid,
-                ..
-            } = item
-            {
-                extra_diff.push(DiffTreeItem::Deleted {
-                    path: from_path.clone(),
-                    mode: *from_mode,
-                    oid: from_oid.clone(),
-                });
-            }
         })
         .collect_vec();
     if diff.is_empty() {
