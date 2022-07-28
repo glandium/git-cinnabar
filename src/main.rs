@@ -1361,7 +1361,7 @@ fn create_merge_changeset(
         for cid in rev_list(["--topo-order", "--full-history", "--reverse", &range]) {
             let commit = RawCommit::read(&cid).unwrap();
             let commit = commit.parse().unwrap();
-            for (path, oid, parents) in get_changes(&cid, commit.parents(), true) {
+            for (path, oid, parents) in get_changes(&cid, commit.parents(), false) {
                 let oid = HgFileId::from_str(&oid.to_string()).unwrap();
                 let path = manifest_path(&path);
                 let parents = parents
