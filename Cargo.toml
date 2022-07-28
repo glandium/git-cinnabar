@@ -11,6 +11,19 @@ license = "MPL-2.0 AND GPL-2.0"
 repository = "https://github.com/glandium/git-cinnabar"
 rust-version = "1.58.0"
 publish = false
+include = [
+  "/src",
+  "/build.rs",
+  "/.cargo",
+  "/git-core/COPYING",
+  "/git-core/LGPL-2.1",
+  "/git-core/Makefile",
+  "/git-core/GIT-VERSION-GEN",
+  "/git-core/*.mak*",
+  "/git-core/**/*.c",
+  "/git-core/**/*.h",
+  "!/git-core/t/**",
+]
 
 [dependencies]
 all_asserts = "2"
