@@ -1171,7 +1171,9 @@ fn bundle_files<const CHUNK_SIZE: usize>(
         count.set(count.get() + 1);
         let mut previous = None;
         let empty_file = HgFileId::from_str("b80de5d138758541c5f05265ad144ab9fa86d1db").unwrap();
-        for ((node, (parent1, parent2, changeset)), ()) in data.into_iter().zip(&mut progress) {
+        for ((node, (mut parent1, mut parent2, changeset)), ()) in
+            data.into_iter().zip(&mut progress)
+        {
             let generate = |node: &HgObjectId| {
                 let node = HgFileId::from_unchecked(node.clone());
                 if node == empty_file {
@@ -1184,14 +1186,32 @@ fn bundle_files<const CHUNK_SIZE: usize>(
                     file.0
                 }
             };
-            let [parent1, parent2] =
-                find_parents(&node, Some(&parent1), Some(&parent2), &generate(&node));
+            let data = generate(&node);
+            let null_id = HgObjectId::null();
+            // Normalize parents so that the first parent isn't null (it's a corner case, see below).
+            if *parent1 == null_id {
+                mem::swap(&mut parent1, &mut parent2);
+            }
+            let [parent1, parent2] = find_parents(&node, Some(&parent1), Some(&parent2), &data);
+            let mut parent1 = parent1.unwrap_or(&null_id);
+            let mut parent2 = parent2.unwrap_or(&null_id);
+            // On merges, a file with copy metadata has either not parent, or only one.
+            // In that latter case, the parent is always set as second parent.
+            // On non-merges, a file with copy metadata doesn't have a parent.
+            if data.starts_with(b"\x01\n") {
+                if parent1 != &null_id && parent2 != &null_id {
+                    die!("Trying to create an invalid file. Please open an issue with details.");
+                }
+                if parent1 != &null_id {
+                    mem::swap(&mut parent1, &mut parent2);
+                }
+            }
             write_chunk(
                 &mut *bundle_part_writer,
                 version,
                 &node,
-                parent1.unwrap_or(&HgObjectId::null()),
-                parent2.unwrap_or(&HgObjectId::null()),
+                parent1,
+                parent2,
                 &changeset,
                 &mut previous,
                 false,
