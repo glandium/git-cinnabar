@@ -29,11 +29,11 @@ use zstd::stream::write::Encoder as ZstdEncoder;
 use crate::hg_connect::{encodecaps, HgConnection, HgConnectionBase, HgRepo};
 use crate::hg_data::find_parents;
 use crate::libcinnabar::files_meta;
-use crate::libgit::BlobId;
+use crate::libgit::{BlobId, CommitId, RawCommit};
 use crate::oid::GitObjectId;
 use crate::progress::Progress;
 use crate::store::{
-    ChangesetHeads, GitFileMetadataId, HgChangesetId, HgFileId, HgManifestId,
+    ChangesetHeads, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId, HgManifestId,
     RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest,
 };
 use crate::util::{FromBytes, ToBoxed};
@@ -1039,19 +1039,28 @@ pub fn create_bundle(
             },
         )
         .unwrap();
-        let get_manifest = |node: HgChangesetId| {
-            let metadata = RawGitChangesetMetadata::read(&node.to_git().unwrap()).unwrap();
-            let metadata = metadata.parse().unwrap();
-            metadata.manifest_id().clone()
+        // We could derive the manifest parents from the parent changesets, but there
+        // are cases where they are actually the opposites of the parent manifests,
+        // so we have to go off the manifest dag.
+        let get_manifest = |node: &CommitId| {
+            let manifest_commit =
+                RawCommit::read(&GitManifestId::from_unchecked(node.clone())).unwrap();
+            let manifest_commit = manifest_commit.parse().unwrap();
+            HgManifestId::from_bytes(manifest_commit.body()).unwrap()
         };
-        let manifest = get_manifest(node.clone());
+        let metadata = RawGitChangesetMetadata::read(&node.to_git().unwrap()).unwrap();
+        let metadata = metadata.parse().unwrap();
+        let manifest = metadata.manifest_id().clone();
         if manifest != HgManifestId::null() && !manifests.contains_key(&manifest) {
-            let mn_parent1 = (parent1 != HgChangesetId::null())
-                .then(|| get_manifest(parent1))
-                .unwrap_or_else(HgManifestId::null);
-            let mn_parent2 = (parent2 != HgChangesetId::null())
-                .then(|| get_manifest(parent2))
-                .unwrap_or_else(HgManifestId::null);
+            let manifest_commit = RawCommit::read(&manifest.to_git().unwrap()).unwrap();
+            let manifest_commit = manifest_commit.parse().unwrap();
+            let manifest_parents = manifest_commit.parents();
+            let mn_parent1 = manifest_parents
+                .get(0)
+                .map_or_else(HgManifestId::null, get_manifest);
+            let mn_parent2 = manifest_parents
+                .get(1)
+                .map_or_else(HgManifestId::null, get_manifest);
             if ![&mn_parent1, &mn_parent2].contains(&&manifest) {
                 manifests.insert(manifest, (mn_parent1, mn_parent2, node));
             }
