@@ -941,6 +941,7 @@ fn write_chunk(
     parent2: &HgObjectId,
     changeset: &HgChangesetId,
     previous: &mut Option<(HgObjectId, Box<[u8]>)>,
+    always_previous: bool,
     mut f: impl FnMut(&HgObjectId) -> Box<[u8]>,
 ) -> io::Result<()> {
     let raw_object = f(node);
@@ -959,7 +960,7 @@ fn write_chunk(
             .filter(|&p| p != &HgObjectId::null())
             .dedup()
             .map(|p| {
-                if previous_node.as_ref() == Some(p) {
+                if let (true, Some(p)) = (always_previous, previous_node.as_ref()) {
                     let previous = raw_previous.as_ref().unwrap();
                     (Some(p), create_chunk_data(previous, &raw_object))
                 } else {
@@ -1030,6 +1031,7 @@ pub fn create_bundle(
             &parent2,
             &node,
             &mut previous,
+            true,
             |node| {
                 let node = HgChangesetId::from_unchecked(node.clone());
                 let changeset = RawHgChangeset::read(&node.to_git().unwrap()).unwrap();
@@ -1085,6 +1087,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
             &parent2,
             &changeset,
             &mut previous,
+            false,
             |node| {
                 let node = HgManifestId::from_unchecked(node.clone());
                 let manifest = RawHgManifest::read(&node.to_git().unwrap()).unwrap();
@@ -1182,6 +1185,7 @@ fn bundle_files<const CHUNK_SIZE: usize>(
                 parent2.unwrap_or(&HgObjectId::null()),
                 &changeset,
                 &mut previous,
+                false,
                 generate,
             )
             .unwrap();
