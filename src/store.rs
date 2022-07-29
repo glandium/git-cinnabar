@@ -463,24 +463,26 @@ impl RawHgChangeset {
         // create a patch instead, which would be handled above instead of
         // manually here.
         let node = metadata.changeset_id();
-        while changeset[changeset.len() - 1] == b'\0' {
-            let mut hash = HgChangesetId::create();
-            let mut parents = commit
-                .parents()
-                .iter()
-                .map(|p| GitChangesetId::from_unchecked(p.clone()).to_hg())
-                .chain(repeat(Some(HgChangesetId::null())))
-                .take(2)
-                .collect::<Option<Vec<_>>>()?;
-            parents.sort();
-            for p in parents {
-                hash.update(p.as_raw_bytes());
+        if *node != HgChangesetId::null() {
+            while changeset[changeset.len() - 1] == b'\0' {
+                let mut hash = HgChangesetId::create();
+                let mut parents = commit
+                    .parents()
+                    .iter()
+                    .map(|p| GitChangesetId::from_unchecked(p.clone()).to_hg())
+                    .chain(repeat(Some(HgChangesetId::null())))
+                    .take(2)
+                    .collect::<Option<Vec<_>>>()?;
+                parents.sort();
+                for p in parents {
+                    hash.update(p.as_raw_bytes());
+                }
+                hash.update(&changeset);
+                if hash.finalize() == *node {
+                    break;
+                }
+                changeset.pop();
             }
-            hash.update(&changeset);
-            if hash.finalize() == *node {
-                break;
-            }
-            changeset.pop();
         }
         Some(RawHgChangeset(changeset.into()))
     }
