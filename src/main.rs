@@ -1461,14 +1461,13 @@ fn create_merge_changeset(
                     }
                 }
             };
-            let parent1_fid = parents[0].fid();
             // empty file needs to be checked separately because hg2git metadata
             // doesn't store empty files because of the conflict with empty manifests.
             let unchanged = parents.len() == 1
-                && (parent1_fid == empty_file && l.oid == *empty_blob)
-                || **parent1_fid.to_git().unwrap() == l.oid;
+                && ((parents[0].fid() == empty_file && l.oid == *empty_blob)
+                    || **parents[0].fid().to_git().unwrap() == l.oid);
             let fid = if unchanged {
-                parent1_fid
+                parents[0].fid()
             } else {
                 let parents = parents.iter().map(ManifestLine::fid).collect_vec();
                 create_file(&BlobId::from_unchecked(l.oid), &parents)
