@@ -246,6 +246,7 @@ static void end_packfile()
 			break;
 		}
 		list_del_init(&pack_data->mru);
+		close_pack_windows(pack_data);
 	}
 
 	real_end_packfile();
