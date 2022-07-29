@@ -1394,6 +1394,8 @@ fn create_merge_changeset(
 
         let mut manifest = Vec::new();
         let mut paths = Vec::new();
+        let empty_file = HgFileId::from_str("b80de5d138758541c5f05265ad144ab9fa86d1db").unwrap();
+        let empty_blob = BlobId::from_str("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391").unwrap();
         for item in files.merge_join_by(manifests, |a, b| {
             (*a.path).cmp(match b {
                 EitherOrBoth::Both(b, _) | EitherOrBoth::Left(b) | EitherOrBoth::Right(b) => {
@@ -1459,9 +1461,14 @@ fn create_merge_changeset(
                     }
                 }
             };
-            let unchanged = parents.len() == 1 && **parents[0].fid().to_git().unwrap() == l.oid;
+            let parent1_fid = parents[0].fid();
+            // empty file needs to be checked separately because hg2git metadata
+            // doesn't store empty files because of the conflict with empty manifests.
+            let unchanged = parents.len() == 1
+                && (parent1_fid == empty_file && l.oid == *empty_blob)
+                || **parent1_fid.to_git().unwrap() == l.oid;
             let fid = if unchanged {
-                parents[0].fid()
+                parent1_fid
             } else {
                 let parents = parents.iter().map(ManifestLine::fid).collect_vec();
                 create_file(&BlobId::from_unchecked(l.oid), &parents)
