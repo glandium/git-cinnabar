@@ -874,7 +874,13 @@ pub fn graft_config_enabled(remote: Option<&str>) -> Result<Option<bool>, String
         .map_err(|e| format!("Invalid value for cinnabar.graft: {}", e.to_string_lossy()))
 }
 
-fn do_unbundle(clonebundle: bool, mut url: Url) -> Result<(), String> {
+fn do_unbundle(clonebundle: bool, mut url: OsString) -> Result<(), String> {
+    if !url.as_bytes().starts_with(b"hg:") {
+        let mut new_url = OsString::from("hg::");
+        new_url.push(url);
+        url = new_url;
+    }
+    let mut url = hg_url(&url).unwrap();
     if !["http", "https", "file"].contains(&url.scheme()) {
         return Err(format!("{} urls are not supported.", url.scheme()));
     }
@@ -2791,9 +2797,9 @@ enum CinnabarCommand {
         #[clap(long)]
         #[clap(help = "Get clone bundle from given repository")]
         clonebundle: bool,
-        #[clap(help = "Url of the bundle")]
+        #[clap(help = "Url/Location of the bundle")]
         #[clap(allow_invalid_utf8 = true)]
-        url: Url,
+        url: OsString,
     },
     #[clap(name = "upgrade")]
     #[clap(about = "Upgrade cinnabar metadata")]
