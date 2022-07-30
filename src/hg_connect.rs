@@ -593,7 +593,7 @@ pub fn get_store_bundle(
         )
     });
     conn.getbundle(heads, common, bundle2caps.as_deref())
-        .map(|r| {
+        .and_then(|r| {
             let mut bundle = BundleReader::new(r).unwrap();
             while let Some(part) = bundle.next_part().unwrap() {
                 if &*part.part_type == "changegroup" {
@@ -602,8 +602,13 @@ pub fn get_store_bundle(
                         .map_or(1, |v| u8::from_str(v).unwrap());
                     let _locked = HELPER_LOCK.lock().unwrap();
                     store_changegroup(part, version);
+                } else if &*part.part_type == "stream2" {
+                    return Err(b"Stream bundles are not supported."
+                        .to_vec()
+                        .into_boxed_slice());
                 }
             }
+            Ok(())
         })
 }
 
