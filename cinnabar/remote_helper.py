@@ -478,12 +478,12 @@ class GitRemoteHelper(BaseRemoteHelper):
             for source, dest, force in pushes:
                 if self._store._broken:
                     self._helper.write(
-                        b'error %s Remote does not support the "unbundle" '
-                        b'capability\n' % dest)
-                else:
-                    self._helper.write(
                         b'error %s Cannot push with broken metadata. '
                         b'Please fix your clone first.\n' % dest)
+                else:
+                    self._helper.write(
+                        b'error %s Remote does not support the "unbundle" '
+                        b'capability\n' % dest)
             self._helper.write(b'\n')
             self._helper.flush()
         else:

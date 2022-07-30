@@ -593,7 +593,7 @@ def prepare_chunk(store, chunk, previous, chunk_type):
                         key=len)
         if len(deltas):
             return deltas[0]
-        return chunk.to_chunk(chunk_type)
+        return chunk.to_chunk(chunk_type, previous)
     else:
         assert False
 
