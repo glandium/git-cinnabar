@@ -24,6 +24,17 @@ etc.).
 Repositories last used with versions lower than 0.5.0 are not supported.
 Please run `git cinnabar upgrade` with version 0.5.0 first.
 
+License:
+--------
+
+The git-cinnabar source code is distributed under the terms of the Mozilla Public
+License version 2.0 (see the MPL-2.0 file), with parts (the git-core subdirectory)
+distributed under the terms of the GNU General Public License version 2.0 (see the
+git-core/COPYING file).
+
+As a consequence, git-cinnabar binary executables are distributed under the terms
+of the GNU General Public License version 2.0.
+
 Requirements:
 -------------
 
