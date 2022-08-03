@@ -1,0 +1,42 @@
+name: cargo package
+on:
+  push:
+    paths:
+      - 'git-core'
+  pull_request:
+    paths:
+      - 'git-core'
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        toolchain: [1.62.0]
+        include:
+          - os: windows-latest
+            toolchain: 1.62.0-x86_64-pc-windows-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          override: true
+      - uses: msys2/setup-msys2@v2
+        with:
+          release: false
+          update: false
+          msystem: MINGW64
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            patch
+        if: runner.os == 'Windows'
+      - name: Update PATH
+        run: |
+          (Resolve-Path c:/msys64/mingw64/bin).Path >> $Env:GITHUB_PATH
+        if: runner.os == 'Windows'
+      - run: cargo package

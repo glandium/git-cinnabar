@@ -1,0 +1,22 @@
+name: python checks
+on:
+  push:
+    paths:
+      - '**.py'
+  pull_request:
+    paths:
+      - '**.py'
+jobs:
+  flake8:
+    strategy:
+      fail-fast: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: flake8
+        run: |
+          pip install flake8==4.0.1
+          flake8 --ignore E402,F405,W504,E741

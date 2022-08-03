@@ -31,9 +31,11 @@ DOCKER_IMAGES = {
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
+         apt-transport-https\\
          bzip2\\
          ca-certificates\\
          curl\\
+         gnupg2\\
          libcurl3-gnutls\\
          python-setuptools\\
          python-pip\\
@@ -42,7 +44,16 @@ DOCKER_IMAGES = {
          unzip\\
          xz-utils\\
          zip\\
-         && apt-get clean &&\\
+         zstd\\
+         && apt-get clean
+        RUN curl -sO https://apt.llvm.org/llvm-snapshot.gpg.key &&\\
+         gpg --no-default-keyring --keyring /usr/share/keyrings/llvm.gpg\\
+          --import llvm-snapshot.gpg.key&& rm llvm-snapshot.gpg.key &&\\
+         echo\\
+          "deb [signed-by=/usr/share/keyrings/llvm.gpg]\\
+           https://apt.llvm.org/stretch/ llvm-toolchain-stretch-13 main"\\
+          > /etc/apt/sources.list.d/llvm.list &&\\
+         apt-get update -o Acquire::Check-Valid-Until=false&&\\
          python2.7 -m pip install pip==20.3.4 wheel==0.37.0\\
          --upgrade --ignore-installed&&\\
          python3 -m pip install pip==20.3.4 wheel==0.37.0\\
@@ -59,9 +70,11 @@ DOCKER_IMAGES = {
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
+         apt-transport-https\\
          bzip2\\
          ca-certificates\\
          curl\\
+         gnupg2\\
          libcurl3-gnutls\\
          python-setuptools\\
          python-pip\\
@@ -70,7 +83,16 @@ DOCKER_IMAGES = {
          unzip\\
          xz-utils\\
          zip\\
-         && apt-get clean &&\\
+         zstd\\
+         && apt-get clean
+        RUN curl -sO https://apt.llvm.org/llvm-snapshot.gpg.key &&\\
+         gpg --no-default-keyring --keyring /usr/share/keyrings/llvm.gpg\\
+          --import llvm-snapshot.gpg.key&& rm llvm-snapshot.gpg.key &&\\
+         echo\\
+          "deb [signed-by=/usr/share/keyrings/llvm.gpg]\\
+           https://apt.llvm.org/stretch/ llvm-toolchain-stretch-13 main"\\
+          > /etc/apt/sources.list.d/llvm.list &&\\
+         apt-get update -o Acquire::Check-Valid-Until=false&&\\
          python2.7 -m pip install pip==20.3.4 wheel==0.37.0\\
          --upgrade --ignore-installed&&\\
          python3 -m pip install pip==20.3.4 wheel==0.37.0\\
@@ -84,17 +106,32 @@ DOCKER_IMAGES = {
 
     'build': '''\
         FROM base
-        RUN apt-get install -y --no-install-recommends\\
+        RUN dpkg --add-architecture arm64\\
+         && apt-get update -o Acquire::Check-Valid-Until=false\\
+         && apt-get install -y --no-install-recommends\\
+         clang-13\\
          gcc\\
          git\\
-         libc6-dev\\
-         libcurl4-gnutls-dev\\
          make\\
          patch\\
+         pkg-config\\
          python-dev\\
          python3-dev\\
+         libc6-dev\\
+         libcurl4-gnutls-dev\\
          zlib1g-dev\\
-         && apt-get clean
+         && echo path-exclude=/usr/bin/curl-config\\
+          > /etc/dpkg/dpkg.cfg.d/excludes\\
+         && apt-get install -y --no-install-recommends\\
+         libc6-dev:arm64\\
+         libcurl4-gnutls-dev:arm64\\
+         zlib1g-dev:arm64\\
+         libgcc-6-dev:arm64\\
+         binutils-aarch64-linux-gnu\\
+         dpkg-dev\\
+         && apt-get clean\\
+         && ln -s /usr/bin/aarch64-linux-gnu-ld\\
+          /usr/bin/aarch64-unknown-linux-gnu-ld
         ''',
 
     'build-buster': '''\
@@ -122,23 +159,18 @@ DOCKER_IMAGES = {
          && python3 -m pip install codecov==2.1.12
         RUN curl -sL {} | tar -C /usr/local/bin -jxf -
         '''.format(
-        'https://github.com/mozilla/grcov/releases/download/v0.7.1'
-        '/grcov-linux-x86_64.tar.bz2'
+        'https://github.com/mozilla/grcov/releases/download/v0.8.7'
+        '/grcov-x86_64-unknown-linux-gnu.tar.bz2'
     ),
 
     'test': '''\
         FROM base-buster
         RUN apt-get install -y --no-install-recommends\\
-         flake8\\
+         llvm-13\\
          make\\
-         python-coverage\\
-         python-flake8\\
-         python3-flake8\\
-         python-nose\\
-         python3-nose\\
-         python-virtualenv\\
          && apt-get clean\\
-         && pip install cram==0.7
+         && pip3 install cram==0.7\\
+         && ln -s llvm-symbolizer-13 /usr/bin/llvm-symbolizer
         ''',
 }
 
@@ -222,7 +254,7 @@ class DockerImageTask(DockerImage, Task, metaclass=TaskEnvironment):
             image='python:3.7',
             dind=True,
             command=Task.checkout() + [
-                'pip install requests-unixsocket==0.2.0 zstandard==0.15.2',
+                'pip install requests-unixsocket==0.3.0 zstandard==0.17.0',
                 'python3 repo/CI/docker.py build {}'
                 .format(name),
                 'python3 repo/CI/docker.py save {}'

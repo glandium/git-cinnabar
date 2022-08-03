@@ -1,0 +1,48 @@
+diff --git a/builtin/fast-import.c b/builtin/fast-import.c
+index 28d3193c38..2b3aeaa4d5 100644
+--- a/builtin/fast-import.c
++++ b/builtin/fast-import.c
+@@ -20,6 +20,7 @@
+ #include "commit-reach.h"
+ #include "khash.h"
+ #include "date.h"
++#include "shallow.h"
+ 
+ #define PACK_ID_BITS 16
+ #define MAX_PACK_ID ((1<<PACK_ID_BITS)-1)
+@@ -746,7 +747,7 @@ static struct tree_content *dup_tree_content(struct tree_content *s)
+ 	return d;
+ }
+ 
+-static void start_packfile(void)
++static void real_start_packfile(void)
+ {
+ 	struct strbuf tmp_file = STRBUF_INIT;
+ 	struct packed_git *p;
+@@ -847,7 +848,7 @@ static int loosen_small_pack(const struct packed_git *p)
+ 	return run_command(&unpack);
+ }
+ 
+-static void end_packfile(void)
++static void real_end_packfile(void)
+ {
+ 	static int running;
+ 
+@@ -866,6 +867,7 @@ static void end_packfile(void)
+ 
+ 		close_pack_windows(pack_data);
+ 		finalize_hashfile(pack_file, cur_pack_oid.hash, FSYNC_COMPONENT_PACK, 0);
++		pack_file = NULL;
+ 		fixup_pack_header_footer(pack_data->pack_fd, pack_data->hash,
+ 					 pack_data->pack_name, object_count,
+ 					 cur_pack_oid.hash, pack_size);
+@@ -965,6 +967,9 @@ static int store_object(
+ 		e->pack_id = MAX_PACK_ID;
+ 		e->idx.offset = 1; /* just not zero! */
+ 		duplicate_count_by_type[type]++;
++		if (type == OBJ_COMMIT) {
++			cinnabar_unregister_shallow(&oid);
++		}
+ 		return 1;
+ 	}
+ 

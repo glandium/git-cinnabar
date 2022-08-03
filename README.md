@@ -1,4 +1,4 @@
-git-cinnabar 0.5
+git-cinnabar 0.6
 ================
 
 *cinnabar is the common natural form in which mercury can be found on Earth.
@@ -7,8 +7,7 @@ pigment.*
 
 git-cinnabar is a git remote helper to interact with mercurial repositories.
 Contrary to other such helpers\*, it doesn't use a local mercurial clone under
-the hood, although it currently does require mercurial to be installed for some
-of its libraries.
+the hood.
 
 \* This applies to the following tools:
   - https://github.com/felipec/git-remote-hg
@@ -22,15 +21,16 @@ The main focus at the moment is to make it work with mozilla-central and
 related mercurial repositories and support Mozilla workflows (try server,
 etc.).
 
-Repositories last used with versions lower than 0.3.0 are not supported.
-Please run `git cinnabar fsck` with version 0.3.0 first.
+Repositories last used with versions lower than 0.5.0 are not supported.
+Please run `git cinnabar upgrade` with version 0.5.0 first.
 
 Requirements:
 -------------
 
-- Git (any version should work ; cinnabarclone bundles require 1.4.4)
-- Python 2.7 and/or 3.5 or more.
-- Mercurial version 1.9 or newer
+- Git (any version should work ; cinnabarclone bundles require 1.4.4).
+- In order to build from source:
+  - Rust 1.58.0 or newer.
+  - GCC or clang.
 
 Setup:
 ------
@@ -38,11 +38,11 @@ Setup:
 - Add this directory to your PATH. If you have another git-remote-hg project in
   your PATH already, make sure the git-cinnabar path comes before.
 
-- A native helper is used for faster operations. You can download a prebuilt
-  binary with the following command (assuming one is available for your system):
+- Download a prebuilt binary with the following command (assuming one is
+  available for your system ; requires python 3.5 or newer):
 
   ```
-  $ git cinnabar download
+  $ ./download.py
   ```
 
   Alternatively, you can build it:
@@ -50,19 +50,6 @@ Setup:
   ```
   $ make
   ```
-
-  If you want to build git along the helper, you can run `make git`.
-
-Python:
--------
-
-git-cinnabar will use one of `python3`, `python`, `python2.7` or `python2`,
-whichever has mercurial libraries. If none of them does, it will use the first
-that can be found.
-
-You may force a specific python through the `GIT_CINNABAR_PYTHON` environment
-variable.
-
 
 Usage:
 ------
@@ -278,16 +265,6 @@ Git-cinnabar has a set of experimental features that can be enabled
 independently. You can set the `cinnabar.experiments` git configuration to a
 comma-separated list of those features to enable the selected ones, or to
 `all` to enable them all. The available features are:
-
-- **wire**
-
-  In order to talk to Mercurial repositories, git-cinnabar normally uses
-  mercurial python modules. This experimental feature allows to access
-  Mercurial repositories without using the mercurial python modules. It then
-  relies on git-cinnabar-helper to connect to the repository through the
-  mercurial wire protocol.
-
-  The feature is automatically enabled when Mercurial is not installed.
 
 - **merge**
 

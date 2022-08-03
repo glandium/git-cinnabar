@@ -1,4 +1,7 @@
-git-cinnabar-helper
-git-cinnabar-helper.exe
-*.patched.c
+git-cinnabar
+git-cinnabar.exe
+git-remote-hg
+git-remote-hg.exe
 *.pyc
+compile_commands.json
+target
