@@ -403,7 +403,7 @@ class Build(Task, metaclass=Tool):
             environ['CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS'] = \
                 '-C link-arg=--target=aarch64-unknown-linux-gnu'
         if variant in ('coverage', 'asan'):
-            rust_install = install_rust('nightly-2022-04-05', rust_target)
+            rust_install = install_rust('nightly-2022-05-15', rust_target)
         elif rust_version:
             rust_install = install_rust(rust_version, target=rust_target)
         else:
