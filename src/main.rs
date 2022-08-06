@@ -571,6 +571,22 @@ fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
     }
 }
 
+fn do_fetch_tags() -> Result<(), String> {
+    let cmd = Command::new("git")
+        .arg("fetch")
+        .arg("--tags")
+        .arg("hg::tags:")
+        .arg("tag")
+        .arg("*")
+        .status()
+        .map_err(|e| e.to_string())?;
+    if cmd.success() {
+        Ok(())
+    } else {
+        Err("fetch failed".to_owned())
+    }
+}
+
 fn get_previous_metadata(metadata: &CommitId) -> Option<CommitId> {
     // TODO: fully parse the metadata commit.
     let commit = RawCommit::read(metadata)?;
@@ -2716,15 +2732,20 @@ enum CinnabarCommand {
     #[clap(name = "fetch")]
     #[clap(about = "Fetch a changeset from a mercurial remote")]
     Fetch {
+        #[clap(required_unless_present = "tags")]
         #[clap(help = "Mercurial remote name or url")]
         #[clap(parse(from_os_str))]
         #[clap(allow_invalid_utf8 = true)]
-        remote: OsString,
-        #[clap(required = true)]
+        remote: Option<OsString>,
+        #[clap(required_unless_present = "tags")]
         #[clap(help = "Mercurial changeset to fetch")]
         #[clap(parse(from_os_str))]
         #[clap(allow_invalid_utf8 = true)]
         revs: Vec<OsString>,
+        #[clap(long)]
+        #[clap(exclusive = true)]
+        #[clap(help = "Fetch tags")]
+        tags: bool,
     },
     #[clap(name = "reclone")]
     #[clap(about = "Reclone all mercurial remotes")]
@@ -2856,7 +2877,13 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             batch,
             do_one_git2hg,
         ),
-        Fetch { remote, revs } => do_fetch(&remote, &revs),
+        Fetch {
+            remote: Some(remote),
+            revs,
+            tags: false,
+        } => do_fetch(&remote, &revs),
+        Fetch { tags: true, .. } => do_fetch_tags(),
+        Fetch { remote: None, .. } => unreachable!(),
         Reclone => do_reclone(),
         Rollback {
             candidates,
@@ -3359,7 +3386,7 @@ fn remote_helper_import(
         if old_tags != get_tags() {
             eprintln!(
                 "\nRun the following command to update tags:\n\
-                 \x20 git fetch --tags hg::tag: tag \"*\""
+                 \x20 git cinnabar fetch --tags"
             );
         }
     }
