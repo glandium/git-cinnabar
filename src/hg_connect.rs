@@ -724,7 +724,7 @@ pub fn find_common(
         }
     }
     for (cs, c) in &undetermined {
-        if let Some((_, mut data)) = dag.get_mut(&*c) {
+        if let Some((_, mut data)) = dag.get_mut(c) {
             data.hg_node = Some(cs.clone());
         }
     }

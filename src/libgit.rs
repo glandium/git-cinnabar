@@ -180,7 +180,7 @@ pub const HTTP_REAUTH: c_int = 4;
 
 #[allow(dead_code, non_camel_case_types, clippy::upper_case_acronyms)]
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub enum http_follow_config {
     HTTP_FOLLOW_NONE,
     HTTP_FOLLOW_ALWAYS,

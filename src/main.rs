@@ -2951,7 +2951,7 @@ fn remote_helper_tags_list(mut stdout: impl Write) {
         let mut buf = b"refs/cinnabar/refs/tags/".to_vec();
         buf.extend_from_slice(tag);
         transaction
-            .update(OsStr::from_bytes(&buf), &*cid, None, "tags")
+            .update(OsStr::from_bytes(&buf), cid, None, "tags")
             .unwrap();
         // Queue the deletions for after the helper closes, by which time git
         // will have finished with check-connection.
