@@ -281,7 +281,7 @@ class Hg(Task, metaclass=Tool):
 MSRV = '1.58.0'
 
 
-def install_rust(version='1.62.0', target='x86_64-unknown-linux-gnu'):
+def install_rust(version='1.63.0', target='x86_64-unknown-linux-gnu'):
     rustup_opts = '-y --default-toolchain none'
     cargo_dir = '$HOME/.cargo/bin/'
     rustup = cargo_dir + 'rustup'
@@ -403,7 +403,7 @@ class Build(Task, metaclass=Tool):
             environ['CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS'] = \
                 '-C link-arg=--target=aarch64-unknown-linux-gnu'
         if variant in ('coverage', 'asan'):
-            rust_install = install_rust('nightly-2022-05-15', rust_target)
+            rust_install = install_rust('nightly-2022-06-25', rust_target)
         elif rust_version:
             rust_install = install_rust(rust_version, target=rust_target)
         else:
