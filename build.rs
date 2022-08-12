@@ -122,6 +122,7 @@ fn main() {
         .arg("USE_LIBPCRE2=")
         .arg("USE_NED_ALLOCATOR=")
         .arg("FSMONITOR_DAEMON_BACKEND=")
+        .arg("GENERATED_H=")
         .args(extra_args);
 
     let compiler = cc::Build::new().force_frame_pointer(true).get_compiler();
