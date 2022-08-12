@@ -64,6 +64,17 @@ include $(dep_files_present)
 endif
 else
 $(ALL_CINNABAR_OBJECTS): $(LIB_H)
+
+# When not using computed header dependencies, the directories for objects
+# aren't going to be created.
+obj_dirs := $(sort $(dir $(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(XDIFF_OBJS)))
+
+$(obj_dirs):
+	@mkdir -p $@
+
+missing_obj_dirs := $(filter-out $(wildcard $(obj_dirs)),$(obj_dirs))
+
+$(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(XDIFF_OBJS): $(missing_obj_dirs)
 endif
 
 PATCHED_GIT_OBJECTS := $(filter-out fast-import.patched.o,$(PATCHES:%.c.patch=%.patched.o))
