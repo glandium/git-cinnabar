@@ -27,7 +27,7 @@ def sources_list(snapshot, sections):
 
 DOCKER_IMAGES = {
     'base': '''\
-        FROM debian:stretch-20220418
+        FROM debian:stretch-20220622
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
@@ -51,22 +51,22 @@ DOCKER_IMAGES = {
           --import llvm-snapshot.gpg.key&& rm llvm-snapshot.gpg.key &&\\
          echo\\
           "deb [signed-by=/usr/share/keyrings/llvm.gpg]\\
-           https://apt.llvm.org/stretch/ llvm-toolchain-stretch-13 main"\\
+           https://apt.llvm.org/stretch/ llvm-toolchain-stretch-14 main"\\
           > /etc/apt/sources.list.d/llvm.list &&\\
          apt-get update -o Acquire::Check-Valid-Until=false&&\\
-         python2.7 -m pip install pip==20.3.4 wheel==0.37.0\\
+         python2.7 -m pip install pip==20.3.4 wheel==0.37.1\\
          --upgrade --ignore-installed&&\\
-         python3 -m pip install pip==20.3.4 wheel==0.37.0\\
+         python3 -m pip install pip==20.3.4 wheel==0.37.1\\
          --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
-            '20220418T210440Z', (
+            '20220622T215414Z', (
                 ('debian', 'stretch'),
                 ('debian', 'stretch-updates'),
                 ('debian-security', 'stretch/updates'),
             )))),
 
     'base-buster': '''\
-        FROM debian:buster-20220418
+        FROM debian:buster-20220801
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
@@ -90,15 +90,15 @@ DOCKER_IMAGES = {
           --import llvm-snapshot.gpg.key&& rm llvm-snapshot.gpg.key &&\\
          echo\\
           "deb [signed-by=/usr/share/keyrings/llvm.gpg]\\
-           https://apt.llvm.org/stretch/ llvm-toolchain-stretch-13 main"\\
+           https://apt.llvm.org/buster/ llvm-toolchain-buster-14 main"\\
           > /etc/apt/sources.list.d/llvm.list &&\\
          apt-get update -o Acquire::Check-Valid-Until=false&&\\
-         python2.7 -m pip install pip==20.3.4 wheel==0.37.0\\
+         python2.7 -m pip install pip==20.3.4 wheel==0.37.1\\
          --upgrade --ignore-installed&&\\
-         python3 -m pip install pip==20.3.4 wheel==0.37.0\\
+         python3 -m pip install pip==22.2.2 wheel==0.37.1\\
          --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
-            '20220418T210440Z', (  # noqa: E126
+            '20220801T205040Z', (  # noqa: E126
                 ('debian', 'buster'),
                 ('debian', 'buster-updates'),
                 ('debian-security', 'buster/updates'),
@@ -109,7 +109,7 @@ DOCKER_IMAGES = {
         RUN dpkg --add-architecture arm64\\
          && apt-get update -o Acquire::Check-Valid-Until=false\\
          && apt-get install -y --no-install-recommends\\
-         clang-13\\
+         clang-14\\
          gcc\\
          git\\
          make\\
@@ -166,11 +166,11 @@ DOCKER_IMAGES = {
     'test': '''\
         FROM base-buster
         RUN apt-get install -y --no-install-recommends\\
-         llvm-13\\
+         llvm-14\\
          make\\
          && apt-get clean\\
          && pip3 install cram==0.7\\
-         && ln -s llvm-symbolizer-13 /usr/bin/llvm-symbolizer
+         && ln -s llvm-symbolizer-14 /usr/bin/llvm-symbolizer
         ''',
 }
 
@@ -254,7 +254,7 @@ class DockerImageTask(DockerImage, Task, metaclass=TaskEnvironment):
             image='python:3.7',
             dind=True,
             command=Task.checkout() + [
-                'pip install requests-unixsocket==0.3.0 zstandard==0.17.0',
+                'pip install requests-unixsocket==0.3.0 zstandard==0.18.0',
                 'python3 repo/CI/docker.py build {}'
                 .format(name),
                 'python3 repo/CI/docker.py save {}'

@@ -12,7 +12,7 @@ from docker import DockerImage
 
 CPUS = ('x86_64',)
 MSYS_VERSION = {
-    'x86_64': '20220319',
+    'x86_64': '20220603',
 }
 
 
@@ -108,8 +108,8 @@ class MsysEnvironment(MsysCommon):
                 ' '.join(self.packages(name))),
             'pkill gpg-agent',
             'rm -rf /var/cache/pacman/pkg',
-            'python2.7 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade',
-            'python3 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade',
+            'python2.7 -m pip install pip==20.3.4 wheel==0.37.1 --upgrade',
+            'python3 -m pip install pip==22.2.2 wheel==0.37.1 --upgrade',
             'mv {}/{}/bin/{{{{mingw32-,}}}}make.exe'.format(msys(cpu),
                                                             mingw(cpu)),
             'tar -c --hard-dereference {} | zstd -c > msys2.tar.zst'.format(

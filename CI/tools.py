@@ -382,7 +382,7 @@ class Build(Task, metaclass=Tool):
             raise Exception('Unknown variant: {}'.format(variant))
 
         if os in ('linux', 'arm64-linux'):
-            environ['CC'] = 'clang-13'
+            environ['CC'] = 'clang-14'
             cargo_features.append('curl-compat')
 
         if os.startswith('mingw'):
