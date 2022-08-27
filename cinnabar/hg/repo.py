@@ -337,7 +337,7 @@ class ChunksCollection(object):
 def _sample(l, size):
     if len(l) <= size:
         return l
-    return random.sample(l, size)
+    return random.sample(list(l), size)
 
 
 # TODO: this algorithm is not very smart and might as well be completely wrong
