@@ -2,19 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::cmp::min;
-use std::collections::VecDeque;
 use std::ffi::{CStr, CString, OsStr};
 use std::fmt;
 use std::io::{self, LineWriter, Read, Seek, SeekFrom, Write};
-use std::marker::PhantomData;
 use std::mem;
 #[cfg(unix)]
 use std::os::unix::ffi;
 #[cfg(windows)]
 use std::os::windows::ffi;
 use std::str::{self, FromStr};
-use std::sync::mpsc::{channel, Receiver};
 
 use bstr::{BStr, ByteSlice};
 
@@ -61,111 +57,6 @@ impl<W: Write> Write for PrefixWriter<W> {
     fn flush(&mut self) -> std::io::Result<()> {
         self.line_writer.flush()
     }
-}
-
-pub struct BufferedReader<'a> {
-    #[allow(dead_code)]
-    thread: Option<std::thread::JoinHandle<io::Result<()>>>,
-    receiver: Option<Receiver<ImmutBString>>,
-    buf: VecDeque<u8>,
-    marker: PhantomData<&'a mut ()>,
-}
-
-impl<'a> BufferedReader<'a> {
-    fn new_<R: Read + Send + 'static, const BUFSIZE: usize>(r: &'a mut R) -> Self {
-        let (sender, receiver) = channel::<ImmutBString>();
-        let r = unsafe { std::mem::transmute::<_, &'static mut R>(r) };
-        let thread = std::thread::Builder::new()
-            .name("buffered-reader".into())
-            .spawn(move || {
-                loop {
-                    let buf = r.take(BUFSIZE as u64).read_all()?;
-                    if !buf.is_empty() {
-                        sender.send(buf).unwrap();
-                    } else {
-                        break;
-                    }
-                }
-                Ok(())
-            })
-            .unwrap();
-        BufferedReader {
-            thread: Some(thread),
-            receiver: Some(receiver),
-            buf: VecDeque::new(),
-            marker: PhantomData,
-        }
-    }
-
-    pub fn new<R: Read + Send + 'static>(r: &'a mut R) -> Self {
-        Self::new_::<_, { 1024 * 1024 }>(r)
-    }
-}
-
-impl<'a> Read for BufferedReader<'a> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut size = min(self.buf.len(), buf.len());
-        let (start, rest) = buf.split_at_mut(size);
-        for (b, x) in Iterator::zip(start.iter_mut(), self.buf.drain(0..size)) {
-            *b = x;
-        }
-        if !rest.is_empty() {
-            assert!(self.buf.is_empty());
-            if let Some(buf) = self.receiver.as_ref().and_then(|r| r.recv().ok()) {
-                self.buf = buf.to_vec().into();
-                size += self.read(rest)?;
-            }
-        }
-        Ok(size)
-    }
-}
-
-#[test]
-fn test_buffered_reader() {
-    use std::io::Cursor;
-    use std::sync::{Arc, Mutex};
-    use std::time::Duration;
-
-    use itertools::Itertools;
-
-    struct ArcRead<R: Read>(Arc<Mutex<R>>);
-
-    impl<R: Read> Read for ArcRead<R> {
-        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-            self.0.lock().unwrap().read(buf)
-        }
-    }
-
-    let data = Arc::new(Mutex::new(Cursor::new((1..=200).collect_vec())));
-
-    let mut r = ArcRead(Arc::clone(&data));
-    let mut reader = BufferedReader::new_::<_, 3>(&mut r);
-
-    let mut buf = vec![0; 255];
-    let mut offset = 0;
-    for i in 1..20 {
-        assert_eq!(reader.read(&mut buf[offset..offset + i]).unwrap(), i);
-        offset += i;
-        if i == 1 {
-            std::thread::sleep(Duration::from_millis(10));
-            // Everything should have been read already.
-            assert_eq!(data.lock().unwrap().position(), 200);
-        }
-    }
-    // We've read 190 characters so far.
-    assert_eq!(offset, 190);
-    // There are only 10 left, although our buffer can take more.
-    assert_eq!(reader.read(&mut buf[190..]).unwrap(), 10);
-    drop(reader);
-    drop(r);
-    assert_eq!(
-        &buf[..200],
-        Arc::try_unwrap(data)
-            .unwrap()
-            .into_inner()
-            .unwrap()
-            .into_inner()
-    );
 }
 
 pub trait ReadExt: Read {

@@ -25,13 +25,12 @@ use crate::hg_connect::{
 use crate::libc::FdFile;
 use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
 use crate::libgit::child_process;
-use crate::util::{BufferedReader, ImmutBString, OsStrExt, PrefixWriter, ReadExt, SeekExt};
+use crate::util::{ImmutBString, OsStrExt, PrefixWriter, ReadExt, SeekExt};
 
 pub struct HgStdioConnection {
     capabilities: HgCapabilities,
     proc_in: FdFile,
     proc_out: BufReader<FdFile>,
-    is_remote: bool,
     proc: *mut child_process,
     thread: Option<JoinHandle<()>>,
     url: Url,
@@ -103,12 +102,7 @@ impl HgWireConnection for HgStdioConnection {
         /* We assume the caller is only going to read the right amount of data according
          * format: changegroup or bundle2.
          */
-        if self.is_remote {
-            // We buffer as much as we can to avoid any network glitches due to slow processing.
-            Ok(Box::new(BufferedReader::new(&mut self.proc_out)))
-        } else {
-            Ok(Box::new(&mut self.proc_out))
-        }
+        Ok(Box::new(&mut self.proc_out))
     }
 
     fn push_command(&mut self, mut input: File, command: &str, args: HgArgs) -> UnbundleResponse {
@@ -219,7 +213,6 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
         capabilities: HgCapabilities::default(),
         proc_in: unsafe { FdFile::from_raw_fd(proc_in(proc)) },
         proc_out: BufReader::new(unsafe { FdFile::from_raw_fd(proc_out(proc)) }),
-        is_remote: url.scheme() == "ssh",
         proc,
         thread: None,
         url: url.clone(),
