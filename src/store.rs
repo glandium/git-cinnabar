@@ -550,7 +550,7 @@ pub struct RawHgManifest(pub ImmutBString);
 impl RawHgManifest {
     pub fn read(oid: &GitManifestId) -> Option<Self> {
         unsafe {
-            generate_manifest(&(&***oid).clone().into())
+            generate_manifest(&(***oid).clone().into())
                 .as_ref()
                 .map(|b| Self(b.as_bytes().to_owned().into()))
         }
