@@ -9,7 +9,7 @@ authors = ["Mike Hommey <mh@glandium.org>"]
 edition = "2021"
 license = "MPL-2.0 AND GPL-2.0"
 repository = "https://github.com/glandium/git-cinnabar"
-rust-version = "1.58.0"
+rust-version = "1.60.0"
 publish = false
 include = [
   "/src",
