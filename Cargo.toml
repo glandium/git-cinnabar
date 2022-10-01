@@ -58,7 +58,7 @@ default-features = false
 features = ["std"]
 
 [dependencies.clap]
-version = "3"
+version = "4"
 features = ["cargo", "derive"]
 
 [target.'cfg(windows)'.dependencies.curl-sys]

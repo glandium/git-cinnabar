@@ -45,7 +45,7 @@ extern crate log;
 
 use bstr::io::BufReadExt;
 use byteorder::{BigEndian, WriteBytesExt};
-use clap::{crate_version, AppSettings, ArgGroup, Parser};
+use clap::{crate_version, ArgGroup, Parser};
 use hg_bundle::{create_bundle, create_chunk_data, BundleSpec, RevChunkIter};
 use indexmap::IndexSet;
 use itertools::{EitherOrBoth, Itertools};
@@ -2650,7 +2650,7 @@ fn manifest_diff2(
     result.into_iter()
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct AbbrevSize(usize);
 
 impl FromStr for AbbrevSize {
@@ -2670,12 +2670,11 @@ impl FromStr for AbbrevSize {
 #[clap(version=crate_version!())]
 #[clap(long_version=FULL_VERSION)]
 #[clap(arg_required_else_help = true)]
-#[clap(setting(AppSettings::DeriveDisplayOrder))]
 #[clap(dont_collapse_args_in_usage = true)]
 #[clap(subcommand_required = true)]
 enum CinnabarCommand {
     #[clap(name = "remote-hg")]
-    #[clap(setting(AppSettings::Hidden))]
+    #[clap(hide = true)]
     RemoteHg { remote: OsString, url: OsString },
     #[clap(name = "data")]
     #[clap(group = ArgGroup::new("input").multiple(false).required(true))]
@@ -2699,7 +2698,7 @@ enum CinnabarCommand {
     Hg2Git {
         #[clap(long)]
         #[clap(require_equals = true)]
-        #[clap(max_values = 1)]
+        #[clap(num_args = ..=1)]
         #[clap(help = "Show a partial prefix")]
         abbrev: Option<Vec<AbbrevSize>>,
         #[clap(group = "input")]
@@ -2716,13 +2715,12 @@ enum CinnabarCommand {
     Git2Hg {
         #[clap(long)]
         #[clap(require_equals = true)]
-        #[clap(max_values = 1)]
+        #[clap(num_args = ..=1)]
         #[clap(help = "Show a partial prefix")]
         abbrev: Option<Vec<AbbrevSize>>,
         #[clap(group = "input")]
         #[clap(help = "Git sha1/committish")]
-        #[clap(parse(from_os_str))]
-        #[clap(allow_invalid_utf8 = true)]
+        #[clap(value_parser)]
         committish: Vec<OsString>,
         #[clap(long)]
         #[clap(group = "input")]
@@ -2734,13 +2732,11 @@ enum CinnabarCommand {
     Fetch {
         #[clap(required_unless_present = "tags")]
         #[clap(help = "Mercurial remote name or url")]
-        #[clap(parse(from_os_str))]
-        #[clap(allow_invalid_utf8 = true)]
+        #[clap(value_parser)]
         remote: Option<OsString>,
         #[clap(required_unless_present = "tags")]
         #[clap(help = "Mercurial changeset to fetch")]
-        #[clap(parse(from_os_str))]
-        #[clap(allow_invalid_utf8 = true)]
+        #[clap(value_parser)]
         revs: Vec<OsString>,
         #[clap(long)]
         #[clap(exclusive = true)]
@@ -2769,8 +2765,7 @@ enum CinnabarCommand {
         )]
         force: bool,
         #[clap(help = "Git sha1/committish of the state to rollback to")]
-        #[clap(parse(from_os_str))]
-        #[clap(allow_invalid_utf8 = true)]
+        #[clap(value_parser)]
         committish: Option<OsString>,
     },
     #[clap(name = "fsck")]
@@ -2786,8 +2781,7 @@ enum CinnabarCommand {
         #[clap(conflicts_with = "commit")]
         full: bool,
         #[clap(help = "Specific commit or changeset to check")]
-        #[clap(parse(from_os_str))]
-        #[clap(allow_invalid_utf8 = true)]
+        #[clap(value_parser)]
         commit: Vec<OsString>,
     },
     #[clap(name = "bundle")]
@@ -2795,7 +2789,7 @@ enum CinnabarCommand {
     Bundle {
         #[clap(long)]
         #[clap(default_value = "2")]
-        #[clap(possible_values = &["1", "2"])]
+        #[clap(value_parser = clap::value_parser!(u8).range(1..=2))]
         #[clap(help = "Bundle version")]
         version: u8,
         #[clap(long)]
@@ -2804,12 +2798,10 @@ enum CinnabarCommand {
         #[clap(conflicts_with = "version")]
         r#type: Option<BundleSpec>,
         #[clap(help = "Path of the bundle")]
-        #[clap(parse(from_os_str))]
-        #[clap(allow_invalid_utf8 = true)]
+        #[clap(value_parser)]
         path: PathBuf,
         #[clap(help = "Git revision range (see the Specifying Ranges section of gitrevisions(7))")]
-        #[clap(parse(from_os_str))]
-        #[clap(allow_invalid_utf8 = true)]
+        #[clap(value_parser)]
         revs: Vec<OsString>,
     },
     #[clap(name = "unbundle")]
@@ -2819,7 +2811,6 @@ enum CinnabarCommand {
         #[clap(help = "Get clone bundle from given repository")]
         clonebundle: bool,
         #[clap(help = "Url/Location of the bundle")]
-        #[clap(allow_invalid_utf8 = true)]
         url: OsString,
     },
     #[clap(name = "upgrade")]

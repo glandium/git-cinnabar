@@ -136,6 +136,7 @@ impl<O: ObjectId> OidCreator<O> {
     }
 }
 
+#[derive(Clone)]
 pub struct Abbrev<O: ObjectId> {
     oid: O,
     len: usize,

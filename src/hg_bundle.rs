@@ -217,6 +217,7 @@ pub enum BundleVersion {
     V2,
 }
 
+#[derive(Clone)]
 pub enum BundleSpec {
     ChangegroupV1,
     V1None,
