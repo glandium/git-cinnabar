@@ -128,21 +128,24 @@ use store::{
 };
 use util::{CStrExt, IteratorExt, OsStrExt, SliceExt};
 
-#[cfg(feature = "version-check")]
+#[cfg(any(feature = "version-check", feature = "self-update"))]
 mod version_check;
 
-#[cfg(not(feature = "version-check"))]
-mod version_check {
-    pub struct VersionCheck;
+#[cfg(feature = "version-check")]
+use version_check::VersionChecker;
 
-    impl VersionCheck {
-        pub fn new() -> Self {
-            VersionCheck
-        }
+#[cfg(not(feature = "version-check"))]
+pub struct VersionChecker;
+
+#[cfg(not(feature = "version-check"))]
+impl VersionChecker {
+    pub fn new() -> Self {
+        VersionChecker
     }
 }
 
-use version_check::VersionCheck;
+#[cfg(feature = "self-update")]
+use version_check::VersionRequest;
 
 pub const FULL_VERSION: &str = git_version!(
     args = [
@@ -862,6 +865,82 @@ fn do_upgrade() -> Result<(), String> {
     // which means we didn't die because of unusable metadata.
     // There are currently no conditions that will require an upgrade.
     warn!(target: "root", "No metadata to upgrade");
+    Ok(())
+}
+
+#[cfg(feature = "self-update")]
+fn do_self_update(branch: Option<String>) -> Result<(), String> {
+    use crate::hg_connect_http::HttpRequest;
+    use version_check::VersionInfo;
+
+    cfg_if::cfg_if! {
+        if #[cfg(all(target_arch = "x86_64", target_os = "linux"))] {
+            const SYSTEM_MACHINE: &str = "linux.x86_64";
+        } else if #[cfg(all(target_arch = "aarch64", target_os = "linux"))] {
+            const SYSTEM_MACHINE: &str = "linux.arm64";
+        } else if #[cfg(all(target_arch = "x86_64", target_os = "macos"))] {
+            const SYSTEM_MACHINE: &str = "macos.x86_64";
+        } else if #[cfg(all(target_arch = "aarch64", target_os = "macos"))] {
+            const SYSTEM_MACHINE: &str = "macos.arm64";
+        } else if #[cfg(all(target_arch = "x86_64", target_os = "windows"))] {
+            const SYSTEM_MACHINE: &str = "windows.x86_64";
+        } else {
+            compile_error!("self-update is not supported on this platform");
+        }
+    }
+    cfg_if::cfg_if! {
+        if #[cfg(windows)] {
+            const BINARY: &str = "git-cinnabar.exe";
+            const REMOTE_HG_BINARY: &str = "git-remote-hg.exe";
+        } else {
+            const BINARY: &str = "git-cinnabar";
+            const REMOTE_HG_BINARY: &str = "git-remote-hg";
+        }
+    };
+    const URL_BASE: &str =
+        "https://community-tc.services.mozilla.com/api/index/v1/task/project.git-cinnabar.build";
+
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_dir = exe.parent().unwrap();
+    let req = branch
+        .as_ref()
+        .map_or_else(VersionRequest::default, |b| VersionRequest::from(&**b));
+    if let Some(version) = version_check::check_new_version(req) {
+        let cid = match version {
+            VersionInfo::Commit(cid) | VersionInfo::Tagged(_, cid) => cid,
+        };
+        let mut tmpbuilder = tempfile::Builder::new();
+        tmpbuilder.prefix(BINARY);
+        let mut tmpfile = tmpbuilder.tempfile_in(exe_dir).map_err(|e| e.to_string())?;
+        let url = format!("{URL_BASE}.{cid}.{SYSTEM_MACHINE}/artifacts/public/{BINARY}");
+        eprintln!("Installing update from {url}");
+        let mut req = HttpRequest::new(Url::parse(&url).map_err(|e| e.to_string())?);
+        req.follow_redirects(true);
+        let mut response = req.execute()?;
+        std::io::copy(&mut response, &mut tmpfile).map_err(|e| e.to_string())?;
+        let old_exe = tmpbuilder.tempfile_in(exe_dir).map_err(|e| e.to_string())?;
+        let old_exe_path = old_exe.path().to_path_buf();
+        old_exe.close().map_err(|e| e.to_string())?;
+        std::fs::rename(&exe, old_exe_path).map_err(|e| e.to_string())?;
+        #[cfg(not(windows))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let file = tmpfile.as_file_mut();
+            let mut perms = file.metadata().map_err(|e| e.to_string())?.permissions();
+            let mode = perms.mode();
+            perms.set_mode(mode | ((mode & 0o444) >> 2));
+            file.set_permissions(perms).map_err(|e| e.to_string())?;
+        }
+        tmpfile.persist(&exe).map_err(|e| e.to_string())?;
+        let remote_hg_exe = exe_dir.join(REMOTE_HG_BINARY);
+        if let Ok(metadata) = std::fs::metadata(&remote_hg_exe) {
+            if !metadata.is_symlink() {
+                std::fs::copy(&exe, &remote_hg_exe).map_err(|e| e.to_string())?;
+            }
+        }
+    } else {
+        warn!(target: "root", "Did not find an update to install.");
+    }
     Ok(())
 }
 
@@ -2817,6 +2896,14 @@ enum CinnabarCommand {
     #[clap(name = "upgrade")]
     #[clap(about = "Upgrade cinnabar metadata")]
     Upgrade,
+    #[cfg(feature = "self-update")]
+    #[clap(name = "self-update")]
+    #[clap(about = "Update git-cinnabar")]
+    SelfUpdate {
+        #[clap(long)]
+        #[clap(help = "git-cinnabar branch to get builds for")]
+        branch: Option<String>,
+    },
 }
 
 use CinnabarCommand::*;
@@ -2834,12 +2921,18 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             return if e.use_stderr() { Ok(1) } else { Ok(0) };
         }
     };
-    let _v = VersionCheck::new();
+    #[cfg(feature = "self-update")]
+    if let SelfUpdate { branch } = command {
+        return do_self_update(branch).map(|()| 0);
+    }
+    let _v = VersionChecker::new();
     if let RemoteHg { remote, url } = command {
         return git_remote_hg(remote, url);
     }
     Lazy::force(&INIT_CINNABAR_2);
     let ret = match command {
+        #[cfg(feature = "self-update")]
+        SelfUpdate { .. } => unreachable!(),
         RemoteHg { .. } => unreachable!(),
         Data {
             changeset: Some(c), ..

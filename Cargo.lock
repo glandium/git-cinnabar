@@ -343,6 +343,7 @@ dependencies = [
  "byteorder",
  "bzip2",
  "cc",
+ "cfg-if",
  "clap",
  "cstr",
  "curl-sys",

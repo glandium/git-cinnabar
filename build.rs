@@ -273,7 +273,7 @@ fn main() {
 
     println!("cargo:rerun-if-env-changed=CINNABAR_MAKE_FLAGS");
 
-    #[cfg(feature = "version-check")]
+    #[cfg(any(feature = "version-check", feature = "self-update"))]
     {
         // The expected lifecycle is:
         // - 0.x.0a on branch next

@@ -33,6 +33,7 @@ bit-vec = "0.6"
 bitflags = "1"
 bzip2 = "0.4"
 byteorder = "1"
+cfg-if = "1"
 cstr = "=0.2.10"
 derivative = "2"
 digest = "0.10"
@@ -129,7 +130,8 @@ panic = "abort"
 panic = "abort"
 
 [features]
-default = ["version-check"]
+default = ["version-check", "self-update"]
 compile_commands = []
 curl-compat = []
 version-check = ["semver", "shared_child"]
+self-update = ["semver", "shared_child"]
