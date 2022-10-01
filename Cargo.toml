@@ -91,10 +91,6 @@ version = "1"
 version = "0.4"
 features = ["std"]
 
-[dependencies.os_pipe]
-version = "1.0"
-optional = true
-
 [dependencies.regex]
 version = "1"
 default-features = false
@@ -136,4 +132,4 @@ panic = "abort"
 default = ["version-check"]
 compile_commands = []
 curl-compat = []
-version-check = ["os_pipe", "semver", "shared_child"]
+version-check = ["semver", "shared_child"]

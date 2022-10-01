@@ -10,7 +10,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bstr::ByteSlice;
 use clap::crate_version;
-use os_pipe::pipe;
 use semver::Version;
 use shared_child::SharedChild;
 
@@ -51,7 +50,7 @@ impl VersionCheck {
             return None;
         }
 
-        version_check_from_repo(now)
+        Some(version_check_from_repo(now))
     }
 
     fn take_result(&mut self) -> Option<String> {
@@ -60,7 +59,7 @@ impl VersionCheck {
     }
 }
 
-fn version_check_from_repo(when: SystemTime) -> Option<VersionCheck> {
+fn version_check_from_repo(when: SystemTime) -> VersionCheck {
     let mut cmd = Command::new("git");
     cmd.args(["ls-remote", CARGO_PKG_REPOSITORY, VERSION_CHECK_REF]);
     let build_commit = FULL_VERSION
@@ -69,8 +68,7 @@ fn version_check_from_repo(when: SystemTime) -> Option<VersionCheck> {
         .strip_prefix(concat!(crate_version!(), "-"))
         .unwrap_or("");
 
-    let (mut reader, writer) = pipe().ok()?;
-    cmd.stdout(writer);
+    cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::null());
 
     let child = SharedChild::spawn(&mut cmd).ok().map(Arc::new);
@@ -79,7 +77,7 @@ fn version_check_from_repo(when: SystemTime) -> Option<VersionCheck> {
         thread::Builder::new()
             .name("version-check".into())
             .spawn(move || {
-                let output = reader.read_all().ok()?;
+                let output = child.take_stdout().unwrap().read_all().ok()?;
                 child.wait().ok()?;
                 let mut new_version = None;
                 let current_version = Version::parse(CARGO_PKG_VERSION).unwrap();
@@ -104,11 +102,11 @@ fn version_check_from_repo(when: SystemTime) -> Option<VersionCheck> {
             })
             .unwrap()
     });
-    Some(VersionCheck {
+    VersionCheck {
         child,
         thread,
         when,
-    })
+    }
 }
 
 impl Drop for VersionCheck {
