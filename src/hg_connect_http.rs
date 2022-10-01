@@ -190,6 +190,7 @@ impl HttpRequest {
         self.body = Some(data);
     }
 
+    #[allow(clippy::result_large_err)]
     fn execute_once(mut self) -> Result<HttpResponse, (c_int, Self)> {
         let (sender, receiver) = channel::<HttpRequestChannelData>();
         let token = self.token.clone();

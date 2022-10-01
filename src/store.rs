@@ -1642,7 +1642,7 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
                 command.arg("--no-progress");
             }
             command.arg(OsStr::new(git_url.as_ref()));
-            command.args(needed.iter().map(|n| OsStr::from_bytes(&**n)));
+            command.args(needed.iter().map(|n| OsStr::from_bytes(n)));
             if !command.status().unwrap().success() {
                 error!(target: "root", "Failed to fetch cinnabar metadata.");
                 return false;

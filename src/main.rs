@@ -35,6 +35,7 @@
 #![deny(clippy::unnecessary_wraps)]
 #![deny(clippy::unnested_or_patterns)]
 #![deny(clippy::unused_self)]
+#![allow(unknown_lints)]
 
 #[macro_use]
 extern crate derivative;
@@ -177,7 +178,7 @@ static REF_UPDATES: Lazy<Mutex<HashMap<Box<BStr>, CommitId>>> =
 unsafe extern "C" fn dump_ref_updates() {
     let mut transaction = RefTransaction::new().unwrap();
     for (refname, oid) in REF_UPDATES.lock().unwrap().drain() {
-        let refname = OsStr::from_bytes(&*refname);
+        let refname = OsStr::from_bytes(&refname);
         if oid == CommitId::null() {
             transaction.delete(refname, None, "update").unwrap();
         } else {
@@ -773,7 +774,7 @@ fn do_reclone() -> Result<(), String> {
                 .arg(format!("cinnabar.previous-metadata={}", previous_metadata));
         }
         let cmd = cmd
-            .args(&["remote", "update", "--prune"])
+            .args(["remote", "update", "--prune"])
             .arg(remote.name().unwrap())
             .status()
             .map_err(|e| e.to_string())?;
@@ -1048,7 +1049,7 @@ fn create_manifest(content: &[u8], parents: &[HgManifestId]) -> HgManifestId {
             hash.update(parent.as_raw_bytes());
         }
     }
-    hash.update(&content);
+    hash.update(content);
     let mid = hash.finalize();
     let data = create_chunk_data(
         parent_manifest
@@ -1196,7 +1197,7 @@ fn create_simple_manifest(cid: &CommitId, parent: &CommitId) -> (HgManifestId, O
     let parent_manifest = RawHgManifest::read(&parent_mid.to_git().unwrap()).unwrap();
     let mut extra_diff = Vec::new();
     let empty_blob = BlobId::from_str("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391").unwrap();
-    let mut diff = diff_tree(&*parent, cid, true)
+    let mut diff = diff_tree(&parent, cid, true)
         .inspect(|item| {
             if let DiffTreeItem::Renamed {
                 from_path,
@@ -3188,7 +3189,7 @@ fn remote_helper_repo_list(
     if let Some(head_ref) = head_ref {
         if let Some((csid, cid)) = refs.get(&head_ref) {
             let mut buf = b"@".to_vec();
-            buf.extend_from_slice(&**head_ref);
+            buf.extend_from_slice(&head_ref);
             buf.push(b' ');
             buf.extend_from_slice(b"HEAD\n");
             stdout.write_all(&buf).unwrap();
@@ -3206,7 +3207,7 @@ fn remote_helper_repo_list(
             .map_or_else(|| "?".to_string(), ToString::to_string)
             .into_bytes();
         buf.push(b' ');
-        buf.extend_from_slice(&**refname);
+        buf.extend_from_slice(refname);
         buf.push(b'\n');
         stdout.write_all(&buf).unwrap();
     }
@@ -3611,7 +3612,7 @@ fn remote_helper_push(
                     }
                 }
                 UnbundleResponse::Raw(response) => {
-                    result = u32::from_bytes(&*response).ok();
+                    result = u32::from_bytes(&response).ok();
                 }
             }
         }

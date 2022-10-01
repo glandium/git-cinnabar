@@ -62,7 +62,7 @@ impl VersionCheck {
 
 fn version_check_from_repo(when: SystemTime) -> Option<VersionCheck> {
     let mut cmd = Command::new("git");
-    cmd.args(&["ls-remote", CARGO_PKG_REPOSITORY, VERSION_CHECK_REF]);
+    cmd.args(["ls-remote", CARGO_PKG_REPOSITORY, VERSION_CHECK_REF]);
     let build_commit = FULL_VERSION
         .strip_suffix("-modified")
         .unwrap_or(FULL_VERSION)
@@ -132,7 +132,7 @@ impl Drop for VersionCheck {
 
         if let Ok(timestamp) = self.when.duration_since(UNIX_EPOCH) {
             Command::new("git")
-                .args(&[
+                .args([
                     "config",
                     "--global",
                     VERSION_CHECK_CONFIG,

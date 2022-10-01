@@ -50,7 +50,7 @@ pub fn init_graft() {
     for cid in rev_list(&args).progress(|n| format!("Reading {} graft candidates", n)) {
         let c = RawCommit::read(&cid).unwrap();
         let c = c.parse().unwrap();
-        let cids_for_tree = graft_trees.entry(c.tree().clone()).or_insert(Vec::new());
+        let cids_for_tree = graft_trees.entry(c.tree().clone()).or_default();
         cids_for_tree.push(cid);
     }
 }
