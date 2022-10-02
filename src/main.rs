@@ -899,6 +899,12 @@ fn do_self_update(branch: Option<String>) -> Result<(), String> {
     };
     const URL_BASE: &str =
         "https://community-tc.services.mozilla.com/api/index/v1/task/project.git-cinnabar.build";
+    const FINISH_SELF_UPDATE: &str = "GIT_CINNABAR_FINISH_SELF_UPDATE";
+
+    if let Some(old_path) = std::env::var_os(FINISH_SELF_UPDATE) {
+        std::fs::remove_file(old_path).ok();
+        return Ok(());
+    }
 
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe_dir = exe.parent().unwrap();
@@ -921,7 +927,7 @@ fn do_self_update(branch: Option<String>) -> Result<(), String> {
         let old_exe = tmpbuilder.tempfile_in(exe_dir).map_err(|e| e.to_string())?;
         let old_exe_path = old_exe.path().to_path_buf();
         old_exe.close().map_err(|e| e.to_string())?;
-        std::fs::rename(&exe, old_exe_path).map_err(|e| e.to_string())?;
+        std::fs::rename(&exe, &old_exe_path).map_err(|e| e.to_string())?;
         #[cfg(not(windows))]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -938,6 +944,11 @@ fn do_self_update(branch: Option<String>) -> Result<(), String> {
                 std::fs::copy(&exe, &remote_hg_exe).map_err(|e| e.to_string())?;
             }
         }
+        Command::new(exe)
+            .arg("self-update")
+            .env(FINISH_SELF_UPDATE, old_exe_path)
+            .status()
+            .ok();
     } else {
         warn!(target: "root", "Did not find an update to install.");
     }
