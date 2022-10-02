@@ -107,7 +107,8 @@ optional = true
 
 [target.'cfg(windows)'.dependencies.winapi]
 version = "0.3"
-features = ["handleapi", "processthreadsapi"]
+features = ["handleapi", "processthreadsapi", "synchapi", "winbase"]
+optional = true
 
 [dependencies.zstd]
 version = "0.11"
@@ -134,4 +135,4 @@ default = ["version-check"]
 compile_commands = []
 curl-compat = []
 version-check = ["semver", "shared_child"]
-self-update = ["semver", "shared_child"]
+self-update = ["semver", "shared_child", "dep:winapi"]
