@@ -51,26 +51,6 @@ static int cleanup_object_array_entry(struct object_array_entry *entry, void *da
 	return 1;
 }
 
-static void rev_info_release(struct rev_info *revs)
-{
-	int i;
-
-	object_array_filter(&revs->pending, cleanup_object_array_entry, NULL);
-	object_array_clear(&revs->pending);
-	object_array_clear(&revs->boundary_commits);
-	for (i = 0; i < revs->cmdline.nr; i++)
-		free((void *)revs->cmdline.rev[i].name);
-	free(revs->cmdline.rev);
-	clear_pathspec(&revs->prune_data);
-	clear_pathspec(&revs->pruning.pathspec);
-	clear_pathspec(&revs->diffopt.pathspec);
-	revs->cmdline.rev = NULL;
-	for (i = 0; i < revs->treesame.size; i++)
-		if (revs->treesame.entries[i].base)
-			free(revs->treesame.entries[i].decoration);
-	free(revs->treesame.entries);
-}
-
 typedef void (*iter_tree_cb)(const struct object_id *oid, struct strbuf *base,
 	                     const char *pathname, unsigned mode, void *context);
 
@@ -141,7 +121,7 @@ void rev_list_finish(struct rev_info *revs) {
 	// More extensive than reset_revision_walk(). Otherwise --boundary
 	// and pathspecs don't work properly.
 	clear_object_flags(ALL_REV_FLAGS | TOPO_WALK_EXPLORED | TOPO_WALK_INDEGREE);
-	rev_info_release(revs);
+	release_revisions(revs);
 	free(revs);
 }
 
@@ -225,7 +205,7 @@ void diff_tree_(int argc, const char **argv, void (*cb)(void *, struct diff_tree
 	              &revs.pending.objects[1].item->oid,
 	              "", &revs.diffopt);
 	log_tree_diff_flush(&revs);
-	rev_info_release(&revs);
+	release_revisions(&revs);
 }
 
 void ensure_notes(struct notes_tree *notes)
