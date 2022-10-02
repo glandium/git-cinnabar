@@ -899,19 +899,18 @@ fn do_self_update(branch: Option<String>) -> Result<(), String> {
     };
     const URL_BASE: &str =
         "https://community-tc.services.mozilla.com/api/index/v1/task/project.git-cinnabar.build";
+    #[cfg(windows)]
     const FINISH_SELF_UPDATE: &str = "GIT_CINNABAR_FINISH_SELF_UPDATE";
     #[cfg(windows)]
     const FINISH_SELF_UPDATE_PARENT: &str = "GIT_CINNABAR_FINISH_SELF_UPDATE_PARENT";
 
+    #[cfg(windows)]
     if let Some(old_path) = std::env::var_os(FINISH_SELF_UPDATE) {
-        #[cfg(windows)]
-        {
-            use std::os::windows::io::RawHandle;
-            let handle = usize::from_str(&std::env::var(FINISH_SELF_UPDATE_PARENT).unwrap())
-                .unwrap() as RawHandle;
-            unsafe {
-                winapi::um::synchapi::WaitForSingleObject(handle, winapi::um::winbase::INFINITE);
-            }
+        use std::os::windows::io::RawHandle;
+        let handle = usize::from_str(&std::env::var(FINISH_SELF_UPDATE_PARENT).unwrap()).unwrap()
+            as RawHandle;
+        unsafe {
+            winapi::um::synchapi::WaitForSingleObject(handle, winapi::um::winbase::INFINITE);
         }
         std::fs::remove_file(old_path).ok();
         return Ok(());
@@ -955,11 +954,6 @@ fn do_self_update(branch: Option<String>) -> Result<(), String> {
                 std::fs::copy(&exe, &remote_hg_exe).map_err(|e| e.to_string())?;
             }
         }
-        let finish_self_update = || {
-            let mut cmd = Command::new(exe);
-            cmd.arg("self-update").env(FINISH_SELF_UPDATE, old_exe_path);
-            cmd
-        };
         #[cfg(windows)]
         {
             use std::os::windows::io::RawHandle;
@@ -978,14 +972,16 @@ fn do_self_update(branch: Option<String>) -> Result<(), String> {
             } != 0
             {
                 std::mem::forget(
-                    finish_self_update()
+                    Command::new(exe)
+                        .arg("self-update")
+                        .env(FINISH_SELF_UPDATE, old_exe_path)
                         .env(FINISH_SELF_UPDATE_PARENT, format!("{}", handle as usize))
                         .spawn(),
                 );
             }
         }
         #[cfg(not(windows))]
-        finish_self_update().status().ok();
+        std::fs::remove_file(old_exe_path).ok();
     } else {
         warn!(target: "root", "Did not find an update to install.");
     }
