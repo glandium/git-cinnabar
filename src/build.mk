@@ -99,6 +99,7 @@ EXCLUDE_OBJS += checkout.o
 EXCLUDE_OBJS += compat/mingw.o
 EXCLUDE_OBJS += connect.o
 EXCLUDE_OBJS += default.o
+EXCLUDE_OBJS += diagnose.o
 EXCLUDE_OBJS += help.o
 EXCLUDE_OBJS += iterator.o
 EXCLUDE_OBJS += reachable.o
