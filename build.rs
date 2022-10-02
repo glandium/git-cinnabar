@@ -278,8 +278,9 @@ fn main() {
         // The expected lifecycle is:
         // - 0.x.0a on branch next
         // - 0.x.0b on branch master
-        // - 0.x.0b1 on branch release
+        // - 0.x.0b1 on branch release (optionally)
         // - 0.(x+1).0a on branch next (possibly later)
+        // - 0.x.0rc1 on branch release (optionally)
         // - 0.x.0 on branch release
         // - 0.x.1a on branch master
         // - 0.x.1 on branch release
