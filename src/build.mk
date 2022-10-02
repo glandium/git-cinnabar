@@ -13,6 +13,10 @@ $(SOURCE_DIR)/git-core/Makefile:
 	git -C $(SOURCE_DIR) submodule sync
 	git -C $(SOURCE_DIR) submodule update --init
 
+gitweb/Makefile:
+	mkdir -p ${@D}
+	touch $@
+
 config.mak.uname:
 	echo "ifndef FAKE_INCLUDE" > $@
 	echo "include $(SOURCE_DIR)/git-core/$@" >> $@
