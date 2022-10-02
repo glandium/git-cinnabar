@@ -130,7 +130,7 @@ panic = "abort"
 panic = "abort"
 
 [features]
-default = ["version-check", "self-update"]
+default = ["version-check"]
 compile_commands = []
 curl-compat = []
 version-check = ["semver", "shared_child"]

@@ -335,7 +335,7 @@ class Build(Task, metaclass=Tool):
         extra_commands = []
         environ = {}
         cargo_flags = ['-vv', '--release']
-        cargo_features = []
+        cargo_features = ['self-update']
         rust_version = None
         if variant == 'asan':
             if os.startswith('osx'):
