@@ -1029,15 +1029,6 @@ void do_reload()
 	reset_changeset_heads();
 }
 
-int configset_add_value(struct config_set *, const char*, const char *);
-
-static int config_set_callback(const char *key, const char *value, void *data)
-{
-	struct config_set *config = data;
-	configset_add_value(config, key, value);
-	return 0;
-}
-
 static void init_git_config()
 {
 	struct child_process proc = CHILD_PROCESS_INIT;
@@ -1060,28 +1051,13 @@ static void init_git_config()
 	 * the path we get is empty we'll know it failed. */
 	capture_command(&proc, &path, 0);
 	strbuf_trim_trailing_newline(&path);
-	/* Bail early when GIT_CONFIG_NO_SYSTEM is set. */
-	if (!git_config_system())
-		goto cleanup;
-
-	/* Avoid future uses of the git_config infrastructure reading the
-         * config we just read (or the wrong system gitconfig). */
-	putenv("GIT_CONFIG_NOSYSTEM=1");
 
 	/* If we couldn't get a path, then so be it. We may just not have
 	 * a complete configuration. */
 	if (!path.len || access_or_die(path.buf, R_OK, 0))
 		goto cleanup;
 
-	if (the_repository->config)
-		// This shouldn't happen, but just in case...
-		git_configset_clear(the_repository->config);
-	else
-		the_repository->config = xcalloc(1, sizeof(struct config_set));
-
-	git_configset_init(the_repository->config);
-	git_configset_add_file(the_repository->config, path.buf);
-	read_early_config(config_set_callback, the_repository->config);
+	setenv("GIT_CONFIG_SYSTEM", path.buf, 1);
 
 cleanup:
 	strbuf_release(&path);
