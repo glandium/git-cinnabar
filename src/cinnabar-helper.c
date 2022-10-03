@@ -1054,12 +1054,9 @@ static void init_git_config()
 
 	/* If we couldn't get a path, then so be it. We may just not have
 	 * a complete configuration. */
-	if (!path.len || access_or_die(path.buf, R_OK, 0))
-		goto cleanup;
+	if (path.len)
+		setenv("GIT_CONFIG_SYSTEM", path.buf, 1);
 
-	setenv("GIT_CONFIG_SYSTEM", path.buf, 1);
-
-cleanup:
 	strbuf_release(&path);
 }
 
