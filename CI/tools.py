@@ -7,13 +7,13 @@ from tasks import (
     Tool,
     parse_version,
 )
+from util import build_commit
 from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '6.1.4'
-PY3_MERCURIAL_VERSION = '6.2'
-GIT_VERSION = '2.37.1'
+MERCURIAL_VERSION = '6.2'
+GIT_VERSION = '2.38.0'
 
 ALL_MERCURIAL_VERSIONS = (
     '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
@@ -30,7 +30,6 @@ SOME_MERCURIAL_VERSIONS = (
 )
 
 assert MERCURIAL_VERSION in ALL_MERCURIAL_VERSIONS
-assert PY3_MERCURIAL_VERSION in ALL_MERCURIAL_VERSIONS
 assert all(v in ALL_MERCURIAL_VERSIONS for v in SOME_MERCURIAL_VERSIONS)
 
 
@@ -51,7 +50,7 @@ class Git(Task, metaclass=Tool):
             build_image = DockerImage.by_name('build')
         if os == 'linux' or os.startswith('osx'):
             h = hashlib.sha1(build_image.hexdigest.encode())
-            h.update(b'v2')
+            h.update(b'v4' if version == GIT_VERSION else b'v3')
             if os == 'linux':
                 description = 'git v{}'.format(version)
             else:
@@ -65,16 +64,19 @@ class Git(Task, metaclass=Tool):
                 expireIn='26 weeks',
                 command=Task.checkout(
                     'git://git.kernel.org/pub/scm/git/git.git',
-                    'v{}'.format(version)
-                ) + [
-                    'make -C repo -j$({}) install prefix=/ NO_GETTEXT=1'
+                    'v{}'.format(version),
+                    dest='git',
+                ) + Task.checkout() + ([
+                    'patch -d git -p1 < repo/CI/git-transport-disconnect.diff',
+                ] if version == GIT_VERSION else []) + [
+                    'make -C git -j$({}) install prefix=/ NO_GETTEXT=1'
                     ' NO_OPENSSL=1 NO_TCLTK=1 NO_UNCOMPRESS2=1'
                     ' DESTDIR=$PWD/git'.format(
                         nproc(build_image)),
-                    'tar -Jcf $ARTIFACTS/git-{}.tar.xz git'
+                    'tar -c git | zstd -c > $ARTIFACTS/git-{}.tar.zst'
                     .format(version),
                 ],
-                artifact='git-{}.tar.xz'.format(version),
+                artifact='git-{}.tar.zst'.format(version),
             )
         else:
             env = TaskEnvironment.by_name('{}.build'.format(os))
@@ -88,11 +90,13 @@ class Git(Task, metaclass=Tool):
                 min_ver = version[:-len('.windows.1')]
             else:
                 min_ver = version.replace('windows.', '')
+            h = hashlib.sha1(env.hexdigest.encode())
+            h.update(b'v1')
             Task.__init__(
                 self,
                 task_env=build_image,
                 description='git v{} {} {}'.format(version, env.os, env.cpu),
-                index='{}.git.v{}'.format(os, raw_version),
+                index='{}.git.v{}'.format(h.hexdigest(), raw_version),
                 expireIn='26 weeks',
                 command=[
                     'curl -L https://github.com/git-for-windows/git/releases/'
@@ -104,10 +108,10 @@ class Git(Task, metaclass=Tool):
                     'tar -C git -jx {}/libexec/git-core/git-http-backend.exe'
                     .format(version, min_ver, msys.bits(env.cpu),
                             msys.mingw(env.cpu).lower()),
-                    'tar -jcf $ARTIFACTS/git-{}.tar.bz2 git'.format(
+                    'tar -c git | zstd -c > $ARTIFACTS/git-{}.tar.zst'.format(
                         raw_version),
                 ],
-                artifact='git-{}.tar.bz2'.format(raw_version),
+                artifact='git-{}.tar.zst'.format(raw_version),
             )
 
     @classmethod
@@ -115,15 +119,15 @@ class Git(Task, metaclass=Tool):
         url = '{{{}.artifact}}'.format(cls.by_name(name))
         if name.startswith(('linux.', 'osx.')):
             return [
-                'curl --compressed -L {} | tar -Jxf -'.format(url),
+                'curl --compressed -L {} | zstd -cd | tar -x'.format(url),
                 'export PATH=$PWD/git/bin:$PATH',
                 'export GIT_EXEC_PATH=$PWD/git/libexec/git-core',
                 'export GIT_TEMPLATE_DIR=$PWD/git/share/git-core/templates',
             ]
         else:
             return [
-                'curl --compressed -L {} -o git.tar.bz2'.format(url),
-                'tar -jxf git.tar.bz2',
+                'curl --compressed -L {} -o git.tar.zst'.format(url),
+                'zstd -cd git.tar.zst | tar -x',
             ]
 
 
@@ -133,7 +137,8 @@ class Hg(Task, metaclass=Tool):
     def __init__(self, os_and_version):
         (os, version) = os_and_version.split('.', 1)
         (version, suffix, _) = version.partition('.py3')
-        if suffix:
+        if suffix or len(version) == 40 or \
+                parse_version(version) >= parse_version('6.2'):
             python = 'python3'
         else:
             python = 'python2.7'
@@ -175,11 +180,12 @@ class Hg(Task, metaclass=Tool):
                 kwargs.setdefault('env', {}).setdefault(
                     'MACOSX_DEPLOYMENT_TARGET', env.os_version)
             else:
-                platform_tag = 'mingw'
                 if python == 'python3':
-                    python_tag = 'cp35'
-                    abi_tag = 'cp35m'
+                    platform_tag = 'mingw_x86_64'
+                    python_tag = 'cp39'
+                    abi_tag = 'cp39'
                 else:
+                    platform_tag = 'mingw'
                     python_tag = 'cp27'
                     abi_tag = 'cp27m'
 
@@ -202,12 +208,10 @@ class Hg(Task, metaclass=Tool):
             ])
         # 2.6.2 is the first version available on pypi
         elif parse_version('2.6.2') <= parse_version(version) and \
-                (parse_version(version) < parse_version('6.1') or
-                 not os.startswith('mingw')):
-            # Always download with python2.7 because pip download does more
-            # than download, and one of the things it does, namely requirements
-            # validation, breaks on Windows with python3 < 3.7 (because
-            # mercurial declares it's not compatible with those).
+                parse_version(version) < parse_version('6.2'):
+            # pip download does more than download, and while it runs setup.py
+            # for version 6.2, a DistutilsPlatformError exception is thrown on
+            # Windows.
             pre_command.append(
                 '{} -m pip download --no-binary mercurial --no-deps'
                 ' --progress-bar off mercurial=={}'.format(python, version))
@@ -221,12 +225,10 @@ class Hg(Task, metaclass=Tool):
                 'tar -zxf mercurial-{}.tar.gz'.format(version))
 
         if os.startswith('mingw'):
-            # Trick setup.py into not doing a python3 version check. Also
-            # work around https://bz.mercurial-scm.org/show_bug.cgi?id=6654
+            # Work around https://bz.mercurial-scm.org/show_bug.cgi?id=6654
             pre_command.append(
-                'sed -i "s/if issetuptools/if False/;'
-                's/, output_dir=self.build_temp/, output_dir=self.build_temp'
-                ', extra_postargs=[$EXTRA_FLAGS]/;'
+                'sed -i "s/, output_dir=self.build_temp/'
+                ', output_dir=self.build_temp, extra_postargs=[$EXTRA_FLAGS]/;'
                 '" mercurial-{}/setup.py'
                 .format(version))
             if python == 'python3':
@@ -265,74 +267,58 @@ class Hg(Task, metaclass=Tool):
     @classmethod
     def install(cls, name):
         hg = cls.by_name(name)
-        if name.endswith('.py3'):
+        filename = os.path.basename(hg.artifacts[0])
+        if 'cp3' in filename:
             python = 'python3'
         else:
             python = 'python2.7'
-        filename = os.path.basename(hg.artifacts[0])
         return [
             'curl -L {{{}.artifact}} -o {}'.format(hg, filename),
             '{} -m pip install {}'.format(python, filename)
         ]
 
 
-def old_compatible_python():
-    '''Find the oldest version of the python code that is compatible with the
-    current helper'''
-    from cinnabar.git import Git
-    with open(os.path.join(os.path.dirname(__file__), '..', 'helper',
-                           'cinnabar-helper.c')) as fh:
-        min_version = None
-        for l in fh:
-            if l.startswith('#define MIN_CMD_VERSION'):
-                min_version = l.rstrip().split()[-1]
-                break
-        if not min_version:
-            raise Exception('Cannot find MIN_CMD_VERSION')
-    return list(Git.iter(
-        'log', 'HEAD', '--format=%H', '-S',
-        'class GitHgHelper(BaseHelper):\n    VERSION = {}'.format(min_version),
-        cwd=os.path.join(os.path.dirname(__file__), '..')))[-1].decode()
-
-
-def old_helper_head():
-    from cinnabar import VERSION
-    from distutils.version import StrictVersion
-    version = VERSION
-    if version.endswith('a'):
-        v = StrictVersion(VERSION[:-1]).version
-        if v[2] == 0:
-            from cinnabar.git import Git
-            from cinnabar.helper import GitHgHelper
-            version = GitHgHelper.VERSION
-            return list(Git.iter(
-                'log', 'HEAD', '--format=%H',
-                '-S', '#define CMD_VERSION {}'.format(version),
-                cwd=os.path.join(os.path.dirname(__file__),
-                                 '..')))[-1].decode()
+def install_rust(version='1.64.0', target='x86_64-unknown-linux-gnu'):
+    rustup_opts = '-y --default-toolchain none'
+    cargo_dir = '$HOME/.cargo/bin/'
+    rustup = cargo_dir + 'rustup'
+    if 'windows' in target:
+        cpu, _, __ = target.partition('-')
+        rust_install = [
+            'curl -o rustup-init.exe https://win.rustup.rs/{cpu}',
+            './rustup-init.exe {rustup_opts}',
+            '{rustup} set default-host {target}',
+        ]
     else:
-        v = StrictVersion(VERSION).version
-    return '{}.{}.{}'.format(v[0], v[1], max(v[2] - 1, 0))
+        rust_install = [
+            'curl -o rustup.sh https://sh.rustup.rs',
+            'sh rustup.sh {rustup_opts}',
+        ]
+    rust_install += [
+        '{rustup} install {version} --profile minimal',
+        '{rustup} default {version}',
+        'PATH={cargo_dir}:$PATH',
+        '{rustup} target add {target}',
+    ]
+    if 'windows' in target:
+        rust_install += [
+            '{rustup} component remove rust-mingw',
+        ]
+    loc = locals()
+    return [r.format(**loc) for r in rust_install]
 
 
-def helper_hash(head='HEAD'):
-    from cinnabar.git import Git, split_ls_tree
-    from cinnabar.util import one
-    return split_ls_tree(one(Git.iter(
-        'ls-tree', head, 'helper',
-        cwd=os.path.join(os.path.dirname(__file__), '..'))))[2].decode()
-
-
-class Helper(Task, metaclass=Tool):
-    PREFIX = 'helper'
+class Build(Task, metaclass=Tool):
+    PREFIX = 'build'
 
     def __init__(self, os_and_variant):
-        os, variant = (os_and_variant.split('.', 2) + [''])[:2]
+        os, variant = (os_and_variant.split('.', 1) + [''])[:2]
         if os.startswith('osx'):
             os = 'osx'
-        env = TaskEnvironment.by_name('{}.build'.format(os))
+        env = TaskEnvironment.by_name(
+            '{}.build'.format(os.replace('arm64-linux', 'linux')))
 
-        artifact = 'git-cinnabar-helper'
+        artifact = 'git-cinnabar'
         if os.startswith('mingw'):
             artifact += '.exe'
         artifacts = [artifact]
@@ -340,78 +326,122 @@ class Helper(Task, metaclass=Tool):
         def prefix(p, s):
             return p + s if s else s
 
-        make_flags = []
         hash = None
         head = None
         desc_variant = variant
         extra_commands = []
+        environ = {}
+        cargo_flags = ['-vv', '--release']
+        cargo_features = ['self-update']
+        rust_version = None
         if variant == 'asan':
             if os.startswith('osx'):
                 opt = '-O2'
             else:
                 opt = '-Og'
-                make_flags.append('LDFLAGS=-static-libasan')
-            make_flags.append(
-                'CFLAGS="{} -g -fsanitize=address -fno-omit-frame-pointer"'
-                .format(opt))
+            environ['TARGET_CFLAGS'] = ' '.join([
+                opt,
+                '-g',
+                '-fsanitize=address',
+                '-fno-omit-frame-pointer',
+                '-fPIC',
+            ])
+            environ['RUSTFLAGS'] = ' '.join([
+                '-Zsanitizer=address',
+                '-Copt-level=1',
+                '-Cforce-frame-pointers=yes',
+            ])
         elif variant == 'coverage':
-            make_flags.append('CFLAGS="-coverage"')
+            environ['TARGET_CFLAGS'] = ' '.join([
+                '-coverage',
+                '-fPIC',
+            ])
             artifacts += ['coverage.zip']
             extra_commands = [
-                'mv repo/git-core/{{cinnabar,connect,hg}}*.gcno repo/helper',
                 '(cd repo && zip $ARTIFACTS/coverage.zip'
-                ' helper/{{cinnabar,connect,hg}}*.gcno)',
+                ' $(find . -name "*.gcno" -not -name "build_script*"))',
             ]
-        elif variant == 'old' or variant.startswith('old:'):
-            if len(variant) > 3:
-                head = variant[4:]
-            else:
-                head = old_helper_head()
-            hash = helper_hash(head)
+            environ['RUSTFLAGS'] = ' '.join([
+                '-Zprofile',
+                '-Ccodegen-units=1',
+                '-Cinline-threshold=0',
+            ])
+            # Build without --release
+            cargo_flags.remove('--release')
+            environ['CARGO_INCREMENTAL'] = '0'
+        elif variant.startswith('old:'):
+            head = variant[4:]
+            hash = build_commit(head)
             variant = ''
+        elif variant.startswith('rust-'):
+            rust_version = variant[5:]
         elif variant:
             raise Exception('Unknown variant: {}'.format(variant))
 
-        if os == 'linux':
-            make_flags.append('CURL_COMPAT=1')
-        elif os == 'arm64-osx':
-            make_flags.append('CFLAGS="-g -O2 -Wall -arch {}"'.format(env.cpu))
-            make_flags.append('LDFLAGS="-arch {}"'.format(env.cpu))
-        elif not os.startswith('osx'):
-            make_flags.append(
-                'CFLAGS="-g -O2 -Wall -DCURLOPT_PROXY_CAINFO=246"')
+        if os in ('linux', 'arm64-linux'):
+            environ['CC'] = 'clang-14'
+            cargo_features.append('curl-compat')
 
-        hash = hash or helper_hash()
+        if os.startswith('mingw'):
+            cpu = msys.msys_cpu(env.cpu)
+            rust_target = "{}-pc-windows-gnu".format(cpu)
+        elif os.startswith('osx'):
+            rust_target = 'x86_64-apple-darwin'
+        elif os.startswith('arm64-osx'):
+            rust_target = 'aarch64-apple-darwin'
+        elif os == 'linux':
+            rust_target = 'x86_64-unknown-linux-gnu'
+        elif os == 'arm64-linux':
+            rust_target = 'aarch64-unknown-linux-gnu'
+            environ['PKG_CONFIG_aarch64_unknown_linux_gnu'] = \
+                '/usr/bin/aarch64-linux-gnu-pkg-config'
+            environ['CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER'] = \
+                environ['CC']
+            environ['CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS'] = \
+                '-C link-arg=--target=aarch64-unknown-linux-gnu'
+        if variant in ('coverage', 'asan'):
+            rust_install = install_rust('nightly-2022-08-07', rust_target)
+        elif rust_version:
+            rust_install = install_rust(rust_version, target=rust_target)
+        else:
+            rust_install = install_rust(target=rust_target)
+        cargo_flags.extend(['--target', rust_target])
+        if cargo_features:
+            cargo_flags.extend(['--features', ','.join(cargo_features)])
 
-        kwargs = {}
+        hash = hash or build_commit()
+
         if os.startswith('osx'):
-            kwargs.setdefault('env', {}).setdefault(
+            environ.setdefault(
                 'MACOSX_DEPLOYMENT_TARGET', '10.7')
 
+        cpu = 'arm64' if os == 'arm64-linux' else env.cpu
         Task.__init__(
             self,
             task_env=env,
-            description='helper {} {}{}'.format(
-                env.os, env.cpu, prefix(' ', desc_variant)),
-            index='helper.{}.{}.{}{}'.format(
-                hash, env.os, env.cpu, prefix('.', variant)),
+            description='build {} {}{}'.format(
+                env.os, cpu, prefix(' ', desc_variant)),
+            index='build.{}.{}.{}{}'.format(
+                hash, env.os, cpu, prefix('.', variant)),
             expireIn='26 weeks',
-            command=Task.checkout(commit=head) + [
-                'make -C repo helper -j $({}) prefix=/usr{} V=1'.format(
-                    nproc(env), prefix(' ', ' '.join(make_flags))),
-                'mv repo/{} $ARTIFACTS/'.format(artifact),
+            command=Task.checkout(commit=head) + rust_install + [
+                '(cd repo ; cargo build {})'.format(' '.join(cargo_flags)),
+                'mv repo/target/{}/{}/{} $ARTIFACTS/'.format(
+                    rust_target,
+                    'release' if '--release' in cargo_flags else 'debug',
+                    artifact),
             ] + extra_commands,
             artifacts=artifacts,
-            **kwargs,
+            env=environ,
         )
 
     @classmethod
     def install(cls, name):
-        helper = cls.by_name(name)
-        filename = os.path.basename(helper.artifacts[0])
+        build = cls.by_name(name)
+        filename = os.path.basename(build.artifacts[0])
         return [
-            'curl --compressed -o {} -L {{{}.artifacts[0]}}'.format(
-                filename, helper),
-            'chmod +x {}'.format(filename),
-            'git config --global cinnabar.helper $PWD/{}'.format(filename),
+            'curl --compressed -o repo/{} -L {{{}.artifacts[0]}}'.format(
+                filename, build),
+            'chmod +x repo/{}'.format(filename),
+            'ln -s $PWD/repo/{} $PWD/repo/git-remote-hg'.format(filename),
         ]

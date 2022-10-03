@@ -27,13 +27,15 @@ def sources_list(snapshot, sections):
 
 DOCKER_IMAGES = {
     'base': '''\
-        FROM debian:stretch-20220418
+        FROM debian:stretch-20220622
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
+         apt-transport-https\\
          bzip2\\
          ca-certificates\\
          curl\\
+         gnupg2\\
          libcurl3-gnutls\\
          python-setuptools\\
          python-pip\\
@@ -42,26 +44,37 @@ DOCKER_IMAGES = {
          unzip\\
          xz-utils\\
          zip\\
-         && apt-get clean &&\\
-         python2.7 -m pip install pip==20.3.4 wheel==0.37.0\\
+         zstd\\
+         && apt-get clean
+        RUN curl -sO https://apt.llvm.org/llvm-snapshot.gpg.key &&\\
+         gpg --no-default-keyring --keyring /usr/share/keyrings/llvm.gpg\\
+          --import llvm-snapshot.gpg.key&& rm llvm-snapshot.gpg.key &&\\
+         echo\\
+          "deb [signed-by=/usr/share/keyrings/llvm.gpg]\\
+           https://apt.llvm.org/stretch/ llvm-toolchain-stretch-14 main"\\
+          > /etc/apt/sources.list.d/llvm.list &&\\
+         apt-get update -o Acquire::Check-Valid-Until=false&&\\
+         python2.7 -m pip install pip==20.3.4 wheel==0.37.1\\
          --upgrade --ignore-installed&&\\
-         python3 -m pip install pip==20.3.4 wheel==0.37.0\\
+         python3 -m pip install pip==20.3.4 wheel==0.37.1\\
          --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
-            '20220418T210440Z', (
+            '20220622T215414Z', (
                 ('debian', 'stretch'),
                 ('debian', 'stretch-updates'),
                 ('debian-security', 'stretch/updates'),
             )))),
 
     'base-buster': '''\
-        FROM debian:buster-20220418
+        FROM debian:buster-20220801
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
+         apt-transport-https\\
          bzip2\\
          ca-certificates\\
          curl\\
+         gnupg2\\
          libcurl3-gnutls\\
          python-setuptools\\
          python-pip\\
@@ -70,13 +83,22 @@ DOCKER_IMAGES = {
          unzip\\
          xz-utils\\
          zip\\
-         && apt-get clean &&\\
-         python2.7 -m pip install pip==20.3.4 wheel==0.37.0\\
+         zstd\\
+         && apt-get clean
+        RUN curl -sO https://apt.llvm.org/llvm-snapshot.gpg.key &&\\
+         gpg --no-default-keyring --keyring /usr/share/keyrings/llvm.gpg\\
+          --import llvm-snapshot.gpg.key&& rm llvm-snapshot.gpg.key &&\\
+         echo\\
+          "deb [signed-by=/usr/share/keyrings/llvm.gpg]\\
+           https://apt.llvm.org/buster/ llvm-toolchain-buster-14 main"\\
+          > /etc/apt/sources.list.d/llvm.list &&\\
+         apt-get update -o Acquire::Check-Valid-Until=false&&\\
+         python2.7 -m pip install pip==20.3.4 wheel==0.37.1\\
          --upgrade --ignore-installed&&\\
-         python3 -m pip install pip==20.3.4 wheel==0.37.0\\
+         python3 -m pip install pip==22.2.2 wheel==0.37.1\\
          --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
-            '20220418T210440Z', (  # noqa: E126
+            '20220801T205040Z', (  # noqa: E126
                 ('debian', 'buster'),
                 ('debian', 'buster-updates'),
                 ('debian-security', 'buster/updates'),
@@ -84,17 +106,32 @@ DOCKER_IMAGES = {
 
     'build': '''\
         FROM base
-        RUN apt-get install -y --no-install-recommends\\
+        RUN dpkg --add-architecture arm64\\
+         && apt-get update -o Acquire::Check-Valid-Until=false\\
+         && apt-get install -y --no-install-recommends\\
+         clang-14\\
          gcc\\
          git\\
-         libc6-dev\\
-         libcurl4-gnutls-dev\\
          make\\
          patch\\
+         pkg-config\\
          python-dev\\
          python3-dev\\
+         libc6-dev\\
+         libcurl4-gnutls-dev\\
          zlib1g-dev\\
-         && apt-get clean
+         && echo path-exclude=/usr/bin/curl-config\\
+          > /etc/dpkg/dpkg.cfg.d/excludes\\
+         && apt-get install -y --no-install-recommends\\
+         libc6-dev:arm64\\
+         libcurl4-gnutls-dev:arm64\\
+         zlib1g-dev:arm64\\
+         libgcc-6-dev:arm64\\
+         binutils-aarch64-linux-gnu\\
+         dpkg-dev\\
+         && apt-get clean\\
+         && ln -s /usr/bin/aarch64-linux-gnu-ld\\
+          /usr/bin/aarch64-unknown-linux-gnu-ld
         ''',
 
     'build-buster': '''\
@@ -122,23 +159,18 @@ DOCKER_IMAGES = {
          && python3 -m pip install codecov==2.1.12
         RUN curl -sL {} | tar -C /usr/local/bin -jxf -
         '''.format(
-        'https://github.com/mozilla/grcov/releases/download/v0.7.1'
-        '/grcov-linux-x86_64.tar.bz2'
+        'https://github.com/mozilla/grcov/releases/download/v0.8.7'
+        '/grcov-x86_64-unknown-linux-gnu.tar.bz2'
     ),
 
     'test': '''\
         FROM base-buster
         RUN apt-get install -y --no-install-recommends\\
-         flake8\\
+         llvm-14\\
          make\\
-         python-coverage\\
-         python-flake8\\
-         python3-flake8\\
-         python-nose\\
-         python3-nose\\
-         python-virtualenv\\
          && apt-get clean\\
-         && pip install cram==0.7
+         && pip3 install cram==0.7\\
+         && ln -s llvm-symbolizer-14 /usr/bin/llvm-symbolizer
         ''',
 }
 
@@ -222,7 +254,7 @@ class DockerImageTask(DockerImage, Task, metaclass=TaskEnvironment):
             image='python:3.7',
             dind=True,
             command=Task.checkout() + [
-                'pip install requests-unixsocket==0.2.0 zstandard==0.15.2',
+                'pip install requests-unixsocket==0.3.0 zstandard==0.18.0',
                 'python3 repo/CI/docker.py build {}'
                 .format(name),
                 'python3 repo/CI/docker.py save {}'

@@ -361,6 +361,21 @@ Removing heads or branches is not supported.
   error: failed to push some refs to 'hg::.*/push-refs.t/repo-from-git' (re)
   [1]
 
+Pushing/deleting tags is not supported.
+
+  $ git -C repo-git -c user.email=foo@bar tag -m 'Tagged' the-tag
+  $ git -C repo-git push origin --tags
+  To hg::.*/push-refs.t/repo-from-git (re)
+   ! [remote rejected] the-tag -> the-tag (Pushing tags is unsupported)
+  error: failed to push some refs to 'hg::.*/push-refs.t/repo-from-git' (re)
+  [1]
+
+  $ git -C repo-git push origin :refs/tags/the-tag
+  To hg::.*/push-refs.t/repo-from-git (re)
+   ! [remote rejected] the-tag (Deleting remote tags is unsupported)
+  error: failed to push some refs to 'hg::.*/push-refs.t/repo-from-git' (re)
+  [1]
+
 Reset target mercurial repositories.
 
   $ rm -rf $REPO-from-hg $REPO-from-git $REPO-from-git2

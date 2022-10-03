@@ -1,5 +1,4 @@
 import hashlib
-import os
 import re
 
 from tasks import (
@@ -11,33 +10,30 @@ from tasks import (
 from docker import DockerImage
 
 
-CPUS = ('x86', 'x86_64')
-MSYS_VERSION = '20161025'
+CPUS = ('x86_64',)
+MSYS_VERSION = {
+    'x86_64': '20220603',
+}
 
 
 def mingw(cpu):
     return {
-        'x86': 'MINGW32',
         'x86_64': 'MINGW64',
     }.get(cpu)
 
 
 def msys(cpu):
     return {
-        'x86': 'msys32',
         'x86_64': 'msys64',
     }.get(cpu)
 
 
 def msys_cpu(cpu):
-    return {
-        'x86': 'i686',
-    }.get(cpu, cpu)
+    return cpu
 
 
 def bits(cpu):
     return {
-        'x86': '32',
         'x86_64': '64',
     }.get(cpu)
 
@@ -81,28 +77,13 @@ class MsysBase(MsysCommon, Task, metaclass=Tool):
 
     def __init__(self, cpu):
         assert cpu in CPUS
-        crts = (
-            '{msys}/usr/ssl/cert.pem '
-            '{msys}/usr/ssl/certs/ca-bundle.crt '
-            '{msys}/usr/ssl/certs/ca-bundle.trust.crt'
-        )
-        crts64 = crts.format(msys='msys64')
-        crts = crts.format(msys=msys(cpu))
-        _create_command = [
+        _create_command = (
             'curl -L http://repo.msys2.org/distrib/{cpu}'
-            '/msys2-base-{cpu}-{version}.tar.xz | xz -cd > msys2.tar'
-            .format(cpu=msys_cpu(cpu), version=MSYS_VERSION),
-            'tar --delete -f msys2.tar {}'.format(crts),
-            'curl -L https://repo.msys2.org/distrib/x86_64/'
-            'msys2-base-x86_64-20220128.tar.xz | tar -Jx {}'.format(crts64),
-        ]
-        if crts64 != crts:
-            _create_command.append('mv msys64 msys32')
-        _create_command += [
-            'tar -rf msys2.tar {}'.format(crts),
-            'bzip2 -c msys2.tar > $ARTIFACTS/msys2.tar.bz2',
-        ]
-        h = hashlib.sha1(';'.join(_create_command).encode())
+            '/msys2-base-{cpu}-{version}.tar.xz | xz -cd | zstd -c'
+            ' > $ARTIFACTS/msys2.tar.zst'.format(
+                cpu=msys_cpu(cpu), version=MSYS_VERSION[cpu])
+        )
+        h = hashlib.sha1(_create_command.encode())
         self.hexdigest = h.hexdigest()
         self.cpu = cpu
 
@@ -112,8 +93,8 @@ class MsysBase(MsysCommon, Task, metaclass=Tool):
             description='msys2 image: base {}'.format(cpu),
             index=self.index,
             expireIn='26 weeks',
-            command=_create_command,
-            artifact='msys2.tar.bz2',
+            command=[_create_command],
+            artifact='msys2.tar.zst',
         )
 
 
@@ -123,37 +104,17 @@ class MsysEnvironment(MsysCommon):
         create_commands = [
             'pacman-key --init',
             'pacman-key --populate msys2',
-            'sed -i s,://repo.msys2.org/,'
-            '://mirrors.huaweicloud.com/repository/msys2/,'
-            ' /etc/pacman.d/mirrorlist.*',
-            'pacman --noconfirm -Sy tar {}'.format(
+            'pacman --noconfirm -Sy procps tar {}'.format(
                 ' '.join(self.packages(name))),
-            '[ -f /{mingw}/ssl/cert.pem ] &&'
-            ' cp /usr/ssl/cert.pem /{mingw}/ssl'.format(mingw=mingw(cpu)),
-            '[ -d /{mingw}/ssl/certs ] &&'
-            ' cp /usr/ssl/certs/* /{mingw}/ssl/certs'.format(mingw=mingw(cpu)),
+            'pkill gpg-agent',
             'rm -rf /var/cache/pacman/pkg',
-            'python2.7 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade',
-            'python3 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade',
+            'python2.7 -m pip install pip==20.3.4 wheel==0.37.1 --upgrade',
+            'python3 -m pip install pip==22.2.2 wheel==0.37.1 --upgrade',
             'mv {}/{}/bin/{{{{mingw32-,}}}}make.exe'.format(msys(cpu),
                                                             mingw(cpu)),
-            'tar -jcf msys2.tar.bz2 --hard-dereference {}'.format(msys(cpu)),
+            'tar -c --hard-dereference {} | zstd -c > msys2.tar.zst'.format(
+                msys(cpu)),
         ]
-
-        if name == 'build':
-            # https://github.com/msys2/MINGW-packages/issues/5155
-            url = ('https://raw.githubusercontent.com/msys2/MINGW-packages/'
-                   '8a162525a7d6f4a0ac2724db2e21c96eae1ba33f/'
-                   'mingw-w64-python2/2030-fix-msvc9-import.patch')
-            create_commands[-1:-1] = [
-                'curl -sLO {}'.format(url)
-            ]
-            for pyver in ('2.7', '3.5'):
-                path = '/{}/lib/python{}/distutils/msvc9compiler.py'.format(
-                    mingw(cpu), pyver)
-                create_commands[-1:-1] = [
-                    'patch {} < {}'.format(path, os.path.basename(url)),
-                ]
 
         env = MsysBase.by_name(cpu)
 
@@ -168,7 +129,7 @@ class MsysEnvironment(MsysCommon):
             index=self.index,
             expireIn='26 weeks',
             command=create_commands,
-            artifact='msys2.tar.bz2',
+            artifact='msys2.tar.zst',
         )
 
     def packages(self, name):
@@ -181,7 +142,6 @@ class MsysEnvironment(MsysCommon):
         packages = mingw_packages([
             'curl',
             'make',
-            'pcre',
             'python2',
             'python2-pip',
             'python3',
@@ -191,7 +151,6 @@ class MsysEnvironment(MsysCommon):
         if name == 'build':
             return packages + mingw_packages([
                 'gcc',
-                'perl',
             ]) + [
                 'patch',
             ]
@@ -201,12 +160,6 @@ class MsysEnvironment(MsysCommon):
                 'git',
             ]
         raise Exception('Unknown name: {}'.format(name))
-
-
-class Msys32Environment(MsysEnvironment, Task, metaclass=TaskEnvironment):
-    PREFIX = 'mingw32'
-    cpu = 'x86'
-    __init__ = MsysEnvironment.__init__
 
 
 class Msys64Environment(MsysEnvironment, Task, metaclass=TaskEnvironment):

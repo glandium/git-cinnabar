@@ -1,0 +1,13 @@
+diff --git a/http.c b/http.c
+index 2a722f6357..2f8308d516 100644
+--- a/http.c
++++ b/http.c
+@@ -63,7 +63,7 @@ static const char *curl_no_proxy;
+ #ifdef GIT_CURL_HAVE_CURLOPT_PINNEDPUBLICKEY
+ static const char *ssl_pinnedkey;
+ #endif
+-static const char *ssl_cainfo;
++const char *ssl_cainfo;
+ static long curl_low_speed_limit = -1;
+ static long curl_low_speed_time = -1;
+ static int curl_ftp_no_epsv;

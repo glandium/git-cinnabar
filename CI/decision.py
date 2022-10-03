@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import subprocess
 import sys
 
 
@@ -22,26 +23,23 @@ from tasks import (
 from tools import (
     GIT_VERSION,
     MERCURIAL_VERSION,
-    PY3_MERCURIAL_VERSION,
     ALL_MERCURIAL_VERSIONS,
     SOME_MERCURIAL_VERSIONS,
+    Build,
     Git,
-    Helper,
     Hg,
     nproc,
-    old_compatible_python,
 )
 from variables import *  # noqa: F403
 
 
 def git_rev_parse(committish):
-    from cinnabar.git import Git
-    from cinnabar.util import one
-    return one(Git.iter('rev-parse', committish,
-                        cwd=os.path.join(BASE_DIR, '..'))).decode()
+    return subprocess.check_output(
+        ['git', 'rev-parse', committish], text=True,
+        cwd=os.path.join(BASE_DIR, '..')).strip()
 
 
-UPGRADE_FROM = ('0.3.0', '0.3.2', '0.4.0', '0.5.0b2', '0.5.0b3')
+UPGRADE_FROM = ()  # ('0.5.0',)
 
 
 class TestTask(Task):
@@ -53,15 +51,15 @@ class TestTask(Task):
         commit = kwargs.pop('commit', None)
         task_env = kwargs.pop('task_env', 'linux')
         variant = kwargs.pop('variant', None)
-        helper = kwargs.pop('helper', None)
+        build = kwargs.pop('build', None)
         clone = kwargs.pop('clone', TC_COMMIT)
         desc = kwargs.pop('description', None)
         short_desc = kwargs.pop('short_desc', 'test')
         extra_desc = kwargs.pop('extra_desc', None)
         pre_command = kwargs.pop('pre_command', None)
-        if helper is None:
-            helper = '{}.{}'.format(task_env, variant) if variant else task_env
-            helper = Helper.install(helper)
+        if build is None:
+            build = '{}.{}'.format(task_env, variant) if variant else task_env
+            build = Build.install(build)
         if variant:
             kwargs.setdefault('env', {})['VARIANT'] = variant
         env = TaskEnvironment.by_name('{}.test'.format(task_env))
@@ -81,7 +79,7 @@ class TestTask(Task):
             command.extend(Git.install('{}.{}'.format(task_env, git)))
             command.append('git --version')
         command.extend(Task.checkout(commit=commit))
-        command.extend(helper)
+        command.extend(build)
         if clone:
             command.extend([
                 'curl --compressed -L {{{}.artifact}} -o repo/bundle.git'
@@ -93,25 +91,17 @@ class TestTask(Task):
                 ' refs/heads/branches/default/tip',
             ])
             kwargs.setdefault('env', {})['REPO'] = REPO
-        if "clone w/ 0.3" not in (desc or ""):
-            command.extend((
-                # 0.4 doesn't support running with CWD outside a git repo.
-                '(cd repo; ./git-cinnabar --version)',
-                '(cd repo; GIT_CINNABAR_COVERAGE='
-                ' ./git-cinnabar python --version)',
-            ))
-        if variant == 'coverage':
-            command = [
-                'export GIT_CINNABAR_COVERAGE=1',
-                'export COVERAGE_FILE=$PWD/repo/.coverage',
-            ] + command
-
+        command.extend((
+            'repo/git-cinnabar --version',
+        ))
         if 'command' in kwargs:
             kwargs['command'] = command + kwargs['command']
         else:
             if commit:
                 # Always use the current CI scripts
-                command.append('git -C repo checkout {} CI'.format(TC_COMMIT))
+                command.append(
+                    'git -C repo -c core.autocrlf=input checkout {} CI'
+                    .format(TC_COMMIT))
             output_sync = ' --output-sync=target'
             if env.os == 'macos':
                 output_sync = ''
@@ -123,12 +113,9 @@ class TestTask(Task):
         if variant == 'coverage':
             kwargs['command'].extend([
                 'shopt -s nullglob',
-                'for f in repo/git-core/{{cinnabar,connect,hg}}*.gcda',
-                'do mv $f repo/helper',
-                'done',
                 'cd repo',
-                'zip $ARTIFACTS/coverage.zip .coverage'
-                ' helper/{{cinnabar,connect,hg}}*.gcda',
+                'zip $ARTIFACTS/coverage.zip'
+                ' $(find . -name "*.gcda")',
                 'cd ..',
                 'shopt -u nullglob',
             ])
@@ -158,36 +145,16 @@ class Clone(TestTask, metaclass=Tool):
     def __init__(self, version):
         sha1 = git_rev_parse(version)
         expireIn = '26 weeks'
-        if version == TC_COMMIT or len(version) == 40 or \
-                version in ('0.5.0b2', '0.5.0b3'):
+        if version == TC_COMMIT or len(version) == 40:
             if version == TC_COMMIT:
-                download = Helper.install('linux')
-            elif version == '0.5.0b2':
-                download = Helper.install(
-                    'linux.old:419f4d2de0f1f0229ca0900774a576db5668e60e')
-            elif version == '0.5.0b3':
-                download = Helper.install(
-                    'linux.old:e47124aa510a3b01409c260c2659666d885ae62f')
+                download = Build.install('linux')
             else:
-                download = Helper.install('linux.old:{}'.format(version))
+                download = Build.install('linux.old:{}'.format(version))
             expireIn = '26 weeks'
-        elif parse_version(version) > parse_version('0.5.0a'):
-            download = [
-                'python2.7 -m pip install requests',
-                'repo/git-cinnabar download',
-            ]
-        elif parse_version(version) == parse_version('0.4.0'):
-            download = [
-                'python2.7 -m pip install requests',
-                '(cd repo ; ./git-cinnabar download)',
-            ]
+        elif parse_version(version) < parse_version('0.6.0'):
+            download = ['repo/git-cinnabar download']
         else:
-            download = []
-        if (parse_version(version) < parse_version('0.5.0b3') and
-                version != TC_COMMIT):
-            hg = '4.3.3'
-        else:
-            hg = MERCURIAL_VERSION
+            download = ['repo/download.py']
         kwargs = {}
         if parse_version(version) < parse_version('0.5.7'):
             kwargs['git'] = '2.30.2'
@@ -197,11 +164,11 @@ class Clone(TestTask, metaclass=Tool):
             index = 'bundle.{}.{}'.format(hashlib.sha1(REPO).hexdigest(), sha1)
         TestTask.__init__(
             self,
-            hg=hg,
+            hg=MERCURIAL_VERSION,
             description='clone w/ {}'.format(version),
             index=index,
             expireIn=expireIn,
-            helper=download,
+            build=download,
             commit=sha1,
             clone=False,
             command=[
@@ -220,58 +187,39 @@ class Clone(TestTask, metaclass=Tool):
 
 @action('decision')
 def decision():
-    TestTask(
-        description='python lint & tests',
-        variant='coverage',
-        clone=False,
-        command=[
-            '(cd repo &&'
-            ' nosetests --all-modules --with-coverage --cover-tests tests &&'
-            ' nosetests3 --all-modules tests)',
-            '(cd repo && python2.7 -m flake8 --ignore E402,F405,W504'
-            ' $(git ls-files \\*\\*.py git-cinnabar git-remote-hg'
-            ' | grep -v ^CI/))',
-            '(cd repo && flake8 --ignore E402,F405,W504'
-            ' $(git ls-files CI/\\*\\*.py)'
-            ' $(git grep -l unicode_literals))',
-        ],
-    )
-
     for env in ('linux', 'mingw64', 'osx'):
         # Can't spawn osx workers from pull requests.
         if env.startswith('osx') and not TC_IS_PUSH:
             continue
 
-        TestTask(task_env=env)
+        TestTask(
+            task_env=env,
+            variant='coverage' if env == 'linux' else None,
+        )
 
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
         if TC_IS_PUSH and TC_BRANCH != "try":
             Task(
                 task_env=task_env,
-                description='download helper {} {}'.format(task_env.os,
-                                                           task_env.cpu),
+                description='download build {} {}'.format(task_env.os,
+                                                          task_env.cpu),
                 command=list(chain(
                     Git.install('{}.{}'.format(env, GIT_VERSION)),
                     Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
                     Task.checkout(),
                     [
-                        '(cd repo ; ./git-cinnabar download --dev)',
-                        'rm -rf repo/.git',
-                        '(cd repo ; ./git-cinnabar download --dev)',
-                        '(cd repo ; ./git-cinnabar download)',
+                        '(cd repo ; ./download.py)',
                     ],
                 )),
                 dependencies=[
-                    Helper.by_name(env),
+                    Build.by_name(env),
                 ],
             )
 
-    # Because nothing is using the x86 windows helper, we need to manually
-    # touch it.
-    Helper.by_name('mingw32')
     # Same for arm64 mac
     if TC_IS_PUSH:
-        Helper.by_name('arm64-osx')
+        Build.by_name('arm64-osx')
+    Build.by_name('arm64-linux')
 
     for upgrade in UPGRADE_FROM:
         TestTask(
@@ -283,16 +231,6 @@ def decision():
                 'UPGRADE_FROM': upgrade,
             },
             hg='5.4.2',
-        )
-        TestTask(
-            short_desc='upgrade tests',
-            extra_desc='from-{}'.format(upgrade),
-            clone=upgrade,
-            env={
-                'GIT_CINNABAR_LOG': 'reexec:3',
-                'UPGRADE_FROM': upgrade,
-            },
-            hg='5.4.2.py3',
         )
 
     for git in ('1.8.5', '2.7.4'):
@@ -309,14 +247,6 @@ def decision():
         task_env='linux',
         variant='asan',
     )
-    TestTask(
-        task_env='linux',
-        variant='asan',
-        extra_desc='experiments',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'true',
-        },
-    )
 
     for env in ('linux', 'mingw64', 'osx'):
         # Can't spawn osx workers from pull requests.
@@ -332,141 +262,10 @@ def decision():
             },
         )
 
-    TestTask(
-        variant='old',
-        env={
-            'GIT_CINNABAR_OLD_HELPER': '1',
-        },
-        git='2.30.0'
-    )
-
-    TestTask(
-        variant='old',
-        short_desc='graft tests',
-        env={
-            'GIT_CINNABAR_OLD_HELPER': '1',
-            'GRAFT': '1',
-        },
-        git='2.30.0'
-    )
-
-    rev = old_compatible_python()
-
-    TestTask(
-        commit=rev,
-        clone=rev,
-        extra_desc='old python',
-        env={
-            'GIT_CINNABAR_OLD': '1',
-        },
-        hg='5.4.2',
-    )
-
-    TestTask(
-        commit=rev,
-        clone=rev,
-        short_desc='graft tests',
-        extra_desc='old python',
-        env={
-            'GIT_CINNABAR_OLD': '1',
-            'GRAFT': '1',
-        },
-        hg='5.4.2',
-    )
-
-    for env in ('linux', 'mingw64', 'osx'):
-        # Can't spawn osx workers from pull requests.
-        if env.startswith('osx') and not TC_IS_PUSH:
-            continue
-
-        TestTask(
-            task_env=env,
-            hg='{}.py3'.format(MERCURIAL_VERSION if env == 'mingw64' else
-                               PY3_MERCURIAL_VERSION),
-        )
-
-        TestTask(
-            task_env=env,
-            short_desc='graft tests',
-            env={
-                'GRAFT': '1',
-            },
-            hg='{}.py3'.format(MERCURIAL_VERSION if env == 'mingw64' else
-                               PY3_MERCURIAL_VERSION),
-        )
-
-    TestTask(
-        extra_desc='experiments',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'true',
-        },
-    )
-
-    TestTask(
-        variant='coverage',
-        short_desc='graft tests',
-        extra_desc='experiments',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'true',
-            'GRAFT': '1',
-        },
-    )
-
-    TestTask(
-        extra_desc='experiments',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'true',
-            'GIT_CINNABAR_LOG': 'reexec:3',
-        },
-        hg='{}.py3'.format(PY3_MERCURIAL_VERSION),
-    )
-
-    TestTask(
-        short_desc='graft tests',
-        extra_desc='experiments',
-        env={
-            'GIT_CINNABAR_EXPERIMENTS': 'true',
-            'GIT_CINNABAR_LOG': 'reexec:3',
-            'GRAFT': '1',
-        },
-        hg='{}.py3'.format(PY3_MERCURIAL_VERSION),
-    )
-
-    for variant in ('coverage', 'old'):
-        env = {
-            'GIT_CINNABAR_CHECK': 'no-mercurial',
-            'GIT_CINNABAR_PYTHON': 'python2.7',
-        }
-        kwargs = {}
-        if variant == 'old':
-            env['GIT_CINNABAR_OLD_HELPER'] = '1'
-            kwargs['git'] = '2.30.0'
-        TestTask(
-            variant=variant,
-            extra_desc='no-mercurial',
-            pre_command=[
-                'python2.7 -m virtualenv venv',
-                '. venv/bin/activate',
-            ],
-            command=[
-                'deactivate',
-                # deactivate removes the git directory from $PATH.
-                # Also add the virtualenv bin directory to $PATH for mercurial
-                # to be found, but at the end for the system python to still
-                # be picked.
-                'export PATH=$PWD/git/bin:$PATH:$PWD/venv/bin',
-                'make -C repo -f CI/tests.mk',
-            ],
-            env=env,
-            **kwargs,
-        )
-
-    for env, variant, check in (
-        ('linux', 'coverage', []),
-        ('linux', 'coverage', ['no-mercurial']),
-        ('linux', 'asan', []),
-        ('linux', 'asan', ['no-mercurial']),
-        ('osx', None, []),
+    for env, variant in (
+        ('linux', 'coverage'),
+        ('linux', 'asan'),
+        ('osx', None),
     ):
         # Can't spawn osx workers from pull requests.
         if env.startswith('osx') and not TC_IS_PUSH:
@@ -480,31 +279,13 @@ def decision():
             task_env=env,
             variant=variant,
             short_desc='cram',
-            extra_desc=' '.join(check),
             clone=False,
             command=pre_command + [
                 'cram --verbose repo/tests',
             ],
             env={
-                'GIT_CINNABAR_CHECK': ','.join(
-                    ['no-version-check'] + check),
+                'GIT_CINNABAR_CHECK': 'no-version-check',
             },
-        )
-
-    for check in ([], ['no-mercurial']):
-        TestTask(
-            short_desc='cram',
-            extra_desc=' '.join(check),
-            clone=False,
-            command=[
-                'cram --verbose repo/tests',
-            ],
-            env={
-                'GIT_CINNABAR_CHECK': ','.join(
-                    ['no-version-check'] + check),
-                'GIT_CINNABAR_EXPERIMENTS': 'true',
-            },
-            hg='{}.py3'.format(PY3_MERCURIAL_VERSION),
         )
 
 
@@ -551,8 +332,7 @@ def do_hg_version(hg):
         description='Trigger tests against more mercurial versions')
 def more_hg_versions():
     for hg in ALL_MERCURIAL_VERSIONS:
-        if hg not in (MERCURIAL_VERSION, PY3_MERCURIAL_VERSION) and \
-                hg not in SOME_MERCURIAL_VERSIONS:
+        if hg != MERCURIAL_VERSION and hg not in SOME_MERCURIAL_VERSIONS:
             do_hg_version(hg)
 
 
@@ -588,30 +368,19 @@ def main():
                 task, task)
             for task in TestTask.coverage
         ]
-        task = Helper.by_name('linux.coverage')
+        task = Build.by_name('linux.coverage')
         download_coverage.append(
-            'curl -o gcno-helper.zip -L {{{}.artifacts[1]}}'.format(task))
+            'curl -o gcno-build.zip -L {{{}.artifacts[1]}}'.format(task))
 
         merge_coverage.append(
             '(' + '& '.join(download_coverage) + '& wait)',
         )
 
-        for task in TestTask.coverage:
-            merge_coverage.extend([
-                'unzip -d cov-{{{}.id}} cov-{{{}.id}}.zip .coverage'.format(
-                    task, task),
-            ])
-
         merge_coverage.extend([
-            'grcov -s repo -t lcov -o repo/coverage.lcov gcno-helper.zip ' +
+            'grcov -s repo -t lcov -o repo/coverage.lcov gcno-build.zip ' +
             ' '.join(
                 'cov-{{{}.id}}.zip'.format(task)
                 for task in TestTask.coverage),
-            'cd repo',
-            'coverage combine --append {}'.format(' '.join(
-                '../cov-{{{}.id}}/.coverage'.format(task)
-                for task in TestTask.coverage)),
-            'cd ..',
         ])
 
     if merge_coverage:

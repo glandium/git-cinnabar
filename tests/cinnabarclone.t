@@ -110,7 +110,7 @@ TODO: Ideally, the error message would say the server could not be connected to.
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/
   \r (no-eol) (esc)
-  ERROR \[Errno (61|111)\] Connection refused (re)
+  ERROR unable to access 'http://localhost:8080/': Failed to connect to localhost port 8080: Connection refused
   \r (no-eol) (esc)
   WARNING Falling back to normal clone.
 
@@ -139,7 +139,7 @@ TODO: git errors are repeating and lack newlines.
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://this.cannot.possibly.exist.invalid-tld/
   \r (no-eol) (esc)
-  ERROR \[Errno (-2\] Name or service not known|8\] nodename nor servname provided, or not known) (re)
+  ERROR unable to access 'http://this.cannot.possibly.exist.invalid-tld/': Could not resolve host: this.cannot.possibly.exist.invalid-tld
   \r (no-eol) (esc)
   WARNING Falling back to normal clone.
 
@@ -196,7 +196,7 @@ TODO: git errors are repeating and lack newlines.
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/non-existing.git
   \r (no-eol) (esc)
-  ERROR File not found
+  ERROR unable to access 'http://localhost:8080/non-existing.git': The requested URL returned error: 404
   \r (no-eol) (esc)
   WARNING Falling back to normal clone.
 

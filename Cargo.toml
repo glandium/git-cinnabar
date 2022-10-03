@@ -1,0 +1,138 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+[package]
+name = "git-cinnabar"
+version = "0.6.0-rc1"
+authors = ["Mike Hommey <mh@glandium.org>"]
+edition = "2021"
+license = "MPL-2.0 AND GPL-2.0"
+repository = "https://github.com/glandium/git-cinnabar"
+rust-version = "1.60.0"
+publish = false
+include = [
+  "/src",
+  "/build.rs",
+  "/.cargo",
+  "/git-core/COPYING",
+  "/git-core/LGPL-2.1",
+  "/git-core/Makefile",
+  "/git-core/GIT-VERSION-GEN",
+  "/git-core/*.mak*",
+  "/git-core/**/*.c",
+  "/git-core/**/*.h",
+  "!/git-core/t/**",
+]
+
+[dependencies]
+all_asserts = "2"
+array-init = "2.0.1"
+backtrace = "0.3"
+bit-vec = "0.6"
+bitflags = "1"
+bzip2 = "0.4"
+byteorder = "1"
+cfg-if = "1"
+cstr = "=0.2.10"
+derivative = "2"
+digest = "0.10"
+either = "1"
+getset = "0.1"
+git-version = "0.3"
+hex = "0.4"
+indexmap = "1"
+itertools = "0.10"
+libc = "0.2"
+once_cell = "1.13"
+percent-encoding = "2"
+rand = "0.8"
+sha-1 = "0.10"
+tee = "0.1"
+tempfile = "3"
+typenum = "1"
+url = "2"
+
+[dependencies.bstr]
+version = "1"
+default-features = false
+features = ["std"]
+
+[dependencies.clap]
+version = "4"
+features = ["cargo", "derive"]
+
+[target.'cfg(windows)'.dependencies.curl-sys]
+version = "0.4"
+default-features = false
+features = ["ssl", "static-curl", "rustls"]
+
+[target.'cfg(not(windows))'.dependencies.curl-sys]
+version = "0.4"
+default-features = false
+
+[dependencies.derive_more]
+version = "0.99"
+default-features = false
+features = ["deref", "display"]
+
+[dependencies.flate2]
+version = "1"
+default-features = false
+features = ["zlib"]
+
+[target.'cfg(windows)'.dependencies.libz-sys]
+version = "1"
+features = ["static"]
+
+[target.'cfg(not(windows))'.dependencies.libz-sys]
+version = "1"
+
+[dependencies.log]
+version = "0.4"
+features = ["std"]
+
+[dependencies.regex]
+version = "1"
+default-features = false
+features = ["std"]
+
+[dependencies.semver]
+version = "1.0"
+optional = true
+
+[dependencies.shared_child]
+version = "1.0"
+optional = true
+
+[target.'cfg(windows)'.dependencies.winapi]
+version = "0.3"
+features = ["handleapi", "processthreadsapi", "synchapi", "winbase"]
+optional = true
+
+[dependencies.zstd]
+version = "0.11"
+default-features = false
+
+[build-dependencies]
+cc = "1.0.46"
+itertools = "0.10"
+make-cmd = "0.1"
+target = "2.0"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+panic = "abort"
+
+[features]
+default = ["version-check"]
+compile_commands = []
+curl-compat = []
+version-check = ["semver", "shared_child"]
+self-update = ["semver", "shared_child", "dep:winapi"]
