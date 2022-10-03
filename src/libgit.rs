@@ -83,6 +83,10 @@ impl strbuf {
         unsafe { std::slice::from_raw_parts(self.buf as *const u8, self.len) }
     }
 
+    pub fn as_ptr(&mut self) -> *mut c_char {
+        self.buf
+    }
+
     pub fn extend_from_slice(&mut self, s: &[u8]) {
         unsafe { strbuf_add(self, s.as_ptr() as *const c_void, s.len()) }
     }
@@ -135,6 +139,8 @@ extern "C" {
     pub fn run_one_slot(slot: *mut active_request_slot, results: *mut slot_results) -> c_int;
 
     pub static curl_errorstr: [c_char; CURL_ERROR_SIZE];
+
+    pub static ssl_cainfo: *mut c_char;
 }
 
 #[allow(non_camel_case_types)]

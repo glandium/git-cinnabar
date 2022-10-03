@@ -4,11 +4,12 @@
 
 use std::borrow::ToOwned;
 use std::cmp;
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{c_void, CStr, CString, OsStr};
 use std::fs::File;
 use std::io::{self, copy, stderr, Cursor, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::{c_char, c_int, c_long};
+use std::path::PathBuf;
 use std::ptr;
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -22,13 +23,15 @@ use cstr::cstr;
 use curl_sys::{
     curl_easy_getinfo, curl_easy_setopt, curl_slist_append, curl_slist_free_all, CURL,
     CURLINFO_CONTENT_TYPE, CURLINFO_EFFECTIVE_URL, CURLINFO_REDIRECT_COUNT, CURLINFO_RESPONSE_CODE,
-    CURLOPT_ACCEPT_ENCODING, CURLOPT_FAILONERROR, CURLOPT_FILE, CURLOPT_FOLLOWLOCATION,
-    CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY, CURLOPT_POST, CURLOPT_POSTFIELDSIZE_LARGE,
-    CURLOPT_READDATA, CURLOPT_READFUNCTION, CURLOPT_URL, CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
+    CURLOPT_ACCEPT_ENCODING, CURLOPT_CAINFO, CURLOPT_FAILONERROR, CURLOPT_FILE,
+    CURLOPT_FOLLOWLOCATION, CURLOPT_HTTPGET, CURLOPT_HTTPHEADER, CURLOPT_NOBODY, CURLOPT_POST,
+    CURLOPT_POSTFIELDSIZE_LARGE, CURLOPT_READDATA, CURLOPT_READFUNCTION, CURLOPT_URL,
+    CURLOPT_USERAGENT, CURLOPT_WRITEFUNCTION,
 };
 use either::Either;
 use flate2::read::ZlibDecoder;
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use url::{form_urlencoded, Url};
 use zstd::stream::read::Decoder as ZstdDecoder;
 
@@ -40,9 +43,9 @@ use crate::hg_connect::{
 };
 use crate::libgit::{
     credential_fill, curl_errorstr, get_active_slot, http_auth, http_follow_config, run_one_slot,
-    slot_results, HTTP_OK, HTTP_REAUTH,
+    slot_results, ssl_cainfo, HTTP_OK, HTTP_REAUTH,
 };
-use crate::util::{ImmutBString, PrefixWriter, ReadExt, SeekExt, SliceExt, ToBoxed};
+use crate::util::{ImmutBString, OsStrExt, PrefixWriter, ReadExt, SeekExt, SliceExt, ToBoxed};
 
 use self::git_http_state::{GitHttpStateToken, GIT_HTTP_STATE};
 
@@ -252,6 +255,40 @@ impl HttpRequest {
                 }
                 curl_easy_setopt(slot.curl, CURLOPT_HTTPHEADER, headers);
                 curl_easy_setopt(slot.curl, CURLOPT_ACCEPT_ENCODING, b"\0");
+
+                // On old versions of Git for Windows, http.sslcainfo is set
+                // and usefully points to the CA certs file, but on recent
+                // versions, it is not set and the path is derived from the
+                // exec path in the curl dll, but we don't use it, so do that
+                // ourselves.
+                // See https://github.com/git-for-windows/MINGW-packages/commit/2e8f4580eb4d
+                if ssl_cainfo.is_null() && cfg!(windows) {
+                    static CA_INFO_PATH: Lazy<PathBuf> = Lazy::new(|| {
+                        PathBuf::from(
+                            std::env::var_os("GIT_EXEC_PATH")
+                                .filter(|p| !p.is_empty())
+                                .unwrap_or_else(|| {
+                                    let output = std::process::Command::new("git")
+                                        .arg("--exec-path")
+                                        .stderr(std::process::Stdio::null())
+                                        .output()
+                                        .unwrap();
+                                    assert!(output.status.success());
+                                    OsStr::from_bytes(&output.stdout).into()
+                                }),
+                        )
+                        .parent()
+                        .unwrap()
+                        .parent()
+                        .unwrap()
+                        .join("ssl")
+                        .join("certs")
+                        .join("ca-bundle.crt")
+                    });
+
+                    let ca_info_path = CString::new(CA_INFO_PATH.as_os_str().as_bytes()).unwrap();
+                    curl_easy_setopt(slot.curl, CURLOPT_CAINFO, ca_info_path.as_ptr());
+                }
                 let mut results = slot_results::new();
                 let result = run_one_slot(slot, &mut results);
                 curl_slist_free_all(headers);
