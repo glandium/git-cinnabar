@@ -6,16 +6,14 @@ It contains mercury sulfide and its powder is used to make the vermillion
 pigment.*
 
 git-cinnabar is a git remote helper to interact with mercurial repositories.
-Contrary to other such helpers\*, it doesn't use a local mercurial clone under
-the hood.
-
-\* This applies to the following tools:
-  - https://github.com/felipec/git-remote-hg
-  - https://github.com/rfk/git-remote-hg
-  - https://github.com/cosmin/git-hg
-  - https://github.com/todesschaf/git-hg
-  - https://github.com/msysgit/msysgit/wiki/Guide-to-git-remote-hg
-  - https://github.com/buchuki/gitifyhg/
+Contrary to other such helpers
+([[1]](https://github.com/felipec/git-remote-hg)
+ [[2]](https://github.com/rfk/git-remote-hg)
+ [[3]](https://github.com/cosmin/git-hg)
+ [[4]](https://github.com/todesschaf/git-hg)
+ [[5]](https://github.com/msysgit/msysgit/wiki/Guide-to-git-remote-hg)
+ [[6]](https://github.com/buchuki/gitifyhg/)), it doesn't use a local
+mercurial clone under the hood.
 
 The main focus at the moment is to make it work with mozilla-central and
 related mercurial repositories and support Mozilla workflows (try server,
