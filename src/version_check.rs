@@ -116,14 +116,11 @@ impl Drop for VersionChecker {
     fn drop(&mut self) {
         match self.take_result() {
             Some(VersionInfo::Tagged(version, _)) if VERSION_CHECK_REF == ALL_TAG_REFS => {
-                let current_version = Version::parse(CARGO_PKG_VERSION).unwrap();
-                if version > current_version {
-                    warn!(
-                        target: "root",
-                        "New git-cinnabar version available: {} (current version: {})",
-                        version, CARGO_PKG_VERSION
-                    );
-                }
+                warn!(
+                    target: "root",
+                    "New git-cinnabar version available: {} (current version: {})",
+                    version, CARGO_PKG_VERSION
+                );
             }
             Some(VersionInfo::Commit(_)) if VERSION_CHECK_REF != ALL_TAG_REFS => {
                 warn!(
@@ -191,6 +188,7 @@ fn get_version(child: &SharedChild) -> Option<VersionInfo> {
         .unwrap_or("");
     let output = child.take_stdout().unwrap().read_all().ok()?;
     child.wait().ok()?;
+    let current_version = Version::parse(CARGO_PKG_VERSION).unwrap();
     let mut newest_version = None;
     for [sha1, r] in output
         .lines()
@@ -206,9 +204,10 @@ fn get_version(child: &SharedChild) -> Option<VersionInfo> {
             .and_then(|tag| std::str::from_utf8(tag).ok())
             .and_then(parse_version)
         {
-            if newest_version
-                .as_ref()
-                .map_or(true, |(n_v, _)| &version > n_v)
+            if version > current_version
+                && newest_version
+                    .as_ref()
+                    .map_or(true, |(n_v, _)| &version > n_v)
             {
                 newest_version = Some((version, cid));
             }
