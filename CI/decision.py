@@ -25,7 +25,6 @@ from tools import (
     MERCURIAL_VERSION,
     ALL_MERCURIAL_VERSIONS,
     SOME_MERCURIAL_VERSIONS,
-    MSRV,
     Build,
     Git,
     Hg,
@@ -221,9 +220,6 @@ def decision():
     if TC_IS_PUSH:
         Build.by_name('arm64-osx')
     Build.by_name('arm64-linux')
-
-    # Test build with the MSRV.
-    Build.by_name('linux.rust-{}'.format(MSRV))
 
     for upgrade in UPGRADE_FROM:
         TestTask(
