@@ -126,7 +126,7 @@ impl Drop for VersionChecker {
                 warn!(
                     target: "root",
                     "The {} branch of git-cinnabar was updated. {}",
-                    VERSION_CHECK_REF.strip_prefix("refs/heads/").unwrap(),
+                    VERSION_CHECK_REF,
                     if cfg!(feature = "self-update") {
                         "You may run `git cinnabar self-update` to update."
                     } else {
