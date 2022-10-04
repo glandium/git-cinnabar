@@ -1,5 +1,5 @@
 diff --git a/http.c b/http.c
-index 2a722f6357..2f8308d516 100644
+index 2a722f6357..c7e0395abd 100644
 --- a/http.c
 +++ b/http.c
 @@ -63,7 +63,7 @@ static const char *curl_no_proxy;
@@ -11,3 +11,17 @@ index 2a722f6357..2f8308d516 100644
  static long curl_low_speed_limit = -1;
  static long curl_low_speed_time = -1;
  static int curl_ftp_no_epsv;
+@@ -288,11 +288,13 @@ static int http_options(const char *var, const char *value, void *cb)
+ 		curl_ssl_try = git_config_bool(var, value);
+ 		return 0;
+ 	}
++#ifndef _WIN32
+ 	if (!strcmp("http.sslbackend", var)) {
+ 		free(http_ssl_backend);
+ 		http_ssl_backend = xstrdup_or_null(value);
+ 		return 0;
+ 	}
++#endif
+ 
+ 	if (!strcmp("http.schannelcheckrevoke", var)) {
+ 		if (value && !strcmp(value, "best-effort")) {
