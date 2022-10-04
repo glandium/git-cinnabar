@@ -74,9 +74,6 @@ def download(args):
     system = args.system
     machine = args.machine
 
-    default_platform = (system == platform.system() and
-                        machine == platform.machine())
-
     if system.startswith('MSYS_NT'):
         system = 'Windows'
 
@@ -215,17 +212,16 @@ def download(args):
             (dirname, filename) = os.path.split(binary_path)
             (stem, ext) = os.path.splitext(filename)
             remote_hg_path = os.path.join(dirname, "git-remote-hg" + ext)
-            if default_platform and not args.no_config:
-                try:
-                    os.unlink(remote_hg_path)
-                except OSError as exc:
-                    if exc.errno != errno.ENOENT:
-                        raise
-                try:
-                    os.symlink(filename, remote_hg_path)
-                except (AttributeError, OSError):
-                    copyfile(binary_path, remote_hg_path)
-                    os.chmod(remote_hg_path, mode)
+            try:
+                os.unlink(remote_hg_path)
+            except OSError as exc:
+                if exc.errno != errno.ENOENT:
+                    raise
+            try:
+                os.symlink(filename, remote_hg_path)
+            except (AttributeError, OSError):
+                copyfile(binary_path, remote_hg_path)
+                os.chmod(remote_hg_path, mode)
 
         else:
             os.unlink(path)
@@ -244,7 +240,5 @@ if __name__ == '__main__':
     parser.add_argument('--machine', default=platform.machine(),
                         help=argparse.SUPPRESS)
     parser.add_argument('-o', '--output', help=argparse.SUPPRESS)
-    parser.add_argument('--no-config', action='store_true',
-                        help=argparse.SUPPRESS)
     parser.add_argument('--list', action='store_true', help=argparse.SUPPRESS)
     download(parser.parse_args())
