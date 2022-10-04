@@ -62,14 +62,12 @@ features = ["std"]
 version = "4"
 features = ["cargo", "derive"]
 
-[target.'cfg(windows)'.dependencies.curl-sys]
+[dependencies.curl-sys]
 version = "0.4"
 default-features = false
-features = ["ssl", "static-curl", "rustls"]
 
-[target.'cfg(not(windows))'.dependencies.curl-sys]
-version = "0.4"
-default-features = false
+[target.'cfg(windows)'.dependencies.curl-sys]
+features = ["ssl", "static-curl", "rustls"]
 
 [dependencies.derive_more]
 version = "0.99"
