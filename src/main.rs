@@ -1707,7 +1707,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         if checked_cid.as_ref() == Some(&metadata_cid) {
             eprintln!(
                 "The git-cinnabar metadata was already checked and is \
-                 presumable clean.\n\
+                 presumably clean.\n\
                  Try `--force` if you want to check anyway."
             );
             return Ok(0);
