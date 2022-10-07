@@ -147,6 +147,7 @@ impl VersionChecker {
 #[cfg(feature = "self-update")]
 use version_check::VersionRequest;
 
+pub const CARGO_PKG_REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 pub const FULL_VERSION: &str = git_version!(
     args = [
         "--always",
@@ -2104,7 +2105,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         eprintln!(
             "This might be a bug in `git cinnabar fsck`. Please open \
              an issue, with the message above, on\n\
-             https://github.com/glandium/git-cinnabar/issues"
+             {CARGO_PKG_REPOSITORY}/issues"
         );
         return Ok(1);
     }
@@ -2115,7 +2116,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         eprintln!(
             "\rYour git-cinnabar repository appears to be corrupted.\n\
              Please open an issue, with the information above, on\n\
-             https://github.com/glandium/git-cinnabar/issues"
+             {CARGO_PKG_REPOSITORY}/issues"
         );
         let mut transaction = RefTransaction::new().unwrap();
         transaction

@@ -26,7 +26,6 @@ use crate::FULL_VERSION;
 use crate::{check_enabled, Checks};
 
 const ALL_TAG_REFS: &str = "refs/tags/*";
-const CARGO_PKG_REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 #[cfg(feature = "version-check")]
 const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg(version_check_branch)]
@@ -169,7 +168,7 @@ pub fn check_new_version(req: VersionRequest) -> Option<VersionInfo> {
 
 fn create_child(req: VersionRequest) -> Option<SharedChild> {
     let mut cmd = Command::new("git");
-    cmd.args(["ls-remote", CARGO_PKG_REPOSITORY]);
+    cmd.args(["ls-remote", crate::CARGO_PKG_REPOSITORY]);
     match req {
         VersionRequest::Tagged => cmd.arg(ALL_TAG_REFS),
         VersionRequest::Branch(branch) => cmd.arg(&format!("refs/heads/{branch}")),
