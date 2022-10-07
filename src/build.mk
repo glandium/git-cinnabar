@@ -17,19 +17,24 @@ gitweb/Makefile:
 	mkdir -p ${@D}
 	touch $@
 
-config.mak.uname:
+config.mak.dev: detect-compiler
+
+config.mak.uname config.mak.dev:
 	echo "ifndef FAKE_INCLUDE" > $@
 	echo "include $(SOURCE_DIR)/git-core/$@" >> $@
 	echo "endif" >> $@
 
 FAKE_INCLUDE := 1
 -include config.mak.uname
+-include config.mak.dev
 FAKE_INCLUDE :=
 include $(SOURCE_DIR)/git-core/Makefile
 
 GIT-VERSION-FILE: GIT-VERSION-GEN
-GIT-VERSION-GEN:
-	echo ". $(SOURCE_DIR)/git-core/$@" > $@
+GIT-VERSION-GEN detect-compiler:
+	echo "#!/bin/sh" > $@
+	echo ". $(SOURCE_DIR)/git-core/$@" >> $@
+	chmod +x $@
 
 shared.mak:
 	echo "include $(SOURCE_DIR)/git-core/shared.mak" > $@

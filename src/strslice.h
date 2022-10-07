@@ -14,7 +14,7 @@ struct strslice {
 };
 
 static inline
-struct strslice empty_strslice()
+struct strslice empty_strslice(void)
 {
 	struct strslice result = { 0, NULL };
 	return result;

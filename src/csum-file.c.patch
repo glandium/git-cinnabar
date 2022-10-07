@@ -1,12 +1,13 @@
 diff --git a/csum-file.c b/csum-file.c
-index c951cf8277..1215459b01 100644
+index 59ef3398ca..46f753d012 100644
 --- a/csum-file.c
 +++ b/csum-file.c
-@@ -91,7 +91,7 @@ int finalize_hashfile(struct hashfile *f, unsigned char *result, unsigned int fl
+@@ -92,7 +92,8 @@ int finalize_hashfile(struct hashfile *f, unsigned char *result,
  	return fd;
  }
  
 -void hashwrite(struct hashfile *f, const void *buf, unsigned int count)
++void real_hashwrite(struct hashfile *f, const void *buf, unsigned int count);
 +void real_hashwrite(struct hashfile *f, const void *buf, unsigned int count)
  {
  	while (count) {

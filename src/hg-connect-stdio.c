@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "git-compat-util.h"
-//#include "hg-connect.h"
+#include "hg-connect.h"
 #include "hg-bundle.h"
 #include "run-command.h"
 #include "strbuf.h"

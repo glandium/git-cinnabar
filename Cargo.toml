@@ -132,7 +132,16 @@ panic = "abort"
 
 [features]
 default = ["version-check"]
-compile_commands = []
+# libcurl.so compatibility (Linux only).
 curl-compat = []
+# Check and report when a new version is available.
 version-check = ["semver", "shared_child"]
+# Download and apply new versions.
 self-update = ["semver", "shared_child", "dep:winapi"]
+
+# Development features
+
+# Create compile_commands.json for IDE integration.
+compile_commands = []
+# Enable libgit development options.
+gitdev = []

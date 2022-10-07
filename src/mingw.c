@@ -3,8 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifdef _WIN32
-#define winansi_init(...)
+static inline void winansi_init(void) {}
 #define main cinnabar_main
 extern int cinnabar_main(int argc, const char *argv[]);
 #include "compat/mingw.c"
+#else
+typedef int make_pedantic_happy;
 #endif

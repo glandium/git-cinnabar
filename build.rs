@@ -126,7 +126,10 @@ fn main() {
         .arg("GENERATED_H=")
         .args(extra_args);
 
-    let compiler = cc::Build::new().force_frame_pointer(true).get_compiler();
+    let compiler = cc::Build::new()
+        .force_frame_pointer(true)
+        .warnings(false)
+        .get_compiler();
 
     let cflags = [
         compiler.cflags_env().into_string().ok(),
@@ -169,6 +172,10 @@ fn main() {
     if compile_commands {
         cmd.arg("GENERATE_COMPILATION_DATABASE=yes");
         cmd.arg("compile_commands.json");
+    }
+
+    if cfg!(feature = "gitdev") || std::env::var("PROFILE").as_deref() == Ok("debug") {
+        cmd.arg("DEVELOPER=1");
     }
 
     println!("cargo:rerun-if-env-changed=CFLAGS_{}", env("TARGET"));
