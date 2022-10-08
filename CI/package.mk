@@ -15,7 +15,7 @@ LOWER = $(subst A,a,$(subst B,b,$(subst C,c,$(subst D,d,$(subst E,e,$(subst F,f,
 system := $(call LOWER,$(SYSTEM))
 machine := $(call LOWER,$(MACHINE))
 PACKAGE_FLAGS = $(addprefix --system ,$(SYSTEM)) $(addprefix --machine ,$(MACHINE))
-PACKAGE_EXT = $(if $(filter windows,$(system)),zip,$(if $(filter macos,$(system)),tar.gz,tar.xz))
+PACKAGE_EXT = $(if $(filter windows,$(system)),zip,tar.xz)
 PACKAGE = git-cinnabar.$(system).$(machine).$(PACKAGE_EXT)
 EXT = $(if $(filter windows,$(system)),.exe)
 
