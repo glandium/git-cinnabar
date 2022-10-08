@@ -120,6 +120,7 @@ fn main() {
         .arg("HAVE_WPGMPTR=")
         .arg("USE_LIBPCRE1=")
         .arg("USE_LIBPCRE2=")
+        .arg("NO_REGEX=1")
         .arg("USE_MIMALLOC=")
         .arg("FSMONITOR_DAEMON_BACKEND=")
         .arg("GENERATED_H=")

@@ -48,6 +48,7 @@ CINNABAR_OBJECTS += hg-bundle.o
 CINNABAR_OBJECTS += hg-connect-stdio.o
 CINNABAR_OBJECTS += hg-data.o
 CINNABAR_OBJECTS += mingw.o
+CINNABAR_OBJECTS += regex.o
 
 PATCHES = $(notdir $(wildcard $(SOURCE_DIR)/src/*.patch))
 
@@ -97,6 +98,7 @@ EXCLUDE_OBJS += bitmap.o
 EXCLUDE_OBJS += blame.o
 EXCLUDE_OBJS += checkout.o
 EXCLUDE_OBJS += compat/mingw.o
+EXCLUDE_OBJS += compat/regex/regex.o
 EXCLUDE_OBJS += connect.o
 EXCLUDE_OBJS += default.o
 EXCLUDE_OBJS += diagnose.o
