@@ -77,6 +77,10 @@ version = "0.99"
 default-features = false
 features = ["deref", "display"]
 
+[target.'cfg(not(windows))'.dependencies.filetime]
+version = "=0.2.16"  # Avoid windows-sys dependency.
+optional = true
+
 [dependencies.flate2]
 version = "1"
 default-features = false
@@ -106,9 +110,23 @@ optional = true
 version = "1.0"
 optional = true
 
+[target.'cfg(not(windows))'.dependencies.tar]
+version = "0.4"
+optional = true
+
 [target.'cfg(windows)'.dependencies.winapi]
 version = "0.3"
 features = ["handleapi", "processthreadsapi", "synchapi", "winbase"]
+optional = true
+
+[target.'cfg(not(windows))'.dependencies.xz2]
+version = "0.1"
+optional = true
+
+[target.'cfg(windows)'.dependencies.zip]
+version = "0.6"
+default-features = false
+features = ["deflate-zlib"]
 optional = true
 
 [dependencies.zstd]
@@ -138,7 +156,7 @@ curl-compat = []
 # Check and report when a new version is available.
 version-check = ["semver", "shared_child"]
 # Download and apply new versions.
-self-update = ["semver", "shared_child", "dep:winapi"]
+self-update = ["semver", "shared_child", "dep:winapi", "dep:tar", "dep:xz2", "dep:zip"]
 
 # Development features
 

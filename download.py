@@ -10,9 +10,11 @@ exec $PYTHON -B $0 "$@"
 exit 1
 '''
 import os
+import re
 import sys
 import argparse
 import platform
+import tarfile
 import tempfile
 import time
 import subprocess
@@ -21,6 +23,7 @@ from gzip import GzipFile
 from shutil import copyfileobj, copyfile
 from urllib.request import urlopen
 from urllib.error import HTTPError
+from zipfile import ZipFile
 try:
     from CI.util import build_commit
 except ImportError:
@@ -99,7 +102,14 @@ def get_url(system, machine, variant, sha1):
     return url
 
 
-def download(url, binary_path):
+def get_release_url(system, machine, tag):
+    ext = 'zip' if system == 'Windows' else 'tar.xz'
+    url = f'{REPOSITORY}/releases/download/{tag}/git-cinnabar'
+    url += f'.{system.lower()}.{machine}.{ext}'
+    return url
+
+
+def download(url, system, binary_path):
     print('Downloading from %s...' % url)
     try:
         reader = urlopen(url)
@@ -122,20 +132,24 @@ def download(url, binary_path):
             self._read = 0
             self._start = self._t0 = time.monotonic()
 
+        def show_progress(self):
+            if self._length:
+                count = f'\r {self._read * 100 // self._length}%'
+            else:
+                count = f'\r {self._read} bytes'
+            sys.stderr.write(count)
+
         def read(self, length):
             data = self._reader.read(length)
             self._read += len(data)
             t1 = time.monotonic()
             if t1 - self._t0 > 0.1:
-                if self._length:
-                    count = f'\r {self._read * 100 // self._length}%'
-                else:
-                    count = f'\r {self._read} bytes'
-                sys.stderr.write(count)
+                self.show_progress()
                 sys.stderr.flush()
             return data
 
         def finish(self):
+            self.show_progress()
             sys.stderr.write('\n')
             sys.stderr.flush()
 
@@ -157,6 +171,38 @@ def download(url, binary_path):
         progress.finish()
         fh.close()
         if success:
+            if url.endswith(('.zip', '.tar.xz')):
+                binary_name = get_binary(system)
+                binary_content = None
+                size = 0
+                if url.endswith('.zip'):
+                    zip = ZipFile(path)
+                    for info in zip.infolist():
+                        if os.path.basename(info.filename) == binary_name:
+                            size = info.file_size
+                            binary_content = zip.open(info)
+                            break
+                elif url.endswith('tar.xz'):
+                    tar = tarfile.open(path, 'r:*')
+                    while True:
+                        member = tar.next()
+                        if member is None:
+                            break
+                        if (member.isfile() and
+                                os.path.basename(member.name) == binary_name):
+                            size = member.size
+                            binary_content = tar.extractfile(member)
+                            break
+                fd, path = tempfile.mkstemp(prefix=filename, dir=dirname)
+                fh = os.fdopen(fd, 'wb')
+                try:
+                    print('Extracting %s...' % binary_name)
+                    progress = ReaderProgress(binary_content, size)
+                    copyfileobj(progress, fh)
+                finally:
+                    progress.finish()
+                    fh.close()
+
             mode = os.stat(path).st_mode
             try:
                 # on Windows it's necessary to remove the file first.
@@ -187,6 +233,23 @@ def download(url, binary_path):
     return 0
 
 
+def maybe_int(s):
+    try:
+        return int(s)
+    except ValueError:
+        return s
+
+
+def split_version(s):
+    s = s.decode('ascii')
+    version = s.replace('-', '').split('.')
+    version[-1:] = [x for x in re.split(r'([0-9]+)', version[-1]) if x]
+    version = [maybe_int(x) for x in version]
+    if isinstance(version[-1], int):
+        version += ['z']
+    return version
+
+
 def main(args):
     if args.list:
         for system, machine in AVAILABLE:
@@ -212,6 +275,7 @@ def main(args):
               file=sys.stderr)
         return 1
 
+    tag = None
     local_sha1 = None
     if build_commit:
         try:
@@ -224,6 +288,21 @@ def main(args):
 
     if exact:
         sha1 = exact
+    elif branch == 'release':
+        if args.variant:
+            print('Cannot use --variant without --branch {master,next}')
+            return 1
+        result = sorted(((sha1, ref[len('refs/tags/'):]) for sha1, ref in [
+            l.split(b'\t', 1) for l in subprocess.check_output(
+                ['git', 'ls-remote', REPOSITORY, 'refs/tags/*']
+            ).splitlines()
+        ]), key=lambda x: split_version(x[1]), reverse=True)
+        if len(result) == 0:
+            print('Could not find release tags')
+            return 1
+        sha1, tag = result[0]
+        sha1 = sha1.decode('ascii')
+        tag = tag.decode('ascii')
     elif branch:
         ref = f'refs/heads/{branch}'.encode('utf-8')
         result = [sha1 for sha1, ref_ in [
@@ -244,7 +323,10 @@ def main(args):
               file=sys.stderr)
         return 1
 
-    url = get_url(system, machine, args.variant, sha1)
+    if tag:
+        url = get_release_url(system, machine, tag)
+    else:
+        url = get_url(system, machine, args.variant, sha1)
     if args.url:
         print(url)
         return 0
@@ -267,7 +349,7 @@ def main(args):
                 return 1
         binary_path = os.path.join(d, get_binary(system))
 
-    return download(url, binary_path)
+    return download(url, system, binary_path)
 
 
 if __name__ == '__main__':

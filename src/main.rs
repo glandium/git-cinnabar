@@ -145,7 +145,7 @@ impl VersionChecker {
 }
 
 #[cfg(feature = "self-update")]
-use version_check::VersionRequest;
+use version_check::{VersionInfo, VersionRequest};
 
 pub const CARGO_PKG_REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 pub const FULL_VERSION: &str = git_version!(
@@ -871,26 +871,7 @@ fn do_upgrade() -> Result<(), String> {
 
 #[cfg(feature = "self-update")]
 fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(), String> {
-    use crate::hg_connect_http::HttpRequest;
-    use version_check::VersionInfo;
-
     assert!(!(branch.is_some() && exact.is_some()));
-
-    cfg_if::cfg_if! {
-        if #[cfg(all(target_arch = "x86_64", target_os = "linux"))] {
-            const SYSTEM_MACHINE: &str = "linux.x86_64";
-        } else if #[cfg(all(target_arch = "aarch64", target_os = "linux"))] {
-            const SYSTEM_MACHINE: &str = "linux.arm64";
-        } else if #[cfg(all(target_arch = "x86_64", target_os = "macos"))] {
-            const SYSTEM_MACHINE: &str = "macos.x86_64";
-        } else if #[cfg(all(target_arch = "aarch64", target_os = "macos"))] {
-            const SYSTEM_MACHINE: &str = "macos.arm64";
-        } else if #[cfg(all(target_arch = "x86_64", target_os = "windows"))] {
-            const SYSTEM_MACHINE: &str = "windows.x86_64";
-        } else {
-            compile_error!("self-update is not supported on this platform");
-        }
-    }
     cfg_if::cfg_if! {
         if #[cfg(windows)] {
             const BINARY: &str = "git-cinnabar.exe";
@@ -900,8 +881,6 @@ fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(),
             const REMOTE_HG_BINARY: &str = "git-remote-hg";
         }
     };
-    const URL_BASE: &str =
-        "https://community-tc.services.mozilla.com/api/index/v1/task/project.git-cinnabar.build";
     #[cfg(windows)]
     const FINISH_SELF_UPDATE: &str = "GIT_CINNABAR_FINISH_SELF_UPDATE";
     #[cfg(windows)]
@@ -928,18 +907,10 @@ fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(),
                 .map_or_else(VersionRequest::default, |b| VersionRequest::from(&**b)),
         )
     }) {
-        let cid = match version {
-            VersionInfo::Commit(cid) | VersionInfo::Tagged(_, cid) => cid,
-        };
         let mut tmpbuilder = tempfile::Builder::new();
         tmpbuilder.prefix(BINARY);
         let mut tmpfile = tmpbuilder.tempfile_in(exe_dir).map_err(|e| e.to_string())?;
-        let url = format!("{URL_BASE}.{cid}.{SYSTEM_MACHINE}/artifacts/public/{BINARY}");
-        eprintln!("Installing update from {url}");
-        let mut req = HttpRequest::new(Url::parse(&url).map_err(|e| e.to_string())?);
-        req.follow_redirects(true);
-        let mut response = req.execute()?;
-        std::io::copy(&mut response, &mut tmpfile).map_err(|e| e.to_string())?;
+        download_build(version, &mut tmpfile, BINARY)?;
         let old_exe = tmpbuilder.tempfile_in(exe_dir).map_err(|e| e.to_string())?;
         let old_exe_path = old_exe.path().to_path_buf();
         old_exe.close().map_err(|e| e.to_string())?;
@@ -992,6 +963,106 @@ fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(),
         warn!(target: "root", "Did not find an update to install.");
     }
     Ok(())
+}
+
+#[cfg(feature = "self-update")]
+fn download_build(
+    version: VersionInfo,
+    tmpfile: &mut impl Write,
+    binary: &str,
+) -> Result<(), String> {
+    use crate::hg_connect_http::HttpRequest;
+
+    cfg_if::cfg_if! {
+        if #[cfg(all(target_arch = "x86_64", target_os = "linux"))] {
+            const SYSTEM_MACHINE: &str = "linux.x86_64";
+        } else if #[cfg(all(target_arch = "aarch64", target_os = "linux"))] {
+            const SYSTEM_MACHINE: &str = "linux.arm64";
+        } else if #[cfg(all(target_arch = "x86_64", target_os = "macos"))] {
+            const SYSTEM_MACHINE: &str = "macos.x86_64";
+        } else if #[cfg(all(target_arch = "aarch64", target_os = "macos"))] {
+            const SYSTEM_MACHINE: &str = "macos.arm64";
+        } else if #[cfg(all(target_arch = "x86_64", target_os = "windows"))] {
+            const SYSTEM_MACHINE: &str = "windows.x86_64";
+        } else {
+            compile_error!("self-update is not supported on this platform");
+        }
+    }
+    cfg_if::cfg_if! {
+        if #[cfg(windows)] {
+            const ARCHIVE_EXT: &str = "zip";
+        } else {
+            const ARCHIVE_EXT: &str = "tar.xz";
+        }
+    }
+
+    let request = |url: &str| {
+        eprintln!("Installing update from {url}");
+        let mut req = HttpRequest::new(Url::parse(url).map_err(|e| e.to_string())?);
+        req.follow_redirects(true);
+        req.execute()
+    };
+
+    match version {
+        VersionInfo::Commit(cid) => {
+            const URL_BASE: &str =
+            "https://community-tc.services.mozilla.com/api/index/v1/task/project.git-cinnabar.build";
+            let url = format!("{URL_BASE}.{cid}.{SYSTEM_MACHINE}/artifacts/public/{binary}");
+            let mut response = request(&url)?;
+            std::io::copy(&mut response, tmpfile)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        VersionInfo::Tagged(tag, _) => {
+            let tag = tag.to_string().replace('-', "");
+            let url = format!("{CARGO_PKG_REPOSITORY}/releases/download/{tag}/git-cinnabar.{SYSTEM_MACHINE}.{ARCHIVE_EXT}");
+            let mut extracted = false;
+            #[cfg(windows)]
+            {
+                let mut response = request(&url)?;
+                while let Some(ref mut file) =
+                    zip::read::read_zipfile_from_stream(&mut response).map_err(|e| e.to_string())?
+                {
+                    if file.is_file()
+                        && file
+                            .enclosed_name()
+                            .map_or(false, |p| p.file_name().unwrap() == binary)
+                    {
+                        std::io::copy(file, tmpfile).map_err(|e| e.to_string())?;
+                        extracted = true;
+                        break;
+                    }
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                let mut archive = tar::Archive::new(xz2::read::XzDecoder::new(request(&url)?));
+                for file in archive.entries().map_err(|e| e.to_string())? {
+                    let mut file = file.map_err(|e| e.to_string())?;
+                    let header = file.header();
+                    if header.entry_type() == tar::EntryType::Regular
+                        && header
+                            .path()
+                            .map_err(|e| e.to_string())?
+                            .file_name()
+                            .unwrap()
+                            == binary
+                    {
+                        std::io::copy(&mut file, tmpfile).map_err(|e| e.to_string())?;
+                        extracted = true;
+                        break;
+                    }
+                }
+            }
+            if extracted {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Could not find the {binary} executable in the downloaded archive."
+                ))
+            }
+        }
+    }
 }
 
 fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
