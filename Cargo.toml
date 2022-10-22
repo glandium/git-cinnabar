@@ -18,6 +18,7 @@ include = [
   "/git-core/COPYING",
   "/git-core/LGPL-2.1",
   "/git-core/Makefile",
+  "/git-core/detect-compiler",
   "/git-core/GIT-VERSION-GEN",
   "/git-core/*.mak*",
   "/git-core/**/*.c",
