@@ -23,6 +23,15 @@ from urllib.request import urlopen
 from urllib.error import HTTPError
 
 
+AVAILABLE = (
+    ('Linux', 'x86_64'),
+    ('Linux', 'arm64'),
+    ('macOS', 'x86_64'),
+    ('macOS', 'arm64'),
+    ('Windows', 'x86_64'),
+)
+
+
 # Transforms a File object without seek() or tell() into one that has.
 # This only implements enough to make GzipFile happy. It wants to seek to
 # the end of the file and back ; it also rewinds 8 bytes for the CRC.
@@ -67,77 +76,25 @@ class Seekable(object):
         return self._pos
 
 
-def download(args):
-    '''download a prebuilt binary'''
-
+def get_binary(system):
     binary = 'git-cinnabar'
-    system = args.system
-    machine = args.machine
-
-    if system.startswith('MSYS_NT'):
-        system = 'Windows'
-
-    if system == 'Darwin':
-        system = 'macOS'
-    elif system == 'Windows':
+    if system == 'Windows':
         binary += '.exe'
-        if machine == 'AMD64':
-            machine = 'x86_64'
-    if machine == 'aarch64':
-        machine = 'arm64'
+    return binary
 
-    available = (
-        ('Linux', 'x86_64'),
-        ('Linux', 'arm64'),
-        ('macOS', 'x86_64'),
-        ('macOS', 'arm64'),
-        ('Windows', 'x86_64'),
-    )
 
-    if args.list:
-        for system, machine in available:
-            print("%s/%s" % (system, machine))
-        return 0
-
-    if (system, machine) not in available:
-        print('No download available for %s/%s' % (system, machine),
-              file=sys.stderr)
-        return 1
-
-    script_path = os.path.dirname(os.path.abspath(sys.argv[0]))
-
-    sha1 = build_commit()
-    if sha1 is None:
-        print('Cannot find the right development binary for this '
-              'version of git cinnabar.',
-              file=sys.stderr)
-        return 1
+def get_url(system, machine, variant, sha1):
     url = 'https://community-tc.services.mozilla.com/api/index/v1/task/'
     url += 'project.git-cinnabar.build.'
     url += '{}.{}.{}.{}'.format(
         sha1, system.lower(), machine,
-        args.variant.lower() if args.variant else '').rstrip('.')
-    url += '/artifacts/public/{}'.format(binary)
+        variant.lower() if variant else '').rstrip('.')
+    url += '/artifacts/public/{}'.format(get_binary(system))
 
-    if args.url:
-        print(url)
-        return 0
+    return url
 
-    if args.output:
-        d = os.path.dirname(args.output)
-    else:
-        d = script_path
-        if not os.access(d, os.W_OK):
-            d = os.path.join(os.path.expanduser('~'), '.git-cinnabar')
-            try:
-                os.makedirs(d)
-            except Exception:
-                pass
-            if not os.path.isdir(d):
-                print('Cannot write to either %s or %s.' % (d, script_path),
-                      file=sys.stderr)
-                return 1
 
+def download(url, binary_path):
     print('Downloading from %s...' % url)
     try:
         reader = urlopen(url)
@@ -183,7 +140,8 @@ def download(args):
     if encoding == 'gzip':
         binary_content = GzipFile(mode='rb', fileobj=binary_content)
 
-    fd, path = tempfile.mkstemp(prefix=binary, dir=d)
+    (dirname, filename) = os.path.split(binary_path)
+    fd, path = tempfile.mkstemp(prefix=filename, dir=dirname)
     fh = os.fdopen(fd, 'wb')
 
     success = False
@@ -195,10 +153,6 @@ def download(args):
         fh.close()
         if success:
             mode = os.stat(path).st_mode
-            if args.output:
-                binary_path = args.output
-            else:
-                binary_path = os.path.join(d, binary)
             try:
                 # on Windows it's necessary to remove the file first.
                 os.remove(binary_path)
@@ -209,7 +163,6 @@ def download(args):
             # Add executable bits wherever read bits are set
             mode = mode | ((mode & 0o0444) >> 2)
             os.chmod(binary_path, mode)
-            (dirname, filename) = os.path.split(binary_path)
             (stem, ext) = os.path.splitext(filename)
             remote_hg_path = os.path.join(dirname, "git-remote-hg" + ext)
             try:
@@ -229,6 +182,64 @@ def download(args):
     return 0
 
 
+def main(args):
+    if args.list:
+        for system, machine in AVAILABLE:
+            print("%s/%s" % (system, machine))
+        return 0
+
+    system = args.system
+    machine = args.machine
+
+    if system.startswith('MSYS_NT'):
+        system = 'Windows'
+
+    if system == 'Darwin':
+        system = 'macOS'
+    elif system == 'Windows':
+        if machine == 'AMD64':
+            machine = 'x86_64'
+    if machine == 'aarch64':
+        machine = 'arm64'
+
+    if (system, machine) not in AVAILABLE:
+        print('No download available for %s/%s' % (system, machine),
+              file=sys.stderr)
+        return 1
+
+    sha1 = build_commit()
+    if sha1 is None:
+        print('Cannot find the right development binary for this '
+              'version of git cinnabar.',
+              file=sys.stderr)
+        return 1
+
+    url = get_url(system, machine, args.variant, sha1)
+    if args.url:
+        print(url)
+        return 0
+
+    script_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+
+    if args.output:
+        binary_path = args.output
+    else:
+        d = script_path
+        if not os.access(d, os.W_OK):
+            d = os.path.join(os.path.expanduser('~'), '.git-cinnabar')
+            try:
+                os.makedirs(d)
+            except Exception:
+                pass
+            if not os.path.isdir(d):
+                print('Cannot write to either %s or %s.' % (d, script_path),
+                      file=sys.stderr)
+                return 1
+        binary_path = os.path.join(d, get_binary(system))
+
+    return download(url, binary_path)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', action='store_true',
@@ -241,4 +252,4 @@ if __name__ == '__main__':
                         help=argparse.SUPPRESS)
     parser.add_argument('-o', '--output', help=argparse.SUPPRESS)
     parser.add_argument('--list', action='store_true', help=argparse.SUPPRESS)
-    download(parser.parse_args())
+    sys.exit(main(parser.parse_args()))
