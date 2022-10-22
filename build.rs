@@ -177,6 +177,7 @@ fn main() {
     if cfg!(feature = "gitdev") || std::env::var("PROFILE").as_deref() == Ok("debug") {
         cmd.arg("DEVELOPER=1");
     }
+    cmd.arg("COMPUTE_HEADER_DEPENDENCIES=yes");
 
     println!("cargo:rerun-if-env-changed=CFLAGS_{}", env("TARGET"));
     println!(
