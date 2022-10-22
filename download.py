@@ -15,14 +15,19 @@ import argparse
 import platform
 import tempfile
 import time
+import subprocess
 import errno
-from CI.util import build_commit
 from gzip import GzipFile
 from shutil import copyfileobj, copyfile
 from urllib.request import urlopen
 from urllib.error import HTTPError
+try:
+    from CI.util import build_commit
+except ImportError:
+    build_commit = None
 
 
+REPOSITORY = 'https://github.com/glandium/git-cinnabar'
 AVAILABLE = (
     ('Linux', 'x86_64'),
     ('Linux', 'arm64'),
@@ -207,10 +212,35 @@ def main(args):
               file=sys.stderr)
         return 1
 
-    sha1 = build_commit()
+    local_sha1 = None
+    if build_commit:
+        try:
+            local_sha1 = build_commit()
+        except Exception:
+            pass
+
+    exact = args.exact or (not args.branch and local_sha1)
+    branch = args.branch or local_sha1 or 'release'
+
+    if exact:
+        sha1 = exact
+    elif branch:
+        ref = f'refs/heads/{branch}'.encode('utf-8')
+        result = [sha1 for sha1, ref_ in [
+            l.split(b'\t', 1) for l in subprocess.check_output(
+                ['git', 'ls-remote', REPOSITORY, ref]
+            ).splitlines()]
+            if ref == ref_
+        ]
+        if len(result) == 0:
+            print(f'Could not find branch {branch}')
+            return 1
+        sha1 = result[0].decode('ascii')
+    else:
+        sha1 = None
     if sha1 is None:
-        print('Cannot find the right development binary for this '
-              'version of git cinnabar.',
+        print('Cannot find the right binary for git-cinnabar.'
+              ' Try --exact or --branch.',
               file=sys.stderr)
         return 1
 
@@ -244,6 +274,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', action='store_true',
                         help='only print the download url')
+    pgroup = parser.add_mutually_exclusive_group()
+    pgroup.add_argument('--branch', metavar='BRANCH',
+                        help='download a build for the given branch')
+    pgroup.add_argument('--exact', metavar='EXACT',
+                        help='download a build for the given commit')
     parser.add_argument('--variant', metavar='VARIANT',
                         help='download the given variant')
     parser.add_argument('--system', default=platform.system(),
