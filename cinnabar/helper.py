@@ -330,7 +330,7 @@ class GitHgHelper(BaseHelper):
 
     @classmethod
     def diff_tree(self, rev1, rev2, detect_copy=False):
-        extra = () if not detect_copy else (b'-C', b'-C')
+        extra = () if not detect_copy else (b'-C', b'-C100%')
         extra = extra + (b'--ignore-submodules=dirty', b'--')
         with self.query(b'diff-tree', rev1, rev2, *extra) as stdout:
             data = self._read_data(stdout)
