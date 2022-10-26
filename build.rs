@@ -258,7 +258,7 @@ fn main() {
 
     if target_os == "windows" && target_env == "gnu" {
         println!("cargo:rustc-link-lib=ssp_nonshared");
-        println!("cargo:rustc-link-lib=ssp");
+        println!("cargo:rustc-link-lib=static=ssp");
     }
 
     for flag in output.split_whitespace() {
