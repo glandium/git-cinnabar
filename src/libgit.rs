@@ -735,7 +735,7 @@ pub fn diff_tree(
     let args = [cstr!(""), &a, &b, cstr!("--ignore-submodules=dirty")];
     let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
     if detect_copy {
-        argv.extend([cstr!("-C").as_ptr(), cstr!("-C").as_ptr()]);
+        argv.extend([cstr!("-C").as_ptr(), cstr!("-C100%").as_ptr()]);
     }
     argv.push(cstr!("--").as_ptr());
     argv.push(std::ptr::null());
