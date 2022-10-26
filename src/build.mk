@@ -42,6 +42,7 @@ shared.mak:
 ALL_PROGRAMS += git-cinnabar$X
 ALL_CFLAGS := $(subst -I. ,-I$(SOURCE_DIR)/git-core -I. ,$(ALL_CFLAGS))
 ALL_CFLAGS := $(subst -Icompat,-I$(SOURCE_DIR)/git-core/compat,$(ALL_CFLAGS))
+ALL_CFLAGS := $(filter-out -DPRECOMPOSE_UNICODE,$(ALL_CFLAGS))
 ALL_CFLAGS += -Werror=implicit-function-declaration
 
 all:: git-cinnabar$X
@@ -103,6 +104,7 @@ EXCLUDE_OBJS += bitmap.o
 EXCLUDE_OBJS += blame.o
 EXCLUDE_OBJS += checkout.o
 EXCLUDE_OBJS += compat/mingw.o
+EXCLUDE_OBJS += compat/precompose_utf8.o
 EXCLUDE_OBJS += compat/regex/regex.o
 EXCLUDE_OBJS += connect.o
 EXCLUDE_OBJS += default.o
