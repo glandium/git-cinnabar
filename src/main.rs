@@ -870,9 +870,11 @@ fn do_upgrade() -> Result<(), String> {
 }
 
 #[cfg(feature = "self-update")]
-fn do_self_update(branch: Option<String>) -> Result<(), String> {
+fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(), String> {
     use crate::hg_connect_http::HttpRequest;
     use version_check::VersionInfo;
+
+    assert!(!(branch.is_some() && exact.is_some()));
 
     cfg_if::cfg_if! {
         if #[cfg(all(target_arch = "x86_64", target_os = "linux"))] {
@@ -919,10 +921,13 @@ fn do_self_update(branch: Option<String>) -> Result<(), String> {
 
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe_dir = exe.parent().unwrap();
-    let req = branch
-        .as_ref()
-        .map_or_else(VersionRequest::default, |b| VersionRequest::from(&**b));
-    if let Some(version) = version_check::check_new_version(req) {
+    if let Some(version) = exact.map(VersionInfo::Commit).or_else(|| {
+        version_check::check_new_version(
+            branch
+                .as_ref()
+                .map_or_else(VersionRequest::default, |b| VersionRequest::from(&**b)),
+        )
+    }) {
         let cid = match version {
             VersionInfo::Commit(cid) | VersionInfo::Tagged(_, cid) => cid,
         };
@@ -2946,8 +2951,13 @@ enum CinnabarCommand {
     #[clap(about = "Update git-cinnabar")]
     SelfUpdate {
         #[clap(long)]
-        #[clap(help = "git-cinnabar branch to get builds for")]
+        #[clap(help = "Branch to get updates from")]
         branch: Option<String>,
+        #[clap(long)]
+        #[clap(help = "Exact commit to get a version from")]
+        #[clap(value_parser)]
+        #[clap(conflicts_with = "branch")]
+        exact: Option<CommitId>,
     },
 }
 
@@ -2967,8 +2977,8 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         }
     };
     #[cfg(feature = "self-update")]
-    if let SelfUpdate { branch } = command {
-        return do_self_update(branch).map(|()| 0);
+    if let SelfUpdate { branch, exact } = command {
+        return do_self_update(branch, exact).map(|()| 0);
     }
     let _v = VersionChecker::new();
     if let RemoteHg { remote, url } = command {
