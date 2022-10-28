@@ -177,14 +177,14 @@ def download(url, system, binary_path):
                 size = 0
                 archive_path = path
                 if url.endswith('.zip'):
-                    zip = ZipFile(path)
+                    archive = zip = ZipFile(path)
                     for info in zip.infolist():
                         if os.path.basename(info.filename) == binary_name:
                             size = info.file_size
                             binary_content = zip.open(info)
                             break
                 elif url.endswith('tar.xz'):
-                    tar = tarfile.open(path, 'r:*')
+                    archive = tar = tarfile.open(path, 'r:*')
                     while True:
                         member = tar.next()
                         if member is None:
@@ -203,6 +203,7 @@ def download(url, system, binary_path):
                 finally:
                     progress.finish()
                     fh.close()
+                    archive.close()
                     os.unlink(archive_path)
 
             mode = os.stat(path).st_mode
