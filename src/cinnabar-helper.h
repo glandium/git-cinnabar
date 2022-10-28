@@ -40,11 +40,6 @@ int check_file(const struct hg_object_id *oid,
                const struct hg_object_id *parent2);
 
 
-struct reader;
-
-extern size_t strbuf_from_reader(struct strbuf *sb, size_t size,
-                                 struct reader *reader);
-
 struct remote;
 
 const char *remote_get_name(const struct remote *remote);
