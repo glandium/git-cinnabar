@@ -926,7 +926,7 @@ fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(),
         }
         tmpfile.persist(&exe).map_err(|e| e.to_string())?;
         let remote_hg_exe = exe_dir.join(REMOTE_HG_BINARY);
-        if let Ok(metadata) = std::fs::metadata(&remote_hg_exe) {
+        if let Ok(metadata) = std::fs::symlink_metadata(&remote_hg_exe) {
             if !metadata.is_symlink() {
                 std::fs::copy(&exe, &remote_hg_exe).map_err(|e| e.to_string())?;
             }
