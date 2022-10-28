@@ -175,6 +175,7 @@ def download(url, system, binary_path):
                 binary_name = get_binary(system)
                 binary_content = None
                 size = 0
+                archive_path = path
                 if url.endswith('.zip'):
                     zip = ZipFile(path)
                     for info in zip.infolist():
@@ -202,6 +203,7 @@ def download(url, system, binary_path):
                 finally:
                     progress.finish()
                     fh.close()
+                    os.unlink(archive_path)
 
             mode = os.stat(path).st_mode
             try:
