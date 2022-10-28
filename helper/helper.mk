@@ -30,7 +30,12 @@ PYTHON_LIBS := \
 	cinnabar/cmd/util.py \
 	cinnabar/util.py
 
+ifeq ($(shell python2.7 -c 'import platform; print platform.system()'),Windows)
+# Manually undo 7934c74463 which somehow causes problems.
+NO_GETTEXT =
+else
 NO_GETTEXT ?= 1
+endif
 NO_OPENSSL ?= 1
 
 include $(CURDIR)/Makefile
