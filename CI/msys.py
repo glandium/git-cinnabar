@@ -89,7 +89,8 @@ class MsysBase(MsysCommon, Task, metaclass=Tool):
         crts64 = crts.format(msys='msys64')
         crts = crts.format(msys=msys(cpu))
         _create_command = [
-            'curl -L http://repo.msys2.org/distrib/{cpu}'
+            'curl -L http://mirrors.huaweicloud.com/repository/msys2'
+            '/distrib/{cpu}'
             '/msys2-base-{cpu}-{version}.tar.xz | xz -cd > msys2.tar'
             .format(cpu=msys_cpu(cpu), version=MSYS_VERSION),
             'tar --delete -f msys2.tar {}'.format(crts),
