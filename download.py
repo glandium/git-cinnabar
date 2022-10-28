@@ -203,6 +203,7 @@ def download(url, system, binary_path):
                 finally:
                     progress.finish()
                     fh.close()
+                    binary_content.close()
                     archive.close()
                     os.unlink(archive_path)
 
