@@ -124,6 +124,12 @@ impl Drop for VersionChecker {
                     "New git-cinnabar version available: {} (current version: {})",
                     version, CARGO_PKG_VERSION
                 );
+                if cfg!(feature = "self-update") {
+                    warn!(
+                        target: "root",
+                        "You may run `git cinnabar self-update` to update."
+                    );
+                }
             }
             Some(VersionInfo::Commit(_)) if VERSION_CHECK_REF != ALL_TAG_REFS => {
                 warn!(
