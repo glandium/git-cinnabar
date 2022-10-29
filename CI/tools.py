@@ -443,5 +443,5 @@ class Build(Task, metaclass=Tool):
             'curl --compressed -o repo/{} -L {{{}.artifacts[0]}}'.format(
                 filename, build),
             'chmod +x repo/{}'.format(filename),
-            'ln -s $PWD/repo/{} $PWD/repo/git-remote-hg'.format(filename),
+            '$PWD/repo/{} setup'.format(filename),
         ]

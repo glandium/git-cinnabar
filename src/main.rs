@@ -869,16 +869,22 @@ fn do_upgrade() -> Result<(), String> {
     Ok(())
 }
 
+cfg_if::cfg_if! {
+    if #[cfg(windows)] {
+        const REMOTE_HG_BINARY: &str = "git-remote-hg.exe";
+    } else {
+        const REMOTE_HG_BINARY: &str = "git-remote-hg";
+    }
+}
+
 #[cfg(feature = "self-update")]
 fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(), String> {
     assert!(!(branch.is_some() && exact.is_some()));
     cfg_if::cfg_if! {
         if #[cfg(windows)] {
             const BINARY: &str = "git-cinnabar.exe";
-            const REMOTE_HG_BINARY: &str = "git-remote-hg.exe";
         } else {
             const BINARY: &str = "git-cinnabar";
-            const REMOTE_HG_BINARY: &str = "git-remote-hg";
         }
     };
     #[cfg(windows)]
@@ -1063,6 +1069,34 @@ fn download_build(
             }
         }
     }
+}
+
+fn do_setup() -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let remote_hg_exe = exe.with_file_name(REMOTE_HG_BINARY);
+    if let Ok(metadata) = std::fs::symlink_metadata(&remote_hg_exe) {
+        if !metadata.is_symlink() {
+            std::fs::copy(&exe, &remote_hg_exe).map_err(|e| e.to_string())?;
+        }
+    } else {
+        cfg_if::cfg_if! {
+            if #[cfg(windows)] {
+                use std::os::windows::fs::symlink_file;
+                use winapi::shared::winerror::ERROR_PRIVILEGE_NOT_HELD;
+                match symlink_file(&exe, &remote_hg_exe) {
+                    Err(e) if e.raw_os_error() == Some(ERROR_PRIVILEGE_NOT_HELD as i32) => {
+                        std::fs::copy(&exe, &remote_hg_exe).map(|_| ())
+                    }
+                    x => x,
+                }
+                .map_err(|e| e.to_string())?;
+            } else {
+                use std::os::unix::fs::symlink;
+                symlink(&exe, &remote_hg_exe).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
@@ -3030,6 +3064,9 @@ enum CinnabarCommand {
         #[clap(conflicts_with = "branch")]
         exact: Option<CommitId>,
     },
+    #[clap(name = "setup")]
+    #[clap(about = "Setup git-cinnabar")]
+    Setup,
 }
 
 use CinnabarCommand::*;
@@ -3051,6 +3088,9 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
     if let SelfUpdate { branch, exact } = command {
         return do_self_update(branch, exact).map(|()| 0);
     }
+    if let Setup = command {
+        return do_setup().map(|()| 0);
+    }
     let _v = VersionChecker::new();
     if let RemoteHg { remote, url } = command {
         return git_remote_hg(remote, url);
@@ -3060,6 +3100,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         #[cfg(feature = "self-update")]
         SelfUpdate { .. } => unreachable!(),
         RemoteHg { .. } => unreachable!(),
+        Setup => unreachable!(),
         Data {
             changeset: Some(c), ..
         } => do_data_changeset(c),
