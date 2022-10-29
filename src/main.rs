@@ -3066,6 +3066,7 @@ enum CinnabarCommand {
     },
     #[clap(name = "setup")]
     #[clap(about = "Setup git-cinnabar")]
+    #[clap(hide = true)]
     Setup,
 }
 
