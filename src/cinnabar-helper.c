@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,16 +47,6 @@ struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
 struct oidset hg2git_seen = OIDSET_INIT;
 
 int metadata_flags = 0;
-
-static int cleanup_object_array_entry(struct object_array_entry *entry, void *data)
-{
-	if (entry->item->type == OBJ_TREE)
-		free_tree_buffer((struct tree *)entry->item);
-	return 1;
-}
-
-typedef void (*iter_tree_cb)(const struct object_id *oid, struct strbuf *base,
-	                     const char *pathname, unsigned mode, void *context);
 
 struct iter_tree_context {
 	void *ctx;
@@ -171,15 +165,15 @@ static void diff_tree_cb(struct diff_queue_struct *q,
 		struct diff_filepair *p = q->queue[i];
 		if (p->status == 0)
 			die("internal diff status error");
-		if (p->status == DIFF_STATUS_UNKNOWN)
-			continue;
-		struct diff_tree_item item = {
-			{ &p->one->oid, p->one->path, p->one->mode },
-			{ &p->two->oid, p->two->path, p->two->mode },
-			p->score,
-			p->status,
-		};
-		ctx->cb(ctx->context, &item);
+		if (p->status != DIFF_STATUS_UNKNOWN) {
+			struct diff_tree_item item = {
+				{ &p->one->oid, p->one->path, p->one->mode },
+				{ &p->two->oid, p->two->path, p->two->mode },
+				p->score,
+				p->status,
+			};
+			ctx->cb(ctx->context, &item);
+		}
 	}
 }
 
@@ -692,7 +686,7 @@ static void reset_heads(struct oid_array *heads)
 	heads->sorted = 1;
 }
 
-void reset_manifest_heads()
+void reset_manifest_heads(void)
 {
 	reset_heads(&manifest_heads);
 }
@@ -862,14 +856,14 @@ void create_git_tree(const struct object_id *tree_id,
 	recurse_create_git_tree(tree_id, ref_tree, NULL, result, &git_tree_cache);
 }
 
-static void reset_replace_map()
+static void reset_replace_map(void)
 {
 	oidmap_free(the_repository->objects->replace_map, 1);
 	FREE_AND_NULL(the_repository->objects->replace_map);
 	the_repository->objects->replace_map_initialized = 0;
 }
 
-unsigned int replace_map_size()
+unsigned int replace_map_size(void)
 {
 	return hashmap_get_size(&the_repository->objects->replace_map->map);
 }
@@ -881,7 +875,7 @@ static int count_refs(const char *refname, const struct object_id *oid,
 	return 0;
 }
 
-static void init_metadata()
+static void init_metadata(void)
 {
 	struct commit *c;
 	struct commit_list *cl;
@@ -1001,9 +995,9 @@ upgrade:
 
 void dump_ref_updates(void);
 
-extern void reset_changeset_heads();
+extern void reset_changeset_heads(void);
 
-void do_reload()
+void do_reload(void)
 {
 	if (notes_initialized(&git2hg))
 		free_notes(&git2hg);
@@ -1029,7 +1023,7 @@ void do_reload()
 	reset_changeset_heads();
 }
 
-static void init_git_config()
+static void init_git_config(void)
 {
 	struct child_process proc = CHILD_PROCESS_INIT;
 	struct strbuf path = STRBUF_INIT;
@@ -1060,7 +1054,7 @@ static void init_git_config()
 	strbuf_release(&path);
 }
 
-static void cleanup_git_config()
+static void cleanup_git_config(void)
 {
 	const char *value;
 	if (!git_config_get_value("cinnabar.fsck", &value)) {
@@ -1155,7 +1149,7 @@ void init_cinnabar(const char *argv0)
 
 static int initialized = 0;
 
-int init_cinnabar_2()
+int init_cinnabar_2(void)
 {
 	if (nongit) {
 		return 0;
@@ -1166,7 +1160,7 @@ int init_cinnabar_2()
 	return 1;
 }
 
-void done_cinnabar()
+void done_cinnabar(void)
 {
 	if (notes_initialized(&git2hg))
 		free_notes(&git2hg);

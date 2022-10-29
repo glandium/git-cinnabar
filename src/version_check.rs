@@ -23,10 +23,9 @@ use crate::libgit::CommitId;
 use crate::util::{FromBytes, ReadExt, SliceExt};
 use crate::FULL_VERSION;
 #[cfg(feature = "version-check")]
-use crate::{check_enabled, Checks};
+use crate::{check_enabled, get_config, Checks};
 
 const ALL_TAG_REFS: &str = "refs/tags/*";
-const CARGO_PKG_REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 #[cfg(feature = "version-check")]
 const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg(version_check_branch)]
@@ -75,7 +74,11 @@ pub struct VersionChecker {
 #[cfg(feature = "version-check")]
 impl VersionChecker {
     pub fn new() -> Option<Self> {
-        if !check_enabled(Checks::VERSION) {
+        // Don't run the check if we are the `git fetch` call from `git cinnabar fetch`
+        // because `git cinnabar fetch` is already doing the check.
+        if !check_enabled(Checks::VERSION)
+            || get_config("fetch").map(|f| !f.is_empty()) == Some(true)
+        {
             return None;
         }
         let now = SystemTime::now();
@@ -116,12 +119,15 @@ impl Drop for VersionChecker {
     fn drop(&mut self) {
         match self.take_result() {
             Some(VersionInfo::Tagged(version, _)) if VERSION_CHECK_REF == ALL_TAG_REFS => {
-                let current_version = Version::parse(CARGO_PKG_VERSION).unwrap();
-                if version > current_version {
+                warn!(
+                    target: "root",
+                    "New git-cinnabar version available: {} (current version: {})",
+                    version, CARGO_PKG_VERSION
+                );
+                if cfg!(feature = "self-update") {
                     warn!(
                         target: "root",
-                        "New git-cinnabar version available: {} (current version: {})",
-                        version, CARGO_PKG_VERSION
+                        "You may run `git cinnabar self-update` to update."
                     );
                 }
             }
@@ -129,7 +135,7 @@ impl Drop for VersionChecker {
                 warn!(
                     target: "root",
                     "The {} branch of git-cinnabar was updated. {}",
-                    VERSION_CHECK_REF.strip_prefix("refs/heads/").unwrap(),
+                    VERSION_CHECK_REF,
                     if cfg!(feature = "self-update") {
                         "You may run `git cinnabar self-update` to update."
                     } else {
@@ -172,7 +178,7 @@ pub fn check_new_version(req: VersionRequest) -> Option<VersionInfo> {
 
 fn create_child(req: VersionRequest) -> Option<SharedChild> {
     let mut cmd = Command::new("git");
-    cmd.args(["ls-remote", CARGO_PKG_REPOSITORY]);
+    cmd.args(["ls-remote", crate::CARGO_PKG_REPOSITORY]);
     match req {
         VersionRequest::Tagged => cmd.arg(ALL_TAG_REFS),
         VersionRequest::Branch(branch) => cmd.arg(&format!("refs/heads/{branch}")),
@@ -191,6 +197,7 @@ fn get_version(child: &SharedChild) -> Option<VersionInfo> {
         .unwrap_or("");
     let output = child.take_stdout().unwrap().read_all().ok()?;
     child.wait().ok()?;
+    let current_version = Version::parse(CARGO_PKG_VERSION).unwrap();
     let mut newest_version = None;
     for [sha1, r] in output
         .lines()
@@ -206,9 +213,10 @@ fn get_version(child: &SharedChild) -> Option<VersionInfo> {
             .and_then(|tag| std::str::from_utf8(tag).ok())
             .and_then(parse_version)
         {
-            if newest_version
-                .as_ref()
-                .map_or(true, |(n_v, _)| &version > n_v)
+            if version > current_version
+                && newest_version
+                    .as_ref()
+                    .map_or(true, |(n_v, _)| &version > n_v)
             {
                 newest_version = Some((version, cid));
             }

@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #ifndef CINNABAR_HELPER_H
 #define CINNABAR_HELPER_H
 
@@ -31,10 +35,51 @@ struct strbuf *generate_manifest(const struct object_id *oid);
 
 int check_manifest(const struct object_id *oid,
                    struct hg_object_id *hg_oid);
+int check_file(const struct hg_object_id *oid,
+               const struct hg_object_id *parent1,
+               const struct hg_object_id *parent2);
 
-struct reader;
 
-extern size_t strbuf_from_reader(struct strbuf *sb, size_t size,
-                                 struct reader *reader);
+struct remote;
+
+const char *remote_get_name(const struct remote *remote);
+void remote_get_url(const struct remote *remote, const char * const **url,
+                    int* url_nr);
+int remote_skip_default_update(const struct remote *remote);
+
+void init_cinnabar(const char *argv0);
+int init_cinnabar_2(void);
+void done_cinnabar(void);
+
+void create_git_tree(const struct object_id *tree_id,
+                     const struct object_id *ref_tree,
+                     struct object_id *result);
+
+void reset_manifest_heads(void);
+void do_reload(void);
+unsigned int replace_map_size(void);
+
+const struct object_id *repo_lookup_replace_object(
+	struct repository *r, const struct object_id *oid);
+const struct object_id *resolve_hg(
+	struct notes_tree* tree, const struct hg_object_id *oid, size_t len);
+const struct object_id *resolve_hg2git(const struct hg_object_id *oid,
+                                       size_t len);
+
+typedef void (*iter_tree_cb)(const struct object_id *oid, struct strbuf *base,
+	                     const char *pathname, unsigned mode, void *context);
+
+int iter_tree(const struct object_id *oid, iter_tree_cb callback, void *context, int recursive);
+
+struct commit;
+
+struct object_id *commit_oid(struct commit *c);
+struct rev_info *rev_list_new(int argc, const char **argv);
+void rev_list_finish(struct rev_info *revs);
+int maybe_boundary(struct rev_info *revs, struct commit *commit);
+
+struct diff_tree_item;
+
+void diff_tree_(int argc, const char **argv, void (*cb)(void *, struct diff_tree_item *), void *context);
 
 #endif

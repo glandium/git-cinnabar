@@ -145,8 +145,9 @@ impl VersionChecker {
 }
 
 #[cfg(feature = "self-update")]
-use version_check::VersionRequest;
+use version_check::{VersionInfo, VersionRequest};
 
+pub const CARGO_PKG_REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 pub const FULL_VERSION: &str = git_version!(
     args = [
         "--always",
@@ -868,37 +869,24 @@ fn do_upgrade() -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(feature = "self-update")]
-fn do_self_update(branch: Option<String>) -> Result<(), String> {
-    use crate::hg_connect_http::HttpRequest;
-    use version_check::VersionInfo;
-
-    cfg_if::cfg_if! {
-        if #[cfg(all(target_arch = "x86_64", target_os = "linux"))] {
-            const SYSTEM_MACHINE: &str = "linux.x86_64";
-        } else if #[cfg(all(target_arch = "aarch64", target_os = "linux"))] {
-            const SYSTEM_MACHINE: &str = "linux.arm64";
-        } else if #[cfg(all(target_arch = "x86_64", target_os = "macos"))] {
-            const SYSTEM_MACHINE: &str = "macos.x86_64";
-        } else if #[cfg(all(target_arch = "aarch64", target_os = "macos"))] {
-            const SYSTEM_MACHINE: &str = "macos.arm64";
-        } else if #[cfg(all(target_arch = "x86_64", target_os = "windows"))] {
-            const SYSTEM_MACHINE: &str = "windows.x86_64";
-        } else {
-            compile_error!("self-update is not supported on this platform");
-        }
+cfg_if::cfg_if! {
+    if #[cfg(windows)] {
+        const REMOTE_HG_BINARY: &str = "git-remote-hg.exe";
+    } else {
+        const REMOTE_HG_BINARY: &str = "git-remote-hg";
     }
+}
+
+#[cfg(feature = "self-update")]
+fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(), String> {
+    assert!(!(branch.is_some() && exact.is_some()));
     cfg_if::cfg_if! {
         if #[cfg(windows)] {
             const BINARY: &str = "git-cinnabar.exe";
-            const REMOTE_HG_BINARY: &str = "git-remote-hg.exe";
         } else {
             const BINARY: &str = "git-cinnabar";
-            const REMOTE_HG_BINARY: &str = "git-remote-hg";
         }
     };
-    const URL_BASE: &str =
-        "https://community-tc.services.mozilla.com/api/index/v1/task/project.git-cinnabar.build";
     #[cfg(windows)]
     const FINISH_SELF_UPDATE: &str = "GIT_CINNABAR_FINISH_SELF_UPDATE";
     #[cfg(windows)]
@@ -918,22 +906,17 @@ fn do_self_update(branch: Option<String>) -> Result<(), String> {
 
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe_dir = exe.parent().unwrap();
-    let req = branch
-        .as_ref()
-        .map_or_else(VersionRequest::default, |b| VersionRequest::from(&**b));
-    if let Some(version) = version_check::check_new_version(req) {
-        let cid = match version {
-            VersionInfo::Commit(cid) | VersionInfo::Tagged(_, cid) => cid,
-        };
+    if let Some(version) = exact.map(VersionInfo::Commit).or_else(|| {
+        version_check::check_new_version(
+            branch
+                .as_ref()
+                .map_or_else(VersionRequest::default, |b| VersionRequest::from(&**b)),
+        )
+    }) {
         let mut tmpbuilder = tempfile::Builder::new();
         tmpbuilder.prefix(BINARY);
         let mut tmpfile = tmpbuilder.tempfile_in(exe_dir).map_err(|e| e.to_string())?;
-        let url = format!("{URL_BASE}.{cid}.{SYSTEM_MACHINE}/artifacts/public/{BINARY}");
-        eprintln!("Installing update from {url}");
-        let mut req = HttpRequest::new(Url::parse(&url).map_err(|e| e.to_string())?);
-        req.follow_redirects(true);
-        let mut response = req.execute()?;
-        std::io::copy(&mut response, &mut tmpfile).map_err(|e| e.to_string())?;
+        download_build(version, &mut tmpfile, BINARY)?;
         let old_exe = tmpbuilder.tempfile_in(exe_dir).map_err(|e| e.to_string())?;
         let old_exe_path = old_exe.path().to_path_buf();
         old_exe.close().map_err(|e| e.to_string())?;
@@ -949,7 +932,7 @@ fn do_self_update(branch: Option<String>) -> Result<(), String> {
         }
         tmpfile.persist(&exe).map_err(|e| e.to_string())?;
         let remote_hg_exe = exe_dir.join(REMOTE_HG_BINARY);
-        if let Ok(metadata) = std::fs::metadata(&remote_hg_exe) {
+        if let Ok(metadata) = std::fs::symlink_metadata(&remote_hg_exe) {
             if !metadata.is_symlink() {
                 std::fs::copy(&exe, &remote_hg_exe).map_err(|e| e.to_string())?;
             }
@@ -984,6 +967,134 @@ fn do_self_update(branch: Option<String>) -> Result<(), String> {
         std::fs::remove_file(old_exe_path).ok();
     } else {
         warn!(target: "root", "Did not find an update to install.");
+    }
+    Ok(())
+}
+
+#[cfg(feature = "self-update")]
+fn download_build(
+    version: VersionInfo,
+    tmpfile: &mut impl Write,
+    binary: &str,
+) -> Result<(), String> {
+    use crate::hg_connect_http::HttpRequest;
+
+    cfg_if::cfg_if! {
+        if #[cfg(all(target_arch = "x86_64", target_os = "linux"))] {
+            const SYSTEM_MACHINE: &str = "linux.x86_64";
+        } else if #[cfg(all(target_arch = "aarch64", target_os = "linux"))] {
+            const SYSTEM_MACHINE: &str = "linux.arm64";
+        } else if #[cfg(all(target_arch = "x86_64", target_os = "macos"))] {
+            const SYSTEM_MACHINE: &str = "macos.x86_64";
+        } else if #[cfg(all(target_arch = "aarch64", target_os = "macos"))] {
+            const SYSTEM_MACHINE: &str = "macos.arm64";
+        } else if #[cfg(all(target_arch = "x86_64", target_os = "windows"))] {
+            const SYSTEM_MACHINE: &str = "windows.x86_64";
+        } else {
+            compile_error!("self-update is not supported on this platform");
+        }
+    }
+    cfg_if::cfg_if! {
+        if #[cfg(windows)] {
+            const ARCHIVE_EXT: &str = "zip";
+        } else {
+            const ARCHIVE_EXT: &str = "tar.xz";
+        }
+    }
+
+    let request = |url: &str| {
+        eprintln!("Installing update from {url}");
+        let mut req = HttpRequest::new(Url::parse(url).map_err(|e| e.to_string())?);
+        req.follow_redirects(true);
+        req.execute()
+    };
+
+    match version {
+        VersionInfo::Commit(cid) => {
+            const URL_BASE: &str =
+            "https://community-tc.services.mozilla.com/api/index/v1/task/project.git-cinnabar.build";
+            let url = format!("{URL_BASE}.{cid}.{SYSTEM_MACHINE}/artifacts/public/{binary}");
+            let mut response = request(&url)?;
+            std::io::copy(&mut response, tmpfile)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        VersionInfo::Tagged(tag, _) => {
+            let tag = tag.to_string().replace('-', "");
+            let url = format!("{CARGO_PKG_REPOSITORY}/releases/download/{tag}/git-cinnabar.{SYSTEM_MACHINE}.{ARCHIVE_EXT}");
+            let mut extracted = false;
+            #[cfg(windows)]
+            {
+                let mut response = request(&url)?;
+                while let Some(ref mut file) =
+                    zip::read::read_zipfile_from_stream(&mut response).map_err(|e| e.to_string())?
+                {
+                    if file.is_file()
+                        && file
+                            .enclosed_name()
+                            .map_or(false, |p| p.file_name().unwrap() == binary)
+                    {
+                        std::io::copy(file, tmpfile).map_err(|e| e.to_string())?;
+                        extracted = true;
+                        break;
+                    }
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                let mut archive = tar::Archive::new(xz2::read::XzDecoder::new(request(&url)?));
+                for file in archive.entries().map_err(|e| e.to_string())? {
+                    let mut file = file.map_err(|e| e.to_string())?;
+                    let header = file.header();
+                    if header.entry_type() == tar::EntryType::Regular
+                        && header
+                            .path()
+                            .map_err(|e| e.to_string())?
+                            .file_name()
+                            .unwrap()
+                            == binary
+                    {
+                        std::io::copy(&mut file, tmpfile).map_err(|e| e.to_string())?;
+                        extracted = true;
+                        break;
+                    }
+                }
+            }
+            if extracted {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Could not find the {binary} executable in the downloaded archive."
+                ))
+            }
+        }
+    }
+}
+
+fn do_setup() -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let remote_hg_exe = exe.with_file_name(REMOTE_HG_BINARY);
+    if let Ok(metadata) = std::fs::symlink_metadata(&remote_hg_exe) {
+        if !metadata.is_symlink() {
+            std::fs::copy(&exe, &remote_hg_exe).map_err(|e| e.to_string())?;
+        }
+    } else {
+        cfg_if::cfg_if! {
+            if #[cfg(windows)] {
+                use std::os::windows::fs::symlink_file;
+                use winapi::shared::winerror::ERROR_PRIVILEGE_NOT_HELD;
+                match symlink_file(&exe, &remote_hg_exe) {
+                    Err(e) if e.raw_os_error() == Some(ERROR_PRIVILEGE_NOT_HELD as i32) => {
+                        std::fs::copy(&exe, &remote_hg_exe).map(|_| ())
+                    }
+                    x => x,
+                }
+                .map_err(|e| e.to_string())?;
+            } else {
+                use std::os::unix::fs::symlink;
+                symlink(&exe, &remote_hg_exe).map_err(|e| e.to_string())?;
+            }
+        }
     }
     Ok(())
 }
@@ -1707,7 +1818,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         if checked_cid.as_ref() == Some(&metadata_cid) {
             eprintln!(
                 "The git-cinnabar metadata was already checked and is \
-                 presumable clean.\n\
+                 presumably clean.\n\
                  Try `--force` if you want to check anyway."
             );
             return Ok(0);
@@ -2104,7 +2215,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         eprintln!(
             "This might be a bug in `git cinnabar fsck`. Please open \
              an issue, with the message above, on\n\
-             https://github.com/glandium/git-cinnabar/issues"
+             {CARGO_PKG_REPOSITORY}/issues"
         );
         return Ok(1);
     }
@@ -2115,7 +2226,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         eprintln!(
             "\rYour git-cinnabar repository appears to be corrupted.\n\
              Please open an issue, with the information above, on\n\
-             https://github.com/glandium/git-cinnabar/issues"
+             {CARGO_PKG_REPOSITORY}/issues"
         );
         let mut transaction = RefTransaction::new().unwrap();
         transaction
@@ -2945,9 +3056,18 @@ enum CinnabarCommand {
     #[clap(about = "Update git-cinnabar")]
     SelfUpdate {
         #[clap(long)]
-        #[clap(help = "git-cinnabar branch to get builds for")]
+        #[clap(help = "Branch to get updates from")]
         branch: Option<String>,
+        #[clap(long)]
+        #[clap(help = "Exact commit to get a version from")]
+        #[clap(value_parser)]
+        #[clap(conflicts_with = "branch")]
+        exact: Option<CommitId>,
     },
+    #[clap(name = "setup")]
+    #[clap(about = "Setup git-cinnabar")]
+    #[clap(hide = true)]
+    Setup,
 }
 
 use CinnabarCommand::*;
@@ -2966,8 +3086,11 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         }
     };
     #[cfg(feature = "self-update")]
-    if let SelfUpdate { branch } = command {
-        return do_self_update(branch).map(|()| 0);
+    if let SelfUpdate { branch, exact } = command {
+        return do_self_update(branch, exact).map(|()| 0);
+    }
+    if let Setup = command {
+        return do_setup().map(|()| 0);
     }
     let _v = VersionChecker::new();
     if let RemoteHg { remote, url } = command {
@@ -2978,6 +3101,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         #[cfg(feature = "self-update")]
         SelfUpdate { .. } => unreachable!(),
         RemoteHg { .. } => unreachable!(),
+        Setup => unreachable!(),
         Data {
             changeset: Some(c), ..
         } => do_data_changeset(c),

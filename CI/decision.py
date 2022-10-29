@@ -209,6 +209,15 @@ def decision():
                     Task.checkout(),
                     [
                         '(cd repo ; ./download.py)',
+                        'PATH=$PWD/repo:$PATH git cinnabar --version',
+                        'cp repo/download.py .',
+                        './download.py',
+                        'PATH=$PWD:$PATH',
+                        'git cinnabar --version',
+                        'git cinnabar self-update',
+                        'git cinnabar --version',
+                        f'git cinnabar self-update --branch {TC_BRANCH}',
+                        'git cinnabar --version',
                     ],
                 )),
                 dependencies=[

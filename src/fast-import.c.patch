@@ -1,5 +1,5 @@
 diff --git a/builtin/fast-import.c b/builtin/fast-import.c
-index 28d3193c38..2b3aeaa4d5 100644
+index 7134683ab9..7dd70b03b5 100644
 --- a/builtin/fast-import.c
 +++ b/builtin/fast-import.c
 @@ -20,6 +20,7 @@

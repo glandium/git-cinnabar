@@ -12,8 +12,8 @@ from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '6.2'
-GIT_VERSION = '2.38.0'
+MERCURIAL_VERSION = '6.2.3'
+GIT_VERSION = '2.38.1'
 
 ALL_MERCURIAL_VERSIONS = (
     '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
@@ -22,7 +22,7 @@ ALL_MERCURIAL_VERSIONS = (
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
     '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2', '5.3.2',
     '5.4.2', '5.5.2', '5.6.1', '5.7.1', '5.8.1', '5.9.3', '6.0.3',
-    '6.1.4', '6.2'
+    '6.1.4', '6.2.3'
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -182,8 +182,8 @@ class Hg(Task, metaclass=Tool):
             else:
                 if python == 'python3':
                     platform_tag = 'mingw_x86_64'
-                    python_tag = 'cp39'
-                    abi_tag = 'cp39'
+                    python_tag = 'cp310'
+                    abi_tag = 'cp310'
                 else:
                     platform_tag = 'mingw'
                     python_tag = 'cp27'
@@ -332,7 +332,7 @@ class Build(Task, metaclass=Tool):
         extra_commands = []
         environ = {}
         cargo_flags = ['-vv', '--release']
-        cargo_features = ['self-update']
+        cargo_features = ['self-update', 'gitdev']
         rust_version = None
         if variant == 'asan':
             if os.startswith('osx'):
@@ -443,5 +443,5 @@ class Build(Task, metaclass=Tool):
             'curl --compressed -o repo/{} -L {{{}.artifacts[0]}}'.format(
                 filename, build),
             'chmod +x repo/{}'.format(filename),
-            'ln -s $PWD/repo/{} $PWD/repo/git-remote-hg'.format(filename),
+            '$PWD/repo/{} setup'.format(filename),
         ]

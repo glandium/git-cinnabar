@@ -17,19 +17,24 @@ gitweb/Makefile:
 	mkdir -p ${@D}
 	touch $@
 
-config.mak.uname:
+config.mak.dev: detect-compiler
+
+config.mak.uname config.mak.dev:
 	echo "ifndef FAKE_INCLUDE" > $@
 	echo "include $(SOURCE_DIR)/git-core/$@" >> $@
 	echo "endif" >> $@
 
 FAKE_INCLUDE := 1
 -include config.mak.uname
+-include config.mak.dev
 FAKE_INCLUDE :=
 include $(SOURCE_DIR)/git-core/Makefile
 
 GIT-VERSION-FILE: GIT-VERSION-GEN
-GIT-VERSION-GEN:
-	echo ". $(SOURCE_DIR)/git-core/$@" > $@
+GIT-VERSION-GEN detect-compiler:
+	echo "#!/bin/sh" > $@
+	echo ". $(SOURCE_DIR)/git-core/$@" >> $@
+	chmod +x $@
 
 shared.mak:
 	echo "include $(SOURCE_DIR)/git-core/shared.mak" > $@
@@ -37,6 +42,7 @@ shared.mak:
 ALL_PROGRAMS += git-cinnabar$X
 ALL_CFLAGS := $(subst -I. ,-I$(SOURCE_DIR)/git-core -I. ,$(ALL_CFLAGS))
 ALL_CFLAGS := $(subst -Icompat,-I$(SOURCE_DIR)/git-core/compat,$(ALL_CFLAGS))
+ALL_CFLAGS := $(filter-out -DPRECOMPOSE_UNICODE,$(ALL_CFLAGS))
 ALL_CFLAGS += -Werror=implicit-function-declaration
 
 all:: git-cinnabar$X
@@ -48,6 +54,7 @@ CINNABAR_OBJECTS += hg-bundle.o
 CINNABAR_OBJECTS += hg-connect-stdio.o
 CINNABAR_OBJECTS += hg-data.o
 CINNABAR_OBJECTS += mingw.o
+CINNABAR_OBJECTS += regex.o
 
 PATCHES = $(notdir $(wildcard $(SOURCE_DIR)/src/*.patch))
 
@@ -97,6 +104,8 @@ EXCLUDE_OBJS += bitmap.o
 EXCLUDE_OBJS += blame.o
 EXCLUDE_OBJS += checkout.o
 EXCLUDE_OBJS += compat/mingw.o
+EXCLUDE_OBJS += compat/precompose_utf8.o
+EXCLUDE_OBJS += compat/regex/regex.o
 EXCLUDE_OBJS += connect.o
 EXCLUDE_OBJS += default.o
 EXCLUDE_OBJS += diagnose.o

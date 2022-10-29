@@ -1,6 +1,10 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include "git-compat-util.h"
 struct object_id;
-static void start_packfile();
+static void start_packfile(void);
 static void cinnabar_unregister_shallow(const struct object_id *oid);
 #include "dir.h"
 #define fspathncmp strncmp
@@ -34,7 +38,7 @@ void cinnabar_unregister_shallow(const struct object_id *oid) {
 		update_shallow = 1;
 }
 
-extern void locked_rollback();
+extern void locked_rollback(void);
 
 /* Divert fast-import.c's calls to hashwrite so as to keep a fake pack window
  * on the last written bits, avoiding munmap/mmap cycles from
@@ -101,7 +105,8 @@ void hashwrite(struct hashfile *f, const void *buf, unsigned int count)
 		       prev_win->base + packed_git_window_size - 20, 20);
 
 		/* Fill up the new window. */
-		memcpy(pack_win->base + 20, buf + count + 40 - pack_win->len,
+		memcpy(pack_win->base + 20,
+		       (char*)buf + count + 40 - pack_win->len,
 		       pack_win->len - 40);
 	}
 }
@@ -129,7 +134,7 @@ void *get_object_entry(const unsigned char *sha1)
 }
 
 /* Mostly copied from fast-import.c's cmd_main() */
-static void init()
+static void init(void)
 {
 	int i;
 
@@ -160,9 +165,9 @@ static void init()
 	atexit(locked_rollback);
 }
 
-extern void dump_ref_updates();
+extern void dump_ref_updates(void);
 
-static void cleanup()
+static void cleanup(void)
 {
 	if (!initialized)
 		return;
@@ -199,14 +204,14 @@ void do_cleanup(int rollback)
 	cleanup();
 }
 
-static void start_packfile()
+static void start_packfile(void)
 {
 	real_start_packfile();
 	install_packed_git(the_repository, pack_data);
 	list_add_tail(&pack_data->mru, &the_repository->objects->packed_git_mru);
 }
 
-static void end_packfile()
+static void end_packfile(void)
 {
 	if (prev_win)
 		unuse_pack(&prev_win);
@@ -383,11 +388,11 @@ void do_set_replace(const struct object_id *replaced,
 	if (is_null_oid(replace_with)) {
 		oidmap_remove(the_repository->objects->replace_map, replaced);
 	} else {
+		struct replace_object *old;
 		replace = xmalloc(sizeof(*replace));
 		oidcpy(&replace->original.oid, replaced);
 		oidcpy(&replace->replacement, replace_with);
-		struct replace_object *old = oidmap_put(
-			the_repository->objects->replace_map, replace);
+		old = oidmap_put(the_repository->objects->replace_map, replace);
 		if (old)
 			free(old);
 	}
@@ -834,7 +839,7 @@ void store_metadata_notes(
 
 extern int config(const char *name, struct strbuf *result);
 
-void ensure_store_init()
+void ensure_store_init(void)
 {
 	ENSURE_INIT();
 	require_explicit_termination = 1;
@@ -985,7 +990,7 @@ const struct object_id empty_blob = { {
 	0x29, 0xae, 0x77, 0x5a, 0xd8, 0xc2, 0xe4, 0x8c, 0x53, 0x91,
 }, GIT_HASH_SHA1 };
 
-const struct object_id *ensure_empty_blob() {
+const struct object_id *ensure_empty_blob(void) {
 	struct object_entry *oe = find_object((struct object_id *)&empty_blob);
 	if (!oe) {
 		struct object_id hash;
@@ -996,7 +1001,7 @@ const struct object_id *ensure_empty_blob() {
 	return &empty_blob;
 }
 
-const struct object_id *ensure_empty_tree() {
+const struct object_id *ensure_empty_tree(void) {
 	struct object_entry *oe = find_object((struct object_id *)&empty_tree);
 	if (!oe) {
 		struct object_id hash;

@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include "git-compat-util.h"
 #include "object-store.h"
 #include "cinnabar-helper.h"
@@ -22,7 +26,7 @@ int is_empty_hg_file(const struct hg_object_id *oid)
 	return hg_oideq(&empty_hg_file, oid);
 }
 
-void _hg_file_split(struct hg_file *result, size_t metadata_len)
+static void _hg_file_split(struct hg_file *result, size_t metadata_len)
 {
 	result->metadata.buf = metadata_len ? result->file.buf + 2 : NULL;
 	result->metadata.len = metadata_len - 4;

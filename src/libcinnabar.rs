@@ -2,13 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::io::{copy, BufRead, Read, Write};
 use std::ops::Deref;
 use std::os::raw::{c_char, c_int, c_void};
 
 use libc::FILE;
 
-use crate::libc::FdFile;
 use crate::libgit::{child_process, object_id, strbuf};
 use crate::oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use crate::util::FromBytes;
@@ -196,32 +194,4 @@ extern "C" {
     ) -> *mut child_process;
 
     pub fn stdio_finish(conn: *mut child_process) -> c_int;
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn send_buffer(fd: c_int, buf: *const strbuf) {
-    let mut out = FdFile::from_raw_fd(fd);
-    send_buffer_to(buf.as_ref().map(strbuf::as_bytes), &mut out);
-}
-
-pub fn send_buffer_to<'a>(buf: impl Into<Option<&'a [u8]>>, out: &mut impl Write) {
-    if let Some(buf) = buf.into() {
-        writeln!(out, "{}", buf.len()).unwrap();
-        out.write_all(buf).unwrap();
-        writeln!(out).unwrap();
-    } else {
-        write!(out, "-1\n\n").unwrap();
-    }
-}
-
-#[repr(C)]
-pub struct reader<'a>(pub &'a mut dyn BufRead);
-
-#[no_mangle]
-pub unsafe extern "C" fn strbuf_from_reader(sb: *mut strbuf, size: usize, r: *mut reader) -> usize {
-    copy(
-        &mut r.as_mut().unwrap().0.take(size as u64),
-        sb.as_mut().unwrap(),
-    )
-    .unwrap() as usize
 }

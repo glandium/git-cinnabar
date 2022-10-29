@@ -2,9 +2,13 @@ name: cargo package
 on:
   push:
     paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
       - 'git-core'
   pull_request:
     paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
       - 'git-core'
 jobs:
   package:

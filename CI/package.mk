@@ -15,20 +15,23 @@ LOWER = $(subst A,a,$(subst B,b,$(subst C,c,$(subst D,d,$(subst E,e,$(subst F,f,
 system := $(call LOWER,$(SYSTEM))
 machine := $(call LOWER,$(MACHINE))
 PACKAGE_FLAGS = $(addprefix --system ,$(SYSTEM)) $(addprefix --machine ,$(MACHINE))
-PACKAGE_EXT = $(if $(filter windows macos,$(system)),zip,tar.xz)
+PACKAGE_EXT = $(if $(filter windows,$(system)),zip,tar.xz)
 PACKAGE = git-cinnabar.$(system).$(machine).$(PACKAGE_EXT)
 EXT = $(if $(filter windows,$(system)),.exe)
+
+export XZ_OPT=-9
+export GZIP=-9
 
 $(PACKAGE):
 	@mkdir -p tmp
 	@rm -rf tmp/git-cinnabar
 	@mkdir -p tmp/git-cinnabar
-	@$(TOPDIR)/download.py --no-config -o tmp/git-cinnabar/git-cinnabar$(EXT) $(PACKAGE_FLAGS)
-ifneq (,$(filter %.tar.xz,$(PACKAGE)))
-	tar --owner cinnabar:1000 --group cinnabar:1000 -C tmp --remove-files --sort=name -Jcvf $@ git-cinnabar
+	@$(TOPDIR)/download.py -o tmp/git-cinnabar/git-cinnabar$(EXT) $(PACKAGE_FLAGS)
+ifeq (,$(filter zip,$(PACKAGE_EXT)))
+	tar --owner cinnabar:1000 --group cinnabar:1000 -C tmp --remove-files --sort=name -acvf $@ git-cinnabar
 else
 	@rm -f $@
-	cd tmp && find git-cinnabar | sort | zip --move $(CURDIR)/$@ -@
+	cd tmp && find git-cinnabar | sort | zip -9 $(if $(filter windows,$(system)),,--symlinks )--move $(CURDIR)/$@ -@
 endif
 	rm -rf tmp
 

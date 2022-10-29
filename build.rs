@@ -120,12 +120,17 @@ fn main() {
         .arg("HAVE_WPGMPTR=")
         .arg("USE_LIBPCRE1=")
         .arg("USE_LIBPCRE2=")
+        .arg("NO_REGEX=1")
+        .arg("NO_ICONV=1")
         .arg("USE_MIMALLOC=")
         .arg("FSMONITOR_DAEMON_BACKEND=")
         .arg("GENERATED_H=")
         .args(extra_args);
 
-    let compiler = cc::Build::new().force_frame_pointer(true).get_compiler();
+    let compiler = cc::Build::new()
+        .force_frame_pointer(true)
+        .warnings(false)
+        .get_compiler();
 
     let cflags = [
         compiler.cflags_env().into_string().ok(),
@@ -169,6 +174,11 @@ fn main() {
         cmd.arg("GENERATE_COMPILATION_DATABASE=yes");
         cmd.arg("compile_commands.json");
     }
+
+    if cfg!(feature = "gitdev") || std::env::var("PROFILE").as_deref() == Ok("debug") {
+        cmd.arg("DEVELOPER=1");
+    }
+    cmd.arg("COMPUTE_HEADER_DEPENDENCIES=yes");
 
     println!("cargo:rerun-if-env-changed=CFLAGS_{}", env("TARGET"));
     println!(
@@ -237,6 +247,7 @@ fn main() {
         .arg("USE_LIBPCRE1=")
         .arg("USE_LIBPCRE2=")
         .arg("USE_NED_ALLOCATOR=")
+        .arg("NO_ICONV=1")
         .args(extra_args)
         .current_dir(&out_dir)
         .output()
@@ -247,7 +258,7 @@ fn main() {
 
     if target_os == "windows" && target_env == "gnu" {
         println!("cargo:rustc-link-lib=ssp_nonshared");
-        println!("cargo:rustc-link-lib=ssp");
+        println!("cargo:rustc-link-lib=static=ssp");
     }
 
     for flag in output.split_whitespace() {
