@@ -5,11 +5,13 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'git-core'
+      - '.github/workflows/cargo-package.yml'
   pull_request:
     paths:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'git-core'
+      - '.github/workflows/cargo-package.yml'
 jobs:
   package:
     strategy:
