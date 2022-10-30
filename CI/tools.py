@@ -47,7 +47,7 @@ class Git(Task, metaclass=Tool):
         if os.startswith('osx'):
             build_image = TaskEnvironment.by_name('osx.build')
         else:
-            build_image = DockerImage.by_name('build')
+            build_image = DockerImage.by_name('build-buster')
         if os == 'linux' or os.startswith('osx'):
             h = hashlib.sha1(build_image.hexdigest.encode())
             h.update(b'v4' if version == GIT_VERSION else b'v3')

@@ -140,6 +140,7 @@ DOCKER_IMAGES = {
          gcc\\
          git\\
          libc6-dev\\
+         libcurl4-gnutls-dev\\
          make\\
          patch\\
          python-dev\\
