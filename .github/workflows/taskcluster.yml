@@ -8,9 +8,9 @@ jobs:
       TC_WORKER_TYPE: osx
       PATH: /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Frameworks/Python.framework/Versions/2.7/bin
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - run: sudo -H python2.7 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.9'
       - run: sudo -H python3 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade

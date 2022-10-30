@@ -3,9 +3,11 @@ on:
   push:
     paths:
       - '**.py'
+      - '.github/workflows/python.yml'
   pull_request:
     paths:
       - '**.py'
+      - '.github/workflows/python.yml'
 jobs:
   flake8:
     strategy:
