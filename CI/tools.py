@@ -389,16 +389,18 @@ class Build(Task, metaclass=Tool):
             rust_target = 'x86_64-apple-darwin'
         elif os.startswith('arm64-osx'):
             rust_target = 'aarch64-apple-darwin'
-        elif os == 'linux':
-            rust_target = 'x86_64-unknown-linux-gnu'
-        elif os == 'arm64-linux':
-            rust_target = 'aarch64-unknown-linux-gnu'
-            environ['PKG_CONFIG_aarch64_unknown_linux_gnu'] = \
-                '/usr/bin/aarch64-linux-gnu-pkg-config'
-            environ['CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER'] = \
-                environ['CC']
-            environ['CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS'] = \
-                '-C link-arg=--target=aarch64-unknown-linux-gnu'
+        elif 'linux' in os:
+            if os == 'linux':
+                rust_target = 'x86_64-unknown-linux-gnu'
+            elif os == 'arm64-linux':
+                rust_target = 'aarch64-unknown-linux-gnu'
+                environ['PKG_CONFIG_aarch64_unknown_linux_gnu'] = \
+                    '/usr/bin/aarch64-linux-gnu-pkg-config'
+            for target in ["x86_64-unknown-linux-gnu", rust_target]:
+                TARGET = target.replace('-', '_').upper()
+                environ[f'CARGO_TARGET_{TARGET}_LINKER'] = environ['CC']
+                environ[f'CARGO_TARGET_{TARGET}_RUSTFLAGS'] = \
+                    f'-C link-arg=--target={target}'
         if variant in ('coverage', 'asan'):
             rust_install = install_rust('nightly-2022-08-07', rust_target)
         elif rust_version:
