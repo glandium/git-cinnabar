@@ -53,10 +53,7 @@ jobs:
         with:
           toolchain: 1.64.0
           components: rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: -- --check
+      - run: cargo fmt -- --check
 
   test:
     strategy:
@@ -98,6 +95,4 @@ jobs:
         run: |
           (Resolve-Path c:/msys64/mingw64/bin).Path >> $Env:GITHUB_PATH
         if: runner.os == 'Windows'
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
+      - run: cargo test
