@@ -366,7 +366,7 @@ checksum = "22030e2c5a68ec659fde1e949a745124b48e6fa8b045b7ed5bd1fe4ccc5c4e5d"
 
 [[package]]
 name = "git-cinnabar"
-version = "0.6.0-b"
+version = "0.7.0-a"
 dependencies = [
  "all_asserts",
  "array-init",
