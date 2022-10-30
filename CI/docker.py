@@ -37,8 +37,6 @@ DOCKER_IMAGES = {
          curl\\
          gnupg2\\
          libcurl3-gnutls\\
-         python-setuptools\\
-         python-pip\\
          python3-setuptools\\
          python3-pip\\
          unzip\\
@@ -54,8 +52,6 @@ DOCKER_IMAGES = {
            https://apt.llvm.org/stretch/ llvm-toolchain-stretch-14 main"\\
           > /etc/apt/sources.list.d/llvm.list &&\\
          apt-get update -o Acquire::Check-Valid-Until=false&&\\
-         python2.7 -m pip install pip==20.3.4 wheel==0.37.1\\
-         --upgrade --ignore-installed&&\\
          python3 -m pip install pip==20.3.4 wheel==0.37.1\\
          --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
@@ -110,13 +106,10 @@ DOCKER_IMAGES = {
          && apt-get update -o Acquire::Check-Valid-Until=false\\
          && apt-get install -y --no-install-recommends\\
          clang-14\\
-         gcc\\
          git\\
          make\\
          patch\\
          pkg-config\\
-         python-dev\\
-         python3-dev\\
          libc6-dev\\
          libcurl4-gnutls-dev\\
          zlib1g-dev\\

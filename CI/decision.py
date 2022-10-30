@@ -404,7 +404,7 @@ def main():
                     'set +x',
                     ('export CODECOV_TOKEN=$(curl -sL '
                      'http://taskcluster/api/secrets/v1/secret/project/git-'
-                     'cinnabar/codecov | python2.7'
+                     'cinnabar/codecov | python3'
                      ' -c "import json, sys; print(json.load(sys.stdin)'
                      '[\\"secret\\"][\\"token\\"])")'),
                     'set -x',
