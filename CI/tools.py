@@ -47,7 +47,7 @@ class Git(Task, metaclass=Tool):
         if os.startswith('osx'):
             build_image = TaskEnvironment.by_name('osx.build')
         else:
-            build_image = DockerImage.by_name('build-bullseye')
+            build_image = DockerImage.by_name('build-tools')
         if os == 'linux' or os.startswith('osx'):
             h = hashlib.sha1(build_image.hexdigest.encode())
             h.update(b'v4' if version == GIT_VERSION else b'v3')
@@ -143,7 +143,7 @@ class Hg(Task, metaclass=Tool):
         else:
             python = 'python2.7'
         if os == 'linux':
-            env = TaskEnvironment.by_name('{}.build-bullseye'.format(os))
+            env = TaskEnvironment.by_name('{}.build-tools'.format(os))
         else:
             env = TaskEnvironment.by_name('{}.build'.format(os))
         kwargs = {}
@@ -394,13 +394,31 @@ class Build(Task, metaclass=Tool):
                 rust_target = 'x86_64-unknown-linux-gnu'
             elif os == 'arm64-linux':
                 rust_target = 'aarch64-unknown-linux-gnu'
-                environ['PKG_CONFIG_aarch64_unknown_linux_gnu'] = \
-                    '/usr/bin/aarch64-linux-gnu-pkg-config'
-            for target in ["x86_64-unknown-linux-gnu", rust_target]:
+            for target in dict.fromkeys(
+                    ["x86_64-unknown-linux-gnu", rust_target]).keys():
+                arch = {
+                    'x86_64': 'amd64',
+                    'aarch64': 'arm64',
+                }[target.partition('-')[0]]
+                multiarch = target.replace('unknown-', '')
                 TARGET = target.replace('-', '_').upper()
                 environ[f'CARGO_TARGET_{TARGET}_LINKER'] = environ['CC']
                 environ[f'CARGO_TARGET_{TARGET}_RUSTFLAGS'] = \
-                    f'-C link-arg=--target={target} -C link-arg=-fuse-ld=lld'
+                    f'-C link-arg=--target={target} ' + \
+                    f'-C link-arg=--sysroot=/sysroot-{arch} ' + \
+                    '-C link-arg=-fuse-ld=lld'
+                rustflags = environ.pop('RUSTFLAGS', None)
+                if rustflags:
+                    environ[f'CARGO_TARGET_{TARGET}_RUSTFLAGS'] += \
+                        f' {rustflags}'
+                environ[f'CFLAGS_{target}'] = f'--sysroot=/sysroot-{arch}'
+            environ['PKG_CONFIG_PATH'] = ''
+            environ['PKG_CONFIG_SYSROOT_DIR'] = f'/sysroot-{arch}'
+            environ['PKG_CONFIG_LIBDIR'] = ':'.join((
+                f'/sysroot-{arch}/usr/lib/pkgconfig',
+                f'/sysroot-{arch}/usr/lib/{multiarch}/pkgconfig',
+                f'/sysroot-{arch}/usr/share/pkgconfig',
+            ))
         if variant in ('coverage', 'asan'):
             rust_install = install_rust('nightly-2022-08-07', rust_target)
         elif rust_version:
