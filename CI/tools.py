@@ -47,7 +47,7 @@ class Git(Task, metaclass=Tool):
         if os.startswith('osx'):
             build_image = TaskEnvironment.by_name('osx.build')
         else:
-            build_image = DockerImage.by_name('build-buster')
+            build_image = DockerImage.by_name('build-bullseye')
         if os == 'linux' or os.startswith('osx'):
             h = hashlib.sha1(build_image.hexdigest.encode())
             h.update(b'v4' if version == GIT_VERSION else b'v3')
@@ -143,7 +143,7 @@ class Hg(Task, metaclass=Tool):
         else:
             python = 'python2.7'
         if os == 'linux':
-            env = TaskEnvironment.by_name('{}.build-buster'.format(os))
+            env = TaskEnvironment.by_name('{}.build-bullseye'.format(os))
         else:
             env = TaskEnvironment.by_name('{}.build'.format(os))
         kwargs = {}
@@ -161,8 +161,8 @@ class Hg(Task, metaclass=Tool):
         if os == 'linux':
             platform_tag = 'linux_x86_64'
             if python == 'python3':
-                python_tag = 'cp37'
-                abi_tag = 'cp37m'
+                python_tag = 'cp39'
+                abi_tag = 'cp39'
             else:
                 python_tag = 'cp27'
                 abi_tag = 'cp27mu'

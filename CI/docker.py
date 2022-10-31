@@ -61,8 +61,8 @@ DOCKER_IMAGES = {
                 ('debian-security', 'stretch/updates'),
             )))),
 
-    'base-buster': '''\
-        FROM debian:buster-20220801
+    'base-bullseye': '''\
+        FROM debian:bullseye-20220801
         RUN ({}) > /etc/apt/sources.list
         RUN apt-get update -o Acquire::Check-Valid-Until=false
         RUN apt-get install -y --no-install-recommends\\
@@ -73,7 +73,6 @@ DOCKER_IMAGES = {
          gnupg2\\
          libcurl3-gnutls\\
          python-setuptools\\
-         python-pip\\
          python3-setuptools\\
          python3-pip\\
          unzip\\
@@ -86,19 +85,23 @@ DOCKER_IMAGES = {
           --import llvm-snapshot.gpg.key&& rm llvm-snapshot.gpg.key &&\\
          echo\\
           "deb [signed-by=/usr/share/keyrings/llvm.gpg]\\
-           https://apt.llvm.org/buster/ llvm-toolchain-buster-14 main"\\
+           https://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-14 main"\\
           > /etc/apt/sources.list.d/llvm.list &&\\
          apt-get update -o Acquire::Check-Valid-Until=false&&\\
+         curl -sO {}&&\\
+         dpkg-deb -x python-pip*.deb /&&\\
          python2.7 -m pip install pip==20.3.4 wheel==0.37.1\\
          --upgrade --ignore-installed&&\\
          python3 -m pip install pip==22.2.2 wheel==0.37.1\\
          --upgrade --ignore-installed
         '''.format('; '.join('echo ' + l for l in sources_list(
             '20220801T205040Z', (  # noqa: E126
-                ('debian', 'buster'),
-                ('debian', 'buster-updates'),
-                ('debian-security', 'buster/updates'),
-            )))),
+                ('debian', 'bullseye'),
+                ('debian', 'bullseye-updates'),
+                ('debian-security', 'bullseye-security'),
+            ))),
+        'http://snapshot.debian.org/archive/debian/20220326T025251Z/pool'
+        '/main/p/python2-pip/python-pip_20.3.4%2Bdfsg-4_all.deb'),
 
     'build': '''\
         FROM base
@@ -127,8 +130,8 @@ DOCKER_IMAGES = {
           /usr/bin/aarch64-unknown-linux-gnu-ld
         ''',
 
-    'build-buster': '''\
-        FROM base-buster
+    'build-bullseye': '''\
+        FROM base-bullseye
         RUN apt-get install -y --no-install-recommends\\
          gcc\\
          git\\
@@ -158,7 +161,7 @@ DOCKER_IMAGES = {
     ),
 
     'test': '''\
-        FROM base-buster
+        FROM base-bullseye
         RUN apt-get install -y --no-install-recommends\\
          llvm-14\\
          make\\
