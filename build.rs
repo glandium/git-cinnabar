@@ -200,6 +200,7 @@ fn main() {
 
     #[cfg(feature = "curl-compat")]
     {
+        use rustflags::Flag;
         if target_os != "linux" {
             panic!("The curl-compat feature is only supported on linux");
         } else if std::env::var("DEP_CURL_STATIC").is_ok() {
@@ -217,6 +218,17 @@ fn main() {
         if let Ok(include) = std::env::var("DEP_CURL_INCLUDE") {
             cmd.arg(format!("-I{}", normalize_path(&include)));
         }
+        cmd.args(rustflags::from_env().flat_map(|flag| match flag {
+            Flag::Codegen {
+                opt,
+                value: Some(value),
+            } if opt == "link-arg" => vec![value],
+            Flag::Codegen {
+                opt,
+                value: Some(value),
+            } if opt == "link-args" => value.split(' ').map(ToString::to_string).collect(),
+            _ => vec![],
+        }));
         match cmd.status() {
             Ok(s) if s.success() => {}
             _ => panic!("Failed to build libcurl.so with command {:?}", cmd),

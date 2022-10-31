@@ -400,6 +400,7 @@ dependencies = [
  "percent-encoding",
  "rand",
  "regex",
+ "rustflags",
  "semver",
  "sha-1",
  "shared_child",
@@ -794,6 +795,12 @@ name = "rustc-demangle"
 version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ef03e0a2b150c7a90d01faf6254c9c48a41e95fb2a8c2ac1c6f0d2b9aefc342"
+
+[[package]]
+name = "rustflags"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27b7b4b81839a593edf095ca5170f67cd065009d7cc828e25de85dab6cd0027f"
 
 [[package]]
 name = "rustls"
