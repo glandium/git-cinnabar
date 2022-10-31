@@ -109,6 +109,7 @@ DOCKER_IMAGES = {
          && apt-get update -o Acquire::Check-Valid-Until=false\\
          && apt-get install -y --no-install-recommends\\
          clang-14\\
+         lld-14\\
          git\\
          make\\
          patch\\

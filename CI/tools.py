@@ -400,7 +400,7 @@ class Build(Task, metaclass=Tool):
                 TARGET = target.replace('-', '_').upper()
                 environ[f'CARGO_TARGET_{TARGET}_LINKER'] = environ['CC']
                 environ[f'CARGO_TARGET_{TARGET}_RUSTFLAGS'] = \
-                    f'-C link-arg=--target={target}'
+                    f'-C link-arg=--target={target} -C link-arg=-fuse-ld=lld'
         if variant in ('coverage', 'asan'):
             rust_install = install_rust('nightly-2022-08-07', rust_target)
         elif rust_version:
