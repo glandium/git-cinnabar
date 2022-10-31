@@ -410,6 +410,11 @@ class Build(Task, metaclass=Tool):
         cargo_flags.extend(['--target', rust_target])
         if cargo_features:
             cargo_flags.extend(['--features', ','.join(cargo_features)])
+        for key, value in list(environ.items()):
+            # RUSTFLAGS values in the environment override builds.rustflags
+            # from .cargo/config.toml.
+            if 'RUSTFLAGS' in key:
+                environ[key] = value + ' -Cforce-unwind-tables=yes'
 
         hash = hash or build_commit()
 
