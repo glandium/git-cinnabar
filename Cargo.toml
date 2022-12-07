@@ -129,7 +129,7 @@ features = ["deflate-zlib"]
 optional = true
 
 [dependencies.zstd]
-version = "0.11"
+version = "0.12"
 default-features = false
 
 [build-dependencies]
