@@ -269,7 +269,7 @@ fn main() {
         }
     }
 
-    for src in fs::read_dir(&dir.join("src")).unwrap() {
+    for src in fs::read_dir(dir.join("src")).unwrap() {
         let path = src.unwrap().path();
         let name = path.file_name().unwrap().to_str().unwrap();
         if (name.ends_with(".h")
