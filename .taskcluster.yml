@@ -57,10 +57,10 @@ tasks:
           features:
             taskclusterProxy: true
           env:
-            TC_PROXY: 1
+            TC_PROXY: "1"
             TC_DATA: {$json: {$eval: e}}
             TC_GROUP_ID: ${taskGroupId}
-            TC_IS_PUSH: {$if: 'tasks_for == "github-push"', then: 1}
+            TC_IS_PUSH: {$if: 'tasks_for == "github-push"', then: "1"}
           command:
             - sh
             - '-c'
