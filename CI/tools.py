@@ -280,7 +280,7 @@ class Hg(Task, metaclass=Tool):
         ]
 
 
-def install_rust(version='1.66.0', target='x86_64-unknown-linux-gnu'):
+def install_rust(version='1.68.0', target='x86_64-unknown-linux-gnu'):
     rustup_opts = '-y --default-toolchain none'
     cargo_dir = '$HOME/.cargo/bin/'
     rustup = cargo_dir + 'rustup'
