@@ -358,9 +358,10 @@ class Task(object):
                         env = task['payload'].setdefault('env', {})
                         env[index_env(t.index)] = t.id
                     dependencies.append(t.id)
-            elif k == 'dind':
+            elif k == 'dockerSave':
                 features = task['payload'].setdefault('features', {})
-                features['dind'] = bool(v)
+                features[k] = bool(v)
+                self.artifact = 'dockerImage.tar'
             else:
                 raise Exception("Don't know how to handle {}".format(k))
         task['dependencies'] = sorted(dependencies)
