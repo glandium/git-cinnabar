@@ -52,7 +52,7 @@ DOCKER_IMAGES = {
             'rm llvm-snapshot.gpg.key',
             'echo'
             ' deb [signed-by=/usr/share/keyrings/llvm.gpg]'
-            ' https://apt.llvm.org/stretch/ llvm-toolchain-stretch-14 main'
+            ' https://apt.llvm.org/stretch/ llvm-toolchain-stretch-15 main'
             ' > /etc/apt/sources.list.d/llvm.list',
             'apt-get update -o Acquire::Check-Valid-Until=false',
             'python2.7 -m pip install pip==20.3.4 wheel==0.37.1'
@@ -95,7 +95,7 @@ DOCKER_IMAGES = {
             'rm llvm-snapshot.gpg.key',
             'echo'
             ' deb [signed-by=/usr/share/keyrings/llvm.gpg]'
-            ' https://apt.llvm.org/buster/ llvm-toolchain-buster-14 main'
+            ' https://apt.llvm.org/buster/ llvm-toolchain-buster-15 main'
             ' > /etc/apt/sources.list.d/llvm.list',
             'apt-get update -o Acquire::Check-Valid-Until=false',
             'python2.7 -m pip install pip==20.3.4 wheel==0.37.1'
@@ -111,7 +111,7 @@ DOCKER_IMAGES = {
             'dpkg --add-architecture arm64',
             'apt-get update -o Acquire::Check-Valid-Until=false',
             'apt-get install -y --no-install-recommends {}'.format(' '.join([
-                'clang-14',
+                'clang-15',
                 'gcc',
                 'git',
                 'make',
@@ -178,12 +178,12 @@ DOCKER_IMAGES = {
         'from': 'base-buster',
         'commands': [
             'apt-get install -y --no-install-recommends {}'.format(' '.join([
-                'llvm-14',
+                'llvm-15',
                 'make',
             ])),
             'apt-get clean',
             'pip3 install cram==0.7',
-            'ln -s llvm-symbolizer-14 /usr/bin/llvm-symbolizer'
+            'ln -s llvm-symbolizer-15 /usr/bin/llvm-symbolizer'
         ],
     },
 }
