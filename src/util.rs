@@ -97,7 +97,7 @@ impl<T: Read> ReadExt for T {}
 
 pub trait SeekExt: Seek {
     fn stream_len_(&mut self) -> io::Result<u64> {
-        let old_pos = self.seek(SeekFrom::Current(0))?;
+        let old_pos = self.stream_position()?;
         let len = self.seek(SeekFrom::End(0))?;
         self.seek(SeekFrom::Start(old_pos))?;
         Ok(len)
