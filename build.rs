@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#![allow(renamed_and_removed_lints)]
 #![deny(clippy::cloned_instead_of_copied)]
 #![deny(clippy::default_trait_access)]
 #![deny(clippy::flat_map_option)]
