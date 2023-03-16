@@ -37,10 +37,15 @@ static void _hg_file_split(struct hg_file *result, size_t metadata_len)
 void hg_file_load(struct hg_file *result, const struct hg_object_id *oid)
 {
 	const struct object_id *note;
+	struct object_info oi = OBJECT_INFO_INIT;
 	char *content;
 	enum object_type type;
 	unsigned long len;
 	size_t metadata_len;
+
+	oi.typep = &type;
+	oi.sizep = &len;
+	oi.contentp = (void **) &content;
 
 	strbuf_release(&result->file);
 	hg_oidcpy(&result->oid, oid);
@@ -51,9 +56,9 @@ void hg_file_load(struct hg_file *result, const struct hg_object_id *oid)
 	ensure_notes(&files_meta);
 	note = get_note_hg(&files_meta, oid);
 	if (note) {
-		content = read_object_file_extended(
-			the_repository, note, &type, &len, 0);
-		if (!content)
+		if (oid_object_info_extended(
+				the_repository, note, &oi,
+				OBJECT_INFO_DIE_IF_CORRUPT) != 0)
 			die("Missing data");
 		strbuf_add(&result->file, "\1\n", 2);
 		strbuf_add(&result->file, content, len);
@@ -68,9 +73,9 @@ void hg_file_load(struct hg_file *result, const struct hg_object_id *oid)
 	if (!note)
 		die("Missing data");
 
-	content = read_object_file_extended(
-		the_repository, note, &type, &len, 0);
-	if (!content)
+	if (oid_object_info_extended(
+			the_repository, note, &oi,
+			OBJECT_INFO_DIE_IF_CORRUPT) != 0)
 		die("Missing data");
 
 	strbuf_add(&result->file, content, len);

@@ -252,14 +252,6 @@ impl Default for object_info {
 }
 
 extern "C" {
-    fn read_object_file_extended(
-        r: *mut repository,
-        oid: *const object_id,
-        typ: *mut object_type,
-        size: *mut c_ulong,
-        lookup_replace: c_int,
-    ) -> *const c_void;
-
     fn oid_object_info_extended(
         r: *mut repository,
         oid: *const object_id,
@@ -275,18 +267,22 @@ pub struct RawObject {
 
 impl RawObject {
     fn read(oid: &GitObjectId) -> Option<(object_type, RawObject)> {
+        let mut info = object_info::default();
         let mut t = object_type::OBJ_NONE;
         let mut len: c_ulong = 0;
-        let buf =
-            unsafe { read_object_file_extended(the_repository, &oid.into(), &mut t, &mut len, 0) };
-        if buf.is_null() {
-            return None;
-        }
-        let raw = RawObject {
-            buf,
-            len: len.try_into().unwrap(),
-        };
-        Some((t, raw))
+        let mut buf = std::ptr::null();
+        info.typep = &mut t;
+        info.sizep = &mut len;
+        info.contentp = &mut buf;
+        (unsafe { oid_object_info_extended(the_repository, &oid.into(), &mut info, 0) } == 0).then(
+            || {
+                let raw = RawObject {
+                    buf,
+                    len: len.try_into().unwrap(),
+                };
+                (t, raw)
+            },
+        )
     }
 
     fn get_type<O: Borrow<GitObjectId>>(oid: O) -> Option<object_type> {

@@ -352,12 +352,17 @@ static void handle_changeset_conflict(const struct hg_object_id *hg_id,
 	ensure_notes(&git2hg);
 	while ((note = get_note(&git2hg, git_id))) {
 		struct hg_object_id oid;
+		struct object_info oi = OBJECT_INFO_INIT;
 		enum object_type type;
 		unsigned long len;
-		char *content = read_object_file_extended(
-			the_repository, note, &type, &len, 0);
-		if (len < 50 || !starts_with(content, "changeset ") ||
-		    get_sha1_hex(&content[10], oid.hash))
+		char *content;
+		oi.typep = &type;
+		oi.sizep = &len;
+		oi.contentp = (void **) &content;
+		if ((oid_object_info_extended(
+			the_repository, note, &oi, OBJECT_INFO_DIE_IF_CORRUPT) == 0) &&
+		    (len < 50 || !starts_with(content, "changeset ") ||
+		     get_sha1_hex(&content[10], oid.hash)))
 			die("Invalid git2hg note for %s", oid_to_hex(git_id));
 
 		free(content);
@@ -367,10 +372,12 @@ static void handle_changeset_conflict(const struct hg_object_id *hg_id,
 			break;
 
 		if (!buf.len) {
-			content = read_object_file_extended(
-				the_repository, git_id, &type, &len, 0);
-			strbuf_add(&buf, content, len);
-			free(content);
+			if (oid_object_info_extended(
+					the_repository, git_id, &oi,
+					OBJECT_INFO_DIE_IF_CORRUPT) == 0) {
+				strbuf_add(&buf, content, len);
+				free(content);
+			}
 		}
 
 		strbuf_addch(&buf, '\0');
