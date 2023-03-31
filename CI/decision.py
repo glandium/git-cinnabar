@@ -216,7 +216,8 @@ def decision():
                         'git cinnabar --version',
                         'git cinnabar self-update',
                         'git cinnabar --version',
-                        f'git cinnabar self-update --branch {TC_BRANCH}',
+                        'git cinnabar self-update --branch {}'.format(
+                            TC_BRANCH or "master"),
                         'git cinnabar --version',
                     ],
                 )),

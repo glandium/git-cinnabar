@@ -44,21 +44,40 @@ Requirements:
 Setup:
 ------
 
-- Add this directory to your PATH. If you have another git-remote-hg project in
-  your PATH already, make sure the git-cinnabar path comes before.
+### Prebuilt binaries
 
-- Download a prebuilt binary with the following command (assuming one is
-  available for your system ; requires python 3.5 or newer):
+- Assuming a prebuilt binary is available for your system, get the
+  [download.py script](https://raw.githubusercontent.com/glandium/git-cinnabar/master/download.py)
+  and run it (requires python 3.6 or newer) with:
 
   ```
   $ ./download.py
   ```
 
-  Alternatively, you can build it:
+- Add the directory where the download happened to your PATH. If you have
+  another git-remote-hg project in your PATH already, make sure the
+  git-cinnabar path comes before.
+
+### Cargo
+
+- Run the following:
 
   ```
+  $ cargo install git-cinnabar
+  $ git cinnabar setup
+  ```
+
+### Build manually
+
+- Run the following:
+
+  ```
+  $ git clone https://github.com/glandium/git-cinnabar
+  $ cd git-cinnabar
   $ make
   ```
+
+- Add the git-cinnabar directory to your PATH.
 
 Usage:
 ------
