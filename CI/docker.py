@@ -199,7 +199,7 @@ class DockerImage(Task, metaclass=TaskEnvironment):
         base = defn['from']
         self.name = name
         if ':' not in base:
-            base = self.__class__(base)
+            base = DockerImage.by_name(base)
         self.base = base
         self.definition = defn['commands']
 
