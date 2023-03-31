@@ -50,7 +50,7 @@ percent-encoding = "2"
 rand = "0.8"
 sha-1 = "0.10"
 tee = "0.1"
-tempfile = "3"
+tempfile = "3,<3.4"  # Avoid windows-sys dependency.
 typenum = "1"
 url = "2"
 
@@ -62,6 +62,9 @@ features = ["std"]
 [dependencies.clap]
 version = "4.0,<4.0.27"  # Avoid windows-sys dependency.
 features = ["cargo", "derive"]
+
+[dependencies.clap_lex]
+version = "=0.3.0"  # Avoid MSRV bump to 1.64.
 
 [target.'cfg(windows)'.dependencies.curl-sys]
 version = "0.4"
@@ -139,7 +142,7 @@ make-cmd = "0.1"
 target = "2.0"
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = "3,<3.4"  # Avoid windows-sys dependency.
 
 [profile.release]
 codegen-units = 1
