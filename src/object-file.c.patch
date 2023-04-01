@@ -1,10 +1,10 @@
 diff --git a/object-file.c b/object-file.c
-index 0071655b69..9ba3e826ec 100644
+index 03de668191..d9e51be352 100644
 --- a/object-file.c
 +++ b/object-file.c
-@@ -34,6 +34,12 @@
- #include "promisor-remote.h"
+@@ -35,6 +35,12 @@
  #include "submodule.h"
+ #include "fsck.h"
  
 +#define write_object_file_flags real_write_object_file_flags
 +

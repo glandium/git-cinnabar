@@ -12,8 +12,8 @@ from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '6.2.3'
-GIT_VERSION = '2.38.1'
+MERCURIAL_VERSION = '6.3.0'
+GIT_VERSION = '2.40.0'
 
 ALL_MERCURIAL_VERSIONS = (
     '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
@@ -22,7 +22,7 @@ ALL_MERCURIAL_VERSIONS = (
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
     '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2', '5.3.2',
     '5.4.2', '5.5.2', '5.6.1', '5.7.1', '5.8.1', '5.9.3', '6.0.3',
-    '6.1.4', '6.2.3'
+    '6.1.4', '6.2.3', '6.3.0',
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -226,9 +226,11 @@ class Hg(Task, metaclass=Tool):
 
         if os.startswith('mingw'):
             # Work around https://bz.mercurial-scm.org/show_bug.cgi?id=6654
+            # and https://bz.mercurial-scm.org/show_bug.cgi?id=6757
             pre_command.append(
                 'sed -i "s/, output_dir=self.build_temp/'
                 ', output_dir=self.build_temp, extra_postargs=[$EXTRA_FLAGS]/;'
+                '/self.addlongpathsmanifest/d;'
                 '" mercurial-{}/setup.py'
                 .format(version))
             if python == 'python3':
@@ -278,7 +280,7 @@ class Hg(Task, metaclass=Tool):
         ]
 
 
-def install_rust(version='1.64.0', target='x86_64-unknown-linux-gnu'):
+def install_rust(version='1.68.0', target='x86_64-unknown-linux-gnu'):
     rustup_opts = '-y --default-toolchain none'
     cargo_dir = '$HOME/.cargo/bin/'
     rustup = cargo_dir + 'rustup'
@@ -379,7 +381,7 @@ class Build(Task, metaclass=Tool):
             raise Exception('Unknown variant: {}'.format(variant))
 
         if os in ('linux', 'arm64-linux'):
-            environ['CC'] = 'clang-14'
+            environ['CC'] = 'clang-15'
             cargo_features.append('curl-compat')
 
         if os.startswith('mingw'):

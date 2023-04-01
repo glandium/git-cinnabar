@@ -51,6 +51,25 @@ def index_env(idx):
     )
 
 
+def expires_soon(expires):
+    try:
+        expires = datetime.strptime(
+            expires.rstrip('Z'), '%Y-%m-%dT%H:%M:%S.%f')
+        return expires < now + 3600
+    except (KeyError, ValueError):
+        return True
+
+
+def http_get(session, url):
+    response = session.get(url)
+    if response.status_code >= 400:
+        # Consume content before returning, so that the connection
+        # can be reused.
+        response.content
+    else:
+        return response.json()
+
+
 class Index(dict):
     class Existing(str):
         pass
@@ -76,24 +95,11 @@ class Index(dict):
     def _try_key(self, key, create=False):
         if not self.requests:
             return
-        response = self.requests.get(PROXY_INDEX_URL.format(key))
-        if response.status_code >= 400:
-            # Consume content before returning, so that the connection
-            # can be reused.
-            response.content
-        else:
-            data = response.json()
-            try:
-                expires = datetime.strptime(data['expires'].rstrip('Z'),
-                                            '%Y-%m-%dT%H:%M:%S.%f')
-            except (KeyError, ValueError):
-                expires = now
-            # Only consider tasks that aren't expired or won't expire
-            # within the hour.
-            if expires >= now + 3600:
-                result = data.get('taskId')
-                print('Found task "{}" for "{}"'.format(result, key))
-                return self.Existing(result)
+        data = http_get(self.requests, PROXY_INDEX_URL.format(key))
+        if data and not expires_soon(data['expires']):
+            result = data.get('taskId')
+            print('Found task "{}" for "{}"'.format(result, key))
+            return self.Existing(result)
 
     def search_local_with_prefix(self, prefix):
         matches = [k for k in self.keys() if k.startswith(prefix)]
@@ -193,11 +199,6 @@ class Task(object):
         kwargs = self.normalize_params(kwargs)
         if task_env:
             kwargs = task_env.prepare_params(kwargs)
-        index = kwargs.get('index')
-        if index:
-            self.id = Task.by_index[index]
-        else:
-            self.id = slugid()
 
         maxRunTime = kwargs.pop('maxRunTime', 1800)
         task = {
@@ -218,7 +219,7 @@ class Task(object):
         }
         kwargs.setdefault('expireIn', '4 weeks')
         dependencies = [os.environ.get('TASK_ID') or task_group_id]
-        self.artifacts = []
+        artifact_paths = []
 
         for k, v in kwargs.items():
             if k in ('provisionerId', 'workerType', 'priority'):
@@ -284,10 +285,7 @@ class Task(object):
                     }
                     for a in v
                 }
-                urls = [
-                    ARTIFACT_URL.format(self.id, a)
-                    for a in artifacts
-                ]
+                artifact_paths.extend(artifacts.keys())
                 if kwargs.get('workerType', '').startswith(
                         ('osx', 'win2012r2')):
                     artifacts = [
@@ -295,11 +293,6 @@ class Task(object):
                         for name, a in artifacts.items()
                     ]
                 task['payload']['artifacts'] = artifacts
-                if len(artifacts) > 1:
-                    self.artifacts = urls
-                else:
-                    self.artifact = urls[0]
-                    self.artifacts = [self.artifact]
             elif k == 'env':
                 task['payload'].setdefault('env', {}).update(v)
             elif k == 'image':
@@ -358,12 +351,45 @@ class Task(object):
                         env = task['payload'].setdefault('env', {})
                         env[index_env(t.index)] = t.id
                     dependencies.append(t.id)
-            elif k == 'dind':
+            elif k == 'dockerSave':
                 features = task['payload'].setdefault('features', {})
-                features['dind'] = bool(v)
+                features[k] = bool(v)
+                artifact_paths.append('public/dockerImage.tar')
             else:
                 raise Exception("Don't know how to handle {}".format(k))
         task['dependencies'] = sorted(dependencies)
+        index = kwargs.get('index')
+        id = None
+        if index and all(isinstance(d, Index.Existing)
+                         for d in dependencies[1:]):
+            id = Task.by_index[index]
+        if isinstance(id, Index.Existing):
+            data = http_get(
+                session, ARTIFACT_URL.format(id, '').rstrip('/')) or {}
+            artifacts_expire = [
+                expires_soon(a.get('expires'))
+                for a in data.get('artifacts', [])
+                if a.get('name') in artifact_paths
+            ]
+            if len(artifact_paths) != len(artifacts_expire) \
+                    or any(artifacts_expire):
+                print(
+                    'Ignore task "{}" because of missing or expiring artifacts'
+                    .format(id))
+                id = None
+
+        self.id = id or slugid()
+        urls = [
+            ARTIFACT_URL.format(self.id, a)
+            for a in artifact_paths
+        ]
+        if len(urls) > 1:
+            self.artifacts = urls
+        elif urls:
+            self.artifact = urls[0]
+            self.artifacts = [self.artifact]
+        else:
+            self.artifacts = []
         self.task = task
         Task.by_id.setdefault(self.id, self)
 

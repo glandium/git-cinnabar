@@ -916,7 +916,6 @@ static void init_metadata(void)
 
 	msg = get_commit_buffer(c, NULL);
 	body = strstr(msg, "\n\n") + 2;
-	unuse_commit_buffer(c, msg);
 	flags = strbuf_split_str(body, ' ', -1);
 	for (f = flags; *f; f++) {
 		strbuf_trim(*f);
@@ -924,15 +923,18 @@ static void init_metadata(void)
 			metadata_flags |= FILES_META;
 		else if (!strcmp("unified-manifests", (*f)->buf)) {
 			strbuf_list_free(flags);
+			unuse_commit_buffer(c, msg);
 			goto old;
 		} else if (!strcmp("unified-manifests-v2", (*f)->buf))
 			metadata_flags |= UNIFIED_MANIFESTS_v2;
 		else {
 			strbuf_list_free(flags);
+			unuse_commit_buffer(c, msg);
 			goto new;
 		}
 	}
 	strbuf_list_free(flags);
+	unuse_commit_buffer(c, msg);
 
 	if (!(metadata_flags & (FILES_META | UNIFIED_MANIFESTS_v2)))
 		goto old;

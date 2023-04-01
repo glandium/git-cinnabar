@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{self, copy, stderr, Cursor, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::os::raw::{c_char, c_int, c_long};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::ptr;
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -264,8 +264,8 @@ impl HttpRequest {
                 // See https://github.com/git-for-windows/MINGW-packages/commit/2e8f4580eb4d
                 if ssl_cainfo.is_null() && cfg!(windows) {
                     static CA_INFO_PATH: Lazy<PathBuf> = Lazy::new(|| {
-                        PathBuf::from(
-                            std::env::var_os("GIT_EXEC_PATH")
+                        let base_path = Path::new(
+                            &std::env::var_os("GIT_EXEC_PATH")
                                 .filter(|p| !p.is_empty())
                                 .unwrap_or_else(|| {
                                     let output = std::process::Command::new("git")
@@ -281,9 +281,17 @@ impl HttpRequest {
                         .unwrap()
                         .parent()
                         .unwrap()
-                        .join("ssl")
-                        .join("certs")
-                        .join("ca-bundle.crt")
+                        .to_path_buf();
+
+                        let bundle_path =
+                            |base: &Path| base.join("ssl").join("certs").join("ca-bundle.crt");
+
+                        let path = bundle_path(&base_path);
+                        if path.exists() {
+                            path
+                        } else {
+                            bundle_path(&base_path.join("etc"))
+                        }
                     });
 
                     let ca_info_path = CString::new(CA_INFO_PATH.as_os_str().as_bytes()).unwrap();
