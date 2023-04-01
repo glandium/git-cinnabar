@@ -354,7 +354,7 @@ class Task(object):
             elif k == 'dockerSave':
                 features = task['payload'].setdefault('features', {})
                 features[k] = bool(v)
-                artifact_paths.append('dockerImage.tar')
+                artifact_paths.append('public/dockerImage.tar')
             else:
                 raise Exception("Don't know how to handle {}".format(k))
         task['dependencies'] = sorted(dependencies)
