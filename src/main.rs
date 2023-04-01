@@ -918,6 +918,7 @@ fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(),
         tmpbuilder.prefix(BINARY);
         let mut tmpfile = tmpbuilder.tempfile_in(exe_dir).map_err(|e| e.to_string())?;
         download_build(version, &mut tmpfile, BINARY)?;
+        tmpfile.flush().map_err(|e| e.to_string())?;
         let old_exe = tmpbuilder.tempfile_in(exe_dir).map_err(|e| e.to_string())?;
         let old_exe_path = old_exe.path().to_path_buf();
         old_exe.close().map_err(|e| e.to_string())?;
