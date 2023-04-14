@@ -110,7 +110,7 @@ TODO: Ideally, the error message would say the server could not be connected to.
   Cloning into 'repo-git'...
   Fetching cinnabar metadata from http://localhost:8080/
   \r (no-eol) (esc)
-  ERROR unable to access 'http://localhost:8080/': Failed to connect to localhost port 8080: Connection refused
+  ERROR unable to access 'http://localhost:8080/': Failed to connect to localhost port 8080.* (re)
   \r (no-eol) (esc)
   WARNING Falling back to normal clone.
 
