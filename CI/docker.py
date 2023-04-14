@@ -166,7 +166,11 @@ DOCKER_IMAGES = {
             ])),
             'apt-get clean',
             'ln -s /usr/bin/python3-coverage /usr/local/bin/coverage',
-            'python3 -m pip install codecov==2.1.12',
+            'curl -o /usr/local/bin/codecov -sL {}'.format(
+                'https://github.com/codecov/uploader/releases/download'
+                '/v0.1.0_9779/codecov-linux'
+            ),
+            'chmod +x /usr/local/bin/codecov',
             'curl -sL {} | tar -C /usr/local/bin -jxf -'.format(
                 'https://github.com/mozilla/grcov/releases/download/v0.8.7'
                 '/grcov-x86_64-unknown-linux-gnu.tar.bz2'
