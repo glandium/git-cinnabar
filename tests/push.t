@@ -15,9 +15,11 @@ Test repository setup.
   $ hg init abc
   $ hg init def
   $ hg init xyz
+  $ hg init uvw
   $ ABC=$(pwd)/abc
   $ DEF=$(pwd)/def
   $ XYZ=$(pwd)/xyz
+  $ UVW=$(pwd)/uvw
 
   $ cd abc
   $ for f in a b c; do create $f; done
@@ -46,6 +48,8 @@ Create git clones of the above repositories.
   $ git -c fetch.prune=true clone -n -q hg::$ABC abc-git
   $ git -c fetch.prune=true clone -n -q hg::$DEF def-git
   $ git -c fetch.prune=true clone -n -q hg::$XYZ xyz-git
+  warning: You appear to have cloned an empty repository.
+  $ git -c fetch.prune=true clone -n -q hg::$UVW uvw-git
   warning: You appear to have cloned an empty repository.
 
 Ensure the repositories look like what we assume further below.
@@ -302,3 +306,62 @@ Server is still non-publishing, but we opted in to store the metadata.
   a2341d430e5acddf9481eabcad901fda12d023d3
   8b8194eefb69ec89edc35dafb965311fe48c49d0
   2836e453f32b1ecccd3acca412f75b07c88176bf
+
+Pushing a root to a new non-publishing repo should work.
+
+  $ cat >> $UVW/.hg/hgrc <<EOF
+  > [phases]
+  > publish = False
+  > EOF
+
+  $ git -C uvw-git fetch ../xyz-git 687e015f9f646bb19797d991f2f53087297fbe14
+  From ../xyz-git
+   * branch            687e015f9f646bb19797d991f2f53087297fbe14 -> FETCH_HEAD
+
+  $ git -c cinnabar.data=phase -C uvw-git push origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 3 changesets with 3 changes to 3 files
+  To hg::.*/push.t/uvw (re)
+   * [new branch]      687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip
+
+Server is non-publishing, metadata should not be stored.
+
+  $ git -C uvw-git cinnabar rollback --candidates
+
+  $ hg -R $UVW phase --public f92470d7f6966a39dfbced6a525fe81ebf5c37b9
+  $ hg -R $UVW phase -r 'all()'
+  0: public
+  1: draft
+  2: draft
+
+We won't be able to push without first pulling something, so fetch the first commit.
+
+  $ git -C uvw-git cinnabar fetch hg::$UVW f92470d7f6966a39dfbced6a525fe81ebf5c37b9
+  From hg::.*/push.t/uvw (re)
+   * branch            hg/revs/f92470d7f6966a39dfbced6a525fe81ebf5c37b9 -> FETCH_HEAD
+
+  $ git -C uvw-git cinnabar rollback --candidates
+  2836e453f32b1ecccd3acca412f75b07c88176bf (current)
+
+  $ hg -R $UVW phase --public 636e60525868096cbdc961870493510558f41d2f
+  $ hg -R $UVW phase -r 'all()'
+  0: public
+  1: public
+  2: draft
+  $ hg --config extensions.strip= -R $UVW strip -r 2 --no-backup
+
+  $ git -c cinnabar.data=phase -C uvw-git push origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 1 changesets with 1 changes to 2 files
+  To hg::.*/push.t/uvw (re)
+   * [new branch]      687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip
+
+We pushed what happens to be one existing public commit and one draft commit.
+In that corner case, we don't store metadata.
+
+  $ git -C uvw-git cinnabar rollback --candidates
+  2836e453f32b1ecccd3acca412f75b07c88176bf (current)

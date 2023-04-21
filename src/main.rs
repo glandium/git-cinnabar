@@ -113,9 +113,9 @@ use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bund
 use libcinnabar::{files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
     config_get_value, diff_tree, for_each_ref_in, for_each_remote, get_oid_committish,
-    lookup_replace_commit, ls_tree, metadata_oid, object_id, remote, resolve_ref, rev_list,
-    rev_list_with_boundaries, strbuf, BlobId, CommitId, DiffTreeItem, FileMode, MaybeBoundary,
-    RawBlob, RawCommit, RefTransaction,
+    lookup_replace_commit, ls_tree, metadata_oid, object_id, reachable_subset, remote, resolve_ref,
+    rev_list, rev_list_with_boundaries, strbuf, BlobId, CommitId, DiffTreeItem, FileMode,
+    MaybeBoundary, RawBlob, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::Progress;
@@ -4006,29 +4006,22 @@ fn remote_helper_push(
                 if drafts.is_empty() {
                     false
                 } else {
-                    let args = [
-                        OsString::from("--ancestry-path"),
-                        OsString::from("--topo-order"),
-                    ]
-                    .into_iter()
-                    .chain(
-                        drafts
-                            .iter()
-                            .filter_map(HgChangesetId::to_git)
-                            .map(|csid| format!("^{}^@", csid).into()),
-                    )
-                    .chain(
-                        pushed
-                            .heads()
-                            .filter_map(HgChangesetId::to_git)
-                            .map(|csid| csid.to_string().into()),
-                    );
                     // Theoretically, we could have commits with no
                     // metadata that the remote declares are public, while
                     // the rest of our push is in a draft state. That is
                     // however so unlikely that it's not worth the effort
                     // to support partial metadata storage.
-                    rev_list(args).any(|_| true)
+                    !reachable_subset(
+                        pushed
+                            .heads()
+                            .filter_map(HgChangesetId::to_git)
+                            .map(Into::into),
+                        drafts
+                            .iter()
+                            .filter_map(HgChangesetId::to_git)
+                            .map(Into::into),
+                    )
+                    .is_empty()
                 }
             }
             _ => unreachable!(),
