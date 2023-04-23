@@ -70,6 +70,12 @@ macro_rules! oid_type {
             }
         }
 
+        impl From<$name> for $base_type {
+            fn from(o: $name) -> $base_type {
+                o.0
+            }
+        }
+
         oid_type!(@other $name);
     };
     ($name:ident for $typ:ty) => {

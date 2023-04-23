@@ -484,6 +484,10 @@ pub struct rev_info(c_void);
 #[repr(transparent)]
 pub struct commit(c_void);
 
+#[allow(non_camel_case_types)]
+#[repr(transparent)]
+pub struct commit_list(c_void);
+
 extern "C" {
     fn commit_oid(c: *const commit) -> *const object_id;
 
@@ -1110,4 +1114,69 @@ pub fn ls_tree(tree_id: &TreeId) -> Result<impl Iterator<Item = LsTreeItem>, LsT
         return Err(LsTreeError);
     }
     Ok(result.into_iter())
+}
+
+extern "C" {
+    fn get_reachable_subset(
+        from: *const *const commit,
+        nr_from: c_int,
+        to: *const *const commit,
+        nr_to: c_int,
+        reachable_flag: c_uint,
+    ) -> *mut commit_list;
+
+    fn commit_list_count(l: *const commit_list) -> c_uint;
+
+    fn free_commit_list(list: *mut commit_list);
+
+    fn lookup_commit(r: *mut repository, oid: *const object_id) -> *const commit;
+}
+
+pub struct CommitList {
+    list: *mut commit_list,
+}
+
+impl CommitList {
+    pub fn is_empty(&self) -> bool {
+        unsafe { commit_list_count(self.list) == 0 }
+    }
+}
+
+impl Drop for CommitList {
+    fn drop(&mut self) {
+        unsafe {
+            free_commit_list(self.list);
+        }
+    }
+}
+
+pub fn reachable_subset(
+    from: impl IntoIterator<Item = CommitId>,
+    to: impl IntoIterator<Item = CommitId>,
+) -> CommitList {
+    let from = from
+        .into_iter()
+        .map(|cid| {
+            let oid = object_id::from(cid);
+            unsafe { lookup_commit(the_repository, &oid) }
+        })
+        .collect::<Vec<_>>();
+    let to = to
+        .into_iter()
+        .map(|cid| {
+            let oid = object_id::from(cid);
+            unsafe { lookup_commit(the_repository, &oid) }
+        })
+        .collect::<Vec<_>>();
+    CommitList {
+        list: unsafe {
+            get_reachable_subset(
+                from.as_ptr(),
+                from.len().try_into().unwrap(),
+                to.as_ptr(),
+                to.len().try_into().unwrap(),
+                0,
+            )
+        },
+    }
 }

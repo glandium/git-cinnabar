@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 import hashlib
 import os
 
@@ -12,7 +16,7 @@ from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '6.3.0'
+MERCURIAL_VERSION = '6.4.2'
 GIT_VERSION = '2.40.0'
 
 ALL_MERCURIAL_VERSIONS = (
@@ -22,7 +26,7 @@ ALL_MERCURIAL_VERSIONS = (
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
     '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2', '5.3.2',
     '5.4.2', '5.5.2', '5.6.1', '5.7.1', '5.8.1', '5.9.3', '6.0.3',
-    '6.1.4', '6.2.3', '6.3.0',
+    '6.1.4', '6.2.3', '6.3.3', '6.4.2',
 )
 
 SOME_MERCURIAL_VERSIONS = (
