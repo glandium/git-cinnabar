@@ -98,11 +98,11 @@ fn main() {
     } else if target_os == "macos" {
         &["uname_S=Darwin", "uname_R=15.0"][..]
     } else if std::env::var("CINNABAR_CROSS_COMPILE_I_KNOW_WHAT_I_M_DOING").is_err()
-        && target_arch != target::arch()
-        || target_os != target::os()
-        || target_env != target::env()
-        || target_endian != target::endian()
-        || target_pointer_width != target::pointer_width()
+        && (target_arch != target::arch()
+            || target_os != target::os()
+            || target_env != target::env()
+            || target_endian != target::endian()
+            || target_pointer_width != target::pointer_width())
     {
         panic!("Cross-compilation is not supported");
     } else {
