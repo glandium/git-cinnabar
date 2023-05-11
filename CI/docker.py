@@ -15,6 +15,12 @@ from variables import TC_REPO_NAME
 
 def sources_list(snapshot, sections):
     for idx, (archive, dist) in enumerate(sections):
+        if not snapshot:
+            yield 'deb http://archive.debian.org/{} {} main'.format(
+                archive,
+                dist,
+            )
+            continue
         yield 'deb http://snapshot.debian.org/archive/{}/{} {} main'.format(
             archive,
             snapshot,
@@ -27,9 +33,9 @@ DOCKER_IMAGES = {
         'from': 'debian:stretch-20220622',
         'commands': [
             '({}) > /etc/apt/sources.list'.format('; '.join(
-                'echo ' + l for l in sources_list('20220622T215414Z', (
+                'echo ' + l for l in sources_list(None, (
                     ('debian', 'stretch'),
-                    ('debian', 'stretch-updates'),
+                    ('debian', 'stretch-proposed-updates'),
                     ('debian-security', 'stretch/updates'),
                 )))),
             'apt-get update -o Acquire::Check-Valid-Until=false',
