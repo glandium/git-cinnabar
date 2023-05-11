@@ -26,8 +26,8 @@ DOCKER_IMAGES = {
     'base': {
         'from': 'debian:stretch-20220622',
         'commands': [
-            '({})'.format('; '.join('echo ' + l for l in sources_list(
-                '20220622T215414Z', (
+            '({}) > /etc/apt/sources.list'.format('; '.join(
+                'echo ' + l for l in sources_list('20220622T215414Z', (
                     ('debian', 'stretch'),
                     ('debian', 'stretch-updates'),
                     ('debian-security', 'stretch/updates'),
@@ -69,8 +69,8 @@ DOCKER_IMAGES = {
     'base-buster': {
         'from': 'debian:buster-20220801',
         'commands': [
-            '({})'.format('; '.join('echo ' + l for l in sources_list(
-                '20220801T205040Z', (
+            '({}) > /etc/apt/sources.list'.format('; '.join(
+                'echo ' + l for l in sources_list('20220801T205040Z', (
                     ('debian', 'buster'),
                     ('debian', 'buster-updates'),
                     ('debian-security', 'buster/updates'),
