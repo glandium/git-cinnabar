@@ -297,7 +297,7 @@ void ensure_heads(struct oid_array *heads)
 	heads->sorted = 1;
 	if (heads == &manifest_heads) {
 		c = lookup_commit_reference(the_repository, &manifests_oid);
-		if (parse_commit(c))
+		if (repo_parse_commit(the_repository, c))
 			c = NULL;
 	}
 	for (parent = c ? c->parents : NULL; parent;

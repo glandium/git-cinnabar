@@ -100,7 +100,7 @@ struct object_id *commit_oid(struct commit *c) {
 struct rev_info *rev_list_new(int argc, const char **argv) {
 	struct rev_info *revs = xmalloc(sizeof(*revs));
 
-	init_revisions(revs, NULL);
+	repo_init_revisions(the_repository, revs, NULL);
 	// Note: we do a pass through, but don't make much effort to actually
 	// support all the options properly.
 	setup_revisions(argc, argv, revs, NULL);
@@ -182,7 +182,7 @@ void diff_tree_(int argc, const char **argv, void (*cb)(void *, struct diff_tree
 	struct diff_tree_ctx ctx = { cb, context };
 	struct rev_info revs;
 
-	init_revisions(&revs, NULL);
+	repo_init_revisions(the_repository, &revs, NULL);
 	revs.diff = 1;
 	// Note: we do a pass through, but don't make much effort to actually
 	// support all the options properly.
@@ -564,14 +564,14 @@ static void get_manifest_oid(const struct commit *commit, struct hg_object_id *o
 	const char *msg;
 	const char *hex_sha1;
 
-	msg = get_commit_buffer(commit, NULL);
+	msg = repo_get_commit_buffer(the_repository, commit, NULL);
 
 	hex_sha1 = strstr(msg, "\n\n") + 2;
 
 	if (get_sha1_hex(hex_sha1, oid->hash))
 		hg_oidclr(oid);
 
-	unuse_commit_buffer(commit, msg);
+	repo_unuse_commit_buffer(the_repository, commit, msg);
 }
 
 static void hg_sha1(struct strbuf *data, const struct hg_object_id *parent1,
@@ -914,7 +914,7 @@ static void init_metadata(void)
 	if (!cl) die("Invalid metadata?");
 	oidcpy(&files_meta_oid, &cl->item->object.oid);
 
-	msg = get_commit_buffer(c, NULL);
+	msg = repo_get_commit_buffer(the_repository, c, NULL);
 	body = strstr(msg, "\n\n") + 2;
 	flags = strbuf_split_str(body, ' ', -1);
 	for (f = flags; *f; f++) {
@@ -923,18 +923,18 @@ static void init_metadata(void)
 			metadata_flags |= FILES_META;
 		else if (!strcmp("unified-manifests", (*f)->buf)) {
 			strbuf_list_free(flags);
-			unuse_commit_buffer(c, msg);
+			repo_unuse_commit_buffer(the_repository, c, msg);
 			goto old;
 		} else if (!strcmp("unified-manifests-v2", (*f)->buf))
 			metadata_flags |= UNIFIED_MANIFESTS_v2;
 		else {
 			strbuf_list_free(flags);
-			unuse_commit_buffer(c, msg);
+			repo_unuse_commit_buffer(the_repository, c, msg);
 			goto new;
 		}
 	}
 	strbuf_list_free(flags);
-	unuse_commit_buffer(c, msg);
+	repo_unuse_commit_buffer(the_repository, c, msg);
 
 	if (!(metadata_flags & (FILES_META | UNIFIED_MANIFESTS_v2)))
 		goto old;
@@ -949,7 +949,7 @@ static void init_metadata(void)
 	oidmap_init(the_repository->objects->replace_map, 0);
 	the_repository->objects->replace_map_initialized = 1;
 
-	tree = get_commit_tree(c);
+	tree = repo_get_commit_tree(the_repository, c);
 	parse_tree(tree);
 	init_tree_desc(&desc, tree->buffer, tree->size);
 	while (tree_entry(&desc, &entry)) {
