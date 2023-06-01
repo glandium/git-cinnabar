@@ -324,7 +324,7 @@
 
   $ git -c fetch.prune=true -C repo-git remote update
   From hg::.*/ls-remote.t/repo (re)
-   - [deleted]         (none)     -> origin/branches/default/636e60525868096cbdc961870493510558f41d2f
+   - \[deleted\]         \(none\)     *-> origin/branches/default/636e60525868096cbdc961870493510558f41d2f (re)
    + 5c5b259...445bd26 branches/default/tip -> origin/branches/default/tip  (forced update)
    * [new branch]      bookmarks/bar        -> origin/bookmarks/bar
    * [new branch]      bookmarks/fooz       -> origin/bookmarks/fooz
