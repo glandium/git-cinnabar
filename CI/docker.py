@@ -36,7 +36,7 @@ DOCKER_IMAGES = {
                 'echo ' + l for l in sources_list('20220801T205040Z', (
                     ('debian', 'bullseye'),
                     ('debian', 'bullseye-updates'),
-                    ('debian-security', 'bullseye/updates'),
+                    ('debian-security', 'bullseye-security'),
                 )))),
             'apt-get update -o Acquire::Check-Valid-Until=false',
             'apt-get install -y --no-install-recommends {}'.format(' '.join([
