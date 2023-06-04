@@ -336,7 +336,9 @@ class Build(Task, metaclass=Tool):
         head = None
         desc_variant = variant
         extra_commands = []
-        environ = {}
+        environ = {
+            'WARNINGS_AS_ERRORS': '1',
+        }
         cargo_flags = ['-vv', '--release']
         cargo_features = ['self-update', 'gitdev']
         rust_version = None

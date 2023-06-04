@@ -50,7 +50,11 @@ ALL_CFLAGS := $(filter-out -DPRECOMPOSE_UNICODE,$(ALL_CFLAGS))
 ifdef MINGW_WRAPPERS
 ALL_CFLAGS += -I$(SOURCE_DIR)/src/mingw
 endif
+ifdef WARNINGS_AS_ERRORS
+ALL_CFLAGS += -Werror
+else
 ALL_CFLAGS += -Werror=implicit-function-declaration
+endif
 
 all:: git-cinnabar$X
 
