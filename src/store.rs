@@ -1070,10 +1070,11 @@ pub fn raw_commit_for_changeset(
         timestamp: changeset.timestamp(),
         utcoffset: changeset.utcoffset(),
     };
-    // TODO: reduce the amount of cloning.
     let git_author = GitAuthorship::from(author.clone());
-    let git_committer = if let Some(extra) = changeset.extra() {
-        if let Some(committer) = extra.get(b"committer") {
+    let git_committer = changeset
+        .extra()
+        .and_then(|extra| extra.get(b"committer"))
+        .map(|committer| {
             if committer.ends_with(b">") {
                 GitAuthorship::from(HgAuthorship {
                     author: committer,
@@ -1083,12 +1084,8 @@ pub fn raw_commit_for_changeset(
             } else {
                 GitAuthorship::from(HgCommitter(committer))
             }
-        } else {
-            git_author.clone()
-        }
-    } else {
-        git_author.clone()
-    };
+        });
+    let git_committer = git_committer.as_ref().unwrap_or(&git_author);
     result.extend_from_slice(format!("tree {}\n", tree_id).as_bytes());
     for parent in parents {
         result.extend_from_slice(format!("parent {}\n", parent).as_bytes());

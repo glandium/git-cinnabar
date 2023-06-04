@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 ifdef NO_CURL
 $(error Cannot build without curl)
 endif
@@ -43,7 +47,14 @@ ALL_PROGRAMS += git-cinnabar$X
 ALL_CFLAGS := $(subst -I. ,-I$(SOURCE_DIR)/git-core -I. ,$(ALL_CFLAGS))
 ALL_CFLAGS := $(subst -Icompat,-I$(SOURCE_DIR)/git-core/compat,$(ALL_CFLAGS))
 ALL_CFLAGS := $(filter-out -DPRECOMPOSE_UNICODE,$(ALL_CFLAGS))
+ifdef MINGW_WRAPPERS
+ALL_CFLAGS += -I$(SOURCE_DIR)/src/mingw
+endif
+ifdef WARNINGS_AS_ERRORS
+ALL_CFLAGS += -Werror
+else
 ALL_CFLAGS += -Werror=implicit-function-declaration
+endif
 
 all:: git-cinnabar$X
 

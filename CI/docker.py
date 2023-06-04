@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 import hashlib
 import json
 
@@ -11,6 +15,12 @@ from variables import TC_REPO_NAME
 
 def sources_list(snapshot, sections):
     for idx, (archive, dist) in enumerate(sections):
+        if not snapshot:
+            yield 'deb http://archive.debian.org/{} {} main'.format(
+                archive,
+                dist,
+            )
+            continue
         yield 'deb http://snapshot.debian.org/archive/{}/{} {} main'.format(
             archive,
             snapshot,
@@ -22,8 +32,8 @@ DOCKER_IMAGES = {
     'base': {
         'from': 'debian:bullseye-20220801',
         'commands': [
-            '({})'.format('; '.join('echo ' + l for l in sources_list(
-                '20220801T205040Z', (
+            '({}) > /etc/apt/sources.list'.format('; '.join(
+                'echo ' + l for l in sources_list('20220801T205040Z', (
                     ('debian', 'bullseye'),
                     ('debian', 'bullseye-updates'),
                     ('debian-security', 'bullseye/updates'),
@@ -124,7 +134,11 @@ DOCKER_IMAGES = {
             ])),
             'apt-get clean',
             'ln -s /usr/bin/python3-coverage /usr/local/bin/coverage',
-            'python3 -m pip install codecov==2.1.12',
+            'curl -o /usr/local/bin/codecov -sL {}'.format(
+                'https://github.com/codecov/uploader/releases/download'
+                '/v0.1.0_9779/codecov-linux'
+            ),
+            'chmod +x /usr/local/bin/codecov',
             'curl -sL {} | tar -C /usr/local/bin -jxf -'.format(
                 'https://github.com/mozilla/grcov/releases/download/v0.8.7'
                 '/grcov-x86_64-unknown-linux-gnu.tar.bz2'

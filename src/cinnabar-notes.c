@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "cache.h"
+#include "hash.h"
 #include "cinnabar-notes.h"
 
 #undef notes_tree

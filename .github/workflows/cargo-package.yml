@@ -18,10 +18,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        toolchain: [1.68.0]
+        toolchain: [1.70.0]
         include:
           - os: windows-latest
-            toolchain: 1.68.0-x86_64-pc-windows-gnu
+            toolchain: 1.70.0-x86_64-pc-windows-gnu
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3

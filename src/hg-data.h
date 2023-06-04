@@ -5,6 +5,8 @@
 #ifndef HG_DATA_H
 #define HG_DATA_H
 
+#include "hash.h"
+#include "hex.h"
 #include "strbuf.h"
 #include "cinnabar-notes.h"
 

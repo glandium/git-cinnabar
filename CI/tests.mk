@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 TOPDIR = $(abspath $(or $(dir $(firstword $(MAKEFILE_LIST))),$(CURDIR))/..)
 
 ifeq (a,$(firstword a$(subst /, ,$(abspath .))))
@@ -232,12 +236,11 @@ hg.graft.base.git hg.graft2.base.git: hg.upgraded.git hg.pure.hg
 	$(GIT) init $@
 	$(GIT) -C $@ remote add origin hg::$(PATH_URL)/$(word 2,$^)
 	$(GIT) -C $< push $(CURDIR)/$@ refs/remotes/*:refs/remotes/*
-	$(GIT) -C $@ checkout $$($(GIT) -C $< rev-parse HEAD)
 
 hg.graft.git: hg.graft.base.git hg.upgraded.git
 	cp -r $< $@
 	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
-	$(GIT) -c user.email=foo@bar -C $@ filter-branch --msg-filter 'cat ; echo' --original original -- --all
+	$(GIT) -C $@ fast-export --no-data --all | python3 $(TOPDIR)/CI/filter.py --commits | git -c core.ignorecase=false -C $@ fast-import --force
 	$(GIT) -C $@ -c cinnabar.graft=true remote update
 	$(call COMPARE_REFS, $(word 2,$^), $@, XARGS_GIT2HG)
 	$(GIT) -C $@ cinnabar fsck --full
@@ -250,10 +253,10 @@ hg.graft2.git: hg.graft.git hg.pure.hg hg.graft2.base.git
 	$(call COMPARE_REFS, $<, $@)
 	$(GIT) -C $@ cinnabar fsck --full
 
-hg.graft.replace.git: hg.graft.git hg.upgraded.git
+hg.graft.replace.git: hg.graft.base.git hg.upgraded.git
 	cp -r $< $@
 	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
-	$(GIT) -c user.email=foo@bar -C $@ filter-branch --index-filter 'test $$GIT_COMMIT = '$$($(call GET_ROOTS,$@,--remotes))' && git rm -r --cached -- \* || true' --original original -- --all
+	$(GIT) -C $@ fast-export --no-data --full-tree --all | python3 $(TOPDIR)/CI/filter.py --commits --roots | git -c core.ignorecase=false -C $@ fast-import --force
 	$(GIT) -C $@ -c cinnabar.graft=true remote update
 	$(call COMPARE_REFS, $(word 2,$^), $@, XARGS_GIT2HG)
 	$(call COMPARE_COMMANDS,$(call GET_ROOTS,$(word 2,$^),--remotes),$(call GET_ROOTS,$@,--glob=refs/cinnabar/replace))

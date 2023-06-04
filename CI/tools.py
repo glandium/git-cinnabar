@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 import hashlib
 import os
 
@@ -12,8 +16,8 @@ from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '6.3.0'
-GIT_VERSION = '2.40.0'
+MERCURIAL_VERSION = '6.4.2'
+GIT_VERSION = '2.41.0'
 
 ALL_MERCURIAL_VERSIONS = (
     '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
@@ -22,7 +26,7 @@ ALL_MERCURIAL_VERSIONS = (
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
     '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2', '5.3.2',
     '5.4.2', '5.5.2', '5.6.1', '5.7.1', '5.8.1', '5.9.3', '6.0.3',
-    '6.1.4', '6.2.3', '6.3.0',
+    '6.1.4', '6.2.3', '6.3.3', '6.4.2',
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -280,7 +284,7 @@ class Hg(Task, metaclass=Tool):
         ]
 
 
-def install_rust(version='1.68.0', target='x86_64-unknown-linux-gnu'):
+def install_rust(version='1.70.0', target='x86_64-unknown-linux-gnu'):
     rustup_opts = '-y --default-toolchain none'
     cargo_dir = '$HOME/.cargo/bin/'
     rustup = cargo_dir + 'rustup'
@@ -332,7 +336,9 @@ class Build(Task, metaclass=Tool):
         head = None
         desc_variant = variant
         extra_commands = []
-        environ = {}
+        environ = {
+            'WARNINGS_AS_ERRORS': '1',
+        }
         cargo_flags = ['-vv', '--release']
         cargo_features = ['self-update', 'gitdev']
         rust_version = None
@@ -422,7 +428,7 @@ class Build(Task, metaclass=Tool):
                 f'/sysroot-{arch}/usr/share/pkgconfig',
             ))
         if variant in ('coverage', 'asan'):
-            rust_install = install_rust('nightly-2022-08-07', rust_target)
+            rust_install = install_rust('nightly-2023-03-05', rust_target)
         elif rust_version:
             rust_install = install_rust(rust_version, target=rust_target)
         else:

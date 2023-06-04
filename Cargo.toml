@@ -69,7 +69,7 @@ version = "=0.3.0"  # Avoid MSRV bump to 1.64.
 [target.'cfg(windows)'.dependencies.curl-sys]
 version = "0.4"
 default-features = false
-features = ["ssl", "static-curl", "rustls"]
+features = ["ssl", "static-curl"]
 
 [target.'cfg(not(windows))'.dependencies.curl-sys]
 version = "0.4"
