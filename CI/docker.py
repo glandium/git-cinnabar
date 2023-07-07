@@ -256,7 +256,7 @@ class DockerImage(Task, metaclass=TaskEnvironment):
                 params['mounts'] = [{'file': image}]
                 artifact = os.path.basename(image.artifact)
                 command.append(
-                    f'IMAGE_NAME=$(podman load -i {artifact}'
+                    f'IMAGE_NAME=$(zstd -cd {artifact} | podman load'
                     ' | sed -n "s/.*: //p")')
                 image = '$IMAGE_NAME'
             bash_cmd = bash_command(*params['command'])
@@ -269,11 +269,12 @@ class DockerImage(Task, metaclass=TaskEnvironment):
                     'exit_code=$?',
                     'podman commit taskcontainer taskcontainer',
                     'mkdir tmp',
-                    'podman save taskcontainer > tmp/dockerImage.tar',
+                    'podman save taskcontainer'
+                    ' | zstd > tmp/dockerImage.tar.zst',
                     'podman rm taskcontainer',
                     'exit $exit_code',
                 ])
-                params['artifacts'] = ["dockerImage.tar"]
+                params['artifacts'] = ["dockerImage.tar.zst"]
             params['command'] = command
         elif 'image' not in params:
             params['image'] = self
