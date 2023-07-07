@@ -4,6 +4,7 @@
 
 import hashlib
 import json
+import os
 
 from tasks import (
     Task,
@@ -223,6 +224,7 @@ class DockerImage(Task, metaclass=TaskEnvironment):
             description='docker image: {}'.format(name),
             index=self.index,
             expireIn='26 weeks',
+            workerType='linux',
             image=base,
             dockerSave=True,
             command=self.definition,
@@ -247,9 +249,37 @@ class DockerImage(Task, metaclass=TaskEnvironment):
         return h.hexdigest()
 
     def prepare_params(self, params):
-        if 'image' not in params:
+        if params.get('workerType') == 'linux':
+            command = []
+            image = params.pop('image')
+            if isinstance(image, DockerImage):
+                params['mounts'] = [{'file': image}]
+                artifact = os.path.basename(image.artifact)
+                command.append(
+                    f'IMAGE_NAME=$(podman load -i {artifact}'
+                    ' | sed -n "s/.*: //p")')
+                image = '$IMAGE_NAME'
+            bash_cmd = bash_command(*params['command'])
+            command.append(
+                f'podman run --name taskcontainer {image} ' +
+                ' '.join(bash_cmd[:-1] + [f"'{bash_cmd[-1]}'"])
+            )
+            if params.pop('dockerSave', False):
+                command.extend([
+                    'exit_code=$?',
+                    'podman commit taskcontainer taskcontainer',
+                    'mkdir tmp',
+                    'podman save taskcontainer > tmp/dockerImage.tar',
+                    'podman rm taskcontainer',
+                    'exit $exit_code',
+                ])
+                params['artifacts'] = ["dockerImage.tar"]
+            params['command'] = command
+        elif 'image' not in params:
             params['image'] = self
+
         params['command'] = bash_command(*params['command'])
+
         params.setdefault('env', {})['ARTIFACTS'] = '/tmp'
         if 'artifacts' in params:
             params['artifacts'] = ['{}/{}'.format('/tmp', a)

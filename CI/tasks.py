@@ -276,7 +276,7 @@ class Task(object):
                     resolver.format(a)
                     for a in v
                 ]
-                if kwargs.get('workerType', '').startswith('osx'):
+                if kwargs.get('workerType', '').startswith(('osx', 'linux')):
                     task['payload']['command'] = [task['payload']['command']]
                 for t in resolver.used():
                     dependencies.append(t.id)
@@ -291,7 +291,7 @@ class Task(object):
                 }
                 artifact_paths.extend(artifacts.keys())
                 if kwargs.get('workerType', '').startswith(
-                        ('osx', 'win2012r2')):
+                        ('osx', 'win2012r2', 'linux')):
                     artifacts = [
                         a.update(name=name) or a
                         for name, a in artifacts.items()
@@ -324,30 +324,35 @@ class Task(object):
                         'Unsupported/unknown format for {}'.format(url))
 
                 mounts = task['payload']['mounts'] = []
-                for t in v:
-                    if isinstance(t, Task):
-                        mounts.append({
-                            'content': {
-                                'artifact': '/'.join(
-                                    t.artifact.rsplit('/', 2)[-2:]),
-                                'taskId': t.id,
-                            },
-                            'directory': '.',
-                            'format': file_format(t.artifact),
-                        })
-                        dependencies.append(t.id)
+                for m in v:
+                    assert isinstance(m, dict)
+                    m = list(m.items())
+                    assert len(m) == 1
+                    kind, m = m[0]
+                    if isinstance(m, Task):
+                        content = {
+                            'artifact': '/'.join(
+                                m.artifact.rsplit('/', 2)[-2:]),
+                            'taskId': m.id,
+                        }
+                        dependencies.append(m.id)
+                    elif isinstance(m, dict):
+                        content = m
                     else:
-                        if not isinstance(t, dict):
-                            t = {
-                                'url': t,
-                                'directory': '.',
-                            }
+                        content = {
+                            'url': m,
+                        }
+                    artifact = content.get('artifact') or content['url']
+                    if kind == "file":
                         mounts.append({
-                            'content': {
-                                'url': t['url'],
-                            },
-                            'directory': t['directory'],
-                            'format': file_format(t['url']),
+                            'content': content,
+                            'file': os.path.basename(artifact),
+                        })
+                    elif kind == "directory":
+                        mounts.append({
+                            'content': content,
+                            'directory': '.',
+                            'format': file_format(artifact),
                         })
             elif k == 'dependencies':
                 for t in v:
@@ -355,10 +360,6 @@ class Task(object):
                         env = task['payload'].setdefault('env', {})
                         env[index_env(t.index)] = t.id
                     dependencies.append(t.id)
-            elif k == 'dockerSave':
-                features = task['payload'].setdefault('features', {})
-                features[k] = bool(v)
-                artifact_paths.append('public/dockerImage.tar')
             else:
                 raise Exception("Don't know how to handle {}".format(k))
         task['dependencies'] = sorted(dependencies)
