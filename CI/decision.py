@@ -149,6 +149,7 @@ class Clone(TestTask, metaclass=Tool):
     def __init__(self, version):
         sha1 = git_rev_parse(version)
         expireIn = '26 weeks'
+        kwargs = {}
         if version == TC_COMMIT or len(version) == 40:
             if version == TC_COMMIT:
                 download = Build.install('linux')
@@ -157,11 +158,10 @@ class Clone(TestTask, metaclass=Tool):
             expireIn = '26 weeks'
         elif parse_version(version) < parse_version('0.6.0'):
             download = ['repo/git-cinnabar download']
+            if parse_version(version) < parse_version('0.5.7'):
+                kwargs['git'] = '2.30.2'
         else:
             download = ['repo/download.py']
-        kwargs = {}
-        if parse_version(version) < parse_version('0.5.7'):
-            kwargs['git'] = '2.30.2'
         if REPO == DEFAULT_REPO:
             index = 'bundle.{}'.format(sha1)
         else:
