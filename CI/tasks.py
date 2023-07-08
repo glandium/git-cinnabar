@@ -8,17 +8,28 @@ import json
 import numbers
 import os
 import requests
-import uuid
 
 from collections import OrderedDict
 from pkg_resources import parse_version  # noqa: F401
 from string import Formatter
+from uuid import uuid4
 
 from variables import *  # noqa: F403
 
 
+if os.environ.get('DETERMINISTIC'):
+    from uuid import UUID
+    import random
+
+    rand = random.Random()
+    rand.seed(0)
+
+    def uuid4():  # noqa: F811
+        return UUID(int=rand.getrandbits(128), version=4)
+
+
 def slugid():
-    rawBytes = bytearray(uuid.uuid4().bytes)
+    rawBytes = bytearray(uuid4().bytes)
     # Ensure base64-encoded bytes start with [A-Za-f]
     if rawBytes[0] >= 0xd0:
         rawBytes[0] = rawBytes[0] & 0x7f
@@ -46,7 +57,10 @@ class datetime(datetime.datetime):
 
 task_group_id = (os.environ.get('TC_GROUP_ID') or
                  os.environ.get('TASK_ID') or slugid())
-now = datetime.utcnow()
+if os.environ.get('DETERMINISTIC'):
+    now = datetime.fromtimestamp(0)
+else:
+    now = datetime.utcnow()
 
 
 def index_env(idx):
