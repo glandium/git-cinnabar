@@ -12,7 +12,6 @@ import requests
 
 from collections import OrderedDict
 from pkg_resources import parse_version  # noqa: F401
-from string import Formatter
 from uuid import uuid4
 
 from variables import *  # noqa: F403
@@ -171,21 +170,6 @@ class Task(object):
     by_index = Index(session)
     by_id = OrderedDict()
 
-    class Resolver(Formatter):
-        def __init__(self):
-            self._used = set()
-
-        def get_value(self, key, args, kwargs):
-            task = Task.by_id.get(key)
-            if task:
-                self._used.add(task)
-                return task
-            raise KeyError(key)
-
-        def used(self):
-            for u in self._used:
-                yield u
-
     @staticmethod
     def normalize_params(params):
         try:
@@ -286,15 +270,9 @@ class Task(object):
                         multiplier = 7 * 24 * 60 * 60  # weeks
                 task['expires'] = (now + value * multiplier).format()
             elif k == 'command':
-                resolver = Task.Resolver()
-                task['payload']['command'] = [
-                    resolver.format(a)
-                    for a in v
-                ]
+                task['payload']['command'] = v
                 if not kwargs.get('workerType', '').startswith('win'):
                     task['payload']['command'] = [task['payload']['command']]
-                for t in resolver.used():
-                    dependencies.append(t.id)
 
             elif k == 'artifacts':
                 artifacts = [

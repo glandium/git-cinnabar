@@ -113,8 +113,7 @@ class MsysEnvironment(MsysCommon):
             'rm -rf /var/cache/pacman/pkg',
             'python2.7 -m pip install pip==20.3.4 wheel==0.37.1 --upgrade',
             'python3 -m pip install pip==22.2.2 wheel==0.37.1 --upgrade',
-            'mv {}/{}/bin/{{{{mingw32-,}}}}make.exe'.format(msys(cpu),
-                                                            mingw(cpu)),
+            'mv {}/{}/bin/{{mingw32-,}}make.exe'.format(msys(cpu), mingw(cpu)),
             'tar -c --hard-dereference {} | zstd -c > msys2.tar.zst'.format(
                 msys(cpu)),
         ]

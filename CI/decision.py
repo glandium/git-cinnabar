@@ -96,7 +96,7 @@ class TestTask(Task):
             command.extend([
                 'git init repo/hg.old.git',
                 'git -C repo/hg.old.git fetch ../../bundle.git refs/*:refs/*',
-                'git -C repo/hg.old.git remote add origin hg:${{REPO#https:}}',
+                'git -C repo/hg.old.git remote add origin hg:${REPO#https:}',
                 'git -C repo/hg.old.git symbolic-ref HEAD'
                 ' refs/heads/branches/default/tip',
             ])
