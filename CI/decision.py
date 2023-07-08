@@ -130,6 +130,8 @@ class TestTask(Task):
                 artifacts.push(artifact)
             artifacts.append('coverage.zip')
             self.coverage.append(self)
+        elif variant == 'asan' and task_env == 'linux':
+            kwargs['caps'] = ['SYS_PTRACE']
         if not desc:
             desc = '{} w/ git-{} hg-{}'.format(
                 short_desc, git, 'r' + hg if len(hg) == 40 else hg)

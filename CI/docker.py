@@ -251,43 +251,45 @@ class DockerImage(Task, metaclass=TaskEnvironment):
         return h.hexdigest()
 
     def prepare_params(self, params):
-        if params.get('workerType') == 'linux':
-            commands = []
-            image = params.pop('image')
-            if isinstance(image, DockerImage):
-                params['mounts'] = [{'file': image}]
-                artifact = os.path.basename(image.artifact)
-                commands.append(
-                    f'IMAGE_NAME=$(zstd -cd {artifact} | podman load'
-                    ' | sed -n "s/.*: //p")')
-                image = no_quote('$IMAGE_NAME')
-            run_cmd = [
-                'podman',
-                'run',
-                '--name=taskcontainer',
-                image,
-            ]
-            run_cmd.extend(bash_command(*params['command']))
-            commands.append(join_command(*run_cmd))
-            if params.pop('dockerSave', False):
-                commands.extend([
-                    'exit_code=$?',
-                    'podman commit taskcontainer taskcontainer',
-                    'mkdir tmp',
-                    'podman save taskcontainer'
-                    ' | zstd > tmp/dockerImage.tar.zst',
-                    'podman rm taskcontainer',
-                    'exit $exit_code',
-                ])
-                params['artifacts'] = ["dockerImage.tar.zst"]
-            params['command'] = commands
-        elif 'image' not in params:
-            params['image'] = self
+        commands = ["mkdir artifacts"]
+        image = params.pop('image', self)
+        if isinstance(image, DockerImage):
+            params['mounts'] = [{'file': image}]
+            artifact = os.path.basename(image.artifact)
+            commands.append(
+                f'IMAGE_NAME=$(zstd -cd {artifact} | podman load'
+                ' | sed -n "s/.*: //p")')
+            image = no_quote('$IMAGE_NAME')
+        run_cmd = [
+            'podman',
+            'run',
+            '--name=taskcontainer',
+            '--volume=./artifacts:/artifacts',
+            '--env=ARTIFACTS=/artifacts',
+        ]
+        if any(s.startswith('secrets:') for s in params.get('scopes', [])):
+            # There's probably a better way, but it's simpler.
+            run_cmd.append('--network=host')
+        for k, v in params.pop('env', {}).items():
+            run_cmd.append(f'--env={k}={v}')
+        for cap in params.pop('caps', []):
+            run_cmd.append(f'--cap-add={cap}')
+        run_cmd.append(image)
+        run_cmd.extend(bash_command(*params['command']))
+        commands.append(join_command(*run_cmd))
+        if params.pop('dockerSave', False):
+            commands.extend([
+                'exit_code=$?',
+                'podman commit taskcontainer taskcontainer',
+                'podman save taskcontainer'
+                ' | zstd > artifacts/dockerImage.tar.zst',
+                'podman rm taskcontainer',
+                'exit $exit_code',
+            ])
+            params['artifacts'] = ["dockerImage.tar.zst"]
+        params['command'] = bash_command(*commands)
 
-        params['command'] = bash_command(*params['command'])
-
-        params.setdefault('env', {})['ARTIFACTS'] = '/tmp'
         if 'artifacts' in params:
-            params['artifacts'] = ['{}/{}'.format('/tmp', a)
+            params['artifacts'] = [f'artifacts/{a}'
                                    for a in params['artifacts']]
         return params

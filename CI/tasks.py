@@ -225,7 +225,7 @@ class Task(object):
             'deadline': (now + maxRunTime * 5 + 1800).format(),
             'retries': 5,
             'provisionerId': 'proj-git-cinnabar',
-            'workerType': 'ci',
+            'workerType': 'linux',
             'schedulerId': 'taskcluster-github',
             'taskGroupId': task_group_id,
             'metadata': {
@@ -291,39 +291,23 @@ class Task(object):
                     resolver.format(a)
                     for a in v
                 ]
-                if kwargs.get('workerType', '').startswith(('osx', 'linux')):
+                if not kwargs.get('workerType', '').startswith('win'):
                     task['payload']['command'] = [task['payload']['command']]
                 for t in resolver.used():
                     dependencies.append(t.id)
 
             elif k == 'artifacts':
-                artifacts = {
-                    'public/{}'.format(os.path.basename(a)): {
+                artifacts = [
+                    {
+                        'name': 'public/{}'.format(os.path.basename(a)),
                         'path': a,
                         'type': 'file',
-                    }
-                    for a in v
-                }
-                artifact_paths.extend(artifacts.keys())
-                if kwargs.get('workerType', '').startswith(
-                        ('osx', 'win2012r2', 'linux')):
-                    artifacts = [
-                        a.update(name=name) or a
-                        for name, a in artifacts.items()
-                    ]
+                    } for a in v
+                ]
+                artifact_paths.extend(a['name'] for a in artifacts)
                 task['payload']['artifacts'] = artifacts
             elif k == 'env':
                 task['payload'].setdefault('env', {}).update(v)
-            elif k == 'image':
-                if isinstance(v, Task):
-                    v = {
-                        'path': 'public/{}'.format(
-                            os.path.basename(v.artifact)),
-                        'taskId': v.id,
-                        'type': 'task-image',
-                    }
-                    dependencies.append(v['taskId'])
-                task['payload']['image'] = v
             elif k == 'scopes':
                 task[k] = v
                 for s in v:
