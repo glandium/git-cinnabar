@@ -10,6 +10,8 @@ from tasks import (
     Task,
     TaskEnvironment,
     bash_command,
+    join_command,
+    no_quote,
 )
 from variables import TC_REPO_NAME
 
@@ -250,22 +252,25 @@ class DockerImage(Task, metaclass=TaskEnvironment):
 
     def prepare_params(self, params):
         if params.get('workerType') == 'linux':
-            command = []
+            commands = []
             image = params.pop('image')
             if isinstance(image, DockerImage):
                 params['mounts'] = [{'file': image}]
                 artifact = os.path.basename(image.artifact)
-                command.append(
+                commands.append(
                     f'IMAGE_NAME=$(zstd -cd {artifact} | podman load'
                     ' | sed -n "s/.*: //p")')
-                image = '$IMAGE_NAME'
-            bash_cmd = bash_command(*params['command'])
-            command.append(
-                f'podman run --name taskcontainer {image} ' +
-                ' '.join(bash_cmd[:-1] + [f"'{bash_cmd[-1]}'"])
-            )
+                image = no_quote('$IMAGE_NAME')
+            run_cmd = [
+                'podman',
+                'run',
+                '--name=taskcontainer',
+                image,
+            ]
+            run_cmd.extend(bash_command(*params['command']))
+            commands.append(join_command(*run_cmd))
             if params.pop('dockerSave', False):
-                command.extend([
+                commands.extend([
                     'exit_code=$?',
                     'podman commit taskcontainer taskcontainer',
                     'mkdir tmp',
@@ -275,7 +280,7 @@ class DockerImage(Task, metaclass=TaskEnvironment):
                     'exit $exit_code',
                 ])
                 params['artifacts'] = ["dockerImage.tar.zst"]
-            params['command'] = command
+            params['command'] = commands
         elif 'image' not in params:
             params['image'] = self
 

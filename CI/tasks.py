@@ -7,6 +7,7 @@ import datetime
 import json
 import numbers
 import os
+import re
 import requests
 
 from collections import OrderedDict
@@ -434,6 +435,26 @@ class Task(object):
                 print(res.content)
             raise
         print(res.json())
+
+
+SHELL_QUOTE_RE = re.compile(r'[\\\t\r\n \'\"#<>&|`~(){}$;\*\?]')
+
+
+class no_quote(str):
+    pass
+
+
+def _quote(s, for_windows=False):
+    if s and (isinstance(s, no_quote) or not SHELL_QUOTE_RE.search(s)):
+        return s
+    if for_windows:
+        for c in '^&\\<>|':
+            s = s.replace(c, '^' + c)
+    return "'{}'".format(s.replace("'", "'\\''"))
+
+
+def join_command(*command, for_windows=False):
+    return ' '.join(_quote(a, for_windows) for a in command)
 
 
 def bash_command(*commands):
