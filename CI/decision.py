@@ -398,7 +398,7 @@ def main():
         ]
         task = Build.by_name('linux.coverage')
         coverage_mounts.append({'file:gcno-build.zip': {
-            'artifact': '/'.join(task.artifacts[1].rsplit('/', 2)[-2:]),
+            'artifact': task.artifacts[1],
             'taskId': task.id,
         }})
 

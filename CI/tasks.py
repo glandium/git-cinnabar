@@ -330,8 +330,7 @@ class Task(object):
                     kind, m = m[0]
                     if isinstance(m, Task):
                         content = {
-                            'artifact': '/'.join(
-                                m.artifacts[0].rsplit('/', 2)[-2:]),
+                            'artifact': m.artifacts[0],
                             'taskId': m.id,
                         }
                         dependencies.append(m.id)
@@ -381,14 +380,10 @@ class Task(object):
                 id = None
 
         self.id = id or slugid()
-        urls = [
-            ARTIFACT_URL.format(self.id, a)
-            for a in artifact_paths
-        ]
-        if len(urls) > 1:
-            self.artifacts = urls
-        elif urls:
-            self.artifact = urls[0]
+        if len(artifact_paths) > 1:
+            self.artifacts = artifact_paths
+        elif artifact_paths:
+            self.artifact = artifact_paths[0]
             self.artifacts = [self.artifact]
         else:
             self.artifacts = []
