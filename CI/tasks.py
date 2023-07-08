@@ -371,9 +371,6 @@ class Task(object):
                         })
             elif k == 'dependencies':
                 for t in v:
-                    if hasattr(t, 'index'):
-                        env = task['payload'].setdefault('env', {})
-                        env[index_env(t.index)] = t.id
                     dependencies.append(t.id)
             else:
                 raise Exception("Don't know how to handle {}".format(k))
