@@ -253,8 +253,14 @@ class DockerImage(Task, metaclass=TaskEnvironment):
     def prepare_params(self, params):
         commands = ["mkdir artifacts"]
         image = params.pop('image', self)
+        volumes = [
+            kind.split(':', 1)[1]
+            for mount in params.get('mounts', [])
+            for kind in mount
+            if ':' in kind
+        ]
         if isinstance(image, DockerImage):
-            params['mounts'] = [{'file': image}]
+            params.setdefault('mounts', []).append({'file': image})
             artifact = os.path.basename(image.artifact)
             commands.append(
                 f'IMAGE_NAME=$(zstd -cd {artifact} | podman load'
@@ -270,6 +276,8 @@ class DockerImage(Task, metaclass=TaskEnvironment):
         if any(s.startswith('secrets:') for s in params.get('scopes', [])):
             # There's probably a better way, but it's simpler.
             run_cmd.append('--network=host')
+        for v in volumes:
+            run_cmd.append(f'--volume=./{v}:/{v}')
         for k, v in params.pop('env', {}).items():
             run_cmd.append(f'--env={k}={v}')
         for cap in params.pop('caps', []):

@@ -48,8 +48,7 @@ class MsysCommon(object):
     def prepare_params(self, params):
         assert 'workerType' not in params
         params['workerType'] = 'win2012r2'
-        assert 'mounts' not in params
-        params['mounts'] = [{'directory': self}]
+        params.setdefault('mounts', []).append({'directory': self})
         params.setdefault('env', {})['MSYSTEM'] = mingw(self.cpu)
 
         command = []

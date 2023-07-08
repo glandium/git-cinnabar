@@ -48,6 +48,7 @@ class Git(Task, metaclass=Tool):
 
     def __init__(self, os_and_version):
         (os, version) = os_and_version.split('.', 1)
+        self.os = os
         if os.startswith('osx'):
             build_image = TaskEnvironment.by_name('osx.build')
         else:
@@ -119,21 +120,18 @@ class Git(Task, metaclass=Tool):
                 artifact='git-{}.tar.zst'.format(raw_version),
             )
 
-    @classmethod
-    def install(cls, name):
-        url = '{{{}.artifact}}'.format(cls.by_name(name))
-        if name.startswith(('linux.', 'osx.')):
+    def mount(self):
+        return {'directory:git': self}
+
+    def install(self):
+        if self.os.startswith(('linux', 'osx')):
             return [
-                'curl --compressed -L {} | zstd -cd | tar -x'.format(url),
                 'export PATH=$PWD/git/bin:$PATH',
                 'export GIT_EXEC_PATH=$PWD/git/libexec/git-core',
                 'export GIT_TEMPLATE_DIR=$PWD/git/share/git-core/templates',
             ]
         else:
-            return [
-                'curl --compressed -L {} -o git.tar.zst'.format(url),
-                'zstd -cd git.tar.zst | tar -x',
-            ]
+            return []
 
 
 class Hg(Task, metaclass=Tool):
@@ -202,8 +200,9 @@ class Hg(Task, metaclass=Tool):
 
         pre_command = []
         if len(version) == 40:
-            pre_command.extend(
-                self.install('{}.{}'.format(os, MERCURIAL_VERSION)))
+            hg = self.by_name('{}.{}'.format(os, MERCURIAL_VERSION))
+            kwargs.setdefault('mounts', []).append(hg.mount())
+            pre_command.extend(hg.install())
             pre_command.extend([
                 'hg clone https://www.mercurial-scm.org/repo/hg'
                 ' -r {} mercurial-{}'.format(version, version),
@@ -271,16 +270,16 @@ class Hg(Task, metaclass=Tool):
             **kwargs
         )
 
-    @classmethod
-    def install(cls, name):
-        hg = cls.by_name(name)
-        filename = os.path.basename(hg.artifacts[0])
+    def mount(self):
+        return {f'file:{os.path.basename(self.artifacts[0])}': self}
+
+    def install(self):
+        filename = os.path.basename(self.artifacts[0])
         if 'cp3' in filename:
             python = 'python3'
         else:
             python = 'python2.7'
         return [
-            'curl -L {{{}.artifact}} -o {}'.format(hg, filename),
             '{} -m pip install {}'.format(python, filename)
         ]
 
@@ -449,13 +448,13 @@ class Build(Task, metaclass=Tool):
             env=environ,
         )
 
-    @classmethod
-    def install(cls, name):
-        build = cls.by_name(name)
-        filename = os.path.basename(build.artifacts[0])
+    def mount(self):
+        return {f'file:{os.path.basename(self.artifacts[0])}': self}
+
+    def install(self):
+        filename = os.path.basename(self.artifacts[0])
         return [
-            'curl --compressed -o repo/{} -L {{{}.artifacts[0]}}'.format(
-                filename, build),
+            f'cp {filename} repo/',
             'chmod +x repo/{}'.format(filename),
             '$PWD/repo/{} setup'.format(filename),
         ]

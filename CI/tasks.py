@@ -331,26 +331,27 @@ class Task(object):
                     if isinstance(m, Task):
                         content = {
                             'artifact': '/'.join(
-                                m.artifact.rsplit('/', 2)[-2:]),
+                                m.artifacts[0].rsplit('/', 2)[-2:]),
                             'taskId': m.id,
                         }
                         dependencies.append(m.id)
                     elif isinstance(m, dict):
                         content = m
+                        dependencies.append(m['taskId'])
                     else:
                         content = {
                             'url': m,
                         }
                     artifact = content.get('artifact') or content['url']
-                    if kind == "file":
+                    if kind == "file" or kind.startswith("file:"):
                         mounts.append({
                             'content': content,
-                            'file': os.path.basename(artifact),
+                            'file': kind[5:] or os.path.basename(artifact),
                         })
-                    elif kind == "directory":
+                    elif kind == "directory" or kind.startswith("directory:"):
                         mounts.append({
                             'content': content,
-                            'directory': '.',
+                            'directory': os.path.dirname(kind[10:]) or '.',
                             'format': file_format(artifact),
                         })
             elif k == 'dependencies':
