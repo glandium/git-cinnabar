@@ -109,7 +109,8 @@ class Git(Task, metaclass=Tool):
                     'unzip -d git git.zip',
                     'curl -L https://github.com/git-for-windows/git/releases/'
                     'download/v{}/Git-{}-{}-bit.tar.bz2 | '
-                    'tar -C git -jx {}/libexec/git-core/git-http-backend.exe'
+                    'tar -C git --no-same-owner -jx '
+                    '{}/libexec/git-core/git-http-backend.exe'
                     .format(version, min_ver, msys.bits(env.cpu),
                             msys.mingw(env.cpu).lower()),
                     'tar -c git | zstd -c > $ARTIFACTS/git-{}.tar.zst'.format(
