@@ -288,28 +288,14 @@ def install_rust(version='1.70.0', target='x86_64-unknown-linux-gnu'):
     rustup_opts = '-y --default-toolchain none'
     cargo_dir = '$HOME/.cargo/bin/'
     rustup = cargo_dir + 'rustup'
-    if 'windows' in target:
-        cpu, _, __ = target.partition('-')
-        rust_install = [
-            'curl -o rustup-init.exe https://win.rustup.rs/{cpu}',
-            './rustup-init.exe {rustup_opts}',
-            '{rustup} set default-host {target}',
-        ]
-    else:
-        rust_install = [
-            'curl -o rustup.sh https://sh.rustup.rs',
-            'sh rustup.sh {rustup_opts}',
-        ]
-    rust_install += [
+    rust_install = [
+        'curl -o rustup.sh https://sh.rustup.rs',
+        'sh rustup.sh {rustup_opts}',
         '{rustup} install {version} --profile minimal',
         '{rustup} default {version}',
         'PATH={cargo_dir}:$PATH',
         '{rustup} target add {target}',
     ]
-    if 'windows' in target:
-        rust_install += [
-            '{rustup} component remove rust-mingw',
-        ]
     loc = locals()
     return [r.format(**loc) for r in rust_install]
 
@@ -323,6 +309,10 @@ class Build(Task, metaclass=Tool):
             os = 'osx'
         env = TaskEnvironment.by_name(
             '{}.build'.format(os.replace('arm64-linux', 'linux')))
+        if os.startswith('mingw'):
+            build_env = TaskEnvironment.by_name('linux.build')
+        else:
+            build_env = env
 
         artifact = 'git-cinnabar'
         if os.startswith('mingw'):
@@ -386,8 +376,9 @@ class Build(Task, metaclass=Tool):
         elif variant:
             raise Exception('Unknown variant: {}'.format(variant))
 
-        if os in ('linux', 'arm64-linux'):
+        if 'osx' not in os:
             environ['CC'] = 'clang-15'
+        if os in ('linux', 'arm64-linux'):
             cargo_features.append('curl-compat')
 
         if os.startswith('mingw'):
@@ -397,11 +388,11 @@ class Build(Task, metaclass=Tool):
             rust_target = 'x86_64-apple-darwin'
         elif os.startswith('arm64-osx'):
             rust_target = 'aarch64-apple-darwin'
-        elif 'linux' in os:
-            if os == 'linux':
-                rust_target = 'x86_64-unknown-linux-gnu'
-            elif os == 'arm64-linux':
-                rust_target = 'aarch64-unknown-linux-gnu'
+        elif os == 'linux':
+            rust_target = 'x86_64-unknown-linux-gnu'
+        elif os == 'arm64-linux':
+            rust_target = 'aarch64-unknown-linux-gnu'
+        if 'osx' not in os:
             for target in dict.fromkeys(
                     ["x86_64-unknown-linux-gnu", rust_target]).keys():
                 arch = {
@@ -411,22 +402,29 @@ class Build(Task, metaclass=Tool):
                 multiarch = target.replace('unknown-', '')
                 TARGET = target.replace('-', '_').upper()
                 environ[f'CARGO_TARGET_{TARGET}_LINKER'] = environ['CC']
+                if 'linux' in os:
+                    extra_link_arg = f'--sysroot=/sysroot-{arch}'
+                if os.startswith('mingw'):
+                    extra_link_arg = \
+                        f'-L/usr/lib/gcc/{cpu}-w64-mingw32/10-win32'
                 environ[f'CARGO_TARGET_{TARGET}_RUSTFLAGS'] = \
                     f'-C link-arg=--target={target} ' + \
-                    f'-C link-arg=--sysroot=/sysroot-{arch} ' + \
-                    '-C link-arg=-fuse-ld=lld'
+                    f'-C link-arg={extra_link_arg} ' + \
+                    '-C link-arg=-fuse-ld=lld-15'
                 rustflags = environ.pop('RUSTFLAGS', None)
                 if rustflags:
                     environ[f'CARGO_TARGET_{TARGET}_RUSTFLAGS'] += \
                         f' {rustflags}'
-                environ[f'CFLAGS_{target}'] = f'--sysroot=/sysroot-{arch}'
-            environ['PKG_CONFIG_PATH'] = ''
-            environ['PKG_CONFIG_SYSROOT_DIR'] = f'/sysroot-{arch}'
-            environ['PKG_CONFIG_LIBDIR'] = ':'.join((
-                f'/sysroot-{arch}/usr/lib/pkgconfig',
-                f'/sysroot-{arch}/usr/lib/{multiarch}/pkgconfig',
-                f'/sysroot-{arch}/usr/share/pkgconfig',
-            ))
+                if 'linux' in os:
+                    environ[f'CFLAGS_{target}'] = f'--sysroot=/sysroot-{arch}'
+            if 'linux' in os:
+                environ['PKG_CONFIG_PATH'] = ''
+                environ['PKG_CONFIG_SYSROOT_DIR'] = f'/sysroot-{arch}'
+                environ['PKG_CONFIG_LIBDIR'] = ':'.join((
+                    f'/sysroot-{arch}/usr/lib/pkgconfig',
+                    f'/sysroot-{arch}/usr/lib/{multiarch}/pkgconfig',
+                    f'/sysroot-{arch}/usr/share/pkgconfig',
+                ))
         if variant in ('coverage', 'asan'):
             rust_install = install_rust('nightly-2023-03-05', rust_target)
         elif rust_version:
@@ -451,7 +449,7 @@ class Build(Task, metaclass=Tool):
         cpu = 'arm64' if os == 'arm64-linux' else env.cpu
         Task.__init__(
             self,
-            task_env=env,
+            task_env=build_env,
             description='build {} {}{}'.format(
                 env.os, cpu, prefix(' ', desc_variant)),
             index='build.{}.{}.{}{}'.format(

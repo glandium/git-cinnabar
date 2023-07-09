@@ -93,6 +93,7 @@ DOCKER_IMAGES = {
                 'debian-archive-keyring',
                 'symlinks',
                 'fakechroot',
+                'gcc-mingw-w64-x86-64-win32',
             ])),
             'for arch in amd64 arm64; do'
             ' mmdebstrap -d'
