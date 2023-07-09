@@ -38,7 +38,7 @@ tasks:
         taskGroupId: ${taskGroupId}
         schedulerId: taskcluster-github
         provisionerId: proj-git-cinnabar
-        workerType: ci
+        workerType: linux
         retries: 5
         scopes:
           $flatten:
@@ -53,7 +53,6 @@ tasks:
             - 'index.project.git-cinnabar.decision.${e.decision_id}'
         payload:
           maxRunTime: 3600
-          image: python:3.7
           features:
             taskclusterProxy: true
           env:
@@ -62,20 +61,20 @@ tasks:
             TC_GROUP_ID: ${taskGroupId}
             TC_IS_PUSH: {$if: 'tasks_for == "github-push"', then: "1"}
           command:
-            - sh
-            - '-c'
-            - >-
-              git clone -n ${e.base_repo_url} repo &&
-              git -C repo remote add head ${e.repo_url} &&
-              git -C repo remote update head &&
-              git -c advice.detachedHead=false -C repo checkout ${e.commit} &&
-              python3 -m venv venv &&
-              venv/bin/pip install pyyaml==6.0 requests==2.27.1 &&
-              venv/bin/python3 repo/CI/decision.py
+            - - sh
+              - '-c'
+              - >-
+                git clone -n ${e.base_repo_url} repo &&
+                git -C repo remote add head ${e.repo_url} &&
+                git -C repo remote update head &&
+                git -c advice.detachedHead=false -C repo checkout ${e.commit} &&
+                python3 -m venv venv &&
+                venv/bin/pip install pyyaml==6.0 requests==2.27.1 &&
+                venv/bin/python3 repo/CI/decision.py
           artifacts:
             $if: 'e.decision_id'
             then:
-              public/actions.json:
+              - name: public/actions.json
                 path: actions.json
                 type: file
         created: {$fromNow: ''}

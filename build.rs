@@ -93,24 +93,33 @@ fn main() {
             target_os, target_env
         );
     }
+
+    let dir = env_os("CARGO_MANIFEST_DIR");
+    let dir = Path::new(&dir);
+
     let extra_args = if target_os == "linux" {
         &["uname_S=Linux"][..]
     } else if target_os == "macos" {
         &["uname_S=Darwin", "uname_R=15.0"][..]
+    } else if target_os == "windows" {
+        static EXTRA_ARGS: [&str; 3] = ["MINGW_WRAPPERS=1", "uname_S=MINGW", "MSYSTEM=MINGW64"];
+        // If the filesystem is case insensitive, we don't want to use MINGW_WRAPPERS.
+        if dir.join("src").join("mingw").join("psapi.h").exists() {
+            &EXTRA_ARGS[1..]
+        } else {
+            &EXTRA_ARGS[..]
+        }
     } else if std::env::var("CINNABAR_CROSS_COMPILE_I_KNOW_WHAT_I_M_DOING").is_err()
-        && target_arch != target::arch()
-        || target_os != target::os()
-        || target_env != target::env()
-        || target_endian != target::endian()
-        || target_pointer_width != target::pointer_width()
+        && (target_arch != target::arch()
+            || target_os != target::os()
+            || target_env != target::env()
+            || target_endian != target::endian()
+            || target_pointer_width != target::pointer_width())
     {
         panic!("Cross-compilation is not supported");
     } else {
         &[][..]
     };
-
-    let dir = env_os("CARGO_MANIFEST_DIR");
-    let dir = Path::new(&dir);
 
     let out_dir = PathBuf::from(env_os("OUT_DIR"));
 

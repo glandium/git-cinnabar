@@ -7,18 +7,29 @@ import datetime
 import json
 import numbers
 import os
+import re
 import requests
-import uuid
 
 from collections import OrderedDict
 from pkg_resources import parse_version  # noqa: F401
-from string import Formatter
+from uuid import uuid4
 
 from variables import *  # noqa: F403
 
 
+if os.environ.get('DETERMINISTIC'):
+    from uuid import UUID
+    import random
+
+    rand = random.Random()
+    rand.seed(0)
+
+    def uuid4():  # noqa: F811
+        return UUID(int=rand.getrandbits(128), version=4)
+
+
 def slugid():
-    rawBytes = bytearray(uuid.uuid4().bytes)
+    rawBytes = bytearray(uuid4().bytes)
     # Ensure base64-encoded bytes start with [A-Za-f]
     if rawBytes[0] >= 0xd0:
         rawBytes[0] = rawBytes[0] & 0x7f
@@ -46,7 +57,10 @@ class datetime(datetime.datetime):
 
 task_group_id = (os.environ.get('TC_GROUP_ID') or
                  os.environ.get('TASK_ID') or slugid())
-now = datetime.utcnow()
+if os.environ.get('DETERMINISTIC'):
+    now = datetime.fromtimestamp(0)
+else:
+    now = datetime.utcnow()
 
 
 def index_env(idx):
@@ -156,21 +170,6 @@ class Task(object):
     by_index = Index(session)
     by_id = OrderedDict()
 
-    class Resolver(Formatter):
-        def __init__(self):
-            self._used = set()
-
-        def get_value(self, key, args, kwargs):
-            task = Task.by_id.get(key)
-            if task:
-                self._used.add(task)
-                return task
-            raise KeyError(key)
-
-        def used(self):
-            for u in self._used:
-                yield u
-
     @staticmethod
     def normalize_params(params):
         try:
@@ -210,7 +209,7 @@ class Task(object):
             'deadline': (now + maxRunTime * 5 + 1800).format(),
             'retries': 5,
             'provisionerId': 'proj-git-cinnabar',
-            'workerType': 'ci',
+            'workerType': 'linux',
             'schedulerId': 'taskcluster-github',
             'taskGroupId': task_group_id,
             'metadata': {
@@ -271,44 +270,22 @@ class Task(object):
                         multiplier = 7 * 24 * 60 * 60  # weeks
                 task['expires'] = (now + value * multiplier).format()
             elif k == 'command':
-                resolver = Task.Resolver()
-                task['payload']['command'] = [
-                    resolver.format(a)
-                    for a in v
-                ]
-                if kwargs.get('workerType', '').startswith('osx'):
+                task['payload']['command'] = v
+                if not kwargs.get('workerType', '').startswith('win'):
                     task['payload']['command'] = [task['payload']['command']]
-                for t in resolver.used():
-                    dependencies.append(t.id)
 
             elif k == 'artifacts':
-                artifacts = {
-                    'public/{}'.format(os.path.basename(a)): {
+                artifacts = [
+                    {
+                        'name': 'public/{}'.format(os.path.basename(a)),
                         'path': a,
                         'type': 'file',
-                    }
-                    for a in v
-                }
-                artifact_paths.extend(artifacts.keys())
-                if kwargs.get('workerType', '').startswith(
-                        ('osx', 'win2012r2')):
-                    artifacts = [
-                        a.update(name=name) or a
-                        for name, a in artifacts.items()
-                    ]
+                    } for a in v
+                ]
+                artifact_paths.extend(a['name'] for a in artifacts)
                 task['payload']['artifacts'] = artifacts
             elif k == 'env':
                 task['payload'].setdefault('env', {}).update(v)
-            elif k == 'image':
-                if isinstance(v, Task):
-                    v = {
-                        'path': 'public/{}'.format(
-                            os.path.basename(v.artifact)),
-                        'taskId': v.id,
-                        'type': 'task-image',
-                    }
-                    dependencies.append(v['taskId'])
-                task['payload']['image'] = v
             elif k == 'scopes':
                 task[k] = v
                 for s in v:
@@ -324,41 +301,39 @@ class Task(object):
                         'Unsupported/unknown format for {}'.format(url))
 
                 mounts = task['payload']['mounts'] = []
-                for t in v:
-                    if isinstance(t, Task):
-                        mounts.append({
-                            'content': {
-                                'artifact': '/'.join(
-                                    t.artifact.rsplit('/', 2)[-2:]),
-                                'taskId': t.id,
-                            },
-                            'directory': '.',
-                            'format': file_format(t.artifact),
-                        })
-                        dependencies.append(t.id)
+                for m in v:
+                    assert isinstance(m, dict)
+                    m = list(m.items())
+                    assert len(m) == 1
+                    kind, m = m[0]
+                    if isinstance(m, Task):
+                        content = {
+                            'artifact': m.artifacts[0],
+                            'taskId': m.id,
+                        }
+                        dependencies.append(m.id)
+                    elif isinstance(m, dict):
+                        content = m
+                        dependencies.append(m['taskId'])
                     else:
-                        if not isinstance(t, dict):
-                            t = {
-                                'url': t,
-                                'directory': '.',
-                            }
+                        content = {
+                            'url': m,
+                        }
+                    artifact = content.get('artifact') or content['url']
+                    if kind == "file" or kind.startswith("file:"):
                         mounts.append({
-                            'content': {
-                                'url': t['url'],
-                            },
-                            'directory': t['directory'],
-                            'format': file_format(t['url']),
+                            'content': content,
+                            'file': kind[5:] or os.path.basename(artifact),
+                        })
+                    elif kind == "directory" or kind.startswith("directory:"):
+                        mounts.append({
+                            'content': content,
+                            'directory': os.path.dirname(kind[10:]) or '.',
+                            'format': file_format(artifact),
                         })
             elif k == 'dependencies':
                 for t in v:
-                    if hasattr(t, 'index'):
-                        env = task['payload'].setdefault('env', {})
-                        env[index_env(t.index)] = t.id
                     dependencies.append(t.id)
-            elif k == 'dockerSave':
-                features = task['payload'].setdefault('features', {})
-                features[k] = bool(v)
-                artifact_paths.append('public/dockerImage.tar')
             else:
                 raise Exception("Don't know how to handle {}".format(k))
         task['dependencies'] = sorted(dependencies)
@@ -383,14 +358,10 @@ class Task(object):
                 id = None
 
         self.id = id or slugid()
-        urls = [
-            ARTIFACT_URL.format(self.id, a)
-            for a in artifact_paths
-        ]
-        if len(urls) > 1:
-            self.artifacts = urls
-        elif urls:
-            self.artifact = urls[0]
+        if len(artifact_paths) > 1:
+            self.artifacts = artifact_paths
+        elif artifact_paths:
+            self.artifact = artifact_paths[0]
             self.artifacts = [self.artifact]
         else:
             self.artifacts = []
@@ -407,7 +378,7 @@ class Task(object):
         print(json.dumps(self.task, indent=4, sort_keys=True))
         if 'TC_PROXY' not in os.environ:
             return
-        url = 'http://taskcluster/api/queue/v1/task/{}'.format(self.id)
+        url = f'{PROXY_URL}/api/queue/v1/task/{self.id}'
         res = session.put(url, json=self.task)
         try:
             res.raise_for_status()
@@ -419,6 +390,26 @@ class Task(object):
                 print(res.content)
             raise
         print(res.json())
+
+
+SHELL_QUOTE_RE = re.compile(r'[\\\t\r\n \'\"#<>&|`~(){}$;\*\?]')
+
+
+class no_quote(str):
+    pass
+
+
+def _quote(s, for_windows=False):
+    if s and (isinstance(s, no_quote) or not SHELL_QUOTE_RE.search(s)):
+        return s
+    if for_windows:
+        for c in '^&\\<>|':
+            s = s.replace(c, '^' + c)
+    return "'{}'".format(s.replace("'", "'\\''"))
+
+
+def join_command(*command, for_windows=False):
+    return ' '.join(_quote(a, for_windows) for a in command)
 
 
 def bash_command(*commands):

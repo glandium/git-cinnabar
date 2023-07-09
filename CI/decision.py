@@ -63,7 +63,9 @@ class TestTask(Task):
         pre_command = kwargs.pop('pre_command', None)
         if build is None:
             build = '{}.{}'.format(task_env, variant) if variant else task_env
-            build = Build.install(build)
+            build = Build.by_name(build)
+            kwargs.setdefault('mounts', []).append(build.mount())
+            build = build.install()
         if variant:
             kwargs.setdefault('env', {})['VARIANT'] = variant
         env = TaskEnvironment.by_name('{}.test'.format(task_env))
@@ -71,7 +73,9 @@ class TestTask(Task):
         if pre_command:
             command.extend(pre_command)
         if hg:
-            command.extend(Hg.install('{}.{}'.format(task_env, hg)))
+            hg_task = Hg.by_name('{}.{}'.format(task_env, hg))
+            kwargs.setdefault('mounts', []).append(hg_task.mount())
+            command.extend(hg_task.install())
             command.append('hg --version')
             try:
                 if StrictVersion(hg) < '3.6':
@@ -80,17 +84,19 @@ class TestTask(Task):
                 # `hg` is a sha1 for trunk, which means it's >= 3.6
                 pass
         if git:
-            command.extend(Git.install('{}.{}'.format(task_env, git)))
+            git_task = Git.by_name('{}.{}'.format(task_env, git))
+            kwargs.setdefault('mounts', []).append(git_task.mount())
+            command.extend(git_task.install())
             command.append('git --version')
         command.extend(Task.checkout(commit=commit))
         command.extend(build)
         if clone:
+            kwargs.setdefault('mounts', []).append(
+                {'file:bundle.git': Clone.by_name(clone)})
             command.extend([
-                'curl --compressed -L {{{}.artifact}} -o repo/bundle.git'
-                .format(Clone.by_name(clone)),
                 'git init repo/hg.old.git',
-                'git -C repo/hg.old.git fetch ../bundle.git refs/*:refs/*',
-                'git -C repo/hg.old.git remote add origin hg:${{REPO#https:}}',
+                'git -C repo/hg.old.git fetch ../../bundle.git refs/*:refs/*',
+                'git -C repo/hg.old.git remote add origin hg:${REPO#https:}',
                 'git -C repo/hg.old.git symbolic-ref HEAD'
                 ' refs/heads/branches/default/tip',
             ])
@@ -130,6 +136,8 @@ class TestTask(Task):
                 artifacts.push(artifact)
             artifacts.append('coverage.zip')
             self.coverage.append(self)
+        elif variant == 'asan' and task_env == 'linux':
+            kwargs['caps'] = ['SYS_PTRACE']
         if not desc:
             desc = '{} w/ git-{} hg-{}'.format(
                 short_desc, git, 'r' + hg if len(hg) == 40 else hg)
@@ -149,19 +157,21 @@ class Clone(TestTask, metaclass=Tool):
     def __init__(self, version):
         sha1 = git_rev_parse(version)
         expireIn = '26 weeks'
+        kwargs = {}
         if version == TC_COMMIT or len(version) == 40:
             if version == TC_COMMIT:
-                download = Build.install('linux')
+                build = Build.by_name('linux')
             else:
-                download = Build.install('linux.old:{}'.format(version))
+                build = Build.by_name('linux.old:{}'.format(version))
+            kwargs.setdefault('mounts', []).append(build.mount())
+            download = build.install()
             expireIn = '26 weeks'
         elif parse_version(version) < parse_version('0.6.0'):
             download = ['repo/git-cinnabar download']
+            if parse_version(version) < parse_version('0.5.7'):
+                kwargs['git'] = '2.30.2'
         else:
             download = ['repo/download.py']
-        kwargs = {}
-        if parse_version(version) < parse_version('0.5.7'):
-            kwargs['git'] = '2.30.2'
         if REPO == DEFAULT_REPO:
             index = 'bundle.{}'.format(sha1)
         else:
@@ -203,13 +213,15 @@ def decision():
 
         task_env = TaskEnvironment.by_name('{}.test'.format(env))
         if TC_IS_PUSH and TC_BRANCH != "try":
+            hg = Hg.by_name('{}.{}'.format(env, MERCURIAL_VERSION))
+            git = Git.by_name('{}.{}'.format(env, GIT_VERSION))
             Task(
                 task_env=task_env,
                 description='download build {} {}'.format(task_env.os,
                                                           task_env.cpu),
                 command=list(chain(
-                    Git.install('{}.{}'.format(env, GIT_VERSION)),
-                    Hg.install('{}.{}'.format(env, MERCURIAL_VERSION)),
+                    git.install(),
+                    hg.install(),
                     Task.checkout(),
                     [
                         '(cd repo ; ./download.py)',
@@ -227,6 +239,10 @@ def decision():
                 )),
                 dependencies=[
                     Build.by_name(env),
+                ],
+                mounts=[
+                    hg.mount(),
+                    git.mount(),
                 ],
             )
 
@@ -377,23 +393,19 @@ def main():
     merge_coverage = []
 
     if TestTask.coverage and TC_IS_PUSH and TC_BRANCH:
-        download_coverage = [
-            'curl -o cov-{{{}.id}}.zip -L {{{}.artifact}}'.format(
-                task, task)
-            for task in TestTask.coverage
+        coverage_mounts = [
+            {f'file:cov-{task.id}.zip': task} for task in TestTask.coverage
         ]
         task = Build.by_name('linux.coverage')
-        download_coverage.append(
-            'curl -o gcno-build.zip -L {{{}.artifacts[1]}}'.format(task))
-
-        merge_coverage.append(
-            '(' + '& '.join(download_coverage) + '& wait)',
-        )
+        coverage_mounts.append({'file:gcno-build.zip': {
+            'artifact': task.artifacts[1],
+            'taskId': task.id,
+        }})
 
         merge_coverage.extend([
             'grcov -s repo -t lcov -o repo/coverage.lcov gcno-build.zip ' +
             ' '.join(
-                'cov-{{{}.id}}.zip'.format(task)
+                f'cov-{task.id}.zip'
                 for task in TestTask.coverage),
         ])
 
@@ -402,13 +414,14 @@ def main():
             task_env=TaskEnvironment.by_name('linux.codecov'),
             description='upload coverage',
             scopes=['secrets:get:project/git-cinnabar/codecov'],
+            mounts=coverage_mounts,
             command=list(chain(
                 Task.checkout(),
                 [
                     'set +x',
                     ('export CODECOV_TOKEN=$(curl -sL '
-                     'http://taskcluster/api/secrets/v1/secret/project/git-'
-                     'cinnabar/codecov | python2.7'
+                     f'{PROXY_URL}/api/secrets/v1/secret/project/git-cinnabar'
+                     '/codecov | python2.7'
                      ' -c "import json, sys; print(json.load(sys.stdin)'
                      '[\\"secret\\"][\\"token\\"])")'),
                     'set -x',

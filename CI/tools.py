@@ -17,7 +17,7 @@ import msys
 
 
 MERCURIAL_VERSION = '6.4.2'
-GIT_VERSION = '2.40.0'
+GIT_VERSION = '2.41.0'
 
 ALL_MERCURIAL_VERSIONS = (
     '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
@@ -48,6 +48,7 @@ class Git(Task, metaclass=Tool):
 
     def __init__(self, os_and_version):
         (os, version) = os_and_version.split('.', 1)
+        self.os = os
         if os.startswith('osx'):
             build_image = TaskEnvironment.by_name('osx.build')
         else:
@@ -109,7 +110,8 @@ class Git(Task, metaclass=Tool):
                     'unzip -d git git.zip',
                     'curl -L https://github.com/git-for-windows/git/releases/'
                     'download/v{}/Git-{}-{}-bit.tar.bz2 | '
-                    'tar -C git -jx {}/libexec/git-core/git-http-backend.exe'
+                    'tar -C git --no-same-owner -jx '
+                    '{}/libexec/git-core/git-http-backend.exe'
                     .format(version, min_ver, msys.bits(env.cpu),
                             msys.mingw(env.cpu).lower()),
                     'tar -c git | zstd -c > $ARTIFACTS/git-{}.tar.zst'.format(
@@ -118,21 +120,18 @@ class Git(Task, metaclass=Tool):
                 artifact='git-{}.tar.zst'.format(raw_version),
             )
 
-    @classmethod
-    def install(cls, name):
-        url = '{{{}.artifact}}'.format(cls.by_name(name))
-        if name.startswith(('linux.', 'osx.')):
+    def mount(self):
+        return {'directory:git': self}
+
+    def install(self):
+        if self.os.startswith(('linux', 'osx')):
             return [
-                'curl --compressed -L {} | zstd -cd | tar -x'.format(url),
                 'export PATH=$PWD/git/bin:$PATH',
                 'export GIT_EXEC_PATH=$PWD/git/libexec/git-core',
                 'export GIT_TEMPLATE_DIR=$PWD/git/share/git-core/templates',
             ]
         else:
-            return [
-                'curl --compressed -L {} -o git.tar.zst'.format(url),
-                'zstd -cd git.tar.zst | tar -x',
-            ]
+            return []
 
 
 class Hg(Task, metaclass=Tool):
@@ -201,8 +200,9 @@ class Hg(Task, metaclass=Tool):
 
         pre_command = []
         if len(version) == 40:
-            pre_command.extend(
-                self.install('{}.{}'.format(os, MERCURIAL_VERSION)))
+            hg = self.by_name('{}.{}'.format(os, MERCURIAL_VERSION))
+            kwargs.setdefault('mounts', []).append(hg.mount())
+            pre_command.extend(hg.install())
             pre_command.extend([
                 'hg clone https://www.mercurial-scm.org/repo/hg'
                 ' -r {} mercurial-{}'.format(version, version),
@@ -270,21 +270,21 @@ class Hg(Task, metaclass=Tool):
             **kwargs
         )
 
-    @classmethod
-    def install(cls, name):
-        hg = cls.by_name(name)
-        filename = os.path.basename(hg.artifacts[0])
+    def mount(self):
+        return {f'file:{os.path.basename(self.artifacts[0])}': self}
+
+    def install(self):
+        filename = os.path.basename(self.artifacts[0])
         if 'cp3' in filename:
             python = 'python3'
         else:
             python = 'python2.7'
         return [
-            'curl -L {{{}.artifact}} -o {}'.format(hg, filename),
             '{} -m pip install {}'.format(python, filename)
         ]
 
 
-def install_rust(version='1.68.0', target='x86_64-unknown-linux-gnu'):
+def install_rust(version='1.70.0', target='x86_64-unknown-linux-gnu'):
     rustup_opts = '-y --default-toolchain none'
     cargo_dir = '$HOME/.cargo/bin/'
     rustup = cargo_dir + 'rustup'
@@ -336,7 +336,9 @@ class Build(Task, metaclass=Tool):
         head = None
         desc_variant = variant
         extra_commands = []
-        environ = {}
+        environ = {
+            'WARNINGS_AS_ERRORS': '1',
+        }
         cargo_flags = ['-vv', '--release']
         cargo_features = ['self-update', 'gitdev']
         rust_version = None
@@ -406,7 +408,7 @@ class Build(Task, metaclass=Tool):
             environ['CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS'] = \
                 '-C link-arg=--target=aarch64-unknown-linux-gnu'
         if variant in ('coverage', 'asan'):
-            rust_install = install_rust('nightly-2022-08-07', rust_target)
+            rust_install = install_rust('nightly-2023-03-05', rust_target)
         elif rust_version:
             rust_install = install_rust(rust_version, target=rust_target)
         else:
@@ -446,13 +448,13 @@ class Build(Task, metaclass=Tool):
             env=environ,
         )
 
-    @classmethod
-    def install(cls, name):
-        build = cls.by_name(name)
-        filename = os.path.basename(build.artifacts[0])
+    def mount(self):
+        return {f'file:{os.path.basename(self.artifacts[0])}': self}
+
+    def install(self):
+        filename = os.path.basename(self.artifacts[0])
         return [
-            'curl --compressed -o repo/{} -L {{{}.artifacts[0]}}'.format(
-                filename, build),
+            f'cp {filename} repo/',
             'chmod +x repo/{}'.format(filename),
             '$PWD/repo/{} setup'.format(filename),
         ]

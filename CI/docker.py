@@ -4,17 +4,26 @@
 
 import hashlib
 import json
+import os
 
 from tasks import (
     Task,
     TaskEnvironment,
     bash_command,
+    join_command,
+    no_quote,
 )
 from variables import TC_REPO_NAME
 
 
 def sources_list(snapshot, sections):
     for idx, (archive, dist) in enumerate(sections):
+        if not snapshot:
+            yield 'deb http://archive.debian.org/{} {} main'.format(
+                archive,
+                dist,
+            )
+            continue
         yield 'deb http://snapshot.debian.org/archive/{}/{} {} main'.format(
             archive,
             snapshot,
@@ -26,10 +35,10 @@ DOCKER_IMAGES = {
     'base': {
         'from': 'debian:stretch-20220622',
         'commands': [
-            '({})'.format('; '.join('echo ' + l for l in sources_list(
-                '20220622T215414Z', (
+            '({}) > /etc/apt/sources.list'.format('; '.join(
+                'echo ' + l for l in sources_list(None, (
                     ('debian', 'stretch'),
-                    ('debian', 'stretch-updates'),
+                    ('debian', 'stretch-proposed-updates'),
                     ('debian-security', 'stretch/updates'),
                 )))),
             'apt-get update -o Acquire::Check-Valid-Until=false',
@@ -69,8 +78,8 @@ DOCKER_IMAGES = {
     'base-buster': {
         'from': 'debian:buster-20220801',
         'commands': [
-            '({})'.format('; '.join('echo ' + l for l in sources_list(
-                '20220801T205040Z', (
+            '({}) > /etc/apt/sources.list'.format('; '.join(
+                'echo ' + l for l in sources_list('20220801T205040Z', (
                     ('debian', 'buster'),
                     ('debian', 'buster-updates'),
                     ('debian-security', 'buster/updates'),
@@ -217,6 +226,7 @@ class DockerImage(Task, metaclass=TaskEnvironment):
             description='docker image: {}'.format(name),
             index=self.index,
             expireIn='26 weeks',
+            workerType='linux',
             image=base,
             dockerSave=True,
             command=self.definition,
@@ -241,11 +251,53 @@ class DockerImage(Task, metaclass=TaskEnvironment):
         return h.hexdigest()
 
     def prepare_params(self, params):
-        if 'image' not in params:
-            params['image'] = self
-        params['command'] = bash_command(*params['command'])
-        params.setdefault('env', {})['ARTIFACTS'] = '/tmp'
+        commands = ["mkdir artifacts"]
+        image = params.pop('image', self)
+        volumes = [
+            kind.split(':', 1)[1]
+            for mount in params.get('mounts', [])
+            for kind in mount
+            if ':' in kind
+        ]
+        if isinstance(image, DockerImage):
+            params.setdefault('mounts', []).append({'file': image})
+            artifact = os.path.basename(image.artifact)
+            commands.append(
+                f'IMAGE_NAME=$(zstd -cd {artifact} | podman load'
+                ' | sed -n "s/.*: //p")')
+            image = no_quote('$IMAGE_NAME')
+        run_cmd = [
+            'podman',
+            'run',
+            '--name=taskcontainer',
+            '--volume=./artifacts:/artifacts',
+            '--env=ARTIFACTS=/artifacts',
+        ]
+        if any(s.startswith('secrets:') for s in params.get('scopes', [])):
+            # There's probably a better way, but it's simpler.
+            run_cmd.append('--network=host')
+        for v in volumes:
+            run_cmd.append(f'--volume=./{v}:/{v}')
+        for k, v in params.pop('env', {}).items():
+            run_cmd.append(f'--env={k}={v}')
+        for cap in params.pop('caps', []):
+            run_cmd.append(f'--cap-add={cap}')
+        run_cmd.append(image)
+        run_cmd.extend(bash_command(*params['command']))
+        commands.append(join_command(*run_cmd))
+        if params.pop('dockerSave', False):
+            commands.extend([
+                'exit_code=$?',
+                'podman commit taskcontainer taskcontainer',
+                'podman save taskcontainer'
+                ' | zstd > artifacts/dockerImage.tar.zst',
+                'podman rm taskcontainer',
+                'exit $exit_code',
+            ])
+            params['artifacts'] = ["dockerImage.tar.zst"]
+        params['command'] = bash_command(*commands)
+
         if 'artifacts' in params:
-            params['artifacts'] = ['{}/{}'.format('/tmp', a)
+            params['artifacts'] = [f'artifacts/{a}'
                                    for a in params['artifacts']]
         return params

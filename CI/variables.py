@@ -10,9 +10,10 @@ rootUrl = os.environ.get(
     'https://community-tc.services.mozilla.com')
 
 if 'TC_PROXY' in os.environ:
-    PROXY_INDEX_URL = 'http://taskcluster/api/index/v1/task/{}'
+    PROXY_URL = os.environ.get('TASKCLUSTER_PROXY_URL', 'http://taskcluster')
 else:
-    PROXY_INDEX_URL = rootUrl + '/api/index/v1/task/{}'
+    PROXY_URL = rootUrl
+PROXY_INDEX_URL = PROXY_URL + '/api/index/v1/task/{}'
 ARTIFACT_URL = rootUrl + '/api/queue/v1/task/{}/artifacts/{}'
 
 
