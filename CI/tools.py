@@ -377,7 +377,7 @@ class Build(Task, metaclass=Tool):
             raise Exception('Unknown variant: {}'.format(variant))
 
         if 'osx' not in os:
-            environ['CC'] = 'clang-15'
+            environ['CC'] = 'clang-16'
         if os in ('linux', 'arm64-linux'):
             cargo_features.append('curl-compat')
 
@@ -410,7 +410,7 @@ class Build(Task, metaclass=Tool):
                 environ[f'CARGO_TARGET_{TARGET}_RUSTFLAGS'] = \
                     f'-C link-arg=--target={target} ' + \
                     f'-C link-arg={extra_link_arg} ' + \
-                    '-C link-arg=-fuse-ld=lld-15'
+                    '-C link-arg=-fuse-ld=lld-16'
                 rustflags = environ.pop('RUSTFLAGS', None)
                 if rustflags:
                     environ[f'CARGO_TARGET_{TARGET}_RUSTFLAGS'] += \
