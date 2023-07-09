@@ -3,13 +3,13 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import hashlib
-import re
 
 from tasks import (
     Task,
     TaskEnvironment,
     Tool,
     bash_command,
+    join_command,
 )
 from docker import DockerImage
 
@@ -48,8 +48,7 @@ class MsysCommon(object):
     def prepare_params(self, params):
         assert 'workerType' not in params
         params['workerType'] = 'win2012r2'
-        assert 'mounts' not in params
-        params['mounts'] = [self]
+        params.setdefault('mounts', []).append({'directory': self})
         params.setdefault('env', {})['MSYSTEM'] = mingw(self.cpu)
 
         command = []
@@ -66,8 +65,8 @@ class MsysCommon(object):
                 'do test -e $postinst && . $postinst',
                 'done',
             ))))
-        command.append(' '.join(
-            _quote(arg) for arg in bash_command(*params['command'])))
+        command.append(
+            join_command(*bash_command(*params['command']), for_windows=True))
         params['command'] = command
         return params
 
@@ -114,8 +113,7 @@ class MsysEnvironment(MsysCommon):
             'rm -rf /var/cache/pacman/pkg',
             'python2.7 -m pip install pip==20.3.4 wheel==0.37.1 --upgrade',
             'python3 -m pip install pip==22.2.2 wheel==0.37.1 --upgrade',
-            'mv {}/{}/bin/{{{{mingw32-,}}}}make.exe'.format(msys(cpu),
-                                                            mingw(cpu)),
+            'mv {}/{}/bin/{{mingw32-,}}make.exe'.format(msys(cpu), mingw(cpu)),
             'tar -c --hard-dereference {} | zstd -c > msys2.tar.zst'.format(
                 msys(cpu)),
         ]
@@ -170,14 +168,3 @@ class Msys64Environment(MsysEnvironment, Task, metaclass=TaskEnvironment):
     PREFIX = 'mingw64'
     cpu = 'x86_64'
     __init__ = MsysEnvironment.__init__
-
-
-SHELL_QUOTE_RE = re.compile(r'[\\\t\r\n \'\"#<>&|`~(){}$;\*\?]')
-
-
-def _quote(s):
-    if s and not SHELL_QUOTE_RE.search(s):
-        return s
-    for c in '^&\\<>|':
-        s = s.replace(c, '^' + c)
-    return "'{}'".format(s.replace("'", "'\\''"))

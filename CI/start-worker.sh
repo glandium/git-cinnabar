@@ -10,7 +10,6 @@ workerType=$2
 [ -z "$clientId" -o -z "$workerType" ] && echo Usage: $0 clientId workerType >&2 && exit 1
 [ -z "$secret" ] && echo Missing key >&2 && exit 1
 
-openssl aes-256-cbc -k "$secret" -in $where/worker-key.enc -out worker.key -d -md sha256
 token=$(openssl aes-256-cbc -k "$secret" -in $where/$workerType.token.enc -d -md sha256)
 
 unset secret
@@ -19,28 +18,33 @@ cat > worker.config <<EOF
 {
   "accessToken": "$token",
   "cachesDir": "caches",
-  "certificate": "",
+  "cleanUpTaskDirs": true,
   "clientId": "project/git-cinnabar/$clientId",
   "disableReboots": true,
   "downloadsDir": "downloads",
+  "ed25519SigningKeyLocation": "worker.key",
   "idleTimeoutSecs": 180,
-  "livelogSecret": " ",
   "provisionerId": "proj-git-cinnabar",
   "publicIP": "127.0.0.1",
   "requiredDiskSpaceMegabytes": 512,
-  "signingKeyLocation": "worker.key",
   "tasksDir": "tasks",
   "rootURL": "https://community-tc.services.mozilla.com",
+  "sentryProject": "",
+  "shutdownMachineOnIdle": false,
+  "shutdownMachineOnInternalError": false,
   "workerGroup": "proj-git-cinnabar",
-  "workerId": "travis-$TRAVIS_BUILD_ID",
+  "workerId": "travis-$GITHUB_RUN_ID",
   "workerType": "$workerType"
 }
 EOF
 
-curl -OL https://github.com/taskcluster/generic-worker/releases/download/v11.1.1/generic-worker-darwin-amd64
-chmod +x generic-worker-darwin-amd64
+env
+
+curl -OL https://github.com/taskcluster/taskcluster/releases/download/v54.1.2/generic-worker-simple-darwin-amd64
+chmod +x generic-worker-simple-darwin-amd64
 mkdir tasks
-./generic-worker-darwin-amd64 run --config worker.config
+./generic-worker-simple-darwin-amd64 new-ed25519-keypair --file worker.key
+./generic-worker-simple-darwin-amd64 run --config worker.config
 case $? in
 0|68)
   ;;
