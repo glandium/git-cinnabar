@@ -262,8 +262,9 @@ hg.graft.replace.git: hg.graft.base.git hg.upgraded.git
 	$(call COMPARE_COMMANDS,$(call GET_ROOTS,$(word 2,$^),--remotes),$(call GET_ROOTS,$@,--glob=refs/cinnabar/replace))
 	$(GIT) -C $@ cinnabar fsck --full
 
-hg.graft.cinnabar.git: hg.upgraded.git
+hg.graft.cinnabar.git: hg.upgraded.git hg.pure.hg
 	cp -r $< $@
+	$(GIT) -C $@ remote set-url origin hg::$(PATH_URL)/$(word 2,$^)
 	$(GIT) -C $@ -c cinnabar.graft=true cinnabar reclone
 	$(call COMPARE_REFS, $<, $@, XARGS_GIT2HG)
 	test $$($(GIT) -C $@ for-each-ref refs/cinnabar/replace | wc -l) -eq 0
