@@ -102,7 +102,7 @@ DOCKER_IMAGES = {
             '  --variant=extract'
             '  --include=libc6-dev,libcurl4-gnutls-dev,zlib1g-dev,libgcc-6-dev'
             '  stretch sysroot-$arch'
-            '  http://snapshot.debian.org/archive/debian/20220622T215414Z/ ;'
+            '  http://archive.debian.org/debian/ ;'
             ' LD_PRELOAD=libfakechroot.so FAKECHROOT_BASE=$PWD/sysroot-$arch'
             '  symlinks -crv /;'
             'done',
