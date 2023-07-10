@@ -116,9 +116,13 @@ class TestTask(Task):
             if env.os == 'macos':
                 output_sync = ''
             kwargs['command'] = command + [
+                'hg init repo/hg.pure.hg',
+                'hg -R repo/hg.pure.hg unbundle bundle.hg',
                 'make -C repo -f CI/tests.mk -j$({}){}'
                 .format(nproc(env), output_sync),
             ]
+            kwargs.setdefault('mounts', []).append(
+                {'file:bundle.hg': HgClone.by_name(MERCURIAL_VERSION)})
 
         if variant == 'coverage':
             kwargs['command'].extend([
@@ -196,6 +200,35 @@ class Clone(TestTask, metaclass=Tool):
             },
             priority='high',
             **kwargs,
+        )
+
+
+class HgClone(Task, metaclass=Tool):
+    PREFIX = "hgclone"
+
+    def __init__(self, version):
+        if REPO == DEFAULT_REPO:
+            index = 'hgclone.{}'.format(version)
+        else:
+            index = 'hgclone.{}.{}'.format(
+                hashlib.sha1(REPO).hexdigest(), version)
+        hg_task = Hg.by_name(f'linux.{version}')
+        Task.__init__(
+            self,
+            task_env=TaskEnvironment.by_name('linux.test'),
+            description=f'hg clone w/ {version}',
+            index=index,
+            expireIn='26 weeks',
+            command=hg_task.install() + [
+                'hg clone -U --stream $REPO repo',
+                'hg -R repo bundle -t none-v1 -a $ARTIFACTS/bundle.hg',
+            ],
+            mounts=[hg_task.mount()],
+            artifact='bundle.hg',
+            env={
+                'REPO': REPO,
+            },
+            priority='high',
         )
 
 
