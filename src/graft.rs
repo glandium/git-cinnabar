@@ -50,7 +50,7 @@ pub fn init_graft() {
     for cid in rev_list(&args).progress(|n| format!("Reading {} graft candidates", n)) {
         let c = RawCommit::read(&cid).unwrap();
         let c = c.parse().unwrap();
-        let cids_for_tree = graft_trees.entry(c.tree().clone()).or_default();
+        let cids_for_tree = graft_trees.entry(c.tree()).or_default();
         cids_for_tree.push(cid);
     }
 }
@@ -78,7 +78,7 @@ pub fn graft(
         .iter()
         .map(|c| {
             let raw = RawCommit::read(c).unwrap();
-            (c.clone(), raw)
+            (*c, raw)
         })
         .collect::<Vec<_>>();
     let candidates = candidates
@@ -143,13 +143,13 @@ pub fn graft(
             let (commit, _) = candidates[0];
             graft_trees_entry.retain(|c| c != *commit);
             DID_SOMETHING.store(true, Ordering::Relaxed);
-            Ok(Some((*commit).clone()))
+            Ok(Some(*(*commit)))
         }
         0 => Err(GraftError::NoGraft),
         _ => Err(GraftError::Ambiguous(
             candidates
                 .into_iter()
-                .map(|(cid, _)| (*cid).clone())
+                .map(|(cid, _)| *(*cid))
                 .collect::<Vec<_>>()
                 .into(),
         )),

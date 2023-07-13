@@ -608,7 +608,7 @@ fn get_previous_metadata(metadata: &CommitId) -> Option<CommitId> {
     };
     let parents = commit.parents();
     if parents.len() == num_parents {
-        Some(parents[num_parents - 1].clone())
+        Some(parents[num_parents - 1])
     } else {
         None
     }
@@ -637,7 +637,7 @@ fn set_metadata_to(
         }
         let mut full_ref = OsString::from(REFS_PREFIX);
         full_ref.push(r);
-        if refs.insert(full_ref, oid.clone()).is_some() {
+        if refs.insert(full_ref, *oid).is_some() {
             return Err("Shouldn't have had conflicts in refs hashmap");
         }
         Ok(())
@@ -685,17 +685,17 @@ fn set_metadata_to(
             _ => MetadataState::Unknown,
         };
 
-        let mut m = metadata.clone();
+        let mut m = metadata;
         let found = flags
             .contains(MetadataFlags::FORCE)
             .then(|| {
                 state = MetadataState::Unknown;
-                new.clone()
+                *new
             })
             .or_else(|| {
                 std::iter::from_fn(move || {
                     m = m.as_ref().and_then(get_previous_metadata);
-                    m.clone()
+                    m
                 })
                 .try_find_(|m| -> Result<_, String> {
                     if Some(m) == broken.as_ref() {
@@ -739,7 +739,7 @@ fn set_metadata_to(
         transaction.update(METADATA_REF, new, metadata.as_ref(), msg)?;
         transaction.update(NOTES_REF, &commit.parents()[3], notes.as_ref(), msg)?;
         for item in
-            ls_tree(commit.tree()).map_err(|_| format!("Failed to read metadata: {}", new))?
+            ls_tree(&commit.tree()).map_err(|_| format!("Failed to read metadata: {}", new))?
         {
             // TODO: Check mode.
             // TODO: Check oid is valid.
@@ -807,13 +807,13 @@ fn do_rollback(
         assert!(!fsck);
         assert!(!force);
         let labels = [
-            ("current", metadata.clone()),
+            ("current", metadata),
             ("checked", resolve_ref(CHECKED_REF)),
             ("broken", resolve_ref(BROKEN_REF)),
         ];
         let labels = labels
             .iter()
-            .filter_map(|(name, cid)| Some((*name, cid.clone()?)))
+            .filter_map(|(name, cid)| Some((*name, (*cid)?)))
             .collect_vec();
         let mut metadata = metadata;
         while let Some(m) = metadata {
@@ -1228,7 +1228,7 @@ fn create_file(blobid: &BlobId, parents: &[HgFileId]) -> HgFileId {
     unsafe {
         do_set(
             cstr::cstr!("file").as_ptr(),
-            &hg_object_id::from(fid.clone()),
+            &hg_object_id::from(fid),
             &object_id::from(blobid),
         );
     }
@@ -1258,12 +1258,12 @@ fn create_copy(blobid: &BlobId, source_path: &BStr, source_fid: &HgFileId) -> Hg
         store_git_blob(&metadata, &mut oid);
         do_set(
             cstr::cstr!("file-meta").as_ptr(),
-            &hg_object_id::from(fid.clone()),
+            &hg_object_id::from(fid),
             &oid,
         );
         do_set(
             cstr::cstr!("file").as_ptr(),
-            &hg_object_id::from(fid.clone()),
+            &hg_object_id::from(fid),
             &object_id::from(blobid),
         );
     }
@@ -1274,7 +1274,7 @@ fn create_manifest(content: &[u8], parents: &[HgManifestId]) -> HgManifestId {
     let parent_manifest = parents
         .get(0)
         .map(|p| RawHgManifest::read(&p.to_git().unwrap()).unwrap());
-    let parent1 = parents.get(0).cloned().unwrap_or_else(HgManifestId::null);
+    let parent1 = parents.get(0).copied().unwrap_or_else(HgManifestId::null);
     let mut hash = HgManifestId::create();
     if parents.len() < 2 {
         hash.update(HgManifestId::null().as_raw_bytes());
@@ -1330,7 +1330,7 @@ fn create_root_changeset(cid: &CommitId) -> HgChangesetId {
     let commit = commit.parse().unwrap();
     let mut manifest = Vec::new();
     let mut paths = Vec::new();
-    for item in ls_tree(commit.tree()).unwrap() {
+    for item in ls_tree(&commit.tree()).unwrap() {
         let fid = create_file(&BlobId::from_unchecked(item.oid), &[]);
         ManifestLine::from((&*item.path, fid, item.mode)).write_into(&mut manifest);
         paths.extend_from_slice(&item.path);
@@ -1386,7 +1386,7 @@ impl<'a> ManifestLine<'a> {
             ManifestLine::Line { line, path_len } => {
                 HgFileId::from_bytes(&line[path_len + 1..][..40]).unwrap()
             }
-            ManifestLine::Content { fid, .. } => fid.clone(),
+            ManifestLine::Content { fid, .. } => *fid,
         }
     }
 
@@ -1427,9 +1427,9 @@ fn create_simple_manifest(cid: &CommitId, parent: &CommitId) -> (HgManifestId, O
     // TODO: this is all very suboptimal in what it does, how it does it,
     // and what the code looks like. And code should be shared with
     // `create_root_changeset`.
-    let parent = GitChangesetId::from_unchecked(parent.clone());
+    let parent = GitChangesetId::from_unchecked(*parent);
     let parent_metadata = RawGitChangesetMetadata::read(&parent).unwrap();
-    let parent_mid = parent_metadata.parse().unwrap().manifest_id().clone();
+    let parent_mid = parent_metadata.parse().unwrap().manifest_id();
     let parent_manifest = RawHgManifest::read(&parent_mid.to_git().unwrap()).unwrap();
     let mut extra_diff = Vec::new();
     let empty_blob = BlobId::from_str("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391").unwrap();
@@ -1445,7 +1445,7 @@ fn create_simple_manifest(cid: &CommitId, parent: &CommitId) -> (HgManifestId, O
                 extra_diff.push(DiffTreeItem::Deleted {
                     path: from_path.clone(),
                     mode: *from_mode,
-                    oid: from_oid.clone(),
+                    oid: *from_oid,
                 });
             }
         })
@@ -1571,9 +1571,7 @@ fn create_simple_changeset(cid: &CommitId, parent: &CommitId) -> [HgChangesetId;
     unsafe {
         ensure_store_init();
     }
-    let parent_csid = GitChangesetId::from_unchecked(parent.clone())
-        .to_hg()
-        .unwrap();
+    let parent_csid = GitChangesetId::from_unchecked(*parent).to_hg().unwrap();
     let (mid, paths) = create_simple_manifest(cid, parent);
     let (csid, _) = create_changeset(cid, &mid, paths);
     [csid, parent_csid]
@@ -1598,13 +1596,10 @@ fn create_merge_changeset(
         ensure_store_init();
     }
     let cs_mn = |c: &CommitId| {
-        let csid = GitChangesetId::from_unchecked(c.clone());
+        let csid = GitChangesetId::from_unchecked(*c);
         let metadata = RawGitChangesetMetadata::read(&csid).unwrap();
         let metadata = metadata.parse().unwrap();
-        (
-            metadata.changeset_id().clone(),
-            metadata.manifest_id().clone(),
-        )
+        (metadata.changeset_id(), metadata.manifest_id())
     };
     let (parent1_csid, parent1_mid) = cs_mn(parent1);
     let (parent2_csid, parent2_mid) = cs_mn(parent2);
@@ -1643,7 +1638,7 @@ fn create_merge_changeset(
 
         let commit = RawCommit::read(cid).unwrap();
         let commit = commit.parse().unwrap();
-        let files = ls_tree(commit.tree()).unwrap();
+        let files = ls_tree(&commit.tree()).unwrap();
         let raw_parent1_manifest = RawHgManifest::read(&parent1_mn_cid).unwrap();
         let parent1_manifest = ByteSlice::lines(&*raw_parent1_manifest).map(ManifestLine::from);
         let parent2_manifest = RawHgManifest::read(&parent2_mn_cid).unwrap();
@@ -1761,8 +1756,8 @@ pub fn do_create_bundle(
     replycaps: bool,
 ) -> Result<ChangesetHeads, String> {
     let changesets = commits.map(|(cid, parents)| {
-        if let Some(csid) = GitChangesetId::from_unchecked(cid.clone()).to_hg() {
-            let mut parents = parents.iter().cloned();
+        if let Some(csid) = GitChangesetId::from_unchecked(cid).to_hg() {
+            let mut parents = parents.iter().copied();
             let parent1 = parents.next().map_or_else(HgChangesetId::null, |p| {
                 GitChangesetId::from_unchecked(p).to_hg().unwrap()
             });
@@ -1872,7 +1867,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             let commit = RawCommit::read(c).unwrap();
             let commit = commit.parse().unwrap();
             let mut parents = commit.parents().iter();
-            [parents.next().cloned(), parents.next().cloned()]
+            [parents.next().copied(), parents.next().copied()]
         });
     let raw_checked = array_init::from_iter::<_, _, 2>(
         [&checked_changesets_cid, &checked_manifests_cid]
@@ -1897,7 +1892,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
     let mut parents = None;
     let mut manifest_nodes = Vec::new();
 
-    for (c, (changeset_node, branch)) in commit
+    for (c, &(changeset_node, branch)) in commit
         .parents()
         .iter()
         .zip(heads.iter())
@@ -1941,7 +1936,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         if metadata.changeset_id() != changeset_node {
             let heads_map = heads_set
                 .get_or_insert_with(|| heads.iter().map(|(a, _)| a).collect::<BTreeSet<_>>());
-            if !heads_map.contains(metadata.changeset_id()) {
+            if !heads_map.contains(&metadata.changeset_id()) {
                 report(format!(
                     "Inconsistent metadata:\n\
                      \x20 Head metadata says {} maps to changeset {}\n
@@ -1979,7 +1974,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             .and_then(|e| e.get(b"branch"))
             .unwrap_or(b"default")
             .as_bstr();
-        if *branch != changeset_branch {
+        if branch != changeset_branch {
             report(format!(
                 "Inconsistent metadata:\n\
                  \x20 Head metadata says changeset {} is in branch {}\n\
@@ -1988,7 +1983,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             ));
             continue;
         }
-        manifest_nodes.push(changeset.manifest().clone());
+        manifest_nodes.push(*changeset.manifest());
     }
 
     if broken.get() {
@@ -2026,13 +2021,13 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
     for mid in rev_list(args).progress(|n| format!("Loading {n} manifests")) {
         let commit = RawCommit::read(&mid).unwrap();
         let commit = commit.parse().unwrap();
-        manifest_queue.push((mid.clone(), commit.parents().to_boxed()));
+        manifest_queue.push((mid, commit.parents().to_boxed()));
         for p in commit.parents() {
             if !depths.contains_key(p) {
-                roots.insert(p.clone());
+                roots.insert(*p);
             }
             depths.insert(
-                mid.clone(),
+                mid,
                 cmp::max(
                     depths.get(p).copied().unwrap_or(0) + 1,
                     depths.get(&mid).copied().unwrap_or(0),
@@ -2083,27 +2078,25 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
                 mid, hg_manifest_id, git_mid
             ));
         }
-        if unsafe { check_manifest(&object_id::from((*git_mid).clone()), std::ptr::null_mut()) }
-            != 1
-        {
+        if unsafe { check_manifest(&object_id::from(*git_mid), std::ptr::null_mut()) } != 1 {
             report(format!("Sha1 mismatch for manifest {}", git_mid));
         }
         let files = if let Some(previous) = previous {
             diff_tree(previous, mid, false)
                 .filter_map(|item| match item {
-                    DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid).clone())),
+                    DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid))),
                     DiffTreeItem::Modified {
                         path,
                         from_oid,
                         to_oid,
                         ..
-                    } if from_oid != to_oid => Some((path, (*to_oid).clone())),
+                    } if from_oid != to_oid => Some((path, (*to_oid))),
                     _ => None,
                 })
                 .filter(|pair| !all_interesting.contains(pair))
                 .collect_vec()
         } else {
-            ls_tree(commit.tree())
+            ls_tree(&commit.tree())
                 .unwrap()
                 .map(|item| (item.path, item.oid))
                 .filter(|pair| !all_interesting.contains(pair))
@@ -2120,13 +2113,13 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         if let Some(previous) = &previous {
             diff_tree(previous, &r, false)
                 .filter_map(|item| match item {
-                    DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid).clone())),
+                    DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid))),
                     DiffTreeItem::Modified {
                         path,
                         from_oid,
                         to_oid,
                         ..
-                    } if from_oid != to_oid => Some((path, (*to_oid).clone())),
+                    } if from_oid != to_oid => Some((path, (*to_oid))),
                     _ => None,
                 })
                 .for_each(|item| {
@@ -2136,7 +2129,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             // Yes, this is ridiculous.
             let commit = RawCommit::read(&r).unwrap();
             let commit = commit.parse().unwrap();
-            for item in ls_tree(commit.tree()).unwrap() {
+            for item in ls_tree(&commit.tree()).unwrap() {
                 all_interesting.remove(&(item.path, item.oid));
             }
         }
@@ -2158,7 +2151,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             // in the first place, or it's the parent of a file we have checked.
             // Either way, we aren't interested in the parents.
             for p in hg_fileparents.iter() {
-                all_interesting.remove(&(path.clone(), p.clone()));
+                all_interesting.remove(&(path.clone(), *p));
             }
             if let Some((path, hg_file)) = all_interesting.take(&(path, hg_file)) {
                 if unsafe {
@@ -2285,14 +2278,14 @@ fn do_fsck_full(
                         format!("Invalid commit or changeset: {}", c.to_string_lossy())
                     })?;
                     if git_cs.to_hg().is_some() {
-                        return Ok((*git_cs).clone());
+                        return Ok(*git_cs);
                     }
                     let cs = HgChangesetId::from_bytes(c.as_bytes()).map_err(|_| {
                         format!("Invalid commit or changeset: {}", c.to_string_lossy())
                     })?;
 
                     if let Some(git_cs) = cs.to_git() {
-                        Ok((*git_cs).clone())
+                        Ok(*git_cs)
                     } else {
                         Err(format!(
                             "Unknown commit or changeset: {}",
@@ -2333,7 +2326,7 @@ fn do_fsck_full(
             report(format!("Missing note for git commit: {}", cid));
             continue;
         };
-        seen_git2hg.insert(cid.clone());
+        seen_git2hg.insert(cid);
 
         let commit = RawCommit::read(&cid).unwrap();
         let commit = commit.parse().unwrap();
@@ -2362,7 +2355,7 @@ fn do_fsck_full(
                 continue;
             }
         }
-        seen_changesets.insert(changeset_id.clone());
+        seen_changesets.insert(*changeset_id);
         let raw_changeset =
             if let Some(raw_changeset) = RawHgChangeset::from_metadata(&commit, &metadata) {
                 raw_changeset
@@ -2386,7 +2379,7 @@ fn do_fsck_full(
             .collect_vec();
         hg_parents
             .iter()
-            .cloned()
+            .copied()
             .chain(repeat(HgChangesetId::null()))
             .take(2)
             .sorted()
@@ -2403,11 +2396,11 @@ fn do_fsck_full(
         if !grafted() {
             let fresh_commit = raw_commit_for_changeset(
                 &changeset,
-                commit.tree(),
+                &commit.tree(),
                 &commit
                     .parents()
                     .iter()
-                    .cloned()
+                    .copied()
                     .map(GitChangesetId::from_unchecked)
                     .collect_vec(),
             );
@@ -2430,25 +2423,26 @@ fn do_fsck_full(
             .and_then(|e| e.get(b"branch"))
             .unwrap_or(b"default");
         changeset_heads.add(
-            changeset_id,
+            &changeset_id,
             &hg_parents.iter().collect_vec(),
             branch.as_bstr(),
         );
 
         let fresh_metadata =
-            GeneratedGitChangesetMetadata::generate(&commit, changeset_id, &raw_changeset).unwrap();
+            GeneratedGitChangesetMetadata::generate(&commit, &changeset_id, &raw_changeset)
+                .unwrap();
         if fresh_metadata != metadata {
             fix(format!("Adjusted changeset metadata for {}", changeset_id));
             unsafe {
                 do_set(
                     cstr::cstr!("changeset").as_ptr(),
-                    &hg_object_id::from(changeset_id.clone()),
+                    &hg_object_id::from(*changeset_id),
                     &object_id::from(CommitId::null()),
                 );
                 do_set(
                     cstr::cstr!("changeset").as_ptr(),
-                    &hg_object_id::from(changeset_id.clone()),
-                    &object_id::from((*cid).clone()),
+                    &hg_object_id::from(*changeset_id),
+                    &object_id::from(*cid),
                 );
                 let mut metadata_id = object_id::default();
                 let mut buf = strbuf::new();
@@ -2456,19 +2450,19 @@ fn do_fsck_full(
                 store_git_blob(&buf, &mut metadata_id);
                 do_set(
                     cstr::cstr!("changeset-metadata").as_ptr(),
-                    &hg_object_id::from(changeset_id.clone()),
+                    &hg_object_id::from(*changeset_id),
                     &object_id::from(CommitId::null()),
                 );
                 do_set(
                     cstr::cstr!("changeset-metadata").as_ptr(),
-                    &hg_object_id::from(changeset_id.clone()),
+                    &hg_object_id::from(*changeset_id),
                     &metadata_id,
                 );
             }
         }
 
         let manifest_id = changeset.manifest();
-        if !seen_manifests.insert(manifest_id.clone()) {
+        if !seen_manifests.insert(*manifest_id) {
             // We've already seen the manifest.
             continue;
         }
@@ -2483,7 +2477,7 @@ fn do_fsck_full(
         };
 
         let checked = unsafe {
-            let manifest_cid = object_id::from((*manifest_cid).clone());
+            let manifest_cid = object_id::from(*manifest_cid);
             check_manifest(&manifest_cid, std::ptr::null_mut()) == 1
         };
         if !checked {
@@ -2495,12 +2489,12 @@ fn do_fsck_full(
             .map(|p| {
                 let metadata = RawGitChangesetMetadata::read(&p.to_git().unwrap()).unwrap();
                 let metadata = metadata.parse().unwrap();
-                metadata.manifest_id().clone()
+                metadata.manifest_id()
             })
             .collect_vec();
         let git_manifest_parents = hg_manifest_parents
             .iter()
-            .filter_map(|p| p.to_git().map(|p| (*p).clone()))
+            .filter_map(|p| p.to_git().map(|p| (*p)))
             .sorted()
             .collect_vec();
 
@@ -2523,7 +2517,7 @@ fn do_fsck_full(
         }
 
         if full_fsck {
-            manifest_heads.insert((*manifest_cid).clone());
+            manifest_heads.insert(*manifest_cid);
             for p in manifest_commit.parents() {
                 manifest_heads.remove(p);
             }
@@ -2535,13 +2529,13 @@ fn do_fsck_full(
         {
             // TODO: This is gross.
             let hg_file = HgFileId::from_bytes(format!("{}", hg_file).as_bytes()).unwrap();
-            if hg_file.is_null() || hg_file == empty_file || !seen_files.insert(hg_file.clone()) {
+            if hg_file.is_null() || hg_file == empty_file || !seen_files.insert(hg_file) {
                 continue;
             }
             if unsafe {
                 // TODO: add FileFindParents logging.
                 check_file(
-                    &hg_object_id::from(hg_file.clone()),
+                    &hg_object_id::from(hg_file),
                     &hg_fileparents.get(0).map_or_else(
                         || hg_object_id::from(HgObjectId::null()),
                         |p| {
@@ -2585,7 +2579,7 @@ fn do_fsck_full(
         let store_manifest_heads = manifests_commit
             .parents()
             .iter()
-            .cloned()
+            .copied()
             .collect::<BTreeSet<_>>();
 
         if manifest_heads != store_manifest_heads {
@@ -2650,9 +2644,9 @@ fn do_fsck_full(
 
     if full_fsck && !broken.get() {
         unsafe { &mut hg2git }.for_each(|h, _| {
-            if seen_changesets.contains(&HgChangesetId::from_unchecked(h.clone()))
-                || seen_manifests.contains(&HgManifestId::from_unchecked(h.clone()))
-                || seen_files.contains(&HgFileId::from_unchecked(h.clone()))
+            if seen_changesets.contains(&HgChangesetId::from_unchecked(*h))
+                || seen_manifests.contains(&HgManifestId::from_unchecked(*h))
+                || seen_files.contains(&HgFileId::from_unchecked(*h))
             {
                 return;
             }
@@ -2664,19 +2658,19 @@ fn do_fsck_full(
             unsafe {
                 do_set(
                     cstr::cstr!("file").as_ptr(),
-                    &hg_object_id::from(h.clone()),
+                    &hg_object_id::from(*h),
                     &object_id::default(),
                 );
                 do_set(
                     cstr::cstr!("file-meta").as_ptr(),
-                    &hg_object_id::from(h.clone()),
+                    &hg_object_id::from(*h),
                     &object_id::default(),
                 );
             }
         });
         unsafe { &mut git2hg }.for_each(|g, _| {
             // TODO: this is gross.
-            let cid = GitChangesetId::from_unchecked(CommitId::from_unchecked(g.clone()));
+            let cid = GitChangesetId::from_unchecked(CommitId::from_unchecked(*g));
             if seen_git2hg.contains(&cid) {
                 return;
             }
@@ -2686,7 +2680,7 @@ fn do_fsck_full(
             unsafe {
                 do_set(
                     cstr::cstr!("changeset-metadata").as_ptr(),
-                    &hg_object_id::from(metadata.changeset_id().clone()),
+                    &hg_object_id::from(*metadata.changeset_id()),
                     &object_id::default(),
                 );
             }
@@ -2753,7 +2747,7 @@ fn do_fsck_full(
 fn check_replace(metadata_cid: &CommitId) {
     let commit = RawCommit::read(metadata_cid).unwrap();
     let commit = commit.parse().unwrap();
-    for r in ls_tree(commit.tree())
+    for r in ls_tree(&commit.tree())
         .unwrap()
         .filter_map(|item| {
             let r = GitObjectId::from_bytes(&item.path).unwrap();
@@ -2784,7 +2778,7 @@ fn get_changes(
         // Yes, this is ridiculous.
         let commit = RawCommit::read(cid).unwrap();
         let commit = commit.parse().unwrap();
-        ls_tree(commit.tree())
+        ls_tree(&commit.tree())
             .unwrap()
             .map(|item| (item.path, item.oid, [].to_boxed()))
             .collect_vec()
@@ -2807,16 +2801,14 @@ fn manifest_diff(
     b: &CommitId,
 ) -> impl Iterator<Item = (Box<[u8]>, GitObjectId, GitObjectId)> {
     diff_tree(a, b, false).filter_map(|item| match item {
-        DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid).clone(), GitObjectId::null())),
+        DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid), GitObjectId::null())),
         DiffTreeItem::Modified {
             path,
             from_oid,
             to_oid,
             ..
-        } if from_oid != to_oid => Some((path, (*to_oid).clone(), (*from_oid).clone())),
-        DiffTreeItem::Deleted { path, oid, .. } => {
-            Some((path, GitObjectId::null(), (*oid).clone()))
-        }
+        } if from_oid != to_oid => Some((path, (*to_oid), (*from_oid))),
+        DiffTreeItem::Deleted { path, oid, .. } => Some((path, GitObjectId::null(), (*oid))),
         _ => None,
     })
 }
@@ -2840,7 +2832,7 @@ fn manifest_diff2(
                 }
             }
             if all {
-                result.push((path.clone(), oid.clone(), [parent_oid.clone(), oid.clone()]));
+                result.push((path.clone(), *oid, [*parent_oid, *oid]));
             }
             item1 = iter1.next();
         }
@@ -2851,7 +2843,7 @@ fn manifest_diff2(
                 }
             }
             if all {
-                result.push((path.clone(), oid.clone(), [oid.clone(), parent_oid.clone()]));
+                result.push((path.clone(), *oid, [*oid, *parent_oid]));
             }
             item2 = iter2.next();
         }
@@ -2865,11 +2857,7 @@ fn manifest_diff2(
             let (_, oid1, parent_oid1) = item1.as_ref().unwrap();
             let (path, oid2, parent_oid2) = item2.as_ref().unwrap();
             assert_eq!(oid1, oid2);
-            result.push((
-                path.clone(),
-                oid1.clone(),
-                [parent_oid1.clone(), parent_oid2.clone()],
-            ));
+            result.push((path.clone(), *oid1, [*parent_oid1, *parent_oid2]));
 
             item1 = iter1.next();
             item2 = iter2.next();
@@ -3381,7 +3369,7 @@ fn remote_helper_repo_list(
                 if &***branch == b"default" {
                     default_tip = Some(tip);
                 }
-                add_ref(tip_template, &[branch], tip.clone());
+                add_ref(tip_template, &[branch], *tip);
             }
 
             for head in heads.iter() {
@@ -3389,7 +3377,7 @@ fn remote_helper_repo_list(
                     add_ref(
                         head_template,
                         &[branch, head.to_string().as_bytes().as_bstr()],
-                        head.clone(),
+                        *head,
                     );
                 }
             }
@@ -3407,7 +3395,7 @@ fn remote_helper_repo_list(
         );
         for (name, cid) in bookmarks.iter() {
             if !cid.is_null() {
-                add_ref(bookmark_template, &[&**name], cid.clone());
+                add_ref(bookmark_template, &[&**name], *cid);
             }
         }
     }
@@ -3416,7 +3404,7 @@ fn remote_helper_repo_list(
         add_ref(
             Some(&["hg/revs/", ""]),
             &[f.to_string().as_bytes().as_bstr()],
-            f.clone(),
+            *f,
         );
     }
 
@@ -3447,7 +3435,7 @@ fn remote_helper_repo_list(
             buf.push(b' ');
             buf.extend_from_slice(b"HEAD\n");
             stdout.write_all(&buf).unwrap();
-            refs.insert(b"HEAD".as_bstr().to_boxed(), (csid.clone(), cid.clone()));
+            refs.insert(b"HEAD".as_bstr().to_boxed(), (*csid, *cid));
         }
     }
 
@@ -3542,7 +3530,7 @@ fn remote_helper_import(
     let mut tags = None;
     let mut unknown_wanted_heads = wanted_refs
         .iter()
-        .filter_map(|(_, csid, cid)| cid.is_none().then(|| (*csid).clone()))
+        .filter_map(|(_, csid, cid)| cid.is_none().then(|| *(*csid)))
         .unique()
         .collect_vec();
     if !unknown_wanted_heads.is_empty() {
@@ -3598,7 +3586,7 @@ fn remote_helper_import(
         transaction
             .update(
                 OsStr::from_bytes(&buf),
-                &cid.cloned().unwrap_or_else(|| csid.to_git().unwrap()),
+                &cid.copied().unwrap_or_else(|| csid.to_git().unwrap()),
                 None,
                 "import",
             )
@@ -3701,10 +3689,7 @@ fn remote_helper_push(
     let mut pushed = ChangesetHeads::new();
     let result = (|| {
         let branch_names = info.branch_names.into_iter().collect::<HashSet<_>>();
-        let push_commits = push_refs
-            .iter()
-            .filter_map(|(_, c, _, _)| c.clone())
-            .collect_vec();
+        let push_commits = push_refs.iter().filter_map(|(_, c, _, _)| *c).collect_vec();
         let local_bases = rev_list_with_boundaries(
             CHANGESET_HEADS
                 .lock()
@@ -3896,7 +3881,7 @@ fn remote_helper_push(
                 let name = percent_decode(name).decode_utf8().unwrap();
                 let csid = source_cid
                     .as_ref()
-                    .map(|cid| GitChangesetId::from_unchecked(cid.clone()).to_hg().unwrap());
+                    .map(|cid| GitChangesetId::from_unchecked(*cid).to_hg().unwrap());
                 conn.require_capability(b"pushkey");
                 let response = conn.pushkey(
                     "bookmarks",

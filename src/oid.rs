@@ -8,7 +8,7 @@ use std::str::{self, FromStr};
 use digest::{Digest, OutputSizeUser};
 use sha1::Sha1;
 
-pub trait ObjectId: Sized {
+pub trait ObjectId: Sized + Copy {
     type Digest: Digest;
     fn as_raw_bytes(&self) -> &[u8];
     fn as_raw_bytes_mut(&mut self) -> &mut [u8];
@@ -33,7 +33,7 @@ pub trait ObjectId: Sized {
 macro_rules! oid_type {
     ($name:ident($base_type:ident)) => {
         #[repr(transparent)]
-        #[derive(Clone, Deref, Display, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        #[derive(Clone, Copy, Deref, Display, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct $name($base_type);
 
         impl $crate::oid::ObjectId for $name {
@@ -83,7 +83,7 @@ macro_rules! oid_type {
     };
     ($name:ident for $typ:ty) => {
         #[repr(C)]
-        #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct $name([u8; <<$typ as digest::OutputSizeUser>::OutputSize as typenum::marker_traits::Unsigned>::USIZE]);
 
         impl $crate::oid::ObjectId for $name {
@@ -145,15 +145,15 @@ impl<O: ObjectId> OidCreator<O> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Abbrev<O: ObjectId> {
     oid: O,
     len: usize,
 }
 
 impl<O: ObjectId> Abbrev<O> {
-    pub unsafe fn as_object_id(&self) -> &O {
-        &self.oid
+    pub unsafe fn as_object_id(&self) -> O {
+        self.oid
     }
 
     pub fn len(&self) -> usize {

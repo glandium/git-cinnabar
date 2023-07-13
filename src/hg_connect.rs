@@ -712,7 +712,7 @@ pub fn find_common(
     }
     for (cs, c) in known {
         if let Some((_, mut data)) = dag.get_mut(&*c) {
-            data.hg_node = Some(cs.clone());
+            data.hg_node = Some(cs);
             data.known = Some(true);
             undetermined_count -= 1;
         }
@@ -725,7 +725,7 @@ pub fn find_common(
     }
     for (cs, c) in &undetermined {
         if let Some((_, mut data)) = dag.get_mut(c) {
-            data.hg_node = Some(cs.clone());
+            data.hg_node = Some(*cs);
         }
     }
 
@@ -738,11 +738,9 @@ pub fn find_common(
                     .choose_multiple(&mut rng, SAMPLE_SIZE - undetermined.len())
                     .into_iter()
                     .map(|(c, data)| {
-                        let git_cs = GitChangesetId::from_unchecked(c.clone());
+                        let git_cs = GitChangesetId::from_unchecked(*c);
                         (
-                            data.hg_node
-                                .get_or_insert_with(|| git_cs.to_hg().unwrap())
-                                .clone(),
+                            *data.hg_node.get_or_insert_with(|| git_cs.to_hg().unwrap()),
                             git_cs,
                         )
                     }),
@@ -776,8 +774,7 @@ pub fn find_common(
     }
     dag.iter()
         .filter_map(|(_, data)| {
-            (data.known == Some(true) && !data.has_known_children)
-                .then(|| data.hg_node.clone().unwrap())
+            (data.known == Some(true) && !data.has_known_children).then(|| data.hg_node.unwrap())
         })
         .collect_vec()
 }
@@ -793,9 +790,7 @@ pub fn get_bundle(
             .lock()
             .unwrap()
             .branch_heads()
-            .filter_map(|(h, b)| {
-                (branch_names.is_empty() || branch_names.contains(b)).then(|| h.clone())
-            })
+            .filter_map(|(h, b)| (branch_names.is_empty() || branch_names.contains(b)).then(|| *h))
             .collect_vec()
     };
 
@@ -809,7 +804,7 @@ pub fn get_bundle(
             heads
                 .iter()
                 .filter(|h| h.to_git().is_none())
-                .cloned()
+                .copied()
                 .collect_vec(),
         );
         drop(lock);
@@ -1047,11 +1042,7 @@ pub fn get_cinnabarclone_url(
                     continue;
                 }
                 if !info.graft.is_empty() {
-                    if !info
-                        .graft
-                        .iter()
-                        .all(|g| CommitId::try_from(g.clone()).is_ok())
-                    {
+                    if !info.graft.iter().all(|g| CommitId::try_from(*g).is_ok()) {
                         debug!(target: "cinnabarclone", " Skipping (missing commit(s) for graft)");
                         continue;
                     }

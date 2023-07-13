@@ -152,20 +152,20 @@ impl hg_notes_tree {
     pub fn get_note(&mut self, oid: &HgObjectId) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
-            get_note_hg(&mut self.0, &oid.clone().into())
+            get_note_hg(&mut self.0, &(*oid).into())
                 .as_ref()
                 .cloned()
                 .map(Into::into)
         }
     }
 
-    pub fn get_note_abbrev<H: ObjectId + Clone + Deref<Target = HgObjectId>>(
+    pub fn get_note_abbrev<H: ObjectId + Deref<Target = HgObjectId>>(
         &mut self,
         oid: &Abbrev<H>,
     ) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
-            resolve_hg(&mut self.0, &oid.as_object_id().clone().into(), oid.len())
+            resolve_hg(&mut self.0, &oid.as_object_id().into(), oid.len())
                 .as_ref()
                 .cloned()
                 .map(Into::into)

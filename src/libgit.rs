@@ -342,7 +342,7 @@ raw_object!(OBJ_BLOB | BlobId => RawBlob);
 
 #[derive(CopyGetters, Getters)]
 pub struct Commit<'a> {
-    #[getset(get = "pub")]
+    #[getset(get_copy = "pub")]
     tree: TreeId,
     parents: Vec<CommitId>,
     #[getset(get_copy = "pub")]

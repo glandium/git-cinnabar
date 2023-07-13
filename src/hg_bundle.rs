@@ -973,7 +973,7 @@ fn write_chunk(
         }
         chunk_data.into_iter().min_by_key(|(_, d)| d.len()).unwrap()
     };
-    *previous = Some((node.clone(), raw_object));
+    *previous = Some((*node, raw_object));
     writer.write_u32::<BigEndian>(
         (4 + chunk.len() + 80 + if version == 2 { 20 } else { 0 })
             .try_into()
@@ -1030,7 +1030,7 @@ pub fn create_bundle(
             &mut previous,
             true,
             |node| {
-                let node = HgChangesetId::from_unchecked(node.clone());
+                let node = HgChangesetId::from_unchecked(*node);
                 let changeset = RawHgChangeset::read(&node.to_git().unwrap()).unwrap();
                 changeset.0
             },
@@ -1040,14 +1040,13 @@ pub fn create_bundle(
         // are cases where they are actually the opposites of the parent manifests,
         // so we have to go off the manifest dag.
         let get_manifest = |node: &CommitId| {
-            let manifest_commit =
-                RawCommit::read(&GitManifestId::from_unchecked(node.clone())).unwrap();
+            let manifest_commit = RawCommit::read(&GitManifestId::from_unchecked(*node)).unwrap();
             let manifest_commit = manifest_commit.parse().unwrap();
             HgManifestId::from_bytes(manifest_commit.body()).unwrap()
         };
         let metadata = RawGitChangesetMetadata::read(&node.to_git().unwrap()).unwrap();
         let metadata = metadata.parse().unwrap();
-        let manifest = metadata.manifest_id().clone();
+        let manifest = metadata.manifest_id();
         if !manifest.is_null() && !manifests.contains_key(&manifest) {
             let manifest_commit = RawCommit::read(&manifest.to_git().unwrap()).unwrap();
             let manifest_commit = manifest_commit.parse().unwrap();
@@ -1095,7 +1094,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
             &mut previous,
             false,
             |node| {
-                let node = HgManifestId::from_unchecked(node.clone());
+                let node = HgManifestId::from_unchecked(*node);
                 let manifest = RawHgManifest::read(&node.to_git().unwrap()).unwrap();
                 manifest.0
             },
@@ -1104,7 +1103,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
         let git_node = node.to_git().unwrap();
         let git_parents = [parent1, parent2]
             .into_iter()
-            .filter_map(|p| (!p.is_null()).then(|| (*p.to_git().unwrap()).clone()))
+            .filter_map(|p| (!p.is_null()).then(|| (*p.to_git().unwrap())))
             .collect_vec();
         for (path, hg_file, hg_fileparents) in get_changes(&git_node, &git_parents, false) {
             if !hg_file.is_null() {
@@ -1119,7 +1118,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
                                     "{}",
                                     hg_fileparents
                                         .get(0)
-                                        .cloned()
+                                        .copied()
                                         .unwrap_or_else(GitObjectId::null)
                                 )
                                 .as_bytes(),
@@ -1130,13 +1129,13 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
                                     "{}",
                                     hg_fileparents
                                         .get(1)
-                                        .cloned()
+                                        .copied()
                                         .unwrap_or_else(GitObjectId::null)
                                 )
                                 .as_bytes(),
                             )
                             .unwrap(),
-                            changeset.clone(),
+                            changeset,
                         )
                     });
             }
@@ -1172,7 +1171,7 @@ fn bundle_files<const CHUNK_SIZE: usize>(
             data.into_iter().zip(&mut progress)
         {
             let generate = |node: &HgObjectId| {
-                let node = HgFileId::from_unchecked(node.clone());
+                let node = HgFileId::from_unchecked(*node);
                 if node == empty_file {
                     vec![].into_boxed_slice()
                 } else {
