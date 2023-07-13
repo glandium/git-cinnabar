@@ -48,7 +48,7 @@ pub fn init_graft() {
     }
     let mut graft_trees = GRAFT_TREES.lock().unwrap();
     for cid in rev_list(&args).progress(|n| format!("Reading {} graft candidates", n)) {
-        let c = RawCommit::read(&cid).unwrap();
+        let c = RawCommit::read(cid).unwrap();
         let c = c.parse().unwrap();
         let cids_for_tree = graft_trees.entry(c.tree()).or_default();
         cids_for_tree.push(cid);
@@ -62,9 +62,9 @@ pub enum GraftError {
 }
 
 pub fn graft(
-    changeset_id: &HgChangesetId,
+    changeset_id: HgChangesetId,
     raw_changeset: &RawHgChangeset,
-    tree: &TreeId,
+    tree: TreeId,
     parents: &[GitChangesetId],
 ) -> Result<Option<CommitId>, GraftError> {
     if Lazy::get(&GRAFT_TREES).is_none() {
@@ -73,12 +73,12 @@ pub fn graft(
 
     let changeset = raw_changeset.parse().unwrap();
     let mut graft_trees = GRAFT_TREES.lock().unwrap();
-    let graft_trees_entry = graft_trees.get_mut(tree).ok_or(GraftError::NoGraft)?;
+    let graft_trees_entry = graft_trees.get_mut(&tree).ok_or(GraftError::NoGraft)?;
     let candidates = graft_trees_entry
         .iter()
-        .map(|c| {
+        .map(|&c| {
             let raw = RawCommit::read(c).unwrap();
-            (*c, raw)
+            (c, raw)
         })
         .collect::<Vec<_>>();
     let candidates = candidates
@@ -90,9 +90,11 @@ pub fn graft(
             }
             if c.parents()
                 .iter()
-                .zip(parents)
+                .copied()
+                .zip(parents.iter().copied())
                 .all(|(commit_parent, changeset_parent)| {
-                    lookup_replace_commit(commit_parent) == lookup_replace_commit(changeset_parent)
+                    lookup_replace_commit(commit_parent)
+                        == lookup_replace_commit(changeset_parent.into())
                 })
             {
                 return true;

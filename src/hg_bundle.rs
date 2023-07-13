@@ -33,7 +33,7 @@ use crate::libgit::{BlobId, CommitId, RawCommit};
 use crate::oid::GitObjectId;
 use crate::progress::Progress;
 use crate::store::{
-    ChangesetHeads, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId, HgManifestId,
+    ChangesetHeads, GitFileMetadataId, HgChangesetId, HgFileId, HgManifestId,
     RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest,
 };
 use crate::util::{FromBytes, ToBoxed};
@@ -808,7 +808,10 @@ impl<R: Read> BundleConnection<R> {
                 let delta_node =
                     HgChangesetId::from_unchecked(HgObjectId::from(chunk.delta_node().clone()));
                 let parents = [parent1, parent2];
-                let parents = parents.iter().filter(|p| !p.is_null()).collect::<Vec<_>>();
+                let parents = parents
+                    .into_iter()
+                    .filter(|p| !p.is_null())
+                    .collect::<Vec<_>>();
 
                 let reference_cs = if delta_node.is_null() {
                     &empty_cs
@@ -837,7 +840,7 @@ impl<R: Read> BundleConnection<R> {
                     .unwrap_or(b"default")
                     .as_bstr();
 
-                changesets.add(&node, &parents, branch);
+                changesets.add(node, &parents, branch);
                 raw_changesets.insert(node, raw_changeset);
             }
             break;
@@ -934,13 +937,13 @@ pub fn create_chunk_data(a: &[u8], b: &[u8]) -> Box<[u8]> {
 fn write_chunk(
     mut writer: impl Write,
     version: u8,
-    node: &HgObjectId,
-    parent1: &HgObjectId,
-    parent2: &HgObjectId,
-    changeset: &HgChangesetId,
+    node: HgObjectId,
+    parent1: HgObjectId,
+    parent2: HgObjectId,
+    changeset: HgChangesetId,
     previous: &mut Option<(HgObjectId, Box<[u8]>)>,
     always_previous: bool,
-    mut f: impl FnMut(&HgObjectId) -> Box<[u8]>,
+    mut f: impl FnMut(HgObjectId) -> Box<[u8]>,
 ) -> io::Result<()> {
     let raw_object = f(node);
     let (previous_node, raw_previous) = match previous.take() {
@@ -957,7 +960,7 @@ fn write_chunk(
             .filter(|p| !p.is_null())
             .dedup()
             .map(|p| {
-                if let (true, Some(p)) = (always_previous, previous_node.as_ref()) {
+                if let (true, Some(p)) = (always_previous, previous_node) {
                     let previous = raw_previous.as_ref().unwrap();
                     (Some(p), create_chunk_data(previous, &raw_object))
                 } else {
@@ -967,13 +970,13 @@ fn write_chunk(
             .collect_vec();
         if chunk_data.is_empty() {
             chunk_data.push((
-                previous_node.as_ref(),
+                previous_node,
                 create_chunk_data(raw_previous.as_deref().unwrap_or(b""), &raw_object),
             ));
         }
         chunk_data.into_iter().min_by_key(|(_, d)| d.len()).unwrap()
     };
-    *previous = Some((*node, raw_object));
+    *previous = Some((node, raw_object));
     writer.write_u32::<BigEndian>(
         (4 + chunk.len() + 80 + if version == 2 { 20 } else { 0 })
             .try_into()
@@ -983,7 +986,7 @@ fn write_chunk(
     writer.write_all(parent1.as_raw_bytes())?;
     writer.write_all(parent2.as_raw_bytes())?;
     if version == 2 {
-        writer.write_all(delta_node.unwrap_or(&HgObjectId::null()).as_raw_bytes())?;
+        writer.write_all(delta_node.unwrap_or(HgObjectId::null()).as_raw_bytes())?;
     }
     writer.write_all(changeset.as_raw_bytes())?;
     writer.write_all(&chunk)
@@ -1017,21 +1020,21 @@ pub fn create_bundle(
 
     for [node, parent1, parent2] in changesets.progress(|n| format!("Bundling {n} changesets")) {
         // TODO: add branch.
-        changeset_heads.add(&node, &[&parent1, &parent2], b"".as_bstr());
+        changeset_heads.add(node, &[parent1, parent2], b"".as_bstr());
 
         let _lock = HELPER_LOCK.lock().unwrap();
         write_chunk(
             &mut bundle_part_writer,
             version,
-            &node,
-            &parent1,
-            &parent2,
-            &node,
+            node.into(),
+            parent1.into(),
+            parent2.into(),
+            node,
             &mut previous,
             true,
             |node| {
-                let node = HgChangesetId::from_unchecked(*node);
-                let changeset = RawHgChangeset::read(&node.to_git().unwrap()).unwrap();
+                let node = HgChangesetId::from_unchecked(node);
+                let changeset = RawHgChangeset::read(node.to_git().unwrap()).unwrap();
                 changeset.0
             },
         )
@@ -1039,23 +1042,25 @@ pub fn create_bundle(
         // We could derive the manifest parents from the parent changesets, but there
         // are cases where they are actually the opposites of the parent manifests,
         // so we have to go off the manifest dag.
-        let get_manifest = |node: &CommitId| {
-            let manifest_commit = RawCommit::read(&GitManifestId::from_unchecked(*node)).unwrap();
+        let get_manifest = |node: CommitId| {
+            let manifest_commit = RawCommit::read(node).unwrap();
             let manifest_commit = manifest_commit.parse().unwrap();
             HgManifestId::from_bytes(manifest_commit.body()).unwrap()
         };
-        let metadata = RawGitChangesetMetadata::read(&node.to_git().unwrap()).unwrap();
+        let metadata = RawGitChangesetMetadata::read(node.to_git().unwrap()).unwrap();
         let metadata = metadata.parse().unwrap();
         let manifest = metadata.manifest_id();
         if !manifest.is_null() && !manifests.contains_key(&manifest) {
-            let manifest_commit = RawCommit::read(&manifest.to_git().unwrap()).unwrap();
+            let manifest_commit = RawCommit::read(manifest.to_git().unwrap().into()).unwrap();
             let manifest_commit = manifest_commit.parse().unwrap();
             let manifest_parents = manifest_commit.parents();
             let mn_parent1 = manifest_parents
                 .get(0)
+                .copied()
                 .map_or_else(HgManifestId::null, get_manifest);
             let mn_parent2 = manifest_parents
                 .get(1)
+                .copied()
                 .map_or_else(HgManifestId::null, get_manifest);
             if ![&mn_parent1, &mn_parent2].contains(&&manifest) {
                 manifests.insert(manifest, (mn_parent1, mn_parent2, node));
@@ -1087,15 +1092,15 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
         write_chunk(
             &mut *bundle_part_writer,
             version,
-            &node,
-            &parent1,
-            &parent2,
-            &changeset,
+            node.into(),
+            parent1.into(),
+            parent2.into(),
+            changeset,
             &mut previous,
             false,
             |node| {
-                let node = HgManifestId::from_unchecked(*node);
-                let manifest = RawHgManifest::read(&node.to_git().unwrap()).unwrap();
+                let node = HgManifestId::from_unchecked(node);
+                let manifest = RawHgManifest::read(node.to_git().unwrap()).unwrap();
                 manifest.0
             },
         )
@@ -1105,7 +1110,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
             .into_iter()
             .filter_map(|p| (!p.is_null()).then(|| (*p.to_git().unwrap())))
             .collect_vec();
-        for (path, hg_file, hg_fileparents) in get_changes(&git_node, &git_parents, false) {
+        for (path, hg_file, hg_fileparents) in get_changes(git_node.into(), &git_parents, false) {
             if !hg_file.is_null() {
                 files
                     .entry(path)
@@ -1170,27 +1175,32 @@ fn bundle_files<const CHUNK_SIZE: usize>(
         for ((node, (mut parent1, mut parent2, changeset)), ()) in
             data.into_iter().zip(&mut progress)
         {
-            let generate = |node: &HgObjectId| {
-                let node = HgFileId::from_unchecked(*node);
+            let generate = |node: HgObjectId| {
+                let node = HgFileId::from_unchecked(node);
                 if node == empty_file {
                     vec![].into_boxed_slice()
                 } else {
-                    let metadata = unsafe { files_meta.get_note(&node) }
+                    let metadata = unsafe { files_meta.get_note(node.into()) }
                         .map(|oid| GitFileMetadataId::from_unchecked(BlobId::from_unchecked(oid)));
 
-                    let file = RawHgFile::read(&node.to_git().unwrap(), metadata.as_ref()).unwrap();
+                    let file = RawHgFile::read(node.to_git().unwrap(), metadata).unwrap();
                     file.0
                 }
             };
-            let data = generate(&node);
+            let data = generate(node.into());
             let null_id = HgObjectId::null();
             // Normalize parents so that the first parent isn't null (it's a corner case, see below).
             if parent1.is_null() {
                 mem::swap(&mut parent1, &mut parent2);
             }
-            let [parent1, parent2] = find_parents(&node, Some(&parent1), Some(&parent2), &data);
-            let mut parent1 = parent1.unwrap_or(&null_id);
-            let mut parent2 = parent2.unwrap_or(&null_id);
+            let [parent1, parent2] = find_parents(
+                node.into(),
+                Some(parent1.into()),
+                Some(parent2.into()),
+                &data,
+            );
+            let mut parent1 = parent1.unwrap_or(null_id);
+            let mut parent2 = parent2.unwrap_or(null_id);
             // On merges, a file with copy metadata has either not parent, or only one.
             // In that latter case, the parent is always set as second parent.
             // On non-merges, a file with copy metadata doesn't have a parent.
@@ -1205,10 +1215,10 @@ fn bundle_files<const CHUNK_SIZE: usize>(
             write_chunk(
                 &mut *bundle_part_writer,
                 version,
-                &node,
+                node.into(),
                 parent1,
                 parent2,
-                &changeset,
+                changeset,
                 &mut previous,
                 false,
                 generate,

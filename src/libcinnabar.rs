@@ -85,14 +85,14 @@ extern "C" {
     ) -> c_int;
 }
 
-fn for_each_note_in<O: ObjectId + FromBytes, N: ObjectId + FromBytes, F: FnMut(&O, &N)>(
+fn for_each_note_in<O: ObjectId + FromBytes, N: ObjectId + FromBytes, F: FnMut(O, N)>(
     notes: &mut cinnabar_notes_tree,
     mut f: F,
 ) {
     unsafe extern "C" fn each_note_cb<
         O: ObjectId + FromBytes,
         N: ObjectId + FromBytes,
-        F: FnMut(&O, &N),
+        F: FnMut(O, N),
     >(
         oid: *const object_id,
         note_oid: *const object_id,
@@ -110,7 +110,7 @@ fn for_each_note_in<O: ObjectId + FromBytes, N: ObjectId + FromBytes, F: FnMut(&
         )
         .map_err(|_| ())
         .unwrap();
-        cb(&o, &n);
+        cb(o, n);
         0
     }
 
@@ -129,7 +129,7 @@ fn for_each_note_in<O: ObjectId + FromBytes, N: ObjectId + FromBytes, F: FnMut(&
 pub struct git_notes_tree(cinnabar_notes_tree);
 
 impl git_notes_tree {
-    pub fn get_note(&mut self, oid: &GitObjectId) -> Option<GitObjectId> {
+    pub fn get_note(&mut self, oid: GitObjectId) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
             cinnabar_get_note(&mut self.0, &oid.into())
@@ -139,7 +139,7 @@ impl git_notes_tree {
         }
     }
 
-    pub fn for_each<F: FnMut(&GitObjectId, &GitObjectId)>(&mut self, f: F) {
+    pub fn for_each<F: FnMut(GitObjectId, GitObjectId)>(&mut self, f: F) {
         for_each_note_in(&mut self.0, f);
     }
 }
@@ -149,10 +149,10 @@ impl git_notes_tree {
 pub struct hg_notes_tree(cinnabar_notes_tree);
 
 impl hg_notes_tree {
-    pub fn get_note(&mut self, oid: &HgObjectId) -> Option<GitObjectId> {
+    pub fn get_note(&mut self, oid: HgObjectId) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
-            get_note_hg(&mut self.0, &(*oid).into())
+            get_note_hg(&mut self.0, &oid.into())
                 .as_ref()
                 .cloned()
                 .map(Into::into)
@@ -161,7 +161,7 @@ impl hg_notes_tree {
 
     pub fn get_note_abbrev<H: ObjectId + Deref<Target = HgObjectId>>(
         &mut self,
-        oid: &Abbrev<H>,
+        oid: Abbrev<H>,
     ) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
@@ -172,7 +172,7 @@ impl hg_notes_tree {
         }
     }
 
-    pub fn for_each<F: FnMut(&HgObjectId, &GitObjectId)>(&mut self, f: F) {
+    pub fn for_each<F: FnMut(HgObjectId, GitObjectId)>(&mut self, f: F) {
         for_each_note_in(&mut self.0, f);
     }
 }

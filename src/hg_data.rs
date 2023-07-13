@@ -430,14 +430,14 @@ fn test_authorship_to_git() {
 }
 
 pub fn hash_data(
-    parent1: Option<&HgObjectId>,
-    parent2: Option<&HgObjectId>,
+    parent1: Option<HgObjectId>,
+    parent2: Option<HgObjectId>,
     data: &[u8],
 ) -> HgObjectId {
     let mut hash = HgObjectId::create();
     let null_oid = HgObjectId::null();
-    let parent1 = parent1.unwrap_or(&null_oid);
-    let parent2 = parent2.unwrap_or(&null_oid);
+    let parent1 = parent1.unwrap_or(null_oid);
+    let parent2 = parent2.unwrap_or(null_oid);
     let mut parents = [parent1, parent2];
     parents.sort();
     hash.update(parents[0].as_raw_bytes());
@@ -446,12 +446,12 @@ pub fn hash_data(
     hash.finalize()
 }
 
-pub fn find_parents<'a>(
-    node: &HgObjectId,
-    parent1: Option<&'a HgObjectId>,
-    parent2: Option<&'a HgObjectId>,
+pub fn find_parents(
+    node: HgObjectId,
+    parent1: Option<HgObjectId>,
+    parent2: Option<HgObjectId>,
     data: &[u8],
-) -> [Option<&'a HgObjectId>; 2] {
+) -> [Option<HgObjectId>; 2] {
     for [parent1, parent2] in [
         [parent1, parent2],
         // In some cases, only one parent is stored in a merge, because
@@ -465,7 +465,7 @@ pub fn find_parents<'a>(
         // As last resord, try without any parents.
         [None, None],
     ] {
-        if &hash_data(parent1, parent2, data) == node {
+        if hash_data(parent1, parent2, data) == node {
             return [parent1, parent2];
         }
     }

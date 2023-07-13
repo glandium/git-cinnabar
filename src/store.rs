@@ -67,10 +67,10 @@ macro_rules! hg2git {
         oid_type!($h(HgObjectId));
 
         impl $h {
-            pub fn to_git(&self) -> Option<$g> {
+            pub fn to_git(self) -> Option<$g> {
                 unsafe {
                     hg2git
-                        .get_note(&self)
+                        .get_note(self.into())
                         .map(|o| $g::from_unchecked($i::from_unchecked(o)))
                 }
             }
@@ -86,7 +86,7 @@ oid_type!(GitChangesetMetadataId(BlobId));
 oid_type!(GitFileMetadataId(BlobId));
 
 impl GitChangesetId {
-    pub fn to_hg(&self) -> Option<HgChangesetId> {
+    pub fn to_hg(self) -> Option<HgChangesetId> {
         //TODO: avoid repeatedly reading metadata for a given changeset.
         //The equivalent python code was keeping a LRU cache.
         let metadata = RawGitChangesetMetadata::read(self);
@@ -100,9 +100,13 @@ impl GitChangesetId {
 pub struct RawGitChangesetMetadata(RawBlob);
 
 impl RawGitChangesetMetadata {
-    pub fn read(changeset_id: &GitChangesetId) -> Option<Self> {
-        let note = unsafe { git2hg.get_note(changeset_id).map(BlobId::from_unchecked)? };
-        RawBlob::read(&note).map(Self)
+    pub fn read(changeset_id: GitChangesetId) -> Option<Self> {
+        let note = unsafe {
+            git2hg
+                .get_note(CommitId::from(changeset_id).into())
+                .map(BlobId::from_unchecked)?
+        };
+        RawBlob::read(note).map(Self)
     }
 
     pub fn parse(&self) -> Option<ParsedGitChangesetMetadata> {
@@ -220,12 +224,11 @@ pub type GeneratedGitChangesetMetadata = GitChangesetMetadata<ImmutBString>;
 impl GeneratedGitChangesetMetadata {
     pub fn generate(
         commit: &Commit,
-        changeset_id: &HgChangesetId,
+        changeset_id: HgChangesetId,
         raw_changeset: &RawHgChangeset,
     ) -> Option<Self> {
         let changeset = raw_changeset.parse()?;
-        let changeset_id = *changeset_id;
-        let manifest_id = *changeset.manifest();
+        let manifest_id = changeset.manifest();
         let author = HgAuthorship::from(GitAuthorship(commit.author())).author;
         let author = if &*author != changeset.author() {
             Some(changeset.author().to_vec().into_boxed_slice())
@@ -487,8 +490,8 @@ impl RawHgChangeset {
         Some(RawHgChangeset(changeset.into()))
     }
 
-    pub fn read(oid: &GitChangesetId) -> Option<Self> {
-        let commit = RawCommit::read(oid)?;
+    pub fn read(oid: GitChangesetId) -> Option<Self> {
+        let commit = RawCommit::read(oid.into())?;
         let commit = commit.parse()?;
         let metadata = RawGitChangesetMetadata::read(oid)?;
         let metadata = metadata.parse()?;
@@ -519,7 +522,7 @@ impl RawHgChangeset {
 
 #[derive(CopyGetters, Getters)]
 pub struct HgChangeset<'a> {
-    #[getset(get = "pub")]
+    #[getset(get_copy = "pub")]
     manifest: HgManifestId,
     #[getset(get_copy = "pub")]
     author: &'a [u8],
@@ -548,9 +551,9 @@ impl<'a> HgChangeset<'a> {
 pub struct RawHgManifest(pub ImmutBString);
 
 impl RawHgManifest {
-    pub fn read(oid: &GitManifestId) -> Option<Self> {
+    pub fn read(oid: GitManifestId) -> Option<Self> {
         unsafe {
-            generate_manifest(&(***oid).into())
+            generate_manifest(&(**oid).into())
                 .as_ref()
                 .map(|b| Self(b.as_bytes().to_owned().into()))
         }
@@ -562,14 +565,14 @@ impl RawHgManifest {
 pub struct RawHgFile(pub ImmutBString);
 
 impl RawHgFile {
-    pub fn read(oid: &GitFileId, metadata: Option<&GitFileMetadataId>) -> Option<Self> {
+    pub fn read(oid: GitFileId, metadata: Option<GitFileMetadataId>) -> Option<Self> {
         let mut result = Vec::new();
         if let Some(metadata) = metadata {
             result.extend_from_slice(b"\x01\n");
-            result.extend_from_slice(RawBlob::read(metadata)?.as_bytes());
+            result.extend_from_slice(RawBlob::read(metadata.into())?.as_bytes());
             result.extend_from_slice(b"\x01\n");
         }
-        result.extend_from_slice(RawBlob::read(oid)?.as_bytes());
+        result.extend_from_slice(RawBlob::read(oid.into())?.as_bytes());
         Some(Self(result.into()))
     }
 }
@@ -616,7 +619,7 @@ pub enum Traversal {
     Children,
 }
 
-impl<N: Ord + Clone, T> Dag<N, T> {
+impl<N: Ord + Copy, T> Dag<N, T> {
     pub fn new() -> Self {
         Dag {
             ids: BTreeMap::new(),
@@ -626,15 +629,15 @@ impl<N: Ord + Clone, T> Dag<N, T> {
 
     pub fn add<F: FnMut(DagNodeId, &mut T)>(
         &mut self,
-        node: &N,
-        parents: &[&N],
+        node: N,
+        parents: &[N],
         data: T,
         mut cb: F,
     ) -> DagNodeId {
         assert!(parents.len() <= 2);
         let parents = parents
             .iter()
-            .filter_map(|p| {
+            .filter_map(|&p| {
                 self.get_mut(p).map(|(id, data)| {
                     cb(id, data);
                     id
@@ -642,9 +645,9 @@ impl<N: Ord + Clone, T> Dag<N, T> {
             })
             .collect_vec();
         let id = DagNodeId::try_from_offset(self.dag.len()).unwrap();
-        assert!(self.ids.insert(node.clone(), id).is_none());
+        assert!(self.ids.insert(node, id).is_none());
         self.dag.push(DagNode {
-            node: node.clone(),
+            node,
             parent1: parents.get(0).copied(),
             parent2: parents.get(1).copied(),
             data,
@@ -652,15 +655,15 @@ impl<N: Ord + Clone, T> Dag<N, T> {
         id
     }
 
-    pub fn get(&self, node: &N) -> Option<(DagNodeId, &T)> {
+    pub fn get(&self, node: N) -> Option<(DagNodeId, &T)> {
         self.ids
-            .get(node)
+            .get(&node)
             .map(|id| (*id, &self.dag[id.to_offset()].data))
     }
 
-    pub fn get_mut(&mut self, node: &N) -> Option<(DagNodeId, &mut T)> {
+    pub fn get_mut(&mut self, node: N) -> Option<(DagNodeId, &mut T)> {
         self.ids
-            .get(node)
+            .get(&node)
             .map(|id| (*id, &mut self.dag[id.to_offset()].data))
     }
 
@@ -671,24 +674,24 @@ impl<N: Ord + Clone, T> Dag<N, T> {
 
     pub fn traverse_mut(
         &mut self,
-        start: &N,
+        start: N,
         direction: Traversal,
-        cb: impl FnMut(&N, &mut T) -> bool,
+        cb: impl FnMut(N, &mut T) -> bool,
     ) {
-        match (direction, self.ids.get(start)) {
+        match (direction, self.ids.get(&start)) {
             (Traversal::Parents, Some(&start)) => self.traverse_parents_mut(start, cb),
             (Traversal::Children, Some(&start)) => self.traverse_children_mut(start, cb),
             _ => {}
         }
     }
 
-    fn traverse_parents_mut(&mut self, start: DagNodeId, mut cb: impl FnMut(&N, &mut T) -> bool) {
+    fn traverse_parents_mut(&mut self, start: DagNodeId, mut cb: impl FnMut(N, &mut T) -> bool) {
         let mut queue = VecDeque::from([start]);
         let mut seen = BitVec::from_elem(self.ids.len(), false);
         while let Some(id) = queue.pop_front() {
             seen.set(id.to_offset(), true);
             let node = &mut self.dag[id.to_offset()];
-            if cb(&node.node, &mut node.data) {
+            if cb(node.node, &mut node.data) {
                 for id in [node.parent1, node.parent2].into_iter().flatten() {
                     if !seen[id.to_offset()] {
                         queue.push_back(id);
@@ -698,7 +701,7 @@ impl<N: Ord + Clone, T> Dag<N, T> {
         }
     }
 
-    fn traverse_children_mut(&mut self, start: DagNodeId, mut cb: impl FnMut(&N, &mut T) -> bool) {
+    fn traverse_children_mut(&mut self, start: DagNodeId, mut cb: impl FnMut(N, &mut T) -> bool) {
         let mut seen = BitVec::from_elem(self.ids.len() - start.to_offset(), false);
         for (idx, node) in self.dag[start.to_offset()..].iter_mut().enumerate() {
             if (idx == 0
@@ -706,7 +709,7 @@ impl<N: Ord + Clone, T> Dag<N, T> {
                     .into_iter()
                     .flatten()
                     .any(|id| id >= start && seen[id.to_offset() - start.to_offset()]))
-                && cb(&node.node, &mut node.data)
+                && cb(node.node, &mut node.data)
             {
                 seen.set(idx, true);
             }
@@ -738,11 +741,10 @@ impl ChangesetHeads {
 
     fn from_stored_metadata() -> Self {
         get_oid_committish(b"refs/cinnabar/metadata^1")
-            .as_ref()
             .map_or_else(ChangesetHeads::new, ChangesetHeads::from_metadata)
     }
 
-    pub fn from_metadata(cid: &CommitId) -> Self {
+    pub fn from_metadata(cid: CommitId) -> Self {
         let mut result = ChangesetHeads::new();
 
         let commit = RawCommit::read(cid).unwrap();
@@ -750,12 +752,12 @@ impl ChangesetHeads {
         for l in ByteSlice::lines(commit.body()) {
             let [h, b] = l.splitn_exact(b' ').unwrap();
             let cs = HgChangesetId::from_bytes(h).unwrap();
-            result.add(&cs, &[], b.as_bstr());
+            result.add(cs, &[], b.as_bstr());
         }
         result
     }
 
-    pub fn add(&mut self, cs: &HgChangesetId, parents: &[&HgChangesetId], branch: &BStr) {
+    pub fn add(&mut self, cs: HgChangesetId, parents: &[HgChangesetId], branch: &BStr) {
         let data = ChangesetInfo {
             has_children: false,
             branch: BString::from(branch),
@@ -862,7 +864,7 @@ pub fn get_tags() -> TagSet {
             let head = head.to_git()?;
             let tags_file = get_oid_blob(format!("{}:.hgtags", head).as_bytes())?;
             if tags_files.insert(tags_file) {
-                let tags_blob = RawBlob::read(&tags_file).unwrap();
+                let tags_blob = RawBlob::read(tags_file).unwrap();
                 tags.merge(TagSet::from_buf(tags_blob.as_bytes())?);
             }
             Some(())
@@ -927,12 +929,13 @@ extern "C" {
 }
 
 fn store_changeset(
-    changeset_id: &HgChangesetId,
+    changeset_id: HgChangesetId,
     parents: &[HgChangesetId],
     raw_changeset: &RawHgChangeset,
 ) -> Result<(CommitId, Option<CommitId>), GraftError> {
     let git_parents = parents
         .iter()
+        .copied()
         .map(HgChangesetId::to_git)
         .collect::<Option<Vec<_>>>()
         .ok_or(GraftError::NoGraft)?;
@@ -945,14 +948,14 @@ fn store_changeset(
         },
         m => {
             let git_manifest_id = m.to_git().unwrap();
-            let manifest_commit = RawCommit::read(&git_manifest_id).unwrap();
+            let manifest_commit = RawCommit::read(git_manifest_id.into()).unwrap();
             let manifest_commit = manifest_commit.parse().unwrap();
             manifest_commit.tree()
         }
     };
 
-    let ref_tree = git_parents.get(0).map(|p| {
-        let ref_commit = RawCommit::read(p).unwrap();
+    let ref_tree = git_parents.get(0).map(|&p| {
+        let ref_commit = RawCommit::read(p.into()).unwrap();
         let ref_commit = ref_commit.parse().unwrap();
         object_id::from(ref_commit.tree())
     });
@@ -970,10 +973,10 @@ fn store_changeset(
     let tree_id = TreeId::from_unchecked(GitObjectId::from(tree_id));
 
     let (commit_id, metadata_id, transition) =
-        match graft(changeset_id, raw_changeset, &tree_id, &git_parents) {
+        match graft(changeset_id, raw_changeset, tree_id, &git_parents) {
             Ok(Some(commit_id)) => {
                 let metadata = GeneratedGitChangesetMetadata::generate(
-                    &RawCommit::read(&commit_id).unwrap().parse().unwrap(),
+                    &RawCommit::read(commit_id).unwrap().parse().unwrap(),
                     changeset_id,
                     raw_changeset,
                 )
@@ -999,7 +1002,7 @@ fn store_changeset(
 
     let (commit_id, metadata_id, replace) = if commit_id.is_none() || transition {
         let replace = commit_id;
-        let result = raw_commit_for_changeset(&changeset, &tree_id, &git_parents);
+        let result = raw_commit_for_changeset(&changeset, tree_id, &git_parents);
         let mut result_oid = object_id::default();
         unsafe {
             store_git_commit(&result, &mut result_oid);
@@ -1007,7 +1010,7 @@ fn store_changeset(
         let commit_id = CommitId::from_unchecked(GitObjectId::from(result_oid));
 
         let metadata = GeneratedGitChangesetMetadata::generate(
-            &RawCommit::read(&commit_id).unwrap().parse().unwrap(),
+            &RawCommit::read(commit_id).unwrap().parse().unwrap(),
             changeset_id,
             raw_changeset,
         )
@@ -1054,14 +1057,13 @@ fn store_changeset(
         .and_then(|e| e.get(b"branch"))
         .unwrap_or(b"default")
         .as_bstr();
-    let parents = parents.iter().collect::<Vec<_>>();
-    heads.add(changeset_id, &parents, branch);
+    heads.add(changeset_id, parents, branch);
     Ok(result)
 }
 
 pub fn raw_commit_for_changeset(
     changeset: &HgChangeset,
-    tree_id: &TreeId,
+    tree_id: TreeId,
     parents: &[GitChangesetId],
 ) -> strbuf {
     let mut result = strbuf::new();
@@ -1100,13 +1102,13 @@ pub fn raw_commit_for_changeset(
 }
 
 pub fn create_changeset(
-    commit_id: &CommitId,
-    manifest_id: &HgManifestId,
+    commit_id: CommitId,
+    manifest_id: HgManifestId,
     files: Option<Box<[u8]>>,
 ) -> (HgChangesetId, GitChangesetMetadataId) {
     let mut metadata = GitChangesetMetadata {
         changeset_id: HgChangesetId::null(),
-        manifest_id: *manifest_id,
+        manifest_id,
         author: None,
         extra: None,
         files: files.and_then(|f| (!f.is_empty()).then(|| f)),
@@ -1115,7 +1117,7 @@ pub fn create_changeset(
     let commit = RawCommit::read(commit_id).unwrap();
     let commit = commit.parse().unwrap();
     let branch = commit.parents().get(0).and_then(|p| {
-        let metadata = RawGitChangesetMetadata::read(&GitChangesetId::from_unchecked(*p)).unwrap();
+        let metadata = RawGitChangesetMetadata::read(GitChangesetId::from_unchecked(*p)).unwrap();
         let metadata = metadata.parse().unwrap();
         metadata
             .extra()
@@ -1167,8 +1169,7 @@ pub fn create_changeset(
     }
     let mut heads = CHANGESET_HEADS.lock().unwrap();
     let branch = branch.as_deref().unwrap_or(b"default").as_bstr();
-    let parents = parents.iter().collect::<Vec<_>>();
-    heads.add(&metadata.changeset_id, &parents, branch);
+    heads.add(metadata.changeset_id, &parents, branch);
     let metadata_id =
         GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(GitObjectId::from(blob_oid)));
     (metadata.changeset_id, metadata_id)
@@ -1207,7 +1208,7 @@ pub fn do_check_files() -> bool {
         transaction
             .update(
                 BROKEN_REF,
-                &unsafe {
+                unsafe {
                     CommitId::from_unchecked(GitObjectId::from(crate::libgit::metadata_oid.clone()))
                 },
                 None,
@@ -1339,7 +1340,7 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
         } else if delta_node.is_null() {
             RawHgChangeset(Box::new([]))
         } else {
-            RawHgChangeset::read(&delta_node.to_git().unwrap()).unwrap()
+            RawHgChangeset::read(delta_node.to_git().unwrap()).unwrap()
         };
 
         let mut last_end = 0;
@@ -1357,7 +1358,7 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
         }
         raw_changeset.extend_from_slice(&reference_cs[last_end..]);
         let raw_changeset = RawHgChangeset(raw_changeset.into());
-        match store_changeset(&changeset_id, &parents, &raw_changeset) {
+        match store_changeset(changeset_id, &parents, &raw_changeset) {
             Ok(_) => {}
             Err(GraftError::NoGraft) => {
                 // TODO: ideally this should instead hard-error when not grafting,
@@ -1584,7 +1585,7 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
 
     // Do some basic validation on the metadata we just got.
     let cid = *remote_refs.get(&refname).unwrap();
-    let commit = RawCommit::read(&cid).unwrap();
+    let commit = RawCommit::read(cid).unwrap();
     let commit = commit.parse().unwrap();
     if !commit.author().contains_str("cinnabar@git")
         || !String::from_utf8_lossy(commit.body())
@@ -1606,7 +1607,7 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
             .map(|(a, b)| (b, a))
             .collect::<BTreeMap<_, _>>();
         let mut needed = Vec::new();
-        for item in ls_tree(&commit.tree()).unwrap() {
+        for item in ls_tree(commit.tree()).unwrap() {
             let cid = CommitId::from_unchecked(item.oid);
             if let Some(refname) = by_sha1.get(&cid) {
                 let replace_ref = bstr::join(b"/", [b"refs/cinnabar/replace", &*item.path]);
@@ -1645,7 +1646,7 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
         }
     }
 
-    set_metadata_to(Some(&cid), MetadataFlags::FORCE, "cinnabarclone").unwrap();
+    set_metadata_to(Some(cid), MetadataFlags::FORCE, "cinnabarclone").unwrap();
     unsafe {
         do_reload();
     }

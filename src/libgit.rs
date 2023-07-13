@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::borrow::{Borrow, Cow};
+use std::borrow::Borrow;
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
 use std::fmt;
 use std::io::{self, Write};
@@ -266,7 +266,7 @@ pub struct RawObject {
 }
 
 impl RawObject {
-    fn read(oid: &GitObjectId) -> Option<(object_type, RawObject)> {
+    fn read(oid: GitObjectId) -> Option<(object_type, RawObject)> {
         let mut info = object_info::default();
         let mut t = object_type::OBJ_NONE;
         let mut len: c_ulong = 0;
@@ -316,8 +316,8 @@ macro_rules! raw_object {
         pub struct $name(RawObject);
 
         impl $name {
-            pub fn read(oid: &$oid_type) -> Option<Self> {
-                match RawObject::read(oid)? {
+            pub fn read(oid: $oid_type) -> Option<Self> {
+                match RawObject::read(*oid)? {
                     (object_type::$t, o) => Some($name(o)),
                     _ => None,
                 }
@@ -417,17 +417,15 @@ pub fn get_oid_blob(s: &[u8]) -> Option<BlobId> {
     }
 }
 
-pub fn lookup_replace_commit(c: &CommitId) -> Cow<CommitId> {
+pub fn lookup_replace_commit(c: CommitId) -> CommitId {
     unsafe {
         let oid = object_id::from(c);
         let replaced = repo_lookup_replace_object(the_repository, &oid);
         if replaced == &oid {
-            Cow::Borrowed(c)
+            c
         } else {
             //TODO: we should actually check the object is a commit.
-            Cow::Owned(CommitId::from_unchecked(
-                replaced.as_ref().unwrap().clone().into(),
-            ))
+            CommitId::from_unchecked(replaced.as_ref().unwrap().clone().into())
         }
     }
 }
@@ -726,8 +724,8 @@ unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tr
 }
 
 pub fn diff_tree(
-    a: &CommitId,
-    b: &CommitId,
+    a: CommitId,
+    b: CommitId,
     detect_copy: bool,
 ) -> impl Iterator<Item = DiffTreeItem> {
     let a = CString::new(format!("{}", a)).unwrap();
@@ -843,7 +841,7 @@ mod refs {
 
 static REFS_LOCK: Lazy<RwLock<()>> = Lazy::new(|| RwLock::new(()));
 
-pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, &CommitId) -> Result<(), E>>(
+pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, CommitId) -> Result<(), E>>(
     prefix: S,
     f: F,
 ) -> Result<(), E> {
@@ -851,7 +849,7 @@ pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, &CommitId) -> Result
     let mut cb_data = (f, None);
     let prefix = prefix.as_ref().to_cstring();
 
-    unsafe extern "C" fn each_ref_cb<E, F: FnMut(&OsStr, &CommitId) -> Result<(), E>>(
+    unsafe extern "C" fn each_ref_cb<E, F: FnMut(&OsStr, CommitId) -> Result<(), E>>(
         refname: *const c_char,
         oid: *const object_id,
         _flags: c_int,
@@ -860,7 +858,7 @@ pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, &CommitId) -> Result
         let (func, ref mut error) = (cb_data as *mut (F, Option<E>)).as_mut().unwrap();
         let refname = OsStr::from_bytes(CStr::from_ptr(refname).to_bytes());
         if let Ok(oid) = CommitId::try_from(GitObjectId::from(oid.as_ref().unwrap().clone())) {
-            match func(refname, &oid) {
+            match func(refname, oid) {
                 Ok(()) => 0,
                 Err(e) => {
                     *error = Some(e);
@@ -978,8 +976,8 @@ impl RefTransaction {
     pub fn update<S: AsRef<OsStr>>(
         &mut self,
         refname: S,
-        new_oid: &CommitId,
-        old_oid: Option<&CommitId>,
+        new_oid: CommitId,
+        old_oid: Option<CommitId>,
         msg: &str,
     ) -> Result<(), String> {
         let msg = CString::new(msg).unwrap();
@@ -1006,7 +1004,7 @@ impl RefTransaction {
     pub fn delete<S: AsRef<OsStr>>(
         &mut self,
         refname: S,
-        old_oid: Option<&CommitId>,
+        old_oid: Option<CommitId>,
         msg: &str,
     ) -> Result<(), String> {
         let msg = CString::new(msg).unwrap();
@@ -1090,7 +1088,7 @@ pub struct LsTreeItem {
 #[derive(Debug)]
 pub struct LsTreeError;
 
-pub fn ls_tree(tree_id: &TreeId) -> Result<impl Iterator<Item = LsTreeItem>, LsTreeError> {
+pub fn ls_tree(tree_id: TreeId) -> Result<impl Iterator<Item = LsTreeItem>, LsTreeError> {
     unsafe extern "C" fn ls_tree_cb(
         oid: *const object_id,
         base: *const strbuf,

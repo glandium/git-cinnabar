@@ -700,32 +700,32 @@ pub fn find_common(
     let mut dag = Dag::new();
     let mut undetermined_count = 0;
     for cid in rev_list(args) {
-        let commit = RawCommit::read(&cid).unwrap();
+        let commit = RawCommit::read(cid).unwrap();
         let commit = commit.parse().unwrap();
         dag.add(
-            &cid,
-            &commit.parents().iter().collect_vec(),
+            cid,
+            &commit.parents().iter().copied().collect_vec(),
             FindCommonInfo::default(),
             |_, _| {},
         );
         undetermined_count += 1;
     }
     for (cs, c) in known {
-        if let Some((_, mut data)) = dag.get_mut(&*c) {
+        if let Some((_, mut data)) = dag.get_mut(*c) {
             data.hg_node = Some(cs);
             data.known = Some(true);
             undetermined_count -= 1;
         }
     }
     for (_, c) in unknown {
-        if let Some((_, mut data)) = dag.get_mut(&*c) {
+        if let Some((_, mut data)) = dag.get_mut(*c) {
             data.known = Some(false);
             undetermined_count -= 1;
         }
     }
-    for (cs, c) in &undetermined {
-        if let Some((_, mut data)) = dag.get_mut(c) {
-            data.hg_node = Some(*cs);
+    for &(cs, c) in &undetermined {
+        if let Some((_, mut data)) = dag.get_mut(*c) {
+            data.hg_node = Some(cs);
         }
     }
 
@@ -737,8 +737,8 @@ pub fn find_common(
                     .filter(|(_, data)| data.known.is_none())
                     .choose_multiple(&mut rng, SAMPLE_SIZE - undetermined.len())
                     .into_iter()
-                    .map(|(c, data)| {
-                        let git_cs = GitChangesetId::from_unchecked(*c);
+                    .map(|(&c, data)| {
+                        let git_cs = GitChangesetId::from_unchecked(c);
                         (
                             *data.hg_node.get_or_insert_with(|| git_cs.to_hg().unwrap()),
                             git_cs,
@@ -750,14 +750,14 @@ pub fn find_common(
             take_sample::<_, _, SAMPLE_SIZE>(&mut rng, &mut undetermined)
                 .into_iter()
                 .unzip();
-        for (&known, c) in conn.known(&sample_hg).iter().zip(sample_git.iter()) {
+        for (&known, &c) in conn.known(&sample_hg).iter().zip(sample_git.iter()) {
             let direction = if known {
                 Traversal::Parents
             } else {
                 Traversal::Children
             };
             let mut first = Some(());
-            dag.traverse_mut(c, direction, |_, data| {
+            dag.traverse_mut(c.into(), direction, |_, data| {
                 if known && first.take().is_none() {
                     data.has_known_children = true;
                 }
