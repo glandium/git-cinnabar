@@ -194,7 +194,7 @@ impl<B: AsRef<[u8]>> GitChangesetMetadata<B> {
         // TODO: ideally, this would return a RawGitChangesetMetadata.
         let mut buf = Vec::new();
         writeln!(buf, "changeset {}", self.changeset_id()).unwrap();
-        if self.manifest_id() != &HgManifestId::null() {
+        if !self.manifest_id().is_null() {
             writeln!(buf, "manifest {}", self.manifest_id()).unwrap();
         }
         for (key, value) in [
@@ -463,7 +463,7 @@ impl RawHgChangeset {
         // create a patch instead, which would be handled above instead of
         // manually here.
         let node = metadata.changeset_id();
-        if *node != HgChangesetId::null() {
+        if !node.is_null() {
             while changeset[changeset.len() - 1] == b'\0' {
                 let mut hash = HgChangesetId::create();
                 let mut parents = commit
@@ -844,7 +844,7 @@ impl TagSet {
     pub fn iter(&self) -> impl Iterator<Item = (&[u8], &HgChangesetId)> {
         self.tags
             .iter()
-            .filter_map(|(tag, (node, _))| (node != &HgChangesetId::null()).then(|| (&**tag, node)))
+            .filter_map(|(tag, (node, _))| (!node.is_null()).then(|| (&**tag, node)))
     }
 }
 
@@ -938,7 +938,7 @@ fn store_changeset(
         .ok_or(GraftError::NoGraft)?;
     let changeset = raw_changeset.parse().unwrap();
     let manifest_tree_id = match changeset.manifest() {
-        m if m == &HgManifestId::null() => unsafe {
+        m if m.is_null() => unsafe {
             TreeId::from_unchecked(GitObjectId::from(
                 ensure_empty_tree().as_ref().unwrap().clone(),
             ))
@@ -1299,7 +1299,7 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
             {
                 stored_files.insert(node, parents.clone());
                 for p in parents.into_iter() {
-                    if p == HgChangesetId::null() {
+                    if p.is_null() {
                         continue;
                     }
                     if stored_files.get(&p) != Some(&null_parents) {
@@ -1332,13 +1332,13 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
             .into_iter()
             .filter_map(|p| {
                 let p = HgChangesetId::from_unchecked(HgObjectId::from(p.clone()));
-                (p != HgChangesetId::null()).then(|| p)
+                (!p.is_null()).then(|| p)
             })
             .collect::<Vec<_>>();
 
         let reference_cs = if delta_node == &previous.0 {
             previous.1
-        } else if delta_node == &HgChangesetId::null() {
+        } else if delta_node.is_null() {
             RawHgChangeset(Box::new([]))
         } else {
             RawHgChangeset::read(&delta_node.to_git().unwrap()).unwrap()

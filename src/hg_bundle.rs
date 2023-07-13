@@ -808,12 +808,9 @@ impl<R: Read> BundleConnection<R> {
                 let delta_node =
                     HgChangesetId::from_unchecked(HgObjectId::from(chunk.delta_node().clone()));
                 let parents = [parent1, parent2];
-                let parents = parents
-                    .iter()
-                    .filter(|&p| *p != HgChangesetId::null())
-                    .collect::<Vec<_>>();
+                let parents = parents.iter().filter(|p| !p.is_null()).collect::<Vec<_>>();
 
-                let reference_cs = if delta_node == HgChangesetId::null() {
+                let reference_cs = if delta_node.is_null() {
                     &empty_cs
                 } else {
                     raw_changesets.get(&delta_node).unwrap()
@@ -951,14 +948,13 @@ fn write_chunk(
         None => (None, None),
     };
     let (delta_node, chunk) = if version == 1 {
-        let previous =
-            raw_previous.or_else(|| (parent1 != &HgObjectId::null()).then(|| f(parent1)));
+        let previous = raw_previous.or_else(|| (!parent1.is_null()).then(|| f(parent1)));
         let previous = previous.as_deref().unwrap_or(b"");
         (None, create_chunk_data(previous, &raw_object))
     } else {
         let mut chunk_data = [parent1, parent2]
             .into_iter()
-            .filter(|&p| p != &HgObjectId::null())
+            .filter(|p| !p.is_null())
             .dedup()
             .map(|p| {
                 if let (true, Some(p)) = (always_previous, previous_node.as_ref()) {
@@ -1052,7 +1048,7 @@ pub fn create_bundle(
         let metadata = RawGitChangesetMetadata::read(&node.to_git().unwrap()).unwrap();
         let metadata = metadata.parse().unwrap();
         let manifest = metadata.manifest_id().clone();
-        if manifest != HgManifestId::null() && !manifests.contains_key(&manifest) {
+        if !manifest.is_null() && !manifests.contains_key(&manifest) {
             let manifest_commit = RawCommit::read(&manifest.to_git().unwrap()).unwrap();
             let manifest_commit = manifest_commit.parse().unwrap();
             let manifest_parents = manifest_commit.parents();
@@ -1108,10 +1104,10 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
         let git_node = node.to_git().unwrap();
         let git_parents = [parent1, parent2]
             .into_iter()
-            .filter_map(|p| (p != HgManifestId::null()).then(|| (*p.to_git().unwrap()).clone()))
+            .filter_map(|p| (!p.is_null()).then(|| (*p.to_git().unwrap()).clone()))
             .collect_vec();
         for (path, hg_file, hg_fileparents) in get_changes(&git_node, &git_parents, false) {
-            if hg_file != GitObjectId::null() {
+            if !hg_file.is_null() {
                 files
                     .entry(path)
                     .or_insert_with(IndexMap::new)
@@ -1190,7 +1186,7 @@ fn bundle_files<const CHUNK_SIZE: usize>(
             let data = generate(&node);
             let null_id = HgObjectId::null();
             // Normalize parents so that the first parent isn't null (it's a corner case, see below).
-            if *parent1 == null_id {
+            if parent1.is_null() {
                 mem::swap(&mut parent1, &mut parent2);
             }
             let [parent1, parent2] = find_parents(&node, Some(&parent1), Some(&parent2), &data);
@@ -1200,10 +1196,10 @@ fn bundle_files<const CHUNK_SIZE: usize>(
             // In that latter case, the parent is always set as second parent.
             // On non-merges, a file with copy metadata doesn't have a parent.
             if data.starts_with(b"\x01\n") {
-                if parent1 != &null_id && parent2 != &null_id {
+                if !parent1.is_null() && !parent2.is_null() {
                     die!("Trying to create an invalid file. Please open an issue with details.");
                 }
-                if parent1 != &null_id {
+                if !parent1.is_null() {
                     mem::swap(&mut parent1, &mut parent2);
                 }
             }

@@ -184,7 +184,7 @@ unsafe extern "C" fn dump_ref_updates() {
     let mut transaction = RefTransaction::new().unwrap();
     for (refname, oid) in REF_UPDATES.lock().unwrap().drain() {
         let refname = OsStr::from_bytes(&refname);
-        if oid == CommitId::null() {
+        if oid.is_null() {
             transaction.delete(refname, None, "update").unwrap();
         } else {
             transaction.update(refname, &oid, None, "update").unwrap();
@@ -1625,7 +1625,7 @@ fn create_merge_changeset(
                 let path = manifest_path(&path);
                 let parents = parents
                     .iter()
-                    .filter(|p| **p != GitObjectId::null())
+                    .filter(|p| !p.is_null())
                     .map(|p| HgFileId::from_str(&p.to_string()).unwrap())
                     .collect_vec();
                 let parents = parents.iter().collect_vec();
@@ -2192,10 +2192,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
                         manifest_path(&path),
                         hg_file
                     ));
-                    let print_parents = hg_fileparents
-                        .iter()
-                        .filter(|p| **p != GitObjectId::null())
-                        .join(" ");
+                    let print_parents = hg_fileparents.iter().filter(|p| !p.is_null()).join(" ");
                     if !print_parents.is_empty() {
                         report(format!(
                             "  with parent{} {}",
@@ -2538,10 +2535,7 @@ fn do_fsck_full(
         {
             // TODO: This is gross.
             let hg_file = HgFileId::from_bytes(format!("{}", hg_file).as_bytes()).unwrap();
-            if hg_file == HgFileId::null()
-                || hg_file == empty_file
-                || !seen_files.insert(hg_file.clone())
-            {
+            if hg_file.is_null() || hg_file == empty_file || !seen_files.insert(hg_file.clone()) {
                 continue;
             }
             if unsafe {
@@ -2573,10 +2567,7 @@ fn do_fsck_full(
                     manifest_path(&path),
                     hg_file
                 ));
-                let print_parents = hg_fileparents
-                    .iter()
-                    .filter(|p| **p != GitObjectId::null())
-                    .join(" ");
+                let print_parents = hg_fileparents.iter().filter(|p| !p.is_null()).join(" ");
                 if !print_parents.is_empty() {
                     report(format!(
                         "  with parent{} {}",
@@ -3415,7 +3406,7 @@ fn remote_helper_repo_list(
             },
         );
         for (name, cid) in bookmarks.iter() {
-            if cid != &HgChangesetId::null() {
+            if !cid.is_null() {
                 add_ref(bookmark_template, &[&**name], cid.clone());
             }
         }
@@ -3742,10 +3733,7 @@ fn remote_helper_push(
 
         let pushing_anything = push_refs.iter().any(|(_, c, _, _)| c.is_some());
         let force = push_refs.iter().all(|(_, _, _, force)| *force);
-        let no_topological_heads = info
-            .topological_heads
-            .iter()
-            .all(|h| h == &HgChangesetId::null());
+        let no_topological_heads = info.topological_heads.iter().all(ObjectId::is_null);
         if pushing_anything && local_bases.is_empty() && !no_topological_heads {
             let mut fail = true;
             if has_metadata() && force {

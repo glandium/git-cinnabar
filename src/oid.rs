@@ -13,6 +13,9 @@ pub trait ObjectId: Sized {
     fn as_raw_bytes(&self) -> &[u8];
     fn as_raw_bytes_mut(&mut self) -> &mut [u8];
     fn null() -> Self;
+    fn is_null(&self) -> bool {
+        self.as_raw_bytes().iter().all(|&b| b == 0)
+    }
     fn create() -> OidCreator<Self> {
         OidCreator(Self::Digest::new())
     }
