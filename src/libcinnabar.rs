@@ -8,7 +8,6 @@ use libc::FILE;
 
 use crate::libgit::{child_process, object_id, strbuf};
 use crate::oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
-use crate::util::FromBytes;
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -75,31 +74,19 @@ extern "C" {
     ) -> c_int;
 }
 
-fn for_each_note_in<O: ObjectId + FromBytes, N: ObjectId + FromBytes, F: FnMut(O, N)>(
+fn for_each_note_in<O: ObjectId, N: ObjectId, F: FnMut(O, N)>(
     notes: &mut cinnabar_notes_tree,
     mut f: F,
 ) {
-    unsafe extern "C" fn each_note_cb<
-        O: ObjectId + FromBytes,
-        N: ObjectId + FromBytes,
-        F: FnMut(O, N),
-    >(
+    unsafe extern "C" fn each_note_cb<O: ObjectId, N: ObjectId, F: FnMut(O, N)>(
         oid: *const object_id,
         note_oid: *const object_id,
         _note_path: *const c_char,
         cb_data: *mut c_void,
     ) -> c_int {
         let cb = (cb_data as *mut F).as_mut().unwrap();
-        let o = O::from_bytes(
-            format!("{}", GitObjectId::from(oid.as_ref().unwrap().clone())).as_bytes(),
-        )
-        .map_err(|_| ())
-        .unwrap();
-        let n = N::from_bytes(
-            format!("{}", GitObjectId::from(note_oid.as_ref().unwrap().clone())).as_bytes(),
-        )
-        .map_err(|_| ())
-        .unwrap();
+        let o = O::from_raw_bytes(oid.as_ref().unwrap().as_raw_bytes()).unwrap();
+        let n = N::from_raw_bytes(note_oid.as_ref().unwrap().as_raw_bytes()).unwrap();
         cb(o, n);
         0
     }

@@ -27,6 +27,13 @@ const GIT_HASH_SHA1: c_int = 1;
 #[derive(Clone)]
 pub struct object_id([u8; GIT_MAX_RAWSZ], c_int);
 
+impl object_id {
+    pub fn as_raw_bytes(&self) -> &[u8] {
+        assert_eq!(self.1, GIT_HASH_SHA1);
+        &self.0[..<sha1::Sha1 as digest::OutputSizeUser>::output_size()]
+    }
+}
+
 impl Default for object_id {
     fn default() -> Self {
         Self([0; GIT_MAX_RAWSZ], GIT_HASH_SHA1)

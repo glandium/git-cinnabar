@@ -21,6 +21,14 @@ pub trait ObjectId: Sized + Copy {
         OidCreator(Self::Digest::new())
     }
     fn from_digest(h: Self::Digest) -> Self;
+    fn from_raw_bytes(b: &[u8]) -> Option<Self> {
+        (b.len() == <Self::Digest as digest::OutputSizeUser>::output_size()).then(|| {
+            let mut result = Self::null();
+            let slice = result.as_raw_bytes_mut();
+            slice.clone_from_slice(&b[..slice.len()]);
+            result
+        })
+    }
     fn abbrev(self, len: usize) -> Abbrev<Self> {
         assert_le!(
             len,

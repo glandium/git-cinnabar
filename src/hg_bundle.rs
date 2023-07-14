@@ -1115,29 +1115,23 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
                 files
                     .entry(path)
                     .or_insert_with(IndexMap::new)
-                    .entry(HgFileId::from_bytes(format!("{}", hg_file).as_bytes()).unwrap())
+                    .entry(HgFileId::from_raw_bytes(hg_file.as_raw_bytes()).unwrap())
                     .or_insert_with(|| {
                         (
-                            HgFileId::from_bytes(
-                                format!(
-                                    "{}",
-                                    hg_fileparents
-                                        .get(0)
-                                        .copied()
-                                        .unwrap_or_else(GitObjectId::null)
-                                )
-                                .as_bytes(),
+                            HgFileId::from_raw_bytes(
+                                hg_fileparents
+                                    .get(0)
+                                    .copied()
+                                    .unwrap_or_else(GitObjectId::null)
+                                    .as_raw_bytes(),
                             )
                             .unwrap(),
-                            HgFileId::from_bytes(
-                                format!(
-                                    "{}",
-                                    hg_fileparents
-                                        .get(1)
-                                        .copied()
-                                        .unwrap_or_else(GitObjectId::null)
-                                )
-                                .as_bytes(),
+                            HgFileId::from_raw_bytes(
+                                hg_fileparents
+                                    .get(1)
+                                    .copied()
+                                    .unwrap_or_else(GitObjectId::null)
+                                    .as_raw_bytes(),
                             )
                             .unwrap(),
                             changeset,

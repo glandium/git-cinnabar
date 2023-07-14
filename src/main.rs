@@ -2156,26 +2156,21 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             if let Some((path, hg_file)) = all_interesting.take(&(path, hg_file)) {
                 if unsafe {
                     check_file(
-                        // TODO: This is gross.
-                        &hg_object_id::from(
-                            HgObjectId::from_bytes(format!("{}", hg_file).as_bytes()).unwrap(),
-                        ),
-                        &hg_fileparents.get(0).map_or_else(
-                            || hg_object_id::from(HgObjectId::null()),
-                            |p| {
-                                hg_object_id::from(
-                                    HgObjectId::from_bytes(format!("{}", p).as_bytes()).unwrap(),
-                                )
-                            },
-                        ),
-                        &hg_fileparents.get(1).map_or_else(
-                            || hg_object_id::from(HgObjectId::null()),
-                            |p| {
-                                hg_object_id::from(
-                                    HgObjectId::from_bytes(format!("{}", p).as_bytes()).unwrap(),
-                                )
-                            },
-                        ),
+                        &HgObjectId::from_raw_bytes(hg_file.as_raw_bytes())
+                            .unwrap()
+                            .into(),
+                        &hg_fileparents
+                            .get(0)
+                            .map_or_else(HgObjectId::null, |p| {
+                                HgObjectId::from_raw_bytes(p.as_raw_bytes()).unwrap()
+                            })
+                            .into(),
+                        &hg_fileparents
+                            .get(1)
+                            .map_or_else(HgObjectId::null, |p| {
+                                HgObjectId::from_raw_bytes(p.as_raw_bytes()).unwrap()
+                            })
+                            .into(),
                     )
                 } != 1
                 {
@@ -2523,31 +2518,26 @@ fn do_fsck_full(
         for (path, hg_file, hg_fileparents) in
             get_changes(manifest_cid.into(), &git_manifest_parents, false)
         {
-            // TODO: This is gross.
-            let hg_file = HgFileId::from_bytes(format!("{}", hg_file).as_bytes()).unwrap();
+            let hg_file = HgFileId::from_raw_bytes(hg_file.as_raw_bytes()).unwrap();
             if hg_file.is_null() || hg_file == empty_file || !seen_files.insert(hg_file) {
                 continue;
             }
             if unsafe {
                 // TODO: add FileFindParents logging.
                 check_file(
-                    &hg_object_id::from(hg_file),
-                    &hg_fileparents.get(0).map_or_else(
-                        || hg_object_id::from(HgObjectId::null()),
-                        |p| {
-                            hg_object_id::from(
-                                HgObjectId::from_bytes(format!("{}", p).as_bytes()).unwrap(),
-                            )
-                        },
-                    ),
-                    &hg_fileparents.get(1).map_or_else(
-                        || hg_object_id::from(HgObjectId::null()),
-                        |p| {
-                            hg_object_id::from(
-                                HgObjectId::from_bytes(format!("{}", p).as_bytes()).unwrap(),
-                            )
-                        },
-                    ),
+                    &hg_file.into(),
+                    &hg_fileparents
+                        .get(0)
+                        .map_or_else(HgObjectId::null, |p| {
+                            HgObjectId::from_raw_bytes(p.as_raw_bytes()).unwrap()
+                        })
+                        .into(),
+                    &hg_fileparents
+                        .get(1)
+                        .map_or_else(HgObjectId::null, |p| {
+                            HgObjectId::from_raw_bytes(p.as_raw_bytes()).unwrap()
+                        })
+                        .into(),
                 )
             } != 1
             {
