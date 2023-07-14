@@ -34,8 +34,8 @@ impl Default for object_id {
     }
 }
 
-impl<O: Borrow<GitObjectId>> From<O> for object_id {
-    fn from(oid: O) -> Self {
+impl From<GitObjectId> for object_id {
+    fn from(oid: GitObjectId) -> Self {
         let mut result = object_id::default();
         let oid = oid.borrow().as_raw_bytes();
         result.0[..oid.len()].clone_from_slice(oid);
@@ -285,11 +285,11 @@ impl RawObject {
         )
     }
 
-    fn get_type<O: Borrow<GitObjectId>>(oid: O) -> Option<object_type> {
+    fn get_type<O: Into<GitObjectId>>(oid: O) -> Option<object_type> {
         let mut info = object_info::default();
         let mut t = object_type::OBJ_NONE;
         info.typep = &mut t;
-        (unsafe { oid_object_info_extended(the_repository, &oid.into(), &mut info, 0) } == 0)
+        (unsafe { oid_object_info_extended(the_repository, &oid.into().into(), &mut info, 0) } == 0)
             .then(|| t)
     }
 
@@ -306,9 +306,44 @@ impl Drop for RawObject {
     }
 }
 
-oid_type!(CommitId(GitObjectId));
-oid_type!(TreeId(GitObjectId));
-oid_type!(BlobId(GitObjectId));
+#[macro_export]
+macro_rules! git_oid_type {
+    ($name:ident($base_type:ident)) => {
+        oid_type!($name($base_type));
+
+        impl From<$name> for object_id {
+            fn from(oid: $name) -> object_id {
+                GitObjectId::from(oid).into()
+            }
+        }
+
+        git_oid_type!(@ $name($base_type));
+    };
+    (@ $name:ident(GitObjectId)) => {};
+    (@ $name:ident($base_type:ident)) => {
+        impl From<$name> for GitObjectId {
+            fn from(oid: $name) -> GitObjectId {
+                $base_type::from(oid).into()
+            }
+        }
+
+        impl PartialEq<$name> for GitObjectId {
+            fn eq(&self, other: &$name) -> bool {
+                self.as_raw_bytes() == other.as_raw_bytes()
+            }
+        }
+
+        impl PartialEq<GitObjectId> for $name {
+            fn eq(&self, other: &GitObjectId) -> bool {
+                self.as_raw_bytes() == other.as_raw_bytes()
+            }
+        }
+    };
+}
+
+git_oid_type!(CommitId(GitObjectId));
+git_oid_type!(TreeId(GitObjectId));
+git_oid_type!(BlobId(GitObjectId));
 
 macro_rules! raw_object {
     ($t:ident | $oid_type:ident => $name:ident) => {
@@ -317,7 +352,7 @@ macro_rules! raw_object {
 
         impl $name {
             pub fn read(oid: $oid_type) -> Option<Self> {
-                match RawObject::read(*oid)? {
+                match RawObject::read(oid.into())? {
                     (object_type::$t, o) => Some($name(o)),
                     _ => None,
                 }
@@ -327,7 +362,7 @@ macro_rules! raw_object {
         impl TryFrom<GitObjectId> for $oid_type {
             type Error = ();
             fn try_from(oid: GitObjectId) -> std::result::Result<Self, ()> {
-                match RawObject::get_type(&oid).ok_or(())? {
+                match RawObject::get_type(oid).ok_or(())? {
                     object_type::$t => Ok($oid_type::from_unchecked(oid)),
                     _ => Err(()),
                 }

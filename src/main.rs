@@ -1716,8 +1716,8 @@ fn create_merge_changeset(
             // empty file needs to be checked separately because hg2git metadata
             // doesn't store empty files because of the conflict with empty manifests.
             let unchanged = parents.len() == 1
-                && ((parents[0].fid() == empty_file && l.oid == *empty_blob)
-                    || **parents[0].fid().to_git().unwrap() == l.oid);
+                && ((parents[0].fid() == empty_file && l.oid == empty_blob)
+                    || parents[0].fid().to_git().unwrap() == l.oid);
             let fid = if unchanged {
                 parents[0].fid()
             } else {
@@ -1910,9 +1910,9 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             ));
             continue;
         };
-        if *git_cid != c {
+        if git_cid != c {
             let parents = parents.get_or_insert_with(|| BTreeSet::from_iter(commit.parents()));
-            if !parents.contains(&*git_cid) {
+            if !parents.contains(&CommitId::from(git_cid)) {
                 report(format!(
                     "Inconsistent metadata:\n\
                      \x20 Head metadata says changeset {} maps to {}\n
@@ -1982,7 +1982,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             ));
             continue;
         }
-        manifest_nodes.push(*changeset.manifest());
+        manifest_nodes.push(changeset.manifest());
     }
 
     if broken.get() {
@@ -2070,7 +2070,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             ));
             continue;
         };
-        if mid != *git_mid {
+        if mid != git_mid {
             report(format!(
                 "Inconsistent metadata:\n\
                  \x20 Manifest DAG contains {} for manifest {}\n
@@ -2078,19 +2078,19 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
                 mid, hg_manifest_id, git_mid
             ));
         }
-        if unsafe { check_manifest(&object_id::from(*git_mid), std::ptr::null_mut()) } != 1 {
+        if unsafe { check_manifest(&object_id::from(git_mid), std::ptr::null_mut()) } != 1 {
             report(format!("Sha1 mismatch for manifest {}", git_mid));
         }
         let files = if let Some(previous) = previous {
             diff_tree(previous, mid, false)
                 .filter_map(|item| match item {
-                    DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid))),
+                    DiffTreeItem::Added { path, oid, .. } => Some((path, oid.into())),
                     DiffTreeItem::Modified {
                         path,
                         from_oid,
                         to_oid,
                         ..
-                    } if from_oid != to_oid => Some((path, (*to_oid))),
+                    } if from_oid != to_oid => Some((path, to_oid.into())),
                     _ => None,
                 })
                 .filter(|pair| !all_interesting.contains(pair))
@@ -2113,13 +2113,13 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         if let Some(previous) = previous {
             diff_tree(previous, r, false)
                 .filter_map(|item| match item {
-                    DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid))),
+                    DiffTreeItem::Added { path, oid, .. } => Some((path, oid.into())),
                     DiffTreeItem::Modified {
                         path,
                         from_oid,
                         to_oid,
                         ..
-                    } if from_oid != to_oid => Some((path, (*to_oid))),
+                    } if from_oid != to_oid => Some((path, to_oid.into())),
                     _ => None,
                 })
                 .for_each(|item| {
@@ -2278,14 +2278,14 @@ fn do_fsck_full(
                         format!("Invalid commit or changeset: {}", c.to_string_lossy())
                     })?;
                     if git_cs.to_hg().is_some() {
-                        return Ok(*git_cs);
+                        return Ok(git_cs.into());
                     }
                     let cs = HgChangesetId::from_bytes(c.as_bytes()).map_err(|_| {
                         format!("Invalid commit or changeset: {}", c.to_string_lossy())
                     })?;
 
                     if let Some(git_cs) = cs.to_git() {
-                        Ok(*git_cs)
+                        Ok(git_cs.into())
                     } else {
                         Err(format!(
                             "Unknown commit or changeset: {}",
@@ -2355,7 +2355,7 @@ fn do_fsck_full(
                 continue;
             }
         }
-        seen_changesets.insert(*changeset_id);
+        seen_changesets.insert(changeset_id);
         let raw_changeset =
             if let Some(raw_changeset) = RawHgChangeset::from_metadata(&commit, &metadata) {
                 raw_changeset
@@ -2432,13 +2432,13 @@ fn do_fsck_full(
             unsafe {
                 do_set(
                     cstr::cstr!("changeset").as_ptr(),
-                    &hg_object_id::from(*changeset_id),
+                    &hg_object_id::from(changeset_id),
                     &object_id::from(CommitId::null()),
                 );
                 do_set(
                     cstr::cstr!("changeset").as_ptr(),
-                    &hg_object_id::from(*changeset_id),
-                    &object_id::from(*cid),
+                    &hg_object_id::from(changeset_id),
+                    &object_id::from(cid),
                 );
                 let mut metadata_id = object_id::default();
                 let mut buf = strbuf::new();
@@ -2446,19 +2446,19 @@ fn do_fsck_full(
                 store_git_blob(&buf, &mut metadata_id);
                 do_set(
                     cstr::cstr!("changeset-metadata").as_ptr(),
-                    &hg_object_id::from(*changeset_id),
+                    &hg_object_id::from(changeset_id),
                     &object_id::from(CommitId::null()),
                 );
                 do_set(
                     cstr::cstr!("changeset-metadata").as_ptr(),
-                    &hg_object_id::from(*changeset_id),
+                    &hg_object_id::from(changeset_id),
                     &metadata_id,
                 );
             }
         }
 
         let manifest_id = changeset.manifest();
-        if !seen_manifests.insert(*manifest_id) {
+        if !seen_manifests.insert(manifest_id) {
             // We've already seen the manifest.
             continue;
         }
@@ -2473,7 +2473,7 @@ fn do_fsck_full(
         };
 
         let checked = unsafe {
-            let manifest_cid = object_id::from(*manifest_cid);
+            let manifest_cid = object_id::from(manifest_cid);
             check_manifest(&manifest_cid, std::ptr::null_mut()) == 1
         };
         if !checked {
@@ -2490,7 +2490,7 @@ fn do_fsck_full(
             .collect_vec();
         let git_manifest_parents = hg_manifest_parents
             .into_iter()
-            .filter_map(|p| p.to_git().map(|p| (*p)))
+            .filter_map(|p| p.to_git().map(Into::into))
             .sorted()
             .collect_vec();
 
@@ -2513,7 +2513,7 @@ fn do_fsck_full(
         }
 
         if full_fsck {
-            manifest_heads.insert(*manifest_cid);
+            manifest_heads.insert(manifest_cid.into());
             for p in manifest_commit.parents() {
                 manifest_heads.remove(p);
             }
@@ -2676,7 +2676,7 @@ fn do_fsck_full(
             unsafe {
                 do_set(
                     cstr::cstr!("changeset-metadata").as_ptr(),
-                    &hg_object_id::from(*metadata.changeset_id()),
+                    &hg_object_id::from(metadata.changeset_id()),
                     &object_id::default(),
                 );
             }
@@ -2797,14 +2797,14 @@ fn manifest_diff(
     b: CommitId,
 ) -> impl Iterator<Item = (Box<[u8]>, GitObjectId, GitObjectId)> {
     diff_tree(a, b, false).filter_map(|item| match item {
-        DiffTreeItem::Added { path, oid, .. } => Some((path, (*oid), GitObjectId::null())),
+        DiffTreeItem::Added { path, oid, .. } => Some((path, oid.into(), GitObjectId::null())),
         DiffTreeItem::Modified {
             path,
             from_oid,
             to_oid,
             ..
-        } if from_oid != to_oid => Some((path, (*to_oid), (*from_oid))),
-        DiffTreeItem::Deleted { path, oid, .. } => Some((path, GitObjectId::null(), (*oid))),
+        } if from_oid != to_oid => Some((path, to_oid.into(), from_oid.into())),
+        DiffTreeItem::Deleted { path, oid, .. } => Some((path, GitObjectId::null(), oid.into())),
         _ => None,
     })
 }

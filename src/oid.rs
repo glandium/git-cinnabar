@@ -10,6 +10,7 @@ use sha1::Sha1;
 
 pub trait ObjectId: Sized + Copy {
     type Digest: Digest;
+
     fn as_raw_bytes(&self) -> &[u8];
     fn as_raw_bytes_mut(&mut self) -> &mut [u8];
     fn null() -> Self;
@@ -33,7 +34,7 @@ pub trait ObjectId: Sized + Copy {
 macro_rules! oid_type {
     ($name:ident($base_type:ident)) => {
         #[repr(transparent)]
-        #[derive(Clone, Copy, Deref, Display, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        #[derive(Clone, Copy, Display, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct $name($base_type);
 
         impl $crate::oid::ObjectId for $name {
@@ -61,21 +62,21 @@ macro_rules! oid_type {
             }
         }
 
-        impl ::std::borrow::Borrow<$base_type> for $name {
-            fn borrow(&self) -> &$base_type {
-                &self.0
-            }
-        }
-
-        impl<'a> ::std::borrow::Borrow<$base_type> for &'a $name where Self: 'a {
-            fn borrow(&self) -> &$base_type {
-                &self.0
-            }
-        }
-
         impl From<$name> for $base_type {
             fn from(o: $name) -> $base_type {
                 o.0
+            }
+        }
+
+        impl PartialEq<$base_type> for $name {
+            fn eq(&self, other: &$base_type) -> bool {
+                self.as_raw_bytes() == other.as_raw_bytes()
+            }
+        }
+
+        impl PartialEq<$name> for $base_type {
+            fn eq(&self, other: &$name) -> bool {
+                self.as_raw_bytes() == other.as_raw_bytes()
             }
         }
 

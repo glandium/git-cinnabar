@@ -1108,7 +1108,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
         let git_node = node.to_git().unwrap();
         let git_parents = [parent1, parent2]
             .into_iter()
-            .filter_map(|p| (!p.is_null()).then(|| (*p.to_git().unwrap())))
+            .filter_map(|p| (!p.is_null()).then(|| (p.to_git().unwrap().into())))
             .collect_vec();
         for (path, hg_file, hg_fileparents) in get_changes(git_node.into(), &git_parents, false) {
             if !hg_file.is_null() {

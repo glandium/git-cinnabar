@@ -711,20 +711,20 @@ pub fn find_common(
         undetermined_count += 1;
     }
     for (cs, c) in known {
-        if let Some((_, mut data)) = dag.get_mut(*c) {
+        if let Some((_, mut data)) = dag.get_mut(c.into()) {
             data.hg_node = Some(cs);
             data.known = Some(true);
             undetermined_count -= 1;
         }
     }
     for (_, c) in unknown {
-        if let Some((_, mut data)) = dag.get_mut(*c) {
+        if let Some((_, mut data)) = dag.get_mut(c.into()) {
             data.known = Some(false);
             undetermined_count -= 1;
         }
     }
     for &(cs, c) in &undetermined {
-        if let Some((_, mut data)) = dag.get_mut(*c) {
+        if let Some((_, mut data)) = dag.get_mut(c.into()) {
             data.hg_node = Some(cs);
         }
     }

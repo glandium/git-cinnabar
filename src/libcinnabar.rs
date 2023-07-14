@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::ops::Deref;
 use std::os::raw::{c_char, c_int, c_void};
 
 use libc::FILE;
@@ -16,16 +15,7 @@ use crate::util::FromBytes;
 #[derive(Clone, Default)]
 pub struct hg_object_id([u8; 20]);
 
-impl From<HgObjectId> for hg_object_id {
-    fn from(oid: HgObjectId) -> Self {
-        let mut result = Self([0; 20]);
-        let oid = oid.as_raw_bytes();
-        result.0[..oid.len()].clone_from_slice(oid);
-        result
-    }
-}
-
-impl<H: ObjectId + Deref<Target = HgObjectId>> From<H> for hg_object_id {
+impl<H: ObjectId + Into<HgObjectId>> From<H> for hg_object_id {
     fn from(oid: H) -> Self {
         let mut result = Self([0; 20]);
         let oid = oid.as_raw_bytes();
@@ -159,7 +149,7 @@ impl hg_notes_tree {
         }
     }
 
-    pub fn get_note_abbrev<H: ObjectId + Deref<Target = HgObjectId>>(
+    pub fn get_note_abbrev<H: ObjectId + Into<hg_object_id>>(
         &mut self,
         oid: Abbrev<H>,
     ) -> Option<GitObjectId> {

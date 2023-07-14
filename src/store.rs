@@ -44,7 +44,7 @@ use crate::progress::{progress_enabled, Progress};
 use crate::util::{FromBytes, ImmutBString, OsStrExt, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::{apply, textdiff, PatchInfo};
 use crate::{check_enabled, do_reload, Checks};
-use crate::{oid_type, set_metadata_to, MetadataFlags};
+use crate::{git_oid_type, set_metadata_to, MetadataFlags};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
 pub const REPLACE_REFS_PREFIX: &str = "refs/cinnabar/replace/";
@@ -63,7 +63,7 @@ pub fn has_metadata() -> bool {
 
 macro_rules! hg2git {
     ($h:ident => $g:ident($i:ident)) => {
-        oid_type!($g($i));
+        git_oid_type!($g($i));
         oid_type!($h(HgObjectId));
 
         impl $h {
@@ -553,7 +553,7 @@ pub struct RawHgManifest(pub ImmutBString);
 impl RawHgManifest {
     pub fn read(oid: GitManifestId) -> Option<Self> {
         unsafe {
-            generate_manifest(&(**oid).into())
+            generate_manifest(&oid.into())
                 .as_ref()
                 .map(|b| Self(b.as_bytes().to_owned().into()))
         }
@@ -1036,10 +1036,10 @@ fn store_changeset(
 
     let result = (commit_id, replace);
     unsafe {
-        let changeset_id = hg_object_id::from(*changeset_id);
+        let changeset_id = hg_object_id::from(changeset_id);
         let commit_id = object_id::from(commit_id);
-        let blob_id = object_id::from(*metadata_id);
-        if let Some(replace) = &result.1 {
+        let blob_id = object_id::from(BlobId::from(metadata_id));
+        if let Some(replace) = result.1 {
             let replace = object_id::from(replace);
             do_set_replace(&replace, &commit_id);
         }
