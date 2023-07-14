@@ -31,40 +31,14 @@ pub trait ObjectId: Sized + Copy {
 }
 
 #[macro_export]
-macro_rules! oid_type {
+macro_rules! oid_impl {
     ($name:ident($base_type:ident)) => {
-        #[repr(transparent)]
-        #[derive(Clone, Copy, Display, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub struct $name($base_type);
-
-        impl $crate::oid::ObjectId for $name {
-            type Digest = <$base_type as $crate::oid::ObjectId>::Digest;
-
-            fn as_raw_bytes(&self) -> &[u8] {
-                self.0.as_raw_bytes()
-            }
-
-            fn as_raw_bytes_mut(&mut self) -> &mut [u8] {
-                self.0.as_raw_bytes_mut()
-            }
-
-            fn null() -> Self {
-                Self($base_type::null())
-            }
-
-            fn from_digest(h: Self::Digest) -> Self {
-                Self(<$base_type as $crate::oid::ObjectId>::from_digest(h))
-            }
-        }
-        impl $name {
-            pub fn from_unchecked(o: $base_type) -> Self {
-                Self(o)
-            }
-        }
-
         impl From<$name> for $base_type {
             fn from(o: $name) -> $base_type {
-                o.0
+                let mut result = $base_type::null();
+                let slice = result.as_raw_bytes_mut();
+                slice.clone_from_slice(&o.0[..slice.len()]);
+                result
             }
         }
 
@@ -79,8 +53,21 @@ macro_rules! oid_type {
                 self.as_raw_bytes() == other.as_raw_bytes()
             }
         }
+    };
+}
 
-        oid_type!(@other $name);
+#[macro_export]
+macro_rules! oid_type {
+    ($name:ident($base_type:ident)) => {
+        oid_type!($name for <$base_type as $crate::oid::ObjectId>::Digest);
+
+        impl $name {
+            pub fn from_unchecked(o: $base_type) -> Self {
+                Self(o.as_raw_bytes().try_into().unwrap())
+            }
+        }
+
+        oid_impl!($name($base_type));
     };
     ($name:ident for $typ:ty) => {
         #[repr(C)]
@@ -103,14 +90,11 @@ macro_rules! oid_type {
             }
 
             fn from_digest(h: Self::Digest) -> Self {
+                use digest::Digest;
                 Self(h.finalize().into())
             }
         }
 
-        oid_type!(@traits $name);
-        oid_type!(@other $name);
-    };
-    (@traits $name:ident) => {
         impl ::std::fmt::Display for $name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
                 for x in self.as_raw_bytes() {
@@ -119,8 +103,7 @@ macro_rules! oid_type {
                 Ok(())
             }
         }
-    };
-    (@other $name:ident) => {
+
         derive_debug_display!($name);
         derive_debug_display!($crate::oid::Abbrev<$name>);
         impl ::std::str::FromStr for $name {

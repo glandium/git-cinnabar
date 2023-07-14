@@ -12,7 +12,7 @@ use std::sync::RwLock;
 use bstr::{BStr, ByteSlice, ByteVec};
 use cstr::cstr;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
-use derive_more::{Deref, Display};
+use derive_more::Deref;
 use getset::{CopyGetters, Getters};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -321,23 +321,7 @@ macro_rules! git_oid_type {
     };
     (@ $name:ident(GitObjectId)) => {};
     (@ $name:ident($base_type:ident)) => {
-        impl From<$name> for GitObjectId {
-            fn from(oid: $name) -> GitObjectId {
-                $base_type::from(oid).into()
-            }
-        }
-
-        impl PartialEq<$name> for GitObjectId {
-            fn eq(&self, other: &$name) -> bool {
-                self.as_raw_bytes() == other.as_raw_bytes()
-            }
-        }
-
-        impl PartialEq<GitObjectId> for $name {
-            fn eq(&self, other: &GitObjectId) -> bool {
-                self.as_raw_bytes() == other.as_raw_bytes()
-            }
-        }
+        oid_impl!($name(GitObjectId));
     };
 }
 
@@ -440,7 +424,7 @@ pub fn get_oid_committish(s: &[u8]) -> Option<CommitId> {
         let c = CString::new(s).unwrap();
         let mut oid = object_id::default();
         (repo_get_oid_committish(the_repository, c.as_ptr(), &mut oid) == 0)
-            .then(|| CommitId(oid.into()))
+            .then(|| CommitId::from_unchecked(oid.into()))
     }
 }
 
@@ -448,7 +432,8 @@ pub fn get_oid_blob(s: &[u8]) -> Option<BlobId> {
     unsafe {
         let c = CString::new(s).unwrap();
         let mut oid = object_id::default();
-        (repo_get_oid_blob(the_repository, c.as_ptr(), &mut oid) == 0).then(|| BlobId(oid.into()))
+        (repo_get_oid_blob(the_repository, c.as_ptr(), &mut oid) == 0)
+            .then(|| BlobId::from_unchecked(oid.into()))
     }
 }
 

@@ -19,7 +19,7 @@ use std::sync::Mutex;
 use bit_vec::BitVec;
 use bstr::{BStr, BString, ByteSlice};
 use cstr::cstr;
-use derive_more::{Deref, Display};
+use derive_more::Deref;
 use getset::{CopyGetters, Getters};
 use indexmap::IndexMap;
 use itertools::Itertools;
