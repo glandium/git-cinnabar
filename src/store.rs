@@ -1186,7 +1186,7 @@ extern "C" {
     ) -> c_int;
 }
 
-static STORED_FILES: Lazy<Mutex<BTreeMap<HgChangesetId, [HgChangesetId; 2]>>> =
+static STORED_FILES: Lazy<Mutex<BTreeMap<HgFileId, [HgFileId; 2]>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 
 pub fn do_check_files() -> bool {
@@ -1275,7 +1275,7 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
         )
     });
     let mut stored_files = STORED_FILES.lock().unwrap();
-    let null_parents = [HgChangesetId::null(), HgChangesetId::null()];
+    let null_parents = [HgFileId::null(), HgFileId::null()];
     while {
         let mut buf = strbuf::new();
         read_rev_chunk(&mut input, &mut buf);
@@ -1283,10 +1283,10 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
     } {
         files.set(files.get() + 1);
         for (file, ()) in RevChunkIter::new(version, &mut input).zip(&mut progress) {
-            let node = HgChangesetId::from_unchecked(HgObjectId::from(file.node().clone()));
+            let node = HgFileId::from_unchecked(HgObjectId::from(file.node().clone()));
             let parents = [
-                HgChangesetId::from_unchecked(HgObjectId::from(file.parent1().clone())),
-                HgChangesetId::from_unchecked(HgObjectId::from(file.parent2().clone())),
+                HgFileId::from_unchecked(HgObjectId::from(file.parent1().clone())),
+                HgFileId::from_unchecked(HgObjectId::from(file.parent2().clone())),
             ];
             // Try to detect issue #207 as early as possible.
             // Keep track of file roots of files with metadata and at least
