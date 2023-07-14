@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::borrow::Borrow;
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
 use std::fmt;
 use std::io::{self, Write};
@@ -37,7 +36,7 @@ impl Default for object_id {
 impl From<GitObjectId> for object_id {
     fn from(oid: GitObjectId) -> Self {
         let mut result = object_id::default();
-        let oid = oid.borrow().as_raw_bytes();
+        let oid = oid.as_raw_bytes();
         result.0[..oid.len()].clone_from_slice(oid);
         result
     }
