@@ -82,6 +82,12 @@ macro_rules! oid_type {
         #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct $name([u8; <<$typ as digest::OutputSizeUser>::OutputSize as typenum::marker_traits::Unsigned>::USIZE]);
 
+        impl $name {
+            pub const fn from_raw_bytes_array(b: [u8; <<$typ as digest::OutputSizeUser>::OutputSize as typenum::marker_traits::Unsigned>::USIZE]) -> Self {
+                Self(b)
+            }
+        }
+
         impl $crate::oid::ObjectId for $name {
             type Digest = $typ;
 

@@ -1165,13 +1165,12 @@ fn bundle_files<const CHUNK_SIZE: usize>(
         bundle_part_writer.write_all(&path).unwrap();
         count.set(count.get() + 1);
         let mut previous = None;
-        let empty_file = HgFileId::from_str("b80de5d138758541c5f05265ad144ab9fa86d1db").unwrap();
         for ((node, (mut parent1, mut parent2, changeset)), ()) in
             data.into_iter().zip(&mut progress)
         {
             let generate = |node: HgObjectId| {
                 let node = HgFileId::from_unchecked(node);
-                if node == empty_file {
+                if node == RawHgFile::EMPTY_OID {
                     vec![].into_boxed_slice()
                 } else {
                     let metadata = unsafe { files_meta.get_note(node.into()) }

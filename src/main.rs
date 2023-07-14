@@ -1431,7 +1431,6 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
     let parent_mid = parent_metadata.parse().unwrap().manifest_id();
     let parent_manifest = RawHgManifest::read(parent_mid.to_git().unwrap()).unwrap();
     let mut extra_diff = Vec::new();
-    let empty_blob = BlobId::from_str("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391").unwrap();
     let mut diff = diff_tree(parent.into(), cid, true)
         .inspect(|item| {
             if let DiffTreeItem::Renamed {
@@ -1460,7 +1459,7 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
                 to_oid,
                 to_mode,
                 ..
-            } if to_oid == empty_blob => DiffTreeItem::Added {
+            } if to_oid == RawBlob::EMPTY_OID => DiffTreeItem::Added {
                 path: to_path,
                 mode: to_mode,
                 oid: to_oid,
@@ -1646,8 +1645,6 @@ fn create_merge_changeset(
 
         let mut manifest = Vec::new();
         let mut paths = Vec::new();
-        let empty_file = HgFileId::from_str("b80de5d138758541c5f05265ad144ab9fa86d1db").unwrap();
-        let empty_blob = BlobId::from_str("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391").unwrap();
         for item in files.merge_join_by(manifests, |a, b| {
             (*a.path).cmp(match b {
                 EitherOrBoth::Both(b, _) | EitherOrBoth::Left(b) | EitherOrBoth::Right(b) => {
@@ -1716,7 +1713,7 @@ fn create_merge_changeset(
             // empty file needs to be checked separately because hg2git metadata
             // doesn't store empty files because of the conflict with empty manifests.
             let unchanged = parents.len() == 1
-                && ((parents[0].fid() == empty_file && l.oid == empty_blob)
+                && ((parents[0].fid() == RawHgFile::EMPTY_OID && l.oid == RawBlob::EMPTY_OID)
                     || parents[0].fid().to_git().unwrap() == l.oid);
             let fid = if unchanged {
                 parents[0].fid()
@@ -2310,7 +2307,6 @@ fn do_fsck_full(
     let mut seen_files = BTreeSet::new();
     let mut changeset_heads = ChangesetHeads::new();
     let mut manifest_heads = BTreeSet::new();
-    let empty_file = HgFileId::from_str("b80de5d138758541c5f05265ad144ab9fa86d1db").unwrap();
 
     for cid in commit_queue.progress(|n| format!("Checking {n} changesets")) {
         let cid = lookup_replace_commit(cid);
@@ -2519,7 +2515,7 @@ fn do_fsck_full(
             get_changes(manifest_cid.into(), &git_manifest_parents, false)
         {
             let hg_file = HgFileId::from_raw_bytes(hg_file.as_raw_bytes()).unwrap();
-            if hg_file.is_null() || hg_file == empty_file || !seen_files.insert(hg_file) {
+            if hg_file.is_null() || hg_file == RawHgFile::EMPTY_OID || !seen_files.insert(hg_file) {
                 continue;
             }
             if unsafe {

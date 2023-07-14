@@ -13,6 +13,7 @@ use cstr::cstr;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use derive_more::Deref;
 use getset::{CopyGetters, Getters};
+use hex_literal::hex;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
@@ -365,6 +366,16 @@ macro_rules! raw_object {
 raw_object!(OBJ_COMMIT | CommitId => RawCommit);
 raw_object!(OBJ_TREE | TreeId => RawTree);
 raw_object!(OBJ_BLOB | BlobId => RawBlob);
+
+impl RawBlob {
+    pub const EMPTY_OID: BlobId =
+        BlobId::from_raw_bytes_array(hex!("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"));
+}
+
+impl RawTree {
+    pub const EMPTY_OID: TreeId =
+        TreeId::from_raw_bytes_array(hex!("4b825dc642cb6eb9a060e54bf8d69288fbee4904"));
+}
 
 #[derive(CopyGetters, Getters)]
 pub struct Commit<'a> {

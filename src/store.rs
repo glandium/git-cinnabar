@@ -13,7 +13,6 @@ use std::mem;
 use std::num::NonZeroU32;
 use std::os::raw::{c_char, c_int};
 use std::process::{Command, Stdio};
-use std::str::FromStr;
 use std::sync::Mutex;
 
 use bit_vec::BitVec;
@@ -21,6 +20,7 @@ use bstr::{BStr, BString, ByteSlice};
 use cstr::cstr;
 use derive_more::Deref;
 use getset::{CopyGetters, Getters};
+use hex_literal::hex;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -37,7 +37,7 @@ use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id};
 use crate::libgit::{
     get_oid_blob, get_oid_committish, ls_tree, object_id, strbuf, BlobId, Commit, CommitId,
-    RawBlob, RawCommit, RefTransaction, TreeId,
+    RawBlob, RawCommit, RawTree, RefTransaction, TreeId,
 };
 use crate::oid::{GitObjectId, HgObjectId, ObjectId};
 use crate::progress::{progress_enabled, Progress};
@@ -565,6 +565,9 @@ impl RawHgManifest {
 pub struct RawHgFile(pub ImmutBString);
 
 impl RawHgFile {
+    pub const EMPTY_OID: HgFileId =
+        HgFileId::from_raw_bytes_array(hex!("b80de5d138758541c5f05265ad144ab9fa86d1db"));
+
     pub fn read(oid: GitFileId, metadata: Option<GitFileMetadataId>) -> Option<Self> {
         let mut result = Vec::new();
         if let Some(metadata) = metadata {
@@ -1600,7 +1603,7 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
     // At this point, we'll just assume this is good enough.
 
     // Get replace refs.
-    if commit.tree() != TreeId::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap() {
+    if commit.tree() != RawTree::EMPTY_OID {
         let mut errors = false;
         let by_sha1 = remote_refs
             .into_iter()
