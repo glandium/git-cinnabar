@@ -11,6 +11,7 @@ use regex::bytes::Regex;
 
 use crate::{
     oid::{HgObjectId, ObjectId},
+    store::HgFileId,
     util::{FromBytes, SliceExt},
 };
 
@@ -446,12 +447,12 @@ pub fn hash_data(
     hash.finalize()
 }
 
-pub fn find_parents(
-    node: HgObjectId,
-    parent1: Option<HgObjectId>,
-    parent2: Option<HgObjectId>,
+pub fn find_file_parents(
+    node: HgFileId,
+    parent1: Option<HgFileId>,
+    parent2: Option<HgFileId>,
     data: &[u8],
-) -> [Option<HgObjectId>; 2] {
+) -> Option<[Option<HgFileId>; 2]> {
     for [parent1, parent2] in [
         [parent1, parent2],
         // In some cases, only one parent is stored in a merge, because
@@ -465,9 +466,9 @@ pub fn find_parents(
         // As last resord, try without any parents.
         [None, None],
     ] {
-        if hash_data(parent1, parent2, data) == node {
-            return [parent1, parent2];
+        if hash_data(parent1.map(Into::into), parent2.map(Into::into), data) == node {
+            return Some([parent1, parent2]);
         }
     }
-    panic!("Failed to create file. Please open an issue with details");
+    None
 }

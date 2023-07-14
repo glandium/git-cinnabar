@@ -639,48 +639,6 @@ int check_manifest(const struct object_id *oid,
 	return hg_oideq(&stored, hg_oid);
 }
 
-int check_file(const struct hg_object_id *oid,
-               const struct hg_object_id *parent1,
-               const struct hg_object_id *parent2)
-{
-	struct hg_file file;
-	struct hg_object_id result;
-
-	hg_file_init(&file);
-	hg_file_load(&file, oid);
-
-	/* We do the quick and dirty thing here, for now.
-	 * See details in cinnabar.githg.FileFindParents._set_parents_fallback
-	 */
-	hg_sha1(&file.file, parent1, parent2, &result);
-	if (hg_oideq(oid, &result))
-		goto ok;
-
-	hg_sha1(&file.file, parent1, NULL, &result);
-	if (hg_oideq(oid, &result))
-		goto ok;
-
-	hg_sha1(&file.file, parent2, NULL, &result);
-	if (hg_oideq(oid, &result))
-		goto ok;
-
-	hg_sha1(&file.file, parent1, parent1, &result);
-	if (hg_oideq(oid, &result))
-		goto ok;
-
-	hg_sha1(&file.file, NULL, NULL, &result);
-	if (!hg_oideq(oid, &result))
-		goto error;
-
-ok:
-	hg_file_release(&file);
-	return 1;
-
-error:
-	hg_file_release(&file);
-	return 0;
-}
-
 static void reset_heads(struct oid_array *heads)
 {
 	oid_array_clear(heads);

@@ -34,7 +34,7 @@ use crate::hg_bundle::{
 };
 use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
-use crate::libcinnabar::{generate_manifest, git2hg, hg2git, hg_object_id};
+use crate::libcinnabar::{files_meta, generate_manifest, git2hg, hg2git, hg_object_id};
 use crate::libgit::{
     get_oid_blob, get_oid_committish, ls_tree, object_id, strbuf, BlobId, Commit, CommitId,
     RawBlob, RawCommit, RawTree, RefTransaction, TreeId,
@@ -577,6 +577,17 @@ impl RawHgFile {
         }
         result.extend_from_slice(RawBlob::read(oid.into())?.as_bytes());
         Some(Self(result.into()))
+    }
+
+    pub fn read_hg(oid: HgFileId) -> Option<Self> {
+        if oid == Self::EMPTY_OID {
+            Some(Self(vec![].into()))
+        } else {
+            let metadata = unsafe { files_meta.get_note(oid.into()) }
+                .map(BlobId::from_unchecked)
+                .map(GitFileMetadataId::from_unchecked);
+            Self::read(oid.to_git().unwrap(), metadata)
+        }
     }
 }
 
@@ -1181,27 +1192,26 @@ pub fn create_changeset(
 extern "C" {
     pub fn store_manifest(chunk: *const rev_chunk);
     fn store_file(chunk: *const rev_chunk);
-
-    fn check_file(
-        oid: *const hg_object_id,
-        parent1: *const hg_object_id,
-        parent2: *const hg_object_id,
-    ) -> c_int;
 }
 
 static STORED_FILES: Lazy<Mutex<BTreeMap<HgFileId, [HgFileId; 2]>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 
+pub fn check_file(node: HgFileId, p1: HgFileId, p2: HgFileId) -> bool {
+    let data = RawHgFile::read_hg(node).unwrap();
+    crate::hg_data::find_file_parents(node, Some(p1), Some(p2), &data).is_some()
+}
+
 pub fn do_check_files() -> bool {
     // Try to detect issue #207 as early as possible.
     let mut busted = false;
-    for (node, [p1, p2]) in STORED_FILES
+    for (&node, &[p1, p2]) in STORED_FILES
         .lock()
         .unwrap()
         .iter()
         .progress(|n| format!("Checking {n} imported file root and head revisions"))
     {
-        if unsafe { check_file(&(*node).into(), &(*p1).into(), &(*p2).into()) } == 0 {
+        if !check_file(node, p1, p2) {
             error!(target: "root", "Error in file {node}");
             busted = true;
         }

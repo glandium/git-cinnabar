@@ -35,10 +35,6 @@ struct strbuf *generate_manifest(const struct object_id *oid);
 
 int check_manifest(const struct object_id *oid,
                    struct hg_object_id *hg_oid);
-int check_file(const struct hg_object_id *oid,
-               const struct hg_object_id *parent1,
-               const struct hg_object_id *parent2);
-
 
 struct remote;
 

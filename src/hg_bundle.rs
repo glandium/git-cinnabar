@@ -27,14 +27,13 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
 use crate::hg_connect::{encodecaps, HgConnection, HgConnectionBase, HgRepo};
-use crate::hg_data::find_parents;
-use crate::libcinnabar::files_meta;
-use crate::libgit::{BlobId, CommitId, RawCommit};
+use crate::hg_data::find_file_parents;
+use crate::libgit::{CommitId, RawCommit};
 use crate::oid::GitObjectId;
 use crate::progress::Progress;
 use crate::store::{
-    ChangesetHeads, GitFileMetadataId, HgChangesetId, HgFileId, HgManifestId,
-    RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest,
+    ChangesetHeads, HgChangesetId, HgFileId, HgManifestId, RawGitChangesetMetadata, RawHgChangeset,
+    RawHgFile, RawHgManifest,
 };
 use crate::util::{FromBytes, ToBoxed};
 use crate::xdiff::textdiff;
@@ -1168,30 +1167,14 @@ fn bundle_files<const CHUNK_SIZE: usize>(
         for ((node, (mut parent1, mut parent2, changeset)), ()) in
             data.into_iter().zip(&mut progress)
         {
-            let generate = |node: HgObjectId| {
-                let node = HgFileId::from_unchecked(node);
-                if node == RawHgFile::EMPTY_OID {
-                    vec![].into_boxed_slice()
-                } else {
-                    let metadata = unsafe { files_meta.get_note(node.into()) }
-                        .map(|oid| GitFileMetadataId::from_unchecked(BlobId::from_unchecked(oid)));
-
-                    let file = RawHgFile::read(node.to_git().unwrap(), metadata).unwrap();
-                    file.0
-                }
-            };
-            let data = generate(node.into());
-            let null_id = HgObjectId::null();
+            let data = RawHgFile::read_hg(node).unwrap();
+            let null_id = HgFileId::null();
             // Normalize parents so that the first parent isn't null (it's a corner case, see below).
             if parent1.is_null() {
                 mem::swap(&mut parent1, &mut parent2);
             }
-            let [parent1, parent2] = find_parents(
-                node.into(),
-                Some(parent1.into()),
-                Some(parent2.into()),
-                &data,
-            );
+            let [parent1, parent2] = find_file_parents(node, Some(parent1), Some(parent2), &data)
+                .expect("Failed to create file. Please open an issue with details");
             let mut parent1 = parent1.unwrap_or(null_id);
             let mut parent2 = parent2.unwrap_or(null_id);
             // On merges, a file with copy metadata has either not parent, or only one.
@@ -1209,12 +1192,12 @@ fn bundle_files<const CHUNK_SIZE: usize>(
                 &mut *bundle_part_writer,
                 version,
                 node.into(),
-                parent1,
-                parent2,
+                parent1.into(),
+                parent2.into(),
                 changeset,
                 &mut previous,
                 false,
-                generate,
+                |oid| RawHgFile::read_hg(HgFileId::from_unchecked(oid)).unwrap().0,
             )
             .unwrap();
         }

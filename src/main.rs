@@ -120,8 +120,8 @@ use libgit::{
 use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 use progress::Progress;
 use store::{
-    create_changeset, do_check_files, do_set, ensure_store_init, get_tags, has_metadata,
-    raw_commit_for_changeset, store_git_blob, store_manifest, ChangesetHeads,
+    check_file, create_changeset, do_check_files, do_set, ensure_store_init, get_tags,
+    has_metadata, raw_commit_for_changeset, store_git_blob, store_manifest, ChangesetHeads,
     GeneratedGitChangesetMetadata, GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId,
     HgChangesetId, HgFileId, HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile,
     RawHgManifest, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX,
@@ -1783,11 +1783,6 @@ pub fn do_create_bundle(
 
 extern "C" {
     fn check_manifest(oid: *const object_id, hg_oid: *mut hg_object_id) -> c_int;
-    fn check_file(
-        oid: *const hg_object_id,
-        parent1: *const hg_object_id,
-        parent2: *const hg_object_id,
-    ) -> c_int;
 }
 
 fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, String> {
@@ -2151,26 +2146,15 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
                 all_interesting.remove(&(path.clone(), *p));
             }
             if let Some((path, hg_file)) = all_interesting.take(&(path, hg_file)) {
-                if unsafe {
-                    check_file(
-                        &HgObjectId::from_raw_bytes(hg_file.as_raw_bytes())
-                            .unwrap()
-                            .into(),
-                        &hg_fileparents
-                            .get(0)
-                            .map_or_else(HgObjectId::null, |p| {
-                                HgObjectId::from_raw_bytes(p.as_raw_bytes()).unwrap()
-                            })
-                            .into(),
-                        &hg_fileparents
-                            .get(1)
-                            .map_or_else(HgObjectId::null, |p| {
-                                HgObjectId::from_raw_bytes(p.as_raw_bytes()).unwrap()
-                            })
-                            .into(),
-                    )
-                } != 1
-                {
+                if !check_file(
+                    HgFileId::from_raw_bytes(hg_file.as_raw_bytes()).unwrap(),
+                    hg_fileparents.get(0).map_or_else(HgFileId::null, |p| {
+                        HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
+                    }),
+                    hg_fileparents.get(1).map_or_else(HgFileId::null, |p| {
+                        HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
+                    }),
+                ) {
                     report(format!(
                         "Sha1 mismatch for file {}\n\
                          \x20 revision {}",
@@ -2518,25 +2502,17 @@ fn do_fsck_full(
             if hg_file.is_null() || hg_file == RawHgFile::EMPTY_OID || !seen_files.insert(hg_file) {
                 continue;
             }
-            if unsafe {
-                // TODO: add FileFindParents logging.
-                check_file(
-                    &hg_file.into(),
-                    &hg_fileparents
-                        .get(0)
-                        .map_or_else(HgObjectId::null, |p| {
-                            HgObjectId::from_raw_bytes(p.as_raw_bytes()).unwrap()
-                        })
-                        .into(),
-                    &hg_fileparents
-                        .get(1)
-                        .map_or_else(HgObjectId::null, |p| {
-                            HgObjectId::from_raw_bytes(p.as_raw_bytes()).unwrap()
-                        })
-                        .into(),
-                )
-            } != 1
-            {
+            if
+            // TODO: add FileFindParents logging.
+            !check_file(
+                hg_file,
+                hg_fileparents.get(0).map_or_else(HgFileId::null, |p| {
+                    HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
+                }),
+                hg_fileparents.get(1).map_or_else(HgFileId::null, |p| {
+                    HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
+                }),
+            ) {
                 report(format!(
                     "Sha1 mismatch for file {}\n\
                      \x20 revision {}",
