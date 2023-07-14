@@ -196,6 +196,7 @@ extern "C" {
     pub static http_follow_config: http_follow_config;
 }
 
+#[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct repository {
     gitdir: *const c_char,
