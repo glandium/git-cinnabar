@@ -174,7 +174,7 @@ impl<R: Read> Iterator for RevChunkIter<R> {
                 chunk.as_mut_ptr(),
                 &mut buf,
                 (self.version == 1)
-                    .then(|| ())
+                    .then_some(())
                     .and(self.delta_node.as_ref())
                     .map_or(std::ptr::null(), |d| d as *const _),
             );

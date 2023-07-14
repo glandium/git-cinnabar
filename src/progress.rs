@@ -47,7 +47,7 @@ impl<I: Iterator> Progress for I {
             let this = ProgressIterEnabled {
                 iter: self.enumerate(),
                 formatter,
-                start: check_enabled(Checks::TIME).then(|| now),
+                start: check_enabled(Checks::TIME).then_some(now),
                 last_update: now,
                 count: 0,
             };

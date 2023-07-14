@@ -819,7 +819,7 @@ fn do_rollback(
             print!("{}", m);
             let matched_labels = labels
                 .iter()
-                .filter_map(|(name, cid)| (*cid == m).then(|| *name))
+                .filter_map(|(name, cid)| (*cid == m).then_some(*name))
                 .collect_vec()
                 .join(", ");
             if !matched_labels.is_empty() {
@@ -1152,7 +1152,7 @@ fn do_unbundle(clonebundle: bool, mut url: OsString) -> Result<(), String> {
     get_store_bundle(&mut *conn, &[], &[]).map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
 
     do_done_and_check(&[])
-        .then(|| ())
+        .then_some(())
         .ok_or_else(|| "Fatal error".to_string())
 }
 
@@ -2709,7 +2709,7 @@ fn check_replace(metadata_cid: CommitId) {
         .unwrap()
         .filter_map(|item| {
             let r = GitObjectId::from_bytes(&item.path).unwrap();
-            (item.oid == r).then(|| r)
+            (item.oid == r).then_some(r)
         })
         .progress(|n| format!("Removing {n} self-referencing grafts"))
     {
@@ -3254,7 +3254,7 @@ fn remote_helper_repo_list(
     let fetches;
     let branchmap;
     let bookmarks;
-    if let Some(fetch) = get_config("fetch").and_then(|f| (!f.is_empty()).then(|| f)) {
+    if let Some(fetch) = get_config("fetch").and_then(|f| (!f.is_empty()).then_some(f)) {
         fetches = Some(
             fetch
                 .to_str()
@@ -3368,7 +3368,7 @@ fn remote_helper_repo_list(
 
     let head_ref = if let Some(bookmark_template) = bookmarks
         .contains_key(b"@".as_bstr())
-        .then(|| ())
+        .then_some(())
         .and(bookmark_template)
     {
         Some(apply_template(bookmark_template, &[b"@".as_bstr()]))
@@ -3488,7 +3488,7 @@ fn remote_helper_import(
     let mut tags = None;
     let mut unknown_wanted_heads = wanted_refs
         .iter()
-        .filter_map(|(_, csid, cid)| cid.is_none().then(|| *(*csid)))
+        .filter_map(|(_, csid, cid)| cid.is_none().then_some(*(*csid)))
         .unique()
         .collect_vec();
     if !unknown_wanted_heads.is_empty() {
@@ -3533,7 +3533,7 @@ fn remote_helper_import(
     }
 
     do_done_and_check(&[])
-        .then(|| ())
+        .then_some(())
         .ok_or_else(|| "Fatal error".to_string())?;
 
     let mut transaction = RefTransaction::new().unwrap();
@@ -3895,7 +3895,7 @@ fn remote_helper_push(
     let data = get_config_remote("data", remote);
     let data = data
         .as_deref()
-        .and_then(|d| (!d.is_empty()).then(|| d))
+        .and_then(|d| (!d.is_empty()).then_some(d))
         .unwrap_or_else(|| OsStr::new("phase"));
     let valid = [
         OsStr::new("never"),
@@ -3968,7 +3968,7 @@ fn remote_helper_push(
         }
     } else {
         do_done_and_check(&[])
-            .then(|| ())
+            .then_some(())
             .ok_or_else(|| "Fatal error".to_string())?;
     }
     result
@@ -3981,7 +3981,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
         url = new_url;
     }
     let remote = Some(remote.to_str().unwrap().to_owned())
-        .and_then(|r| (!r.starts_with("hg://") && !r.starts_with("hg::")).then(|| r));
+        .and_then(|r| (!r.starts_with("hg://") && !r.starts_with("hg::")).then_some(r));
     let url = hg_url(&url).unwrap();
     let mut conn = (url.scheme() != "tags").then(|| get_connection(&url).unwrap());
 

@@ -298,7 +298,7 @@ impl RawObject {
         let mut t = object_type::OBJ_NONE;
         info.typep = &mut t;
         (unsafe { oid_object_info_extended(the_repository, &oid.into().into(), &mut info, 0) } == 0)
-            .then(|| t)
+            .then_some(t)
     }
 
     pub fn as_bytes(&self) -> &[u8] {

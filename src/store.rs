@@ -797,7 +797,7 @@ impl ChangesetHeads {
             let (node, data) = self.dag.get_by_id(*id);
             // Branch heads can have children in other branches, in which case
             // they are not heads.
-            (!data.has_children).then(|| node)
+            (!data.has_children).then_some(node)
         })
     }
 
@@ -860,7 +860,7 @@ impl TagSet {
     pub fn iter(&self) -> impl Iterator<Item = (&[u8], &HgChangesetId)> {
         self.tags
             .iter()
-            .filter_map(|(tag, (node, _))| (!node.is_null()).then(|| (&**tag, node)))
+            .filter_map(|(tag, (node, _))| (!node.is_null()).then_some((&**tag, node)))
     }
 }
 
@@ -1125,7 +1125,7 @@ pub fn create_changeset(
         manifest_id,
         author: None,
         extra: None,
-        files: files.and_then(|f| (!f.is_empty()).then(|| f)),
+        files: files.and_then(|f| (!f.is_empty()).then_some(f)),
         patch: None,
     };
     let commit = RawCommit::read(commit_id).unwrap();
@@ -1194,8 +1194,7 @@ extern "C" {
     fn store_file(chunk: *const rev_chunk);
 }
 
-static STORED_FILES: Lazy<Mutex<BTreeMap<HgFileId, [HgFileId; 2]>>> =
-    Lazy::new(|| Mutex::new(BTreeMap::new()));
+static STORED_FILES: Mutex<BTreeMap<HgFileId, [HgFileId; 2]>> = Mutex::new(BTreeMap::new());
 
 pub fn check_file(node: HgFileId, p1: HgFileId, p2: HgFileId) -> bool {
     let data = RawHgFile::read_hg(node).unwrap();
@@ -1344,7 +1343,7 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
             .into_iter()
             .filter_map(|p| {
                 let p = HgChangesetId::from_unchecked(HgObjectId::from(p.clone()));
-                (!p.is_null()).then(|| p)
+                (!p.is_null()).then_some(p)
             })
             .collect::<Vec<_>>();
 

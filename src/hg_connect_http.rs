@@ -52,7 +52,6 @@ use self::git_http_state::{GitHttpStateToken, GIT_HTTP_STATE};
 mod git_http_state {
     use std::{ffi::CString, ptr, sync::Mutex};
 
-    use once_cell::sync::Lazy;
     use url::Url;
 
     use crate::libgit::{http_cleanup, http_init};
@@ -65,7 +64,7 @@ mod git_http_state {
     pub struct GitHttpStateToken(());
 
     impl GitHttpState {
-        fn new() -> Self {
+        const fn new() -> Self {
             GitHttpState {
                 url: None,
                 taken: false,
@@ -105,8 +104,7 @@ mod git_http_state {
         }
     }
 
-    pub static GIT_HTTP_STATE: Lazy<Mutex<GitHttpState>> =
-        Lazy::new(|| Mutex::new(GitHttpState::new()));
+    pub static GIT_HTTP_STATE: Mutex<GitHttpState> = Mutex::new(GitHttpState::new());
 
     impl Drop for GitHttpStateToken {
         fn drop(&mut self) {

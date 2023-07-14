@@ -38,7 +38,7 @@ Requirements:
 
 - Git (any version should work ; cinnabarclone bundles require 1.4.4).
 - In order to build from source:
-  - Rust 1.60.0 or newer.
+  - Rust 1.66.0 or newer.
   - GCC or clang.
 
 Setup:

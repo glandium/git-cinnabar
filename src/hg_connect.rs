@@ -790,7 +790,9 @@ pub fn get_bundle(
             .lock()
             .unwrap()
             .branch_heads()
-            .filter_map(|(h, b)| (branch_names.is_empty() || branch_names.contains(b)).then(|| *h))
+            .filter_map(|(h, b)| {
+                (branch_names.is_empty() || branch_names.contains(b)).then_some(*h)
+            })
             .collect_vec()
     };
 
@@ -845,7 +847,7 @@ fn get_initial_bundle(conn: &mut dyn HgRepo, remote: Option<&str>) -> Result<boo
                 Err(Some("Server advertizes cinnabarclone but provided a non http/https git repository. Skipping."))
             } else {
                 eprintln!("Fetching cinnabar metadata from {}", url);
-                merge_metadata(url, conn.get_url().cloned(), branch.as_deref()).then(|| ()).ok_or(None)
+                merge_metadata(url, conn.get_url().cloned(), branch.as_deref()).then_some(()).ok_or(None)
             }
         }) {
             Ok(()) => {
@@ -939,7 +941,7 @@ fn can_use_clonebundle(line: &[u8]) -> Result<Option<Url>, String> {
     trace!(target: "clonebundle", "{:?}", params);
 
     Ok((!params.contains_key(b"stream".as_bstr()))
-        .then(|| Some(url))
+        .then_some(Some(url))
         .ok_or("stream bundles are not supported")?)
 }
 
