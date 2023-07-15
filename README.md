@@ -1,4 +1,4 @@
-git-cinnabar 0.6
+git-cinnabar 0.7
 ================
 
 *cinnabar is the common natural form in which mercury can be found on Earth.
