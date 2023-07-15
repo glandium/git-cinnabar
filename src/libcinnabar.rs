@@ -4,8 +4,6 @@
 
 use std::os::raw::{c_char, c_int, c_void};
 
-use libc::FILE;
-
 use crate::libgit::{child_process, object_id, strbuf};
 use crate::oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
 
@@ -152,14 +150,6 @@ impl hg_notes_tree {
     pub fn for_each<F: FnMut(HgObjectId, GitObjectId)>(&mut self, f: F) {
         for_each_note_in(&mut self.0, f);
     }
-}
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct hg_connection_stdio {
-    pub out: *mut FILE,
-    pub is_remote: c_int,
 }
 
 extern "C" {
