@@ -40,7 +40,7 @@ EOF
 
 env
 
-curl -OL https://github.com/taskcluster/taskcluster/releases/download/v54.1.2/generic-worker-simple-darwin-amd64
+curl -OL https://github.com/taskcluster/taskcluster/releases/download/v54.4.0/generic-worker-simple-darwin-amd64
 chmod +x generic-worker-simple-darwin-amd64
 mkdir tasks
 ./generic-worker-simple-darwin-amd64 new-ed25519-keypair --file worker.key
