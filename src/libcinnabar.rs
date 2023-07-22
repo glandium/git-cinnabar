@@ -72,30 +72,22 @@ extern "C" {
     ) -> c_int;
 }
 
-fn for_each_note_in<O: ObjectId, N: ObjectId, F: FnMut(O, N)>(
-    notes: &mut cinnabar_notes_tree,
-    mut f: F,
-) {
-    unsafe extern "C" fn each_note_cb<O: ObjectId, N: ObjectId, F: FnMut(O, N)>(
+fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_notes_tree, mut f: F) {
+    unsafe extern "C" fn each_note_cb<F: FnMut(GitObjectId, GitObjectId)>(
         oid: *const object_id,
         note_oid: *const object_id,
         _note_path: *const c_char,
         cb_data: *mut c_void,
     ) -> c_int {
         let cb = (cb_data as *mut F).as_mut().unwrap();
-        let o = O::from_raw_bytes(oid.as_ref().unwrap().as_raw_bytes()).unwrap();
-        let n = N::from_raw_bytes(note_oid.as_ref().unwrap().as_raw_bytes()).unwrap();
+        let o = oid.as_ref().unwrap().clone().into();
+        let n = note_oid.as_ref().unwrap().clone().into();
         cb(o, n);
         0
     }
 
     unsafe {
-        cinnabar_for_each_note(
-            notes,
-            0,
-            each_note_cb::<O, N, F>,
-            &mut f as *mut F as *mut c_void,
-        );
+        cinnabar_for_each_note(notes, 0, each_note_cb::<F>, &mut f as *mut F as *mut c_void);
     }
 }
 
@@ -147,8 +139,11 @@ impl hg_notes_tree {
         }
     }
 
-    pub fn for_each<F: FnMut(HgObjectId, GitObjectId)>(&mut self, f: F) {
-        for_each_note_in(&mut self.0, f);
+    pub fn for_each<F: FnMut(HgObjectId, GitObjectId)>(&mut self, mut f: F) {
+        for_each_note_in(&mut self.0, |h, g| {
+            let h = HgObjectId::from_raw_bytes(h.as_raw_bytes()).unwrap();
+            f(h, g);
+        });
     }
 }
 
