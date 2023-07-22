@@ -6,7 +6,6 @@ use std::borrow::Cow;
 use std::str::{self, FromStr};
 
 use digest::{Digest, OutputSizeUser};
-use sha1::Sha1;
 
 pub trait ObjectId: Sized + Copy {
     type Digest: Digest;
@@ -41,10 +40,11 @@ pub trait ObjectId: Sized + Copy {
 
 #[macro_export]
 macro_rules! oid_impl {
-    ($name:ident($base_type:ident)) => {
+    ($name:ident($base_type:ty)) => {
         impl From<$name> for $base_type {
             fn from(o: $name) -> $base_type {
-                let mut result = $base_type::NULL;
+                use $crate::oid::ObjectId;
+                let mut result = <$base_type>::NULL;
                 let slice = result.as_raw_bytes_mut();
                 slice.clone_from_slice(&o.0[..slice.len()]);
                 result
@@ -53,12 +53,14 @@ macro_rules! oid_impl {
 
         impl PartialEq<$base_type> for $name {
             fn eq(&self, other: &$base_type) -> bool {
+                use $crate::oid::ObjectId;
                 self.as_raw_bytes() == other.as_raw_bytes()
             }
         }
 
         impl PartialEq<$name> for $base_type {
             fn eq(&self, other: &$name) -> bool {
+                use $crate::oid::ObjectId;
                 self.as_raw_bytes() == other.as_raw_bytes()
             }
         }
@@ -72,6 +74,7 @@ macro_rules! oid_type {
 
         impl $name {
             pub fn from_unchecked(o: $base_type) -> Self {
+                use $crate::oid::ObjectId;
                 Self(o.as_raw_bytes().try_into().unwrap())
             }
         }
@@ -110,6 +113,7 @@ macro_rules! oid_type {
 
         impl ::std::fmt::Display for $name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                use $crate::oid::ObjectId;
                 for x in self.as_raw_bytes() {
                     write!(f, "{:02x}", x)?;
                 }
@@ -122,6 +126,7 @@ macro_rules! oid_type {
         impl ::std::str::FromStr for $name {
             type Err = hex::FromHexError;
             fn from_str(s: &str) -> Result<Self, Self::Err> {
+                use $crate::oid::ObjectId;
                 let mut result = Self::NULL;
                 hex::decode_to_slice(s, &mut result.as_raw_bytes_mut())?;
                 Ok(result)
@@ -210,30 +215,3 @@ impl<O: ObjectId> FromStr for Abbrev<O> {
         Ok(result)
     }
 }
-
-#[test]
-fn test_abbrev_hg_object_id() {
-    let hex = "123456789abcdef00123456789abcdefedcba987";
-    for len in 1..40 {
-        let abbrev = HgObjectId::from_str("123456789abcdef00123456789abcdefedcba987")
-            .unwrap()
-            .abbrev(len);
-        let result = format!("{}", abbrev);
-        assert_eq!(&result, &hex[..len]);
-
-        let abbrev2 = Abbrev::<HgObjectId>::from_str(&result).unwrap();
-        assert_eq!(abbrev, abbrev2);
-    }
-
-    assert_ne!(
-        Abbrev::<HgObjectId>::from_str("123").unwrap(),
-        Abbrev::<HgObjectId>::from_str("124").unwrap()
-    );
-    assert_eq!(
-        Abbrev::<HgObjectId>::from_str("123a").unwrap(),
-        Abbrev::<HgObjectId>::from_str("123A").unwrap()
-    );
-}
-
-oid_type!(GitObjectId for Sha1);
-oid_type!(HgObjectId for Sha1);

@@ -61,7 +61,12 @@ mod util;
 mod oid;
 #[macro_use]
 pub mod libgit;
+#[macro_use]
+mod cinnabar;
+#[macro_use]
+mod git;
 mod graft;
+mod hg;
 mod libc;
 mod libcinnabar;
 mod logging;
@@ -108,22 +113,26 @@ use crate::hg_connect::{decodecaps, find_common, UnbundleResponse};
 use crate::progress::set_progress;
 use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads, Dag, Traversal};
 use crate::util::{FromBytes, ToBoxed};
+use cinnabar::{GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId};
+use git::GitObjectId;
+use git::{BlobId, CommitId};
 use graft::{graft_finish, grafted, init_graft};
+use hg::HgObjectId;
+use hg::{HgChangesetId, HgFileId, HgManifestId};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
 use libcinnabar::{files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
     config_get_value, diff_tree, for_each_ref_in, for_each_remote, get_oid_committish,
     lookup_replace_commit, ls_tree, metadata_oid, object_id, reachable_subset, remote, resolve_ref,
-    rev_list, rev_list_with_boundaries, strbuf, BlobId, CommitId, DiffTreeItem, FileMode,
-    MaybeBoundary, RawBlob, RawCommit, RefTransaction,
+    rev_list, rev_list_with_boundaries, strbuf, DiffTreeItem, FileMode, MaybeBoundary, RawBlob,
+    RawCommit, RefTransaction,
 };
-use oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
+use oid::{Abbrev, ObjectId};
 use progress::Progress;
 use store::{
     check_file, create_changeset, do_check_files, do_set, ensure_store_init, get_tags,
     has_metadata, raw_commit_for_changeset, store_git_blob, store_manifest, ChangesetHeads,
-    GeneratedGitChangesetMetadata, GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId,
-    HgChangesetId, HgFileId, HgManifestId, RawGitChangesetMetadata, RawHgChangeset, RawHgFile,
+    GeneratedGitChangesetMetadata, RawGitChangesetMetadata, RawHgChangeset, RawHgFile,
     RawHgManifest, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX,
     REPLACE_REFS_PREFIX,
 };

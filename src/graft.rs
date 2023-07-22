@@ -10,12 +10,13 @@ use std::sync::Mutex;
 use bstr::ByteSlice;
 use once_cell::sync::Lazy;
 
+use crate::cinnabar::GitChangesetId;
+use crate::git::{CommitId, TreeId};
+use crate::hg::HgChangesetId;
 use crate::hg_data::{GitAuthorship, HgAuthorship};
-use crate::libgit::{lookup_replace_commit, rev_list, CommitId, RawCommit, TreeId};
+use crate::libgit::{lookup_replace_commit, rev_list, RawCommit};
 use crate::progress::Progress;
-use crate::store::{
-    has_metadata, GeneratedGitChangesetMetadata, GitChangesetId, HgChangesetId, RawHgChangeset,
-};
+use crate::store::{has_metadata, GeneratedGitChangesetMetadata, RawHgChangeset};
 
 extern "C" {
     fn replace_map_size() -> c_uint;

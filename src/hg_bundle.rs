@@ -26,22 +26,24 @@ use tee::TeeReader;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
+use crate::git::CommitId;
+use crate::git::GitObjectId;
+use crate::hg::{HgChangesetId, HgFileId, HgManifestId};
 use crate::hg_connect::{encodecaps, HgConnection, HgConnectionBase, HgRepo};
 use crate::hg_data::find_file_parents;
-use crate::libgit::{CommitId, RawCommit};
-use crate::oid::GitObjectId;
+use crate::libgit::RawCommit;
 use crate::progress::Progress;
 use crate::store::{
-    ChangesetHeads, HgChangesetId, HgFileId, HgManifestId, RawGitChangesetMetadata, RawHgChangeset,
-    RawHgFile, RawHgManifest,
+    ChangesetHeads, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest,
 };
 use crate::util::{FromBytes, ToBoxed};
 use crate::xdiff::textdiff;
 use crate::{get_changes, manifest_path, HELPER_LOCK};
 use crate::{
+    hg::HgObjectId,
     libcinnabar::hg_object_id,
     libgit::strbuf,
-    oid::{HgObjectId, ObjectId},
+    oid::ObjectId,
     util::{ImmutBString, ReadExt, SliceExt},
 };
 

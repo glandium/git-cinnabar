@@ -17,9 +17,9 @@ use clap::crate_version;
 use semver::Version;
 use shared_child::SharedChild;
 
+use crate::git::CommitId;
 #[cfg(feature = "version-check")]
 use crate::libgit::config_get_value;
-use crate::libgit::CommitId;
 use crate::util::{FromBytes, ReadExt, SliceExt};
 use crate::FULL_VERSION;
 #[cfg(feature = "version-check")]

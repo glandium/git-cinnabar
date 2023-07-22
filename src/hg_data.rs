@@ -10,8 +10,8 @@ use once_cell::sync::Lazy;
 use regex::bytes::Regex;
 
 use crate::{
-    oid::{HgObjectId, ObjectId},
-    store::HgFileId,
+    hg::{HgFileId, HgObjectId},
+    oid::ObjectId,
     util::{FromBytes, SliceExt},
 };
 

@@ -16,14 +16,17 @@ use rand::prelude::IteratorRandom;
 use sha1::{Digest, Sha1};
 use url::Url;
 
+use crate::cinnabar::GitChangesetId;
+use crate::git::CommitId;
+use crate::git::GitObjectId;
+use crate::hg::HgChangesetId;
 use crate::hg_bundle::{BundleReader, BundleSpec};
 use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
-use crate::libgit::{rev_list, CommitId, RawCommit};
-use crate::oid::{GitObjectId, ObjectId};
+use crate::libgit::{rev_list, RawCommit};
+use crate::oid::ObjectId;
 use crate::store::{
-    has_metadata, merge_metadata, store_changegroup, Dag, GitChangesetId, HgChangesetId, Traversal,
-    CHANGESET_HEADS,
+    has_metadata, merge_metadata, store_changegroup, Dag, Traversal, CHANGESET_HEADS,
 };
 use crate::util::{FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed};
 use crate::{check_enabled, get_config_remote, graft_config_enabled, Checks, HELPER_LOCK};

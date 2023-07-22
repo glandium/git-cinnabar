@@ -28,7 +28,14 @@ use percent_encoding::{percent_decode, percent_encode, NON_ALPHANUMERIC};
 use tee::TeeReader;
 use url::{Host, Url};
 
+use crate::cinnabar::{
+    GitChangesetId, GitChangesetMetadataId, GitFileId, GitFileMetadataId, GitManifestId,
+};
+use crate::git::GitObjectId;
+use crate::git::{BlobId, CommitId, TreeId};
 use crate::graft::{graft, grafted, GraftError};
+use crate::hg::HgObjectId;
+use crate::hg::{HgChangesetId, HgFileId, HgManifestId};
 use crate::hg_bundle::{
     read_rev_chunk, rev_chunk, BundlePartInfo, BundleSpec, BundleWriter, RevChunkIter,
 };
@@ -36,15 +43,15 @@ use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{files_meta, generate_manifest, git2hg, hg2git, hg_object_id};
 use crate::libgit::{
-    get_oid_blob, get_oid_committish, ls_tree, object_id, strbuf, BlobId, Commit, CommitId,
-    RawBlob, RawCommit, RawTree, RefTransaction, TreeId,
+    get_oid_blob, get_oid_committish, ls_tree, object_id, strbuf, Commit, RawBlob, RawCommit,
+    RawTree, RefTransaction,
 };
-use crate::oid::{GitObjectId, HgObjectId, ObjectId};
+use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
 use crate::util::{FromBytes, ImmutBString, OsStrExt, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::{apply, textdiff, PatchInfo};
 use crate::{check_enabled, do_reload, Checks};
-use crate::{git_oid_type, set_metadata_to, MetadataFlags};
+use crate::{set_metadata_to, MetadataFlags};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
 pub const REPLACE_REFS_PREFIX: &str = "refs/cinnabar/replace/";
@@ -62,28 +69,22 @@ pub fn has_metadata() -> bool {
 }
 
 macro_rules! hg2git {
-    ($h:ident => $g:ident($i:ident)) => {
-        git_oid_type!($g($i));
-        oid_type!($h(HgObjectId));
-
+    ($h:ident => $g:ident) => {
         impl $h {
             pub fn to_git(self) -> Option<$g> {
                 unsafe {
                     hg2git
                         .get_note(self.into())
-                        .map(|o| $g::from_unchecked($i::from_unchecked(o)))
+                        .map(|o| $g::from_raw_bytes(o.as_raw_bytes()).unwrap())
                 }
             }
         }
     };
 }
 
-hg2git!(HgChangesetId => GitChangesetId(CommitId));
-hg2git!(HgManifestId => GitManifestId(CommitId));
-hg2git!(HgFileId => GitFileId(BlobId));
-
-oid_type!(GitChangesetMetadataId(BlobId));
-oid_type!(GitFileMetadataId(BlobId));
+hg2git!(HgChangesetId => GitChangesetId);
+hg2git!(HgManifestId => GitManifestId);
+hg2git!(HgFileId => GitFileId);
 
 impl GitChangesetId {
     pub fn to_hg(self) -> Option<HgChangesetId> {

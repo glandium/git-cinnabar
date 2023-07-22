@@ -17,7 +17,9 @@ use hex_literal::hex;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
-use crate::oid::{GitObjectId, ObjectId};
+use crate::git::GitObjectId;
+use crate::git::{BlobId, CommitId, TreeId};
+use crate::oid::ObjectId;
 use crate::util::{CStrExt, FromBytes, ImmutBString, OptionExt, OsStrExt, SliceExt};
 
 const GIT_MAX_RAWSZ: usize = 32;
@@ -313,29 +315,6 @@ impl Drop for RawObject {
         }
     }
 }
-
-#[macro_export]
-macro_rules! git_oid_type {
-    ($name:ident($base_type:ident)) => {
-        oid_type!($name($base_type));
-
-        impl From<$name> for object_id {
-            fn from(oid: $name) -> object_id {
-                GitObjectId::from(oid).into()
-            }
-        }
-
-        git_oid_type!(@ $name($base_type));
-    };
-    (@ $name:ident(GitObjectId)) => {};
-    (@ $name:ident($base_type:ident)) => {
-        oid_impl!($name(GitObjectId));
-    };
-}
-
-git_oid_type!(CommitId(GitObjectId));
-git_oid_type!(TreeId(GitObjectId));
-git_oid_type!(BlobId(GitObjectId));
 
 macro_rules! raw_object {
     ($t:ident | $oid_type:ident => $name:ident) => {

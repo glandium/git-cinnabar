@@ -4,8 +4,10 @@
 
 use std::os::raw::{c_char, c_int, c_void};
 
+use crate::git::GitObjectId;
+use crate::hg::HgObjectId;
 use crate::libgit::{child_process, object_id, strbuf};
-use crate::oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
+use crate::oid::{Abbrev, ObjectId};
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
