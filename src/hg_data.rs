@@ -436,9 +436,8 @@ pub fn hash_data(
     data: &[u8],
 ) -> HgObjectId {
     let mut hash = HgObjectId::create();
-    let null_oid = HgObjectId::null();
-    let parent1 = parent1.unwrap_or(null_oid);
-    let parent2 = parent2.unwrap_or(null_oid);
+    let parent1 = parent1.unwrap_or(HgObjectId::NULL);
+    let parent2 = parent2.unwrap_or(HgObjectId::NULL);
     let mut parents = [parent1, parent2];
     parents.sort();
     hash.update(parents[0].as_raw_bytes());

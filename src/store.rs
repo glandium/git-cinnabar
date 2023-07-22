@@ -130,7 +130,7 @@ impl RawGitChangesetMetadata {
 
         Some(ParsedGitChangesetMetadata {
             changeset_id: changeset?,
-            manifest_id: manifest.unwrap_or_else(HgManifestId::null),
+            manifest_id: manifest.unwrap_or(HgManifestId::NULL),
             author,
             extra,
             files,
@@ -473,7 +473,7 @@ impl RawHgChangeset {
                     .parents()
                     .iter()
                     .map(|p| GitChangesetId::from_unchecked(*p).to_hg())
-                    .chain(repeat(Some(HgChangesetId::null())))
+                    .chain(repeat(Some(HgChangesetId::NULL)))
                     .take(2)
                     .collect::<Option<Vec<_>>>()?;
                 parents.sort();
@@ -1121,7 +1121,7 @@ pub fn create_changeset(
     files: Option<Box<[u8]>>,
 ) -> (HgChangesetId, GitChangesetMetadataId) {
     let mut metadata = GitChangesetMetadata {
-        changeset_id: HgChangesetId::null(),
+        changeset_id: HgChangesetId::NULL,
         manifest_id,
         author: None,
         extra: None,
@@ -1155,7 +1155,7 @@ pub fn create_changeset(
     for p in parents
         .iter()
         .copied()
-        .chain(repeat(HgChangesetId::null()))
+        .chain(repeat(HgChangesetId::NULL))
         .take(2)
         .sorted()
         .collect_vec()
@@ -1287,7 +1287,7 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
         )
     });
     let mut stored_files = STORED_FILES.lock().unwrap();
-    let null_parents = [HgFileId::null(), HgFileId::null()];
+    let null_parents = [HgFileId::NULL; 2];
     while {
         let mut buf = strbuf::new();
         read_rev_chunk(&mut input, &mut buf);
@@ -1331,7 +1331,7 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
     }
     drop(progress);
 
-    let mut previous = (HgChangesetId::null(), RawHgChangeset(Box::new([])));
+    let mut previous = (HgChangesetId::NULL, RawHgChangeset(Box::new([])));
     for changeset in changesets
         .drain(..)
         .progress(|n| format!("Importing {n} changesets"))

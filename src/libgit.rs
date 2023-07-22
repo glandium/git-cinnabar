@@ -52,7 +52,7 @@ impl From<GitObjectId> for object_id {
 
 impl From<object_id> for GitObjectId {
     fn from(oid: object_id) -> Self {
-        let mut result = Self::null();
+        let mut result = Self::NULL;
         let slice = result.as_raw_bytes_mut();
         slice.clone_from_slice(&oid.0[..slice.len()]);
         result

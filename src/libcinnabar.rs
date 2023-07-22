@@ -23,7 +23,7 @@ impl<H: ObjectId + Into<HgObjectId>> From<H> for hg_object_id {
 
 impl From<hg_object_id> for HgObjectId {
     fn from(oid: hg_object_id) -> Self {
-        let mut result = Self::null();
+        let mut result = Self::NULL;
         let slice = result.as_raw_bytes_mut();
         slice.clone_from_slice(&oid.0[..slice.len()]);
         result

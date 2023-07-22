@@ -162,7 +162,7 @@ impl<R: Read> Iterator for RevChunkIter<R> {
         self.delta_node = self
             .next_delta_node
             .take()
-            .or_else(|| Some(HgObjectId::null().into()));
+            .or_else(|| Some(HgObjectId::NULL.into()));
         let mut buf = strbuf::new();
         read_rev_chunk(&mut self.reader, &mut buf);
         if buf.as_bytes().is_empty() {
@@ -985,7 +985,7 @@ fn write_chunk(
     writer.write_all(parent1.as_raw_bytes())?;
     writer.write_all(parent2.as_raw_bytes())?;
     if version == 2 {
-        writer.write_all(delta_node.unwrap_or(HgObjectId::null()).as_raw_bytes())?;
+        writer.write_all(delta_node.unwrap_or(HgObjectId::NULL).as_raw_bytes())?;
     }
     writer.write_all(changeset.as_raw_bytes())?;
     writer.write_all(&chunk)
@@ -1056,11 +1056,11 @@ pub fn create_bundle(
             let mn_parent1 = manifest_parents
                 .get(0)
                 .copied()
-                .map_or_else(HgManifestId::null, get_manifest);
+                .map_or(HgManifestId::NULL, get_manifest);
             let mn_parent2 = manifest_parents
                 .get(1)
                 .copied()
-                .map_or_else(HgManifestId::null, get_manifest);
+                .map_or(HgManifestId::NULL, get_manifest);
             if ![&mn_parent1, &mn_parent2].contains(&&manifest) {
                 manifests.insert(manifest, (mn_parent1, mn_parent2, node));
             }
@@ -1121,7 +1121,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
                                 hg_fileparents
                                     .get(0)
                                     .copied()
-                                    .unwrap_or_else(GitObjectId::null)
+                                    .unwrap_or(GitObjectId::NULL)
                                     .as_raw_bytes(),
                             )
                             .unwrap(),
@@ -1129,7 +1129,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
                                 hg_fileparents
                                     .get(1)
                                     .copied()
-                                    .unwrap_or_else(GitObjectId::null)
+                                    .unwrap_or(GitObjectId::NULL)
                                     .as_raw_bytes(),
                             )
                             .unwrap(),
@@ -1168,15 +1168,14 @@ fn bundle_files<const CHUNK_SIZE: usize>(
             data.into_iter().zip(&mut progress)
         {
             let data = RawHgFile::read_hg(node).unwrap();
-            let null_id = HgFileId::null();
             // Normalize parents so that the first parent isn't null (it's a corner case, see below).
             if parent1.is_null() {
                 mem::swap(&mut parent1, &mut parent2);
             }
             let [parent1, parent2] = find_file_parents(node, Some(parent1), Some(parent2), &data)
                 .expect("Failed to create file. Please open an issue with details");
-            let mut parent1 = parent1.unwrap_or(null_id);
-            let mut parent2 = parent2.unwrap_or(null_id);
+            let mut parent1 = parent1.unwrap_or(HgFileId::NULL);
+            let mut parent2 = parent2.unwrap_or(HgFileId::NULL);
             // On merges, a file with copy metadata has either not parent, or only one.
             // In that latter case, the parent is always set as second parent.
             // On non-merges, a file with copy metadata doesn't have a parent.

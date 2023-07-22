@@ -11,9 +11,10 @@ use sha1::Sha1;
 pub trait ObjectId: Sized + Copy {
     type Digest: Digest;
 
+    const NULL: Self;
+
     fn as_raw_bytes(&self) -> &[u8];
     fn as_raw_bytes_mut(&mut self) -> &mut [u8];
-    fn null() -> Self;
     fn is_null(&self) -> bool {
         self.as_raw_bytes().iter().all(|&b| b == 0)
     }
@@ -23,7 +24,7 @@ pub trait ObjectId: Sized + Copy {
     fn from_digest(h: Self::Digest) -> Self;
     fn from_raw_bytes(b: &[u8]) -> Option<Self> {
         (b.len() == <Self::Digest as digest::OutputSizeUser>::output_size()).then(|| {
-            let mut result = Self::null();
+            let mut result = Self::NULL;
             let slice = result.as_raw_bytes_mut();
             slice.clone_from_slice(&b[..slice.len()]);
             result
@@ -43,7 +44,7 @@ macro_rules! oid_impl {
     ($name:ident($base_type:ident)) => {
         impl From<$name> for $base_type {
             fn from(o: $name) -> $base_type {
-                let mut result = $base_type::null();
+                let mut result = $base_type::NULL;
                 let slice = result.as_raw_bytes_mut();
                 slice.clone_from_slice(&o.0[..slice.len()]);
                 result
@@ -91,16 +92,14 @@ macro_rules! oid_type {
         impl $crate::oid::ObjectId for $name {
             type Digest = $typ;
 
+            const NULL: Self = Self([0; <<$typ as digest::OutputSizeUser>::OutputSize as typenum::marker_traits::Unsigned>::USIZE]);
+
             fn as_raw_bytes(&self) -> &[u8] {
                 &self.0
             }
 
             fn as_raw_bytes_mut(&mut self) -> &mut [u8] {
                 &mut self.0
-            }
-
-            fn null() -> Self {
-                Self([0; <<$typ as digest::OutputSizeUser>::OutputSize as typenum::marker_traits::Unsigned>::USIZE])
             }
 
             fn from_digest(h: Self::Digest) -> Self {
@@ -123,7 +122,7 @@ macro_rules! oid_type {
         impl ::std::str::FromStr for $name {
             type Err = hex::FromHexError;
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                let mut result = Self::null();
+                let mut result = Self::NULL;
                 hex::decode_to_slice(s, &mut result.as_raw_bytes_mut())?;
                 Ok(result)
              }
@@ -196,7 +195,7 @@ impl<O: ObjectId> FromStr for Abbrev<O> {
             return Err(hex::FromHexError::InvalidStringLength);
         }
         let mut result = Abbrev {
-            oid: O::null(),
+            oid: O::NULL,
             len: s.len(),
         };
         let s = if s.len() % 2 == 0 {

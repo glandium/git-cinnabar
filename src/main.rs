@@ -281,9 +281,7 @@ pub fn prepare_arg(arg: OsString) -> Vec<u16> {
 
 fn do_one_hg2git(sha1: Abbrev<HgChangesetId>) -> String {
     format!("{}", unsafe {
-        hg2git
-            .get_note_abbrev(sha1)
-            .unwrap_or_else(GitObjectId::null)
+        hg2git.get_note_abbrev(sha1).unwrap_or(GitObjectId::NULL)
     })
 }
 
@@ -291,7 +289,7 @@ fn do_one_git2hg(committish: OsString) -> String {
     let note = get_oid_committish(committish.as_bytes())
         .map(lookup_replace_commit)
         .and_then(|oid| GitChangesetId::from_unchecked(oid).to_hg());
-    format!("{}", note.unwrap_or_else(HgChangesetId::null))
+    format!("{}", note.unwrap_or(HgChangesetId::NULL))
 }
 
 fn do_conversion<T, I: Iterator<Item = T>, F: Fn(T) -> Result<String, String>, W: Write>(
@@ -839,7 +837,7 @@ fn do_rollback(
             return Err("No successful fsck has been recorded. Cannot rollback.".to_string());
         }
     } else if let Some(committish) = committish {
-        if *committish == *CommitId::null().to_string() {
+        if *committish == *CommitId::NULL.to_string() {
             None
         } else {
             Some(
@@ -1214,8 +1212,8 @@ fn create_file(blobid: BlobId, parents: &[HgFileId]) -> HgFileId {
     let blob = RawBlob::read(blobid).unwrap();
     let mut hash = HgFileId::create();
     if parents.len() < 2 {
-        hash.update(HgFileId::null().as_raw_bytes());
-        hash.update(parents.get(0).unwrap_or(&HgFileId::null()).as_raw_bytes());
+        hash.update(HgFileId::NULL.as_raw_bytes());
+        hash.update(parents.get(0).unwrap_or(&HgFileId::NULL).as_raw_bytes());
     } else {
         assert_eq!(parents.len(), 2);
         for parent in parents.iter().sorted() {
@@ -1244,8 +1242,8 @@ fn create_copy(blobid: BlobId, source_path: &BStr, source_fid: HgFileId) -> HgFi
     metadata.extend_from_slice(b"\n");
 
     let mut hash = HgFileId::create();
-    hash.update(HgFileId::null().as_raw_bytes());
-    hash.update(HgFileId::null().as_raw_bytes());
+    hash.update(HgFileId::NULL.as_raw_bytes());
+    hash.update(HgFileId::NULL.as_raw_bytes());
     hash.update(b"\x01\n");
     hash.update(metadata.as_bytes());
     hash.update(b"\x01\n");
@@ -1273,10 +1271,10 @@ fn create_manifest(content: &[u8], parents: &[HgManifestId]) -> HgManifestId {
     let parent_manifest = parents
         .get(0)
         .map(|p| RawHgManifest::read(p.to_git().unwrap()).unwrap());
-    let parent1 = parents.get(0).copied().unwrap_or_else(HgManifestId::null);
+    let parent1 = parents.get(0).copied().unwrap_or(HgManifestId::NULL);
     let mut hash = HgManifestId::create();
     if parents.len() < 2 {
-        hash.update(HgManifestId::null().as_raw_bytes());
+        hash.update(HgManifestId::NULL.as_raw_bytes());
         hash.update(parent1.as_raw_bytes());
     } else {
         assert_eq!(parents.len(), 2);
@@ -1297,14 +1295,9 @@ fn create_manifest(content: &[u8], parents: &[HgManifestId]) -> HgManifestId {
     manifest_chunk.extend_from_slice(b"\0\0\0\0");
     manifest_chunk.extend_from_slice(mid.as_raw_bytes());
     manifest_chunk.extend_from_slice(parent1.as_raw_bytes());
-    manifest_chunk.extend_from_slice(
-        parents
-            .get(1)
-            .unwrap_or(&HgManifestId::null())
-            .as_raw_bytes(),
-    );
+    manifest_chunk.extend_from_slice(parents.get(1).unwrap_or(&HgManifestId::NULL).as_raw_bytes());
     manifest_chunk.extend_from_slice(parent1.as_raw_bytes());
-    manifest_chunk.extend_from_slice(HgManifestId::null().as_raw_bytes());
+    manifest_chunk.extend_from_slice(HgManifestId::NULL.as_raw_bytes());
     manifest_chunk.extend_from_slice(&data);
     let len = manifest_chunk.len();
     (&mut manifest_chunk[..4])
@@ -1753,10 +1746,10 @@ pub fn do_create_bundle(
     let changesets = commits.map(|(cid, parents)| {
         if let Some(csid) = GitChangesetId::from_unchecked(cid).to_hg() {
             let mut parents = parents.iter().copied();
-            let parent1 = parents.next().map_or_else(HgChangesetId::null, |p| {
+            let parent1 = parents.next().map_or(HgChangesetId::NULL, |p| {
                 GitChangesetId::from_unchecked(p).to_hg().unwrap()
             });
-            let parent2 = parents.next().map_or_else(HgChangesetId::null, |p| {
+            let parent2 = parents.next().map_or(HgChangesetId::NULL, |p| {
                 GitChangesetId::from_unchecked(p).to_hg().unwrap()
             });
             assert!(parents.next().is_none());
@@ -1764,12 +1757,12 @@ pub fn do_create_bundle(
         } else if parents.is_empty() {
             [
                 create_root_changeset(cid),
-                HgChangesetId::null(),
-                HgChangesetId::null(),
+                HgChangesetId::NULL,
+                HgChangesetId::NULL,
             ]
         } else if parents.len() == 1 {
             let [csid, parent1] = create_simple_changeset(cid, parents[0]);
-            [csid, parent1, HgChangesetId::null()]
+            [csid, parent1, HgChangesetId::NULL]
         } else if parents.len() == 2 {
             create_merge_changeset(cid, *parents.get(0).unwrap(), *parents.get(1).unwrap())
         } else {
@@ -1949,7 +1942,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
                     .to_hg()
                     .unwrap()
             })
-            .chain(repeat(HgChangesetId::null()))
+            .chain(repeat(HgChangesetId::NULL))
             .take(2)
             .sorted()
             .for_each(|p| sha1.update(p.as_raw_bytes()));
@@ -2148,10 +2141,10 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             if let Some((path, hg_file)) = all_interesting.take(&(path, hg_file)) {
                 if !check_file(
                     HgFileId::from_raw_bytes(hg_file.as_raw_bytes()).unwrap(),
-                    hg_fileparents.get(0).map_or_else(HgFileId::null, |p| {
+                    hg_fileparents.get(0).map_or(HgFileId::NULL, |p| {
                         HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
                     }),
-                    hg_fileparents.get(1).map_or_else(HgFileId::null, |p| {
+                    hg_fileparents.get(1).map_or(HgFileId::NULL, |p| {
                         HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
                     }),
                 ) {
@@ -2356,7 +2349,7 @@ fn do_fsck_full(
         hg_parents
             .iter()
             .copied()
-            .chain(repeat(HgChangesetId::null()))
+            .chain(repeat(HgChangesetId::NULL))
             .take(2)
             .sorted()
             .for_each(|p| sha1.update(p.as_raw_bytes()));
@@ -2408,7 +2401,7 @@ fn do_fsck_full(
                 do_set(
                     cstr::cstr!("changeset").as_ptr(),
                     &hg_object_id::from(changeset_id),
-                    &object_id::from(CommitId::null()),
+                    &object_id::from(CommitId::NULL),
                 );
                 do_set(
                     cstr::cstr!("changeset").as_ptr(),
@@ -2422,7 +2415,7 @@ fn do_fsck_full(
                 do_set(
                     cstr::cstr!("changeset-metadata").as_ptr(),
                     &hg_object_id::from(changeset_id),
-                    &object_id::from(CommitId::null()),
+                    &object_id::from(CommitId::NULL),
                 );
                 do_set(
                     cstr::cstr!("changeset-metadata").as_ptr(),
@@ -2506,10 +2499,10 @@ fn do_fsck_full(
             // TODO: add FileFindParents logging.
             !check_file(
                 hg_file,
-                hg_fileparents.get(0).map_or_else(HgFileId::null, |p| {
+                hg_fileparents.get(0).map_or(HgFileId::NULL, |p| {
                     HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
                 }),
-                hg_fileparents.get(1).map_or_else(HgFileId::null, |p| {
+                hg_fileparents.get(1).map_or(HgFileId::NULL, |p| {
                     HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
                 }),
             ) {
@@ -2759,14 +2752,14 @@ fn manifest_diff(
     b: CommitId,
 ) -> impl Iterator<Item = (Box<[u8]>, GitObjectId, GitObjectId)> {
     diff_tree(a, b, false).filter_map(|item| match item {
-        DiffTreeItem::Added { path, oid, .. } => Some((path, oid.into(), GitObjectId::null())),
+        DiffTreeItem::Added { path, oid, .. } => Some((path, oid.into(), GitObjectId::NULL)),
         DiffTreeItem::Modified {
             path,
             from_oid,
             to_oid,
             ..
         } if from_oid != to_oid => Some((path, to_oid.into(), from_oid.into())),
-        DiffTreeItem::Deleted { path, oid, .. } => Some((path, GitObjectId::null(), oid.into())),
+        DiffTreeItem::Deleted { path, oid, .. } => Some((path, GitObjectId::NULL, oid.into())),
         _ => None,
     })
 }
@@ -3147,7 +3140,7 @@ fn remote_helper_tags_list(mut stdout: impl Write) {
             .unwrap();
         // Queue the deletions for after the helper closes, by which time git
         // will have finished with check-connection.
-        ref_updates.insert(buf.as_bstr().to_boxed(), CommitId::null());
+        ref_updates.insert(buf.as_bstr().to_boxed(), CommitId::NULL);
     }
     transaction.commit().unwrap();
 
@@ -3776,7 +3769,7 @@ fn remote_helper_push(
             )?;
             drop(file);
             let file = File::open(path).unwrap();
-            let empty_heads = [HgChangesetId::null()];
+            let empty_heads = [HgChangesetId::NULL];
             let heads = if force {
                 None
             } else if no_topological_heads {
