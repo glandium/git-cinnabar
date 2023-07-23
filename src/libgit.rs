@@ -5,10 +5,11 @@
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
 use std::fmt;
 use std::io::{self, Write};
+use std::num::ParseIntError;
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 use std::sync::RwLock;
 
-use bstr::{BStr, ByteSlice, ByteVec};
+use bstr::{BStr, ByteSlice};
 use cstr::cstr;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use derive_more::Deref;
@@ -17,8 +18,8 @@ use hex_literal::hex;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
-use crate::git::{BlobId, CommitId, TreeId};
-use crate::git::{GitObjectId, GitOid};
+use crate::git::{BlobId, CommitId, GitOid, TreeId};
+use crate::git::{GitObjectId, TreeEntry};
 use crate::oid::ObjectId;
 use crate::util::{CStrExt, FromBytes, ImmutBString, OptionExt, OsStrExt, SliceExt};
 
@@ -630,6 +631,14 @@ impl fmt::Debug for FileMode {
     }
 }
 
+impl FromBytes for FileMode {
+    type Err = ParseIntError;
+
+    fn from_bytes(b: &[u8]) -> Result<Self, Self::Err> {
+        u16::from_str_radix(std::str::from_utf8(b).unwrap(), 8).map(FileMode)
+    }
+}
+
 #[allow(clippy::unnecessary_cast)]
 impl FileMode {
     pub const REGULAR: Self = FileMode(0o100_000);
@@ -1109,58 +1118,13 @@ pub fn config_set_value<S: ToString>(key: &str, value: S) {
     }
 }
 
-extern "C" {
-    fn iter_tree(
-        oid: *const object_id,
-        cb: unsafe extern "C" fn(
-            *const object_id,
-            *const strbuf,
-            *const c_char,
-            c_uint,
-            *mut c_void,
-        ),
-        context: *mut c_void,
-        recursive: c_int,
-    ) -> c_int;
-}
-
-#[derive(Derivative)]
-#[derivative(Debug)]
-pub struct LsTreeItem {
-    #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
-    pub path: ImmutBString,
-    pub mode: FileMode,
-    pub oid: GitOid,
-}
-
 #[derive(Debug)]
 pub struct LsTreeError;
 
-pub fn ls_tree(tree_id: TreeId) -> Result<impl Iterator<Item = LsTreeItem>, LsTreeError> {
-    unsafe extern "C" fn ls_tree_cb(
-        oid: *const object_id,
-        base: *const strbuf,
-        pathname: *const c_char,
-        mode: c_uint,
-        ctx: *mut c_void,
-    ) {
-        let ls_tree = (ctx as *mut Vec<LsTreeItem>).as_mut().unwrap();
-        let mut path = base.as_ref().unwrap().as_bytes().to_owned();
-        assert!(path.is_empty() || path.ends_with_str("/"));
-        path.push_str(CStr::from_ptr(pathname).to_bytes());
-        let mode = FileMode(mode.try_into().unwrap());
-        ls_tree.push(LsTreeItem {
-            path: path.into_boxed_slice(),
-            mode,
-            oid: (GitObjectId::from(oid.as_ref().unwrap().clone()), mode).into(),
-        });
-    }
-    let mut result = Vec::<LsTreeItem>::new();
-    let oid = object_id::from(tree_id);
-    if unsafe { iter_tree(&oid, ls_tree_cb, &mut result as *mut _ as *mut c_void, 1) } == 0 {
-        return Err(LsTreeError);
-    }
-    Ok(result.into_iter())
+pub fn ls_tree(tree_id: TreeId) -> Result<impl Iterator<Item = TreeEntry>, LsTreeError> {
+    RawTree::read(tree_id)
+        .ok_or(LsTreeError)
+        .map(RawTree::into_recursive_iter)
 }
 
 extern "C" {

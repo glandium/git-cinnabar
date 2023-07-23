@@ -51,51 +51,6 @@ struct oidset hg2git_seen = OIDSET_INIT;
 
 int metadata_flags = 0;
 
-struct iter_tree_context {
-	void *ctx;
-	iter_tree_cb callback;
-	struct object_list *list;
-	int recursive;
-};
-
-static int do_iter_tree(const struct object_id *oid, struct strbuf *base,
-			const char *pathname, unsigned mode, void *context)
-{
-	struct iter_tree_context *ctx = context;
-
-	if (S_ISDIR(mode)) {
-		object_list_insert((struct object *)lookup_tree(the_repository, oid),
-		                   &ctx->list);
-		if (ctx->recursive)
-			return READ_TREE_RECURSIVE;
-	}
-
-	ctx->callback(oid, base, pathname, mode, ctx->ctx);
-	return 0;
-}
-
-int iter_tree(const struct object_id *oid, iter_tree_cb callback, void *context, int recursive) {
-	struct tree *tree = NULL;
-	struct iter_tree_context ctx = { context, callback, NULL, recursive };
-	struct pathspec match_all;
-
-	tree = parse_tree_indirect(oid);
-	if (!tree)
-		return 0;
-
-	memset(&match_all, 0, sizeof(match_all));
-	read_tree(the_repository, tree, &match_all, do_iter_tree, &ctx);
-
-	while (ctx.list) {
-		struct object *obj = ctx.list->item;
-		struct object_list *elem = ctx.list;
-		ctx.list = elem->next;
-		free(elem);
-		free_tree_buffer((struct tree *)obj);
-	}
-	return 1;
-}
-
 struct object_id *commit_oid(struct commit *c) {
 	return &c->object.oid;
 }

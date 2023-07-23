@@ -62,11 +62,6 @@ const struct object_id *resolve_hg(
 const struct object_id *resolve_hg2git(const struct hg_object_id *oid,
                                        size_t len);
 
-typedef void (*iter_tree_cb)(const struct object_id *oid, struct strbuf *base,
-	                     const char *pathname, unsigned mode, void *context);
-
-int iter_tree(const struct object_id *oid, iter_tree_cb callback, void *context, int recursive);
-
 struct commit;
 
 struct object_id *commit_oid(struct commit *c);
