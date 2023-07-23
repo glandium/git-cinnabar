@@ -79,7 +79,7 @@ default-features = false
 [dependencies.derive_more]
 version = "0.99"
 default-features = false
-features = ["deref"]
+features = ["deref", "from", "try_into"]
 
 [target.'cfg(not(windows))'.dependencies.filetime]
 version = "=0.2.16"  # Avoid windows-sys dependency.

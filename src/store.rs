@@ -1621,7 +1621,7 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
             .collect::<BTreeMap<_, _>>();
         let mut needed = Vec::new();
         for item in ls_tree(commit.tree()).unwrap() {
-            let cid = CommitId::from_unchecked(item.oid);
+            let cid = item.oid.try_into().unwrap();
             if let Some(refname) = by_sha1.get(&cid) {
                 let replace_ref = bstr::join(b"/", [b"refs/cinnabar/replace", &*item.path]);
                 needed.push(

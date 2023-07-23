@@ -17,8 +17,8 @@ use hex_literal::hex;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
-use crate::git::GitObjectId;
 use crate::git::{BlobId, CommitId, TreeId};
+use crate::git::{GitObjectId, GitOid};
 use crate::oid::ObjectId;
 use crate::util::{CStrExt, FromBytes, ImmutBString, OptionExt, OsStrExt, SliceExt};
 
@@ -664,41 +664,41 @@ pub enum DiffTreeItem {
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         path: ImmutBString,
         mode: FileMode,
-        oid: BlobId, // TODO: Use GitObjectId
+        oid: GitOid,
     },
     Deleted {
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         path: ImmutBString,
         mode: FileMode,
-        oid: BlobId,
+        oid: GitOid,
     },
     Modified {
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         path: ImmutBString,
         from_mode: FileMode,
-        from_oid: BlobId,
+        from_oid: GitOid,
         to_mode: FileMode,
-        to_oid: BlobId,
+        to_oid: GitOid,
     },
     Renamed {
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         to_path: ImmutBString,
         to_mode: FileMode,
-        to_oid: BlobId,
+        to_oid: GitOid,
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         from_path: ImmutBString,
         from_mode: FileMode,
-        from_oid: BlobId,
+        from_oid: GitOid,
     },
     Copied {
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         to_path: ImmutBString,
         to_mode: FileMode,
-        to_oid: BlobId,
+        to_oid: GitOid,
         #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
         from_path: ImmutBString,
         from_mode: FileMode,
-        from_oid: BlobId,
+        from_oid: GitOid,
     },
 }
 
@@ -715,6 +715,16 @@ impl DiffTreeItem {
 }
 
 unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tree_item) {
+    fn gitoid(f: &diff_tree_file) -> GitOid {
+        unsafe {
+            (
+                GitObjectId::from(f.oid.as_ref().unwrap().clone()),
+                FileMode(f.mode),
+            )
+                .into()
+        }
+    }
+
     let diff_tree = (diff_tree as *mut Vec<DiffTreeItem>).as_mut().unwrap();
     let item = item.as_ref().unwrap();
     let item = match item.status {
@@ -725,41 +735,35 @@ unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tr
                 assert_eq!(a_path.as_bstr(), b_path.as_bstr());
                 a_path
             },
-            from_oid: BlobId::from_unchecked(GitObjectId::from(
-                item.a.oid.as_ref().unwrap().clone(),
-            )),
+            from_oid: gitoid(&item.a),
             from_mode: FileMode(item.a.mode),
-            to_oid: BlobId::from_unchecked(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
+            to_oid: gitoid(&item.b),
             to_mode: FileMode(item.b.mode),
         },
         DIFF_STATUS_ADDED => DiffTreeItem::Added {
             path: CStr::from_ptr(item.b.path).to_bytes().into(),
-            oid: BlobId::from_unchecked(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
+            oid: gitoid(&item.b),
             mode: FileMode(item.b.mode),
         },
         DIFF_STATUS_DELETED => DiffTreeItem::Deleted {
             path: CStr::from_ptr(item.a.path).to_bytes().into(),
-            oid: BlobId::from_unchecked(GitObjectId::from(item.a.oid.as_ref().unwrap().clone())),
+            oid: gitoid(&item.a),
             mode: FileMode(item.a.mode),
         },
         DIFF_STATUS_RENAMED => DiffTreeItem::Renamed {
             to_path: CStr::from_ptr(item.b.path).to_bytes().into(),
-            to_oid: BlobId::from_unchecked(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
+            to_oid: gitoid(&item.b),
             to_mode: FileMode(item.b.mode),
             from_path: CStr::from_ptr(item.a.path).to_bytes().into(),
-            from_oid: BlobId::from_unchecked(GitObjectId::from(
-                item.a.oid.as_ref().unwrap().clone(),
-            )),
+            from_oid: gitoid(&item.a),
             from_mode: FileMode(item.a.mode),
         },
         DIFF_STATUS_COPIED => DiffTreeItem::Copied {
             to_path: CStr::from_ptr(item.b.path).to_bytes().into(),
-            to_oid: BlobId::from_unchecked(GitObjectId::from(item.b.oid.as_ref().unwrap().clone())),
+            to_oid: gitoid(&item.b),
             to_mode: FileMode(item.b.mode),
             from_path: CStr::from_ptr(item.a.path).to_bytes().into(),
-            from_oid: BlobId::from_unchecked(GitObjectId::from(
-                item.a.oid.as_ref().unwrap().clone(),
-            )),
+            from_oid: gitoid(&item.a),
             from_mode: FileMode(item.a.mode),
         },
         c => panic!("Unknown diff state: {}", c),
@@ -1126,7 +1130,7 @@ pub struct LsTreeItem {
     #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
     pub path: ImmutBString,
     pub mode: FileMode,
-    pub oid: GitObjectId,
+    pub oid: GitOid,
 }
 
 #[derive(Debug)]
@@ -1144,10 +1148,11 @@ pub fn ls_tree(tree_id: TreeId) -> Result<impl Iterator<Item = LsTreeItem>, LsTr
         let mut path = base.as_ref().unwrap().as_bytes().to_owned();
         assert!(path.is_empty() || path.ends_with_str("/"));
         path.push_str(CStr::from_ptr(pathname).to_bytes());
+        let mode = FileMode(mode.try_into().unwrap());
         ls_tree.push(LsTreeItem {
             path: path.into_boxed_slice(),
-            mode: FileMode(mode.try_into().unwrap()),
-            oid: GitObjectId::from(oid.as_ref().unwrap().clone()),
+            mode,
+            oid: (GitObjectId::from(oid.as_ref().unwrap().clone()), mode).into(),
         });
     }
     let mut result = Vec::<LsTreeItem>::new();

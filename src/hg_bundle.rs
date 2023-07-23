@@ -1111,7 +1111,10 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
             .filter_map(|p| (!p.is_null()).then(|| (p.to_git().unwrap().into())))
             .collect_vec();
         for (path, hg_file, hg_fileparents) in get_changes(git_node.into(), &git_parents, false) {
-            if !hg_file.is_null() {
+            if !HgFileId::from_raw_bytes(hg_file.as_raw_bytes())
+                .unwrap()
+                .is_null()
+            {
                 files
                     .entry(path)
                     .or_insert_with(IndexMap::new)
