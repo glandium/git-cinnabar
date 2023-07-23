@@ -122,10 +122,10 @@ use hg::{HgChangesetId, HgFileId, HgManifestId};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
 use libcinnabar::{files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
-    config_get_value, diff_tree, for_each_ref_in, for_each_remote, get_oid_committish,
-    lookup_replace_commit, ls_tree, metadata_oid, object_id, reachable_subset, remote, resolve_ref,
-    rev_list, rev_list_with_boundaries, strbuf, DiffTreeItem, FileMode, MaybeBoundary, RawBlob,
-    RawCommit, RefTransaction,
+    config_get_value, diff_tree, diff_tree_with_copies, for_each_ref_in, for_each_remote,
+    get_oid_committish, lookup_replace_commit, ls_tree, metadata_oid, object_id, reachable_subset,
+    remote, resolve_ref, rev_list, rev_list_with_boundaries, strbuf, DiffTreeItem, FileMode,
+    MaybeBoundary, RawBlob, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, ObjectId};
 use progress::Progress;
@@ -1433,7 +1433,7 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
     let parent_mid = parent_metadata.parse().unwrap().manifest_id();
     let parent_manifest = RawHgManifest::read(parent_mid.to_git().unwrap()).unwrap();
     let mut extra_diff = Vec::new();
-    let mut diff = diff_tree(parent.into(), cid, true)
+    let mut diff = diff_tree_with_copies(parent.into(), cid)
         .inspect(|item| {
             if let DiffTreeItem::Renamed {
                 from_path,
@@ -2076,7 +2076,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             report(format!("Sha1 mismatch for manifest {}", git_mid));
         }
         let files: Vec<(_, CommitId)> = if let Some(previous) = previous {
-            diff_tree(previous, mid, false)
+            diff_tree(previous, mid)
                 .filter_map(|item| match item {
                     DiffTreeItem::Added { path, oid, .. } => Some((path, oid.try_into().unwrap())),
                     DiffTreeItem::Modified {
@@ -2105,7 +2105,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
     let mut previous = None;
     for r in roots {
         if let Some(previous) = previous {
-            diff_tree(previous, r, false)
+            diff_tree(previous, r)
                 .filter_map(|item| match item {
                     DiffTreeItem::Added { path, oid, .. } => Some((path, oid.try_into().unwrap())),
                     DiffTreeItem::Modified {
@@ -2773,7 +2773,7 @@ fn get_changes(
 }
 
 fn manifest_diff(a: CommitId, b: CommitId) -> impl Iterator<Item = (Box<[u8]>, GitOid, GitOid)> {
-    diff_tree(a, b, false).filter_map(|item| match item {
+    diff_tree(a, b).filter_map(|item| match item {
         DiffTreeItem::Added { path, oid, .. } => Some((path, oid, GitOid::Commit(CommitId::NULL))),
         DiffTreeItem::Modified {
             path,

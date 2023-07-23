@@ -15,6 +15,7 @@ use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use derive_more::Deref;
 use getset::{CopyGetters, Getters};
 use hex_literal::hex;
+use itertools::EitherOrBoth::*;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
@@ -355,6 +356,11 @@ impl RawBlob {
 impl RawTree {
     pub const EMPTY_OID: TreeId =
         TreeId::from_raw_bytes_array(hex!("4b825dc642cb6eb9a060e54bf8d69288fbee4904"));
+
+    pub const EMPTY: RawTree = RawTree(RawObject {
+        buf: std::ptr::null(),
+        len: 0,
+    });
 }
 
 #[derive(CopyGetters, Getters)]
@@ -780,19 +786,19 @@ unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tr
     diff_tree.push(item);
 }
 
-pub fn diff_tree(
-    a: CommitId,
-    b: CommitId,
-    detect_copy: bool,
-) -> impl Iterator<Item = DiffTreeItem> {
+pub fn diff_tree_with_copies(a: CommitId, b: CommitId) -> impl Iterator<Item = DiffTreeItem> {
     let a = CString::new(format!("{}", a)).unwrap();
     let b = CString::new(format!("{}", b)).unwrap();
-    let args = [cstr!(""), &a, &b, cstr!("--ignore-submodules=dirty")];
+    let args = [
+        cstr!(""),
+        &a,
+        &b,
+        cstr!("--ignore-submodules=dirty"),
+        cstr!("-C"),
+        cstr!("-C100%"),
+        cstr!("--"),
+    ];
     let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
-    if detect_copy {
-        argv.extend([cstr!("-C").as_ptr(), cstr!("-C100%").as_ptr()]);
-    }
-    argv.push(cstr!("--").as_ptr());
     argv.push(std::ptr::null());
     let mut result = Vec::<DiffTreeItem>::new();
     unsafe {
@@ -804,6 +810,34 @@ pub fn diff_tree(
         );
     }
     result.into_iter()
+}
+
+pub fn diff_tree(a: CommitId, b: CommitId) -> impl Iterator<Item = DiffTreeItem> {
+    let a = RawCommit::read(a).unwrap();
+    let a = a.parse().unwrap();
+    let a = RawTree::read(a.tree()).unwrap();
+    let b = RawCommit::read(b).unwrap();
+    let b = b.parse().unwrap();
+    let b = RawTree::read(b.tree()).unwrap();
+    RawTree::into_recursive_diff(a, b).map(|entry| match entry {
+        Both(a, b) => DiffTreeItem::Modified {
+            path: a.path,
+            from_mode: a.mode,
+            from_oid: a.oid,
+            to_mode: b.mode,
+            to_oid: b.oid,
+        },
+        Left(a) => DiffTreeItem::Deleted {
+            path: a.path,
+            mode: a.mode,
+            oid: a.oid,
+        },
+        Right(b) => DiffTreeItem::Added {
+            path: b.path,
+            mode: b.mode,
+            oid: b.oid,
+        },
+    })
 }
 
 extern "C" {

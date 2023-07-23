@@ -69,6 +69,18 @@ pub enum GitOid {
 }
 
 impl GitOid {
+    pub fn is_blob(&self) -> bool {
+        matches!(self, GitOid::Blob(_))
+    }
+
+    pub fn is_tree(&self) -> bool {
+        matches!(self, GitOid::Tree(_))
+    }
+
+    pub fn is_commit(&self) -> bool {
+        matches!(self, GitOid::Commit(_))
+    }
+
     pub fn as_raw_bytes(&self) -> &[u8] {
         match self {
             GitOid::Blob(b) => b.as_raw_bytes(),

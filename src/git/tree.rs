@@ -4,6 +4,8 @@
 
 use bstr::BString;
 use digest::OutputSizeUser;
+use itertools::EitherOrBoth::{self, Both, Left, Right};
+use itertools::Itertools;
 
 use super::{GitObjectId, GitOid};
 use crate::git_oid_type;
@@ -36,11 +38,35 @@ pub struct IntoRecursiveIterTree {
     stack: Vec<(IntoIterTree, usize)>,
 }
 
+pub type DiffTreeEntry = EitherOrBoth<TreeEntry, TreeEntry>;
+
+pub struct IntoRecursiveIterDiff {
+    prefix: BString,
+    stack: Vec<(Box<dyn Iterator<Item = DiffTreeEntry>>, usize)>,
+}
+
 impl RawTree {
     pub fn into_recursive_iter(self) -> IntoRecursiveIterTree {
         IntoRecursiveIterTree {
             prefix: BString::from(Vec::<u8>::new()),
             stack: vec![(self.into_iter(), 0)],
+        }
+    }
+
+    pub fn into_diff(self, other: RawTree) -> impl Iterator<Item = DiffTreeEntry> {
+        Itertools::merge_join_by(self.into_iter(), other.into_iter(), |a, b| {
+            <[u8]>::cmp(&a.path, &b.path)
+        })
+        .filter(|entry| match entry {
+            Both(a, b) => a != b,
+            _ => true,
+        })
+    }
+
+    pub fn into_recursive_diff(self, other: RawTree) -> IntoRecursiveIterDiff {
+        IntoRecursiveIterDiff {
+            prefix: BString::from(Vec::<u8>::new()),
+            stack: vec![(Box::new(Self::into_diff(self, other)), 0)],
         }
     }
 }
@@ -105,6 +131,89 @@ impl Iterator for IntoRecursiveIterTree {
                             path: full_path.to_vec().into_boxed_slice(),
                             mode: entry.mode,
                         });
+                    }
+                } else {
+                    self.prefix.truncate(*prefix_len);
+                    self.stack.pop();
+                }
+            } else {
+                return None;
+            }
+        }
+    }
+}
+
+trait EitherOrBothExt<T> {
+    fn map<F: Fn(T) -> U, U>(self, f: F) -> EitherOrBoth<U, U>;
+    fn filter<F: Fn(&T) -> bool>(self, f: F) -> Option<EitherOrBoth<T, T>>;
+    fn filter_map<F: Fn(T) -> Option<U>, U>(self, f: F) -> Option<EitherOrBoth<U, U>>;
+}
+
+impl<T> EitherOrBothExt<T> for EitherOrBoth<T, T> {
+    fn map<F: Fn(T) -> U, U>(self, f: F) -> EitherOrBoth<U, U> {
+        self.map_any(&f, &f)
+    }
+
+    fn filter<F: Fn(&T) -> bool>(self, f: F) -> Option<EitherOrBoth<T, T>> {
+        match self {
+            Left(a) => f(&a).then_some(Left(a)),
+            Right(b) => f(&b).then_some(Right(b)),
+            Both(a, b) => match (f(&a), f(&b)) {
+                (false, false) => None,
+                (true, false) => Some(Left(a)),
+                (false, true) => Some(Right(b)),
+                (true, true) => Some(Both(a, b)),
+            },
+        }
+    }
+
+    fn filter_map<F: Fn(T) -> Option<U>, U>(self, f: F) -> Option<EitherOrBoth<U, U>> {
+        match self {
+            Left(a) => f(a).map(Left),
+            Right(b) => f(b).map(Right),
+            Both(a, b) => match (f(a), f(b)) {
+                (None, None) => None,
+                (Some(a), None) => Some(Left(a)),
+                (None, Some(b)) => Some(Right(b)),
+                (Some(a), Some(b)) => Some(Both(a, b)),
+            },
+        }
+    }
+}
+
+impl Iterator for IntoRecursiveIterDiff {
+    type Item = DiffTreeEntry;
+
+    fn next(&mut self) -> Option<DiffTreeEntry> {
+        loop {
+            if let Some((diff, prefix_len)) = self.stack.last_mut() {
+                if let Some(entry) = diff.next() {
+                    let non_trees = entry.as_ref().filter(|e| !e.oid.is_tree());
+                    let trees = entry.as_ref().filter_map(|e| {
+                        e.oid
+                            .try_into()
+                            .ok()
+                            .map(|tree_id| RawTree::read(tree_id).unwrap())
+                    });
+                    let path = entry.as_ref().map(|e| &e.path).reduce(|a, _| a);
+                    let result = non_trees.map(|non_trees| {
+                        let mut full_path = self.prefix.clone();
+                        full_path.extend_from_slice(&entry.as_ref().reduce(|a, _| a).path);
+                        non_trees.map(|e| TreeEntry {
+                            oid: e.oid,
+                            path: full_path.to_vec().into_boxed_slice(),
+                            mode: e.mode,
+                        })
+                    });
+                    if let Some(trees) = trees {
+                        let (a, b) = trees.or(RawTree::EMPTY, RawTree::EMPTY);
+                        self.stack
+                            .push((Box::new(RawTree::into_diff(a, b)), self.prefix.len()));
+                        self.prefix.extend_from_slice(path);
+                        self.prefix.push(b'/');
+                    }
+                    if result.is_some() {
+                        return result;
                     }
                 } else {
                     self.prefix.truncate(*prefix_len);
