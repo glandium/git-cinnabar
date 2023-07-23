@@ -1200,19 +1200,19 @@ fn do_bundle(
 }
 
 fn hg_attr(mode: FileMode) -> &'static [u8] {
-    match mode.0 {
-        0o100644 => b"",
-        0o100755 => b"x",
-        0o120000 => b"l",
+    match (mode.typ(), mode.perms()) {
+        (FileMode::REGULAR, FileMode::RW) => b"",
+        (FileMode::REGULAR, FileMode::RWX) => b"x",
+        (FileMode::SYMLINK, FileMode::NONE) => b"l",
         _ => die!("Unexpected file mode"),
     }
 }
 
 fn git_mode(attr: &[u8]) -> FileMode {
     match attr {
-        b"" => FileMode(0o100644),
-        b"x" => FileMode(0o100755),
-        b"l" => FileMode(0o120000),
+        b"" => FileMode::REGULAR | FileMode::RW,
+        b"x" => FileMode::REGULAR | FileMode::RWX,
+        b"l" => FileMode::SYMLINK,
         _ => die!("Unexpected attribute"),
     }
 }

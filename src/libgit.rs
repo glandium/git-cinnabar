@@ -622,11 +622,38 @@ extern "C" {
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
-pub struct FileMode(pub u16);
+pub struct FileMode(u16);
 
 impl fmt::Debug for FileMode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:06o}", self.0)
+    }
+}
+
+#[allow(clippy::unnecessary_cast)]
+impl FileMode {
+    pub const REGULAR: Self = FileMode(0o100_000);
+    pub const SYMLINK: Self = FileMode(0o120_000);
+    pub const DIRECTORY: Self = FileMode(0o040_000);
+    pub const GITLINK: Self = FileMode(0o160_000);
+    pub const RW: Self = FileMode(0o644);
+    pub const RWX: Self = FileMode(0o755);
+    pub const NONE: Self = FileMode(0);
+
+    pub fn typ(&self) -> FileMode {
+        FileMode(self.0 & 0o170_000)
+    }
+
+    pub fn perms(&self) -> FileMode {
+        FileMode(self.0 & !0o170_000)
+    }
+}
+
+impl std::ops::BitOr for FileMode {
+    type Output = FileMode;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        FileMode(self.0 | rhs.0)
     }
 }
 
