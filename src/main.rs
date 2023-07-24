@@ -1616,12 +1616,12 @@ fn create_merge_changeset(
             let commit = RawCommit::read(cid).unwrap();
             let commit = commit.parse().unwrap();
             for (path, oid, parents) in get_changes(cid, commit.parents(), false) {
-                let oid = HgFileId::from_str(&oid.to_string()).unwrap();
+                let oid = HgFileId::from_raw_bytes(oid.as_raw_bytes()).unwrap();
                 let path = manifest_path(&path);
                 let parents = parents
                     .iter()
                     .filter(|p| !p.is_null())
-                    .map(|p| HgFileId::from_str(&p.to_string()).unwrap())
+                    .map(|p| HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap())
                     .collect_vec();
                 let dag = file_dags.entry(path).or_insert_with(Dag::new);
                 for &parent in &parents {
