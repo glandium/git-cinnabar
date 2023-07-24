@@ -27,7 +27,6 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
 use crate::git::CommitId;
-use crate::git::GitObjectId;
 use crate::hg::{HgChangesetId, HgFileId, HgManifestId};
 use crate::hg_connect::{encodecaps, HgConnection, HgConnectionBase, HgRepo};
 use crate::hg_data::find_file_parents;
@@ -1119,22 +1118,12 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
                     .entry(HgFileId::from_raw_bytes(hg_file.as_raw_bytes()).unwrap())
                     .or_insert_with(|| {
                         (
-                            HgFileId::from_raw_bytes(
-                                hg_fileparents
-                                    .get(0)
-                                    .copied()
-                                    .unwrap_or(GitObjectId::NULL)
-                                    .as_raw_bytes(),
-                            )
-                            .unwrap(),
-                            HgFileId::from_raw_bytes(
-                                hg_fileparents
-                                    .get(1)
-                                    .copied()
-                                    .unwrap_or(GitObjectId::NULL)
-                                    .as_raw_bytes(),
-                            )
-                            .unwrap(),
+                            hg_fileparents.get(0).map_or(HgFileId::NULL, |p| {
+                                HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
+                            }),
+                            hg_fileparents.get(1).map_or(HgFileId::NULL, |p| {
+                                HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
+                            }),
                             changeset,
                         )
                     });
