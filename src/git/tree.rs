@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::borrow::Cow;
+
 use bstr::BString;
 use digest::OutputSizeUser;
 use itertools::EitherOrBoth::{self, Both, Left, Right};
@@ -55,7 +57,17 @@ impl RawTree {
 
     pub fn into_diff(self, other: RawTree) -> impl Iterator<Item = DiffTreeEntry> {
         Itertools::merge_join_by(self.into_iter(), other.into_iter(), |a, b| {
-            <[u8]>::cmp(&a.path, &b.path)
+            // Trees need to be sorted as if they were recursed, so that
+            // foo.bar comes before foo when foo is a tree.
+            let mut path_a = Cow::Borrowed(&*a.path);
+            if a.oid.is_tree() {
+                path_a.to_mut().push(b'/');
+            }
+            let mut path_b = Cow::Borrowed(&*b.path);
+            if b.oid.is_tree() {
+                path_b.to_mut().push(b'/');
+            }
+            <[u8]>::cmp(&path_a, &path_b)
         })
         .filter(|entry| match entry {
             Both(a, b) => a != b,
