@@ -2736,36 +2736,33 @@ pub fn manifest_path(p: &[u8]) -> Box<BStr> {
         .to_boxed()
 }
 
+#[allow(clippy::type_complexity)]
 fn get_changes(
     cid: CommitId,
     parents: &[CommitId],
     all: bool,
-) -> impl Iterator<Item = (Box<[u8]>, HgFileId, Box<[HgFileId]>)> {
+) -> Box<dyn Iterator<Item = (Box<[u8]>, HgFileId, Box<[HgFileId]>)>> {
     if parents.is_empty() {
         // Yes, this is ridiculous.
         let commit = RawCommit::read(cid).unwrap();
         let commit = commit.parse().unwrap();
-        ls_tree(commit.tree())
-            .unwrap()
-            .map(|item| {
-                (
-                    item.path,
-                    HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
-                    [].to_boxed(),
-                )
-            })
-            .collect_vec()
-            .into_iter()
+        Box::new(ls_tree(commit.tree()).unwrap().map(|item| {
+            (
+                item.path,
+                HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
+                [].to_boxed(),
+            )
+        }))
     } else if parents.len() == 1 {
-        manifest_diff(parents[0], cid)
-            .map(|(path, node, parent)| (path, node, [parent].to_boxed()))
-            .collect_vec()
-            .into_iter()
+        Box::new(
+            manifest_diff(parents[0], cid)
+                .map(|(path, node, parent)| (path, node, [parent].to_boxed())),
+        )
     } else {
-        manifest_diff2(parents[0], parents[1], cid, all)
-            .map(|(path, node, parents)| (path, node, parents.to_boxed()))
-            .collect_vec()
-            .into_iter()
+        Box::new(
+            manifest_diff2(parents[0], parents[1], cid, all)
+                .map(|(path, node, parents)| (path, node, parents.to_boxed())),
+        )
     }
 }
 
