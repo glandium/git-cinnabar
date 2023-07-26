@@ -557,8 +557,7 @@ static void hg_sha1(struct strbuf *data, const struct hg_object_id *parent1,
 	git_SHA1_Final(result->hash, &ctx);
 }
 
-int check_manifest(const struct object_id *oid,
-                   struct hg_object_id *hg_oid)
+int check_manifest(const struct object_id *oid)
 {
 	struct hg_object_id parent1, parent2, stored, computed;
 	const struct commit *manifest_commit;
@@ -584,14 +583,11 @@ int check_manifest(const struct object_id *oid,
 		hg_oidclr(&parent2);
 	}
 
-	if (!hg_oid)
-		hg_oid = &computed;
-
-	hg_sha1(manifest, &parent1, &parent2, hg_oid);
+	hg_sha1(manifest, &parent1, &parent2, &computed);
 
 	get_manifest_oid(manifest_commit, &stored);
 
-	return hg_oideq(&stored, hg_oid);
+	return hg_oideq(&stored, &computed);
 }
 
 static void reset_heads(struct oid_array *heads)

@@ -1783,7 +1783,7 @@ pub fn do_create_bundle(
 }
 
 extern "C" {
-    fn check_manifest(oid: *const object_id, hg_oid: *mut hg_object_id) -> c_int;
+    fn check_manifest(oid: *const object_id) -> c_int;
 }
 
 fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, String> {
@@ -2071,7 +2071,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
                 mid, hg_manifest_id, git_mid
             ));
         }
-        if unsafe { check_manifest(&object_id::from(git_mid), std::ptr::null_mut()) } != 1 {
+        if unsafe { check_manifest(&object_id::from(git_mid)) } != 1 {
             report(format!("Sha1 mismatch for manifest {}", git_mid));
         }
         let files: Vec<(_, HgFileId)> = if let Some(previous) = previous {
@@ -2464,7 +2464,7 @@ fn do_fsck_full(
 
         let checked = unsafe {
             let manifest_cid = object_id::from(manifest_cid);
-            check_manifest(&manifest_cid, std::ptr::null_mut()) == 1
+            check_manifest(&manifest_cid) == 1
         };
         if !checked {
             report(format!("Sha1 mismatch for manifest {}", manifest_id));

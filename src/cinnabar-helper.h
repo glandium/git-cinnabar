@@ -33,8 +33,7 @@ extern void ensure_notes(struct notes_tree *notes);
 
 struct strbuf *generate_manifest(const struct object_id *oid);
 
-int check_manifest(const struct object_id *oid,
-                   struct hg_object_id *hg_oid);
+int check_manifest(const struct object_id *oid);
 
 struct remote;
 
