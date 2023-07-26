@@ -42,9 +42,11 @@ pub struct IntoRecursiveIterTree {
 
 pub type DiffTreeEntry = EitherOrBoth<TreeEntry, TreeEntry>;
 
+pub struct IntoIterDiff(Box<dyn Iterator<Item = DiffTreeEntry>>);
+
 pub struct IntoRecursiveIterDiff {
     prefix: BString,
-    stack: Vec<(Box<dyn Iterator<Item = DiffTreeEntry>>, usize)>,
+    stack: Vec<(IntoIterDiff, usize)>,
 }
 
 impl RawTree {
@@ -55,30 +57,32 @@ impl RawTree {
         }
     }
 
-    pub fn into_diff(self, other: RawTree) -> impl Iterator<Item = DiffTreeEntry> {
-        Itertools::merge_join_by(self.into_iter(), other.into_iter(), |a, b| {
-            // Trees need to be sorted as if they were recursed, so that
-            // foo.bar comes before foo when foo is a tree.
-            let mut path_a = Cow::Borrowed(&*a.path);
-            if a.oid.is_tree() {
-                path_a.to_mut().push(b'/');
-            }
-            let mut path_b = Cow::Borrowed(&*b.path);
-            if b.oid.is_tree() {
-                path_b.to_mut().push(b'/');
-            }
-            <[u8]>::cmp(&path_a, &path_b)
-        })
-        .filter(|entry| match entry {
-            Both(a, b) => a != b,
-            _ => true,
-        })
+    pub fn into_diff(self, other: RawTree) -> IntoIterDiff {
+        IntoIterDiff(Box::new(
+            Itertools::merge_join_by(self.into_iter(), other.into_iter(), |a, b| {
+                // Trees need to be sorted as if they were recursed, so that
+                // foo.bar comes before foo when foo is a tree.
+                let mut path_a = Cow::Borrowed(&*a.path);
+                if a.oid.is_tree() {
+                    path_a.to_mut().push(b'/');
+                }
+                let mut path_b = Cow::Borrowed(&*b.path);
+                if b.oid.is_tree() {
+                    path_b.to_mut().push(b'/');
+                }
+                <[u8]>::cmp(&path_a, &path_b)
+            })
+            .filter(|entry| match entry {
+                Both(a, b) => a != b,
+                _ => true,
+            }),
+        ))
     }
 
     pub fn into_recursive_diff(self, other: RawTree) -> IntoRecursiveIterDiff {
         IntoRecursiveIterDiff {
             prefix: BString::from(Vec::<u8>::new()),
-            stack: vec![(Box::new(Self::into_diff(self, other)), 0)],
+            stack: vec![(Self::into_diff(self, other), 0)],
         }
     }
 }
@@ -120,6 +124,14 @@ impl Iterator for IntoIterTree {
             })()
             .expect("malformed tree"),
         )
+    }
+}
+
+impl Iterator for IntoIterDiff {
+    type Item = DiffTreeEntry;
+
+    fn next(&mut self) -> Option<DiffTreeEntry> {
+        self.0.next()
     }
 }
 
@@ -220,7 +232,7 @@ impl Iterator for IntoRecursiveIterDiff {
                     if let Some(trees) = trees {
                         let (a, b) = trees.or(RawTree::EMPTY, RawTree::EMPTY);
                         self.stack
-                            .push((Box::new(RawTree::into_diff(a, b)), self.prefix.len()));
+                            .push((RawTree::into_diff(a, b), self.prefix.len()));
                         self.prefix.extend_from_slice(path);
                         self.prefix.push(b'/');
                     }
