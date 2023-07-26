@@ -40,7 +40,7 @@ use crate::hg_bundle::{
     read_rev_chunk, rev_chunk, BundlePartInfo, BundleSpec, BundleWriter, RevChunkIter,
 };
 use crate::hg_connect_http::HttpRequest;
-use crate::hg_data::{GitAuthorship, HgAuthorship, HgCommitter};
+use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{files_meta, generate_manifest, git2hg, hg2git, hg_object_id};
 use crate::libgit::{
     get_oid_blob, get_oid_committish, ls_tree, object_id, strbuf, Commit, RawBlob, RawCommit,
@@ -1193,6 +1193,38 @@ pub fn create_changeset(
 extern "C" {
     pub fn store_manifest(chunk: *const rev_chunk);
     fn store_file(chunk: *const rev_chunk);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn check_manifest(oid: *const object_id) -> c_int {
+    let git_manifest_id =
+        GitManifestId::from_raw_bytes(oid.as_ref().unwrap().as_raw_bytes()).unwrap();
+    let manifest_commit = RawCommit::read(git_manifest_id.into()).unwrap();
+    let manifest_commit = manifest_commit.parse().unwrap();
+    let manifest_id = HgManifestId::from_bytes(manifest_commit.body()).unwrap();
+
+    let parents = manifest_commit
+        .parents()
+        .iter()
+        .map(|p| {
+            let manifest_commit = RawCommit::read(*p).unwrap();
+            let manifest_commit = manifest_commit.parse().unwrap();
+            HgManifestId::from_bytes(manifest_commit.body()).unwrap()
+        })
+        .collect_vec();
+    let manifest = RawHgManifest::read(git_manifest_id).unwrap();
+
+    let computed = hash_data(
+        parents.get(0).copied().map(Into::into),
+        parents.get(1).copied().map(Into::into),
+        manifest.as_ref(),
+    );
+
+    if computed == manifest_id {
+        1
+    } else {
+        0
+    }
 }
 
 static STORED_FILES: Mutex<BTreeMap<HgFileId, [HgFileId; 2]>> = Mutex::new(BTreeMap::new());

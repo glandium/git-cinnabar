@@ -130,11 +130,11 @@ use libgit::{
 use oid::{Abbrev, ObjectId};
 use progress::Progress;
 use store::{
-    check_file, create_changeset, do_check_files, do_set, ensure_store_init, get_tags,
-    has_metadata, raw_commit_for_changeset, store_git_blob, store_manifest, ChangesetHeads,
-    GeneratedGitChangesetMetadata, RawGitChangesetMetadata, RawHgChangeset, RawHgFile,
-    RawHgManifest, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX,
-    REPLACE_REFS_PREFIX,
+    check_file, check_manifest, create_changeset, do_check_files, do_set, ensure_store_init,
+    get_tags, has_metadata, raw_commit_for_changeset, store_git_blob, store_manifest,
+    ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata, RawHgChangeset,
+    RawHgFile, RawHgManifest, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF, METADATA_REF, NOTES_REF,
+    REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use util::{CStrExt, IteratorExt, OsStrExt, SliceExt};
 
@@ -1780,10 +1780,6 @@ pub fn do_create_bundle(
     Ok(create_bundle(
         changesets, bundlespec, version, output, replycaps,
     ))
-}
-
-extern "C" {
-    fn check_manifest(oid: *const object_id) -> c_int;
 }
 
 fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, String> {
