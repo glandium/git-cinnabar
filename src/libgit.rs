@@ -819,7 +819,7 @@ pub fn diff_tree(a: CommitId, b: CommitId) -> impl Iterator<Item = DiffTreeItem>
     let b = RawCommit::read(b).unwrap();
     let b = b.parse().unwrap();
     let b = RawTree::read(b.tree()).unwrap();
-    RawTree::into_recursive_diff(a, b).map(|entry| match entry {
+    RawTree::into_diff(a, b).recurse().map(|entry| match entry {
         Both(a, b) => DiffTreeItem::Modified {
             path: a.path,
             from_mode: a.mode,
@@ -1158,7 +1158,7 @@ pub struct LsTreeError;
 pub fn ls_tree(tree_id: TreeId) -> Result<impl Iterator<Item = TreeEntry>, LsTreeError> {
     RawTree::read(tree_id)
         .ok_or(LsTreeError)
-        .map(RawTree::into_recursive_iter)
+        .map(|tree| tree.into_iter().recurse())
 }
 
 extern "C" {

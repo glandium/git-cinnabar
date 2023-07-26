@@ -50,13 +50,6 @@ pub struct IntoRecursiveIterDiff {
 }
 
 impl RawTree {
-    pub fn into_recursive_iter(self) -> IntoRecursiveIterTree {
-        IntoRecursiveIterTree {
-            prefix: BString::from(Vec::<u8>::new()),
-            stack: vec![(self.into_iter(), 0)],
-        }
-    }
-
     pub fn into_diff(self, other: RawTree) -> IntoIterDiff {
         IntoIterDiff(Box::new(
             Itertools::merge_join_by(self.into_iter(), other.into_iter(), |a, b| {
@@ -77,13 +70,6 @@ impl RawTree {
                 _ => true,
             }),
         ))
-    }
-
-    pub fn into_recursive_diff(self, other: RawTree) -> IntoRecursiveIterDiff {
-        IntoRecursiveIterDiff {
-            prefix: BString::from(Vec::<u8>::new()),
-            stack: vec![(Self::into_diff(self, other), 0)],
-        }
     }
 }
 
@@ -127,11 +113,29 @@ impl Iterator for IntoIterTree {
     }
 }
 
+impl IntoIterTree {
+    pub fn recurse(self) -> IntoRecursiveIterTree {
+        IntoRecursiveIterTree {
+            prefix: BString::from(Vec::new()),
+            stack: vec![(self, 0)],
+        }
+    }
+}
+
 impl Iterator for IntoIterDiff {
     type Item = DiffTreeEntry;
 
     fn next(&mut self) -> Option<DiffTreeEntry> {
         self.0.next()
+    }
+}
+
+impl IntoIterDiff {
+    pub fn recurse(self) -> IntoRecursiveIterDiff {
+        IntoRecursiveIterDiff {
+            prefix: BString::from(Vec::new()),
+            stack: vec![(self, 0)],
+        }
     }
 }
 
