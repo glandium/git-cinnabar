@@ -50,6 +50,7 @@ use byteorder::{BigEndian, WriteBytesExt};
 use clap::{crate_version, ArgGroup, Parser};
 use hg_bundle::{create_bundle, create_chunk_data, BundleSpec, RevChunkIter};
 use indexmap::IndexSet;
+use itertools::EitherOrBoth::{Both, Left, Right};
 use itertools::{EitherOrBoth, Itertools};
 use logging::{LoggingReader, LoggingWriter};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
@@ -2801,51 +2802,19 @@ fn manifest_diff2(
     c: CommitId,
     all: bool,
 ) -> impl Iterator<Item = (Box<[u8]>, HgFileId, [HgFileId; 2])> {
-    let mut iter1 = manifest_diff(a, c);
-    let mut iter2 = manifest_diff(b, c);
-    let mut item1 = iter1.next();
-    let mut item2 = iter2.next();
-    let mut result = Vec::new();
-    loop {
-        while let Some((path, oid, parent_oid)) = item1.as_ref() {
-            if let Some((path2, ..)) = &item2 {
-                if path >= path2 {
-                    break;
-                }
-            }
-            if all {
-                result.push((path.clone(), *oid, [*parent_oid, *oid]));
-            }
-            item1 = iter1.next();
+    Itertools::merge_join_by(manifest_diff(a, c), manifest_diff(b, c), |x, y| {
+        x.0.cmp(&y.0)
+    })
+    .filter_map(move |y| match y {
+        Left((path, c, a)) if all => Some((path, c, [a, c])),
+        Right((path, c, b)) if all => Some((path, c, [c, b])),
+        Both((path, c, a), (path2, c2, b)) => {
+            assert_eq!(path, path2);
+            assert_eq!(c, c2);
+            Some((path, c, [a, b]))
         }
-        while let Some((path, oid, parent_oid)) = item2.as_ref() {
-            if let Some((path1, ..)) = &item1 {
-                if path >= path1 {
-                    break;
-                }
-            }
-            if all {
-                result.push((path.clone(), *oid, [*oid, *parent_oid]));
-            }
-            item2 = iter2.next();
-        }
-        if item1.is_none() && item2.is_none() {
-            break;
-        }
-        if item1.is_some()
-            && item2.is_some()
-            && item1.as_ref().unwrap().0 == item2.as_ref().unwrap().0
-        {
-            let (_, oid1, parent_oid1) = item1.as_ref().unwrap();
-            let (path, oid2, parent_oid2) = item2.as_ref().unwrap();
-            assert_eq!(oid1, oid2);
-            result.push((path.clone(), *oid1, [*parent_oid1, *parent_oid2]));
-
-            item1 = iter1.next();
-            item2 = iter2.next();
-        }
-    }
-    result.into_iter()
+        _ => None,
+    })
 }
 
 #[derive(Clone, Debug)]
