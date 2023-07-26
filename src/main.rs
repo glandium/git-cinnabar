@@ -114,8 +114,7 @@ use crate::progress::set_progress;
 use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads, Dag, Traversal};
 use crate::util::{FromBytes, ToBoxed};
 use cinnabar::{GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId};
-use git::{BlobId, CommitId};
-use git::{GitObjectId, GitOid};
+use git::{BlobId, CommitId, GitObjectId};
 use graft::{graft_finish, grafted, init_graft};
 use hg::HgObjectId;
 use hg::{HgChangesetId, HgFileId, HgManifestId};
@@ -1616,11 +1615,10 @@ fn create_merge_changeset(
             let commit = RawCommit::read(cid).unwrap();
             let commit = commit.parse().unwrap();
             for (path, oid, parents) in get_changes(cid, commit.parents(), false) {
-                let oid = HgFileId::from_raw_bytes(oid.as_raw_bytes()).unwrap();
                 let path = manifest_path(&path);
                 let parents = parents
                     .iter()
-                    .map(|p| HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap())
+                    .copied()
                     .filter(|p| !p.is_null())
                     .collect_vec();
                 let dag = file_dags.entry(path).or_insert_with(Dag::new);
@@ -2075,16 +2073,21 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         if unsafe { check_manifest(&object_id::from(git_mid), std::ptr::null_mut()) } != 1 {
             report(format!("Sha1 mismatch for manifest {}", git_mid));
         }
-        let files: Vec<(_, CommitId)> = if let Some(previous) = previous {
+        let files: Vec<(_, HgFileId)> = if let Some(previous) = previous {
             diff_tree(previous, mid)
                 .filter_map(|item| match item {
-                    DiffTreeItem::Added { path, oid, .. } => Some((path, oid.try_into().unwrap())),
+                    DiffTreeItem::Added { path, oid, .. } => {
+                        Some((path, HgFileId::from_raw_bytes(oid.as_raw_bytes()).unwrap()))
+                    }
                     DiffTreeItem::Modified {
                         path,
                         from_oid,
                         to_oid,
                         ..
-                    } if from_oid != to_oid => Some((path, to_oid.try_into().unwrap())),
+                    } if from_oid != to_oid => Some((
+                        path,
+                        HgFileId::from_raw_bytes(to_oid.as_raw_bytes()).unwrap(),
+                    )),
                     _ => None,
                 })
                 .filter(|pair| !all_interesting.contains(pair))
@@ -2092,7 +2095,12 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         } else {
             ls_tree(commit.tree())
                 .unwrap()
-                .map(|item| (item.path, item.oid.try_into().unwrap()))
+                .map(|item| {
+                    (
+                        item.path,
+                        HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
+                    )
+                })
                 .filter(|pair| !all_interesting.contains(pair))
                 .collect_vec()
         };
@@ -2107,13 +2115,18 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         if let Some(previous) = previous {
             diff_tree(previous, r)
                 .filter_map(|item| match item {
-                    DiffTreeItem::Added { path, oid, .. } => Some((path, oid.try_into().unwrap())),
+                    DiffTreeItem::Added { path, oid, .. } => {
+                        Some((path, HgFileId::from_raw_bytes(oid.as_raw_bytes()).unwrap()))
+                    }
                     DiffTreeItem::Modified {
                         path,
                         from_oid,
                         to_oid,
                         ..
-                    } if from_oid != to_oid => Some((path, to_oid.try_into().unwrap())),
+                    } if from_oid != to_oid => Some((
+                        path,
+                        HgFileId::from_raw_bytes(to_oid.as_raw_bytes()).unwrap(),
+                    )),
                     _ => None,
                 })
                 .for_each(|item| {
@@ -2124,7 +2137,10 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             let commit = RawCommit::read(r).unwrap();
             let commit = commit.parse().unwrap();
             for item in ls_tree(commit.tree()).unwrap() {
-                all_interesting.remove(&(item.path, item.oid.try_into().unwrap()));
+                all_interesting.remove(&(
+                    item.path,
+                    HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
+                ));
             }
         }
         previous = Some(r);
@@ -2145,19 +2161,13 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             // in the first place, or it's the parent of a file we have checked.
             // Either way, we aren't interested in the parents.
             for p in hg_fileparents.iter() {
-                all_interesting.remove(&(path.clone(), (*p).try_into().unwrap()));
+                all_interesting.remove(&(path.clone(), *p));
             }
-            if let Some((path, hg_file)) =
-                all_interesting.take(&(path, hg_file.try_into().unwrap()))
-            {
+            if let Some((path, hg_file)) = all_interesting.take(&(path, hg_file)) {
                 if !check_file(
-                    HgFileId::from_raw_bytes(hg_file.as_raw_bytes()).unwrap(),
-                    hg_fileparents.get(0).map_or(HgFileId::NULL, |p| {
-                        HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
-                    }),
-                    hg_fileparents.get(1).map_or(HgFileId::NULL, |p| {
-                        HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
-                    }),
+                    hg_file,
+                    hg_fileparents.get(0).copied().unwrap_or(HgFileId::NULL),
+                    hg_fileparents.get(1).copied().unwrap_or(HgFileId::NULL),
                 ) {
                     report(format!(
                         "Sha1 mismatch for file {}\n\
@@ -2165,14 +2175,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
                         manifest_path(&path),
                         hg_file
                     ));
-                    let print_parents = hg_fileparents
-                        .iter()
-                        .filter(|p| {
-                            !HgFileId::from_raw_bytes(p.as_raw_bytes())
-                                .unwrap()
-                                .is_null()
-                        })
-                        .join(" ");
+                    let print_parents = hg_fileparents.iter().filter(|p| !p.is_null()).join(" ");
                     if !print_parents.is_empty() {
                         report(format!(
                             "  with parent{} {}",
@@ -2509,7 +2512,6 @@ fn do_fsck_full(
         for (path, hg_file, hg_fileparents) in
             get_changes(manifest_cid.into(), &git_manifest_parents, false)
         {
-            let hg_file = HgFileId::from_raw_bytes(hg_file.as_raw_bytes()).unwrap();
             if hg_file.is_null() || hg_file == RawHgFile::EMPTY_OID || !seen_files.insert(hg_file) {
                 continue;
             }
@@ -2517,12 +2519,8 @@ fn do_fsck_full(
             // TODO: add FileFindParents logging.
             !check_file(
                 hg_file,
-                hg_fileparents.get(0).map_or(HgFileId::NULL, |p| {
-                    HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
-                }),
-                hg_fileparents.get(1).map_or(HgFileId::NULL, |p| {
-                    HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
-                }),
+                hg_fileparents.get(0).copied().unwrap_or(HgFileId::NULL),
+                hg_fileparents.get(1).copied().unwrap_or(HgFileId::NULL),
             ) {
                 report(format!(
                     "Sha1 mismatch for file {}\n\
@@ -2530,14 +2528,7 @@ fn do_fsck_full(
                     manifest_path(&path),
                     hg_file
                 ));
-                let print_parents = hg_fileparents
-                    .iter()
-                    .filter(|p| {
-                        !HgFileId::from_raw_bytes(p.as_raw_bytes())
-                            .unwrap()
-                            .is_null()
-                    })
-                    .join(" ");
+                let print_parents = hg_fileparents.iter().filter(|p| !p.is_null()).join(" ");
                 if !print_parents.is_empty() {
                     report(format!(
                         "  with parent{} {}",
@@ -2749,14 +2740,20 @@ fn get_changes(
     cid: CommitId,
     parents: &[CommitId],
     all: bool,
-) -> impl Iterator<Item = (Box<[u8]>, GitOid, Box<[GitOid]>)> {
+) -> impl Iterator<Item = (Box<[u8]>, HgFileId, Box<[HgFileId]>)> {
     if parents.is_empty() {
         // Yes, this is ridiculous.
         let commit = RawCommit::read(cid).unwrap();
         let commit = commit.parse().unwrap();
         ls_tree(commit.tree())
             .unwrap()
-            .map(|item| (item.path, item.oid, [].to_boxed()))
+            .map(|item| {
+                (
+                    item.path,
+                    HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
+                    [].to_boxed(),
+                )
+            })
             .collect_vec()
             .into_iter()
     } else if parents.len() == 1 {
@@ -2772,18 +2769,31 @@ fn get_changes(
     }
 }
 
-fn manifest_diff(a: CommitId, b: CommitId) -> impl Iterator<Item = (Box<[u8]>, GitOid, GitOid)> {
+fn manifest_diff(
+    a: CommitId,
+    b: CommitId,
+) -> impl Iterator<Item = (Box<[u8]>, HgFileId, HgFileId)> {
     diff_tree(a, b).filter_map(|item| match item {
-        DiffTreeItem::Added { path, oid, .. } => Some((path, oid, GitOid::Commit(CommitId::NULL))),
+        DiffTreeItem::Added { path, oid, .. } => Some((
+            path,
+            HgFileId::from_raw_bytes(oid.as_raw_bytes()).unwrap(),
+            HgFileId::NULL,
+        )),
         DiffTreeItem::Modified {
             path,
             from_oid,
             to_oid,
             ..
-        } if from_oid != to_oid => Some((path, to_oid, from_oid)),
-        DiffTreeItem::Deleted { path, oid, .. } => {
-            Some((path, GitOid::Commit(CommitId::NULL), oid))
-        }
+        } if from_oid != to_oid => Some((
+            path,
+            HgFileId::from_raw_bytes(to_oid.as_raw_bytes()).unwrap(),
+            HgFileId::from_raw_bytes(from_oid.as_raw_bytes()).unwrap(),
+        )),
+        DiffTreeItem::Deleted { path, oid, .. } => Some((
+            path,
+            HgFileId::NULL,
+            HgFileId::from_raw_bytes(oid.as_raw_bytes()).unwrap(),
+        )),
         _ => None,
     })
 }
@@ -2793,7 +2803,7 @@ fn manifest_diff2(
     b: CommitId,
     c: CommitId,
     all: bool,
-) -> impl Iterator<Item = (Box<[u8]>, GitOid, [GitOid; 2])> {
+) -> impl Iterator<Item = (Box<[u8]>, HgFileId, [HgFileId; 2])> {
     let mut iter1 = manifest_diff(a, c);
     let mut iter2 = manifest_diff(b, c);
     let mut item1 = iter1.next();

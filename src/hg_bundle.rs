@@ -1111,22 +1111,15 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
             .filter_map(|p| (!p.is_null()).then(|| (p.to_git().unwrap().into())))
             .collect_vec();
         for (path, hg_file, hg_fileparents) in get_changes(git_node.into(), &git_parents, false) {
-            if !HgFileId::from_raw_bytes(hg_file.as_raw_bytes())
-                .unwrap()
-                .is_null()
-            {
+            if !hg_file.is_null() {
                 files
                     .entry(path)
                     .or_insert_with(IndexMap::new)
-                    .entry(HgFileId::from_raw_bytes(hg_file.as_raw_bytes()).unwrap())
+                    .entry(hg_file)
                     .or_insert_with(|| {
                         (
-                            hg_fileparents.get(0).map_or(HgFileId::NULL, |p| {
-                                HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
-                            }),
-                            hg_fileparents.get(1).map_or(HgFileId::NULL, |p| {
-                                HgFileId::from_raw_bytes(p.as_raw_bytes()).unwrap()
-                            }),
+                            hg_fileparents.get(0).copied().unwrap_or(HgFileId::NULL),
+                            hg_fileparents.get(1).copied().unwrap_or(HgFileId::NULL),
                             changeset,
                         )
                     });
