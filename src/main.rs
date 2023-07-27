@@ -1338,82 +1338,47 @@ fn create_root_changeset(cid: CommitId) -> HgChangesetId {
     csid
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum ManifestLine<'a> {
-    Line {
-        line: &'a BStr,
-        path_len: usize,
-    },
-    Content {
-        path: &'a BStr,
-        fid: HgFileId,
-        mode: FileMode,
-    },
-}
+type ManifestLine = WithPath<(HgFileId, FileMode)>;
 
-impl<'a> From<&'a [u8]> for ManifestLine<'a> {
+impl<'a> From<&'a [u8]> for ManifestLine {
     fn from(line: &'a [u8]) -> Self {
-        ManifestLine::Line {
-            line: line.as_bstr(),
-            path_len: line.find_byte(b'\0').unwrap(),
-        }
+        let [path, remainder] = line.splitn_exact(b'\0').unwrap();
+        let fid = HgFileId::from_bytes(&remainder[..40]).unwrap();
+        let mode = git_mode(&remainder[40..]);
+        (path, fid, mode).into()
     }
 }
 
-impl<'a> From<(&'a [u8], HgFileId, FileMode)> for ManifestLine<'a> {
+impl<'a> From<(&'a [u8], HgFileId, FileMode)> for ManifestLine {
     fn from((path, fid, mode): (&'a [u8], HgFileId, FileMode)) -> Self {
-        ManifestLine::Content {
-            path: path.as_bstr(),
-            fid,
-            mode,
-        }
+        WithPath::new(path, (fid, mode))
     }
 }
-impl<'a> ManifestLine<'a> {
-    fn path(&self) -> &BStr {
-        match self {
-            ManifestLine::Line { line, path_len } => line[..*path_len].as_bstr(),
-            ManifestLine::Content { path, .. } => path,
-        }
-    }
-
+impl ManifestLine {
     fn fid(&self) -> HgFileId {
-        match self {
-            ManifestLine::Line { line, path_len } => {
-                HgFileId::from_bytes(&line[path_len + 1..][..40]).unwrap()
-            }
-            ManifestLine::Content { fid, .. } => *fid,
-        }
+        self.inner().0
     }
 
     fn mode(&self) -> FileMode {
-        match self {
-            ManifestLine::Line { line, path_len } => git_mode(&line[path_len + 41..]),
-            ManifestLine::Content { mode, .. } => *mode,
-        }
+        self.inner().1
     }
 
     fn write_into(&self, buf: &mut Vec<u8>) {
-        match self {
-            ManifestLine::Line { line, .. } => buf.extend_from_slice(line),
-            ManifestLine::Content { path, fid, mode } => {
-                buf.extend_from_slice(path);
-                buf.push(b'\0');
-                write!(buf, "{}", fid).unwrap();
-                buf.extend_from_slice(hg_attr(*mode));
-            }
-        }
+        buf.extend_from_slice(self.path());
+        buf.push(b'\0');
+        write!(buf, "{}", self.fid()).unwrap();
+        buf.extend_from_slice(hg_attr(self.mode()));
         buf.push(b'\n');
     }
 }
 
-impl<'a> Hash for ManifestLine<'a> {
+impl Hash for ManifestLine {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.path().hash(state);
     }
 }
 
-impl<'a> Borrow<[u8]> for ManifestLine<'a> {
+impl Borrow<[u8]> for ManifestLine {
     fn borrow(&self) -> &[u8] {
         self.path()
     }
