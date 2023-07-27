@@ -254,32 +254,27 @@ impl Iterator for IntoRecursiveIterDiff {
         loop {
             if let Some((diff, prefix_len)) = self.stack.last_mut() {
                 if let Some(entry) = diff.next() {
-                    let non_trees = entry.as_ref().filter(|e| !e.oid.is_tree());
-                    let trees = entry.as_ref().filter_map(|e| {
-                        e.oid
-                            .try_into()
-                            .ok()
-                            .map(|tree_id| RawTree::read(tree_id).unwrap())
+                    let is_tree = entry.as_ref().map(|e| e.oid.is_tree()).reduce(|a, b| {
+                        assert_eq!(a, b);
+                        a && b
                     });
-                    let path = entry.as_ref().map(|e| &e.path).reduce(|a, _| a);
-                    let result = non_trees.map(|non_trees| {
+                    let path = &entry.as_ref().reduce(|a, _| a).path;
+                    if is_tree {
+                        let len = self.prefix.len();
+                        self.prefix.extend_from_slice(path);
+                        self.prefix.push(b'/');
+                        let (a, b) = entry
+                            .map(|e| RawTree::read(e.oid.try_into().unwrap()).unwrap())
+                            .or(RawTree::EMPTY, RawTree::EMPTY);
+                        self.stack.push((RawTree::into_diff(a, b), len));
+                    } else {
                         let mut full_path = self.prefix.clone();
-                        full_path.extend_from_slice(&entry.as_ref().reduce(|a, _| a).path);
-                        non_trees.map(|e| TreeEntry {
+                        full_path.extend_from_slice(path);
+                        return Some(entry.map(|e| TreeEntry {
                             oid: e.oid,
                             path: full_path.to_vec().into_boxed_slice(),
                             mode: e.mode,
-                        })
-                    });
-                    if let Some(trees) = trees {
-                        let (a, b) = trees.or(RawTree::EMPTY, RawTree::EMPTY);
-                        self.stack
-                            .push((RawTree::into_diff(a, b), self.prefix.len()));
-                        self.prefix.extend_from_slice(path);
-                        self.prefix.push(b'/');
-                    }
-                    if result.is_some() {
-                        return result;
+                        }));
                     }
                 } else {
                     self.prefix.truncate(*prefix_len);
