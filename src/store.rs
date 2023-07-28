@@ -43,7 +43,7 @@ use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{files_meta, generate_manifest, git2hg, hg2git, hg_object_id};
 use crate::libgit::{
-    get_oid_blob, get_oid_committish, ls_tree, object_id, strbuf, Commit, RawBlob, RawCommit,
+    die, get_oid_blob, get_oid_committish, ls_tree, object_id, strbuf, Commit, RawBlob, RawCommit,
     RawTree, RefTransaction,
 };
 use crate::oid::ObjectId;

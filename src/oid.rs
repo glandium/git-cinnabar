@@ -38,7 +38,6 @@ pub trait ObjectId: Sized + Copy {
     }
 }
 
-#[macro_export]
 macro_rules! oid_impl {
     ($name:ident($base_type:ty)) => {
         impl From<$name> for $base_type {
@@ -66,11 +65,11 @@ macro_rules! oid_impl {
         }
     };
 }
+pub(crate) use oid_impl;
 
-#[macro_export]
 macro_rules! oid_type {
     ($name:ident($base_type:ident)) => {
-        oid_type!($name for <$base_type as $crate::oid::ObjectId>::Digest);
+        $crate::oid::oid_type!($name for <$base_type as $crate::oid::ObjectId>::Digest);
 
         impl $name {
             pub fn from_unchecked(o: $base_type) -> Self {
@@ -79,7 +78,7 @@ macro_rules! oid_type {
             }
         }
 
-        oid_impl!($name($base_type));
+        $crate::oid::oid_impl!($name($base_type));
     };
     ($name:ident for $typ:ty) => {
         #[repr(C)]
@@ -121,8 +120,8 @@ macro_rules! oid_type {
             }
         }
 
-        derive_debug_display!($name);
-        derive_debug_display!($crate::oid::Abbrev<$name>);
+        $crate::util::derive_debug_display!($name);
+        $crate::util::derive_debug_display!($crate::oid::Abbrev<$name>);
         impl ::std::str::FromStr for $name {
             type Err = hex::FromHexError;
             fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -134,6 +133,7 @@ macro_rules! oid_type {
         }
     };
 }
+pub(crate) use oid_type;
 
 pub struct OidCreator<O: ObjectId>(O::Digest);
 

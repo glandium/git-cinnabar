@@ -3,5 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use super::HgObjectId;
+use crate::oid::oid_type;
 
 oid_type!(HgManifestId(HgObjectId));

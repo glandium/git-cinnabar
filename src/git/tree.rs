@@ -9,8 +9,7 @@ use digest::OutputSizeUser;
 use itertools::EitherOrBoth::{self, Both, Left, Right};
 use itertools::Itertools;
 
-use super::{GitObjectId, GitOid};
-use crate::git_oid_type;
+use super::{git_oid_type, GitObjectId, GitOid};
 use crate::libgit::{FileMode, RawTree};
 use crate::oid::ObjectId;
 use crate::util::{FromBytes, ImmutBString, SliceExt};

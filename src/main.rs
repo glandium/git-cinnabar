@@ -56,27 +56,21 @@ use logging::{LoggingReader, LoggingWriter};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
 use sha1::{Digest, Sha1};
 
-#[macro_use]
-mod util;
-#[macro_use]
-mod oid;
-#[macro_use]
-pub mod libgit;
-#[macro_use]
 mod cinnabar;
-#[macro_use]
 mod git;
 mod graft;
 mod hg;
 mod libc;
 mod libcinnabar;
+pub mod libgit;
 mod logging;
+mod oid;
 mod progress;
 pub mod store;
+mod util;
 mod xdiff;
 
 pub(crate) mod hg_bundle;
-#[macro_use]
 pub mod hg_connect;
 pub(crate) mod hg_connect_http;
 pub(crate) mod hg_connect_stdio;
@@ -122,7 +116,7 @@ use hg::{HgChangesetId, HgFileId, HgManifestId};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
 use libcinnabar::{files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
-    config_get_value, diff_tree, diff_tree_with_copies, for_each_ref_in, for_each_remote,
+    config_get_value, die, diff_tree, diff_tree_with_copies, for_each_ref_in, for_each_remote,
     get_oid_committish, lookup_replace_commit, ls_tree, metadata_oid, object_id, reachable_subset,
     remote, resolve_ref, rev_list, rev_list_with_boundaries, strbuf, DiffTreeItem, FileMode,
     MaybeBoundary, RawBlob, RawCommit, RefTransaction,

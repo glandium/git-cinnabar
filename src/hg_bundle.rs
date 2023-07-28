@@ -30,7 +30,7 @@ use crate::git::CommitId;
 use crate::hg::{HgChangesetId, HgFileId, HgManifestId};
 use crate::hg_connect::{encodecaps, HgConnection, HgConnectionBase, HgRepo};
 use crate::hg_data::find_file_parents;
-use crate::libgit::RawCommit;
+use crate::libgit::{die, RawCommit};
 use crate::progress::Progress;
 use crate::store::{
     ChangesetHeads, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest,

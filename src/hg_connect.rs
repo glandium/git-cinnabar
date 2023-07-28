@@ -23,7 +23,7 @@ use crate::hg::HgChangesetId;
 use crate::hg_bundle::{BundleReader, BundleSpec};
 use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
-use crate::libgit::{rev_list, RawCommit};
+use crate::libgit::{die, rev_list, RawCommit};
 use crate::oid::ObjectId;
 use crate::store::{
     has_metadata, merge_metadata, store_changegroup, Dag, Traversal, CHANGESET_HEADS,
@@ -41,21 +41,21 @@ pub struct HgArgs<'a> {
     pub extra_args: Option<&'a [OneHgArg<'a>]>,
 }
 
-#[macro_export]
 macro_rules! args {
     ($($n:ident : $v:expr,)* $(*: $a:expr)?) => {
         HgArgs {
-            args: $crate::args!(@args $($n:$v),*),
-            extra_args: $crate::args!(@extra $($a)?),
+            args: $crate::hg_connect::args!(@args $($n:$v),*),
+            extra_args: $crate::hg_connect::args!(@extra $($a)?),
         }
     };
-    ($($n:ident : $v:expr),*) => { $crate::args!($($n:$v,)*) };
+    ($($n:ident : $v:expr),*) => { $crate::hg_connect::args!($($n:$v,)*) };
     (@args $($n:ident : $v:expr),*) => {&[
         $(OneHgArg { name: stringify!($n), value: $v }),*
     ]};
     (@extra) => { None };
     (@extra $a:expr) => { Some($a) };
 }
+pub(crate) use args;
 
 #[derive(Default)]
 pub struct HgCapabilities {

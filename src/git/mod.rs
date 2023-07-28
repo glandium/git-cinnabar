@@ -13,14 +13,13 @@ mod tree;
 pub use tree::*;
 
 use crate::libgit::FileMode;
-use crate::oid::ObjectId;
+use crate::oid::{oid_type, ObjectId};
 
 oid_type!(GitObjectId for Sha1);
 
-#[macro_export]
 macro_rules! git_oid_type {
     ($name:ident($base_type:ident)) => {
-        oid_type!($name($base_type));
+        $crate::oid::oid_type!($name($base_type));
 
         impl From<$name> for $crate::libgit::object_id {
             fn from(oid: $name) -> $crate::libgit::object_id {
@@ -28,7 +27,7 @@ macro_rules! git_oid_type {
             }
         }
 
-        git_oid_type!(@ $name($base_type));
+        $crate::git::git_oid_type!(@ $name($base_type));
     };
     (@ $name:ident(GitObjectId)) => {
         impl PartialEq<$name> for $crate::git::GitOid {
@@ -45,7 +44,7 @@ macro_rules! git_oid_type {
 
     };
     (@ $name:ident($base_type:ident)) => {
-        oid_impl!($name($crate::git::GitObjectId));
+        $crate::oid::oid_impl!($name($crate::git::GitObjectId));
 
         impl PartialEq<$name> for $crate::git::GitOid {
             fn eq(&self, other: &$name) -> bool {
@@ -60,6 +59,7 @@ macro_rules! git_oid_type {
         }
     };
 }
+pub(crate) use git_oid_type;
 
 #[derive(Clone, Copy, From, TryInto, Debug, PartialEq, Eq)]
 pub enum GitOid {

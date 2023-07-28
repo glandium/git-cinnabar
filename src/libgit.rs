@@ -136,6 +136,7 @@ macro_rules! die {
         panic!($($e),+)
     }
 }
+pub(crate) use die;
 
 extern "C" {
     pub fn credential_fill(auth: *mut credential);

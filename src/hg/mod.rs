@@ -10,6 +10,7 @@ mod file;
 pub use file::*;
 mod manifest;
 pub use manifest::*;
+use crate::oid::oid_type;
 
 oid_type!(HgObjectId for Sha1);
 

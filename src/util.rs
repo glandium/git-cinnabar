@@ -14,7 +14,6 @@ use std::str::{self, FromStr};
 
 use bstr::{BStr, ByteSlice};
 
-#[macro_export]
 macro_rules! derive_debug_display {
     ($typ:ty) => {
         impl ::std::fmt::Debug for $typ
@@ -29,6 +28,7 @@ macro_rules! derive_debug_display {
         }
     };
 }
+pub(crate) use derive_debug_display;
 
 pub struct PrefixWriter<W: Write> {
     prefix: ImmutString,

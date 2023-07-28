@@ -16,10 +16,9 @@ use itertools::Itertools;
 use percent_encoding::percent_decode_str;
 use url::Url;
 
-use crate::args;
 use crate::hg_bundle::BundleConnection;
 use crate::hg_connect::{
-    HgArgs, HgCapabilities, HgConnectionBase, HgRepo, HgWireConnection, HgWired, OneHgArg,
+    args, HgArgs, HgCapabilities, HgConnectionBase, HgRepo, HgWireConnection, HgWired, OneHgArg,
     UnbundleResponse,
 };
 use crate::libc::FdFile;

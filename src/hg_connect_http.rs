@@ -35,15 +35,14 @@ use once_cell::sync::Lazy;
 use url::{form_urlencoded, Url};
 use zstd::stream::read::Decoder as ZstdDecoder;
 
-use crate::args;
 use crate::hg_bundle::BundleConnection;
 use crate::hg_connect::{
-    HgArgs, HgCapabilities, HgConnectionBase, HgRepo, HgWireConnection, HgWired, OneHgArg,
+    args, HgArgs, HgCapabilities, HgConnectionBase, HgRepo, HgWireConnection, HgWired, OneHgArg,
     UnbundleResponse,
 };
 use crate::libgit::{
-    credential_fill, curl_errorstr, get_active_slot, http_auth, http_follow_config, run_one_slot,
-    slot_results, ssl_cainfo, HTTP_OK, HTTP_REAUTH,
+    credential_fill, curl_errorstr, die, get_active_slot, http_auth, http_follow_config,
+    run_one_slot, slot_results, ssl_cainfo, HTTP_OK, HTTP_REAUTH,
 };
 use crate::util::{ImmutBString, OsStrExt, PrefixWriter, ReadExt, SeekExt, SliceExt, ToBoxed};
 
