@@ -5,15 +5,14 @@
 use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
-use std::env;
 use std::ffi::OsStr;
 use std::io::{copy, BufRead, BufReader, Read, Write};
 use std::iter::{repeat, IntoIterator};
-use std::mem;
 use std::num::NonZeroU32;
 use std::os::raw::{c_char, c_int};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
+use std::{env, mem};
 
 use bit_vec::BitVec;
 use bstr::{BStr, BString, ByteSlice};
@@ -31,11 +30,9 @@ use url::{Host, Url};
 use crate::cinnabar::{
     GitChangesetId, GitChangesetMetadataId, GitFileId, GitFileMetadataId, GitManifestId,
 };
-use crate::git::GitObjectId;
-use crate::git::{BlobId, CommitId, TreeId};
+use crate::git::{BlobId, CommitId, GitObjectId, TreeId};
 use crate::graft::{graft, grafted, GraftError};
-use crate::hg::HgObjectId;
-use crate::hg::{HgChangesetId, HgFileId, HgManifestId};
+use crate::hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_bundle::{
     read_rev_chunk, rev_chunk, BundlePartInfo, BundleSpec, BundleWriter, RevChunkIter,
 };
@@ -50,8 +47,7 @@ use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
 use crate::util::{FromBytes, ImmutBString, OsStrExt, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::{apply, textdiff, PatchInfo};
-use crate::{check_enabled, do_reload, Checks};
-use crate::{set_metadata_to, MetadataFlags};
+use crate::{check_enabled, do_reload, set_metadata_to, Checks, MetadataFlags};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
 pub const REPLACE_REFS_PREFIX: &str = "refs/cinnabar/replace/";

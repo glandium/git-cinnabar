@@ -9,11 +9,9 @@ use bstr::{BStr, ByteSlice};
 use once_cell::sync::Lazy;
 use regex::bytes::Regex;
 
-use crate::{
-    hg::{HgFileId, HgObjectId},
-    oid::ObjectId,
-    util::{FromBytes, SliceExt},
-};
+use crate::hg::{HgFileId, HgObjectId};
+use crate::oid::ObjectId;
+use crate::util::{FromBytes, SliceExt};
 
 // TODO: This doesn't actually need to be a regexp
 static WHO_RE: Lazy<Regex> = Lazy::new(|| Regex::new("^(?-u)(.*?) ?(?:<(.*?)>)").unwrap());

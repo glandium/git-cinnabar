@@ -3,14 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::ffi::{CStr, CString, OsStr};
-use std::fmt;
 use std::io::{self, LineWriter, Read, Seek, SeekFrom, Write};
-use std::mem;
 #[cfg(unix)]
 use std::os::unix::ffi;
 #[cfg(windows)]
 use std::os::windows::ffi;
 use std::str::{self, FromStr};
+use std::{fmt, mem};
 
 use bstr::{BStr, ByteSlice};
 

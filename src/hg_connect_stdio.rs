@@ -5,11 +5,10 @@
 use std::ffi::CString;
 use std::fs::File;
 use std::io::{copy, BufRead, BufReader, Read, Seek, SeekFrom, Write};
-use std::mem;
 use std::os::raw::c_int;
-use std::ptr;
 use std::str::FromStr;
 use std::thread::{self, JoinHandle};
+use std::{mem, ptr};
 
 use bstr::{BStr, BString};
 use itertools::Itertools;

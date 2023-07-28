@@ -19,8 +19,7 @@ use itertools::EitherOrBoth::*;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
-use crate::git::{BlobId, CommitId, GitOid, TreeId};
-use crate::git::{GitObjectId, TreeEntry};
+use crate::git::{BlobId, CommitId, GitObjectId, GitOid, TreeEntry, TreeId};
 use crate::oid::ObjectId;
 use crate::util::{CStrExt, FromBytes, ImmutBString, OptionExt, OsStrExt, SliceExt};
 

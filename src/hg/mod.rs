@@ -10,14 +10,16 @@ mod file;
 pub use file::*;
 mod manifest;
 pub use manifest::*;
+
 use crate::oid::oid_type;
 
 oid_type!(HgObjectId for Sha1);
 
 #[test]
 fn test_abbrev_hg_object_id() {
-    use crate::oid::{Abbrev, ObjectId};
     use std::str::FromStr;
+
+    use crate::oid::{Abbrev, ObjectId};
 
     let hex = "123456789abcdef00123456789abcdefedcba987";
     for len in 1..40 {

@@ -17,8 +17,7 @@ use sha1::{Digest, Sha1};
 use url::Url;
 
 use crate::cinnabar::GitChangesetId;
-use crate::git::CommitId;
-use crate::git::GitObjectId;
+use crate::git::{CommitId, GitObjectId};
 use crate::hg::HgChangesetId;
 use crate::hg_bundle::{BundleReader, BundleSpec};
 use crate::hg_connect_http::get_http_connection;

@@ -3,18 +3,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::ToOwned;
-use std::cmp;
 use std::ffi::{c_void, CStr, CString, OsStr};
 use std::fs::File;
 use std::io::{self, copy, stderr, Cursor, Read, Seek, SeekFrom, Write};
-use std::mem;
 use std::os::raw::{c_char, c_int, c_long};
 use std::path::{Path, PathBuf};
-use std::ptr;
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
+use std::{cmp, mem, ptr};
 
 use bstr::{BStr, ByteSlice};
 use byteorder::ReadBytesExt;
@@ -35,6 +33,7 @@ use once_cell::sync::Lazy;
 use url::{form_urlencoded, Url};
 use zstd::stream::read::Decoder as ZstdDecoder;
 
+use self::git_http_state::{GitHttpStateToken, GIT_HTTP_STATE};
 use crate::hg_bundle::BundleConnection;
 use crate::hg_connect::{
     args, HgArgs, HgCapabilities, HgConnectionBase, HgRepo, HgWireConnection, HgWired, OneHgArg,
@@ -46,10 +45,10 @@ use crate::libgit::{
 };
 use crate::util::{ImmutBString, OsStrExt, PrefixWriter, ReadExt, SeekExt, SliceExt, ToBoxed};
 
-use self::git_http_state::{GitHttpStateToken, GIT_HTTP_STATE};
-
 mod git_http_state {
-    use std::{ffi::CString, ptr, sync::Mutex};
+    use std::ffi::CString;
+    use std::ptr;
+    use std::sync::Mutex;
 
     use url::Url;
 

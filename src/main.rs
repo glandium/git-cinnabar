@@ -87,32 +87,22 @@ use std::hash::Hash;
 use std::io::{stdin, stdout, BufRead, BufWriter, Write};
 use std::iter::repeat;
 use std::os::raw::{c_char, c_int};
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::{self, from_utf8, FromStr};
 use std::sync::Mutex;
-use std::{cmp, fmt};
-
-#[cfg(windows)]
-use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 use std::time::Instant;
+use std::{cmp, fmt};
 
 use bitflags::bitflags;
 use bstr::{BStr, ByteSlice};
-use git_version::git_version;
-use once_cell::sync::Lazy;
-use url::Url;
-
-use crate::hg_bundle::BundleReader;
-use crate::hg_connect::{decodecaps, find_common, UnbundleResponse};
-use crate::progress::set_progress;
-use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads, Dag, Traversal};
-use crate::util::{FromBytes, ToBoxed};
 use cinnabar::{GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId};
 use git::{BlobId, CommitId, GitObjectId};
+use git_version::git_version;
 use graft::{graft_finish, grafted, init_graft};
-use hg::HgObjectId;
-use hg::{HgChangesetId, HgFileId, HgManifestId};
+use hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
 use libcinnabar::{files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
@@ -122,6 +112,7 @@ use libgit::{
     MaybeBoundary, RawBlob, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, ObjectId};
+use once_cell::sync::Lazy;
 use progress::Progress;
 use store::{
     check_file, check_manifest, create_changeset, do_check_files, do_set, ensure_store_init,
@@ -130,7 +121,14 @@ use store::{
     RawHgFile, RawHgManifest, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF, METADATA_REF, NOTES_REF,
     REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
+use url::Url;
 use util::{CStrExt, IteratorExt, OsStrExt, SliceExt};
+
+use crate::hg_bundle::BundleReader;
+use crate::hg_connect::{decodecaps, find_common, UnbundleResponse};
+use crate::progress::set_progress;
+use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads, Dag, Traversal};
+use crate::util::{FromBytes, ToBoxed};
 
 #[cfg(any(feature = "version-check", feature = "self-update"))]
 mod version_check;

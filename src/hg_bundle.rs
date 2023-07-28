@@ -27,24 +27,19 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
 use crate::git::CommitId;
-use crate::hg::{HgChangesetId, HgFileId, HgManifestId};
+use crate::hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_connect::{encodecaps, HgConnection, HgConnectionBase, HgRepo};
 use crate::hg_data::find_file_parents;
-use crate::libgit::{die, RawCommit};
+use crate::libcinnabar::hg_object_id;
+use crate::libgit::{die, strbuf, RawCommit};
+use crate::oid::ObjectId;
 use crate::progress::Progress;
 use crate::store::{
     ChangesetHeads, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest,
 };
-use crate::util::{FromBytes, ToBoxed};
+use crate::util::{FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::textdiff;
 use crate::{get_changes, manifest_path, HELPER_LOCK};
-use crate::{
-    hg::HgObjectId,
-    libcinnabar::hg_object_id,
-    libgit::strbuf,
-    oid::ObjectId,
-    util::{ImmutBString, ReadExt, SliceExt},
-};
 
 extern "C" {
     fn rev_chunk_from_memory(
