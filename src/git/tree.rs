@@ -12,7 +12,8 @@ use itertools::Itertools;
 use super::{git_oid_type, GitObjectId, GitOid};
 use crate::libgit::{FileMode, RawTree};
 use crate::oid::ObjectId;
-use crate::util::{FromBytes, ImmutBString, SliceExt};
+use crate::tree_util::WithPath;
+use crate::util::{FromBytes, SliceExt, Transpose};
 
 git_oid_type!(TreeId(GitObjectId));
 
@@ -22,7 +23,7 @@ pub struct IntoIterTree {
 }
 
 impl IntoIterator for RawTree {
-    type Item = TreeEntry;
+    type Item = WithPath<TreeEntry>;
     type IntoIter = IntoIterTree;
 
     fn into_iter(self) -> IntoIterTree {
@@ -39,7 +40,7 @@ pub struct IntoRecursiveIterTree {
     stack: Vec<(IntoIterTree, usize)>,
 }
 
-pub type DiffTreeEntry = EitherOrBoth<TreeEntry, TreeEntry>;
+pub type DiffTreeEntry = WithPath<EitherOrBoth<TreeEntry, TreeEntry>>;
 
 pub struct IntoIterDiff(Box<dyn Iterator<Item = DiffTreeEntry>>);
 
@@ -100,9 +101,15 @@ impl RawTree {
     pub fn into_diff(self, other: RawTree) -> IntoIterDiff {
         IntoIterDiff(Box::new(
             Itertools::merge_join_by(self.into_iter(), other.into_iter(), |a, b| {
-                cmp_leaf_name(&a.path, a.oid.is_tree(), &b.path, b.oid.is_tree())
+                cmp_leaf_name(
+                    a.path(),
+                    a.inner().oid.is_tree(),
+                    b.path(),
+                    b.inner().oid.is_tree(),
+                )
             })
-            .filter(|entry| match entry {
+            .map(|entry| entry.transpose().unwrap())
+            .filter(|entry| match entry.inner() {
                 Both(a, b) => a != b,
                 _ => true,
             }),
@@ -110,19 +117,16 @@ impl RawTree {
     }
 }
 
-#[derive(Derivative, PartialEq, Eq)]
-#[derivative(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TreeEntry {
     pub oid: GitOid,
-    #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
-    pub path: ImmutBString,
     pub mode: FileMode,
 }
 
 impl Iterator for IntoIterTree {
-    type Item = TreeEntry;
+    type Item = WithPath<TreeEntry>;
 
-    fn next(&mut self) -> Option<TreeEntry> {
+    fn next(&mut self) -> Option<WithPath<TreeEntry>> {
         let buf = self.tree.as_bytes();
         let buf = &buf[buf.len() - self.remaining..];
         if buf.is_empty() {
@@ -139,11 +143,13 @@ impl Iterator for IntoIterTree {
                 let (oid, remainder) =
                     remainder.split_at(<GitObjectId as ObjectId>::Digest::output_size());
                 self.remaining = remainder.len();
-                Some(TreeEntry {
-                    oid: (GitObjectId::from_raw_bytes(oid).unwrap(), mode).into(),
-                    path: path.to_vec().into_boxed_slice(),
-                    mode,
-                })
+                Some(WithPath::new(
+                    path,
+                    TreeEntry {
+                        oid: (GitObjectId::from_raw_bytes(oid).unwrap(), mode).into(),
+                        mode,
+                    },
+                ))
             })()
             .expect("malformed tree"),
         )
@@ -177,25 +183,21 @@ impl IntoIterDiff {
 }
 
 impl Iterator for IntoRecursiveIterTree {
-    type Item = TreeEntry;
+    type Item = WithPath<TreeEntry>;
 
-    fn next(&mut self) -> Option<TreeEntry> {
+    fn next(&mut self) -> Option<WithPath<TreeEntry>> {
         loop {
             if let Some((iter, prefix_len)) = self.stack.last_mut() {
-                if let Some(entry) = iter.next() {
+                if let Some((path, entry)) = iter.next().map(WithPath::unzip) {
                     if let GitOid::Tree(tree_id) = entry.oid {
                         let tree = RawTree::read(tree_id).unwrap();
                         self.stack.push((tree.into_iter(), self.prefix.len()));
-                        self.prefix.extend_from_slice(&entry.path);
+                        self.prefix.extend_from_slice(&path);
                         self.prefix.push(b'/');
                     } else {
                         let mut full_path = self.prefix.clone();
-                        full_path.extend_from_slice(&entry.path);
-                        return Some(TreeEntry {
-                            oid: entry.oid,
-                            path: full_path.to_vec().into_boxed_slice(),
-                            mode: entry.mode,
-                        });
+                        full_path.extend_from_slice(&path);
+                        return Some(WithPath::new(Vec::from(full_path), entry));
                     }
                 } else {
                     self.prefix.truncate(*prefix_len);
@@ -252,15 +254,14 @@ impl Iterator for IntoRecursiveIterDiff {
     fn next(&mut self) -> Option<DiffTreeEntry> {
         loop {
             if let Some((diff, prefix_len)) = self.stack.last_mut() {
-                if let Some(entry) = diff.next() {
+                if let Some((path, entry)) = diff.next().map(WithPath::unzip) {
                     let is_tree = entry.as_ref().map(|e| e.oid.is_tree()).reduce(|a, b| {
                         assert_eq!(a, b);
                         a && b
                     });
-                    let path = &entry.as_ref().reduce(|a, _| a).path;
                     if is_tree {
                         let len = self.prefix.len();
-                        self.prefix.extend_from_slice(path);
+                        self.prefix.extend_from_slice(&path);
                         self.prefix.push(b'/');
                         let (a, b) = entry
                             .map(|e| RawTree::read(e.oid.try_into().unwrap()).unwrap())
@@ -268,12 +269,8 @@ impl Iterator for IntoRecursiveIterDiff {
                         self.stack.push((RawTree::into_diff(a, b), len));
                     } else {
                         let mut full_path = self.prefix.clone();
-                        full_path.extend_from_slice(path);
-                        return Some(entry.map(|e| TreeEntry {
-                            oid: e.oid,
-                            path: full_path.to_vec().into_boxed_slice(),
-                            mode: e.mode,
-                        }));
+                        full_path.extend_from_slice(&path);
+                        return Some(WithPath::new(Vec::from(full_path), entry));
                     }
                 } else {
                     self.prefix.truncate(*prefix_len);

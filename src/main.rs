@@ -129,6 +129,7 @@ use crate::hg_bundle::BundleReader;
 use crate::hg_connect::{decodecaps, find_common, UnbundleResponse};
 use crate::progress::set_progress;
 use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads, Dag, Traversal};
+use crate::tree_util::WithPath;
 use crate::util::{FromBytes, ToBoxed};
 
 #[cfg(any(feature = "version-check", feature = "self-update"))]
@@ -737,13 +738,14 @@ fn set_metadata_to(
         }
         transaction.update(METADATA_REF, new, metadata, msg)?;
         transaction.update(NOTES_REF, commit.parents()[3], notes, msg)?;
-        for item in
-            ls_tree(commit.tree()).map_err(|_| format!("Failed to read metadata: {}", new))?
+        for (path, item) in ls_tree(commit.tree())
+            .map_err(|_| format!("Failed to read metadata: {}", new))?
+            .map(WithPath::unzip)
         {
             // TODO: Check mode.
             // TODO: Check oid is valid.
             let mut replace_ref = REPLACE_REFS_PREFIX.to_owned();
-            replace_ref.push_str(from_utf8(&item.path).unwrap());
+            replace_ref.push_str(from_utf8(&path).unwrap());
             let replace_ref = OsString::from(replace_ref);
             transaction.update(
                 &replace_ref,
@@ -1324,10 +1326,10 @@ fn create_root_changeset(cid: CommitId) -> HgChangesetId {
     let commit = commit.parse().unwrap();
     let mut manifest = Vec::new();
     let mut paths = Vec::new();
-    for item in ls_tree(commit.tree()).unwrap() {
+    for (path, item) in ls_tree(commit.tree()).unwrap().map(WithPath::unzip) {
         let fid = create_file(item.oid.try_into().unwrap(), &[]);
-        ManifestLine::from((&*item.path, fid, item.mode)).write_into(&mut manifest);
-        paths.extend_from_slice(&item.path);
+        ManifestLine::from((&*path, fid, item.mode)).write_into(&mut manifest);
+        paths.extend_from_slice(&path);
         paths.push(b'\0');
     }
     paths.pop();
@@ -1640,7 +1642,7 @@ fn create_merge_changeset(
         let mut manifest = Vec::new();
         let mut paths = Vec::new();
         for item in files.merge_join_by(manifests, |a, b| {
-            (*a.path).cmp(match b {
+            a.path().cmp(match b {
                 EitherOrBoth::Both(b, _) | EitherOrBoth::Left(b) | EitherOrBoth::Right(b) => {
                     b.path()
                 }
@@ -1677,7 +1679,7 @@ fn create_merge_changeset(
                         static WARN: std::sync::Once = std::sync::Once::new();
                         WARN.call_once(|| warn!(target: "root", "This may take a while..."));
                         let parents = file_dags
-                            .remove(l.path.as_bstr())
+                            .remove(l.path())
                             .and_then(|mut dag| {
                                 let mut is_ancestor = |a: HgFileId, b| {
                                     let mut result = false;
@@ -1707,19 +1709,24 @@ fn create_merge_changeset(
             // empty file needs to be checked separately because hg2git metadata
             // doesn't store empty files because of the conflict with empty manifests.
             let unchanged = parents.len() == 1
-                && ((parents[0].fid() == RawHgFile::EMPTY_OID && l.oid == RawBlob::EMPTY_OID)
-                    || parents[0].fid().to_git().unwrap() == l.oid);
+                && ((parents[0].fid() == RawHgFile::EMPTY_OID
+                    && l.inner().oid == RawBlob::EMPTY_OID)
+                    || parents[0].fid().to_git().unwrap() == l.inner().oid);
             let fid = if unchanged {
                 parents[0].fid()
             } else {
                 let parents = parents.iter().map(ManifestLine::fid).collect_vec();
-                create_file(l.oid.try_into().unwrap(), &parents)
+                create_file(l.inner().oid.try_into().unwrap(), &parents)
             };
 
-            let line = ManifestLine::from((&*l.path, fid, l.mode));
+            let line = ManifestLine::from((&**l.path(), fid, l.inner().mode));
             line.write_into(&mut manifest);
-            if !unchanged || p1_mode.map(|mode| mode != l.mode).unwrap_or_default() {
-                paths.extend_from_slice(&l.path);
+            if !unchanged
+                || p1_mode
+                    .map(|mode| mode != l.inner().mode)
+                    .unwrap_or_default()
+            {
+                paths.extend_from_slice(l.path());
                 paths.push(b'\0');
             }
         }
@@ -2085,9 +2092,10 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         } else {
             ls_tree(commit.tree())
                 .unwrap()
-                .map(|item| {
+                .map(WithPath::unzip)
+                .map(|(path, item)| {
                     (
-                        item.path,
+                        path,
                         HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
                     )
                 })
@@ -2126,9 +2134,9 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             // Yes, this is ridiculous.
             let commit = RawCommit::read(r).unwrap();
             let commit = commit.parse().unwrap();
-            for item in ls_tree(commit.tree()).unwrap() {
+            for (path, item) in ls_tree(commit.tree()).unwrap().map(WithPath::unzip) {
                 all_interesting.remove(&(
-                    item.path,
+                    path,
                     HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
                 ));
             }
@@ -2707,8 +2715,8 @@ fn check_replace(metadata_cid: CommitId) {
     for r in ls_tree(commit.tree())
         .unwrap()
         .filter_map(|item| {
-            let r = GitObjectId::from_bytes(&item.path).unwrap();
-            (item.oid == r).then_some(r)
+            let r = GitObjectId::from_bytes(item.path()).unwrap();
+            (item.inner().oid == r).then_some(r)
         })
         .progress(|n| format!("Removing {n} self-referencing grafts"))
     {
@@ -2736,13 +2744,18 @@ fn get_changes(
         // Yes, this is ridiculous.
         let commit = RawCommit::read(cid).unwrap();
         let commit = commit.parse().unwrap();
-        Box::new(ls_tree(commit.tree()).unwrap().map(|item| {
-            (
-                item.path,
-                HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
-                [].to_boxed(),
-            )
-        }))
+        Box::new(
+            ls_tree(commit.tree())
+                .unwrap()
+                .map(WithPath::unzip)
+                .map(|(path, item)| {
+                    (
+                        path,
+                        HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
+                        [].to_boxed(),
+                    )
+                }),
+        )
     } else if parents.len() == 1 {
         Box::new(
             manifest_diff(parents[0], cid)

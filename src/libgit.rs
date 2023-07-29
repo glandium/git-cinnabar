@@ -21,6 +21,7 @@ use once_cell::sync::Lazy;
 
 use crate::git::{BlobId, CommitId, GitObjectId, GitOid, TreeEntry, TreeId};
 use crate::oid::ObjectId;
+use crate::tree_util::WithPath;
 use crate::util::{CStrExt, FromBytes, ImmutBString, OptionExt, OsStrExt, SliceExt};
 
 const GIT_MAX_RAWSZ: usize = 32;
@@ -819,25 +820,27 @@ pub fn diff_tree(a: CommitId, b: CommitId) -> impl Iterator<Item = DiffTreeItem>
     let b = RawCommit::read(b).unwrap();
     let b = b.parse().unwrap();
     let b = RawTree::read(b.tree()).unwrap();
-    RawTree::into_diff(a, b).recurse().map(|entry| match entry {
-        Both(a, b) => DiffTreeItem::Modified {
-            path: a.path,
-            from_mode: a.mode,
-            from_oid: a.oid,
-            to_mode: b.mode,
-            to_oid: b.oid,
-        },
-        Left(a) => DiffTreeItem::Deleted {
-            path: a.path,
-            mode: a.mode,
-            oid: a.oid,
-        },
-        Right(b) => DiffTreeItem::Added {
-            path: b.path,
-            mode: b.mode,
-            oid: b.oid,
-        },
-    })
+    RawTree::into_diff(a, b)
+        .recurse()
+        .map(|entry| match entry.unzip() {
+            (path, Both(a, b)) => DiffTreeItem::Modified {
+                path,
+                from_mode: a.mode,
+                from_oid: a.oid,
+                to_mode: b.mode,
+                to_oid: b.oid,
+            },
+            (path, Left(a)) => DiffTreeItem::Deleted {
+                path,
+                mode: a.mode,
+                oid: a.oid,
+            },
+            (path, Right(b)) => DiffTreeItem::Added {
+                path,
+                mode: b.mode,
+                oid: b.oid,
+            },
+        })
 }
 
 extern "C" {
@@ -1155,7 +1158,7 @@ pub fn config_set_value<S: ToString>(key: &str, value: S) {
 #[derive(Debug)]
 pub struct LsTreeError;
 
-pub fn ls_tree(tree_id: TreeId) -> Result<impl Iterator<Item = TreeEntry>, LsTreeError> {
+pub fn ls_tree(tree_id: TreeId) -> Result<impl Iterator<Item = WithPath<TreeEntry>>, LsTreeError> {
     RawTree::read(tree_id)
         .ok_or(LsTreeError)
         .map(|tree| tree.into_iter().recurse())
