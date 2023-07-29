@@ -67,6 +67,7 @@ mod logging;
 mod oid;
 mod progress;
 pub mod store;
+pub mod tree_util;
 mod util;
 mod xdiff;
 

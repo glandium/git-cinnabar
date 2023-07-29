@@ -354,3 +354,9 @@ impl ToBoxed for str {
         self.to_string().into()
     }
 }
+
+pub trait Transpose {
+    type Target;
+
+    fn transpose(self) -> Self::Target;
+}
