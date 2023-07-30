@@ -103,7 +103,7 @@ use cinnabar::{GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId};
 use git::{BlobId, CommitId, GitObjectId};
 use git_version::git_version;
 use graft::{graft_finish, grafted, init_graft};
-use hg::{HgChangesetId, HgFileAttr, HgFileId, HgManifestId, HgObjectId, ManifestEntry};
+use hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId, ManifestEntry};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
 use libcinnabar::{files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
@@ -1331,10 +1331,6 @@ impl ManifestLine {
     fn fid(&self) -> HgFileId {
         self.inner().fid
     }
-
-    fn attr(&self) -> HgFileAttr {
-        self.inner().attr
-    }
 }
 
 impl Hash for ManifestLine {
@@ -1574,11 +1570,16 @@ fn create_merge_changeset(
                 }
             })
         }) {
+            let (path, item) = item
+                .map_right(|r| r.transpose().unwrap())
+                .transpose()
+                .unwrap()
+                .unzip();
             let (l, parents, p1_attr) = match item {
-                EitherOrBoth::Right(EitherOrBoth::Both(p1, _) | EitherOrBoth::Left(p1)) => {
+                EitherOrBoth::Right(EitherOrBoth::Both(_, _) | EitherOrBoth::Left(_)) => {
                     // File was removed and was on the first parent, it's marked
                     // as affecting the changeset.
-                    paths.extend_from_slice(p1.path());
+                    paths.extend_from_slice(&path);
                     paths.push(b'\0');
                     continue;
                 }
@@ -1593,19 +1594,19 @@ fn create_merge_changeset(
                     (l, Vec::new().into_boxed_slice(), None)
                 }
                 EitherOrBoth::Both(l, EitherOrBoth::Left(p1)) => {
-                    (l, vec![p1.clone()].into_boxed_slice(), Some(p1.attr()))
+                    (l, vec![p1.clone()].into_boxed_slice(), Some(p1.attr))
                 }
                 EitherOrBoth::Both(l, EitherOrBoth::Right(p2)) => {
                     (l, vec![p2].into_boxed_slice(), None)
                 }
                 EitherOrBoth::Both(l, EitherOrBoth::Both(p1, p2)) => {
-                    if p1.fid() == p2.fid() {
-                        (l, vec![p1.clone()].into_boxed_slice(), Some(p1.attr()))
+                    if p1.fid == p2.fid {
+                        (l, vec![p1.clone()].into_boxed_slice(), Some(p1.attr))
                     } else {
                         static WARN: std::sync::Once = std::sync::Once::new();
                         WARN.call_once(|| warn!(target: "root", "This may take a while..."));
                         let parents = file_dags
-                            .remove(l.path())
+                            .remove(path.as_bstr())
                             .and_then(|mut dag| {
                                 let mut is_ancestor = |a: HgFileId, b| {
                                     let mut result = false;
@@ -1617,40 +1618,44 @@ fn create_merge_changeset(
                                     });
                                     result
                                 };
-                                let p1_fid = p1.fid();
-                                let p2_fid = p2.fid();
-                                if is_ancestor(p1_fid, p2_fid) {
+                                if is_ancestor(p1.fid, p2.fid) {
                                     Some(vec![p2.clone()])
-                                } else if is_ancestor(p2_fid, p1_fid) {
+                                } else if is_ancestor(p2.fid, p1.fid) {
                                     Some(vec![p1.clone()])
                                 } else {
                                     None
                                 }
                             })
                             .unwrap_or_else(|| vec![p1.clone(), p2]);
-                        (l, parents.into_boxed_slice(), Some(p1.attr()))
+                        (l, parents.into_boxed_slice(), Some(p1.attr))
                     }
                 }
             };
             // empty file needs to be checked separately because hg2git metadata
             // doesn't store empty files because of the conflict with empty manifests.
             let unchanged = parents.len() == 1
-                && ((parents[0].fid() == RawHgFile::EMPTY_OID
-                    && l.inner().oid == RawBlob::EMPTY_OID)
-                    || parents[0].fid().to_git().unwrap() == l.inner().oid);
+                && ((parents[0].fid == RawHgFile::EMPTY_OID && l.oid == RawBlob::EMPTY_OID)
+                    || parents[0].fid.to_git().unwrap() == l.oid);
             let fid = if unchanged {
-                parents[0].fid()
+                parents[0].fid
             } else {
-                let parents = parents.iter().map(ManifestLine::fid).collect_vec();
-                create_file(l.inner().oid.try_into().unwrap(), &parents)
+                let parents = parents.iter().map(|p| p.fid).collect_vec();
+                create_file(l.oid.try_into().unwrap(), &parents)
             };
 
-            let line = l.map(|entry| ManifestEntry {
-                fid,
-                attr: entry.mode.try_into().unwrap(),
-            });
+            let line = WithPath::new(
+                path,
+                ManifestEntry {
+                    fid,
+                    attr: l.mode.try_into().unwrap(),
+                },
+            );
             RawHgManifest::write_one_entry(&line, &mut manifest);
-            if !unchanged || p1_attr.map(|attr| attr != line.attr()).unwrap_or_default() {
+            if !unchanged
+                || p1_attr
+                    .map(|attr| attr != line.inner().attr)
+                    .unwrap_or_default()
+            {
                 paths.extend_from_slice(line.path());
                 paths.push(b'\0');
             }
