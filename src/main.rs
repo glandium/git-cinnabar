@@ -1565,7 +1565,9 @@ fn create_merge_changeset(
         for cid in rev_list(["--topo-order", "--full-history", "--reverse", &range]) {
             let commit = RawCommit::read(cid).unwrap();
             let commit = commit.parse().unwrap();
-            for (path, oid, parents) in get_changes(cid, commit.parents(), false) {
+            for (path, (oid, parents)) in
+                get_changes(cid, commit.parents(), false).map(WithPath::unzip)
+            {
                 let path = manifest_path(&path);
                 let parents = parents
                     .iter()
@@ -2098,7 +2100,9 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
     let mut progress = repeat(()).progress(|n| format!("Checking {n} files"));
     while !all_interesting.is_empty() && !manifest_queue.is_empty() {
         let (mid, parents) = manifest_queue.pop().unwrap();
-        for (path, hg_file, hg_fileparents) in get_changes(mid, &parents, true) {
+        for (path, (hg_file, hg_fileparents)) in
+            get_changes(mid, &parents, true).map(WithPath::unzip)
+        {
             if hg_fileparents.iter().any(|p| *p == hg_file) {
                 continue;
             }
@@ -2458,8 +2462,8 @@ fn do_fsck_full(
         }
 
         // TODO: check that manifest content matches changeset content.
-        for (path, hg_file, hg_fileparents) in
-            get_changes(manifest_cid.into(), &git_manifest_parents, false)
+        for (path, (hg_file, hg_fileparents)) in
+            get_changes(manifest_cid.into(), &git_manifest_parents, false).map(WithPath::unzip)
         {
             if hg_file.is_null() || hg_file == RawHgFile::EMPTY_OID || !seen_files.insert(hg_file) {
                 continue;
@@ -2690,62 +2694,49 @@ fn get_changes(
     cid: CommitId,
     parents: &[CommitId],
     all: bool,
-) -> Box<dyn Iterator<Item = (Box<[u8]>, HgFileId, Box<[HgFileId]>)>> {
+) -> Box<dyn Iterator<Item = WithPath<(HgFileId, Box<[HgFileId]>)>>> {
     if parents.is_empty() {
         // Yes, this is ridiculous.
         let commit = RawCommit::read(cid).unwrap();
         let commit = commit.parse().unwrap();
-        Box::new(
-            ls_tree(commit.tree())
-                .unwrap()
-                .map(WithPath::unzip)
-                .map(|(path, item)| {
-                    (
-                        path,
-                        HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
-                        [].to_boxed(),
-                    )
-                }),
-        )
+        Box::new(ls_tree(commit.tree()).unwrap().map_map(|item| {
+            (
+                HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
+                [].to_boxed(),
+            )
+        }))
     } else if parents.len() == 1 {
         Box::new(
-            manifest_diff(parents[0], cid)
-                .map(|(path, node, parent)| (path, node, [parent].to_boxed())),
+            manifest_diff(parents[0], cid).map_map(|(node, parent)| (node, [parent].to_boxed())),
         )
     } else {
         Box::new(
             manifest_diff2(parents[0], parents[1], cid, all)
-                .map(|(path, node, parents)| (path, node, parents.to_boxed())),
+                .map_map(|(node, parents)| (node, parents.to_boxed())),
         )
     }
 }
 
-fn manifest_diff(
-    a: CommitId,
-    b: CommitId,
-) -> impl Iterator<Item = (Box<[u8]>, HgFileId, HgFileId)> {
+fn manifest_diff(a: CommitId, b: CommitId) -> impl Iterator<Item = WithPath<(HgFileId, HgFileId)>> {
     diff_tree(a, b)
-        .map(WithPath::unzip)
-        .filter_map(|(path, item)| match item {
+        .map_map(|item| match item {
             DiffTreeItem::Added { oid, .. } => Some((
-                path,
                 HgFileId::from_raw_bytes(oid.as_raw_bytes()).unwrap(),
                 HgFileId::NULL,
             )),
             DiffTreeItem::Modified {
                 from_oid, to_oid, ..
             } if from_oid != to_oid => Some((
-                path,
                 HgFileId::from_raw_bytes(to_oid.as_raw_bytes()).unwrap(),
                 HgFileId::from_raw_bytes(from_oid.as_raw_bytes()).unwrap(),
             )),
             DiffTreeItem::Deleted { oid, .. } => Some((
-                path,
                 HgFileId::NULL,
                 HgFileId::from_raw_bytes(oid.as_raw_bytes()).unwrap(),
             )),
             _ => None,
         })
+        .filter_map(Transpose::transpose)
 }
 
 fn manifest_diff2(
@@ -2753,20 +2744,21 @@ fn manifest_diff2(
     b: CommitId,
     c: CommitId,
     all: bool,
-) -> impl Iterator<Item = (Box<[u8]>, HgFileId, [HgFileId; 2])> {
+) -> impl Iterator<Item = WithPath<(HgFileId, [HgFileId; 2])>> {
     Itertools::merge_join_by(manifest_diff(a, c), manifest_diff(b, c), |x, y| {
-        x.0.cmp(&y.0)
+        x.path().cmp(y.path())
     })
-    .filter_map(move |y| match y {
-        Left((path, c, a)) if all => Some((path, c, [a, c])),
-        Right((path, c, b)) if all => Some((path, c, [c, b])),
-        Both((path, c, a), (path2, c2, b)) => {
-            assert_eq!(path, path2);
+    .map(|item| item.transpose().unwrap())
+    .map_map(move |y| match y {
+        Left((c, a)) if all => Some((c, [a, c])),
+        Right((c, b)) if all => Some((c, [c, b])),
+        Both((c, a), (c2, b)) => {
             assert_eq!(c, c2);
-            Some((path, c, [a, b]))
+            Some((c, [a, b]))
         }
         _ => None,
     })
+    .filter_map(Transpose::transpose)
 }
 
 #[derive(Clone, Debug)]

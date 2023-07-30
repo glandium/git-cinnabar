@@ -37,6 +37,7 @@ use crate::progress::Progress;
 use crate::store::{
     ChangesetHeads, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest,
 };
+use crate::tree_util::WithPath;
 use crate::util::{FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::textdiff;
 use crate::{get_changes, manifest_path, HELPER_LOCK};
@@ -1105,7 +1106,9 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
             .into_iter()
             .filter_map(|p| (!p.is_null()).then(|| (p.to_git().unwrap().into())))
             .collect_vec();
-        for (path, hg_file, hg_fileparents) in get_changes(git_node.into(), &git_parents, false) {
+        for (path, (hg_file, hg_fileparents)) in
+            get_changes(git_node.into(), &git_parents, false).map(WithPath::unzip)
+        {
             if !hg_file.is_null() {
                 files
                     .entry(path)
