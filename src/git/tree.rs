@@ -2,18 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::cmp::Ordering;
-
 use bstr::BString;
 use digest::OutputSizeUser;
 use itertools::EitherOrBoth::{self, Both, Left, Right};
-use itertools::Itertools;
 
 use super::{git_oid_type, GitObjectId, GitOid};
 use crate::libgit::{FileMode, RawTree};
 use crate::oid::ObjectId;
-use crate::tree_util::{ParseTree, TreeIter, WithPath};
-use crate::util::{FromBytes, SliceExt, Transpose};
+use crate::tree_util::{merge_join_by_path, MayRecurse, ParseTree, TreeIter, WithPath};
+use crate::util::{FromBytes, SliceExt};
 
 git_oid_type!(TreeId(GitObjectId));
 
@@ -21,6 +18,12 @@ git_oid_type!(TreeId(GitObjectId));
 pub struct TreeEntry {
     pub oid: GitOid,
     pub mode: FileMode,
+}
+
+impl MayRecurse for TreeEntry {
+    fn may_recurse(&self) -> bool {
+        self.oid.is_tree()
+    }
 }
 
 impl AsRef<[u8]> for RawTree {
@@ -86,71 +89,14 @@ pub struct IntoRecursiveIterDiff {
     stack: Vec<(IntoIterDiff, usize)>,
 }
 
-fn cmp_leaf_name(a: &[u8], a_is_tree: bool, b: &[u8], b_is_tree: bool) -> Ordering {
-    // Trees need to be sorted as if they were recursed, so that
-    // foo.bar comes before foo when foo is a tree.
-    if !a_is_tree && !b_is_tree {
-        a.cmp(b)
-    } else {
-        let shortest_len = std::cmp::min(a.len(), b.len());
-        match a[..shortest_len].cmp(&b[..shortest_len]) {
-            Ordering::Equal => match a.len().cmp(&b.len()) {
-                Ordering::Equal => match (a_is_tree, b_is_tree) {
-                    (true, false) => Ordering::Greater,
-                    (false, true) => Ordering::Less,
-                    _ => Ordering::Equal,
-                },
-                Ordering::Greater if b_is_tree => a[shortest_len..].cmp(b"/"),
-                Ordering::Less if a_is_tree => b"/"[..].cmp(&b[shortest_len..]),
-                o => o,
-            },
-            o => o,
-        }
-    }
-}
-
-#[test]
-fn test_cmp_leaf_name() {
-    let examples = ["foo", "bar", "foobar", "foo.bar", "foo_", "foo.", "qux"];
-    let example_dirs = examples.iter().map(|x| format!("{}/", x)).collect_vec();
-    let all_examples = example_dirs.iter().map(|x| &**x).chain(examples);
-
-    for (a, b) in Itertools::cartesian_product(all_examples.clone(), all_examples) {
-        let expected = a.cmp(b);
-        let (a_stripped, a_is_tree) = a.strip_suffix('/').map_or((a, false), |x| (x, true));
-        let (b_stripped, b_is_tree) = b.strip_suffix('/').map_or((b, false), |x| (x, true));
-        assert_eq!(
-            cmp_leaf_name(
-                a_stripped.as_bytes(),
-                a_is_tree,
-                b_stripped.as_bytes(),
-                b_is_tree
-            ),
-            expected,
-            "comparing {} and {}",
-            a,
-            b
-        );
-    }
-}
-
 impl RawTree {
     pub fn into_diff(self, other: RawTree) -> IntoIterDiff {
-        IntoIterDiff(Box::new(
-            Itertools::merge_join_by(self.into_iter(), other.into_iter(), |a, b| {
-                cmp_leaf_name(
-                    a.path(),
-                    a.inner().oid.is_tree(),
-                    b.path(),
-                    b.inner().oid.is_tree(),
-                )
-            })
-            .map(|entry| entry.transpose().unwrap())
-            .filter(|entry| match entry.inner() {
+        IntoIterDiff(Box::new(merge_join_by_path(self, other).filter(
+            |entry| match entry.inner() {
                 Both(a, b) => a != b,
                 _ => true,
-            }),
-        ))
+            },
+        )))
     }
 }
 

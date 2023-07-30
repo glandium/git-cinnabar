@@ -327,12 +327,12 @@ pub trait IteratorExt: Iterator {
         }
     }
 
-    fn map_map<B, F: FnMut(<Self::Item as Map>::Input) -> B>(self, f: F) -> MapMap<Self, F>
+    fn map_map<B, F: FnMut(<Self::Item as Map>::Input) -> B>(self, f: F) -> MapMapIter<Self, F>
     where
         Self: Sized,
         Self::Item: Map,
     {
-        MapMap { iter: self, f }
+        MapMapIter { iter: self, f }
     }
 }
 
@@ -343,12 +343,34 @@ pub trait Map {
     fn map<U, F: FnMut(Self::Input) -> U>(self, f: F) -> Self::Target<U>;
 }
 
+pub trait MapMap: Sized + Map
+where
+    Self::Input: Map,
+{
+    fn map_map<U, F: FnMut(<Self::Input as Map>::Input) -> U>(
+        self,
+        f: F,
+    ) -> Self::Target<<Self::Input as Map>::Target<U>>;
+}
+
 impl<T> Map for Option<T> {
     type Input = T;
     type Target<U> = Option<U>;
 
     fn map<U, F: FnMut(Self::Input) -> U>(self, f: F) -> Self::Target<U> {
         self.map(f)
+    }
+}
+
+impl<T: Map> MapMap for Option<T>
+where
+    Self::Input: Map,
+{
+    fn map_map<U, F: FnMut(T::Input) -> U>(
+        self,
+        f: F,
+    ) -> Self::Target<<Self::Input as Map>::Target<U>> {
+        self.map(|inner| inner.map(f))
     }
 }
 
@@ -361,12 +383,24 @@ impl<T, E> Map for Result<T, E> {
     }
 }
 
-pub struct MapMap<I, F> {
+impl<T: Map, E> MapMap for Result<T, E>
+where
+    Self::Input: Map,
+{
+    fn map_map<U, F: FnMut(T::Input) -> U>(
+        self,
+        f: F,
+    ) -> Self::Target<<Self::Input as Map>::Target<U>> {
+        self.map(|inner| inner.map(f))
+    }
+}
+
+pub struct MapMapIter<I, F> {
     iter: I,
     f: F,
 }
 
-impl<I: Iterator, B, F: FnMut(<I::Item as Map>::Input) -> B> Iterator for MapMap<I, F>
+impl<I: Iterator, B, F: FnMut(<I::Item as Map>::Input) -> B> Iterator for MapMapIter<I, F>
 where
     I::Item: Map,
 {
