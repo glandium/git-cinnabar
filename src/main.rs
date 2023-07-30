@@ -123,7 +123,7 @@ use store::{
     REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use url::Url;
-use util::{CStrExt, IteratorExt, OsStrExt, SliceExt};
+use util::{CStrExt, IteratorExt, OsStrExt, SliceExt, Transpose};
 
 use crate::hg_bundle::BundleReader;
 use crate::hg_connect::{decodecaps, find_common, UnbundleResponse};
@@ -1400,29 +1400,24 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
                 from_mode,
                 from_oid,
                 ..
-            } = item
+            } = item.inner()
             {
-                extra_diff.push(DiffTreeItem::Deleted {
-                    path: from_path.clone(),
-                    mode: *from_mode,
-                    oid: *from_oid,
-                });
+                extra_diff.push(WithPath::new(
+                    from_path.clone(),
+                    DiffTreeItem::Deleted {
+                        mode: *from_mode,
+                        oid: *from_oid,
+                    },
+                ));
             }
         })
-        .map(|item| match item {
+        .map_map(|item| match item {
             DiffTreeItem::Renamed {
-                to_path,
-                to_oid,
-                to_mode,
-                ..
+                to_oid, to_mode, ..
             }
             | DiffTreeItem::Copied {
-                to_path,
-                to_oid,
-                to_mode,
-                ..
+                to_oid, to_mode, ..
             } if to_oid == RawBlob::EMPTY_OID => DiffTreeItem::Added {
-                path: to_path,
                 mode: to_mode,
                 oid: to_oid,
             },
@@ -1439,49 +1434,47 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
         .collect::<IndexSet<_>>();
     let mut manifest = Vec::new();
     let mut paths = Vec::new();
-    for either_or_both in parent_lines
+    for (path, either_or_both) in parent_lines
         .iter()
+        .cloned()
         .merge_join_by(diff, |parent_line, diff_item| {
             (parent_line.path()).cmp(diff_item.path())
         })
+        .map(|item| item.transpose().unwrap().unzip())
     {
-        let (path, fid, mode) = match either_or_both {
-            EitherOrBoth::Left(manifest_line) => {
-                manifest_line.write_into(&mut manifest);
+        let (fid, mode) = match either_or_both {
+            EitherOrBoth::Left(info) => {
+                WithPath::new(path, info).write_into(&mut manifest);
                 continue;
             }
-            EitherOrBoth::Both(_, DiffTreeItem::Deleted { path, .. }) => {
+            EitherOrBoth::Both(_, DiffTreeItem::Deleted { .. }) => {
                 paths.extend_from_slice(&path);
                 paths.push(b'\0');
                 continue;
             }
             EitherOrBoth::Both(
-                manifest_line,
+                (mut fid, _),
                 DiffTreeItem::Modified {
-                    path,
                     from_oid,
                     to_mode,
                     to_oid,
                     ..
                 },
             ) => {
-                let mut fid = manifest_line.fid();
                 if from_oid != to_oid {
                     fid = create_file(to_oid.try_into().unwrap(), &[fid]);
                 }
-                (path, fid, to_mode)
+                (fid, to_mode)
             }
             EitherOrBoth::Both(
                 _,
                 DiffTreeItem::Renamed {
-                    to_path,
                     to_mode,
                     to_oid,
                     from_path,
                     ..
                 }
                 | DiffTreeItem::Copied {
-                    to_path,
                     to_mode,
                     to_oid,
                     from_path,
@@ -1490,21 +1483,18 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
             )
             | EitherOrBoth::Right(
                 DiffTreeItem::Renamed {
-                    to_path,
                     to_mode,
                     to_oid,
                     from_path,
                     ..
                 }
                 | DiffTreeItem::Copied {
-                    to_path,
                     to_mode,
                     to_oid,
                     from_path,
                     ..
                 },
             ) => (
-                to_path,
                 create_copy(
                     to_oid.try_into().unwrap(),
                     from_path.as_bstr(),
@@ -1512,8 +1502,8 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
                 ),
                 to_mode,
             ),
-            EitherOrBoth::Right(DiffTreeItem::Added { path, mode, oid }) => {
-                (path, create_file(oid.try_into().unwrap(), &[]), mode)
+            EitherOrBoth::Right(DiffTreeItem::Added { mode, oid }) => {
+                (create_file(oid.try_into().unwrap(), &[]), mode)
             }
 
             thing => die!("Something went wrong {:?}", thing),
@@ -2037,15 +2027,13 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         }
         let files: Vec<(_, HgFileId)> = if let Some(previous) = previous {
             diff_tree(previous, mid)
-                .filter_map(|item| match item {
-                    DiffTreeItem::Added { path, oid, .. } => {
+                .map(WithPath::unzip)
+                .filter_map(|(path, item)| match item {
+                    DiffTreeItem::Added { oid, .. } => {
                         Some((path, HgFileId::from_raw_bytes(oid.as_raw_bytes()).unwrap()))
                     }
                     DiffTreeItem::Modified {
-                        path,
-                        from_oid,
-                        to_oid,
-                        ..
+                        from_oid, to_oid, ..
                     } if from_oid != to_oid => Some((
                         path,
                         HgFileId::from_raw_bytes(to_oid.as_raw_bytes()).unwrap(),
@@ -2077,15 +2065,13 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
     for r in roots {
         if let Some(previous) = previous {
             diff_tree(previous, r)
-                .filter_map(|item| match item {
-                    DiffTreeItem::Added { path, oid, .. } => {
+                .map(WithPath::unzip)
+                .filter_map(|(path, item)| match item {
+                    DiffTreeItem::Added { oid, .. } => {
                         Some((path, HgFileId::from_raw_bytes(oid.as_raw_bytes()).unwrap()))
                     }
                     DiffTreeItem::Modified {
-                        path,
-                        from_oid,
-                        to_oid,
-                        ..
+                        from_oid, to_oid, ..
                     } if from_oid != to_oid => Some((
                         path,
                         HgFileId::from_raw_bytes(to_oid.as_raw_bytes()).unwrap(),
@@ -2738,29 +2724,28 @@ fn manifest_diff(
     a: CommitId,
     b: CommitId,
 ) -> impl Iterator<Item = (Box<[u8]>, HgFileId, HgFileId)> {
-    diff_tree(a, b).filter_map(|item| match item {
-        DiffTreeItem::Added { path, oid, .. } => Some((
-            path,
-            HgFileId::from_raw_bytes(oid.as_raw_bytes()).unwrap(),
-            HgFileId::NULL,
-        )),
-        DiffTreeItem::Modified {
-            path,
-            from_oid,
-            to_oid,
-            ..
-        } if from_oid != to_oid => Some((
-            path,
-            HgFileId::from_raw_bytes(to_oid.as_raw_bytes()).unwrap(),
-            HgFileId::from_raw_bytes(from_oid.as_raw_bytes()).unwrap(),
-        )),
-        DiffTreeItem::Deleted { path, oid, .. } => Some((
-            path,
-            HgFileId::NULL,
-            HgFileId::from_raw_bytes(oid.as_raw_bytes()).unwrap(),
-        )),
-        _ => None,
-    })
+    diff_tree(a, b)
+        .map(WithPath::unzip)
+        .filter_map(|(path, item)| match item {
+            DiffTreeItem::Added { oid, .. } => Some((
+                path,
+                HgFileId::from_raw_bytes(oid.as_raw_bytes()).unwrap(),
+                HgFileId::NULL,
+            )),
+            DiffTreeItem::Modified {
+                from_oid, to_oid, ..
+            } if from_oid != to_oid => Some((
+                path,
+                HgFileId::from_raw_bytes(to_oid.as_raw_bytes()).unwrap(),
+                HgFileId::from_raw_bytes(from_oid.as_raw_bytes()).unwrap(),
+            )),
+            DiffTreeItem::Deleted { oid, .. } => Some((
+                path,
+                HgFileId::NULL,
+                HgFileId::from_raw_bytes(oid.as_raw_bytes()).unwrap(),
+            )),
+            _ => None,
+        })
 }
 
 fn manifest_diff2(

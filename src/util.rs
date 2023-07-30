@@ -326,6 +326,55 @@ pub trait IteratorExt: Iterator {
             Err(Err(e)) => Err(e),
         }
     }
+
+    fn map_map<B, F: FnMut(<Self::Item as Map>::Input) -> B>(self, f: F) -> MapMap<Self, F>
+    where
+        Self: Sized,
+        Self::Item: Map,
+    {
+        MapMap { iter: self, f }
+    }
+}
+
+pub trait Map {
+    type Input;
+    type Target<U>;
+
+    fn map<U, F: FnMut(Self::Input) -> U>(self, f: F) -> Self::Target<U>;
+}
+
+impl<T> Map for Option<T> {
+    type Input = T;
+    type Target<U> = Option<U>;
+
+    fn map<U, F: FnMut(Self::Input) -> U>(self, f: F) -> Self::Target<U> {
+        self.map(f)
+    }
+}
+
+impl<T, E> Map for Result<T, E> {
+    type Input = T;
+    type Target<U> = Result<U, E>;
+
+    fn map<U, F: FnMut(Self::Input) -> U>(self, f: F) -> Self::Target<U> {
+        self.map(f)
+    }
+}
+
+pub struct MapMap<I, F> {
+    iter: I,
+    f: F,
+}
+
+impl<I: Iterator, B, F: FnMut(<I::Item as Map>::Input) -> B> Iterator for MapMap<I, F>
+where
+    I::Item: Map,
+{
+    type Item = <I::Item as Map>::Target<B>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|item| item.map(&mut self.f))
+    }
 }
 
 impl<I: Iterator> IteratorExt for I {}

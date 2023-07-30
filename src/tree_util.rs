@@ -10,7 +10,7 @@ use bstr::{BStr, ByteSlice};
 use either::Either;
 use itertools::EitherOrBoth;
 
-use crate::util::{ImmutBString, Transpose};
+use crate::util::{ImmutBString, Map, Transpose};
 
 /// Wrapper type that pairs a value of any type with a path string.
 #[derive(Clone, Derivative, PartialEq, Eq, PartialOrd, Ord)]
@@ -146,5 +146,14 @@ impl<L, R> Transpose for EitherOrBoth<WithPath<L>, WithPath<R>> {
             }
             _ => Err(self),
         }
+    }
+}
+
+impl<T> Map for WithPath<T> {
+    type Input = T;
+    type Target<U> = WithPath<U>;
+
+    fn map<U, F: FnMut(Self::Input) -> U>(self, f: F) -> Self::Target<U> {
+        self.map(f)
     }
 }
