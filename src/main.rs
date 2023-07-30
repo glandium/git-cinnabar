@@ -103,14 +103,14 @@ use cinnabar::{GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId};
 use git::{BlobId, CommitId, GitObjectId};
 use git_version::git_version;
 use graft::{graft_finish, grafted, init_graft};
-use hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
+use hg::{HgChangesetId, HgFileAttr, HgFileId, HgManifestId, HgObjectId, ManifestEntry};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
 use libcinnabar::{files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
     config_get_value, die, diff_tree, diff_tree_with_copies, for_each_ref_in, for_each_remote,
     get_oid_committish, lookup_replace_commit, ls_tree, metadata_oid, object_id, reachable_subset,
-    remote, resolve_ref, rev_list, rev_list_with_boundaries, strbuf, DiffTreeItem, FileMode,
-    MaybeBoundary, RawBlob, RawCommit, RefTransaction,
+    remote, resolve_ref, rev_list, rev_list_with_boundaries, strbuf, DiffTreeItem, MaybeBoundary,
+    RawBlob, RawCommit, RefTransaction,
 };
 use oid::{Abbrev, ObjectId};
 use once_cell::sync::Lazy;
@@ -129,7 +129,7 @@ use crate::hg_bundle::BundleReader;
 use crate::hg_connect::{decodecaps, find_common, UnbundleResponse};
 use crate::progress::set_progress;
 use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads, Dag, Traversal};
-use crate::tree_util::WithPath;
+use crate::tree_util::{ParseTree, WithPath};
 use crate::util::{FromBytes, ToBoxed};
 
 #[cfg(any(feature = "version-check", feature = "self-update"))]
@@ -1194,24 +1194,6 @@ fn do_bundle(
     result
 }
 
-fn hg_attr(mode: FileMode) -> &'static [u8] {
-    match (mode.typ(), mode.perms()) {
-        (FileMode::REGULAR, FileMode::RW) => b"",
-        (FileMode::REGULAR, FileMode::RWX) => b"x",
-        (FileMode::SYMLINK, FileMode::NONE) => b"l",
-        _ => die!("Unexpected file mode"),
-    }
-}
-
-fn git_mode(attr: &[u8]) -> FileMode {
-    match attr {
-        b"" => FileMode::REGULAR | FileMode::RW,
-        b"x" => FileMode::REGULAR | FileMode::RWX,
-        b"l" => FileMode::SYMLINK,
-        _ => die!("Unexpected attribute"),
-    }
-}
-
 fn create_file(blobid: BlobId, parents: &[HgFileId]) -> HgFileId {
     let blob = RawBlob::read(blobid).unwrap();
     let mut hash = HgFileId::create();
@@ -1326,10 +1308,15 @@ fn create_root_changeset(cid: CommitId) -> HgChangesetId {
     let commit = commit.parse().unwrap();
     let mut manifest = Vec::new();
     let mut paths = Vec::new();
-    for (path, item) in ls_tree(commit.tree()).unwrap().map(WithPath::unzip) {
-        let fid = create_file(item.oid.try_into().unwrap(), &[]);
-        ManifestLine::from((&*path, fid, item.mode)).write_into(&mut manifest);
-        paths.extend_from_slice(&path);
+    for entry in ls_tree(commit.tree())
+        .unwrap()
+        .map_map(|item| ManifestEntry {
+            fid: create_file(item.oid.try_into().unwrap(), &[]),
+            attr: item.mode.try_into().unwrap(),
+        })
+    {
+        RawHgManifest::write_one_entry(&entry, &mut manifest);
+        paths.extend_from_slice(entry.path());
         paths.push(b'\0');
     }
     paths.pop();
@@ -1338,37 +1325,15 @@ fn create_root_changeset(cid: CommitId) -> HgChangesetId {
     csid
 }
 
-type ManifestLine = WithPath<(HgFileId, FileMode)>;
+type ManifestLine = WithPath<ManifestEntry>;
 
-impl<'a> From<&'a [u8]> for ManifestLine {
-    fn from(line: &'a [u8]) -> Self {
-        let [path, remainder] = line.splitn_exact(b'\0').unwrap();
-        let fid = HgFileId::from_bytes(&remainder[..40]).unwrap();
-        let mode = git_mode(&remainder[40..]);
-        (path, fid, mode).into()
-    }
-}
-
-impl<'a> From<(&'a [u8], HgFileId, FileMode)> for ManifestLine {
-    fn from((path, fid, mode): (&'a [u8], HgFileId, FileMode)) -> Self {
-        WithPath::new(path, (fid, mode))
-    }
-}
 impl ManifestLine {
     fn fid(&self) -> HgFileId {
-        self.inner().0
+        self.inner().fid
     }
 
-    fn mode(&self) -> FileMode {
-        self.inner().1
-    }
-
-    fn write_into(&self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(self.path());
-        buf.push(b'\0');
-        write!(buf, "{}", self.fid()).unwrap();
-        buf.extend_from_slice(hg_attr(self.mode()));
-        buf.push(b'\n');
+    fn attr(&self) -> HgFileAttr {
+        self.inner().attr
     }
 }
 
@@ -1429,9 +1394,7 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
     }
     diff.append(&mut extra_diff);
     diff.sort_by(|a, b| a.path().cmp(b.path()));
-    let parent_lines = ByteSlice::lines(&*parent_manifest)
-        .map(ManifestLine::from)
-        .collect::<IndexSet<_>>();
+    let parent_lines = parent_manifest.into_iter().collect::<IndexSet<_>>();
     let mut manifest = Vec::new();
     let mut paths = Vec::new();
     for (path, either_or_both) in parent_lines
@@ -1444,7 +1407,7 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
     {
         let (fid, mode) = match either_or_both {
             EitherOrBoth::Left(info) => {
-                WithPath::new(path, info).write_into(&mut manifest);
+                RawHgManifest::write_one_entry(&WithPath::new(path, info), &mut manifest);
                 continue;
             }
             EitherOrBoth::Both(_, DiffTreeItem::Deleted { .. }) => {
@@ -1453,7 +1416,7 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
                 continue;
             }
             EitherOrBoth::Both(
-                (mut fid, _),
+                ManifestEntry { mut fid, .. },
                 DiffTreeItem::Modified {
                     from_oid,
                     to_mode,
@@ -1508,8 +1471,15 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
 
             thing => die!("Something went wrong {:?}", thing),
         };
-        ManifestLine::from((&*path, fid, mode)).write_into(&mut manifest);
-        paths.extend_from_slice(&path);
+        let entry = WithPath::new(
+            path,
+            ManifestEntry {
+                fid,
+                attr: mode.try_into().unwrap(),
+            },
+        );
+        RawHgManifest::write_one_entry(&entry, &mut manifest);
+        paths.extend_from_slice(entry.path());
         paths.push(b'\0');
     }
     paths.pop();
@@ -1590,9 +1560,8 @@ fn create_merge_changeset(
         let commit = commit.parse().unwrap();
         let files = ls_tree(commit.tree()).unwrap();
         let raw_parent1_manifest = RawHgManifest::read(parent1_mn_cid).unwrap();
-        let parent1_manifest = ByteSlice::lines(&*raw_parent1_manifest).map(ManifestLine::from);
-        let parent2_manifest = RawHgManifest::read(parent2_mn_cid).unwrap();
-        let parent2_manifest = ByteSlice::lines(&*parent2_manifest).map(ManifestLine::from);
+        let parent1_manifest = raw_parent1_manifest.iter();
+        let parent2_manifest = RawHgManifest::read(parent2_mn_cid).unwrap().into_iter();
         let manifests =
             parent1_manifest.merge_join_by(parent2_manifest, |a, b| a.path().cmp(b.path()));
 
@@ -1605,7 +1574,7 @@ fn create_merge_changeset(
                 }
             })
         }) {
-            let (l, parents, p1_mode) = match item {
+            let (l, parents, p1_attr) = match item {
                 EitherOrBoth::Right(EitherOrBoth::Both(p1, _) | EitherOrBoth::Left(p1)) => {
                     // File was removed and was on the first parent, it's marked
                     // as affecting the changeset.
@@ -1624,14 +1593,14 @@ fn create_merge_changeset(
                     (l, Vec::new().into_boxed_slice(), None)
                 }
                 EitherOrBoth::Both(l, EitherOrBoth::Left(p1)) => {
-                    (l, vec![p1.clone()].into_boxed_slice(), Some(p1.mode()))
+                    (l, vec![p1.clone()].into_boxed_slice(), Some(p1.attr()))
                 }
                 EitherOrBoth::Both(l, EitherOrBoth::Right(p2)) => {
                     (l, vec![p2].into_boxed_slice(), None)
                 }
                 EitherOrBoth::Both(l, EitherOrBoth::Both(p1, p2)) => {
                     if p1.fid() == p2.fid() {
-                        (l, vec![p1.clone()].into_boxed_slice(), Some(p1.mode()))
+                        (l, vec![p1.clone()].into_boxed_slice(), Some(p1.attr()))
                     } else {
                         static WARN: std::sync::Once = std::sync::Once::new();
                         WARN.call_once(|| warn!(target: "root", "This may take a while..."));
@@ -1659,7 +1628,7 @@ fn create_merge_changeset(
                                 }
                             })
                             .unwrap_or_else(|| vec![p1.clone(), p2]);
-                        (l, parents.into_boxed_slice(), Some(p1.mode()))
+                        (l, parents.into_boxed_slice(), Some(p1.attr()))
                     }
                 }
             };
@@ -1676,14 +1645,13 @@ fn create_merge_changeset(
                 create_file(l.inner().oid.try_into().unwrap(), &parents)
             };
 
-            let line = ManifestLine::from((&**l.path(), fid, l.inner().mode));
-            line.write_into(&mut manifest);
-            if !unchanged
-                || p1_mode
-                    .map(|mode| mode != l.inner().mode)
-                    .unwrap_or_default()
-            {
-                paths.extend_from_slice(l.path());
+            let line = l.map(|entry| ManifestEntry {
+                fid,
+                attr: entry.mode.try_into().unwrap(),
+            });
+            RawHgManifest::write_one_entry(&line, &mut manifest);
+            if !unchanged || p1_attr.map(|attr| attr != line.attr()).unwrap_or_default() {
+                paths.extend_from_slice(line.path());
                 paths.push(b'\0');
             }
         }

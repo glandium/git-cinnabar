@@ -157,3 +157,70 @@ impl<T> Map for WithPath<T> {
         self.map(f)
     }
 }
+
+/// Parsing interface for trees
+///
+/// A type implementing this trait can be used with `TreeIter` to iterate over
+/// the parsed entries.
+pub trait ParseTree: AsRef<[u8]> {
+    /// Inner type of the parsed entry.
+    type Inner;
+    /// Parsing error.
+    type Error: std::fmt::Debug;
+
+    /// Parse one entry from the given buffer.
+    ///
+    /// The method is called by `TreeIter`. The method reads one entry, and
+    /// advances `buf` to the beginning of next entry.
+    fn parse_one_entry(buf: &mut &[u8]) -> Result<WithPath<Self::Inner>, Self::Error>;
+
+    /// Write one entry into the given buffer.
+    fn write_one_entry(entry: &WithPath<Self::Inner>, buf: &mut Vec<u8>);
+
+    /// Iterates the tree
+    fn iter(&self) -> TreeIter<&Self> {
+        TreeIter::new(self)
+    }
+}
+
+impl<T: ParseTree + ?Sized> ParseTree for &T {
+    type Inner = T::Inner;
+    type Error = T::Error;
+
+    fn parse_one_entry(buf: &mut &[u8]) -> Result<WithPath<Self::Inner>, Self::Error> {
+        T::parse_one_entry(buf)
+    }
+
+    fn write_one_entry(entry: &WithPath<Self::Inner>, buf: &mut Vec<u8>) {
+        T::write_one_entry(entry, buf);
+    }
+}
+
+/// An iterator for parsed trees
+pub struct TreeIter<T: ParseTree> {
+    tree: T,
+    remaining: usize,
+}
+
+impl<T: ParseTree> TreeIter<T> {
+    /// Constructs a tree iterator
+    pub fn new(t: T) -> Self {
+        let remaining = t.as_ref().len();
+        TreeIter { tree: t, remaining }
+    }
+}
+
+impl<T: ParseTree> Iterator for TreeIter<T> {
+    type Item = WithPath<T::Inner>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let buf = self.tree.as_ref();
+        let mut buf = &buf[buf.len() - self.remaining..];
+        if buf.is_empty() {
+            return None;
+        }
+        let result = T::parse_one_entry(&mut buf).unwrap();
+        self.remaining = buf.len();
+        Some(result)
+    }
+}

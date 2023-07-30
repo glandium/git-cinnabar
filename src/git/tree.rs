@@ -12,32 +12,69 @@ use itertools::Itertools;
 use super::{git_oid_type, GitObjectId, GitOid};
 use crate::libgit::{FileMode, RawTree};
 use crate::oid::ObjectId;
-use crate::tree_util::WithPath;
+use crate::tree_util::{ParseTree, TreeIter, WithPath};
 use crate::util::{FromBytes, SliceExt, Transpose};
 
 git_oid_type!(TreeId(GitObjectId));
 
-pub struct IntoIterTree {
-    tree: RawTree,
-    remaining: usize,
+#[derive(Debug, PartialEq, Eq)]
+pub struct TreeEntry {
+    pub oid: GitOid,
+    pub mode: FileMode,
+}
+
+impl AsRef<[u8]> for RawTree {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+#[derive(Debug)]
+pub struct MalformedTree;
+
+impl ParseTree for RawTree {
+    type Inner = TreeEntry;
+    type Error = MalformedTree;
+
+    fn parse_one_entry(buf: &mut &[u8]) -> Result<WithPath<Self::Inner>, Self::Error> {
+        (|| {
+            let [mode, remainder] = buf.splitn_exact(b' ')?;
+            let mode = FileMode::from_bytes(mode).ok()?;
+            let [path, remainder] = remainder.splitn_exact(b'\0')?;
+            if path.is_empty() {
+                return None;
+            }
+            let (oid, remainder) =
+                remainder.split_at(<GitObjectId as ObjectId>::Digest::output_size());
+            *buf = remainder;
+            Some(WithPath::new(
+                path,
+                TreeEntry {
+                    oid: (GitObjectId::from_raw_bytes(oid).unwrap(), mode).into(),
+                    mode,
+                },
+            ))
+        })()
+        .ok_or(MalformedTree)
+    }
+
+    fn write_one_entry(_entry: &WithPath<Self::Inner>, _buf: &mut Vec<u8>) {
+        todo!()
+    }
 }
 
 impl IntoIterator for RawTree {
     type Item = WithPath<TreeEntry>;
-    type IntoIter = IntoIterTree;
+    type IntoIter = TreeIter<RawTree>;
 
-    fn into_iter(self) -> IntoIterTree {
-        let remaining = self.as_bytes().len();
-        IntoIterTree {
-            tree: self,
-            remaining,
-        }
+    fn into_iter(self) -> TreeIter<RawTree> {
+        TreeIter::new(self)
     }
 }
 
 pub struct IntoRecursiveIterTree {
     prefix: BString,
-    stack: Vec<(IntoIterTree, usize)>,
+    stack: Vec<(TreeIter<RawTree>, usize)>,
 }
 
 pub type DiffTreeEntry = WithPath<EitherOrBoth<TreeEntry, TreeEntry>>;
@@ -117,46 +154,7 @@ impl RawTree {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct TreeEntry {
-    pub oid: GitOid,
-    pub mode: FileMode,
-}
-
-impl Iterator for IntoIterTree {
-    type Item = WithPath<TreeEntry>;
-
-    fn next(&mut self) -> Option<WithPath<TreeEntry>> {
-        let buf = self.tree.as_bytes();
-        let buf = &buf[buf.len() - self.remaining..];
-        if buf.is_empty() {
-            return None;
-        }
-        Some(
-            (|| {
-                let [mode, remainder] = buf.splitn_exact(b' ')?;
-                let mode = FileMode::from_bytes(mode).ok()?;
-                let [path, remainder] = remainder.splitn_exact(b'\0')?;
-                if path.is_empty() {
-                    return None;
-                }
-                let (oid, remainder) =
-                    remainder.split_at(<GitObjectId as ObjectId>::Digest::output_size());
-                self.remaining = remainder.len();
-                Some(WithPath::new(
-                    path,
-                    TreeEntry {
-                        oid: (GitObjectId::from_raw_bytes(oid).unwrap(), mode).into(),
-                        mode,
-                    },
-                ))
-            })()
-            .expect("malformed tree"),
-        )
-    }
-}
-
-impl IntoIterTree {
+impl TreeIter<RawTree> {
     pub fn recurse(self) -> IntoRecursiveIterTree {
         IntoRecursiveIterTree {
             prefix: BString::from(Vec::new()),
