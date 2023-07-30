@@ -22,9 +22,7 @@ use once_cell::sync::Lazy;
 use crate::git::{BlobId, CommitId, GitObjectId, GitOid, TreeEntry, TreeId};
 use crate::oid::ObjectId;
 use crate::tree_util::{diff_by_path, RecurseTree, WithPath};
-use crate::util::{
-    CStrExt, FromBytes, ImmutBString, IteratorExt, OptionExt, OsStrExt, SliceExt, Transpose,
-};
+use crate::util::{CStrExt, FromBytes, IteratorExt, OptionExt, OsStrExt, SliceExt, Transpose};
 
 const GIT_MAX_RAWSZ: usize = 32;
 const GIT_HASH_SHA1: c_int = 1;
@@ -675,38 +673,21 @@ impl std::ops::BitOr for FileMode {
     }
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Debug)]
 pub enum DiffTreeItem {
-    Added {
-        mode: FileMode,
-        oid: GitOid,
-    },
-    Deleted {
-        mode: FileMode,
-        oid: GitOid,
-    },
+    Added(TreeEntry),
+    Deleted(TreeEntry),
     Modified {
-        from_mode: FileMode,
-        from_oid: GitOid,
-        to_mode: FileMode,
-        to_oid: GitOid,
+        from: TreeEntry,
+        to: TreeEntry,
     },
     Renamed {
-        to_mode: FileMode,
-        to_oid: GitOid,
-        #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
-        from_path: ImmutBString,
-        from_mode: FileMode,
-        from_oid: GitOid,
+        from: WithPath<TreeEntry>,
+        to: TreeEntry,
     },
     Copied {
-        to_mode: FileMode,
-        to_oid: GitOid,
-        #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
-        from_path: ImmutBString,
-        from_mode: FileMode,
-        from_oid: GitOid,
+        from: WithPath<TreeEntry>,
+        to: TreeEntry,
     },
 }
 
@@ -733,44 +714,60 @@ unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tr
                 .transpose()
                 .unwrap()
                 .map(|_| DiffTreeItem::Modified {
-                    from_oid: gitoid(&item.a),
-                    from_mode: FileMode(item.a.mode),
-                    to_oid: gitoid(&item.b),
-                    to_mode: FileMode(item.b.mode),
+                    from: TreeEntry {
+                        oid: gitoid(&item.a),
+                        mode: FileMode(item.a.mode),
+                    },
+                    to: TreeEntry {
+                        oid: gitoid(&item.b),
+                        mode: FileMode(item.b.mode),
+                    },
                 })
         }
         DIFF_STATUS_ADDED => WithPath::new(
             CStr::from_ptr(item.b.path).to_bytes(),
-            DiffTreeItem::Added {
+            DiffTreeItem::Added(TreeEntry {
                 oid: gitoid(&item.b),
                 mode: FileMode(item.b.mode),
-            },
+            }),
         ),
         DIFF_STATUS_DELETED => WithPath::new(
             CStr::from_ptr(item.b.path).to_bytes(),
-            DiffTreeItem::Deleted {
+            DiffTreeItem::Deleted(TreeEntry {
                 oid: gitoid(&item.a),
                 mode: FileMode(item.a.mode),
-            },
+            }),
         ),
         DIFF_STATUS_RENAMED => WithPath::new(
             CStr::from_ptr(item.b.path).to_bytes(),
             DiffTreeItem::Renamed {
-                to_oid: gitoid(&item.b),
-                to_mode: FileMode(item.b.mode),
-                from_path: CStr::from_ptr(item.a.path).to_bytes().into(),
-                from_oid: gitoid(&item.a),
-                from_mode: FileMode(item.a.mode),
+                from: WithPath::new(
+                    CStr::from_ptr(item.a.path).to_bytes(),
+                    TreeEntry {
+                        oid: gitoid(&item.a),
+                        mode: FileMode(item.a.mode),
+                    },
+                ),
+                to: TreeEntry {
+                    oid: gitoid(&item.b),
+                    mode: FileMode(item.b.mode),
+                },
             },
         ),
         DIFF_STATUS_COPIED => WithPath::new(
             CStr::from_ptr(item.b.path).to_bytes(),
             DiffTreeItem::Copied {
-                to_oid: gitoid(&item.b),
-                to_mode: FileMode(item.b.mode),
-                from_path: CStr::from_ptr(item.a.path).to_bytes().into(),
-                from_oid: gitoid(&item.a),
-                from_mode: FileMode(item.a.mode),
+                from: WithPath::new(
+                    CStr::from_ptr(item.a.path).to_bytes(),
+                    TreeEntry {
+                        oid: gitoid(&item.a),
+                        mode: FileMode(item.a.mode),
+                    },
+                ),
+                to: TreeEntry {
+                    oid: gitoid(&item.b),
+                    mode: FileMode(item.b.mode),
+                },
             },
         ),
         c => panic!("Unknown diff state: {}", c),
@@ -815,20 +812,9 @@ pub fn diff_tree(a: CommitId, b: CommitId) -> impl Iterator<Item = WithPath<Diff
     let b = b.parse().unwrap();
     let b = RawTree::read(b.tree()).unwrap();
     diff_by_path(a, b).recurse().map_map(|entry| match entry {
-        Both(a, b) => DiffTreeItem::Modified {
-            from_mode: a.mode,
-            from_oid: a.oid,
-            to_mode: b.mode,
-            to_oid: b.oid,
-        },
-        Left(a) => DiffTreeItem::Deleted {
-            mode: a.mode,
-            oid: a.oid,
-        },
-        Right(b) => DiffTreeItem::Added {
-            mode: b.mode,
-            oid: b.oid,
-        },
+        Both(a, b) => DiffTreeItem::Modified { from: a, to: b },
+        Left(a) => DiffTreeItem::Deleted(a),
+        Right(b) => DiffTreeItem::Added(b),
     })
 }
 

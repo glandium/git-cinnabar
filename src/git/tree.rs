@@ -13,7 +13,7 @@ use crate::util::{FromBytes, SliceExt};
 
 git_oid_type!(TreeId(GitObjectId));
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TreeEntry {
     pub oid: GitOid,
     pub mode: FileMode,
