@@ -19,7 +19,7 @@ use itertools::EitherOrBoth::{self, *};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
-use crate::git::{BlobId, CommitId, GitObjectId, GitOid, TreeEntry, TreeId};
+use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry, TreeId};
 use crate::oid::ObjectId;
 use crate::tree_util::{diff_by_path, RecurseTree, WithPath};
 use crate::util::{CStrExt, FromBytes, IteratorExt, OptionExt, OsStrExt, SliceExt, Transpose};
@@ -675,19 +675,19 @@ impl std::ops::BitOr for FileMode {
 
 #[derive(Debug)]
 pub enum DiffTreeItem {
-    Added(TreeEntry),
-    Deleted(TreeEntry),
+    Added(RecursedTreeEntry),
+    Deleted(RecursedTreeEntry),
     Modified {
-        from: TreeEntry,
-        to: TreeEntry,
+        from: RecursedTreeEntry,
+        to: RecursedTreeEntry,
     },
     Renamed {
-        from: WithPath<TreeEntry>,
-        to: TreeEntry,
+        from: WithPath<RecursedTreeEntry>,
+        to: RecursedTreeEntry,
     },
     Copied {
-        from: WithPath<TreeEntry>,
-        to: TreeEntry,
+        from: WithPath<RecursedTreeEntry>,
+        to: RecursedTreeEntry,
     },
 }
 
@@ -714,11 +714,11 @@ unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tr
                 .transpose()
                 .unwrap()
                 .map(|_| DiffTreeItem::Modified {
-                    from: TreeEntry {
+                    from: RecursedTreeEntry {
                         oid: gitoid(&item.a),
                         mode: FileMode(item.a.mode),
                     },
-                    to: TreeEntry {
+                    to: RecursedTreeEntry {
                         oid: gitoid(&item.b),
                         mode: FileMode(item.b.mode),
                     },
@@ -726,14 +726,14 @@ unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tr
         }
         DIFF_STATUS_ADDED => WithPath::new(
             CStr::from_ptr(item.b.path).to_bytes(),
-            DiffTreeItem::Added(TreeEntry {
+            DiffTreeItem::Added(RecursedTreeEntry {
                 oid: gitoid(&item.b),
                 mode: FileMode(item.b.mode),
             }),
         ),
         DIFF_STATUS_DELETED => WithPath::new(
             CStr::from_ptr(item.b.path).to_bytes(),
-            DiffTreeItem::Deleted(TreeEntry {
+            DiffTreeItem::Deleted(RecursedTreeEntry {
                 oid: gitoid(&item.a),
                 mode: FileMode(item.a.mode),
             }),
@@ -743,12 +743,12 @@ unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tr
             DiffTreeItem::Renamed {
                 from: WithPath::new(
                     CStr::from_ptr(item.a.path).to_bytes(),
-                    TreeEntry {
+                    RecursedTreeEntry {
                         oid: gitoid(&item.a),
                         mode: FileMode(item.a.mode),
                     },
                 ),
-                to: TreeEntry {
+                to: RecursedTreeEntry {
                     oid: gitoid(&item.b),
                     mode: FileMode(item.b.mode),
                 },
@@ -759,12 +759,12 @@ unsafe extern "C" fn diff_tree_fill(diff_tree: *mut c_void, item: *const diff_tr
             DiffTreeItem::Copied {
                 from: WithPath::new(
                     CStr::from_ptr(item.a.path).to_bytes(),
-                    TreeEntry {
+                    RecursedTreeEntry {
                         oid: gitoid(&item.a),
                         mode: FileMode(item.a.mode),
                     },
                 ),
-                to: TreeEntry {
+                to: RecursedTreeEntry {
                     oid: gitoid(&item.b),
                     mode: FileMode(item.b.mode),
                 },
@@ -1133,7 +1133,9 @@ pub fn config_set_value<S: ToString>(key: &str, value: S) {
 #[derive(Debug)]
 pub struct LsTreeError;
 
-pub fn ls_tree(tree_id: TreeId) -> Result<impl Iterator<Item = WithPath<TreeEntry>>, LsTreeError> {
+pub fn ls_tree(
+    tree_id: TreeId,
+) -> Result<impl Iterator<Item = WithPath<RecursedTreeEntry>>, LsTreeError> {
     RawTree::read(tree_id)
         .ok_or(LsTreeError)
         .map(|tree| tree.into_iter().recurse())

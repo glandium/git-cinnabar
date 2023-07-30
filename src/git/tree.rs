@@ -14,14 +14,16 @@ use crate::util::{FromBytes, SliceExt};
 git_oid_type!(TreeId(GitObjectId));
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TreeEntry {
+pub struct RecursedTreeEntry {
     pub oid: GitOid,
     pub mode: FileMode,
 }
 
+pub type TreeEntry = Either<TreeId, RecursedTreeEntry>;
+
 impl MayRecurse for TreeEntry {
     fn may_recurse(&self) -> bool {
-        self.oid.is_tree()
+        self.is_left()
     }
 }
 
@@ -57,9 +59,9 @@ impl ParseTree for RawTree {
             *buf = remainder;
             Some(WithPath::new(
                 path,
-                TreeEntry {
-                    oid: (GitObjectId::from_raw_bytes(oid).unwrap(), mode).into(),
-                    mode,
+                match GitOid::from((GitObjectId::from_raw_bytes(oid).unwrap(), mode)) {
+                    GitOid::Tree(tree_id) => Either::Left(tree_id),
+                    oid => Either::Right(RecursedTreeEntry { oid, mode }),
                 },
             ))
         })()
@@ -81,13 +83,9 @@ impl IntoIterator for RawTree {
 }
 
 impl RecurseAs<TreeIter<RawTree>> for TreeEntry {
-    type NonRecursed = Self;
+    type NonRecursed = RecursedTreeEntry;
 
-    fn maybe_recurse(self) -> Either<TreeIter<RawTree>, Self> {
-        if let GitOid::Tree(tree_id) = self.oid {
-            Either::Left(RawTree::read(tree_id).unwrap().into_iter())
-        } else {
-            Either::Right(self)
-        }
+    fn maybe_recurse(self) -> Either<TreeIter<RawTree>, RecursedTreeEntry> {
+        self.map_left(|tree_id| RawTree::read(tree_id).unwrap().into_iter())
     }
 }
