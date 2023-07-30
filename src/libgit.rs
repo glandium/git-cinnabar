@@ -21,7 +21,7 @@ use once_cell::sync::Lazy;
 
 use crate::git::{BlobId, CommitId, GitObjectId, GitOid, TreeEntry, TreeId};
 use crate::oid::ObjectId;
-use crate::tree_util::{diff_by_path, WithPath};
+use crate::tree_util::{diff_by_path, RecurseTree, WithPath};
 use crate::util::{
     CStrExt, FromBytes, ImmutBString, IteratorExt, OptionExt, OsStrExt, SliceExt, Transpose,
 };

@@ -9,7 +9,7 @@
 use std::cmp::Ordering;
 use std::iter::{zip, Peekable};
 
-use bstr::{BStr, ByteSlice};
+use bstr::{BStr, BString, ByteSlice};
 use either::Either;
 use itertools::EitherOrBoth;
 
@@ -319,6 +319,7 @@ impl<T: ParseTree + ?Sized> ParseTree for &T {
 }
 
 /// An iterator for parsed trees
+#[derive(Default)]
 pub struct TreeIter<T: ParseTree> {
     tree: T,
     remaining: usize,
@@ -555,6 +556,326 @@ fn test_diff_by_path() {
             WithPath::new(*b"hoge", EitherOrBoth::Both(NonTree(2), NonTree(3))),
             WithPath::new(*b"qux", EitherOrBoth::Left(NonTree(3))),
             WithPath::new(*b"toto", EitherOrBoth::Right(NonTree(4)))
+        ]
+    );
+}
+
+/// An iterator adaptor that recurses through tree entries of its base iterator.
+///
+/// See [`RecurseTree::recurse`] for more information.
+pub struct RecurseTreeIter<I: Iterator> {
+    prefix: BString,
+    stack: Vec<(I, usize)>,
+}
+
+/// Recursion driver for [`RecurseTreeIter`]
+pub trait RecurseAs<I>: MayRecurse {
+    /// The type returned by [`RecurseAs::maybe_recurse`] when not recursing.
+    type NonRecursed;
+
+    /// Method called by [`RecurseTreeIter`] for each item in its base iterator.
+    ///
+    /// For each of the tree items (where [`MayRecurse::may_recurse`] returns `true`),
+    /// this method may return a tree iterator of the same type as base iterator
+    /// of the calling [`RecurseTreeIter`].
+    ///
+    /// The calling [`RecurseTreeIter`] will emit items of the type `WithPath<NonRecursed>`.
+    fn maybe_recurse(self) -> Either<I, Self::NonRecursed>;
+}
+
+impl<I: Iterator> RecurseTreeIter<I>
+where
+    I::Item: IsWithPath,
+    <I::Item as IsWithPath>::Inner: RecurseAs<I>,
+{
+    /// Constructs a recursive tree iterator.
+    pub fn new(iter: I) -> Self {
+        RecurseTreeIter {
+            prefix: BString::from(Vec::new()),
+            stack: vec![(iter, 0)],
+        }
+    }
+}
+
+impl<I: Iterator> Iterator for RecurseTreeIter<I>
+where
+    I::Item: IsWithPath,
+    <I::Item as IsWithPath>::Inner: RecurseAs<I>,
+{
+    type Item = WithPath<<<I::Item as IsWithPath>::Inner as RecurseAs<I>>::NonRecursed>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some((iter, prefix_len)) = self.stack.last_mut() {
+                if let Some((path, entry)) =
+                    iter.next().map(IsWithPath::realize).map(WithPath::unzip)
+                {
+                    match entry.maybe_recurse() {
+                        Either::Left(recursed) => {
+                            self.stack.push((recursed.into_iter(), self.prefix.len()));
+                            self.prefix.extend_from_slice(&path);
+                            self.prefix.push(b'/');
+                        }
+                        Either::Right(entry) => {
+                            let mut full_path = self.prefix.clone();
+                            full_path.extend_from_slice(&path);
+                            return Some(WithPath::new(Vec::from(full_path), entry));
+                        }
+                    }
+                } else {
+                    self.prefix.truncate(*prefix_len);
+                    self.stack.pop();
+                }
+            } else {
+                return None;
+            }
+        }
+    }
+}
+
+#[allow(missing_docs)]
+pub trait Mergeish {
+    type I: Iterator;
+    type J: Iterator;
+    fn merge(left: Self::I, right: Self::J) -> Self;
+}
+
+impl<I: Iterator, J: Iterator> Mergeish for MergeJoinByPath<I, J>
+where
+    I::Item: IsWithPath,
+    J::Item: IsWithPath,
+{
+    type I = I;
+    type J = J;
+
+    fn merge(left: Self::I, right: Self::J) -> Self {
+        merge_join_by_path(left, right)
+    }
+}
+
+impl<I: Iterator, J: Iterator> Mergeish for DiffByPath<I, J>
+where
+    I::Item: IsWithPath,
+    J::Item: IsWithPath,
+{
+    type I = I;
+    type J = J;
+
+    fn merge(left: Self::I, right: Self::J) -> Self {
+        diff_by_path(left, right)
+    }
+}
+
+impl<L: MayRecurse, R: MayRecurse> MayRecurse for EitherOrBoth<L, R> {
+    fn may_recurse(&self) -> bool {
+        self.as_ref()
+            .map_any(MayRecurse::may_recurse, MayRecurse::may_recurse)
+            .reduce(|l, r| {
+                assert_eq!(
+                    l, r,
+                    "Both ends of EitherOrBoth need to agree for may_recurse"
+                );
+                l && r
+            })
+    }
+}
+
+#[allow(missing_docs)]
+pub trait Empty {
+    fn empty() -> Self;
+}
+
+impl<T: Empty + ParseTree> Empty for TreeIter<T> {
+    fn empty() -> Self {
+        TreeIter::new(T::empty())
+    }
+}
+
+impl<T: Mergeish, L: RecurseAs<T::I>, R: RecurseAs<T::J>> RecurseAs<T> for EitherOrBoth<L, R>
+where
+    T::I: Empty,
+    T::J: Empty,
+{
+    type NonRecursed = EitherOrBoth<L::NonRecursed, R::NonRecursed>;
+
+    fn maybe_recurse(self) -> Either<T, Self::NonRecursed> {
+        use EitherOrBoth::{Both, Left, Right};
+        match self.map_any(RecurseAs::maybe_recurse, RecurseAs::maybe_recurse) {
+            Both(Either::Left(l), Either::Left(r)) => Either::Left(Both(l, r)),
+            Both(Either::Right(l), Either::Right(r)) => Either::Right(Both(l, r)),
+            Both(_, _) => unreachable!(),
+            Left(l) => l.map_left(Left).map_right(Left),
+            Right(r) => r.map_left(Right).map_right(Right),
+        }
+        .map_left(|l| {
+            let (a, b) = l.or_else(Empty::empty, Empty::empty);
+            T::merge(a, b)
+        })
+    }
+}
+
+#[allow(missing_docs)]
+pub trait RecurseTree {
+    type RecurseType;
+
+    fn recurse(self) -> Self::RecurseType;
+}
+
+impl<T: RecurseAs<I>, I: Iterator<Item = WithPath<T>>> RecurseTree for I {
+    type RecurseType = RecurseTreeIter<I>;
+
+    fn recurse(self) -> Self::RecurseType {
+        RecurseTreeIter::new(self)
+    }
+}
+
+#[test]
+fn test_recurse_tree_iter() {
+    use itertools::Itertools;
+    use once_cell::sync::Lazy;
+    use std::cell::RefCell;
+    use Either::{Left, Right};
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct TreeId(usize);
+
+    type Tree = Vec<WithPath<Either<TreeId, &'static str>>>;
+
+    static TREES: Lazy<[Tree; 7]> = Lazy::new(|| {
+        [
+            vec![
+                WithPath::new(*b"bar", Right("bar")),
+                WithPath::new(*b"foo", Left(TreeId(1))),
+                WithPath::new(*b"fuga", Right("fuga")),
+                WithPath::new(*b"hoge", Left(TreeId(2))),
+                WithPath::new(*b"qux", Right("qux")),
+            ],
+            vec![
+                WithPath::new(*b"bar", Right("foobar")),
+                WithPath::new(*b"baz", Right("foobaz")),
+                WithPath::new(*b"toto", Left(TreeId(3))),
+            ],
+            vec![WithPath::new(*b"hoge", Right("hoge"))],
+            vec![WithPath::new(*b"titi", Right("footototiti"))],
+            vec![
+                WithPath::new(*b"bar", Right("bar")),
+                WithPath::new(*b"foo", Left(TreeId(5))),
+                WithPath::new(*b"fuga", Right("fuga")),
+                WithPath::new(*b"hoge", Left(TreeId(2))),
+                WithPath::new(*b"qux", Right("qux")),
+            ],
+            vec![
+                WithPath::new(*b"bar", Right("foobar")),
+                WithPath::new(*b"foo", Right("foofoo")),
+                WithPath::new(*b"toto", Left(TreeId(6))),
+            ],
+            vec![
+                WithPath::new(*b"a", Right("a")),
+                WithPath::new(*b"titi", Right("titi")),
+            ],
+        ]
+    });
+    thread_local! {
+        static COUNTS: RefCell<[usize; 7]> = RefCell::new([0; 7]);
+    }
+
+    impl MayRecurse for Either<TreeId, &'static str> {
+        fn may_recurse(&self) -> bool {
+            self.is_left()
+        }
+    }
+
+    impl RecurseAs<<Tree as IntoIterator>::IntoIter> for Either<TreeId, &'static str> {
+        type NonRecursed = &'static str;
+
+        fn maybe_recurse(self) -> Either<<Tree as IntoIterator>::IntoIter, &'static str> {
+            self.map_left(|l| {
+                COUNTS.with(|counts| counts.borrow_mut()[l.0] += 1);
+                TREES[l.0].clone().into_iter()
+            })
+        }
+    }
+
+    impl<T> Empty for std::vec::IntoIter<T> {
+        fn empty() -> Self {
+            vec![].into_iter()
+        }
+    }
+
+    let counts = COUNTS.with(RefCell::take);
+    assert_eq!(counts, [0; 7]);
+
+    let recursed = TREES[0].clone().into_iter().recurse().collect_vec();
+
+    assert_eq!(
+        &recursed,
+        &[
+            WithPath::new(*b"bar", "bar"),
+            WithPath::new(*b"foo/bar", "foobar"),
+            WithPath::new(*b"foo/baz", "foobaz"),
+            WithPath::new(*b"foo/toto/titi", "footototiti"),
+            WithPath::new(*b"fuga", "fuga"),
+            WithPath::new(*b"hoge/hoge", "hoge"),
+            WithPath::new(*b"qux", "qux"),
+        ]
+    );
+
+    let counts = COUNTS.with(RefCell::take);
+    assert_eq!(counts, [0, 1, 1, 1, 0, 0, 0]);
+
+    let recursed = TREES[4].clone().into_iter().recurse().collect_vec();
+
+    assert_eq!(
+        &recursed,
+        &[
+            WithPath::new(*b"bar", "bar"),
+            WithPath::new(*b"foo/bar", "foobar"),
+            WithPath::new(*b"foo/foo", "foofoo"),
+            WithPath::new(*b"foo/toto/a", "a"),
+            WithPath::new(*b"foo/toto/titi", "titi"),
+            WithPath::new(*b"fuga", "fuga"),
+            WithPath::new(*b"hoge/hoge", "hoge"),
+            WithPath::new(*b"qux", "qux"),
+        ]
+    );
+
+    let counts = COUNTS.with(RefCell::take);
+    assert_eq!(counts, [0, 0, 1, 0, 0, 1, 1]);
+
+    let diff_recursed = diff_by_path(TREES[0].clone(), TREES[4].clone())
+        .recurse()
+        .collect_vec();
+    assert_eq!(
+        &diff_recursed,
+        &[
+            WithPath::new(*b"foo/baz", EitherOrBoth::Left("foobaz")),
+            WithPath::new(*b"foo/foo", EitherOrBoth::Right("foofoo")),
+            WithPath::new(*b"foo/toto/a", EitherOrBoth::Right("a")),
+            WithPath::new(*b"foo/toto/titi", EitherOrBoth::Both("footototiti", "titi")),
+        ]
+    );
+
+    let counts = COUNTS.with(RefCell::take);
+    assert_eq!(counts, [0, 1, 0, 1, 0, 1, 1]);
+
+    let merge_recursed = merge_join_by_path(TREES[0].clone(), TREES[4].clone())
+        .recurse()
+        .collect_vec();
+    let counts = COUNTS.with(RefCell::take);
+    assert_eq!(counts, [0, 1, 2, 1, 0, 1, 1]);
+
+    assert_eq!(
+        &merge_recursed,
+        &[
+            WithPath::new(*b"bar", EitherOrBoth::Both("bar", "bar")),
+            WithPath::new(*b"foo/bar", EitherOrBoth::Both("foobar", "foobar")),
+            WithPath::new(*b"foo/baz", EitherOrBoth::Left("foobaz")),
+            WithPath::new(*b"foo/foo", EitherOrBoth::Right("foofoo")),
+            WithPath::new(*b"foo/toto/a", EitherOrBoth::Right("a")),
+            WithPath::new(*b"foo/toto/titi", EitherOrBoth::Both("footototiti", "titi")),
+            WithPath::new(*b"fuga", EitherOrBoth::Both("fuga", "fuga")),
+            WithPath::new(*b"hoge/hoge", EitherOrBoth::Both("hoge", "hoge")),
+            WithPath::new(*b"qux", EitherOrBoth::Both("qux", "qux")),
         ]
     );
 }
