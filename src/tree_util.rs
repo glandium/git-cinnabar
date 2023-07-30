@@ -466,3 +466,95 @@ fn test_merge_join_by_path() {
         ]
     );
 }
+
+/// An iterator adaptor that emits differences between items from the two
+/// base iterators in ascending order of the path associated with their items.
+///
+/// See [`diff_by_path()`] for more information.
+pub struct DiffByPath<I: Iterator, J: Iterator>(MergeJoinByPath<I, J>);
+
+/// Create an iterator that emits differences between items from the specified
+/// iterators in ascending order of the path associated with their items.
+///
+/// From iterators `I` and `J` respectively emitting `WithPath<L>` and `WithPath<R>`, the
+/// resulting iterator will emit `WithPath<EitherOrBoth<L, R>>`.
+///
+/// Notes:
+/// - The specified iterators are expected to be ordered by order of [`WithPath::cmp_path`].
+/// - If both iterators have entries with the same path, but one may be recursed and the
+///   other may not, they are emitted separately (per [`WithPath::cmp_path`] not returning
+///   [`Ordering::Equal`] in that case).
+///
+/// This is equivalent to
+/// ```
+/// merge_join_by_path(left, right).filter(|x| match x.inner() {
+///     EitherOrBoth::Both(a, b) => a != b,
+///     _ => true,
+/// })
+/// ```
+pub fn diff_by_path<I: IntoIterator, J: IntoIterator>(
+    left: I,
+    right: J,
+) -> DiffByPath<I::IntoIter, J::IntoIter>
+where
+    I::Item: IsWithPath,
+    J::Item: IsWithPath,
+{
+    DiffByPath(merge_join_by_path(left, right))
+}
+
+impl<I: Iterator, J: Iterator> Iterator for DiffByPath<I, J>
+where
+    I::Item: IsWithPath,
+    J::Item: IsWithPath,
+    <I::Item as IsWithPath>::Inner: MayRecurse + PartialEq<<J::Item as IsWithPath>::Inner>,
+    <J::Item as IsWithPath>::Inner: MayRecurse,
+{
+    type Item = <MergeJoinByPath<I, J> as Iterator>::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.find(|entry| match entry.inner() {
+            EitherOrBoth::Both(a, b) => a != b,
+            _ => true,
+        })
+    }
+}
+
+#[test]
+fn test_diff_by_path() {
+    use itertools::Itertools;
+
+    #[derive(Debug, PartialEq)]
+    struct NonTree<T>(T);
+    impl<T> MayRecurse for NonTree<T> {
+        fn may_recurse(&self) -> bool {
+            false
+        }
+    }
+
+    let diffed = diff_by_path(
+        [
+            WithPath::new(*b"foo", NonTree(1)),
+            WithPath::new(*b"hoge", NonTree(2)),
+            WithPath::new(*b"qux", NonTree(3)),
+        ],
+        [
+            WithPath::new(*b"bar", NonTree(0)),
+            WithPath::new(*b"foo", NonTree(1)),
+            WithPath::new(*b"fuga", NonTree(2)),
+            WithPath::new(*b"hoge", NonTree(3)),
+            WithPath::new(*b"toto", NonTree(4)),
+        ],
+    )
+    .collect_vec();
+    assert_eq!(
+        &diffed,
+        &[
+            WithPath::new(*b"bar", EitherOrBoth::Right(NonTree(0))),
+            WithPath::new(*b"fuga", EitherOrBoth::Right(NonTree(2))),
+            WithPath::new(*b"hoge", EitherOrBoth::Both(NonTree(2), NonTree(3))),
+            WithPath::new(*b"qux", EitherOrBoth::Left(NonTree(3))),
+            WithPath::new(*b"toto", EitherOrBoth::Right(NonTree(4)))
+        ]
+    );
+}

@@ -21,7 +21,7 @@ use once_cell::sync::Lazy;
 
 use crate::git::{BlobId, CommitId, GitObjectId, GitOid, TreeEntry, TreeId};
 use crate::oid::ObjectId;
-use crate::tree_util::WithPath;
+use crate::tree_util::{diff_by_path, WithPath};
 use crate::util::{
     CStrExt, FromBytes, ImmutBString, IteratorExt, OptionExt, OsStrExt, SliceExt, Transpose,
 };
@@ -814,24 +814,22 @@ pub fn diff_tree(a: CommitId, b: CommitId) -> impl Iterator<Item = WithPath<Diff
     let b = RawCommit::read(b).unwrap();
     let b = b.parse().unwrap();
     let b = RawTree::read(b.tree()).unwrap();
-    RawTree::into_diff(a, b)
-        .recurse()
-        .map_map(|entry| match entry {
-            Both(a, b) => DiffTreeItem::Modified {
-                from_mode: a.mode,
-                from_oid: a.oid,
-                to_mode: b.mode,
-                to_oid: b.oid,
-            },
-            Left(a) => DiffTreeItem::Deleted {
-                mode: a.mode,
-                oid: a.oid,
-            },
-            Right(b) => DiffTreeItem::Added {
-                mode: b.mode,
-                oid: b.oid,
-            },
-        })
+    diff_by_path(a, b).recurse().map_map(|entry| match entry {
+        Both(a, b) => DiffTreeItem::Modified {
+            from_mode: a.mode,
+            from_oid: a.oid,
+            to_mode: b.mode,
+            to_oid: b.oid,
+        },
+        Left(a) => DiffTreeItem::Deleted {
+            mode: a.mode,
+            oid: a.oid,
+        },
+        Right(b) => DiffTreeItem::Added {
+            mode: b.mode,
+            oid: b.oid,
+        },
+    })
 }
 
 extern "C" {

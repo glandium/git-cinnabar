@@ -9,7 +9,7 @@ use itertools::EitherOrBoth::{self, Both, Left, Right};
 use super::{git_oid_type, GitObjectId, GitOid};
 use crate::libgit::{FileMode, RawTree};
 use crate::oid::ObjectId;
-use crate::tree_util::{merge_join_by_path, MayRecurse, ParseTree, TreeIter, WithPath};
+use crate::tree_util::{diff_by_path, DiffByPath, MayRecurse, ParseTree, TreeIter, WithPath};
 use crate::util::{FromBytes, SliceExt};
 
 git_oid_type!(TreeId(GitObjectId));
@@ -82,22 +82,11 @@ pub struct IntoRecursiveIterTree {
 
 pub type DiffTreeEntry = WithPath<EitherOrBoth<TreeEntry, TreeEntry>>;
 
-pub struct IntoIterDiff(Box<dyn Iterator<Item = DiffTreeEntry>>);
+pub type IntoIterDiff = DiffByPath<TreeIter<RawTree>, TreeIter<RawTree>>;
 
 pub struct IntoRecursiveIterDiff {
     prefix: BString,
     stack: Vec<(IntoIterDiff, usize)>,
-}
-
-impl RawTree {
-    pub fn into_diff(self, other: RawTree) -> IntoIterDiff {
-        IntoIterDiff(Box::new(merge_join_by_path(self, other).filter(
-            |entry| match entry.inner() {
-                Both(a, b) => a != b,
-                _ => true,
-            },
-        )))
-    }
 }
 
 impl TreeIter<RawTree> {
@@ -106,14 +95,6 @@ impl TreeIter<RawTree> {
             prefix: BString::from(Vec::new()),
             stack: vec![(self, 0)],
         }
-    }
-}
-
-impl Iterator for IntoIterDiff {
-    type Item = DiffTreeEntry;
-
-    fn next(&mut self) -> Option<DiffTreeEntry> {
-        self.0.next()
     }
 }
 
@@ -210,7 +191,7 @@ impl Iterator for IntoRecursiveIterDiff {
                         let (a, b) = entry
                             .map(|e| RawTree::read(e.oid.try_into().unwrap()).unwrap())
                             .or(RawTree::EMPTY, RawTree::EMPTY);
-                        self.stack.push((RawTree::into_diff(a, b), len));
+                        self.stack.push((diff_by_path(a, b), len));
                     } else {
                         let mut full_path = self.prefix.clone();
                         full_path.extend_from_slice(&path);
