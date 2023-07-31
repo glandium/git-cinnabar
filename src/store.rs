@@ -40,11 +40,12 @@ use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{files_meta, generate_manifest, git2hg, hg2git, hg_object_id};
 use crate::libgit::{
-    die, get_oid_blob, get_oid_committish, ls_tree, object_id, strbuf, Commit, RawBlob, RawCommit,
-    RawTree, RefTransaction,
+    die, get_oid_blob, get_oid_committish, object_id, strbuf, Commit, RawBlob, RawCommit, RawTree,
+    RefTransaction,
 };
 use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
+use crate::tree_util::RecurseTree;
 use crate::util::{FromBytes, ImmutBString, OsStrExt, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::{apply, textdiff, PatchInfo};
 use crate::{check_enabled, do_reload, set_metadata_to, Checks, MetadataFlags};
@@ -1648,7 +1649,7 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
             .map(|(a, b)| (b, a))
             .collect::<BTreeMap<_, _>>();
         let mut needed = Vec::new();
-        for item in ls_tree(commit.tree()).unwrap() {
+        for item in RawTree::read(commit.tree()).unwrap().into_iter().recurse() {
             let cid = item.inner().oid.try_into().unwrap();
             if let Some(refname) = by_sha1.get(&cid) {
                 let replace_ref = bstr::join(b"/", [b"refs/cinnabar/replace", &**item.path()]);

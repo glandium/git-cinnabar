@@ -21,7 +21,7 @@ use once_cell::sync::Lazy;
 
 use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry, TreeId};
 use crate::oid::ObjectId;
-use crate::tree_util::{RecurseTree, WithPath};
+use crate::tree_util::WithPath;
 use crate::util::{CStrExt, FromBytes, OptionExt, OsStrExt, SliceExt, Transpose};
 
 const GIT_MAX_RAWSZ: usize = 32;
@@ -1114,17 +1114,6 @@ pub fn config_set_value<S: ToString>(key: &str, value: S) {
     unsafe {
         git_config_set(key.as_ptr(), value.as_ptr());
     }
-}
-
-#[derive(Debug)]
-pub struct LsTreeError;
-
-pub fn ls_tree(
-    tree_id: TreeId,
-) -> Result<impl Iterator<Item = WithPath<RecursedTreeEntry>>, LsTreeError> {
-    RawTree::read(tree_id)
-        .ok_or(LsTreeError)
-        .map(|tree| tree.into_iter().recurse())
 }
 
 extern "C" {

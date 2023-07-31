@@ -109,9 +109,9 @@ use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bund
 use libcinnabar::{files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
     config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
-    get_oid_committish, lookup_replace_commit, ls_tree, metadata_oid, object_id, reachable_subset,
-    remote, resolve_ref, rev_list, rev_list_with_boundaries, strbuf, DiffTreeItem, MaybeBoundary,
-    RawBlob, RawCommit, RawTree, RefTransaction,
+    get_oid_committish, lookup_replace_commit, metadata_oid, object_id, reachable_subset, remote,
+    resolve_ref, rev_list, rev_list_with_boundaries, strbuf, DiffTreeItem, MaybeBoundary, RawBlob,
+    RawCommit, RawTree, RefTransaction,
 };
 use oid::{Abbrev, ObjectId};
 use once_cell::sync::Lazy;
@@ -739,8 +739,10 @@ fn set_metadata_to(
         }
         transaction.update(METADATA_REF, new, metadata, msg)?;
         transaction.update(NOTES_REF, commit.parents()[3], notes, msg)?;
-        for (path, item) in ls_tree(commit.tree())
-            .map_err(|_| format!("Failed to read metadata: {}", new))?
+        for (path, item) in RawTree::read(commit.tree())
+            .ok_or_else(|| format!("Failed to read metadata: {}", new))?
+            .into_iter()
+            .recurse()
             .map(WithPath::unzip)
         {
             // TODO: Check mode.
@@ -1305,12 +1307,12 @@ fn create_root_changeset(cid: CommitId) -> HgChangesetId {
     unsafe {
         ensure_store_init();
     }
-    let commit = RawCommit::read(cid).unwrap();
-    let commit = commit.parse().unwrap();
     let mut manifest = Vec::new();
     let mut paths = Vec::new();
-    for entry in ls_tree(commit.tree())
+    for entry in RawTree::read_treeish(cid)
         .unwrap()
+        .into_iter()
+        .recurse()
         .map_map(|item| ManifestEntry {
             fid: create_file(item.oid.try_into().unwrap(), &[]),
             attr: item.mode.try_into().unwrap(),
@@ -1510,9 +1512,7 @@ fn create_merge_changeset(
             }
         }
 
-        let commit = RawCommit::read(cid).unwrap();
-        let commit = commit.parse().unwrap();
-        let files = ls_tree(commit.tree()).unwrap();
+        let files = RawTree::read_treeish(cid).unwrap().into_iter().recurse();
         let raw_parent1_manifest = RawHgManifest::read(parent1_mn_cid).unwrap();
         let parent1_manifest = raw_parent1_manifest.iter();
         let parent2_manifest = RawHgManifest::read(parent2_mn_cid).unwrap().into_iter();
@@ -1977,15 +1977,12 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
                 .filter(|pair| !all_interesting.contains(pair))
                 .collect_vec()
         } else {
-            ls_tree(commit.tree())
+            RawTree::read(commit.tree())
                 .unwrap()
+                .into_iter()
+                .recurse()
+                .map_map(|item| HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap())
                 .map(WithPath::unzip)
-                .map(|(path, item)| {
-                    (
-                        path,
-                        HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
-                    )
-                })
                 .filter(|pair| !all_interesting.contains(pair))
                 .collect_vec()
         };
@@ -2017,14 +2014,14 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
                     all_interesting.remove(&item);
                 });
         } else {
-            // Yes, this is ridiculous.
-            let commit = RawCommit::read(r).unwrap();
-            let commit = commit.parse().unwrap();
-            for (path, item) in ls_tree(commit.tree()).unwrap().map(WithPath::unzip) {
-                all_interesting.remove(&(
-                    path,
-                    HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
-                ));
+            for item in RawTree::read_treeish(r)
+                .unwrap()
+                .into_iter()
+                .recurse()
+                .map_map(|item| HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap())
+                .map(WithPath::unzip)
+            {
+                all_interesting.remove(&item);
             }
         }
         previous = Some(r);
@@ -2598,10 +2595,10 @@ fn do_fsck_full(
 }
 
 fn check_replace(metadata_cid: CommitId) {
-    let commit = RawCommit::read(metadata_cid).unwrap();
-    let commit = commit.parse().unwrap();
-    for r in ls_tree(commit.tree())
+    for r in RawTree::read_treeish(metadata_cid)
         .unwrap()
+        .into_iter()
+        .recurse()
         .filter_map(|item| {
             let r = GitObjectId::from_bytes(item.path()).unwrap();
             (item.inner().oid == r).then_some(r)
@@ -2629,15 +2626,18 @@ fn get_changes(
     all: bool,
 ) -> Box<dyn Iterator<Item = WithPath<(HgFileId, Box<[HgFileId]>)>>> {
     if parents.is_empty() {
-        // Yes, this is ridiculous.
-        let commit = RawCommit::read(cid).unwrap();
-        let commit = commit.parse().unwrap();
-        Box::new(ls_tree(commit.tree()).unwrap().map_map(|item| {
-            (
-                HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
-                [].to_boxed(),
-            )
-        }))
+        Box::new(
+            RawTree::read_treeish(cid)
+                .unwrap()
+                .into_iter()
+                .recurse()
+                .map_map(|item| {
+                    (
+                        HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
+                        [].to_boxed(),
+                    )
+                }),
+        )
     } else if parents.len() == 1 {
         Box::new(
             manifest_diff(parents[0], cid).map_map(|(node, parent)| (node, [parent].to_boxed())),
