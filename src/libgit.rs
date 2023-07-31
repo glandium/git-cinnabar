@@ -15,14 +15,14 @@ use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use derive_more::Deref;
 use getset::{CopyGetters, Getters};
 use hex_literal::hex;
-use itertools::EitherOrBoth::{self, *};
+use itertools::EitherOrBoth;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 
 use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry, TreeId};
 use crate::oid::ObjectId;
-use crate::tree_util::{diff_by_path, RecurseTree, WithPath};
-use crate::util::{CStrExt, FromBytes, IteratorExt, OptionExt, OsStrExt, SliceExt, Transpose};
+use crate::tree_util::{RecurseTree, WithPath};
+use crate::util::{CStrExt, FromBytes, OptionExt, OsStrExt, SliceExt, Transpose};
 
 const GIT_MAX_RAWSZ: usize = 32;
 const GIT_HASH_SHA1: c_int = 1;
@@ -802,20 +802,6 @@ pub fn diff_tree_with_copies(
         );
     }
     result.into_iter()
-}
-
-pub fn diff_tree(a: CommitId, b: CommitId) -> impl Iterator<Item = WithPath<DiffTreeItem>> {
-    let a = RawCommit::read(a).unwrap();
-    let a = a.parse().unwrap();
-    let a = RawTree::read(a.tree()).unwrap();
-    let b = RawCommit::read(b).unwrap();
-    let b = b.parse().unwrap();
-    let b = RawTree::read(b.tree()).unwrap();
-    diff_by_path(a, b).recurse().map_map(|entry| match entry {
-        Both(a, b) => DiffTreeItem::Modified { from: a, to: b },
-        Left(a) => DiffTreeItem::Deleted(a),
-        Right(b) => DiffTreeItem::Added(b),
-    })
 }
 
 extern "C" {

@@ -55,6 +55,7 @@ use itertools::{EitherOrBoth, Itertools};
 use logging::{LoggingReader, LoggingWriter};
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
 use sha1::{Digest, Sha1};
+use tree_util::{diff_by_path, RecurseTree};
 
 mod cinnabar;
 mod git;
@@ -107,10 +108,10 @@ use hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId, ManifestEntry};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
 use libcinnabar::{files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
-    config_get_value, die, diff_tree, diff_tree_with_copies, for_each_ref_in, for_each_remote,
+    config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
     get_oid_committish, lookup_replace_commit, ls_tree, metadata_oid, object_id, reachable_subset,
     remote, resolve_ref, rev_list, rev_list_with_boundaries, strbuf, DiffTreeItem, MaybeBoundary,
-    RawBlob, RawCommit, RefTransaction,
+    RawBlob, RawCommit, RawTree, RefTransaction,
 };
 use oid::{Abbrev, ObjectId};
 use once_cell::sync::Lazy;
@@ -1958,19 +1959,21 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             report(format!("Sha1 mismatch for manifest {}", git_mid));
         }
         let files: Vec<(_, HgFileId)> = if let Some(previous) = previous {
-            diff_tree(previous, mid)
-                .map(WithPath::unzip)
-                .filter_map(|(path, item)| match item {
-                    DiffTreeItem::Added(added) => Some((
-                        path,
-                        HgFileId::from_raw_bytes(added.oid.as_raw_bytes()).unwrap(),
-                    )),
-                    DiffTreeItem::Modified { from, to } if from.oid != to.oid => Some((
-                        path,
-                        HgFileId::from_raw_bytes(to.oid.as_raw_bytes()).unwrap(),
-                    )),
+            let a = RawTree::read_treeish(previous).unwrap();
+            let b = RawTree::read_treeish(mid).unwrap();
+            diff_by_path(a, b)
+                .recurse()
+                .map_map(|entry| match entry {
+                    Right(added) => {
+                        Some(HgFileId::from_raw_bytes(added.oid.as_raw_bytes()).unwrap())
+                    }
+                    Both(from, to) if from.oid != to.oid => {
+                        Some(HgFileId::from_raw_bytes(to.oid.as_raw_bytes()).unwrap())
+                    }
                     _ => None,
                 })
+                .filter_map(Transpose::transpose)
+                .map(WithPath::unzip)
                 .filter(|pair| !all_interesting.contains(pair))
                 .collect_vec()
         } else {
@@ -1995,19 +1998,21 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
     let mut previous = None;
     for r in roots {
         if let Some(previous) = previous {
-            diff_tree(previous, r)
-                .map(WithPath::unzip)
-                .filter_map(|(path, item)| match item {
-                    DiffTreeItem::Added(added) => Some((
-                        path,
-                        HgFileId::from_raw_bytes(added.oid.as_raw_bytes()).unwrap(),
-                    )),
-                    DiffTreeItem::Modified { from, to } if from.oid != to.oid => Some((
-                        path,
-                        HgFileId::from_raw_bytes(to.oid.as_raw_bytes()).unwrap(),
-                    )),
+            let a = RawTree::read_treeish(previous).unwrap();
+            let b = RawTree::read_treeish(r).unwrap();
+            diff_by_path(a, b)
+                .recurse()
+                .map_map(|entry| match entry {
+                    Right(added) => {
+                        Some(HgFileId::from_raw_bytes(added.oid.as_raw_bytes()).unwrap())
+                    }
+                    Both(from, to) if from.oid != to.oid => {
+                        Some(HgFileId::from_raw_bytes(to.oid.as_raw_bytes()).unwrap())
+                    }
                     _ => None,
                 })
+                .filter_map(Transpose::transpose)
+                .map(WithPath::unzip)
                 .for_each(|item| {
                     all_interesting.remove(&item);
                 });
@@ -2646,17 +2651,20 @@ fn get_changes(
 }
 
 fn manifest_diff(a: CommitId, b: CommitId) -> impl Iterator<Item = WithPath<(HgFileId, HgFileId)>> {
-    diff_tree(a, b)
-        .map_map(|item| match item {
-            DiffTreeItem::Added(added) => Some((
+    let a = RawTree::read_treeish(a).unwrap();
+    let b = RawTree::read_treeish(b).unwrap();
+    diff_by_path(a, b)
+        .recurse()
+        .map_map(|entry| match entry {
+            Right(added) => Some((
                 HgFileId::from_raw_bytes(added.oid.as_raw_bytes()).unwrap(),
                 HgFileId::NULL,
             )),
-            DiffTreeItem::Modified { from, to } if from.oid != to.oid => Some((
+            Both(from, to) if from.oid != to.oid => Some((
                 HgFileId::from_raw_bytes(to.oid.as_raw_bytes()).unwrap(),
                 HgFileId::from_raw_bytes(from.oid.as_raw_bytes()).unwrap(),
             )),
-            DiffTreeItem::Deleted(deleted) => Some((
+            Left(deleted) => Some((
                 HgFileId::NULL,
                 HgFileId::from_raw_bytes(deleted.oid.as_raw_bytes()).unwrap(),
             )),

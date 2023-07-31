@@ -13,6 +13,24 @@ use crate::util::{FromBytes, SliceExt};
 
 git_oid_type!(TreeId(GitObjectId));
 
+pub trait TreeIsh: ObjectId {
+    type TreeId: ObjectId;
+    fn get_tree_id(self) -> Self::TreeId;
+}
+
+impl TreeIsh for TreeId {
+    type TreeId = TreeId;
+    fn get_tree_id(self) -> TreeId {
+        self
+    }
+}
+
+impl RawTree {
+    pub fn read_treeish<T: TreeIsh<TreeId = TreeId>>(t: T) -> Option<RawTree> {
+        RawTree::read(t.get_tree_id())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecursedTreeEntry {
     pub oid: GitOid,
