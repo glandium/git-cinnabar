@@ -428,6 +428,16 @@ where
     }
 }
 
+impl<I: Iterator + Empty, J: Iterator + Empty> Empty for MergeJoinByPath<I, J>
+where
+    I::Item: IsWithPath,
+    J::Item: IsWithPath,
+{
+    fn empty() -> Self {
+        merge_join_by_path(I::empty(), J::empty())
+    }
+}
+
 #[test]
 fn test_merge_join_by_path() {
     use itertools::Itertools;
@@ -518,6 +528,16 @@ where
             EitherOrBoth::Both(a, b) => a != b,
             _ => true,
         })
+    }
+}
+
+impl<I: Iterator + Empty, J: Iterator + Empty> Empty for DiffByPath<I, J>
+where
+    I::Item: IsWithPath,
+    J::Item: IsWithPath,
+{
+    fn empty() -> Self {
+        diff_by_path(I::empty(), J::empty())
     }
 }
 
@@ -876,6 +896,38 @@ fn test_recurse_tree_iter() {
             WithPath::new(*b"fuga", EitherOrBoth::Both("fuga", "fuga")),
             WithPath::new(*b"hoge/hoge", EitherOrBoth::Both("hoge", "hoge")),
             WithPath::new(*b"qux", EitherOrBoth::Both("qux", "qux")),
+        ]
+    );
+
+    let pairs_a = merge_join_by_path(TREES[0].clone(), TREES[0].clone());
+    let pairs_b = merge_join_by_path(TREES[4].clone(), TREES[4].clone());
+    let diff_pairs_recursed = diff_by_path(pairs_a, pairs_b).recurse().collect_vec();
+
+    let counts = COUNTS.with(RefCell::take);
+    assert_eq!(counts, [0, 2, 0, 2, 0, 2, 2]);
+
+    assert_eq!(
+        &diff_pairs_recursed,
+        &[
+            WithPath::new(
+                *b"foo/baz",
+                EitherOrBoth::Left(EitherOrBoth::Both("foobaz", "foobaz"))
+            ),
+            WithPath::new(
+                *b"foo/foo",
+                EitherOrBoth::Right(EitherOrBoth::Both("foofoo", "foofoo"))
+            ),
+            WithPath::new(
+                *b"foo/toto/a",
+                EitherOrBoth::Right(EitherOrBoth::Both("a", "a"))
+            ),
+            WithPath::new(
+                *b"foo/toto/titi",
+                EitherOrBoth::Both(
+                    EitherOrBoth::Both("footototiti", "footototiti"),
+                    EitherOrBoth::Both("titi", "titi")
+                )
+            ),
         ]
     );
 }
