@@ -2,12 +2,38 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::marker::PhantomData;
 use std::os::raw::{c_char, c_int, c_void};
 
 use crate::git::GitObjectId;
 use crate::hg::HgObjectId;
-use crate::libgit::{child_process, object_id, strbuf};
+use crate::libgit::{child_process, object_id};
 use crate::oid::{Abbrev, ObjectId};
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct strslice<'a> {
+    len: usize,
+    buf: *const c_char,
+    marker: PhantomData<&'a [u8]>,
+}
+
+impl strslice<'_> {
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.buf as *const u8, self.len) }
+    }
+}
+
+impl<'a, T: AsRef<[u8]> + 'a> From<T> for strslice<'a> {
+    fn from(buf: T) -> Self {
+        let buf = buf.as_ref();
+        strslice {
+            len: buf.len(),
+            buf: buf.as_ptr() as *const c_char,
+            marker: PhantomData,
+        }
+    }
+}
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -59,7 +85,7 @@ extern "C" {
         len: usize,
     ) -> *const object_id;
 
-    pub fn generate_manifest(oid: *const object_id) -> *const strbuf;
+    pub fn generate_manifest(oid: *const object_id) -> strslice<'static>;
 
     fn cinnabar_for_each_note(
         notes: *mut cinnabar_notes_tree,

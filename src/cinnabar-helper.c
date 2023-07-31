@@ -466,8 +466,7 @@ struct manifest {
  */
 static struct manifest generated_manifest = MANIFEST_INIT;
 
-/* The returned strbuf must not be released and/or freed. */
-struct strbuf *generate_manifest(const struct object_id *oid)
+struct strslice generate_manifest(const struct object_id *oid)
 {
 	struct strbuf content = STRBUF_INIT;
 	struct object_list *tree_list = NULL;
@@ -485,7 +484,7 @@ struct strbuf *generate_manifest(const struct object_id *oid)
 	}
 
 	if (oidcmp(&generated_manifest.tree_id, oid) == 0) {
-		return &generated_manifest.content;
+		return strbuf_as_slice(&generated_manifest.content);
 	}
 
 	if (generated_manifest.content.len) {
@@ -514,7 +513,7 @@ struct strbuf *generate_manifest(const struct object_id *oid)
 		if (!(obj->flags & SEEN))
 			free_tree_buffer((struct tree *)obj);
 	}
-	return &generated_manifest.content;
+	return strbuf_as_slice(&generated_manifest.content);
 }
 
 static void reset_heads(struct oid_array *heads)

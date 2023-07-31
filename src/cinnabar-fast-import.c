@@ -682,7 +682,7 @@ void store_manifest(struct rev_chunk *chunk)
 		parse_from_existing(last_manifest);
 		load_tree(&last_manifest->branch_tree);
 		strbuf_reset(&last_manifest_content);
-		strbuf_addbuf(&last_manifest_content, generate_manifest(note));
+		strbuf_addslice(&last_manifest_content, generate_manifest(note));
 	}
 
 	// Start with the same allocation size as last manifest. (-1 before
