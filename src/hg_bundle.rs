@@ -40,7 +40,7 @@ use crate::store::{
 use crate::tree_util::WithPath;
 use crate::util::{FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::textdiff;
-use crate::{get_changes, manifest_path, HELPER_LOCK};
+use crate::{get_changes, HELPER_LOCK};
 
 extern "C" {
     fn rev_chunk_from_memory(
@@ -1142,7 +1142,6 @@ fn bundle_files<const CHUNK_SIZE: usize>(
     let mut progress =
         repeat(()).progress(|n| format!("Bundling {n} revisions of {} files", count.get()));
     for (path, data) in files.into_iter().sorted_by(|a, b| a.0.cmp(&b.0)) {
-        let path = manifest_path(&path);
         bundle_part_writer
             .write_u32::<BigEndian>((4 + path.len()).try_into().unwrap())
             .unwrap();

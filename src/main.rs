@@ -100,7 +100,9 @@ use std::{cmp, fmt};
 
 use bitflags::bitflags;
 use bstr::{BStr, ByteSlice};
-use cinnabar::{GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId};
+use cinnabar::{
+    GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, GitManifestTree, GitManifestTreeId,
+};
 use git::{BlobId, CommitId, GitObjectId};
 use git_version::git_version;
 use graft::{graft_finish, grafted, init_graft};
@@ -1494,7 +1496,6 @@ fn create_merge_changeset(
             for (path, (oid, parents)) in
                 get_changes(cid, commit.parents(), false).map(WithPath::unzip)
             {
-                let path = manifest_path(&path);
                 let parents = parents
                     .iter()
                     .copied()
@@ -1564,7 +1565,7 @@ fn create_merge_changeset(
                         static WARN: std::sync::Once = std::sync::Once::new();
                         WARN.call_once(|| warn!(target: "root", "This may take a while..."));
                         let parents = file_dags
-                            .remove(path.as_bstr())
+                            .remove(&path)
                             .and_then(|mut dag| {
                                 let mut is_ancestor = |a: HgFileId, b| {
                                     let mut result = false;
@@ -1959,17 +1960,13 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
             report(format!("Sha1 mismatch for manifest {}", git_mid));
         }
         let files: Vec<(_, HgFileId)> = if let Some(previous) = previous {
-            let a = RawTree::read_treeish(previous).unwrap();
-            let b = RawTree::read_treeish(mid).unwrap();
+            let a = GitManifestTree::read_treeish(GitManifestId::from_unchecked(previous)).unwrap();
+            let b = GitManifestTree::read_treeish(GitManifestId::from_unchecked(mid)).unwrap();
             diff_by_path(a, b)
                 .recurse()
                 .map_map(|entry| match entry {
-                    Right(added) => {
-                        Some(HgFileId::from_raw_bytes(added.oid.as_raw_bytes()).unwrap())
-                    }
-                    Both(from, to) if from.oid != to.oid => {
-                        Some(HgFileId::from_raw_bytes(to.oid.as_raw_bytes()).unwrap())
-                    }
+                    Right(added) => Some(added.fid),
+                    Both(from, to) if from.fid != to.fid => Some(to.fid),
                     _ => None,
                 })
                 .filter_map(Transpose::transpose)
@@ -1977,11 +1974,11 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
                 .filter(|pair| !all_interesting.contains(pair))
                 .collect_vec()
         } else {
-            RawTree::read(commit.tree())
+            GitManifestTree::read(GitManifestTreeId::from_unchecked(commit.tree()))
                 .unwrap()
                 .into_iter()
                 .recurse()
-                .map_map(|item| HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap())
+                .map_map(|item| item.fid)
                 .map(WithPath::unzip)
                 .filter(|pair| !all_interesting.contains(pair))
                 .collect_vec()
@@ -1995,17 +1992,13 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
     let mut previous = None;
     for r in roots {
         if let Some(previous) = previous {
-            let a = RawTree::read_treeish(previous).unwrap();
-            let b = RawTree::read_treeish(r).unwrap();
+            let a = GitManifestTree::read_treeish(GitManifestId::from_unchecked(previous)).unwrap();
+            let b = GitManifestTree::read_treeish(GitManifestId::from_unchecked(r)).unwrap();
             diff_by_path(a, b)
                 .recurse()
                 .map_map(|entry| match entry {
-                    Right(added) => {
-                        Some(HgFileId::from_raw_bytes(added.oid.as_raw_bytes()).unwrap())
-                    }
-                    Both(from, to) if from.oid != to.oid => {
-                        Some(HgFileId::from_raw_bytes(to.oid.as_raw_bytes()).unwrap())
-                    }
+                    Right(added) => Some(added.fid),
+                    Both(from, to) if from.fid != to.fid => Some(to.fid),
                     _ => None,
                 })
                 .filter_map(Transpose::transpose)
@@ -2014,11 +2007,11 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
                     all_interesting.remove(&item);
                 });
         } else {
-            for item in RawTree::read_treeish(r)
+            for item in GitManifestTree::read_treeish(GitManifestId::from_unchecked(r))
                 .unwrap()
                 .into_iter()
                 .recurse()
-                .map_map(|item| HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap())
+                .map_map(|item| item.fid)
                 .map(WithPath::unzip)
             {
                 all_interesting.remove(&item);
@@ -2055,7 +2048,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
                     report(format!(
                         "Sha1 mismatch for file {}\n\
                          \x20 revision {}",
-                        manifest_path(&path),
+                        path.as_bstr(),
                         hg_file
                     ));
                     let print_parents = hg_fileparents.iter().filter(|p| !p.is_null()).join(" ");
@@ -2075,7 +2068,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
     if !all_interesting.is_empty() {
         eprintln!("\rCould not find the following files:");
         for (path, oid) in all_interesting.iter().sorted() {
-            eprintln!(" . {} {}", oid, manifest_path(path));
+            eprintln!(" . {} {}", oid, path.as_bstr());
         }
         eprintln!(
             "This might be a bug in `git cinnabar fsck`. Please open \
@@ -2408,7 +2401,7 @@ fn do_fsck_full(
                 report(format!(
                     "Sha1 mismatch for file {}\n\
                      \x20 revision {}",
-                    manifest_path(&path),
+                    path.as_bstr(),
                     hg_file
                 ));
                 let print_parents = hg_fileparents.iter().filter(|p| !p.is_null()).join(" ");
@@ -2611,14 +2604,6 @@ fn check_replace(metadata_cid: CommitId) {
     }
 }
 
-pub fn manifest_path(p: &[u8]) -> Box<BStr> {
-    p.strip_prefix(b"_")
-        .unwrap()
-        .replace("/_", "/")
-        .as_bstr()
-        .to_boxed()
-}
-
 #[allow(clippy::type_complexity)]
 fn get_changes(
     cid: CommitId,
@@ -2627,16 +2612,11 @@ fn get_changes(
 ) -> Box<dyn Iterator<Item = WithPath<(HgFileId, Box<[HgFileId]>)>>> {
     if parents.is_empty() {
         Box::new(
-            RawTree::read_treeish(cid)
+            GitManifestTree::read_treeish(GitManifestId::from_unchecked(cid))
                 .unwrap()
                 .into_iter()
                 .recurse()
-                .map_map(|item| {
-                    (
-                        HgFileId::from_raw_bytes(item.oid.as_raw_bytes()).unwrap(),
-                        [].to_boxed(),
-                    )
-                }),
+                .map_map(|item| (item.fid, [].to_boxed())),
         )
     } else if parents.len() == 1 {
         Box::new(
@@ -2651,23 +2631,14 @@ fn get_changes(
 }
 
 fn manifest_diff(a: CommitId, b: CommitId) -> impl Iterator<Item = WithPath<(HgFileId, HgFileId)>> {
-    let a = RawTree::read_treeish(a).unwrap();
-    let b = RawTree::read_treeish(b).unwrap();
+    let a = GitManifestTree::read_treeish(GitManifestId::from_unchecked(a)).unwrap();
+    let b = GitManifestTree::read_treeish(GitManifestId::from_unchecked(b)).unwrap();
     diff_by_path(a, b)
         .recurse()
         .map_map(|entry| match entry {
-            Right(added) => Some((
-                HgFileId::from_raw_bytes(added.oid.as_raw_bytes()).unwrap(),
-                HgFileId::NULL,
-            )),
-            Both(from, to) if from.oid != to.oid => Some((
-                HgFileId::from_raw_bytes(to.oid.as_raw_bytes()).unwrap(),
-                HgFileId::from_raw_bytes(from.oid.as_raw_bytes()).unwrap(),
-            )),
-            Left(deleted) => Some((
-                HgFileId::NULL,
-                HgFileId::from_raw_bytes(deleted.oid.as_raw_bytes()).unwrap(),
-            )),
+            Right(added) => Some((added.fid, HgFileId::NULL)),
+            Both(from, to) if from.fid != to.fid => Some((to.fid, from.fid)),
+            Left(deleted) => Some((HgFileId::NULL, deleted.fid)),
             _ => None,
         })
         .filter_map(Transpose::transpose)

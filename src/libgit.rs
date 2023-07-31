@@ -654,6 +654,7 @@ impl FileMode {
     pub const GITLINK: Self = FileMode(0o160_000);
     pub const RW: Self = FileMode(0o644);
     pub const RWX: Self = FileMode(0o755);
+    pub const ALL_RWX: Self = FileMode(0o777);
     pub const NONE: Self = FileMode(0);
 
     pub fn typ(&self) -> FileMode {
