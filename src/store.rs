@@ -11,6 +11,7 @@ use std::iter::{repeat, IntoIterator};
 use std::num::NonZeroU32;
 use std::os::raw::{c_char, c_int};
 use std::process::{Command, Stdio};
+use std::rc::Rc;
 use std::sync::Mutex;
 use std::{env, mem};
 
@@ -21,6 +22,7 @@ use derive_more::Deref;
 use getset::{CopyGetters, Getters};
 use hex_literal::hex;
 use indexmap::IndexMap;
+use itertools::EitherOrBoth::{Both, Left, Right};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use percent_encoding::{percent_decode, percent_encode, NON_ALPHANUMERIC};
@@ -29,8 +31,9 @@ use url::{Host, Url};
 
 use crate::cinnabar::{
     GitChangesetId, GitChangesetMetadataId, GitFileId, GitFileMetadataId, GitManifestId,
+    GitManifestTree, GitManifestTreeId,
 };
-use crate::git::{BlobId, CommitId, GitObjectId, TreeId};
+use crate::git::{BlobId, CommitId, GitObjectId, TreeId, TreeIsh};
 use crate::graft::{graft, grafted, GraftError};
 use crate::hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_bundle::{
@@ -38,15 +41,15 @@ use crate::hg_bundle::{
 };
 use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
-use crate::libcinnabar::{files_meta, generate_manifest, git2hg, hg2git, hg_object_id};
+use crate::libcinnabar::{files_meta, git2hg, hg2git, hg_object_id, strslice};
 use crate::libgit::{
     die, get_oid_blob, get_oid_committish, object_id, strbuf, Commit, RawBlob, RawCommit, RawTree,
     RefTransaction,
 };
 use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
-use crate::tree_util::RecurseTree;
-use crate::util::{FromBytes, ImmutBString, OsStrExt, ReadExt, SliceExt, ToBoxed};
+use crate::tree_util::{diff_by_path, Empty, ParseTree, RecurseTree};
+use crate::util::{FromBytes, ImmutBString, OsStrExt, ReadExt, SliceExt, ToBoxed, Transpose};
 use crate::xdiff::{apply, textdiff, PatchInfo};
 use crate::{check_enabled, do_reload, set_metadata_to, Checks, MetadataFlags};
 
@@ -544,17 +547,106 @@ impl<'a> HgChangeset<'a> {
     }
 }
 
+// Note: the C equivalent used to indirectly cache trees. This has not been
+// replicated here. We'll see if it shows up in performance profiles.
+struct ManifestCache {
+    tree_id: GitManifestTreeId,
+    content: Rc<[u8]>,
+}
+
+thread_local! {
+    static MANIFESTCACHE: Cell<Option<ManifestCache>> = Cell::new(None);
+}
+
 #[derive(Deref)]
 #[deref(forward)]
-pub struct RawHgManifest(pub ImmutBString);
+pub struct RawHgManifest(Rc<[u8]>);
+
+impl Empty for RawHgManifest {
+    fn empty() -> RawHgManifest {
+        RawHgManifest(Rc::new([]))
+    }
+}
 
 impl RawHgManifest {
     pub fn read(oid: GitManifestId) -> Option<Self> {
-        unsafe {
-            Some(Self(
-                generate_manifest(&oid.into()).as_bytes().to_owned().into(),
-            ))
-        }
+        Some(MANIFESTCACHE.with(|cache| {
+            let last_manifest = cache.take();
+            let tree_id = oid.get_tree_id();
+
+            let mut manifest = Vec::new();
+            if let Some(last_manifest) = last_manifest {
+                let reference_manifest = last_manifest.content.clone();
+                if last_manifest.tree_id == tree_id {
+                    cache.set(Some(last_manifest));
+                    return RawHgManifest(reference_manifest);
+                }
+                // Generously reserve memory for the new manifest to avoid reallocs.
+                manifest.reserve(reference_manifest.as_ref().len() * 2);
+                // TODO: ideally, we'd be able to use merge_join_by_path, but WithPath
+                // using an owned string has a huge impact on performance.
+                for entry in itertools::merge_join_by(
+                    ByteSlice::lines_with_terminator(&*reference_manifest).map(ByteSlice::as_bstr),
+                    diff_by_path(
+                        GitManifestTree::read(last_manifest.tree_id).unwrap(),
+                        GitManifestTree::read(tree_id).unwrap(),
+                    )
+                    .recurse(),
+                    |manifest_line, diff| {
+                        let [path, _] = manifest_line.splitn_exact(b'\0').unwrap();
+                        path.cmp(diff.path())
+                    },
+                ) {
+                    match entry {
+                        // Entry from the last manifest, take that line verbatim ; no diff to apply
+                        Left(entry) => manifest.extend_from_slice(entry),
+                        // No entry in the last manifest, apply the diff
+                        Right(diff) => RawHgManifest::write_one_entry(
+                            &diff.map(|inner| {
+                                // There isn't supposed to be a left side on the diff, matchin
+                                // the manifest.
+                                assert!(!inner.has_left());
+                                inner.right().unwrap()
+                            }),
+                            &mut manifest,
+                        ),
+                        // There was an entry in the last manifest, but the file was modified or removed
+                        Both(_, diff) => {
+                            if let Some(new_entry) = diff
+                                .map(|inner| {
+                                    match inner {
+                                        // File was removed, do nothing.
+                                        Left(_) => None,
+                                        Both(_, b) => Some(b),
+                                        // This shouldn't be possible
+                                        Right(_) => unreachable!(),
+                                    }
+                                })
+                                .transpose()
+                            {
+                                RawHgManifest::write_one_entry(&new_entry, &mut manifest);
+                            }
+                        }
+                    };
+                }
+            } else {
+                for entry in GitManifestTree::read(tree_id)
+                    .unwrap()
+                    .into_iter()
+                    .recurse()
+                {
+                    RawHgManifest::write_one_entry(&entry, &mut manifest);
+                }
+            }
+            let content = Rc::<[u8]>::from(manifest.as_ref());
+
+            cache.set(Some(ManifestCache {
+                tree_id,
+                content: content.clone(),
+            }));
+
+            RawHgManifest(content)
+        }))
     }
 }
 
@@ -1190,6 +1282,22 @@ pub fn create_changeset(
 extern "C" {
     pub fn store_manifest(chunk: *const rev_chunk);
     fn store_file(chunk: *const rev_chunk);
+}
+
+/// XXX: This is unsound. The string behind the returned slice may theoretically
+/// be freed and the rust compiler won't warn about it. But in practice, that's ok.
+/// The code using the slice is releasing it before returning, and we're
+/// single-threaded.
+#[no_mangle]
+pub unsafe extern "C" fn generate_manifest(oid: *const object_id) -> strslice<'static> {
+    mem::transmute::<strslice, _>(
+        RawHgManifest::read(
+            GitManifestId::from_raw_bytes(oid.as_ref().unwrap().as_raw_bytes()).unwrap(),
+        )
+        .unwrap()
+        .as_ref()
+        .into(),
+    )
 }
 
 #[no_mangle]

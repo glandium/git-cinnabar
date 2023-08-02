@@ -85,8 +85,6 @@ extern "C" {
         len: usize,
     ) -> *const object_id;
 
-    pub fn generate_manifest(oid: *const object_id) -> strslice<'static>;
-
     fn cinnabar_for_each_note(
         notes: *mut cinnabar_notes_tree,
         flags: c_int,

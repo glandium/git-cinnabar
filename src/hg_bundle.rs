@@ -1097,7 +1097,8 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
             |node| {
                 let node = HgManifestId::from_unchecked(node);
                 let manifest = RawHgManifest::read(node.to_git().unwrap()).unwrap();
-                manifest.0
+                // TODO: avoid the copy.
+                manifest.as_ref().to_owned().into_boxed_slice()
             },
         )
         .unwrap();

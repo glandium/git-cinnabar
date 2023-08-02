@@ -10,7 +10,7 @@ use super::{HgFileId, HgObjectId};
 use crate::libgit::FileMode;
 use crate::oid::oid_type;
 use crate::store::RawHgManifest;
-use crate::tree_util::{ParseTree, TreeIter, WithPath};
+use crate::tree_util::{MayRecurse, ParseTree, TreeIter, WithPath};
 use crate::util::{FromBytes, SliceExt};
 
 oid_type!(HgManifestId(HgObjectId));
@@ -22,6 +22,12 @@ pub struct ManifestEntry {
     pub fid: HgFileId,
     /// File attribute (regular, executable or symbolic link).
     pub attr: HgFileAttr,
+}
+
+impl MayRecurse for ManifestEntry {
+    fn may_recurse(&self) -> bool {
+        false
+    }
 }
 
 /// File attribute, as recorded in a Mercurial manifest
