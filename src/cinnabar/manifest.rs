@@ -77,7 +77,7 @@ impl ParseTree for GitManifestTree {
                         match entry.mode.perms() {
                             FileMode::RW => HgFileAttr::Regular,
                             FileMode::RWX => HgFileAttr::Executable,
-                            FileMode::ALL_RWX => HgFileAttr::Symlink,
+                            FileMode::NONE => HgFileAttr::Symlink,
                             _ => die!("Unexpected file mode"),
                         }
                     },
