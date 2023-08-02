@@ -347,6 +347,7 @@ class Build(Task, metaclass=Tool):
             environ['RUSTFLAGS'] = ' '.join([
                 '-Zsanitizer=address',
                 '-Copt-level=1',
+                '-Cdebuginfo=full',
                 '-Cforce-frame-pointers=yes',
             ])
         elif variant == 'coverage':
