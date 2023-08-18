@@ -1,10 +1,10 @@
 diff --git a/object-file.c b/object-file.c
-index 44f311d804..bf9076b5d8 100644
+index 4df61c0ce6..b615d2e9c2 100644
 --- a/object-file.c
 +++ b/object-file.c
-@@ -45,6 +45,12 @@
+@@ -44,6 +44,12 @@
+ #include "submodule.h"
  #include "fsck.h"
- #include "wrapper.h"
  
 +#define write_object_file_flags real_write_object_file_flags
 +

@@ -5,7 +5,7 @@
 #ifndef BUNDLE_H
 #define BUNDLE_H
 
-#include "cache.h"
+#include "git-compat-util.h"
 #include "strbuf.h"
 #include "hg-data.h"
 #include <stdio.h>

@@ -164,8 +164,8 @@ and can't push, but that's caught by git itself.
    ! [rejected]        62326f34fea5b80510f57599da9fd6e5997c0ca4 -> branches/default/tip (non-fast-forward)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   hint: Updates were rejected because the tip of your current branch is behind
-  hint: its remote counterpart. Integrate the remote changes (e.g.
-  hint: 'git pull ...') before pushing again.
+  hint: its remote counterpart.* (re)
+  hint: .*before pushing again. (re)
   hint: See the 'Note about fast-forwards' in 'git push --help' for details.
   [1]
 

@@ -134,8 +134,8 @@ Pushing `b` fails because it would add a new head to the branch.
    ! [rejected]        d04f6df4abe2870ceb759263ee6aaa9241c4f93c -> branches/default/tip (non-fast-forward)
   error: failed to push some refs to 'hg::.*/push-refs.t/repo-from-git' (re)
   hint: Updates were rejected because the tip of your current branch is behind
-  hint: its remote counterpart. Integrate the remote changes (e.g.
-  hint: 'git pull ...') before pushing again.
+  hint: its remote counterpart.* (re)
+  hint: .* before pushing again. (re)
   hint: See the 'Note about fast-forwards' in 'git push --help' for details.
   [1]
 
@@ -144,8 +144,8 @@ Pushing `b` fails because it would add a new head to the branch.
    ! [rejected]        d04f6df4abe2870ceb759263ee6aaa9241c4f93c -> branches/default/tip (non-fast-forward)
   error: failed to push some refs to 'hg::.*/push-refs.t/repo-from-git2' (re)
   hint: Updates were rejected because a pushed branch tip is behind its remote
-  hint: counterpart. Check out this branch and integrate the remote changes
-  hint: (e.g. 'git pull ...') before pushing again.
+  hint: counterpart.* (re)
+  hint: .*before pushing again. (re)
   hint: See the 'Note about fast-forwards' in 'git push --help' for details.
   [1]
 
@@ -495,8 +495,8 @@ Push the same bookmark, pointing to `b`.
    ! [rejected]        d04f6df4abe2870ceb759263ee6aaa9241c4f93c -> bookmarks/qux (non-fast-forward)
   error: failed to push some refs to 'hg::.*/push-refs.t/repo-from-git' (re)
   hint: Updates were rejected because a pushed branch tip is behind its remote
-  hint: counterpart. Check out this branch and integrate the remote changes
-  hint: (e.g. 'git pull ...') before pushing again.
+  hint: counterpart.* (re)
+  hint: .*before pushing again. (re)
   hint: See the 'Note about fast-forwards' in 'git push --help' for details.
   [1]
 
@@ -505,8 +505,8 @@ Push the same bookmark, pointing to `b`.
    ! [rejected]        d04f6df4abe2870ceb759263ee6aaa9241c4f93c -> bookmarks/qux (non-fast-forward)
   error: failed to push some refs to 'hg::.*/push-refs.t/repo-from-git2' (re)
   hint: Updates were rejected because a pushed branch tip is behind its remote
-  hint: counterpart. Check out this branch and integrate the remote changes
-  hint: (e.g. 'git pull ...') before pushing again.
+  hint: counterpart.* (re)
+  hint: .*before pushing again. (re)
   hint: See the 'Note about fast-forwards' in 'git push --help' for details.
   [1]
 

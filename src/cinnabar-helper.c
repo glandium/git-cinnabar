@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "cache.h"
+#include "git-compat-util.h"
 #include "attr.h"
 #include "blob.h"
 #include "commit.h"
@@ -25,6 +25,7 @@
 #include "object.h"
 #include "oid-array.h"
 #include "oidset.h"
+#include "path.h"
 #include "quote.h"
 #include "refs.h"
 #include "remote.h"

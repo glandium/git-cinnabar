@@ -363,7 +363,7 @@ static void handle_changeset_conflict(const struct hg_object_id *hg_id,
 		if ((oid_object_info_extended(
 			the_repository, note, &oi, OBJECT_INFO_DIE_IF_CORRUPT) == 0) &&
 		    (len < 50 || !starts_with(content, "changeset ") ||
-		     get_sha1_hex(&content[10], oid.hash)))
+		     get_hash_hex(&content[10], oid.hash)))
 			die("Invalid git2hg note for %s", oid_to_hex(git_id));
 
 		free(content);
@@ -582,7 +582,7 @@ static int split_manifest_line(struct strslice *slice,
 
        if (slice->len < 41)
 	       return -1;
-       if (get_sha1_hex(slice->buf, result->oid.hash))
+       if (get_hash_hex(slice->buf, result->oid.hash))
 	       return -1;
        *slice = strslice_slice(*slice, 40, SIZE_MAX);
 
