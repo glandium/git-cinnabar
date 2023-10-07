@@ -606,28 +606,36 @@ impl HgHttpConnection {
             .and_then(|s| usize::from_str(s).ok())
             .unwrap_or(0);
 
+        let httppostargs = self.get_capability(b"httppostargs").is_some();
+
         let mut command_url = self.url.clone();
         let mut query_pairs = command_url.query_pairs_mut();
         query_pairs.append_pair("cmd", command);
         let mut headers = Vec::new();
+        let mut body = None;
 
-        if httpheader > 0 && !args.is_empty() {
+        if !args.is_empty() && (httppostargs || httpheader > 0) {
             let mut encoder = form_urlencoded::Serializer::new(String::new());
             for (name, value) in args.iter() {
                 encoder.append_pair(name, value);
             }
             let args = encoder.finish();
-            let mut args = &args[..];
-            let mut num = 1;
-            while !args.is_empty() {
-                let header_name = format!("X-HgArg-{}", num);
-                num += 1;
-                let (chunk, remainder) = args.split_at(cmp::min(
-                    args.len(),
-                    httpheader - header_name.len() - ": ".len(),
-                ));
-                headers.push((header_name, chunk.to_string()));
-                args = remainder;
+            if httppostargs {
+                headers.push(("X-HgArgs-Post".to_string(), args.len().to_string()));
+                body = Some(args);
+            } else {
+                let mut args = &args[..];
+                let mut num = 1;
+                while !args.is_empty() {
+                    let header_name = format!("X-HgArg-{}", num);
+                    num += 1;
+                    let (chunk, remainder) = args.split_at(cmp::min(
+                        args.len(),
+                        httpheader - header_name.len() - ": ".len(),
+                    ));
+                    headers.push((header_name, chunk.to_string()));
+                    args = remainder;
+                }
             }
         } else {
             for (name, value) in args.iter() {
@@ -644,6 +652,9 @@ impl HgHttpConnection {
         request.header("Accept", "application/mercurial-0.1");
         for (name, value) in headers {
             request.header(&name, &value);
+        }
+        if let Some(body) = body {
+            request.post_data(Cursor::new(body));
         }
         request
     }
