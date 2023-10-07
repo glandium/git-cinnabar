@@ -45,7 +45,7 @@ use crate::libgit::{
     credential_fill, curl_errorstr, get_active_slot, http_auth, http_follow_config, run_one_slot,
     slot_results, ssl_cainfo, HTTP_OK, HTTP_REAUTH,
 };
-use crate::util::{ImmutBString, OsStrExt, PrefixWriter, ReadExt, SeekExt, SliceExt, ToBoxed};
+use crate::util::{ImmutBString, OsStrExt, PrefixWriter, ReadExt, SliceExt, ToBoxed};
 
 use self::git_http_state::{GitHttpStateToken, GIT_HTTP_STATE};
 
@@ -230,7 +230,7 @@ impl HttpRequest {
                     curl_easy_setopt(
                         slot.curl,
                         CURLOPT_POSTFIELDSIZE_LARGE,
-                        body.stream_len_().unwrap(),
+                        body.seek(SeekFrom::End(0)).unwrap(),
                     );
                     /* Ensure we have no state from a previous attempt that failed because
                      * of authentication (401). */

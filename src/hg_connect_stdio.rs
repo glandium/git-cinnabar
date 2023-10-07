@@ -25,7 +25,7 @@ use crate::hg_connect::{
 use crate::libc::FdFile;
 use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
 use crate::libgit::child_process;
-use crate::util::{ImmutBString, OsStrExt, PrefixWriter, ReadExt, SeekExt};
+use crate::util::{ImmutBString, OsStrExt, PrefixWriter, ReadExt};
 
 pub struct HgStdioConnection {
     capabilities: HgCapabilities,
@@ -115,7 +115,7 @@ impl HgWireConnection for HgStdioConnection {
         self.proc_in.write_all(&header).unwrap();
         drop(header);
 
-        let len = input.stream_len_().unwrap();
+        let len = input.metadata().unwrap().len();
         //TODO: chunk in smaller pieces.
         writeln!(self.proc_in, "{}", len).unwrap();
 
