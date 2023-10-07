@@ -4,6 +4,7 @@
 
 use std::borrow::ToOwned;
 use std::cmp;
+use std::convert::AsRef;
 use std::ffi::{c_void, CStr, CString, OsStr};
 use std::fs::File;
 use std::io::{self, copy, stderr, Cursor, Read, Seek, SeekFrom, Write};
@@ -130,14 +131,141 @@ pub struct HgHttpConnection {
  * The command results are simply the corresponding HTTP responses.
  */
 
-trait ReadAndSeek: Read + Seek {}
+/// A `Read` that knows its exact length and can seek to its beginning.
+trait ExactSizeReadRewind: Read {
+    fn len(&self) -> io::Result<u64>;
 
-impl<T: Read + Seek> ReadAndSeek for T {}
+    fn rewind(&mut self) -> io::Result<()>;
+}
+
+impl ExactSizeReadRewind for File {
+    fn len(&self) -> io::Result<u64> {
+        self.metadata().map(|m| m.len())
+    }
+
+    fn rewind(&mut self) -> io::Result<()> {
+        self.seek(SeekFrom::Start(0)).map(|_| ())
+    }
+}
+
+impl<T: AsRef<[u8]>> ExactSizeReadRewind for Cursor<T> {
+    fn len(&self) -> io::Result<u64> {
+        Ok(self.get_ref().as_ref().len().try_into().unwrap())
+    }
+
+    fn rewind(&mut self) -> io::Result<()> {
+        self.set_position(0);
+        Ok(())
+    }
+}
+
+enum Body {
+    None,
+    Simple(Box<dyn ExactSizeReadRewind + Send>),
+    Chained(
+        std::io::Chain<Box<dyn ExactSizeReadRewind + Send>, Box<dyn ExactSizeReadRewind + Send>>,
+    ),
+}
+
+impl Body {
+    fn new() -> Body {
+        Body::None
+    }
+
+    fn is_some(&self) -> bool {
+        !matches!(self, Body::None)
+    }
+
+    fn add(&mut self, r: impl ExactSizeReadRewind + Send + 'static) {
+        let current = mem::replace(self, Body::None);
+        *self = match current {
+            Body::None => Body::Simple(Box::new(r)),
+            Body::Simple(first) => Body::Chained(first.chain(Box::new(r))),
+            Body::Chained(_) => Body::Chained(
+                (Box::new(current) as Box<dyn ExactSizeReadRewind + Send>).chain(Box::new(r)),
+            ),
+        }
+    }
+}
+
+impl Read for Body {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Body::None => Ok(0),
+            Body::Simple(first) => first.read(buf),
+            Body::Chained(chained) => chained.read(buf),
+        }
+    }
+}
+
+impl ExactSizeReadRewind for Body {
+    fn len(&self) -> io::Result<u64> {
+        match self {
+            Body::None => Ok(0),
+            Body::Simple(first) => first.len(),
+            Body::Chained(chained) => {
+                let (first, second) = chained.get_ref();
+                Ok(first.len()? + second.len()?)
+            }
+        }
+    }
+
+    fn rewind(&mut self) -> io::Result<()> {
+        match self {
+            Body::None => Ok(()),
+            Body::Simple(first) => first.rewind(),
+            Body::Chained(_) => {
+                let current = mem::replace(self, Body::None);
+                if let Body::Chained(chained) = current {
+                    let (mut first, mut second) = chained.into_inner();
+                    first.rewind()?;
+                    second.rewind()?;
+                    *self = Body::Chained(first.chain(second));
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+#[test]
+fn test_exactsize_read_rewind_body() {
+    let a = "abcd";
+    let b = "efg";
+    let c = "hijklm";
+
+    let mut body1 = Body::new();
+    body1.add(Cursor::new(&a[..]));
+
+    assert_eq!(body1.len().unwrap(), 4);
+    assert_eq!(&body1.read_all_to_string().unwrap()[..], "abcd");
+    body1.rewind().unwrap();
+    assert_eq!(&body1.read_all_to_string().unwrap()[..], "abcd");
+
+    let mut body2 = Body::new();
+    body2.add(Cursor::new(&a[..]));
+    body2.add(Cursor::new(&b[..]));
+
+    assert_eq!(body2.len().unwrap(), 7);
+    assert_eq!(&body2.read_all_to_string().unwrap()[..], "abcdefg");
+    body2.rewind().unwrap();
+    assert_eq!(&body2.read_all_to_string().unwrap()[..], "abcdefg");
+
+    let mut body3 = Body::new();
+    body3.add(Cursor::new(&a[..]));
+    body3.add(Cursor::new(&b[..]));
+    body3.add(Cursor::new(&c[..]));
+
+    assert_eq!(body3.len().unwrap(), 13);
+    assert_eq!(&body3.read_all_to_string().unwrap()[..], "abcdefghijklm");
+    body3.rewind().unwrap();
+    assert_eq!(&body3.read_all_to_string().unwrap()[..], "abcdefghijklm");
+}
 
 pub struct HttpRequest {
     url: Url,
     headers: Vec<(String, String)>,
-    body: Option<Box<dyn ReadAndSeek + Send>>,
+    body: Body,
     follow_redirects: bool,
     token: Arc<GitHttpStateToken>,
 }
@@ -175,7 +303,7 @@ impl HttpRequest {
         HttpRequest {
             url,
             headers: Vec::new(),
-            body: None,
+            body: Body::new(),
             follow_redirects: false,
             token: Arc::new(token),
         }
@@ -189,8 +317,8 @@ impl HttpRequest {
         self.headers.push((name.to_string(), value.to_string()));
     }
 
-    fn post_data(&mut self, data: Box<dyn ReadAndSeek + Send>) {
-        self.body = Some(data);
+    fn post_data(&mut self, data: impl ExactSizeReadRewind + Send + 'static) {
+        self.body.add(data);
     }
 
     #[allow(clippy::result_large_err)]
@@ -225,21 +353,21 @@ impl HttpRequest {
                     http_request_execute as *const c_void,
                 );
                 let mut headers = ptr::null_mut();
-                if let Some(ref mut body) = self.body {
+                if self.body.is_some() {
                     curl_easy_setopt(slot.curl, CURLOPT_POST, 1);
                     curl_easy_setopt(
                         slot.curl,
                         CURLOPT_POSTFIELDSIZE_LARGE,
-                        body.seek(SeekFrom::End(0)).unwrap(),
+                        self.body.len().unwrap(),
                     );
                     /* Ensure we have no state from a previous attempt that failed because
                      * of authentication (401). */
-                    body.seek(SeekFrom::Start(0)).unwrap();
-                    curl_easy_setopt(slot.curl, CURLOPT_READDATA, &mut *body);
+                    self.body.rewind().unwrap();
+                    curl_easy_setopt(slot.curl, CURLOPT_READDATA, &mut self.body);
                     curl_easy_setopt(
                         slot.curl,
                         CURLOPT_READFUNCTION,
-                        read_from_read::<&mut (dyn ReadAndSeek + Send)> as *const c_void,
+                        read_from_read::<Body> as *const c_void,
                     );
                     curl_easy_setopt(slot.curl, CURLOPT_FOLLOWLOCATION, 0);
                     headers = curl_slist_append(headers, cstr!("Expect:").as_ptr());
@@ -535,7 +663,7 @@ impl HgWireConnection for HgHttpConnection {
         let mut http_req = self.start_command_request(command, args);
         if command == "pushkey" {
             http_req.header("Content-Type", "application/mercurial-0.1");
-            http_req.post_data(Box::new(Cursor::new(Vec::<u8>::new())));
+            http_req.post_data(Cursor::new(Vec::<u8>::new()));
         }
         let mut http_resp = http_req.execute().unwrap();
         self.handle_redirect(&http_resp);
@@ -588,7 +716,7 @@ impl HgWireConnection for HgHttpConnection {
 
     fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> UnbundleResponse {
         let mut http_req = self.start_command_request(command, args);
-        http_req.post_data(Box::new(input));
+        http_req.post_data(input);
         http_req.header("Content-Type", "application/mercurial-0.1");
         let mut http_resp = http_req.execute().unwrap();
         self.handle_redirect(&http_resp);
