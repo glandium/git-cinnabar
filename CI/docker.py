@@ -64,7 +64,7 @@ DOCKER_IMAGES = {
             'rm llvm-snapshot.gpg.key',
             'echo'
             ' deb [signed-by=/usr/share/keyrings/llvm.gpg]'
-            ' https://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-16 main'
+            ' https://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-17 main'
             ' > /etc/apt/sources.list.d/llvm.list',
             'apt-get update -o Acquire::Check-Valid-Until=false',
             'curl -sO http://snapshot.debian.org/archive/debian'
@@ -83,8 +83,8 @@ DOCKER_IMAGES = {
         'commands': [
             'apt-get update -o Acquire::Check-Valid-Until=false',
             'apt-get install -y --no-install-recommends {}'.format(' '.join([
-                'clang-16',
-                'lld-16',
+                'clang-17',
+                'lld-17',
                 'git',
                 'make',
                 'patch',
@@ -154,12 +154,12 @@ DOCKER_IMAGES = {
         'from': 'base',
         'commands': [
             'apt-get install -y --no-install-recommends {}'.format(' '.join([
-                'llvm-16',
+                'llvm-17',
                 'make',
             ])),
             'apt-get clean',
             'pip3 install cram==0.7',
-            'ln -s llvm-symbolizer-16 /usr/bin/llvm-symbolizer'
+            'ln -s llvm-symbolizer-17 /usr/bin/llvm-symbolizer'
         ],
     },
 }
