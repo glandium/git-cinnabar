@@ -1141,7 +1141,7 @@ fn do_unbundle(clonebundle: bool, mut url: OsString) -> Result<(), String> {
     }
     let mut url = hg_url(&url).unwrap();
     if !["http", "https", "file"].contains(&url.scheme()) {
-        return Err(format!("{} urls are not supported.", url.scheme()));
+        Err(format!("{} urls are not supported.", url.scheme()))?;
     }
     if graft_config_enabled(None)?.unwrap_or(false) {
         init_graft();
@@ -1149,7 +1149,7 @@ fn do_unbundle(clonebundle: bool, mut url: OsString) -> Result<(), String> {
     if clonebundle {
         let mut conn = get_connection(&url).unwrap();
         if conn.get_capability(b"clonebundles").is_none() {
-            return Err("Repository does not support clonebundles")?;
+            Err("Repository does not support clonebundles")?;
         }
         url = get_clonebundle_url(&mut *conn).ok_or("Repository didn't provide a clonebundle")?;
         eprintln!("Getting clone bundle from {}", url);
@@ -3497,11 +3497,8 @@ fn remote_helper_push(
                 .lock()
                 .unwrap()
                 .branch_heads()
-                .filter_map(|(h, b)| {
-                    branch_names
-                        .contains(b)
-                        .then(|| format!("^{}", h.to_git().unwrap()))
-                })
+                .filter(|(_, b)| branch_names.contains(*b))
+                .map(|(h, _)| format!("^{}", h.to_git().unwrap()))
                 .chain(push_commits.iter().map(ToString::to_string))
                 .chain(["--topo-order".to_string(), "--full-history".to_string()]),
         )

@@ -655,17 +655,17 @@ pub fn find_common(
     }
     let sample = take_sample::<_, _, SAMPLE_SIZE>(&mut rng, &mut undetermined);
 
-    let (known, unknown): (Vec<_>, Vec<_>) = conn
-        .known(&sample)
-        .iter()
-        .zip(sample.into_iter())
-        .partition_map(|(&known, head)| {
-            if known {
-                Either::Left(head)
-            } else {
-                Either::Right(head)
-            }
-        });
+    let (known, unknown): (Vec<_>, Vec<_>) =
+        conn.known(&sample)
+            .iter()
+            .zip(sample)
+            .partition_map(|(&known, head)| {
+                if known {
+                    Either::Left(head)
+                } else {
+                    Either::Right(head)
+                }
+            });
 
     if undetermined.is_empty() && unknown.is_empty() {
         return known;
@@ -775,9 +775,8 @@ pub fn find_common(
         }
     }
     dag.iter()
-        .filter_map(|(_, data)| {
-            (data.known == Some(true) && !data.has_known_children).then(|| data.hg_node.unwrap())
-        })
+        .filter(|(_, data)| data.known == Some(true) && !data.has_known_children)
+        .map(|(_, data)| data.hg_node.unwrap())
         .collect_vec()
 }
 
