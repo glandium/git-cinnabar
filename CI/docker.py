@@ -31,6 +31,13 @@ def sources_list(snapshot, sections):
         )
 
 
+LLVM_REPO = (
+    'echo'
+    ' deb [signed-by=/usr/share/keyrings/llvm.gpg]'
+    ' https://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-17 main'
+    ' > /etc/apt/sources.list.d/llvm.list'
+)
+
 DOCKER_IMAGES = {
     'base': {
         'from': 'debian:bullseye-20220801',
@@ -62,11 +69,6 @@ DOCKER_IMAGES = {
             'gpg --no-default-keyring --keyring /usr/share/keyrings/llvm.gpg'
             ' --import llvm-snapshot.gpg.key',
             'rm llvm-snapshot.gpg.key',
-            'echo'
-            ' deb [signed-by=/usr/share/keyrings/llvm.gpg]'
-            ' https://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-17 main'
-            ' > /etc/apt/sources.list.d/llvm.list',
-            'apt-get update -o Acquire::Check-Valid-Until=false',
             'curl -sO http://snapshot.debian.org/archive/debian'
             '/20220326T025251Z/pool/main/p/python2-pip'
             '/python-pip_20.3.4%2Bdfsg-4_all.deb',
@@ -81,6 +83,7 @@ DOCKER_IMAGES = {
     'build': {
         'from': 'base',
         'commands': [
+            LLVM_REPO,
             'apt-get update -o Acquire::Check-Valid-Until=false',
             'apt-get install -y --no-install-recommends {}'.format(' '.join([
                 'clang-17',
@@ -153,6 +156,8 @@ DOCKER_IMAGES = {
     'test': {
         'from': 'base',
         'commands': [
+            LLVM_REPO,
+            'apt-get update -o Acquire::Check-Valid-Until=false',
             'apt-get install -y --no-install-recommends {}'.format(' '.join([
                 'llvm-17',
                 'make',
