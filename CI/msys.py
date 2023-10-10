@@ -107,9 +107,11 @@ class MsysEnvironment(MsysCommon):
         create_commands = [
             'pacman-key --init',
             'pacman-key --populate msys2',
+            'pacman-key --refresh',
             'pacman --noconfirm -Sy procps tar {}'.format(
                 ' '.join(self.packages(name))),
             'pkill gpg-agent',
+            'pkill dirmngr',
             'rm -rf /var/cache/pacman/pkg',
             'python3 -m pip install pip==22.2.2 wheel==0.37.1 --upgrade',
             'mv {}/{}/bin/{{mingw32-,}}make.exe'.format(msys(cpu), mingw(cpu)),
