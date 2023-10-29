@@ -43,7 +43,7 @@ use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{files_meta, git2hg, hg2git, hg_object_id, strslice};
 use crate::libgit::{
-    die, get_oid_blob, get_oid_committish, object_id, strbuf, Commit, RawBlob, RawCommit, RawTree,
+    changesets_oid, die, get_oid_blob, object_id, strbuf, Commit, RawBlob, RawCommit, RawTree,
     RefTransaction,
 };
 use crate::oid::ObjectId;
@@ -844,8 +844,13 @@ impl ChangesetHeads {
     }
 
     fn from_stored_metadata() -> Self {
-        get_oid_committish(b"refs/cinnabar/metadata^1")
-            .map_or_else(ChangesetHeads::new, ChangesetHeads::from_metadata)
+        let changesets_cid =
+            CommitId::from_raw_bytes(unsafe { changesets_oid.as_raw_bytes() }).unwrap();
+        if changesets_cid.is_null() {
+            ChangesetHeads::new()
+        } else {
+            ChangesetHeads::from_metadata(changesets_cid)
+        }
     }
 
     pub fn from_metadata(cid: CommitId) -> Self {
@@ -1798,7 +1803,7 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
 
     set_metadata_to(Some(cid), MetadataFlags::FORCE, "cinnabarclone").unwrap();
     unsafe {
-        do_reload();
+        do_reload(0);
     }
     true
 }

@@ -528,6 +528,16 @@ static int count_refs(const char *refname, const struct object_id *oid,
 	return 0;
 }
 
+static void reset_metadata(void)
+{
+	oidcpy(&metadata_oid, null_oid());
+	oidcpy(&changesets_oid, null_oid());
+	oidcpy(&manifests_oid, null_oid());
+	oidcpy(&hg2git_oid, null_oid());
+	oidcpy(&git2hg_oid, null_oid());
+	oidcpy(&files_meta_oid, null_oid());
+}
+
 static void init_metadata(void)
 {
 	struct commit *c;
@@ -542,12 +552,7 @@ static void init_metadata(void)
 
 	c = lookup_commit_reference_by_name(METADATA_REF);
 	if (!c) {
-		oidcpy(&metadata_oid, null_oid());
-		oidcpy(&changesets_oid, null_oid());
-		oidcpy(&manifests_oid, null_oid());
-		oidcpy(&hg2git_oid, null_oid());
-		oidcpy(&git2hg_oid, null_oid());
-		oidcpy(&files_meta_oid, null_oid());
+		reset_metadata();
 		return;
 	}
 	oidcpy(&metadata_oid, &c->object.oid);
@@ -652,7 +657,7 @@ void dump_ref_updates(void);
 
 extern void reset_changeset_heads(void);
 
-void do_reload(void)
+void do_reload(int reset)
 {
 	done_cinnabar();
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
@@ -663,7 +668,11 @@ void do_reload(void)
 
 	metadata_flags = 0;
 	reset_replace_map();
-	init_metadata();
+	if (reset) {
+		reset_metadata();
+	} else {
+		init_metadata();
+	}
 	reset_changeset_heads();
 }
 
@@ -754,6 +763,61 @@ void remote_get_url(const struct remote *remote, const char * const **url,
 int remote_skip_default_update(const struct remote *remote)
 {
 	return remote->skip_default_update;
+}
+
+void add_ref(struct ref ***tail, char *name, const struct object_id *oid)
+{
+	struct ref *ref = alloc_ref(name);
+	if (oid) {
+		oidcpy(&ref->old_oid, oid);
+	}
+	**tail = ref;
+        *tail = &ref->next;
+}
+
+void add_symref(struct ref ***tail, const char *name, const char *sym)
+{
+	struct ref *ref = alloc_ref(name);
+	ref->symref = xstrdup(sym);
+	**tail = ref;
+        *tail = &ref->next;
+}
+
+struct ref *get_ref_map(const struct remote *remote,
+                        const struct ref *remote_refs)
+{
+	struct ref *ref_map = NULL;
+	struct ref **tail = &ref_map;
+	int i;
+
+	for (i = 0; i < remote->fetch.nr; i++) {
+		get_fetch_map(remote_refs, &remote->fetch.items[i], &tail, 0);
+	}
+	apply_negative_refspecs(ref_map, (struct refspec *)&remote->fetch);
+	ref_map = ref_remove_duplicates(ref_map);
+	return ref_map;
+}
+
+struct ref *get_stale_refs(const struct remote *remote,
+                           const struct ref *ref_map)
+{
+	return get_stale_heads((struct refspec *)&remote->fetch,
+	                       (struct ref *)ref_map);
+}
+
+const struct ref *get_next_ref(const struct ref *ref)
+{
+	return ref->next;
+}
+
+const char *get_ref_name(const struct ref *ref)
+{
+	return ref->name;
+}
+
+const struct ref *get_ref_peer_ref(const struct ref *ref)
+{
+	return ref->peer_ref;
 }
 
 static int nongit = 0;

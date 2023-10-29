@@ -82,14 +82,13 @@ pub(crate) mod hg_data;
 use std::borrow::{Borrow, Cow};
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-#[cfg(unix)]
 use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{stdin, stdout, BufRead, BufWriter, Write};
 use std::iter::repeat;
-use std::os::raw::{c_char, c_int};
+use std::os::raw::{c_char, c_int, c_void};
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 use std::path::{Path, PathBuf};
@@ -104,6 +103,7 @@ use bstr::{BStr, ByteSlice};
 use cinnabar::{
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, GitManifestTree, GitManifestTreeId,
 };
+use cstr::cstr;
 use git::{BlobId, CommitId, GitObjectId};
 use git_version::git_version;
 use graft::{graft_finish, grafted, init_graft};
@@ -111,10 +111,11 @@ use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
 use libcinnabar::{files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
-    config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
-    get_oid_committish, get_unique_abbrev, lookup_replace_commit, metadata_oid, object_id,
-    reachable_subset, remote, repository, resolve_ref, rev_list, rev_list_with_boundaries, strbuf,
-    the_repository, DiffTreeItem, MaybeBoundary, RawBlob, RawCommit, RawTree, RefTransaction,
+    commit, config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
+    get_oid_committish, get_unique_abbrev, lookup_commit, lookup_replace_commit, metadata_oid,
+    object_id, reachable_subset, remote, repository, resolve_ref, rev_list,
+    rev_list_with_boundaries, strbuf, the_repository, DiffTreeItem, MaybeBoundary, RawBlob,
+    RawCommit, RawTree, RefTransaction,
 };
 use oid::{Abbrev, ObjectId};
 use once_cell::sync::Lazy;
@@ -170,7 +171,7 @@ pub const FULL_VERSION: &str = git_version!(
 
 #[allow(improper_ctypes)]
 extern "C" {
-    pub fn do_reload();
+    pub fn do_reload(reset: c_int);
     fn do_cleanup(rollback: c_int);
 
     fn do_store_metadata(result: *mut object_id);
@@ -269,7 +270,7 @@ fn do_done_and_check(args: &[&[u8]]) -> bool {
                 .unwrap();
             transaction.commit().unwrap();
         }
-        do_reload();
+        do_reload(0);
     }
     do_check_files()
 }
@@ -801,32 +802,250 @@ fn set_metadata_to(
     Ok(metadata)
 }
 
+#[allow(non_camel_case_types)]
+#[repr(transparent)]
+struct r#ref(c_void);
+
+extern "C" {
+    fn add_ref(tail: *mut *mut *mut r#ref, name: *const c_char, oid: *const object_id);
+
+    fn add_symref(tail: *mut *mut *mut r#ref, name: *const c_char, sym: *const c_char);
+
+    fn get_ref_map(remote: *const remote, remote_refs: *const r#ref) -> *mut r#ref;
+
+    fn free_refs(r: *mut r#ref);
+
+    fn get_next_ref(r: *const r#ref) -> *const r#ref;
+
+    fn get_ref_name(r: *const r#ref) -> *const c_char;
+
+    fn get_ref_peer_ref(r: *const r#ref) -> *const r#ref;
+
+    fn get_stale_refs(r: *const remote, fetch_map: *const r#ref) -> *mut r#ref;
+
+    fn repo_in_merge_bases(
+        r: *mut repository,
+        commit: *const commit,
+        reference: *const commit,
+    ) -> c_int;
+}
+
 fn do_reclone() -> Result<(), String> {
-    // TODO: Avoid resetting at all, possibly leaving the repo with no metadata
-    // if this is interrupted somehow.
-    let mut previous_metadata = set_metadata_to(None, MetadataFlags::empty(), "reclone")?;
+    unsafe {
+        let current_metadata_oid = metadata_oid.clone();
+        do_reload(/* reset */ 1);
+        metadata_oid = current_metadata_oid;
+    }
+
+    check_graft_refs();
+
+    let mut update_refs_by_remote = Vec::new();
 
     for_each_remote(|remote| {
-        if remote.skip_default_update() || hg_url(remote.get_url()).is_none() {
+        if remote.skip_default_update() {
             return Ok(());
         }
-        let mut cmd = Command::new("git");
-        if let Some(previous_metadata) = previous_metadata.take() {
-            cmd.arg("-c")
-                .arg(format!("cinnabar.previous-metadata={}", previous_metadata));
+        let url = match hg_url(remote.get_url()) {
+            Some(url) if url.scheme() == "tags" => return Ok(()),
+            Some(url) => url,
+            None => return Ok(()),
+        };
+        let mut conn = get_connection(&url).unwrap();
+        let info = repo_list(&mut *conn, remote.name().and_then(|s| s.to_str()), false);
+
+        let mut ref_map: *mut r#ref = std::ptr::null_mut();
+        let mut tail = &mut ref_map as *mut _;
+
+        for (refname, (_, cid)) in info.refs.iter() {
+            let refname = CString::new(refname.to_vec()).unwrap();
+            unsafe {
+                add_ref(
+                    &mut tail,
+                    refname.as_ptr(),
+                    cid.map(object_id::from)
+                        .as_ref()
+                        .map_or(std::ptr::null(), |cid| cid as *const _),
+                );
+            }
         }
-        let cmd = cmd
-            .args(["remote", "update", "--prune"])
-            .arg(remote.name().unwrap())
-            .status()
-            .map_err(|e| e.to_string())?;
-        if cmd.success() {
-            Ok(())
-        } else {
-            Err("fetch failed".to_string())
+        let mut wanted_refs = Vec::new();
+        let mut update_refs = Vec::new();
+
+        unsafe {
+            if let Some(head_ref) = &info.head_ref {
+                let symref = CString::new(head_ref.to_vec()).unwrap();
+                add_symref(&mut tail, cstr!("HEAD").as_ptr(), symref.as_ptr());
+            }
+
+            let refs = get_ref_map(remote, ref_map);
+            free_refs(ref_map);
+            let mut r = refs as *const r#ref;
+
+            while !r.is_null() {
+                let refname = CStr::from_ptr(get_ref_name(r)).to_bytes().as_bstr();
+                let peer_ref = get_ref_peer_ref(r);
+                if !peer_ref.is_null() {
+                    let peer_ref = CStr::from_ptr(get_ref_name(peer_ref))
+                        .to_bytes()
+                        .as_bstr()
+                        .to_boxed();
+                    let (csid, cid) = info.refs.get(refname).unwrap();
+                    wanted_refs.push((refname.to_boxed(), peer_ref, *csid, *cid));
+                }
+                r = get_next_ref(r);
+            }
+            let stale_refs = get_stale_refs(remote, refs);
+            r = stale_refs;
+            while !r.is_null() {
+                let refname = CStr::from_ptr(get_ref_name(r)).to_bytes().as_bstr();
+                update_refs.push((None, refname.to_boxed(), None, None));
+                r = get_next_ref(r);
+            }
+            free_refs(refs);
         }
+        let unknown_wanted_heads = wanted_refs
+            .iter()
+            .filter(|(_, _, _, cid)| cid.is_none())
+            .map(|(_, _, csid, _)| *csid)
+            .unique()
+            .collect_vec();
+
+        import_bundle(
+            &mut *conn,
+            remote.name().and_then(|n| n.to_str()),
+            &info,
+            &unknown_wanted_heads,
+        )?;
+
+        for (refname, peer_ref, csid, cid) in wanted_refs.into_iter().unique() {
+            let old_cid = resolve_ref(OsStr::from_bytes(&peer_ref));
+            let cid = Some(CommitId::from(
+                cid.unwrap_or_else(|| csid.to_git().unwrap()),
+            ));
+            if old_cid != cid {
+                update_refs.push((Some(refname), peer_ref, cid, old_cid));
+            }
+        }
+        if !update_refs.is_empty() {
+            update_refs.sort();
+            update_refs_by_remote.push((remote.get_url().to_os_string(), update_refs));
+        }
+        Ok(())
     })
-    .map(|_| {
+    .and_then(|()| {
+        do_done_and_check(&[])
+            .then_some(())
+            .ok_or_else(|| "Fatal error".to_string())?;
+        let mut transaction = RefTransaction::new().unwrap();
+        for (remote_url, update_refs) in update_refs_by_remote {
+            eprintln!("From {}", remote_url.to_string_lossy());
+            let update_refs = update_refs
+                .into_iter()
+                .map(|(refname, peer_ref, cid, old_cid)| {
+                    fn get_pretty_refname(r: &BStr) -> Box<str> {
+                        r.strip_prefix(b"refs/heads/")
+                            .or_else(|| r.strip_prefix(b"refs/tags/"))
+                            .or_else(|| r.strip_prefix(b"refs/remotes/"))
+                            .unwrap_or(r)
+                            .to_str_lossy()
+                            .into()
+                    }
+                    let pretty_refname = refname.as_ref().map(|r| get_pretty_refname(r).to_boxed());
+                    let pretty_peer_ref = get_pretty_refname(&peer_ref).to_boxed();
+                    let abbrev_cid = cid.map(get_unique_abbrev);
+                    let abbrev_old_cid = old_cid.map(get_unique_abbrev);
+                    (
+                        (refname, pretty_refname),
+                        (peer_ref, pretty_peer_ref),
+                        (cid, abbrev_cid),
+                        (old_cid, abbrev_old_cid),
+                    )
+                })
+                .collect_vec();
+            let width = update_refs
+                .iter()
+                .filter_map(|(_, _, (_, cid), (_, old_cid))| {
+                    cid.map(|c| c.len())
+                        .into_iter()
+                        .chain((old_cid.map(|c| c.len())).into_iter())
+                        .max()
+                })
+                .max()
+                .unwrap_or(7)
+                * 2
+                + 3;
+            let refwidth = update_refs
+                .iter()
+                .map(|((_, r), _, _, _)| r.as_ref().map_or(6, |r| r.len()))
+                .max()
+                .unwrap();
+            /*
+            transaction
+                .update(BROKEN_REF, metadata_cid, None, "fsck")
+                .unwrap();
+            transaction.commit().unwrap();*/
+            for (
+                (_, pretty_refname),
+                (peer_ref, pretty_peer_ref),
+                (cid, abbrev_cid),
+                (old_cid, abbrev_old_cid),
+            ) in update_refs
+            {
+                if let Some(pretty_refname) = &pretty_refname {
+                    let abbrev_cid = abbrev_cid.unwrap();
+                    let cid = cid.unwrap();
+                    let msg = if let Some(abbrev_old_cid) = abbrev_old_cid {
+                        let old_cid = old_cid.unwrap();
+                        let old_commit = unsafe { lookup_commit(the_repository, &old_cid.into()) };
+                        let commit = unsafe { lookup_commit(the_repository, &cid.into()) };
+                        if unsafe { repo_in_merge_bases(the_repository, commit, old_commit) } == 0 {
+                            eprintln!(
+                                "+ {:width$} {:refwidth$} -> {}  (forced update)",
+                                format!("{}...{}", abbrev_old_cid, abbrev_cid),
+                                pretty_refname,
+                                pretty_peer_ref
+                            );
+                            "forced-update"
+                        } else {
+                            eprintln!(
+                                "  {:width$} {:refwidth$} -> {}",
+                                format!("{}..{}", abbrev_old_cid, abbrev_cid),
+                                pretty_refname,
+                                pretty_peer_ref
+                            );
+                            "fast-forward"
+                        }
+                    } else {
+                        eprintln!(
+                            "* {:width$} {:refwidth$} -> {}",
+                            "[new branch]", pretty_refname, pretty_peer_ref
+                        );
+                        "storing head"
+                    };
+                    transaction
+                        .update(OsStr::from_bytes(&peer_ref), cid, old_cid, msg)
+                        .unwrap();
+                } else {
+                    eprintln!(
+                        "- {:width$} {:refwidth$} -> {}",
+                        "[deleted]", "(none)", pretty_peer_ref
+                    );
+                    transaction
+                        .delete(OsStr::from_bytes(&peer_ref), old_cid, "prune")
+                        .unwrap();
+                };
+            }
+        }
+        transaction.commit().unwrap();
+        Ok(())
+    })
+    // From hg::https://www.mercurial-scm.org/repo/hg
+    // - [deleted]               (none)     -> origin/foo
+    // + c5e89032c3...8d49257b82 bookmarks/@          -> origin/bookmarks/@  (forced update)
+    // + 37d672d992...82f6360883 branches/default/tip -> origin/branches/default/tip  (forced update)
+    // * [new branch]            branches/stable/tip  -> origin/branches/stable/tip
+    //   1d5a458aa0..fbd55a8651  branches/stable/tip -> origin/branches/stable/tip
+    .map(|()| {
         println!("Please note that reclone left your local branches untouched.");
         println!("They may be based on entirely different commits.");
     })
@@ -3070,7 +3289,9 @@ impl RefsStyle {
     }
 }
 
+#[derive(Debug)]
 struct RemoteInfo {
+    head_ref: Option<Box<BStr>>,
     refs: BTreeMap<Box<BStr>, (HgChangesetId, Option<GitChangesetId>)>,
     topological_heads: Vec<HgChangesetId>,
     branch_names: Vec<Box<BStr>>,
@@ -3078,12 +3299,7 @@ struct RemoteInfo {
     refs_style: RefsStyle,
 }
 
-fn remote_helper_repo_list(
-    conn: &mut dyn HgRepo,
-    remote: Option<&str>,
-    mut stdout: impl Write,
-    for_push: bool,
-) -> RemoteInfo {
+fn repo_list(conn: &mut dyn HgRepo, remote: Option<&str>, for_push: bool) -> RemoteInfo {
     let _lock = HELPER_LOCK.lock().unwrap();
     let refs_style = (for_push)
         .then(|| RefsStyle::from_config("pushrefs", remote))
@@ -3233,31 +3449,8 @@ fn remote_helper_repo_list(
         None
     };
 
-    if let Some(head_ref) = head_ref {
-        if let Some((csid, cid)) = refs.get(&head_ref) {
-            let mut buf = b"@".to_vec();
-            buf.extend_from_slice(&head_ref);
-            buf.push(b' ');
-            buf.extend_from_slice(b"HEAD\n");
-            stdout.write_all(&buf).unwrap();
-            refs.insert(b"HEAD".as_bstr().to_boxed(), (*csid, *cid));
-        }
-    }
-
-    for (refname, (_, cid)) in refs.iter().filter(|(r, _)| &***r != b"HEAD".as_bstr()) {
-        let mut buf = cid
-            .as_ref()
-            .map_or_else(|| "?".to_string(), ToString::to_string)
-            .into_bytes();
-        buf.push(b' ');
-        buf.extend_from_slice(refname);
-        buf.push(b'\n');
-        stdout.write_all(&buf).unwrap();
-    }
-
-    stdout.write_all(b"\n").unwrap();
-    stdout.flush().unwrap();
     RemoteInfo {
+        head_ref,
         refs,
         topological_heads: conn
             .heads()
@@ -3270,6 +3463,39 @@ fn remote_helper_repo_list(
         bookmarks,
         refs_style,
     }
+}
+
+fn remote_helper_repo_list(
+    conn: &mut dyn HgRepo,
+    remote: Option<&str>,
+    mut stdout: impl Write,
+    for_push: bool,
+) -> RemoteInfo {
+    let info = repo_list(conn, remote, for_push);
+    if let Some(head_ref) = &info.head_ref {
+        if info.refs.contains_key(head_ref) {
+            let mut buf = b"@".to_vec();
+            buf.extend_from_slice(head_ref);
+            buf.push(b' ');
+            buf.extend_from_slice(b"HEAD\n");
+            stdout.write_all(&buf).unwrap();
+        }
+    }
+
+    for (refname, (_, cid)) in info.refs.iter() {
+        let mut buf = cid
+            .as_ref()
+            .map_or_else(|| "?".to_string(), ToString::to_string)
+            .into_bytes();
+        buf.push(b' ');
+        buf.extend_from_slice(refname);
+        buf.push(b'\n');
+        stdout.write_all(&buf).unwrap();
+    }
+
+    stdout.write_all(b"\n").unwrap();
+    stdout.flush().unwrap();
+    info
 }
 
 fn remote_helper_import(
@@ -3309,8 +3535,12 @@ fn remote_helper_import(
     let wanted_refs = wanted_refs
         .iter()
         .map(|refname| {
+            let refname = (*refname == b"HEAD".as_bstr())
+                .then_some(info.head_ref.as_deref())
+                .flatten()
+                .unwrap_or(*refname);
             info.refs
-                .get_key_value(*refname)
+                .get_key_value(refname)
                 .map(|(k, (h, g))| (k.as_bstr(), h, g.as_ref()))
                 .ok_or(refname)
         })
@@ -3318,45 +3548,15 @@ fn remote_helper_import(
         .map_err(|refname| format!("couldn't find remote ref {}", refname))?;
 
     let mut tags = None;
-    let mut unknown_wanted_heads = wanted_refs
+    let unknown_wanted_heads = wanted_refs
         .iter()
-        .filter_map(|(_, csid, cid)| cid.is_none().then_some(*(*csid)))
+        .filter(|(_, _, cid)| cid.is_none())
+        .map(|(_, csid, _)| **csid)
         .unique()
         .collect_vec();
     if !unknown_wanted_heads.is_empty() {
         tags = Some(get_tags());
-        if graft_config_enabled(remote)?.unwrap_or(false) {
-            init_graft();
-        }
-        // TODO: Mercurial can be an order of magnitude slower when
-        // creating a bundle when not giving topological heads, which
-        // some of the branch heads might not be.
-        // http://bz.selenic.com/show_bug.cgi?id=4595
-        // The heads we've been asked for either come from the repo
-        // branchmap, and are a superset of its topological heads.
-        // That means if the heads we don't know in those we were asked for
-        // are a superset of the topological heads we don't know, then we
-        // should use those instead.
-        if !info.branch_names.is_empty() {
-            let unknown_topological_heads = info
-                .topological_heads
-                .into_iter()
-                .filter(|h| h.to_git().is_none())
-                .collect::<Vec<_>>();
-            if unknown_wanted_heads
-                .iter()
-                .collect::<HashSet<_>>()
-                .is_superset(&unknown_topological_heads.iter().collect())
-            {
-                unknown_wanted_heads = unknown_topological_heads;
-            }
-        }
-        let branch_names = info
-            .branch_names
-            .iter()
-            .map(|b| &**b)
-            .collect::<HashSet<_>>();
-        get_bundle(conn, &unknown_wanted_heads, &branch_names, remote)?;
+        import_bundle(conn, remote, &info, &unknown_wanted_heads)?;
     }
 
     do_done_and_check(&[])
@@ -3412,6 +3612,48 @@ fn remote_helper_import(
         }
     }
     Ok(())
+}
+
+fn import_bundle(
+    conn: &mut dyn HgRepo,
+    remote: Option<&str>,
+    info: &RemoteInfo,
+    unknown_wanted_heads: &[HgChangesetId],
+) -> Result<(), String> {
+    if graft_config_enabled(remote)?.unwrap_or(false) {
+        init_graft();
+    }
+    // TODO: Mercurial can be an order of magnitude slower when
+    // creating a bundle when not giving topological heads, which
+    // some of the branch heads might not be.
+    // http://bz.selenic.com/show_bug.cgi?id=4595
+    // The heads we've been asked for either come from the repo
+    // branchmap, and are a superset of its topological heads.
+    // That means if the heads we don't know in those we were asked for
+    // are a superset of the topological heads we don't know, then we
+    // should use those instead.
+    let mut unknown_wanted_heads = Cow::Borrowed(unknown_wanted_heads);
+    if !info.branch_names.is_empty() {
+        let unknown_topological_heads = info
+            .topological_heads
+            .iter()
+            .copied()
+            .filter(|h| h.to_git().is_none())
+            .collect::<Vec<_>>();
+        if unknown_wanted_heads
+            .iter()
+            .collect::<HashSet<_>>()
+            .is_superset(&unknown_topological_heads.iter().collect())
+        {
+            unknown_wanted_heads = Cow::Owned(unknown_topological_heads);
+        }
+    }
+    let branch_names = info
+        .branch_names
+        .iter()
+        .map(|b| &**b)
+        .collect::<HashSet<_>>();
+    get_bundle(conn, &unknown_wanted_heads, &branch_names, remote)
 }
 
 fn check_graft_refs() {

@@ -887,14 +887,10 @@ void do_store_metadata(struct object_id *result) {
 	}
 
 	store_changesets_metadata(&changesets);
-	config("previous-metadata", &buf);
-	if ((buf.len && !get_oid_hex(buf.buf, &previous))) {
-		has_previous = 1;
-	} else if (!is_null_oid(&metadata_oid)) {
+	if (!is_null_oid(&metadata_oid)) {
 		oidcpy(&previous, &metadata_oid);
 		has_previous = 1;
 	}
-	strbuf_release(&buf);
 	oidmap_iter_init(the_repository->objects->replace_map, &iter);
 	while ((replace = oidmap_iter_next(&iter))) {
 		strbuf_addf(&buf, "160000 %s%c",

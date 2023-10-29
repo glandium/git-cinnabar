@@ -65,7 +65,8 @@ impl From<object_id> for GitObjectId {
 }
 
 extern "C" {
-    pub static metadata_oid: object_id;
+    pub static mut metadata_oid: object_id;
+    pub static mut changesets_oid: object_id;
 }
 
 #[allow(non_camel_case_types)]
@@ -1154,7 +1155,7 @@ extern "C" {
 
     fn free_commit_list(list: *mut commit_list);
 
-    fn lookup_commit(r: *mut repository, oid: *const object_id) -> *const commit;
+    pub fn lookup_commit(r: *mut repository, oid: *const object_id) -> *const commit;
 }
 
 pub struct CommitList {

@@ -51,7 +51,7 @@ void create_git_tree(const struct object_id *tree_id,
                      struct object_id *result);
 
 void reset_manifest_heads(void);
-void do_reload(void);
+void do_reload(int);
 unsigned int replace_map_size(void);
 
 const struct object_id *repo_lookup_replace_object(
@@ -71,5 +71,23 @@ int maybe_boundary(struct rev_info *revs, struct commit *commit);
 struct diff_tree_item;
 
 void diff_tree_(int argc, const char **argv, void (*cb)(void *, struct diff_tree_item *), void *context);
+
+struct ref;
+
+void add_ref(struct ref ***tail, char *name, const struct object_id *oid);
+
+void add_symref(struct ref ***tail, const char *name, const char *sym);
+
+struct ref *get_ref_map(const struct remote *remote,
+                        const struct ref *remote_refs);
+
+struct ref *get_stale_refs(const struct remote *remote,
+                           const struct ref *ref_map);
+
+const struct ref *get_next_ref(const struct ref *ref);
+
+const char *get_ref_name(const struct ref *ref);
+
+const struct ref *get_ref_peer_ref(const struct ref *ref);
 
 #endif
