@@ -29,6 +29,7 @@ include = [
 [dependencies]
 all_asserts = "2"
 array-init = "2.0.1"
+atty = "0.2"
 backtrace = "0.3"
 bit-vec = "0.6"
 bitflags = "1"

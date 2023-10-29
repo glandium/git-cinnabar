@@ -7,6 +7,7 @@ use std::fmt;
 use std::io::{self, Write};
 use std::num::ParseIntError;
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
+use std::str::FromStr;
 use std::sync::RwLock;
 
 use bstr::ByteSlice;
@@ -20,7 +21,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 
 use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry, TreeId};
-use crate::oid::ObjectId;
+use crate::oid::{Abbrev, ObjectId};
 use crate::tree_util::WithPath;
 use crate::util::{CStrExt, FromBytes, OptionExt, OsStrExt, SliceExt, Transpose};
 
@@ -415,9 +416,18 @@ impl RawCommit {
 extern "C" {
     pub static mut the_repository: *mut repository;
 
+    static default_abbrev: c_int;
+
     fn repo_get_oid_committish(r: *mut repository, s: *const c_char, oid: *mut object_id) -> c_int;
 
     fn repo_get_oid_blob(repo: *mut repository, name: *const c_char, oid: *mut object_id) -> c_int;
+
+    fn repo_find_unique_abbrev_r(
+        r: *mut repository,
+        hex: *mut c_char,
+        oid: *const object_id,
+        len: c_int,
+    ) -> c_int;
 
     fn repo_lookup_replace_object(r: *mut repository, oid: *const object_id) -> *const object_id;
 }
@@ -440,6 +450,21 @@ pub fn get_oid_blob(s: &[u8]) -> Option<BlobId> {
         (repo_get_oid_blob(the_repository, c.as_ptr(), &mut oid) == 0)
             .then(|| BlobId::from_unchecked(oid.into()))
     }
+}
+
+pub fn get_unique_abbrev<O: ObjectId + Into<object_id>>(oid: O) -> Abbrev<O> {
+    let mut hex: [c_char; GIT_MAX_RAWSZ * 2 + 1] = [0; GIT_MAX_RAWSZ * 2 + 1];
+    let len = unsafe {
+        repo_find_unique_abbrev_r(
+            the_repository,
+            hex.as_mut_ptr(),
+            &oid.into(),
+            default_abbrev,
+        )
+    };
+    let s = unsafe { CStr::from_ptr(hex.as_ptr()) }.to_str().unwrap();
+    assert_eq!(s.len(), len as usize);
+    Abbrev::from_str(s).unwrap()
 }
 
 pub fn lookup_replace_commit(c: CommitId) -> CommitId {

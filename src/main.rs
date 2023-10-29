@@ -106,14 +106,14 @@ use cinnabar::{
 use git::{BlobId, CommitId, GitObjectId};
 use git_version::git_version;
 use graft::{graft_finish, grafted, init_graft};
-use hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId, ManifestEntry};
+use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
 use libcinnabar::{files_meta, git2hg, hg2git, hg_object_id};
 use libgit::{
     config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
-    get_oid_committish, lookup_replace_commit, metadata_oid, object_id, reachable_subset, remote,
-    resolve_ref, rev_list, rev_list_with_boundaries, strbuf, DiffTreeItem, MaybeBoundary, RawBlob,
-    RawCommit, RawTree, RefTransaction,
+    get_oid_committish, get_unique_abbrev, lookup_replace_commit, metadata_oid, object_id,
+    reachable_subset, remote, repository, resolve_ref, rev_list, rev_list_with_boundaries, strbuf,
+    the_repository, DiffTreeItem, MaybeBoundary, RawBlob, RawCommit, RawTree, RefTransaction,
 };
 use oid::{Abbrev, ObjectId};
 use once_cell::sync::Lazy;
@@ -527,12 +527,17 @@ fn test_hg_url() {
     );
 }
 
+extern "C" {
+    fn git_path_fetch_head(repos: *mut repository) -> *const c_char;
+}
+
 fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
+    set_progress(atty::is(atty::Stream::Stderr));
     let url = remote::get(remote).get_url();
-    let url =
+    let hg_url =
         hg_url(url).ok_or_else(|| format!("Invalid mercurial url: {}", url.to_string_lossy()))?;
-    let mut conn =
-        hg_connect::get_connection(&url).ok_or_else(|| format!("Failed to connect to {}", url))?;
+    let mut conn = hg_connect::get_connection(&hg_url)
+        .ok_or_else(|| format!("Failed to connect to {}", hg_url))?;
     if conn.get_capability(b"lookup").is_none() {
         return Err(
             "Remote repository does not support the \"lookup\" command. \
@@ -560,24 +565,50 @@ fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
         full_revs.push(
             data.to_str()
                 .ok()
-                .and_then(|d| HgObjectId::from_str(d).ok())
-                .expect("lookup command result is malformed")
-                .to_string(),
+                .and_then(|d| HgChangesetId::from_str(d).ok())
+                .expect("lookup command result is malformed"),
         );
     }
-    let cmd = Command::new("git")
-        .arg("-c")
-        .arg(format!("cinnabar.fetch={}", full_revs.join(" ")))
-        .arg("fetch")
-        .arg(remote)
-        .args(full_revs.iter().map(|s| format!("hg/revs/{}", s)))
-        .status()
-        .map_err(|e| e.to_string())?;
-    if cmd.success() {
-        Ok(())
-    } else {
-        Err("fetch failed".to_owned())
+
+    check_graft_refs();
+
+    let remote = Some(remote.to_str().unwrap())
+        .and_then(|r| (!r.starts_with("hg://") && !r.starts_with("hg::")).then_some(r));
+
+    if graft_config_enabled(remote)?.unwrap_or(false) {
+        init_graft();
     }
+
+    get_bundle(&mut *conn, &full_revs, &HashSet::new(), remote)?;
+
+    do_done_and_check(&[])
+        .then_some(())
+        .ok_or_else(|| "Fatal error".to_string())?;
+
+    let url = url.to_string_lossy();
+    let mut fetch_head = Vec::new();
+    let width = full_revs
+        .iter()
+        .map(|rev| {
+            let git_rev = rev.to_git().unwrap();
+            writeln!(fetch_head, "{}\t\t'hg/revs/{}' of {}", git_rev, rev, url).unwrap();
+            get_unique_abbrev(git_rev).len()
+        })
+        .max()
+        .unwrap()
+        * 2
+        + 3;
+    let path = unsafe { CStr::from_ptr(git_path_fetch_head(the_repository)).to_osstr() };
+    File::create(path)
+        .and_then(|mut f| f.write(&fetch_head))
+        .map_err(|e| e.to_string())?;
+
+    eprintln!("From {}", url);
+    for rev in full_revs {
+        // TODO: there is some logic in transport_summary_width to determine the width between branch and hg/revs/
+        eprintln!(" * {:width$} hg/revs/{} -> FETCH_HEAD", "branch", rev);
+    }
+    Ok(())
 }
 
 fn do_fetch_tags() -> Result<(), String> {
@@ -3093,45 +3124,27 @@ fn remote_helper_repo_list(
         }
     };
 
-    let fetches;
-    let branchmap;
-    let bookmarks;
-    if let Some(fetch) = get_config("fetch").and_then(|f| (!f.is_empty()).then_some(f)) {
-        fetches = Some(
-            fetch
-                .to_str()
-                .unwrap()
-                .split(' ')
-                .map(HgChangesetId::from_str)
-                .collect::<Result<Box<[_]>, _>>()
-                .unwrap(),
-        );
-        branchmap = HashMap::new();
-        bookmarks = HashMap::new();
-    } else {
-        fetches = None;
-        branchmap = ByteSlice::lines(&*conn.branchmap())
-            .map(|l| {
-                let [b, h] = l.splitn_exact(b' ').unwrap();
-                (
-                    b.as_bstr().to_boxed(),
-                    h.split(|&b| b == b' ')
-                        .map(HgChangesetId::from_bytes)
-                        .collect::<Result<Box<[_]>, _>>()
-                        .unwrap(),
-                )
-            })
-            .collect();
-        bookmarks = ByteSlice::lines(&*conn.bookmarks())
-            .map(|l| {
-                let [b, h] = l.splitn_exact(b'\t').unwrap();
-                (
-                    b.as_bstr().to_boxed(),
-                    HgChangesetId::from_bytes(h).unwrap(),
-                )
-            })
-            .collect();
-    }
+    let branchmap = ByteSlice::lines(&*conn.branchmap())
+        .map(|l| {
+            let [b, h] = l.splitn_exact(b' ').unwrap();
+            (
+                b.as_bstr().to_boxed(),
+                h.split(|&b| b == b' ')
+                    .map(HgChangesetId::from_bytes)
+                    .collect::<Result<Box<[_]>, _>>()
+                    .unwrap(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let bookmarks = ByteSlice::lines(&*conn.bookmarks())
+        .map(|l| {
+            let [b, h] = l.splitn_exact(b'\t').unwrap();
+            (
+                b.as_bstr().to_boxed(),
+                HgChangesetId::from_bytes(h).unwrap(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
 
     let mut head_template = None;
     let mut tip_template = None;
@@ -3200,14 +3213,6 @@ fn remote_helper_repo_list(
         }
     }
 
-    for f in fetches.iter().flat_map(|f| f.iter()) {
-        add_ref(
-            Some(&["hg/revs/", ""]),
-            &[f.to_string().as_bytes().as_bstr()],
-            *f,
-        );
-    }
-
     let head_ref = if let Some(bookmark_template) = bookmarks
         .contains_key(b"@".as_bstr())
         .then_some(())
@@ -3258,18 +3263,13 @@ fn remote_helper_repo_list(
     stdout.flush().unwrap();
     RemoteInfo {
         refs,
-        topological_heads: fetches
-            .is_none()
-            .then(|| {
-                conn.heads()
-                    .trim_end_with(|c| c == '\n')
-                    .split(|&b| b == b' ')
-                    .map(HgChangesetId::from_bytes)
-                    .collect::<Result<_, _>>()
-            })
-            .transpose()
-            .unwrap()
-            .unwrap_or_default(),
+        topological_heads: conn
+            .heads()
+            .trim_end_with(|c| c == '\n')
+            .split(|&b| b == b' ')
+            .map(HgChangesetId::from_bytes)
+            .collect::<Result<_, _>>()
+            .unwrap(),
         branch_names: branchmap.into_keys().collect(),
         bookmarks,
         refs_style,
@@ -3308,13 +3308,7 @@ fn remote_helper_import(
     })?;
     transaction.commit()?;
 
-    if get_config("graft-refs").is_some() {
-        warn!(
-            target: "root",
-            "The cinnabar.graft-refs configuration is deprecated.\n\
-             Please unset it."
-        );
-    }
+    check_graft_refs();
 
     let wanted_refs = wanted_refs
         .iter()
@@ -3427,6 +3421,16 @@ fn remote_helper_import(
         }
     }
     Ok(())
+}
+
+fn check_graft_refs() {
+    if get_config("graft-refs").is_some() {
+        warn!(
+            target: "root",
+            "The cinnabar.graft-refs configuration is deprecated.\n\
+             Please unset it."
+        );
+    }
 }
 
 fn remote_helper_push(

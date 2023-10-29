@@ -366,6 +366,7 @@ version = "0.7.0-a"
 dependencies = [
  "all_asserts",
  "array-init",
+ "atty",
  "backtrace",
  "bit-vec",
  "bitflags",
