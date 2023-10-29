@@ -791,8 +791,6 @@ void init_cinnabar(const char *argv0)
 	warn_on_object_refname_ambiguity = 0;
 }
 
-static int initialized = 0;
-
 int init_cinnabar_2(void)
 {
 	if (nongit) {
@@ -800,7 +798,6 @@ int init_cinnabar_2(void)
 	}
 	init_metadata();
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
-	initialized = 1;
 	return 1;
 }
 
