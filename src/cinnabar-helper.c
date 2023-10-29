@@ -654,18 +654,7 @@ extern void reset_changeset_heads(void);
 
 void do_reload(void)
 {
-	if (notes_initialized(&git2hg))
-		free_notes(&git2hg);
-
-	if (notes_initialized(&hg2git))
-		free_notes(&hg2git);
-
-	if (notes_initialized(&files_meta))
-		free_notes(&files_meta);
-
-	oidset_clear(&hg2git_seen);
-
-	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
+	done_cinnabar();
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
 
 	oid_array_clear(&manifest_heads);
