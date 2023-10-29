@@ -231,7 +231,7 @@ fn test_exactsize_read_rewind_body() {
     let c = "hijklm";
 
     let mut body1 = Body::new();
-    body1.add(Cursor::new(&a[..]));
+    body1.add(Cursor::new(a));
 
     assert_eq!(body1.len().unwrap(), 4);
     assert_eq!(&body1.read_all_to_string().unwrap()[..], "abcd");
@@ -239,8 +239,8 @@ fn test_exactsize_read_rewind_body() {
     assert_eq!(&body1.read_all_to_string().unwrap()[..], "abcd");
 
     let mut body2 = Body::new();
-    body2.add(Cursor::new(&a[..]));
-    body2.add(Cursor::new(&b[..]));
+    body2.add(Cursor::new(a));
+    body2.add(Cursor::new(b));
 
     assert_eq!(body2.len().unwrap(), 7);
     assert_eq!(&body2.read_all_to_string().unwrap()[..], "abcdefg");
@@ -248,9 +248,9 @@ fn test_exactsize_read_rewind_body() {
     assert_eq!(&body2.read_all_to_string().unwrap()[..], "abcdefg");
 
     let mut body3 = Body::new();
-    body3.add(Cursor::new(&a[..]));
-    body3.add(Cursor::new(&b[..]));
-    body3.add(Cursor::new(&c[..]));
+    body3.add(Cursor::new(a));
+    body3.add(Cursor::new(b));
+    body3.add(Cursor::new(c));
 
     assert_eq!(body3.len().unwrap(), 13);
     assert_eq!(&body3.read_all_to_string().unwrap()[..], "abcdefghijklm");

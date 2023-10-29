@@ -26,6 +26,7 @@
 #![deny(clippy::range_plus_one)]
 #![deny(clippy::redundant_closure_for_method_calls)]
 #![deny(clippy::redundant_else)]
+#![deny(clippy::redundant_slicing)]
 #![deny(clippy::ref_binding_to_reference)]
 #![deny(clippy::ref_option_ref)]
 #![deny(clippy::semicolon_if_nothing_returned)]
