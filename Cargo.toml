@@ -62,7 +62,7 @@ default-features = false
 features = ["std"]
 
 [dependencies.clap]
-version = "4.0,<4.0.27"  # Avoid windows-sys dependency.
+version = "4.0,<4.4"  # Avoid MSRV bump to 1.70.
 features = ["cargo", "derive"]
 
 [target.'cfg(windows)'.dependencies.curl-sys]
@@ -135,6 +135,7 @@ cc = "1.0.46"
 itertools = "0.11"
 make-cmd = "0.1"
 target = "2.0"
+syn = { version = "1", features = ["full"] }  # git-version fails to parse inner macros without this.
 
 [build-dependencies.rustflags]
 version = "0.1"
