@@ -606,7 +606,6 @@ fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
 
     eprintln!("From {}", url);
     for rev in full_revs {
-        // TODO: there is some logic in transport_summary_width to determine the width between branch and hg/revs/
         eprintln!(" * {:width$} hg/revs/{} -> FETCH_HEAD", "branch", rev);
     }
     Ok(())
