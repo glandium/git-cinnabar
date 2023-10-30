@@ -111,9 +111,9 @@ optional = true
 version = "0.4"
 optional = true
 
-[target.'cfg(windows)'.dependencies.winapi]
-version = "0.3"
-features = ["std", "winerror"]
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.48"
+features = ["Win32_Foundation"]
 
 [target.'cfg(not(windows))'.dependencies.xz2]
 version = "0.1"
@@ -157,7 +157,7 @@ curl-compat = ["rustflags"]
 # Check and report when a new version is available.
 version-check = ["semver", "shared_child"]
 # Download and apply new versions.
-self-update = ["semver", "shared_child", "dep:tar", "dep:xz2", "dep:zip", "winapi/handleapi", "winapi/processthreadsapi", "winapi/synchapi", "winapi/winbase"]
+self-update = ["semver", "shared_child", "dep:tar", "dep:xz2", "dep:zip", "windows-sys/Win32_System_Threading"]
 
 # Development features
 

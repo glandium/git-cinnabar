@@ -106,6 +106,8 @@ use cinnabar::{
 use cstr::cstr;
 use git::{BlobId, CommitId, GitObjectId};
 use git_version::git_version;
+#[cfg(windows)]
+use windows_sys::Win32;
 
 use graft::{graft_finish, grafted, init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
@@ -1153,11 +1155,14 @@ fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(),
 
     #[cfg(windows)]
     if let Some(old_path) = std::env::var_os(FINISH_SELF_UPDATE) {
-        use std::os::windows::io::RawHandle;
-        let handle = usize::from_str(&std::env::var(FINISH_SELF_UPDATE_PARENT).unwrap()).unwrap()
-            as RawHandle;
+        use Win32::Foundation::HANDLE;
+        let handle =
+            usize::from_str(&std::env::var(FINISH_SELF_UPDATE_PARENT).unwrap()).unwrap() as HANDLE;
         unsafe {
-            winapi::um::synchapi::WaitForSingleObject(handle, winapi::um::winbase::INFINITE);
+            Win32::System::Threading::WaitForSingleObject(
+                handle,
+                Win32::System::Threading::INFINITE,
+            );
         }
         std::fs::remove_file(old_path).ok();
         return Ok(());
@@ -1199,18 +1204,18 @@ fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(),
         }
         #[cfg(windows)]
         {
-            use std::os::windows::io::RawHandle;
-            let mut handle: RawHandle = std::ptr::null_mut();
-            let curproc = unsafe { winapi::um::processthreadsapi::GetCurrentProcess() };
+            use Win32::Foundation::HANDLE;
+            let mut handle: HANDLE = 0;
+            let curproc = unsafe { Win32::System::Threading::GetCurrentProcess() };
             if unsafe {
-                winapi::um::handleapi::DuplicateHandle(
+                Win32::Foundation::DuplicateHandle(
                     curproc,
                     curproc,
                     curproc,
                     &mut handle,
                     /* dwDesiredAccess */ 0,
                     /* bInheritHandle */ 1,
-                    winapi::um::winnt::DUPLICATE_SAME_ACCESS,
+                    Win32::Foundation::DUPLICATE_SAME_ACCESS,
                 )
             } != 0
             {
@@ -1342,7 +1347,7 @@ fn do_setup() -> Result<(), String> {
         cfg_if::cfg_if! {
             if #[cfg(windows)] {
                 use std::os::windows::fs::symlink_file;
-                use winapi::shared::winerror::ERROR_PRIVILEGE_NOT_HELD;
+                use Win32::Foundation::ERROR_PRIVILEGE_NOT_HELD;
                 match symlink_file(&exe, &remote_hg_exe) {
                     Err(e) if e.raw_os_error() == Some(ERROR_PRIVILEGE_NOT_HELD as i32) => {
                         std::fs::copy(&exe, &remote_hg_exe).map(|_| ())

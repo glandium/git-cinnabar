@@ -467,7 +467,7 @@ dependencies = [
  "tempfile",
  "typenum",
  "url",
- "winapi",
+ "windows-sys",
  "xz2",
  "zip",
  "zstd",
