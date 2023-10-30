@@ -114,7 +114,7 @@ optional = true
 
 [target.'cfg(windows)'.dependencies.winapi]
 version = "0.3"
-features = ["winerror"]
+features = ["std", "winerror"]
 
 [target.'cfg(not(windows))'.dependencies.xz2]
 version = "0.1"
