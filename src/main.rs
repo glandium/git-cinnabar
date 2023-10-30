@@ -3334,15 +3334,10 @@ fn remote_helper_import(
         // some of the branch heads might not be.
         // http://bz.selenic.com/show_bug.cgi?id=4595
         // The heads we've been asked for either come from the repo
-        // branchmap, and are a superset of its topological heads,
-        // or from `hg/revs/*` fetch refs, in which case we want specific
-        // things anyways. In the former case, that means if the heads
-        // we don't know in those we were asked for are a superset of the
-        // topological heads we don't know, then we should use those
-        // instead.
-        // In the case of `hg/revs/*` fetch refs, we don't have any branch
-        // names, as per the branchmap initialization in
-        // remote_helper_repo_list.
+        // branchmap, and are a superset of its topological heads.
+        // That means if the heads we don't know in those we were asked for
+        // are a superset of the topological heads we don't know, then we
+        // should use those instead.
         if !info.branch_names.is_empty() {
             let unknown_topological_heads = info
                 .topological_heads
