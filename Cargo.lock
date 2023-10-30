@@ -397,7 +397,6 @@ dependencies = [
  "derive_more",
  "digest",
  "either",
- "filetime",
  "flate2",
  "getset",
  "git-version",
