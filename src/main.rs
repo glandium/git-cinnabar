@@ -650,6 +650,7 @@ fn get_previous_metadata(metadata: CommitId) -> Option<CommitId> {
 }
 
 bitflags! {
+    #[derive(Debug)]
     pub struct MetadataFlags: i32 {
         const FORCE = 0x1;
         const KEEP_REFS = 0x2;
@@ -3254,6 +3255,7 @@ fn remote_helper_tags_list(mut stdout: impl Write) {
 }
 
 bitflags! {
+    #[derive(Debug)]
     pub struct RefsStyle: i32 {
         const HEADS = 0x1;
         const BOOKMARKS = 0x2;
@@ -4309,6 +4311,7 @@ pub fn get_config_remote(name: &str, remote: Option<&str>) -> Option<OsString> {
 }
 
 bitflags! {
+    #[derive(Debug)]
     pub struct Checks: i32 {
         const HELPER = 0x1;
         const MANIFESTS = 0x2;
@@ -4322,7 +4325,7 @@ bitflags! {
         const CLONEBUNDLES = 0x1000;
         const UNBUNDLER = 0x2000;
 
-        const ALL_BASE_CHECKS = Checks::NODEID.bits | Checks::MANIFESTS.bits | Checks::HELPER.bits;
+        const ALL_BASE_CHECKS = Checks::NODEID.bits() | Checks::MANIFESTS.bits() | Checks::HELPER.bits();
     }
 }
 
@@ -4360,6 +4363,7 @@ pub fn check_enabled(checks: Checks) -> bool {
 }
 
 bitflags! {
+    #[derive(Debug)]
     pub struct Experiments: i32 {
         const MERGE = 0x1;
     }
