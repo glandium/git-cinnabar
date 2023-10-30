@@ -106,6 +106,8 @@ use cinnabar::{
 use cstr::cstr;
 use git::{BlobId, CommitId, GitObjectId};
 use git_version::git_version;
+use is_terminal::IsTerminal;
+
 use graft::{graft_finish, grafted, init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
@@ -534,7 +536,7 @@ extern "C" {
 }
 
 fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
-    set_progress(atty::is(atty::Stream::Stderr));
+    set_progress(stdout().is_terminal());
     let url = remote::get(remote).get_url();
     let hg_url =
         hg_url(url).ok_or_else(|| format!("Invalid mercurial url: {}", url.to_string_lossy()))?;
