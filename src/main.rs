@@ -3072,7 +3072,7 @@ impl RefsStyle {
 }
 
 struct RemoteInfo {
-    refs: HashMap<Box<BStr>, (HgChangesetId, Option<GitChangesetId>)>,
+    refs: BTreeMap<Box<BStr>, (HgChangesetId, Option<GitChangesetId>)>,
     topological_heads: Vec<HgChangesetId>,
     branch_names: Vec<Box<BStr>>,
     bookmarks: HashMap<Box<BStr>, HgChangesetId>,
@@ -3092,7 +3092,7 @@ fn remote_helper_repo_list(
         .or_else(|| RefsStyle::from_config("refs", remote))
         .unwrap_or(RefsStyle::all());
 
-    let mut refs = HashMap::new();
+    let mut refs = BTreeMap::new();
 
     // Valid characters in mercurial branch names are not necessarily valid
     // in git ref names. This function replaces unsupported characters with a
@@ -3245,11 +3245,7 @@ fn remote_helper_repo_list(
         }
     }
 
-    for (refname, (_, cid)) in refs
-        .iter()
-        .filter(|(r, _)| &***r != b"HEAD".as_bstr())
-        .sorted()
-    {
+    for (refname, (_, cid)) in refs.iter().filter(|(r, _)| &***r != b"HEAD".as_bstr()) {
         let mut buf = cid
             .as_ref()
             .map_or_else(|| "?".to_string(), ToString::to_string)
