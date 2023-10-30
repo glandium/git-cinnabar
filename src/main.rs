@@ -3317,10 +3317,10 @@ fn remote_helper_import(
             info.refs
                 .get_key_value(*refname)
                 .map(|(k, (h, g))| (k.as_bstr(), h, g.as_ref()))
-                .ok_or_else(|| refname.to_boxed())
+                .ok_or(refname)
         })
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|refname| format!("couldn't find remote ref {}", refname.as_bstr()))?;
+        .map_err(|refname| format!("couldn't find remote ref {}", refname))?;
 
     let mut tags = None;
     let mut unknown_wanted_heads = wanted_refs
