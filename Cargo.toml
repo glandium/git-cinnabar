@@ -10,7 +10,7 @@ authors = ["Mike Hommey <mh@glandium.org>"]
 edition = "2021"
 license = "MPL-2.0 AND GPL-2.0"
 repository = "https://github.com/glandium/git-cinnabar"
-rust-version = "1.66.0"
+rust-version = "1.70.0"
 include = [
   "/src",
   "/build.rs",
@@ -44,7 +44,6 @@ git-version = "0.3"
 hex = "0.4"
 hex-literal = "0.4"
 indexmap = "2"
-is-terminal = "0.4"
 itertools = "0.11"
 libc = "0.2"
 once_cell = "1.13"
@@ -62,7 +61,7 @@ default-features = false
 features = ["std"]
 
 [dependencies.clap]
-version = "4.0,<4.4"  # Avoid MSRV bump to 1.70.
+version = "4.0"
 features = ["cargo", "derive"]
 
 [target.'cfg(windows)'.dependencies.curl-sys]

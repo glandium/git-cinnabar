@@ -86,7 +86,7 @@ use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};
 use std::fs::File;
 use std::hash::Hash;
-use std::io::{stdin, stdout, BufRead, BufWriter, Write};
+use std::io::{stdin, stdout, BufRead, BufWriter, IsTerminal, Write};
 use std::iter::repeat;
 use std::os::raw::{c_char, c_int, c_void};
 #[cfg(windows)]
@@ -106,7 +106,6 @@ use cinnabar::{
 use cstr::cstr;
 use git::{BlobId, CommitId, GitObjectId};
 use git_version::git_version;
-use is_terminal::IsTerminal;
 
 use graft::{graft_finish, grafted, init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
