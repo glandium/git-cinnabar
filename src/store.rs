@@ -1675,72 +1675,76 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
         |b| vec![b.as_bstr().to_boxed()],
     );
 
-    let refname = if let Some(refname) = branches.into_iter().find_map(|branch| {
-        if remote_refs.contains_key(&*branch) {
-            return Some(branch);
-        }
-        let cinnabar_refname = bstr::join(b"", [b"refs/cinnabar/".as_bstr(), &branch])
-            .as_bstr()
-            .to_boxed();
-        if remote_refs.contains_key(&cinnabar_refname) {
-            return Some(cinnabar_refname);
-        }
-        let head_refname = bstr::join(b"", [b"refs/heads/".as_bstr(), &branch])
-            .as_bstr()
-            .to_boxed();
-        if remote_refs.contains_key(&head_refname) {
-            return Some(head_refname);
-        }
-        None
-    }) {
-        refname
+    let (refname, metadata_cid) = if let Some((refname, metadata_cid)) =
+        branches.into_iter().find_map(|branch| {
+            if let Some(cid) = remote_refs.get(&*branch) {
+                return Some((branch, cid));
+            }
+            let cinnabar_refname = bstr::join(b"", [b"refs/cinnabar/".as_bstr(), &branch])
+                .as_bstr()
+                .to_boxed();
+            if let Some(cid) = remote_refs.get(&cinnabar_refname) {
+                return Some((cinnabar_refname, cid));
+            }
+            let head_refname = bstr::join(b"", [b"refs/heads/".as_bstr(), &branch])
+                .as_bstr()
+                .to_boxed();
+            if let Some(cid) = remote_refs.get(&head_refname) {
+                return Some((head_refname, cid));
+            }
+            None
+        }) {
+        (refname, *metadata_cid)
     } else {
         error!(target: "root", "Could not find cinnabar metadata");
         return false;
     };
 
-    let mut proc = if let Some(mut bundle) = bundle.as_mut() {
-        let mut command = Command::new("git");
-        command
-            .arg("index-pack")
-            .arg("--stdin")
-            .arg("--fix-thin")
-            .stdout(Stdio::null())
-            .stdin(Stdio::piped());
-        if progress_enabled() {
-            command.arg("-v");
-        }
-        let mut proc = command.spawn().unwrap();
-        let stdin = proc.stdin.as_mut().unwrap();
-        copy(&mut bundle, stdin).unwrap();
-        proc
+    let commit = if let Some(commit) = RawCommit::read(metadata_cid) {
+        commit
     } else {
-        let mut command = Command::new("git");
-        command
-            .arg("fetch")
-            .arg("--no-tags")
-            .arg("--no-recurse-submodules")
-            .arg("-q");
-        if progress_enabled() {
-            command.arg("--progress");
+        let mut proc = if let Some(mut bundle) = bundle.as_mut() {
+            let mut command = Command::new("git");
+            command
+                .arg("index-pack")
+                .arg("--stdin")
+                .arg("--fix-thin")
+                .stdout(Stdio::null())
+                .stdin(Stdio::piped());
+            if progress_enabled() {
+                command.arg("-v");
+            }
+            let mut proc = command.spawn().unwrap();
+            let stdin = proc.stdin.as_mut().unwrap();
+            copy(&mut bundle, stdin).unwrap();
+            proc
         } else {
-            command.arg("--no-progress");
+            let mut command = Command::new("git");
+            command
+                .arg("fetch")
+                .arg("--no-tags")
+                .arg("--no-recurse-submodules")
+                .arg("-q");
+            if progress_enabled() {
+                command.arg("--progress");
+            } else {
+                command.arg("--no-progress");
+            }
+            command.arg(OsStr::new(git_url.as_ref()));
+            command.arg(OsStr::from_bytes(&bstr::join(
+                b":",
+                [&**refname, b"refs/cinnabar/fetch"],
+            )));
+            command.spawn().unwrap()
+        };
+        if !proc.wait().unwrap().success() {
+            error!(target: "root", "Failed to fetch cinnabar metadata.");
+            return false;
         }
-        command.arg(OsStr::new(git_url.as_ref()));
-        command.arg(OsStr::from_bytes(&bstr::join(
-            b":",
-            [&**refname, b"refs/cinnabar/fetch"],
-        )));
-        command.spawn().unwrap()
+        RawCommit::read(metadata_cid).unwrap()
     };
-    if !proc.wait().unwrap().success() {
-        error!(target: "root", "Failed to fetch cinnabar metadata.");
-        return false;
-    }
 
     // Do some basic validation on the metadata we just got.
-    let cid = *remote_refs.get(&refname).unwrap();
-    let commit = RawCommit::read(cid).unwrap();
     let commit = commit.parse().unwrap();
     if !commit.author().contains_str("cinnabar@git")
         || !String::from_utf8_lossy(commit.body())
@@ -1764,23 +1768,25 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
         let mut needed = Vec::new();
         for item in RawTree::read(commit.tree()).unwrap().into_iter().recurse() {
             let cid = item.inner().oid.try_into().unwrap();
-            if let Some(refname) = by_sha1.get(&cid) {
-                let replace_ref = bstr::join(b"/", [b"refs/cinnabar/replace", &**item.path()]);
-                needed.push(
-                    bstr::join(b":", [&**refname, replace_ref.as_bstr()])
-                        .as_bstr()
-                        .to_boxed(),
-                );
-            } else {
-                error!(target: "root", "Missing commit: {}", cid);
-                errors = true;
+            if RawCommit::read(cid).is_none() {
+                if let Some(refname) = by_sha1.get(&cid) {
+                    let replace_ref = bstr::join(b"/", [b"refs/cinnabar/replace", &**item.path()]);
+                    needed.push(
+                        bstr::join(b":", [&**refname, replace_ref.as_bstr()])
+                            .as_bstr()
+                            .to_boxed(),
+                    );
+                } else {
+                    error!(target: "root", "Missing commit: {}", cid);
+                    errors = true;
+                }
             }
         }
         if errors {
             return false;
         }
 
-        if bundle.is_none() {
+        if !needed.is_empty() && bundle.is_none() {
             let mut command = Command::new("git");
             command
                 .arg("fetch")
@@ -1801,7 +1807,7 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
         }
     }
 
-    set_metadata_to(Some(cid), MetadataFlags::FORCE, "cinnabarclone").unwrap();
+    set_metadata_to(Some(metadata_cid), MetadataFlags::FORCE, "cinnabarclone").unwrap();
     unsafe {
         do_reload(0);
     }
