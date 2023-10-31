@@ -854,6 +854,7 @@ fn do_reclone() -> Result<(), String> {
             Some(url) => url,
             None => return Ok(()),
         };
+        println!("Fetching {}", remote.name().unwrap().to_string_lossy());
         let mut conn = get_connection(&url).unwrap();
         let info = repo_list(&mut *conn, remote.name().and_then(|s| s.to_str()), false);
 
