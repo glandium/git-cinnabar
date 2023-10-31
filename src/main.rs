@@ -834,6 +834,10 @@ extern "C" {
     ) -> c_int;
 }
 
+extern "C" {
+    fn term_columns() -> c_int;
+}
+
 fn do_reclone() -> Result<(), String> {
     unsafe {
         let current_metadata_oid = metadata_oid.clone();
@@ -979,9 +983,13 @@ fn do_reclone() -> Result<(), String> {
                 .unwrap_or(7)
                 * 2
                 + 3;
+            let term_columns = unsafe { term_columns() as usize };
             let refwidth = update_refs
                 .iter()
-                .map(|((_, r), _, _, _)| r.as_ref().map_or(6, |r| r.len()))
+                .filter_map(|((_, r), (_, p), _, _)| {
+                    let width = r.as_ref().map_or(0, |r| r.len());
+                    (width <= term_columns.saturating_sub(width + p.len() + 25)).then_some(width)
+                })
                 .max()
                 .unwrap();
             /*
@@ -1005,7 +1013,7 @@ fn do_reclone() -> Result<(), String> {
                         let commit = unsafe { lookup_commit(the_repository, &cid.into()) };
                         if unsafe { repo_in_merge_bases(the_repository, commit, old_commit) } == 0 {
                             eprintln!(
-                                "+ {:width$} {:refwidth$} -> {}  (forced update)",
+                                " + {:width$} {:refwidth$} -> {}  (forced update)",
                                 format!("{}...{}", abbrev_old_cid, abbrev_cid),
                                 pretty_refname,
                                 pretty_peer_ref
@@ -1013,7 +1021,7 @@ fn do_reclone() -> Result<(), String> {
                             "forced-update"
                         } else {
                             eprintln!(
-                                "  {:width$} {:refwidth$} -> {}",
+                                "   {:width$} {:refwidth$} -> {}",
                                 format!("{}..{}", abbrev_old_cid, abbrev_cid),
                                 pretty_refname,
                                 pretty_peer_ref
@@ -1022,7 +1030,7 @@ fn do_reclone() -> Result<(), String> {
                         }
                     } else {
                         eprintln!(
-                            "* {:width$} {:refwidth$} -> {}",
+                            " * {:width$} {:refwidth$} -> {}",
                             "[new branch]", pretty_refname, pretty_peer_ref
                         );
                         "storing head"
@@ -1032,7 +1040,7 @@ fn do_reclone() -> Result<(), String> {
                         .unwrap();
                 } else {
                     eprintln!(
-                        "- {:width$} {:refwidth$} -> {}",
+                        " - {:width$} {:refwidth$} -> {}",
                         "[deleted]", "(none)", pretty_peer_ref
                     );
                     transaction
