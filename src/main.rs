@@ -992,11 +992,6 @@ fn do_reclone() -> Result<(), String> {
                 })
                 .max()
                 .unwrap();
-            /*
-            transaction
-                .update(BROKEN_REF, metadata_cid, None, "fsck")
-                .unwrap();
-            transaction.commit().unwrap();*/
             for (
                 (_, pretty_refname),
                 (peer_ref, pretty_peer_ref),
@@ -1052,12 +1047,6 @@ fn do_reclone() -> Result<(), String> {
         transaction.commit().unwrap();
         Ok(())
     })
-    // From hg::https://www.mercurial-scm.org/repo/hg
-    // - [deleted]               (none)     -> origin/foo
-    // + c5e89032c3...8d49257b82 bookmarks/@          -> origin/bookmarks/@  (forced update)
-    // + 37d672d992...82f6360883 branches/default/tip -> origin/branches/default/tip  (forced update)
-    // * [new branch]            branches/stable/tip  -> origin/branches/stable/tip
-    //   1d5a458aa0..fbd55a8651  branches/stable/tip -> origin/branches/stable/tip
     .map(|()| {
         println!("Please note that reclone left your local branches untouched.");
         println!("They may be based on entirely different commits.");
