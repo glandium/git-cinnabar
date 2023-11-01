@@ -907,7 +907,7 @@ fn do_reclone() -> Result<(), String> {
             r = stale_refs;
             while !r.is_null() {
                 let refname = CStr::from_ptr(get_ref_name(r)).to_bytes().as_bstr();
-                update_refs.push((None, refname.to_boxed(), None, None));
+                update_refs.push((refname.to_boxed(), None, None, None));
                 r = get_next_ref(r);
             }
             free_refs(refs);
@@ -932,7 +932,7 @@ fn do_reclone() -> Result<(), String> {
                 cid.unwrap_or_else(|| csid.to_git().unwrap()),
             ));
             if old_cid != cid {
-                update_refs.push((Some(refname), peer_ref, cid, old_cid));
+                update_refs.push((peer_ref, Some(refname), cid, old_cid));
             }
         }
         if !update_refs.is_empty() {
@@ -950,7 +950,7 @@ fn do_reclone() -> Result<(), String> {
             eprintln!("From {}", remote_url.to_string_lossy());
             let update_refs = update_refs
                 .into_iter()
-                .map(|(refname, peer_ref, cid, old_cid)| {
+                .map(|(peer_ref, refname, cid, old_cid)| {
                     fn get_pretty_refname(r: &BStr) -> Box<str> {
                         r.strip_prefix(b"refs/heads/")
                             .or_else(|| r.strip_prefix(b"refs/tags/"))
@@ -964,8 +964,8 @@ fn do_reclone() -> Result<(), String> {
                     let abbrev_cid = cid.map(get_unique_abbrev);
                     let abbrev_old_cid = old_cid.map(get_unique_abbrev);
                     (
-                        (refname, pretty_refname),
                         (peer_ref, pretty_peer_ref),
+                        (refname, pretty_refname),
                         (cid, abbrev_cid),
                         (old_cid, abbrev_old_cid),
                     )
@@ -986,15 +986,15 @@ fn do_reclone() -> Result<(), String> {
             let term_columns = unsafe { term_columns() as usize };
             let refwidth = update_refs
                 .iter()
-                .filter_map(|((_, r), (_, p), _, _)| {
+                .filter_map(|((_, p), (_, r), _, _)| {
                     let width = r.as_ref().map_or(0, |r| r.len());
                     (width <= term_columns.saturating_sub(width + p.len() + 25)).then_some(width)
                 })
                 .max()
                 .unwrap();
             for (
-                (_, pretty_refname),
                 (peer_ref, pretty_peer_ref),
+                (_, pretty_refname),
                 (cid, abbrev_cid),
                 (old_cid, abbrev_old_cid),
             ) in update_refs
