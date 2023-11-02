@@ -848,6 +848,10 @@ fn do_reclone() -> Result<(), String> {
 
     check_graft_refs();
 
+    if graft_config_enabled(None)?.unwrap_or(false) {
+        init_graft();
+    }
+
     let mut update_refs_by_remote = Vec::new();
 
     for_each_remote(|remote| {
@@ -3571,6 +3575,9 @@ fn remote_helper_import(
         .collect_vec();
     if !unknown_wanted_heads.is_empty() {
         tags = Some(get_tags());
+        if graft_config_enabled(remote)?.unwrap_or(false) {
+            init_graft();
+        }
         import_bundle(conn, remote, &info, &unknown_wanted_heads)?;
     }
 
@@ -3635,9 +3642,6 @@ fn import_bundle(
     info: &RemoteInfo,
     unknown_wanted_heads: &[HgChangesetId],
 ) -> Result<(), String> {
-    if graft_config_enabled(remote)?.unwrap_or(false) {
-        init_graft();
-    }
     // TODO: Mercurial can be an order of magnitude slower when
     // creating a bundle when not giving topological heads, which
     // some of the branch heads might not be.
