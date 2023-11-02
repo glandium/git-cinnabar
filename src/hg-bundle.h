@@ -7,6 +7,7 @@
 
 #include "git-compat-util.h"
 #include "strbuf.h"
+#include "strslice.h"
 #include "hg-data.h"
 #include <stdio.h>
 
@@ -25,7 +26,7 @@ struct rev_chunk {
 struct rev_diff_part {
 	size_t start;
 	size_t end;
-	struct strbuf data;
+	struct strslice data;
 	struct rev_chunk *chunk;
 };
 

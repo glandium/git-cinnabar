@@ -12,7 +12,6 @@ void rev_diff_start_iter(struct rev_diff_part *iterator,
 {
 	iterator->start = 0;
 	iterator->end = 0;
-	iterator->data.alloc = 0;
 	iterator->data.len = 0;
 	iterator->data.buf = NULL;
 	iterator->chunk = chunk;

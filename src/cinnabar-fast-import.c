@@ -545,7 +545,7 @@ void store_file(struct rev_chunk *chunk)
 			    hg_oid_to_hex(chunk->node));
 		strbuf_add(&data, last_file.file.buf + last_end,
 		           diff.start - last_end);
-		strbuf_addbuf(&data, &diff.data);
+		strbuf_addslice(&data, diff.data);
 
 		last_end = diff.end;
 	}
@@ -700,7 +700,7 @@ void store_manifest(struct rev_chunk *chunk)
 			goto malformed;
 		strbuf_add(&data, last_manifest_content.buf + last_end,
 		           diff.start - last_end);
-		strbuf_addbuf(&data, &diff.data);
+		strbuf_addslice(&data, diff.data);
 
 		last_end = diff.end;
 
@@ -740,7 +740,7 @@ void store_manifest(struct rev_chunk *chunk)
 	rev_diff_start_iter(&diff, chunk);
 	while (rev_diff_iter_next(&diff)) {
 		// Process added files.
-		slice = strbuf_slice(&diff.data, 0, diff.data.len);
+		slice = diff.data;
 		while (split_manifest_line(&slice, &line) == 0) {
 			uint16_t mode;
 			struct object_id file_node;

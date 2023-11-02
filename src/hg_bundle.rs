@@ -30,7 +30,7 @@ use crate::git::CommitId;
 use crate::hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_connect::{encodecaps, HgConnection, HgConnectionBase, HgRepo};
 use crate::hg_data::find_file_parents;
-use crate::libcinnabar::hg_object_id;
+use crate::libcinnabar::{hg_object_id, strslice};
 use crate::libgit::{die, strbuf, RawCommit};
 use crate::oid::ObjectId;
 use crate::progress::Progress;
@@ -64,7 +64,7 @@ pub struct rev_chunk {
 pub struct rev_diff_part<'a> {
     start: usize,
     end: usize,
-    data: strbuf,
+    data: strslice<'a>,
     chunk: &'a rev_chunk,
 }
 
