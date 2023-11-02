@@ -29,13 +29,6 @@ struct rev_diff_part {
 	struct rev_chunk *chunk;
 };
 
-static inline void rev_chunk_release(struct rev_chunk *chunk)
-{
-	strbuf_release(&chunk->raw);
-	chunk->node = chunk->parent1 = chunk->parent2 = chunk->delta_node = NULL;
-	chunk->diff_data = NULL;
-}
-
 void rev_diff_start_iter(struct rev_diff_part *iterator,
                          struct rev_chunk *chunk);
 
