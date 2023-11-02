@@ -43,12 +43,6 @@ use crate::xdiff::textdiff;
 use crate::{get_changes, HELPER_LOCK};
 
 extern "C" {
-    fn rev_chunk_from_memory(
-        result: *mut rev_chunk,
-        buf: *mut strbuf,
-        delta_node: *const hg_object_id,
-    );
-
     fn rev_diff_start_iter(iterator: *mut rev_diff_part, chunk: *const rev_chunk);
 
     fn rev_diff_iter_next(iterator: *mut rev_diff_part) -> c_int;
@@ -165,18 +159,30 @@ impl<R: Read> Iterator for RevChunkIter<R> {
         if buf.as_bytes().is_empty() {
             return None;
         }
-        let mut chunk = MaybeUninit::zeroed();
-        unsafe {
-            rev_chunk_from_memory(
-                chunk.as_mut_ptr(),
-                &mut buf,
+        let data_offset = 80 + 20 * (if self.version == 1 { 0 } else { 1 });
+        if buf.as_bytes().len() < data_offset {
+            die!("Invalid revchunk");
+        }
+        let chunk = unsafe {
+            let node = NonNull::new_unchecked(buf.as_ptr()).cast();
+            let parent1 = NonNull::new_unchecked(buf.as_ptr().add(20)).cast();
+            let parent2 = NonNull::new_unchecked(buf.as_ptr().add(40)).cast();
+            let delta_node = NonNull::new_unchecked(
                 (self.version == 1)
                     .then_some(())
-                    .and(self.delta_node.as_ref())
-                    .map_or(std::ptr::null(), |d| d as *const _),
+                    .and(self.delta_node.as_ref()) // Yes, this is bad.
+                    .map_or_else(|| buf.as_ptr().add(60) as _, |n| n as *const _ as *mut _),
             );
-        }
-        let chunk = unsafe { chunk.assume_init() };
+            let diff_data = NonNull::new_unchecked(buf.as_ptr().add(data_offset)).cast();
+            rev_chunk {
+                raw: buf,
+                node,
+                parent1,
+                parent2,
+                delta_node,
+                diff_data,
+            }
+        };
         if self.version == 1 {
             if first {
                 self.delta_node = Some(chunk.parent1().clone());

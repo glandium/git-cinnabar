@@ -7,25 +7,6 @@
 #include "hg-bundle.h"
 #include <stdint.h>
 
-void rev_chunk_from_memory(struct rev_chunk *result, struct strbuf *buf,
-                           const struct hg_object_id *delta_node)
-{
-	size_t data_offset = 80 + 20 * !!(delta_node == NULL);
-	unsigned char *data = (unsigned char *) buf->buf;
-
-	strbuf_swap(&result->raw, buf);
-	if (result->raw.len < data_offset)
-		die("Invalid revchunk");
-
-	result->node = (const struct hg_object_id *)data;
-	result->parent1 = (const struct hg_object_id *)(data + 20);
-	result->parent2 = (const struct hg_object_id *)(data + 40);
-	result->delta_node = delta_node ? delta_node
-	                                : (const struct hg_object_id *)(data + 60);
-/*	result->changeset = data + 60 + 20 * !!(delta_node == NULL); */
-	result->diff_data = data + data_offset;
-}
-
 void rev_diff_start_iter(struct rev_diff_part *iterator,
                          struct rev_chunk *chunk)
 {

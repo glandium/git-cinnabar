@@ -29,10 +29,6 @@ struct rev_diff_part {
 	struct rev_chunk *chunk;
 };
 
-void rev_chunk_from_memory(struct rev_chunk *result,
-                           struct strbuf *buf,
-                           const struct hg_object_id *delta_node);
-
 static inline void rev_chunk_release(struct rev_chunk *chunk)
 {
 	strbuf_release(&chunk->raw);
