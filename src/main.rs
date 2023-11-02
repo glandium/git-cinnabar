@@ -86,7 +86,7 @@ use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};
 use std::fs::File;
 use std::hash::Hash;
-use std::io::{stdin, stdout, BufRead, BufWriter, IsTerminal, Write};
+use std::io::{stderr, stdin, stdout, BufRead, BufWriter, IsTerminal, Write};
 use std::iter::repeat;
 use std::os::raw::{c_char, c_int, c_void};
 #[cfg(windows)]
@@ -951,8 +951,9 @@ fn do_reclone() -> Result<(), String> {
             .then_some(())
             .ok_or_else(|| "Fatal error".to_string())?;
         let mut transaction = RefTransaction::new().unwrap();
+        let mut out = Vec::new();
         for (remote_url, update_refs) in update_refs_by_remote {
-            eprintln!("From {}", remote_url.to_string_lossy());
+            writeln!(out, "From {}", remote_url.to_string_lossy()).unwrap();
             let update_refs = update_refs
                 .into_iter()
                 .map(|(peer_ref, refname, cid, old_cid)| {
@@ -1007,42 +1008,44 @@ fn do_reclone() -> Result<(), String> {
                 if let Some(pretty_refname) = &pretty_refname {
                     let abbrev_cid = abbrev_cid.unwrap();
                     let cid = cid.unwrap();
-                    let msg = if let Some(abbrev_old_cid) = abbrev_old_cid {
+                    let (code, from_to, extra, msg) = if let Some(abbrev_old_cid) = abbrev_old_cid {
                         let old_cid = old_cid.unwrap();
                         let old_commit = unsafe { lookup_commit(the_repository, &old_cid.into()) };
                         let commit = unsafe { lookup_commit(the_repository, &cid.into()) };
                         if unsafe { repo_in_merge_bases(the_repository, commit, old_commit) } == 0 {
-                            eprintln!(
-                                " + {:width$} {:refwidth$} -> {}  (forced update)",
+                            (
+                                '+',
                                 format!("{}...{}", abbrev_old_cid, abbrev_cid),
-                                pretty_refname,
-                                pretty_peer_ref
-                            );
-                            "forced-update"
+                                "  (forced update)",
+                                "forced-update",
+                            )
                         } else {
-                            eprintln!(
-                                "   {:width$} {:refwidth$} -> {}",
+                            (
+                                ' ',
                                 format!("{}..{}", abbrev_old_cid, abbrev_cid),
-                                pretty_refname,
-                                pretty_peer_ref
-                            );
-                            "fast-forward"
+                                "",
+                                "fast-forward",
+                            )
                         }
                     } else {
-                        eprintln!(
-                            " * {:width$} {:refwidth$} -> {}",
-                            "[new branch]", pretty_refname, pretty_peer_ref
-                        );
-                        "storing head"
+                        ('*', "[new branch]".to_string(), "", "storing head")
                     };
+                    writeln!(
+                        out,
+                        " {code} {from_to:width$} {:refwidth$} -> {}{extra}",
+                        pretty_refname, pretty_peer_ref
+                    )
+                    .unwrap();
                     transaction
                         .update(OsStr::from_bytes(&peer_ref), cid, old_cid, msg)
                         .unwrap();
                 } else {
-                    eprintln!(
+                    writeln!(
+                        out,
                         " - {:width$} {:refwidth$} -> {}",
                         "[deleted]", "(none)", pretty_peer_ref
-                    );
+                    )
+                    .unwrap();
                     transaction
                         .delete(OsStr::from_bytes(&peer_ref), old_cid, "prune")
                         .unwrap();
@@ -1050,6 +1053,7 @@ fn do_reclone() -> Result<(), String> {
             }
         }
         transaction.commit().unwrap();
+        stderr().write_all(&out).unwrap();
         Ok(())
     })
     .map(|()| {
