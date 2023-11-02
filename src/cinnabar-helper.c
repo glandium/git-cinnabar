@@ -528,19 +528,8 @@ static int count_refs(const char *refname, const struct object_id *oid,
 	return 0;
 }
 
-static void reset_metadata(void)
+static void init_metadata(struct commit *c)
 {
-	oidcpy(&metadata_oid, null_oid());
-	oidcpy(&changesets_oid, null_oid());
-	oidcpy(&manifests_oid, null_oid());
-	oidcpy(&hg2git_oid, null_oid());
-	oidcpy(&git2hg_oid, null_oid());
-	oidcpy(&files_meta_oid, null_oid());
-}
-
-static void init_metadata(void)
-{
-	struct commit *c;
 	struct commit_list *cl;
 	const char *msg, *body;
 	struct strbuf **flags, **f;
@@ -550,9 +539,13 @@ static void init_metadata(void)
 	struct replace_object *replace;
 	size_t count = 0;
 
-	c = lookup_commit_reference_by_name(METADATA_REF);
 	if (!c) {
-		reset_metadata();
+		oidcpy(&metadata_oid, null_oid());
+		oidcpy(&changesets_oid, null_oid());
+		oidcpy(&manifests_oid, null_oid());
+		oidcpy(&hg2git_oid, null_oid());
+		oidcpy(&git2hg_oid, null_oid());
+		oidcpy(&files_meta_oid, null_oid());
 		return;
 	}
 	oidcpy(&metadata_oid, &c->object.oid);
@@ -657,8 +650,10 @@ void dump_ref_updates(void);
 
 extern void reset_changeset_heads(void);
 
-void do_reload(int reset)
+void do_reload(struct object_id *oid)
 {
+	struct commit *c = NULL;
+
 	done_cinnabar();
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
 
@@ -668,11 +663,14 @@ void do_reload(int reset)
 
 	metadata_flags = 0;
 	reset_replace_map();
-	if (reset) {
-		reset_metadata();
+	if (oid) {
+		if (!is_null_oid(oid)) {
+			c = lookup_commit_reference(the_repository, oid);
+		}
 	} else {
-		init_metadata();
+		c = lookup_commit_reference_by_name(METADATA_REF);
 	}
+	init_metadata(c);
 	reset_changeset_heads();
 }
 
@@ -857,10 +855,12 @@ void init_cinnabar(const char *argv0)
 
 int init_cinnabar_2(void)
 {
+	struct commit *c;
 	if (nongit) {
 		return 0;
 	}
-	init_metadata();
+	c = lookup_commit_reference_by_name(METADATA_REF);
+	init_metadata(c);
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
 	return 1;
 }

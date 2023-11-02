@@ -51,7 +51,7 @@ void create_git_tree(const struct object_id *tree_id,
                      struct object_id *result);
 
 void reset_manifest_heads(void);
-void do_reload(int);
+void do_reload(struct object_id *);
 unsigned int replace_map_size(void);
 
 const struct object_id *repo_lookup_replace_object(

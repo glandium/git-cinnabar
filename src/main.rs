@@ -174,7 +174,7 @@ pub const FULL_VERSION: &str = git_version!(
 
 #[allow(improper_ctypes)]
 extern "C" {
-    pub fn do_reload(reset: c_int);
+    pub fn do_reload(metadata: *const object_id);
     fn do_cleanup(rollback: c_int);
 
     fn do_store_metadata(result: *mut object_id);
@@ -273,7 +273,7 @@ fn do_done_and_check(args: &[&[u8]]) -> bool {
                 .unwrap();
             transaction.commit().unwrap();
         }
-        do_reload(0);
+        do_reload(std::ptr::null());
     }
     do_check_files()
 }
@@ -839,11 +839,12 @@ extern "C" {
 }
 
 fn do_reclone() -> Result<(), String> {
-    unsafe {
+    let current_metadata_oid = unsafe {
         let current_metadata_oid = metadata_oid.clone();
-        do_reload(/* reset */ 1);
-        metadata_oid = current_metadata_oid;
-    }
+        do_reload(&object_id::default());
+        metadata_oid = current_metadata_oid.clone();
+        current_metadata_oid
+    };
 
     check_graft_refs();
 
@@ -942,6 +943,10 @@ fn do_reclone() -> Result<(), String> {
         Ok(())
     })
     .and_then(|()| {
+        unsafe {
+            metadata_oid = current_metadata_oid;
+        }
+
         do_done_and_check(&[])
             .then_some(())
             .ok_or_else(|| "Fatal error".to_string())?;

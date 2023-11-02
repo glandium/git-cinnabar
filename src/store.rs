@@ -51,7 +51,7 @@ use crate::progress::{progress_enabled, Progress};
 use crate::tree_util::{diff_by_path, Empty, ParseTree, RecurseTree};
 use crate::util::{FromBytes, ImmutBString, OsStrExt, ReadExt, SliceExt, ToBoxed, Transpose};
 use crate::xdiff::{apply, textdiff, PatchInfo};
-use crate::{check_enabled, do_reload, set_metadata_to, Checks, MetadataFlags};
+use crate::{check_enabled, do_reload, Checks};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
 pub const REPLACE_REFS_PREFIX: &str = "refs/cinnabar/replace/";
@@ -1807,9 +1807,8 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
         }
     }
 
-    set_metadata_to(Some(metadata_cid), MetadataFlags::FORCE, "cinnabarclone").unwrap();
     unsafe {
-        do_reload(0);
+        do_reload(&object_id::from(metadata_cid));
     }
     true
 }
