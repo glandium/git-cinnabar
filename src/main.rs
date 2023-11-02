@@ -991,7 +991,7 @@ fn do_reclone() -> Result<(), String> {
                     (width <= term_columns.saturating_sub(width + p.len() + 25)).then_some(width)
                 })
                 .max()
-                .unwrap();
+                .unwrap_or(0);
             for (
                 (peer_ref, pretty_peer_ref),
                 (_, pretty_refname),
