@@ -634,13 +634,15 @@ static void manifest_metadata_path(struct strbuf *out, struct strslice *in)
 	strbuf_addslice(out, *in);
 }
 
-void store_manifest(struct rev_chunk *chunk)
+void store_manifest(struct rev_chunk *chunk,
+                    const struct strslice last_manifest_content,
+                    struct strslice_mut stored_manifest)
 {
 	static struct hg_object_id last_manifest_oid;
 	static struct branch *last_manifest;
-	static struct strbuf last_manifest_content = STRBUF_INIT;
-	struct strbuf data = STRBUF_INIT;
 	struct strbuf path = STRBUF_INIT;
+	struct strbuf data = STRBUF_INIT;
+	struct strslice_mut manifest = stored_manifest;
 	struct rev_diff_part diff;
 	size_t last_end = 0;
 	struct strslice slice;
@@ -659,7 +661,7 @@ void store_manifest(struct rev_chunk *chunk)
 		oidclr(&last_manifest->branch_tree.versions[1].oid);
 		hg_oidclr(&last_manifest_oid);
 		oidclr(&last_manifest->oid);
-		strbuf_reset(&last_manifest_content);
+		assert(last_manifest_content.len == 0);
 	} else if (!hg_oideq(chunk->delta_node, &last_manifest_oid)) {
 		const struct object_id *note;
 		ensure_notes(&hg2git);
@@ -681,26 +683,22 @@ void store_manifest(struct rev_chunk *chunk)
 		oidcpy(&last_manifest->oid, note);
 		parse_from_existing(last_manifest);
 		load_tree(&last_manifest->branch_tree);
-		strbuf_reset(&last_manifest_content);
-		strbuf_addslice(&last_manifest_content, generate_manifest(note));
 	}
 
-	// Start with the same allocation size as last manifest. (-1 before
-	// strbuf_grow always adds 1 for a final '\0')
-	if (last_manifest_content.alloc)
-		strbuf_grow(&data, last_manifest_content.alloc - 1);
-	// While not exact, the total length of the previous manifest and the
-	// chunk will be an upper bound on the size of the new manifest, so
-	// ensure we'll have enough room for that.
-	strbuf_grow(&data, last_manifest_content.len + chunk->raw.len);
 	rev_diff_start_iter(&diff, chunk);
 	while (rev_diff_iter_next(&diff)) {
+		size_t len;
 		if (diff.start > last_manifest_content.len ||
 		    diff.start < last_end || diff.start > diff.end)
 			goto malformed;
-		strbuf_add(&data, last_manifest_content.buf + last_end,
-		           diff.start - last_end);
-		strbuf_addslice(&data, diff.data);
+		len = diff.start - last_end;
+		strslice_copy(
+			strslice_slice(last_manifest_content, last_end, len),
+			strslice_mut_slice(manifest, 0, diff.start - last_end));
+		manifest = strslice_mut_slice(manifest, len, SIZE_MAX);
+		strslice_copy(diff.data,
+		              strslice_mut_slice(manifest, 0, diff.data.len));
+		manifest = strslice_mut_slice(manifest, diff.data.len, SIZE_MAX);
 
 		last_end = diff.end;
 
@@ -715,8 +713,8 @@ void store_manifest(struct rev_chunk *chunk)
 		// TODO: Avoid a remove+add cycle for same-file modifications.
 
 		// Process removed files.
-		slice = strbuf_slice(&last_manifest_content, diff.start,
-                                     diff.end - diff.start);
+		slice = strslice_slice(last_manifest_content, diff.start,
+                                       diff.end - diff.start);
 		while (split_manifest_line(&slice, &line) == 0) {
 			manifest_metadata_path(&path, &line.path);
 			tree_content_remove(&last_manifest->branch_tree,
@@ -767,11 +765,9 @@ void store_manifest(struct rev_chunk *chunk)
 	if (last_manifest_content.len < last_end)
 		goto malformed;
 
-	strbuf_add(&data, last_manifest_content.buf + last_end,
-		   last_manifest_content.len - last_end);
-
-	strbuf_swap(&last_manifest_content, &data);
-	strbuf_release(&data);
+	strslice_copy(
+		strslice_slice(last_manifest_content, last_end, SIZE_MAX),
+		manifest);
 
 	store_tree(&last_manifest->branch_tree);
 	oidcpy(&last_manifest->branch_tree.versions[0].oid,

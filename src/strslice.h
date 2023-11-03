@@ -5,12 +5,18 @@
 #ifndef STRSLICE_H
 #define STRSLICE_H
 
+#include <assert.h>
 #include <string.h>
 #include "strbuf.h"
 
 struct strslice {
 	size_t len;
 	const char *buf;
+};
+
+struct strslice_mut {
+	size_t len;
+	char *buf;
 };
 
 static inline
@@ -31,6 +37,20 @@ static inline
 struct strslice strslice_slice(struct strslice slice, size_t start, size_t len)
 {
 	struct strslice result;
+	if (start >= slice.len)
+		len = 0;
+	else if (slice.len - start < len)
+		len = slice.len - start;
+	result.len = len;
+	result.buf = len ? slice.buf + start : strbuf_slopbuf;
+	return result;
+}
+
+static inline
+struct strslice_mut strslice_mut_slice(struct strslice_mut slice, size_t start,
+                                       size_t len)
+{
+	struct strslice_mut result;
 	if (start >= slice.len)
 		len = 0;
 	else if (slice.len - start < len)
@@ -114,6 +134,13 @@ static inline int strslice_startswith(const struct strslice a,
 	} else {
 		return 0;
 	}
+}
+
+static inline void strslice_copy(const struct strslice from,
+                                 struct strslice_mut to)
+{
+	assert(from.len == to.len);
+	memcpy(to.buf, from.buf, to.len);
 }
 
 #endif

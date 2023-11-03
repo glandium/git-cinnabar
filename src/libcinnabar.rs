@@ -37,6 +37,25 @@ impl<'a, T: AsRef<[u8]> + 'a> From<T> for strslice<'a> {
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
+pub struct strslice_mut<'a> {
+    len: usize,
+    buf: *mut c_char,
+    marker: PhantomData<&'a mut [u8]>,
+}
+
+impl<'a, T: AsMut<[u8]> + 'a> From<T> for strslice_mut<'a> {
+    fn from(mut buf: T) -> Self {
+        let buf = buf.as_mut();
+        strslice_mut {
+            len: buf.len(),
+            buf: buf.as_mut_ptr() as *mut c_char,
+            marker: PhantomData,
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
 #[derive(Clone, Default)]
 pub struct hg_object_id([u8; 20]);
 

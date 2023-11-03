@@ -5,6 +5,8 @@
 #ifndef CINNABAR_FAST_IMPORT_H
 #define CINNABAR_FAST_IMPORT_H
 
+#include "strslice.h"
+
 struct reader;
 struct object_id;
 struct hg_object_id;
@@ -37,7 +39,9 @@ void do_set(const char *what, const struct hg_object_id *hg_id,
             const struct object_id *git_id);
 
 void store_file(struct rev_chunk *chunk);
-void store_manifest(struct rev_chunk *chunk);
+void store_manifest(struct rev_chunk *chunk,
+                    const struct strslice last_manifest_content,
+                    struct strslice_mut data);
 void store_metadata_notes(
 	struct cinnabar_notes_tree *notes, const struct object_id *reference,
 	struct object_id *result);

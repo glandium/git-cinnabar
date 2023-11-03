@@ -41,7 +41,7 @@ use crate::hg_bundle::{
 };
 use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
-use crate::libcinnabar::{files_meta, git2hg, hg2git, hg_object_id, strslice};
+use crate::libcinnabar::{files_meta, git2hg, hg2git, hg_object_id, strslice, strslice_mut};
 use crate::libgit::{
     changesets_oid, die, get_oid_blob, object_id, strbuf, Commit, RawBlob, RawCommit, RawTree,
     RefTransaction,
@@ -1285,24 +1285,8 @@ pub fn create_changeset(
 }
 
 extern "C" {
-    pub fn store_manifest(chunk: *const rev_chunk);
+    pub fn store_manifest(chunk: *const rev_chunk, reference_mn: strslice, stored_mn: strslice_mut);
     fn store_file(chunk: *const rev_chunk);
-}
-
-/// XXX: This is unsound. The string behind the returned slice may theoretically
-/// be freed and the rust compiler won't warn about it. But in practice, that's ok.
-/// The code using the slice is releasing it before returning, and we're
-/// single-threaded.
-#[no_mangle]
-pub unsafe extern "C" fn generate_manifest(oid: *const object_id) -> strslice<'static> {
-    mem::transmute::<strslice, _>(
-        RawHgManifest::read(
-            GitManifestId::from_raw_bytes(oid.as_ref().unwrap().as_raw_bytes()).unwrap(),
-        )
-        .unwrap()
-        .as_ref()
-        .into(),
-    )
 }
 
 #[no_mangle]
@@ -1418,9 +1402,45 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
     for manifest in RevChunkIter::new(version, &mut input)
         .progress(|n| format!("Reading and importing {n} manifests"))
     {
-        unsafe {
-            store_manifest(&manifest);
+        let mid = HgManifestId::from_unchecked(HgObjectId::from(manifest.node().clone()));
+        let delta_node =
+            HgManifestId::from_unchecked(HgObjectId::from(manifest.delta_node().clone()));
+        let reference_mn = if delta_node.is_null() {
+            RawHgManifest::empty()
+        } else {
+            RawHgManifest::read(delta_node.to_git().unwrap()).unwrap()
+        };
+        let mut last_end = 0;
+        let mut mn_size = 0;
+        for diff in manifest.iter_diff() {
+            if diff.start > reference_mn.len() || diff.start < last_end {
+                die!("Malformed changeset chunk for {mid}");
+            }
+            mn_size += diff.start - last_end;
+            mn_size += diff.data.len();
+            last_end = diff.end;
         }
+        if reference_mn.len() < last_end {
+            die!("Malformed changeset chunk for {mid}");
+        }
+        mn_size += reference_mn.len() - last_end;
+
+        let mut stored_manifest = vec![0; mn_size];
+        unsafe {
+            store_manifest(
+                &manifest,
+                (&reference_mn).into(),
+                (&mut stored_manifest).into(),
+            );
+        }
+        let stored_manifest = Rc::<[u8]>::from(stored_manifest.as_ref());
+        let tree_id = mid.to_git().unwrap().get_tree_id();
+        MANIFESTCACHE.with(|cache| {
+            cache.set(Some(ManifestCache {
+                tree_id,
+                content: stored_manifest,
+            }));
+        });
     }
     let files = Cell::new(0);
     let mut progress = repeat(()).progress(|n| {

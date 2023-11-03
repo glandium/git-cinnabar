@@ -137,7 +137,7 @@ use crate::hg_bundle::BundleReader;
 use crate::hg_connect::{decodecaps, find_common, UnbundleResponse};
 use crate::progress::set_progress;
 use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads, Dag, Traversal};
-use crate::tree_util::{ParseTree, WithPath};
+use crate::tree_util::{Empty, ParseTree, WithPath};
 use crate::util::{FromBytes, ToBoxed};
 
 #[cfg(any(feature = "version-check", feature = "self-update"))]
@@ -1526,10 +1526,13 @@ fn create_copy(blobid: BlobId, source_path: &BStr, source_fid: HgFileId) -> HgFi
     fid
 }
 
-fn create_manifest(content: &[u8], parents: &[HgManifestId]) -> HgManifestId {
-    let parent_manifest = parents
-        .get(0)
-        .map(|p| RawHgManifest::read(p.to_git().unwrap()).unwrap());
+// content is &mut but is only going to be overwritten with the same content.
+// This is an inconvenience from the way store_manifest currently works, and
+// it will remain this way until it moves to Rust.
+fn create_manifest(content: &mut [u8], parents: &[HgManifestId]) -> HgManifestId {
+    let parent_manifest = parents.get(0).map_or_else(RawHgManifest::empty, |p| {
+        RawHgManifest::read(p.to_git().unwrap()).unwrap()
+    });
     let parent1 = parents.get(0).copied().unwrap_or(HgManifestId::NULL);
     let mut hash = HgManifestId::create();
     if parents.len() < 2 {
@@ -1541,15 +1544,9 @@ fn create_manifest(content: &[u8], parents: &[HgManifestId]) -> HgManifestId {
             hash.update(parent.as_raw_bytes());
         }
     }
-    hash.update(content);
+    hash.update(&content);
     let mid = hash.finalize();
-    let data = create_chunk_data(
-        parent_manifest
-            .as_ref()
-            .map(|m| m.as_bstr())
-            .unwrap_or_default(),
-        content,
-    );
+    let data = create_chunk_data(&parent_manifest, content);
     let mut manifest_chunk = Vec::new();
     manifest_chunk.extend_from_slice(b"\0\0\0\0");
     manifest_chunk.extend_from_slice(mid.as_raw_bytes());
@@ -1565,7 +1562,7 @@ fn create_manifest(content: &[u8], parents: &[HgManifestId]) -> HgManifestId {
     manifest_chunk.extend_from_slice(b"\0\0\0\0");
     for chunk in RevChunkIter::new(2, manifest_chunk.as_bytes()) {
         unsafe {
-            store_manifest(&chunk);
+            store_manifest(&chunk, (&parent_manifest).into(), content.into());
         }
     }
     mid
@@ -1593,7 +1590,7 @@ fn create_root_changeset(cid: CommitId) -> HgChangesetId {
         paths.push(b'\0');
     }
     paths.pop();
-    let mid = create_manifest(&manifest, &[]);
+    let mid = create_manifest(&mut manifest, &[]);
     let (csid, _) = create_changeset(cid, mid, Some(paths.to_boxed()));
     csid
 }
@@ -1709,7 +1706,7 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
         paths.push(b'\0');
     }
     paths.pop();
-    let mid = create_manifest(&manifest, &[parent_mid]);
+    let mid = create_manifest(&mut manifest, &[parent_mid]);
     (mid, Some(paths.into_boxed_slice()))
 }
 
@@ -1892,7 +1889,7 @@ fn create_merge_changeset(
             (parent1_mid, None)
         } else {
             (
-                create_manifest(&manifest, &[parent1_mid, parent2_mid]),
+                create_manifest(&mut manifest, &[parent1_mid, parent2_mid]),
                 Some(paths.into_boxed_slice()),
             )
         };
