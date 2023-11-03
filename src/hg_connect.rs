@@ -634,7 +634,7 @@ fn take_sample<R: rand::Rng + ?Sized, T, const SIZE: usize>(
     }
 }
 
-const SAMPLE_SIZE: usize = 100;
+pub const SAMPLE_SIZE: usize = 100;
 
 #[derive(Default, Debug)]
 struct FindCommonInfo {

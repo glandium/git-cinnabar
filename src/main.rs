@@ -49,6 +49,7 @@ extern crate log;
 use bstr::io::BufReadExt;
 use byteorder::{BigEndian, WriteBytesExt};
 use clap::{crate_version, ArgGroup, Parser};
+use either::Either;
 use hg_bundle::{create_bundle, create_chunk_data, BundleSpec, RevChunkIter};
 use indexmap::IndexSet;
 use itertools::EitherOrBoth::{Both, Left, Right};
@@ -945,6 +946,95 @@ fn do_reclone() -> Result<(), String> {
             update_refs_by_remote.push((remote.get_url().to_os_string(), update_refs));
         }
         Ok(())
+    })
+    .and_then(|()| {
+        // If all the changesets we had in store weren't pulled from the remotes
+        // above, try fetching them from skip-default-update remotes.
+        let old_changesets_oid =
+            CommitId::from_unchecked(GitObjectId::from(unsafe { libgit::changesets_oid.clone() }));
+        if old_changesets_oid.is_null() {
+            return Ok(());
+        }
+        let old_changeset_heads = RawCommit::read(old_changesets_oid).unwrap();
+        let old_changeset_heads = old_changeset_heads.parse().unwrap();
+        let mut unknowns = old_changeset_heads
+            .parents()
+            .iter()
+            .copied()
+            .zip(
+                // Yes, this reads the commit one more time. We need better APIs.
+                ChangesetHeads::from_metadata(old_changesets_oid)
+                    .heads()
+                    .copied(),
+            )
+            .filter(|(_, csid)| csid.to_git().is_none())
+            .collect_vec();
+
+        for_each_remote(|remote| {
+            if unknowns.is_empty() || !remote.skip_default_update() {
+                return Ok(());
+            }
+            let url = match hg_url(remote.get_url()) {
+                Some(url) if url.scheme() == "tags" => return Ok(()),
+                Some(url) => url,
+                None => return Ok(()),
+            };
+            println!("Fetching {}", remote.name().unwrap().to_string_lossy());
+            let mut conn = get_connection(&url).unwrap();
+
+            let knowns = unknowns
+                .chunks(hg_connect::SAMPLE_SIZE)
+                .map(|unknowns| {
+                    conn.known(&unknowns.iter().map(|(_, csid)| *csid).collect_vec())
+                        .into_vec()
+                        .into_iter()
+                })
+                .collect_vec();
+
+            let (knowns, u): (Vec<_>, Vec<_>) = unknowns
+                .drain(..)
+                .zip(knowns.into_iter().flatten())
+                .partition_map(|(ids, known)| {
+                    if known {
+                        Either::Left(ids)
+                    } else {
+                        Either::Right(ids)
+                    }
+                });
+            unknowns = u;
+            if !knowns.is_empty() {
+                get_bundle(
+                    &mut *conn,
+                    &knowns.iter().map(|(_, csid)| *csid).collect_vec(),
+                    &HashSet::new(),
+                    Some(remote.name().unwrap().to_str().unwrap()),
+                )?;
+                let update_refs = knowns
+                    .into_iter()
+                    .filter_map(|(old_cid, csid)| {
+                        csid.to_git()
+                            .and_then(|cid| (cid != old_cid).then(|| (old_cid, cid.into(), csid)))
+                    })
+                    .map(|(old_cid, cid, csid)| {
+                        (
+                            b"(none)".as_bstr().to_boxed(),
+                            Some(
+                                format!("hg/revs/{}", csid)
+                                    .into_bytes()
+                                    .into_boxed_slice()
+                                    .into(),
+                            ),
+                            Some(cid),
+                            Some(old_cid),
+                        )
+                    })
+                    .collect_vec();
+                if !update_refs.is_empty() {
+                    update_refs_by_remote.push((remote.get_url().to_os_string(), update_refs));
+                }
+            }
+            Ok(())
+        })
     })
     .and_then(|()| {
         unsafe {
