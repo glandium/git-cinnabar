@@ -230,3 +230,15 @@ void consolidate_notes(struct cinnabar_notes_tree *t) {
 	}
 	free(notes_ref);
 }
+
+struct cinnabar_notes_tree *new_notes_tree(const char *notes_ref)
+{
+	struct cinnabar_notes_tree *result = calloc(1, sizeof(*result));
+	cinnabar_init_notes(result, notes_ref, combine_notes_ignore, 0);
+	return result;
+}
+
+void destroy_notes_tree(struct cinnabar_notes_tree *t) {
+	cinnabar_free_notes(t);
+	free(t);
+}

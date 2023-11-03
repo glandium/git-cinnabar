@@ -67,6 +67,7 @@ impl From<object_id> for GitObjectId {
 extern "C" {
     pub static mut metadata_oid: object_id;
     pub static mut changesets_oid: object_id;
+    pub static mut git2hg_oid: object_id;
 }
 
 #[allow(non_camel_case_types)]

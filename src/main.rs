@@ -89,6 +89,7 @@ use std::fs::File;
 use std::hash::Hash;
 use std::io::{stderr, stdin, stdout, BufRead, BufWriter, IsTerminal, Write};
 use std::iter::repeat;
+use std::ops::{Deref, DerefMut};
 use std::os::raw::{c_char, c_int, c_void};
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
@@ -105,7 +106,7 @@ use cinnabar::{
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, GitManifestTree, GitManifestTreeId,
 };
 use cstr::cstr;
-use git::{BlobId, CommitId, GitObjectId};
+use git::{BlobId, CommitId, GitObjectId, TreeIsh};
 use git_version::git_version;
 #[cfg(windows)]
 use windows_sys::Win32;
@@ -113,7 +114,7 @@ use windows_sys::Win32;
 use graft::{graft_finish, grafted, init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
-use libcinnabar::{files_meta, git2hg, hg2git, hg_object_id};
+use libcinnabar::{files_meta, git2hg, git_notes_tree, hg2git, hg_object_id};
 use libgit::{
     commit, config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
     get_oid_committish, get_unique_abbrev, lookup_commit, lookup_replace_commit, metadata_oid,
@@ -837,9 +838,64 @@ extern "C" {
 
 extern "C" {
     fn term_columns() -> c_int;
+
+    fn new_notes_tree(notes_ref: *const c_char) -> *mut git_notes_tree;
+
+    fn destroy_notes_tree(t: *mut git_notes_tree);
 }
 
-fn do_reclone() -> Result<(), String> {
+struct NotesBox(*mut git_notes_tree);
+
+impl Deref for NotesBox {
+    type Target = git_notes_tree;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.0.as_ref().unwrap() }
+    }
+}
+
+impl DerefMut for NotesBox {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.0.as_mut().unwrap() }
+    }
+}
+
+impl Drop for NotesBox {
+    fn drop(&mut self) {
+        unsafe {
+            destroy_notes_tree(self.0);
+        }
+    }
+}
+
+fn do_reclone(rebase: bool) -> Result<(), String> {
+    let mut heads = Vec::new();
+    if rebase {
+        for prefix in ["refs/tags/", "refs/heads/"] {
+            // TODO: this doesn't handle tag objects, only tags that point directly to commits.
+            // Ideally, we'd print out that we can't update those, but at the moment we can't
+            // even enumerate them. We don't expect tag objects on cinnabar-produced commits,
+            // though.
+            for_each_ref_in(prefix, |refname, cid| -> Result<(), String> {
+                let mut full_ref = OsString::from(prefix);
+                full_ref.push(refname);
+                heads.push((full_ref, cid));
+                Ok(())
+            })?;
+        }
+    }
+
+    let old_changesets_oid = GitObjectId::from(unsafe { libgit::changesets_oid.clone() });
+    let mut old_git2hg = {
+        let git2hg_oid = GitObjectId::from(unsafe { libgit::git2hg_oid.clone() });
+        if git2hg_oid.is_null() {
+            None
+        } else {
+            let git2hg_oid = CString::new(git2hg_oid.to_string()).unwrap();
+            Some(NotesBox(unsafe { new_notes_tree(git2hg_oid.as_ptr()) }))
+        }
+    };
+
     let current_metadata_oid = unsafe {
         let current_metadata_oid = metadata_oid.clone();
         do_reload(&object_id::default());
@@ -853,7 +909,21 @@ fn do_reclone() -> Result<(), String> {
         init_graft();
     }
 
-    let mut update_refs_by_remote = Vec::new();
+    let mut old_to_hg = |cid| {
+        let old_git2hg = old_git2hg.as_mut().unwrap();
+        // Manual reimplementation of to_hg. Can't wait to have non-global
+        // metadata structs. This shouldn't fail, but in case the original
+        // metadata was busted...
+        RawGitChangesetMetadata::read_from_notes_tree(
+            old_git2hg,
+            GitChangesetId::from_unchecked(cid),
+        )
+        .as_ref()
+        .and_then(RawGitChangesetMetadata::parse)
+        .map(|m| m.changeset_id())
+    };
+
+    let mut update_refs_by_category = Vec::new();
 
     for_each_remote(|remote| {
         if remote.skip_default_update() {
@@ -943,15 +1013,17 @@ fn do_reclone() -> Result<(), String> {
         }
         if !update_refs.is_empty() {
             update_refs.sort();
-            update_refs_by_remote.push((remote.get_url().to_os_string(), update_refs));
+            update_refs_by_category.push((
+                format!("From {}", remote.get_url().to_string_lossy()),
+                update_refs,
+            ));
         }
         Ok(())
     })
     .and_then(|()| {
         // If all the changesets we had in store weren't pulled from the remotes
         // above, try fetching them from skip-default-update remotes.
-        let old_changesets_oid =
-            CommitId::from_unchecked(GitObjectId::from(unsafe { libgit::changesets_oid.clone() }));
+        let old_changesets_oid = CommitId::from_unchecked(old_changesets_oid);
         if old_changesets_oid.is_null() {
             return Ok(());
         }
@@ -1030,13 +1102,120 @@ fn do_reclone() -> Result<(), String> {
                     })
                     .collect_vec();
                 if !update_refs.is_empty() {
-                    update_refs_by_remote.push((remote.get_url().to_os_string(), update_refs));
+                    update_refs_by_category.push((
+                        format!("From {}", remote.get_url().to_string_lossy()),
+                        update_refs,
+                    ));
                 }
             }
             Ok(())
         })
     })
     .and_then(|()| {
+        let mut to_rewrite = if rebase && !old_changesets_oid.is_null() {
+            let mut args = vec!["--full-history".to_string(), "--topo-order".to_string()];
+            for (_, cid) in &heads {
+                args.push(cid.to_string());
+            }
+            args.push("--not".to_string());
+            args.push(old_changesets_oid.to_string());
+            rev_list(args).collect_vec()
+        } else {
+            Vec::new()
+        };
+
+        let mut rewritten = BTreeMap::new();
+
+        while let Some(cid) = to_rewrite.pop() {
+            let commit = RawCommit::read(cid).unwrap();
+            let commit = commit.parse().unwrap();
+            let (new_parents, need_parents): (Vec<_>, Vec<_>) = commit
+                .parents()
+                .iter()
+                .map(|p| {
+                    if let Some(p) = rewritten.get(p) {
+                        (*p, None)
+                    } else {
+                        old_to_hg(*p).map_or((None, Some(*p)), |csid| {
+                            let new_cid = csid.to_git().map(CommitId::from).filter(|new_cid| {
+                                p == new_cid || p.get_tree_id() == new_cid.get_tree_id()
+                            });
+                            (new_cid, None)
+                        })
+                    }
+                })
+                .unzip();
+            let new_parents = new_parents.into_iter().flatten().collect_vec();
+            let need_parents = need_parents.into_iter().flatten().collect_vec();
+            if !need_parents.is_empty() {
+                to_rewrite.push(cid);
+                for p in need_parents.into_iter() {
+                    to_rewrite.push(p);
+                }
+                continue;
+            }
+            if new_parents == commit.parents() {
+                assert!(rewritten.insert(cid, Some(cid)).is_none());
+            } else if new_parents.len() == commit.parents().len() {
+                let mut buf = strbuf::new();
+                buf.extend_from_slice(b"tree ");
+                buf.extend_from_slice(commit.tree().to_string().as_bytes());
+                for p in new_parents {
+                    buf.extend_from_slice(b"\nparent ");
+                    buf.extend_from_slice(p.to_string().as_bytes());
+                }
+                buf.extend_from_slice(b"\nauthor ");
+                buf.extend_from_slice(commit.author());
+                buf.extend_from_slice(b"\ncommitter ");
+                buf.extend_from_slice(commit.committer());
+                buf.extend_from_slice(b"\n\n");
+                buf.extend_from_slice(commit.body());
+                let mut new_oid = object_id::default();
+                unsafe {
+                    store::store_git_commit(&buf, &mut new_oid);
+                }
+                let new_cid = CommitId::from_unchecked(new_oid.into());
+                assert!(rewritten.insert(cid, Some(new_cid)).is_none());
+            } else {
+                assert!(rewritten.insert(cid, None).is_none());
+            }
+        }
+
+        let (update_refs, cant_update_refs): (Vec<_>, Vec<_>) = heads
+            .into_iter()
+            .filter_map(|(refname_or_head, old_cid)| {
+                let cid = rewritten.get(&old_cid).and_then(Clone::clone).or_else(|| {
+                    old_to_hg(old_cid)
+                        .and_then(HgChangesetId::to_git)
+                        .map(Into::into)
+                });
+                (Some(old_cid) != cid).then_some((refname_or_head, old_cid, cid))
+            })
+            .partition_map(|(refname_or_head, old_cid, cid)| {
+                if let Some(cid) = cid {
+                    Either::Left((refname_or_head, old_cid, cid))
+                } else {
+                    Either::Right(refname_or_head)
+                }
+            });
+        for (category, update_refs) in &update_refs.into_iter().group_by(|(refname, _, _)| {
+            if refname.as_bytes().starts_with(b"refs/tags/") {
+                "Rebased tags"
+            } else if refname.as_bytes().starts_with(b"refs/heads/") {
+                "Rebased branches"
+            } else {
+                unreachable!();
+            }
+        }) {
+            let update_refs = update_refs
+                .map(|(refname, old_cid, cid)| {
+                    let refname = refname.as_bytes().as_bstr().to_boxed();
+                    (refname.clone(), Some(refname), Some(cid), Some(old_cid))
+                })
+                .collect_vec();
+            update_refs_by_category.push((category.to_string(), update_refs));
+        }
+
         unsafe {
             metadata_oid = current_metadata_oid;
         }
@@ -1046,8 +1225,8 @@ fn do_reclone() -> Result<(), String> {
             .ok_or_else(|| "Fatal error".to_string())?;
         let mut transaction = RefTransaction::new().unwrap();
         let mut out = Vec::new();
-        for (remote_url, update_refs) in update_refs_by_remote {
-            writeln!(out, "From {}", remote_url.to_string_lossy()).unwrap();
+        for (category, update_refs) in update_refs_by_category {
+            writeln!(out, "{}", category).unwrap();
             let update_refs = update_refs
                 .into_iter()
                 .map(|(peer_ref, refname, cid, old_cid)| {
@@ -1094,7 +1273,7 @@ fn do_reclone() -> Result<(), String> {
                 .unwrap_or(0);
             for (
                 (peer_ref, pretty_peer_ref),
-                (_, pretty_refname),
+                (refname, pretty_refname),
                 (cid, abbrev_cid),
                 (old_cid, abbrev_old_cid),
             ) in update_refs
@@ -1130,9 +1309,11 @@ fn do_reclone() -> Result<(), String> {
                         pretty_refname, pretty_peer_ref
                     )
                     .unwrap();
-                    transaction
-                        .update(OsStr::from_bytes(&peer_ref), cid, old_cid, msg)
-                        .unwrap();
+                    if !refname.unwrap().starts_with(b"hg/revs/") {
+                        transaction
+                            .update(OsStr::from_bytes(&peer_ref), cid, old_cid, msg)
+                            .unwrap();
+                    }
                 } else {
                     writeln!(
                         out,
@@ -1148,11 +1329,26 @@ fn do_reclone() -> Result<(), String> {
         }
         transaction.commit().unwrap();
         stderr().write_all(&out).unwrap();
+        if !cant_update_refs.is_empty() {
+            eprintln!("Could not rewrite the following refs:");
+            for refname in cant_update_refs {
+                eprintln!("   {}", refname.as_bytes().as_bstr());
+            }
+            eprintln!("They may still be based on the old remote branches.");
+        }
         Ok(())
     })
     .map(|()| {
-        println!("Please note that reclone left your local branches untouched.");
-        println!("They may be based on entirely different commits.");
+        if !rebase {
+            // TODO: Avoid showing this message when we detect there is nothing
+            // to rebase.
+            println!("Please note that reclone left your local branches untouched.");
+            println!("They may be based on entirely different commits.");
+            println!("If that is the case, you can try to fix them automatically by running");
+            println!("the two following commands:");
+            println!("  git cinnabar rollback");
+            println!("  git cinnabar reclone --rebase");
+        }
     })
 }
 
@@ -3116,7 +3312,11 @@ enum CinnabarCommand {
     },
     #[clap(name = "reclone")]
     #[clap(about = "Reclone all mercurial remotes")]
-    Reclone,
+    Reclone {
+        #[clap(long)]
+        #[clap(help = "Rebase local branches")]
+        rebase: bool,
+    },
     #[clap(name = "rollback")]
     #[clap(about = "Rollback cinnabar metadata state")]
     Rollback {
@@ -3273,7 +3473,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         } => do_fetch(&remote, &revs),
         Fetch { tags: true, .. } => do_fetch_tags(),
         Fetch { remote: None, .. } => unreachable!(),
-        Reclone => do_reclone(),
+        Reclone { rebase } => do_reclone(rebase),
         Rollback {
             candidates,
             fsck,

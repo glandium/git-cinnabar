@@ -41,7 +41,9 @@ use crate::hg_bundle::{
 };
 use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
-use crate::libcinnabar::{files_meta, git2hg, hg2git, hg_object_id, strslice, strslice_mut};
+use crate::libcinnabar::{
+    files_meta, git2hg, git_notes_tree, hg2git, hg_object_id, strslice, strslice_mut,
+};
 use crate::libgit::{
     changesets_oid, die, get_oid_blob, object_id, strbuf, Commit, RawBlob, RawCommit, RawTree,
     RefTransaction,
@@ -104,11 +106,16 @@ pub struct RawGitChangesetMetadata(RawBlob);
 
 impl RawGitChangesetMetadata {
     pub fn read(changeset_id: GitChangesetId) -> Option<Self> {
-        let note = unsafe {
-            git2hg
-                .get_note(CommitId::from(changeset_id).into())
-                .map(BlobId::from_unchecked)?
-        };
+        Self::read_from_notes_tree(unsafe { &mut git2hg }, changeset_id)
+    }
+
+    pub fn read_from_notes_tree(
+        notes: &mut git_notes_tree,
+        changeset_id: GitChangesetId,
+    ) -> Option<Self> {
+        let note = notes
+            .get_note(CommitId::from(changeset_id).into())
+            .map(BlobId::from_unchecked)?;
         RawBlob::read(note).map(Self)
     }
 
@@ -1028,7 +1035,7 @@ extern "C" {
     pub fn ensure_store_init();
     pub fn store_git_blob(blob_buf: *const strbuf, result: *mut object_id);
     fn store_git_tree(tree_buf: *const strbuf, reference: *const object_id, result: *mut object_id);
-    fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
+    pub fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
     pub fn do_set(what: *const c_char, hg_id: *const hg_object_id, git_id: *const object_id);
     pub fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
     fn create_git_tree(

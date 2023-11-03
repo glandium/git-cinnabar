@@ -62,4 +62,8 @@ int write_notes_tree(struct notes_tree *t, struct object_id *result,
 
 void consolidate_notes(struct notes_tree *t);
 
+struct notes_tree *new_notes_tree(const char *notes_ref);
+
+void destroy_notes_tree(struct notes_tree *t);
+
 #endif
