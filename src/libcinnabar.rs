@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::marker::PhantomData;
+use std::mem::MaybeUninit;
 use std::os::raw::{c_char, c_int, c_void};
 
 use crate::git::GitObjectId;
@@ -43,9 +44,18 @@ pub struct strslice_mut<'a> {
     marker: PhantomData<&'a mut [u8]>,
 }
 
-impl<'a, T: AsMut<[u8]> + 'a> From<T> for strslice_mut<'a> {
-    fn from(mut buf: T) -> Self {
-        let buf = buf.as_mut();
+impl<'a> From<&'a mut [u8]> for strslice_mut<'a> {
+    fn from(buf: &'a mut [u8]) -> Self {
+        strslice_mut {
+            len: buf.len(),
+            buf: buf.as_mut_ptr() as *mut c_char,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<'a> From<&'a mut [MaybeUninit<u8>]> for strslice_mut<'a> {
+    fn from(buf: &'a mut [MaybeUninit<u8>]) -> Self {
         strslice_mut {
             len: buf.len(),
             buf: buf.as_mut_ptr() as *mut c_char,

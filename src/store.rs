@@ -49,7 +49,9 @@ use crate::libgit::{
 use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
 use crate::tree_util::{diff_by_path, Empty, ParseTree, RecurseTree};
-use crate::util::{FromBytes, ImmutBString, OsStrExt, ReadExt, SliceExt, ToBoxed, Transpose};
+use crate::util::{
+    FromBytes, ImmutBString, OsStrExt, RcExt, ReadExt, SliceExt, ToBoxed, Transpose,
+};
 use crate::xdiff::{apply, textdiff, PatchInfo};
 use crate::{check_enabled, do_reload, Checks};
 
@@ -574,7 +576,7 @@ impl RawHgManifest {
             let last_manifest = cache.take();
             let tree_id = oid.get_tree_id();
 
-            let mut manifest = Vec::new();
+            let mut manifest = Rc::<[u8]>::builder();
             if let Some(last_manifest) = last_manifest {
                 let reference_manifest = last_manifest.content.clone();
                 if last_manifest.tree_id == tree_id {
@@ -639,7 +641,7 @@ impl RawHgManifest {
                     RawHgManifest::write_one_entry(&entry, &mut manifest).unwrap();
                 }
             }
-            let content = Rc::<[u8]>::from(manifest.as_ref());
+            let content = manifest.into_rc();
 
             cache.set(Some(ManifestCache {
                 tree_id,
@@ -1426,20 +1428,21 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
         }
         mn_size += reference_mn.len() - last_end;
 
-        let mut stored_manifest = vec![0; mn_size];
+        let mut stored_manifest = Rc::builder_with_capacity(mn_size);
         unsafe {
             store_manifest(
                 &manifest,
                 (&reference_mn).into(),
-                (&mut stored_manifest).into(),
+                (&mut stored_manifest.spare_capacity_mut()[..mn_size]).into(),
             );
+            stored_manifest.set_len(mn_size);
         }
-        let stored_manifest = Rc::<[u8]>::from(stored_manifest.as_ref());
+
         let tree_id = mid.to_git().unwrap().get_tree_id();
         MANIFESTCACHE.with(|cache| {
             cache.set(Some(ManifestCache {
                 tree_id,
-                content: stored_manifest,
+                content: stored_manifest.into_rc(),
             }));
         });
     }

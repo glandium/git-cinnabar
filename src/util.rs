@@ -2,12 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::alloc::Layout;
+use std::cell::Cell;
+use std::cmp;
 use std::ffi::{CStr, CString, OsStr};
 use std::io::{self, LineWriter, Read, Write};
+use std::marker::PhantomData;
+use std::mem::MaybeUninit;
+use std::ops::{Deref, DerefMut};
 #[cfg(unix)]
 use std::os::unix::ffi;
 #[cfg(windows)]
 use std::os::windows::ffi;
+use std::ptr::{self, NonNull};
+use std::rc::Rc;
 use std::str::{self, FromStr};
 use std::{fmt, mem};
 
@@ -431,4 +439,191 @@ pub trait Transpose {
     type Target;
 
     fn transpose(self) -> Self::Target;
+}
+
+type RcBox = [Cell<usize>; 2];
+
+pub struct RcSliceBuilder<T> {
+    ptr: NonNull<T>,
+    len: usize,
+    capacity: usize,
+    marker: PhantomData<T>,
+}
+
+impl<T> RcSliceBuilder<T> {
+    pub fn new() -> Self {
+        RcSliceBuilder {
+            ptr: NonNull::dangling(),
+            len: 0,
+            capacity: 0,
+            marker: PhantomData,
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        let mut result = Self::new();
+        if capacity > 0 {
+            result.grow_to(capacity);
+        }
+        result
+    }
+
+    pub fn into_rc(self) -> Rc<[T]> {
+        if self.len != 0 {
+            let (layout, offset) = Self::layout_for_size(self.len);
+            let ptr = if layout.size() != self.capacity {
+                let (current_layout, _) = Self::layout_for_size(self.capacity);
+                // We need to shrink to fit so that Rc's deallocation layout matches ours.
+                unsafe {
+                    let ptr = std::alloc::realloc(
+                        self.ptr.cast::<u8>().as_ptr().sub(offset),
+                        current_layout,
+                        layout.size(),
+                    );
+                    if ptr.is_null() {
+                        panic!("Out of memory");
+                    }
+                    NonNull::new_unchecked(ptr.add(offset) as *mut T)
+                }
+            } else {
+                self.ptr
+            };
+            let len = self.len;
+            mem::forget(self);
+            unsafe {
+                ptr::write(
+                    ptr.cast::<u8>().as_ptr().sub(offset) as *mut RcBox,
+                    [Cell::new(1), Cell::new(1)],
+                );
+                Rc::from_raw(NonNull::slice_from_raw_parts(ptr, len).as_ptr())
+            }
+        } else {
+            Rc::new([])
+        }
+    }
+
+    fn layout_for_size(size: usize) -> (Layout, usize) {
+        Layout::array::<T>(size)
+            .and_then(|layout| Layout::new::<RcBox>().extend(layout))
+            .map(|(layout, offset)| (layout.pad_to_align(), offset))
+            .unwrap()
+    }
+
+    #[inline(never)]
+    fn grow_to(&mut self, needed_len: usize) {
+        // Same growth strategy as git's ALLOC_GROW.
+        let new_capacity = cmp::max(
+            needed_len,
+            self.capacity
+                .checked_add(16)
+                .and_then(|cap| cap.checked_mul(3))
+                .map_or(needed_len, |cap| cap / 2),
+        );
+        let (layout, offset) = Self::layout_for_size(new_capacity);
+        unsafe {
+            let ptr = if self.capacity == 0 {
+                std::alloc::alloc(layout)
+            } else {
+                let (current_layout, _) = Self::layout_for_size(self.capacity);
+                std::alloc::realloc(
+                    self.ptr.cast::<u8>().as_ptr().sub(offset),
+                    current_layout,
+                    layout.size(),
+                )
+            };
+            if ptr.is_null() {
+                panic!("Out of memory");
+            }
+            self.ptr = NonNull::new_unchecked(ptr.add(offset) as *mut T);
+            self.capacity = layout.size() - offset;
+        }
+    }
+
+    #[inline(always)]
+    pub fn reserve(&mut self, additional: usize) {
+        let new_len = self.len.checked_add(additional).unwrap();
+        if new_len > self.capacity {
+            self.grow_to(new_len);
+        }
+    }
+}
+
+impl<T: Copy> RcSliceBuilder<T> {
+    pub fn extend_from_slice(&mut self, other: &[T]) {
+        self.reserve(other.len());
+        unsafe {
+            ptr::copy_nonoverlapping(other.as_ptr(), self.ptr.as_ptr().add(self.len), other.len());
+        }
+        self.len += other.len();
+    }
+
+    pub fn spare_capacity_mut(&mut self) -> &mut [MaybeUninit<T>] {
+        unsafe {
+            std::slice::from_raw_parts_mut(
+                self.ptr.as_ptr().add(self.len) as *mut MaybeUninit<T>,
+                self.capacity - self.len,
+            )
+        }
+    }
+
+    pub unsafe fn set_len(&mut self, new_len: usize) {
+        debug_assert!(new_len <= self.capacity);
+        self.len = new_len;
+    }
+}
+
+impl<T> Deref for RcSliceBuilder<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
+    }
+}
+
+impl<T> DerefMut for RcSliceBuilder<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { std::slice::from_raw_parts_mut(self.ptr.as_mut(), self.len) }
+    }
+}
+
+impl<T> Drop for RcSliceBuilder<T> {
+    fn drop(&mut self) {
+        unsafe {
+            ptr::drop_in_place(NonNull::slice_from_raw_parts(self.ptr, self.len).as_ptr());
+            if self.capacity > 0 {
+                let (layout, offset) = Self::layout_for_size(self.capacity);
+                std::alloc::dealloc(self.ptr.cast::<u8>().as_ptr().sub(offset), layout);
+            }
+        }
+    }
+}
+
+impl Write for RcSliceBuilder<u8> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+pub trait RcExt {
+    type Builder;
+
+    fn builder() -> Self::Builder;
+    fn builder_with_capacity(capacity: usize) -> Self::Builder;
+}
+
+impl<T> RcExt for Rc<[T]> {
+    type Builder = RcSliceBuilder<T>;
+
+    fn builder() -> Self::Builder {
+        Self::Builder::new()
+    }
+
+    fn builder_with_capacity(capacity: usize) -> Self::Builder {
+        Self::Builder::with_capacity(capacity)
+    }
 }
