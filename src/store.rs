@@ -992,15 +992,26 @@ pub fn get_tags() -> TagSet {
     tags
 }
 
-static BUNDLE_BLOB: Mutex<Option<object_id>> = Mutex::new(None);
+static BUNDLE_BLOBS: Mutex<Vec<object_id>> = Mutex::new(Vec::new());
 
 #[no_mangle]
 pub unsafe extern "C" fn store_changesets_metadata(result: *mut object_id) {
     let result = result.as_mut().unwrap();
     let mut tree = strbuf::new();
-    if let Some(blob) = &*BUNDLE_BLOB.lock().unwrap() {
-        let blob = BlobId::from_unchecked(GitObjectId::from(blob.clone()));
-        tree.extend_from_slice(b"100644 bundle\0");
+    for (n, blob) in BUNDLE_BLOBS
+        .lock()
+        .unwrap()
+        .drain(..)
+        .enumerate()
+        .map(|(n, blob)| ((n + 1).to_string(), blob))
+        .sorted_by(|(n, _), (n2, _)| Ord::cmp(n, n2))
+    {
+        let blob = BlobId::from_unchecked(GitObjectId::from(blob));
+        tree.extend_from_slice(b"100644 bundle");
+        if n != "1" {
+            tree.extend_from_slice(n.as_bytes());
+        }
+        tree.extend_from_slice(b"\0");
         tree.extend_from_slice(blob.as_raw_bytes());
     }
     let mut tid = object_id::default();
@@ -1565,7 +1576,7 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
         unsafe {
             store_git_blob(&bundle, &mut bundle_blob);
         }
-        *BUNDLE_BLOB.lock().unwrap() = Some(bundle_blob);
+        BUNDLE_BLOBS.lock().unwrap().push(bundle_blob);
     }
 }
 
