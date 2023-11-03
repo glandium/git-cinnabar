@@ -35,6 +35,7 @@
 #include "setup.h"
 #include "tree.h"
 #include "tree-walk.h"
+#include "worktree.h"
 #include "hg-data.h"
 #include "cinnabar-helper.h"
 #include "cinnabar-fast-import.h"
@@ -816,6 +817,26 @@ const char *get_ref_name(const struct ref *ref)
 const struct ref *get_ref_peer_ref(const struct ref *ref)
 {
 	return ref->peer_ref;
+}
+
+const char *get_worktree_path(const struct worktree *wr)
+{
+	return wr->path;
+}
+
+int get_worktree_is_current(const struct worktree *wr)
+{
+	return wr->is_current;
+}
+
+int get_worktree_is_detached(const struct worktree *wr)
+{
+	return wr->is_detached;
+}
+
+const struct object_id *get_worktree_head_oid(const struct worktree *wr)
+{
+	return &wr->head_oid;
 }
 
 static int nongit = 0;

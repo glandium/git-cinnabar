@@ -82,6 +82,7 @@ pub(crate) mod hg_data;
 
 use std::borrow::{Borrow, Cow};
 use std::cell::Cell;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::CString;
 use std::ffi::{CStr, OsStr, OsString};
@@ -836,8 +837,28 @@ extern "C" {
     ) -> c_int;
 }
 
+#[allow(non_camel_case_types)]
+#[repr(transparent)]
+struct worktree(c_void);
+
 extern "C" {
     fn term_columns() -> c_int;
+
+    fn get_worktrees() -> *const *const worktree;
+
+    fn free_worktrees(wt: *const *const worktree);
+
+    fn get_worktree_git_dir(wt: *const worktree) -> *const c_char;
+
+    fn get_worktree_path(wt: *const worktree) -> *const c_char;
+
+    fn get_worktree_is_current(wt: *const worktree) -> c_int;
+
+    fn get_worktree_is_detached(wt: *const worktree) -> c_int;
+
+    fn get_worktree_head_oid(wt: *const worktree) -> *const object_id;
+
+    fn get_worktree_ref_store(wr: *const worktree) -> *const libgit::ref_store;
 
     fn new_notes_tree(notes_ref: *const c_char) -> *mut git_notes_tree;
 
@@ -879,9 +900,41 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
             for_each_ref_in(prefix, |refname, cid| -> Result<(), String> {
                 let mut full_ref = OsString::from(prefix);
                 full_ref.push(refname);
-                heads.push((full_ref, cid));
+                heads.push((Either::Left(full_ref), cid));
                 Ok(())
             })?;
+        }
+        unsafe {
+            let worktrees = get_worktrees();
+            let mut wt = worktrees;
+            while !(*wt).is_null() {
+                let git_dir = Path::new(CStr::from_ptr(get_worktree_git_dir(*wt)).to_osstr());
+                if git_dir.join("BISECT_LOG").exists() {
+                    let err = if get_worktree_is_current(*wt) != 0 {
+                        "Can't reclone: bisect in progress.".to_string()
+                    } else {
+                        let path = PathBuf::from(CStr::from_ptr(get_worktree_path(*wt)).to_osstr());
+                        format!("Can't reclone: bisect in progress in {}.", path.display())
+                    };
+                    free_worktrees(worktrees);
+                    return Err(err);
+                }
+                if get_worktree_is_detached(*wt) == 1 {
+                    heads.push((
+                        Either::Right((get_worktree_is_current(*wt) == 0).then(|| {
+                            (
+                                get_worktree_ref_store(*wt).as_ref().unwrap(),
+                                PathBuf::from(CStr::from_ptr(get_worktree_path(*wt)).to_osstr()),
+                            )
+                        })),
+                        CommitId::from_raw_bytes((*get_worktree_head_oid(*wt)).as_raw_bytes())
+                            .unwrap(),
+                    ));
+                }
+                wt = wt.add(1);
+            }
+
+            free_worktrees(worktrees);
         }
     }
 
@@ -983,7 +1036,7 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
             r = stale_refs;
             while !r.is_null() {
                 let refname = CStr::from_ptr(get_ref_name(r)).to_bytes().as_bstr();
-                update_refs.push((refname.to_boxed(), None, None, None));
+                update_refs.push((Either::Left(refname.to_boxed()), None, None, None));
                 r = get_next_ref(r);
             }
             free_refs(refs);
@@ -1008,11 +1061,10 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
                 cid.unwrap_or_else(|| csid.to_git().unwrap()),
             ));
             if old_cid != cid {
-                update_refs.push((peer_ref, Some(refname), cid, old_cid));
+                update_refs.push((Either::Left(peer_ref), Some(refname), cid, old_cid));
             }
         }
         if !update_refs.is_empty() {
-            update_refs.sort();
             update_refs_by_category.push((
                 format!("From {}", remote.get_url().to_string_lossy()),
                 update_refs,
@@ -1089,7 +1141,7 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
                     })
                     .map(|(old_cid, cid, csid)| {
                         (
-                            b"(none)".as_bstr().to_boxed(),
+                            Either::Left(b"(none)".as_bstr().to_boxed()),
                             Some(
                                 format!("hg/revs/{}", csid)
                                     .into_bytes()
@@ -1198,19 +1250,29 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
                     Either::Right(refname_or_head)
                 }
             });
-        for (category, update_refs) in &update_refs.into_iter().group_by(|(refname, _, _)| {
-            if refname.as_bytes().starts_with(b"refs/tags/") {
-                "Rebased tags"
-            } else if refname.as_bytes().starts_with(b"refs/heads/") {
-                "Rebased branches"
-            } else {
-                unreachable!();
-            }
-        }) {
+        for (category, update_refs) in
+            &update_refs.into_iter().group_by(|(refname_or_head, _, _)| {
+                if let Either::Left(refname) = refname_or_head {
+                    if refname.as_bytes().starts_with(b"refs/tags/") {
+                        "Rebased tags"
+                    } else if refname.as_bytes().starts_with(b"refs/heads/") {
+                        "Rebase branches"
+                    } else {
+                        unreachable!();
+                    }
+                } else {
+                    "Rebased detached heads"
+                }
+            })
+        {
             let update_refs = update_refs
-                .map(|(refname, old_cid, cid)| {
-                    let refname = refname.as_bytes().as_bstr().to_boxed();
-                    (refname.clone(), Some(refname), Some(cid), Some(old_cid))
+                .map(|(refname_or_head, old_cid, cid)| {
+                    let peer_ref =
+                        refname_or_head.map_left(|refname| refname.as_bytes().as_bstr().to_boxed());
+                    let refname = peer_ref
+                        .as_ref()
+                        .either(Clone::clone, |_| b"HEAD".as_bstr().to_boxed());
+                    (peer_ref, Some(refname), Some(cid), Some(old_cid))
                 })
                 .collect_vec();
             update_refs_by_category.push((category.to_string(), update_refs));
@@ -1224,11 +1286,27 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
             .then_some(())
             .ok_or_else(|| "Fatal error".to_string())?;
         let mut transaction = RefTransaction::new().unwrap();
+        let mut other_transactions = Vec::new();
         let mut out = Vec::new();
         for (category, update_refs) in update_refs_by_category {
             writeln!(out, "{}", category).unwrap();
             let update_refs = update_refs
                 .into_iter()
+                .sorted_by(|(peer_ref_a, _, _, _), (peer_ref_b, _, _, _)| {
+                    match (peer_ref_a, peer_ref_b) {
+                        (Either::Left(refname_a), Either::Left(refname_b)) => {
+                            Ord::cmp(refname_a, refname_b)
+                        }
+                        (Either::Left(_), Either::Right(_)) => Ordering::Less,
+                        (Either::Right(_), Either::Left(_)) => Ordering::Greater,
+                        (Either::Right(None), Either::Right(None)) => Ordering::Equal,
+                        (Either::Right(Some(_)), Either::Right(None)) => Ordering::Less,
+                        (Either::Right(None), Either::Right(Some(_))) => Ordering::Greater,
+                        (Either::Right(Some((_, path_a))), Either::Right(Some((_, path_b)))) => {
+                            Ord::cmp(path_a, path_b)
+                        }
+                    }
+                })
                 .map(|(peer_ref, refname, cid, old_cid)| {
                     fn get_pretty_refname(r: &BStr) -> Box<str> {
                         r.strip_prefix(b"refs/heads/")
@@ -1239,7 +1317,16 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
                             .into()
                     }
                     let pretty_refname = refname.as_ref().map(|r| get_pretty_refname(r).to_boxed());
-                    let pretty_peer_ref = get_pretty_refname(&peer_ref).to_boxed();
+                    let pretty_peer_ref = peer_ref.as_ref().either(
+                        |peer_ref| get_pretty_refname(peer_ref).to_boxed(),
+                        |head| {
+                            if let Some((_, path)) = head {
+                                format!("HEAD [{}]", path.display()).to_boxed()
+                            } else {
+                                "HEAD".to_boxed()
+                            }
+                        },
+                    );
                     let abbrev_cid = cid.map(get_unique_abbrev);
                     let abbrev_old_cid = old_cid.map(get_unique_abbrev);
                     (
@@ -1309,10 +1396,23 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
                         pretty_refname, pretty_peer_ref
                     )
                     .unwrap();
-                    if !refname.unwrap().starts_with(b"hg/revs/") {
-                        transaction
-                            .update(OsStr::from_bytes(&peer_ref), cid, old_cid, msg)
-                            .unwrap();
+                    let msg = format!("cinnabar reclone: {msg}");
+                    match &peer_ref {
+                        Either::Left(peer_ref) => {
+                            if !refname.unwrap().starts_with(b"hg/revs/") {
+                                transaction
+                                    .update(OsStr::from_bytes(peer_ref), cid, old_cid, &msg)
+                                    .unwrap();
+                            }
+                        }
+                        Either::Right(None) => {
+                            transaction.update("HEAD", cid, old_cid, &msg).unwrap();
+                        }
+                        Either::Right(Some((rs, _))) => {
+                            let mut transaction = RefTransaction::new_with_ref_store(rs).unwrap();
+                            transaction.update("HEAD", cid, old_cid, &msg).unwrap();
+                            other_transactions.push(transaction);
+                        }
                     }
                 } else {
                     writeln!(
@@ -1322,17 +1422,28 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
                     )
                     .unwrap();
                     transaction
-                        .delete(OsStr::from_bytes(&peer_ref), old_cid, "prune")
+                        .delete(
+                            OsStr::from_bytes(&peer_ref.left().unwrap()),
+                            old_cid,
+                            "cinnabar reclone: prune",
+                        )
                         .unwrap();
                 };
             }
         }
         transaction.commit().unwrap();
+        for transaction in other_transactions {
+            transaction.commit().unwrap();
+        }
         stderr().write_all(&out).unwrap();
         if !cant_update_refs.is_empty() {
             eprintln!("Could not rewrite the following refs:");
-            for refname in cant_update_refs {
-                eprintln!("   {}", refname.as_bytes().as_bstr());
+            for refname_or_head in cant_update_refs {
+                match refname_or_head {
+                    Either::Left(refname) => eprintln!("   {}", refname.as_bytes().as_bstr()),
+                    Either::Right(None) => eprintln!("   HEAD"),
+                    Either::Right(Some((_, path))) => eprintln!("   HEAD [{}]", path.display()),
+                }
             }
             eprintln!("They may still be based on the old remote branches.");
         }

@@ -88,4 +88,14 @@ const char *get_ref_name(const struct ref *ref);
 
 const struct ref *get_ref_peer_ref(const struct ref *ref);
 
+struct worktree;
+
+const char *get_worktree_path(const struct worktree *wr);
+
+int get_worktree_is_current(const struct worktree *wr);
+
+int get_worktree_is_detached(const struct worktree *wr);
+
+const struct object_id *get_worktree_head_oid(const struct worktree *wr);
+
 #endif

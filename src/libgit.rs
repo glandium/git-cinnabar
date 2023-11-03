@@ -988,8 +988,17 @@ pub fn resolve_ref<S: AsRef<OsStr>>(refname: S) -> Option<CommitId> {
 #[repr(transparent)]
 pub struct ref_transaction(c_void);
 
+#[allow(non_camel_case_types)]
+#[repr(transparent)]
+pub struct ref_store(c_void);
+
 extern "C" {
     fn ref_transaction_begin(err: *mut strbuf) -> *mut ref_transaction;
+
+    fn ref_store_transaction_begin(
+        refs: *const ref_store,
+        err: *mut strbuf,
+    ) -> *mut ref_transaction;
 
     fn ref_transaction_free(tr: *mut ref_transaction);
 
@@ -1027,6 +1036,14 @@ impl RefTransaction {
         let mut err = strbuf::new();
         Some(RefTransaction {
             tr: unsafe { ref_transaction_begin(&mut err).as_mut()? },
+            err,
+        })
+    }
+
+    pub fn new_with_ref_store(refs: &ref_store) -> Option<Self> {
+        let mut err = strbuf::new();
+        Some(RefTransaction {
+            tr: unsafe { ref_store_transaction_begin(refs, &mut err).as_mut()? },
             err,
         })
     }
