@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::io::Write;
+use std::io::{self, Write};
 
 use bstr::{BStr, ByteSlice};
 
@@ -109,12 +109,13 @@ impl ParseTree for RawHgManifest {
         .ok_or(MalformedManifest)
     }
 
-    fn write_one_entry(entry: &WithPath<Self::Inner>, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(entry.path());
-        buf.push(b'\0');
-        write!(buf, "{}", entry.inner().fid).unwrap();
-        buf.extend_from_slice(entry.inner().attr.as_bstr());
-        buf.push(b'\n');
+    fn write_one_entry<W: Write>(entry: &WithPath<Self::Inner>, mut w: W) -> io::Result<()> {
+        w.write_all(entry.path())?;
+        w.write_all(b"\0")?;
+        write!(w, "{}", entry.inner().fid)?;
+        w.write_all(entry.inner().attr.as_bstr())?;
+        w.write_all(b"\n")?;
+        Ok(())
     }
 }
 

@@ -7,6 +7,7 @@
 //! Helpers related to trees.
 
 use std::cmp::Ordering;
+use std::io::{self, Write};
 use std::iter::{zip, Peekable};
 
 use bstr::{BStr, BString, ByteSlice};
@@ -297,7 +298,7 @@ pub trait ParseTree: AsRef<[u8]> {
     fn parse_one_entry(buf: &mut &[u8]) -> Result<WithPath<Self::Inner>, Self::Error>;
 
     /// Write one entry into the given buffer.
-    fn write_one_entry(entry: &WithPath<Self::Inner>, buf: &mut Vec<u8>);
+    fn write_one_entry<W: Write>(entry: &WithPath<Self::Inner>, w: W) -> io::Result<()>;
 
     /// Iterates the tree
     fn iter(&self) -> TreeIter<&Self> {
@@ -313,8 +314,8 @@ impl<T: ParseTree + ?Sized> ParseTree for &T {
         T::parse_one_entry(buf)
     }
 
-    fn write_one_entry(entry: &WithPath<Self::Inner>, buf: &mut Vec<u8>) {
-        T::write_one_entry(entry, buf);
+    fn write_one_entry<W: Write>(entry: &WithPath<Self::Inner>, w: W) -> io::Result<()> {
+        T::write_one_entry(entry, w)
     }
 }
 

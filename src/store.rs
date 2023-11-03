@@ -609,7 +609,8 @@ impl RawHgManifest {
                                 inner.right().unwrap()
                             }),
                             &mut manifest,
-                        ),
+                        )
+                        .unwrap(),
                         // There was an entry in the last manifest, but the file was modified or removed
                         Both(_, diff) => {
                             if let Some(new_entry) = diff
@@ -624,7 +625,7 @@ impl RawHgManifest {
                                 })
                                 .transpose()
                             {
-                                RawHgManifest::write_one_entry(&new_entry, &mut manifest);
+                                RawHgManifest::write_one_entry(&new_entry, &mut manifest).unwrap();
                             }
                         }
                     };
@@ -635,7 +636,7 @@ impl RawHgManifest {
                     .into_iter()
                     .recurse()
                 {
-                    RawHgManifest::write_one_entry(&entry, &mut manifest);
+                    RawHgManifest::write_one_entry(&entry, &mut manifest).unwrap();
                 }
             }
             let content = Rc::<[u8]>::from(manifest.as_ref());

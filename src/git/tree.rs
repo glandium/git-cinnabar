@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::io::{self, Write};
+
 use digest::OutputSizeUser;
 use either::Either;
 
@@ -86,7 +88,7 @@ impl ParseTree for RawTree {
         .ok_or(MalformedTree)
     }
 
-    fn write_one_entry(_entry: &WithPath<Self::Inner>, _buf: &mut Vec<u8>) {
+    fn write_one_entry<W: Write>(_entry: &WithPath<Self::Inner>, _w: W) -> io::Result<()> {
         todo!()
     }
 }

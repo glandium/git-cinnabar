@@ -1585,7 +1585,7 @@ fn create_root_changeset(cid: CommitId) -> HgChangesetId {
             attr: item.mode.try_into().unwrap(),
         })
     {
-        RawHgManifest::write_one_entry(&entry, &mut manifest);
+        RawHgManifest::write_one_entry(&entry, &mut manifest).unwrap();
         paths.extend_from_slice(entry.path());
         paths.push(b'\0');
     }
@@ -1657,7 +1657,7 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
     {
         let (fid, mode) = match either_or_both {
             EitherOrBoth::Left(info) => {
-                RawHgManifest::write_one_entry(&WithPath::new(path, info), &mut manifest);
+                RawHgManifest::write_one_entry(&WithPath::new(path, info), &mut manifest).unwrap();
                 continue;
             }
             EitherOrBoth::Both(_, DiffTreeItem::Deleted { .. }) => {
@@ -1701,7 +1701,7 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
                 attr: mode.try_into().unwrap(),
             },
         );
-        RawHgManifest::write_one_entry(&entry, &mut manifest);
+        RawHgManifest::write_one_entry(&entry, &mut manifest).unwrap();
         paths.extend_from_slice(entry.path());
         paths.push(b'\0');
     }
@@ -1874,7 +1874,7 @@ fn create_merge_changeset(
                     attr: l.mode.try_into().unwrap(),
                 },
             );
-            RawHgManifest::write_one_entry(&line, &mut manifest);
+            RawHgManifest::write_one_entry(&line, &mut manifest).unwrap();
             if !unchanged
                 || p1_attr
                     .map(|attr| attr != line.inner().attr)
