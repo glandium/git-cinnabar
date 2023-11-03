@@ -18,7 +18,6 @@ use getset::{CopyGetters, Getters};
 use hex_literal::hex;
 use itertools::EitherOrBoth;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 
 use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry, TreeId};
 use crate::oid::{Abbrev, ObjectId};
@@ -921,7 +920,7 @@ mod refs {
     }
 }
 
-static REFS_LOCK: Lazy<RwLock<()>> = Lazy::new(|| RwLock::new(()));
+static REFS_LOCK: RwLock<()> = RwLock::new(());
 
 pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, CommitId) -> Result<(), E>>(
     prefix: S,

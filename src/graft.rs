@@ -8,7 +8,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use bstr::ByteSlice;
-use once_cell::sync::Lazy;
 
 use crate::cinnabar::GitChangesetId;
 use crate::git::{CommitId, TreeId};
@@ -28,11 +27,14 @@ pub fn grafted() -> bool {
 
 static DID_SOMETHING: AtomicBool = AtomicBool::new(false);
 
-static GRAFT_TREES: Lazy<Mutex<BTreeMap<TreeId, Vec<CommitId>>>> =
-    Lazy::new(|| Mutex::new(BTreeMap::new()));
+static GRAFT_TREES: Mutex<BTreeMap<TreeId, Vec<CommitId>>> = Mutex::new(BTreeMap::new());
 
 pub fn graft_finish() -> Option<bool> {
-    Lazy::get(&GRAFT_TREES).map(|_| grafted() || DID_SOMETHING.load(Ordering::Relaxed))
+    if GRAFT_TREES.lock().unwrap().is_empty() {
+        None
+    } else {
+        Some(grafted() || DID_SOMETHING.load(Ordering::Relaxed))
+    }
 }
 
 pub fn init_graft() {
@@ -68,12 +70,12 @@ pub fn graft(
     tree: TreeId,
     parents: &[GitChangesetId],
 ) -> Result<Option<CommitId>, GraftError> {
-    if Lazy::get(&GRAFT_TREES).is_none() {
+    let mut graft_trees = GRAFT_TREES.lock().unwrap();
+    if graft_trees.is_empty() {
         return Ok(None);
     }
 
     let changeset = raw_changeset.parse().unwrap();
-    let mut graft_trees = GRAFT_TREES.lock().unwrap();
     let graft_trees_entry = graft_trees.get_mut(&tree).ok_or(GraftError::NoGraft)?;
     let candidates = graft_trees_entry
         .iter()

@@ -992,7 +992,7 @@ pub fn get_tags() -> TagSet {
     tags
 }
 
-static BUNDLE_BLOB: Lazy<Mutex<Option<object_id>>> = Lazy::new(|| Mutex::new(None));
+static BUNDLE_BLOB: Mutex<Option<object_id>> = Mutex::new(None);
 
 #[no_mangle]
 pub unsafe extern "C" fn store_changesets_metadata(result: *mut object_id) {
