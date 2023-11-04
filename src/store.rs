@@ -1413,15 +1413,9 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
     } else {
         Box::from(input)
     };
-    let mut changesets = Vec::new();
-    for changeset in
-        RevChunkIter::new(version, &mut input).progress(|n| format!("Reading {n} changesets"))
-    {
-        changesets.push(Box::new((
-            HgChangesetId::from_unchecked(HgObjectId::from(changeset.delta_node().clone())),
-            changeset,
-        )));
-    }
+    let mut changesets = RevChunkIter::new(version, &mut input)
+        .progress(|n| format!("Reading {n} changesets"))
+        .collect_vec();
     for manifest in RevChunkIter::new(version, &mut input)
         .progress(|n| format!("Reading and importing {n} manifests"))
     {
@@ -1523,7 +1517,8 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
         .drain(..)
         .progress(|n| format!("Importing {n} changesets"))
     {
-        let (delta_node, changeset) = &*changeset;
+        let delta_node =
+            HgChangesetId::from_unchecked(HgObjectId::from(changeset.delta_node().clone()));
         let changeset_id =
             HgChangesetId::from_unchecked(HgObjectId::from(changeset.node().clone()));
         let parents = [changeset.parent1(), changeset.parent2()]
@@ -1534,7 +1529,7 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
             })
             .collect::<Vec<_>>();
 
-        let reference_cs = if delta_node == &previous.0 {
+        let reference_cs = if delta_node == previous.0 {
             previous.1
         } else if delta_node.is_null() {
             RawHgChangeset(Box::new([]))

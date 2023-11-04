@@ -11,6 +11,7 @@ use std::iter::repeat;
 use std::mem::{self, MaybeUninit};
 use std::os::raw::c_int;
 use std::ptr::NonNull;
+use std::rc::Rc;
 use std::str::FromStr;
 
 use bstr::ByteSlice;
@@ -94,6 +95,18 @@ impl rev_chunk {
     }
 }
 
+impl Drop for rev_chunk {
+    fn drop(&mut self) {
+        let delta_node_addr = self.delta_node.as_ptr() as usize;
+        let raw_addr = self.raw.as_ptr() as usize;
+        if delta_node_addr < raw_addr || delta_node_addr >= raw_addr + 80 {
+            unsafe {
+                mem::drop(Rc::from_raw(self.delta_node.as_ptr()));
+            }
+        }
+    }
+}
+
 pub fn read_rev_chunk<R: Read>(mut r: R, out: &mut strbuf) {
     let mut buf = [0; 4];
     r.read_exact(&mut buf).unwrap();
@@ -129,8 +142,8 @@ fn skip_bundle2_chunk<R: Read>(mut r: R) -> io::Result<u64> {
 
 pub struct RevChunkIter<R: Read> {
     version: u8,
-    delta_node: Option<hg_object_id>,
-    next_delta_node: Option<hg_object_id>,
+    delta_node: Option<Rc<hg_object_id>>,
+    next_delta_node: Option<Rc<hg_object_id>>,
     reader: R,
 }
 
@@ -149,11 +162,6 @@ impl<R: Read> Iterator for RevChunkIter<R> {
     type Item = rev_chunk;
 
     fn next(&mut self) -> Option<rev_chunk> {
-        let first = self.delta_node.take().is_none();
-        self.delta_node = self
-            .next_delta_node
-            .take()
-            .or_else(|| Some(HgObjectId::NULL.into()));
         let mut buf = strbuf::new();
         read_rev_chunk(&mut self.reader, &mut buf);
         if buf.as_bytes().is_empty() {
@@ -163,16 +171,29 @@ impl<R: Read> Iterator for RevChunkIter<R> {
         if buf.as_bytes().len() < data_offset {
             die!("Invalid revchunk");
         }
-        let chunk = unsafe {
-            let node = NonNull::new_unchecked(buf.as_ptr()).cast();
+        Some(unsafe {
+            let node: NonNull<hg_object_id> = NonNull::new_unchecked(buf.as_ptr()).cast();
             let parent1 = NonNull::new_unchecked(buf.as_ptr().add(20)).cast();
             let parent2 = NonNull::new_unchecked(buf.as_ptr().add(40)).cast();
-            let delta_node = NonNull::new_unchecked(
-                (self.version == 1)
-                    .then_some(())
-                    .and(self.delta_node.as_ref()) // Yes, this is bad.
-                    .map_or_else(|| buf.as_ptr().add(60) as _, |n| n as *const _ as *mut _),
-            );
+            let delta_node = if self.version == 1 {
+                mem::swap(&mut self.delta_node, &mut self.next_delta_node);
+                let delta_node = self.delta_node.clone().take().map_or(parent1, |rc| {
+                    NonNull::new_unchecked(Rc::into_raw(rc) as *mut _)
+                });
+
+                let next_delta_node = if let Some(next_delta_node) =
+                    Rc::get_mut(self.next_delta_node.get_or_insert_with(Default::default))
+                {
+                    next_delta_node
+                } else {
+                    self.next_delta_node = Some(Rc::new(hg_object_id::default()));
+                    Rc::get_mut(self.next_delta_node.as_mut().unwrap()).unwrap()
+                };
+                *next_delta_node = node.as_ref().clone();
+                delta_node
+            } else {
+                NonNull::new_unchecked(buf.as_ptr().add(60)).cast()
+            };
             let diff_data = NonNull::new_unchecked(buf.as_ptr().add(data_offset)).cast();
             rev_chunk {
                 raw: buf,
@@ -182,14 +203,7 @@ impl<R: Read> Iterator for RevChunkIter<R> {
                 delta_node,
                 diff_data,
             }
-        };
-        if self.version == 1 {
-            if first {
-                self.delta_node = Some(chunk.parent1().clone());
-            }
-            self.next_delta_node = Some(chunk.node().clone());
-        }
-        Some(chunk)
+        })
     }
 }
 
