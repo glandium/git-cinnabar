@@ -84,20 +84,20 @@ pub struct rev_diff_part<'a> {
 }
 
 impl rev_chunk {
-    pub fn node(&self) -> &hg_object_id {
-        unsafe { self.node.as_ref() }
+    pub fn node(&self) -> HgObjectId {
+        unsafe { self.node.as_ref() }.clone().into()
     }
 
-    pub fn parent1(&self) -> &hg_object_id {
-        unsafe { self.parent1.as_ref() }
+    pub fn parent1(&self) -> HgObjectId {
+        unsafe { self.parent1.as_ref() }.clone().into()
     }
 
-    pub fn parent2(&self) -> &hg_object_id {
-        unsafe { self.parent2.as_ref() }
+    pub fn parent2(&self) -> HgObjectId {
+        unsafe { self.parent2.as_ref() }.clone().into()
     }
 
-    pub fn delta_node(&self) -> &hg_object_id {
-        unsafe { self.delta_node.as_ref() }
+    pub fn delta_node(&self) -> HgObjectId {
+        unsafe { self.delta_node.as_ref() }.clone().into()
     }
 
     pub fn iter_diff(&self) -> RevDiffIter {
@@ -855,13 +855,10 @@ impl<R: Read> BundleConnection<R> {
             for chunk in
                 RevChunkIter::new(version, part).progress(|n| format!("Analyzing {n} changesets"))
             {
-                let node = HgChangesetId::from_unchecked(HgObjectId::from(chunk.node().clone()));
-                let parent1 =
-                    HgChangesetId::from_unchecked(HgObjectId::from(chunk.parent1().clone()));
-                let parent2 =
-                    HgChangesetId::from_unchecked(HgObjectId::from(chunk.parent2().clone()));
-                let delta_node =
-                    HgChangesetId::from_unchecked(HgObjectId::from(chunk.delta_node().clone()));
+                let node = HgChangesetId::from_unchecked(chunk.node());
+                let parent1 = HgChangesetId::from_unchecked(chunk.parent1());
+                let parent2 = HgChangesetId::from_unchecked(chunk.parent2());
+                let delta_node = HgChangesetId::from_unchecked(chunk.delta_node());
                 let parents = [parent1, parent2];
                 let parents = parents
                     .into_iter()

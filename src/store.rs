@@ -35,7 +35,7 @@ use crate::cinnabar::{
 };
 use crate::git::{BlobId, CommitId, GitObjectId, TreeId, TreeIsh};
 use crate::graft::{graft, grafted, GraftError};
-use crate::hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
+use crate::hg::{HgChangesetId, HgFileId, HgManifestId};
 use crate::hg_bundle::{
     read_rev_chunk, rev_chunk, BundlePartInfo, BundleSpec, BundleWriter, RevChunkIter,
 };
@@ -1419,9 +1419,8 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
     for manifest in RevChunkIter::new(version, &mut input)
         .progress(|n| format!("Reading and importing {n} manifests"))
     {
-        let mid = HgManifestId::from_unchecked(HgObjectId::from(manifest.node().clone()));
-        let delta_node =
-            HgManifestId::from_unchecked(HgObjectId::from(manifest.delta_node().clone()));
+        let mid = HgManifestId::from_unchecked(manifest.node());
+        let delta_node = HgManifestId::from_unchecked(manifest.delta_node());
         let reference_mn = if delta_node.is_null() {
             RawHgManifest::empty()
         } else {
@@ -1476,10 +1475,10 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
     } {
         files.set(files.get() + 1);
         for (file, ()) in RevChunkIter::new(version, &mut input).zip(&mut progress) {
-            let node = HgFileId::from_unchecked(HgObjectId::from(file.node().clone()));
+            let node = HgFileId::from_unchecked(file.node());
             let parents = [
-                HgFileId::from_unchecked(HgObjectId::from(file.parent1().clone())),
-                HgFileId::from_unchecked(HgObjectId::from(file.parent2().clone())),
+                HgFileId::from_unchecked(file.parent1()),
+                HgFileId::from_unchecked(file.parent2()),
             ];
             // Try to detect issue #207 as early as possible.
             // Keep track of file roots of files with metadata and at least
@@ -1517,14 +1516,12 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
         .drain(..)
         .progress(|n| format!("Importing {n} changesets"))
     {
-        let delta_node =
-            HgChangesetId::from_unchecked(HgObjectId::from(changeset.delta_node().clone()));
-        let changeset_id =
-            HgChangesetId::from_unchecked(HgObjectId::from(changeset.node().clone()));
+        let delta_node = HgChangesetId::from_unchecked(changeset.delta_node());
+        let changeset_id = HgChangesetId::from_unchecked(changeset.node());
         let parents = [changeset.parent1(), changeset.parent2()]
             .into_iter()
             .filter_map(|p| {
-                let p = HgChangesetId::from_unchecked(HgObjectId::from(p.clone()));
+                let p = HgChangesetId::from_unchecked(p);
                 (!p.is_null()).then_some(p)
             })
             .collect::<Vec<_>>();
