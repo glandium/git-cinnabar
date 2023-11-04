@@ -1305,6 +1305,8 @@ pub fn create_changeset(
     (metadata.changeset_id, metadata_id)
 }
 
+// The rev_chunk has a non-FFI-safe field that is not exposed to C.
+#[allow(improper_ctypes)]
 extern "C" {
     pub fn store_manifest(chunk: *const rev_chunk, reference_mn: strslice, stored_mn: strslice_mut);
     fn store_file(chunk: *const rev_chunk);
@@ -1444,7 +1446,7 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
         let mut stored_manifest = Rc::builder_with_capacity(mn_size);
         unsafe {
             store_manifest(
-                &manifest,
+                &manifest.into(),
                 (&reference_mn).into(),
                 (&mut stored_manifest.spare_capacity_mut()[..mn_size]).into(),
             );
@@ -1469,9 +1471,8 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
     let mut stored_files = STORED_FILES.lock().unwrap();
     let null_parents = [HgFileId::NULL; 2];
     while {
-        let mut buf = strbuf::new();
-        read_rev_chunk(&mut input, &mut buf);
-        !buf.as_bytes().is_empty()
+        let buf = read_rev_chunk(&mut input);
+        !buf.is_empty()
     } {
         files.set(files.get() + 1);
         for (file, ()) in RevChunkIter::new(version, &mut input).zip(&mut progress) {
@@ -1505,7 +1506,7 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
                 }
             }
             unsafe {
-                store_file(&file);
+                store_file(&file.into());
             }
         }
     }

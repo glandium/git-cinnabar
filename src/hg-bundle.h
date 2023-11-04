@@ -12,7 +12,7 @@
 #include <stdio.h>
 
 struct rev_chunk {
-	struct strbuf raw;
+	struct strslice raw;
 
 	const struct hg_object_id *node;
 	const struct hg_object_id *parent1;

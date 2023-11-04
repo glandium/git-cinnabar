@@ -32,7 +32,7 @@ use crate::hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_connect::{encodecaps, HgConnection, HgConnectionBase, HgRepo};
 use crate::hg_data::find_file_parents;
 use crate::libcinnabar::{hg_object_id, strslice};
-use crate::libgit::{die, strbuf, RawCommit};
+use crate::libgit::{die, RawCommit};
 use crate::oid::ObjectId;
 use crate::progress::Progress;
 use crate::store::{
@@ -45,7 +45,10 @@ use crate::{get_changes, HELPER_LOCK};
 
 #[no_mangle]
 pub unsafe extern "C" fn rev_diff_start_iter(iterator: *mut strslice, chunk: *const rev_chunk) {
-    ptr::write(iterator, chunk.as_ref().unwrap().iter_diff().0.into());
+    ptr::write(
+        iterator,
+        chunk.as_ref().unwrap().revchunk.iter_diff().0.into(),
+    );
 }
 
 #[no_mangle]
@@ -67,12 +70,12 @@ pub unsafe extern "C" fn rev_diff_iter_next(
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct rev_chunk {
-    raw: strbuf,
+    raw: strslice<'static>,
     node: NonNull<hg_object_id>,
     parent1: NonNull<hg_object_id>,
     parent2: NonNull<hg_object_id>,
     delta_node: NonNull<hg_object_id>,
-    data_offset: usize,
+    revchunk: RevChunk,
 }
 
 #[allow(non_camel_case_types)]
@@ -83,49 +86,70 @@ pub struct rev_diff_part<'a> {
     data: strslice<'a>,
 }
 
-impl rev_chunk {
+pub struct RevChunk {
+    raw: ImmutBString,
+    delta_node: Option<Rc<HgObjectId>>,
+}
+
+impl RevChunk {
     pub fn node(&self) -> HgObjectId {
-        unsafe { self.node.as_ref() }.clone().into()
+        HgObjectId::from_raw_bytes(&self.raw[0..20]).unwrap()
     }
 
     pub fn parent1(&self) -> HgObjectId {
-        unsafe { self.parent1.as_ref() }.clone().into()
+        HgObjectId::from_raw_bytes(&self.raw[20..40]).unwrap()
     }
 
     pub fn parent2(&self) -> HgObjectId {
-        unsafe { self.parent2.as_ref() }.clone().into()
+        HgObjectId::from_raw_bytes(&self.raw[40..60]).unwrap()
     }
 
     pub fn delta_node(&self) -> HgObjectId {
-        unsafe { self.delta_node.as_ref() }.clone().into()
+        self.delta_node.as_ref().map_or_else(
+            || HgObjectId::from_raw_bytes(&self.raw[60..80]).unwrap(),
+            |oid| **oid,
+        )
     }
 
     pub fn iter_diff(&self) -> RevDiffIter {
-        RevDiffIter(&self.raw.as_bytes()[self.data_offset..])
+        RevDiffIter(&self.raw[if self.delta_node.is_some() { 80 } else { 100 }..])
     }
 }
 
-impl Drop for rev_chunk {
-    fn drop(&mut self) {
-        let delta_node_addr = self.delta_node.as_ptr() as usize;
-        let raw_addr = self.raw.as_ptr() as usize;
-        if delta_node_addr < raw_addr || delta_node_addr >= raw_addr + 80 {
-            unsafe {
-                mem::drop(Rc::from_raw(self.delta_node.as_ptr()));
+impl From<RevChunk> for rev_chunk {
+    fn from(mut chunk: RevChunk) -> Self {
+        let buf = &mut chunk.raw[..];
+        unsafe {
+            rev_chunk {
+                raw: mem::transmute(strslice::from(&mut buf[..])),
+                node: NonNull::new_unchecked(buf.as_mut_ptr()).cast(),
+                parent1: NonNull::new_unchecked(buf.as_mut_ptr().add(20)).cast(),
+                parent2: NonNull::new_unchecked(buf.as_mut_ptr().add(40)).cast(),
+                delta_node: chunk
+                    .delta_node
+                    .as_ref()
+                    .map_or_else(
+                        || NonNull::new_unchecked(buf.as_mut_ptr().add(60)),
+                        |oid| NonNull::new_unchecked(oid.as_raw_bytes() as *const _ as *mut _),
+                    )
+                    .cast(),
+                revchunk: chunk,
             }
         }
     }
 }
 
-pub fn read_rev_chunk<R: Read>(mut r: R, out: &mut strbuf) {
+pub fn read_rev_chunk<R: Read>(mut r: R) -> ImmutBString {
     let mut buf = [0; 4];
     r.read_exact(&mut buf).unwrap();
     let len = BigEndian::read_u32(&buf) as u64;
     if len == 0 {
-        return;
+        return Box::new([]);
     }
+    let mut result = Vec::with_capacity(len.try_into().unwrap());
     // TODO: should error out on short read
-    copy(&mut r.take(len.checked_sub(4).unwrap()), out).unwrap();
+    copy(&mut r.take(len.checked_sub(4).unwrap()), &mut result).unwrap();
+    result.into_boxed_slice()
 }
 
 pub fn read_bundle2_chunk<R: Read>(mut r: R) -> io::Result<ImmutBString> {
@@ -152,8 +176,8 @@ fn skip_bundle2_chunk<R: Read>(mut r: R) -> io::Result<u64> {
 
 pub struct RevChunkIter<R: Read> {
     version: u8,
-    delta_node: Option<Rc<hg_object_id>>,
-    next_delta_node: Option<Rc<hg_object_id>>,
+    delta_node: Option<Rc<HgObjectId>>,
+    next_delta_node: Option<Rc<HgObjectId>>,
     reader: R,
 }
 
@@ -169,11 +193,10 @@ impl<R: Read> RevChunkIter<R> {
 }
 
 impl<R: Read> Iterator for RevChunkIter<R> {
-    type Item = rev_chunk;
+    type Item = RevChunk;
 
-    fn next(&mut self) -> Option<rev_chunk> {
-        let mut buf = strbuf::new();
-        read_rev_chunk(&mut self.reader, &mut buf);
+    fn next(&mut self) -> Option<RevChunk> {
+        let buf = read_rev_chunk(&mut self.reader);
         if buf.as_bytes().is_empty() {
             return None;
         }
@@ -181,38 +204,34 @@ impl<R: Read> Iterator for RevChunkIter<R> {
         if buf.as_bytes().len() < data_offset {
             die!("Invalid revchunk");
         }
-        Some(unsafe {
-            let node: NonNull<hg_object_id> = NonNull::new_unchecked(buf.as_ptr()).cast();
-            let parent1 = NonNull::new_unchecked(buf.as_ptr().add(20)).cast();
-            let parent2 = NonNull::new_unchecked(buf.as_ptr().add(40)).cast();
-            let delta_node = if self.version == 1 {
-                mem::swap(&mut self.delta_node, &mut self.next_delta_node);
-                let delta_node = self.delta_node.clone().take().map_or(parent1, |rc| {
-                    NonNull::new_unchecked(Rc::into_raw(rc) as *mut _)
-                });
 
-                let next_delta_node = if let Some(next_delta_node) =
-                    Rc::get_mut(self.next_delta_node.get_or_insert_with(Default::default))
-                {
-                    next_delta_node
-                } else {
-                    self.next_delta_node = Some(Rc::new(hg_object_id::default()));
-                    Rc::get_mut(self.next_delta_node.as_mut().unwrap()).unwrap()
-                };
-                *next_delta_node = node.as_ref().clone();
-                delta_node
+        let mut chunk = RevChunk {
+            raw: buf,
+            delta_node: None,
+        };
+
+        chunk.delta_node = (self.version == 1).then(|| {
+            mem::swap(&mut self.delta_node, &mut self.next_delta_node);
+            let delta_node = self
+                .delta_node
+                .clone()
+                .take()
+                .unwrap_or_else(|| chunk.parent1().into());
+
+            let next_delta_node = if let Some(next_delta_node) = Rc::get_mut(
+                self.next_delta_node
+                    .get_or_insert_with(|| Rc::new(HgObjectId::NULL)),
+            ) {
+                next_delta_node
             } else {
-                NonNull::new_unchecked(buf.as_ptr().add(60)).cast()
+                self.next_delta_node = Some(Rc::new(HgObjectId::NULL));
+                Rc::get_mut(self.next_delta_node.as_mut().unwrap()).unwrap()
             };
-            rev_chunk {
-                raw: buf,
-                node,
-                parent1,
-                parent2,
-                delta_node,
-                data_offset,
-            }
-        })
+            *next_delta_node = chunk.node();
+            delta_node
+        });
+
+        Some(chunk)
     }
 }
 
