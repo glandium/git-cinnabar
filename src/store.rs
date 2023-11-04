@@ -8,12 +8,12 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::ffi::OsStr;
 use std::io::{copy, BufRead, BufReader, Read, Write};
 use std::iter::{repeat, IntoIterator};
+use std::mem;
 use std::num::NonZeroU32;
 use std::os::raw::{c_char, c_int};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 use std::sync::Mutex;
-use std::{env, mem};
 
 use bit_vec::BitVec;
 use bstr::{BStr, BString, ByteSlice};
@@ -1401,7 +1401,9 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
     }
     let mut bundle = strbuf::new();
     let mut bundle_writer = None;
-    let mut input = if check_enabled(Checks::UNBUNDLER) && env::var("GIT_DIR").is_ok() {
+    let mut input = if check_enabled(Checks::UNBUNDLER)
+        && CHANGESET_HEADS.lock().unwrap().heads().next().is_some()
+    {
         bundle_writer = Some(BundleWriter::new(BundleSpec::V2Zstd, &mut bundle).unwrap());
         let bundle_writer = bundle_writer.as_mut().unwrap();
         let info =
