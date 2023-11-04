@@ -587,13 +587,17 @@ pub fn get_store_bundle(
     heads: &[HgChangesetId],
     common: &[HgChangesetId],
 ) -> Result<(), ImmutBString> {
-    let bundle2caps = conn.get_capability(b"bundle2").map(|_| {
-        let bundle2caps = [("HG20", None), ("changegroup", Some(&["01", "02"]))];
-        format!(
-            "HG20,bundle2={}",
-            percent_encode(encodecaps(bundle2caps).as_bytes(), PYTHON_QUOTE_SET)
-        )
-    });
+    let bundle2caps = if check_enabled(Checks::NO_BUNDLE2) {
+        None
+    } else {
+        conn.get_capability(b"bundle2").map(|_| {
+            let bundle2caps = [("HG20", None), ("changegroup", Some(&["01", "02"]))];
+            format!(
+                "HG20,bundle2={}",
+                percent_encode(encodecaps(bundle2caps).as_bytes(), PYTHON_QUOTE_SET)
+            )
+        })
+    };
     conn.getbundle(heads, common, bundle2caps.as_deref())
         .and_then(|r| {
             let mut bundle = BundleReader::new(r).unwrap();
