@@ -8,13 +8,13 @@ use std::fmt::Display;
 use std::fs::File;
 use std::io::{self, copy, Chain, Cursor, ErrorKind, Read, Write};
 use std::iter::repeat;
-use std::mem::{self, MaybeUninit};
+use std::mem;
 use std::os::raw::c_int;
-use std::ptr::NonNull;
+use std::ptr::{self, NonNull};
 use std::rc::Rc;
 use std::str::FromStr;
 
-use bstr::ByteSlice;
+use bstr::{BStr, ByteSlice};
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use bzip2::read::BzDecoder;
 use bzip2::write::BzEncoder;
@@ -43,10 +43,25 @@ use crate::util::{FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::textdiff;
 use crate::{get_changes, HELPER_LOCK};
 
-extern "C" {
-    fn rev_diff_start_iter(iterator: *mut rev_diff_part, chunk: *const rev_chunk);
+#[no_mangle]
+pub unsafe extern "C" fn rev_diff_start_iter(iterator: *mut strslice, chunk: *const rev_chunk) {
+    ptr::write(iterator, chunk.as_ref().unwrap().iter_diff().0.into());
+}
 
-    fn rev_diff_iter_next(iterator: *mut rev_diff_part) -> c_int;
+#[no_mangle]
+pub unsafe extern "C" fn rev_diff_iter_next(
+    iterator: *mut strslice,
+    part: *mut rev_diff_part,
+) -> c_int {
+    let mut diff_iter = RevDiffIter(iterator.as_mut().unwrap().as_bytes());
+    let next = diff_iter.next();
+    ptr::write(iterator, diff_iter.0.into());
+    if let Some(p) = next {
+        ptr::write(part, mem::transmute(p.0));
+        1
+    } else {
+        0
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -57,7 +72,7 @@ pub struct rev_chunk {
     parent1: NonNull<hg_object_id>,
     parent2: NonNull<hg_object_id>,
     delta_node: NonNull<hg_object_id>,
-    diff_data: NonNull<u8>,
+    data_offset: usize,
 }
 
 #[allow(non_camel_case_types)]
@@ -66,7 +81,6 @@ pub struct rev_diff_part<'a> {
     start: usize,
     end: usize,
     data: strslice<'a>,
-    chunk: &'a rev_chunk,
 }
 
 impl rev_chunk {
@@ -87,11 +101,7 @@ impl rev_chunk {
     }
 
     pub fn iter_diff(&self) -> RevDiffIter {
-        unsafe {
-            let mut part = MaybeUninit::zeroed();
-            rev_diff_start_iter(part.as_mut_ptr(), self);
-            RevDiffIter(part.assume_init())
-        }
+        RevDiffIter(&self.raw.as_bytes()[self.data_offset..])
     }
 }
 
@@ -194,36 +204,65 @@ impl<R: Read> Iterator for RevChunkIter<R> {
             } else {
                 NonNull::new_unchecked(buf.as_ptr().add(60)).cast()
             };
-            let diff_data = NonNull::new_unchecked(buf.as_ptr().add(data_offset)).cast();
             rev_chunk {
                 raw: buf,
                 node,
                 parent1,
                 parent2,
                 delta_node,
-                diff_data,
+                data_offset,
             }
         })
     }
 }
 
-pub struct RevDiffIter<'a>(rev_diff_part<'a>);
+#[repr(transparent)]
+pub struct RevDiffIter<'a>(&'a [u8]);
 
-pub struct RevDiffPart {
-    pub start: usize,
-    pub end: usize,
-    pub data: ImmutBString,
-}
+#[repr(transparent)]
+pub struct RevDiffPart<'a>(rev_diff_part<'a>);
 
 impl<'a> Iterator for RevDiffIter<'a> {
-    type Item = RevDiffPart;
+    type Item = RevDiffPart<'a>;
 
-    fn next(&mut self) -> Option<RevDiffPart> {
-        unsafe { rev_diff_iter_next(&mut self.0) != 0 }.then(|| RevDiffPart {
-            start: self.0.start,
-            end: self.0.end,
-            data: self.0.data.as_bytes().to_vec().into_boxed_slice(),
-        })
+    fn next(&mut self) -> Option<RevDiffPart<'a>> {
+        let slice = self.0.as_bytes();
+        if slice.is_empty() {
+            return None;
+        }
+        if slice.len() < 12 {
+            die!("Invalid revchunk");
+        }
+        let start = usize::try_from(BigEndian::read_u32(&slice[0..4])).unwrap();
+        let end = usize::try_from(BigEndian::read_u32(&slice[4..8])).unwrap();
+        let len = usize::try_from(BigEndian::read_u32(&slice[8..12])).unwrap();
+        let slice = &slice[12..];
+        if slice.len() < len {
+            die!("Invalid revchunk");
+        }
+        let (data, slice) = slice.split_at(len);
+        unsafe {
+            ptr::write(&mut self.0 as *mut _, slice);
+        }
+        Some(RevDiffPart(rev_diff_part {
+            start,
+            end,
+            data: data.into(),
+        }))
+    }
+}
+
+impl<'a> RevDiffPart<'a> {
+    pub fn start(&self) -> usize {
+        self.0.start
+    }
+
+    pub fn end(&self) -> usize {
+        self.0.end
+    }
+
+    pub fn data(&self) -> &BStr {
+        self.0.data.as_bytes().as_bstr()
     }
 }
 
@@ -837,12 +876,12 @@ impl<R: Read> BundleConnection<R> {
                 let mut last_end = 0;
                 let mut raw_changeset = Vec::new();
                 for diff in chunk.iter_diff() {
-                    if diff.start > reference_cs.len() || diff.start < last_end {
+                    if diff.start() > reference_cs.len() || diff.start() < last_end {
                         die!("Malformed changeset chunk for {node}");
                     }
-                    raw_changeset.extend_from_slice(&reference_cs[last_end..diff.start]);
-                    raw_changeset.extend_from_slice(&diff.data);
-                    last_end = diff.end;
+                    raw_changeset.extend_from_slice(&reference_cs[last_end..diff.start()]);
+                    raw_changeset.extend_from_slice(diff.data());
+                    last_end = diff.end();
                 }
                 if reference_cs.len() < last_end {
                     die!("Malformed changeset chunk for {node}");

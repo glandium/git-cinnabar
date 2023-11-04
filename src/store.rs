@@ -1430,12 +1430,12 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
         let mut last_end = 0;
         let mut mn_size = 0;
         for diff in manifest.iter_diff() {
-            if diff.start > reference_mn.len() || diff.start < last_end {
+            if diff.start() > reference_mn.len() || diff.start() < last_end {
                 die!("Malformed changeset chunk for {mid}");
             }
-            mn_size += diff.start - last_end;
-            mn_size += diff.data.len();
-            last_end = diff.end;
+            mn_size += diff.start() - last_end;
+            mn_size += diff.data().len();
+            last_end = diff.end();
         }
         if reference_mn.len() < last_end {
             die!("Malformed changeset chunk for {mid}");
@@ -1500,7 +1500,7 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
                 }
             } else if parents == null_parents {
                 if let Some(diff) = file.iter_diff().next() {
-                    if diff.start == 0 && diff.data.get(..2) == Some(b"\x01\n") {
+                    if diff.start() == 0 && diff.data().get(..2) == Some(b"\x01\n") {
                         stored_files.insert(node, parents);
                     }
                 }
@@ -1540,12 +1540,12 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
         let mut last_end = 0;
         let mut raw_changeset = Vec::new();
         for diff in changeset.iter_diff() {
-            if diff.start > reference_cs.len() || diff.start < last_end {
+            if diff.start() > reference_cs.len() || diff.start() < last_end {
                 die!("Malformed changeset chunk for {changeset_id}");
             }
-            raw_changeset.extend_from_slice(&reference_cs[last_end..diff.start]);
-            raw_changeset.extend_from_slice(&diff.data);
-            last_end = diff.end;
+            raw_changeset.extend_from_slice(&reference_cs[last_end..diff.start()]);
+            raw_changeset.extend_from_slice(diff.data());
+            last_end = diff.end();
         }
         if reference_cs.len() < last_end {
             die!("Malformed changeset chunk for {changeset_id}");

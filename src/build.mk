@@ -61,7 +61,6 @@ all:: git-cinnabar$X
 CINNABAR_OBJECTS += cinnabar-fast-import.o
 CINNABAR_OBJECTS += cinnabar-helper.o
 CINNABAR_OBJECTS += cinnabar-notes.o
-CINNABAR_OBJECTS += hg-bundle.o
 CINNABAR_OBJECTS += hg-connect-stdio.o
 CINNABAR_OBJECTS += hg-data.o
 CINNABAR_OBJECTS += mingw.o

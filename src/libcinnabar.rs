@@ -12,6 +12,7 @@ use crate::libgit::{child_process, object_id};
 use crate::oid::{Abbrev, ObjectId};
 
 #[allow(non_camel_case_types)]
+#[derive(Clone, Debug)]
 #[repr(C)]
 pub struct strslice<'a> {
     len: usize,

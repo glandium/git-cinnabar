@@ -20,19 +20,17 @@ struct rev_chunk {
 	// Only in changegroupv2
 	const struct hg_object_id *delta_node;
 /*	const struct hg_object_id *changeset; // We actually don't care about this */
-	const unsigned char *diff_data;
 };
 
 struct rev_diff_part {
 	size_t start;
 	size_t end;
 	struct strslice data;
-	struct rev_chunk *chunk;
 };
 
-void rev_diff_start_iter(struct rev_diff_part *iterator,
+void rev_diff_start_iter(struct strslice *iterator,
                          struct rev_chunk *chunk);
 
-int rev_diff_iter_next(struct rev_diff_part *iterator);
+int rev_diff_iter_next(struct strslice *iterator, struct rev_diff_part *part);
 
 #endif

@@ -524,7 +524,8 @@ void store_file(struct rev_chunk *chunk)
 	static struct hg_file last_file;
 	struct hg_file file;
 	struct strbuf data = STRBUF_INIT;
-	struct rev_diff_part diff;
+	struct strslice diff;
+	struct rev_diff_part part;
 	size_t last_end = 0;
 
 	if (is_empty_hg_file(chunk->node))
@@ -539,15 +540,15 @@ void store_file(struct rev_chunk *chunk)
 	}
 
 	rev_diff_start_iter(&diff, chunk);
-	while (rev_diff_iter_next(&diff)) {
-		if (diff.start > last_file.file.len || diff.start < last_end)
+	while (rev_diff_iter_next(&diff, &part)) {
+		if (part.start > last_file.file.len || part.start < last_end)
 			die("Malformed file chunk for %s",
 			    hg_oid_to_hex(chunk->node));
 		strbuf_add(&data, last_file.file.buf + last_end,
-		           diff.start - last_end);
-		strbuf_addslice(&data, diff.data);
+		           part.start - last_end);
+		strbuf_addslice(&data, part.data);
 
-		last_end = diff.end;
+		last_end = part.end;
 	}
 
 	if (last_file.file.len < last_end)
@@ -643,7 +644,8 @@ void store_manifest(struct rev_chunk *chunk,
 	struct strbuf path = STRBUF_INIT;
 	struct strbuf data = STRBUF_INIT;
 	struct strslice_mut manifest = stored_manifest;
-	struct rev_diff_part diff;
+	struct strslice diff;
+	struct rev_diff_part part;
 	size_t last_end = 0;
 	struct strslice slice;
 	struct manifest_line line;
@@ -686,35 +688,35 @@ void store_manifest(struct rev_chunk *chunk,
 	}
 
 	rev_diff_start_iter(&diff, chunk);
-	while (rev_diff_iter_next(&diff)) {
+	while (rev_diff_iter_next(&diff, &part)) {
 		size_t len;
-		if (diff.start > last_manifest_content.len ||
-		    diff.start < last_end || diff.start > diff.end)
+		if (part.start > last_manifest_content.len ||
+		    part.start < last_end || part.start > part.end)
 			goto malformed;
-		len = diff.start - last_end;
+		len = part.start - last_end;
 		strslice_copy(
 			strslice_slice(last_manifest_content, last_end, len),
-			strslice_mut_slice(manifest, 0, diff.start - last_end));
+			strslice_mut_slice(manifest, 0, part.start - last_end));
 		manifest = strslice_mut_slice(manifest, len, SIZE_MAX);
-		strslice_copy(diff.data,
-		              strslice_mut_slice(manifest, 0, diff.data.len));
-		manifest = strslice_mut_slice(manifest, diff.data.len, SIZE_MAX);
+		strslice_copy(part.data,
+		              strslice_mut_slice(manifest, 0, part.data.len));
+		manifest = strslice_mut_slice(manifest, part.data.len, SIZE_MAX);
 
-		last_end = diff.end;
+		last_end = part.end;
 
 		// We assume manifest diffs are line-based.
-		if (diff.start > 0 &&
-		    last_manifest_content.buf[diff.start - 1] != '\n')
+		if (part.start > 0 &&
+		    last_manifest_content.buf[part.start - 1] != '\n')
 			goto malformed;
-		if (diff.end > 0 &&
-		    last_manifest_content.buf[diff.end - 1] != '\n')
+		if (part.end > 0 &&
+		    last_manifest_content.buf[part.end - 1] != '\n')
 			goto malformed;
 
 		// TODO: Avoid a remove+add cycle for same-file modifications.
 
 		// Process removed files.
-		slice = strslice_slice(last_manifest_content, diff.start,
-                                       diff.end - diff.start);
+		slice = strslice_slice(last_manifest_content, part.start,
+                                       part.end - part.start);
 		while (split_manifest_line(&slice, &line) == 0) {
 			manifest_metadata_path(&path, &line.path);
 			tree_content_remove(&last_manifest->branch_tree,
@@ -736,9 +738,9 @@ void store_manifest(struct rev_chunk *chunk,
 	}
 
 	rev_diff_start_iter(&diff, chunk);
-	while (rev_diff_iter_next(&diff)) {
+	while (rev_diff_iter_next(&diff, &part)) {
 		// Process added files.
-		slice = diff.data;
+		slice = part.data;
 		while (split_manifest_line(&slice, &line) == 0) {
 			uint16_t mode;
 			struct object_id file_node;
