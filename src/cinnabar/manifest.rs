@@ -2,9 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::cell::RefCell;
+use std::cmp;
 use std::io::{self, Write};
+use std::num::NonZeroUsize;
 
 use either::Either;
+use lru::LruCache;
 
 use crate::git::{git_oid_type, CommitId, MalformedTree, TreeId, TreeIsh};
 use crate::hg::{HgFileAttr, HgFileId, ManifestEntry};
@@ -31,11 +35,47 @@ impl TreeIsh for GitManifestId {
     }
 }
 
+#[derive(Clone)]
 pub struct GitManifestTree(RawTree);
+
+thread_local! {
+    static MANIFEST_TREE_CACHE: RefCell<(LruCache<GitManifestTreeId, GitManifestTree>, usize, usize)> = RefCell::new((LruCache::unbounded(), 0, 0));
+}
 
 impl GitManifestTree {
     pub fn read(oid: GitManifestTreeId) -> Option<GitManifestTree> {
-        RawTree::read(oid.into()).map(Self)
+        MANIFEST_TREE_CACHE.with(|cache| {
+            let (lru_cache, queries, misses) = &mut *cache.borrow_mut();
+            *queries += 1;
+            let result = lru_cache
+                .try_get_or_insert(oid, || {
+                    *misses += 1;
+                    RawTree::read(oid.into()).map(Self).ok_or(())
+                })
+                .ok()
+                .cloned();
+            let queries_limit = cmp::max(100, lru_cache.len() / 2);
+            if *queries >= queries_limit {
+                let miss_rate = *misses / (*queries / 10);
+                if (lru_cache.cap() == NonZeroUsize::MAX) || miss_rate >= 7 {
+                    lru_cache.resize(
+                        NonZeroUsize::new(lru_cache.len() + lru_cache.len() / 2 + 1).unwrap(),
+                    );
+                }
+                debug!(
+                    target: "manifesttreecache",
+                    "cap: {}, len: {} ; {} misses in the last {} queries ({:.1}%)",
+                    lru_cache.cap(),
+                    lru_cache.len(),
+                    *misses,
+                    *queries,
+                    (*misses as f64) * 100.0 / (*queries as f64)
+                );
+                *queries = 0;
+                *misses = 0;
+            }
+            result
+        })
     }
 
     pub fn read_treeish<T: TreeIsh<TreeId = GitManifestTreeId>>(t: T) -> Option<GitManifestTree> {

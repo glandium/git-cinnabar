@@ -451,6 +451,7 @@ dependencies = [
  "libc",
  "libz-sys",
  "log",
+ "lru",
  "make-cmd",
  "once_cell",
  "percent-encoding",
@@ -586,6 +587,12 @@ name = "log"
 version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
+
+[[package]]
+name = "lru"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1efa59af2ddfad1854ae27d75009d538d0998b4b2fd47083e743ac1a10e46c60"
 
 [[package]]
 name = "lzma-sys"

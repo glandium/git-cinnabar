@@ -94,6 +94,10 @@ version = "1"
 version = "0.4"
 features = ["std"]
 
+[dependencies.lru]
+version = "0.12"
+default-features = false
+
 [dependencies.regex]
 version = "1"
 default-features = false

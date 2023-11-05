@@ -5,6 +5,7 @@
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
 use std::fmt;
 use std::io::{self, Write};
+use std::mem;
 use std::num::ParseIntError;
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 use std::str::FromStr;
@@ -313,6 +314,17 @@ impl RawObject {
     }
 }
 
+impl Clone for RawObject {
+    fn clone(&self) -> Self {
+        let mut cloned = strbuf::new();
+        cloned.extend_from_slice(self.as_bytes());
+        let buf = cloned.as_ptr() as *const _;
+        let len = cloned.as_bytes().len();
+        mem::forget(cloned);
+        RawObject { buf, len }
+    }
+}
+
 impl Drop for RawObject {
     fn drop(&mut self) {
         unsafe {
@@ -323,7 +335,7 @@ impl Drop for RawObject {
 
 macro_rules! raw_object {
     ($t:ident | $oid_type:ident => $name:ident) => {
-        #[derive(Deref)]
+        #[derive(Deref, Clone)]
         pub struct $name(RawObject);
 
         impl $name {
