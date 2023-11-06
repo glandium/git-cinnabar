@@ -23,10 +23,6 @@ extern int metadata_flags;
 
 extern int cinnabar_check(int);
 
-extern struct oid_array manifest_heads;
-
-void ensure_heads(struct oid_array *heads);
-
 extern struct notes_tree git2hg, hg2git, files_meta;
 
 extern void ensure_notes(struct notes_tree *notes);
@@ -48,7 +44,6 @@ void create_git_tree(const struct object_id *tree_id,
                      const struct object_id *ref_tree,
                      struct object_id *result);
 
-void reset_manifest_heads(void);
 void do_reload(struct object_id *);
 unsigned int replace_map_size(void);
 

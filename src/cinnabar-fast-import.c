@@ -16,7 +16,6 @@ static void cinnabar_unregister_shallow(const struct object_id *oid);
 #include "hg-bundle.h"
 #include "hg-data.h"
 #include "list.h"
-#include "oid-array.h"
 #include "replace-object.h"
 #include "shallow.h"
 #include "strslice.h"
@@ -263,80 +262,6 @@ const struct object_id empty_tree = { {
 	0xe5, 0x4b, 0xf8, 0xd6, 0x92, 0x88, 0xfb, 0xee, 0x49, 0x04,
 }, GIT_HASH_SHA1 };
 
-struct oid_array manifest_heads = OID_ARRAY_INIT;
-int manifest_heads_dirty = 0;
-
-static void oid_array_insert(struct oid_array *array, int index,
-                             const struct object_id *oid)
-{
-	ALLOC_GROW(array->oid, array->nr + 1, array->alloc);
-	memmove(&array->oid[index+1], &array->oid[index],
-	        sizeof(array->oid[0]) * (array->nr++ - index));
-	oidcpy(&array->oid[index], oid);
-	if (array == &manifest_heads)
-		manifest_heads_dirty = 1;
-}
-
-static void oid_array_remove(struct oid_array *array, int index)
-{
-	memmove(&array->oid[index], &array->oid[index+1],
-	        sizeof(array->oid[0]) * (--array->nr - index));
-	if (array == &manifest_heads)
-		manifest_heads_dirty = 1;
-}
-
-void ensure_heads(struct oid_array *heads)
-{
-	struct commit *c = NULL;
-	struct commit_list *parent;
-
-	/* We always keep the array sorted, so if it's not sorted, it's
-	 * not initialized. */
-	if (heads->sorted)
-		return;
-
-	heads->sorted = 1;
-	if (heads == &manifest_heads) {
-		c = lookup_commit_reference(the_repository, &manifests_oid);
-		if (repo_parse_commit(the_repository, c))
-			c = NULL;
-	}
-	for (parent = c ? c->parents : NULL; parent;
-	     parent = parent->next) {
-		const struct object_id *parent_sha1 =
-			&parent->item->object.oid;
-		if (!heads->nr || oidcmp(&heads->oid[heads->nr-1],
-		                         parent_sha1)) {
-			oid_array_insert(heads, heads->nr, parent_sha1);
-		} else {
-			/* This should not happen, but just in case,
-			 * instead of failing. */
-			add_head(heads, parent_sha1);
-		}
-	}
-}
-
-void add_head(struct oid_array *heads, const struct object_id *oid)
-{
-	struct commit *c = NULL;
-	struct commit_list *parent;
-	int pos;
-
-	ensure_heads(heads);
-	c = lookup_commit(the_repository, oid);
-	parse_commit_or_die(c);
-
-	for (parent = c->parents; parent; parent = parent->next) {
-		pos = oid_array_lookup(heads, &parent->item->object.oid);
-		if (pos >= 0)
-			oid_array_remove(heads, pos);
-	}
-	pos = oid_array_lookup(heads, oid);
-	if (pos >= 0)
-		return;
-	oid_array_insert(heads, -pos - 1, oid);
-}
-
 static void handle_changeset_conflict(const struct hg_object_id *hg_id,
                                       struct object_id *git_id)
 {
@@ -410,7 +335,6 @@ void do_set_(const char *what, const struct hg_object_id *hg_id,
              const struct object_id *git_id)
 {
 	enum object_type type;
-	struct oid_array *heads = NULL;
 	struct notes_tree *notes = &hg2git;
 	int is_changeset = 0;
 
@@ -419,9 +343,7 @@ void do_set_(const char *what, const struct hg_object_id *hg_id,
 		type = OBJ_BLOB;
 	} else if (!strcmp(what, "manifest") || !strcmp(what, "changeset")) {
 		type = OBJ_COMMIT;
-		if (what[0] == 'm')
-			heads = &manifest_heads;
-		else
+		if (what[0] != 'm')
 			is_changeset = 1;
 	} else if (!strcmp(what, "changeset-metadata")) {
 		type = OBJ_BLOB;
@@ -463,8 +385,6 @@ void do_set_(const char *what, const struct hg_object_id *hg_id,
 		if (is_changeset)
 			handle_changeset_conflict(hg_id, &git_id_);
 		add_note_hg(notes, hg_id, &git_id_);
-		if (heads)
-			add_head(heads, &git_id_);
 	}
 }
 
@@ -635,6 +555,8 @@ static void manifest_metadata_path(struct strbuf *out, struct strslice *in)
 	strbuf_addslice(out, *in);
 }
 
+extern void add_manifest_head(const struct object_id *manifest);
+
 void store_manifest(struct rev_chunk *chunk,
                     const struct strslice last_manifest_content,
                     struct strslice_mut stored_manifest)
@@ -793,7 +715,7 @@ void store_manifest(struct rev_chunk *chunk,
 	strbuf_release(&data);
 	ensure_notes(&hg2git);
 	add_note_hg(&hg2git, &last_manifest_oid, &last_manifest->oid);
-	add_head(&manifest_heads, &last_manifest->oid);
+	add_manifest_head(&last_manifest->oid);
 	if ((cinnabar_check(CHECK_MANIFESTS)) &&
 	    !check_manifest(&last_manifest->oid))
 		die("sha1 mismatch for node %s", hg_oid_to_hex(chunk->node));
@@ -803,16 +725,8 @@ malformed:
 	die("Malformed manifest chunk for %s", hg_oid_to_hex(chunk->node));
 }
 
-static int add_manifests_parent(const struct object_id *oid, void *data)
-{
-	struct strbuf *buf = data;
-	strbuf_addstr(buf, "parent ");
-	strbuf_addstr(buf, oid_to_hex(oid));
-	strbuf_addch(buf, '\n');
-	return 0;
-}
-
 extern void store_changesets_metadata(struct object_id *result);
+extern void store_manifests_metadata(struct object_id *result);
 
 void store_metadata_notes(
 	struct notes_tree *notes, const struct object_id *reference,
@@ -864,26 +778,7 @@ void do_store_metadata(struct object_id *result) {
 	store_metadata_notes(&hg2git, &hg2git_oid, &hg2git_);
 	store_metadata_notes(&git2hg, &git2hg_oid, &git2hg_);
 	store_metadata_notes(&files_meta, &files_meta_oid, &files_meta_);
-
-	if (manifest_heads_dirty) {
-		strbuf_addf(
-			&buf, "tree %s\n",
-			oid_to_hex(&empty_tree));
-		ensure_heads(&manifest_heads);
-		oid_array_for_each_unique(
-			&manifest_heads, add_manifests_parent,
-			&buf);
-		strbuf_addstr(
-			&buf,
-			"author  <cinnabar@git> 0 +0000\n"
-			"committer  <cinnabar@git> 0 +0000\n"
-			"\n");
-		store_git_commit(&buf, &manifests);
-		strbuf_release(&buf);
-	} else {
-		oidcpy(&manifests, &manifests_oid);
-	}
-
+	store_manifests_metadata(&manifests);
 	store_changesets_metadata(&changesets);
 	if (!is_null_oid(&metadata_oid)) {
 		oidcpy(&previous, &metadata_oid);

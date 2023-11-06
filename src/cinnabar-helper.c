@@ -23,7 +23,6 @@
 #include "string-list.h"
 #include "streaming.h"
 #include "object.h"
-#include "oid-array.h"
 #include "oidset.h"
 #include "path.h"
 #include "quote.h"
@@ -332,19 +331,6 @@ static int merge_tree_entry(struct merge_manifest_tree_state *state,
 	return 1;
 }
 
-static void reset_heads(struct oid_array *heads)
-{
-	oid_array_clear(heads);
-	// We don't want subsequent ensure_heads to refill the array,
-	// so mark it as sorted, which means it's initialized.
-	heads->sorted = 1;
-}
-
-void reset_manifest_heads(void)
-{
-	reset_heads(&manifest_heads);
-}
-
 static struct name_entry *
 lazy_tree_entry_by_name(struct manifest_tree_state *state,
                         const struct object_id *tree_id,
@@ -650,6 +636,7 @@ upgrade:
 void dump_ref_updates(void);
 
 extern void reset_changeset_heads(void);
+extern void reset_manifest_heads(void);
 
 void do_reload(struct object_id *oid)
 {
@@ -657,8 +644,6 @@ void do_reload(struct object_id *oid)
 
 	done_cinnabar();
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
-
-	oid_array_clear(&manifest_heads);
 
 	dump_ref_updates();
 
@@ -673,6 +658,7 @@ void do_reload(struct object_id *oid)
 	}
 	init_metadata(c);
 	reset_changeset_heads();
+	reset_manifest_heads();
 }
 
 static void init_git_config(void)

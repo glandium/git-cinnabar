@@ -139,7 +139,7 @@ use util::{CStrExt, IteratorExt, OsStrExt, SliceExt, Transpose};
 use crate::hg_bundle::BundleReader;
 use crate::hg_connect::{decodecaps, find_common, UnbundleResponse};
 use crate::progress::set_progress;
-use crate::store::{do_set_replace, reset_manifest_heads, set_changeset_heads, Dag, Traversal};
+use crate::store::{clear_manifest_heads, do_set_replace, set_changeset_heads, Dag, Traversal};
 use crate::tree_util::{Empty, ParseTree, WithPath};
 use crate::util::{FromBytes, ToBoxed};
 
@@ -3109,7 +3109,7 @@ fn do_fsck_full(
             }
 
             unsafe {
-                reset_manifest_heads();
+                clear_manifest_heads();
                 for h in manifest_heads {
                     // TODO: This is gross.
                     let m = RawCommit::read(h).unwrap();

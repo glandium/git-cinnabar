@@ -45,8 +45,8 @@ use crate::libcinnabar::{
     files_meta, git2hg, git_notes_tree, hg2git, hg_object_id, strslice, strslice_mut,
 };
 use crate::libgit::{
-    changesets_oid, die, get_oid_blob, object_id, strbuf, Commit, RawBlob, RawCommit, RawTree,
-    RefTransaction,
+    changesets_oid, die, get_oid_blob, manifests_oid, object_id, strbuf, Commit, RawBlob,
+    RawCommit, RawTree, RefTransaction,
 };
 use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
@@ -914,6 +914,60 @@ impl ChangesetHeads {
 pub static CHANGESET_HEADS: Lazy<Mutex<ChangesetHeads>> =
     Lazy::new(|| Mutex::new(ChangesetHeads::from_stored_metadata()));
 
+#[derive(Debug)]
+pub struct ManifestHeads {
+    heads: BTreeSet<GitManifestId>,
+}
+
+impl ManifestHeads {
+    pub fn new() -> Self {
+        ManifestHeads {
+            heads: BTreeSet::new(),
+        }
+    }
+
+    fn from_stored_metadata() -> Self {
+        let manifests_cid =
+            CommitId::from_raw_bytes(unsafe { manifests_oid.as_raw_bytes() }).unwrap();
+        if manifests_cid.is_null() {
+            ManifestHeads::new()
+        } else {
+            ManifestHeads::from_metadata(manifests_cid)
+        }
+    }
+
+    pub fn from_metadata(cid: CommitId) -> Self {
+        let mut result = ManifestHeads::new();
+
+        let commit = RawCommit::read(cid).unwrap();
+        let commit = commit.parse().unwrap();
+        for p in commit.parents() {
+            result.heads.insert(GitManifestId::from_unchecked(*p));
+        }
+        result
+    }
+
+    pub fn add(&mut self, head: GitManifestId) {
+        let commit = RawCommit::read(head.into()).unwrap();
+        let commit = commit.parse().unwrap();
+        for p in commit.parents() {
+            self.heads.remove(&GitManifestId::from_unchecked(*p));
+        }
+        self.heads.insert(head);
+    }
+
+    pub fn heads(&self) -> impl Iterator<Item = &GitManifestId> {
+        self.heads.iter()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.heads.is_empty()
+    }
+}
+
+pub static MANIFEST_HEADS: Lazy<Mutex<ManifestHeads>> =
+    Lazy::new(|| Mutex::new(ManifestHeads::from_stored_metadata()));
+
 #[derive(Default)]
 pub struct TagSet {
     tags: IndexMap<Box<[u8]>, (HgChangesetId, HashSet<HgChangesetId>)>,
@@ -1037,6 +1091,40 @@ pub unsafe extern "C" fn reset_changeset_heads() {
     *heads = ChangesetHeads::from_stored_metadata();
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn store_manifests_metadata(result: *mut object_id) {
+    let result = result.as_mut().unwrap();
+    let mut commit = strbuf::new();
+    writeln!(commit, "tree {}", RawTree::EMPTY_OID).ok();
+    let heads = MANIFEST_HEADS.lock().unwrap();
+    for head in heads.heads() {
+        writeln!(commit, "parent {}", head).ok();
+    }
+    writeln!(commit, "author  <cinnabar@git> 0 +0000").ok();
+    writeln!(commit, "committer  <cinnabar@git> 0 +0000\n").ok();
+    store_git_commit(&commit, result);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn add_manifest_head(mn: *const object_id) {
+    let mut heads = MANIFEST_HEADS.lock().unwrap();
+    heads.add(GitManifestId::from_unchecked(CommitId::from_unchecked(
+        mn.as_ref().unwrap().clone().into(),
+    )));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn reset_manifest_heads() {
+    let mut heads = MANIFEST_HEADS.lock().unwrap();
+    *heads = ManifestHeads::from_stored_metadata();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn clear_manifest_heads() {
+    let mut heads = MANIFEST_HEADS.lock().unwrap();
+    *heads = ManifestHeads::new();
+}
+
 pub fn set_changeset_heads(new_heads: ChangesetHeads) {
     let mut heads = CHANGESET_HEADS.lock().unwrap();
     *heads = new_heads;
@@ -1054,7 +1142,6 @@ extern "C" {
         ref_tree: *const object_id,
         result: *mut object_id,
     );
-    pub fn reset_manifest_heads();
 }
 
 pub enum SetWhat {
@@ -1069,7 +1156,17 @@ pub fn do_set(what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
     let what = match what {
         SetWhat::Changeset => cstr!("changeset"),
         SetWhat::ChangesetMeta => cstr!("changeset-metadata"),
-        SetWhat::Manifest => cstr!("manifest"),
+        SetWhat::Manifest => {
+            if !git_id.is_null() {
+                MANIFEST_HEADS
+                    .lock()
+                    .unwrap()
+                    .add(GitManifestId::from_unchecked(CommitId::from_unchecked(
+                        git_id,
+                    )));
+            }
+            cstr!("manifest")
+        }
         SetWhat::File => cstr!("file"),
         SetWhat::FileMeta => cstr!("file-meta"),
     };
