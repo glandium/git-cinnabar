@@ -406,8 +406,8 @@ void do_set_replace(const struct object_id *replaced,
 	}
 }
 
-void do_set(const char *what, const struct hg_object_id *hg_id,
-            const struct object_id *git_id)
+void do_set_(const char *what, const struct hg_object_id *hg_id,
+             const struct object_id *git_id)
 {
 	enum object_type type;
 	struct oid_array *heads = NULL;

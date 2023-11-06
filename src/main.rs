@@ -115,7 +115,7 @@ use windows_sys::Win32;
 use graft::{graft_finish, grafted, init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
-use libcinnabar::{files_meta, git2hg, git_notes_tree, hg2git, hg_object_id};
+use libcinnabar::{files_meta, git2hg, git_notes_tree, hg2git};
 use libgit::{
     commit, config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
     get_oid_committish, get_unique_abbrev, lookup_commit, lookup_replace_commit, metadata_oid,
@@ -130,8 +130,8 @@ use store::{
     check_file, check_manifest, create_changeset, do_check_files, do_set, ensure_store_init,
     get_tags, has_metadata, raw_commit_for_changeset, store_git_blob, store_manifest,
     ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata, RawHgChangeset,
-    RawHgFile, RawHgManifest, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF, METADATA_REF, NOTES_REF,
-    REFS_PREFIX, REPLACE_REFS_PREFIX,
+    RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF, METADATA_REF,
+    NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use url::Url;
 use util::{CStrExt, IteratorExt, OsStrExt, SliceExt, Transpose};
@@ -1878,13 +1878,7 @@ fn create_file(blobid: BlobId, parents: &[HgFileId]) -> HgFileId {
     }
     hash.update(blob.as_bytes());
     let fid = hash.finalize();
-    unsafe {
-        do_set(
-            cstr::cstr!("file").as_ptr(),
-            &hg_object_id::from(fid),
-            &object_id::from(blobid),
-        );
-    }
+    do_set(SetWhat::File, fid.into(), blobid.into());
     fid
 }
 
@@ -1909,16 +1903,8 @@ fn create_copy(blobid: BlobId, source_path: &BStr, source_fid: HgFileId) -> HgFi
     let mut oid = object_id::default();
     unsafe {
         store_git_blob(&metadata, &mut oid);
-        do_set(
-            cstr::cstr!("file-meta").as_ptr(),
-            &hg_object_id::from(fid),
-            &oid,
-        );
-        do_set(
-            cstr::cstr!("file").as_ptr(),
-            &hg_object_id::from(fid),
-            &object_id::from(blobid),
-        );
+        do_set(SetWhat::FileMeta, fid.into(), oid.into());
+        do_set(SetWhat::File, fid.into(), blobid.into());
     }
     fid
 }
@@ -2957,29 +2943,21 @@ fn do_fsck_full(
         if fresh_metadata != metadata {
             fix(format!("Adjusted changeset metadata for {}", changeset_id));
             unsafe {
-                do_set(
-                    cstr::cstr!("changeset").as_ptr(),
-                    &hg_object_id::from(changeset_id),
-                    &object_id::from(CommitId::NULL),
-                );
-                do_set(
-                    cstr::cstr!("changeset").as_ptr(),
-                    &hg_object_id::from(changeset_id),
-                    &object_id::from(cid),
-                );
+                do_set(SetWhat::Changeset, changeset_id.into(), GitObjectId::NULL);
+                do_set(SetWhat::Changeset, changeset_id.into(), cid.into());
                 let mut metadata_id = object_id::default();
                 let mut buf = strbuf::new();
                 buf.extend_from_slice(&fresh_metadata.serialize());
                 store_git_blob(&buf, &mut metadata_id);
                 do_set(
-                    cstr::cstr!("changeset-metadata").as_ptr(),
-                    &hg_object_id::from(changeset_id),
-                    &object_id::from(CommitId::NULL),
+                    SetWhat::ChangesetMeta,
+                    changeset_id.into(),
+                    GitObjectId::NULL,
                 );
                 do_set(
-                    cstr::cstr!("changeset-metadata").as_ptr(),
-                    &hg_object_id::from(changeset_id),
-                    &metadata_id,
+                    SetWhat::ChangesetMeta,
+                    changeset_id.into(),
+                    metadata_id.into(),
                 );
             }
         }
@@ -3137,11 +3115,7 @@ fn do_fsck_full(
                     let m = RawCommit::read(h).unwrap();
                     let m = m.parse().unwrap();
                     let m = HgManifestId::from_bytes(m.body()).unwrap();
-                    do_set(
-                        cstr::cstr!("manifest").as_ptr(),
-                        &hg_object_id::from(m),
-                        &object_id::from(h),
-                    );
+                    do_set(SetWhat::Manifest, m.into(), h.into());
                 }
             }
         }
@@ -3160,18 +3134,8 @@ fn do_fsck_full(
             // or changesets and set the right variable accordingly, but in
             // practice, it makes no difference. Reevaluate when refactoring,
             // though.
-            unsafe {
-                do_set(
-                    cstr::cstr!("file").as_ptr(),
-                    &hg_object_id::from(h),
-                    &object_id::default(),
-                );
-                do_set(
-                    cstr::cstr!("file-meta").as_ptr(),
-                    &hg_object_id::from(h),
-                    &object_id::default(),
-                );
-            }
+            do_set(SetWhat::File, h, GitObjectId::NULL);
+            do_set(SetWhat::FileMeta, h, GitObjectId::NULL);
         });
         unsafe { &mut git2hg }.for_each(|g, _| {
             // TODO: this is gross.
@@ -3182,13 +3146,11 @@ fn do_fsck_full(
             fix(format!("Removing dangling note for commit {}", g));
             let metadata = RawGitChangesetMetadata::read(cid).unwrap();
             let metadata = metadata.parse().unwrap();
-            unsafe {
-                do_set(
-                    cstr::cstr!("changeset-metadata").as_ptr(),
-                    &hg_object_id::from(metadata.changeset_id()),
-                    &object_id::default(),
-                );
-            }
+            do_set(
+                SetWhat::ChangesetMeta,
+                metadata.changeset_id().into(),
+                GitObjectId::NULL,
+            );
         });
     }
 

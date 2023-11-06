@@ -35,7 +35,7 @@ use crate::cinnabar::{
 };
 use crate::git::{BlobId, CommitId, GitObjectId, TreeId, TreeIsh};
 use crate::graft::{graft, grafted, GraftError};
-use crate::hg::{HgChangesetId, HgFileId, HgManifestId};
+use crate::hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_bundle::{
     read_rev_chunk, rev_chunk, BundlePartInfo, BundleSpec, BundleWriter, RevChunkIter,
 };
@@ -1047,7 +1047,7 @@ extern "C" {
     pub fn store_git_blob(blob_buf: *const strbuf, result: *mut object_id);
     fn store_git_tree(tree_buf: *const strbuf, reference: *const object_id, result: *mut object_id);
     pub fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
-    pub fn do_set(what: *const c_char, hg_id: *const hg_object_id, git_id: *const object_id);
+    pub fn do_set_(what: *const c_char, hg_id: *const hg_object_id, git_id: *const object_id);
     pub fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
     fn create_git_tree(
         tree_id: *const object_id,
@@ -1055,6 +1055,27 @@ extern "C" {
         result: *mut object_id,
     );
     pub fn reset_manifest_heads();
+}
+
+pub enum SetWhat {
+    Changeset,
+    ChangesetMeta,
+    Manifest,
+    File,
+    FileMeta,
+}
+
+pub fn do_set(what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
+    let what = match what {
+        SetWhat::Changeset => cstr!("changeset"),
+        SetWhat::ChangesetMeta => cstr!("changeset-metadata"),
+        SetWhat::Manifest => cstr!("manifest"),
+        SetWhat::File => cstr!("file"),
+        SetWhat::FileMeta => cstr!("file-meta"),
+    };
+    unsafe {
+        do_set_(what.as_ptr(), &hg_id.into(), &git_id.into());
+    }
 }
 
 fn store_changeset(
@@ -1164,21 +1185,18 @@ fn store_changeset(
     };
 
     let result = (commit_id, replace);
-    unsafe {
-        let changeset_id = hg_object_id::from(changeset_id);
-        let commit_id = object_id::from(commit_id);
-        let blob_id = object_id::from(BlobId::from(metadata_id));
-        if let Some(replace) = result.1 {
-            let replace = object_id::from(replace);
-            do_set_replace(&replace, &commit_id);
+    if let Some(replace) = result.1 {
+        let replace = object_id::from(replace);
+        unsafe {
+            do_set_replace(&replace, &commit_id.into());
         }
-        do_set(cstr!("changeset").as_ptr(), &changeset_id, &commit_id);
-        do_set(
-            cstr!("changeset-metadata").as_ptr(),
-            &changeset_id,
-            &blob_id,
-        );
     }
+    do_set(SetWhat::Changeset, changeset_id.into(), commit_id.into());
+    do_set(
+        SetWhat::ChangesetMeta,
+        changeset_id.into(),
+        metadata_id.into(),
+    );
 
     let mut heads = CHANGESET_HEADS.lock().unwrap();
     let branch = changeset
@@ -1283,17 +1301,16 @@ pub fn create_changeset(
     buf.extend_from_slice(&metadata.serialize());
     let mut blob_oid = object_id::default();
     unsafe {
-        let changeset_id = hg_object_id::from(metadata.changeset_id);
         store_git_blob(&buf, &mut blob_oid);
         do_set(
-            cstr!("changeset").as_ptr(),
-            &changeset_id,
-            &object_id::from(commit_id),
+            SetWhat::Changeset,
+            metadata.changeset_id.into(),
+            commit_id.into(),
         );
         do_set(
-            cstr!("changeset-metadata").as_ptr(),
-            &changeset_id,
-            &blob_oid,
+            SetWhat::ChangesetMeta,
+            metadata.changeset_id.into(),
+            blob_oid.clone().into(),
         );
     }
     let mut heads = CHANGESET_HEADS.lock().unwrap();
