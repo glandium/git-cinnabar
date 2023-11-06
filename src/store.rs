@@ -1305,6 +1305,43 @@ fn store_changeset(
     Ok(result)
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn handle_changeset_conflict(
+    hg_id: *const hg_object_id,
+    git_id: *mut object_id,
+) {
+    // There are cases where two changesets would map to the same git
+    // commit because their differences are not in information stored in
+    // the git commit (different manifest node, but identical tree ;
+    // different branches ; etc.)
+    // In that case, add invisible characters to the commit message until
+    // we find a commit that doesn't map to another changeset.
+
+    let hg_id = HgChangesetId::from_unchecked(HgObjectId::from(hg_id.as_ref().unwrap().clone()));
+    let new_git_id = git_id.as_mut().unwrap();
+    let mut commit_data = None;
+    while let Some(existing_hg_id) =
+        GitChangesetId::from_unchecked(CommitId::from_unchecked(new_git_id.clone().into())).to_hg()
+    {
+        // We might just already have the changeset in store.
+        if existing_hg_id == hg_id {
+            break;
+        }
+
+        let commit_data = commit_data.get_or_insert_with(|| {
+            let mut buf = strbuf::new();
+            buf.extend_from_slice(
+                RawCommit::read(CommitId::from_unchecked(new_git_id.clone().into()))
+                    .unwrap()
+                    .as_bytes(),
+            );
+            buf
+        });
+        commit_data.extend_from_slice(b"\0");
+        store_git_commit(commit_data, new_git_id);
+    }
+}
+
 pub fn raw_commit_for_changeset(
     changeset: &HgChangeset,
     tree_id: TreeId,

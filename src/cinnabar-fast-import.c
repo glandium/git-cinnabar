@@ -262,56 +262,8 @@ const struct object_id empty_tree = { {
 	0xe5, 0x4b, 0xf8, 0xd6, 0x92, 0x88, 0xfb, 0xee, 0x49, 0x04,
 }, GIT_HASH_SHA1 };
 
-static void handle_changeset_conflict(const struct hg_object_id *hg_id,
-                                      struct object_id *git_id)
-{
-	/* There are cases where two changesets would map to the same git
-	 * commit because their differences are not in information stored in
-	 * the git commit (different manifest node, but identical tree ;
-	 * different branches ; etc.)
-	 * In that case, add invisible characters to the commit message until
-	 * we find a commit that doesn't map to another changeset.
-	 */
-	struct strbuf buf = STRBUF_INIT;
-	const struct object_id *note;
-
-	ensure_notes(&git2hg);
-	while ((note = get_note(&git2hg, git_id))) {
-		struct hg_object_id oid;
-		struct object_info oi = OBJECT_INFO_INIT;
-		enum object_type type;
-		unsigned long len;
-		char *content;
-		oi.typep = &type;
-		oi.sizep = &len;
-		oi.contentp = (void **) &content;
-		if ((oid_object_info_extended(
-			the_repository, note, &oi, OBJECT_INFO_DIE_IF_CORRUPT) == 0) &&
-		    (len < 50 || !starts_with(content, "changeset ") ||
-		     get_hash_hex(&content[10], oid.hash)))
-			die("Invalid git2hg note for %s", oid_to_hex(git_id));
-
-		free(content);
-
-		/* We might just already have the changeset in store */
-		if (hg_oideq(&oid, hg_id))
-			break;
-
-		if (!buf.len) {
-			if (oid_object_info_extended(
-					the_repository, git_id, &oi,
-					OBJECT_INFO_DIE_IF_CORRUPT) == 0) {
-				strbuf_add(&buf, content, len);
-				free(content);
-			}
-		}
-
-		strbuf_addch(&buf, '\0');
-		store_object(OBJ_COMMIT, &buf, NULL, git_id, 0);
-	}
-	strbuf_release(&buf);
-
-}
+extern void handle_changeset_conflict(const struct hg_object_id *hg_id,
+                                      struct object_id *git_id);
 
 void do_set_replace(const struct object_id *replaced,
                     const struct object_id *replace_with)
