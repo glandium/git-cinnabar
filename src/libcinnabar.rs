@@ -126,6 +126,14 @@ extern "C" {
         ) -> c_int,
         cb_data: *mut c_void,
     ) -> c_int;
+
+    fn cinnabar_add_note(
+        notes: *mut cinnabar_notes_tree,
+        object_oid: *const object_id,
+        note_oid: *const object_id,
+    );
+
+    fn cinnabar_remove_note(notes: *mut cinnabar_notes_tree, object_sha1: *const u8);
 }
 
 fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_notes_tree, mut f: F) {
@@ -164,6 +172,20 @@ impl git_notes_tree {
 
     pub fn for_each<F: FnMut(GitObjectId, GitObjectId)>(&mut self, f: F) {
         for_each_note_in(&mut self.0, f);
+    }
+
+    pub fn add_note(&mut self, oid: GitObjectId, note_oid: GitObjectId) {
+        unsafe {
+            ensure_notes(&mut self.0);
+            cinnabar_add_note(&mut self.0, &oid.into(), &note_oid.into());
+        }
+    }
+
+    pub fn remove_note(&mut self, oid: GitObjectId) {
+        unsafe {
+            ensure_notes(&mut self.0);
+            cinnabar_remove_note(&mut self.0, oid.as_raw_bytes().as_ptr());
+        }
     }
 }
 

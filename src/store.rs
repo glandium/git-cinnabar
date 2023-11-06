@@ -1155,7 +1155,25 @@ pub enum SetWhat {
 pub fn do_set(what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
     let what = match what {
         SetWhat::Changeset => cstr!("changeset"),
-        SetWhat::ChangesetMeta => cstr!("changeset-metadata"),
+        SetWhat::ChangesetMeta => {
+            let csid = HgChangesetId::from_unchecked(hg_id);
+            if let Some(cid) = csid.to_git() {
+                if git_id.is_null() {
+                    unsafe {
+                        git2hg.remove_note(cid.into());
+                    }
+                } else if BlobId::try_from(git_id).is_err() {
+                    die!("Invalid object");
+                } else {
+                    unsafe {
+                        git2hg.add_note(cid.into(), git_id);
+                    }
+                }
+            } else if !git_id.is_null() {
+                die!("Invalid sha1");
+            }
+            return;
+        }
         SetWhat::Manifest => {
             if !git_id.is_null() {
                 MANIFEST_HEADS

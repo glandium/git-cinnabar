@@ -297,33 +297,11 @@ void do_set_(const char *what, const struct hg_object_id *hg_id,
 		type = OBJ_COMMIT;
 		if (what[0] != 'm')
 			is_changeset = 1;
-	} else if (!strcmp(what, "changeset-metadata")) {
-		type = OBJ_BLOB;
-		notes = &git2hg;
 	} else if (!strcmp(what, "file-meta")) {
 		type = OBJ_BLOB;
 		notes = &files_meta;
 	} else {
 		die("Unknown kind of object: %s", what);
-	}
-
-	if (notes == &git2hg) {
-		const struct object_id *note;
-		ensure_notes(&hg2git);
-		note = get_note_hg(&hg2git, hg_id);
-		if (note) {
-			ensure_notes(&git2hg);
-			if (is_null_oid(git_id)) {
-				remove_note(notes, note->hash);
-			} else if (oid_object_info(the_repository, git_id,
-			                           NULL) != OBJ_BLOB) {
-				die("Invalid object");
-			} else {
-				add_note(notes, note, git_id);
-			}
-		} else if (!is_null_oid(git_id))
-			die("Invalid sha1");
-		return;
 	}
 
 	ensure_notes(notes);
