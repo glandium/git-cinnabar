@@ -10,14 +10,13 @@ use std::io::{copy, BufRead, BufReader, Read, Write};
 use std::iter::{repeat, IntoIterator};
 use std::mem;
 use std::num::NonZeroU32;
-use std::os::raw::{c_char, c_int};
+use std::os::raw::c_int;
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 use std::sync::Mutex;
 
 use bit_vec::BitVec;
 use bstr::{BStr, BString, ByteSlice};
-use cstr::cstr;
 use derive_more::Deref;
 use getset::{CopyGetters, Getters};
 use hex_literal::hex;
@@ -42,7 +41,7 @@ use crate::hg_bundle::{
 use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{
-    files_meta, git2hg, git_notes_tree, hg2git, hg_object_id, strslice, strslice_mut,
+    files_meta, git2hg, git_notes_tree, hg2git, hg_notes_tree, strslice, strslice_mut,
 };
 use crate::libgit::{
     changesets_oid, die, get_oid_blob, manifests_oid, object_id, strbuf, Commit, RawBlob,
@@ -1135,7 +1134,6 @@ extern "C" {
     pub fn store_git_blob(blob_buf: *const strbuf, result: *mut object_id);
     fn store_git_tree(tree_buf: *const strbuf, reference: *const object_id, result: *mut object_id);
     pub fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
-    pub fn do_set_(what: *const c_char, hg_id: *const hg_object_id, git_id: *const object_id);
     pub fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
     fn create_git_tree(
         tree_id: *const object_id,
@@ -1153,8 +1151,30 @@ pub enum SetWhat {
 }
 
 pub fn do_set(what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
-    let what = match what {
-        SetWhat::Changeset => cstr!("changeset"),
+    fn set<T: TryFrom<GitObjectId>>(
+        notes: &mut hg_notes_tree,
+        hg_id: HgObjectId,
+        git_id: GitObjectId,
+    ) {
+        if git_id.is_null() {
+            notes.remove_note(hg_id);
+        } else if T::try_from(git_id).is_err() {
+            die!("Invalid object");
+        } else {
+            notes.add_note(hg_id, git_id);
+        }
+    }
+    match what {
+        SetWhat::Changeset => {
+            if git_id.is_null() {
+                unsafe { &mut hg2git }.remove_note(hg_id);
+            } else if let Ok(ref mut commit) = CommitId::try_from(git_id) {
+                handle_changeset_conflict(HgChangesetId::from_unchecked(hg_id), commit);
+                unsafe { &mut hg2git }.add_note(hg_id, (*commit).into());
+            } else {
+                die!("Invalid object");
+            }
+        }
         SetWhat::ChangesetMeta => {
             let csid = HgChangesetId::from_unchecked(hg_id);
             if let Some(cid) = csid.to_git() {
@@ -1172,7 +1192,6 @@ pub fn do_set(what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
             } else if !git_id.is_null() {
                 die!("Invalid sha1");
             }
-            return;
         }
         SetWhat::Manifest => {
             if !git_id.is_null() {
@@ -1183,13 +1202,14 @@ pub fn do_set(what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
                         git_id,
                     )));
             }
-            cstr!("manifest")
+            set::<CommitId>(unsafe { &mut hg2git }, hg_id, git_id);
         }
-        SetWhat::File => cstr!("file"),
-        SetWhat::FileMeta => cstr!("file-meta"),
-    };
-    unsafe {
-        do_set_(what.as_ptr(), &hg_id.into(), &git_id.into());
+        SetWhat::File => {
+            set::<BlobId>(unsafe { &mut hg2git }, hg_id, git_id);
+        }
+        SetWhat::FileMeta => {
+            set::<BlobId>(unsafe { &mut files_meta }, hg_id, git_id);
+        }
     }
 }
 
@@ -1323,11 +1343,7 @@ fn store_changeset(
     Ok(result)
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn handle_changeset_conflict(
-    hg_id: *const hg_object_id,
-    git_id: *mut object_id,
-) {
+fn handle_changeset_conflict(hg_id: HgChangesetId, git_id: &mut CommitId) {
     // There are cases where two changesets would map to the same git
     // commit because their differences are not in information stored in
     // the git commit (different manifest node, but identical tree ;
@@ -1335,12 +1351,8 @@ pub unsafe extern "C" fn handle_changeset_conflict(
     // In that case, add invisible characters to the commit message until
     // we find a commit that doesn't map to another changeset.
 
-    let hg_id = HgChangesetId::from_unchecked(HgObjectId::from(hg_id.as_ref().unwrap().clone()));
-    let new_git_id = git_id.as_mut().unwrap();
     let mut commit_data = None;
-    while let Some(existing_hg_id) =
-        GitChangesetId::from_unchecked(CommitId::from_unchecked(new_git_id.clone().into())).to_hg()
-    {
+    while let Some(existing_hg_id) = GitChangesetId::from_unchecked(*git_id).to_hg() {
         // We might just already have the changeset in store.
         if existing_hg_id == hg_id {
             break;
@@ -1348,15 +1360,15 @@ pub unsafe extern "C" fn handle_changeset_conflict(
 
         let commit_data = commit_data.get_or_insert_with(|| {
             let mut buf = strbuf::new();
-            buf.extend_from_slice(
-                RawCommit::read(CommitId::from_unchecked(new_git_id.clone().into()))
-                    .unwrap()
-                    .as_bytes(),
-            );
+            buf.extend_from_slice(RawCommit::read(*git_id).unwrap().as_bytes());
             buf
         });
         commit_data.extend_from_slice(b"\0");
-        store_git_commit(commit_data, new_git_id);
+        let mut new_git_id = object_id::default();
+        unsafe {
+            store_git_commit(commit_data, &mut new_git_id);
+        }
+        *git_id = CommitId::from_unchecked(new_git_id.into());
     }
 }
 

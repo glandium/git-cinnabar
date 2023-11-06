@@ -223,6 +223,26 @@ impl hg_notes_tree {
             f(h, g);
         });
     }
+
+    pub fn add_note(&mut self, oid: HgObjectId, note_oid: GitObjectId) {
+        unsafe {
+            ensure_notes(&mut self.0);
+            cinnabar_add_note(
+                &mut self.0,
+                &GitObjectId::from_raw_bytes(oid.as_raw_bytes())
+                    .unwrap()
+                    .into(),
+                &note_oid.into(),
+            );
+        }
+    }
+
+    pub fn remove_note(&mut self, oid: HgObjectId) {
+        unsafe {
+            ensure_notes(&mut self.0);
+            cinnabar_remove_note(&mut self.0, oid.as_raw_bytes().as_ptr());
+        }
+    }
 }
 
 extern "C" {

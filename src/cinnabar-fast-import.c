@@ -283,41 +283,6 @@ void do_set_replace(const struct object_id *replaced,
 	}
 }
 
-void do_set_(const char *what, const struct hg_object_id *hg_id,
-             const struct object_id *git_id)
-{
-	enum object_type type;
-	struct notes_tree *notes = &hg2git;
-	int is_changeset = 0;
-
-	ENSURE_INIT();
-	if (!strcmp(what, "file")) {
-		type = OBJ_BLOB;
-	} else if (!strcmp(what, "manifest") || !strcmp(what, "changeset")) {
-		type = OBJ_COMMIT;
-		if (what[0] != 'm')
-			is_changeset = 1;
-	} else if (!strcmp(what, "file-meta")) {
-		type = OBJ_BLOB;
-		notes = &files_meta;
-	} else {
-		die("Unknown kind of object: %s", what);
-	}
-
-	ensure_notes(notes);
-	if (is_null_oid(git_id)) {
-		remove_note_hg(notes, hg_id);
-	} else if (oid_object_info(the_repository, git_id, NULL) != type) {
-		die("Invalid object");
-	} else {
-		struct object_id git_id_;
-		oidcpy(&git_id_, git_id);
-		if (is_changeset)
-			handle_changeset_conflict(hg_id, &git_id_);
-		add_note_hg(notes, hg_id, &git_id_);
-	}
-}
-
 int write_object_file_flags(const void *buf, size_t len, enum object_type type,
                             struct object_id *oid, unsigned flags)
 {
