@@ -1055,7 +1055,6 @@ extern "C" {
         result: *mut object_id,
     );
     pub fn reset_manifest_heads();
-    fn ensure_empty_tree() -> *const object_id;
 }
 
 fn store_changeset(
@@ -1072,9 +1071,9 @@ fn store_changeset(
     let changeset = raw_changeset.parse().unwrap();
     let manifest_tree_id = match changeset.manifest() {
         m if m.is_null() => unsafe {
-            TreeId::from_unchecked(GitObjectId::from(
-                ensure_empty_tree().as_ref().unwrap().clone(),
-            ))
+            let mut tid = object_id::default();
+            store_git_tree(&strbuf::new(), std::ptr::null(), &mut tid);
+            TreeId::from_unchecked(GitObjectId::from(tid))
         },
         m => {
             let git_manifest_id = m.to_git().unwrap();

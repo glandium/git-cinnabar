@@ -47,7 +47,6 @@ void store_metadata_notes(
 	struct object_id *result);
 
 void ensure_store_init(void);
-const struct object_id *ensure_empty_tree(void);
 
 void do_store_metadata(struct object_id *result);
 

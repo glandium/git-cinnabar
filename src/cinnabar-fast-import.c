@@ -1002,14 +1002,3 @@ const struct object_id *ensure_empty_blob(void) {
 	}
 	return &empty_blob;
 }
-
-const struct object_id *ensure_empty_tree(void) {
-	struct object_entry *oe = find_object((struct object_id *)&empty_tree);
-	if (!oe) {
-		struct object_id hash;
-		struct strbuf buf = STRBUF_INIT;
-		store_object(OBJ_TREE, &buf, NULL, &hash, 0);
-		assert(oidcmp(&hash, &empty_tree) == 0);
-	}
-	return &empty_tree;
-}
