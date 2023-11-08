@@ -4,7 +4,6 @@
 
 use std::alloc::Layout;
 use std::cell::Cell;
-use std::cmp;
 use std::ffi::{CStr, CString, OsStr};
 use std::io::{self, LineWriter, Read, Write};
 use std::marker::PhantomData;
@@ -17,7 +16,7 @@ use std::os::windows::ffi;
 use std::ptr::{self, NonNull};
 use std::rc::Rc;
 use std::str::{self, FromStr};
-use std::{fmt, mem};
+use std::{cmp, fmt, mem};
 
 use bstr::{BStr, ByteSlice};
 

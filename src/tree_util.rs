@@ -752,9 +752,10 @@ impl<T: RecurseAs<I>, I: Iterator<Item = WithPath<T>>> RecurseTree for I {
 
 #[test]
 fn test_recurse_tree_iter() {
+    use std::cell::RefCell;
+
     use itertools::Itertools;
     use once_cell::sync::Lazy;
-    use std::cell::RefCell;
     use Either::{Left, Right};
 
     #[derive(Debug, Clone, PartialEq)]

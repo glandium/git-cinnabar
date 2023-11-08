@@ -46,19 +46,6 @@ extern crate all_asserts;
 #[macro_use]
 extern crate log;
 
-use bstr::io::BufReadExt;
-use byteorder::{BigEndian, WriteBytesExt};
-use clap::{crate_version, ArgGroup, Parser};
-use either::Either;
-use hg_bundle::{create_bundle, create_chunk_data, BundleSpec, RevChunkIter};
-use indexmap::IndexSet;
-use itertools::EitherOrBoth::{Both, Left, Right};
-use itertools::{EitherOrBoth, Itertools};
-use logging::{LoggingReader, LoggingWriter};
-use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
-use sha1::{Digest, Sha1};
-use tree_util::{diff_by_path, RecurseTree};
-
 mod cinnabar;
 mod git;
 mod graft;
@@ -84,8 +71,7 @@ use std::borrow::{Borrow, Cow};
 use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::ffi::CString;
-use std::ffi::{CStr, OsStr, OsString};
+use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{stderr, stdin, stdout, BufRead, BufWriter, IsTerminal, Write};
@@ -102,19 +88,24 @@ use std::time::Instant;
 use std::{cmp, fmt};
 
 use bitflags::bitflags;
+use bstr::io::BufReadExt;
 use bstr::{BStr, ByteSlice};
+use byteorder::{BigEndian, WriteBytesExt};
 use cinnabar::{
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, GitManifestTree, GitManifestTreeId,
 };
+use clap::{crate_version, ArgGroup, Parser};
 use cstr::cstr;
+use either::Either;
 use git::{BlobId, CommitId, GitObjectId, TreeIsh};
 use git_version::git_version;
-#[cfg(windows)]
-use windows_sys::Win32;
-
 use graft::{graft_finish, grafted, init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
+use hg_bundle::{create_bundle, create_chunk_data, BundleSpec, RevChunkIter};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
+use indexmap::IndexSet;
+use itertools::EitherOrBoth::{Both, Left, Right};
+use itertools::{EitherOrBoth, Itertools};
 use libcinnabar::{files_meta, git2hg, git_notes_tree, hg2git};
 use libgit::{
     commit, config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
@@ -123,9 +114,12 @@ use libgit::{
     rev_list_with_boundaries, strbuf, the_repository, DiffTreeItem, MaybeBoundary, RawBlob,
     RawCommit, RawTree, RefTransaction,
 };
+use logging::{LoggingReader, LoggingWriter};
 use oid::{Abbrev, ObjectId};
 use once_cell::sync::Lazy;
+use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
 use progress::Progress;
+use sha1::{Digest, Sha1};
 use store::{
     check_file, check_manifest, create_changeset, do_check_files, do_set, ensure_store_init,
     get_tags, has_metadata, raw_commit_for_changeset, store_git_blob, store_manifest,
@@ -133,8 +127,11 @@ use store::{
     RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF, METADATA_REF,
     NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
+use tree_util::{diff_by_path, RecurseTree};
 use url::Url;
 use util::{CStrExt, IteratorExt, OsStrExt, SliceExt, Transpose};
+#[cfg(windows)]
+use windows_sys::Win32;
 
 use crate::hg_bundle::BundleReader;
 use crate::hg_connect::{decodecaps, find_common, UnbundleResponse};

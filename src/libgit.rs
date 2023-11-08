@@ -3,13 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
-use std::fmt;
 use std::io::{self, Write};
-use std::mem;
 use std::num::ParseIntError;
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 use std::str::FromStr;
 use std::sync::RwLock;
+use std::{fmt, mem};
 
 use bstr::ByteSlice;
 use cstr::cstr;
@@ -17,8 +16,7 @@ use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use derive_more::Deref;
 use getset::{CopyGetters, Getters};
 use hex_literal::hex;
-use itertools::EitherOrBoth;
-use itertools::Itertools;
+use itertools::{EitherOrBoth, Itertools};
 
 use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry, TreeId};
 use crate::oid::{Abbrev, ObjectId};
