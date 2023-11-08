@@ -916,6 +916,16 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
                     free_worktrees(worktrees);
                     return Err(err);
                 }
+                if git_dir.join("rebase-apply").exists() || git_dir.join("rebase-merge").exists() {
+                    let err = if get_worktree_is_current(*wt) != 0 {
+                        "Can't reclone: rebase in progress.".to_string()
+                    } else {
+                        let path = PathBuf::from(CStr::from_ptr(get_worktree_path(*wt)).to_osstr());
+                        format!("Can't reclone: rebase in progress in {}.", path.display())
+                    };
+                    free_worktrees(worktrees);
+                    return Err(err);
+                }
                 if get_worktree_is_detached(*wt) == 1 {
                     heads.push((
                         Either::Right((get_worktree_is_current(*wt) == 0).then(|| {
