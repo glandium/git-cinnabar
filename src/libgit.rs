@@ -62,14 +62,12 @@ impl From<object_id> for GitObjectId {
     }
 }
 
-extern "C" {
-    pub static mut metadata_oid: object_id;
-    pub static mut changesets_oid: object_id;
-    pub static mut manifests_oid: object_id;
-    pub static mut git2hg_oid: object_id;
-    pub static mut hg2git_oid: object_id;
-    pub static mut files_meta_oid: object_id;
-}
+pub static mut METADATA_OID: object_id = object_id([0; GIT_MAX_RAWSZ], GIT_HASH_SHA1);
+pub static mut CHANGESETS_OID: object_id = object_id([0; GIT_MAX_RAWSZ], GIT_HASH_SHA1);
+pub static mut MANIFESTS_OID: object_id = object_id([0; GIT_MAX_RAWSZ], GIT_HASH_SHA1);
+pub static mut GIT2HG_OID: object_id = object_id([0; GIT_MAX_RAWSZ], GIT_HASH_SHA1);
+pub static mut HG2GIT_OID: object_id = object_id([0; GIT_MAX_RAWSZ], GIT_HASH_SHA1);
+pub static mut FILES_META_OID: object_id = object_id([0; GIT_MAX_RAWSZ], GIT_HASH_SHA1);
 
 #[allow(non_camel_case_types)]
 #[repr(C)]

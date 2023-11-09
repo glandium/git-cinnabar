@@ -46,9 +46,9 @@ use crate::libcinnabar::{
     strslice_mut,
 };
 use crate::libgit::{
-    changesets_oid, commit, commit_oid, die, files_meta_oid, for_each_ref_in, get_oid_blob,
-    git2hg_oid, hg2git_oid, manifests_oid, metadata_oid, object_id, strbuf, Commit, RawBlob,
-    RawCommit, RawTree, RefTransaction,
+    commit, commit_oid, die, for_each_ref_in, get_oid_blob, object_id, strbuf, Commit, RawBlob,
+    RawCommit, RawTree, RefTransaction, CHANGESETS_OID, FILES_META_OID, GIT2HG_OID, HG2GIT_OID,
+    MANIFESTS_OID, METADATA_OID,
 };
 use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
@@ -858,7 +858,7 @@ impl ChangesetHeads {
 
     fn from_stored_metadata() -> Self {
         let changesets_cid =
-            CommitId::from_raw_bytes(unsafe { changesets_oid.as_raw_bytes() }).unwrap();
+            CommitId::from_raw_bytes(unsafe { CHANGESETS_OID.as_raw_bytes() }).unwrap();
         if changesets_cid.is_null() {
             ChangesetHeads::new()
         } else {
@@ -931,7 +931,7 @@ impl ManifestHeads {
 
     fn from_stored_metadata() -> Self {
         let manifests_cid =
-            CommitId::from_raw_bytes(unsafe { manifests_oid.as_raw_bytes() }).unwrap();
+            CommitId::from_raw_bytes(unsafe { MANIFESTS_OID.as_raw_bytes() }).unwrap();
         if manifests_cid.is_null() {
             ManifestHeads::new()
         } else {
@@ -1555,7 +1555,7 @@ pub fn do_check_files() -> bool {
             .update(
                 BROKEN_REF,
                 unsafe {
-                    CommitId::from_unchecked(GitObjectId::from(crate::libgit::metadata_oid.clone()))
+                    CommitId::from_unchecked(GitObjectId::from(crate::libgit::METADATA_OID.clone()))
                 },
                 None,
                 "post-pull check",
@@ -2064,12 +2064,12 @@ pub unsafe extern "C" fn init_metadata(c: *const commit) {
     let cid = if let Some(c) = c.as_ref() {
         CommitId::from_unchecked(GitObjectId::from(commit_oid(c).as_ref().unwrap().clone()))
     } else {
-        metadata_oid = object_id::default();
-        changesets_oid = object_id::default();
-        manifests_oid = object_id::default();
-        hg2git_oid = object_id::default();
-        git2hg_oid = object_id::default();
-        files_meta_oid = object_id::default();
+        METADATA_OID = object_id::default();
+        CHANGESETS_OID = object_id::default();
+        MANIFESTS_OID = object_id::default();
+        HG2GIT_OID = object_id::default();
+        GIT2HG_OID = object_id::default();
+        FILES_META_OID = object_id::default();
         return;
     };
     let c = RawCommit::read(cid).unwrap();
@@ -2078,12 +2078,12 @@ pub unsafe extern "C" fn init_metadata(c: *const commit) {
         die!("Invalid metadata?");
     }
     for (cid, field) in Some(cid).iter().chain(c.parents()[..5].iter()).zip([
-        &mut metadata_oid,
-        &mut changesets_oid,
-        &mut manifests_oid,
-        &mut hg2git_oid,
-        &mut git2hg_oid,
-        &mut files_meta_oid,
+        &mut METADATA_OID,
+        &mut CHANGESETS_OID,
+        &mut MANIFESTS_OID,
+        &mut HG2GIT_OID,
+        &mut GIT2HG_OID,
+        &mut FILES_META_OID,
     ]) {
         *field = (*cid).into();
     }
@@ -2171,14 +2171,14 @@ pub fn do_store_metadata() -> CommitId {
     let mut tree = object_id::default();
     let mut previous = None;
     unsafe {
-        store_metadata_notes(&mut *hg2git, &hg2git_oid, &mut hg2git_);
-        store_metadata_notes(&mut *git2hg, &git2hg_oid, &mut git2hg_);
-        store_metadata_notes(&mut *files_meta, &files_meta_oid, &mut files_meta_);
+        store_metadata_notes(&mut *hg2git, &HG2GIT_OID, &mut hg2git_);
+        store_metadata_notes(&mut *git2hg, &GIT2HG_OID, &mut git2hg_);
+        store_metadata_notes(&mut *files_meta, &FILES_META_OID, &mut files_meta_);
         store_manifests_metadata(&mut manifests);
         store_changesets_metadata(&mut changesets);
-        if !GitObjectId::from(metadata_oid.clone()).is_null() {
+        if !GitObjectId::from(METADATA_OID.clone()).is_null() {
             previous = Some(CommitId::from_unchecked(GitObjectId::from(
-                metadata_oid.clone(),
+                METADATA_OID.clone(),
             )));
         }
         store_replace_map(&mut tree);

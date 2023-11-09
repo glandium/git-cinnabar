@@ -109,10 +109,10 @@ use itertools::{EitherOrBoth, Itertools};
 use libcinnabar::{files_meta, git2hg, git_notes_tree, hg2git};
 use libgit::{
     commit, config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
-    get_oid_committish, get_unique_abbrev, lookup_commit, lookup_replace_commit, metadata_oid,
-    object_id, reachable_subset, remote, repository, resolve_ref, rev_list,
-    rev_list_with_boundaries, strbuf, the_repository, DiffTreeItem, MaybeBoundary, RawBlob,
-    RawCommit, RawTree, RefTransaction,
+    get_oid_committish, get_unique_abbrev, lookup_commit, lookup_replace_commit, object_id,
+    reachable_subset, remote, repository, resolve_ref, rev_list, rev_list_with_boundaries, strbuf,
+    the_repository, DiffTreeItem, MaybeBoundary, RawBlob, RawCommit, RawTree, RefTransaction,
+    METADATA_OID,
 };
 use logging::{LoggingReader, LoggingWriter};
 use oid::{Abbrev, ObjectId};
@@ -941,9 +941,9 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
         }
     }
 
-    let old_changesets_oid = GitObjectId::from(unsafe { libgit::changesets_oid.clone() });
+    let old_changesets_oid = GitObjectId::from(unsafe { libgit::CHANGESETS_OID.clone() });
     let mut old_git2hg = {
-        let git2hg_oid = GitObjectId::from(unsafe { libgit::git2hg_oid.clone() });
+        let git2hg_oid = GitObjectId::from(unsafe { libgit::GIT2HG_OID.clone() });
         if git2hg_oid.is_null() {
             None
         } else {
@@ -953,9 +953,9 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
     };
 
     let current_metadata_oid = unsafe {
-        let current_metadata_oid = metadata_oid.clone();
+        let current_metadata_oid = METADATA_OID.clone();
         do_reload(&object_id::default());
-        metadata_oid = current_metadata_oid.clone();
+        METADATA_OID = current_metadata_oid.clone();
         current_metadata_oid
     };
 
@@ -1282,7 +1282,7 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
         }
 
         unsafe {
-            metadata_oid = current_metadata_oid;
+            METADATA_OID = current_metadata_oid;
         }
 
         do_done_and_check(&[])
@@ -2330,7 +2330,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         );
         return Ok(1);
     }
-    let metadata_cid = unsafe { CommitId::from_unchecked(GitObjectId::from(metadata_oid.clone())) };
+    let metadata_cid = unsafe { CommitId::from_unchecked(GitObjectId::from(METADATA_OID.clone())) };
     let checked_cid = if force {
         None
     } else {

@@ -14,8 +14,8 @@ use derive_more::{Deref, DerefMut};
 use crate::git::{GitObjectId, TreeId};
 use crate::hg::HgObjectId;
 use crate::libgit::{
-    child_process, die, files_meta_oid, git2hg_oid, hg2git_oid, object_id, strbuf, FileMode,
-    RawTree,
+    child_process, die, object_id, strbuf, FileMode, RawTree, FILES_META_OID, GIT2HG_OID,
+    HG2GIT_OID,
 };
 use crate::oid::{Abbrev, ObjectId};
 use crate::store::{store_git_commit, FILES_META, METADATA_FLAGS};
@@ -171,11 +171,11 @@ unsafe fn ensure_notes(t: *mut cinnabar_notes_tree) {
         let oid;
         let mut flags = 0;
         if ptr::eq(t, &git2hg.0) {
-            oid = git2hg_oid.clone();
+            oid = GIT2HG_OID.clone();
         } else if ptr::eq(t, &hg2git.0) {
-            oid = hg2git_oid.clone();
+            oid = HG2GIT_OID.clone();
         } else if ptr::eq(t, &files_meta.0) {
-            oid = files_meta_oid.clone();
+            oid = FILES_META_OID.clone();
             if METADATA_FLAGS & FILES_META == 0 {
                 flags = NOTES_INIT_EMPTY;
             }

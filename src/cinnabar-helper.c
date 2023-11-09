@@ -44,8 +44,6 @@
 #define STRINGIFY(s) _STRINGIFY(s)
 
 struct notes_tree git2hg, hg2git, files_meta;
-struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
-                 hg2git_oid, files_meta_oid;
 
 struct object_id *commit_oid(struct commit *c) {
 	return &c->object.oid;
