@@ -158,27 +158,6 @@ void diff_tree_(int argc, const char **argv, void (*cb)(void *, struct diff_tree
 	release_revisions(&revs);
 }
 
-void ensure_notes(struct notes_tree *notes)
-{
-	if (!notes_initialized(notes)) {
-		const struct object_id *oid;
-		int flags = 0;
-		if (notes == &git2hg)
-			oid = &git2hg_oid;
-		else if (notes == &hg2git)
-			oid = &hg2git_oid;
-		else if (notes == &files_meta) {
-			oid = &files_meta_oid;
-			if (!(metadata_flags & FILES_META))
-				flags = NOTES_INIT_EMPTY;
-		} else
-			die("Unknown notes tree");
-		if (is_null_oid(oid))
-			flags = NOTES_INIT_EMPTY;
-		init_notes(notes, oid_to_hex(oid), combine_notes_ignore, flags);
-	}
-}
-
 const struct object_id *repo_lookup_replace_object(
 	struct repository *r, const struct object_id *oid)
 {

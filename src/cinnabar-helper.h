@@ -25,8 +25,6 @@ extern int cinnabar_check(int);
 
 extern struct notes_tree git2hg, hg2git, files_meta;
 
-extern void ensure_notes(struct notes_tree *notes);
-
 int check_manifest(const struct object_id *oid);
 
 struct remote;

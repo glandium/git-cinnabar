@@ -126,6 +126,11 @@ void cinnabar_free_notes(struct cinnabar_notes_tree *t)
 	free_notes(&t->additions);
 }
 
+int notes_initialized(struct cinnabar_notes_tree *notes)
+{
+	return notes->current.initialized;
+}
+
 int notes_dirty(struct cinnabar_notes_tree *notes)
 {
 	return notes->current.dirty || notes->additions.dirty;

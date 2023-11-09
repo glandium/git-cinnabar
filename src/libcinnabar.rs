@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::ffi::CString;
 use std::io::Write;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
@@ -12,9 +13,12 @@ use derive_more::{Deref, DerefMut};
 
 use crate::git::{GitObjectId, TreeId};
 use crate::hg::HgObjectId;
-use crate::libgit::{child_process, object_id, strbuf, FileMode, RawTree};
+use crate::libgit::{
+    child_process, die, files_meta_oid, git2hg_oid, hg2git_oid, object_id, strbuf, FileMode,
+    RawTree,
+};
 use crate::oid::{Abbrev, ObjectId};
-use crate::store::store_git_commit;
+use crate::store::{metadata_flags, store_git_commit, FILES_META};
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug)]
@@ -105,7 +109,17 @@ extern "C" {
     pub static mut hg2git: hg_notes_tree;
     pub static mut files_meta: hg_notes_tree;
 
-    fn ensure_notes(t: *mut cinnabar_notes_tree);
+    fn combine_notes_ignore(cur_oid: *mut object_id, new_oid: *const object_id) -> c_int;
+
+    fn cinnabar_init_notes(
+        notes: *mut cinnabar_notes_tree,
+        notes_ref: *const c_char,
+        combine_notes_fn: unsafe extern "C" fn(
+            cur_oid: *mut object_id,
+            new_oid: *const object_id,
+        ) -> c_int,
+        flags: c_int,
+    );
 
     fn cinnabar_get_note(
         notes: *mut cinnabar_notes_tree,
@@ -138,13 +152,41 @@ extern "C" {
 
     fn cinnabar_remove_note(notes: *mut cinnabar_notes_tree, object_sha1: *const u8);
 
-    fn notes_dirty(noted: *const cinnabar_notes_tree) -> c_int;
+    fn notes_initialized(notes: *const cinnabar_notes_tree) -> c_int;
+    fn notes_dirty(notes: *const cinnabar_notes_tree) -> c_int;
 
     fn cinnabar_write_notes_tree(
         notes: *mut cinnabar_notes_tree,
         result: *mut object_id,
         mode: c_uint,
     ) -> c_int;
+}
+
+const NOTES_INIT_EMPTY: c_int = 1;
+
+unsafe fn ensure_notes(t: *mut cinnabar_notes_tree) {
+    if notes_initialized(t) == 0 {
+        let oid;
+        let mut flags = 0;
+        if ptr::eq(t, &git2hg.0) {
+            oid = git2hg_oid.clone();
+        } else if ptr::eq(t, &hg2git.0) {
+            oid = hg2git_oid.clone();
+        } else if ptr::eq(t, &files_meta.0) {
+            oid = files_meta_oid.clone();
+            if metadata_flags & FILES_META == 0 {
+                flags = NOTES_INIT_EMPTY;
+            }
+        } else {
+            die!("Unknown notes tree");
+        }
+        let oid = GitObjectId::from(oid);
+        if oid.is_null() {
+            flags = NOTES_INIT_EMPTY;
+        }
+        let oid = CString::new(oid.to_string()).unwrap();
+        cinnabar_init_notes(t, oid.as_ptr(), combine_notes_ignore, flags);
+    }
 }
 
 fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_notes_tree, mut f: F) {

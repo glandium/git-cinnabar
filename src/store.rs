@@ -65,8 +65,10 @@ pub const BROKEN_REF: &str = "refs/cinnabar/broken";
 pub const NOTES_REF: &str = "refs/notes/cinnabar";
 
 extern "C" {
-    static metadata_flags: c_int;
+    pub static metadata_flags: c_int;
 }
+
+pub const FILES_META: c_int = 0x1;
 
 pub fn has_metadata() -> bool {
     unsafe { metadata_flags != 0 }

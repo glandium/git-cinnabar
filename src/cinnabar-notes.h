@@ -27,10 +27,7 @@ struct cinnabar_notes_tree {
 #define for_each_note cinnabar_for_each_note
 #define write_notes_tree cinnabar_write_notes_tree
 
-static inline int notes_initialized(struct notes_tree *notes)
-{
-	return notes->current.initialized;
-}
+int notes_initialized(struct notes_tree *notes);
 
 int notes_dirty(struct notes_tree *notes);
 
