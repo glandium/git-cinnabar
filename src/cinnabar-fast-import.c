@@ -425,7 +425,7 @@ static int add_parent(struct strbuf *data,
 		if (hg_oideq(parent_oid, last_manifest_oid))
 			note = &last_manifest->oid;
 		else {
-			note = get_note_hg(&hg2git, parent_oid);
+			note = resolve_hg2git(parent_oid);
 		}
 		if (!note)
 			return -1;
@@ -483,8 +483,7 @@ void store_manifest(struct rev_chunk *chunk,
 		assert(last_manifest_content.len == 0);
 	} else if (!hg_oideq(chunk->delta_node, &last_manifest_oid)) {
 		const struct object_id *note;
-		ensure_notes(&hg2git);
-		note = get_note_hg(&hg2git, chunk->delta_node);
+		note = resolve_hg2git(chunk->delta_node);
 		if (!note)
 			die("Cannot find delta node %s for %s",
 			    hg_oid_to_hex(chunk->delta_node),

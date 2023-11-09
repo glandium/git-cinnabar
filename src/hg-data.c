@@ -68,8 +68,7 @@ void hg_file_load(struct hg_file *result, const struct hg_object_id *oid)
 
 	metadata_len = result->file.len;
 
-	ensure_notes(&hg2git);
-	note = get_note_hg(&hg2git, oid);
+	note = resolve_hg2git(oid);
 	if (!note)
 		die("Missing data");
 
