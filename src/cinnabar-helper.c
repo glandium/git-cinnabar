@@ -450,7 +450,7 @@ void create_git_tree(const struct object_id *tree_id,
 	recurse_create_git_tree(tree_id, ref_tree, NULL, result, &git_tree_cache);
 }
 
-static void init_replace_map(void)
+void init_replace_map(void)
 {
 	the_repository->objects->replace_map =
 		xmalloc(sizeof(*the_repository->objects->replace_map));
@@ -458,7 +458,7 @@ static void init_replace_map(void)
 	the_repository->objects->replace_map_initialized = 1;
 }
 
-static void reset_replace_map(void)
+void reset_replace_map(void)
 {
 	oidmap_free(the_repository->objects->replace_map, 1);
 	FREE_AND_NULL(the_repository->objects->replace_map);
@@ -470,127 +470,12 @@ unsigned int replace_map_size(void)
 	return hashmap_get_size(&the_repository->objects->replace_map->map);
 }
 
-static int count_refs(const char *refname, const struct object_id *oid,
-                      int flags, void *cb_dat) {
-	size_t *count = (size_t *)cb_dat;
-	(*count)++;
-	return 0;
-}
-
-static void init_metadata(struct commit *c)
+unsigned int replace_map_tablesize(void)
 {
-	struct commit_list *cl;
-	const char *msg, *body;
-	struct strbuf **flags, **f;
-	struct tree *tree;
-	struct tree_desc desc;
-	struct name_entry entry;
-	struct replace_object *replace;
-	size_t count = 0;
-
-	if (!c) {
-		oidcpy(&metadata_oid, null_oid());
-		oidcpy(&changesets_oid, null_oid());
-		oidcpy(&manifests_oid, null_oid());
-		oidcpy(&hg2git_oid, null_oid());
-		oidcpy(&git2hg_oid, null_oid());
-		oidcpy(&files_meta_oid, null_oid());
-		return;
-	}
-	oidcpy(&metadata_oid, &c->object.oid);
-	cl = c->parents;
-	if (!cl) die("Invalid metadata?");
-	oidcpy(&changesets_oid, &cl->item->object.oid);
-	cl = cl->next;
-	if (!cl) die("Invalid metadata?");
-	oidcpy(&manifests_oid, &cl->item->object.oid);
-	cl = cl->next;
-	if (!cl) die("Invalid metadata?");
-	oidcpy(&hg2git_oid, &cl->item->object.oid);
-	cl = cl->next;
-	if (!cl) die("Invalid metadata?");
-	oidcpy(&git2hg_oid, &cl->item->object.oid);
-	cl = cl->next;
-	if (!cl) die("Invalid metadata?");
-	oidcpy(&files_meta_oid, &cl->item->object.oid);
-
-	msg = repo_get_commit_buffer(the_repository, c, NULL);
-	body = strstr(msg, "\n\n") + 2;
-	flags = strbuf_split_str(body, ' ', -1);
-	for (f = flags; *f; f++) {
-		strbuf_trim(*f);
-		if (!strcmp("files-meta", (*f)->buf))
-			metadata_flags |= FILES_META;
-		else if (!strcmp("unified-manifests", (*f)->buf)) {
-			strbuf_list_free(flags);
-			repo_unuse_commit_buffer(the_repository, c, msg);
-			goto old;
-		} else if (!strcmp("unified-manifests-v2", (*f)->buf))
-			metadata_flags |= UNIFIED_MANIFESTS_v2;
-		else {
-			strbuf_list_free(flags);
-			repo_unuse_commit_buffer(the_repository, c, msg);
-			goto new;
-		}
-	}
-	strbuf_list_free(flags);
-	repo_unuse_commit_buffer(the_repository, c, msg);
-
-	if (!(metadata_flags & (FILES_META | UNIFIED_MANIFESTS_v2)))
-		goto old;
-
-	for_each_ref_in("refs/cinnabar/branches/", count_refs, &count);
-	if (count)
-		goto old;
-
-	reset_replace_map();
-	init_replace_map();
-
-	tree = repo_get_commit_tree(the_repository, c);
-	parse_tree(tree);
-	init_tree_desc(&desc, tree->buffer, tree->size);
-	while (tree_entry(&desc, &entry)) {
-		struct object_id original_oid;
-		if (entry.pathlen != 40 ||
-		    get_oid_hex(entry.path, &original_oid)) {
-			struct strbuf buf = STRBUF_INIT;
-			strbuf_add(&buf, entry.path, entry.pathlen);
-			warning(_("bad replace name: %s"), buf.buf);
-			strbuf_release(&buf);
-			continue;
-		}
-		if (oideq(&entry.oid, &original_oid)) {
-			warning(_("self-referencing graft: %s"),
-				oid_to_hex(&original_oid));
-			continue;
-		}
-		replace = xmalloc(sizeof(*replace));
-		oidcpy(&replace->original.oid, &original_oid);
-		oidcpy(&replace->replacement, &entry.oid);
-		if (oidmap_put(the_repository->objects->replace_map, replace))
-			die(_("duplicate replace: %s"),
-			    oid_to_hex(&replace->original.oid));
-	}
-	if (the_repository->objects->replace_map->map.tablesize == 0) {
-		count = 0;
-		for_each_ref_in("refs/cinnabar/replace/", count_refs, &count);
-		if (count > 0)
-			goto old;
-	}
-	return;
-old:
-	die("Metadata from git-cinnabar versions older than 0.5.0 is not "
-	    "supported.\n"
-	    "Please run `git cinnabar upgrade` with version 0.5.x first.");
-new:
-	die("It looks like this repository was used with a newer version of "
-	    "git-cinnabar. Cannot use this version.");
-#if 0
-upgrade:
-	die("Git-cinnabar metadata needs upgrade. "
-	    "Please run `git cinnabar upgrade`.");
-#endif
+	return the_repository->objects->replace_map->map.tablesize;
 }
+
+extern void init_metadata(struct commit *c);
 
 void dump_ref_updates(void);
 

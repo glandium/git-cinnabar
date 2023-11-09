@@ -18,6 +18,7 @@ use std::sync::Mutex;
 use bit_vec::BitVec;
 use bstr::{BStr, BString, ByteSlice};
 use derive_more::Deref;
+use either::Either;
 use getset::{CopyGetters, Getters};
 use hex_literal::hex;
 use indexmap::IndexMap;
@@ -32,8 +33,8 @@ use crate::cinnabar::{
     GitChangesetId, GitChangesetMetadataId, GitFileId, GitFileMetadataId, GitManifestId,
     GitManifestTree, GitManifestTreeId,
 };
-use crate::git::{BlobId, CommitId, GitObjectId, TreeId, TreeIsh};
-use crate::graft::{graft, grafted, GraftError};
+use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry, TreeId, TreeIsh};
+use crate::graft::{graft, grafted, replace_map_tablesize, GraftError};
 use crate::hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_bundle::{
     read_rev_chunk, rev_chunk, BundlePartInfo, BundleSpec, BundleWriter, RevChunkIter,
@@ -45,12 +46,13 @@ use crate::libcinnabar::{
     strslice_mut,
 };
 use crate::libgit::{
-    changesets_oid, die, files_meta_oid, get_oid_blob, git2hg_oid, hg2git_oid, manifests_oid,
-    metadata_oid, object_id, strbuf, Commit, RawBlob, RawCommit, RawTree, RefTransaction,
+    changesets_oid, commit, commit_oid, die, files_meta_oid, for_each_ref_in, get_oid_blob,
+    git2hg_oid, hg2git_oid, manifests_oid, metadata_oid, object_id, strbuf, Commit, RawBlob,
+    RawCommit, RawTree, RefTransaction,
 };
 use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
-use crate::tree_util::{diff_by_path, Empty, ParseTree, RecurseTree};
+use crate::tree_util::{diff_by_path, Empty, ParseTree, RecurseTree, WithPath};
 use crate::util::{
     FromBytes, ImmutBString, OsStrExt, RcExt, ReadExt, SliceExt, ToBoxed, Transpose,
 };
@@ -65,10 +67,11 @@ pub const BROKEN_REF: &str = "refs/cinnabar/broken";
 pub const NOTES_REF: &str = "refs/notes/cinnabar";
 
 extern "C" {
-    pub static metadata_flags: c_int;
+    pub static mut metadata_flags: c_int;
 }
 
 pub const FILES_META: c_int = 0x1;
+pub const UNIFIED_MANIFESTS_V2: c_int = 0x2;
 
 pub fn has_metadata() -> bool {
     unsafe { metadata_flags != 0 }
@@ -2034,7 +2037,124 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
 }
 
 extern "C" {
+    fn init_replace_map();
+    fn reset_replace_map();
     fn store_replace_map(result: *mut object_id);
+}
+
+fn old_metadata() {
+    die!(
+        "Metadata from git-cinnabar versions older than 0.5.0 is not supported.\n\
+          Please run `git cinnabar upgrade` with version 0.5.x first."
+    );
+}
+
+fn new_metadata() {
+    die!(
+        "It looks like this repository was used with a newer version of git-cinnabar. \
+          Cannot use this version."
+    );
+}
+
+#[allow(dead_code)]
+fn need_upgrade() {
+    die!("Git-cinnabar metadata needs upgrade. Please run `git cinnabar upgrade` first.");
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn init_metadata(c: *const commit) {
+    let cid = if let Some(c) = c.as_ref() {
+        CommitId::from_unchecked(GitObjectId::from(commit_oid(c).as_ref().unwrap().clone()))
+    } else {
+        metadata_oid = object_id::default();
+        changesets_oid = object_id::default();
+        manifests_oid = object_id::default();
+        hg2git_oid = object_id::default();
+        git2hg_oid = object_id::default();
+        files_meta_oid = object_id::default();
+        return;
+    };
+    let c = RawCommit::read(cid).unwrap();
+    let c = c.parse().unwrap();
+    if !(5..=6).contains(&c.parents().len()) {
+        die!("Invalid metadata?");
+    }
+    for (cid, field) in Some(cid).iter().chain(c.parents()[..5].iter()).zip([
+        &mut metadata_oid,
+        &mut changesets_oid,
+        &mut manifests_oid,
+        &mut hg2git_oid,
+        &mut git2hg_oid,
+        &mut files_meta_oid,
+    ]) {
+        *field = (*cid).into();
+    }
+    for flag in c.body().split(|&b| b == b' ') {
+        match flag {
+            b"files-meta" => {
+                metadata_flags |= FILES_META;
+            }
+            b"unified-manifests" => old_metadata(),
+            b"unified-manifests-v2" => {
+                metadata_flags |= UNIFIED_MANIFESTS_V2;
+            }
+            _ => new_metadata(),
+        }
+    }
+    if metadata_flags != FILES_META | UNIFIED_MANIFESTS_V2 {
+        old_metadata();
+    }
+    let mut count = 0;
+    for_each_ref_in("refs/cinnabar/branches/", |_, _| -> Result<(), ()> {
+        count += 1;
+        Ok(())
+    })
+    .ok();
+    if count > 0 {
+        old_metadata();
+    }
+
+    reset_replace_map();
+
+    let tree = RawTree::read(c.tree()).unwrap();
+    let mut replaces = BTreeMap::new();
+    for (path, oid) in tree.into_iter().map(WithPath::unzip) {
+        match oid {
+            Either::Right(RecursedTreeEntry {
+                oid: GitOid::Commit(replace_with),
+                ..
+            }) => {
+                if let Ok(original) = CommitId::from_bytes(&path) {
+                    if original == replace_with {
+                        warn!("self-referencing graft: {}", original);
+                    } else {
+                        replaces
+                            .entry(original)
+                            .and_modify(|_| die!("duplicate replace: {}", original))
+                            .or_insert_with(|| replace_with);
+                    }
+                } else {
+                    warn!("bad replace name: {}", path.as_bstr());
+                }
+            }
+            _ => die!("Invalid metadata"),
+        }
+    }
+    init_replace_map();
+    for (original, replace_with) in replaces.into_iter() {
+        do_set_replace(&original.into(), &replace_with.into());
+    }
+    if replace_map_tablesize() == 0 {
+        let mut count = 0;
+        for_each_ref_in("refs/cinnabar/replace/", |_, _| -> Result<(), ()> {
+            count += 1;
+            Ok(())
+        })
+        .ok();
+        if count > 0 {
+            old_metadata();
+        }
+    }
 }
 
 pub fn do_store_metadata() -> CommitId {

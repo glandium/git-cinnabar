@@ -44,6 +44,7 @@ void create_git_tree(const struct object_id *tree_id,
 
 void do_reload(struct object_id *);
 unsigned int replace_map_size(void);
+unsigned int replace_map_tablesize(void);
 
 const struct object_id *repo_lookup_replace_object(
 	struct repository *r, const struct object_id *oid);
@@ -87,5 +88,8 @@ int get_worktree_is_current(const struct worktree *wr);
 int get_worktree_is_detached(const struct worktree *wr);
 
 const struct object_id *get_worktree_head_oid(const struct worktree *wr);
+
+void init_replace_map(void);
+void reset_replace_map(void);
 
 #endif

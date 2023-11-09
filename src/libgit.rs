@@ -551,7 +551,7 @@ pub struct commit(c_void);
 pub struct commit_list(c_void);
 
 extern "C" {
-    fn commit_oid(c: *const commit) -> *const object_id;
+    pub fn commit_oid(c: *const commit) -> *const object_id;
 
     fn get_revision(revs: *mut rev_info) -> *const commit;
 

@@ -19,6 +19,7 @@ use crate::store::{has_metadata, GeneratedGitChangesetMetadata, RawHgChangeset};
 
 extern "C" {
     fn replace_map_size() -> c_uint;
+    pub fn replace_map_tablesize() -> c_uint;
 }
 
 pub fn grafted() -> bool {
