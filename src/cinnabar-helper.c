@@ -47,9 +47,6 @@ struct notes_tree git2hg, hg2git, files_meta;
 struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
                  hg2git_oid, files_meta_oid;
 
-// XXX: Should use a hg-specific oidset type.
-struct oidset hg2git_seen = OIDSET_INIT;
-
 int metadata_flags = 0;
 
 struct object_id *commit_oid(struct commit *c) {
@@ -860,8 +857,6 @@ void done_cinnabar(void)
 
 	if (notes_initialized(&files_meta))
 		free_notes(&files_meta);
-
-	oidset_clear(&hg2git_seen);
 
 	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
 }
