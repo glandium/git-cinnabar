@@ -172,6 +172,11 @@ pub unsafe extern "C" fn resolve_hg(
     get_abbrev_note(t, &git_oid.into(), len)
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn resolve_hg2git(oid: *const hg_object_id, len: usize) -> *const object_id {
+    resolve_hg(&mut hg2git.0, oid, len)
+}
+
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
 pub struct git_notes_tree(cinnabar_notes_tree);

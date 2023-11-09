@@ -188,12 +188,6 @@ const struct object_id *repo_lookup_replace_object(
 	return lookup_replace_object(r, oid);
 }
 
-const struct object_id *resolve_hg2git(const struct hg_object_id *oid,
-                                       size_t len)
-{
-	return resolve_hg(&hg2git, oid, len);
-}
-
 /* The git storage for a mercurial manifest used to be a commit with two
  * directories at its root:
  * - a git directory, matching the git tree in the git commit corresponding to
