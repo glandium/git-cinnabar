@@ -212,7 +212,8 @@ impl hg_notes_tree {
     pub fn get_note(&mut self, oid: HgObjectId) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
-            get_note_hg(&mut self.0, &oid.into())
+            let git_oid = GitObjectId::from_raw_bytes(oid.as_raw_bytes()).unwrap();
+            cinnabar_get_note(&mut self.0, &git_oid.into())
                 .as_ref()
                 .cloned()
                 .map(Into::into)
@@ -227,13 +228,15 @@ impl hg_notes_tree {
             ensure_notes(&mut self.0);
             {
                 let len = oid.len();
-                let note = get_note_hg(&mut self.0, &oid.as_object_id().into());
+                let git_oid = GitObjectId::from_raw_bytes(oid.as_object_id().as_raw_bytes())
+                    .unwrap()
+                    .into();
+                // get_abbrev_note relied on cinnabar_get_note having run first.
+                let note = cinnabar_get_note(&mut self.0, &git_oid);
                 if len == 40 {
                     note
                 } else {
-                    let git_oid =
-                        GitObjectId::from_raw_bytes(oid.as_object_id().as_raw_bytes()).unwrap();
-                    get_abbrev_note(&mut self.0, &git_oid.into(), len)
+                    get_abbrev_note(&mut self.0, &git_oid, len)
                 }
             }
             .as_ref()
