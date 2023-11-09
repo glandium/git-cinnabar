@@ -8,7 +8,7 @@ use std::mem::MaybeUninit;
 use std::os::raw::{c_char, c_int, c_uint, c_void};
 use std::ptr;
 
-use crate::git::GitObjectId;
+use crate::git::{GitObjectId, TreeId};
 use crate::hg::HgObjectId;
 use crate::libgit::{child_process, object_id, strbuf, FileMode, RawTree};
 use crate::oid::{Abbrev, ObjectId};
@@ -207,19 +207,6 @@ pub unsafe extern "C" fn add_files_meta(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn store_notes(notes: *mut cinnabar_notes_tree, result: *mut object_id) {
-    *result = object_id::default();
-    if notes_dirty(notes) != 0 {
-        let mode = if ptr::eq(notes, &hg2git.0) {
-            FileMode::GITLINK
-        } else {
-            FileMode::REGULAR | FileMode::RW
-        };
-        cinnabar_write_notes_tree(notes, result, u16::from(mode).into());
-    }
-}
-
-#[no_mangle]
 pub unsafe extern "C" fn store_metadata_notes(
     notes: *mut cinnabar_notes_tree,
     reference: *const object_id,
@@ -227,15 +214,21 @@ pub unsafe extern "C" fn store_metadata_notes(
 ) {
     *result = object_id::default();
     let mut tree = object_id::default();
-    store_notes(notes, &mut tree);
-
-    if GitObjectId::from(tree.clone()).is_null() {
+    if notes_dirty(notes) != 0 {
+        let mode = if ptr::eq(notes, &hg2git.0) {
+            FileMode::GITLINK
+        } else {
+            FileMode::REGULAR | FileMode::RW
+        };
+        cinnabar_write_notes_tree(notes, &mut tree, u16::from(mode).into());
+    }
+    let mut tree = TreeId::from_unchecked(GitObjectId::from(tree));
+    if tree.is_null() {
         *result = reference.as_ref().unwrap().clone();
         if GitObjectId::from(result.as_ref().unwrap().clone()).is_null() {
-            tree = RawTree::EMPTY_OID.into();
+            tree = RawTree::EMPTY_OID;
         }
     }
-    let tree = GitObjectId::from(tree);
     if !tree.is_null() {
         let mut buf = strbuf::new();
         writeln!(buf, "tree {}", tree).ok();
