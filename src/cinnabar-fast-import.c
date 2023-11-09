@@ -621,12 +621,25 @@ void ensure_store_init(void)
 	require_explicit_termination = 1;
 }
 
+void store_replace_map(struct object_id *result) {
+	struct strbuf buf = STRBUF_INIT;
+	struct oidmap_iter iter;
+	struct replace_object *replace;
+
+	oidmap_iter_init(the_repository->objects->replace_map, &iter);
+	while ((replace = oidmap_iter_next(&iter))) {
+		strbuf_addf(&buf, "160000 %s%c",
+		            oid_to_hex(&replace->original.oid), '\0');
+		strbuf_add(&buf, replace->replacement.hash, the_hash_algo->rawsz);
+	}
+	store_object(OBJ_TREE, &buf, NULL, result, 0);
+	strbuf_release(&buf);
+}
+
 void do_store_metadata(struct object_id *result) {
 	struct object_id changesets, manifests, hg2git_, git2hg_,
 	                 files_meta_, previous;
 	struct strbuf buf = STRBUF_INIT;
-	struct oidmap_iter iter;
-	struct replace_object *replace;
 	struct commit *c;
 	struct commit_list *cl;
 	int has_previous = 0, unchanged = 1;
@@ -640,14 +653,7 @@ void do_store_metadata(struct object_id *result) {
 		oidcpy(&previous, &metadata_oid);
 		has_previous = 1;
 	}
-	oidmap_iter_init(the_repository->objects->replace_map, &iter);
-	while ((replace = oidmap_iter_next(&iter))) {
-		strbuf_addf(&buf, "160000 %s%c",
-		            oid_to_hex(&replace->original.oid), '\0');
-		strbuf_add(&buf, replace->replacement.hash, the_hash_algo->rawsz);
-	}
-	store_object(OBJ_TREE, &buf, NULL, result, 0);
-	strbuf_release(&buf);
+	store_replace_map(result);
 
 	if (has_previous) {
 		c = lookup_commit_reference(the_repository, &previous);

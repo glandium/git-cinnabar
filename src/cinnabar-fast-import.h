@@ -46,6 +46,8 @@ void store_metadata_notes(
 
 void ensure_store_init(void);
 
+void store_replace_map(struct object_id *result);
+
 void do_store_metadata(struct object_id *result);
 
 #endif
