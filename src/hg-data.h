@@ -92,9 +92,6 @@ int add_note_hg(struct notes_tree *notes,
                 const struct hg_object_id *oid,
                 const struct object_id *note_oid);
 
-int remove_note_hg(struct notes_tree *notes,
-                   const struct hg_object_id *oid);
-
 const struct object_id *get_note_hg(struct notes_tree *notes,
                                     const struct hg_object_id *oid);
 

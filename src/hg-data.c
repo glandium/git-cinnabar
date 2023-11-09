@@ -119,11 +119,3 @@ void hg_file_release(struct hg_file *file)
 	strbuf_release(&file->file);
 	hg_file_init(file);
 }
-
-int remove_note_hg(struct notes_tree *notes,
-                   const struct hg_object_id *oid)
-{
-	struct object_id git_oid;
-	hg_oidcpy2git(&git_oid, oid);
-	return cinnabar_remove_note(notes, git_oid.hash);
-}
