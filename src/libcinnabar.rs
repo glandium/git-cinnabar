@@ -155,25 +155,10 @@ fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_not
     }
 }
 
-unsafe fn resolve_hg(
-    t: *mut cinnabar_notes_tree,
-    oid: *const hg_object_id,
-    len: usize,
-) -> *const object_id {
-    ensure_notes(t);
-    let note = get_note_hg(t, oid);
-    if len == 40 {
-        return note;
-    }
-    let git_oid =
-        GitObjectId::from_raw_bytes(HgObjectId::from(oid.as_ref().unwrap().clone()).as_raw_bytes())
-            .unwrap();
-    get_abbrev_note(t, &git_oid.into(), len)
-}
-
 #[no_mangle]
 pub unsafe extern "C" fn resolve_hg2git(oid: *const hg_object_id) -> *const object_id {
-    resolve_hg(&mut hg2git.0, oid, 40)
+    ensure_notes(&mut hg2git.0);
+    get_note_hg(&mut hg2git.0, oid)
 }
 
 #[allow(non_camel_case_types)]
@@ -231,10 +216,20 @@ impl hg_notes_tree {
     ) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
-            resolve_hg(&mut self.0, &oid.as_object_id().into(), oid.len())
-                .as_ref()
-                .cloned()
-                .map(Into::into)
+            {
+                let len = oid.len();
+                let note = get_note_hg(&mut self.0, &oid.as_object_id().into());
+                if len == 40 {
+                    note
+                } else {
+                    let git_oid =
+                        GitObjectId::from_raw_bytes(oid.as_object_id().as_raw_bytes()).unwrap();
+                    get_abbrev_note(&mut self.0, &git_oid.into(), len)
+                }
+            }
+            .as_ref()
+            .cloned()
+            .map(Into::into)
         }
     }
 
