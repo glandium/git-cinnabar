@@ -254,10 +254,8 @@ fn do_done_and_check(args: &[&[u8]]) -> bool {
             error!(target: "root", "Nothing to graft");
             return false;
         }
-        let mut new_metadata = object_id::default();
-        do_store_metadata(&mut new_metadata);
+        let new_metadata = do_store_metadata();
         do_cleanup(0);
-        let new_metadata = CommitId::from_unchecked(new_metadata.into());
         set_metadata_to(
             Some(new_metadata),
             MetadataFlags::FORCE | MetadataFlags::KEEP_REFS,

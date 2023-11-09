@@ -2035,12 +2035,13 @@ extern "C" {
     fn store_replace_map(result: *mut object_id);
 }
 
-pub unsafe fn do_store_metadata(result: *mut object_id) {
+pub fn do_store_metadata() -> CommitId {
     let mut hg2git_ = object_id::default();
     let mut git2hg_ = object_id::default();
     let mut files_meta_ = object_id::default();
     let mut manifests = object_id::default();
     let mut changesets = object_id::default();
+    let mut tree = object_id::default();
     let mut previous = None;
     unsafe {
         store_metadata_notes(&mut *hg2git, &hg2git_oid, &mut hg2git_);
@@ -2053,7 +2054,7 @@ pub unsafe fn do_store_metadata(result: *mut object_id) {
                 metadata_oid.clone(),
             )));
         }
-        store_replace_map(result);
+        store_replace_map(&mut tree);
     }
     let new_metadata = [
         changesets.clone(),
@@ -2072,17 +2073,11 @@ pub unsafe fn do_store_metadata(result: *mut object_id) {
             die!("Invalid metadata?");
         }
         if c.parents()[..5] == new_metadata {
-            *result = previous.into();
-            return;
+            return previous;
         }
     }
     let mut buf = strbuf::new();
-    writeln!(
-        buf,
-        "tree {}",
-        GitObjectId::from(result.as_ref().unwrap().clone())
-    )
-    .ok();
+    writeln!(buf, "tree {}", GitObjectId::from(tree)).ok();
     for p in new_metadata.into_iter().chain(previous) {
         writeln!(buf, "parent {}", p).ok();
     }
@@ -2093,6 +2088,8 @@ pub unsafe fn do_store_metadata(result: *mut object_id) {
           files-meta unified-manifests-v2",
     );
     unsafe {
-        store_git_commit(&buf, result);
+        let mut result = object_id::default();
+        store_git_commit(&buf, &mut result);
+        CommitId::from_unchecked(result.into())
     }
 }
