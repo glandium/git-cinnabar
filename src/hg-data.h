@@ -88,9 +88,8 @@ void hg_file_release(struct hg_file *file);
 
 void hg_file_store(struct hg_file *file, struct hg_file *reference);
 
-int add_note_hg(struct notes_tree *notes,
-                const struct hg_object_id *oid,
-                const struct object_id *note_oid);
+int add_hg2git(const struct hg_object_id *oid, const struct object_id *note_oid);
+int add_files_meta(const struct hg_object_id *oid, const struct object_id *note_oid);
 
 const struct object_id *get_note_hg(struct notes_tree *notes,
                                     const struct hg_object_id *oid);

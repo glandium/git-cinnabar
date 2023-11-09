@@ -170,16 +170,29 @@ pub unsafe extern "C" fn get_note_hg(
     cinnabar_get_note(notes, &git_oid.into())
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn add_note_hg(
+unsafe fn add_note_hg(
     notes: *mut cinnabar_notes_tree,
     oid: *const hg_object_id,
     note_oid: *const object_id,
 ) -> c_int {
+    ensure_notes(notes);
     let git_oid =
         GitObjectId::from_raw_bytes(HgObjectId::from(oid.as_ref().unwrap().clone()).as_raw_bytes())
             .unwrap();
     cinnabar_add_note(notes, &git_oid.into(), note_oid)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn add_hg2git(oid: *const hg_object_id, note_oid: *const object_id) -> c_int {
+    add_note_hg(&mut hg2git.0, oid, note_oid)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn add_files_meta(
+    oid: *const hg_object_id,
+    note_oid: *const object_id,
+) -> c_int {
+    add_note_hg(&mut files_meta.0, oid, note_oid)
 }
 
 #[allow(non_camel_case_types)]
