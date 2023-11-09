@@ -183,6 +183,12 @@ pub unsafe extern "C" fn get_note_hg(
     cinnabar_get_note(notes, &git_oid.into())
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn get_files_meta(oid: *const hg_object_id) -> *const object_id {
+    ensure_notes(&mut files_meta.0);
+    get_note_hg(&mut files_meta.0, oid)
+}
+
 unsafe fn add_note_hg(
     notes: *mut cinnabar_notes_tree,
     oid: *const hg_object_id,

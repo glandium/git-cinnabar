@@ -53,8 +53,7 @@ void hg_file_load(struct hg_file *result, const struct hg_object_id *oid)
 	if (is_empty_hg_file(oid))
 		return;
 
-	ensure_notes(&files_meta);
-	note = get_note_hg(&files_meta, oid);
+	note = get_files_meta(oid);
 	if (note) {
 		if (oid_object_info_extended(
 				the_repository, note, &oi,
