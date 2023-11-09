@@ -450,6 +450,14 @@ void create_git_tree(const struct object_id *tree_id,
 	recurse_create_git_tree(tree_id, ref_tree, NULL, result, &git_tree_cache);
 }
 
+static void init_replace_map(void)
+{
+	the_repository->objects->replace_map =
+		xmalloc(sizeof(*the_repository->objects->replace_map));
+	oidmap_init(the_repository->objects->replace_map, 0);
+	the_repository->objects->replace_map_initialized = 1;
+}
+
 static void reset_replace_map(void)
 {
 	oidmap_free(the_repository->objects->replace_map, 1);
@@ -536,10 +544,7 @@ static void init_metadata(struct commit *c)
 		goto old;
 
 	reset_replace_map();
-	the_repository->objects->replace_map =
-		xmalloc(sizeof(*the_repository->objects->replace_map));
-	oidmap_init(the_repository->objects->replace_map, 0);
-	the_repository->objects->replace_map_initialized = 1;
+	init_replace_map();
 
 	tree = repo_get_commit_tree(the_repository, c);
 	parse_tree(tree);
