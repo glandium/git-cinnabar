@@ -155,8 +155,7 @@ fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_not
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn resolve_hg(
+unsafe fn resolve_hg(
     t: *mut cinnabar_notes_tree,
     oid: *const hg_object_id,
     len: usize,
@@ -173,8 +172,8 @@ pub unsafe extern "C" fn resolve_hg(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn resolve_hg2git(oid: *const hg_object_id, len: usize) -> *const object_id {
-    resolve_hg(&mut hg2git.0, oid, len)
+pub unsafe extern "C" fn resolve_hg2git(oid: *const hg_object_id) -> *const object_id {
+    resolve_hg(&mut hg2git.0, oid, 40)
 }
 
 #[allow(non_camel_case_types)]

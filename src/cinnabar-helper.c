@@ -422,7 +422,7 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 				if (is_empty_hg_file(&hg_oid))
 					file_oid = ensure_empty_blob();
 				else
-					file_oid = resolve_hg2git(&hg_oid, 40);
+					file_oid = resolve_hg2git(&hg_oid);
 				if (!file_oid)
 					goto corrupted;
 				oidcpy(&oid, file_oid);

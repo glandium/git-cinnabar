@@ -49,8 +49,7 @@ unsigned int replace_map_size(void);
 
 const struct object_id *repo_lookup_replace_object(
 	struct repository *r, const struct object_id *oid);
-const struct object_id *resolve_hg2git(const struct hg_object_id *oid,
-                                       size_t len);
+const struct object_id *resolve_hg2git(const struct hg_object_id *oid);
 
 struct commit;
 
