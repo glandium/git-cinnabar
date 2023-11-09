@@ -41,11 +41,12 @@ use crate::hg_bundle::{
 use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{
-    files_meta, git2hg, git_notes_tree, hg2git, hg_notes_tree, strslice, strslice_mut,
+    files_meta, git2hg, git_notes_tree, hg2git, hg_notes_tree, store_metadata_notes, strslice,
+    strslice_mut,
 };
 use crate::libgit::{
-    changesets_oid, die, get_oid_blob, manifests_oid, object_id, strbuf, Commit, RawBlob,
-    RawCommit, RawTree, RefTransaction,
+    changesets_oid, die, files_meta_oid, get_oid_blob, git2hg_oid, hg2git_oid, manifests_oid,
+    metadata_oid, object_id, strbuf, Commit, RawBlob, RawCommit, RawTree, RefTransaction,
 };
 use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
@@ -1271,12 +1272,12 @@ fn store_changeset(
                 } else {
                     let mut buf = strbuf::new();
                     buf.extend_from_slice(&metadata.serialize());
-                    let mut metadata_oid = object_id::default();
+                    let mut cs_metadata_oid = object_id::default();
                     unsafe {
-                        store_git_blob(&buf, &mut metadata_oid);
+                        store_git_blob(&buf, &mut cs_metadata_oid);
                     }
                     let metadata_id = GitChangesetMetadataId::from_unchecked(
-                        BlobId::from_unchecked(GitObjectId::from(metadata_oid)),
+                        BlobId::from_unchecked(GitObjectId::from(cs_metadata_oid)),
                     );
                     (Some(commit_id), Some(metadata_id), false)
                 }
@@ -1302,12 +1303,12 @@ fn store_changeset(
         .unwrap();
         let mut buf = strbuf::new();
         buf.extend_from_slice(&metadata.serialize());
-        let mut metadata_oid = object_id::default();
+        let mut cs_metadata_oid = object_id::default();
         unsafe {
-            store_git_blob(&buf, &mut metadata_oid);
+            store_git_blob(&buf, &mut cs_metadata_oid);
         }
         let metadata_id = GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(
-            GitObjectId::from(metadata_oid),
+            GitObjectId::from(cs_metadata_oid),
         ));
 
         (commit_id, metadata_id, replace)
@@ -2028,4 +2029,70 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
         do_reload(&object_id::from(metadata_cid));
     }
     true
+}
+
+extern "C" {
+    fn store_replace_map(result: *mut object_id);
+}
+
+pub unsafe fn do_store_metadata(result: *mut object_id) {
+    let mut hg2git_ = object_id::default();
+    let mut git2hg_ = object_id::default();
+    let mut files_meta_ = object_id::default();
+    let mut manifests = object_id::default();
+    let mut changesets = object_id::default();
+    let mut previous = None;
+    unsafe {
+        store_metadata_notes(&mut *hg2git, &hg2git_oid, &mut hg2git_);
+        store_metadata_notes(&mut *git2hg, &git2hg_oid, &mut git2hg_);
+        store_metadata_notes(&mut *files_meta, &files_meta_oid, &mut files_meta_);
+        store_manifests_metadata(&mut manifests);
+        store_changesets_metadata(&mut changesets);
+        if !GitObjectId::from(metadata_oid.clone()).is_null() {
+            previous = Some(CommitId::from_unchecked(GitObjectId::from(
+                metadata_oid.clone(),
+            )));
+        }
+        store_replace_map(result);
+    }
+    let new_metadata = [
+        changesets.clone(),
+        manifests.clone(),
+        hg2git_.clone(),
+        git2hg_.clone(),
+        files_meta_.clone(),
+    ]
+    .into_iter()
+    .map(|o| CommitId::from_unchecked(GitObjectId::from(o)))
+    .collect_vec();
+    if let Some(previous) = previous {
+        let c = RawCommit::read(previous).unwrap();
+        let c = c.parse().unwrap();
+        if !(5..=6).contains(&c.parents().len()) {
+            die!("Invalid metadata?");
+        }
+        if c.parents()[..5] == new_metadata {
+            *result = previous.into();
+            return;
+        }
+    }
+    let mut buf = strbuf::new();
+    writeln!(
+        buf,
+        "tree {}",
+        GitObjectId::from(result.as_ref().unwrap().clone())
+    )
+    .ok();
+    for p in new_metadata.into_iter().chain(previous) {
+        writeln!(buf, "parent {}", p).ok();
+    }
+    buf.extend_from_slice(
+        b"author  <cinnabar@git> 0 +0000\n\
+          committer  <cinnabar@git> 0 +0000\n\
+          \n\
+          files-meta unified-manifests-v2",
+    );
+    unsafe {
+        store_git_commit(&buf, result);
+    }
 }

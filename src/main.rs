@@ -121,11 +121,11 @@ use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
 use progress::Progress;
 use sha1::{Digest, Sha1};
 use store::{
-    check_file, check_manifest, create_changeset, do_check_files, do_set, ensure_store_init,
-    get_tags, has_metadata, raw_commit_for_changeset, store_git_blob, store_manifest,
-    ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata, RawHgChangeset,
-    RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF, METADATA_REF,
-    NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    check_file, check_manifest, create_changeset, do_check_files, do_set, do_store_metadata,
+    ensure_store_init, get_tags, has_metadata, raw_commit_for_changeset, store_git_blob,
+    store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata,
+    RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF,
+    METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use tree_util::{diff_by_path, RecurseTree};
 use url::Url;
@@ -176,8 +176,6 @@ pub const FULL_VERSION: &str = git_version!(
 extern "C" {
     pub fn do_reload(metadata: *const object_id);
     fn do_cleanup(rollback: c_int);
-
-    fn do_store_metadata(result: *mut object_id);
 
     #[cfg(windows)]
     fn wmain(argc: c_int, argv: *const *const u16) -> c_int;
