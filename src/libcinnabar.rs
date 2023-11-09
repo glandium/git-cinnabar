@@ -129,7 +129,7 @@ extern "C" {
         notes: *mut cinnabar_notes_tree,
         object_oid: *const object_id,
         note_oid: *const object_id,
-    );
+    ) -> c_int;
 
     fn cinnabar_remove_note(notes: *mut cinnabar_notes_tree, object_sha1: *const u8);
 }
@@ -168,6 +168,18 @@ pub unsafe extern "C" fn get_note_hg(
         GitObjectId::from_raw_bytes(HgObjectId::from(oid.as_ref().unwrap().clone()).as_raw_bytes())
             .unwrap();
     cinnabar_get_note(notes, &git_oid.into())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn add_note_hg(
+    notes: *mut cinnabar_notes_tree,
+    oid: *const hg_object_id,
+    note_oid: *const object_id,
+) -> c_int {
+    let git_oid =
+        GitObjectId::from_raw_bytes(HgObjectId::from(oid.as_ref().unwrap().clone()).as_raw_bytes())
+            .unwrap();
+    cinnabar_add_note(notes, &git_oid.into(), note_oid)
 }
 
 #[allow(non_camel_case_types)]
