@@ -13,11 +13,6 @@
 extern struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
                         hg2git_oid, files_meta_oid;
 
-#define FILES_META 0x1
-#define UNIFIED_MANIFESTS_v2 0x2
-
-extern int metadata_flags;
-
 #define CHECK_HELPER 0x1
 #define CHECK_MANIFESTS 0x2
 

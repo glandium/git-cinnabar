@@ -66,15 +66,13 @@ pub const CHECKED_REF: &str = "refs/cinnabar/checked";
 pub const BROKEN_REF: &str = "refs/cinnabar/broken";
 pub const NOTES_REF: &str = "refs/notes/cinnabar";
 
-extern "C" {
-    pub static mut metadata_flags: c_int;
-}
+pub static mut METADATA_FLAGS: c_int = 0;
 
 pub const FILES_META: c_int = 0x1;
 pub const UNIFIED_MANIFESTS_V2: c_int = 0x2;
 
 pub fn has_metadata() -> bool {
-    unsafe { metadata_flags != 0 }
+    unsafe { METADATA_FLAGS != 0 }
 }
 
 macro_rules! hg2git {
@@ -2092,16 +2090,16 @@ pub unsafe extern "C" fn init_metadata(c: *const commit) {
     for flag in c.body().split(|&b| b == b' ') {
         match flag {
             b"files-meta" => {
-                metadata_flags |= FILES_META;
+                METADATA_FLAGS |= FILES_META;
             }
             b"unified-manifests" => old_metadata(),
             b"unified-manifests-v2" => {
-                metadata_flags |= UNIFIED_MANIFESTS_V2;
+                METADATA_FLAGS |= UNIFIED_MANIFESTS_V2;
             }
             _ => new_metadata(),
         }
     }
-    if metadata_flags != FILES_META | UNIFIED_MANIFESTS_V2 {
+    if METADATA_FLAGS != FILES_META | UNIFIED_MANIFESTS_V2 {
         old_metadata();
     }
     let mut count = 0;

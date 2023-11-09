@@ -18,7 +18,7 @@ use crate::libgit::{
     RawTree,
 };
 use crate::oid::{Abbrev, ObjectId};
-use crate::store::{metadata_flags, store_git_commit, FILES_META};
+use crate::store::{store_git_commit, FILES_META, METADATA_FLAGS};
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug)]
@@ -176,7 +176,7 @@ unsafe fn ensure_notes(t: *mut cinnabar_notes_tree) {
             oid = hg2git_oid.clone();
         } else if ptr::eq(t, &files_meta.0) {
             oid = files_meta_oid.clone();
-            if metadata_flags & FILES_META == 0 {
+            if METADATA_FLAGS & FILES_META == 0 {
                 flags = NOTES_INIT_EMPTY;
             }
         } else {
