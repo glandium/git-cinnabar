@@ -2157,6 +2157,13 @@ pub unsafe extern "C" fn init_metadata(c: *const commit) {
     }
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn done_metadata() {
+    git2hg.done();
+    hg2git.done();
+    files_meta.done();
+}
+
 pub fn do_store_metadata() -> CommitId {
     let mut hg2git_ = object_id::default();
     let mut git2hg_ = object_id::default();

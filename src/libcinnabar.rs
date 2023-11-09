@@ -121,6 +121,8 @@ extern "C" {
         flags: c_int,
     );
 
+    fn cinnabar_free_notes(notes: *mut cinnabar_notes_tree);
+
     fn cinnabar_get_note(
         notes: *mut cinnabar_notes_tree,
         oid: *const object_id,
@@ -322,6 +324,14 @@ impl git_notes_tree {
             cinnabar_remove_note(&mut self.0, oid.as_raw_bytes().as_ptr());
         }
     }
+
+    pub fn done(&mut self) {
+        unsafe {
+            if notes_initialized(&self.0) != 0 {
+                cinnabar_free_notes(&mut self.0);
+            }
+        }
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -390,6 +400,14 @@ impl hg_notes_tree {
         unsafe {
             ensure_notes(&mut self.0);
             cinnabar_remove_note(&mut self.0, oid.as_raw_bytes().as_ptr());
+        }
+    }
+
+    pub fn done(&mut self) {
+        unsafe {
+            if notes_initialized(&self.0) != 0 {
+                cinnabar_free_notes(&mut self.0);
+            }
         }
     }
 }

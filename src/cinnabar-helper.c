@@ -716,17 +716,11 @@ int init_cinnabar_2(void)
 	return 1;
 }
 
+extern void done_metadata(void);
+
 void done_cinnabar(void)
 {
-	if (notes_initialized(&git2hg))
-		free_notes(&git2hg);
-
-	if (notes_initialized(&hg2git))
-		free_notes(&hg2git);
-
-	if (notes_initialized(&files_meta))
-		free_notes(&files_meta);
-
+	done_metadata();
 	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
 }
 
