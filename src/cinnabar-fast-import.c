@@ -294,15 +294,7 @@ int write_object_file_flags(const void *buf, size_t len, enum object_type type,
 	return 0;
 }
 
-static void store_notes(struct notes_tree *notes, struct object_id *result)
-{
-	oidclr(result);
-	if (notes_dirty(notes)) {
-		unsigned int mode = (notes == &hg2git) ? S_IFGITLINK
-		                                       : S_IFREG | 0644;
-		write_notes_tree(notes, result, mode);
-	}
-}
+extern void store_notes(struct notes_tree *notes, struct object_id *result);
 
 void hg_file_store(struct hg_file *file, struct hg_file *reference)
 {

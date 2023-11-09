@@ -32,10 +32,7 @@ static inline int notes_initialized(struct notes_tree *notes)
 	return notes->current.initialized;
 }
 
-static inline int notes_dirty(struct notes_tree *notes)
-{
-	return notes->current.dirty || notes->additions.dirty;
-}
+int notes_dirty(struct notes_tree *notes);
 
 extern const struct object_id *get_abbrev_note(
 	struct notes_tree *t, const struct object_id *object_oid, size_t len);

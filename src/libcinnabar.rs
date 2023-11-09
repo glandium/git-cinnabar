@@ -4,11 +4,12 @@
 
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
-use std::os::raw::{c_char, c_int, c_void};
+use std::os::raw::{c_char, c_int, c_uint, c_void};
+use std::ptr;
 
 use crate::git::GitObjectId;
 use crate::hg::HgObjectId;
-use crate::libgit::{child_process, object_id};
+use crate::libgit::{child_process, object_id, FileMode};
 use crate::oid::{Abbrev, ObjectId};
 
 #[allow(non_camel_case_types)]
@@ -132,6 +133,10 @@ extern "C" {
     ) -> c_int;
 
     fn cinnabar_remove_note(notes: *mut cinnabar_notes_tree, object_sha1: *const u8);
+
+    fn notes_dirty(noted: *const cinnabar_notes_tree) -> c_int;
+
+    fn cinnabar_write_notes_tree(notes: *mut cinnabar_notes_tree, result: *mut object_id, mode: c_uint) -> c_int;
 }
 
 fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_notes_tree, mut f: F) {
@@ -193,6 +198,19 @@ pub unsafe extern "C" fn add_files_meta(
     note_oid: *const object_id,
 ) -> c_int {
     add_note_hg(&mut files_meta.0, oid, note_oid)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn store_notes(notes: *mut cinnabar_notes_tree, result: *mut object_id) {
+    *result = object_id::default();
+    if notes_dirty(notes) != 0 {
+        let mode = if ptr::eq(notes, &hg2git.0) {
+            FileMode::GITLINK
+        } else {
+            FileMode::REGULAR | FileMode::RW
+        };
+        cinnabar_write_notes_tree(notes, result, u16::from(mode).into());
+    }
 }
 
 #[allow(non_camel_case_types)]

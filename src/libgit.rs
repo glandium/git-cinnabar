@@ -675,6 +675,12 @@ impl fmt::Debug for FileMode {
     }
 }
 
+impl From<FileMode> for u16 {
+    fn from(value: FileMode) -> Self {
+        value.0
+    }
+}
+
 impl FromBytes for FileMode {
     type Err = ParseIntError;
 
