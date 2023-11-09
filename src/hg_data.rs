@@ -460,6 +460,9 @@ pub fn find_file_parents(
         [parent2, None],
         // Some mercurial versions store the first parent twice in merges.
         [parent1, parent1],
+        // And because we don't necessarily have the same parent order as
+        // what mercurial recorded, it might be the second parent twice.
+        [parent2, parent2],
         // As last resord, try without any parents.
         [None, None],
     ] {
