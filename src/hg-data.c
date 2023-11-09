@@ -136,11 +136,3 @@ int remove_note_hg(struct notes_tree *notes,
 	hg_oidcpy2git(&git_oid, oid);
 	return cinnabar_remove_note(notes, git_oid.hash);
 }
-
-const struct object_id *get_note_hg(struct notes_tree *notes,
-                                    const struct hg_object_id *oid)
-{
-	struct object_id git_oid;
-	hg_oidcpy2git(&git_oid, oid);
-	return cinnabar_get_note(notes, &git_oid);
-}

@@ -113,8 +113,6 @@ extern "C" {
         len: usize,
     ) -> *const object_id;
 
-    fn get_note_hg(notes: *mut cinnabar_notes_tree, oid: *const hg_object_id) -> *const object_id;
-
     fn cinnabar_for_each_note(
         notes: *mut cinnabar_notes_tree,
         flags: c_int,
@@ -159,6 +157,17 @@ fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_not
 pub unsafe extern "C" fn resolve_hg2git(oid: *const hg_object_id) -> *const object_id {
     ensure_notes(&mut hg2git.0);
     get_note_hg(&mut hg2git.0, oid)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn get_note_hg(
+    notes: *mut cinnabar_notes_tree,
+    oid: *const hg_object_id,
+) -> *const object_id {
+    let git_oid =
+        GitObjectId::from_raw_bytes(HgObjectId::from(oid.as_ref().unwrap().clone()).as_raw_bytes())
+            .unwrap();
+    cinnabar_get_note(notes, &git_oid.into())
 }
 
 #[allow(non_camel_case_types)]
