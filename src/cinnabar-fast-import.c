@@ -294,8 +294,6 @@ int write_object_file_flags(const void *buf, size_t len, enum object_type type,
 	return 0;
 }
 
-extern void store_notes(struct notes_tree *notes, struct object_id *result);
-
 void hg_file_store(struct hg_file *file, struct hg_file *reference)
 {
 	struct object_id oid;
@@ -611,34 +609,9 @@ malformed:
 extern void store_changesets_metadata(struct object_id *result);
 extern void store_manifests_metadata(struct object_id *result);
 
-void store_metadata_notes(
+extern void store_metadata_notes(
 	struct notes_tree *notes, const struct object_id *reference,
-	struct object_id *result)
-{
-	struct object_id tree;
-	oidcpy(result, null_oid());
-	store_notes(notes, &tree);
-
-	if (is_null_oid(&tree)) {
-		oidcpy(result, reference);
-		if (is_null_oid(result)) {
-			oidcpy(&tree, &empty_tree);
-		}
-	}
-	if (!is_null_oid(&tree)) {
-		struct strbuf buf = STRBUF_INIT;
-		strbuf_addf(
-			&buf, "tree %s\n",
-			oid_to_hex(&tree));
-		strbuf_addstr(
-			&buf,
-			"author  <cinnabar@git> 0 +0000\n"
-			"committer  <cinnabar@git> 0 +0000\n"
-			"\n");
-		store_git_commit(&buf, result);
-		strbuf_release(&buf);
-	}
-}
+	struct object_id *result);
 
 extern int config(const char *name, struct strbuf *result);
 

@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::io::Write;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::os::raw::{c_char, c_int, c_uint, c_void};
@@ -9,8 +10,9 @@ use std::ptr;
 
 use crate::git::GitObjectId;
 use crate::hg::HgObjectId;
-use crate::libgit::{child_process, object_id, FileMode};
+use crate::libgit::{child_process, object_id, strbuf, FileMode, RawTree};
 use crate::oid::{Abbrev, ObjectId};
+use crate::store::store_git_commit;
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug)]
@@ -136,7 +138,11 @@ extern "C" {
 
     fn notes_dirty(noted: *const cinnabar_notes_tree) -> c_int;
 
-    fn cinnabar_write_notes_tree(notes: *mut cinnabar_notes_tree, result: *mut object_id, mode: c_uint) -> c_int;
+    fn cinnabar_write_notes_tree(
+        notes: *mut cinnabar_notes_tree,
+        result: *mut object_id,
+        mode: c_uint,
+    ) -> c_int;
 }
 
 fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_notes_tree, mut f: F) {
@@ -210,6 +216,33 @@ pub unsafe extern "C" fn store_notes(notes: *mut cinnabar_notes_tree, result: *m
             FileMode::REGULAR | FileMode::RW
         };
         cinnabar_write_notes_tree(notes, result, u16::from(mode).into());
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn store_metadata_notes(
+    notes: *mut cinnabar_notes_tree,
+    reference: *const object_id,
+    result: *mut object_id,
+) {
+    *result = object_id::default();
+    let mut tree = object_id::default();
+    store_notes(notes, &mut tree);
+
+    if GitObjectId::from(tree.clone()).is_null() {
+        *result = reference.as_ref().unwrap().clone();
+        if GitObjectId::from(result.as_ref().unwrap().clone()).is_null() {
+            tree = RawTree::EMPTY_OID.into();
+        }
+    }
+    let tree = GitObjectId::from(tree);
+    if !tree.is_null() {
+        let mut buf = strbuf::new();
+        writeln!(buf, "tree {}", tree).ok();
+        buf.extend_from_slice(
+            b"author  <cinnabar@git> 0 +0000\ncommitter  <cinnabar@git> 0 +0000\n\n",
+        );
+        store_git_commit(&buf, result);
     }
 }
 
