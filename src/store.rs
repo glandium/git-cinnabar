@@ -42,8 +42,7 @@ use crate::hg_bundle::{
 use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{
-    files_meta, git2hg, git_notes_tree, hg2git, hg_notes_tree, store_metadata_notes, strslice,
-    strslice_mut,
+    files_meta, git2hg, git_notes_tree, hg2git, hg_notes_tree, strslice, strslice_mut,
 };
 use crate::libgit::{
     commit, commit_oid, die, for_each_ref_in, get_oid_blob, object_id, strbuf, Commit, RawBlob,
@@ -2174,9 +2173,9 @@ pub fn do_store_metadata() -> CommitId {
     let mut tree = object_id::default();
     let mut previous = None;
     unsafe {
-        hg2git_ = store_metadata_notes(&mut *hg2git, HG2GIT_OID);
-        git2hg_ = store_metadata_notes(&mut *git2hg, GIT2HG_OID);
-        files_meta_ = store_metadata_notes(&mut *files_meta, FILES_META_OID);
+        hg2git_ = hg2git.store(HG2GIT_OID);
+        git2hg_ = git2hg.store(GIT2HG_OID);
+        files_meta_ = files_meta.store(FILES_META_OID);
         manifests = store_manifests_metadata();
         changesets = store_changesets_metadata();
         if !METADATA_OID.is_null() {

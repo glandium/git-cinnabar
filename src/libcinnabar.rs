@@ -9,8 +9,6 @@ use std::mem::MaybeUninit;
 use std::os::raw::{c_char, c_int, c_uint, c_void};
 use std::ptr;
 
-use derive_more::{Deref, DerefMut};
-
 use crate::git::{CommitId, GitObjectId, TreeId};
 use crate::hg::HgObjectId;
 use crate::libgit::{
@@ -290,7 +288,6 @@ pub unsafe fn store_metadata_notes(
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Deref, DerefMut)]
 #[repr(transparent)]
 pub struct git_notes_tree(cinnabar_notes_tree);
 
@@ -330,10 +327,13 @@ impl git_notes_tree {
             }
         }
     }
+
+    pub fn store(&mut self, reference: CommitId) -> CommitId {
+        unsafe { store_metadata_notes(&mut self.0, reference) }
+    }
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Deref, DerefMut)]
 #[repr(transparent)]
 pub struct hg_notes_tree(cinnabar_notes_tree);
 
@@ -407,6 +407,10 @@ impl hg_notes_tree {
                 cinnabar_free_notes(&mut self.0);
             }
         }
+    }
+
+    pub fn store(&mut self, reference: CommitId) -> CommitId {
+        unsafe { store_metadata_notes(&mut self.0, reference) }
     }
 }
 
