@@ -476,11 +476,6 @@ unsigned int replace_map_tablesize(void)
 	return the_repository->objects->replace_map->map.tablesize;
 }
 
-extern void init_metadata(struct commit *c);
-
-extern void reset_changeset_heads(void);
-extern void reset_manifest_heads(void);
-
 static void init_git_config(void)
 {
 	struct child_process proc = CHILD_PROCESS_INIT;
