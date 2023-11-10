@@ -645,7 +645,7 @@ const struct object_id *get_worktree_head_oid(const struct worktree *wr)
 	return &wr->head_oid;
 }
 
-static int nongit = 0;
+int nongit = 0;
 
 extern NORETURN void do_panic(const char *err, size_t len);
 
@@ -678,18 +678,6 @@ void init_cinnabar(const char *argv0)
 	cleanup_git_config();
 	save_commit_buffer = 0;
 	warn_on_object_refname_ambiguity = 0;
-}
-
-int init_cinnabar_2(void)
-{
-	struct commit *c;
-	if (nongit) {
-		return 0;
-	}
-	c = lookup_commit_reference_by_name(METADATA_REF);
-	init_metadata(c);
-	init_git_tree_cache();
-	return 1;
 }
 
 int common_exit(const char *file, int line, int code)

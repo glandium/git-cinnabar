@@ -181,7 +181,6 @@ extern "C" {
     fn wmain(argc: c_int, argv: *const *const u16) -> c_int;
 
     fn init_cinnabar(argv0: *const c_char);
-    fn init_cinnabar_2() -> c_int;
 
     fn init_git_tree_cache();
     fn free_git_tree_cache();
@@ -189,6 +188,18 @@ extern "C" {
     fn lookup_commit_reference(repo: *mut repository, oid: *const object_id)
         -> *mut libgit::commit;
     fn lookup_commit_reference_by_name(r: *const c_char) -> *mut libgit::commit;
+    static nongit: c_int;
+}
+
+unsafe fn init_cinnabar_2() -> c_int {
+    if nongit != 0 {
+        return 0;
+    }
+    let r = CString::new(METADATA_REF).unwrap();
+    let c = lookup_commit_reference_by_name(r.as_ptr());
+    init_metadata(c);
+    init_git_tree_cache();
+    1
 }
 
 pub unsafe fn do_reload(metadata: *const object_id) {
