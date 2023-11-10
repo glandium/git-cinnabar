@@ -81,7 +81,6 @@ use std::os::raw::{c_char, c_int, c_void};
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::ptr;
 use std::str::{self, from_utf8, FromStr};
 use std::sync::Mutex;
 use std::time::Instant;
@@ -185,9 +184,6 @@ extern "C" {
     fn init_git_tree_cache();
     fn free_git_tree_cache();
     fn reset_replace_map();
-    fn lookup_commit_reference(repo: *mut repository, oid: *const object_id)
-        -> *mut libgit::commit;
-    fn lookup_commit_reference_by_name(r: *const c_char) -> *mut libgit::commit;
     static nongit: c_int;
 }
 
@@ -195,26 +191,25 @@ unsafe fn init_cinnabar_2() -> c_int {
     if nongit != 0 {
         return 0;
     }
-    let r = CString::new(METADATA_REF).unwrap();
-    let c = lookup_commit_reference_by_name(r.as_ptr());
+    let c = get_oid_committish(METADATA_REF.as_bytes());
     init_metadata(c);
     init_git_tree_cache();
     1
 }
 
 pub unsafe fn do_reload(metadata: *const object_id) {
-    let mut c = ptr::null();
+    let mut c = None;
     done_cinnabar();
     init_git_tree_cache();
 
     reset_replace_map();
     if let Some(metadata) = metadata.as_ref() {
-        if !GitObjectId::from(metadata.clone()).is_null() {
-            c = lookup_commit_reference(the_repository, metadata);
+        let metadata = GitObjectId::from(metadata.clone());
+        if !metadata.is_null() {
+            c = Some(CommitId::from_unchecked(metadata));
         }
     } else {
-        let r = CString::new(METADATA_REF).unwrap();
-        c = lookup_commit_reference_by_name(r.as_ptr());
+        c = get_oid_committish(METADATA_REF.as_bytes());
     }
     init_metadata(c);
     reset_changeset_heads();

@@ -46,9 +46,9 @@ use crate::libcinnabar::{
     git_notes_tree, hg_notes_tree, strslice, strslice_mut, FILES_META, GIT2HG, HG2GIT,
 };
 use crate::libgit::{
-    commit, commit_oid, die, for_each_ref_in, get_oid_blob, object_id, strbuf, Commit, RawBlob,
-    RawCommit, RawTree, RefTransaction, CHANGESETS_OID, FILES_META_OID, GIT2HG_OID, HG2GIT_OID,
-    MANIFESTS_OID, METADATA_OID,
+    die, for_each_ref_in, get_oid_blob, object_id, strbuf, Commit, RawBlob, RawCommit, RawTree,
+    RefTransaction, CHANGESETS_OID, FILES_META_OID, GIT2HG_OID, HG2GIT_OID, MANIFESTS_OID,
+    METADATA_OID,
 };
 use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
@@ -2073,10 +2073,9 @@ fn need_upgrade() {
     die!("Git-cinnabar metadata needs upgrade. Please run `git cinnabar upgrade` first.");
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn init_metadata(c: *const commit) {
-    let cid = if let Some(c) = c.as_ref() {
-        CommitId::from_unchecked(GitObjectId::from(commit_oid(c).as_ref().unwrap().clone()))
+pub unsafe fn init_metadata(c: Option<CommitId>) {
+    let cid = if let Some(c) = c {
+        c
     } else {
         METADATA_OID = CommitId::NULL;
         CHANGESETS_OID = CommitId::NULL;
