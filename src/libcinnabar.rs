@@ -106,7 +106,7 @@ pub struct cinnabar_notes_tree {
 impl Drop for cinnabar_notes_tree {
     fn drop(&mut self) {
         unsafe {
-            if notes_initialized(self) != 0 {
+            if self.current.initialized() {
                 free_notes(&mut self.current);
                 free_notes(&mut self.additions);
             }
@@ -176,7 +176,6 @@ extern "C" {
 
     fn cinnabar_remove_note(notes: *mut cinnabar_notes_tree, object_sha1: *const u8);
 
-    fn notes_initialized(notes: *const cinnabar_notes_tree) -> c_int;
     fn notes_dirty(notes: *const cinnabar_notes_tree) -> c_int;
 
     fn cinnabar_write_notes_tree(
@@ -189,7 +188,8 @@ extern "C" {
 const NOTES_INIT_EMPTY: c_int = 1;
 
 unsafe fn ensure_notes(t: *mut cinnabar_notes_tree) {
-    if notes_initialized(t) == 0 {
+    let t = t.as_mut().unwrap();
+    if !t.current.initialized() {
         let oid;
         let mut flags = 0;
         if ptr::eq(t, &GIT2HG.0) {
@@ -209,7 +209,6 @@ unsafe fn ensure_notes(t: *mut cinnabar_notes_tree) {
             flags = NOTES_INIT_EMPTY;
         }
         let oid = CString::new(oid.to_string()).unwrap();
-        let t = t.as_mut().unwrap();
         init_notes(&mut t.current, oid.as_ptr(), combine_notes_ignore, flags);
         init_notes(
             &mut t.additions,

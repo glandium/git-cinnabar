@@ -99,7 +99,7 @@ const struct object_id *get_abbrev_note(struct cinnabar_notes_tree *t,
 	struct leaf_node *found;
 
 	assert(t);
-	assert(notes_initialized(t));
+	assert(t->current.initialized);
 	found = note_tree_abbrev_find(&t->current, t->current.root, 0,
 	                              object_oid->hash, len);
 	if (!found)
@@ -107,11 +107,6 @@ const struct object_id *get_abbrev_note(struct cinnabar_notes_tree *t,
 			&t->additions, t->additions.root, 0,
 			object_oid->hash, len);
 	return found ? &found->val_oid : NULL;
-}
-
-int notes_initialized(struct cinnabar_notes_tree *notes)
-{
-	return notes->current.initialized;
 }
 
 int notes_dirty(struct cinnabar_notes_tree *notes)
