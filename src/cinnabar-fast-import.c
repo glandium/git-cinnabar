@@ -601,15 +601,6 @@ malformed:
 	die("Malformed manifest chunk for %s", hg_oid_to_hex(chunk->node));
 }
 
-extern void store_changesets_metadata(struct object_id *result);
-extern void store_manifests_metadata(struct object_id *result);
-
-extern void store_metadata_notes(
-	struct notes_tree *notes, const struct object_id *reference,
-	struct object_id *result);
-
-extern int config(const char *name, struct strbuf *result);
-
 void ensure_store_init(void)
 {
 	ENSURE_INIT();
