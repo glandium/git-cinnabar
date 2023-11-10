@@ -76,7 +76,6 @@ use std::fs::File;
 use std::hash::Hash;
 use std::io::{stderr, stdin, stdout, BufRead, BufWriter, IsTerminal, Write};
 use std::iter::repeat;
-use std::ops::{Deref, DerefMut};
 use std::os::raw::{c_char, c_int, c_void};
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
@@ -854,34 +853,6 @@ extern "C" {
     fn get_worktree_head_oid(wt: *const worktree) -> *const object_id;
 
     fn get_worktree_ref_store(wr: *const worktree) -> *const libgit::ref_store;
-
-    fn new_notes_tree(notes_ref: *const c_char) -> *mut git_notes_tree;
-
-    fn destroy_notes_tree(t: *mut git_notes_tree);
-}
-
-struct NotesBox(*mut git_notes_tree);
-
-impl Deref for NotesBox {
-    type Target = git_notes_tree;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { self.0.as_ref().unwrap() }
-    }
-}
-
-impl DerefMut for NotesBox {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.0.as_mut().unwrap() }
-    }
-}
-
-impl Drop for NotesBox {
-    fn drop(&mut self) {
-        unsafe {
-            destroy_notes_tree(self.0);
-        }
-    }
 }
 
 fn do_reclone(rebase: bool) -> Result<(), String> {
@@ -949,8 +920,7 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
         if git2hg_oid.is_null() {
             None
         } else {
-            let git2hg_oid = CString::new(git2hg_oid.to_string()).unwrap();
-            Some(NotesBox(unsafe { new_notes_tree(git2hg_oid.as_ptr()) }))
+            Some(git_notes_tree::new_with(git2hg_oid))
         }
     };
 

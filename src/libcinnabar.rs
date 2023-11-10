@@ -103,19 +103,36 @@ pub struct cinnabar_notes_tree {
     init_flags: c_int,
 }
 
+impl Drop for cinnabar_notes_tree {
+    fn drop(&mut self) {
+        unsafe {
+            cinnabar_free_notes(self);
+        }
+    }
+}
+
 impl cinnabar_notes_tree {
-    const fn new() -> Self {
+    pub const fn new() -> Self {
         cinnabar_notes_tree {
             current: notes_tree::new(),
             additions: notes_tree::new(),
             init_flags: 0,
         }
     }
+
+    pub fn new_with(c: CommitId) -> Self {
+        let mut result = Self::new();
+        let oid = CString::new(c.to_string()).unwrap();
+        unsafe {
+            cinnabar_init_notes(&mut result, oid.as_ptr(), combine_notes_ignore, 0);
+        }
+        result
+    }
 }
 
-pub static mut GIT2HG: git_notes_tree = git_notes_tree(cinnabar_notes_tree::new());
-pub static mut HG2GIT: hg_notes_tree = hg_notes_tree(cinnabar_notes_tree::new());
-pub static mut FILES_META: hg_notes_tree = hg_notes_tree(cinnabar_notes_tree::new());
+pub static mut GIT2HG: git_notes_tree = git_notes_tree::new();
+pub static mut HG2GIT: hg_notes_tree = hg_notes_tree::new();
+pub static mut FILES_META: hg_notes_tree = hg_notes_tree::new();
 
 extern "C" {
     fn combine_notes_ignore(cur_oid: *mut object_id, new_oid: *const object_id) -> c_int;
@@ -303,6 +320,14 @@ pub unsafe fn store_metadata_notes(
 pub struct git_notes_tree(cinnabar_notes_tree);
 
 impl git_notes_tree {
+    pub const fn new() -> Self {
+        git_notes_tree(cinnabar_notes_tree::new())
+    }
+
+    pub fn new_with(c: CommitId) -> Self {
+        git_notes_tree(cinnabar_notes_tree::new_with(c))
+    }
+
     pub fn get_note(&mut self, oid: GitObjectId) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
@@ -349,6 +374,15 @@ impl git_notes_tree {
 pub struct hg_notes_tree(cinnabar_notes_tree);
 
 impl hg_notes_tree {
+    pub const fn new() -> Self {
+        hg_notes_tree(cinnabar_notes_tree::new())
+    }
+
+    #[allow(dead_code)]
+    pub fn new_with(c: CommitId) -> Self {
+        hg_notes_tree(cinnabar_notes_tree::new_with(c))
+    }
+
     pub fn get_note(&mut self, oid: HgObjectId) -> Option<GitObjectId> {
         unsafe {
             ensure_notes(&mut self.0);
