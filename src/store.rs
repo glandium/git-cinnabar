@@ -1096,7 +1096,7 @@ impl Metadata {
 
 static BUNDLE_BLOBS: Mutex<Vec<object_id>> = Mutex::new(Vec::new());
 
-fn store_changesets_metadata() -> CommitId {
+fn store_changesets_metadata(metadata: &Metadata) -> CommitId {
     let mut tree = strbuf::new();
     for (n, blob) in BUNDLE_BLOBS
         .lock()
@@ -1121,7 +1121,7 @@ fn store_changesets_metadata() -> CommitId {
     drop(tree);
     let mut commit = strbuf::new();
     writeln!(commit, "tree {}", GitObjectId::from(tid)).ok();
-    let heads = unsafe { &METADATA }.changeset_heads();
+    let heads = metadata.changeset_heads();
     for (head, _) in heads.branch_heads() {
         writeln!(commit, "parent {}", head.to_git().unwrap()).ok();
     }
@@ -1137,10 +1137,10 @@ fn store_changesets_metadata() -> CommitId {
     CommitId::from_unchecked(result.into())
 }
 
-fn store_manifests_metadata() -> CommitId {
+fn store_manifests_metadata(metadata: &Metadata) -> CommitId {
     let mut commit = strbuf::new();
     writeln!(commit, "tree {}", RawTree::EMPTY_OID).ok();
-    let heads = unsafe { &METADATA }.manifest_heads();
+    let heads = metadata.manifest_heads();
     for head in heads.heads() {
         writeln!(commit, "parent {}", head).ok();
     }
@@ -2216,7 +2216,7 @@ pub unsafe extern "C" fn done_metadata() {
     METADATA.files_meta = hg_notes_tree::new();
 }
 
-pub fn do_store_metadata() -> CommitId {
+pub fn do_store_metadata(metadata: &mut Metadata) -> CommitId {
     let hg2git_;
     let git2hg_;
     let files_meta_;
@@ -2225,13 +2225,13 @@ pub fn do_store_metadata() -> CommitId {
     let mut tree = object_id::default();
     let mut previous = None;
     unsafe {
-        hg2git_ = METADATA.hg2git.store(METADATA.hg2git_cid);
-        git2hg_ = METADATA.git2hg.store(METADATA.git2hg_cid);
-        files_meta_ = METADATA.files_meta.store(METADATA.files_meta_cid);
-        manifests = store_manifests_metadata();
-        changesets = store_changesets_metadata();
-        if !METADATA.metadata_cid.is_null() {
-            previous = Some(METADATA.metadata_cid);
+        hg2git_ = metadata.hg2git.store(metadata.hg2git_cid);
+        git2hg_ = metadata.git2hg.store(metadata.git2hg_cid);
+        files_meta_ = metadata.files_meta.store(metadata.files_meta_cid);
+        manifests = store_manifests_metadata(metadata);
+        changesets = store_changesets_metadata(metadata);
+        if !metadata.metadata_cid.is_null() {
+            previous = Some(metadata.metadata_cid);
         }
         store_replace_map(&mut tree);
     }

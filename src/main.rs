@@ -288,7 +288,7 @@ fn do_done_and_check(args: &[&[u8]]) -> bool {
             error!(target: "root", "Nothing to graft");
             return false;
         }
-        let new_metadata = do_store_metadata();
+        let new_metadata = do_store_metadata(&mut METADATA);
         do_cleanup(0);
         set_metadata_to(
             Some(new_metadata),
