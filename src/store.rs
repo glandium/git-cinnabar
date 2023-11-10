@@ -2211,9 +2211,7 @@ pub unsafe fn init_metadata(c: Option<CommitId>) {
 
 #[no_mangle]
 pub unsafe extern "C" fn done_metadata() {
-    METADATA.git2hg = git_notes_tree::new();
-    METADATA.hg2git = hg_notes_tree::new();
-    METADATA.files_meta = hg_notes_tree::new();
+    METADATA = Metadata::default();
 }
 
 pub fn do_store_metadata(metadata: &mut Metadata) -> CommitId {
