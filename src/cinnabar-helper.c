@@ -40,8 +40,6 @@
 #include "cinnabar-fast-import.h"
 #include "cinnabar-notes.h"
 
-struct notes_tree git2hg, hg2git, files_meta;
-
 struct object_id *commit_oid(struct commit *c) {
 	return &c->object.oid;
 }

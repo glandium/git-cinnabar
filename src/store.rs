@@ -43,7 +43,7 @@ use crate::hg_bundle::{
 use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{
-    files_meta, git2hg, git_notes_tree, hg2git, hg_notes_tree, strslice, strslice_mut,
+    git_notes_tree, hg_notes_tree, strslice, strslice_mut, FILES_META, GIT2HG, HG2GIT,
 };
 use crate::libgit::{
     commit, commit_oid, die, for_each_ref_in, get_oid_blob, object_id, strbuf, Commit, RawBlob,
@@ -85,7 +85,7 @@ macro_rules! hg2git {
         impl $h {
             pub fn to_git(self) -> Option<$g> {
                 unsafe {
-                    hg2git
+                    HG2GIT
                         .get_note(self.into())
                         .map(|o| $g::from_raw_bytes(o.as_raw_bytes()).unwrap())
                 }
@@ -114,7 +114,7 @@ pub struct RawGitChangesetMetadata(RawBlob);
 
 impl RawGitChangesetMetadata {
     pub fn read(changeset_id: GitChangesetId) -> Option<Self> {
-        Self::read_from_notes_tree(unsafe { &mut git2hg }, changeset_id)
+        Self::read_from_notes_tree(unsafe { &mut GIT2HG }, changeset_id)
     }
 
     pub fn read_from_notes_tree(
@@ -691,7 +691,7 @@ impl RawHgFile {
         if oid == Self::EMPTY_OID {
             Some(Self(vec![].into()))
         } else {
-            let metadata = unsafe { files_meta.get_note(oid.into()) }
+            let metadata = unsafe { FILES_META.get_note(oid.into()) }
                 .map(BlobId::from_unchecked)
                 .map(GitFileMetadataId::from_unchecked);
             Self::read(oid.to_git().unwrap(), metadata)
@@ -1181,10 +1181,10 @@ pub fn do_set(what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
     match what {
         SetWhat::Changeset => {
             if git_id.is_null() {
-                unsafe { &mut hg2git }.remove_note(hg_id);
+                unsafe { &mut HG2GIT }.remove_note(hg_id);
             } else if let Ok(ref mut commit) = CommitId::try_from(git_id) {
                 handle_changeset_conflict(HgChangesetId::from_unchecked(hg_id), commit);
-                unsafe { &mut hg2git }.add_note(hg_id, (*commit).into());
+                unsafe { &mut HG2GIT }.add_note(hg_id, (*commit).into());
             } else {
                 die!("Invalid object");
             }
@@ -1194,13 +1194,13 @@ pub fn do_set(what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
             if let Some(cid) = csid.to_git() {
                 if git_id.is_null() {
                     unsafe {
-                        git2hg.remove_note(cid.into());
+                        GIT2HG.remove_note(cid.into());
                     }
                 } else if BlobId::try_from(git_id).is_err() {
                     die!("Invalid object");
                 } else {
                     unsafe {
-                        git2hg.add_note(cid.into(), git_id);
+                        GIT2HG.add_note(cid.into(), git_id);
                     }
                 }
             } else if !git_id.is_null() {
@@ -1216,13 +1216,13 @@ pub fn do_set(what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
                         git_id,
                     )));
             }
-            set::<CommitId>(unsafe { &mut hg2git }, hg_id, git_id);
+            set::<CommitId>(unsafe { &mut HG2GIT }, hg_id, git_id);
         }
         SetWhat::File => {
-            set::<BlobId>(unsafe { &mut hg2git }, hg_id, git_id);
+            set::<BlobId>(unsafe { &mut HG2GIT }, hg_id, git_id);
         }
         SetWhat::FileMeta => {
-            set::<BlobId>(unsafe { &mut files_meta }, hg_id, git_id);
+            set::<BlobId>(unsafe { &mut FILES_META }, hg_id, git_id);
         }
     }
 }
@@ -2174,9 +2174,9 @@ pub unsafe extern "C" fn init_metadata(c: *const commit) {
 
 #[no_mangle]
 pub unsafe extern "C" fn done_metadata() {
-    git2hg.done();
-    hg2git.done();
-    files_meta.done();
+    GIT2HG.done();
+    HG2GIT.done();
+    FILES_META.done();
 }
 
 pub fn do_store_metadata() -> CommitId {
@@ -2188,9 +2188,9 @@ pub fn do_store_metadata() -> CommitId {
     let mut tree = object_id::default();
     let mut previous = None;
     unsafe {
-        hg2git_ = hg2git.store(HG2GIT_OID);
-        git2hg_ = git2hg.store(GIT2HG_OID);
-        files_meta_ = files_meta.store(FILES_META_OID);
+        hg2git_ = HG2GIT.store(HG2GIT_OID);
+        git2hg_ = GIT2HG.store(GIT2HG_OID);
+        files_meta_ = FILES_META.store(FILES_META_OID);
         manifests = store_manifests_metadata();
         changesets = store_changesets_metadata();
         if !METADATA_OID.is_null() {

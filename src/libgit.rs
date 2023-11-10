@@ -6,6 +6,7 @@ use std::ffi::{c_void, CStr, CString, OsStr, OsString};
 use std::io::{self, Write};
 use std::num::ParseIntError;
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
+use std::ptr;
 use std::str::FromStr;
 use std::sync::RwLock;
 use std::{fmt, mem};
@@ -1238,5 +1239,38 @@ pub fn reachable_subset(
                 0,
             )
         },
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct notes_tree {
+    root: *mut c_void,
+    first_non_note: *mut c_void,
+    prev_non_note: *mut c_void,
+    r#ref: *const c_char,
+    update_ref: *const c_char,
+    combine_notes:
+        unsafe extern "C" fn(cur_oid: *mut object_id, new_oid: *const object_id) -> c_int,
+    initialized: c_int,
+    dirty: c_int,
+}
+
+extern "C" {
+    fn combine_notes_ignore(cur_oid: *mut object_id, new_oid: *const object_id) -> c_int;
+}
+
+impl notes_tree {
+    pub const fn new() -> Self {
+        notes_tree {
+            root: ptr::null_mut(),
+            first_non_note: ptr::null_mut(),
+            prev_non_note: ptr::null_mut(),
+            r#ref: ptr::null(),
+            update_ref: ptr::null(),
+            combine_notes: combine_notes_ignore,
+            initialized: 0,
+            dirty: 0,
+        }
     }
 }

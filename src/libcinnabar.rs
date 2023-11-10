@@ -12,8 +12,8 @@ use std::ptr;
 use crate::git::{CommitId, GitObjectId, TreeId};
 use crate::hg::HgObjectId;
 use crate::libgit::{
-    child_process, die, object_id, strbuf, FileMode, RawTree, FILES_META_OID, GIT2HG_OID,
-    HG2GIT_OID,
+    child_process, die, notes_tree, object_id, strbuf, FileMode, RawTree, FILES_META_OID,
+    GIT2HG_OID, HG2GIT_OID,
 };
 use crate::oid::{Abbrev, ObjectId};
 use crate::store::{store_git_commit, MetadataFlags, METADATA_FLAGS};
@@ -98,15 +98,26 @@ impl From<hg_object_id> for HgObjectId {
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct cinnabar_notes_tree {
-    root: *mut c_void,
-    // ...
+    current: notes_tree,
+    additions: notes_tree,
+    init_flags: c_int,
 }
 
-extern "C" {
-    pub static mut git2hg: git_notes_tree;
-    pub static mut hg2git: hg_notes_tree;
-    pub static mut files_meta: hg_notes_tree;
+impl cinnabar_notes_tree {
+    const fn new() -> Self {
+        cinnabar_notes_tree {
+            current: notes_tree::new(),
+            additions: notes_tree::new(),
+            init_flags: 0,
+        }
+    }
+}
 
+pub static mut GIT2HG: git_notes_tree = git_notes_tree(cinnabar_notes_tree::new());
+pub static mut HG2GIT: hg_notes_tree = hg_notes_tree(cinnabar_notes_tree::new());
+pub static mut FILES_META: hg_notes_tree = hg_notes_tree(cinnabar_notes_tree::new());
+
+extern "C" {
     fn combine_notes_ignore(cur_oid: *mut object_id, new_oid: *const object_id) -> c_int;
 
     fn cinnabar_init_notes(
@@ -168,11 +179,11 @@ unsafe fn ensure_notes(t: *mut cinnabar_notes_tree) {
     if notes_initialized(t) == 0 {
         let oid;
         let mut flags = 0;
-        if ptr::eq(t, &git2hg.0) {
+        if ptr::eq(t, &GIT2HG.0) {
             oid = GIT2HG_OID;
-        } else if ptr::eq(t, &hg2git.0) {
+        } else if ptr::eq(t, &HG2GIT.0) {
             oid = HG2GIT_OID;
-        } else if ptr::eq(t, &files_meta.0) {
+        } else if ptr::eq(t, &FILES_META.0) {
             oid = FILES_META_OID;
             if !METADATA_FLAGS.contains(MetadataFlags::FILES_META) {
                 flags = NOTES_INIT_EMPTY;
@@ -210,8 +221,8 @@ fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_not
 
 #[no_mangle]
 pub unsafe extern "C" fn resolve_hg2git(oid: *const hg_object_id) -> *const object_id {
-    ensure_notes(&mut hg2git.0);
-    get_note_hg(&mut hg2git.0, oid)
+    ensure_notes(&mut HG2GIT.0);
+    get_note_hg(&mut HG2GIT.0, oid)
 }
 
 unsafe fn get_note_hg(
@@ -226,8 +237,8 @@ unsafe fn get_note_hg(
 
 #[no_mangle]
 pub unsafe extern "C" fn get_files_meta(oid: *const hg_object_id) -> *const object_id {
-    ensure_notes(&mut files_meta.0);
-    get_note_hg(&mut files_meta.0, oid)
+    ensure_notes(&mut FILES_META.0);
+    get_note_hg(&mut FILES_META.0, oid)
 }
 
 unsafe fn add_note_hg(
@@ -244,7 +255,7 @@ unsafe fn add_note_hg(
 
 #[no_mangle]
 pub unsafe extern "C" fn add_hg2git(oid: *const hg_object_id, note_oid: *const object_id) -> c_int {
-    add_note_hg(&mut hg2git.0, oid, note_oid)
+    add_note_hg(&mut HG2GIT.0, oid, note_oid)
 }
 
 #[no_mangle]
@@ -252,7 +263,7 @@ pub unsafe extern "C" fn add_files_meta(
     oid: *const hg_object_id,
     note_oid: *const object_id,
 ) -> c_int {
-    add_note_hg(&mut files_meta.0, oid, note_oid)
+    add_note_hg(&mut FILES_META.0, oid, note_oid)
 }
 
 pub unsafe fn store_metadata_notes(
@@ -262,7 +273,7 @@ pub unsafe fn store_metadata_notes(
     let mut result = object_id::default();
     let mut tree = object_id::default();
     if notes_dirty(notes) != 0 {
-        let mode = if ptr::eq(notes, &hg2git.0) {
+        let mode = if ptr::eq(notes, &HG2GIT.0) {
             FileMode::GITLINK
         } else {
             FileMode::REGULAR | FileMode::RW
