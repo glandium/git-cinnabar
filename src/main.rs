@@ -105,13 +105,12 @@ use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bund
 use indexmap::IndexSet;
 use itertools::EitherOrBoth::{Both, Left, Right};
 use itertools::{EitherOrBoth, Itertools};
-use libcinnabar::{git_notes_tree, FILES_META, GIT2HG, HG2GIT};
+use libcinnabar::git_notes_tree;
 use libgit::{
     commit, config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
     get_oid_committish, get_unique_abbrev, lookup_commit, lookup_replace_commit, object_id,
     reachable_subset, remote, repository, resolve_ref, rev_list, rev_list_with_boundaries, strbuf,
     the_repository, DiffTreeItem, MaybeBoundary, RawBlob, RawCommit, RawTree, RefTransaction,
-    METADATA_OID,
 };
 use logging::{LoggingReader, LoggingWriter};
 use oid::{Abbrev, ObjectId};
@@ -125,7 +124,8 @@ use store::{
     raw_commit_for_changeset, reset_changeset_heads, reset_manifest_heads, store_git_blob,
     store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata,
     RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF,
-    METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    FILES_META, GIT2HG, HG2GIT, METADATA_OID, METADATA_REF, NOTES_REF, REFS_PREFIX,
+    REPLACE_REFS_PREFIX,
 };
 use tree_util::{diff_by_path, RecurseTree};
 use url::Url;
@@ -951,9 +951,9 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
         }
     }
 
-    let old_changesets_oid = unsafe { libgit::CHANGESETS_OID };
+    let old_changesets_oid = unsafe { store::CHANGESETS_OID };
     let mut old_git2hg = {
-        let git2hg_oid = unsafe { libgit::GIT2HG_OID };
+        let git2hg_oid = unsafe { store::GIT2HG_OID };
         if git2hg_oid.is_null() {
             None
         } else {

@@ -13,10 +13,13 @@ use crate::git::{CommitId, GitObjectId, TreeId};
 use crate::hg::HgObjectId;
 use crate::libgit::{
     child_process, combine_notes_ignore, die, free_notes, init_notes, notes_tree, object_id,
-    strbuf, FileMode, RawTree, FILES_META_OID, GIT2HG_OID, HG2GIT_OID,
+    strbuf, FileMode, RawTree,
 };
 use crate::oid::{Abbrev, ObjectId};
-use crate::store::{store_git_commit, MetadataFlags, METADATA_FLAGS};
+use crate::store::{
+    store_git_commit, MetadataFlags, FILES_META, FILES_META_OID, GIT2HG, GIT2HG_OID, HG2GIT,
+    HG2GIT_OID, METADATA_FLAGS,
+};
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug)]
@@ -139,10 +142,6 @@ impl cinnabar_notes_tree {
         result
     }
 }
-
-pub static mut GIT2HG: git_notes_tree = git_notes_tree::new();
-pub static mut HG2GIT: hg_notes_tree = hg_notes_tree::new();
-pub static mut FILES_META: hg_notes_tree = hg_notes_tree::new();
 
 extern "C" {
     fn cinnabar_get_note(

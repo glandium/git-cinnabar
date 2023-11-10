@@ -42,13 +42,10 @@ use crate::hg_bundle::{
 };
 use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
-use crate::libcinnabar::{
-    git_notes_tree, hg_notes_tree, strslice, strslice_mut, FILES_META, GIT2HG, HG2GIT,
-};
+use crate::libcinnabar::{git_notes_tree, hg_notes_tree, strslice, strslice_mut};
 use crate::libgit::{
     die, for_each_ref_in, get_oid_blob, object_id, strbuf, Commit, RawBlob, RawCommit, RawTree,
-    RefTransaction, CHANGESETS_OID, FILES_META_OID, GIT2HG_OID, HG2GIT_OID, MANIFESTS_OID,
-    METADATA_OID,
+    RefTransaction,
 };
 use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
@@ -65,6 +62,17 @@ pub const METADATA_REF: &str = "refs/cinnabar/metadata";
 pub const CHECKED_REF: &str = "refs/cinnabar/checked";
 pub const BROKEN_REF: &str = "refs/cinnabar/broken";
 pub const NOTES_REF: &str = "refs/notes/cinnabar";
+
+pub static mut METADATA_OID: CommitId = CommitId::NULL;
+pub static mut CHANGESETS_OID: CommitId = CommitId::NULL;
+pub static mut MANIFESTS_OID: CommitId = CommitId::NULL;
+pub static mut GIT2HG_OID: CommitId = CommitId::NULL;
+pub static mut HG2GIT_OID: CommitId = CommitId::NULL;
+pub static mut FILES_META_OID: CommitId = CommitId::NULL;
+
+pub static mut GIT2HG: git_notes_tree = git_notes_tree::new();
+pub static mut HG2GIT: hg_notes_tree = hg_notes_tree::new();
+pub static mut FILES_META: hg_notes_tree = hg_notes_tree::new();
 
 bitflags! {
     #[derive(Debug, Copy, Clone)]
@@ -1562,12 +1570,7 @@ pub fn do_check_files() -> bool {
     if busted {
         let mut transaction = RefTransaction::new().unwrap();
         transaction
-            .update(
-                BROKEN_REF,
-                unsafe { crate::libgit::METADATA_OID },
-                None,
-                "post-pull check",
-            )
+            .update(BROKEN_REF, unsafe { METADATA_OID }, None, "post-pull check")
             .unwrap();
         transaction.commit().unwrap();
         error!(

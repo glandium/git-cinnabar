@@ -63,13 +63,6 @@ impl From<object_id> for GitObjectId {
     }
 }
 
-pub static mut METADATA_OID: CommitId = CommitId::NULL;
-pub static mut CHANGESETS_OID: CommitId = CommitId::NULL;
-pub static mut MANIFESTS_OID: CommitId = CommitId::NULL;
-pub static mut GIT2HG_OID: CommitId = CommitId::NULL;
-pub static mut HG2GIT_OID: CommitId = CommitId::NULL;
-pub static mut FILES_META_OID: CommitId = CommitId::NULL;
-
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct strbuf {
