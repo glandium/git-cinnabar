@@ -187,14 +187,14 @@ extern "C" {
     static nongit: c_int;
 }
 
-unsafe fn init_cinnabar_2() -> c_int {
+unsafe fn init_cinnabar_2() -> bool {
     if nongit != 0 {
-        return 0;
+        return false;
     }
     let c = get_oid_committish(METADATA_REF.as_bytes());
     init_metadata(c);
     init_git_tree_cache();
-    1
+    true
 }
 
 pub unsafe fn do_reload(metadata: Option<CommitId>) {
@@ -241,7 +241,7 @@ fn dump_ref_updates() {
 }
 
 static MAYBE_INIT_CINNABAR_2: Lazy<Option<()>> = Lazy::new(|| unsafe {
-    (init_cinnabar_2() != 0).then(|| {
+    init_cinnabar_2().then(|| {
         if let Some(refs) = [
             // Delete old tag-cache, which may contain incomplete data.
             "refs/cinnabar/tag-cache",
