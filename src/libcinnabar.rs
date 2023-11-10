@@ -171,11 +171,11 @@ unsafe fn ensure_notes(t: *mut cinnabar_notes_tree) {
         let oid;
         let mut flags = 0;
         if ptr::eq(t, &git2hg.0) {
-            oid = GIT2HG_OID.clone();
+            oid = GIT2HG_OID;
         } else if ptr::eq(t, &hg2git.0) {
-            oid = HG2GIT_OID.clone();
+            oid = HG2GIT_OID;
         } else if ptr::eq(t, &files_meta.0) {
-            oid = FILES_META_OID.clone();
+            oid = FILES_META_OID;
             if METADATA_FLAGS & FILES_META == 0 {
                 flags = NOTES_INIT_EMPTY;
             }
@@ -260,7 +260,7 @@ pub unsafe extern "C" fn add_files_meta(
 
 pub unsafe fn store_metadata_notes(
     notes: *mut cinnabar_notes_tree,
-    reference: *const object_id,
+    reference: CommitId,
 ) -> CommitId {
     let mut result = object_id::default();
     let mut tree = object_id::default();
@@ -274,7 +274,7 @@ pub unsafe fn store_metadata_notes(
     }
     let mut tree = TreeId::from_unchecked(GitObjectId::from(tree));
     if tree.is_null() {
-        result = reference.as_ref().unwrap().clone();
+        result = reference.into();
         if GitObjectId::from(result.clone()).is_null() {
             tree = RawTree::EMPTY_OID;
         }

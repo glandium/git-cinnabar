@@ -1560,9 +1560,7 @@ pub fn do_check_files() -> bool {
         transaction
             .update(
                 BROKEN_REF,
-                unsafe {
-                    CommitId::from_unchecked(GitObjectId::from(crate::libgit::METADATA_OID.clone()))
-                },
+                unsafe { crate::libgit::METADATA_OID },
                 None,
                 "post-pull check",
             )
@@ -2070,12 +2068,12 @@ pub unsafe extern "C" fn init_metadata(c: *const commit) {
     let cid = if let Some(c) = c.as_ref() {
         CommitId::from_unchecked(GitObjectId::from(commit_oid(c).as_ref().unwrap().clone()))
     } else {
-        METADATA_OID = object_id::default();
-        CHANGESETS_OID = object_id::default();
-        MANIFESTS_OID = object_id::default();
-        HG2GIT_OID = object_id::default();
-        GIT2HG_OID = object_id::default();
-        FILES_META_OID = object_id::default();
+        METADATA_OID = CommitId::NULL;
+        CHANGESETS_OID = CommitId::NULL;
+        MANIFESTS_OID = CommitId::NULL;
+        HG2GIT_OID = CommitId::NULL;
+        GIT2HG_OID = CommitId::NULL;
+        FILES_META_OID = CommitId::NULL;
         return;
     };
     let c = RawCommit::read(cid).unwrap();
@@ -2091,7 +2089,7 @@ pub unsafe extern "C" fn init_metadata(c: *const commit) {
         &mut GIT2HG_OID,
         &mut FILES_META_OID,
     ]) {
-        *field = (*cid).into();
+        *field = *cid;
     }
     for flag in c.body().split(|&b| b == b' ') {
         match flag {
@@ -2177,15 +2175,13 @@ pub fn do_store_metadata() -> CommitId {
     let mut tree = object_id::default();
     let mut previous = None;
     unsafe {
-        hg2git_ = store_metadata_notes(&mut *hg2git, &HG2GIT_OID);
-        git2hg_ = store_metadata_notes(&mut *git2hg, &GIT2HG_OID);
-        files_meta_ = store_metadata_notes(&mut *files_meta, &FILES_META_OID);
+        hg2git_ = store_metadata_notes(&mut *hg2git, HG2GIT_OID);
+        git2hg_ = store_metadata_notes(&mut *git2hg, GIT2HG_OID);
+        files_meta_ = store_metadata_notes(&mut *files_meta, FILES_META_OID);
         manifests = store_manifests_metadata();
         changesets = store_changesets_metadata();
-        if !GitObjectId::from(METADATA_OID.clone()).is_null() {
-            previous = Some(CommitId::from_unchecked(GitObjectId::from(
-                METADATA_OID.clone(),
-            )));
+        if !METADATA_OID.is_null() {
+            previous = Some(METADATA_OID);
         }
         store_replace_map(&mut tree);
     }

@@ -941,9 +941,9 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
         }
     }
 
-    let old_changesets_oid = GitObjectId::from(unsafe { libgit::CHANGESETS_OID.clone() });
+    let old_changesets_oid = unsafe { libgit::CHANGESETS_OID };
     let mut old_git2hg = {
-        let git2hg_oid = GitObjectId::from(unsafe { libgit::GIT2HG_OID.clone() });
+        let git2hg_oid = unsafe { libgit::GIT2HG_OID };
         if git2hg_oid.is_null() {
             None
         } else {
@@ -953,9 +953,9 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
     };
 
     let current_metadata_oid = unsafe {
-        let current_metadata_oid = METADATA_OID.clone();
+        let current_metadata_oid = METADATA_OID;
         do_reload(&object_id::default());
-        METADATA_OID = current_metadata_oid.clone();
+        METADATA_OID = current_metadata_oid;
         current_metadata_oid
     };
 
@@ -1078,7 +1078,6 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
     .and_then(|()| {
         // If all the changesets we had in store weren't pulled from the remotes
         // above, try fetching them from skip-default-update remotes.
-        let old_changesets_oid = CommitId::from_unchecked(old_changesets_oid);
         if old_changesets_oid.is_null() {
             return Ok(());
         }
@@ -2330,7 +2329,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         );
         return Ok(1);
     }
-    let metadata_cid = unsafe { CommitId::from_unchecked(GitObjectId::from(METADATA_OID.clone())) };
+    let metadata_cid = unsafe { METADATA_OID };
     let checked_cid = if force {
         None
     } else {
