@@ -4643,16 +4643,6 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
     }
 }
 
-#[no_mangle]
-unsafe extern "C" fn config(name: *const c_char, result: *mut strbuf) -> c_int {
-    if let Some(res) = get_config(CStr::from_ptr(name).to_str().unwrap()) {
-        result.as_mut().unwrap().extend_from_slice(res.as_bytes());
-        0
-    } else {
-        1
-    }
-}
-
 pub fn get_config(name: &str) -> Option<OsString> {
     get_config_remote(name, None)
 }
