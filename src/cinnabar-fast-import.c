@@ -21,10 +21,6 @@ static void cinnabar_unregister_shallow(const struct object_id *oid);
 #include "strslice.h"
 #include "tree-walk.h"
 
-// Including tag.h conflicts with fast-import.c, so manually define what
-// we use.
-extern const char *tag_type;
-
 #define ENSURE_INIT() do { \
 	if (!initialized) \
 		init(); \
