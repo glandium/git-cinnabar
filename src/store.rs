@@ -1128,8 +1128,7 @@ pub unsafe extern "C" fn reset_manifest_heads() {
     *heads = ManifestHeads::from_stored_metadata();
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn clear_manifest_heads() {
+pub fn clear_manifest_heads() {
     let mut heads = MANIFEST_HEADS.lock().unwrap();
     *heads = ManifestHeads::new();
 }

@@ -216,8 +216,7 @@ pub unsafe extern "C" fn resolve_hg2git(oid: *const hg_object_id) -> *const obje
     get_note_hg(&mut hg2git.0, oid)
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn get_note_hg(
+unsafe fn get_note_hg(
     notes: *mut cinnabar_notes_tree,
     oid: *const hg_object_id,
 ) -> *const object_id {

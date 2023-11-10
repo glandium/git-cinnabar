@@ -3110,15 +3110,13 @@ fn do_fsck_full(
                 }
             }
 
-            unsafe {
-                clear_manifest_heads();
-                for h in manifest_heads {
-                    // TODO: This is gross.
-                    let m = RawCommit::read(h).unwrap();
-                    let m = m.parse().unwrap();
-                    let m = HgManifestId::from_bytes(m.body()).unwrap();
-                    do_set(SetWhat::Manifest, m.into(), h.into());
-                }
+            clear_manifest_heads();
+            for h in manifest_heads {
+                // TODO: This is gross.
+                let m = RawCommit::read(h).unwrap();
+                let m = m.parse().unwrap();
+                let m = HgManifestId::from_bytes(m.body()).unwrap();
+                do_set(SetWhat::Manifest, m.into(), h.into());
             }
         }
     }
