@@ -790,9 +790,7 @@ pub fn get_bundle(
 ) -> Result<(), String> {
     let known_branch_heads = || {
         unsafe { &METADATA }
-            .changeset_heads
-            .lock()
-            .unwrap()
+            .changeset_heads()
             .branch_heads()
             .filter_map(|(h, b)| {
                 (branch_names.is_empty() || branch_names.contains(b)).then_some(*h)

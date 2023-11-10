@@ -4125,9 +4125,7 @@ fn remote_helper_push(
         let push_commits = push_refs.iter().filter_map(|(_, c, _, _)| *c).collect_vec();
         let local_bases = rev_list_with_boundaries(
             unsafe { &METADATA }
-                .changeset_heads
-                .lock()
-                .unwrap()
+                .changeset_heads()
                 .branch_heads()
                 .filter(|(_, b)| branch_names.contains(*b))
                 .map(|(h, _)| format!("^{}", h.to_git().unwrap()))
