@@ -2174,9 +2174,9 @@ pub unsafe extern "C" fn init_metadata(c: *const commit) {
 
 #[no_mangle]
 pub unsafe extern "C" fn done_metadata() {
-    GIT2HG.done();
-    HG2GIT.done();
-    FILES_META.done();
+    GIT2HG = git_notes_tree::new();
+    HG2GIT = hg_notes_tree::new();
+    FILES_META = hg_notes_tree::new();
 }
 
 pub fn do_store_metadata() -> CommitId {

@@ -106,7 +106,9 @@ pub struct cinnabar_notes_tree {
 impl Drop for cinnabar_notes_tree {
     fn drop(&mut self) {
         unsafe {
-            cinnabar_free_notes(self);
+            if notes_initialized(self) != 0 {
+                cinnabar_free_notes(self);
+            }
         }
     }
 }
@@ -359,14 +361,6 @@ impl git_notes_tree {
         }
     }
 
-    pub fn done(&mut self) {
-        unsafe {
-            if notes_initialized(&self.0) != 0 {
-                cinnabar_free_notes(&mut self.0);
-            }
-        }
-    }
-
     pub fn store(&mut self, reference: CommitId) -> CommitId {
         unsafe { store_metadata_notes(&mut self.0, reference) }
     }
@@ -446,14 +440,6 @@ impl hg_notes_tree {
         unsafe {
             ensure_notes(&mut self.0);
             cinnabar_remove_note(&mut self.0, oid.as_raw_bytes().as_ptr());
-        }
-    }
-
-    pub fn done(&mut self) {
-        unsafe {
-            if notes_initialized(&self.0) != 0 {
-                cinnabar_free_notes(&mut self.0);
-            }
         }
     }
 
