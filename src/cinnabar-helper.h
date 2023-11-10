@@ -87,4 +87,7 @@ const struct object_id *get_worktree_head_oid(const struct worktree *wr);
 void init_replace_map(void);
 void reset_replace_map(void);
 
+void init_git_tree_cache(void);
+void free_git_tree_cache(void);
+
 #endif

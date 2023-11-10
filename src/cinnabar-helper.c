@@ -434,6 +434,16 @@ corrupted:
 
 static struct hashmap git_tree_cache;
 
+void init_git_tree_cache(void)
+{
+	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
+}
+
+void free_git_tree_cache(void)
+{
+	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
+}
+
 void create_git_tree(const struct object_id *tree_id,
                      const struct object_id *ref_tree,
                      struct object_id *result)
@@ -476,7 +486,7 @@ void do_reload(struct object_id *oid)
 	struct commit *c = NULL;
 
 	done_cinnabar();
-	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
+	init_git_tree_cache();
 
 	reset_replace_map();
 	if (oid) {
@@ -698,7 +708,7 @@ int init_cinnabar_2(void)
 	}
 	c = lookup_commit_reference_by_name(METADATA_REF);
 	init_metadata(c);
-	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
+	init_git_tree_cache();
 	return 1;
 }
 
@@ -707,7 +717,7 @@ extern void done_metadata(void);
 void done_cinnabar(void)
 {
 	done_metadata();
-	hashmap_clear_and_free(&git_tree_cache, struct oid_map_entry, ent);
+	free_git_tree_cache();
 }
 
 int common_exit(const char *file, int line, int code)
