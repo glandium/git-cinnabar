@@ -83,6 +83,8 @@ pub struct Metadata {
     pub git2hg: git_notes_tree,
     pub files_meta: hg_notes_tree,
     pub flags: MetadataFlags,
+    pub changeset_heads: Lazy<Mutex<ChangesetHeads>>,
+    pub manifest_heads: Lazy<Mutex<ManifestHeads>>,
 }
 
 pub static mut METADATA: Metadata = Metadata {
@@ -96,6 +98,8 @@ pub static mut METADATA: Metadata = Metadata {
     hg2git: hg_notes_tree::new(),
     files_meta: hg_notes_tree::new(),
     flags: MetadataFlags::empty(),
+    changeset_heads: Lazy::new(|| Mutex::new(ChangesetHeads::from_stored_metadata())),
+    manifest_heads: Lazy::new(|| Mutex::new(ManifestHeads::from_stored_metadata())),
 };
 
 pub fn has_metadata() -> bool {
@@ -942,9 +946,6 @@ impl ChangesetHeads {
     }
 }
 
-pub static CHANGESET_HEADS: Lazy<Mutex<ChangesetHeads>> =
-    Lazy::new(|| Mutex::new(ChangesetHeads::from_stored_metadata()));
-
 #[derive(Debug)]
 pub struct ManifestHeads {
     heads: BTreeSet<GitManifestId>,
@@ -994,9 +995,6 @@ impl ManifestHeads {
         self.heads.is_empty()
     }
 }
-
-pub static MANIFEST_HEADS: Lazy<Mutex<ManifestHeads>> =
-    Lazy::new(|| Mutex::new(ManifestHeads::from_stored_metadata()));
 
 #[derive(Default)]
 pub struct TagSet {
@@ -1062,7 +1060,7 @@ impl PartialEq for TagSet {
 pub fn get_tags() -> TagSet {
     let mut tags = TagSet::default();
     let mut tags_files = HashSet::new();
-    for head in CHANGESET_HEADS.lock().unwrap().heads() {
+    for head in unsafe { &METADATA }.changeset_heads.lock().unwrap().heads() {
         (|| -> Option<()> {
             let head = head.to_git()?;
             let tags_file = get_oid_blob(format!("{}:.hgtags", head).as_bytes())?;
@@ -1103,7 +1101,7 @@ fn store_changesets_metadata() -> CommitId {
     drop(tree);
     let mut commit = strbuf::new();
     writeln!(commit, "tree {}", GitObjectId::from(tid)).ok();
-    let heads = CHANGESET_HEADS.lock().unwrap();
+    let heads = unsafe { &METADATA }.changeset_heads.lock().unwrap();
     for (head, _) in heads.branch_heads() {
         writeln!(commit, "parent {}", head.to_git().unwrap()).ok();
     }
@@ -1121,14 +1119,14 @@ fn store_changesets_metadata() -> CommitId {
 
 #[no_mangle]
 pub unsafe extern "C" fn reset_changeset_heads() {
-    let mut heads = CHANGESET_HEADS.lock().unwrap();
+    let mut heads = METADATA.changeset_heads.lock().unwrap();
     *heads = ChangesetHeads::from_stored_metadata();
 }
 
 fn store_manifests_metadata() -> CommitId {
     let mut commit = strbuf::new();
     writeln!(commit, "tree {}", RawTree::EMPTY_OID).ok();
-    let heads = MANIFEST_HEADS.lock().unwrap();
+    let heads = unsafe { &METADATA }.manifest_heads.lock().unwrap();
     for head in heads.heads() {
         writeln!(commit, "parent {}", head).ok();
     }
@@ -1143,7 +1141,7 @@ fn store_manifests_metadata() -> CommitId {
 
 #[no_mangle]
 pub unsafe extern "C" fn add_manifest_head(mn: *const object_id) {
-    let mut heads = MANIFEST_HEADS.lock().unwrap();
+    let mut heads = METADATA.manifest_heads.lock().unwrap();
     heads.add(GitManifestId::from_unchecked(CommitId::from_unchecked(
         mn.as_ref().unwrap().clone().into(),
     )));
@@ -1151,17 +1149,17 @@ pub unsafe extern "C" fn add_manifest_head(mn: *const object_id) {
 
 #[no_mangle]
 pub unsafe extern "C" fn reset_manifest_heads() {
-    let mut heads = MANIFEST_HEADS.lock().unwrap();
+    let mut heads = METADATA.manifest_heads.lock().unwrap();
     *heads = ManifestHeads::from_stored_metadata();
 }
 
 pub fn clear_manifest_heads() {
-    let mut heads = MANIFEST_HEADS.lock().unwrap();
+    let mut heads = unsafe { &METADATA }.manifest_heads.lock().unwrap();
     *heads = ManifestHeads::new();
 }
 
 pub fn set_changeset_heads(new_heads: ChangesetHeads) {
-    let mut heads = CHANGESET_HEADS.lock().unwrap();
+    let mut heads = unsafe { &METADATA }.changeset_heads.lock().unwrap();
     *heads = new_heads;
 }
 
@@ -1231,12 +1229,9 @@ pub fn do_set(what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
         }
         SetWhat::Manifest => {
             if !git_id.is_null() {
-                MANIFEST_HEADS
-                    .lock()
-                    .unwrap()
-                    .add(GitManifestId::from_unchecked(CommitId::from_unchecked(
-                        git_id,
-                    )));
+                unsafe { &METADATA }.manifest_heads.lock().unwrap().add(
+                    GitManifestId::from_unchecked(CommitId::from_unchecked(git_id)),
+                );
             }
             set::<CommitId>(unsafe { &mut METADATA.hg2git }, hg_id, git_id);
         }
@@ -1369,7 +1364,7 @@ fn store_changeset(
         metadata_id.into(),
     );
 
-    let mut heads = CHANGESET_HEADS.lock().unwrap();
+    let mut heads = unsafe { &METADATA }.changeset_heads.lock().unwrap();
     let branch = changeset
         .extra()
         .and_then(|e| e.get(b"branch"))
@@ -1513,7 +1508,7 @@ pub fn create_changeset(
             blob_oid.clone().into(),
         );
     }
-    let mut heads = CHANGESET_HEADS.lock().unwrap();
+    let mut heads = unsafe { &METADATA }.changeset_heads.lock().unwrap();
     let branch = branch.as_deref().unwrap_or(b"default").as_bstr();
     heads.add(metadata.changeset_id, &parents, branch);
     let metadata_id =
@@ -1618,7 +1613,13 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
     let mut bundle = strbuf::new();
     let mut bundle_writer = None;
     let mut input = if check_enabled(Checks::UNBUNDLER)
-        && CHANGESET_HEADS.lock().unwrap().heads().next().is_some()
+        && unsafe { &METADATA }
+            .changeset_heads
+            .lock()
+            .unwrap()
+            .heads()
+            .next()
+            .is_some()
     {
         bundle_writer = Some(BundleWriter::new(BundleSpec::V2Zstd, &mut bundle).unwrap());
         let bundle_writer = bundle_writer.as_mut().unwrap();

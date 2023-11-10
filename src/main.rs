@@ -123,8 +123,8 @@ use store::{
     done_metadata, ensure_store_init, get_tags, has_metadata, init_metadata,
     raw_commit_for_changeset, reset_changeset_heads, reset_manifest_heads, store_git_blob,
     store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata,
-    RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF,
-    METADATA, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHECKED_REF, METADATA,
+    METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use tree_util::{diff_by_path, RecurseTree};
 use url::Url;
@@ -4124,7 +4124,8 @@ fn remote_helper_push(
         let branch_names = info.branch_names.into_iter().collect::<HashSet<_>>();
         let push_commits = push_refs.iter().filter_map(|(_, c, _, _)| *c).collect_vec();
         let local_bases = rev_list_with_boundaries(
-            CHANGESET_HEADS
+            unsafe { &METADATA }
+                .changeset_heads
                 .lock()
                 .unwrap()
                 .branch_heads()

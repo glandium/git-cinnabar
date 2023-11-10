@@ -24,9 +24,7 @@ use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libgit::{die, rev_list, RawCommit};
 use crate::oid::ObjectId;
-use crate::store::{
-    has_metadata, merge_metadata, store_changegroup, Dag, Traversal, CHANGESET_HEADS,
-};
+use crate::store::{has_metadata, merge_metadata, store_changegroup, Dag, Traversal, METADATA};
 use crate::util::{FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed};
 use crate::{check_enabled, get_config_remote, graft_config_enabled, Checks, HELPER_LOCK};
 
@@ -791,7 +789,8 @@ pub fn get_bundle(
     remote: Option<&str>,
 ) -> Result<(), String> {
     let known_branch_heads = || {
-        CHANGESET_HEADS
+        unsafe { &METADATA }
+            .changeset_heads
             .lock()
             .unwrap()
             .branch_heads()
