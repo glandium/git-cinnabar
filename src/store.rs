@@ -2043,7 +2043,7 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
     }
 
     unsafe {
-        do_reload(&object_id::from(metadata_cid));
+        do_reload(Some(metadata_cid));
     }
     true
 }

@@ -197,16 +197,15 @@ unsafe fn init_cinnabar_2() -> c_int {
     1
 }
 
-pub unsafe fn do_reload(metadata: *const object_id) {
+pub unsafe fn do_reload(metadata: Option<CommitId>) {
     let mut c = None;
     done_cinnabar();
     init_git_tree_cache();
 
     reset_replace_map();
-    if let Some(metadata) = metadata.as_ref() {
-        let metadata = GitObjectId::from(metadata.clone());
+    if let Some(metadata) = metadata {
         if !metadata.is_null() {
-            c = Some(CommitId::from_unchecked(metadata));
+            c = Some(metadata);
         }
     } else {
         c = get_oid_committish(METADATA_REF.as_bytes());
@@ -308,7 +307,7 @@ fn do_done_and_check(args: &[&[u8]]) -> bool {
                 .unwrap();
             transaction.commit().unwrap();
         }
-        do_reload(std::ptr::null());
+        do_reload(None);
     }
     do_check_files()
 }
@@ -964,7 +963,7 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
 
     let current_metadata_oid = unsafe {
         let current_metadata_oid = METADATA_OID;
-        do_reload(&object_id::default());
+        do_reload(Some(CommitId::NULL));
         METADATA_OID = current_metadata_oid;
         current_metadata_oid
     };
