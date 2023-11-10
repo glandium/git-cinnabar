@@ -16,6 +16,7 @@ use std::rc::Rc;
 use std::sync::Mutex;
 
 use bit_vec::BitVec;
+use bitflags::bitflags;
 use bstr::{BStr, BString, ByteSlice};
 use derive_more::Deref;
 use either::Either;
@@ -65,13 +66,18 @@ pub const CHECKED_REF: &str = "refs/cinnabar/checked";
 pub const BROKEN_REF: &str = "refs/cinnabar/broken";
 pub const NOTES_REF: &str = "refs/notes/cinnabar";
 
-pub static mut METADATA_FLAGS: c_int = 0;
+bitflags! {
+    #[derive(Debug, Copy, Clone)]
+    pub struct MetadataFlags: i32 {
+        const FILES_META = 0x1;
+        const UNIFIED_MANIFESTS_V2 = 0x2;
 
-pub const FILES_META: c_int = 0x1;
-pub const UNIFIED_MANIFESTS_V2: c_int = 0x2;
+    }
+}
+pub static mut METADATA_FLAGS: MetadataFlags = MetadataFlags::empty();
 
 pub fn has_metadata() -> bool {
-    unsafe { METADATA_FLAGS != 0 }
+    unsafe { !METADATA_FLAGS.is_empty() }
 }
 
 macro_rules! hg2git {
@@ -2098,16 +2104,19 @@ pub unsafe extern "C" fn init_metadata(c: *const commit) {
     for flag in c.body().split(|&b| b == b' ') {
         match flag {
             b"files-meta" => {
-                METADATA_FLAGS |= FILES_META;
+                METADATA_FLAGS.insert(MetadataFlags::FILES_META);
             }
             b"unified-manifests" => old_metadata(),
             b"unified-manifests-v2" => {
-                METADATA_FLAGS |= UNIFIED_MANIFESTS_V2;
+                METADATA_FLAGS.insert(MetadataFlags::UNIFIED_MANIFESTS_V2);
             }
             _ => new_metadata(),
         }
     }
-    if METADATA_FLAGS != FILES_META | UNIFIED_MANIFESTS_V2 {
+    if !METADATA_FLAGS
+        .difference(MetadataFlags::FILES_META | MetadataFlags::UNIFIED_MANIFESTS_V2)
+        .is_empty()
+    {
         old_metadata();
     }
     let mut count = 0;

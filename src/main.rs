@@ -260,7 +260,7 @@ fn do_done_and_check(args: &[&[u8]]) -> bool {
         do_cleanup(0);
         set_metadata_to(
             Some(new_metadata),
-            MetadataFlags::FORCE | MetadataFlags::KEEP_REFS,
+            SetMetadataFlags::FORCE | SetMetadataFlags::KEEP_REFS,
             "update",
         )
         .unwrap();
@@ -652,7 +652,7 @@ fn get_previous_metadata(metadata: CommitId) -> Option<CommitId> {
 
 bitflags! {
     #[derive(Debug)]
-    pub struct MetadataFlags: i32 {
+    pub struct SetMetadataFlags: i32 {
         const FORCE = 0x1;
         const KEEP_REFS = 0x2;
     }
@@ -660,12 +660,12 @@ bitflags! {
 
 fn set_metadata_to(
     new_metadata: Option<CommitId>,
-    flags: MetadataFlags,
+    flags: SetMetadataFlags,
     msg: &str,
 ) -> Result<Option<CommitId>, String> {
     let mut refs = HashMap::new();
     for_each_ref_in(REFS_PREFIX, |r, oid| {
-        if flags.contains(MetadataFlags::KEEP_REFS)
+        if flags.contains(SetMetadataFlags::KEEP_REFS)
             && (r.as_bytes().starts_with_str("refs/")
                 || r.as_bytes().starts_with_str("hg/")
                 || r == "HEAD")
@@ -724,7 +724,7 @@ fn set_metadata_to(
 
         let mut m = metadata;
         let found = flags
-            .contains(MetadataFlags::FORCE)
+            .contains(SetMetadataFlags::FORCE)
             .then(|| {
                 state = MetadataState::Unknown;
                 new
@@ -1526,9 +1526,9 @@ fn do_rollback(
         return Err("Nothing to rollback.".to_string());
     };
     let flags = if force {
-        MetadataFlags::FORCE
+        SetMetadataFlags::FORCE
     } else {
-        MetadataFlags::empty()
+        SetMetadataFlags::empty()
     };
     set_metadata_to(wanted_metadata, flags, "rollback").map(|_| ())
 }
