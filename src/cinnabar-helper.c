@@ -473,8 +473,6 @@ unsigned int replace_map_tablesize(void)
 
 extern void init_metadata(struct commit *c);
 
-void dump_ref_updates(void);
-
 extern void reset_changeset_heads(void);
 extern void reset_manifest_heads(void);
 
@@ -484,8 +482,6 @@ void do_reload(struct object_id *oid)
 
 	done_cinnabar();
 	hashmap_init(&git_tree_cache, oid_map_entry_cmp, NULL, 0);
-
-	dump_ref_updates();
 
 	reset_replace_map();
 	if (oid) {

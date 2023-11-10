@@ -161,8 +161,6 @@ static void init(void)
 	atexit(locked_rollback);
 }
 
-extern void dump_ref_updates(void);
-
 static void cleanup(void)
 {
 	if (!initialized)
@@ -182,7 +180,6 @@ static void cleanup(void)
 				NULL);
 			commit_shallow_file(the_repository, &shallow_lock);
 		}
-		dump_ref_updates();
 	}
 
 	unkeep_all_packs();

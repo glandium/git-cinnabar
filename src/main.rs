@@ -188,18 +188,20 @@ extern "C" {
 static REF_UPDATES: Lazy<Mutex<HashMap<Box<BStr>, CommitId>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-#[no_mangle]
-unsafe extern "C" fn dump_ref_updates() {
-    let mut transaction = RefTransaction::new().unwrap();
-    for (refname, oid) in REF_UPDATES.lock().unwrap().drain() {
-        let refname = OsStr::from_bytes(&refname);
-        if oid.is_null() {
-            transaction.delete(refname, None, "update").unwrap();
-        } else {
-            transaction.update(refname, oid, None, "update").unwrap();
+fn dump_ref_updates() {
+    let mut ref_updates = REF_UPDATES.lock().unwrap();
+    if !ref_updates.is_empty() {
+        let mut transaction = RefTransaction::new().unwrap();
+        for (refname, oid) in ref_updates.drain() {
+            let refname = OsStr::from_bytes(&refname);
+            if oid.is_null() {
+                transaction.delete(refname, None, "update").unwrap();
+            } else {
+                transaction.update(refname, oid, None, "update").unwrap();
+            }
         }
+        transaction.commit().unwrap();
     }
-    transaction.commit().unwrap();
 }
 
 static MAYBE_INIT_CINNABAR_2: Lazy<Option<()>> = Lazy::new(|| unsafe {
@@ -4579,6 +4581,8 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
             _ => panic!("unknown command: {}", cmd.as_bstr()),
         }
     }
+    // See comment in remote_helper_tags_list.
+    dump_ref_updates();
     Ok(0)
 }
 
