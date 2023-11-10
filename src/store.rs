@@ -63,17 +63,6 @@ pub const CHECKED_REF: &str = "refs/cinnabar/checked";
 pub const BROKEN_REF: &str = "refs/cinnabar/broken";
 pub const NOTES_REF: &str = "refs/notes/cinnabar";
 
-pub static mut METADATA_OID: CommitId = CommitId::NULL;
-pub static mut CHANGESETS_OID: CommitId = CommitId::NULL;
-pub static mut MANIFESTS_OID: CommitId = CommitId::NULL;
-pub static mut GIT2HG_OID: CommitId = CommitId::NULL;
-pub static mut HG2GIT_OID: CommitId = CommitId::NULL;
-pub static mut FILES_META_OID: CommitId = CommitId::NULL;
-
-pub static mut GIT2HG: git_notes_tree = git_notes_tree::new();
-pub static mut HG2GIT: hg_notes_tree = hg_notes_tree::new();
-pub static mut FILES_META: hg_notes_tree = hg_notes_tree::new();
-
 bitflags! {
     #[derive(Debug, Copy, Clone)]
     pub struct MetadataFlags: i32 {
@@ -82,10 +71,35 @@ bitflags! {
 
     }
 }
-pub static mut METADATA_FLAGS: MetadataFlags = MetadataFlags::empty();
+
+pub struct Metadata {
+    pub metadata_cid: CommitId,
+    pub changesets_cid: CommitId,
+    pub manifests_cid: CommitId,
+    pub hg2git_cid: CommitId,
+    pub git2hg_cid: CommitId,
+    pub files_meta_cid: CommitId,
+    pub hg2git: hg_notes_tree,
+    pub git2hg: git_notes_tree,
+    pub files_meta: hg_notes_tree,
+    pub flags: MetadataFlags,
+}
+
+pub static mut METADATA: Metadata = Metadata {
+    metadata_cid: CommitId::NULL,
+    changesets_cid: CommitId::NULL,
+    manifests_cid: CommitId::NULL,
+    git2hg_cid: CommitId::NULL,
+    hg2git_cid: CommitId::NULL,
+    files_meta_cid: CommitId::NULL,
+    git2hg: git_notes_tree::new(),
+    hg2git: hg_notes_tree::new(),
+    files_meta: hg_notes_tree::new(),
+    flags: MetadataFlags::empty(),
+};
 
 pub fn has_metadata() -> bool {
-    unsafe { !METADATA_FLAGS.is_empty() }
+    unsafe { !METADATA.flags.is_empty() }
 }
 
 macro_rules! hg2git {
@@ -93,7 +107,8 @@ macro_rules! hg2git {
         impl $h {
             pub fn to_git(self) -> Option<$g> {
                 unsafe {
-                    HG2GIT
+                    METADATA
+                        .hg2git
                         .get_note(self.into())
                         .map(|o| $g::from_raw_bytes(o.as_raw_bytes()).unwrap())
                 }
@@ -122,7 +137,7 @@ pub struct RawGitChangesetMetadata(RawBlob);
 
 impl RawGitChangesetMetadata {
     pub fn read(changeset_id: GitChangesetId) -> Option<Self> {
-        Self::read_from_notes_tree(unsafe { &mut GIT2HG }, changeset_id)
+        Self::read_from_notes_tree(unsafe { &mut METADATA.git2hg }, changeset_id)
     }
 
     pub fn read_from_notes_tree(
@@ -699,7 +714,7 @@ impl RawHgFile {
         if oid == Self::EMPTY_OID {
             Some(Self(vec![].into()))
         } else {
-            let metadata = unsafe { FILES_META.get_note(oid.into()) }
+            let metadata = unsafe { METADATA.files_meta.get_note(oid.into()) }
                 .map(BlobId::from_unchecked)
                 .map(GitFileMetadataId::from_unchecked);
             Self::read(oid.to_git().unwrap(), metadata)
@@ -871,7 +886,7 @@ impl ChangesetHeads {
 
     fn from_stored_metadata() -> Self {
         let changesets_cid =
-            CommitId::from_raw_bytes(unsafe { CHANGESETS_OID.as_raw_bytes() }).unwrap();
+            CommitId::from_raw_bytes(unsafe { METADATA.changesets_cid.as_raw_bytes() }).unwrap();
         if changesets_cid.is_null() {
             ChangesetHeads::new()
         } else {
@@ -943,8 +958,7 @@ impl ManifestHeads {
     }
 
     fn from_stored_metadata() -> Self {
-        let manifests_cid =
-            CommitId::from_raw_bytes(unsafe { MANIFESTS_OID.as_raw_bytes() }).unwrap();
+        let manifests_cid = unsafe { METADATA.manifests_cid };
         if manifests_cid.is_null() {
             ManifestHeads::new()
         } else {
@@ -1189,10 +1203,10 @@ pub fn do_set(what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
     match what {
         SetWhat::Changeset => {
             if git_id.is_null() {
-                unsafe { &mut HG2GIT }.remove_note(hg_id);
+                unsafe { &mut METADATA.hg2git }.remove_note(hg_id);
             } else if let Ok(ref mut commit) = CommitId::try_from(git_id) {
                 handle_changeset_conflict(HgChangesetId::from_unchecked(hg_id), commit);
-                unsafe { &mut HG2GIT }.add_note(hg_id, (*commit).into());
+                unsafe { &mut METADATA.hg2git }.add_note(hg_id, (*commit).into());
             } else {
                 die!("Invalid object");
             }
@@ -1202,13 +1216,13 @@ pub fn do_set(what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
             if let Some(cid) = csid.to_git() {
                 if git_id.is_null() {
                     unsafe {
-                        GIT2HG.remove_note(cid.into());
+                        METADATA.git2hg.remove_note(cid.into());
                     }
                 } else if BlobId::try_from(git_id).is_err() {
                     die!("Invalid object");
                 } else {
                     unsafe {
-                        GIT2HG.add_note(cid.into(), git_id);
+                        METADATA.git2hg.add_note(cid.into(), git_id);
                     }
                 }
             } else if !git_id.is_null() {
@@ -1224,13 +1238,13 @@ pub fn do_set(what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
                         git_id,
                     )));
             }
-            set::<CommitId>(unsafe { &mut HG2GIT }, hg_id, git_id);
+            set::<CommitId>(unsafe { &mut METADATA.hg2git }, hg_id, git_id);
         }
         SetWhat::File => {
-            set::<BlobId>(unsafe { &mut HG2GIT }, hg_id, git_id);
+            set::<BlobId>(unsafe { &mut METADATA.hg2git }, hg_id, git_id);
         }
         SetWhat::FileMeta => {
-            set::<BlobId>(unsafe { &mut FILES_META }, hg_id, git_id);
+            set::<BlobId>(unsafe { &mut METADATA.files_meta }, hg_id, git_id);
         }
     }
 }
@@ -1570,7 +1584,12 @@ pub fn do_check_files() -> bool {
     if busted {
         let mut transaction = RefTransaction::new().unwrap();
         transaction
-            .update(BROKEN_REF, unsafe { METADATA_OID }, None, "post-pull check")
+            .update(
+                BROKEN_REF,
+                unsafe { METADATA.metadata_cid },
+                None,
+                "post-pull check",
+            )
             .unwrap();
         transaction.commit().unwrap();
         error!(
@@ -2080,12 +2099,12 @@ pub unsafe fn init_metadata(c: Option<CommitId>) {
     let cid = if let Some(c) = c {
         c
     } else {
-        METADATA_OID = CommitId::NULL;
-        CHANGESETS_OID = CommitId::NULL;
-        MANIFESTS_OID = CommitId::NULL;
-        HG2GIT_OID = CommitId::NULL;
-        GIT2HG_OID = CommitId::NULL;
-        FILES_META_OID = CommitId::NULL;
+        METADATA.metadata_cid = CommitId::NULL;
+        METADATA.changesets_cid = CommitId::NULL;
+        METADATA.manifests_cid = CommitId::NULL;
+        METADATA.hg2git_cid = CommitId::NULL;
+        METADATA.git2hg_cid = CommitId::NULL;
+        METADATA.files_meta_cid = CommitId::NULL;
         return;
     };
     let c = RawCommit::read(cid).unwrap();
@@ -2094,28 +2113,29 @@ pub unsafe fn init_metadata(c: Option<CommitId>) {
         die!("Invalid metadata?");
     }
     for (cid, field) in Some(cid).iter().chain(c.parents()[..5].iter()).zip([
-        &mut METADATA_OID,
-        &mut CHANGESETS_OID,
-        &mut MANIFESTS_OID,
-        &mut HG2GIT_OID,
-        &mut GIT2HG_OID,
-        &mut FILES_META_OID,
+        &mut METADATA.metadata_cid,
+        &mut METADATA.changesets_cid,
+        &mut METADATA.manifests_cid,
+        &mut METADATA.hg2git_cid,
+        &mut METADATA.git2hg_cid,
+        &mut METADATA.files_meta_cid,
     ]) {
         *field = *cid;
     }
     for flag in c.body().split(|&b| b == b' ') {
         match flag {
             b"files-meta" => {
-                METADATA_FLAGS.insert(MetadataFlags::FILES_META);
+                METADATA.flags.insert(MetadataFlags::FILES_META);
             }
             b"unified-manifests" => old_metadata(),
             b"unified-manifests-v2" => {
-                METADATA_FLAGS.insert(MetadataFlags::UNIFIED_MANIFESTS_V2);
+                METADATA.flags.insert(MetadataFlags::UNIFIED_MANIFESTS_V2);
             }
             _ => new_metadata(),
         }
     }
-    if !METADATA_FLAGS
+    if !METADATA
+        .flags
         .difference(MetadataFlags::FILES_META | MetadataFlags::UNIFIED_MANIFESTS_V2)
         .is_empty()
     {
@@ -2176,9 +2196,9 @@ pub unsafe fn init_metadata(c: Option<CommitId>) {
 
 #[no_mangle]
 pub unsafe extern "C" fn done_metadata() {
-    GIT2HG = git_notes_tree::new();
-    HG2GIT = hg_notes_tree::new();
-    FILES_META = hg_notes_tree::new();
+    METADATA.git2hg = git_notes_tree::new();
+    METADATA.hg2git = hg_notes_tree::new();
+    METADATA.files_meta = hg_notes_tree::new();
 }
 
 pub fn do_store_metadata() -> CommitId {
@@ -2190,13 +2210,13 @@ pub fn do_store_metadata() -> CommitId {
     let mut tree = object_id::default();
     let mut previous = None;
     unsafe {
-        hg2git_ = HG2GIT.store(HG2GIT_OID);
-        git2hg_ = GIT2HG.store(GIT2HG_OID);
-        files_meta_ = FILES_META.store(FILES_META_OID);
+        hg2git_ = METADATA.hg2git.store(METADATA.hg2git_cid);
+        git2hg_ = METADATA.git2hg.store(METADATA.git2hg_cid);
+        files_meta_ = METADATA.files_meta.store(METADATA.files_meta_cid);
         manifests = store_manifests_metadata();
         changesets = store_changesets_metadata();
-        if !METADATA_OID.is_null() {
-            previous = Some(METADATA_OID);
+        if !METADATA.metadata_cid.is_null() {
+            previous = Some(METADATA.metadata_cid);
         }
         store_replace_map(&mut tree);
     }

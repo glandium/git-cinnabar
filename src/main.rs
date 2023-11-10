@@ -124,8 +124,7 @@ use store::{
     raw_commit_for_changeset, reset_changeset_heads, reset_manifest_heads, store_git_blob,
     store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata,
     RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF,
-    FILES_META, GIT2HG, HG2GIT, METADATA_OID, METADATA_REF, NOTES_REF, REFS_PREFIX,
-    REPLACE_REFS_PREFIX,
+    METADATA, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use tree_util::{diff_by_path, RecurseTree};
 use url::Url;
@@ -326,7 +325,10 @@ pub fn prepare_arg(arg: OsString) -> Vec<u16> {
 
 fn do_one_hg2git(sha1: Abbrev<HgChangesetId>) -> String {
     format!("{}", unsafe {
-        HG2GIT.get_note_abbrev(sha1).unwrap_or(GitObjectId::NULL)
+        METADATA
+            .hg2git
+            .get_note_abbrev(sha1)
+            .unwrap_or(GitObjectId::NULL)
     })
 }
 
@@ -389,7 +391,8 @@ where
 
 fn do_data_changeset(rev: Abbrev<HgChangesetId>) -> Result<(), String> {
     unsafe {
-        let commit_id = HG2GIT
+        let commit_id = METADATA
+            .hg2git
             .get_note_abbrev(rev)
             .ok_or_else(|| format!("Unknown changeset id: {}", rev))?;
         let changeset = RawHgChangeset::read(GitChangesetId::from_unchecked(
@@ -402,7 +405,8 @@ fn do_data_changeset(rev: Abbrev<HgChangesetId>) -> Result<(), String> {
 
 fn do_data_manifest(rev: Abbrev<HgManifestId>) -> Result<(), String> {
     unsafe {
-        let commit_id = HG2GIT
+        let commit_id = METADATA
+            .hg2git
             .get_note_abbrev(rev)
             .ok_or_else(|| format!("Unknown manifest id: {}", rev))?;
         let manifest = RawHgManifest::read(GitManifestId::from_unchecked(
@@ -951,9 +955,9 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
         }
     }
 
-    let old_changesets_oid = unsafe { store::CHANGESETS_OID };
+    let old_changesets_oid = unsafe { METADATA.changesets_cid };
     let mut old_git2hg = {
-        let git2hg_oid = unsafe { store::GIT2HG_OID };
+        let git2hg_oid = unsafe { METADATA.git2hg_cid };
         if git2hg_oid.is_null() {
             None
         } else {
@@ -962,9 +966,9 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
     };
 
     let current_metadata_oid = unsafe {
-        let current_metadata_oid = METADATA_OID;
+        let current_metadata_oid = METADATA.metadata_cid;
         do_reload(Some(CommitId::NULL));
-        METADATA_OID = current_metadata_oid;
+        METADATA.metadata_cid = current_metadata_oid;
         current_metadata_oid
     };
 
@@ -1290,7 +1294,7 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
         }
 
         unsafe {
-            METADATA_OID = current_metadata_oid;
+            METADATA.metadata_cid = current_metadata_oid;
         }
 
         do_done_and_check(&[])
@@ -1786,11 +1790,13 @@ fn do_setup() -> Result<(), String> {
 fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
     unsafe {
         let mut stdout = stdout();
-        let blob_id = HG2GIT
+        let blob_id = METADATA
+            .hg2git
             .get_note_abbrev(rev)
             .ok_or_else(|| format!("Unknown file id: {}", rev))?;
         let file_id = GitFileId::from_unchecked(BlobId::from_unchecked(blob_id));
-        let metadata_id = FILES_META
+        let metadata_id = METADATA
+            .files_meta
             .get_note_abbrev(rev)
             .map(|oid| GitFileMetadataId::from_unchecked(BlobId::from_unchecked(oid)));
         let file = RawHgFile::read(file_id, metadata_id).unwrap();
@@ -2338,7 +2344,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         );
         return Ok(1);
     }
-    let metadata_cid = unsafe { METADATA_OID };
+    let metadata_cid = unsafe { METADATA.metadata_cid };
     let checked_cid = if force {
         None
     } else {
@@ -3131,7 +3137,7 @@ fn do_fsck_full(
     }
 
     if full_fsck && !broken.get() {
-        unsafe { &mut HG2GIT }.for_each(|h, _| {
+        unsafe { &mut METADATA.hg2git }.for_each(|h, _| {
             if seen_changesets.contains(&HgChangesetId::from_unchecked(h))
                 || seen_manifests.contains(&HgManifestId::from_unchecked(h))
                 || seen_files.contains(&HgFileId::from_unchecked(h))
@@ -3146,7 +3152,7 @@ fn do_fsck_full(
             do_set(SetWhat::File, h, GitObjectId::NULL);
             do_set(SetWhat::FileMeta, h, GitObjectId::NULL);
         });
-        unsafe { &mut GIT2HG }.for_each(|g, _| {
+        unsafe { &mut METADATA.git2hg }.for_each(|g, _| {
             // TODO: this is gross.
             let cid = GitChangesetId::from_unchecked(CommitId::from_unchecked(g));
             if seen_git2hg.contains(&cid) {
