@@ -37,7 +37,6 @@ void create_git_tree(const struct object_id *tree_id,
                      const struct object_id *ref_tree,
                      struct object_id *result);
 
-void do_reload(struct object_id *);
 unsigned int replace_map_size(void);
 unsigned int replace_map_tablesize(void);
 

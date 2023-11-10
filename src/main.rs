@@ -81,6 +81,7 @@ use std::os::raw::{c_char, c_int, c_void};
 use std::os::windows::ffi::OsStrExt as WinOsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::ptr;
 use std::str::{self, from_utf8, FromStr};
 use std::sync::Mutex;
 use std::time::Instant;
@@ -121,10 +122,11 @@ use progress::Progress;
 use sha1::{Digest, Sha1};
 use store::{
     check_file, check_manifest, create_changeset, do_check_files, do_set, do_store_metadata,
-    done_metadata, ensure_store_init, get_tags, has_metadata, raw_commit_for_changeset,
-    store_git_blob, store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata,
-    RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF,
-    CHANGESET_HEADS, CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    done_metadata, ensure_store_init, get_tags, has_metadata, init_metadata,
+    raw_commit_for_changeset, reset_changeset_heads, reset_manifest_heads, store_git_blob,
+    store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata,
+    RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF,
+    METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use tree_util::{diff_by_path, RecurseTree};
 use url::Url;
@@ -173,7 +175,6 @@ pub const FULL_VERSION: &str = git_version!(
 
 #[allow(improper_ctypes)]
 extern "C" {
-    pub fn do_reload(metadata: *const object_id);
     fn do_cleanup(rollback: c_int);
 
     #[cfg(windows)]
@@ -181,7 +182,32 @@ extern "C" {
 
     fn init_cinnabar(argv0: *const c_char);
     fn init_cinnabar_2() -> c_int;
+
+    fn init_git_tree_cache();
     fn free_git_tree_cache();
+    fn reset_replace_map();
+    fn lookup_commit_reference(repo: *mut repository, oid: *const object_id)
+        -> *mut libgit::commit;
+    fn lookup_commit_reference_by_name(r: *const c_char) -> *mut libgit::commit;
+}
+
+pub unsafe fn do_reload(metadata: *const object_id) {
+    let mut c = ptr::null();
+    done_cinnabar();
+    init_git_tree_cache();
+
+    reset_replace_map();
+    if let Some(metadata) = metadata.as_ref() {
+        if !GitObjectId::from(metadata.clone()).is_null() {
+            c = lookup_commit_reference(the_repository, metadata);
+        }
+    } else {
+        let r = CString::new(METADATA_REF).unwrap();
+        c = lookup_commit_reference_by_name(r.as_ptr());
+    }
+    init_metadata(c);
+    reset_changeset_heads();
+    reset_manifest_heads();
 }
 
 #[no_mangle]

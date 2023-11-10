@@ -481,26 +481,6 @@ extern void init_metadata(struct commit *c);
 extern void reset_changeset_heads(void);
 extern void reset_manifest_heads(void);
 
-void do_reload(struct object_id *oid)
-{
-	struct commit *c = NULL;
-
-	done_cinnabar();
-	init_git_tree_cache();
-
-	reset_replace_map();
-	if (oid) {
-		if (!is_null_oid(oid)) {
-			c = lookup_commit_reference(the_repository, oid);
-		}
-	} else {
-		c = lookup_commit_reference_by_name(METADATA_REF);
-	}
-	init_metadata(c);
-	reset_changeset_heads();
-	reset_manifest_heads();
-}
-
 static void init_git_config(void)
 {
 	struct child_process proc = CHILD_PROCESS_INIT;
