@@ -1257,7 +1257,18 @@ pub struct notes_tree {
 }
 
 extern "C" {
-    fn combine_notes_ignore(cur_oid: *mut object_id, new_oid: *const object_id) -> c_int;
+    pub fn combine_notes_ignore(cur_oid: *mut object_id, new_oid: *const object_id) -> c_int;
+
+    pub fn init_notes(
+        notes: *mut notes_tree,
+        notes_ref: *const c_char,
+        combine_notes_fn: unsafe extern "C" fn(
+            cur_oid: *mut object_id,
+            new_oid: *const object_id,
+        ) -> c_int,
+        flags: c_int,
+    );
+
 }
 
 impl notes_tree {

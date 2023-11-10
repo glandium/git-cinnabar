@@ -12,8 +12,8 @@ use std::ptr;
 use crate::git::{CommitId, GitObjectId, TreeId};
 use crate::hg::HgObjectId;
 use crate::libgit::{
-    child_process, die, notes_tree, object_id, strbuf, FileMode, RawTree, FILES_META_OID,
-    GIT2HG_OID, HG2GIT_OID,
+    child_process, combine_notes_ignore, die, init_notes, notes_tree, object_id, strbuf, FileMode,
+    RawTree, FILES_META_OID, GIT2HG_OID, HG2GIT_OID,
 };
 use crate::oid::{Abbrev, ObjectId};
 use crate::store::{store_git_commit, MetadataFlags, METADATA_FLAGS};
@@ -124,7 +124,14 @@ impl cinnabar_notes_tree {
         let mut result = Self::new();
         let oid = CString::new(c.to_string()).unwrap();
         unsafe {
-            cinnabar_init_notes(&mut result, oid.as_ptr(), combine_notes_ignore, 0);
+            init_notes(&mut result.current, oid.as_ptr(), combine_notes_ignore, 0);
+            init_notes(
+                &mut result.additions,
+                oid.as_ptr(),
+                combine_notes_ignore,
+                NOTES_INIT_EMPTY,
+            );
+            result.init_flags = 0;
         }
         result
     }
@@ -135,18 +142,6 @@ pub static mut HG2GIT: hg_notes_tree = hg_notes_tree::new();
 pub static mut FILES_META: hg_notes_tree = hg_notes_tree::new();
 
 extern "C" {
-    fn combine_notes_ignore(cur_oid: *mut object_id, new_oid: *const object_id) -> c_int;
-
-    fn cinnabar_init_notes(
-        notes: *mut cinnabar_notes_tree,
-        notes_ref: *const c_char,
-        combine_notes_fn: unsafe extern "C" fn(
-            cur_oid: *mut object_id,
-            new_oid: *const object_id,
-        ) -> c_int,
-        flags: c_int,
-    );
-
     fn cinnabar_free_notes(notes: *mut cinnabar_notes_tree);
 
     fn cinnabar_get_note(
@@ -213,7 +208,15 @@ unsafe fn ensure_notes(t: *mut cinnabar_notes_tree) {
             flags = NOTES_INIT_EMPTY;
         }
         let oid = CString::new(oid.to_string()).unwrap();
-        cinnabar_init_notes(t, oid.as_ptr(), combine_notes_ignore, flags);
+        let t = t.as_mut().unwrap();
+        init_notes(&mut t.current, oid.as_ptr(), combine_notes_ignore, flags);
+        init_notes(
+            &mut t.additions,
+            oid.as_ptr(),
+            combine_notes_ignore,
+            NOTES_INIT_EMPTY,
+        );
+        t.init_flags = flags;
     }
 }
 
