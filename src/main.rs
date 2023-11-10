@@ -120,11 +120,10 @@ use progress::Progress;
 use sha1::{Digest, Sha1};
 use store::{
     check_file, check_manifest, create_changeset, do_check_files, do_set, do_store_metadata,
-    done_metadata, ensure_store_init, get_tags, has_metadata, init_metadata,
-    raw_commit_for_changeset, store_git_blob, store_manifest, ChangesetHeads,
-    GeneratedGitChangesetMetadata, RawGitChangesetMetadata, RawHgChangeset, RawHgFile,
-    RawHgManifest, SetWhat, BROKEN_REF, CHECKED_REF, METADATA, METADATA_REF, NOTES_REF,
-    REFS_PREFIX, REPLACE_REFS_PREFIX,
+    done_metadata, ensure_store_init, has_metadata, init_metadata, raw_commit_for_changeset,
+    store_git_blob, store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata,
+    RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF,
+    CHECKED_REF, METADATA, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use tree_util::{diff_by_path, RecurseTree};
 use url::Url;
@@ -3609,7 +3608,7 @@ pub fn main() {
 fn remote_helper_tags_list(mut stdout: impl Write) {
     Lazy::force(&INIT_CINNABAR_2);
     let _lock = HELPER_LOCK.lock().unwrap();
-    let tags = get_tags();
+    let tags = unsafe { &METADATA }.get_tags();
     let tags = tags
         .iter()
         .filter_map(|(t, h)| h.to_git().map(|g| (t, g)))
@@ -3947,7 +3946,7 @@ fn remote_helper_import(
         .unique()
         .collect_vec();
     if !unknown_wanted_heads.is_empty() {
-        tags = Some(get_tags());
+        tags = Some(unsafe { &METADATA }.get_tags());
         if graft_config_enabled(remote)?.unwrap_or(false) {
             init_graft();
         }
@@ -3999,7 +3998,7 @@ fn remote_helper_import(
     }
 
     if let Some(old_tags) = tags {
-        if old_tags != get_tags() {
+        if old_tags != unsafe { &METADATA }.get_tags() {
             eprintln!(
                 "\nRun the following command to update tags:\n\
                  \x20 git cinnabar fetch --tags"

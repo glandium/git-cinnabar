@@ -1075,21 +1075,23 @@ impl PartialEq for TagSet {
     }
 }
 
-pub fn get_tags() -> TagSet {
-    let mut tags = TagSet::default();
-    let mut tags_files = HashSet::new();
-    for head in unsafe { &METADATA }.changeset_heads().heads() {
-        (|| -> Option<()> {
-            let head = head.to_git()?;
-            let tags_file = get_oid_blob(format!("{}:.hgtags", head).as_bytes())?;
-            if tags_files.insert(tags_file) {
-                let tags_blob = RawBlob::read(tags_file).unwrap();
-                tags.merge(TagSet::from_buf(tags_blob.as_bytes())?);
-            }
-            Some(())
-        })();
+impl Metadata {
+    pub fn get_tags(&self) -> TagSet {
+        let mut tags = TagSet::default();
+        let mut tags_files = HashSet::new();
+        for head in self.changeset_heads().heads() {
+            (|| -> Option<()> {
+                let head = head.to_git()?;
+                let tags_file = get_oid_blob(format!("{}:.hgtags", head).as_bytes())?;
+                if tags_files.insert(tags_file) {
+                    let tags_blob = RawBlob::read(tags_file).unwrap();
+                    tags.merge(TagSet::from_buf(tags_blob.as_bytes())?);
+                }
+                Some(())
+            })();
+        }
+        tags
     }
-    tags
 }
 
 static BUNDLE_BLOBS: Mutex<Vec<object_id>> = Mutex::new(Vec::new());
