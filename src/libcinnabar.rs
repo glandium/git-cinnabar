@@ -11,7 +11,7 @@ use std::ptr;
 
 use derive_more::{Deref, DerefMut};
 
-use crate::git::{GitObjectId, TreeId};
+use crate::git::{CommitId, GitObjectId, TreeId};
 use crate::hg::HgObjectId;
 use crate::libgit::{
     child_process, die, object_id, strbuf, FileMode, RawTree, FILES_META_OID, GIT2HG_OID,
@@ -258,13 +258,11 @@ pub unsafe extern "C" fn add_files_meta(
     add_note_hg(&mut files_meta.0, oid, note_oid)
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn store_metadata_notes(
+pub unsafe fn store_metadata_notes(
     notes: *mut cinnabar_notes_tree,
     reference: *const object_id,
-    result: *mut object_id,
-) {
-    *result = object_id::default();
+) -> CommitId {
+    let mut result = object_id::default();
     let mut tree = object_id::default();
     if notes_dirty(notes) != 0 {
         let mode = if ptr::eq(notes, &hg2git.0) {
@@ -276,8 +274,8 @@ pub unsafe extern "C" fn store_metadata_notes(
     }
     let mut tree = TreeId::from_unchecked(GitObjectId::from(tree));
     if tree.is_null() {
-        *result = reference.as_ref().unwrap().clone();
-        if GitObjectId::from(result.as_ref().unwrap().clone()).is_null() {
+        result = reference.as_ref().unwrap().clone();
+        if GitObjectId::from(result.clone()).is_null() {
             tree = RawTree::EMPTY_OID;
         }
     }
@@ -287,8 +285,9 @@ pub unsafe extern "C" fn store_metadata_notes(
         buf.extend_from_slice(
             b"author  <cinnabar@git> 0 +0000\ncommitter  <cinnabar@git> 0 +0000\n\n",
         );
-        store_git_commit(&buf, result);
+        store_git_commit(&buf, &mut result);
     }
+    CommitId::from_unchecked(result.into())
 }
 
 #[allow(non_camel_case_types)]

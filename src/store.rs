@@ -1051,9 +1051,7 @@ pub fn get_tags() -> TagSet {
 
 static BUNDLE_BLOBS: Mutex<Vec<object_id>> = Mutex::new(Vec::new());
 
-#[no_mangle]
-pub unsafe extern "C" fn store_changesets_metadata(result: *mut object_id) {
-    let result = result.as_mut().unwrap();
+fn store_changesets_metadata() -> CommitId {
     let mut tree = strbuf::new();
     for (n, blob) in BUNDLE_BLOBS
         .lock()
@@ -1072,7 +1070,9 @@ pub unsafe extern "C" fn store_changesets_metadata(result: *mut object_id) {
         tree.extend_from_slice(blob.as_raw_bytes());
     }
     let mut tid = object_id::default();
-    store_git_tree(&tree, std::ptr::null(), &mut tid);
+    unsafe {
+        store_git_tree(&tree, std::ptr::null(), &mut tid);
+    }
     drop(tree);
     let mut commit = strbuf::new();
     writeln!(commit, "tree {}", GitObjectId::from(tid)).ok();
@@ -1085,7 +1085,11 @@ pub unsafe extern "C" fn store_changesets_metadata(result: *mut object_id) {
     for (head, branch) in heads.branch_heads() {
         write!(commit, "\n{} {}", head, branch).ok();
     }
-    store_git_commit(&commit, result);
+    let mut result = object_id::default();
+    unsafe {
+        store_git_commit(&commit, &mut result);
+    }
+    CommitId::from_unchecked(result.into())
 }
 
 #[no_mangle]
@@ -1094,9 +1098,7 @@ pub unsafe extern "C" fn reset_changeset_heads() {
     *heads = ChangesetHeads::from_stored_metadata();
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn store_manifests_metadata(result: *mut object_id) {
-    let result = result.as_mut().unwrap();
+fn store_manifests_metadata() -> CommitId {
     let mut commit = strbuf::new();
     writeln!(commit, "tree {}", RawTree::EMPTY_OID).ok();
     let heads = MANIFEST_HEADS.lock().unwrap();
@@ -1105,7 +1107,11 @@ pub unsafe extern "C" fn store_manifests_metadata(result: *mut object_id) {
     }
     writeln!(commit, "author  <cinnabar@git> 0 +0000").ok();
     writeln!(commit, "committer  <cinnabar@git> 0 +0000\n").ok();
-    store_git_commit(&commit, result);
+    let mut result = object_id::default();
+    unsafe {
+        store_git_commit(&commit, &mut result);
+    }
+    CommitId::from_unchecked(result.into())
 }
 
 #[no_mangle]
@@ -2163,19 +2169,19 @@ pub unsafe extern "C" fn done_metadata() {
 }
 
 pub fn do_store_metadata() -> CommitId {
-    let mut hg2git_ = object_id::default();
-    let mut git2hg_ = object_id::default();
-    let mut files_meta_ = object_id::default();
-    let mut manifests = object_id::default();
-    let mut changesets = object_id::default();
+    let hg2git_;
+    let git2hg_;
+    let files_meta_;
+    let manifests;
+    let changesets;
     let mut tree = object_id::default();
     let mut previous = None;
     unsafe {
-        store_metadata_notes(&mut *hg2git, &HG2GIT_OID, &mut hg2git_);
-        store_metadata_notes(&mut *git2hg, &GIT2HG_OID, &mut git2hg_);
-        store_metadata_notes(&mut *files_meta, &FILES_META_OID, &mut files_meta_);
-        store_manifests_metadata(&mut manifests);
-        store_changesets_metadata(&mut changesets);
+        hg2git_ = store_metadata_notes(&mut *hg2git, &HG2GIT_OID);
+        git2hg_ = store_metadata_notes(&mut *git2hg, &GIT2HG_OID);
+        files_meta_ = store_metadata_notes(&mut *files_meta, &FILES_META_OID);
+        manifests = store_manifests_metadata();
+        changesets = store_changesets_metadata();
         if !GitObjectId::from(METADATA_OID.clone()).is_null() {
             previous = Some(CommitId::from_unchecked(GitObjectId::from(
                 METADATA_OID.clone(),
@@ -2183,16 +2189,10 @@ pub fn do_store_metadata() -> CommitId {
         }
         store_replace_map(&mut tree);
     }
-    let new_metadata = [
-        changesets.clone(),
-        manifests.clone(),
-        hg2git_.clone(),
-        git2hg_.clone(),
-        files_meta_.clone(),
-    ]
-    .into_iter()
-    .map(|o| CommitId::from_unchecked(GitObjectId::from(o)))
-    .collect_vec();
+    let new_metadata = [changesets, manifests, hg2git_, git2hg_, files_meta_]
+        .into_iter()
+        .map(|o| CommitId::from_unchecked(GitObjectId::from(o)))
+        .collect_vec();
     if let Some(previous) = previous {
         let c = RawCommit::read(previous).unwrap();
         let c = c.parse().unwrap();
