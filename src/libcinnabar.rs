@@ -12,8 +12,8 @@ use std::ptr;
 use crate::git::{CommitId, GitObjectId, TreeId};
 use crate::hg::HgObjectId;
 use crate::libgit::{
-    child_process, combine_notes_ignore, die, init_notes, notes_tree, object_id, strbuf, FileMode,
-    RawTree, FILES_META_OID, GIT2HG_OID, HG2GIT_OID,
+    child_process, combine_notes_ignore, die, free_notes, init_notes, notes_tree, object_id,
+    strbuf, FileMode, RawTree, FILES_META_OID, GIT2HG_OID, HG2GIT_OID,
 };
 use crate::oid::{Abbrev, ObjectId};
 use crate::store::{store_git_commit, MetadataFlags, METADATA_FLAGS};
@@ -107,7 +107,8 @@ impl Drop for cinnabar_notes_tree {
     fn drop(&mut self) {
         unsafe {
             if notes_initialized(self) != 0 {
-                cinnabar_free_notes(self);
+                free_notes(&mut self.current);
+                free_notes(&mut self.additions);
             }
         }
     }
@@ -144,8 +145,6 @@ pub static mut HG2GIT: hg_notes_tree = hg_notes_tree::new();
 pub static mut FILES_META: hg_notes_tree = hg_notes_tree::new();
 
 extern "C" {
-    fn cinnabar_free_notes(notes: *mut cinnabar_notes_tree);
-
     fn cinnabar_get_note(
         notes: *mut cinnabar_notes_tree,
         oid: *const object_id,

@@ -19,7 +19,6 @@ struct cinnabar_notes_tree {
  * lookups induces a large cost when storing them.
  * So we transparently wrap the API to work around this problem. */
 #define notes_tree cinnabar_notes_tree
-#define free_notes cinnabar_free_notes
 #define add_note cinnabar_add_note
 #define remove_note cinnabar_remove_note
 #define get_note cinnabar_get_note
@@ -32,8 +31,6 @@ int notes_dirty(struct notes_tree *notes);
 
 extern const struct object_id *get_abbrev_note(
 	struct notes_tree *t, const struct object_id *object_oid, size_t len);
-
-void free_notes(struct notes_tree *t);
 
 extern int add_note(
 	struct notes_tree *t, const struct object_id *object_oid,

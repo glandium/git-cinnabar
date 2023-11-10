@@ -7,7 +7,6 @@
 #include "cinnabar-notes.h"
 
 #undef notes_tree
-#undef free_notes
 #undef add_note
 #undef remove_note
 #undef get_note
@@ -108,12 +107,6 @@ const struct object_id *get_abbrev_note(struct cinnabar_notes_tree *t,
 			&t->additions, t->additions.root, 0,
 			object_oid->hash, len);
 	return found ? &found->val_oid : NULL;
-}
-
-void cinnabar_free_notes(struct cinnabar_notes_tree *t)
-{
-	free_notes(&t->current);
-	free_notes(&t->additions);
 }
 
 int notes_initialized(struct cinnabar_notes_tree *notes)

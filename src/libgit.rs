@@ -1269,6 +1269,7 @@ extern "C" {
         flags: c_int,
     );
 
+    pub fn free_notes(notes: *mut notes_tree);
 }
 
 impl notes_tree {
