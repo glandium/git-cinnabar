@@ -712,14 +712,6 @@ int init_cinnabar_2(void)
 	return 1;
 }
 
-extern void done_metadata(void);
-
-void done_cinnabar(void)
-{
-	done_metadata();
-	free_git_tree_cache();
-}
-
 int common_exit(const char *file, int line, int code)
 {
 	return code;

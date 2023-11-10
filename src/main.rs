@@ -121,10 +121,10 @@ use progress::Progress;
 use sha1::{Digest, Sha1};
 use store::{
     check_file, check_manifest, create_changeset, do_check_files, do_set, do_store_metadata,
-    ensure_store_init, get_tags, has_metadata, raw_commit_for_changeset, store_git_blob,
-    store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata,
-    RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHANGESET_HEADS, CHECKED_REF,
-    METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    done_metadata, ensure_store_init, get_tags, has_metadata, raw_commit_for_changeset,
+    store_git_blob, store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata,
+    RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF,
+    CHANGESET_HEADS, CHECKED_REF, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use tree_util::{diff_by_path, RecurseTree};
 use url::Url;
@@ -181,7 +181,13 @@ extern "C" {
 
     fn init_cinnabar(argv0: *const c_char);
     fn init_cinnabar_2() -> c_int;
-    fn done_cinnabar();
+    fn free_git_tree_cache();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn done_cinnabar() {
+    done_metadata();
+    free_git_tree_cache();
 }
 
 static REF_UPDATES: Lazy<Mutex<HashMap<Box<BStr>, CommitId>>> =
