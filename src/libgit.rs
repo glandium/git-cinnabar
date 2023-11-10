@@ -1289,4 +1289,8 @@ impl notes_tree {
     pub const fn initialized(&self) -> bool {
         self.initialized != 0
     }
+
+    pub const fn dirty(&self) -> bool {
+        self.dirty != 0
+    }
 }

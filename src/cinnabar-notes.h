@@ -25,8 +25,6 @@ struct cinnabar_notes_tree {
 #define for_each_note cinnabar_for_each_note
 #define write_notes_tree cinnabar_write_notes_tree
 
-int notes_dirty(struct notes_tree *notes);
-
 extern const struct object_id *get_abbrev_note(
 	struct notes_tree *t, const struct object_id *object_oid, size_t len);
 

@@ -176,8 +176,6 @@ extern "C" {
 
     fn cinnabar_remove_note(notes: *mut cinnabar_notes_tree, object_sha1: *const u8);
 
-    fn notes_dirty(notes: *const cinnabar_notes_tree) -> c_int;
-
     fn cinnabar_write_notes_tree(
         notes: *mut cinnabar_notes_tree,
         result: *mut object_id,
@@ -292,7 +290,8 @@ pub unsafe fn store_metadata_notes(
 ) -> CommitId {
     let mut result = object_id::default();
     let mut tree = object_id::default();
-    if notes_dirty(notes) != 0 {
+    let notes = notes.as_mut().unwrap();
+    if notes.current.dirty() || notes.additions.dirty() {
         let mode = if ptr::eq(notes, &HG2GIT.0) {
             FileMode::GITLINK
         } else {
