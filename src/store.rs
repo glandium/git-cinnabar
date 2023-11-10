@@ -1993,7 +1993,13 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
             let cid = item.inner().oid.try_into().unwrap();
             if RawCommit::read(cid).is_none() {
                 if let Some(refname) = by_sha1.get(&cid) {
-                    let replace_ref = bstr::join(b"/", [b"refs/cinnabar/replace", &**item.path()]);
+                    let replace_ref = bstr::join(
+                        b"/",
+                        [
+                            REPLACE_REFS_PREFIX.strip_suffix('/').unwrap().as_bytes(),
+                            &**item.path(),
+                        ],
+                    );
                     needed.push(
                         bstr::join(b":", [&**refname, replace_ref.as_bstr()])
                             .as_bstr()
@@ -2146,7 +2152,7 @@ pub unsafe extern "C" fn init_metadata(c: *const commit) {
     }
     if replace_map_tablesize() == 0 {
         let mut count = 0;
-        for_each_ref_in("refs/cinnabar/replace/", |_, _| -> Result<(), ()> {
+        for_each_ref_in(REPLACE_REFS_PREFIX, |_, _| -> Result<(), ()> {
             count += 1;
             Ok(())
         })
