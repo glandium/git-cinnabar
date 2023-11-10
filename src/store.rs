@@ -86,20 +86,26 @@ pub struct Metadata {
     manifest_heads_: OnceCell<ManifestHeads>,
 }
 
-pub static mut METADATA: Metadata = Metadata {
-    metadata_cid: CommitId::NULL,
-    changesets_cid: CommitId::NULL,
-    manifests_cid: CommitId::NULL,
-    git2hg_cid: CommitId::NULL,
-    hg2git_cid: CommitId::NULL,
-    files_meta_cid: CommitId::NULL,
-    git2hg: git_notes_tree::new(),
-    hg2git: hg_notes_tree::new(),
-    files_meta: hg_notes_tree::new(),
-    flags: MetadataFlags::empty(),
-    changeset_heads_: OnceCell::new(),
-    manifest_heads_: OnceCell::new(),
-};
+pub static mut METADATA: Metadata = Metadata::default();
+
+impl Metadata {
+    const fn default() -> Metadata {
+        Metadata {
+            metadata_cid: CommitId::NULL,
+            changesets_cid: CommitId::NULL,
+            manifests_cid: CommitId::NULL,
+            git2hg_cid: CommitId::NULL,
+            hg2git_cid: CommitId::NULL,
+            files_meta_cid: CommitId::NULL,
+            git2hg: git_notes_tree::new(),
+            hg2git: hg_notes_tree::new(),
+            files_meta: hg_notes_tree::new(),
+            flags: MetadataFlags::empty(),
+            changeset_heads_: OnceCell::new(),
+            manifest_heads_: OnceCell::new(),
+        }
+    }
+}
 
 impl Metadata {
     pub fn changeset_heads(&self) -> &ChangesetHeads {
@@ -1129,11 +1135,6 @@ fn store_changesets_metadata() -> CommitId {
     CommitId::from_unchecked(result.into())
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn reset_changeset_heads() {
-    METADATA.changeset_heads_ = OnceCell::new();
-}
-
 fn store_manifests_metadata() -> CommitId {
     let mut commit = strbuf::new();
     writeln!(commit, "tree {}", RawTree::EMPTY_OID).ok();
@@ -1156,11 +1157,6 @@ pub unsafe extern "C" fn add_manifest_head(mn: *const object_id) {
     heads.add(GitManifestId::from_unchecked(CommitId::from_unchecked(
         mn.as_ref().unwrap().clone().into(),
     )));
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn reset_manifest_heads() {
-    METADATA.manifest_heads_ = OnceCell::new();
 }
 
 pub fn clear_manifest_heads() {
@@ -2106,95 +2102,50 @@ fn need_upgrade() {
     die!("Git-cinnabar metadata needs upgrade. Please run `git cinnabar upgrade` first.");
 }
 
-pub unsafe fn init_metadata(c: Option<CommitId>) {
-    let cid = if let Some(c) = c {
-        c
-    } else {
-        METADATA.metadata_cid = CommitId::NULL;
-        METADATA.changesets_cid = CommitId::NULL;
-        METADATA.manifests_cid = CommitId::NULL;
-        METADATA.hg2git_cid = CommitId::NULL;
-        METADATA.git2hg_cid = CommitId::NULL;
-        METADATA.files_meta_cid = CommitId::NULL;
-        return;
-    };
-    let c = RawCommit::read(cid).unwrap();
-    let c = c.parse().unwrap();
-    if !(5..=6).contains(&c.parents().len()) {
-        die!("Invalid metadata?");
-    }
-    for (cid, field) in Some(cid).iter().chain(c.parents()[..5].iter()).zip([
-        &mut METADATA.metadata_cid,
-        &mut METADATA.changesets_cid,
-        &mut METADATA.manifests_cid,
-        &mut METADATA.hg2git_cid,
-        &mut METADATA.git2hg_cid,
-        &mut METADATA.files_meta_cid,
-    ]) {
-        *field = *cid;
-    }
-    for flag in c.body().split(|&b| b == b' ') {
-        match flag {
-            b"files-meta" => {
-                METADATA.flags.insert(MetadataFlags::FILES_META);
-            }
-            b"unified-manifests" => old_metadata(),
-            b"unified-manifests-v2" => {
-                METADATA.flags.insert(MetadataFlags::UNIFIED_MANIFESTS_V2);
-            }
-            _ => new_metadata(),
+impl Metadata {
+    pub fn new(c: Option<CommitId>) -> Self {
+        let mut result = Metadata::default();
+        let cid = if let Some(c) = c {
+            c
+        } else {
+            return result;
+        };
+        let c = RawCommit::read(cid).unwrap();
+        let c = c.parse().unwrap();
+        if !(5..=6).contains(&c.parents().len()) {
+            die!("Invalid metadata?");
         }
-    }
-    if !METADATA
-        .flags
-        .difference(MetadataFlags::FILES_META | MetadataFlags::UNIFIED_MANIFESTS_V2)
-        .is_empty()
-    {
-        old_metadata();
-    }
-    let mut count = 0;
-    for_each_ref_in("refs/cinnabar/branches/", |_, _| -> Result<(), ()> {
-        count += 1;
-        Ok(())
-    })
-    .ok();
-    if count > 0 {
-        old_metadata();
-    }
-
-    reset_replace_map();
-
-    let tree = RawTree::read(c.tree()).unwrap();
-    let mut replaces = BTreeMap::new();
-    for (path, oid) in tree.into_iter().map(WithPath::unzip) {
-        match oid {
-            Either::Right(RecursedTreeEntry {
-                oid: GitOid::Commit(replace_with),
-                ..
-            }) => {
-                if let Ok(original) = CommitId::from_bytes(&path) {
-                    if original == replace_with {
-                        warn!("self-referencing graft: {}", original);
-                    } else {
-                        replaces
-                            .entry(original)
-                            .and_modify(|_| die!("duplicate replace: {}", original))
-                            .or_insert_with(|| replace_with);
-                    }
-                } else {
-                    warn!("bad replace name: {}", path.as_bstr());
+        for (cid, field) in Some(cid).iter().chain(c.parents()[..5].iter()).zip([
+            &mut result.metadata_cid,
+            &mut result.changesets_cid,
+            &mut result.manifests_cid,
+            &mut result.hg2git_cid,
+            &mut result.git2hg_cid,
+            &mut result.files_meta_cid,
+        ]) {
+            *field = *cid;
+        }
+        for flag in c.body().split(|&b| b == b' ') {
+            match flag {
+                b"files-meta" => {
+                    result.flags.insert(MetadataFlags::FILES_META);
                 }
+                b"unified-manifests" => old_metadata(),
+                b"unified-manifests-v2" => {
+                    result.flags.insert(MetadataFlags::UNIFIED_MANIFESTS_V2);
+                }
+                _ => new_metadata(),
             }
-            _ => die!("Invalid metadata"),
         }
-    }
-    init_replace_map();
-    for (original, replace_with) in replaces.into_iter() {
-        do_set_replace(&original.into(), &replace_with.into());
-    }
-    if replace_map_tablesize() == 0 {
+        if !result
+            .flags
+            .difference(MetadataFlags::FILES_META | MetadataFlags::UNIFIED_MANIFESTS_V2)
+            .is_empty()
+        {
+            old_metadata();
+        }
         let mut count = 0;
-        for_each_ref_in(REPLACE_REFS_PREFIX, |_, _| -> Result<(), ()> {
+        for_each_ref_in("refs/cinnabar/branches/", |_, _| -> Result<(), ()> {
             count += 1;
             Ok(())
         })
@@ -2202,7 +2153,58 @@ pub unsafe fn init_metadata(c: Option<CommitId>) {
         if count > 0 {
             old_metadata();
         }
+
+        unsafe {
+            reset_replace_map();
+        }
+
+        let tree = RawTree::read(c.tree()).unwrap();
+        let mut replaces = BTreeMap::new();
+        for (path, oid) in tree.into_iter().map(WithPath::unzip) {
+            match oid {
+                Either::Right(RecursedTreeEntry {
+                    oid: GitOid::Commit(replace_with),
+                    ..
+                }) => {
+                    if let Ok(original) = CommitId::from_bytes(&path) {
+                        if original == replace_with {
+                            warn!("self-referencing graft: {}", original);
+                        } else {
+                            replaces
+                                .entry(original)
+                                .and_modify(|_| die!("duplicate replace: {}", original))
+                                .or_insert_with(|| replace_with);
+                        }
+                    } else {
+                        warn!("bad replace name: {}", path.as_bstr());
+                    }
+                }
+                _ => die!("Invalid metadata"),
+            }
+        }
+        unsafe {
+            init_replace_map();
+            for (original, replace_with) in replaces.into_iter() {
+                do_set_replace(&original.into(), &replace_with.into());
+            }
+        }
+        if unsafe { replace_map_tablesize() } == 0 {
+            let mut count = 0;
+            for_each_ref_in(REPLACE_REFS_PREFIX, |_, _| -> Result<(), ()> {
+                count += 1;
+                Ok(())
+            })
+            .ok();
+            if count > 0 {
+                old_metadata();
+            }
+        }
+        result
     }
+}
+
+pub unsafe fn init_metadata(c: Option<CommitId>) {
+    METADATA = Metadata::new(c);
 }
 
 #[no_mangle]

@@ -121,10 +121,10 @@ use sha1::{Digest, Sha1};
 use store::{
     check_file, check_manifest, create_changeset, do_check_files, do_set, do_store_metadata,
     done_metadata, ensure_store_init, get_tags, has_metadata, init_metadata,
-    raw_commit_for_changeset, reset_changeset_heads, reset_manifest_heads, store_git_blob,
-    store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata,
-    RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHECKED_REF, METADATA,
-    METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    raw_commit_for_changeset, store_git_blob, store_manifest, ChangesetHeads,
+    GeneratedGitChangesetMetadata, RawGitChangesetMetadata, RawHgChangeset, RawHgFile,
+    RawHgManifest, SetWhat, BROKEN_REF, CHECKED_REF, METADATA, METADATA_REF, NOTES_REF,
+    REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use tree_util::{diff_by_path, RecurseTree};
 use url::Url;
@@ -210,8 +210,6 @@ pub unsafe fn do_reload(metadata: Option<CommitId>) {
         c = get_oid_committish(METADATA_REF.as_bytes());
     }
     init_metadata(c);
-    reset_changeset_heads();
-    reset_manifest_heads();
 }
 
 #[no_mangle]
