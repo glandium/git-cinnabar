@@ -257,11 +257,6 @@ static void end_packfile(void)
 	real_end_packfile();
 }
 
-const struct object_id empty_tree = { {
-	0x4b, 0x82, 0x5d, 0xc6, 0x42, 0xcb, 0x6e, 0xb9, 0xa0, 0x60,
-	0xe5, 0x4b, 0xf8, 0xd6, 0x92, 0x88, 0xfb, 0xee, 0x49, 0x04,
-}, GIT_HASH_SHA1 };
-
 extern void handle_changeset_conflict(const struct hg_object_id *hg_id,
                                       struct object_id *git_id);
 
