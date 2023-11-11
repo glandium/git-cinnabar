@@ -80,7 +80,7 @@ void hg_file_load(struct hg_file *result, const struct hg_object_id *oid)
 	free(content);
 
 	// Note this duplicates work read_object_file already did.
-	result->content_oe = get_object_entry(note->hash);
+	result->content_oe = get_object_entry(note);
 
 	_hg_file_split(result, metadata_len);
 }

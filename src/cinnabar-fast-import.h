@@ -12,11 +12,12 @@ struct object_id;
 struct hg_object_id;
 struct cinnabar_notes_tree;
 struct rev_chunk;
+struct object_entry;
 
 int maybe_handle_command(struct reader *helper_input, int helper_output,
                          const char *command, struct string_list *args);
 
-void *get_object_entry(const unsigned char *sha1);
+struct object_entry *get_object_entry(const struct object_id *oid);
 
 void store_git_tree(struct strbuf *tree_buf,
                     const struct object_id *reference,

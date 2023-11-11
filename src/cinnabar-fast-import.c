@@ -113,7 +113,11 @@ off_t real_find_pack_entry_one(const unsigned char *sha1,
 off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
 {
 	if (p == pack_data) {
-		struct object_entry *oe = get_object_entry(sha1);
+		struct object_id oid;
+		struct object_entry *oe;
+		hashcpy(oid.hash, sha1);
+		oid.algo = GIT_HASH_SHA1;
+		oe = get_object_entry(&oid);
 		if (oe && oe->idx.offset > 1 && oe->pack_id == pack_id)
 			return oe->idx.offset;
 		return 0;
@@ -121,12 +125,9 @@ off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
 	return real_find_pack_entry_one(sha1, p);
 }
 
-void *get_object_entry(const unsigned char *sha1)
+struct object_entry *get_object_entry(const struct object_id *oid)
 {
-	struct object_id oid;
-	hashcpy(oid.hash, sha1);
-	oid.algo = GIT_HASH_SHA1;
-	return find_object(&oid);
+	return find_object((struct object_id*)oid);
 }
 
 /* Mostly copied from fast-import.c's cmd_main() */
