@@ -186,11 +186,11 @@ unsafe fn ensure_notes(t: *mut cinnabar_notes_tree) {
     if !t.current.initialized() {
         let oid;
         let mut flags = 0;
-        if ptr::eq(t, &METADATA.git2hg.0) {
+        if ptr::eq(t, &METADATA.git2hg().0) {
             oid = METADATA.git2hg_cid;
-        } else if ptr::eq(t, &METADATA.hg2git.0) {
+        } else if ptr::eq(t, &METADATA.hg2git().0) {
             oid = METADATA.hg2git_cid;
-        } else if ptr::eq(t, &METADATA.files_meta.0) {
+        } else if ptr::eq(t, &METADATA.files_meta().0) {
             oid = METADATA.files_meta_cid;
             if !METADATA.flags.contains(MetadataFlags::FILES_META) {
                 flags = NOTES_INIT_EMPTY;
@@ -235,8 +235,8 @@ fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_not
 
 #[no_mangle]
 pub unsafe extern "C" fn resolve_hg2git(oid: *const hg_object_id) -> *const object_id {
-    ensure_notes(&mut METADATA.hg2git.0);
-    get_note_hg(&mut METADATA.hg2git.0, oid)
+    ensure_notes(&mut METADATA.hg2git_mut().0);
+    get_note_hg(&mut METADATA.hg2git_mut().0, oid)
 }
 
 unsafe fn get_note_hg(
@@ -251,8 +251,8 @@ unsafe fn get_note_hg(
 
 #[no_mangle]
 pub unsafe extern "C" fn get_files_meta(oid: *const hg_object_id) -> *const object_id {
-    ensure_notes(&mut METADATA.files_meta.0);
-    get_note_hg(&mut METADATA.files_meta.0, oid)
+    ensure_notes(&mut METADATA.files_meta_mut().0);
+    get_note_hg(&mut METADATA.files_meta_mut().0, oid)
 }
 
 unsafe fn add_note_hg(
@@ -269,7 +269,7 @@ unsafe fn add_note_hg(
 
 #[no_mangle]
 pub unsafe extern "C" fn add_hg2git(oid: *const hg_object_id, note_oid: *const object_id) -> c_int {
-    add_note_hg(&mut METADATA.hg2git.0, oid, note_oid)
+    add_note_hg(&mut METADATA.hg2git_mut().0, oid, note_oid)
 }
 
 #[no_mangle]
@@ -277,7 +277,7 @@ pub unsafe extern "C" fn add_files_meta(
     oid: *const hg_object_id,
     note_oid: *const object_id,
 ) -> c_int {
-    add_note_hg(&mut METADATA.files_meta.0, oid, note_oid)
+    add_note_hg(&mut METADATA.files_meta_mut().0, oid, note_oid)
 }
 
 pub unsafe fn store_metadata_notes(
@@ -288,7 +288,7 @@ pub unsafe fn store_metadata_notes(
     let mut tree = object_id::default();
     let notes = notes.as_mut().unwrap();
     if notes.current.dirty() || notes.additions.dirty() {
-        let mode = if ptr::eq(notes, &METADATA.hg2git.0) {
+        let mode = if ptr::eq(notes, &METADATA.hg2git().0) {
             FileMode::GITLINK
         } else {
             FileMode::REGULAR | FileMode::RW
