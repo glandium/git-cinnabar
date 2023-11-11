@@ -223,24 +223,21 @@ unsafe fn add_note_hg(
     notes: *mut cinnabar_notes_tree,
     oid: *const hg_object_id,
     note_oid: *const object_id,
-) -> c_int {
+) {
     let git_oid =
         GitObjectId::from_raw_bytes(HgObjectId::from(oid.as_ref().unwrap().clone()).as_raw_bytes())
             .unwrap();
-    cinnabar_add_note(notes, &git_oid.into(), note_oid)
+    cinnabar_add_note(notes, &git_oid.into(), note_oid);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn add_hg2git(oid: *const hg_object_id, note_oid: *const object_id) -> c_int {
-    add_note_hg(&mut METADATA.hg2git_mut().0, oid, note_oid)
+pub unsafe extern "C" fn add_hg2git(oid: *const hg_object_id, note_oid: *const object_id) {
+    add_note_hg(&mut METADATA.hg2git_mut().0, oid, note_oid);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn add_files_meta(
-    oid: *const hg_object_id,
-    note_oid: *const object_id,
-) -> c_int {
-    add_note_hg(&mut METADATA.files_meta_mut().0, oid, note_oid)
+pub unsafe extern "C" fn add_files_meta(oid: *const hg_object_id, note_oid: *const object_id) {
+    add_note_hg(&mut METADATA.files_meta_mut().0, oid, note_oid);
 }
 
 pub unsafe fn store_metadata_notes(
