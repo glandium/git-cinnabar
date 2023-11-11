@@ -1988,7 +1988,7 @@ fn create_root_changeset(cid: CommitId) -> HgChangesetId {
     }
     paths.pop();
     let mid = create_manifest(&mut manifest, &[]);
-    let (csid, _) = create_changeset(cid, mid, Some(paths.to_boxed()));
+    let (csid, _) = create_changeset(unsafe { &mut METADATA }, cid, mid, Some(paths.to_boxed()));
     csid
 }
 
@@ -2113,7 +2113,7 @@ fn create_simple_changeset(cid: CommitId, parent: CommitId) -> [HgChangesetId; 2
     }
     let parent_csid = GitChangesetId::from_unchecked(parent).to_hg().unwrap();
     let (mid, paths) = create_simple_manifest(cid, parent);
-    let (csid, _) = create_changeset(cid, mid, paths);
+    let (csid, _) = create_changeset(unsafe { &mut METADATA }, cid, mid, paths);
     [csid, parent_csid]
 }
 
@@ -2145,7 +2145,7 @@ fn create_merge_changeset(
     let (parent2_csid, parent2_mid) = cs_mn(parent2);
     if parent1_mid == parent2_mid {
         let (mid, paths) = create_simple_manifest(cid, parent1);
-        let (csid, _) = create_changeset(cid, mid, paths);
+        let (csid, _) = create_changeset(unsafe { &mut METADATA }, cid, mid, paths);
         [csid, parent1_csid, parent2_csid]
     } else {
         let parent1_mn_cid = parent1_mid.to_git().unwrap();
@@ -2290,7 +2290,7 @@ fn create_merge_changeset(
                 Some(paths.into_boxed_slice()),
             )
         };
-        let (csid, _) = create_changeset(cid, mid, paths);
+        let (csid, _) = create_changeset(unsafe { &mut METADATA }, cid, mid, paths);
         [csid, parent1_csid, parent2_csid]
     }
 }

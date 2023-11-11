@@ -1451,11 +1451,12 @@ pub fn raw_commit_for_changeset(
 }
 
 pub fn create_changeset(
+    metadata: &mut Metadata,
     commit_id: CommitId,
     manifest_id: HgManifestId,
     files: Option<Box<[u8]>>,
 ) -> (HgChangesetId, GitChangesetMetadataId) {
-    let mut metadata = GitChangesetMetadata {
+    let mut cs_metadata = GitChangesetMetadata {
         changeset_id: HgChangesetId::NULL,
         manifest_id,
         author: None,
@@ -1466,9 +1467,10 @@ pub fn create_changeset(
     let commit = RawCommit::read(commit_id).unwrap();
     let commit = commit.parse().unwrap();
     let branch = commit.parents().get(0).and_then(|p| {
-        let metadata = RawGitChangesetMetadata::read(GitChangesetId::from_unchecked(*p)).unwrap();
-        let metadata = metadata.parse().unwrap();
-        metadata
+        let cs_metadata =
+            RawGitChangesetMetadata::read(GitChangesetId::from_unchecked(*p)).unwrap();
+        let cs_metadata = cs_metadata.parse().unwrap();
+        cs_metadata
             .extra()
             .and_then(|e| e.get(b"branch").map(ToBoxed::to_boxed))
     });
@@ -1477,9 +1479,9 @@ pub fn create_changeset(
         extra.set(b"branch", branch);
         let mut buf = Vec::new();
         extra.dump_into(&mut buf);
-        metadata.extra = Some(buf.into_boxed_slice());
+        cs_metadata.extra = Some(buf.into_boxed_slice());
     }
-    let changeset = RawHgChangeset::from_metadata(&commit, &metadata).unwrap();
+    let changeset = RawHgChangeset::from_metadata(&commit, &cs_metadata).unwrap();
     let mut hash = HgChangesetId::create();
     let parents = commit
         .parents()
@@ -1498,29 +1500,29 @@ pub fn create_changeset(
         hash.update(p.as_raw_bytes());
     }
     hash.update(&changeset.0);
-    metadata.changeset_id = hash.finalize();
+    cs_metadata.changeset_id = hash.finalize();
     let mut buf = strbuf::new();
-    buf.extend_from_slice(&metadata.serialize());
+    buf.extend_from_slice(&cs_metadata.serialize());
     let mut blob_oid = object_id::default();
     unsafe {
         store_git_blob(&buf, &mut blob_oid);
-        METADATA.set(
+        metadata.set(
             SetWhat::Changeset,
-            metadata.changeset_id.into(),
+            cs_metadata.changeset_id.into(),
             commit_id.into(),
         );
-        METADATA.set(
+        metadata.set(
             SetWhat::ChangesetMeta,
-            metadata.changeset_id.into(),
+            cs_metadata.changeset_id.into(),
             blob_oid.clone().into(),
         );
     }
-    let heads = unsafe { &mut METADATA }.changeset_heads_mut();
+    let heads = metadata.changeset_heads_mut();
     let branch = branch.as_deref().unwrap_or(b"default").as_bstr();
-    heads.add(metadata.changeset_id, &parents, branch);
-    let metadata_id =
+    heads.add(cs_metadata.changeset_id, &parents, branch);
+    let cs_metadata_id =
         GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(GitObjectId::from(blob_oid)));
-    (metadata.changeset_id, metadata_id)
+    (cs_metadata.changeset_id, cs_metadata_id)
 }
 
 // The rev_chunk has a non-FFI-safe field that is not exposed to C.
