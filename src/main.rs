@@ -3122,7 +3122,7 @@ fn do_fsck_full(
                 }
             }
 
-            clear_manifest_heads();
+            clear_manifest_heads(unsafe { &mut METADATA });
             for h in manifest_heads {
                 // TODO: This is gross.
                 let m = RawCommit::read(h).unwrap();
@@ -3189,7 +3189,7 @@ fn do_fsck_full(
             ));
         }
         if original_heads != computed_heads {
-            set_changeset_heads(changeset_heads);
+            set_changeset_heads(unsafe { &mut METADATA }, changeset_heads);
         }
     }
 

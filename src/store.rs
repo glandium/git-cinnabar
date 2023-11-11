@@ -1161,13 +1161,13 @@ pub unsafe extern "C" fn add_manifest_head(mn: *const object_id) {
     )));
 }
 
-pub fn clear_manifest_heads() {
-    let heads = unsafe { &mut METADATA }.manifest_heads_mut();
+pub fn clear_manifest_heads(metadata: &mut Metadata) {
+    let heads = metadata.manifest_heads_mut();
     *heads = ManifestHeads::new();
 }
 
-pub fn set_changeset_heads(new_heads: ChangesetHeads) {
-    let heads = unsafe { &mut METADATA }.changeset_heads_mut();
+pub fn set_changeset_heads(metadata: &mut Metadata, new_heads: ChangesetHeads) {
+    let heads = metadata.changeset_heads_mut();
     *heads = new_heads;
 }
 
