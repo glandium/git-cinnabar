@@ -240,20 +240,18 @@ pub unsafe extern "C" fn add_files_meta(oid: *const hg_object_id, note_oid: *con
     add_note_hg(METADATA.files_meta_mut(), oid, note_oid);
 }
 
-pub unsafe fn store_metadata_notes(
-    notes: *mut cinnabar_notes_tree,
-    reference: CommitId,
-) -> CommitId {
+pub fn store_metadata_notes(notes: &mut cinnabar_notes_tree, reference: CommitId) -> CommitId {
     let mut result = object_id::default();
     let mut tree = object_id::default();
-    let notes = notes.as_mut().unwrap();
     if notes.current.dirty() || notes.additions.dirty() {
-        let mode = if ptr::eq(notes, &METADATA.hg2git().0) {
+        let mode = if ptr::eq(notes, unsafe { &METADATA.hg2git().0 }) {
             FileMode::GITLINK
         } else {
             FileMode::REGULAR | FileMode::RW
         };
-        cinnabar_write_notes_tree(notes, &mut tree, u16::from(mode).into());
+        unsafe {
+            cinnabar_write_notes_tree(notes, &mut tree, u16::from(mode).into());
+        }
     }
     let mut tree = TreeId::from_unchecked(GitObjectId::from(tree));
     if tree.is_null() {
@@ -268,7 +266,9 @@ pub unsafe fn store_metadata_notes(
         buf.extend_from_slice(
             b"author  <cinnabar@git> 0 +0000\ncommitter  <cinnabar@git> 0 +0000\n\n",
         );
-        store_git_commit(&buf, &mut result);
+        unsafe {
+            store_git_commit(&buf, &mut result);
+        }
     }
     CommitId::from_unchecked(result.into())
 }
@@ -308,7 +308,7 @@ impl git_notes_tree {
     }
 
     pub fn store(&mut self, reference: CommitId) -> CommitId {
-        unsafe { store_metadata_notes(&mut self.0, reference) }
+        store_metadata_notes(&mut self.0, reference)
     }
 }
 
@@ -382,7 +382,7 @@ impl hg_notes_tree {
     }
 
     pub fn store(&mut self, reference: CommitId) -> CommitId {
-        unsafe { store_metadata_notes(&mut self.0, reference) }
+        store_metadata_notes(&mut self.0, reference)
     }
 }
 
