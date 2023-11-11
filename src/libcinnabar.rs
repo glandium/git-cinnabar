@@ -12,8 +12,8 @@ use std::ptr;
 use crate::git::{CommitId, GitObjectId, TreeId};
 use crate::hg::HgObjectId;
 use crate::libgit::{
-    child_process, combine_notes_ignore, die, free_notes, init_notes, notes_tree, object_id,
-    strbuf, FileMode, RawTree,
+    child_process, combine_notes_ignore, free_notes, init_notes, notes_tree, object_id, strbuf,
+    FileMode, RawTree,
 };
 use crate::oid::{Abbrev, ObjectId};
 use crate::store::{store_git_commit, METADATA};
@@ -115,26 +115,28 @@ impl Drop for cinnabar_notes_tree {
 }
 
 impl cinnabar_notes_tree {
-    pub const fn new() -> Self {
-        cinnabar_notes_tree {
+    pub fn new_with(c: CommitId) -> Self {
+        let mut result = cinnabar_notes_tree {
             current: notes_tree::new(),
             additions: notes_tree::new(),
             init_flags: 0,
-        }
-    }
-
-    pub fn new_with(c: CommitId) -> Self {
-        let mut result = Self::new();
+        };
         let oid = CString::new(c.to_string()).unwrap();
+        let flags = if c.is_null() { NOTES_INIT_EMPTY } else { 0 };
         unsafe {
-            init_notes(&mut result.current, oid.as_ptr(), combine_notes_ignore, 0);
+            init_notes(
+                &mut result.current,
+                oid.as_ptr(),
+                combine_notes_ignore,
+                flags,
+            );
             init_notes(
                 &mut result.additions,
                 oid.as_ptr(),
                 combine_notes_ignore,
                 NOTES_INIT_EMPTY,
             );
-            result.init_flags = 0;
+            result.init_flags = flags;
         }
         result
     }
@@ -181,36 +183,6 @@ extern "C" {
 
 const NOTES_INIT_EMPTY: c_int = 1;
 
-unsafe fn ensure_notes(t: *mut cinnabar_notes_tree) {
-    let t = t.as_mut().unwrap();
-    if !t.current.initialized() {
-        let oid;
-        let mut flags = 0;
-        if ptr::eq(t, &METADATA.git2hg().0) {
-            oid = METADATA.git2hg_cid;
-        } else if ptr::eq(t, &METADATA.hg2git().0) {
-            oid = METADATA.hg2git_cid;
-        } else if ptr::eq(t, &METADATA.files_meta().0) {
-            oid = METADATA.files_meta_cid;
-        } else {
-            die!("Unknown notes tree");
-        }
-        let oid = GitObjectId::from(oid);
-        if oid.is_null() {
-            flags = NOTES_INIT_EMPTY;
-        }
-        let oid = CString::new(oid.to_string()).unwrap();
-        init_notes(&mut t.current, oid.as_ptr(), combine_notes_ignore, flags);
-        init_notes(
-            &mut t.additions,
-            oid.as_ptr(),
-            combine_notes_ignore,
-            NOTES_INIT_EMPTY,
-        );
-        t.init_flags = flags;
-    }
-}
-
 fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_notes_tree, mut f: F) {
     unsafe extern "C" fn each_note_cb<F: FnMut(GitObjectId, GitObjectId)>(
         oid: *const object_id,
@@ -232,7 +204,6 @@ fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_not
 
 #[no_mangle]
 pub unsafe extern "C" fn resolve_hg2git(oid: *const hg_object_id) -> *const object_id {
-    ensure_notes(&mut METADATA.hg2git_mut().0);
     get_note_hg(&mut METADATA.hg2git_mut().0, oid)
 }
 
@@ -248,7 +219,6 @@ unsafe fn get_note_hg(
 
 #[no_mangle]
 pub unsafe extern "C" fn get_files_meta(oid: *const hg_object_id) -> *const object_id {
-    ensure_notes(&mut METADATA.files_meta_mut().0);
     get_note_hg(&mut METADATA.files_meta_mut().0, oid)
 }
 
@@ -257,7 +227,6 @@ unsafe fn add_note_hg(
     oid: *const hg_object_id,
     note_oid: *const object_id,
 ) -> c_int {
-    ensure_notes(notes);
     let git_oid =
         GitObjectId::from_raw_bytes(HgObjectId::from(oid.as_ref().unwrap().clone()).as_raw_bytes())
             .unwrap();
@@ -315,17 +284,12 @@ pub unsafe fn store_metadata_notes(
 pub struct git_notes_tree(cinnabar_notes_tree);
 
 impl git_notes_tree {
-    pub const fn new() -> Self {
-        git_notes_tree(cinnabar_notes_tree::new())
-    }
-
     pub fn new_with(c: CommitId) -> Self {
         git_notes_tree(cinnabar_notes_tree::new_with(c))
     }
 
     pub fn get_note(&mut self, oid: GitObjectId) -> Option<GitObjectId> {
         unsafe {
-            ensure_notes(&mut self.0);
             cinnabar_get_note(&mut self.0, &oid.into())
                 .as_ref()
                 .cloned()
@@ -339,14 +303,12 @@ impl git_notes_tree {
 
     pub fn add_note(&mut self, oid: GitObjectId, note_oid: GitObjectId) {
         unsafe {
-            ensure_notes(&mut self.0);
             cinnabar_add_note(&mut self.0, &oid.into(), &note_oid.into());
         }
     }
 
     pub fn remove_note(&mut self, oid: GitObjectId) {
         unsafe {
-            ensure_notes(&mut self.0);
             cinnabar_remove_note(&mut self.0, oid.as_raw_bytes().as_ptr());
         }
     }
@@ -361,10 +323,6 @@ impl git_notes_tree {
 pub struct hg_notes_tree(cinnabar_notes_tree);
 
 impl hg_notes_tree {
-    pub const fn new() -> Self {
-        hg_notes_tree(cinnabar_notes_tree::new())
-    }
-
     #[allow(dead_code)]
     pub fn new_with(c: CommitId) -> Self {
         hg_notes_tree(cinnabar_notes_tree::new_with(c))
@@ -372,7 +330,6 @@ impl hg_notes_tree {
 
     pub fn get_note(&mut self, oid: HgObjectId) -> Option<GitObjectId> {
         unsafe {
-            ensure_notes(&mut self.0);
             let git_oid = GitObjectId::from_raw_bytes(oid.as_raw_bytes()).unwrap();
             cinnabar_get_note(&mut self.0, &git_oid.into())
                 .as_ref()
@@ -386,7 +343,6 @@ impl hg_notes_tree {
         oid: Abbrev<H>,
     ) -> Option<GitObjectId> {
         unsafe {
-            ensure_notes(&mut self.0);
             {
                 let len = oid.len();
                 let git_oid = GitObjectId::from_raw_bytes(oid.as_object_id().as_raw_bytes())
@@ -415,7 +371,6 @@ impl hg_notes_tree {
 
     pub fn add_note(&mut self, oid: HgObjectId, note_oid: GitObjectId) {
         unsafe {
-            ensure_notes(&mut self.0);
             cinnabar_add_note(
                 &mut self.0,
                 &GitObjectId::from_raw_bytes(oid.as_raw_bytes())
@@ -428,7 +383,6 @@ impl hg_notes_tree {
 
     pub fn remove_note(&mut self, oid: HgObjectId) {
         unsafe {
-            ensure_notes(&mut self.0);
             cinnabar_remove_note(&mut self.0, oid.as_raw_bytes().as_ptr());
         }
     }

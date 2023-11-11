@@ -78,9 +78,9 @@ pub struct Metadata {
     pub hg2git_cid: CommitId,
     pub git2hg_cid: CommitId,
     pub files_meta_cid: CommitId,
-    pub hg2git_: hg_notes_tree,
-    pub git2hg_: git_notes_tree,
-    pub files_meta_: hg_notes_tree,
+    pub hg2git_: OnceCell<hg_notes_tree>,
+    pub git2hg_: OnceCell<git_notes_tree>,
+    pub files_meta_: OnceCell<hg_notes_tree>,
     pub flags: MetadataFlags,
     changeset_heads_: OnceCell<ChangesetHeads>,
     manifest_heads_: OnceCell<ManifestHeads>,
@@ -97,9 +97,9 @@ impl Metadata {
             git2hg_cid: CommitId::NULL,
             hg2git_cid: CommitId::NULL,
             files_meta_cid: CommitId::NULL,
-            git2hg_: git_notes_tree::new(),
-            hg2git_: hg_notes_tree::new(),
-            files_meta_: hg_notes_tree::new(),
+            git2hg_: OnceCell::new(),
+            hg2git_: OnceCell::new(),
+            files_meta_: OnceCell::new(),
             flags: MetadataFlags::empty(),
             changeset_heads_: OnceCell::new(),
             manifest_heads_: OnceCell::new(),
@@ -139,27 +139,33 @@ impl Metadata {
     }
 
     pub fn hg2git(&self) -> &hg_notes_tree {
-        &self.hg2git_
+        self.hg2git_
+            .get_or_init(|| hg_notes_tree::new_with(self.hg2git_cid))
     }
 
     pub fn hg2git_mut(&mut self) -> &mut hg_notes_tree {
-        &mut self.hg2git_
+        self.hg2git();
+        self.hg2git_.get_mut().unwrap()
     }
 
     pub fn git2hg(&self) -> &git_notes_tree {
-        &self.git2hg_
+        self.git2hg_
+            .get_or_init(|| git_notes_tree::new_with(self.git2hg_cid))
     }
 
     pub fn git2hg_mut(&mut self) -> &mut git_notes_tree {
-        &mut self.git2hg_
+        self.git2hg();
+        self.git2hg_.get_mut().unwrap()
     }
 
     pub fn files_meta(&self) -> &hg_notes_tree {
-        &self.files_meta_
+        self.files_meta_
+            .get_or_init(|| hg_notes_tree::new_with(self.files_meta_cid))
     }
 
     pub fn files_meta_mut(&mut self) -> &mut hg_notes_tree {
-        &mut self.files_meta_
+        self.files_meta();
+        self.files_meta_.get_mut().unwrap()
     }
 }
 
