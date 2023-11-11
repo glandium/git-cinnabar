@@ -119,11 +119,11 @@ use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
 use progress::Progress;
 use sha1::{Digest, Sha1};
 use store::{
-    check_file, check_manifest, create_changeset, do_check_files, do_set, do_store_metadata,
-    done_metadata, ensure_store_init, has_metadata, init_metadata, raw_commit_for_changeset,
-    store_git_blob, store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata,
-    RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF,
-    CHECKED_REF, METADATA, METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    check_file, check_manifest, create_changeset, do_check_files, do_store_metadata, done_metadata,
+    ensure_store_init, has_metadata, init_metadata, raw_commit_for_changeset, store_git_blob,
+    store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata,
+    RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHECKED_REF, METADATA,
+    METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use tree_util::{diff_by_path, RecurseTree};
 use url::Url;
@@ -1892,7 +1892,7 @@ fn create_file(blobid: BlobId, parents: &[HgFileId]) -> HgFileId {
     }
     hash.update(blob.as_bytes());
     let fid = hash.finalize();
-    do_set(SetWhat::File, fid.into(), blobid.into());
+    unsafe { &mut METADATA }.set(SetWhat::File, fid.into(), blobid.into());
     fid
 }
 
@@ -1917,8 +1917,8 @@ fn create_copy(blobid: BlobId, source_path: &BStr, source_fid: HgFileId) -> HgFi
     let mut oid = object_id::default();
     unsafe {
         store_git_blob(&metadata, &mut oid);
-        do_set(SetWhat::FileMeta, fid.into(), oid.into());
-        do_set(SetWhat::File, fid.into(), blobid.into());
+        METADATA.set(SetWhat::FileMeta, fid.into(), oid.into());
+        METADATA.set(SetWhat::File, fid.into(), blobid.into());
     }
     fid
 }
@@ -2957,18 +2957,18 @@ fn do_fsck_full(
         if fresh_metadata != metadata {
             fix(format!("Adjusted changeset metadata for {}", changeset_id));
             unsafe {
-                do_set(SetWhat::Changeset, changeset_id.into(), GitObjectId::NULL);
-                do_set(SetWhat::Changeset, changeset_id.into(), cid.into());
+                METADATA.set(SetWhat::Changeset, changeset_id.into(), GitObjectId::NULL);
+                METADATA.set(SetWhat::Changeset, changeset_id.into(), cid.into());
                 let mut metadata_id = object_id::default();
                 let mut buf = strbuf::new();
                 buf.extend_from_slice(&fresh_metadata.serialize());
                 store_git_blob(&buf, &mut metadata_id);
-                do_set(
+                METADATA.set(
                     SetWhat::ChangesetMeta,
                     changeset_id.into(),
                     GitObjectId::NULL,
                 );
-                do_set(
+                METADATA.set(
                     SetWhat::ChangesetMeta,
                     changeset_id.into(),
                     metadata_id.into(),
@@ -3128,7 +3128,7 @@ fn do_fsck_full(
                 let m = RawCommit::read(h).unwrap();
                 let m = m.parse().unwrap();
                 let m = HgManifestId::from_bytes(m.body()).unwrap();
-                do_set(SetWhat::Manifest, m.into(), h.into());
+                unsafe { &mut METADATA }.set(SetWhat::Manifest, m.into(), h.into());
             }
         }
     }
@@ -3146,8 +3146,8 @@ fn do_fsck_full(
             // or changesets and set the right variable accordingly, but in
             // practice, it makes no difference. Reevaluate when refactoring,
             // though.
-            do_set(SetWhat::File, h, GitObjectId::NULL);
-            do_set(SetWhat::FileMeta, h, GitObjectId::NULL);
+            unsafe { &mut METADATA }.set(SetWhat::File, h, GitObjectId::NULL);
+            unsafe { &mut METADATA }.set(SetWhat::FileMeta, h, GitObjectId::NULL);
         });
         unsafe { &mut METADATA.git2hg }.for_each(|g, _| {
             // TODO: this is gross.
@@ -3158,7 +3158,7 @@ fn do_fsck_full(
             fix(format!("Removing dangling note for commit {}", g));
             let metadata = RawGitChangesetMetadata::read(cid).unwrap();
             let metadata = metadata.parse().unwrap();
-            do_set(
+            unsafe { &mut METADATA }.set(
                 SetWhat::ChangesetMeta,
                 metadata.changeset_id().into(),
                 GitObjectId::NULL,

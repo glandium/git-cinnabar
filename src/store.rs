@@ -1192,64 +1192,60 @@ pub enum SetWhat {
     FileMeta,
 }
 
-pub fn do_set(what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
-    fn set<T: TryFrom<GitObjectId>>(
-        notes: &mut hg_notes_tree,
-        hg_id: HgObjectId,
-        git_id: GitObjectId,
-    ) {
-        if git_id.is_null() {
-            notes.remove_note(hg_id);
-        } else if T::try_from(git_id).is_err() {
-            die!("Invalid object");
-        } else {
-            notes.add_note(hg_id, git_id);
-        }
-    }
-    match what {
-        SetWhat::Changeset => {
+impl Metadata {
+    pub fn set(&mut self, what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
+        fn set<T: TryFrom<GitObjectId>>(
+            notes: &mut hg_notes_tree,
+            hg_id: HgObjectId,
+            git_id: GitObjectId,
+        ) {
             if git_id.is_null() {
-                unsafe { &mut METADATA.hg2git }.remove_note(hg_id);
-            } else if let Ok(ref mut commit) = CommitId::try_from(git_id) {
-                handle_changeset_conflict(HgChangesetId::from_unchecked(hg_id), commit);
-                unsafe { &mut METADATA.hg2git }.add_note(hg_id, (*commit).into());
-            } else {
+                notes.remove_note(hg_id);
+            } else if T::try_from(git_id).is_err() {
                 die!("Invalid object");
+            } else {
+                notes.add_note(hg_id, git_id);
             }
         }
-        SetWhat::ChangesetMeta => {
-            let csid = HgChangesetId::from_unchecked(hg_id);
-            if let Some(cid) = csid.to_git() {
+        match what {
+            SetWhat::Changeset => {
                 if git_id.is_null() {
-                    unsafe {
-                        METADATA.git2hg.remove_note(cid.into());
-                    }
-                } else if BlobId::try_from(git_id).is_err() {
-                    die!("Invalid object");
+                    self.hg2git.remove_note(hg_id);
+                } else if let Ok(ref mut commit) = CommitId::try_from(git_id) {
+                    handle_changeset_conflict(HgChangesetId::from_unchecked(hg_id), commit);
+                    self.hg2git.add_note(hg_id, (*commit).into());
                 } else {
-                    unsafe {
-                        METADATA.git2hg.add_note(cid.into(), git_id);
-                    }
+                    die!("Invalid object");
                 }
-            } else if !git_id.is_null() {
-                die!("Invalid sha1");
             }
-        }
-        SetWhat::Manifest => {
-            if !git_id.is_null() {
-                unsafe { &mut METADATA }
-                    .manifest_heads_mut()
-                    .add(GitManifestId::from_unchecked(CommitId::from_unchecked(
-                        git_id,
-                    )));
+            SetWhat::ChangesetMeta => {
+                let csid = HgChangesetId::from_unchecked(hg_id);
+                if let Some(cid) = csid.to_git() {
+                    if git_id.is_null() {
+                        self.git2hg.remove_note(cid.into());
+                    } else if BlobId::try_from(git_id).is_err() {
+                        die!("Invalid object");
+                    } else {
+                        self.git2hg.add_note(cid.into(), git_id);
+                    }
+                } else if !git_id.is_null() {
+                    die!("Invalid sha1");
+                }
             }
-            set::<CommitId>(unsafe { &mut METADATA.hg2git }, hg_id, git_id);
-        }
-        SetWhat::File => {
-            set::<BlobId>(unsafe { &mut METADATA.hg2git }, hg_id, git_id);
-        }
-        SetWhat::FileMeta => {
-            set::<BlobId>(unsafe { &mut METADATA.files_meta }, hg_id, git_id);
+            SetWhat::Manifest => {
+                if !git_id.is_null() {
+                    self.manifest_heads_mut().add(GitManifestId::from_unchecked(
+                        CommitId::from_unchecked(git_id),
+                    ));
+                }
+                set::<CommitId>(&mut self.hg2git, hg_id, git_id);
+            }
+            SetWhat::File => {
+                set::<BlobId>(&mut self.hg2git, hg_id, git_id);
+            }
+            SetWhat::FileMeta => {
+                set::<BlobId>(&mut self.files_meta, hg_id, git_id);
+            }
         }
     }
 }
@@ -1367,8 +1363,8 @@ fn store_changeset(
             do_set_replace(&replace, &commit_id.into());
         }
     }
-    do_set(SetWhat::Changeset, changeset_id.into(), commit_id.into());
-    do_set(
+    unsafe { &mut METADATA }.set(SetWhat::Changeset, changeset_id.into(), commit_id.into());
+    unsafe { &mut METADATA }.set(
         SetWhat::ChangesetMeta,
         changeset_id.into(),
         metadata_id.into(),
@@ -1507,12 +1503,12 @@ pub fn create_changeset(
     let mut blob_oid = object_id::default();
     unsafe {
         store_git_blob(&buf, &mut blob_oid);
-        do_set(
+        METADATA.set(
             SetWhat::Changeset,
             metadata.changeset_id.into(),
             commit_id.into(),
         );
-        do_set(
+        METADATA.set(
             SetWhat::ChangesetMeta,
             metadata.changeset_id.into(),
             blob_oid.clone().into(),
