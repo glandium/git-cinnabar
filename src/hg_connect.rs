@@ -605,7 +605,7 @@ pub fn get_store_bundle(
                         .get_param("version")
                         .map_or(1, |v| u8::from_str(v).unwrap());
                     let _locked = HELPER_LOCK.lock().unwrap();
-                    store_changegroup(BufReader::new(part), version);
+                    store_changegroup(unsafe { &mut METADATA }, BufReader::new(part), version);
                 } else if &*part.part_type == "stream2" {
                     return Err(b"Stream bundles are not supported."
                         .to_vec()

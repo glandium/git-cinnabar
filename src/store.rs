@@ -1251,6 +1251,7 @@ impl Metadata {
 }
 
 fn store_changeset(
+    metadata: &mut Metadata,
     changeset_id: HgChangesetId,
     parents: &[HgChangesetId],
     raw_changeset: &RawHgChangeset,
@@ -1363,14 +1364,14 @@ fn store_changeset(
             do_set_replace(&replace, &commit_id.into());
         }
     }
-    unsafe { &mut METADATA }.set(SetWhat::Changeset, changeset_id.into(), commit_id.into());
-    unsafe { &mut METADATA }.set(
+    metadata.set(SetWhat::Changeset, changeset_id.into(), commit_id.into());
+    metadata.set(
         SetWhat::ChangesetMeta,
         changeset_id.into(),
         metadata_id.into(),
     );
 
-    let heads = unsafe { &mut METADATA }.changeset_heads_mut();
+    let heads = metadata.changeset_heads_mut();
     let branch = changeset
         .extra()
         .and_then(|e| e.get(b"branch"))
@@ -1612,18 +1613,14 @@ pub fn do_check_files() -> bool {
     !busted
 }
 
-pub fn store_changegroup<R: Read>(input: R, version: u8) {
+pub fn store_changegroup<R: Read>(metadata: &mut Metadata, input: R, version: u8) {
     unsafe {
         ensure_store_init();
     }
     let mut bundle = strbuf::new();
     let mut bundle_writer = None;
     let mut input = if check_enabled(Checks::UNBUNDLER)
-        && unsafe { &METADATA }
-            .changeset_heads()
-            .heads()
-            .next()
-            .is_some()
+        && metadata.changeset_heads().heads().next().is_some()
     {
         bundle_writer = Some(BundleWriter::new(BundleSpec::V2Zstd, &mut bundle).unwrap());
         let bundle_writer = bundle_writer.as_mut().unwrap();
@@ -1769,7 +1766,7 @@ pub fn store_changegroup<R: Read>(input: R, version: u8) {
         }
         raw_changeset.extend_from_slice(&reference_cs[last_end..]);
         let raw_changeset = RawHgChangeset(raw_changeset.into());
-        match store_changeset(changeset_id, &parents, &raw_changeset) {
+        match store_changeset(metadata, changeset_id, &parents, &raw_changeset) {
             Ok(_) => {}
             Err(GraftError::NoGraft) => {
                 // TODO: ideally this should instead hard-error when not grafting,
