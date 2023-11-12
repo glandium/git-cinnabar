@@ -622,28 +622,22 @@ void store_replace_map(struct object_id *result) {
 void store_git_tree(struct strbuf *tree_buf, const struct object_id *reference,
                     struct object_id *result)
 {
-	struct last_object ref_tree = { STRBUF_INIT, 0, 0, 1 };
-	struct last_object *last_tree = NULL;
 	struct object_entry *oe = NULL;
-	char *buf = NULL;
-
 	ENSURE_INIT();
 	if (reference) {
 		oe = get_object_entry(reference);
 	}
 	if (oe) {
+		struct strslice ref_tree;
 		unsigned long len;
-		ref_tree.data.buf = buf = gfi_unpack_entry(oe, &len);
-		ref_tree.data.len = len;
-		ref_tree.offset = oe->idx.offset;
-		ref_tree.depth = oe->depth;
-		last_tree = &ref_tree;
-	}
-	store_object(OBJ_TREE, tree_buf, last_tree, result, 0);
-	if (last_tree) {
-		// store_object messes with last_tree so free using an old
-		// copy of the pointer.
-		free(buf);
+		ref_tree.buf = gfi_unpack_entry(oe, &len);
+		ref_tree.len = len;
+		store_git_object(OBJ_TREE, strbuf_as_slice(tree_buf), result,
+		                 &ref_tree, oe);
+		free((char*)ref_tree.buf);
+	} else {
+		store_git_object(OBJ_TREE, strbuf_as_slice(tree_buf), result,
+		                 NULL, NULL);
 	}
 }
 
@@ -657,6 +651,25 @@ void store_git_commit(struct strbuf *commit_buf, struct object_id *result)
 {
 	ENSURE_INIT();
 	store_object(OBJ_COMMIT, commit_buf, NULL, result, 0);
+}
+
+void store_git_object(enum object_type type, const struct strslice buf,
+                      struct object_id *result, const struct strslice *reference,
+                      const struct object_entry *reference_entry)
+{
+	struct last_object ref_object = { STRBUF_INIT, 0, 0, 1 };
+	struct strbuf data = { .buf = (char*)buf.buf, .len = buf.len, .alloc = 0 };
+	if (reference && reference_entry && reference_entry->idx.offset > 1 &&
+			reference_entry->pack_id == pack_id) {
+		ref_object.data.buf = (char*)reference->buf;
+		ref_object.data.len = reference->len;
+		ref_object.offset = reference_entry->idx.offset;
+		ref_object.depth = reference_entry->depth;
+	} else {
+		reference = NULL;
+	}
+	ENSURE_INIT();
+	store_object(type, &data, reference ? &ref_object : NULL, result, 0);
 }
 
 const struct object_id empty_blob = { {

@@ -27,6 +27,10 @@ void store_git_commit(struct strbuf *commit_buf, struct object_id *result);
 
 void store_git_blob(struct strbuf *blob_buf, struct object_id *result);
 
+void store_git_object(enum object_type type, const struct strslice buf,
+                      struct object_id *result, const struct strslice *reference,
+                      const struct object_entry *reference_entry);
+
 const struct object_id *ensure_empty_blob(void);
 
 void do_cleanup(int rollback);
