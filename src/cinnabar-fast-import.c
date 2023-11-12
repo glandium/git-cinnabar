@@ -118,7 +118,7 @@ off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
 		hashcpy(oid.hash, sha1);
 		oid.algo = GIT_HASH_SHA1;
 		oe = get_object_entry(&oid);
-		if (oe && oe->idx.offset > 1 && oe->pack_id == pack_id)
+		if (oe)
 			return oe->idx.offset;
 		return 0;
 	}
@@ -127,7 +127,10 @@ off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
 
 struct object_entry *get_object_entry(const struct object_id *oid)
 {
-	return find_object((struct object_id*)oid);
+	struct object_entry *oe = find_object((struct object_id*)oid);
+	if (oe && oe->idx.offset > 1 && oe->pack_id == pack_id)
+		return oe;
+	return NULL;
 }
 
 /* Mostly copied from fast-import.c's cmd_main() */
@@ -299,7 +302,7 @@ void hg_file_store(struct hg_file *file, struct hg_file *reference)
 	if (reference)
 		oe = (struct object_entry *) reference->content_oe;
 
-	if (oe && oe->idx.offset > 1 && oe->pack_id == pack_id) {
+	if (oe) {
 		last_blob.data.buf = reference->content.buf;
 		last_blob.data.len = reference->content.len;
 		last_blob.offset = oe->idx.offset;
@@ -308,7 +311,7 @@ void hg_file_store(struct hg_file *file, struct hg_file *reference)
 	store_object(OBJ_BLOB, &file->content, &last_blob, &oid, 0);
 	add_hg2git(&file->oid, &oid);
 
-	file->content_oe = find_object(&oid);
+	file->content_oe = get_object_entry(&oid);
 }
 
 void store_file(struct rev_chunk *chunk)
@@ -626,9 +629,9 @@ void store_git_tree(struct strbuf *tree_buf, const struct object_id *reference,
 
 	ENSURE_INIT();
 	if (reference) {
-		oe = find_object((struct object_id *)reference);
+		oe = get_object_entry(reference);
 	}
-	if (oe && oe->idx.offset > 1 && oe->pack_id == pack_id) {
+	if (oe) {
 		unsigned long len;
 		ref_tree.data.buf = buf = gfi_unpack_entry(oe, &len);
 		ref_tree.data.len = len;
