@@ -64,34 +64,6 @@ int is_null_hg_oid(const struct hg_object_id *oid);
 
 int is_empty_hg_file(const struct hg_object_id *oid);
 
-struct hg_file {
-	struct hg_object_id oid;
-
-	struct strbuf file;
-	struct strslice metadata;
-	struct strslice content;
-	struct object_entry *content_oe;
-};
-
-void hg_file_load(struct hg_file *result, const struct hg_object_id *oid);
-
-void hg_file_from_memory(struct hg_file *result,
-                         const struct hg_object_id *oid, struct strbuf *buf);
-
-static inline void hg_file_swap(struct hg_file *a, struct hg_file *b)
-{
-        SWAP(*a, *b);
-}
-
-void hg_file_init(struct hg_file *file);
-
-void hg_file_release(struct hg_file *file);
-
-void hg_file_store(struct hg_file *file, struct hg_file *reference);
-
 void add_hg2git(const struct hg_object_id *oid, const struct object_id *note_oid);
-void add_files_meta(const struct hg_object_id *oid, const struct object_id *note_oid);
-
-const struct object_id *get_files_meta(const struct hg_object_id *oid);
 
 #endif

@@ -204,40 +204,18 @@ fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_not
 
 #[no_mangle]
 pub unsafe extern "C" fn resolve_hg2git(oid: *const hg_object_id) -> *const object_id {
-    get_note_hg(METADATA.hg2git_mut(), oid)
-}
-
-unsafe fn get_note_hg(notes: &mut hg_notes_tree, oid: *const hg_object_id) -> *const object_id {
     let git_oid =
         GitObjectId::from_raw_bytes(HgObjectId::from(oid.as_ref().unwrap().clone()).as_raw_bytes())
             .unwrap();
-    cinnabar_get_note(&mut notes.0, &git_oid.into())
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn get_files_meta(oid: *const hg_object_id) -> *const object_id {
-    get_note_hg(METADATA.files_meta_mut(), oid)
-}
-
-unsafe fn add_note_hg(
-    notes: &mut hg_notes_tree,
-    oid: *const hg_object_id,
-    note_oid: *const object_id,
-) {
-    notes.add_note(
-        HgObjectId::from(oid.as_ref().unwrap().clone()),
-        note_oid.as_ref().unwrap().clone().into(),
-    );
+    cinnabar_get_note(&mut METADATA.hg2git_mut().0, &git_oid.into())
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn add_hg2git(oid: *const hg_object_id, note_oid: *const object_id) {
-    add_note_hg(METADATA.hg2git_mut(), oid, note_oid);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn add_files_meta(oid: *const hg_object_id, note_oid: *const object_id) {
-    add_note_hg(METADATA.files_meta_mut(), oid, note_oid);
+    METADATA.hg2git_mut().add_note(
+        HgObjectId::from(oid.as_ref().unwrap().clone()),
+        note_oid.as_ref().unwrap().clone().into(),
+    );
 }
 
 pub fn store_metadata_notes(notes: &mut cinnabar_notes_tree, reference: CommitId) -> CommitId {

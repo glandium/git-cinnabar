@@ -43,8 +43,8 @@ use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{git_notes_tree, hg_notes_tree, strslice, strslice_mut};
 use crate::libgit::{
-    die, for_each_ref_in, get_oid_blob, object_id, strbuf, Commit, RawBlob, RawCommit, RawTree,
-    RefTransaction,
+    die, for_each_ref_in, get_oid_blob, object_entry, object_id, object_type, strbuf, Commit,
+    RawBlob, RawCommit, RawTree, RefTransaction,
 };
 use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
@@ -1208,12 +1208,20 @@ extern "C" {
     pub fn store_git_blob(blob_buf: strslice, result: *mut object_id);
     fn store_git_tree(tree_buf: strslice, reference: *const object_id, result: *mut object_id);
     pub fn store_git_commit(commit_buf: strslice, result: *mut object_id);
+    fn store_git_object(
+        typ: object_type,
+        buf: strslice,
+        result: *mut object_id,
+        reference: *const strslice,
+        reference_entry: *const object_entry,
+    );
     pub fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
     fn create_git_tree(
         tree_id: *const object_id,
         ref_tree: *const object_id,
         result: *mut object_id,
     );
+    fn get_object_entry(oid: *const object_id) -> *const object_entry;
 }
 
 pub enum SetWhat {
@@ -1561,7 +1569,6 @@ pub fn create_changeset(
 #[allow(improper_ctypes)]
 extern "C" {
     pub fn store_manifest(chunk: *const rev_chunk, reference_mn: strslice, stored_mn: strslice_mut);
-    fn store_file(chunk: *const rev_chunk);
 }
 
 #[no_mangle]
@@ -1725,8 +1732,10 @@ pub fn store_changegroup<R: Read>(metadata: &mut Metadata, input: R, version: u8
         !buf.is_empty()
     } {
         files.set(files.get() + 1);
+        let mut previous_file = None;
         for (file, ()) in RevChunkIter::new(version, &mut input).zip(&mut progress) {
             let node = HgFileId::from_unchecked(file.node());
+            let delta_node = HgFileId::from_unchecked(file.delta_node());
             let parents = [
                 HgFileId::from_unchecked(file.parent1()),
                 HgFileId::from_unchecked(file.parent2()),
@@ -1755,9 +1764,80 @@ pub fn store_changegroup<R: Read>(metadata: &mut Metadata, input: R, version: u8
                     }
                 }
             }
-            unsafe {
-                store_file(&file.into());
+            if node == RawHgFile::EMPTY_OID {
+                // Creating the empty blob is handled when creating the git tree for
+                // the corresponding changeset. We have nothing to associate the blob
+                // with here.
+                continue;
             }
+            let reference_file = previous_file
+                .take()
+                .and_then(|(fid, file)| (fid == delta_node).then_some(file))
+                .unwrap_or_else(|| {
+                    RawHgFile::read_hg(if delta_node.is_null() {
+                        RawHgFile::EMPTY_OID
+                    } else {
+                        delta_node
+                    })
+                    .unwrap()
+                });
+
+            let mut raw_file = Vec::new();
+            let mut last_end = 0;
+            for diff in file.iter_diff() {
+                if diff.start() > reference_file.len() || diff.start() < last_end {
+                    die!("Malformed file chunk for {node}");
+                }
+                raw_file.extend_from_slice(&reference_file[last_end..diff.start()]);
+                raw_file.extend_from_slice(diff.data());
+                last_end = diff.end();
+            }
+            if reference_file.len() < last_end {
+                die!("Malformed file chunk for {node}");
+            }
+            raw_file.extend_from_slice(&reference_file[last_end..]);
+            let mut content = &raw_file[..];
+            if content.starts_with(b"\x01\n") {
+                let [file_metadata, file_content] =
+                    content[2..].splitn_exact(&b"\x01\n"[..]).unwrap();
+                unsafe {
+                    let mut metadata_oid = object_id::default();
+                    store_git_blob(file_metadata.into(), &mut metadata_oid);
+                    metadata
+                        .files_meta_mut()
+                        .add_note(node.into(), metadata_oid.into());
+                }
+                content = file_content;
+            }
+            unsafe {
+                let mut file_oid = object_id::default();
+                if let Some(reference_entry) = (!delta_node.is_null())
+                    .then(|| {
+                        delta_node.to_git().and_then(|delta_node| {
+                            get_object_entry(&GitObjectId::from(delta_node).into()).as_ref()
+                        })
+                    })
+                    .flatten()
+                {
+                    let reference_offset = metadata
+                        .files_meta_mut()
+                        .get_note(delta_node.into())
+                        .map(BlobId::from_unchecked)
+                        .map_or(0, |b| RawBlob::read(b).unwrap().as_bytes().len() + 4);
+
+                    store_git_object(
+                        object_type::OBJ_BLOB,
+                        content.into(),
+                        &mut file_oid,
+                        &reference_file[reference_offset..].into(),
+                        reference_entry,
+                    );
+                } else {
+                    store_git_blob(content.into(), &mut file_oid);
+                };
+                metadata.hg2git_mut().add_note(node.into(), file_oid.into());
+            }
+            previous_file = Some((node, RawHgFile(raw_file.into())));
         }
     }
     drop(progress);

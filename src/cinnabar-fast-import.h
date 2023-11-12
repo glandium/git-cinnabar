@@ -41,7 +41,6 @@ void do_set_replace(const struct object_id *replaced,
 void do_set_(const char *what, const struct hg_object_id *hg_id,
              const struct object_id *git_id);
 
-void store_file(struct rev_chunk *chunk);
 void store_manifest(struct rev_chunk *chunk,
                     const struct strslice last_manifest_content,
                     struct strslice_mut data);

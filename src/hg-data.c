@@ -3,10 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "git-compat-util.h"
-#include "object-store.h"
-#include "cinnabar-helper.h"
-#include "cinnabar-notes.h"
-#include "cinnabar-fast-import.h"
 #include "hg-data.h"
 
 static const struct hg_object_id empty_hg_file = {{
@@ -24,97 +20,4 @@ int is_null_hg_oid(const struct hg_object_id *oid)
 int is_empty_hg_file(const struct hg_object_id *oid)
 {
 	return hg_oideq(&empty_hg_file, oid);
-}
-
-static void _hg_file_split(struct hg_file *result, size_t metadata_len)
-{
-	result->metadata.buf = metadata_len ? result->file.buf + 2 : NULL;
-	result->metadata.len = metadata_len - 4;
-	result->content.buf = result->file.buf + metadata_len;
-	result->content.len = result->file.len - metadata_len;
-}
-
-void hg_file_load(struct hg_file *result, const struct hg_object_id *oid)
-{
-	const struct object_id *note;
-	struct object_info oi = OBJECT_INFO_INIT;
-	char *content;
-	enum object_type type;
-	unsigned long len;
-	size_t metadata_len;
-
-	oi.typep = &type;
-	oi.sizep = &len;
-	oi.contentp = (void **) &content;
-
-	strbuf_release(&result->file);
-	hg_oidcpy(&result->oid, oid);
-
-	if (is_empty_hg_file(oid))
-		return;
-
-	note = get_files_meta(oid);
-	if (note) {
-		if (oid_object_info_extended(
-				the_repository, note, &oi,
-				OBJECT_INFO_DIE_IF_CORRUPT) != 0)
-			die("Missing data");
-		strbuf_add(&result->file, "\1\n", 2);
-		strbuf_add(&result->file, content, len);
-		strbuf_add(&result->file, "\1\n", 2);
-		free(content);
-	}
-
-	metadata_len = result->file.len;
-
-	note = resolve_hg2git(oid);
-	if (!note)
-		die("Missing data");
-
-	if (oid_object_info_extended(
-			the_repository, note, &oi,
-			OBJECT_INFO_DIE_IF_CORRUPT) != 0)
-		die("Missing data");
-
-	strbuf_add(&result->file, content, len);
-	free(content);
-
-	// Note this duplicates work read_object_file already did.
-	result->content_oe = get_object_entry(note);
-
-	_hg_file_split(result, metadata_len);
-}
-
-void hg_file_from_memory(struct hg_file *result,
-                         const struct hg_object_id *oid, struct strbuf *buf)
-{
-	size_t metadata_len = 0;
-
-	strbuf_swap(&result->file, buf);
-	hg_oidcpy(&result->oid, oid);
-	result->content_oe = NULL;
-
-	if (result->file.len > 4 && memcmp(result->file.buf, "\1\n", 2) == 0) {
-		char *metadata_end = strstr(result->file.buf + 2, "\1\n");
-		if (metadata_end)
-			metadata_len = metadata_end + 2 - result->file.buf;
-	}
-
-	_hg_file_split(result, metadata_len);
-}
-
-void hg_file_init(struct hg_file *file)
-{
-	hg_oidclr(&file->oid);
-	strbuf_init(&file->file, 0);
-	file->metadata.buf = NULL;
-	file->metadata.len = 0;
-	file->content = strbuf_as_slice(&file->file);
-	file->content_oe = NULL;
-}
-
-void hg_file_release(struct hg_file *file)
-{
-	strbuf_release(&file->file);
-	hg_file_init(file);
 }
