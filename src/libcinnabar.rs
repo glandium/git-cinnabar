@@ -267,7 +267,7 @@ pub fn store_metadata_notes(notes: &mut cinnabar_notes_tree, reference: CommitId
             b"author  <cinnabar@git> 0 +0000\ncommitter  <cinnabar@git> 0 +0000\n\n",
         );
         unsafe {
-            store_git_commit(&buf, &mut result);
+            store_git_commit(buf.as_bytes().into(), &mut result);
         }
     }
     CommitId::from_unchecked(result.into())

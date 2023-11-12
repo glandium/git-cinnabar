@@ -19,13 +19,13 @@ int maybe_handle_command(struct reader *helper_input, int helper_output,
 
 struct object_entry *get_object_entry(const struct object_id *oid);
 
-void store_git_tree(struct strbuf *tree_buf,
+void store_git_tree(struct strslice tree_buf,
                     const struct object_id *reference,
                     struct object_id *result);
 
-void store_git_commit(struct strbuf *commit_buf, struct object_id *result);
+void store_git_commit(struct strslice commit_buf, struct object_id *result);
 
-void store_git_blob(struct strbuf *blob_buf, struct object_id *result);
+void store_git_blob(struct strslice blob_buf, struct object_id *result);
 
 void store_git_object(enum object_type type, const struct strslice buf,
                       struct object_id *result, const struct strslice *reference,

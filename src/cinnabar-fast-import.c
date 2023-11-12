@@ -613,7 +613,7 @@ void store_replace_map(struct object_id *result) {
 	strbuf_release(&buf);
 }
 
-void store_git_tree(struct strbuf *tree_buf, const struct object_id *reference,
+void store_git_tree(struct strslice tree_buf, const struct object_id *reference,
                     struct object_id *result)
 {
 	struct object_entry *oe = NULL;
@@ -625,23 +625,21 @@ void store_git_tree(struct strbuf *tree_buf, const struct object_id *reference,
 		unsigned long len;
 		ref_tree.buf = gfi_unpack_entry(oe, &len);
 		ref_tree.len = len;
-		store_git_object(OBJ_TREE, strbuf_as_slice(tree_buf), result,
-		                 &ref_tree, oe);
+		store_git_object(OBJ_TREE, tree_buf, result, &ref_tree, oe);
 		free((char*)ref_tree.buf);
 	} else {
-		store_git_object(OBJ_TREE, strbuf_as_slice(tree_buf), result,
-		                 NULL, NULL);
+		store_git_object(OBJ_TREE, tree_buf, result, NULL, NULL);
 	}
 }
 
-void store_git_blob(struct strbuf *blob_buf, struct object_id *result)
+void store_git_blob(struct strslice blob_buf, struct object_id *result)
 {
-	store_git_object(OBJ_BLOB, strbuf_as_slice(blob_buf), result, NULL, NULL);
+	store_git_object(OBJ_BLOB, blob_buf, result, NULL, NULL);
 }
 
-void store_git_commit(struct strbuf *commit_buf, struct object_id *result)
+void store_git_commit(struct strslice commit_buf, struct object_id *result)
 {
-	store_git_object(OBJ_COMMIT, strbuf_as_slice(commit_buf), result, NULL, NULL);
+	store_git_object(OBJ_COMMIT, commit_buf, result, NULL, NULL);
 }
 
 void store_git_object(enum object_type type, const struct strslice buf,

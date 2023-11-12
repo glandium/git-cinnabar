@@ -410,7 +410,8 @@ static void recurse_create_git_tree(const struct object_id *tree_id,
 			cache_entry->ent = k.ent;
 			cache_entry->old_oid = k.old_oid;
 		}
-		store_git_tree(&tree_buf, reference, cache_entry ? &cache_entry->new_oid : result);
+		store_git_tree(strbuf_as_slice(&tree_buf), reference,
+		               cache_entry ? &cache_entry->new_oid : result);
 		strbuf_release(&tree_buf);
 		if (!merge_tree_id) {
 			hashmap_add(cache, &cache_entry->ent);

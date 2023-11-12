@@ -1148,7 +1148,7 @@ fn store_changesets_metadata(metadata: &Metadata) -> CommitId {
     }
     let mut tid = object_id::default();
     unsafe {
-        store_git_tree(&tree, std::ptr::null(), &mut tid);
+        store_git_tree(tree.as_bytes().into(), std::ptr::null(), &mut tid);
     }
     drop(tree);
     let mut commit = strbuf::new();
@@ -1164,7 +1164,7 @@ fn store_changesets_metadata(metadata: &Metadata) -> CommitId {
     }
     let mut result = object_id::default();
     unsafe {
-        store_git_commit(&commit, &mut result);
+        store_git_commit(commit.as_bytes().into(), &mut result);
     }
     CommitId::from_unchecked(result.into())
 }
@@ -1180,7 +1180,7 @@ fn store_manifests_metadata(metadata: &Metadata) -> CommitId {
     writeln!(commit, "committer  <cinnabar@git> 0 +0000\n").ok();
     let mut result = object_id::default();
     unsafe {
-        store_git_commit(&commit, &mut result);
+        store_git_commit(commit.as_bytes().into(), &mut result);
     }
     CommitId::from_unchecked(result.into())
 }
@@ -1205,9 +1205,9 @@ pub fn set_changeset_heads(metadata: &mut Metadata, new_heads: ChangesetHeads) {
 
 extern "C" {
     pub fn ensure_store_init();
-    pub fn store_git_blob(blob_buf: *const strbuf, result: *mut object_id);
-    fn store_git_tree(tree_buf: *const strbuf, reference: *const object_id, result: *mut object_id);
-    pub fn store_git_commit(commit_buf: *const strbuf, result: *mut object_id);
+    pub fn store_git_blob(blob_buf: strslice, result: *mut object_id);
+    fn store_git_tree(tree_buf: strslice, reference: *const object_id, result: *mut object_id);
+    pub fn store_git_commit(commit_buf: strslice, result: *mut object_id);
     pub fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
     fn create_git_tree(
         tree_id: *const object_id,
@@ -1298,7 +1298,7 @@ fn store_changeset(
     let manifest_tree_id = match changeset.manifest() {
         m if m.is_null() => unsafe {
             let mut tid = object_id::default();
-            store_git_tree(&strbuf::new(), std::ptr::null(), &mut tid);
+            store_git_tree([].into(), std::ptr::null(), &mut tid);
             TreeId::from_unchecked(GitObjectId::from(tid))
         },
         m => {
@@ -1343,7 +1343,7 @@ fn store_changeset(
                     buf.extend_from_slice(&metadata.serialize());
                     let mut cs_metadata_oid = object_id::default();
                     unsafe {
-                        store_git_blob(&buf, &mut cs_metadata_oid);
+                        store_git_blob(buf.as_bytes().into(), &mut cs_metadata_oid);
                     }
                     let metadata_id = GitChangesetMetadataId::from_unchecked(
                         BlobId::from_unchecked(GitObjectId::from(cs_metadata_oid)),
@@ -1360,7 +1360,7 @@ fn store_changeset(
         let result = raw_commit_for_changeset(&changeset, tree_id, &git_parents);
         let mut result_oid = object_id::default();
         unsafe {
-            store_git_commit(&result, &mut result_oid);
+            store_git_commit(result.as_bytes().into(), &mut result_oid);
         }
         let commit_id = CommitId::from_unchecked(GitObjectId::from(result_oid));
 
@@ -1374,7 +1374,7 @@ fn store_changeset(
         buf.extend_from_slice(&metadata.serialize());
         let mut cs_metadata_oid = object_id::default();
         unsafe {
-            store_git_blob(&buf, &mut cs_metadata_oid);
+            store_git_blob(buf.as_bytes().into(), &mut cs_metadata_oid);
         }
         let metadata_id = GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(
             GitObjectId::from(cs_metadata_oid),
@@ -1436,7 +1436,7 @@ fn handle_changeset_conflict(hg_id: HgChangesetId, git_id: &mut CommitId) {
         commit_data.extend_from_slice(b"\0");
         let mut new_git_id = object_id::default();
         unsafe {
-            store_git_commit(commit_data, &mut new_git_id);
+            store_git_commit(commit_data.as_bytes().into(), &mut new_git_id);
         }
         *git_id = CommitId::from_unchecked(new_git_id.into());
     }
@@ -1537,7 +1537,7 @@ pub fn create_changeset(
     buf.extend_from_slice(&cs_metadata.serialize());
     let mut blob_oid = object_id::default();
     unsafe {
-        store_git_blob(&buf, &mut blob_oid);
+        store_git_blob(buf.as_bytes().into(), &mut blob_oid);
         metadata.set(
             SetWhat::Changeset,
             cs_metadata.changeset_id.into(),
@@ -1819,7 +1819,7 @@ pub fn store_changegroup<R: Read>(metadata: &mut Metadata, input: R, version: u8
     if !bundle.as_bytes().is_empty() {
         let mut bundle_blob = object_id::default();
         unsafe {
-            store_git_blob(&bundle, &mut bundle_blob);
+            store_git_blob(bundle.as_bytes().into(), &mut bundle_blob);
         }
         BUNDLE_BLOBS.lock().unwrap().push(bundle_blob);
     }
@@ -2290,7 +2290,7 @@ pub fn do_store_metadata(metadata: &mut Metadata) -> CommitId {
     );
     unsafe {
         let mut result = object_id::default();
-        store_git_commit(&buf, &mut result);
+        store_git_commit(buf.as_bytes().into(), &mut result);
         CommitId::from_unchecked(result.into())
     }
 }
