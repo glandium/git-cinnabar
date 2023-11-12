@@ -2217,6 +2217,10 @@ impl Metadata {
         let cid = if let Some(c) = c {
             c
         } else {
+            unsafe {
+                reset_replace_map();
+                init_replace_map();
+            }
             return result;
         };
         let c = RawCommit::read(cid).unwrap();
