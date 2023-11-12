@@ -43,6 +43,8 @@ thread_local! {
 }
 
 impl GitManifestTree {
+    pub const EMPTY: GitManifestTree = GitManifestTree(RawTree::EMPTY);
+
     pub fn read(oid: GitManifestTreeId) -> Option<GitManifestTree> {
         MANIFEST_TREE_CACHE.with(|cache| {
             let (lru_cache, queries, misses) = &mut *cache.borrow_mut();

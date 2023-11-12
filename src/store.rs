@@ -6,12 +6,14 @@ use std::borrow::Cow;
 use std::cell::{Cell, OnceCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::ffi::OsStr;
+use std::hash::Hash;
 use std::io::{copy, BufRead, BufReader, Read, Write};
 use std::iter::{repeat, IntoIterator};
 use std::mem;
 use std::num::NonZeroU32;
 use std::os::raw::c_int;
 use std::process::{Command, Stdio};
+use std::ptr;
 use std::rc::Rc;
 use std::sync::Mutex;
 
@@ -35,7 +37,7 @@ use crate::cinnabar::{
 };
 use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry, TreeId, TreeIsh};
 use crate::graft::{graft, grafted, replace_map_tablesize, GraftError};
-use crate::hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
+use crate::hg::{HgChangesetId, HgFileAttr, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_bundle::{
     read_rev_chunk, rev_chunk, BundlePartInfo, BundleSpec, BundleWriter, RevChunkIter,
 };
@@ -44,11 +46,11 @@ use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{git_notes_tree, hg_notes_tree, strslice, strslice_mut};
 use crate::libgit::{
     die, for_each_ref_in, get_oid_blob, object_entry, object_id, object_type, strbuf, Commit,
-    RawBlob, RawCommit, RawTree, RefTransaction,
+    FileMode, RawBlob, RawCommit, RawTree, RefTransaction,
 };
 use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
-use crate::tree_util::{diff_by_path, Empty, ParseTree, RecurseTree, WithPath};
+use crate::tree_util::{diff_by_path, merge_join_by_path, Empty, ParseTree, RecurseTree, WithPath};
 use crate::util::{
     FromBytes, ImmutBString, OsStrExt, RcExt, ReadExt, SliceExt, ToBoxed, Transpose,
 };
@@ -84,6 +86,7 @@ pub struct Metadata {
     pub flags: MetadataFlags,
     changeset_heads_: OnceCell<ChangesetHeads>,
     manifest_heads_: OnceCell<ManifestHeads>,
+    tree_cache_: BTreeMap<GitManifestTreeId, TreeId>,
 }
 
 pub static mut METADATA: Metadata = Metadata::default();
@@ -103,6 +106,7 @@ impl Metadata {
             flags: MetadataFlags::empty(),
             changeset_heads_: OnceCell::new(),
             manifest_heads_: OnceCell::new(),
+            tree_cache_: BTreeMap::new(),
         }
     }
 }
@@ -1216,11 +1220,6 @@ extern "C" {
         reference_entry: *const object_entry,
     );
     pub fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
-    fn create_git_tree(
-        tree_id: *const object_id,
-        ref_tree: *const object_id,
-        result: *mut object_id,
-    );
     fn get_object_entry(oid: *const object_id) -> *const object_entry;
 }
 
@@ -1290,6 +1289,144 @@ impl Metadata {
     }
 }
 
+fn corrupted_metata() -> ! {
+    die!("Corrupt mercurial metadata");
+}
+
+// The git storage for a mercurial manifest used to be a commit with two
+// directories at its root:
+// - a git directory, matching the git tree in the git commit corresponding to
+//   the mercurial changeset using the manifest.
+// - a hg directory, containing the same file paths, but where all pointed
+//   objects are commits (mode 160000 in the git tree) whose sha1 is actually
+//   the mercurial sha1 for the corresponding mercurial file.
+// Reconstructing the mercurial manifest required file paths, mercurial sha1
+// for each file, and the corresponding attribute ("l" for symlinks, "x" for
+// executables"). The hg directory alone was not enough for that, because it
+// lacked the attribute information.
+fn create_git_tree(
+    metadata: &mut Metadata,
+    manifest_tree_id: GitManifestTreeId,
+    ref_tree_id: Option<TreeId>,
+    merge_tree_id: Option<GitManifestTreeId>,
+) -> TreeId {
+    let cached = merge_tree_id
+        .is_none()
+        .then(|| metadata.tree_cache_.get(&manifest_tree_id))
+        .flatten();
+    if let Some(cached) = cached {
+        return *cached;
+    }
+    let manifest_tree = GitManifestTree::read(manifest_tree_id).unwrap();
+    let merge_tree = merge_tree_id.map_or(GitManifestTree::EMPTY, |tid| {
+        GitManifestTree::read(tid).unwrap()
+    });
+    let mut tree_buf = Vec::new();
+    let mut ref_tree = None;
+    for (path, entries) in
+        merge_join_by_path(manifest_tree.iter(), merge_tree.iter()).map(WithPath::unzip)
+    {
+        let entry = entries
+            .as_ref()
+            .left()
+            .or_else(|| entries.as_ref().right())
+            .unwrap();
+        // In some edge cases, presumably all related to the use of
+        // `hg convert` before Mercurial 2.0.1, manifest trees have
+        // double slashes, which end up as "_" directories in the
+        // corresponding git cinnabar metadata.
+        // With further changes in the subsequent Mercurial manifests,
+        // those entries with double slashes are superseded with entries
+        // with single slash, while still being there. So to create
+        // the corresponding git commit, we need to merge both in some
+        // manner.
+        // Mercurial doesn't actually guarantee which of the paths would
+        // actually be checked out when checking out such manifests,
+        // but we always choose the single slash path. Most of the time,
+        // though, both will have the same contents. At least for files.
+        // Sub-directories may differ in what paths they contain, but
+        // again, the files they contain are usually identical.
+        if path.len() == 0 {
+            if entry.is_right() {
+                corrupted_metata();
+            }
+            if merge_tree_id.is_some() {
+                continue;
+            }
+            let result = create_git_tree(
+                metadata,
+                manifest_tree_id,
+                ref_tree_id,
+                entry.clone().left(),
+            );
+            metadata.tree_cache_.insert(manifest_tree_id, result);
+            return result;
+        }
+        let (oid, mode): (GitObjectId, _) = match entry {
+            Either::Left(subtree_id) => {
+                let ref_entry_oid = ref_tree_id
+                    .and_then(|tid| {
+                        ref_tree
+                            .get_or_insert_with(|| RawTree::read(tid).unwrap().into_iter())
+                            .find(|e| e.path() == path.as_bstr())
+                    })
+                    .and_then(|e| e.into_inner().left());
+                (
+                    create_git_tree(
+                        metadata,
+                        *subtree_id,
+                        ref_entry_oid,
+                        entries.right().and_then(Either::left),
+                    )
+                    .into(),
+                    FileMode::DIRECTORY,
+                )
+            }
+            Either::Right(entry) => {
+                let oid = if entry.fid == RawHgFile::EMPTY_OID {
+                    let mut empty_blob_id = object_id::default();
+                    unsafe {
+                        store_git_blob([].into(), &mut empty_blob_id);
+                    }
+                    let empty_blob_id = BlobId::from_unchecked(empty_blob_id.into());
+                    assert_eq!(empty_blob_id, RawBlob::EMPTY_OID);
+                    RawBlob::EMPTY_OID
+                } else if let Some(bid) = metadata.hg2git_mut().get_note(entry.fid.into()) {
+                    BlobId::from_unchecked(bid)
+                } else {
+                    corrupted_metata();
+                };
+                (
+                    oid.into(),
+                    match entry.attr {
+                        HgFileAttr::Regular => FileMode::REGULAR | FileMode::RW,
+                        HgFileAttr::Executable => FileMode::REGULAR | FileMode::RWX,
+                        HgFileAttr::Symlink => FileMode::SYMLINK,
+                    },
+                )
+            }
+        };
+        write!(tree_buf, "{:o} ", u16::from(mode)).ok();
+        tree_buf.extend_from_slice(&path);
+        tree_buf.extend_from_slice(b"\0");
+        tree_buf.extend_from_slice(oid.as_raw_bytes());
+    }
+    let mut result = object_id::default();
+    let ref_tree = ref_tree_id.map(GitObjectId::from).map(object_id::from);
+    unsafe {
+        store_git_tree(
+            tree_buf.as_slice().into(),
+            ref_tree.as_ref().map_or(ptr::null(), |x| x as *const _),
+            &mut result,
+        );
+    }
+    let result = TreeId::from_unchecked(result.into());
+    if merge_tree_id.is_none() {
+        metadata.tree_cache_.insert(manifest_tree_id, result);
+    }
+    result
+}
+
 fn store_changeset(
     metadata: &mut Metadata,
     changeset_id: HgChangesetId,
@@ -1303,7 +1440,7 @@ fn store_changeset(
         .collect::<Option<Vec<_>>>()
         .ok_or(GraftError::NoGraft)?;
     let changeset = raw_changeset.parse().unwrap();
-    let manifest_tree_id = match changeset.manifest() {
+    let manifest_tree_id = GitManifestTreeId::from_unchecked(match changeset.manifest() {
         m if m.is_null() => unsafe {
             let mut tid = object_id::default();
             store_git_tree([].into(), std::ptr::null(), &mut tid);
@@ -1315,25 +1452,15 @@ fn store_changeset(
             let manifest_commit = manifest_commit.parse().unwrap();
             manifest_commit.tree()
         }
-    };
+    });
 
     let ref_tree = git_parents.get(0).map(|&p| {
         let ref_commit = RawCommit::read(p.into()).unwrap();
         let ref_commit = ref_commit.parse().unwrap();
-        object_id::from(ref_commit.tree())
+        ref_commit.tree()
     });
 
-    let mut tree_id = object_id::default();
-    unsafe {
-        create_git_tree(
-            &object_id::from(manifest_tree_id),
-            ref_tree
-                .as_ref()
-                .map_or(std::ptr::null(), |t| t as *const _),
-            &mut tree_id,
-        );
-    }
-    let tree_id = TreeId::from_unchecked(GitObjectId::from(tree_id));
+    let tree_id = create_git_tree(metadata, manifest_tree_id, ref_tree, None);
 
     let (commit_id, metadata_id, transition) =
         match graft(changeset_id, raw_changeset, tree_id, &git_parents) {

@@ -179,8 +179,6 @@ extern "C" {
 
     fn init_cinnabar(argv0: *const c_char);
 
-    fn init_git_tree_cache();
-    fn free_git_tree_cache();
     fn reset_replace_map();
     static nongit: c_int;
 }
@@ -191,14 +189,12 @@ unsafe fn init_cinnabar_2() -> bool {
     }
     let c = get_oid_committish(METADATA_REF.as_bytes());
     init_metadata(c);
-    init_git_tree_cache();
     true
 }
 
 pub unsafe fn do_reload(metadata: Option<CommitId>) {
     let mut c = None;
     done_cinnabar();
-    init_git_tree_cache();
 
     reset_replace_map();
     if let Some(metadata) = metadata {
@@ -214,7 +210,6 @@ pub unsafe fn do_reload(metadata: Option<CommitId>) {
 #[no_mangle]
 pub unsafe extern "C" fn done_cinnabar() {
     done_metadata();
-    free_git_tree_cache();
 }
 
 static REF_UPDATES: Lazy<Mutex<HashMap<Box<BStr>, CommitId>>> =
