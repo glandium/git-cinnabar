@@ -38,9 +38,6 @@ void do_cleanup(int rollback);
 void do_set_replace(const struct object_id *replaced,
                     const struct object_id *replace_with);
 
-void do_set_(const char *what, const struct hg_object_id *hg_id,
-             const struct object_id *git_id);
-
 void store_manifest(struct rev_chunk *chunk,
                     const struct strslice last_manifest_content,
                     struct strslice_mut data);
