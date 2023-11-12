@@ -278,37 +278,30 @@ void do_set_replace(const struct object_id *replaced,
 int write_object_file_flags(const void *buf, size_t len, enum object_type type,
                             struct object_id *oid, unsigned flags)
 {
-	struct strbuf data;
+	struct strslice data;
 	data.buf = (void *)buf;
 	data.len = len;
-	data.alloc = len;
-	store_object(type, &data, NULL, oid, 0);
+	store_git_object(type, data, oid, NULL, NULL);
 	return 0;
 }
 
 void hg_file_store(struct hg_file *file, struct hg_file *reference)
 {
 	struct object_id oid;
-	struct last_object last_blob = { STRBUF_INIT, 0, 0, 1 };
+	struct strslice *last_blob = NULL;
 	struct object_entry *oe = NULL;
 
-	ENSURE_INIT();
-
 	if (file->metadata.buf) {
-		store_object(OBJ_BLOB, &file->metadata, NULL, &oid, 0);
+		store_git_object(OBJ_BLOB, file->metadata, &oid, NULL, NULL);
 		add_files_meta(&file->oid, &oid);
 	}
 
-	if (reference)
-		oe = (struct object_entry *) reference->content_oe;
-
-	if (oe) {
-		last_blob.data.buf = reference->content.buf;
-		last_blob.data.len = reference->content.len;
-		last_blob.offset = oe->idx.offset;
-		last_blob.depth = oe->depth;
+	if (reference) {
+		last_blob = &reference->content;
+		oe = reference->content_oe;
 	}
-	store_object(OBJ_BLOB, &file->content, &last_blob, &oid, 0);
+
+	store_git_object(OBJ_BLOB, file->content, &oid, last_blob, oe);
 	add_hg2git(&file->oid, &oid);
 
 	file->content_oe = get_object_entry(&oid);
@@ -585,7 +578,8 @@ void store_manifest(struct rev_chunk *chunk,
 	                     "committer  <cinnabar@git> 0 +0000\n"
 	                     "\n");
 	strbuf_addstr(&data, hg_oid_to_hex(&last_manifest_oid));
-	store_object(OBJ_COMMIT, &data, NULL, &last_manifest->oid, 0);
+	store_git_object(OBJ_COMMIT, strbuf_as_slice(&data),
+	                 &last_manifest->oid, NULL, NULL);
 	strbuf_release(&data);
 	add_hg2git(&last_manifest_oid, &last_manifest->oid);
 	add_manifest_head(&last_manifest->oid);
@@ -615,7 +609,7 @@ void store_replace_map(struct object_id *result) {
 		            oid_to_hex(&replace->original.oid), '\0');
 		strbuf_add(&buf, replace->replacement.hash, the_hash_algo->rawsz);
 	}
-	store_object(OBJ_TREE, &buf, NULL, result, 0);
+	store_git_object(OBJ_TREE, strbuf_as_slice(&buf), result, NULL, NULL);
 	strbuf_release(&buf);
 }
 
@@ -623,7 +617,6 @@ void store_git_tree(struct strbuf *tree_buf, const struct object_id *reference,
                     struct object_id *result)
 {
 	struct object_entry *oe = NULL;
-	ENSURE_INIT();
 	if (reference) {
 		oe = get_object_entry(reference);
 	}
@@ -643,14 +636,12 @@ void store_git_tree(struct strbuf *tree_buf, const struct object_id *reference,
 
 void store_git_blob(struct strbuf *blob_buf, struct object_id *result)
 {
-	ENSURE_INIT();
-	store_object(OBJ_BLOB, blob_buf, NULL, result, 0);
+	store_git_object(OBJ_BLOB, strbuf_as_slice(blob_buf), result, NULL, NULL);
 }
 
 void store_git_commit(struct strbuf *commit_buf, struct object_id *result)
 {
-	ENSURE_INIT();
-	store_object(OBJ_COMMIT, commit_buf, NULL, result, 0);
+	store_git_object(OBJ_COMMIT, strbuf_as_slice(commit_buf), result, NULL, NULL);
 }
 
 void store_git_object(enum object_type type, const struct strslice buf,

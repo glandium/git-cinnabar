@@ -109,7 +109,7 @@ void hg_file_init(struct hg_file *file)
 	strbuf_init(&file->file, 0);
 	file->metadata.buf = NULL;
 	file->metadata.len = 0;
-	strbuf_init(&file->content, 0);
+	file->content = strbuf_as_slice(&file->file);
 	file->content_oe = NULL;
 }
 

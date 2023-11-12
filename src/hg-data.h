@@ -8,6 +8,7 @@
 #include "hash.h"
 #include "hex.h"
 #include "strbuf.h"
+#include "strslice.h"
 #include "cinnabar-notes.h"
 
 struct hg_object_id {
@@ -67,9 +68,9 @@ struct hg_file {
 	struct hg_object_id oid;
 
 	struct strbuf file;
-	struct strbuf metadata;
-	struct strbuf content;
-	void *content_oe;
+	struct strslice metadata;
+	struct strslice content;
+	struct object_entry *content_oe;
 };
 
 void hg_file_load(struct hg_file *result, const struct hg_object_id *oid);
