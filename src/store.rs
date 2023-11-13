@@ -1190,8 +1190,8 @@ fn store_manifests_metadata(metadata: &Metadata) -> CommitId {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn add_manifest_head(mn: *const object_id) {
-    let heads = METADATA.manifest_heads_mut();
+pub unsafe extern "C" fn add_manifest_head(metadata: &mut Metadata, mn: *const object_id) {
+    let heads = metadata.manifest_heads_mut();
     heads.add(GitManifestId::from_unchecked(CommitId::from_unchecked(
         mn.as_ref().unwrap().clone().into(),
     )));
@@ -1695,7 +1695,12 @@ pub fn create_changeset(
 // The rev_chunk has a non-FFI-safe field that is not exposed to C.
 #[allow(improper_ctypes)]
 extern "C" {
-    pub fn store_manifest(chunk: *const rev_chunk, reference_mn: strslice, stored_mn: strslice_mut);
+    pub fn store_manifest(
+        metadata: &mut Metadata,
+        chunk: *const rev_chunk,
+        reference_mn: strslice,
+        stored_mn: strslice_mut,
+    );
 }
 
 #[no_mangle]
@@ -1830,6 +1835,7 @@ pub fn store_changegroup<R: Read>(metadata: &mut Metadata, input: R, version: u8
         let mut stored_manifest = Rc::builder_with_capacity(mn_size);
         unsafe {
             store_manifest(
+                metadata,
                 &manifest.into(),
                 (&reference_mn).into(),
                 (&mut stored_manifest.spare_capacity_mut()[..mn_size]).into(),

@@ -1949,7 +1949,12 @@ fn create_manifest(content: &mut [u8], parents: &[HgManifestId]) -> HgManifestId
     manifest_chunk.extend_from_slice(b"\0\0\0\0");
     for chunk in RevChunkIter::new(2, manifest_chunk.as_bytes()) {
         unsafe {
-            store_manifest(&chunk.into(), (&parent_manifest).into(), content.into());
+            store_manifest(
+                &mut METADATA,
+                &chunk.into(),
+                (&parent_manifest).into(),
+                content.into(),
+            );
         }
     }
     mid

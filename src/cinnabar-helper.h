@@ -8,6 +8,8 @@
 #include "hg-data.h"
 #include "cinnabar-notes.h"
 
+struct Metadata;
+
 #define METADATA_REF "refs/cinnabar/metadata"
 
 extern struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
@@ -19,8 +21,6 @@ extern struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
 extern int cinnabar_check(int);
 
 extern struct notes_tree git2hg, hg2git, files_meta;
-
-int check_manifest(const struct object_id *oid);
 
 struct remote;
 
@@ -40,7 +40,8 @@ unsigned int replace_map_tablesize(void);
 
 const struct object_id *repo_lookup_replace_object(
 	struct repository *r, const struct object_id *oid);
-const struct object_id *resolve_hg2git(const struct hg_object_id *oid);
+const struct object_id *resolve_hg2git(struct Metadata *metadata,
+                                       const struct hg_object_id *oid);
 
 struct commit;
 

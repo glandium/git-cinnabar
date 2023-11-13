@@ -64,6 +64,4 @@ int is_null_hg_oid(const struct hg_object_id *oid);
 
 int is_empty_hg_file(const struct hg_object_id *oid);
 
-void add_hg2git(const struct hg_object_id *oid, const struct object_id *note_oid);
-
 #endif
