@@ -42,6 +42,7 @@ struct ManifestTreeCache {
     lru_cache: LruCache<GitManifestTreeId, GitManifestTree>,
     queries: usize,
     misses: usize,
+    had_first_hit: bool,
 }
 
 impl ManifestTreeCache {
@@ -50,6 +51,7 @@ impl ManifestTreeCache {
             lru_cache: LruCache::unbounded(),
             queries: 0,
             misses: 0,
+            had_first_hit: false,
         }
     }
 
@@ -66,10 +68,12 @@ impl ManifestTreeCache {
                 f()
             })
             .map(Clone::clone);
+        self.had_first_hit |= self.misses != self.queries;
         let queries_limit = cmp::max(100, self.lru_cache.len() / 2);
         if self.queries >= queries_limit {
             let miss_rate = self.misses / (self.queries / 10);
-            if (self.lru_cache.cap() == NonZeroUsize::MAX) || miss_rate >= 7 {
+            // Avoid growing the cache when we're flat-lining at 100% miss rate.
+            if !self.had_first_hit || (miss_rate >= 7 && self.misses != self.queries) {
                 self.lru_cache.resize(
                     NonZeroUsize::new(self.lru_cache.len() + self.lru_cache.len() / 2 + 1).unwrap(),
                 );
