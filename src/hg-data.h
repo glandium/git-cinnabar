@@ -62,6 +62,4 @@ static inline void oidcpy2hg(struct hg_object_id *dst,
 
 int is_null_hg_oid(const struct hg_object_id *oid);
 
-int is_empty_hg_file(const struct hg_object_id *oid);
-
 #endif
