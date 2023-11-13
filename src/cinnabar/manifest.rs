@@ -38,8 +38,60 @@ impl TreeIsh for GitManifestId {
 #[derive(Clone)]
 pub struct GitManifestTree(RawTree);
 
+struct ManifestTreeCache {
+    lru_cache: LruCache<GitManifestTreeId, GitManifestTree>,
+    queries: usize,
+    misses: usize,
+}
+
+impl ManifestTreeCache {
+    fn new() -> Self {
+        ManifestTreeCache {
+            lru_cache: LruCache::unbounded(),
+            queries: 0,
+            misses: 0,
+        }
+    }
+
+    fn try_get_or_insert<F: FnOnce() -> Result<GitManifestTree, E>, E>(
+        &mut self,
+        k: GitManifestTreeId,
+        f: F,
+    ) -> Result<GitManifestTree, E> {
+        self.queries += 1;
+        let result = self
+            .lru_cache
+            .try_get_or_insert(k, || {
+                self.misses += 1;
+                f()
+            })
+            .map(Clone::clone);
+        let queries_limit = cmp::max(100, self.lru_cache.len() / 2);
+        if self.queries >= queries_limit {
+            let miss_rate = self.misses / (self.queries / 10);
+            if (self.lru_cache.cap() == NonZeroUsize::MAX) || miss_rate >= 7 {
+                self.lru_cache.resize(
+                    NonZeroUsize::new(self.lru_cache.len() + self.lru_cache.len() / 2 + 1).unwrap(),
+                );
+            }
+            debug!(
+                target: "manifesttreecache",
+                "cap: {}, len: {} ; {} misses in the last {} queries ({:.1}%)",
+                self.lru_cache.cap(),
+                self.lru_cache.len(),
+                self.misses,
+                self.queries,
+                (self.misses as f64) * 100.0 / (self.queries as f64)
+            );
+            self.queries = 0;
+            self.misses = 0;
+        }
+        result
+    }
+}
+
 thread_local! {
-    static MANIFEST_TREE_CACHE: RefCell<(LruCache<GitManifestTreeId, GitManifestTree>, usize, usize)> = RefCell::new((LruCache::unbounded(), 0, 0));
+    static MANIFEST_TREE_CACHE: RefCell<ManifestTreeCache> = RefCell::new(ManifestTreeCache::new());
 }
 
 impl GitManifestTree {
@@ -47,36 +99,10 @@ impl GitManifestTree {
 
     pub fn read(oid: GitManifestTreeId) -> Option<GitManifestTree> {
         MANIFEST_TREE_CACHE.with(|cache| {
-            let (lru_cache, queries, misses) = &mut *cache.borrow_mut();
-            *queries += 1;
-            let result = lru_cache
-                .try_get_or_insert(oid, || {
-                    *misses += 1;
-                    RawTree::read(oid.into()).map(Self).ok_or(())
-                })
+            cache
+                .borrow_mut()
+                .try_get_or_insert(oid, || RawTree::read(oid.into()).map(Self).ok_or(()))
                 .ok()
-                .cloned();
-            let queries_limit = cmp::max(100, lru_cache.len() / 2);
-            if *queries >= queries_limit {
-                let miss_rate = *misses / (*queries / 10);
-                if (lru_cache.cap() == NonZeroUsize::MAX) || miss_rate >= 7 {
-                    lru_cache.resize(
-                        NonZeroUsize::new(lru_cache.len() + lru_cache.len() / 2 + 1).unwrap(),
-                    );
-                }
-                debug!(
-                    target: "manifesttreecache",
-                    "cap: {}, len: {} ; {} misses in the last {} queries ({:.1}%)",
-                    lru_cache.cap(),
-                    lru_cache.len(),
-                    *misses,
-                    *queries,
-                    (*misses as f64) * 100.0 / (*queries as f64)
-                );
-                *queries = 0;
-                *misses = 0;
-            }
-            result
         })
     }
 
