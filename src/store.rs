@@ -2447,8 +2447,7 @@ pub unsafe fn init_metadata(c: Option<CommitId>) {
     METADATA = Metadata::new(c);
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn done_metadata() {
+pub unsafe fn done_metadata() {
     METADATA = Metadata::default();
 }
 
