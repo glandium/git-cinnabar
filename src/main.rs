@@ -194,7 +194,7 @@ unsafe fn init_cinnabar_2() -> bool {
 
 pub unsafe fn do_reload(metadata: Option<CommitId>) {
     let mut c = None;
-    done_cinnabar();
+    done_metadata();
 
     reset_replace_map();
     if let Some(metadata) = metadata {
@@ -205,11 +205,6 @@ pub unsafe fn do_reload(metadata: Option<CommitId>) {
         c = get_oid_committish(METADATA_REF.as_bytes());
     }
     init_metadata(c);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn done_cinnabar() {
-    done_metadata();
 }
 
 static REF_UPDATES: Lazy<Mutex<HashMap<Box<BStr>, CommitId>>> =
@@ -4639,7 +4634,7 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
         )),
         Some(_) | None => Ok(1),
     };
-    done_cinnabar();
+    done_metadata();
     match ret {
         Ok(code) => code,
         Err(msg) => {
