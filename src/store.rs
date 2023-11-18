@@ -14,7 +14,6 @@ use std::num::NonZeroU32;
 use std::os::raw::c_int;
 use std::process::{Command, Stdio};
 use std::ptr;
-use std::rc::Rc;
 use std::sync::Mutex;
 
 use bit_vec::BitVec;
@@ -52,7 +51,7 @@ use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
 use crate::tree_util::{diff_by_path, merge_join_by_path, Empty, ParseTree, RecurseTree, WithPath};
 use crate::util::{
-    FromBytes, ImmutBString, OsStrExt, RcExt, ReadExt, SliceExt, ToBoxed, Transpose,
+    FromBytes, ImmutBString, OsStrExt, RcExt, RcSlice, ReadExt, SliceExt, ToBoxed, Transpose,
 };
 use crate::xdiff::{apply, textdiff, PatchInfo};
 use crate::{check_enabled, do_reload, Checks};
@@ -666,7 +665,7 @@ impl<'a> HgChangeset<'a> {
 // replicated here. We'll see if it shows up in performance profiles.
 struct ManifestCache {
     tree_id: GitManifestTreeId,
-    content: Rc<[u8]>,
+    content: RcSlice<u8>,
 }
 
 thread_local! {
@@ -675,11 +674,11 @@ thread_local! {
 
 #[derive(Deref)]
 #[deref(forward)]
-pub struct RawHgManifest(Rc<[u8]>);
+pub struct RawHgManifest(RcSlice<u8>);
 
 impl Empty for RawHgManifest {
     fn empty() -> RawHgManifest {
-        RawHgManifest(Rc::new([]))
+        RawHgManifest(RcSlice::new())
     }
 }
 
@@ -689,15 +688,14 @@ impl RawHgManifest {
             let last_manifest = cache.take();
             let tree_id = oid.get_tree_id();
 
-            let mut manifest = Rc::<[u8]>::builder();
+            let mut manifest = RcSlice::<u8>::builder();
             if let Some(last_manifest) = last_manifest {
                 let reference_manifest = last_manifest.content.clone();
                 if last_manifest.tree_id == tree_id {
                     cache.set(Some(last_manifest));
                     return RawHgManifest(reference_manifest);
                 }
-                // Generously reserve memory for the new manifest to avoid reallocs.
-                manifest.reserve(reference_manifest.as_ref().len() * 2);
+                manifest.reserve(reference_manifest.len());
                 // TODO: ideally, we'd be able to use merge_join_by_path, but WithPath
                 // using an owned string has a huge impact on performance.
                 for entry in itertools::merge_join_by(
@@ -1832,7 +1830,7 @@ pub fn store_changegroup<R: Read>(metadata: &mut Metadata, input: R, version: u8
         }
         mn_size += reference_mn.len() - last_end;
 
-        let mut stored_manifest = Rc::builder_with_capacity(mn_size);
+        let mut stored_manifest = RcSlice::builder_with_capacity(mn_size);
         unsafe {
             store_manifest(
                 metadata,

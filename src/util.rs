@@ -7,7 +7,7 @@ use std::cell::Cell;
 use std::ffi::{CStr, CString, OsStr};
 use std::io::{self, LineWriter, Read, Write};
 use std::marker::PhantomData;
-use std::mem::MaybeUninit;
+use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ops::{Deref, DerefMut};
 #[cfg(unix)]
 use std::os::unix::ffi;
@@ -16,7 +16,7 @@ use std::os::windows::ffi;
 use std::ptr::{self, NonNull};
 use std::rc::Rc;
 use std::str::{self, FromStr};
-use std::{cmp, fmt, mem};
+use std::{fmt, mem};
 
 use bstr::{BStr, ByteSlice};
 
@@ -440,6 +440,44 @@ pub trait Transpose {
     fn transpose(self) -> Self::Target;
 }
 
+#[repr(transparent)]
+#[derive(Clone)]
+pub struct RcSlice<T>(ManuallyDrop<Rc<[T]>>);
+
+impl<T> RcSlice<T> {
+    pub fn new() -> RcSlice<T> {
+        RcSlice(ManuallyDrop::new(Rc::new([])))
+    }
+}
+
+impl<T> Drop for RcSlice<T> {
+    fn drop(&mut self) {
+        if let Some(this) = Rc::get_mut(&mut self.0) {
+            // last reference, we can drop.
+            let len = this.len();
+            let (layout, offset) = RcSliceBuilder::<T>::layout_for_size(len);
+            unsafe {
+                ptr::drop_in_place(this);
+                std::alloc::dealloc((this.as_mut_ptr() as *mut u8).sub(offset), layout);
+            };
+        } else {
+            // We don't handle this case.
+            assert_ne!(Rc::strong_count(&self.0), 1);
+            unsafe {
+                ManuallyDrop::drop(&mut self.0);
+            }
+        }
+    }
+}
+
+impl<T> Deref for RcSlice<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 type RcBox = [Cell<usize>; 2];
 
 pub struct RcSliceBuilder<T> {
@@ -467,26 +505,10 @@ impl<T> RcSliceBuilder<T> {
         result
     }
 
-    pub fn into_rc(self) -> Rc<[T]> {
+    pub fn into_rc(self) -> RcSlice<T> {
         if self.len != 0 {
-            let (layout, offset) = Self::layout_for_size(self.len);
-            let ptr = if layout.size() != self.capacity * mem::size_of::<T>() + offset {
-                let (current_layout, _) = Self::layout_for_size(self.capacity);
-                // We need to shrink to fit so that Rc's deallocation layout matches ours.
-                unsafe {
-                    let ptr = std::alloc::realloc(
-                        self.ptr.cast::<u8>().as_ptr().sub(offset),
-                        current_layout,
-                        layout.size(),
-                    );
-                    if ptr.is_null() {
-                        panic!("Out of memory");
-                    }
-                    NonNull::new_unchecked(ptr.add(offset) as *mut T)
-                }
-            } else {
-                self.ptr
-            };
+            let (_layout, offset) = Self::layout_for_size(self.capacity);
+            let ptr = self.ptr;
             let len = self.len;
             mem::forget(self);
             unsafe {
@@ -494,31 +516,43 @@ impl<T> RcSliceBuilder<T> {
                     ptr.cast::<u8>().as_ptr().sub(offset) as *mut RcBox,
                     [Cell::new(1), Cell::new(1)],
                 );
-                Rc::from_raw(NonNull::slice_from_raw_parts(ptr, len).as_ptr())
+                RcSlice(ManuallyDrop::new(Rc::from_raw(
+                    NonNull::slice_from_raw_parts(ptr, len).as_ptr(),
+                )))
             }
         } else {
-            Rc::new([])
+            RcSlice::new()
         }
     }
 
     fn layout_for_size(size: usize) -> (Layout, usize) {
-        Layout::array::<T>(size)
+        let (layout, offset) = Layout::array::<T>(size)
             .and_then(|layout| Layout::new::<RcBox>().extend(layout))
             .map(|(layout, offset)| (layout.pad_to_align(), offset))
-            .unwrap()
+            .unwrap();
+        let size = layout.size();
+        let align = layout.align();
+
+        // Normalize the allocation size to a power of 2 or the halfway point
+        // between to powers of 2.
+        let leading_zeros = size.leading_zeros();
+        let pow2 = (1usize << (usize::BITS - 1)) >> leading_zeros;
+        let size = if size == pow2 {
+            size
+        } else {
+            let halfway = (3usize << (usize::BITS - 2)) >> leading_zeros;
+            if size > halfway {
+                pow2 << 1
+            } else {
+                halfway
+            }
+        };
+        (Layout::from_size_align(size, align).unwrap(), offset)
     }
 
     #[inline(never)]
     fn grow_to(&mut self, needed_len: usize) {
-        // Same growth strategy as git's ALLOC_GROW.
-        let new_capacity = cmp::max(
-            needed_len,
-            self.capacity
-                .checked_add(16)
-                .and_then(|cap| cap.checked_mul(3))
-                .map_or(needed_len, |cap| cap / 2),
-        );
-        let (layout, offset) = Self::layout_for_size(new_capacity);
+        let (layout, offset) = Self::layout_for_size(needed_len);
         unsafe {
             let ptr = if self.capacity == 0 {
                 std::alloc::alloc(layout)
@@ -615,7 +649,7 @@ pub trait RcExt {
     fn builder_with_capacity(capacity: usize) -> Self::Builder;
 }
 
-impl<T> RcExt for Rc<[T]> {
+impl<T> RcExt for RcSlice<T> {
     type Builder = RcSliceBuilder<T>;
 
     fn builder() -> Self::Builder {
