@@ -470,7 +470,7 @@ impl<T> RcSliceBuilder<T> {
     pub fn into_rc(self) -> Rc<[T]> {
         if self.len != 0 {
             let (layout, offset) = Self::layout_for_size(self.len);
-            let ptr = if layout.size() != self.capacity {
+            let ptr = if layout.size() != self.capacity * mem::size_of::<T>() + offset {
                 let (current_layout, _) = Self::layout_for_size(self.capacity);
                 // We need to shrink to fit so that Rc's deallocation layout matches ours.
                 unsafe {
