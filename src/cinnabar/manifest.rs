@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::cell::RefCell;
-use std::cmp;
 use std::io::{self, Write};
 use std::num::NonZeroUsize;
 
@@ -42,16 +41,14 @@ struct ManifestTreeCache {
     lru_cache: LruCache<GitManifestTreeId, GitManifestTree>,
     queries: usize,
     misses: usize,
-    had_first_hit: bool,
 }
 
 impl ManifestTreeCache {
     fn new() -> Self {
         ManifestTreeCache {
-            lru_cache: LruCache::unbounded(),
+            lru_cache: LruCache::new(NonZeroUsize::new(100).unwrap()),
             queries: 0,
             misses: 0,
-            had_first_hit: false,
         }
     }
 
@@ -68,12 +65,10 @@ impl ManifestTreeCache {
                 f()
             })
             .map(Clone::clone);
-        self.had_first_hit |= self.misses != self.queries;
-        let queries_limit = cmp::max(100, self.lru_cache.len() / 2);
-        if self.queries >= queries_limit {
+        if self.queries >= self.lru_cache.cap().get() / 2 {
             let miss_rate = self.misses / (self.queries / 10);
             // Avoid growing the cache when we're flat-lining at 100% miss rate.
-            if !self.had_first_hit || (miss_rate >= 7 && self.misses != self.queries) {
+            if miss_rate >= 7 && self.misses != self.queries {
                 self.lru_cache.resize(
                     NonZeroUsize::new(self.lru_cache.len() + self.lru_cache.len() / 2 + 1).unwrap(),
                 );
