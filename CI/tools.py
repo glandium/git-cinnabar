@@ -284,7 +284,7 @@ class Hg(Task, metaclass=Tool):
         ]
 
 
-def install_rust(version='1.73.0', target='x86_64-unknown-linux-gnu'):
+def install_rust(version='1.74.0', target='x86_64-unknown-linux-gnu'):
     rustup_opts = '-y --default-toolchain none'
     cargo_dir = '$HOME/.cargo/bin/'
     rustup = cargo_dir + 'rustup'
@@ -427,7 +427,7 @@ class Build(Task, metaclass=Tool):
                     f'/sysroot-{arch}/usr/share/pkgconfig',
                 ))
         if variant in ('coverage', 'asan'):
-            rust_install = install_rust('nightly-2023-05-29', rust_target)
+            rust_install = install_rust('nightly-2023-10-02', rust_target)
         elif rust_version:
             rust_install = install_rust(rust_version, target=rust_target)
         else:
