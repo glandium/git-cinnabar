@@ -580,16 +580,6 @@ impl<T> RcSliceBuilder<T> {
             self.grow_to(new_len);
         }
     }
-}
-
-impl<T: Copy> RcSliceBuilder<T> {
-    pub fn extend_from_slice(&mut self, other: &[T]) {
-        self.reserve(other.len());
-        unsafe {
-            ptr::copy_nonoverlapping(other.as_ptr(), self.ptr.as_ptr().add(self.len), other.len());
-        }
-        self.len += other.len();
-    }
 
     pub fn spare_capacity_mut(&mut self) -> &mut [MaybeUninit<T>] {
         unsafe {
@@ -603,6 +593,16 @@ impl<T: Copy> RcSliceBuilder<T> {
     pub unsafe fn set_len(&mut self, new_len: usize) {
         debug_assert!(new_len <= self.capacity);
         self.len = new_len;
+    }
+}
+
+impl<T: Copy> RcSliceBuilder<T> {
+    pub fn extend_from_slice(&mut self, other: &[T]) {
+        self.reserve(other.len());
+        unsafe {
+            ptr::copy_nonoverlapping(other.as_ptr(), self.ptr.as_ptr().add(self.len), other.len());
+        }
+        self.len += other.len();
     }
 }
 
