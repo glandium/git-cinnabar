@@ -440,6 +440,37 @@ pub trait Transpose {
     fn transpose(self) -> Self::Target;
 }
 
+thread_local! {
+    static RECYCLED_ALLOC: Cell<Option<(NonNull<u8>, Layout)>> = Cell::new(None);
+}
+
+unsafe fn alloc_recycle(layout: Layout) -> (*mut u8, usize) {
+    RECYCLED_ALLOC.with(|recycled| {
+        if let Some((ptr, recycled_layout)) = recycled.get() {
+            if layout.size() <= recycled_layout.size() && layout.align() == recycled_layout.align()
+            {
+                recycled.take();
+                return (ptr.as_ptr(), recycled_layout.size());
+            }
+        }
+        (std::alloc::alloc(layout), layout.size())
+    })
+}
+
+unsafe fn dealloc_keep(ptr: *mut u8, layout: Layout) {
+    RECYCLED_ALLOC.with(|recycled| {
+        let to_dealloc = Cell::new(Some((NonNull::new(ptr).unwrap(), layout)));
+        if recycled.get().map_or(true, |(_, recycled_layout)| {
+            recycled_layout.size() < layout.size()
+        }) {
+            to_dealloc.swap(recycled);
+        }
+        if let Some((ptr, layout)) = to_dealloc.take() {
+            std::alloc::dealloc(ptr.as_ptr(), layout);
+        }
+    });
+}
+
 #[derive(Clone)]
 pub struct RcSlice<T> {
     // The rc spans the initialized part of the array.
@@ -464,7 +495,7 @@ impl<T> Drop for RcSlice<T> {
             let (layout, offset) = RcSliceBuilder::<T>::layout_for_size(self.capacity);
             unsafe {
                 ptr::drop_in_place(this);
-                std::alloc::dealloc((this.as_mut_ptr() as *mut u8).sub(offset), layout);
+                dealloc_keep((this.as_mut_ptr() as *mut u8).sub(offset), layout);
             };
         } else {
             // We don't handle this case.
@@ -555,13 +586,16 @@ impl<T> RcSliceBuilder<T> {
     fn grow_to(&mut self, needed_len: usize) {
         let (layout, offset) = Self::layout_for_size(needed_len);
         unsafe {
-            let ptr = if self.capacity == 0 {
-                std::alloc::alloc(layout)
+            let (ptr, capacity) = if self.capacity == 0 {
+                alloc_recycle(layout)
             } else {
                 let (current_layout, _) = Self::layout_for_size(self.capacity);
-                std::alloc::realloc(
-                    self.ptr.cast::<u8>().as_ptr().sub(offset),
-                    current_layout,
+                (
+                    std::alloc::realloc(
+                        self.ptr.cast::<u8>().as_ptr().sub(offset),
+                        current_layout,
+                        layout.size(),
+                    ),
                     layout.size(),
                 )
             };
@@ -569,7 +603,7 @@ impl<T> RcSliceBuilder<T> {
                 panic!("Out of memory");
             }
             self.ptr = NonNull::new_unchecked(ptr.add(offset) as *mut T);
-            self.capacity = layout.size() - offset;
+            self.capacity = capacity - offset;
         }
     }
 
@@ -626,7 +660,7 @@ impl<T> Drop for RcSliceBuilder<T> {
             ptr::drop_in_place(NonNull::slice_from_raw_parts(self.ptr, self.len).as_ptr());
             if self.capacity > 0 {
                 let (layout, offset) = Self::layout_for_size(self.capacity);
-                std::alloc::dealloc(self.ptr.cast::<u8>().as_ptr().sub(offset), layout);
+                dealloc_keep(self.ptr.cast::<u8>().as_ptr().sub(offset), layout);
             }
         }
     }
