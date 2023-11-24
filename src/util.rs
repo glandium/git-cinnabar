@@ -440,31 +440,37 @@ pub trait Transpose {
     fn transpose(self) -> Self::Target;
 }
 
-#[repr(transparent)]
 #[derive(Clone)]
-pub struct RcSlice<T>(ManuallyDrop<Rc<[T]>>);
+pub struct RcSlice<T> {
+    // The rc spans the initialized part of the array.
+    rc: ManuallyDrop<Rc<[T]>>,
+    // The real capacity of the allocation.
+    capacity: usize,
+}
 
 impl<T> RcSlice<T> {
     pub fn new() -> RcSlice<T> {
-        RcSlice(ManuallyDrop::new(Rc::new([])))
+        RcSlice {
+            rc: ManuallyDrop::new(Rc::new([])),
+            capacity: 0,
+        }
     }
 }
 
 impl<T> Drop for RcSlice<T> {
     fn drop(&mut self) {
-        if let Some(this) = Rc::get_mut(&mut self.0) {
+        if let Some(this) = Rc::get_mut(&mut self.rc) {
             // last reference, we can drop.
-            let len = this.len();
-            let (layout, offset) = RcSliceBuilder::<T>::layout_for_size(len);
+            let (layout, offset) = RcSliceBuilder::<T>::layout_for_size(self.capacity);
             unsafe {
                 ptr::drop_in_place(this);
                 std::alloc::dealloc((this.as_mut_ptr() as *mut u8).sub(offset), layout);
             };
         } else {
             // We don't handle this case.
-            assert_ne!(Rc::strong_count(&self.0), 1);
+            assert_ne!(Rc::strong_count(&self.rc), 1);
             unsafe {
-                ManuallyDrop::drop(&mut self.0);
+                ManuallyDrop::drop(&mut self.rc);
             }
         }
     }
@@ -474,7 +480,7 @@ impl<T> Deref for RcSlice<T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.rc
     }
 }
 
@@ -510,15 +516,19 @@ impl<T> RcSliceBuilder<T> {
             let (_layout, offset) = Self::layout_for_size(self.capacity);
             let ptr = self.ptr;
             let len = self.len;
+            let capacity = self.capacity;
             mem::forget(self);
             unsafe {
                 ptr::write(
                     ptr.cast::<u8>().as_ptr().sub(offset) as *mut RcBox,
                     [Cell::new(1), Cell::new(1)],
                 );
-                RcSlice(ManuallyDrop::new(Rc::from_raw(
-                    NonNull::slice_from_raw_parts(ptr, len).as_ptr(),
-                )))
+                RcSlice {
+                    rc: ManuallyDrop::new(Rc::from_raw(
+                        NonNull::slice_from_raw_parts(ptr, len).as_ptr(),
+                    )),
+                    capacity,
+                }
             }
         } else {
             RcSlice::new()
