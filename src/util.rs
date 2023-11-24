@@ -535,18 +535,9 @@ impl<T> RcSliceBuilder<T> {
 
         // Normalize the allocation size to a power of 2 or the halfway point
         // between to powers of 2.
-        let leading_zeros = size.leading_zeros();
-        let pow2 = (1usize << (usize::BITS - 1)) >> leading_zeros;
-        let size = if size == pow2 {
-            size
-        } else {
-            let halfway = (3usize << (usize::BITS - 2)) >> leading_zeros;
-            if size > halfway {
-                pow2 << 1
-            } else {
-                halfway
-            }
-        };
+        let next_pow2 = size.next_power_of_two();
+        let gap = next_pow2 / 4 - 1;
+        let size = (size + gap) & !gap;
         (Layout::from_size_align(size, align).unwrap(), offset)
     }
 
