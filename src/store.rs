@@ -51,7 +51,8 @@ use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
 use crate::tree_util::{diff_by_path, merge_join_by_path, Empty, ParseTree, RecurseTree, WithPath};
 use crate::util::{
-    FromBytes, ImmutBString, OsStrExt, RcExt, RcSlice, ReadExt, SliceExt, ToBoxed, Transpose,
+    FromBytes, ImmutBString, OsStrExt, RcExt, RcSlice, RcSliceBuilder, ReadExt, SliceExt, ToBoxed,
+    Transpose,
 };
 use crate::xdiff::{apply, textdiff, PatchInfo};
 use crate::{check_enabled, do_reload, Checks};
@@ -778,26 +779,26 @@ impl RawHgManifest {
 
 #[derive(Deref)]
 #[deref(forward)]
-pub struct RawHgFile(ImmutBString);
+pub struct RawHgFile(RcSlice<u8>);
 
 impl RawHgFile {
     pub const EMPTY_OID: HgFileId =
         HgFileId::from_raw_bytes_array(hex!("b80de5d138758541c5f05265ad144ab9fa86d1db"));
 
     pub fn read(oid: GitFileId, metadata: Option<GitFileMetadataId>) -> Option<Self> {
-        let mut result = Vec::new();
+        let mut result = RcSliceBuilder::new();
         if let Some(metadata) = metadata {
             result.extend_from_slice(b"\x01\n");
             result.extend_from_slice(RawBlob::read(metadata.into())?.as_bytes());
             result.extend_from_slice(b"\x01\n");
         }
         result.extend_from_slice(RawBlob::read(oid.into())?.as_bytes());
-        Some(Self(result.into()))
+        Some(Self(result.into_rc()))
     }
 
     pub fn read_hg(oid: HgFileId) -> Option<Self> {
         if oid == Self::EMPTY_OID {
-            Some(Self(vec![].into()))
+            Some(Self(RcSlice::new()))
         } else {
             let metadata = unsafe { &mut METADATA }
                 .files_meta_mut()
@@ -1925,7 +1926,7 @@ pub fn store_changegroup<R: Read>(metadata: &mut Metadata, input: R, version: u8
                     .unwrap()
                 });
 
-            let mut raw_file = Vec::new();
+            let mut raw_file = RcSliceBuilder::new();
             let mut last_end = 0;
             for diff in file.iter_diff() {
                 if diff.start() > reference_file.len() || diff.start() < last_end {
@@ -1980,7 +1981,7 @@ pub fn store_changegroup<R: Read>(metadata: &mut Metadata, input: R, version: u8
                 };
                 metadata.hg2git_mut().add_note(node.into(), file_oid.into());
             }
-            previous_file = Some((node, RawHgFile(raw_file.into())));
+            previous_file = Some((node, RawHgFile(raw_file.into_rc())));
         }
     }
     drop(progress);
