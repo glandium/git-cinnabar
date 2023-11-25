@@ -523,7 +523,19 @@ impl<'a> GitChangesetPatch<'a> {
 
 #[derive(Deref)]
 #[deref(forward)]
-pub struct RawHgChangeset(pub ImmutBString);
+pub struct RawHgChangeset(ImmutBString);
+
+impl Empty for RawHgChangeset {
+    fn empty() -> RawHgChangeset {
+        RawHgChangeset(Box::new([]))
+    }
+}
+
+impl From<Vec<u8>> for RawHgChangeset {
+    fn from(v: Vec<u8>) -> RawHgChangeset {
+        RawHgChangeset(v.into_boxed_slice())
+    }
+}
 
 impl RawHgChangeset {
     pub fn from_metadata<B: AsRef<[u8]>>(
@@ -766,7 +778,7 @@ impl RawHgManifest {
 
 #[derive(Deref)]
 #[deref(forward)]
-pub struct RawHgFile(pub ImmutBString);
+pub struct RawHgFile(ImmutBString);
 
 impl RawHgFile {
     pub const EMPTY_OID: HgFileId =

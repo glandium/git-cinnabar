@@ -38,7 +38,7 @@ use crate::progress::Progress;
 use crate::store::{
     ChangesetHeads, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest,
 };
-use crate::tree_util::WithPath;
+use crate::tree_util::{Empty, WithPath};
 use crate::util::{FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::textdiff;
 use crate::{get_changes, HELPER_LOCK};
@@ -869,7 +869,7 @@ impl<R: Read> BundleConnection<R> {
             let version = part
                 .get_param("version")
                 .map_or(1, |v| u8::from_str(v).unwrap());
-            let empty_cs = RawHgChangeset(Box::new([]));
+            let empty_cs = RawHgChangeset::empty();
             // TODO: share more code with the equivalent loop in store.rs.
             for chunk in
                 RevChunkIter::new(version, part).progress(|n| format!("Analyzing {n} changesets"))
@@ -903,7 +903,7 @@ impl<R: Read> BundleConnection<R> {
                     die!("Malformed changeset chunk for {node}");
                 }
                 raw_changeset.extend_from_slice(&reference_cs[last_end..]);
-                let raw_changeset = RawHgChangeset(raw_changeset.into());
+                let raw_changeset = RawHgChangeset::from(raw_changeset);
                 let changeset = raw_changeset.parse().unwrap();
                 let branch = changeset
                     .extra()
@@ -1005,16 +1005,16 @@ pub fn create_chunk_data(a: &[u8], b: &[u8]) -> Box<[u8]> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn write_chunk(
+fn write_chunk<T: core::ops::Deref<Target = [u8]>>(
     mut writer: impl Write,
     version: u8,
     node: HgObjectId,
     parent1: HgObjectId,
     parent2: HgObjectId,
     changeset: HgChangesetId,
-    previous: &mut Option<(HgObjectId, Box<[u8]>)>,
+    previous: &mut Option<(HgObjectId, T)>,
     always_previous: bool,
-    mut f: impl FnMut(HgObjectId) -> Box<[u8]>,
+    mut f: impl FnMut(HgObjectId) -> T,
 ) -> io::Result<()> {
     let raw_object = f(node);
     let (previous_node, raw_previous) = match previous.take() {
@@ -1105,8 +1105,7 @@ pub fn create_bundle(
             true,
             |node| {
                 let node = HgChangesetId::from_unchecked(node);
-                let changeset = RawHgChangeset::read(node.to_git().unwrap()).unwrap();
-                changeset.0
+                RawHgChangeset::read(node.to_git().unwrap()).unwrap()
             },
         )
         .unwrap();
@@ -1171,9 +1170,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
             false,
             |node| {
                 let node = HgManifestId::from_unchecked(node);
-                let manifest = RawHgManifest::read(node.to_git().unwrap()).unwrap();
-                // TODO: avoid the copy.
-                manifest.as_ref().to_owned().into_boxed_slice()
+                RawHgManifest::read(node.to_git().unwrap()).unwrap()
             },
         )
         .unwrap();
@@ -1257,7 +1254,7 @@ fn bundle_files<const CHUNK_SIZE: usize>(
                 changeset,
                 &mut previous,
                 false,
-                |oid| RawHgFile::read_hg(HgFileId::from_unchecked(oid)).unwrap().0,
+                |oid| RawHgFile::read_hg(HgFileId::from_unchecked(oid)).unwrap(),
             )
             .unwrap();
         }
