@@ -80,7 +80,7 @@ pub struct Store {
     pub hg2git_cid: CommitId,
     pub git2hg_cid: CommitId,
     pub files_meta_cid: CommitId,
-    hg2git_: OnceCell<hg_notes_tree>,
+    hg2git_: OnceCell<RefCell<hg_notes_tree>>,
     git2hg_: OnceCell<git_notes_tree>,
     files_meta_: OnceCell<hg_notes_tree>,
     pub flags: MetadataFlags,
@@ -146,14 +146,15 @@ impl Store {
         self.manifest_heads_.get().unwrap().borrow_mut()
     }
 
-    pub fn hg2git(&self) -> &hg_notes_tree {
+    pub fn hg2git(&self) -> Ref<hg_notes_tree> {
         self.hg2git_
-            .get_or_init(|| hg_notes_tree::new_with(self.hg2git_cid))
+            .get_or_init(|| RefCell::new(hg_notes_tree::new_with(self.hg2git_cid)))
+            .borrow()
     }
 
-    pub fn hg2git_mut(&mut self) -> &mut hg_notes_tree {
+    pub fn hg2git_mut(&self) -> RefMut<hg_notes_tree> {
         self.hg2git();
-        self.hg2git_.get_mut().unwrap()
+        self.hg2git_.get().unwrap().borrow_mut()
     }
 
     pub fn git2hg(&self) -> &git_notes_tree {
@@ -1291,10 +1292,10 @@ impl Store {
                         CommitId::from_unchecked(git_id),
                     ));
                 }
-                set::<CommitId>(self.hg2git_mut(), hg_id, git_id);
+                set::<CommitId>(&mut self.hg2git_mut(), hg_id, git_id);
             }
             SetWhat::File => {
-                set::<BlobId>(self.hg2git_mut(), hg_id, git_id);
+                set::<BlobId>(&mut self.hg2git_mut(), hg_id, git_id);
             }
             SetWhat::FileMeta => {
                 set::<BlobId>(self.files_meta_mut(), hg_id, git_id);
