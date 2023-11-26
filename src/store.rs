@@ -86,7 +86,7 @@ pub struct Store {
     pub flags: MetadataFlags,
     changeset_heads_: OnceCell<RefCell<ChangesetHeads>>,
     manifest_heads_: OnceCell<RefCell<ManifestHeads>>,
-    tree_cache_: BTreeMap<GitManifestTreeId, TreeId>,
+    tree_cache_: RefCell<BTreeMap<GitManifestTreeId, TreeId>>,
 }
 
 pub static mut STORE: Store = Store::default();
@@ -106,7 +106,7 @@ impl Store {
             flags: MetadataFlags::empty(),
             changeset_heads_: OnceCell::new(),
             manifest_heads_: OnceCell::new(),
-            tree_cache_: BTreeMap::new(),
+            tree_cache_: RefCell::new(BTreeMap::new()),
         }
     }
 }
@@ -1326,10 +1326,10 @@ fn create_git_tree(
 ) -> TreeId {
     let cached = merge_tree_id
         .is_none()
-        .then(|| store.tree_cache_.get(&manifest_tree_id))
+        .then(|| store.tree_cache_.borrow().get(&manifest_tree_id).copied())
         .flatten();
     if let Some(cached) = cached {
-        return *cached;
+        return cached;
     }
     let manifest_tree = GitManifestTree::read(manifest_tree_id).unwrap();
     let merge_tree = merge_tree_id.map_or(GitManifestTree::EMPTY, |tid| {
@@ -1369,7 +1369,10 @@ fn create_git_tree(
             }
             let result =
                 create_git_tree(store, manifest_tree_id, ref_tree_id, entry.clone().left());
-            store.tree_cache_.insert(manifest_tree_id, result);
+            store
+                .tree_cache_
+                .borrow_mut()
+                .insert(manifest_tree_id, result);
             return result;
         }
         let (oid, mode): (GitObjectId, _) = match entry {
@@ -1432,7 +1435,10 @@ fn create_git_tree(
     }
     let result = TreeId::from_unchecked(result.into());
     if merge_tree_id.is_none() {
-        store.tree_cache_.insert(manifest_tree_id, result);
+        store
+            .tree_cache_
+            .borrow_mut()
+            .insert(manifest_tree_id, result);
     }
     result
 }
