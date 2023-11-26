@@ -802,7 +802,7 @@ pub fn get_bundle(
 
     let mut heads = Cow::Borrowed(heads);
     let mut common = find_common(conn, known_branch_heads(store));
-    if common.is_empty() && !has_metadata() && get_initial_bundle(store, conn, remote)? {
+    if common.is_empty() && !has_metadata(store) && get_initial_bundle(store, conn, remote)? {
         // Eliminate the heads that we got from the clonebundle or
         // cinnabarclone
         let lock = HELPER_LOCK.lock();
@@ -855,7 +855,7 @@ fn get_initial_bundle(
                 Err(Some("Server advertizes cinnabarclone but provided a non http/https git repository. Skipping."))
             } else {
                 eprintln!("Fetching cinnabar metadata from {}", url);
-                merge_metadata(url, conn.get_url().cloned(), branch.as_deref()).then_some(()).ok_or(None)
+                merge_metadata(store, url, conn.get_url().cloned(), branch.as_deref()).then_some(()).ok_or(None)
             }
         }) {
             Ok(()) => {

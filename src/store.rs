@@ -173,8 +173,8 @@ impl Store {
     }
 }
 
-pub fn has_metadata() -> bool {
-    unsafe { !STORE.flags.is_empty() }
+pub fn has_metadata(store: &Store) -> bool {
+    !store.flags.is_empty()
 }
 
 macro_rules! hg2git {
@@ -1879,7 +1879,7 @@ pub fn store_changegroup<R: Read>(store: &mut Store, input: R, version: u8) {
             // Keep track of file roots of files with metadata and at least
             // one head that can be traced back to each of those roots.
             // Or, in the case of updates, all heads.
-            if has_metadata()
+            if has_metadata(store)
                 || stored_files.contains_key(&parents[0])
                 || stored_files.contains_key(&parents[1])
             {
@@ -2109,11 +2109,16 @@ fn test_branches_for_url() {
     );
 }
 
-pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) -> bool {
+pub fn merge_metadata(
+    store: &mut Store,
+    git_url: Url,
+    hg_url: Option<Url>,
+    branch: Option<&[u8]>,
+) -> bool {
     // Eventually we'll want to handle a full merge, but for now, we only
     // handle the case where we don't have metadata to begin with.
     // The caller should avoid calling this function otherwise.
-    assert!(!has_metadata());
+    assert!(!has_metadata(store));
     let mut remote_refs = Command::new("git")
         .arg("ls-remote")
         .arg(OsStr::new(git_url.as_ref()))
@@ -2316,7 +2321,7 @@ pub fn merge_metadata(git_url: Url, hg_url: Option<Url>, branch: Option<&[u8]>) 
     }
 
     unsafe {
-        do_reload(Some(metadata_cid));
+        do_reload(store, Some(metadata_cid));
     }
     true
 }
@@ -2451,12 +2456,12 @@ impl Store {
     }
 }
 
-pub unsafe fn init_metadata(c: Option<CommitId>) {
-    STORE = Store::new(c);
+pub unsafe fn init_store(store: &mut Store, c: Option<CommitId>) {
+    *store = Store::new(c);
 }
 
-pub unsafe fn done_metadata() {
-    STORE = Store::default();
+pub unsafe fn done_store(store: &mut Store) {
+    *store = Store::default();
 }
 
 pub fn do_store_metadata(store: &mut Store) -> CommitId {

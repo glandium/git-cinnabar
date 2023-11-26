@@ -119,8 +119,8 @@ use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
 use progress::Progress;
 use sha1::{Digest, Sha1};
 use store::{
-    check_file, check_manifest, create_changeset, do_check_files, do_store_metadata, done_metadata,
-    ensure_store_init, has_metadata, init_metadata, raw_commit_for_changeset, store_git_blob,
+    check_file, check_manifest, create_changeset, do_check_files, do_store_metadata, done_store,
+    ensure_store_init, has_metadata, init_store, raw_commit_for_changeset, store_git_blob,
     store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata,
     RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, Store, BROKEN_REF, CHECKED_REF,
     METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX, STORE,
@@ -189,13 +189,13 @@ unsafe fn init_cinnabar_2() -> bool {
         return false;
     }
     let c = get_oid_committish(METADATA_REF.as_bytes());
-    init_metadata(c);
+    init_store(&mut STORE, c);
     true
 }
 
-pub unsafe fn do_reload(metadata: Option<CommitId>) {
+pub unsafe fn do_reload(store: &mut Store, metadata: Option<CommitId>) {
     let mut c = None;
-    done_metadata();
+    done_store(store);
 
     reset_replace_map();
     if let Some(metadata) = metadata {
@@ -205,7 +205,7 @@ pub unsafe fn do_reload(metadata: Option<CommitId>) {
     } else {
         c = get_oid_committish(METADATA_REF.as_bytes());
     }
-    init_metadata(c);
+    init_store(store, c);
 }
 
 static REF_UPDATES: Lazy<Mutex<HashMap<Box<BStr>, CommitId>>> =
@@ -294,7 +294,7 @@ fn do_done_and_check(store: &mut Store, args: &[&[u8]]) -> bool {
                 .unwrap();
             transaction.commit().unwrap();
         }
-        do_reload(None);
+        do_reload(store, None);
     }
     do_check_files()
 }
@@ -953,7 +953,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
 
     let current_metadata_oid = unsafe {
         let current_metadata_oid = store.metadata_cid;
-        do_reload(Some(CommitId::NULL));
+        do_reload(store, Some(CommitId::NULL));
         store.metadata_cid = current_metadata_oid;
         current_metadata_oid
     };
@@ -2359,7 +2359,7 @@ fn do_fsck(
     full: bool,
     commits: Vec<OsString>,
 ) -> Result<i32, String> {
-    if !has_metadata() {
+    if !has_metadata(store) {
         eprintln!(
             "There does not seem to be any git-cinnabar metadata.\n\
              Is this a git-cinnabar clone?"
@@ -4192,7 +4192,7 @@ fn remote_helper_push(
         let no_topological_heads = info.topological_heads.iter().all(ObjectId::is_null);
         if pushing_anything && local_bases.is_empty() && !no_topological_heads {
             let mut fail = true;
-            if has_metadata() && force {
+            if has_metadata(store) && force {
                 let cinnabar_roots = rev_list([
                     "--topo-order",
                     "--full-history",
@@ -4691,7 +4691,7 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
         )),
         Some(_) | None => Ok(1),
     };
-    done_metadata();
+    done_store(unsafe { &mut STORE });
     match ret {
         Ok(code) => code,
         Err(msg) => {
