@@ -7,7 +7,6 @@ use std::io::Write;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::os::raw::{c_char, c_int, c_uint, c_void};
-use std::ptr;
 
 use crate::git::{CommitId, GitObjectId, TreeId};
 use crate::hg::HgObjectId;
@@ -16,7 +15,7 @@ use crate::libgit::{
     RawTree,
 };
 use crate::oid::{Abbrev, ObjectId};
-use crate::store::{store_git_commit, Store, STORE};
+use crate::store::{store_git_commit, Store};
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug)]
@@ -229,15 +228,14 @@ pub unsafe extern "C" fn add_hg2git(
     );
 }
 
-pub fn store_metadata_notes(notes: &mut cinnabar_notes_tree, reference: CommitId) -> CommitId {
+pub fn store_metadata_notes(
+    notes: &mut cinnabar_notes_tree,
+    reference: CommitId,
+    mode: FileMode,
+) -> CommitId {
     let mut result = object_id::default();
     let mut tree = object_id::default();
     if notes.current.dirty() || notes.additions.dirty() {
-        let mode = if ptr::eq(notes, unsafe { &STORE.hg2git().0 }) {
-            FileMode::GITLINK
-        } else {
-            FileMode::REGULAR | FileMode::RW
-        };
         unsafe {
             cinnabar_write_notes_tree(notes, &mut tree, u16::from(mode).into());
         }
@@ -296,8 +294,8 @@ impl git_notes_tree {
         }
     }
 
-    pub fn store(&mut self, reference: CommitId) -> CommitId {
-        store_metadata_notes(&mut self.0, reference)
+    pub fn store(&mut self, reference: CommitId, mode: FileMode) -> CommitId {
+        store_metadata_notes(&mut self.0, reference, mode)
     }
 }
 
@@ -370,8 +368,8 @@ impl hg_notes_tree {
         }
     }
 
-    pub fn store(&mut self, reference: CommitId) -> CommitId {
-        store_metadata_notes(&mut self.0, reference)
+    pub fn store(&mut self, reference: CommitId, mode: FileMode) -> CommitId {
+        store_metadata_notes(&mut self.0, reference, mode)
     }
 }
 

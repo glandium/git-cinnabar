@@ -2469,11 +2469,15 @@ pub fn do_store_metadata(store: &mut Store) -> CommitId {
     let mut previous = None;
     unsafe {
         let hg2git_cid = store.hg2git_cid;
-        hg2git_ = store.hg2git_mut().store(hg2git_cid);
+        hg2git_ = store.hg2git_mut().store(hg2git_cid, FileMode::GITLINK);
         let git2hg_cid = store.git2hg_cid;
-        git2hg_ = store.git2hg_mut().store(git2hg_cid);
+        git2hg_ = store
+            .git2hg_mut()
+            .store(git2hg_cid, FileMode::REGULAR | FileMode::RW);
         let files_meta_cid = store.files_meta_cid;
-        files_meta_ = store.files_meta_mut().store(files_meta_cid);
+        files_meta_ = store
+            .files_meta_mut()
+            .store(files_meta_cid, FileMode::REGULAR | FileMode::RW);
         manifests = store_manifests_metadata(store);
         changesets = store_changesets_metadata(store);
         if !store.metadata_cid.is_null() {
