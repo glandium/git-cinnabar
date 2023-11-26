@@ -2474,20 +2474,13 @@ impl Store {
                 old_metadata();
             }
         }
-        if let Some(refs) = [
-            // Delete old tag-cache, which may contain incomplete data.
-            "refs/cinnabar/tag-cache",
-            // Delete new-type tag_cache, we don't use it anymore.
-            "refs/cinnabar/tag_cache",
-        ]
-        .iter()
-        .map(|r| resolve_ref(r).map(|cid| (*r, cid)))
-        .collect::<Option<Vec<_>>>()
-        {
+        // Delete new-type tag_cache, we don't use it anymore. Old-type
+        // tag-cache is expected to have been removed by versions >= 0.5.x,
+        // which is a required first step if upgrading from < 0.5.0.
+        let tag_cache = "refs/cinnabar/tag_cache";
+        if let Some(cid) = resolve_ref(tag_cache) {
             let mut transaction = RefTransaction::new().unwrap();
-            for (refname, cid) in refs {
-                transaction.delete(refname, Some(cid), "cleanup").unwrap();
-            }
+            transaction.delete(tag_cache, Some(cid), "cleanup").unwrap();
             transaction.commit().unwrap();
         }
         result
