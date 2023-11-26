@@ -2303,45 +2303,43 @@ fn create_merge_changeset(
 
 pub fn do_create_bundle(
     store: &Store,
-    mut commits: impl Iterator<Item = (CommitId, Box<[CommitId]>)>,
+    commits: impl Iterator<Item = (CommitId, Box<[CommitId]>)>,
     bundlespec: BundleSpec,
     version: u8,
     output: &File,
     replycaps: bool,
 ) -> Result<ChangesetHeads, String> {
-    let changesets = |store: &Store| {
-        commits.next().map(move |(cid, parents)| {
-            if let Some(csid) = GitChangesetId::from_unchecked(cid).to_hg() {
-                let mut parents = parents.iter().copied();
-                let parent1 = parents.next().map_or(HgChangesetId::NULL, |p| {
-                    GitChangesetId::from_unchecked(p).to_hg().unwrap()
-                });
-                let parent2 = parents.next().map_or(HgChangesetId::NULL, |p| {
-                    GitChangesetId::from_unchecked(p).to_hg().unwrap()
-                });
-                assert!(parents.next().is_none());
-                [csid, parent1, parent2]
-            } else if parents.is_empty() {
-                [
-                    create_root_changeset(store, cid),
-                    HgChangesetId::NULL,
-                    HgChangesetId::NULL,
-                ]
-            } else if parents.len() == 1 {
-                let [csid, parent1] = create_simple_changeset(store, cid, parents[0]);
-                [csid, parent1, HgChangesetId::NULL]
-            } else if parents.len() == 2 {
-                create_merge_changeset(
-                    store,
-                    cid,
-                    *parents.get(0).unwrap(),
-                    *parents.get(1).unwrap(),
-                )
-            } else {
-                die!("Pushing octopus merges to mercurial is not supported");
-            }
-        })
-    };
+    let changesets = commits.map(move |(cid, parents)| {
+        if let Some(csid) = GitChangesetId::from_unchecked(cid).to_hg() {
+            let mut parents = parents.iter().copied();
+            let parent1 = parents.next().map_or(HgChangesetId::NULL, |p| {
+                GitChangesetId::from_unchecked(p).to_hg().unwrap()
+            });
+            let parent2 = parents.next().map_or(HgChangesetId::NULL, |p| {
+                GitChangesetId::from_unchecked(p).to_hg().unwrap()
+            });
+            assert!(parents.next().is_none());
+            [csid, parent1, parent2]
+        } else if parents.is_empty() {
+            [
+                create_root_changeset(store, cid),
+                HgChangesetId::NULL,
+                HgChangesetId::NULL,
+            ]
+        } else if parents.len() == 1 {
+            let [csid, parent1] = create_simple_changeset(store, cid, parents[0]);
+            [csid, parent1, HgChangesetId::NULL]
+        } else if parents.len() == 2 {
+            create_merge_changeset(
+                store,
+                cid,
+                *parents.get(0).unwrap(),
+                *parents.get(1).unwrap(),
+            )
+        } else {
+            die!("Pushing octopus merges to mercurial is not supported");
+        }
+    });
     Ok(create_bundle(
         store, changesets, bundlespec, version, output, replycaps,
     ))

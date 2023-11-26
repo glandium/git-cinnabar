@@ -1069,7 +1069,7 @@ fn write_chunk<T: core::ops::Deref<Target = [u8]>>(
 
 pub fn create_bundle(
     store: &Store,
-    mut changesets: impl FnMut(&Store) -> Option<[HgChangesetId; 3]>,
+    changesets: impl Iterator<Item = [HgChangesetId; 3]>,
     bundlespec: BundleSpec,
     version: u8,
     output: &File,
@@ -1094,9 +1094,7 @@ pub fn create_bundle(
     let mut previous = None;
     let mut manifests = IndexMap::new();
 
-    for [node, parent1, parent2] in
-        std::iter::from_fn(|| changesets(store)).progress(|n| format!("Bundling {n} changesets"))
-    {
+    for [node, parent1, parent2] in changesets.progress(|n| format!("Bundling {n} changesets")) {
         // TODO: add branch.
         changeset_heads.add(node, &[parent1, parent2], b"".as_bstr());
 
