@@ -1330,7 +1330,7 @@ fn create_git_tree(
     let merge_tree = merge_tree_id.map_or(GitManifestTree::EMPTY, |tid| {
         GitManifestTree::read(tid).unwrap()
     });
-    let mut tree_buf = Vec::new();
+    let mut tree_buf = Vec::with_capacity(manifest_tree.as_ref().len());
     let mut ref_tree = None;
     for (path, entries) in
         merge_join_by_path(manifest_tree.iter(), merge_tree.iter()).map(WithPath::unzip)
