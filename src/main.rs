@@ -181,20 +181,6 @@ extern "C" {
     fn init_cinnabar(argv0: *const c_char) -> c_int;
 }
 
-pub unsafe fn do_reload(store: &mut Store, metadata: Option<CommitId>) {
-    let mut c = None;
-    done_store(store);
-
-    if let Some(metadata) = metadata {
-        if !metadata.is_null() {
-            c = Some(metadata);
-        }
-    } else {
-        c = get_oid_committish(METADATA_REF.as_bytes());
-    }
-    init_store(store, c);
-}
-
 static REF_UPDATES: Lazy<Mutex<HashMap<Box<BStr>, CommitId>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
@@ -260,7 +246,7 @@ fn do_done_and_check(store: &mut Store, args: &[&[u8]]) -> bool {
                 .unwrap();
             transaction.commit().unwrap();
         }
-        do_reload(store, None);
+        init_store(store, Some(new_metadata));
     }
     do_check_files(store)
 }
@@ -920,7 +906,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
 
     let current_metadata_oid = unsafe {
         let current_metadata_oid = store.metadata_cid;
-        do_reload(store, Some(CommitId::NULL));
+        init_store(store, None);
         store.metadata_cid = current_metadata_oid;
         current_metadata_oid
     };

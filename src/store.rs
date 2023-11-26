@@ -55,7 +55,7 @@ use crate::util::{
     Transpose,
 };
 use crate::xdiff::{apply, textdiff, PatchInfo};
-use crate::{check_enabled, do_reload, Checks};
+use crate::{check_enabled, Checks};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
 pub const REPLACE_REFS_PREFIX: &str = "refs/cinnabar/replace/";
@@ -2334,7 +2334,7 @@ pub fn merge_metadata(
     }
 
     unsafe {
-        do_reload(store, Some(metadata_cid));
+        init_store(store, Some(metadata_cid));
     }
     true
 }
