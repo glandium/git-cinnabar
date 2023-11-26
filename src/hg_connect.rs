@@ -746,7 +746,9 @@ pub fn find_common(
                     .map(|(&c, data)| {
                         let git_cs = GitChangesetId::from_unchecked(c);
                         (
-                            *data.hg_node.get_or_insert_with(|| git_cs.to_hg().unwrap()),
+                            *data
+                                .hg_node
+                                .get_or_insert_with(|| git_cs.to_hg(store).unwrap()),
                             git_cs,
                         )
                     }),

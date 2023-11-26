@@ -66,6 +66,7 @@ pub enum GraftError {
 }
 
 pub fn graft(
+    store: &Store,
     changeset_id: HgChangesetId,
     raw_changeset: &RawHgChangeset,
     tree: TreeId,
@@ -137,7 +138,7 @@ pub fn graft(
     // on a repo that was already handled by cinnabar.
     if candidates.len() > 1 {
         candidates.retain(|(_, c)| {
-            GeneratedGitChangesetMetadata::generate(c, changeset_id, raw_changeset)
+            GeneratedGitChangesetMetadata::generate(store, c, changeset_id, raw_changeset)
                 .unwrap()
                 .patch()
                 .is_some()

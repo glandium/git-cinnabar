@@ -1110,7 +1110,7 @@ pub fn create_bundle(
             true,
             |node| {
                 let node = HgChangesetId::from_unchecked(node);
-                RawHgChangeset::read(node.to_git(store).unwrap()).unwrap()
+                RawHgChangeset::read(store, node.to_git(store).unwrap()).unwrap()
             },
         )
         .unwrap();
@@ -1122,7 +1122,7 @@ pub fn create_bundle(
             let manifest_commit = manifest_commit.parse().unwrap();
             HgManifestId::from_bytes(manifest_commit.body()).unwrap()
         };
-        let metadata = RawGitChangesetMetadata::read(node.to_git(store).unwrap()).unwrap();
+        let metadata = RawGitChangesetMetadata::read(store, node.to_git(store).unwrap()).unwrap();
         let metadata = metadata.parse().unwrap();
         let manifest = metadata.manifest_id();
         if !manifest.is_null() && !manifests.contains_key(&manifest) {

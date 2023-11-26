@@ -321,10 +321,10 @@ fn do_one_hg2git(store: &Store, sha1: Abbrev<HgChangesetId>) -> String {
     )
 }
 
-fn do_one_git2hg(_store: &Store, committish: OsString) -> String {
+fn do_one_git2hg(store: &Store, committish: OsString) -> String {
     let note = get_oid_committish(committish.as_bytes())
         .map(lookup_replace_commit)
-        .and_then(|oid| GitChangesetId::from_unchecked(oid).to_hg());
+        .and_then(|oid| GitChangesetId::from_unchecked(oid).to_hg(store));
     format!("{}", note.unwrap_or(HgChangesetId::NULL))
 }
 
@@ -384,9 +384,10 @@ fn do_data_changeset(store: &Store, rev: Abbrev<HgChangesetId>) -> Result<(), St
         .hg2git_mut()
         .get_note_abbrev(rev)
         .ok_or_else(|| format!("Unknown changeset id: {}", rev))?;
-    let changeset = RawHgChangeset::read(GitChangesetId::from_unchecked(CommitId::from_unchecked(
-        commit_id,
-    )))
+    let changeset = RawHgChangeset::read(
+        store,
+        GitChangesetId::from_unchecked(CommitId::from_unchecked(commit_id)),
+    )
     .unwrap();
     stdout().write_all(&changeset).map_err(|e| e.to_string())
 }
@@ -2021,7 +2022,7 @@ fn create_simple_manifest(
     // and what the code looks like. And code should be shared with
     // `create_root_changeset`.
     let parent = GitChangesetId::from_unchecked(parent);
-    let parent_metadata = RawGitChangesetMetadata::read(parent).unwrap();
+    let parent_metadata = RawGitChangesetMetadata::read(store, parent).unwrap();
     let parent_mid = parent_metadata.parse().unwrap().manifest_id();
     let parent_manifest = RawHgManifest::read(parent_mid.to_git(store).unwrap()).unwrap();
     let mut extra_diff = Vec::new();
@@ -2117,7 +2118,7 @@ fn create_simple_changeset(store: &Store, cid: CommitId, parent: CommitId) -> [H
     unsafe {
         ensure_store_init();
     }
-    let parent_csid = GitChangesetId::from_unchecked(parent).to_hg().unwrap();
+    let parent_csid = GitChangesetId::from_unchecked(parent).to_hg(store).unwrap();
     let (mid, paths) = create_simple_manifest(store, cid, parent);
     let (csid, _) = create_changeset(store, cid, mid, paths);
     [csid, parent_csid]
@@ -2144,7 +2145,7 @@ fn create_merge_changeset(
     }
     let cs_mn = |c: CommitId| {
         let csid = GitChangesetId::from_unchecked(c);
-        let metadata = RawGitChangesetMetadata::read(csid).unwrap();
+        let metadata = RawGitChangesetMetadata::read(store, csid).unwrap();
         let metadata = metadata.parse().unwrap();
         (metadata.changeset_id(), metadata.manifest_id())
     };
@@ -2311,13 +2312,13 @@ pub fn do_create_bundle(
     replycaps: bool,
 ) -> Result<ChangesetHeads, String> {
     let changesets = commits.map(move |(cid, parents)| {
-        if let Some(csid) = GitChangesetId::from_unchecked(cid).to_hg() {
+        if let Some(csid) = GitChangesetId::from_unchecked(cid).to_hg(store) {
             let mut parents = parents.iter().copied();
             let parent1 = parents.next().map_or(HgChangesetId::NULL, |p| {
-                GitChangesetId::from_unchecked(p).to_hg().unwrap()
+                GitChangesetId::from_unchecked(p).to_hg(store).unwrap()
             });
             let parent2 = parents.next().map_or(HgChangesetId::NULL, |p| {
-                GitChangesetId::from_unchecked(p).to_hg().unwrap()
+                GitChangesetId::from_unchecked(p).to_hg(store).unwrap()
             });
             assert!(parents.next().is_none());
             [csid, parent1, parent2]
@@ -2482,7 +2483,7 @@ fn do_fsck(
         }
         let commit = RawCommit::read(c).unwrap();
         let commit = commit.parse().unwrap();
-        let metadata = if let Some(metadata) = RawGitChangesetMetadata::read(git_cid) {
+        let metadata = if let Some(metadata) = RawGitChangesetMetadata::read(store, git_cid) {
             metadata
         } else {
             report(format!("Missing git2hg metadata for git commit {}", c));
@@ -2504,7 +2505,7 @@ fn do_fsck(
                 continue;
             }
         }
-        let raw_changeset = RawHgChangeset::from_metadata(&commit, &metadata).unwrap();
+        let raw_changeset = RawHgChangeset::from_metadata(store, &commit, &metadata).unwrap();
         let mut sha1 = Sha1::new();
         commit
             .parents()
@@ -2512,7 +2513,7 @@ fn do_fsck(
             .copied()
             .map(|p| {
                 GitChangesetId::from_unchecked(lookup_replace_commit(p))
-                    .to_hg()
+                    .to_hg(store)
                     .unwrap()
             })
             .chain(repeat(HgChangesetId::NULL))
@@ -2825,7 +2826,7 @@ fn do_fsck_full(
                     let git_cs = GitChangesetId::from_bytes(c.as_bytes()).map_err(|_| {
                         format!("Invalid commit or changeset: {}", c.to_string_lossy())
                     })?;
-                    if git_cs.to_hg().is_some() {
+                    if git_cs.to_hg(store).is_some() {
                         return Ok(git_cs.into());
                     }
                     let cs = HgChangesetId::from_bytes(c.as_bytes()).map_err(|_| {
@@ -2867,7 +2868,7 @@ fn do_fsck_full(
     for cid in commit_queue.progress(|n| format!("Checking {n} changesets")) {
         let cid = lookup_replace_commit(cid);
         let cid = GitChangesetId::from_unchecked(cid);
-        let metadata = if let Some(metadata) = RawGitChangesetMetadata::read(cid) {
+        let metadata = if let Some(metadata) = RawGitChangesetMetadata::read(store, cid) {
             metadata
         } else {
             report(format!("Missing note for git commit: {}", cid));
@@ -2904,7 +2905,7 @@ fn do_fsck_full(
         }
         seen_changesets.insert(changeset_id);
         let raw_changeset =
-            if let Some(raw_changeset) = RawHgChangeset::from_metadata(&commit, &metadata) {
+            if let Some(raw_changeset) = RawHgChangeset::from_metadata(store, &commit, &metadata) {
                 raw_changeset
             } else {
                 report(format!(
@@ -2921,7 +2922,7 @@ fn do_fsck_full(
             .copied()
             .map(|p| {
                 GitChangesetId::from_unchecked(lookup_replace_commit(p))
-                    .to_hg()
+                    .to_hg(store)
                     .unwrap()
             })
             .collect_vec();
@@ -2973,7 +2974,8 @@ fn do_fsck_full(
         changeset_heads.add(changeset_id, &hg_parents, branch.as_bstr());
 
         let fresh_metadata =
-            GeneratedGitChangesetMetadata::generate(&commit, changeset_id, &raw_changeset).unwrap();
+            GeneratedGitChangesetMetadata::generate(store, &commit, changeset_id, &raw_changeset)
+                .unwrap();
         if fresh_metadata != metadata {
             fix(format!("Adjusted changeset metadata for {}", changeset_id));
             unsafe {
@@ -3021,7 +3023,8 @@ fn do_fsck_full(
         let hg_manifest_parents = hg_parents
             .iter()
             .map(|p| {
-                let metadata = RawGitChangesetMetadata::read(p.to_git(store).unwrap()).unwrap();
+                let metadata =
+                    RawGitChangesetMetadata::read(store, p.to_git(store).unwrap()).unwrap();
                 let metadata = metadata.parse().unwrap();
                 metadata.manifest_id()
             })
@@ -3184,7 +3187,7 @@ fn do_fsck_full(
         });
         for cid in dangling {
             fix(format!("Removing dangling note for commit {}", cid));
-            let metadata = RawGitChangesetMetadata::read(cid).unwrap();
+            let metadata = RawGitChangesetMetadata::read(store, cid).unwrap();
             let metadata = metadata.parse().unwrap();
             store.set(
                 SetWhat::ChangesetMeta,
@@ -3810,7 +3813,7 @@ fn repo_list(conn: &mut dyn HgRepo, remote: Option<&str>, for_push: bool) -> Rem
             for head in heads.iter().rev() {
                 tip = Some(head);
                 if let Some(git_head) = head.to_git(store) {
-                    let metadata = RawGitChangesetMetadata::read(git_head).unwrap();
+                    let metadata = RawGitChangesetMetadata::read(store, git_head).unwrap();
                     let metadata = metadata.parse().unwrap();
                     if metadata.extra().and_then(|e| e.get(b"close")).is_some() {
                         continue;
@@ -4179,7 +4182,7 @@ fn remote_helper_push(
         })
         .chain(push_commits.into_iter().map(Ok))
         .map_ok(GitChangesetId::from_unchecked)
-        .filter_map_ok(GitChangesetId::to_hg)
+        .filter_map_ok(|c| c.to_hg(store))
         .unique()
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -4195,7 +4198,7 @@ fn remote_helper_push(
                     "--max-parents=0",
                     "refs/cinnabar/metadata^",
                 ])
-                .filter_map(|c| GitChangesetId::from_unchecked(c).to_hg())
+                .filter_map(|c| GitChangesetId::from_unchecked(c).to_hg(store))
                 .collect_vec();
                 fail = !conn.known(&cinnabar_roots).iter().any(|k| *k);
             }
@@ -4349,7 +4352,7 @@ fn remote_helper_push(
                 let name = percent_decode(name).decode_utf8().unwrap();
                 let csid = source_cid
                     .as_ref()
-                    .map(|cid| GitChangesetId::from_unchecked(*cid).to_hg().unwrap());
+                    .map(|cid| GitChangesetId::from_unchecked(*cid).to_hg(store).unwrap());
                 conn.require_capability(b"pushkey");
                 let response = conn.pushkey(
                     "bookmarks",

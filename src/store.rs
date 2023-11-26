@@ -202,10 +202,10 @@ hg2git!(HgManifestId => GitManifestId);
 hg2git!(HgFileId => GitFileId);
 
 impl GitChangesetId {
-    pub fn to_hg(self) -> Option<HgChangesetId> {
+    pub fn to_hg(self, store: &Store) -> Option<HgChangesetId> {
         //TODO: avoid repeatedly reading metadata for a given changeset.
         //The equivalent python code was keeping a LRU cache.
-        let metadata = RawGitChangesetMetadata::read(self);
+        let metadata = RawGitChangesetMetadata::read(store, self);
         metadata
             .as_ref()
             .and_then(RawGitChangesetMetadata::parse)
@@ -216,8 +216,8 @@ impl GitChangesetId {
 pub struct RawGitChangesetMetadata(RawBlob);
 
 impl RawGitChangesetMetadata {
-    pub fn read(changeset_id: GitChangesetId) -> Option<Self> {
-        Self::read_from_notes_tree(&mut unsafe { &STORE }.git2hg_mut(), changeset_id)
+    pub fn read(store: &Store, changeset_id: GitChangesetId) -> Option<Self> {
+        Self::read_from_notes_tree(&mut store.git2hg_mut(), changeset_id)
     }
 
     pub fn read_from_notes_tree(
@@ -344,6 +344,7 @@ pub type GeneratedGitChangesetMetadata = GitChangesetMetadata<ImmutBString>;
 
 impl GeneratedGitChangesetMetadata {
     pub fn generate(
+        store: &Store,
         commit: &Commit,
         changeset_id: HgChangesetId,
         raw_changeset: &RawHgChangeset,
@@ -379,7 +380,7 @@ impl GeneratedGitChangesetMetadata {
             files,
             patch: None,
         };
-        let new = RawHgChangeset::from_metadata(commit, &temp)?;
+        let new = RawHgChangeset::from_metadata(store, commit, &temp)?;
         if **raw_changeset != *new {
             // TODO: produce a better patch (byte_diff). In the meanwhile, we
             // do an approximation by taking the by-line diff from textdiff
@@ -545,6 +546,7 @@ impl From<Vec<u8>> for RawHgChangeset {
 
 impl RawHgChangeset {
     pub fn from_metadata<B: AsRef<[u8]>>(
+        store: &Store,
         commit: &Commit,
         metadata: &GitChangesetMetadata<B>,
     ) -> Option<Self> {
@@ -605,7 +607,7 @@ impl RawHgChangeset {
                 let mut parents = commit
                     .parents()
                     .iter()
-                    .map(|p| GitChangesetId::from_unchecked(*p).to_hg())
+                    .map(|p| GitChangesetId::from_unchecked(*p).to_hg(store))
                     .chain(repeat(Some(HgChangesetId::NULL)))
                     .take(2)
                     .collect::<Option<Vec<_>>>()?;
@@ -623,12 +625,12 @@ impl RawHgChangeset {
         Some(RawHgChangeset(changeset.into()))
     }
 
-    pub fn read(oid: GitChangesetId) -> Option<Self> {
+    pub fn read(store: &Store, oid: GitChangesetId) -> Option<Self> {
         let commit = RawCommit::read(oid.into())?;
         let commit = commit.parse()?;
-        let metadata = RawGitChangesetMetadata::read(oid)?;
+        let metadata = RawGitChangesetMetadata::read(store, oid)?;
         let metadata = metadata.parse()?;
-        Self::from_metadata(&commit, &metadata)
+        Self::from_metadata(store, &commit, &metadata)
     }
 
     pub fn parse(&self) -> Option<HgChangeset> {
@@ -1266,7 +1268,7 @@ impl Store {
                 if git_id.is_null() {
                     self.hg2git_mut().remove_note(hg_id);
                 } else if let Ok(ref mut commit) = CommitId::try_from(git_id) {
-                    handle_changeset_conflict(HgChangesetId::from_unchecked(hg_id), commit);
+                    handle_changeset_conflict(self, HgChangesetId::from_unchecked(hg_id), commit);
                     self.hg2git_mut().add_note(hg_id, (*commit).into());
                 } else {
                     die!("Invalid object");
@@ -1480,9 +1482,10 @@ fn store_changeset(
     let tree_id = create_git_tree(store, manifest_tree_id, ref_tree, None);
 
     let (commit_id, metadata_id, transition) =
-        match graft(changeset_id, raw_changeset, tree_id, &git_parents) {
+        match graft(store, changeset_id, raw_changeset, tree_id, &git_parents) {
             Ok(Some(commit_id)) => {
                 let metadata = GeneratedGitChangesetMetadata::generate(
+                    store,
                     &RawCommit::read(commit_id).unwrap().parse().unwrap(),
                     changeset_id,
                     raw_changeset,
@@ -1516,6 +1519,7 @@ fn store_changeset(
         let commit_id = CommitId::from_unchecked(GitObjectId::from(result_oid));
 
         let metadata = GeneratedGitChangesetMetadata::generate(
+            store,
             &RawCommit::read(commit_id).unwrap().parse().unwrap(),
             changeset_id,
             raw_changeset,
@@ -1563,7 +1567,7 @@ fn store_changeset(
     Ok(result)
 }
 
-fn handle_changeset_conflict(hg_id: HgChangesetId, git_id: &mut CommitId) {
+fn handle_changeset_conflict(store: &Store, hg_id: HgChangesetId, git_id: &mut CommitId) {
     // There are cases where two changesets would map to the same git
     // commit because their differences are not in information stored in
     // the git commit (different manifest node, but identical tree ;
@@ -1572,7 +1576,7 @@ fn handle_changeset_conflict(hg_id: HgChangesetId, git_id: &mut CommitId) {
     // we find a commit that doesn't map to another changeset.
 
     let mut commit_data = None;
-    while let Some(existing_hg_id) = GitChangesetId::from_unchecked(*git_id).to_hg() {
+    while let Some(existing_hg_id) = GitChangesetId::from_unchecked(*git_id).to_hg(store) {
         // We might just already have the changeset in store.
         if existing_hg_id == hg_id {
             break;
@@ -1650,7 +1654,7 @@ pub fn create_changeset(
     let commit = commit.parse().unwrap();
     let branch = commit.parents().get(0).and_then(|p| {
         let cs_metadata =
-            RawGitChangesetMetadata::read(GitChangesetId::from_unchecked(*p)).unwrap();
+            RawGitChangesetMetadata::read(store, GitChangesetId::from_unchecked(*p)).unwrap();
         let cs_metadata = cs_metadata.parse().unwrap();
         cs_metadata
             .extra()
@@ -1663,12 +1667,12 @@ pub fn create_changeset(
         extra.dump_into(&mut buf);
         cs_metadata.extra = Some(buf.into_boxed_slice());
     }
-    let changeset = RawHgChangeset::from_metadata(&commit, &cs_metadata).unwrap();
+    let changeset = RawHgChangeset::from_metadata(store, &commit, &cs_metadata).unwrap();
     let mut hash = HgChangesetId::create();
     let parents = commit
         .parents()
         .iter()
-        .map(|p| GitChangesetId::from_unchecked(*p).to_hg())
+        .map(|p| GitChangesetId::from_unchecked(*p).to_hg(store))
         .collect::<Option<Vec<_>>>()
         .unwrap();
     for p in parents
@@ -2006,7 +2010,7 @@ pub fn store_changegroup<R: Read>(store: &Store, input: R, version: u8) {
         } else if delta_node.is_null() {
             RawHgChangeset(Box::new([]))
         } else {
-            RawHgChangeset::read(delta_node.to_git(store).unwrap()).unwrap()
+            RawHgChangeset::read(store, delta_node.to_git(store).unwrap()).unwrap()
         };
 
         let mut last_end = 0;
