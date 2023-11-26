@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::Cow;
-use std::cell::{Cell, OnceCell};
+use std::cell::{Cell, OnceCell, Ref, RefCell, RefMut};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::ffi::OsStr;
 use std::hash::Hash;
@@ -84,7 +84,7 @@ pub struct Store {
     git2hg_: OnceCell<git_notes_tree>,
     files_meta_: OnceCell<hg_notes_tree>,
     pub flags: MetadataFlags,
-    changeset_heads_: OnceCell<ChangesetHeads>,
+    changeset_heads_: OnceCell<RefCell<ChangesetHeads>>,
     manifest_heads_: OnceCell<ManifestHeads>,
     tree_cache_: BTreeMap<GitManifestTreeId, TreeId>,
 }
@@ -112,19 +112,21 @@ impl Store {
 }
 
 impl Store {
-    pub fn changeset_heads(&self) -> &ChangesetHeads {
-        self.changeset_heads_.get_or_init(|| {
-            if self.changesets_cid.is_null() {
-                ChangesetHeads::new()
-            } else {
-                ChangesetHeads::from_metadata(self.changesets_cid)
-            }
-        })
+    pub fn changeset_heads(&self) -> Ref<ChangesetHeads> {
+        self.changeset_heads_
+            .get_or_init(|| {
+                RefCell::new(if self.changesets_cid.is_null() {
+                    ChangesetHeads::new()
+                } else {
+                    ChangesetHeads::from_metadata(self.changesets_cid)
+                })
+            })
+            .borrow()
     }
 
-    pub fn changeset_heads_mut(&mut self) -> &mut ChangesetHeads {
+    pub fn changeset_heads_mut(&self) -> RefMut<ChangesetHeads> {
         self.changeset_heads();
-        self.changeset_heads_.get_mut().unwrap()
+        self.changeset_heads_.get().unwrap().borrow_mut()
     }
 
     pub fn manifest_heads(&self) -> &ManifestHeads {
@@ -1212,8 +1214,8 @@ pub fn clear_manifest_heads(store: &mut Store) {
     *heads = ManifestHeads::new();
 }
 
-pub fn set_changeset_heads(store: &mut Store, new_heads: ChangesetHeads) {
-    let heads = store.changeset_heads_mut();
+pub fn set_changeset_heads(store: &Store, new_heads: ChangesetHeads) {
+    let mut heads = store.changeset_heads_mut();
     *heads = new_heads;
 }
 
@@ -1542,7 +1544,7 @@ fn store_changeset(
         metadata_id.into(),
     );
 
-    let heads = store.changeset_heads_mut();
+    let mut heads = store.changeset_heads_mut();
     let branch = changeset
         .extra()
         .and_then(|e| e.get(b"branch"))
@@ -1687,7 +1689,7 @@ pub fn create_changeset(
             blob_oid.clone().into(),
         );
     }
-    let heads = store.changeset_heads_mut();
+    let mut heads = store.changeset_heads_mut();
     let branch = branch.as_deref().unwrap_or(b"default").as_bstr();
     heads.add(cs_metadata.changeset_id, &parents, branch);
     let cs_metadata_id =
