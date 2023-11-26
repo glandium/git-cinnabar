@@ -180,7 +180,6 @@ extern "C" {
 
     fn init_cinnabar(argv0: *const c_char);
 
-    fn reset_replace_map();
     static nongit: c_int;
 }
 
@@ -188,7 +187,6 @@ pub unsafe fn do_reload(store: &mut Store, metadata: Option<CommitId>) {
     let mut c = None;
     done_store(store);
 
-    reset_replace_map();
     if let Some(metadata) = metadata {
         if !metadata.is_null() {
             c = Some(metadata);

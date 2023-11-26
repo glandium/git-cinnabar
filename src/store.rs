@@ -2487,6 +2487,16 @@ impl Store {
     }
 }
 
+impl Drop for Store {
+    fn drop(&mut self) {
+        if has_metadata(self) {
+            unsafe {
+                reset_replace_map();
+            }
+        }
+    }
+}
+
 pub unsafe fn init_store(store: &mut Store, c: Option<CommitId>) {
     *store = Store::new(c);
 }
