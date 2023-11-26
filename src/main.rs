@@ -3610,10 +3610,7 @@ pub fn main() {
     std::process::exit(ret);
 }
 
-fn remote_helper_tags_list(mut stdout: impl Write) {
-    Lazy::force(&INIT_CINNABAR_2);
-    let _lock = HELPER_LOCK.lock().unwrap();
-    let store = unsafe { &STORE };
+fn remote_helper_tags_list(store: &Store, mut stdout: impl Write) {
     let tags = store.get_tags();
     let tags = tags
         .iter()
@@ -4533,7 +4530,8 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                 };
                 if url.scheme() == "tags" {
                     assert!(!for_push);
-                    remote_helper_tags_list(&mut stdout);
+                    Lazy::force(&INIT_CINNABAR_2);
+                    remote_helper_tags_list(unsafe { &STORE }, &mut stdout);
                 } else {
                     info = Some(remote_helper_repo_list(
                         unsafe { HAS_GIT_REPO.then_some(&STORE) },
