@@ -344,8 +344,6 @@ const struct object_id *get_worktree_head_oid(const struct worktree *wr)
 	return &wr->head_oid;
 }
 
-int nongit = 0;
-
 extern NORETURN void do_panic(const char *err, size_t len);
 
 static NORETURN void die_panic(const char *err, va_list params)
@@ -355,8 +353,10 @@ static NORETURN void die_panic(const char *err, va_list params)
 	do_panic(msg, (size_t)(len < 0) ? 0 : len);
 }
 
-void init_cinnabar(const char *argv0)
+int init_cinnabar(const char *argv0)
 {
+	int nongit = 0;
+
 	set_die_routine(die_panic);
 
 	// Initialization from common-main.c.
@@ -377,6 +377,8 @@ void init_cinnabar(const char *argv0)
 	cleanup_git_config();
 	save_commit_buffer = 0;
 	warn_on_object_refname_ambiguity = 0;
+
+	return !nongit;
 }
 
 int common_exit(const char *file, int line, int code)

@@ -178,9 +178,7 @@ extern "C" {
     #[cfg(windows)]
     fn wmain(argc: c_int, argv: *const *const u16) -> c_int;
 
-    fn init_cinnabar(argv0: *const c_char);
-
-    static nongit: c_int;
+    fn init_cinnabar(argv0: *const c_char) -> c_int;
 }
 
 pub unsafe fn do_reload(store: &mut Store, metadata: Option<CommitId>) {
@@ -217,7 +215,7 @@ fn dump_ref_updates() {
 }
 
 static MAYBE_INIT_CINNABAR_2: Lazy<Option<()>> = Lazy::new(|| unsafe {
-    if nongit != 0 {
+    if !HAS_GIT_REPO {
         return None;
     }
     let c = get_oid_committish(METADATA_REF.as_bytes());
@@ -4609,6 +4607,8 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
     Ok(0)
 }
 
+static mut HAS_GIT_REPO: bool = false;
+
 #[no_mangle]
 unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> c_int {
     let now = Instant::now();
@@ -4639,7 +4639,7 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
             );
         }
     }));
-    init_cinnabar(exe.as_deref().unwrap_or(argv0).as_ptr());
+    HAS_GIT_REPO = init_cinnabar(exe.as_deref().unwrap_or(argv0).as_ptr()) != 0;
     logging::init(now);
 
     let ret = match argv0_path.file_stem().and_then(OsStr::to_str) {
