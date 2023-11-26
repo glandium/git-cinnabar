@@ -87,7 +87,6 @@ pub struct Store {
     changeset_heads_: OnceCell<ChangesetHeads>,
     manifest_heads_: OnceCell<ManifestHeads>,
     tree_cache_: BTreeMap<GitManifestTreeId, TreeId>,
-    stored_files: BTreeMap<HgFileId, [HgFileId; 2]>,
 }
 
 pub static mut STORE: Store = Store::default();
@@ -108,7 +107,6 @@ impl Store {
             changeset_heads_: OnceCell::new(),
             manifest_heads_: OnceCell::new(),
             tree_cache_: BTreeMap::new(),
-            stored_files: BTreeMap::new(),
         }
     }
 }
@@ -1740,16 +1738,19 @@ pub unsafe extern "C" fn check_manifest(oid: *const object_id) -> c_int {
     }
 }
 
+static STORED_FILES: Mutex<BTreeMap<HgFileId, [HgFileId; 2]>> = Mutex::new(BTreeMap::new());
+
 pub fn check_file(node: HgFileId, p1: HgFileId, p2: HgFileId) -> bool {
     let data = RawHgFile::read_hg(node).unwrap();
     crate::hg_data::find_file_parents(node, Some(p1), Some(p2), &data).is_some()
 }
 
-pub fn do_check_files(store: &Store) -> bool {
+pub fn do_check_files() -> bool {
     // Try to detect issue #207 as early as possible.
     let mut busted = false;
-    for (&node, &[p1, p2]) in store
-        .stored_files
+    for (&node, &[p1, p2]) in STORED_FILES
+        .lock()
+        .unwrap()
         .iter()
         .progress(|n| format!("Checking {n} imported file root and head revisions"))
     {
@@ -1859,6 +1860,7 @@ pub fn store_changegroup<R: Read>(store: &mut Store, input: R, version: u8) {
             files.get()
         )
     });
+    let mut stored_files = STORED_FILES.lock().unwrap();
     let null_parents = [HgFileId::NULL; 2];
     while {
         let buf = read_rev_chunk(&mut input);
@@ -1878,22 +1880,22 @@ pub fn store_changegroup<R: Read>(store: &mut Store, input: R, version: u8) {
             // one head that can be traced back to each of those roots.
             // Or, in the case of updates, all heads.
             if has_metadata(store)
-                || store.stored_files.contains_key(&parents[0])
-                || store.stored_files.contains_key(&parents[1])
+                || stored_files.contains_key(&parents[0])
+                || stored_files.contains_key(&parents[1])
             {
-                store.stored_files.insert(node, parents);
+                stored_files.insert(node, parents);
                 for p in parents.into_iter() {
                     if p.is_null() {
                         continue;
                     }
-                    if store.stored_files.get(&p) != Some(&null_parents) {
-                        store.stored_files.remove(&p);
+                    if stored_files.get(&p) != Some(&null_parents) {
+                        stored_files.remove(&p);
                     }
                 }
             } else if parents == null_parents {
                 if let Some(diff) = file.iter_diff().next() {
                     if diff.start() == 0 && diff.data().get(..2) == Some(b"\x01\n") {
-                        store.stored_files.insert(node, parents);
+                        stored_files.insert(node, parents);
                     }
                 }
             }
