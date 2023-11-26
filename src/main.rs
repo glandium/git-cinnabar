@@ -605,7 +605,7 @@ fn do_fetch(store: &mut Store, remote: &OsStr, revs: &[OsString]) -> Result<(), 
         .and_then(|r| (!r.starts_with("hg://") && !r.starts_with("hg::")).then_some(r));
 
     if graft_config_enabled(remote)?.unwrap_or(false) {
-        init_graft();
+        init_graft(store);
     }
 
     get_bundle(store, &mut *conn, &full_revs, &HashSet::new(), remote)?;
@@ -961,7 +961,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
     check_graft_refs();
 
     if graft_config_enabled(None)?.unwrap_or(false) {
-        init_graft();
+        init_graft(store);
     }
 
     let mut old_to_hg = |cid| {
@@ -1811,7 +1811,7 @@ fn do_unbundle(store: &mut Store, clonebundle: bool, mut url: OsString) -> Resul
         Err(format!("{} urls are not supported.", url.scheme()))?;
     }
     if graft_config_enabled(None)?.unwrap_or(false) {
-        init_graft();
+        init_graft(store);
     }
     if clonebundle {
         let mut conn = get_connection(&url).unwrap();
@@ -3981,7 +3981,7 @@ fn remote_helper_import(
     if !unknown_wanted_heads.is_empty() {
         tags = Some(unsafe { &STORE }.get_tags());
         if graft_config_enabled(remote)?.unwrap_or(false) {
-            init_graft();
+            init_graft(unsafe { &STORE });
         }
         import_bundle(
             unsafe { &mut STORE },

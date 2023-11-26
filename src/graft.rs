@@ -15,7 +15,7 @@ use crate::hg::HgChangesetId;
 use crate::hg_data::{GitAuthorship, HgAuthorship};
 use crate::libgit::{lookup_replace_commit, rev_list, RawCommit};
 use crate::progress::Progress;
-use crate::store::{has_metadata, GeneratedGitChangesetMetadata, RawHgChangeset, STORE};
+use crate::store::{has_metadata, GeneratedGitChangesetMetadata, RawHgChangeset, Store};
 
 extern "C" {
     fn replace_map_size() -> c_uint;
@@ -38,7 +38,7 @@ pub fn graft_finish() -> Option<bool> {
     }
 }
 
-pub fn init_graft() {
+pub fn init_graft(store: &Store) {
     let mut args = vec![
         "--full-history",
         "--exclude=refs/cinnabar/*",
@@ -46,7 +46,7 @@ pub fn init_graft() {
         "--exclude=refs/original/*",
         "--all",
     ];
-    if has_metadata(unsafe { &STORE }) {
+    if has_metadata(store) {
         args.push("--not");
         args.push("refs/cinnabar/metadata^");
     }
