@@ -8,7 +8,7 @@
 #include "hg-data.h"
 #include "cinnabar-notes.h"
 
-struct Metadata;
+struct Store;
 
 #define METADATA_REF "refs/cinnabar/metadata"
 
@@ -40,7 +40,7 @@ unsigned int replace_map_tablesize(void);
 
 const struct object_id *repo_lookup_replace_object(
 	struct repository *r, const struct object_id *oid);
-const struct object_id *resolve_hg2git(struct Metadata *metadata,
+const struct object_id *resolve_hg2git(struct Store *store,
                                        const struct hg_object_id *oid);
 
 struct commit;

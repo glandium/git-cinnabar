@@ -122,8 +122,8 @@ use store::{
     check_file, check_manifest, create_changeset, do_check_files, do_store_metadata, done_metadata,
     ensure_store_init, has_metadata, init_metadata, raw_commit_for_changeset, store_git_blob,
     store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata,
-    RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHECKED_REF, METADATA,
-    METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
+    RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHECKED_REF, METADATA_REF,
+    NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX, STORE,
 };
 use tree_util::{diff_by_path, RecurseTree};
 use url::Url;
@@ -278,7 +278,7 @@ fn do_done_and_check(args: &[&[u8]]) -> bool {
             error!(target: "root", "Nothing to graft");
             return false;
         }
-        let new_metadata = do_store_metadata(&mut METADATA);
+        let new_metadata = do_store_metadata(&mut STORE);
         do_cleanup(0);
         set_metadata_to(
             Some(new_metadata),
@@ -312,7 +312,7 @@ pub fn prepare_arg(arg: OsString) -> Vec<u16> {
 
 fn do_one_hg2git(sha1: Abbrev<HgChangesetId>) -> String {
     format!("{}", unsafe {
-        METADATA
+        STORE
             .hg2git_mut()
             .get_note_abbrev(sha1)
             .unwrap_or(GitObjectId::NULL)
@@ -378,7 +378,7 @@ where
 
 fn do_data_changeset(rev: Abbrev<HgChangesetId>) -> Result<(), String> {
     unsafe {
-        let commit_id = METADATA
+        let commit_id = STORE
             .hg2git_mut()
             .get_note_abbrev(rev)
             .ok_or_else(|| format!("Unknown changeset id: {}", rev))?;
@@ -392,7 +392,7 @@ fn do_data_changeset(rev: Abbrev<HgChangesetId>) -> Result<(), String> {
 
 fn do_data_manifest(rev: Abbrev<HgManifestId>) -> Result<(), String> {
     unsafe {
-        let commit_id = METADATA
+        let commit_id = STORE
             .hg2git_mut()
             .get_note_abbrev(rev)
             .ok_or_else(|| format!("Unknown manifest id: {}", rev))?;
@@ -942,9 +942,9 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
         }
     }
 
-    let old_changesets_oid = unsafe { METADATA.changesets_cid };
+    let old_changesets_oid = unsafe { STORE.changesets_cid };
     let mut old_git2hg = {
-        let git2hg_oid = unsafe { METADATA.git2hg_cid };
+        let git2hg_oid = unsafe { STORE.git2hg_cid };
         if git2hg_oid.is_null() {
             None
         } else {
@@ -953,9 +953,9 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
     };
 
     let current_metadata_oid = unsafe {
-        let current_metadata_oid = METADATA.metadata_cid;
+        let current_metadata_oid = STORE.metadata_cid;
         do_reload(Some(CommitId::NULL));
-        METADATA.metadata_cid = current_metadata_oid;
+        STORE.metadata_cid = current_metadata_oid;
         current_metadata_oid
     };
 
@@ -1281,7 +1281,7 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
         }
 
         unsafe {
-            METADATA.metadata_cid = current_metadata_oid;
+            STORE.metadata_cid = current_metadata_oid;
         }
 
         do_done_and_check(&[])
@@ -1777,12 +1777,12 @@ fn do_setup() -> Result<(), String> {
 fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
     unsafe {
         let mut stdout = stdout();
-        let blob_id = METADATA
+        let blob_id = STORE
             .hg2git_mut()
             .get_note_abbrev(rev)
             .ok_or_else(|| format!("Unknown file id: {}", rev))?;
         let file_id = GitFileId::from_unchecked(BlobId::from_unchecked(blob_id));
-        let metadata_id = METADATA
+        let metadata_id = STORE
             .files_meta_mut()
             .get_note_abbrev(rev)
             .map(|oid| GitFileMetadataId::from_unchecked(BlobId::from_unchecked(oid)));
@@ -1882,7 +1882,7 @@ fn create_file(blobid: BlobId, parents: &[HgFileId]) -> HgFileId {
     }
     hash.update(blob.as_bytes());
     let fid = hash.finalize();
-    unsafe { &mut METADATA }.set(SetWhat::File, fid.into(), blobid.into());
+    unsafe { &mut STORE }.set(SetWhat::File, fid.into(), blobid.into());
     fid
 }
 
@@ -1907,8 +1907,8 @@ fn create_copy(blobid: BlobId, source_path: &BStr, source_fid: HgFileId) -> HgFi
     let mut oid = object_id::default();
     unsafe {
         store_git_blob(metadata.as_bytes().into(), &mut oid);
-        METADATA.set(SetWhat::FileMeta, fid.into(), oid.into());
-        METADATA.set(SetWhat::File, fid.into(), blobid.into());
+        STORE.set(SetWhat::FileMeta, fid.into(), oid.into());
+        STORE.set(SetWhat::File, fid.into(), blobid.into());
     }
     fid
 }
@@ -1950,7 +1950,7 @@ fn create_manifest(content: &mut [u8], parents: &[HgManifestId]) -> HgManifestId
     for chunk in RevChunkIter::new(2, manifest_chunk.as_bytes()) {
         unsafe {
             store_manifest(
-                &mut METADATA,
+                &mut STORE,
                 &chunk.into(),
                 (&parent_manifest).into(),
                 content.into(),
@@ -1983,7 +1983,7 @@ fn create_root_changeset(cid: CommitId) -> HgChangesetId {
     }
     paths.pop();
     let mid = create_manifest(&mut manifest, &[]);
-    let (csid, _) = create_changeset(unsafe { &mut METADATA }, cid, mid, Some(paths.to_boxed()));
+    let (csid, _) = create_changeset(unsafe { &mut STORE }, cid, mid, Some(paths.to_boxed()));
     csid
 }
 
@@ -2108,7 +2108,7 @@ fn create_simple_changeset(cid: CommitId, parent: CommitId) -> [HgChangesetId; 2
     }
     let parent_csid = GitChangesetId::from_unchecked(parent).to_hg().unwrap();
     let (mid, paths) = create_simple_manifest(cid, parent);
-    let (csid, _) = create_changeset(unsafe { &mut METADATA }, cid, mid, paths);
+    let (csid, _) = create_changeset(unsafe { &mut STORE }, cid, mid, paths);
     [csid, parent_csid]
 }
 
@@ -2140,7 +2140,7 @@ fn create_merge_changeset(
     let (parent2_csid, parent2_mid) = cs_mn(parent2);
     if parent1_mid == parent2_mid {
         let (mid, paths) = create_simple_manifest(cid, parent1);
-        let (csid, _) = create_changeset(unsafe { &mut METADATA }, cid, mid, paths);
+        let (csid, _) = create_changeset(unsafe { &mut STORE }, cid, mid, paths);
         [csid, parent1_csid, parent2_csid]
     } else {
         let parent1_mn_cid = parent1_mid.to_git().unwrap();
@@ -2285,7 +2285,7 @@ fn create_merge_changeset(
                 Some(paths.into_boxed_slice()),
             )
         };
-        let (csid, _) = create_changeset(unsafe { &mut METADATA }, cid, mid, paths);
+        let (csid, _) = create_changeset(unsafe { &mut STORE }, cid, mid, paths);
         [csid, parent1_csid, parent2_csid]
     }
 }
@@ -2336,7 +2336,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         );
         return Ok(1);
     }
-    let metadata_cid = unsafe { METADATA.metadata_cid };
+    let metadata_cid = unsafe { STORE.metadata_cid };
     let checked_cid = if force {
         None
     } else {
@@ -2952,18 +2952,18 @@ fn do_fsck_full(
         if fresh_metadata != metadata {
             fix(format!("Adjusted changeset metadata for {}", changeset_id));
             unsafe {
-                METADATA.set(SetWhat::Changeset, changeset_id.into(), GitObjectId::NULL);
-                METADATA.set(SetWhat::Changeset, changeset_id.into(), cid.into());
+                STORE.set(SetWhat::Changeset, changeset_id.into(), GitObjectId::NULL);
+                STORE.set(SetWhat::Changeset, changeset_id.into(), cid.into());
                 let mut metadata_id = object_id::default();
                 let mut buf = strbuf::new();
                 buf.extend_from_slice(&fresh_metadata.serialize());
                 store_git_blob(buf.as_bytes().into(), &mut metadata_id);
-                METADATA.set(
+                STORE.set(
                     SetWhat::ChangesetMeta,
                     changeset_id.into(),
                     GitObjectId::NULL,
                 );
-                METADATA.set(
+                STORE.set(
                     SetWhat::ChangesetMeta,
                     changeset_id.into(),
                     metadata_id.into(),
@@ -3117,19 +3117,19 @@ fn do_fsck_full(
                 }
             }
 
-            clear_manifest_heads(unsafe { &mut METADATA });
+            clear_manifest_heads(unsafe { &mut STORE });
             for h in manifest_heads {
                 // TODO: This is gross.
                 let m = RawCommit::read(h).unwrap();
                 let m = m.parse().unwrap();
                 let m = HgManifestId::from_bytes(m.body()).unwrap();
-                unsafe { &mut METADATA }.set(SetWhat::Manifest, m.into(), h.into());
+                unsafe { &mut STORE }.set(SetWhat::Manifest, m.into(), h.into());
             }
         }
     }
 
     if full_fsck && !broken.get() {
-        unsafe { &mut METADATA }.hg2git_mut().for_each(|h, _| {
+        unsafe { &mut STORE }.hg2git_mut().for_each(|h, _| {
             if seen_changesets.contains(&HgChangesetId::from_unchecked(h))
                 || seen_manifests.contains(&HgManifestId::from_unchecked(h))
                 || seen_files.contains(&HgFileId::from_unchecked(h))
@@ -3141,10 +3141,10 @@ fn do_fsck_full(
             // or changesets and set the right variable accordingly, but in
             // practice, it makes no difference. Reevaluate when refactoring,
             // though.
-            unsafe { &mut METADATA }.set(SetWhat::File, h, GitObjectId::NULL);
-            unsafe { &mut METADATA }.set(SetWhat::FileMeta, h, GitObjectId::NULL);
+            unsafe { &mut STORE }.set(SetWhat::File, h, GitObjectId::NULL);
+            unsafe { &mut STORE }.set(SetWhat::FileMeta, h, GitObjectId::NULL);
         });
-        unsafe { &mut METADATA }.git2hg_mut().for_each(|g, _| {
+        unsafe { &mut STORE }.git2hg_mut().for_each(|g, _| {
             // TODO: this is gross.
             let cid = GitChangesetId::from_unchecked(CommitId::from_unchecked(g));
             if seen_git2hg.contains(&cid) {
@@ -3153,7 +3153,7 @@ fn do_fsck_full(
             fix(format!("Removing dangling note for commit {}", g));
             let metadata = RawGitChangesetMetadata::read(cid).unwrap();
             let metadata = metadata.parse().unwrap();
-            unsafe { &mut METADATA }.set(
+            unsafe { &mut STORE }.set(
                 SetWhat::ChangesetMeta,
                 metadata.changeset_id().into(),
                 GitObjectId::NULL,
@@ -3184,7 +3184,7 @@ fn do_fsck_full(
             ));
         }
         if original_heads != computed_heads {
-            set_changeset_heads(unsafe { &mut METADATA }, changeset_heads);
+            set_changeset_heads(unsafe { &mut STORE }, changeset_heads);
         }
     }
 
@@ -3603,7 +3603,7 @@ pub fn main() {
 fn remote_helper_tags_list(mut stdout: impl Write) {
     Lazy::force(&INIT_CINNABAR_2);
     let _lock = HELPER_LOCK.lock().unwrap();
-    let tags = unsafe { &METADATA }.get_tags();
+    let tags = unsafe { &STORE }.get_tags();
     let tags = tags
         .iter()
         .filter_map(|(t, h)| h.to_git().map(|g| (t, g)))
@@ -3941,7 +3941,7 @@ fn remote_helper_import(
         .unique()
         .collect_vec();
     if !unknown_wanted_heads.is_empty() {
-        tags = Some(unsafe { &METADATA }.get_tags());
+        tags = Some(unsafe { &STORE }.get_tags());
         if graft_config_enabled(remote)?.unwrap_or(false) {
             init_graft();
         }
@@ -3993,7 +3993,7 @@ fn remote_helper_import(
     }
 
     if let Some(old_tags) = tags {
-        if old_tags != unsafe { &METADATA }.get_tags() {
+        if old_tags != unsafe { &STORE }.get_tags() {
             eprintln!(
                 "\nRun the following command to update tags:\n\
                  \x20 git cinnabar fetch --tags"
@@ -4116,7 +4116,7 @@ fn remote_helper_push(
         let branch_names = info.branch_names.into_iter().collect::<HashSet<_>>();
         let push_commits = push_refs.iter().filter_map(|(_, c, _, _)| *c).collect_vec();
         let local_bases = rev_list_with_boundaries(
-            unsafe { &METADATA }
+            unsafe { &STORE }
                 .changeset_heads()
                 .branch_heads()
                 .filter(|(_, b)| branch_names.contains(*b))

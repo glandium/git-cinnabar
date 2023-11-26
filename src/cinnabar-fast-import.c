@@ -320,7 +320,7 @@ static int split_manifest_line(struct strslice *slice,
        return 0;
 }
 
-static int add_parent(struct Metadata *metadata, struct strbuf *data,
+static int add_parent(struct Store *store, struct strbuf *data,
                       const struct hg_object_id *last_manifest_oid,
                       const struct branch *last_manifest,
                       const struct hg_object_id *parent_oid)
@@ -330,7 +330,7 @@ static int add_parent(struct Metadata *metadata, struct strbuf *data,
 		if (hg_oideq(parent_oid, last_manifest_oid))
 			note = &last_manifest->oid;
 		else {
-			note = resolve_hg2git(metadata, parent_oid);
+			note = resolve_hg2git(store, parent_oid);
 		}
 		if (!note)
 			return -1;
@@ -355,17 +355,17 @@ static void manifest_metadata_path(struct strbuf *out, struct strslice *in)
 	strbuf_addslice(out, *in);
 }
 
-extern void add_hg2git(struct Metadata *metadata,
+extern void add_hg2git(struct Store *store,
                        const struct hg_object_id *oid,
                        const struct object_id *note_oid);
 
-extern void add_manifest_head(struct Metadata *metadata,
+extern void add_manifest_head(struct Store *store,
                               const struct object_id *manifest);
 
 extern int check_manifest(const struct object_id *oid);
 
 
-void store_manifest(struct Metadata *metadata, struct rev_chunk *chunk,
+void store_manifest(struct Store *store, struct rev_chunk *chunk,
                     const struct strslice last_manifest_content,
                     struct strslice_mut stored_manifest)
 {
@@ -396,7 +396,7 @@ void store_manifest(struct Metadata *metadata, struct rev_chunk *chunk,
 		assert(last_manifest_content.len == 0);
 	} else if (!hg_oideq(chunk->delta_node, &last_manifest_oid)) {
 		const struct object_id *note;
-		note = resolve_hg2git(metadata, chunk->delta_node);
+		note = resolve_hg2git(store, chunk->delta_node);
 		if (!note)
 			die("Cannot find delta node %s for %s",
 			    hg_oid_to_hex(chunk->delta_node),
@@ -507,9 +507,9 @@ void store_manifest(struct Metadata *metadata, struct rev_chunk *chunk,
 	strbuf_addf(&data, "tree %s\n",
 	            oid_to_hex(&last_manifest->branch_tree.versions[1].oid));
 
-	if ((add_parent(metadata, &data, &last_manifest_oid, last_manifest,
+	if ((add_parent(store, &data, &last_manifest_oid, last_manifest,
 	                chunk->parent1) == -1) ||
-	    (add_parent(metadata, &data, &last_manifest_oid, last_manifest,
+	    (add_parent(store, &data, &last_manifest_oid, last_manifest,
 	                chunk->parent2) == -1))
 		goto malformed;
 
@@ -521,8 +521,8 @@ void store_manifest(struct Metadata *metadata, struct rev_chunk *chunk,
 	store_git_object(OBJ_COMMIT, strbuf_as_slice(&data),
 	                 &last_manifest->oid, NULL, NULL);
 	strbuf_release(&data);
-	add_hg2git(metadata, &last_manifest_oid, &last_manifest->oid);
-	add_manifest_head(metadata, &last_manifest->oid);
+	add_hg2git(store, &last_manifest_oid, &last_manifest->oid);
+	add_manifest_head(store, &last_manifest->oid);
 	if ((cinnabar_check(CHECK_MANIFESTS)) &&
 	    !check_manifest(&last_manifest->oid))
 		die("sha1 mismatch for node %s", hg_oid_to_hex(chunk->node));

@@ -16,7 +16,7 @@ use crate::libgit::{
     FileMode, RawTree,
 };
 use crate::oid::{Abbrev, ObjectId};
-use crate::store::{store_git_commit, Metadata, METADATA};
+use crate::store::{store_git_commit, Store, STORE};
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug)]
@@ -204,22 +204,22 @@ fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_not
 
 #[no_mangle]
 pub unsafe extern "C" fn resolve_hg2git(
-    metadata: &mut Metadata,
+    store: &mut Store,
     oid: *const hg_object_id,
 ) -> *const object_id {
     let git_oid =
         GitObjectId::from_raw_bytes(HgObjectId::from(oid.as_ref().unwrap().clone()).as_raw_bytes())
             .unwrap();
-    cinnabar_get_note(&mut metadata.hg2git_mut().0, &git_oid.into())
+    cinnabar_get_note(&mut store.hg2git_mut().0, &git_oid.into())
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn add_hg2git(
-    metadata: &mut Metadata,
+    store: &mut Store,
     oid: *const hg_object_id,
     note_oid: *const object_id,
 ) {
-    metadata.hg2git_mut().add_note(
+    store.hg2git_mut().add_note(
         HgObjectId::from(oid.as_ref().unwrap().clone()),
         note_oid.as_ref().unwrap().clone().into(),
     );
@@ -229,7 +229,7 @@ pub fn store_metadata_notes(notes: &mut cinnabar_notes_tree, reference: CommitId
     let mut result = object_id::default();
     let mut tree = object_id::default();
     if notes.current.dirty() || notes.additions.dirty() {
-        let mode = if ptr::eq(notes, unsafe { &METADATA.hg2git().0 }) {
+        let mode = if ptr::eq(notes, unsafe { &STORE.hg2git().0 }) {
             FileMode::GITLINK
         } else {
             FileMode::REGULAR | FileMode::RW
