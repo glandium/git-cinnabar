@@ -958,7 +958,12 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
         };
         println!("Fetching {}", remote.name().unwrap().to_string_lossy());
         let mut conn = get_connection(&url).unwrap();
-        let info = repo_list(&mut *conn, remote.name().and_then(|s| s.to_str()), false);
+        let info = repo_list(
+            Some(store),
+            &mut *conn,
+            remote.name().and_then(|s| s.to_str()),
+            false,
+        );
 
         let mut ref_map: *mut r#ref = std::ptr::null_mut();
         let mut tail = &mut ref_map as *mut _;
@@ -3691,9 +3696,13 @@ struct RemoteInfo {
     refs_style: RefsStyle,
 }
 
-fn repo_list(conn: &mut dyn HgRepo, remote: Option<&str>, for_push: bool) -> RemoteInfo {
+fn repo_list(
+    store: Option<&Store>,
+    conn: &mut dyn HgRepo,
+    remote: Option<&str>,
+    for_push: bool,
+) -> RemoteInfo {
     let _lock = HELPER_LOCK.lock().unwrap();
-    let store = unsafe { &STORE };
     let refs_style = (for_push)
         .then(|| RefsStyle::from_config("pushrefs", remote))
         .flatten()
@@ -3728,7 +3737,7 @@ fn repo_list(conn: &mut dyn HgRepo, remote: Option<&str>, for_push: bool) -> Rem
 
     let mut add_ref = |template: Option<&[&str]>, values: &[&BStr], csid: HgChangesetId| {
         if let Some(template) = template {
-            let cid = csid.to_git(store);
+            let cid = store.as_ref().and_then(|store| csid.to_git(store));
             refs.insert(apply_template(template, values), (csid, cid));
         }
     };
@@ -3778,11 +3787,13 @@ fn repo_list(conn: &mut dyn HgRepo, remote: Option<&str>, for_push: bool) -> Rem
             let mut tip = None;
             for head in heads.iter().rev() {
                 tip = Some(head);
-                if let Some(git_head) = head.to_git(store) {
-                    let metadata = RawGitChangesetMetadata::read(store, git_head).unwrap();
-                    let metadata = metadata.parse().unwrap();
-                    if metadata.extra().and_then(|e| e.get(b"close")).is_some() {
-                        continue;
+                if let Some(store) = store {
+                    if let Some(git_head) = head.to_git(store) {
+                        let metadata = RawGitChangesetMetadata::read(store, git_head).unwrap();
+                        let metadata = metadata.parse().unwrap();
+                        if metadata.extra().and_then(|e| e.get(b"close")).is_some() {
+                            continue;
+                        }
                     }
                 }
                 break;
@@ -3859,12 +3870,13 @@ fn repo_list(conn: &mut dyn HgRepo, remote: Option<&str>, for_push: bool) -> Rem
 }
 
 fn remote_helper_repo_list(
+    store: Option<&Store>,
     conn: &mut dyn HgRepo,
     remote: Option<&str>,
     mut stdout: impl Write,
     for_push: bool,
 ) -> RemoteInfo {
-    let info = repo_list(conn, remote, for_push);
+    let info = repo_list(store, conn, remote, for_push);
     if let Some(head_ref) = &info.head_ref {
         if info.refs.contains_key(head_ref) {
             let mut buf = b"@".to_vec();
@@ -4524,6 +4536,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                     remote_helper_tags_list(&mut stdout);
                 } else {
                     info = Some(remote_helper_repo_list(
+                        unsafe { HAS_GIT_REPO.then_some(&STORE) },
                         conn.as_deref_mut().unwrap(),
                         remote.as_deref(),
                         &mut stdout,
