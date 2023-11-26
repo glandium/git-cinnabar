@@ -3892,6 +3892,7 @@ fn remote_helper_repo_list(
 }
 
 fn remote_helper_import(
+    store: &mut Store,
     conn: &mut dyn HgRepo,
     remote: Option<&str>,
     wanted_refs: &[&BStr],
@@ -3948,20 +3949,14 @@ fn remote_helper_import(
         .unique()
         .collect_vec();
     if !unknown_wanted_heads.is_empty() {
-        tags = Some(unsafe { &STORE }.get_tags());
+        tags = Some(store.get_tags());
         if graft_config_enabled(remote)?.unwrap_or(false) {
-            init_graft(unsafe { &STORE });
+            init_graft(store);
         }
-        import_bundle(
-            unsafe { &mut STORE },
-            conn,
-            remote,
-            &info,
-            &unknown_wanted_heads,
-        )?;
+        import_bundle(store, conn, remote, &info, &unknown_wanted_heads)?;
     }
 
-    do_done_and_check(unsafe { &mut STORE }, &[])
+    do_done_and_check(store, &[])
         .then_some(())
         .ok_or_else(|| "Fatal error".to_string())?;
 
@@ -3974,7 +3969,7 @@ fn remote_helper_import(
             .update(
                 OsStr::from_bytes(&buf),
                 cid.copied()
-                    .unwrap_or_else(|| csid.to_git(unsafe { &STORE }).unwrap())
+                    .unwrap_or_else(|| csid.to_git(store).unwrap())
                     .into(),
                 None,
                 "import",
@@ -4006,7 +4001,7 @@ fn remote_helper_import(
     }
 
     if let Some(old_tags) = tags {
-        if old_tags != unsafe { &STORE }.get_tags() {
+        if old_tags != store.get_tags() {
             eprintln!(
                 "\nRun the following command to update tags:\n\
                  \x20 git cinnabar fetch --tags"
@@ -4562,6 +4557,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
             b"import" => {
                 assert_ne!(url.scheme(), "tags");
                 match remote_helper_import(
+                    unsafe { &mut STORE },
                     conn.as_deref_mut().unwrap(),
                     remote.as_deref(),
                     &args.iter().map(|r| &**r).collect_vec(),
