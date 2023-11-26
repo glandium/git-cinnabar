@@ -187,13 +187,11 @@ pub fn has_metadata(store: &Store) -> bool {
 macro_rules! hg2git {
     ($h:ident => $g:ident) => {
         impl $h {
-            pub fn to_git(self) -> Option<$g> {
-                unsafe {
-                    STORE
-                        .hg2git_mut()
-                        .get_note(self.into())
-                        .map(|o| $g::from_raw_bytes(o.as_raw_bytes()).unwrap())
-                }
+            pub fn to_git(self, store: &Store) -> Option<$g> {
+                store
+                    .hg2git_mut()
+                    .get_note(self.into())
+                    .map(|o| $g::from_raw_bytes(o.as_raw_bytes()).unwrap())
             }
         }
     };
@@ -812,7 +810,7 @@ impl RawHgFile {
                 .get_note(oid.into())
                 .map(BlobId::from_unchecked)
                 .map(GitFileMetadataId::from_unchecked);
-            Self::read(oid.to_git().unwrap(), metadata)
+            Self::read(oid.to_git(store).unwrap(), metadata)
         }
     }
 }
@@ -1135,7 +1133,7 @@ impl Store {
         let mut tags_files = HashSet::new();
         for head in self.changeset_heads().heads() {
             (|| -> Option<()> {
-                let head = head.to_git()?;
+                let head = head.to_git(self)?;
                 let tags_file = get_oid_blob(format!("{}:.hgtags", head).as_bytes())?;
                 if tags_files.insert(tags_file) {
                     let tags_blob = RawBlob::read(tags_file).unwrap();
@@ -1176,7 +1174,7 @@ fn store_changesets_metadata(store: &Store) -> CommitId {
     writeln!(commit, "tree {}", GitObjectId::from(tid)).ok();
     let heads = store.changeset_heads();
     for (head, _) in heads.branch_heads() {
-        writeln!(commit, "parent {}", head.to_git().unwrap()).ok();
+        writeln!(commit, "parent {}", head.to_git(store).unwrap()).ok();
     }
     writeln!(commit, "author  <cinnabar@git> 0 +0000").ok();
     writeln!(commit, "committer  <cinnabar@git> 0 +0000").ok();
@@ -1276,7 +1274,7 @@ impl Store {
             }
             SetWhat::ChangesetMeta => {
                 let csid = HgChangesetId::from_unchecked(hg_id);
-                if let Some(cid) = csid.to_git() {
+                if let Some(cid) = csid.to_git(self) {
                     if git_id.is_null() {
                         self.git2hg_mut().remove_note(cid.into());
                     } else if BlobId::try_from(git_id).is_err() {
@@ -1455,7 +1453,7 @@ fn store_changeset(
     let git_parents = parents
         .iter()
         .copied()
-        .map(HgChangesetId::to_git)
+        .map(|p| p.to_git(store))
         .collect::<Option<Vec<_>>>()
         .ok_or(GraftError::NoGraft)?;
     let changeset = raw_changeset.parse().unwrap();
@@ -1466,7 +1464,7 @@ fn store_changeset(
             TreeId::from_unchecked(GitObjectId::from(tid))
         },
         m => {
-            let git_manifest_id = m.to_git().unwrap();
+            let git_manifest_id = m.to_git(store).unwrap();
             let manifest_commit = RawCommit::read(git_manifest_id.into()).unwrap();
             let manifest_commit = manifest_commit.parse().unwrap();
             manifest_commit.tree()
@@ -1825,7 +1823,7 @@ pub fn store_changegroup<R: Read>(store: &Store, input: R, version: u8) {
         let reference_mn = if delta_node.is_null() {
             RawHgManifest::empty()
         } else {
-            RawHgManifest::read(delta_node.to_git().unwrap()).unwrap()
+            RawHgManifest::read(delta_node.to_git(store).unwrap()).unwrap()
         };
         let mut last_end = 0;
         let mut mn_size = 0;
@@ -1853,7 +1851,7 @@ pub fn store_changegroup<R: Read>(store: &Store, input: R, version: u8) {
             stored_manifest.set_len(mn_size);
         }
 
-        let tree_id = mid.to_git().unwrap().get_tree_id();
+        let tree_id = mid.to_git(store).unwrap().get_tree_id();
         MANIFESTCACHE.with(|cache| {
             cache.set(Some(ManifestCache {
                 tree_id,
@@ -1959,7 +1957,7 @@ pub fn store_changegroup<R: Read>(store: &Store, input: R, version: u8) {
                 let mut file_oid = object_id::default();
                 if let Some(reference_entry) = (!delta_node.is_null())
                     .then(|| {
-                        delta_node.to_git().and_then(|delta_node| {
+                        delta_node.to_git(store).and_then(|delta_node| {
                             get_object_entry(&GitObjectId::from(delta_node).into()).as_ref()
                         })
                     })
@@ -2008,7 +2006,7 @@ pub fn store_changegroup<R: Read>(store: &Store, input: R, version: u8) {
         } else if delta_node.is_null() {
             RawHgChangeset(Box::new([]))
         } else {
-            RawHgChangeset::read(delta_node.to_git().unwrap()).unwrap()
+            RawHgChangeset::read(delta_node.to_git(store).unwrap()).unwrap()
         };
 
         let mut last_end = 0;

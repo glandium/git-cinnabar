@@ -619,7 +619,7 @@ fn do_fetch(store: &mut Store, remote: &OsStr, revs: &[OsString]) -> Result<(), 
     let width = full_revs
         .iter()
         .map(|rev| {
-            let git_rev = rev.to_git().unwrap();
+            let git_rev = rev.to_git(store).unwrap();
             writeln!(fetch_head, "{}\t\t'hg/revs/{}' of {}", git_rev, rev, url).unwrap();
             get_unique_abbrev(git_rev).len()
         })
@@ -1061,7 +1061,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
         for (refname, peer_ref, csid, cid) in wanted_refs.into_iter().unique() {
             let old_cid = resolve_ref(OsStr::from_bytes(&peer_ref));
             let cid = Some(CommitId::from(
-                cid.unwrap_or_else(|| csid.to_git().unwrap()),
+                cid.unwrap_or_else(|| csid.to_git(store).unwrap()),
             ));
             if old_cid != cid {
                 update_refs.push((Either::Left(peer_ref), Some(refname), cid, old_cid));
@@ -1093,7 +1093,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                     .heads()
                     .copied(),
             )
-            .filter(|(_, csid)| csid.to_git().is_none())
+            .filter(|(_, csid)| csid.to_git(store).is_none())
             .collect_vec();
 
         for_each_remote(|remote| {
@@ -1139,7 +1139,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                 let update_refs = knowns
                     .into_iter()
                     .filter_map(|(old_cid, csid)| {
-                        csid.to_git()
+                        csid.to_git(store)
                             .and_then(|cid| (cid != old_cid).then(|| (old_cid, cid.into(), csid)))
                     })
                     .map(|(old_cid, cid, csid)| {
@@ -1192,9 +1192,10 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                         (*p, None)
                     } else {
                         old_to_hg(*p).map_or((None, Some(*p)), |csid| {
-                            let new_cid = csid.to_git().map(CommitId::from).filter(|new_cid| {
-                                p == new_cid || p.get_tree_id() == new_cid.get_tree_id()
-                            });
+                            let new_cid =
+                                csid.to_git(store).map(CommitId::from).filter(|new_cid| {
+                                    p == new_cid || p.get_tree_id() == new_cid.get_tree_id()
+                                });
                             (new_cid, None)
                         })
                     }
@@ -1241,7 +1242,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
             .filter_map(|(refname_or_head, old_cid)| {
                 let cid = rewritten.get(&old_cid).and_then(Clone::clone).or_else(|| {
                     old_to_hg(old_cid)
-                        .and_then(HgChangesetId::to_git)
+                        .and_then(|cid| cid.to_git(store))
                         .map(Into::into)
                 });
                 (Some(old_cid) != cid).then_some((refname_or_head, old_cid, cid))
@@ -1922,7 +1923,7 @@ fn create_copy(
 // it will remain this way until it moves to Rust.
 fn create_manifest(store: &Store, content: &mut [u8], parents: &[HgManifestId]) -> HgManifestId {
     let parent_manifest = parents.get(0).map_or_else(RawHgManifest::empty, |p| {
-        RawHgManifest::read(p.to_git().unwrap()).unwrap()
+        RawHgManifest::read(p.to_git(store).unwrap()).unwrap()
     });
     let parent1 = parents.get(0).copied().unwrap_or(HgManifestId::NULL);
     let mut hash = HgManifestId::create();
@@ -2022,7 +2023,7 @@ fn create_simple_manifest(
     let parent = GitChangesetId::from_unchecked(parent);
     let parent_metadata = RawGitChangesetMetadata::read(parent).unwrap();
     let parent_mid = parent_metadata.parse().unwrap().manifest_id();
-    let parent_manifest = RawHgManifest::read(parent_mid.to_git().unwrap()).unwrap();
+    let parent_manifest = RawHgManifest::read(parent_mid.to_git(store).unwrap()).unwrap();
     let mut extra_diff = Vec::new();
     let mut diff = diff_tree_with_copies(parent.into(), cid)
         .inspect(|item| {
@@ -2154,8 +2155,8 @@ fn create_merge_changeset(
         let (csid, _) = create_changeset(store, cid, mid, paths);
         [csid, parent1_csid, parent2_csid]
     } else {
-        let parent1_mn_cid = parent1_mid.to_git().unwrap();
-        let parent2_mn_cid = parent2_mid.to_git().unwrap();
+        let parent1_mn_cid = parent1_mid.to_git(store).unwrap();
+        let parent2_mn_cid = parent2_mid.to_git(store).unwrap();
         let range = format!("{}...{}", &parent1_mn_cid, &parent2_mn_cid);
         let mut file_dags = HashMap::new();
         for cid in rev_list(["--topo-order", "--full-history", "--reverse", &range]) {
@@ -2262,7 +2263,7 @@ fn create_merge_changeset(
             // doesn't store empty files because of the conflict with empty manifests.
             let unchanged = parents.len() == 1
                 && ((parents[0].fid == RawHgFile::EMPTY_OID && l.oid == RawBlob::EMPTY_OID)
-                    || parents[0].fid.to_git().unwrap() == l.oid);
+                    || parents[0].fid.to_git(store).unwrap() == l.oid);
             let fid = if unchanged {
                 parents[0].fid
             } else {
@@ -2457,7 +2458,7 @@ fn do_fsck(
         })
         .progress(|n| format!("Checking {n} changeset heads"))
     {
-        let git_cid = changeset_node.to_git();
+        let git_cid = changeset_node.to_git(store);
         let git_cid = if let Some(git_cid) = git_cid {
             git_cid
         } else {
@@ -2618,7 +2619,7 @@ fn do_fsck(
             report(format!("Invalid manifest metadata in git commit {}", mid));
             continue;
         };
-        let git_mid = if let Some(id) = hg_manifest_id.to_git() {
+        let git_mid = if let Some(id) = hg_manifest_id.to_git(store) {
             id
         } else {
             report(format!(
@@ -2831,7 +2832,7 @@ fn do_fsck_full(
                         format!("Invalid commit or changeset: {}", c.to_string_lossy())
                     })?;
 
-                    if let Some(git_cs) = cs.to_git() {
+                    if let Some(git_cs) = cs.to_git(store) {
                         Ok(git_cs.into())
                     } else {
                         Err(format!(
@@ -2883,7 +2884,7 @@ fn do_fsck_full(
             continue;
         };
         let changeset_id = metadata.changeset_id();
-        match changeset_id.to_git() {
+        match changeset_id.to_git(store) {
             Some(oid) if oid == cid => {}
             Some(oid) => {
                 report(format!(
@@ -2999,7 +3000,7 @@ fn do_fsck_full(
             // We've already seen the manifest.
             continue;
         }
-        let manifest_cid = if let Some(manifest_cid) = manifest_id.to_git() {
+        let manifest_cid = if let Some(manifest_cid) = manifest_id.to_git(store) {
             manifest_cid
         } else {
             report(format!(
@@ -3020,14 +3021,14 @@ fn do_fsck_full(
         let hg_manifest_parents = hg_parents
             .iter()
             .map(|p| {
-                let metadata = RawGitChangesetMetadata::read(p.to_git().unwrap()).unwrap();
+                let metadata = RawGitChangesetMetadata::read(p.to_git(store).unwrap()).unwrap();
                 let metadata = metadata.parse().unwrap();
                 metadata.manifest_id()
             })
             .collect_vec();
         let git_manifest_parents = hg_manifest_parents
             .into_iter()
-            .filter_map(|p| p.to_git().map(Into::into))
+            .filter_map(|p| p.to_git(store).map(Into::into))
             .sorted()
             .collect_vec();
 
@@ -3642,7 +3643,7 @@ fn remote_helper_tags_list(mut stdout: impl Write) {
     let tags = store.get_tags();
     let tags = tags
         .iter()
-        .filter_map(|(t, h)| h.to_git().map(|g| (t, g)))
+        .filter_map(|(t, h)| h.to_git(store).map(|g| (t, g)))
         .sorted()
         .collect_vec();
     // git fetch does a check-connection that calls
@@ -3723,6 +3724,7 @@ struct RemoteInfo {
 
 fn repo_list(conn: &mut dyn HgRepo, remote: Option<&str>, for_push: bool) -> RemoteInfo {
     let _lock = HELPER_LOCK.lock().unwrap();
+    let store = unsafe { &STORE };
     let refs_style = (for_push)
         .then(|| RefsStyle::from_config("pushrefs", remote))
         .flatten()
@@ -3757,7 +3759,7 @@ fn repo_list(conn: &mut dyn HgRepo, remote: Option<&str>, for_push: bool) -> Rem
 
     let mut add_ref = |template: Option<&[&str]>, values: &[&BStr], csid: HgChangesetId| {
         if let Some(template) = template {
-            let cid = csid.to_git();
+            let cid = csid.to_git(store);
             refs.insert(apply_template(template, values), (csid, cid));
         }
     };
@@ -3807,7 +3809,7 @@ fn repo_list(conn: &mut dyn HgRepo, remote: Option<&str>, for_push: bool) -> Rem
             let mut tip = None;
             for head in heads.iter().rev() {
                 tip = Some(head);
-                if let Some(git_head) = head.to_git() {
+                if let Some(git_head) = head.to_git(store) {
                     let metadata = RawGitChangesetMetadata::read(git_head).unwrap();
                     let metadata = metadata.parse().unwrap();
                     if metadata.extra().and_then(|e| e.get(b"close")).is_some() {
@@ -4003,7 +4005,7 @@ fn remote_helper_import(
             .update(
                 OsStr::from_bytes(&buf),
                 cid.copied()
-                    .unwrap_or_else(|| csid.to_git().unwrap())
+                    .unwrap_or_else(|| csid.to_git(unsafe { &STORE }).unwrap())
                     .into(),
                 None,
                 "import",
@@ -4067,7 +4069,7 @@ fn import_bundle(
             .topological_heads
             .iter()
             .copied()
-            .filter(|h| h.to_git().is_none())
+            .filter(|h| h.to_git(store).is_none())
             .collect::<Vec<_>>();
         if unknown_wanted_heads
             .iter()
@@ -4164,7 +4166,7 @@ fn remote_helper_push(
                 .changeset_heads()
                 .branch_heads()
                 .filter(|(_, b)| branch_names.contains(*b))
-                .map(|(h, _)| format!("^{}", h.to_git().unwrap()))
+                .map(|(h, _)| format!("^{}", h.to_git(store).unwrap()))
                 .chain(push_commits.iter().map(ToString::to_string))
                 .chain(["--topo-order".to_string(), "--full-history".to_string()]),
         )
@@ -4204,7 +4206,7 @@ fn remote_helper_push(
             }
         }
 
-        let common = find_common(conn, local_bases);
+        let common = find_common(store, conn, local_bases);
 
         let push_commits = rev_list(
             ["--topo-order", "--full-history", "--reverse"]
@@ -4213,7 +4215,7 @@ fn remote_helper_push(
                 .chain(
                     common
                         .into_iter()
-                        .map(|c| format!("^{}", c.to_git().unwrap())),
+                        .map(|c| format!("^{}", c.to_git(store).unwrap())),
                 )
                 .chain(
                     push_refs
@@ -4454,12 +4456,12 @@ fn remote_helper_push(
                         pushed
                             .heads()
                             .copied()
-                            .filter_map(HgChangesetId::to_git)
+                            .filter_map(|h| h.to_git(store))
                             .map(Into::into),
                         drafts
                             .iter()
                             .copied()
-                            .filter_map(HgChangesetId::to_git)
+                            .filter_map(|h| h.to_git(store))
                             .map(Into::into),
                     )
                     .is_empty()

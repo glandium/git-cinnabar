@@ -647,6 +647,7 @@ struct FindCommonInfo {
 }
 
 pub fn find_common(
+    store: &Store,
     conn: &mut dyn HgRepo,
     hgheads: impl Into<Vec<HgChangesetId>>,
 ) -> Vec<HgChangesetId> {
@@ -676,15 +677,15 @@ pub fn find_common(
 
     let known = known
         .into_iter()
-        .filter_map(|cs| cs.to_git().map(|c| (cs, c)))
+        .filter_map(|cs| cs.to_git(store).map(|c| (cs, c)))
         .collect_vec();
     let mut undetermined = undetermined
         .into_iter()
-        .filter_map(|cs| cs.to_git().map(|c| (cs, c)))
+        .filter_map(|cs| cs.to_git(store).map(|c| (cs, c)))
         .collect_vec();
     let unknown = unknown
         .into_iter()
-        .filter_map(|cs| cs.to_git().map(|c| (cs, c)))
+        .filter_map(|cs| cs.to_git(store).map(|c| (cs, c)))
         .collect_vec();
 
     let args = [
@@ -801,7 +802,7 @@ pub fn get_bundle(
     };
 
     let mut heads = Cow::Borrowed(heads);
-    let mut common = find_common(conn, known_branch_heads(store));
+    let mut common = find_common(store, conn, known_branch_heads(store));
     if common.is_empty() && !has_metadata(store) && get_initial_bundle(store, conn, remote)? {
         // Eliminate the heads that we got from the clonebundle or
         // cinnabarclone
@@ -809,7 +810,7 @@ pub fn get_bundle(
         heads = Cow::Owned(
             heads
                 .iter()
-                .filter(|h| h.to_git().is_none())
+                .filter(|h| h.to_git(store).is_none())
                 .copied()
                 .collect_vec(),
         );
@@ -817,7 +818,7 @@ pub fn get_bundle(
         if heads.is_empty() {
             return Ok(());
         }
-        common = find_common(conn, known_branch_heads(store));
+        common = find_common(store, conn, known_branch_heads(store));
     }
 
     get_store_bundle(store, conn, &heads, &common).map_err(|e| {

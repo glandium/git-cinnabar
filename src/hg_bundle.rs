@@ -1110,7 +1110,7 @@ pub fn create_bundle(
             true,
             |node| {
                 let node = HgChangesetId::from_unchecked(node);
-                RawHgChangeset::read(node.to_git().unwrap()).unwrap()
+                RawHgChangeset::read(node.to_git(store).unwrap()).unwrap()
             },
         )
         .unwrap();
@@ -1122,11 +1122,11 @@ pub fn create_bundle(
             let manifest_commit = manifest_commit.parse().unwrap();
             HgManifestId::from_bytes(manifest_commit.body()).unwrap()
         };
-        let metadata = RawGitChangesetMetadata::read(node.to_git().unwrap()).unwrap();
+        let metadata = RawGitChangesetMetadata::read(node.to_git(store).unwrap()).unwrap();
         let metadata = metadata.parse().unwrap();
         let manifest = metadata.manifest_id();
         if !manifest.is_null() && !manifests.contains_key(&manifest) {
-            let manifest_commit = RawCommit::read(manifest.to_git().unwrap().into()).unwrap();
+            let manifest_commit = RawCommit::read(manifest.to_git(store).unwrap().into()).unwrap();
             let manifest_commit = manifest_commit.parse().unwrap();
             let manifest_parents = manifest_commit.parents();
             let mn_parent1 = manifest_parents
@@ -1143,12 +1143,13 @@ pub fn create_bundle(
         }
     }
     bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
-    let files = bundle_manifest(&mut bundle_part_writer, version, manifests.drain(..));
+    let files = bundle_manifest(store, &mut bundle_part_writer, version, manifests.drain(..));
     bundle_files(store, &mut bundle_part_writer, version, files);
     changeset_heads
 }
 
 fn bundle_manifest<const CHUNK_SIZE: usize>(
+    store: &Store,
     bundle_part_writer: &mut BundlePartWriter<CHUNK_SIZE>,
     version: u8,
     manifests: impl IntoIterator<Item = (HgManifestId, (HgManifestId, HgManifestId, HgChangesetId))>,
@@ -1175,15 +1176,15 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
             false,
             |node| {
                 let node = HgManifestId::from_unchecked(node);
-                RawHgManifest::read(node.to_git().unwrap()).unwrap()
+                RawHgManifest::read(node.to_git(store).unwrap()).unwrap()
             },
         )
         .unwrap();
-        let git_node = node.to_git().unwrap();
+        let git_node = node.to_git(store).unwrap();
         let git_parents = [parent1, parent2]
             .into_iter()
             .filter(|p| !p.is_null())
-            .map(|p| (p.to_git().unwrap().into()))
+            .map(|p| (p.to_git(store).unwrap().into()))
             .collect_vec();
         for (path, (hg_file, hg_fileparents)) in
             get_changes(git_node.into(), &git_parents, false).map(WithPath::unzip)
