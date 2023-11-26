@@ -109,7 +109,7 @@ use libcinnabar::git_notes_tree;
 use libgit::{
     commit, config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
     get_oid_committish, get_unique_abbrev, lookup_commit, lookup_replace_commit, object_id,
-    reachable_subset, remote, repository, resolve_ref, rev_list, rev_list_with_boundaries, strbuf,
+    reachable_subset, remote, repository, resolve_ref, rev_list, rev_list_with_boundaries,
     the_repository, DiffTreeItem, MaybeBoundary, RawBlob, RawCommit, RawTree, RefTransaction,
 };
 use logging::{LoggingReader, LoggingWriter};
@@ -1210,7 +1210,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
             if new_parents == commit.parents() {
                 assert!(rewritten.insert(cid, Some(cid)).is_none());
             } else if new_parents.len() == commit.parents().len() {
-                let mut buf = strbuf::new();
+                let mut buf = Vec::new();
                 buf.extend_from_slice(b"tree ");
                 buf.extend_from_slice(commit.tree().to_string().as_bytes());
                 for p in new_parents {
@@ -1225,7 +1225,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                 buf.extend_from_slice(commit.body());
                 let mut new_oid = object_id::default();
                 unsafe {
-                    store::store_git_commit(buf.as_bytes().as_str_slice(), &mut new_oid);
+                    store::store_git_commit(buf.as_str_slice(), &mut new_oid);
                 }
                 let new_cid = CommitId::from_unchecked(new_oid.into());
                 assert!(rewritten.insert(cid, Some(new_cid)).is_none());
@@ -1889,7 +1889,7 @@ fn create_copy(
     source_fid: HgFileId,
 ) -> HgFileId {
     let blob = RawBlob::read(blobid).unwrap();
-    let mut metadata = strbuf::new();
+    let mut metadata = Vec::new();
     metadata.extend_from_slice(b"copy: ");
     metadata.extend_from_slice(source_path);
     metadata.extend_from_slice(b"\ncopyrev: ");
@@ -1907,7 +1907,7 @@ fn create_copy(
 
     let mut oid = object_id::default();
     unsafe {
-        store_git_blob(metadata.as_bytes().as_str_slice(), &mut oid);
+        store_git_blob(metadata.as_str_slice(), &mut oid);
         store.set(SetWhat::FileMeta, fid.into(), oid.into());
         store.set(SetWhat::File, fid.into(), blobid.into());
     }
@@ -2983,9 +2983,8 @@ fn do_fsck_full(
                 store.set(SetWhat::Changeset, changeset_id.into(), GitObjectId::NULL);
                 store.set(SetWhat::Changeset, changeset_id.into(), cid.into());
                 let mut metadata_id = object_id::default();
-                let mut buf = strbuf::new();
-                buf.extend_from_slice(&fresh_metadata.serialize());
-                store_git_blob(buf.as_bytes().as_str_slice(), &mut metadata_id);
+                let buf = fresh_metadata.serialize();
+                store_git_blob(buf.as_str_slice(), &mut metadata_id);
                 store.set(
                     SetWhat::ChangesetMeta,
                     changeset_id.into(),

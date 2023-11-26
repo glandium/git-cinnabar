@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
-use std::io::{self, Write};
 use std::num::ParseIntError;
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 use std::ptr;
@@ -105,17 +104,6 @@ impl strbuf {
                 *self.buf = 0;
             }
         }
-    }
-}
-
-impl Write for strbuf {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
     }
 }
 

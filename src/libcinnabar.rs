@@ -12,8 +12,8 @@ use std::ptr;
 use crate::git::{CommitId, GitObjectId, TreeId};
 use crate::hg::HgObjectId;
 use crate::libgit::{
-    child_process, combine_notes_ignore, free_notes, init_notes, notes_tree, object_id, strbuf,
-    FileMode, RawTree,
+    child_process, combine_notes_ignore, free_notes, init_notes, notes_tree, object_id, FileMode,
+    RawTree,
 };
 use crate::oid::{Abbrev, ObjectId};
 use crate::store::{store_git_commit, Store, STORE};
@@ -250,13 +250,13 @@ pub fn store_metadata_notes(notes: &mut cinnabar_notes_tree, reference: CommitId
         }
     }
     if !tree.is_null() {
-        let mut buf = strbuf::new();
+        let mut buf = Vec::new();
         writeln!(buf, "tree {}", tree).ok();
         buf.extend_from_slice(
             b"author  <cinnabar@git> 0 +0000\ncommitter  <cinnabar@git> 0 +0000\n\n",
         );
         unsafe {
-            store_git_commit(buf.as_bytes().as_str_slice(), &mut result);
+            store_git_commit(buf.as_str_slice(), &mut result);
         }
     }
     CommitId::from_unchecked(result.into())
