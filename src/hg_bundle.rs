@@ -36,7 +36,7 @@ use crate::libgit::{die, RawCommit};
 use crate::oid::ObjectId;
 use crate::progress::Progress;
 use crate::store::{
-    ChangesetHeads, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest,
+    ChangesetHeads, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, Store,
 };
 use crate::tree_util::{Empty, WithPath};
 use crate::util::{FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
@@ -1068,7 +1068,8 @@ fn write_chunk<T: core::ops::Deref<Target = [u8]>>(
 }
 
 pub fn create_bundle(
-    changesets: impl Iterator<Item = [HgChangesetId; 3]>,
+    store: &mut Store,
+    mut changesets: impl FnMut(&mut Store) -> Option<[HgChangesetId; 3]>,
     bundlespec: BundleSpec,
     version: u8,
     output: &File,
@@ -1093,7 +1094,9 @@ pub fn create_bundle(
     let mut previous = None;
     let mut manifests = IndexMap::new();
 
-    for [node, parent1, parent2] in changesets.progress(|n| format!("Bundling {n} changesets")) {
+    for [node, parent1, parent2] in
+        std::iter::from_fn(|| changesets(store)).progress(|n| format!("Bundling {n} changesets"))
+    {
         // TODO: add branch.
         changeset_heads.add(node, &[parent1, parent2], b"".as_bstr());
 
@@ -1143,7 +1146,7 @@ pub fn create_bundle(
     }
     bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
     let files = bundle_manifest(&mut bundle_part_writer, version, manifests.drain(..));
-    bundle_files(&mut bundle_part_writer, version, files);
+    bundle_files(store, &mut bundle_part_writer, version, files);
     changeset_heads
 }
 
@@ -1207,6 +1210,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
 }
 
 fn bundle_files<const CHUNK_SIZE: usize>(
+    store: &mut Store,
     bundle_part_writer: &mut BundlePartWriter<CHUNK_SIZE>,
     version: u8,
     files: impl IntoIterator<
@@ -1229,7 +1233,7 @@ fn bundle_files<const CHUNK_SIZE: usize>(
         for ((node, (mut parent1, mut parent2, changeset)), ()) in
             data.into_iter().zip(&mut progress)
         {
-            let data = RawHgFile::read_hg(node).unwrap();
+            let data = RawHgFile::read_hg(store, node).unwrap();
             // Normalize parents so that the first parent isn't null (it's a corner case, see below).
             if parent1.is_null() {
                 mem::swap(&mut parent1, &mut parent2);
@@ -1258,7 +1262,7 @@ fn bundle_files<const CHUNK_SIZE: usize>(
                 changeset,
                 &mut previous,
                 false,
-                |oid| RawHgFile::read_hg(HgFileId::from_unchecked(oid)).unwrap(),
+                |oid| RawHgFile::read_hg(store, HgFileId::from_unchecked(oid)).unwrap(),
             )
             .unwrap();
         }

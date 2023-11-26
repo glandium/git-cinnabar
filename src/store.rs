@@ -796,11 +796,11 @@ impl RawHgFile {
         Some(Self(result.into_rc()))
     }
 
-    pub fn read_hg(oid: HgFileId) -> Option<Self> {
+    pub fn read_hg(store: &mut Store, oid: HgFileId) -> Option<Self> {
         if oid == Self::EMPTY_OID {
             Some(Self(RcSlice::new()))
         } else {
-            let metadata = unsafe { &mut STORE }
+            let metadata = store
                 .files_meta_mut()
                 .get_note(oid.into())
                 .map(BlobId::from_unchecked)
@@ -1740,12 +1740,12 @@ pub unsafe extern "C" fn check_manifest(oid: *const object_id) -> c_int {
 
 static STORED_FILES: Mutex<BTreeMap<HgFileId, [HgFileId; 2]>> = Mutex::new(BTreeMap::new());
 
-pub fn check_file(node: HgFileId, p1: HgFileId, p2: HgFileId) -> bool {
-    let data = RawHgFile::read_hg(node).unwrap();
+pub fn check_file(store: &mut Store, node: HgFileId, p1: HgFileId, p2: HgFileId) -> bool {
+    let data = RawHgFile::read_hg(store, node).unwrap();
     crate::hg_data::find_file_parents(node, Some(p1), Some(p2), &data).is_some()
 }
 
-pub fn do_check_files() -> bool {
+pub fn do_check_files(store: &mut Store) -> bool {
     // Try to detect issue #207 as early as possible.
     let mut busted = false;
     for (&node, &[p1, p2]) in STORED_FILES
@@ -1754,7 +1754,7 @@ pub fn do_check_files() -> bool {
         .iter()
         .progress(|n| format!("Checking {n} imported file root and head revisions"))
     {
-        if !check_file(node, p1, p2) {
+        if !check_file(store, node, p1, p2) {
             error!(target: "root", "Error in file {node}");
             busted = true;
         }
@@ -1762,12 +1762,7 @@ pub fn do_check_files() -> bool {
     if busted {
         let mut transaction = RefTransaction::new().unwrap();
         transaction
-            .update(
-                BROKEN_REF,
-                unsafe { STORE.metadata_cid },
-                None,
-                "post-pull check",
-            )
+            .update(BROKEN_REF, store.metadata_cid, None, "post-pull check")
             .unwrap();
         transaction.commit().unwrap();
         error!(
@@ -1909,11 +1904,14 @@ pub fn store_changegroup<R: Read>(store: &mut Store, input: R, version: u8) {
                 .take()
                 .and_then(|(fid, file)| (fid == delta_node).then_some(file))
                 .unwrap_or_else(|| {
-                    RawHgFile::read_hg(if delta_node.is_null() {
-                        RawHgFile::EMPTY_OID
-                    } else {
-                        delta_node
-                    })
+                    RawHgFile::read_hg(
+                        store,
+                        if delta_node.is_null() {
+                            RawHgFile::EMPTY_OID
+                        } else {
+                            delta_node
+                        },
+                    )
                     .unwrap()
                 });
 

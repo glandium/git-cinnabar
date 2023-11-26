@@ -296,7 +296,7 @@ fn do_done_and_check(store: &mut Store, args: &[&[u8]]) -> bool {
         }
         do_reload(store, None);
     }
-    do_check_files()
+    do_check_files(store)
 }
 
 #[cfg(unix)]
@@ -2311,45 +2311,47 @@ fn create_merge_changeset(
 
 pub fn do_create_bundle(
     store: &mut Store,
-    commits: impl Iterator<Item = (CommitId, Box<[CommitId]>)>,
+    mut commits: impl Iterator<Item = (CommitId, Box<[CommitId]>)>,
     bundlespec: BundleSpec,
     version: u8,
     output: &File,
     replycaps: bool,
 ) -> Result<ChangesetHeads, String> {
-    let changesets = commits.map(|(cid, parents)| {
-        if let Some(csid) = GitChangesetId::from_unchecked(cid).to_hg() {
-            let mut parents = parents.iter().copied();
-            let parent1 = parents.next().map_or(HgChangesetId::NULL, |p| {
-                GitChangesetId::from_unchecked(p).to_hg().unwrap()
-            });
-            let parent2 = parents.next().map_or(HgChangesetId::NULL, |p| {
-                GitChangesetId::from_unchecked(p).to_hg().unwrap()
-            });
-            assert!(parents.next().is_none());
-            [csid, parent1, parent2]
-        } else if parents.is_empty() {
-            [
-                create_root_changeset(store, cid),
-                HgChangesetId::NULL,
-                HgChangesetId::NULL,
-            ]
-        } else if parents.len() == 1 {
-            let [csid, parent1] = create_simple_changeset(store, cid, parents[0]);
-            [csid, parent1, HgChangesetId::NULL]
-        } else if parents.len() == 2 {
-            create_merge_changeset(
-                store,
-                cid,
-                *parents.get(0).unwrap(),
-                *parents.get(1).unwrap(),
-            )
-        } else {
-            die!("Pushing octopus merges to mercurial is not supported");
-        }
-    });
+    let changesets = |store: &mut Store| {
+        commits.next().map(move |(cid, parents)| {
+            if let Some(csid) = GitChangesetId::from_unchecked(cid).to_hg() {
+                let mut parents = parents.iter().copied();
+                let parent1 = parents.next().map_or(HgChangesetId::NULL, |p| {
+                    GitChangesetId::from_unchecked(p).to_hg().unwrap()
+                });
+                let parent2 = parents.next().map_or(HgChangesetId::NULL, |p| {
+                    GitChangesetId::from_unchecked(p).to_hg().unwrap()
+                });
+                assert!(parents.next().is_none());
+                [csid, parent1, parent2]
+            } else if parents.is_empty() {
+                [
+                    create_root_changeset(store, cid),
+                    HgChangesetId::NULL,
+                    HgChangesetId::NULL,
+                ]
+            } else if parents.len() == 1 {
+                let [csid, parent1] = create_simple_changeset(store, cid, parents[0]);
+                [csid, parent1, HgChangesetId::NULL]
+            } else if parents.len() == 2 {
+                create_merge_changeset(
+                    store,
+                    cid,
+                    *parents.get(0).unwrap(),
+                    *parents.get(1).unwrap(),
+                )
+            } else {
+                die!("Pushing octopus merges to mercurial is not supported");
+            }
+        })
+    };
     Ok(create_bundle(
-        changesets, bundlespec, version, output, replycaps,
+        store, changesets, bundlespec, version, output, replycaps,
     ))
 }
 
@@ -2728,6 +2730,7 @@ fn do_fsck(
             }
             if let Some((path, hg_file)) = all_interesting.take(&(path, hg_file)) {
                 if !check_file(
+                    store,
                     hg_file,
                     hg_fileparents.get(0).copied().unwrap_or(HgFileId::NULL),
                     hg_fileparents.get(1).copied().unwrap_or(HgFileId::NULL),
@@ -3073,6 +3076,7 @@ fn do_fsck_full(
             if
             // TODO: add FileFindParents logging.
             !check_file(
+                store,
                 hg_file,
                 hg_fileparents.get(0).copied().unwrap_or(HgFileId::NULL),
                 hg_fileparents.get(1).copied().unwrap_or(HgFileId::NULL),
