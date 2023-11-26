@@ -89,8 +89,6 @@ pub struct Store {
     tree_cache_: RefCell<BTreeMap<GitManifestTreeId, TreeId>>,
 }
 
-pub static mut STORE: Store = Store::default();
-
 impl Store {
     const fn default() -> Store {
         Store {
@@ -2327,9 +2325,7 @@ pub fn merge_metadata(
         }
     }
 
-    unsafe {
-        init_store(store, Some(metadata_cid));
-    }
+    *store = Store::new(Some(metadata_cid));
     true
 }
 
@@ -2489,14 +2485,6 @@ impl Drop for Store {
             }
         }
     }
-}
-
-pub unsafe fn init_store(store: &mut Store, c: Option<CommitId>) {
-    *store = Store::new(c);
-}
-
-pub unsafe fn done_store(store: &mut Store) {
-    *store = Store::default();
 }
 
 pub fn do_store_metadata(store: &Store) -> CommitId {

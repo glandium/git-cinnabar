@@ -26,7 +26,7 @@ use crate::libgit::{die, rev_list, RawCommit};
 use crate::oid::ObjectId;
 use crate::store::{has_metadata, merge_metadata, store_changegroup, Dag, Store, Traversal};
 use crate::util::{FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed};
-use crate::{check_enabled, get_config_remote, graft_config_enabled, Checks, HELPER_LOCK};
+use crate::{check_enabled, get_config_remote, graft_config_enabled, Checks};
 
 pub struct OneHgArg<'a> {
     pub name: &'a str,
@@ -605,7 +605,6 @@ pub fn get_store_bundle(
                     let version = part
                         .get_param("version")
                         .map_or(1, |v| u8::from_str(v).unwrap());
-                    let _locked = HELPER_LOCK.lock().unwrap();
                     store_changegroup(store, BufReader::new(part), version);
                 } else if &*part.part_type == "stream2" {
                     return Err(b"Stream bundles are not supported."
@@ -651,7 +650,6 @@ pub fn find_common(
     conn: &mut dyn HgRepo,
     hgheads: impl Into<Vec<HgChangesetId>>,
 ) -> Vec<HgChangesetId> {
-    let _lock = HELPER_LOCK.lock();
     let mut rng = rand::thread_rng();
     let mut undetermined = hgheads.into();
     if undetermined.is_empty() {
@@ -808,7 +806,6 @@ pub fn get_bundle(
     if common.is_empty() && !has_metadata(store) && get_initial_bundle(store, conn, remote)? {
         // Eliminate the heads that we got from the clonebundle or
         // cinnabarclone
-        let lock = HELPER_LOCK.lock();
         heads = Cow::Owned(
             heads
                 .iter()
@@ -816,7 +813,6 @@ pub fn get_bundle(
                 .copied()
                 .collect_vec(),
         );
-        drop(lock);
         if heads.is_empty() {
             return Ok(());
         }

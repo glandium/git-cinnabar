@@ -118,11 +118,11 @@ use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
 use progress::Progress;
 use sha1::{Digest, Sha1};
 use store::{
-    check_file, check_manifest, create_changeset, do_check_files, do_store_metadata, done_store,
-    ensure_store_init, has_metadata, init_store, raw_commit_for_changeset, store_git_blob,
-    store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata,
-    RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, Store, BROKEN_REF, CHECKED_REF,
-    METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX, STORE,
+    check_file, check_manifest, create_changeset, do_check_files, do_store_metadata,
+    ensure_store_init, has_metadata, raw_commit_for_changeset, store_git_blob, store_manifest,
+    ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata, RawHgChangeset,
+    RawHgFile, RawHgManifest, SetWhat, Store, BROKEN_REF, CHECKED_REF, METADATA_REF, NOTES_REF,
+    REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use tree_util::{diff_by_path, RecurseTree};
 use url::Url;
@@ -199,27 +199,13 @@ fn dump_ref_updates() {
     }
 }
 
-static MAYBE_INIT_CINNABAR_2: Lazy<Option<()>> = Lazy::new(|| unsafe {
-    if !HAS_GIT_REPO {
-        return None;
-    }
-    let c = get_oid_committish(METADATA_REF.as_bytes());
-    init_store(&mut STORE, c);
-    Some(())
-});
-
-static INIT_CINNABAR_2: Lazy<()> =
-    Lazy::new(|| MAYBE_INIT_CINNABAR_2.unwrap_or_else(|| panic!("not a git repository")));
-
-static HELPER_LOCK: Lazy<Mutex<()>> = Lazy::new(|| {
-    Lazy::force(&MAYBE_INIT_CINNABAR_2);
-    Mutex::new(())
-});
-
-#[no_mangle]
-unsafe extern "C" fn locked_rollback() {
-    let _lock = HELPER_LOCK.lock().unwrap();
-    do_cleanup(1);
+fn the_store() -> Result<Store, &'static str> {
+    unsafe { HAS_GIT_REPO }
+        .then(|| {
+            let c = get_oid_committish(METADATA_REF.as_bytes());
+            Store::new(c)
+        })
+        .ok_or("not a git repository")
 }
 
 fn do_done_and_check(store: &mut Store, args: &[&[u8]]) -> bool {
@@ -245,7 +231,7 @@ fn do_done_and_check(store: &mut Store, args: &[&[u8]]) -> bool {
                 .unwrap();
             transaction.commit().unwrap();
         }
-        init_store(store, Some(new_metadata));
+        *store = Store::new(Some(new_metadata));
     }
     do_check_files(store)
 }
@@ -3482,8 +3468,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
     if let RemoteHg { remote, url } = command {
         return git_remote_hg(remote, url);
     }
-    Lazy::force(&INIT_CINNABAR_2);
-    let store = unsafe { &mut STORE };
+    let mut store = the_store().unwrap_or_else(|e| panic!("{}", e));
     let ret = match command {
         #[cfg(feature = "self-update")]
         SelfUpdate { .. } => unreachable!(),
@@ -3491,18 +3476,18 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         Setup => unreachable!(),
         Data {
             changeset: Some(c), ..
-        } => do_data_changeset(store, c),
+        } => do_data_changeset(&store, c),
         Data {
             manifest: Some(m), ..
-        } => do_data_manifest(store, m),
-        Data { file: Some(f), .. } => do_data_file(store, f),
+        } => do_data_manifest(&store, m),
+        Data { file: Some(f), .. } => do_data_file(&store, f),
         Data { .. } => unreachable!(),
         Hg2Git {
             abbrev,
             sha1,
             batch,
         } => do_conversion_cmd(
-            store,
+            &store,
             abbrev.map(|v| v.get(0).map_or(12, |a| a.0)),
             sha1.into_iter(),
             batch,
@@ -3513,7 +3498,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             committish,
             batch,
         } => do_conversion_cmd(
-            store,
+            &store,
             abbrev.map(|v| v.get(0).map_or(12, |a| a.0)),
             committish.into_iter(),
             batch,
@@ -3523,10 +3508,10 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             remote: Some(remote),
             revs,
             tags: false,
-        } => do_fetch(store, &remote, &revs),
+        } => do_fetch(&mut store, &remote, &revs),
         Fetch { tags: true, .. } => do_fetch_tags(),
         Fetch { remote: None, .. } => unreachable!(),
-        Reclone { rebase } => do_reclone(store, rebase),
+        Reclone { rebase } => do_reclone(&mut store, rebase),
         Rollback {
             candidates,
             fsck,
@@ -3534,12 +3519,12 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             committish,
         } => do_rollback(candidates, fsck, force, committish),
         Upgrade => do_upgrade(),
-        Unbundle { clonebundle, url } => do_unbundle(store, clonebundle, url),
+        Unbundle { clonebundle, url } => do_unbundle(&mut store, clonebundle, url),
         Fsck {
             force,
             full,
             commit,
-        } => match do_fsck(store, force, full, commit) {
+        } => match do_fsck(&mut store, force, full, commit) {
             Ok(code) => return Ok(code),
             Err(e) => Err(e),
         },
@@ -3548,7 +3533,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             r#type,
             path,
             revs,
-        } => match do_bundle(store, version, r#type, path, revs) {
+        } => match do_bundle(&store, version, r#type, path, revs) {
             Ok(code) => return Ok(code),
             Err(e) => Err(e),
         },
@@ -3662,7 +3647,6 @@ fn repo_list(
     remote: Option<&str>,
     for_push: bool,
 ) -> RemoteInfo {
-    let _lock = HELPER_LOCK.lock().unwrap();
     let refs_style = (for_push)
         .then(|| RefsStyle::from_config("pushrefs", remote))
         .flatten()
@@ -4436,6 +4420,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
     let mut buf = Vec::new();
     let mut dry_run = false;
     let mut info = None;
+    let mut store: Lazy<Result<_, _>> = Lazy::new(the_store);
     loop {
         buf.truncate(0);
         stdin.read_until(b'\n', &mut buf).unwrap();
@@ -4493,11 +4478,13 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                 };
                 if url.scheme() == "tags" {
                     assert!(!for_push);
-                    Lazy::force(&INIT_CINNABAR_2);
-                    remote_helper_tags_list(unsafe { &STORE }, &mut stdout);
+                    remote_helper_tags_list(
+                        store.as_ref().unwrap_or_else(|e| panic!("{}", e)),
+                        &mut stdout,
+                    );
                 } else {
                     info = Some(remote_helper_repo_list(
-                        unsafe { HAS_GIT_REPO.then_some(&STORE) },
+                        store.as_ref().ok(),
                         conn.as_deref_mut().unwrap(),
                         remote.as_deref(),
                         &mut stdout,
@@ -4531,7 +4518,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
             b"import" => {
                 assert_ne!(url.scheme(), "tags");
                 match remote_helper_import(
-                    unsafe { &mut STORE },
+                    store.as_mut().unwrap_or_else(|e| panic!("{}", e)),
                     conn.as_deref_mut().unwrap(),
                     remote.as_deref(),
                     &args.iter().map(|r| &**r).collect_vec(),
@@ -4557,7 +4544,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
             b"push" => {
                 assert_ne!(url.scheme(), "tags");
                 let code = remote_helper_push(
-                    unsafe { &mut STORE },
+                    store.as_mut().unwrap_or_else(|e| panic!("{}", e)),
                     conn.as_deref_mut().unwrap(),
                     remote.as_deref(),
                     &args.iter().map(|r| &**r).collect_vec(),
@@ -4628,7 +4615,6 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
         )),
         Some(_) | None => Ok(1),
     };
-    done_store(unsafe { &mut STORE });
     match ret {
         Ok(code) => code,
         Err(msg) => {

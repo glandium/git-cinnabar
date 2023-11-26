@@ -27,6 +27,7 @@ use tee::TeeReader;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
+use crate::get_changes;
 use crate::git::CommitId;
 use crate::hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_connect::{encodecaps, HgConnection, HgConnectionBase, HgRepo};
@@ -41,7 +42,6 @@ use crate::store::{
 use crate::tree_util::{Empty, WithPath};
 use crate::util::{FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::textdiff;
-use crate::{get_changes, HELPER_LOCK};
 
 #[no_mangle]
 pub unsafe extern "C" fn rev_diff_start_iter(iterator: *mut strslice, chunk: *const rev_chunk) {
@@ -1098,7 +1098,6 @@ pub fn create_bundle(
         // TODO: add branch.
         changeset_heads.add(node, &[parent1, parent2], b"".as_bstr());
 
-        let _lock = HELPER_LOCK.lock().unwrap();
         write_chunk(
             &mut bundle_part_writer,
             version,
