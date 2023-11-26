@@ -44,8 +44,8 @@ use crate::hg_connect_http::HttpRequest;
 use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{git_notes_tree, hg_notes_tree, strslice, strslice_mut, AsStrSlice};
 use crate::libgit::{
-    die, for_each_ref_in, get_oid_blob, object_entry, object_id, object_type, Commit, FileMode,
-    RawBlob, RawCommit, RawTree, RefTransaction,
+    config_get_value, die, for_each_ref_in, get_oid_blob, object_entry, object_id, object_type,
+    resolve_ref, Commit, FileMode, RawBlob, RawCommit, RawTree, RefTransaction,
 };
 use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
@@ -2366,6 +2366,15 @@ fn need_upgrade() {
 
 impl Store {
     pub fn new(c: Option<CommitId>) -> Self {
+        if let Some(objectformat) = config_get_value("extensions.objectformat") {
+            if objectformat != OsStr::new("sha1") {
+                // Ideally, we'd return error code 65 (Data format error).
+                die!(
+                    "Git repository uses unsupported {} object format",
+                    objectformat.to_string_lossy()
+                );
+            }
+        }
         let mut result = Store::default();
         let cid = if let Some(c) = c {
             c
@@ -2464,6 +2473,22 @@ impl Store {
             if count > 0 {
                 old_metadata();
             }
+        }
+        if let Some(refs) = [
+            // Delete old tag-cache, which may contain incomplete data.
+            "refs/cinnabar/tag-cache",
+            // Delete new-type tag_cache, we don't use it anymore.
+            "refs/cinnabar/tag_cache",
+        ]
+        .iter()
+        .map(|r| resolve_ref(r).map(|cid| (*r, cid)))
+        .collect::<Option<Vec<_>>>()
+        {
+            let mut transaction = RefTransaction::new().unwrap();
+            for (refname, cid) in refs {
+                transaction.delete(refname, Some(cid), "cleanup").unwrap();
+            }
+            transaction.commit().unwrap();
         }
         result
     }

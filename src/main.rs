@@ -224,31 +224,6 @@ static MAYBE_INIT_CINNABAR_2: Lazy<Option<()>> = Lazy::new(|| unsafe {
     }
     let c = get_oid_committish(METADATA_REF.as_bytes());
     init_store(&mut STORE, c);
-    if let Some(refs) = [
-        // Delete old tag-cache, which may contain incomplete data.
-        "refs/cinnabar/tag-cache",
-        // Delete new-type tag_cache, we don't use it anymore.
-        "refs/cinnabar/tag_cache",
-    ]
-    .iter()
-    .map(|r| resolve_ref(r).map(|cid| (*r, cid)))
-    .collect::<Option<Vec<_>>>()
-    {
-        let mut transaction = RefTransaction::new().unwrap();
-        for (refname, cid) in refs {
-            transaction.delete(refname, Some(cid), "cleanup").unwrap();
-        }
-        transaction.commit().unwrap();
-    }
-    if let Some(objectformat) = config_get_value("extensions.objectformat") {
-        if objectformat != OsStr::new("sha1") {
-            // Ideally, we'd return error code 65 (Data format error).
-            die!(
-                "Git repository uses unsupported {} object format",
-                objectformat.to_string_lossy()
-            );
-        }
-    }
     Some(())
 });
 
