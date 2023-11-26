@@ -33,9 +33,13 @@ impl strslice<'_> {
     }
 }
 
-impl<'a, T: AsRef<[u8]> + 'a> From<T> for strslice<'a> {
-    fn from(buf: T) -> Self {
-        let buf = buf.as_ref();
+pub trait AsStrSlice {
+    fn as_str_slice(&self) -> strslice;
+}
+
+impl<T: AsRef<[u8]> + ?Sized> AsStrSlice for T {
+    fn as_str_slice(&self) -> strslice {
+        let buf = self.as_ref();
         strslice {
             len: buf.len(),
             buf: buf.as_ptr() as *const c_char,
@@ -252,7 +256,7 @@ pub fn store_metadata_notes(notes: &mut cinnabar_notes_tree, reference: CommitId
             b"author  <cinnabar@git> 0 +0000\ncommitter  <cinnabar@git> 0 +0000\n\n",
         );
         unsafe {
-            store_git_commit(buf.as_bytes().into(), &mut result);
+            store_git_commit(buf.as_bytes().as_str_slice(), &mut result);
         }
     }
     CommitId::from_unchecked(result.into())

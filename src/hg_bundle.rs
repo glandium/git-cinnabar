@@ -31,7 +31,7 @@ use crate::git::CommitId;
 use crate::hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_connect::{encodecaps, HgConnection, HgConnectionBase, HgRepo};
 use crate::hg_data::find_file_parents;
-use crate::libcinnabar::{hg_object_id, strslice};
+use crate::libcinnabar::{hg_object_id, strslice, AsStrSlice};
 use crate::libgit::{die, RawCommit};
 use crate::oid::ObjectId;
 use crate::progress::Progress;
@@ -47,7 +47,13 @@ use crate::{get_changes, HELPER_LOCK};
 pub unsafe extern "C" fn rev_diff_start_iter(iterator: *mut strslice, chunk: *const rev_chunk) {
     ptr::write(
         iterator,
-        chunk.as_ref().unwrap().revchunk.iter_diff().0.into(),
+        chunk
+            .as_ref()
+            .unwrap()
+            .revchunk
+            .iter_diff()
+            .0
+            .as_str_slice(),
     );
 }
 
@@ -58,7 +64,7 @@ pub unsafe extern "C" fn rev_diff_iter_next(
 ) -> c_int {
     let mut diff_iter = RevDiffIter(iterator.as_mut().unwrap().as_bytes());
     let next = diff_iter.next();
-    ptr::write(iterator, diff_iter.0.into());
+    ptr::write(iterator, diff_iter.0.as_str_slice());
     if let Some(p) = next {
         ptr::write(part, mem::transmute(p.0));
         1
@@ -121,7 +127,7 @@ impl From<RevChunk> for rev_chunk {
         let buf = &mut chunk.raw[..];
         unsafe {
             rev_chunk {
-                raw: mem::transmute(strslice::from(&mut buf[..])),
+                raw: mem::transmute(buf.as_str_slice()),
                 node: NonNull::new_unchecked(buf.as_mut_ptr()).cast(),
                 parent1: NonNull::new_unchecked(buf.as_mut_ptr().add(20)).cast(),
                 parent2: NonNull::new_unchecked(buf.as_mut_ptr().add(40)).cast(),
@@ -266,7 +272,7 @@ impl<'a> Iterator for RevDiffIter<'a> {
         Some(RevDiffPart(rev_diff_part {
             start,
             end,
-            data: data.into(),
+            data: data.as_str_slice(),
         }))
     }
 }

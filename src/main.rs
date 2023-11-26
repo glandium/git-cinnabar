@@ -133,6 +133,7 @@ use windows_sys::Win32;
 
 use crate::hg_bundle::BundleReader;
 use crate::hg_connect::{decodecaps, find_common, UnbundleResponse};
+use crate::libcinnabar::AsStrSlice;
 use crate::progress::set_progress;
 use crate::store::{clear_manifest_heads, do_set_replace, set_changeset_heads, Dag, Traversal};
 use crate::tree_util::{Empty, ParseTree, WithPath};
@@ -1224,7 +1225,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                 buf.extend_from_slice(commit.body());
                 let mut new_oid = object_id::default();
                 unsafe {
-                    store::store_git_commit(buf.as_bytes().into(), &mut new_oid);
+                    store::store_git_commit(buf.as_bytes().as_str_slice(), &mut new_oid);
                 }
                 let new_cid = CommitId::from_unchecked(new_oid.into());
                 assert!(rewritten.insert(cid, Some(new_cid)).is_none());
@@ -1906,7 +1907,7 @@ fn create_copy(
 
     let mut oid = object_id::default();
     unsafe {
-        store_git_blob(metadata.as_bytes().into(), &mut oid);
+        store_git_blob(metadata.as_bytes().as_str_slice(), &mut oid);
         store.set(SetWhat::FileMeta, fid.into(), oid.into());
         store.set(SetWhat::File, fid.into(), blobid.into());
     }
@@ -1956,7 +1957,7 @@ fn create_manifest(
             store_manifest(
                 store,
                 &chunk.into(),
-                (&parent_manifest).into(),
+                parent_manifest.as_str_slice(),
                 content.into(),
             );
         }
@@ -2984,7 +2985,7 @@ fn do_fsck_full(
                 let mut metadata_id = object_id::default();
                 let mut buf = strbuf::new();
                 buf.extend_from_slice(&fresh_metadata.serialize());
-                store_git_blob(buf.as_bytes().into(), &mut metadata_id);
+                store_git_blob(buf.as_bytes().as_str_slice(), &mut metadata_id);
                 store.set(
                     SetWhat::ChangesetMeta,
                     changeset_id.into(),
