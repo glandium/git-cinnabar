@@ -122,8 +122,8 @@ use store::{
     check_file, check_manifest, create_changeset, do_check_files, do_store_metadata, done_metadata,
     ensure_store_init, has_metadata, init_metadata, raw_commit_for_changeset, store_git_blob,
     store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata,
-    RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, BROKEN_REF, CHECKED_REF, METADATA_REF,
-    NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX, STORE,
+    RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, Store, BROKEN_REF, CHECKED_REF,
+    METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX, STORE,
 };
 use tree_util::{diff_by_path, RecurseTree};
 use url::Url;
@@ -270,7 +270,7 @@ unsafe extern "C" fn locked_rollback() {
     do_cleanup(1);
 }
 
-fn do_done_and_check(args: &[&[u8]]) -> bool {
+fn do_done_and_check(store: &mut Store, args: &[&[u8]]) -> bool {
     unsafe {
         if graft_finish() == Some(false) {
             // Rollback
@@ -278,7 +278,7 @@ fn do_done_and_check(args: &[&[u8]]) -> bool {
             error!(target: "root", "Nothing to graft");
             return false;
         }
-        let new_metadata = do_store_metadata(&mut STORE);
+        let new_metadata = do_store_metadata(store);
         do_cleanup(0);
         set_metadata_to(
             Some(new_metadata),
@@ -310,26 +310,27 @@ pub fn prepare_arg(arg: OsString) -> Vec<u16> {
     arg
 }
 
-fn do_one_hg2git(sha1: Abbrev<HgChangesetId>) -> String {
-    format!("{}", unsafe {
-        STORE
+fn do_one_hg2git(store: &mut Store, sha1: Abbrev<HgChangesetId>) -> String {
+    format!(
+        "{}",
+        store
             .hg2git_mut()
             .get_note_abbrev(sha1)
             .unwrap_or(GitObjectId::NULL)
-    })
+    )
 }
 
-fn do_one_git2hg(committish: OsString) -> String {
+fn do_one_git2hg(_store: &mut Store, committish: OsString) -> String {
     let note = get_oid_committish(committish.as_bytes())
         .map(lookup_replace_commit)
         .and_then(|oid| GitChangesetId::from_unchecked(oid).to_hg());
     format!("{}", note.unwrap_or(HgChangesetId::NULL))
 }
 
-fn do_conversion<T, I: Iterator<Item = T>, F: Fn(T) -> Result<String, String>, W: Write>(
+fn do_conversion<T, I: Iterator<Item = T>, F: FnMut(T) -> Result<String, String>, W: Write>(
     abbrev: Option<usize>,
     input: I,
-    f: F,
+    mut f: F,
     mut output: W,
 ) -> Result<(), String> {
     let abbrev = abbrev.unwrap_or(40);
@@ -341,6 +342,7 @@ fn do_conversion<T, I: Iterator<Item = T>, F: Fn(T) -> Result<String, String>, W
 }
 
 fn do_conversion_cmd<T, I, F>(
+    store: &mut Store,
     abbrev: Option<usize>,
     input: I,
     batch: bool,
@@ -350,12 +352,12 @@ where
     T: FromStr,
     <T as FromStr>::Err: fmt::Display,
     I: Iterator<Item = T>,
-    F: Fn(T) -> String,
+    F: Fn(&mut Store, T) -> String,
 {
     let f = &f;
     let out = stdout();
     let mut out = BufWriter::new(out.lock());
-    do_conversion(abbrev, input, |t| Ok(f(t)), &mut out)?;
+    do_conversion(abbrev, input, |t| Ok(f(store, t)), &mut out)?;
     if batch {
         out.flush().map_err(|e| e.to_string())?;
         let input = stdin();
@@ -366,7 +368,7 @@ where
                 line.split_whitespace(),
                 |i| {
                     let t = T::from_str(i).map_err(|e| e.to_string())?;
-                    Ok(f(t))
+                    Ok(f(store, t))
                 },
                 &mut out,
             )?;
@@ -376,32 +378,28 @@ where
     Ok(())
 }
 
-fn do_data_changeset(rev: Abbrev<HgChangesetId>) -> Result<(), String> {
-    unsafe {
-        let commit_id = STORE
-            .hg2git_mut()
-            .get_note_abbrev(rev)
-            .ok_or_else(|| format!("Unknown changeset id: {}", rev))?;
-        let changeset = RawHgChangeset::read(GitChangesetId::from_unchecked(
-            CommitId::from_unchecked(commit_id),
-        ))
-        .unwrap();
-        stdout().write_all(&changeset).map_err(|e| e.to_string())
-    }
+fn do_data_changeset(store: &mut Store, rev: Abbrev<HgChangesetId>) -> Result<(), String> {
+    let commit_id = store
+        .hg2git_mut()
+        .get_note_abbrev(rev)
+        .ok_or_else(|| format!("Unknown changeset id: {}", rev))?;
+    let changeset = RawHgChangeset::read(GitChangesetId::from_unchecked(CommitId::from_unchecked(
+        commit_id,
+    )))
+    .unwrap();
+    stdout().write_all(&changeset).map_err(|e| e.to_string())
 }
 
-fn do_data_manifest(rev: Abbrev<HgManifestId>) -> Result<(), String> {
-    unsafe {
-        let commit_id = STORE
-            .hg2git_mut()
-            .get_note_abbrev(rev)
-            .ok_or_else(|| format!("Unknown manifest id: {}", rev))?;
-        let manifest = RawHgManifest::read(GitManifestId::from_unchecked(
-            CommitId::from_unchecked(commit_id),
-        ))
-        .unwrap();
-        stdout().write_all(&manifest).map_err(|e| e.to_string())
-    }
+fn do_data_manifest(store: &mut Store, rev: Abbrev<HgManifestId>) -> Result<(), String> {
+    let commit_id = store
+        .hg2git_mut()
+        .get_note_abbrev(rev)
+        .ok_or_else(|| format!("Unknown manifest id: {}", rev))?;
+    let manifest = RawHgManifest::read(GitManifestId::from_unchecked(CommitId::from_unchecked(
+        commit_id,
+    )))
+    .unwrap();
+    stdout().write_all(&manifest).map_err(|e| e.to_string())
 }
 
 fn hg_url(url: impl AsRef<OsStr>) -> Option<Url> {
@@ -561,7 +559,7 @@ extern "C" {
     fn git_path_fetch_head(repos: *mut repository) -> *const c_char;
 }
 
-fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
+fn do_fetch(store: &mut Store, remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
     set_progress(stdout().is_terminal());
     let url = remote::get(remote).get_url();
     let hg_url =
@@ -611,7 +609,7 @@ fn do_fetch(remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
 
     get_bundle(&mut *conn, &full_revs, &HashSet::new(), remote)?;
 
-    do_done_and_check(&[])
+    do_done_and_check(store, &[])
         .then_some(())
         .ok_or_else(|| "Fatal error".to_string())?;
 
@@ -883,7 +881,7 @@ extern "C" {
     fn get_worktree_ref_store(wr: *const worktree) -> *const libgit::ref_store;
 }
 
-fn do_reclone(rebase: bool) -> Result<(), String> {
+fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
     let mut heads = Vec::new();
     if rebase {
         for prefix in ["refs/tags/", "refs/heads/"] {
@@ -942,9 +940,9 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
         }
     }
 
-    let old_changesets_oid = unsafe { STORE.changesets_cid };
+    let old_changesets_oid = store.changesets_cid;
     let mut old_git2hg = {
-        let git2hg_oid = unsafe { STORE.git2hg_cid };
+        let git2hg_oid = store.git2hg_cid;
         if git2hg_oid.is_null() {
             None
         } else {
@@ -953,9 +951,9 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
     };
 
     let current_metadata_oid = unsafe {
-        let current_metadata_oid = STORE.metadata_cid;
+        let current_metadata_oid = store.metadata_cid;
         do_reload(Some(CommitId::NULL));
-        STORE.metadata_cid = current_metadata_oid;
+        store.metadata_cid = current_metadata_oid;
         current_metadata_oid
     };
 
@@ -1280,11 +1278,9 @@ fn do_reclone(rebase: bool) -> Result<(), String> {
             update_refs_by_category.push((category.to_string(), update_refs));
         }
 
-        unsafe {
-            STORE.metadata_cid = current_metadata_oid;
-        }
+        store.metadata_cid = current_metadata_oid;
 
-        do_done_and_check(&[])
+        do_done_and_check(store, &[])
             .then_some(())
             .ok_or_else(|| "Fatal error".to_string())?;
         let mut transaction = RefTransaction::new().unwrap();
@@ -1774,21 +1770,19 @@ fn do_setup() -> Result<(), String> {
     Ok(())
 }
 
-fn do_data_file(rev: Abbrev<HgFileId>) -> Result<(), String> {
-    unsafe {
-        let mut stdout = stdout();
-        let blob_id = STORE
-            .hg2git_mut()
-            .get_note_abbrev(rev)
-            .ok_or_else(|| format!("Unknown file id: {}", rev))?;
-        let file_id = GitFileId::from_unchecked(BlobId::from_unchecked(blob_id));
-        let metadata_id = STORE
-            .files_meta_mut()
-            .get_note_abbrev(rev)
-            .map(|oid| GitFileMetadataId::from_unchecked(BlobId::from_unchecked(oid)));
-        let file = RawHgFile::read(file_id, metadata_id).unwrap();
-        stdout.write_all(&file).map_err(|e| e.to_string())
-    }
+fn do_data_file(store: &mut Store, rev: Abbrev<HgFileId>) -> Result<(), String> {
+    let mut stdout = stdout();
+    let blob_id = store
+        .hg2git_mut()
+        .get_note_abbrev(rev)
+        .ok_or_else(|| format!("Unknown file id: {}", rev))?;
+    let file_id = GitFileId::from_unchecked(BlobId::from_unchecked(blob_id));
+    let metadata_id = store
+        .files_meta_mut()
+        .get_note_abbrev(rev)
+        .map(|oid| GitFileMetadataId::from_unchecked(BlobId::from_unchecked(oid)));
+    let file = RawHgFile::read(file_id, metadata_id).unwrap();
+    stdout.write_all(&file).map_err(|e| e.to_string())
 }
 
 pub fn graft_config_enabled(remote: Option<&str>) -> Result<Option<bool>, String> {
@@ -1802,7 +1796,7 @@ pub fn graft_config_enabled(remote: Option<&str>) -> Result<Option<bool>, String
         .map_err(|e| format!("Invalid value for cinnabar.graft: {}", e.to_string_lossy()))
 }
 
-fn do_unbundle(clonebundle: bool, mut url: OsString) -> Result<(), String> {
+fn do_unbundle(store: &mut Store, clonebundle: bool, mut url: OsString) -> Result<(), String> {
     if !url.as_bytes().starts_with(b"hg:") {
         let mut new_url = OsString::from("hg::");
         new_url.push(url);
@@ -1827,12 +1821,13 @@ fn do_unbundle(clonebundle: bool, mut url: OsString) -> Result<(), String> {
 
     get_store_bundle(&mut *conn, &[], &[]).map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
 
-    do_done_and_check(&[])
+    do_done_and_check(store, &[])
         .then_some(())
         .ok_or_else(|| "Fatal error".to_string())
 }
 
 fn do_bundle(
+    store: &mut Store,
     version: u8,
     bundlespec: Option<BundleSpec>,
     path: PathBuf,
@@ -1861,14 +1856,14 @@ fn do_bundle(
         (c, commit.parents().to_boxed())
     });
     let file = File::create(path).unwrap();
-    let result = do_create_bundle(commits, bundlespec, version, &file, false).map(|_| 0);
+    let result = do_create_bundle(store, commits, bundlespec, version, &file, false).map(|_| 0);
     unsafe {
         do_cleanup(1);
     }
     result
 }
 
-fn create_file(blobid: BlobId, parents: &[HgFileId]) -> HgFileId {
+fn create_file(store: &mut Store, blobid: BlobId, parents: &[HgFileId]) -> HgFileId {
     let blob = RawBlob::read(blobid).unwrap();
     let mut hash = HgFileId::create();
     if parents.len() < 2 {
@@ -1882,11 +1877,16 @@ fn create_file(blobid: BlobId, parents: &[HgFileId]) -> HgFileId {
     }
     hash.update(blob.as_bytes());
     let fid = hash.finalize();
-    unsafe { &mut STORE }.set(SetWhat::File, fid.into(), blobid.into());
+    store.set(SetWhat::File, fid.into(), blobid.into());
     fid
 }
 
-fn create_copy(blobid: BlobId, source_path: &BStr, source_fid: HgFileId) -> HgFileId {
+fn create_copy(
+    store: &mut Store,
+    blobid: BlobId,
+    source_path: &BStr,
+    source_fid: HgFileId,
+) -> HgFileId {
     let blob = RawBlob::read(blobid).unwrap();
     let mut metadata = strbuf::new();
     metadata.extend_from_slice(b"copy: ");
@@ -1907,8 +1907,8 @@ fn create_copy(blobid: BlobId, source_path: &BStr, source_fid: HgFileId) -> HgFi
     let mut oid = object_id::default();
     unsafe {
         store_git_blob(metadata.as_bytes().into(), &mut oid);
-        STORE.set(SetWhat::FileMeta, fid.into(), oid.into());
-        STORE.set(SetWhat::File, fid.into(), blobid.into());
+        store.set(SetWhat::FileMeta, fid.into(), oid.into());
+        store.set(SetWhat::File, fid.into(), blobid.into());
     }
     fid
 }
@@ -1916,7 +1916,11 @@ fn create_copy(blobid: BlobId, source_path: &BStr, source_fid: HgFileId) -> HgFi
 // content is &mut but is only going to be overwritten with the same content.
 // This is an inconvenience from the way store_manifest currently works, and
 // it will remain this way until it moves to Rust.
-fn create_manifest(content: &mut [u8], parents: &[HgManifestId]) -> HgManifestId {
+fn create_manifest(
+    store: &mut Store,
+    content: &mut [u8],
+    parents: &[HgManifestId],
+) -> HgManifestId {
     let parent_manifest = parents.get(0).map_or_else(RawHgManifest::empty, |p| {
         RawHgManifest::read(p.to_git().unwrap()).unwrap()
     });
@@ -1950,7 +1954,7 @@ fn create_manifest(content: &mut [u8], parents: &[HgManifestId]) -> HgManifestId
     for chunk in RevChunkIter::new(2, manifest_chunk.as_bytes()) {
         unsafe {
             store_manifest(
-                &mut STORE,
+                store,
                 &chunk.into(),
                 (&parent_manifest).into(),
                 content.into(),
@@ -1960,7 +1964,7 @@ fn create_manifest(content: &mut [u8], parents: &[HgManifestId]) -> HgManifestId
     mid
 }
 
-fn create_root_changeset(cid: CommitId) -> HgChangesetId {
+fn create_root_changeset(store: &mut Store, cid: CommitId) -> HgChangesetId {
     // TODO: this is all very suboptimal in what it does, how it does it,
     // and what the code looks like.
     unsafe {
@@ -1973,7 +1977,7 @@ fn create_root_changeset(cid: CommitId) -> HgChangesetId {
         .into_iter()
         .recurse()
         .map_map(|item| ManifestEntry {
-            fid: create_file(item.oid.try_into().unwrap(), &[]),
+            fid: create_file(store, item.oid.try_into().unwrap(), &[]),
             attr: item.mode.try_into().unwrap(),
         })
     {
@@ -1982,8 +1986,8 @@ fn create_root_changeset(cid: CommitId) -> HgChangesetId {
         paths.push(b'\0');
     }
     paths.pop();
-    let mid = create_manifest(&mut manifest, &[]);
-    let (csid, _) = create_changeset(unsafe { &mut STORE }, cid, mid, Some(paths.to_boxed()));
+    let mid = create_manifest(store, &mut manifest, &[]);
+    let (csid, _) = create_changeset(store, cid, mid, Some(paths.to_boxed()));
     csid
 }
 
@@ -2007,7 +2011,11 @@ impl Borrow<[u8]> for ManifestLine {
     }
 }
 
-fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Option<Box<[u8]>>) {
+fn create_simple_manifest(
+    store: &mut Store,
+    cid: CommitId,
+    parent: CommitId,
+) -> (HgManifestId, Option<Box<[u8]>>) {
     // TODO: this is all very suboptimal in what it does, how it does it,
     // and what the code looks like. And code should be shared with
     // `create_root_changeset`.
@@ -2062,7 +2070,7 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
                 DiffTreeItem::Modified { from, to },
             ) => {
                 if from.oid != to.oid {
-                    fid = create_file(to.oid.try_into().unwrap(), &[fid]);
+                    fid = create_file(store, to.oid.try_into().unwrap(), &[fid]);
                 }
                 (fid, to.mode)
             }
@@ -2074,15 +2082,17 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
                 DiffTreeItem::Renamed { from, to } | DiffTreeItem::Copied { from, to },
             ) => (
                 create_copy(
+                    store,
                     to.oid.try_into().unwrap(),
                     from.path(),
                     parent_lines.get(&**from.path()).unwrap().fid(),
                 ),
                 to.mode,
             ),
-            EitherOrBoth::Right(DiffTreeItem::Added(added)) => {
-                (create_file(added.oid.try_into().unwrap(), &[]), added.mode)
-            }
+            EitherOrBoth::Right(DiffTreeItem::Added(added)) => (
+                create_file(store, added.oid.try_into().unwrap(), &[]),
+                added.mode,
+            ),
 
             thing => die!("Something went wrong {:?}", thing),
         };
@@ -2098,21 +2108,26 @@ fn create_simple_manifest(cid: CommitId, parent: CommitId) -> (HgManifestId, Opt
         paths.push(b'\0');
     }
     paths.pop();
-    let mid = create_manifest(&mut manifest, &[parent_mid]);
+    let mid = create_manifest(store, &mut manifest, &[parent_mid]);
     (mid, Some(paths.into_boxed_slice()))
 }
 
-fn create_simple_changeset(cid: CommitId, parent: CommitId) -> [HgChangesetId; 2] {
+fn create_simple_changeset(
+    store: &mut Store,
+    cid: CommitId,
+    parent: CommitId,
+) -> [HgChangesetId; 2] {
     unsafe {
         ensure_store_init();
     }
     let parent_csid = GitChangesetId::from_unchecked(parent).to_hg().unwrap();
-    let (mid, paths) = create_simple_manifest(cid, parent);
-    let (csid, _) = create_changeset(unsafe { &mut STORE }, cid, mid, paths);
+    let (mid, paths) = create_simple_manifest(store, cid, parent);
+    let (csid, _) = create_changeset(store, cid, mid, paths);
     [csid, parent_csid]
 }
 
 fn create_merge_changeset(
+    store: &mut Store,
     cid: CommitId,
     parent1: CommitId,
     parent2: CommitId,
@@ -2139,8 +2154,8 @@ fn create_merge_changeset(
     let (parent1_csid, parent1_mid) = cs_mn(parent1);
     let (parent2_csid, parent2_mid) = cs_mn(parent2);
     if parent1_mid == parent2_mid {
-        let (mid, paths) = create_simple_manifest(cid, parent1);
-        let (csid, _) = create_changeset(unsafe { &mut STORE }, cid, mid, paths);
+        let (mid, paths) = create_simple_manifest(store, cid, parent1);
+        let (csid, _) = create_changeset(store, cid, mid, paths);
         [csid, parent1_csid, parent2_csid]
     } else {
         let parent1_mn_cid = parent1_mid.to_git().unwrap();
@@ -2256,7 +2271,7 @@ fn create_merge_changeset(
                 parents[0].fid
             } else {
                 let parents = parents.iter().map(|p| p.fid).collect_vec();
-                create_file(l.oid.try_into().unwrap(), &parents)
+                create_file(store, l.oid.try_into().unwrap(), &parents)
             };
 
             let line = WithPath::new(
@@ -2281,16 +2296,17 @@ fn create_merge_changeset(
             (parent1_mid, None)
         } else {
             (
-                create_manifest(&mut manifest, &[parent1_mid, parent2_mid]),
+                create_manifest(store, &mut manifest, &[parent1_mid, parent2_mid]),
                 Some(paths.into_boxed_slice()),
             )
         };
-        let (csid, _) = create_changeset(unsafe { &mut STORE }, cid, mid, paths);
+        let (csid, _) = create_changeset(store, cid, mid, paths);
         [csid, parent1_csid, parent2_csid]
     }
 }
 
 pub fn do_create_bundle(
+    store: &mut Store,
     commits: impl Iterator<Item = (CommitId, Box<[CommitId]>)>,
     bundlespec: BundleSpec,
     version: u8,
@@ -2310,15 +2326,20 @@ pub fn do_create_bundle(
             [csid, parent1, parent2]
         } else if parents.is_empty() {
             [
-                create_root_changeset(cid),
+                create_root_changeset(store, cid),
                 HgChangesetId::NULL,
                 HgChangesetId::NULL,
             ]
         } else if parents.len() == 1 {
-            let [csid, parent1] = create_simple_changeset(cid, parents[0]);
+            let [csid, parent1] = create_simple_changeset(store, cid, parents[0]);
             [csid, parent1, HgChangesetId::NULL]
         } else if parents.len() == 2 {
-            create_merge_changeset(cid, *parents.get(0).unwrap(), *parents.get(1).unwrap())
+            create_merge_changeset(
+                store,
+                cid,
+                *parents.get(0).unwrap(),
+                *parents.get(1).unwrap(),
+            )
         } else {
             die!("Pushing octopus merges to mercurial is not supported");
         }
@@ -2328,7 +2349,12 @@ pub fn do_create_bundle(
     ))
 }
 
-fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, String> {
+fn do_fsck(
+    store: &mut Store,
+    force: bool,
+    full: bool,
+    commits: Vec<OsString>,
+) -> Result<i32, String> {
     if !has_metadata() {
         eprintln!(
             "There does not seem to be any git-cinnabar metadata.\n\
@@ -2336,7 +2362,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         );
         return Ok(1);
     }
-    let metadata_cid = unsafe { STORE.metadata_cid };
+    let metadata_cid = store.metadata_cid;
     let checked_cid = if force {
         None
     } else {
@@ -2392,7 +2418,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
     }
 
     if full || !commits.is_empty() {
-        return do_fsck_full(commits, metadata_cid, changesets_cid, manifests_cid);
+        return do_fsck_full(store, commits, metadata_cid, changesets_cid, manifests_cid);
     }
 
     let [checked_changesets_cid, checked_manifests_cid] =
@@ -2769,7 +2795,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
         return Ok(1);
     }
 
-    if do_done_and_check(&[CHECKED_REF.as_bytes()]) {
+    if do_done_and_check(store, &[CHECKED_REF.as_bytes()]) {
         Ok(0)
     } else {
         Ok(1)
@@ -2777,6 +2803,7 @@ fn do_fsck(force: bool, full: bool, commits: Vec<OsString>) -> Result<i32, Strin
 }
 
 fn do_fsck_full(
+    store: &mut Store,
     commits: Vec<OsString>,
     metadata_cid: CommitId,
     changesets_cid: CommitId,
@@ -2952,18 +2979,18 @@ fn do_fsck_full(
         if fresh_metadata != metadata {
             fix(format!("Adjusted changeset metadata for {}", changeset_id));
             unsafe {
-                STORE.set(SetWhat::Changeset, changeset_id.into(), GitObjectId::NULL);
-                STORE.set(SetWhat::Changeset, changeset_id.into(), cid.into());
+                store.set(SetWhat::Changeset, changeset_id.into(), GitObjectId::NULL);
+                store.set(SetWhat::Changeset, changeset_id.into(), cid.into());
                 let mut metadata_id = object_id::default();
                 let mut buf = strbuf::new();
                 buf.extend_from_slice(&fresh_metadata.serialize());
                 store_git_blob(buf.as_bytes().into(), &mut metadata_id);
-                STORE.set(
+                store.set(
                     SetWhat::ChangesetMeta,
                     changeset_id.into(),
                     GitObjectId::NULL,
                 );
-                STORE.set(
+                store.set(
                     SetWhat::ChangesetMeta,
                     changeset_id.into(),
                     metadata_id.into(),
@@ -3117,48 +3144,56 @@ fn do_fsck_full(
                 }
             }
 
-            clear_manifest_heads(unsafe { &mut STORE });
+            clear_manifest_heads(store);
             for h in manifest_heads {
                 // TODO: This is gross.
                 let m = RawCommit::read(h).unwrap();
                 let m = m.parse().unwrap();
                 let m = HgManifestId::from_bytes(m.body()).unwrap();
-                unsafe { &mut STORE }.set(SetWhat::Manifest, m.into(), h.into());
+                store.set(SetWhat::Manifest, m.into(), h.into());
             }
         }
     }
 
     if full_fsck && !broken.get() {
-        unsafe { &mut STORE }.hg2git_mut().for_each(|h, _| {
+        let mut dangling = Vec::new();
+        store.hg2git_mut().for_each(|h, _| {
             if seen_changesets.contains(&HgChangesetId::from_unchecked(h))
                 || seen_manifests.contains(&HgManifestId::from_unchecked(h))
                 || seen_files.contains(&HgFileId::from_unchecked(h))
             {
                 return;
             }
+            dangling.push(h);
+        });
+        for h in dangling {
             fix(format!("Removing dangling metadata for {}", h));
             // Theoretically, we should figure out if they are files, manifests
             // or changesets and set the right variable accordingly, but in
             // practice, it makes no difference. Reevaluate when refactoring,
             // though.
-            unsafe { &mut STORE }.set(SetWhat::File, h, GitObjectId::NULL);
-            unsafe { &mut STORE }.set(SetWhat::FileMeta, h, GitObjectId::NULL);
-        });
-        unsafe { &mut STORE }.git2hg_mut().for_each(|g, _| {
+            store.set(SetWhat::File, h, GitObjectId::NULL);
+            store.set(SetWhat::FileMeta, h, GitObjectId::NULL);
+        }
+        let mut dangling = Vec::new();
+        store.git2hg_mut().for_each(|g, _| {
             // TODO: this is gross.
             let cid = GitChangesetId::from_unchecked(CommitId::from_unchecked(g));
             if seen_git2hg.contains(&cid) {
                 return;
             }
-            fix(format!("Removing dangling note for commit {}", g));
+            dangling.push(cid);
+        });
+        for cid in dangling {
+            fix(format!("Removing dangling note for commit {}", cid));
             let metadata = RawGitChangesetMetadata::read(cid).unwrap();
             let metadata = metadata.parse().unwrap();
-            unsafe { &mut STORE }.set(
+            store.set(
                 SetWhat::ChangesetMeta,
                 metadata.changeset_id().into(),
                 GitObjectId::NULL,
             );
-        });
+        }
     }
 
     check_replace(metadata_cid);
@@ -3184,7 +3219,7 @@ fn do_fsck_full(
             ));
         }
         if original_heads != computed_heads {
-            set_changeset_heads(unsafe { &mut STORE }, changeset_heads);
+            set_changeset_heads(store, changeset_heads);
         }
     }
 
@@ -3207,7 +3242,7 @@ fn do_fsck_full(
         return Ok(1);
     }
 
-    if do_done_and_check(&[CHECKED_REF.as_bytes()]) {
+    if do_done_and_check(store, &[CHECKED_REF.as_bytes()]) {
         if fixed.get() {
             Ok(2)
         } else {
@@ -3513,6 +3548,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         return git_remote_hg(remote, url);
     }
     Lazy::force(&INIT_CINNABAR_2);
+    let store = unsafe { &mut STORE };
     let ret = match command {
         #[cfg(feature = "self-update")]
         SelfUpdate { .. } => unreachable!(),
@@ -3520,17 +3556,18 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         Setup => unreachable!(),
         Data {
             changeset: Some(c), ..
-        } => do_data_changeset(c),
+        } => do_data_changeset(store, c),
         Data {
             manifest: Some(m), ..
-        } => do_data_manifest(m),
-        Data { file: Some(f), .. } => do_data_file(f),
+        } => do_data_manifest(store, m),
+        Data { file: Some(f), .. } => do_data_file(store, f),
         Data { .. } => unreachable!(),
         Hg2Git {
             abbrev,
             sha1,
             batch,
         } => do_conversion_cmd(
+            store,
             abbrev.map(|v| v.get(0).map_or(12, |a| a.0)),
             sha1.into_iter(),
             batch,
@@ -3541,6 +3578,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             committish,
             batch,
         } => do_conversion_cmd(
+            store,
             abbrev.map(|v| v.get(0).map_or(12, |a| a.0)),
             committish.into_iter(),
             batch,
@@ -3550,10 +3588,10 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             remote: Some(remote),
             revs,
             tags: false,
-        } => do_fetch(&remote, &revs),
+        } => do_fetch(store, &remote, &revs),
         Fetch { tags: true, .. } => do_fetch_tags(),
         Fetch { remote: None, .. } => unreachable!(),
-        Reclone { rebase } => do_reclone(rebase),
+        Reclone { rebase } => do_reclone(store, rebase),
         Rollback {
             candidates,
             fsck,
@@ -3561,12 +3599,12 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             committish,
         } => do_rollback(candidates, fsck, force, committish),
         Upgrade => do_upgrade(),
-        Unbundle { clonebundle, url } => do_unbundle(clonebundle, url),
+        Unbundle { clonebundle, url } => do_unbundle(store, clonebundle, url),
         Fsck {
             force,
             full,
             commit,
-        } => match do_fsck(force, full, commit) {
+        } => match do_fsck(store, force, full, commit) {
             Ok(code) => return Ok(code),
             Err(e) => Err(e),
         },
@@ -3575,7 +3613,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             r#type,
             path,
             revs,
-        } => match do_bundle(version, r#type, path, revs) {
+        } => match do_bundle(store, version, r#type, path, revs) {
             Ok(code) => return Ok(code),
             Err(e) => Err(e),
         },
@@ -3603,7 +3641,8 @@ pub fn main() {
 fn remote_helper_tags_list(mut stdout: impl Write) {
     Lazy::force(&INIT_CINNABAR_2);
     let _lock = HELPER_LOCK.lock().unwrap();
-    let tags = unsafe { &STORE }.get_tags();
+    let store = unsafe { &mut STORE };
+    let tags = store.get_tags();
     let tags = tags
         .iter()
         .filter_map(|(t, h)| h.to_git().map(|g| (t, g)))
@@ -3948,7 +3987,7 @@ fn remote_helper_import(
         import_bundle(conn, remote, &info, &unknown_wanted_heads)?;
     }
 
-    do_done_and_check(&[])
+    do_done_and_check(unsafe { &mut STORE }, &[])
         .then_some(())
         .ok_or_else(|| "Fatal error".to_string())?;
 
@@ -4053,6 +4092,7 @@ fn check_graft_refs() {
 }
 
 fn remote_helper_push(
+    store: &mut Store,
     conn: &mut dyn HgRepo,
     remote: Option<&str>,
     push_refs: &[&BStr],
@@ -4116,7 +4156,7 @@ fn remote_helper_push(
         let branch_names = info.branch_names.into_iter().collect::<HashSet<_>>();
         let push_commits = push_refs.iter().filter_map(|(_, c, _, _)| *c).collect_vec();
         let local_bases = rev_list_with_boundaries(
-            unsafe { &STORE }
+            store
                 .changeset_heads()
                 .branch_heads()
                 .filter(|(_, b)| branch_names.contains(*b))
@@ -4229,6 +4269,7 @@ fn remote_helper_push(
                 .unwrap();
             let (file, path) = tempfile.into_parts();
             pushed = do_create_bundle(
+                store,
                 push_commits.iter().cloned(),
                 bundlespec,
                 version,
@@ -4428,7 +4469,7 @@ fn remote_helper_push(
             do_cleanup(1);
         }
     } else {
-        do_done_and_check(&[])
+        do_done_and_check(store, &[])
             .then_some(())
             .ok_or_else(|| "Fatal error".to_string())?;
     }
@@ -4571,6 +4612,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
             b"push" => {
                 assert_ne!(url.scheme(), "tags");
                 let code = remote_helper_push(
+                    unsafe { &mut STORE },
                     conn.as_deref_mut().unwrap(),
                     remote.as_deref(),
                     &args.iter().map(|r| &**r).collect_vec(),
