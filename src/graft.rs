@@ -46,7 +46,7 @@ pub fn init_graft() {
         "--exclude=refs/original/*",
         "--all",
     ];
-    if has_metadata(unsafe { &mut STORE }) {
+    if has_metadata(unsafe { &STORE }) {
         args.push("--not");
         args.push("refs/cinnabar/metadata^");
     }

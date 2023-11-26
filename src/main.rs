@@ -311,7 +311,7 @@ pub fn prepare_arg(arg: OsString) -> Vec<u16> {
     arg
 }
 
-fn do_one_hg2git(store: &mut Store, sha1: Abbrev<HgChangesetId>) -> String {
+fn do_one_hg2git(store: &Store, sha1: Abbrev<HgChangesetId>) -> String {
     format!(
         "{}",
         store
@@ -321,7 +321,7 @@ fn do_one_hg2git(store: &mut Store, sha1: Abbrev<HgChangesetId>) -> String {
     )
 }
 
-fn do_one_git2hg(_store: &mut Store, committish: OsString) -> String {
+fn do_one_git2hg(_store: &Store, committish: OsString) -> String {
     let note = get_oid_committish(committish.as_bytes())
         .map(lookup_replace_commit)
         .and_then(|oid| GitChangesetId::from_unchecked(oid).to_hg());
@@ -343,7 +343,7 @@ fn do_conversion<T, I: Iterator<Item = T>, F: FnMut(T) -> Result<String, String>
 }
 
 fn do_conversion_cmd<T, I, F>(
-    store: &mut Store,
+    store: &Store,
     abbrev: Option<usize>,
     input: I,
     batch: bool,
@@ -353,7 +353,7 @@ where
     T: FromStr,
     <T as FromStr>::Err: fmt::Display,
     I: Iterator<Item = T>,
-    F: Fn(&mut Store, T) -> String,
+    F: Fn(&Store, T) -> String,
 {
     let f = &f;
     let out = stdout();
@@ -379,7 +379,7 @@ where
     Ok(())
 }
 
-fn do_data_changeset(store: &mut Store, rev: Abbrev<HgChangesetId>) -> Result<(), String> {
+fn do_data_changeset(store: &Store, rev: Abbrev<HgChangesetId>) -> Result<(), String> {
     let commit_id = store
         .hg2git_mut()
         .get_note_abbrev(rev)
@@ -391,7 +391,7 @@ fn do_data_changeset(store: &mut Store, rev: Abbrev<HgChangesetId>) -> Result<()
     stdout().write_all(&changeset).map_err(|e| e.to_string())
 }
 
-fn do_data_manifest(store: &mut Store, rev: Abbrev<HgManifestId>) -> Result<(), String> {
+fn do_data_manifest(store: &Store, rev: Abbrev<HgManifestId>) -> Result<(), String> {
     let commit_id = store
         .hg2git_mut()
         .get_note_abbrev(rev)
@@ -1773,7 +1773,7 @@ fn do_setup() -> Result<(), String> {
     Ok(())
 }
 
-fn do_data_file(store: &mut Store, rev: Abbrev<HgFileId>) -> Result<(), String> {
+fn do_data_file(store: &Store, rev: Abbrev<HgFileId>) -> Result<(), String> {
     let mut stdout = stdout();
     let blob_id = store
         .hg2git_mut()
@@ -1831,7 +1831,7 @@ fn do_unbundle(store: &mut Store, clonebundle: bool, mut url: OsString) -> Resul
 }
 
 fn do_bundle(
-    store: &mut Store,
+    store: &Store,
     version: u8,
     bundlespec: Option<BundleSpec>,
     path: PathBuf,
@@ -1867,7 +1867,7 @@ fn do_bundle(
     result
 }
 
-fn create_file(store: &mut Store, blobid: BlobId, parents: &[HgFileId]) -> HgFileId {
+fn create_file(store: &Store, blobid: BlobId, parents: &[HgFileId]) -> HgFileId {
     let blob = RawBlob::read(blobid).unwrap();
     let mut hash = HgFileId::create();
     if parents.len() < 2 {
@@ -1886,7 +1886,7 @@ fn create_file(store: &mut Store, blobid: BlobId, parents: &[HgFileId]) -> HgFil
 }
 
 fn create_copy(
-    store: &mut Store,
+    store: &Store,
     blobid: BlobId,
     source_path: &BStr,
     source_fid: HgFileId,
@@ -1920,11 +1920,7 @@ fn create_copy(
 // content is &mut but is only going to be overwritten with the same content.
 // This is an inconvenience from the way store_manifest currently works, and
 // it will remain this way until it moves to Rust.
-fn create_manifest(
-    store: &mut Store,
-    content: &mut [u8],
-    parents: &[HgManifestId],
-) -> HgManifestId {
+fn create_manifest(store: &Store, content: &mut [u8], parents: &[HgManifestId]) -> HgManifestId {
     let parent_manifest = parents.get(0).map_or_else(RawHgManifest::empty, |p| {
         RawHgManifest::read(p.to_git().unwrap()).unwrap()
     });
@@ -1968,7 +1964,7 @@ fn create_manifest(
     mid
 }
 
-fn create_root_changeset(store: &mut Store, cid: CommitId) -> HgChangesetId {
+fn create_root_changeset(store: &Store, cid: CommitId) -> HgChangesetId {
     // TODO: this is all very suboptimal in what it does, how it does it,
     // and what the code looks like.
     unsafe {
@@ -2016,7 +2012,7 @@ impl Borrow<[u8]> for ManifestLine {
 }
 
 fn create_simple_manifest(
-    store: &mut Store,
+    store: &Store,
     cid: CommitId,
     parent: CommitId,
 ) -> (HgManifestId, Option<Box<[u8]>>) {
@@ -2116,11 +2112,7 @@ fn create_simple_manifest(
     (mid, Some(paths.into_boxed_slice()))
 }
 
-fn create_simple_changeset(
-    store: &mut Store,
-    cid: CommitId,
-    parent: CommitId,
-) -> [HgChangesetId; 2] {
+fn create_simple_changeset(store: &Store, cid: CommitId, parent: CommitId) -> [HgChangesetId; 2] {
     unsafe {
         ensure_store_init();
     }
@@ -2131,7 +2123,7 @@ fn create_simple_changeset(
 }
 
 fn create_merge_changeset(
-    store: &mut Store,
+    store: &Store,
     cid: CommitId,
     parent1: CommitId,
     parent2: CommitId,
@@ -2310,14 +2302,14 @@ fn create_merge_changeset(
 }
 
 pub fn do_create_bundle(
-    store: &mut Store,
+    store: &Store,
     mut commits: impl Iterator<Item = (CommitId, Box<[CommitId]>)>,
     bundlespec: BundleSpec,
     version: u8,
     output: &File,
     replycaps: bool,
 ) -> Result<ChangesetHeads, String> {
-    let changesets = |store: &mut Store| {
+    let changesets = |store: &Store| {
         commits.next().map(move |(cid, parents)| {
             if let Some(csid) = GitChangesetId::from_unchecked(cid).to_hg() {
                 let mut parents = parents.iter().copied();
@@ -3648,7 +3640,7 @@ pub fn main() {
 fn remote_helper_tags_list(mut stdout: impl Write) {
     Lazy::force(&INIT_CINNABAR_2);
     let _lock = HELPER_LOCK.lock().unwrap();
-    let store = unsafe { &mut STORE };
+    let store = unsafe { &STORE };
     let tags = store.get_tags();
     let tags = tags
         .iter()

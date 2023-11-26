@@ -581,7 +581,7 @@ fn test_encode_decode_caps() {
 }
 
 pub fn get_store_bundle(
-    store: &mut Store,
+    store: &Store,
     conn: &mut dyn HgRepo,
     heads: &[HgChangesetId],
     common: &[HgChangesetId],
@@ -790,7 +790,7 @@ pub fn get_bundle(
     branch_names: &HashSet<&BStr>,
     remote: Option<&str>,
 ) -> Result<(), String> {
-    let known_branch_heads = |store: &mut Store| {
+    let known_branch_heads = |store: &Store| {
         store
             .changeset_heads()
             .branch_heads()

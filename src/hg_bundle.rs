@@ -1068,8 +1068,8 @@ fn write_chunk<T: core::ops::Deref<Target = [u8]>>(
 }
 
 pub fn create_bundle(
-    store: &mut Store,
-    mut changesets: impl FnMut(&mut Store) -> Option<[HgChangesetId; 3]>,
+    store: &Store,
+    mut changesets: impl FnMut(&Store) -> Option<[HgChangesetId; 3]>,
     bundlespec: BundleSpec,
     version: u8,
     output: &File,
@@ -1210,7 +1210,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
 }
 
 fn bundle_files<const CHUNK_SIZE: usize>(
-    store: &mut Store,
+    store: &Store,
     bundle_part_writer: &mut BundlePartWriter<CHUNK_SIZE>,
     version: u8,
     files: impl IntoIterator<

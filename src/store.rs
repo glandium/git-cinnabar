@@ -803,7 +803,7 @@ impl RawHgFile {
         Some(Self(result.into_rc()))
     }
 
-    pub fn read_hg(store: &mut Store, oid: HgFileId) -> Option<Self> {
+    pub fn read_hg(store: &Store, oid: HgFileId) -> Option<Self> {
         if oid == Self::EMPTY_OID {
             Some(Self(RcSlice::new()))
         } else {
@@ -1249,7 +1249,7 @@ pub enum SetWhat {
 }
 
 impl Store {
-    pub fn set(&mut self, what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
+    pub fn set(&self, what: SetWhat, hg_id: HgObjectId, git_id: GitObjectId) {
         fn set<T: TryFrom<GitObjectId>>(
             notes: &mut hg_notes_tree,
             hg_id: HgObjectId,
@@ -1322,7 +1322,7 @@ fn corrupted_metata() -> ! {
 // executables"). The hg directory alone was not enough for that, because it
 // lacked the attribute information.
 fn create_git_tree(
-    store: &mut Store,
+    store: &Store,
     manifest_tree_id: GitManifestTreeId,
     ref_tree_id: Option<TreeId>,
     merge_tree_id: Option<GitManifestTreeId>,
@@ -1447,7 +1447,7 @@ fn create_git_tree(
 }
 
 fn store_changeset(
-    store: &mut Store,
+    store: &Store,
     changeset_id: HgChangesetId,
     parents: &[HgChangesetId],
     raw_changeset: &RawHgChangeset,
@@ -1635,7 +1635,7 @@ pub fn raw_commit_for_changeset(
 }
 
 pub fn create_changeset(
-    store: &mut Store,
+    store: &Store,
     commit_id: CommitId,
     manifest_id: HgManifestId,
     files: Option<Box<[u8]>>,
@@ -1712,7 +1712,7 @@ pub fn create_changeset(
 #[allow(improper_ctypes)]
 extern "C" {
     pub fn store_manifest(
-        store: &mut Store,
+        store: &Store,
         chunk: *const rev_chunk,
         reference_mn: strslice,
         stored_mn: strslice_mut,
@@ -1753,12 +1753,12 @@ pub unsafe extern "C" fn check_manifest(oid: *const object_id) -> c_int {
 
 static STORED_FILES: Mutex<BTreeMap<HgFileId, [HgFileId; 2]>> = Mutex::new(BTreeMap::new());
 
-pub fn check_file(store: &mut Store, node: HgFileId, p1: HgFileId, p2: HgFileId) -> bool {
+pub fn check_file(store: &Store, node: HgFileId, p1: HgFileId, p2: HgFileId) -> bool {
     let data = RawHgFile::read_hg(store, node).unwrap();
     crate::hg_data::find_file_parents(node, Some(p1), Some(p2), &data).is_some()
 }
 
-pub fn do_check_files(store: &mut Store) -> bool {
+pub fn do_check_files(store: &Store) -> bool {
     // Try to detect issue #207 as early as possible.
     let mut busted = false;
     for (&node, &[p1, p2]) in STORED_FILES
@@ -1797,7 +1797,7 @@ pub fn do_check_files(store: &mut Store) -> bool {
     !busted
 }
 
-pub fn store_changegroup<R: Read>(store: &mut Store, input: R, version: u8) {
+pub fn store_changegroup<R: Read>(store: &Store, input: R, version: u8) {
     unsafe {
         ensure_store_init();
     }
@@ -2475,7 +2475,7 @@ pub unsafe fn done_store(store: &mut Store) {
     *store = Store::default();
 }
 
-pub fn do_store_metadata(store: &mut Store) -> CommitId {
+pub fn do_store_metadata(store: &Store) -> CommitId {
     let hg2git_;
     let git2hg_;
     let files_meta_;

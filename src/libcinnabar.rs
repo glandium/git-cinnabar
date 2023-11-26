@@ -207,7 +207,7 @@ fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_not
 
 #[no_mangle]
 pub unsafe extern "C" fn resolve_hg2git(
-    store: &mut Store,
+    store: &Store,
     oid: *const hg_object_id,
 ) -> *const object_id {
     let git_oid =
@@ -218,7 +218,7 @@ pub unsafe extern "C" fn resolve_hg2git(
 
 #[no_mangle]
 pub unsafe extern "C" fn add_hg2git(
-    store: &mut Store,
+    store: &Store,
     oid: *const hg_object_id,
     note_oid: *const object_id,
 ) {
