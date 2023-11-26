@@ -105,7 +105,6 @@ use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bund
 use indexmap::IndexSet;
 use itertools::EitherOrBoth::{Both, Left, Right};
 use itertools::{EitherOrBoth, Itertools};
-use libcinnabar::git_notes_tree;
 use libgit::{
     commit, config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
     get_oid_committish, get_unique_abbrev, lookup_commit, lookup_replace_commit, object_id,
@@ -895,41 +894,18 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
     }
 
     let old_changesets_oid = store.changesets_cid;
-    let mut old_git2hg = {
-        let git2hg_oid = store.git2hg_cid;
-        if git2hg_oid.is_null() {
-            None
-        } else {
-            Some(git_notes_tree::new_with(git2hg_oid))
-        }
-    };
-
-    let current_metadata_oid = unsafe {
-        let current_metadata_oid = store.metadata_cid;
-        init_store(store, None);
-        store.metadata_cid = current_metadata_oid;
-        current_metadata_oid
-    };
+    let current_metadata_oid = store.metadata_cid;
+    let old_store = store;
+    let mut store = Store::new(None);
+    store.metadata_cid = current_metadata_oid;
 
     check_graft_refs();
 
     if graft_config_enabled(None)?.unwrap_or(false) {
-        init_graft(store);
+        init_graft(&store);
     }
 
-    let mut old_to_hg = |cid| {
-        let old_git2hg = old_git2hg.as_mut().unwrap();
-        // Manual reimplementation of to_hg. Can't wait to have non-global
-        // metadata structs. This shouldn't fail, but in case the original
-        // metadata was busted...
-        RawGitChangesetMetadata::read_from_notes_tree(
-            old_git2hg,
-            GitChangesetId::from_unchecked(cid),
-        )
-        .as_ref()
-        .and_then(RawGitChangesetMetadata::parse)
-        .map(|m| m.changeset_id())
-    };
+    let old_to_hg = |cid| GitChangesetId::from_unchecked(cid).to_hg(old_store);
 
     let mut update_refs_by_category = Vec::new();
 
@@ -945,7 +921,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
         println!("Fetching {}", remote.name().unwrap().to_string_lossy());
         let mut conn = get_connection(&url).unwrap();
         let info = repo_list(
-            Some(store),
+            Some(&store),
             &mut *conn,
             remote.name().and_then(|s| s.to_str()),
             false,
@@ -1009,7 +985,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
             .collect_vec();
 
         import_bundle(
-            store,
+            &mut store,
             &mut *conn,
             remote.name().and_then(|n| n.to_str()),
             &info,
@@ -1019,7 +995,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
         for (refname, peer_ref, csid, cid) in wanted_refs.into_iter().unique() {
             let old_cid = resolve_ref(OsStr::from_bytes(&peer_ref));
             let cid = Some(CommitId::from(
-                cid.unwrap_or_else(|| csid.to_git(store).unwrap()),
+                cid.unwrap_or_else(|| csid.to_git(&store).unwrap()),
             ));
             if old_cid != cid {
                 update_refs.push((Either::Left(peer_ref), Some(refname), cid, old_cid));
@@ -1051,7 +1027,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                     .heads()
                     .copied(),
             )
-            .filter(|(_, csid)| csid.to_git(store).is_none())
+            .filter(|(_, csid)| csid.to_git(&store).is_none())
             .collect_vec();
 
         for_each_remote(|remote| {
@@ -1088,7 +1064,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
             unknowns = u;
             if !knowns.is_empty() {
                 get_bundle(
-                    store,
+                    &mut store,
                     &mut *conn,
                     &knowns.iter().map(|(_, csid)| *csid).collect_vec(),
                     &HashSet::new(),
@@ -1097,7 +1073,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                 let update_refs = knowns
                     .into_iter()
                     .filter_map(|(old_cid, csid)| {
-                        csid.to_git(store)
+                        csid.to_git(&store)
                             .and_then(|cid| (cid != old_cid).then(|| (old_cid, cid.into(), csid)))
                     })
                     .map(|(old_cid, cid, csid)| {
@@ -1151,7 +1127,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                     } else {
                         old_to_hg(*p).map_or((None, Some(*p)), |csid| {
                             let new_cid =
-                                csid.to_git(store).map(CommitId::from).filter(|new_cid| {
+                                csid.to_git(&store).map(CommitId::from).filter(|new_cid| {
                                     p == new_cid || p.get_tree_id() == new_cid.get_tree_id()
                                 });
                             (new_cid, None)
@@ -1200,7 +1176,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
             .filter_map(|(refname_or_head, old_cid)| {
                 let cid = rewritten.get(&old_cid).and_then(Clone::clone).or_else(|| {
                     old_to_hg(old_cid)
-                        .and_then(|cid| cid.to_git(store))
+                        .and_then(|cid| cid.to_git(&store))
                         .map(Into::into)
                 });
                 (Some(old_cid) != cid).then_some((refname_or_head, old_cid, cid))
@@ -1242,7 +1218,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
 
         store.metadata_cid = current_metadata_oid;
 
-        do_done_and_check(store, &[])
+        do_done_and_check(&mut store, &[])
             .then_some(())
             .ok_or_else(|| "Fatal error".to_string())?;
         let mut transaction = RefTransaction::new().unwrap();
@@ -1410,6 +1386,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
         Ok(())
     })
     .map(|()| {
+        *old_store = store;
         if !rebase {
             // TODO: Avoid showing this message when we detect there is nothing
             // to rebase.

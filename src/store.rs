@@ -217,14 +217,8 @@ pub struct RawGitChangesetMetadata(RawBlob);
 
 impl RawGitChangesetMetadata {
     pub fn read(store: &Store, changeset_id: GitChangesetId) -> Option<Self> {
-        Self::read_from_notes_tree(&mut store.git2hg_mut(), changeset_id)
-    }
-
-    pub fn read_from_notes_tree(
-        notes: &mut git_notes_tree,
-        changeset_id: GitChangesetId,
-    ) -> Option<Self> {
-        let note = notes
+        let note = store
+            .git2hg_mut()
             .get_note(CommitId::from(changeset_id).into())
             .map(BlobId::from_unchecked)?;
         RawBlob::read(note).map(Self)
