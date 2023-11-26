@@ -608,7 +608,7 @@ fn do_fetch(store: &mut Store, remote: &OsStr, revs: &[OsString]) -> Result<(), 
         init_graft();
     }
 
-    get_bundle(&mut *conn, &full_revs, &HashSet::new(), remote)?;
+    get_bundle(store, &mut *conn, &full_revs, &HashSet::new(), remote)?;
 
     do_done_and_check(store, &[])
         .then_some(())
@@ -1051,6 +1051,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
             .collect_vec();
 
         import_bundle(
+            store,
             &mut *conn,
             remote.name().and_then(|n| n.to_str()),
             &info,
@@ -1129,6 +1130,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
             unknowns = u;
             if !knowns.is_empty() {
                 get_bundle(
+                    store,
                     &mut *conn,
                     &knowns.iter().map(|(_, csid)| *csid).collect_vec(),
                     &HashSet::new(),
@@ -1820,7 +1822,8 @@ fn do_unbundle(store: &mut Store, clonebundle: bool, mut url: OsString) -> Resul
     }
     let mut conn = get_connection(&url).unwrap();
 
-    get_store_bundle(&mut *conn, &[], &[]).map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
+    get_store_bundle(store, &mut *conn, &[], &[])
+        .map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
 
     do_done_and_check(store, &[])
         .then_some(())
@@ -3984,7 +3987,13 @@ fn remote_helper_import(
         if graft_config_enabled(remote)?.unwrap_or(false) {
             init_graft();
         }
-        import_bundle(conn, remote, &info, &unknown_wanted_heads)?;
+        import_bundle(
+            unsafe { &mut STORE },
+            conn,
+            remote,
+            &info,
+            &unknown_wanted_heads,
+        )?;
     }
 
     do_done_and_check(unsafe { &mut STORE }, &[])
@@ -4043,6 +4052,7 @@ fn remote_helper_import(
 }
 
 fn import_bundle(
+    store: &mut Store,
     conn: &mut dyn HgRepo,
     remote: Option<&str>,
     info: &RemoteInfo,
@@ -4078,7 +4088,7 @@ fn import_bundle(
         .iter()
         .map(|b| &**b)
         .collect::<HashSet<_>>();
-    get_bundle(conn, &unknown_wanted_heads, &branch_names, remote)
+    get_bundle(store, conn, &unknown_wanted_heads, &branch_names, remote)
 }
 
 fn check_graft_refs() {

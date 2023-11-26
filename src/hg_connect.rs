@@ -24,7 +24,7 @@ use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libgit::{die, rev_list, RawCommit};
 use crate::oid::ObjectId;
-use crate::store::{has_metadata, merge_metadata, store_changegroup, Dag, Traversal, STORE};
+use crate::store::{has_metadata, merge_metadata, store_changegroup, Dag, Store, Traversal};
 use crate::util::{FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed};
 use crate::{check_enabled, get_config_remote, graft_config_enabled, Checks, HELPER_LOCK};
 
@@ -581,6 +581,7 @@ fn test_encode_decode_caps() {
 }
 
 pub fn get_store_bundle(
+    store: &mut Store,
     conn: &mut dyn HgRepo,
     heads: &[HgChangesetId],
     common: &[HgChangesetId],
@@ -605,7 +606,7 @@ pub fn get_store_bundle(
                         .get_param("version")
                         .map_or(1, |v| u8::from_str(v).unwrap());
                     let _locked = HELPER_LOCK.lock().unwrap();
-                    store_changegroup(unsafe { &mut STORE }, BufReader::new(part), version);
+                    store_changegroup(store, BufReader::new(part), version);
                 } else if &*part.part_type == "stream2" {
                     return Err(b"Stream bundles are not supported."
                         .to_vec()
@@ -783,13 +784,14 @@ pub fn find_common(
 }
 
 pub fn get_bundle(
+    store: &mut Store,
     conn: &mut dyn HgRepo,
     heads: &[HgChangesetId],
     branch_names: &HashSet<&BStr>,
     remote: Option<&str>,
 ) -> Result<(), String> {
-    let known_branch_heads = || {
-        unsafe { &STORE }
+    let known_branch_heads = |store: &mut Store| {
+        store
             .changeset_heads()
             .branch_heads()
             .filter_map(|(h, b)| {
@@ -799,8 +801,8 @@ pub fn get_bundle(
     };
 
     let mut heads = Cow::Borrowed(heads);
-    let mut common = find_common(conn, known_branch_heads());
-    if common.is_empty() && !has_metadata() && get_initial_bundle(conn, remote)? {
+    let mut common = find_common(conn, known_branch_heads(store));
+    if common.is_empty() && !has_metadata() && get_initial_bundle(store, conn, remote)? {
         // Eliminate the heads that we got from the clonebundle or
         // cinnabarclone
         let lock = HELPER_LOCK.lock();
@@ -815,10 +817,10 @@ pub fn get_bundle(
         if heads.is_empty() {
             return Ok(());
         }
-        common = find_common(conn, known_branch_heads());
+        common = find_common(conn, known_branch_heads(store));
     }
 
-    get_store_bundle(conn, &heads, &common).map_err(|e| {
+    get_store_bundle(store, conn, &heads, &common).map_err(|e| {
         let stderr = stderr();
         let mut writer = PrefixWriter::new("remote: ", stderr.lock());
         writer.write_all(&e).unwrap();
@@ -826,7 +828,11 @@ pub fn get_bundle(
     })
 }
 
-fn get_initial_bundle(conn: &mut dyn HgRepo, remote: Option<&str>) -> Result<bool, String> {
+fn get_initial_bundle(
+    store: &mut Store,
+    conn: &mut dyn HgRepo,
+    remote: Option<&str>,
+) -> Result<bool, String> {
     if let Some((manifest, limit_schemes)) = get_config_remote("clone", remote)
         .map(|m| (m.as_bytes().to_boxed(), false))
         .or_else(|| {
@@ -875,7 +881,7 @@ fn get_initial_bundle(conn: &mut dyn HgRepo, remote: Option<&str>) -> Result<boo
         {
             eprintln!("Getting clone bundle from {}", url);
             let mut bundle_conn = get_connection(&url).unwrap();
-            match get_store_bundle(&mut *bundle_conn, &[], &[]) {
+            match get_store_bundle(store, &mut *bundle_conn, &[], &[]) {
                 Ok(()) => {
                     return Ok(true);
                 }
