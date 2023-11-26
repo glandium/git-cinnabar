@@ -85,7 +85,7 @@ pub struct Store {
     files_meta_: OnceCell<hg_notes_tree>,
     pub flags: MetadataFlags,
     changeset_heads_: OnceCell<RefCell<ChangesetHeads>>,
-    manifest_heads_: OnceCell<ManifestHeads>,
+    manifest_heads_: OnceCell<RefCell<ManifestHeads>>,
     tree_cache_: BTreeMap<GitManifestTreeId, TreeId>,
 }
 
@@ -129,19 +129,21 @@ impl Store {
         self.changeset_heads_.get().unwrap().borrow_mut()
     }
 
-    pub fn manifest_heads(&self) -> &ManifestHeads {
-        self.manifest_heads_.get_or_init(|| {
-            if self.manifests_cid.is_null() {
-                ManifestHeads::new()
-            } else {
-                ManifestHeads::from_metadata(self.manifests_cid)
-            }
-        })
+    pub fn manifest_heads(&self) -> Ref<ManifestHeads> {
+        self.manifest_heads_
+            .get_or_init(|| {
+                RefCell::new(if self.manifests_cid.is_null() {
+                    ManifestHeads::new()
+                } else {
+                    ManifestHeads::from_metadata(self.manifests_cid)
+                })
+            })
+            .borrow()
     }
 
-    pub fn manifest_heads_mut(&mut self) -> &mut ManifestHeads {
+    pub fn manifest_heads_mut(&self) -> RefMut<ManifestHeads> {
         self.manifest_heads();
-        self.manifest_heads_.get_mut().unwrap()
+        self.manifest_heads_.get().unwrap().borrow_mut()
     }
 
     pub fn hg2git(&self) -> &hg_notes_tree {
@@ -1202,15 +1204,15 @@ fn store_manifests_metadata(store: &Store) -> CommitId {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn add_manifest_head(store: &mut Store, mn: *const object_id) {
-    let heads = store.manifest_heads_mut();
+pub unsafe extern "C" fn add_manifest_head(store: &Store, mn: *const object_id) {
+    let mut heads = store.manifest_heads_mut();
     heads.add(GitManifestId::from_unchecked(CommitId::from_unchecked(
         mn.as_ref().unwrap().clone().into(),
     )));
 }
 
-pub fn clear_manifest_heads(store: &mut Store) {
-    let heads = store.manifest_heads_mut();
+pub fn clear_manifest_heads(store: &Store) {
+    let mut heads = store.manifest_heads_mut();
     *heads = ManifestHeads::new();
 }
 
