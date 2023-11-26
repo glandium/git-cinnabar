@@ -76,7 +76,6 @@ pub unsafe extern "C" fn rev_diff_iter_next(
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct rev_chunk {
-    raw: strslice<'static>,
     node: NonNull<hg_object_id>,
     parent1: NonNull<hg_object_id>,
     parent2: NonNull<hg_object_id>,
@@ -127,7 +126,6 @@ impl From<RevChunk> for rev_chunk {
         let buf = &mut chunk.raw[..];
         unsafe {
             rev_chunk {
-                raw: mem::transmute(buf.as_str_slice()),
                 node: NonNull::new_unchecked(buf.as_mut_ptr()).cast(),
                 parent1: NonNull::new_unchecked(buf.as_mut_ptr().add(20)).cast(),
                 parent2: NonNull::new_unchecked(buf.as_mut_ptr().add(40)).cast(),

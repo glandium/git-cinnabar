@@ -12,8 +12,6 @@
 #include <stdio.h>
 
 struct rev_chunk {
-	struct strslice raw;
-
 	const struct hg_object_id *node;
 	const struct hg_object_id *parent1;
 	const struct hg_object_id *parent2;
