@@ -81,7 +81,7 @@ pub struct Store {
     pub git2hg_cid: CommitId,
     pub files_meta_cid: CommitId,
     hg2git_: OnceCell<RefCell<hg_notes_tree>>,
-    git2hg_: OnceCell<git_notes_tree>,
+    git2hg_: OnceCell<RefCell<git_notes_tree>>,
     files_meta_: OnceCell<hg_notes_tree>,
     pub flags: MetadataFlags,
     changeset_heads_: OnceCell<RefCell<ChangesetHeads>>,
@@ -157,14 +157,15 @@ impl Store {
         self.hg2git_.get().unwrap().borrow_mut()
     }
 
-    pub fn git2hg(&self) -> &git_notes_tree {
+    pub fn git2hg(&self) -> Ref<git_notes_tree> {
         self.git2hg_
-            .get_or_init(|| git_notes_tree::new_with(self.git2hg_cid))
+            .get_or_init(|| RefCell::new(git_notes_tree::new_with(self.git2hg_cid)))
+            .borrow()
     }
 
-    pub fn git2hg_mut(&mut self) -> &mut git_notes_tree {
+    pub fn git2hg_mut(&self) -> RefMut<git_notes_tree> {
         self.git2hg();
-        self.git2hg_.get_mut().unwrap()
+        self.git2hg_.get().unwrap().borrow_mut()
     }
 
     pub fn files_meta(&self) -> &hg_notes_tree {
@@ -217,7 +218,7 @@ pub struct RawGitChangesetMetadata(RawBlob);
 
 impl RawGitChangesetMetadata {
     pub fn read(changeset_id: GitChangesetId) -> Option<Self> {
-        Self::read_from_notes_tree(unsafe { &mut STORE }.git2hg_mut(), changeset_id)
+        Self::read_from_notes_tree(&mut unsafe { &STORE }.git2hg_mut(), changeset_id)
     }
 
     pub fn read_from_notes_tree(
