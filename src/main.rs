@@ -296,7 +296,7 @@ fn do_done_and_check(store: &mut Store, args: &[&[u8]]) -> bool {
         }
         do_reload(store, None);
     }
-    do_check_files()
+    do_check_files(store)
 }
 
 #[cfg(unix)]
