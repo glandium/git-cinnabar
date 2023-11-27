@@ -42,9 +42,6 @@ void do_set_replace(const struct object_id *replaced,
 void store_manifest(struct Store *store, struct rev_chunk *chunk,
                     const struct strslice last_manifest_content,
                     struct strslice_mut data);
-void store_metadata_notes(
-	struct cinnabar_notes_tree *notes, const struct object_id *reference,
-	struct object_id *result);
 
 void ensure_store_init(void);
 
