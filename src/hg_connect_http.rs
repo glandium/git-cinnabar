@@ -799,13 +799,9 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
      * the repo url with a query string "?cmd=capabilities". If the remote
      * url is not actually a repo, but a bundle, the content will start with
      * 'HG10' or 'HG20', which is not something that would appear as the first
-     * four characters for the "capabilities" answer. In that case, we output
-     * the stream to stdout.
+     * four characters for the "capabilities" answer.
      * (Note this assumes HTTP servers serving bundles don't care about query
      * strings)
-     * Ideally, it would be good to pause the curl request, return a
-     * hg_connection, and give control back to the caller, but git's http.c
-     * doesn't allow pauses.
      */
     let mut http_req = conn.start_command_request("capabilities", args!());
     if unsafe { http_follow_config } == http_follow_config::HTTP_FOLLOW_INITIAL {
