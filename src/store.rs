@@ -2488,54 +2488,63 @@ impl Drop for Store {
 }
 
 pub fn do_store_metadata(store: &Store) -> CommitId {
-    let mut tree = object_id::default();
-    let mut previous = None;
-    let hg2git_cid = store.hg2git_cid;
-    let hg2git_ = store.hg2git_mut().store(hg2git_cid, FileMode::GITLINK);
-    let git2hg_cid = store.git2hg_cid;
-    let git2hg_ = store
-        .git2hg_mut()
-        .store(git2hg_cid, FileMode::REGULAR | FileMode::RW);
-    let files_meta_cid = store.files_meta_cid;
-    let files_meta_ = store
-        .files_meta_mut()
-        .store(files_meta_cid, FileMode::REGULAR | FileMode::RW);
-    let manifests = store_manifests_metadata(store);
-    let changesets = store_changesets_metadata(store);
-    if !store.metadata_cid.is_null() {
-        previous = Some(store.metadata_cid);
+    if progress_enabled() {
+        eprint!("Updating metadata...");
     }
-    unsafe {
-        store_replace_map(&mut tree);
-    }
-    let new_metadata = [changesets, manifests, hg2git_, git2hg_, files_meta_]
-        .into_iter()
-        .map(|o| CommitId::from_unchecked(GitObjectId::from(o)))
-        .collect_vec();
-    if let Some(previous) = previous {
-        let c = RawCommit::read(previous).unwrap();
-        let c = c.parse().unwrap();
-        if !(5..=6).contains(&c.parents().len()) {
-            die!("Invalid metadata?");
+    let result = (|| {
+        let mut tree = object_id::default();
+        let mut previous = None;
+        let hg2git_cid = store.hg2git_cid;
+        let hg2git_ = store.hg2git_mut().store(hg2git_cid, FileMode::GITLINK);
+        let git2hg_cid = store.git2hg_cid;
+        let git2hg_ = store
+            .git2hg_mut()
+            .store(git2hg_cid, FileMode::REGULAR | FileMode::RW);
+        let files_meta_cid = store.files_meta_cid;
+        let files_meta_ = store
+            .files_meta_mut()
+            .store(files_meta_cid, FileMode::REGULAR | FileMode::RW);
+        let manifests = store_manifests_metadata(store);
+        let changesets = store_changesets_metadata(store);
+        if !store.metadata_cid.is_null() {
+            previous = Some(store.metadata_cid);
         }
-        if c.parents()[..5] == new_metadata {
-            return previous;
+        unsafe {
+            store_replace_map(&mut tree);
         }
-    }
-    let mut buf = Vec::new();
-    writeln!(buf, "tree {}", GitObjectId::from(tree)).ok();
-    for p in new_metadata.into_iter().chain(previous) {
-        writeln!(buf, "parent {}", p).ok();
-    }
-    buf.extend_from_slice(
-        b"author  <cinnabar@git> 0 +0000\n\
+        let new_metadata = [changesets, manifests, hg2git_, git2hg_, files_meta_]
+            .into_iter()
+            .map(|o| CommitId::from_unchecked(GitObjectId::from(o)))
+            .collect_vec();
+        if let Some(previous) = previous {
+            let c = RawCommit::read(previous).unwrap();
+            let c = c.parse().unwrap();
+            if !(5..=6).contains(&c.parents().len()) {
+                die!("Invalid metadata?");
+            }
+            if c.parents()[..5] == new_metadata {
+                return previous;
+            }
+        }
+        let mut buf = Vec::new();
+        writeln!(buf, "tree {}", GitObjectId::from(tree)).ok();
+        for p in new_metadata.into_iter().chain(previous) {
+            writeln!(buf, "parent {}", p).ok();
+        }
+        buf.extend_from_slice(
+            b"author  <cinnabar@git> 0 +0000\n\
           committer  <cinnabar@git> 0 +0000\n\
           \n\
           files-meta unified-manifests-v2",
-    );
-    let mut result = object_id::default();
-    unsafe {
-        store_git_commit(buf.as_str_slice(), &mut result);
+        );
+        let mut result = object_id::default();
+        unsafe {
+            store_git_commit(buf.as_str_slice(), &mut result);
+        }
+        CommitId::from_unchecked(result.into())
+    })();
+    if progress_enabled() {
+        eprintln!();
     }
-    CommitId::from_unchecked(result.into())
+    result
 }
