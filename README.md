@@ -147,24 +147,9 @@ scheme for pushes only.
 Tags:
 -----
 
-Because mercurial stores tags in a file in the repository, it is not possible
-for git-cinnabar to know them when git asks for them, except when the
-repository has already been updated. Until version 0.4.0, git-cinnabar would
-try to get tags in a best effort way.
+You can get/update tags with the following command:
 
-Furthermore, the way tags are tracked across branches in mercurial can make it
-awkward when pulling from multiple mercurial repositories. For example, pulling
-tags from mozilla-release, mozilla-beta, and mozilla-esr\* repositories is messy.
-
-So, as of 0.5.0, tags are not associated with mercurial remotes anymore, and one
-needs to setup a separate remote that consolidates all mercurial tags tracked by
-git-cinnabar. That remote can be set like the following:
-
-`$ git remote add tags hg::tags:`
-
-And tags can be updated with, e.g.:
-
-`$ git fetch tags`
+`$ git cinnabar fetch --tags`
 
 Fetching a specific mercurial changeset:
 ----------------------------------------
