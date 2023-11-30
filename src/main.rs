@@ -1913,21 +1913,38 @@ fn create_root_changeset(store: &Store, cid: CommitId) -> HgChangesetId {
     csid
 }
 
-type ManifestLine = WithPath<ManifestEntry>;
+#[derive(Debug, PartialEq, Eq)]
+struct ManifestLine<'a> {
+    line: &'a BStr,
+    path_len: usize,
+}
 
-impl ManifestLine {
+impl<'a> ManifestLine<'a> {
+    fn path(&self) -> &[u8] {
+        &self.line[..self.path_len]
+    }
+
     fn fid(&self) -> HgFileId {
-        self.inner().fid
+        HgFileId::from_bytes(&self.line[self.path_len + 1..self.path_len + 41]).unwrap()
     }
 }
 
-impl Hash for ManifestLine {
+impl<'a> From<&'a [u8]> for ManifestLine<'a> {
+    fn from(line: &'a [u8]) -> ManifestLine<'a> {
+        ManifestLine {
+            line: line.as_bstr(),
+            path_len: line.find_byte(b'\0').unwrap(),
+        }
+    }
+}
+
+impl<'a> Hash for ManifestLine<'a> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.path().hash(state);
     }
 }
 
-impl Borrow<[u8]> for ManifestLine {
+impl<'a> Borrow<[u8]> for ManifestLine<'a> {
     fn borrow(&self) -> &[u8] {
         self.path()
     }
@@ -1966,20 +1983,32 @@ fn create_simple_manifest(
     }
     diff.append(&mut extra_diff);
     diff.sort_by(|a, b| a.path().cmp(b.path()));
-    let parent_lines = parent_manifest.into_iter().collect::<IndexSet<_>>();
+    let parent_lines = parent_manifest
+        .lines_with_terminator()
+        .map(ManifestLine::from)
+        .collect::<IndexSet<_>>();
     let mut manifest = Vec::new();
     let mut paths = Vec::new();
     for (path, either_or_both) in parent_lines
         .iter()
-        .cloned()
         .merge_join_by(diff, |parent_line, diff_item| {
             (parent_line.path()).cmp(diff_item.path())
         })
-        .map(|item| item.transpose().unwrap().unzip())
+        .map(|item| match item {
+            EitherOrBoth::Left(left) => (left.path().to_boxed(), EitherOrBoth::Left(left)),
+            EitherOrBoth::Right(right) => {
+                let (path, inner) = right.unzip();
+                (path, EitherOrBoth::Right(inner))
+            }
+            EitherOrBoth::Both(left, right) => {
+                let (path, inner) = right.unzip();
+                (path, EitherOrBoth::Both(left, inner))
+            }
+        })
     {
         let (fid, mode) = match either_or_both {
-            EitherOrBoth::Left(info) => {
-                RawHgManifest::write_one_entry(&WithPath::new(path, info), &mut manifest).unwrap();
+            EitherOrBoth::Left(line) => {
+                manifest.extend_from_slice(line.line);
                 continue;
             }
             EitherOrBoth::Both(_, DiffTreeItem::Deleted { .. }) => {
@@ -1987,10 +2016,8 @@ fn create_simple_manifest(
                 paths.push(b'\0');
                 continue;
             }
-            EitherOrBoth::Both(
-                ManifestEntry { mut fid, .. },
-                DiffTreeItem::Modified { from, to },
-            ) => {
+            EitherOrBoth::Both(line, DiffTreeItem::Modified { from, to }) => {
+                let mut fid = line.fid();
                 if from.oid != to.oid {
                     fid = create_file(store, to.oid.try_into().unwrap(), &[fid]);
                 }
