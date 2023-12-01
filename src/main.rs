@@ -102,7 +102,6 @@ use graft::{graft_finish, grafted, init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
 use hg_bundle::{create_bundle, create_chunk_data, BundleSpec, RevChunkIter};
 use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
-use indexmap::IndexSet;
 use itertools::EitherOrBoth::{Both, Left, Right};
 use itertools::{EitherOrBoth, Itertools};
 use libgit::{
@@ -1938,9 +1937,15 @@ impl<'a> From<&'a [u8]> for ManifestLine<'a> {
     }
 }
 
-impl<'a> Hash for ManifestLine<'a> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.path().hash(state);
+impl<'a> PartialOrd for ManifestLine<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a> Ord for ManifestLine<'a> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.path().cmp(other.path())
     }
 }
 
@@ -1986,7 +1991,7 @@ fn create_simple_manifest(
     let parent_lines = parent_manifest
         .lines_with_terminator()
         .map(ManifestLine::from)
-        .collect::<IndexSet<_>>();
+        .collect::<Vec<_>>();
     let mut manifest = Vec::new();
     let mut paths = Vec::new();
     for (path, either_or_both) in parent_lines
@@ -2034,7 +2039,10 @@ fn create_simple_manifest(
                     store,
                     to.oid.try_into().unwrap(),
                     from.path(),
-                    parent_lines.get(&**from.path()).unwrap().fid(),
+                    parent_lines[parent_lines
+                        .binary_search_by_key(&&**from.path(), |e| e.path())
+                        .unwrap()]
+                    .fid(),
                 ),
                 to.mode,
             ),
