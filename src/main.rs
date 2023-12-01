@@ -4633,6 +4633,7 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
     }));
     HAS_GIT_REPO = init_cinnabar(exe.as_deref().unwrap_or(argv0).as_ptr()) != 0;
     logging::init(now);
+    experiment(Experiments::MERGE);
 
     let ret = match argv0_path.file_stem().and_then(OsStr::to_str) {
         Some("git-cinnabar") => git_cinnabar(None),
@@ -4747,29 +4748,57 @@ pub fn check_enabled(checks: Checks) -> bool {
     CHECKS.contains(checks)
 }
 
-bitflags! {
-    #[derive(Debug)]
-    pub struct Experiments: i32 {
-        const MERGE = 0x1;
-    }
+pub struct Experiments {
+    merge: bool,
+    similarity: CString,
+}
+
+impl Experiments {
+    const MERGE: u8 = 0x1;
 }
 
 static EXPERIMENTS: Lazy<Experiments> = Lazy::new(|| {
-    let mut experiments = Experiments::empty();
+    let mut merge = false;
+    let mut similarity = None;
     if let Some(config) = get_config("experiments") {
         for c in config.as_bytes().split(|&b| b == b',') {
             match c {
-                b"true" | b"all" => experiments = Experiments::all(),
-                b"merge" => experiments.set(Experiments::MERGE, true),
+                b"true" | b"all" | b"merge" => {
+                    merge = true;
+                }
+                s if s.starts_with(b"similarity") => {
+                    if let Some(value) = s[b"similarity".len()..].strip_prefix(b"=") {
+                        match u8::from_bytes(value) {
+                            Ok(value) if value <= 100 => {
+                                similarity = Some(CString::new(format!("-C{}%", value)).unwrap());
+                            }
+                            _ => {
+                                warn!(target: "root", "Invalid value for similarity experiment: {}", value.as_bstr());
+                            }
+                        }
+                    } else {
+                        warn!(target: "root", "Missing value for similarity experiment.");
+                    }
+                }
                 _ => {}
             }
         }
     }
-    experiments
+    Experiments {
+        merge,
+        similarity: similarity.unwrap_or_else(|| cstr!("-C100%").into()),
+    }
 });
 
-pub fn experiment(experiments: Experiments) -> bool {
-    EXPERIMENTS.contains(experiments)
+pub fn experiment(experiments: u8) -> bool {
+    match experiments {
+        Experiments::MERGE => EXPERIMENTS.merge,
+        _ => false,
+    }
+}
+
+pub fn experiment_similarity() -> &'static CStr {
+    &EXPERIMENTS.similarity
 }
 
 #[no_mangle]

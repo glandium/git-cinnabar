@@ -289,3 +289,18 @@ comma-separated list of those features to enable the selected ones, or to
   currently doesn’t handle the case where a file was moved on one of the
   branches the same way mercurial would (i.e. the information would be lost to
   mercurial users).
+
+- **similarity**
+
+  Git doesn't track file copies or renames. It however has flags to try to
+  detect them after the fact. On the other hand, Mercurial does track copies
+  and renames, if they're recorded manually in the first place. Git-cinnabar
+  does exact-copy/rename detection when pushing new commits to a Mercurial
+  repository.
+
+  The similarity feature allows to configure how (dis)similar files can be
+  to be detected as a rename or copy. `similarity=100` is the default, which
+  means only 100% identical files are considered. `similarity=90` means 90%
+  identical files, and so on.
+
+  This is equivalent to `git diff -C -C${similarity}%`

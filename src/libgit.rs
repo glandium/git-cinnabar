@@ -17,6 +17,7 @@ use getset::{CopyGetters, Getters};
 use hex_literal::hex;
 use itertools::{EitherOrBoth, Itertools};
 
+use crate::experiment_similarity;
 use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry, TreeId};
 use crate::oid::{Abbrev, ObjectId};
 use crate::tree_util::WithPath;
@@ -813,7 +814,7 @@ pub fn diff_tree_with_copies(
         &b,
         cstr!("--ignore-submodules=dirty"),
         cstr!("-C"),
-        cstr!("-C100%"),
+        experiment_similarity(),
         cstr!("--"),
     ];
     let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
