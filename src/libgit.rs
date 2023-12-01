@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
-use std::num::ParseIntError;
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 use std::ptr;
 use std::str::FromStr;
@@ -667,11 +666,9 @@ impl From<FileMode> for u16 {
     }
 }
 
-impl FromBytes for FileMode {
-    type Err = ParseIntError;
-
-    fn from_bytes(b: &[u8]) -> Result<Self, Self::Err> {
-        u16::from_str_radix(std::str::from_utf8(b).unwrap(), 8).map(FileMode)
+impl From<u16> for FileMode {
+    fn from(value: u16) -> Self {
+        FileMode(value)
     }
 }
 

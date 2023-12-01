@@ -11,7 +11,7 @@ use super::{git_oid_type, GitObjectId, GitOid};
 use crate::libgit::{FileMode, RawTree};
 use crate::oid::ObjectId;
 use crate::tree_util::{Empty, MayRecurse, ParseTree, RecurseAs, TreeIter, WithPath};
-use crate::util::{FromBytes, SliceExt};
+use crate::util::SliceExt;
 
 git_oid_type!(TreeId(GitObjectId));
 
@@ -68,9 +68,20 @@ impl ParseTree for RawTree {
 
     fn parse_one_entry(buf: &mut &[u8]) -> Result<WithPath<Self::Inner>, Self::Error> {
         (|| {
-            let [mode, remainder] = buf.splitn_exact(b' ')?;
-            let mode = FileMode::from_bytes(mode).ok()?;
-            let [path, remainder] = remainder.splitn_exact(b'\0')?;
+            let mut mode = 0u16;
+            let mut bytes = buf.iter();
+            for b in &mut bytes {
+                match b {
+                    b' ' => break,
+                    b'0'..=b'7' => {
+                        mode <<= 3;
+                        mode += (b - b'0') as u16;
+                    }
+                    _ => return None,
+                }
+            }
+            let mode = FileMode::from(mode);
+            let [path, remainder] = bytes.as_slice().splitn_exact(b'\0')?;
             if path.is_empty() {
                 return None;
             }
