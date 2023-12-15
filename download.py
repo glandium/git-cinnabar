@@ -366,10 +366,14 @@ if __name__ == '__main__':
                         help='only print the download url')
     pgroup = parser.add_mutually_exclusive_group()
     pgroup.add_argument('--branch', metavar='BRANCH',
+                        default=os.environ.get("GIT_CINNABAR_DOWNLOAD_BRANCH"),
                         help='download a build for the given branch')
     pgroup.add_argument('--exact', metavar='EXACT',
+                        default=os.environ.get("GIT_CINNABAR_DOWNLOAD_EXACT"),
                         help='download a build for the given commit')
     parser.add_argument('--variant', metavar='VARIANT',
+                        default=os.environ.get(
+                            "GIT_CINNABAR_DOWNLOAD_VARIANT"),
                         help='download the given variant')
     parser.add_argument('--system', default=platform.system(),
                         help=argparse.SUPPRESS)
