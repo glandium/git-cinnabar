@@ -6,10 +6,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        toolchain: [1.74.0]
+        toolchain: [1.74.1]
         include:
           - os: windows-latest
-            toolchain: 1.74.0-x86_64-pc-windows-gnu
+            toolchain: 1.74.1-x86_64-pc-windows-gnu
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
@@ -51,7 +51,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.74.0
+          toolchain: 1.74.1
           components: rustfmt
       - run: cargo fmt -- --check
 
@@ -60,10 +60,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        toolchain: [1.74.0, 1.70.0]
+        toolchain: [1.74.1, 1.70.0]
         include:
           - os: windows-latest
-            toolchain: 1.74.0-x86_64-pc-windows-gnu
+            toolchain: 1.74.1-x86_64-pc-windows-gnu
           - os: windows-latest
             toolchain: 1.70.0-x86_64-pc-windows-gnu
     runs-on: ${{ matrix.os }}
