@@ -32,7 +32,7 @@ use curl_sys::{
 use either::Either;
 use flate2::read::ZlibDecoder;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
+use once_cell::sync::{Lazy, OnceCell};
 use url::{form_urlencoded, Url};
 use zstd::stream::read::Decoder as ZstdDecoder;
 
@@ -49,6 +49,8 @@ use crate::libgit::{
 use crate::util::{ImmutBString, OsStrExt, PrefixWriter, ReadExt, SliceExt, ToBoxed};
 
 use self::git_http_state::{GitHttpStateToken, GIT_HTTP_STATE};
+
+pub static CURL_GLOBAL_INIT: OnceCell<()> = OnceCell::new();
 
 mod git_http_state {
     use std::{ffi::CString, ptr, sync::Mutex};
@@ -82,6 +84,13 @@ mod git_http_state {
             match &self.url {
                 Some(url) if url == &normalized_url => {}
                 _ => {
+                    super::CURL_GLOBAL_INIT.get_or_init(|| {
+                        if unsafe { curl_sys::curl_global_init(curl_sys::CURL_GLOBAL_ALL) }
+                            != curl_sys::CURLE_OK
+                        {
+                            die!("curl_global_init failed");
+                        }
+                    });
                     let c_url = CString::new(normalized_url.to_string()).unwrap();
                     unsafe {
                         if self.url.is_some() {
