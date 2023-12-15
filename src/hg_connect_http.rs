@@ -11,7 +11,7 @@ use std::os::raw::{c_char, c_int, c_long};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::{cmp, mem, ptr};
 
@@ -46,6 +46,8 @@ use crate::libgit::{
 };
 use crate::util::{ImmutBString, OsStrExt, PrefixWriter, ReadExt, SliceExt, ToBoxed};
 
+pub static CURL_GLOBAL_INIT: OnceLock<()> = OnceLock::new();
+
 mod git_http_state {
     use std::ffi::CString;
     use std::ptr;
@@ -79,6 +81,13 @@ mod git_http_state {
             match &self.url {
                 Some(url) if url == &normalized_url => {}
                 _ => {
+                    super::CURL_GLOBAL_INIT.get_or_init(|| {
+                        if unsafe { curl_sys::curl_global_init(curl_sys::CURL_GLOBAL_ALL) }
+                            != curl_sys::CURLE_OK
+                        {
+                            crate::die!("curl_global_init failed");
+                        }
+                    });
                     let c_url = CString::new(normalized_url.to_string()).unwrap();
                     unsafe {
                         if self.url.is_some() {

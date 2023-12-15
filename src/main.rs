@@ -4651,6 +4651,11 @@ unsafe extern "C" fn cinnabar_main(_argc: c_int, argv: *const *const c_char) -> 
         )),
         Some(_) | None => Ok(1),
     };
+    if hg_connect_http::CURL_GLOBAL_INIT.get().is_some() {
+        unsafe {
+            curl_sys::curl_global_cleanup();
+        }
+    }
     match ret {
         Ok(code) => code,
         Err(msg) => {
