@@ -157,7 +157,7 @@ hg.clonebundles-full.git: hg.clonebundles-full.hg hg.git
 hg.clonebundles-bz2.git: hg.clonebundles-bz2.hg hg.git
 hg.clonebundles-full-bz2.git: hg.clonebundles-full-bz2.hg hg.git
 hg.clonebundles.git hg.clonebundles-full.git hg.clonebundles-bz2.git hg.clonebundles-full-bz2.git:
-	$(HG) -R $< --config serve.other=http --config serve.otherport=88$(NUM) --config web.port=80$(NUM) --config extensions.clonebundles= --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py serve-and-exec -- $(GIT) clone --progress -n hg://localhost:80$(NUM).http/ $@
+	$(HG) -R $< --config serve.other=http --config serve.otherport=88$(NUM) --config web.port=80$(NUM) --config experimental.httppostargs=true --config extensions.clonebundles= --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py serve-and-exec -- $(GIT) clone --progress -n hg://localhost:80$(NUM).http/ $@
 	$(call COMPARE_REFS, $(word 2,$^), $@)
 
 hg.pure.git: hg.git
@@ -179,7 +179,7 @@ hg.http.hg.gitcredentials hg.http.hg.nobundle2.gitcredentials:
 
 hg.http.hg hg.http.hg.nobundle2: %: %.gitcredentials hg.git
 	$(call HG_INIT, $@)
-	$(HG) -R $@ --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config web.port=80$(NUM) serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/$@.gitcredentials' -c cinnabar.data=never -C $(word 2,$^) push hg://localhost:80$(NUM).http/ refs/remotes/origin/*:refs/heads/*
+	$(HG) -R $@ --config experimental.httppostargs=true --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config web.port=80$(NUM) serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/$@.gitcredentials' -c cinnabar.data=never -C $(word 2,$^) push hg://localhost:80$(NUM).http/ refs/remotes/origin/*:refs/heads/*
 
 hg.incr.base.git: hg.incr.hg
 	$(HG) clone -U $< $@.hg
@@ -213,7 +213,7 @@ hg.cinnabarclone-bundle.git hg.cinnabarclone-bundle-full.git hg.cinnabarclone-gr
 hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-bundle.git hg.cinnabarclone-bundle-full.git hg.cinnabarclone-graft.git hg.cinnabarclone-graft-replace.git: hg.pure.hg
 	$(HG) clone -U $< $@.hg
 	echo http://localhost:88$(NUM)/$(word 2,$^) | tee $@.hg/.hg/cinnabar.manifest
-	$(HG) -R $@.hg --config web.port=80$(NUM) --config serve.other=$(OTHER_SERVER) --config serve.otherport=88$(NUM) --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(HG_CINNABARCLONE_EXT) serve-and-exec -- $(GIT) clone --progress hg://localhost:80$(NUM).http/ $@
+	$(HG) -R $@.hg --config web.port=80$(NUM) --config serve.other=$(OTHER_SERVER) --config serve.otherport=88$(NUM) --config experimental.httppostargs=true --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(HG_CINNABARCLONE_EXT) serve-and-exec -- $(GIT) clone --progress hg://localhost:80$(NUM).http/ $@
 	$(call COMPARE_REFS, $(or $(word 3,$^),$(word 2,$^)), $@)
 	$(GIT) -C $@ cinnabar fsck
 	$(GIT) -C $@ cinnabar fsck --full
@@ -224,7 +224,7 @@ hg.cinnabarclone-graft-bundle.git: hg.pure.hg
 	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
 	$(GIT) -C $@ remote rename origin grafted
 	(echo http://localhost:88$(NUM)/$(word 2,$^); echo http://localhost:88$(NUM)/$(word 4,$^) graft=$$($(GIT) ls-remote $(CURDIR)/$(word 4,$^) refs/cinnabar/replace/* | awk -F/ '{print $$NF}')) | tee $@.hg/.hg/cinnabar.manifest
-	$(HG) -R $@.hg --config serve.other=http --config serve.otherport=88$(NUM) --config web.port=80$(NUM) --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(HG_CINNABARCLONE_EXT) serve-and-exec -- $(GIT) -c cinnabar.graft=true -C $@ fetch --progress hg://localhost:80$(NUM).http/ refs/heads/*:refs/remotes/origin/*
+	$(HG) -R $@.hg --config serve.other=http --config serve.otherport=88$(NUM) --config web.port=80$(NUM) --config experimental.httppostargs=true --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(HG_CINNABARCLONE_EXT) serve-and-exec -- $(GIT) -c cinnabar.graft=true -C $@ fetch --progress hg://localhost:80$(NUM).http/ refs/heads/*:refs/remotes/origin/*
 	$(call COMPARE_REFS, $(or $(word 3,$^),$(word 2,$^)), $@)
 	$(GIT) -C $@ cinnabar fsck
 	$(GIT) -C $@ cinnabar fsck --full
@@ -262,8 +262,9 @@ hg.graft.replace.git: hg.graft.base.git hg.upgraded.git
 	$(call COMPARE_COMMANDS,$(call GET_ROOTS,$(word 2,$^),--remotes),$(call GET_ROOTS,$@,--glob=refs/cinnabar/replace))
 	$(GIT) -C $@ cinnabar fsck --full
 
-hg.graft.cinnabar.git: hg.upgraded.git
+hg.graft.cinnabar.git: hg.upgraded.git hg.pure.hg
 	cp -r $< $@
+	$(GIT) -C $@ remote set-url origin hg::$(PATH_URL)/$(word 2,$^)
 	$(GIT) -C $@ -c cinnabar.graft=true cinnabar reclone
 	$(call COMPARE_REFS, $<, $@, XARGS_GIT2HG)
 	test $$($(GIT) -C $@ for-each-ref refs/cinnabar/replace | wc -l) -eq 0

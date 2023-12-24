@@ -4,7 +4,7 @@
 
 use std::ffi::{CStr, CString, OsStr};
 use std::fmt;
-use std::io::{self, LineWriter, Read, Seek, SeekFrom, Write};
+use std::io::{self, LineWriter, Read, Write};
 use std::mem;
 #[cfg(unix)]
 use std::os::unix::ffi;
@@ -94,17 +94,6 @@ pub trait ReadExt: Read {
 }
 
 impl<T: Read> ReadExt for T {}
-
-pub trait SeekExt: Seek {
-    fn stream_len_(&mut self) -> io::Result<u64> {
-        let old_pos = self.stream_position()?;
-        let len = self.seek(SeekFrom::End(0))?;
-        self.seek(SeekFrom::Start(old_pos))?;
-        Ok(len)
-    }
-}
-
-impl<T: Seek> SeekExt for T {}
 
 pub trait SliceExt<C> {
     fn splitn_exact<const N: usize>(&self, c: C) -> Option<[&Self; N]>;

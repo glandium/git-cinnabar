@@ -1014,7 +1014,7 @@ const struct object_id *ensure_empty_tree(void) {
 	if (!oe) {
 		struct object_id hash;
 		struct strbuf buf = STRBUF_INIT;
-		store_object(OBJ_BLOB, &buf, NULL, &hash, 0);
+		store_object(OBJ_TREE, &buf, NULL, &hash, 0);
 		assert(oidcmp(&hash, &empty_tree) == 0);
 	}
 	return &empty_tree;

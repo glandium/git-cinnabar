@@ -107,11 +107,12 @@ class MsysEnvironment(MsysCommon):
         create_commands = [
             'pacman-key --init',
             'pacman-key --populate msys2',
+            'pacman-key --refresh',
             'pacman --noconfirm -Sy procps tar {}'.format(
                 ' '.join(self.packages(name))),
             'pkill gpg-agent',
+            'pkill dirmngr',
             'rm -rf /var/cache/pacman/pkg',
-            'python2.7 -m pip install pip==20.3.4 wheel==0.37.1 --upgrade',
             'python3 -m pip install pip==22.2.2 wheel==0.37.1 --upgrade',
             'mv {}/{}/bin/{{mingw32-,}}make.exe'.format(msys(cpu), mingw(cpu)),
             'tar -c --hard-dereference {} | zstd -c > msys2.tar.zst'.format(
@@ -144,8 +145,6 @@ class MsysEnvironment(MsysCommon):
         packages = mingw_packages([
             'curl',
             'make',
-            'python2',
-            'python2-pip',
             'python3',
             'python3-pip',
         ])
