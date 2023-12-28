@@ -880,7 +880,7 @@ impl<N: Ord + Copy, T> Dag<N, T> {
         assert!(self.ids.insert(node, id).is_none());
         self.dag.push(DagNode {
             node,
-            parent1: parents.get(0).copied(),
+            parent1: parents.first().copied(),
             parent2: parents.get(1).copied(),
             data,
         });
@@ -1465,7 +1465,7 @@ fn store_changeset(
         }
     });
 
-    let ref_tree = git_parents.get(0).map(|&p| {
+    let ref_tree = git_parents.first().map(|&p| {
         let ref_commit = RawCommit::read(p.into()).unwrap();
         let ref_commit = ref_commit.parse().unwrap();
         ref_commit.tree()
@@ -1644,7 +1644,7 @@ pub fn create_changeset(
     };
     let commit = RawCommit::read(commit_id).unwrap();
     let commit = commit.parse().unwrap();
-    let branch = commit.parents().get(0).and_then(|p| {
+    let branch = commit.parents().first().and_then(|p| {
         let cs_metadata =
             RawGitChangesetMetadata::read(store, GitChangesetId::from_unchecked(*p)).unwrap();
         let cs_metadata = cs_metadata.parse().unwrap();
@@ -1733,7 +1733,7 @@ pub unsafe extern "C" fn check_manifest(oid: *const object_id) -> c_int {
     let manifest = RawHgManifest::read(git_manifest_id).unwrap();
 
     let computed = hash_data(
-        parents.get(0).copied().map(Into::into),
+        parents.first().copied().map(Into::into),
         parents.get(1).copied().map(Into::into),
         manifest.as_ref(),
     );

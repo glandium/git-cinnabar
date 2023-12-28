@@ -1129,7 +1129,7 @@ pub fn create_bundle(
             let manifest_commit = manifest_commit.parse().unwrap();
             let manifest_parents = manifest_commit.parents();
             let mn_parent1 = manifest_parents
-                .get(0)
+                .first()
                 .copied()
                 .map_or(HgManifestId::NULL, get_manifest);
             let mn_parent2 = manifest_parents
@@ -1195,7 +1195,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
                     .entry(hg_file)
                     .or_insert_with(|| {
                         (
-                            hg_fileparents.get(0).copied().unwrap_or(HgFileId::NULL),
+                            hg_fileparents.first().copied().unwrap_or(HgFileId::NULL),
                             hg_fileparents.get(1).copied().unwrap_or(HgFileId::NULL),
                             changeset,
                         )

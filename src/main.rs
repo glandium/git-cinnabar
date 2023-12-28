@@ -1793,7 +1793,7 @@ fn create_file(store: &Store, blobid: BlobId, parents: &[HgFileId]) -> HgFileId 
     let mut hash = HgFileId::create();
     if parents.len() < 2 {
         hash.update(HgFileId::NULL.as_raw_bytes());
-        hash.update(parents.get(0).unwrap_or(&HgFileId::NULL).as_raw_bytes());
+        hash.update(parents.first().unwrap_or(&HgFileId::NULL).as_raw_bytes());
     } else {
         assert_eq!(parents.len(), 2);
         for parent in parents.iter().sorted() {
@@ -1842,10 +1842,10 @@ fn create_copy(
 // This is an inconvenience from the way store_manifest currently works, and
 // it will remain this way until it moves to Rust.
 fn create_manifest(store: &Store, content: &mut [u8], parents: &[HgManifestId]) -> HgManifestId {
-    let parent_manifest = parents.get(0).map_or_else(RawHgManifest::empty, |p| {
+    let parent_manifest = parents.first().map_or_else(RawHgManifest::empty, |p| {
         RawHgManifest::read(p.to_git(store).unwrap()).unwrap()
     });
-    let parent1 = parents.get(0).copied().unwrap_or(HgManifestId::NULL);
+    let parent1 = parents.first().copied().unwrap_or(HgManifestId::NULL);
     let mut hash = HgManifestId::create();
     if parents.len() < 2 {
         hash.update(HgManifestId::NULL.as_raw_bytes());
@@ -2290,7 +2290,7 @@ pub fn do_create_bundle(
             create_merge_changeset(
                 store,
                 cid,
-                *parents.get(0).unwrap(),
+                *parents.first().unwrap(),
                 *parents.get(1).unwrap(),
             )
         } else {
@@ -2679,7 +2679,7 @@ fn do_fsck(
                 if !check_file(
                     store,
                     hg_file,
-                    hg_fileparents.get(0).copied().unwrap_or(HgFileId::NULL),
+                    hg_fileparents.first().copied().unwrap_or(HgFileId::NULL),
                     hg_fileparents.get(1).copied().unwrap_or(HgFileId::NULL),
                 ) {
                     report(format!(
@@ -3027,7 +3027,7 @@ fn do_fsck_full(
             !check_file(
                 store,
                 hg_file,
-                hg_fileparents.get(0).copied().unwrap_or(HgFileId::NULL),
+                hg_fileparents.first().copied().unwrap_or(HgFileId::NULL),
                 hg_fileparents.get(1).copied().unwrap_or(HgFileId::NULL),
             ) {
                 report(format!(
@@ -3523,7 +3523,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             batch,
         } => do_conversion_cmd(
             &store,
-            abbrev.map(|v| v.get(0).map_or(12, |a| a.0)),
+            abbrev.map(|v| v.first().map_or(12, |a| a.0)),
             sha1.into_iter(),
             batch,
             do_one_hg2git,
@@ -3534,7 +3534,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             batch,
         } => do_conversion_cmd(
             &store,
-            abbrev.map(|v| v.get(0).map_or(12, |a| a.0)),
+            abbrev.map(|v| v.first().map_or(12, |a| a.0)),
             committish.into_iter(),
             batch,
             do_one_git2hg,
