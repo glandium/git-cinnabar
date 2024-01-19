@@ -186,7 +186,8 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
         .port()
         .map(|port| CString::new(port.to_string()).unwrap());
     let path = if url.scheme() == "ssh" {
-        percent_decode_str(url.path().trim_start_matches('/')).collect_vec()
+        let path = url.path();
+        percent_decode_str(path.strip_prefix('/').unwrap_or(path)).collect_vec()
     } else {
         let path = url.to_file_path().unwrap();
         if path.metadata().map(|m| m.is_file()).unwrap_or(false) {
