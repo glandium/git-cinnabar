@@ -466,7 +466,7 @@ impl HttpRequest {
         self.execute_once()
             .or_else(|(result, this)| {
                 if result == HTTP_REAUTH {
-                    unsafe { credential_fill(&mut http_auth) };
+                    unsafe { credential_fill(ptr::addr_of_mut!(http_auth)) };
                     this.execute_once()
                 } else {
                     Err((result, this))
