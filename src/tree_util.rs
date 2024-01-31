@@ -798,7 +798,7 @@ fn test_recurse_tree_iter() {
         ]
     });
     thread_local! {
-        static COUNTS: RefCell<[usize; 7]> = RefCell::new([0; 7]);
+        static COUNTS: RefCell<[usize; 7]> = const { RefCell::new([0; 7]) };
     }
 
     impl MayRecurse for Either<TreeId, &'static str> {

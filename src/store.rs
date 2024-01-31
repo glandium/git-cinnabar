@@ -681,7 +681,7 @@ struct ManifestCache {
 }
 
 thread_local! {
-    static MANIFESTCACHE: Cell<Option<ManifestCache>> = Cell::new(None);
+    static MANIFESTCACHE: Cell<Option<ManifestCache>> = const { Cell::new(None) };
 }
 
 #[derive(Deref)]

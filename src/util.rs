@@ -441,7 +441,7 @@ pub trait Transpose {
 }
 
 thread_local! {
-    static RECYCLED_ALLOC: Cell<Option<(NonNull<u8>, Layout)>> = Cell::new(None);
+    static RECYCLED_ALLOC: Cell<Option<(NonNull<u8>, Layout)>> = const { Cell::new(None) };
 }
 
 unsafe fn alloc_recycle(layout: Layout) -> (*mut u8, usize) {
