@@ -140,20 +140,20 @@ extern "C" {
 }
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
-pub struct credential(c_void);
+#[repr(C)]
+pub struct credential([u8; 0]);
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
-pub struct remote(c_void);
+#[repr(C)]
+pub struct remote([u8; 0]);
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
-pub struct child_process(c_void);
+#[repr(C)]
+pub struct child_process([u8; 0]);
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
-pub struct object_entry(c_void);
+#[repr(C)]
+pub struct object_entry([u8; 0]);
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -523,16 +523,16 @@ impl<'a> Iterator for string_list_iter<'a> {
 }
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
-pub struct rev_info(c_void);
+#[repr(C)]
+pub struct rev_info([u8; 0]);
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
-pub struct commit(c_void);
+#[repr(C)]
+pub struct commit([u8; 0]);
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
-pub struct commit_list(c_void);
+#[repr(C)]
+pub struct commit_list([u8; 0]);
 
 extern "C" {
     pub fn commit_oid(c: *const commit) -> *const object_id;
@@ -985,11 +985,11 @@ pub fn resolve_ref<S: AsRef<OsStr>>(refname: S) -> Option<CommitId> {
 }
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
+#[repr(C)]
 pub struct ref_transaction(c_void);
 
 #[allow(non_camel_case_types)]
-#[repr(transparent)]
+#[repr(C)]
 pub struct ref_store(c_void);
 
 extern "C" {
