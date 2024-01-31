@@ -49,11 +49,11 @@ class Git(Task, metaclass=Tool):
     def __init__(self, os_and_version):
         (os, version) = os_and_version.split('.', 1)
         self.os = os
-        if os.startswith('osx'):
-            build_image = TaskEnvironment.by_name('osx.build')
+        if os.endswith('osx'):
+            build_image = TaskEnvironment.by_name('{}.build'.format(os))
         else:
             build_image = DockerImage.by_name('build-tools')
-        if os == 'linux' or os.startswith('osx'):
+        if os == 'linux' or os.endswith('osx'):
             h = hashlib.sha1(build_image.hexdigest.encode())
             h.update(b'v4' if version == GIT_VERSION else b'v3')
             if os == 'linux':
@@ -124,7 +124,7 @@ class Git(Task, metaclass=Tool):
         return {'directory:git': self}
 
     def install(self):
-        if self.os.startswith(('linux', 'osx')):
+        if self.os.endswith(('linux', 'osx')):
             return [
                 'export PATH=$PWD/git/bin:$PATH',
                 'export GIT_EXEC_PATH=$PWD/git/libexec/git-core',
@@ -171,17 +171,19 @@ class Hg(Task, metaclass=Tool):
                 abi_tag = 'cp27mu'
         else:
             desc = '{} {} {}'.format(desc, env.os, env.cpu)
-            if os.startswith('osx'):
-                platform_tag = 'macosx_{}_x86_64'.format(
-                    env.os_version.replace('.', '_'))
+            if os.endswith('osx'):
+                py_host_plat = 'macosx-{}-{}'.format(env.os_version, env.cpu)
+                platform_tag = py_host_plat.replace('.', '_').replace('-', '_')
                 if python == 'python3':
-                    python_tag = 'cp39'
-                    abi_tag = 'cp39'
+                    python_tag = 'cp311' if os == 'arm64-osx' else 'cp39'
+                    abi_tag = python_tag
                 else:
                     python_tag = 'cp27'
                     abi_tag = 'cp27m'
-                kwargs.setdefault('env', {}).setdefault(
-                    'MACOSX_DEPLOYMENT_TARGET', env.os_version)
+                env_ = kwargs.setdefault('env', {})
+                env_.setdefault('MACOSX_DEPLOYMENT_TARGET', env.os_version)
+                env_.setdefault('ARCHFLAGS', '-arch {}'.format(env.cpu))
+                env_.setdefault('_PYTHON_HOST_PLATFORM', py_host_plat)
             else:
                 if python == 'python3':
                     platform_tag = 'mingw_x86_64'
@@ -247,7 +249,12 @@ class Hg(Task, metaclass=Tool):
 
         h = hashlib.sha1(env.hexdigest.encode())
         h.update(artifact.encode())
-        h.update(b'v4' if os.startswith('mingw') else b'v1')
+        if os.endswith('osx'):
+            h.update(b'v2')
+        elif os.startswith('mingw'):
+            h.update(b'v4')
+        else:
+            h.update(b'v1')
 
         Task.__init__(
             self,
@@ -305,8 +312,6 @@ class Build(Task, metaclass=Tool):
 
     def __init__(self, os_and_variant):
         os, variant = (os_and_variant.split('.', 1) + [''])[:2]
-        if os.startswith('osx'):
-            os = 'osx'
         env = TaskEnvironment.by_name(
             '{}.build'.format(os.replace('arm64-linux', 'linux')))
         if os.startswith('mingw'):
@@ -333,7 +338,7 @@ class Build(Task, metaclass=Tool):
         cargo_features = ['self-update', 'gitdev']
         rust_version = None
         if variant == 'asan':
-            if os.startswith('osx'):
+            if os.endswith('osx'):
                 opt = '-O2'
             else:
                 opt = '-Og'
@@ -446,6 +451,9 @@ class Build(Task, metaclass=Tool):
         if os.startswith('osx'):
             environ.setdefault(
                 'MACOSX_DEPLOYMENT_TARGET', '10.7')
+        if os.startswith('arm64-osx'):
+            environ.setdefault(
+                'MACOSX_DEPLOYMENT_TARGET', '11.0')
 
         cpu = 'arm64' if os == 'arm64-linux' else env.cpu
         Task.__init__(

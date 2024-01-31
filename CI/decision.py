@@ -234,9 +234,9 @@ class HgClone(Task, metaclass=Tool):
 
 @action('decision')
 def decision():
-    for env in ('linux', 'mingw64', 'osx'):
+    for env in ('linux', 'mingw64', 'osx', 'arm64-osx'):
         # Can't spawn osx workers from pull requests.
-        if env.startswith('osx') and not TC_IS_PUSH:
+        if env.endswith('osx') and not TC_IS_PUSH:
             continue
 
         TestTask(
@@ -279,9 +279,8 @@ def decision():
                 ],
             )
 
-    # Same for arm64 mac
-    if TC_IS_PUSH:
-        Build.by_name('arm64-osx')
+    # Because nothing is using the arm64 linux build, we need to manually
+    # touch it.
     Build.by_name('arm64-linux')
 
     for upgrade in UPGRADE_FROM:
@@ -311,9 +310,9 @@ def decision():
         variant='asan',
     )
 
-    for env in ('linux', 'mingw64', 'osx'):
+    for env in ('linux', 'mingw64', 'osx', 'arm64-osx'):
         # Can't spawn osx workers from pull requests.
-        if env.startswith('osx') and not TC_IS_PUSH:
+        if env.endswith('osx') and not TC_IS_PUSH:
             continue
 
         TestTask(
@@ -329,9 +328,10 @@ def decision():
         ('linux', 'coverage'),
         ('linux', 'asan'),
         ('osx', None),
+        ('arm64-osx', None),
     ):
         # Can't spawn osx workers from pull requests.
-        if env.startswith('osx') and not TC_IS_PUSH:
+        if env.endswith('osx') and not TC_IS_PUSH:
             continue
 
         pre_command = []
