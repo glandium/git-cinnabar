@@ -4,14 +4,12 @@
 
 import hashlib
 import json
-import os
 
 from tasks import (
     Task,
     TaskEnvironment,
     bash_command,
     join_command,
-    no_quote,
 )
 from variables import TC_REPO_NAME
 
@@ -224,12 +222,8 @@ class DockerImage(Task, metaclass=TaskEnvironment):
             if ':' in kind
         ]
         if isinstance(image, DockerImage):
-            params.setdefault('mounts', []).append({'file': image})
-            artifact = os.path.basename(image.artifact)
-            commands.append(
-                f'IMAGE_NAME=$(zstd -cd {artifact} | podman load'
-                ' | sed -n "s/.*: //p")')
-            image = no_quote('$IMAGE_NAME')
+            params.setdefault('mounts', []).append({'file:dockerimage': image})
+            image = 'docker-archive:dockerimage'
         run_cmd = [
             'podman',
             'run',
