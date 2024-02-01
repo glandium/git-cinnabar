@@ -52,6 +52,7 @@ class TestTask(Task):
     def __init__(self, **kwargs):
         git = kwargs.pop('git', GIT_VERSION)
         hg = kwargs.pop('hg', MERCURIAL_VERSION)
+        hg_clone = kwargs.pop('hg_clone', None)
         commit = kwargs.pop('commit', None)
         task_env = kwargs.pop('task_env', 'linux')
         variant = kwargs.pop('variant', None)
@@ -104,6 +105,13 @@ class TestTask(Task):
         command.extend((
             'repo/git-cinnabar --version',
         ))
+        if 'command' not in kwargs or hg_clone:
+            command += [
+                'hg init repo/hg.pure.hg',
+                'hg -R repo/hg.pure.hg unbundle bundle.hg',
+            ]
+            kwargs.setdefault('mounts', []).append(
+                {'file:bundle.hg': HgClone.by_name(MERCURIAL_VERSION)})
         if 'command' in kwargs:
             kwargs['command'] = command + kwargs['command']
         else:
@@ -116,13 +124,9 @@ class TestTask(Task):
             if env.os == 'macos':
                 output_sync = ''
             kwargs['command'] = command + [
-                'hg init repo/hg.pure.hg',
-                'hg -R repo/hg.pure.hg unbundle bundle.hg',
                 'make -C repo -f CI/tests.mk -j$({}){}'
                 .format(nproc(env), output_sync),
             ]
-            kwargs.setdefault('mounts', []).append(
-                {'file:bundle.hg': HgClone.by_name(MERCURIAL_VERSION)})
 
         if variant == 'coverage':
             kwargs['command'].extend([
@@ -183,6 +187,7 @@ class Clone(TestTask, metaclass=Tool):
         TestTask.__init__(
             self,
             hg=MERCURIAL_VERSION,
+            hg_clone=True,
             description='clone w/ {}'.format(version),
             index=index,
             expireIn=expireIn,
@@ -191,13 +196,11 @@ class Clone(TestTask, metaclass=Tool):
             clone=False,
             command=[
                 'PATH=$PWD/repo:$PATH'
-                ' git -c fetch.prune=true clone -n hg::$REPO hg.old.git',
+                ' git -c fetch.prune=true clone -n hg::$PWD/repo/hg.pure.hg'
+                ' hg.old.git',
                 'git -C hg.old.git bundle create $ARTIFACTS/bundle.git --all',
             ],
             artifact='bundle.git',
-            env={
-                'REPO': REPO,
-            },
             priority='high',
             **kwargs,
         )
