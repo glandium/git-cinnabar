@@ -18,8 +18,8 @@ jobs:
       TC_WORKER_TYPE: ${{ matrix.workerType }}
       PATH: /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Frameworks/Python.framework/Versions/2.7/bin
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.pyver }}
       - run: python3 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade
