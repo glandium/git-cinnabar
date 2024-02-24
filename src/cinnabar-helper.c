@@ -218,7 +218,7 @@ static void cleanup_git_config(void)
 		// We used to set cinnabar.fsck globally, then locally.
 		// Remove both.
 		char *user_config, *xdg_config;
-		git_global_config(&user_config, &xdg_config);
+		git_global_config_paths(&user_config, &xdg_config);
 		if (user_config) {
 			if (access_or_warn(user_config, R_OK, 0) &&
 				xdg_config &&
@@ -378,9 +378,18 @@ int init_cinnabar(const char *argv0)
 	save_commit_buffer = 0;
 	warn_on_object_refname_ambiguity = 0;
 
-	// We check GIT_DIR because git 2.44.0 doesn't create a new repo
-	// during git clone in a way that sets `nongit` properly.
-	return !nongit || (getenv("GIT_DIR") != NULL);
+	// Starting from git 2.44, git clone doesn't create a repository
+	// that setup_git_directory will recognize as a git directory.
+	// When in that situation, GIT_DIR is set, so rely on that and
+	// initialize the ref store.
+	if (nongit && getenv("GIT_DIR") != NULL) {
+		struct strbuf err = STRBUF_INIT;
+		check_repository_format(NULL);
+		if (refs_init_db(get_main_ref_store(the_repository), 0, &err))
+			die("failed to set up refs db: %s", err.buf);
+		nongit = 0;
+	}
+	return !nongit;
 }
 
 int common_exit(const char *file, int line, int code)
