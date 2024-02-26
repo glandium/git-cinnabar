@@ -378,7 +378,9 @@ int init_cinnabar(const char *argv0)
 	save_commit_buffer = 0;
 	warn_on_object_refname_ambiguity = 0;
 
-	return !nongit;
+	// We check GIT_DIR because git 2.44.0 doesn't create a new repo
+	// during git clone in a way that sets `nongit` properly.
+	return !nongit || (getenv("GIT_DIR") != NULL);
 }
 
 int common_exit(const char *file, int line, int code)
