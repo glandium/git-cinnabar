@@ -1561,7 +1561,7 @@ fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(),
         #[cfg(not(windows))]
         std::fs::remove_file(old_exe_path).ok();
     } else {
-        warn!(target: "root", "Did not find an update to install.");
+        warn!(target: "root", "Did not find a git-cinnabar update to install.");
     }
     Ok(())
 }
