@@ -243,18 +243,18 @@ fn test_exactsize_read_rewind_body() {
     body1.add(Cursor::new(a));
 
     assert_eq!(body1.len().unwrap(), 4);
-    assert_eq!(&body1.read_all_to_string().unwrap()[..], "abcd");
+    assert_eq!(&body1.read_all().unwrap()[..], b"abcd");
     body1.rewind().unwrap();
-    assert_eq!(&body1.read_all_to_string().unwrap()[..], "abcd");
+    assert_eq!(&body1.read_all().unwrap()[..], b"abcd");
 
     let mut body2 = Body::new();
     body2.add(Cursor::new(a));
     body2.add(Cursor::new(b));
 
     assert_eq!(body2.len().unwrap(), 7);
-    assert_eq!(&body2.read_all_to_string().unwrap()[..], "abcdefg");
+    assert_eq!(&body2.read_all().unwrap()[..], b"abcdefg");
     body2.rewind().unwrap();
-    assert_eq!(&body2.read_all_to_string().unwrap()[..], "abcdefg");
+    assert_eq!(&body2.read_all().unwrap()[..], b"abcdefg");
 
     let mut body3 = Body::new();
     body3.add(Cursor::new(a));
@@ -262,9 +262,9 @@ fn test_exactsize_read_rewind_body() {
     body3.add(Cursor::new(c));
 
     assert_eq!(body3.len().unwrap(), 13);
-    assert_eq!(&body3.read_all_to_string().unwrap()[..], "abcdefghijklm");
+    assert_eq!(&body3.read_all().unwrap()[..], b"abcdefghijklm");
     body3.rewind().unwrap();
-    assert_eq!(&body3.read_all_to_string().unwrap()[..], "abcdefghijklm");
+    assert_eq!(&body3.read_all().unwrap()[..], b"abcdefghijklm");
 }
 
 pub struct HttpRequest {

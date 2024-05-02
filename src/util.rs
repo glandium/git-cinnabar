@@ -72,12 +72,6 @@ pub trait ReadExt: Read {
         Ok(buf.into_boxed_slice())
     }
 
-    fn read_all_to_string(&mut self) -> io::Result<ImmutString> {
-        let mut buf = String::new();
-        self.read_to_string(&mut buf)?;
-        Ok(buf.into_boxed_str())
-    }
-
     fn read_exactly(&mut self, len: usize) -> io::Result<ImmutBString> {
         let mut buf = Vec::with_capacity(len);
         self.take(len as u64).read_to_end(&mut buf)?;
