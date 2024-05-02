@@ -230,10 +230,6 @@ pub trait OptionExt<T> {
     fn as_ptr(&self) -> *const T;
 }
 
-pub trait OptionMutExt<T>: OptionExt<T> {
-    fn as_mut_ptr(&mut self) -> *mut T;
-}
-
 impl<T> OptionExt<T> for Option<&T> {
     fn as_ptr(&self) -> *const T {
         match self {
@@ -248,15 +244,6 @@ impl<T> OptionExt<T> for Option<&mut T> {
         match self {
             Some(x) => *x as *const T,
             None => std::ptr::null(),
-        }
-    }
-}
-
-impl<T> OptionMutExt<T> for Option<&mut T> {
-    fn as_mut_ptr(&mut self) -> *mut T {
-        match self {
-            Some(ref mut x) => *x as *mut T,
-            None => std::ptr::null_mut(),
         }
     }
 }
@@ -280,19 +267,11 @@ fn test_optionext() {
         assert!(!DROPPED.load(Ordering::SeqCst));
     }
 
-    fn callback_mut(ptr: *mut Foo) {
-        assert_ne!(ptr, std::ptr::null_mut());
-        assert!(!DROPPED.load(Ordering::SeqCst));
-    }
-
     // For good measure, ensure that lifetimes workout fine.
     callback(Some(Foo).as_ref().as_ptr());
     assert!(DROPPED.load(Ordering::SeqCst));
     DROPPED.store(false, Ordering::SeqCst);
     callback(Some(Foo).as_mut().as_ptr());
-    assert!(DROPPED.load(Ordering::SeqCst));
-    DROPPED.store(false, Ordering::SeqCst);
-    callback_mut(Some(Foo).as_mut().as_mut_ptr());
     assert!(DROPPED.load(Ordering::SeqCst));
     assert_eq!(std::ptr::null(), (None as Option<&usize>).as_ptr());
 }
