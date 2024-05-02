@@ -8,6 +8,7 @@ endif
 
 NO_GETTEXT ?= 1
 NO_OPENSSL ?= 1
+NO_UNIX_SOCKETS ?= 1
 
 SOURCE_DIR = $(subst \,/,$(CARGO_MANIFEST_DIR))
 
@@ -88,14 +89,14 @@ $(ALL_CINNABAR_OBJECTS): $(LIB_H)
 
 # When not using computed header dependencies, the directories for objects
 # aren't going to be created.
-obj_dirs := $(sort $(dir $(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(XDIFF_OBJS)))
+obj_dirs := $(sort $(dir $(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(REFTABLE_OBJS) $(XDIFF_OBJS)))
 
 $(obj_dirs):
 	@mkdir -p $@
 
 missing_obj_dirs := $(filter-out $(wildcard $(obj_dirs)),$(obj_dirs))
 
-$(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(XDIFF_OBJS): $(missing_obj_dirs)
+$(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(REFTABLE_OBJS) $(XDIFF_OBJS): $(missing_obj_dirs)
 endif
 
 PATCHED_GIT_OBJECTS := $(filter-out fast-import.patched.o,$(PATCHES:%.c.patch=%.patched.o))
@@ -127,7 +128,7 @@ EXCLUDE_OBJS += help.o
 EXCLUDE_OBJS += iterator.o
 EXCLUDE_OBJS += reachable.o
 EXCLUDE_OBJS += serve.o
-libcinnabar.a: $(ALL_CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(XDIFF_OBJS)
+libcinnabar.a: $(ALL_CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(REFTABLE_OBJS) $(XDIFF_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
 
 linker-flags: GIT-LDFLAGS FORCE

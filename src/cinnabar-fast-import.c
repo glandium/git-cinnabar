@@ -278,7 +278,8 @@ void do_set_replace(const struct object_id *replaced,
 }
 
 int write_object_file_flags(const void *buf, size_t len, enum object_type type,
-                            struct object_id *oid, unsigned flags)
+                            struct object_id *oid, struct object_id *compat_oid_in,
+                            unsigned flags)
 {
 	struct strslice data;
 	data.buf = (void *)buf;

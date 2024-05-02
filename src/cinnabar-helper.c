@@ -225,10 +225,12 @@ static void cleanup_git_config(void)
 				!access_or_warn(xdg_config, R_OK, 0))
 			{
 				git_config_set_in_file_gently(
-					xdg_config, "cinnabar.fsck", NULL);
+					xdg_config, "cinnabar.fsck", NULL,
+					NULL);
 			} else {
 				git_config_set_in_file_gently(
-					user_config, "cinnabar.fsck", NULL);
+					user_config, "cinnabar.fsck", NULL,
+					NULL);
 			}
 		}
 		free(user_config);
@@ -236,7 +238,7 @@ static void cleanup_git_config(void)
 		user_config = git_pathdup("config");
 		if (user_config) {
 			git_config_set_in_file_gently(
-				user_config, "cinnabar.fsck", NULL);
+				user_config, "cinnabar.fsck", NULL, NULL);
 		}
 		free(user_config);
 	}
