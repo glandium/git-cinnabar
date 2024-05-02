@@ -267,6 +267,11 @@ pub struct RawObject {
 }
 
 impl RawObject {
+    const EMPTY: RawObject = RawObject {
+        buf: std::ptr::NonNull::dangling().as_ptr() as *const _,
+        len: 0,
+    };
+
     fn read(oid: GitObjectId) -> Option<(object_type, RawObject)> {
         let mut info = object_info::default();
         let mut t = object_type::OBJ_NONE;
@@ -301,19 +306,25 @@ impl RawObject {
 
 impl Clone for RawObject {
     fn clone(&self) -> Self {
-        let mut cloned = strbuf::new();
-        cloned.extend_from_slice(self.as_bytes());
-        let buf = cloned.as_ptr() as *const _;
-        let len = cloned.as_bytes().len();
-        mem::forget(cloned);
-        RawObject { buf, len }
+        if self.len > 0 {
+            let mut cloned = strbuf::new();
+            cloned.extend_from_slice(self.as_bytes());
+            let buf = cloned.as_ptr() as *const _;
+            let len = cloned.as_bytes().len();
+            mem::forget(cloned);
+            RawObject { buf, len }
+        } else {
+            RawObject::EMPTY
+        }
     }
 }
 
 impl Drop for RawObject {
     fn drop(&mut self) {
         unsafe {
-            libc::free(self.buf as *mut _);
+            if self.buf != std::ptr::NonNull::dangling().as_ptr() {
+                libc::free(self.buf as *mut _);
+            }
         }
     }
 }
@@ -357,10 +368,7 @@ impl RawTree {
     pub const EMPTY_OID: TreeId =
         TreeId::from_raw_bytes_array(hex!("4b825dc642cb6eb9a060e54bf8d69288fbee4904"));
 
-    pub const EMPTY: RawTree = RawTree(RawObject {
-        buf: std::ptr::null(),
-        len: 0,
-    });
+    pub const EMPTY: RawTree = RawTree(RawObject::EMPTY);
 }
 
 #[derive(CopyGetters, Getters)]
