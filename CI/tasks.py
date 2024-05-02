@@ -73,7 +73,7 @@ def expires_soon(expires):
     try:
         expires = datetime.strptime(
             expires.rstrip('Z'), '%Y-%m-%dT%H:%M:%S.%f')
-        return expires < now + 3600
+        return expires < now + 86400
     except (KeyError, ValueError):
         return True
 
