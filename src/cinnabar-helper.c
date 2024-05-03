@@ -378,16 +378,45 @@ int init_cinnabar(const char *argv0)
 	save_commit_buffer = 0;
 	warn_on_object_refname_ambiguity = 0;
 
-	// Starting from git 2.44, git clone doesn't create a repository
-	// that setup_git_directory will recognize as a git directory.
-	// When in that situation, GIT_DIR is set, so rely on that and
-	// initialize the ref store.
-	if (nongit && getenv("GIT_DIR") != NULL) {
-		struct strbuf err = STRBUF_INIT;
-		check_repository_format(NULL);
-		if (refs_init_db(get_main_ref_store(the_repository), 0, &err))
-			die("failed to set up refs db: %s", err.buf);
-		nongit = 0;
+	// In git 2.44, git clone doesn't create a repository that
+	// setup_git_directory_gently will recognize as a git directory.
+	// The first indicator that we might be in a git clone is that
+	// GIT_DIR is set.
+	if (getenv("GIT_DIR") != NULL) {
+		if (nongit) {
+			// If GIT_DIR is set and setup_git_directory_gently
+			// says we're not in a git directory, assume we're in
+			// that weird git 2.44 case.
+			struct strbuf err = STRBUF_INIT;
+			check_repository_format(NULL);
+			if (refs_init_db(get_main_ref_store(the_repository),
+			                 0, &err))
+				die("failed to set up refs db: %s", err.buf);
+			nongit = 0;
+		} else {
+			// To make things even gnarlier, git 2.45 hits a case
+			// where it will print an irrelevant hint because of the
+			// HEAD it created itself. Removing that HEAD works
+			// around the problem, so try to detect it.
+			// See http://public-inbox.org/git/20240503020432.2fxwuhjsvumy7i7z@glandium.org/
+			struct strbuf head = STRBUF_INIT;
+			struct strbuf buf = STRBUF_INIT;
+			git_path_buf(&head, "HEAD");
+			if (strbuf_read_file(&buf, head.buf, 0) > 0) {
+				const char invalid_head_s[] =
+					"ref: refs/heads/.invalid\n";
+				struct strbuf invalid_head = {
+					.buf = (char*)invalid_head_s,
+					.len = sizeof(invalid_head_s) - 1,
+					.alloc = 0
+				};
+				if (strbuf_cmp(&invalid_head, &buf) == 0) {
+					unlink(head.buf);
+				}
+			}
+			strbuf_release(&head);
+			strbuf_release(&buf);
+		}
 	}
 	return !nongit;
 }
