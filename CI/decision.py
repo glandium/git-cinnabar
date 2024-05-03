@@ -13,7 +13,6 @@ BASE_DIR = os.path.dirname(__file__)
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '..'))
 
-from distutils.version import StrictVersion
 from itertools import chain
 
 import osx  # noqa: F401
@@ -41,6 +40,19 @@ def git_rev_parse(committish):
     return subprocess.check_output(
         ['git', 'rev-parse', committish], text=True,
         cwd=os.path.join(BASE_DIR, '..')).strip()
+
+
+def is_old_hg(version):
+    # `version` is a sha1 for trunk, which means it's >= 3.6
+    if len(version) == 40:
+        return False
+    try:
+        version = [int(x) for x in version.split('.')]
+    except ValueError:
+        # Assume that an invalid version per the conversion above is
+        # newer.
+        return False
+    return version < [3, 6]
 
 
 UPGRADE_FROM = ()  # ('0.5.0',)
@@ -78,12 +90,8 @@ class TestTask(Task):
             kwargs.setdefault('mounts', []).append(hg_task.mount())
             command.extend(hg_task.install())
             command.append('hg --version')
-            try:
-                if StrictVersion(hg) < '3.6':
-                    kwargs.setdefault('env', {})['NO_CLONEBUNDLES'] = '1'
-            except ValueError:
-                # `hg` is a sha1 for trunk, which means it's >= 3.6
-                pass
+            if is_old_hg(hg):
+                kwargs.setdefault('env', {})['NO_CLONEBUNDLES'] = '1'
         if git:
             git_task = Git.by_name('{}.{}'.format(task_env, git))
             kwargs.setdefault('mounts', []).append(git_task.mount())
@@ -360,13 +368,7 @@ def do_hg_version(hg):
     # Don't run cram tests for version < 3.6, which would need
     # different tests because of server-side changes in behavior
     # wrt bookmarks.
-    try:
-        old_hg = StrictVersion(hg) < '3.6'
-    except ValueError:
-        # `hg` is a sha1 for trunk, which means it's >= 3.6
-        old_hg = False
-
-    if not old_hg:
+    if not is_old_hg(hg):
         TestTask(
             short_desc='cram',
             clone=False,
