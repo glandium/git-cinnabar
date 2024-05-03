@@ -356,30 +356,17 @@ def decision():
 
 
 def do_hg_version(hg):
-    cram_hg = []
-    python2 = False
+    TestTask(hg=hg)
+    # Don't run cram tests for version < 3.6, which would need
+    # different tests because of server-side changes in behavior
+    # wrt bookmarks.
     try:
-        # Don't run python2 tests for version >= 6.2, which doesn't support
-        # python2 anymore.
-        if StrictVersion(hg) < '6.2':
-            python2 = True
-    except ValueError:
-        # `hg` is a sha1 for trunk, which means it's >= 6.2
-        pass
-    if python2:
-        TestTask(hg=hg)
-        cram_hg.append(hg)
-    try:
-        # Don't run cram tests for version < 3.6, which would need
-        # different tests because of server-side changes in behavior
-        # wrt bookmarks.
-        if StrictVersion(hg) < '3.6':
-            return
+        old_hg = StrictVersion(hg) < '3.6'
     except ValueError:
         # `hg` is a sha1 for trunk, which means it's >= 3.6
-        TestTask(hg='{}.py3'.format(hg))
-        cram_hg.append('{}.py3'.format(hg))
-    for hg in cram_hg:
+        old_hg = False
+
+    if not old_hg:
         TestTask(
             short_desc='cram',
             clone=False,
