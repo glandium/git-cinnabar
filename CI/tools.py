@@ -432,8 +432,8 @@ class Build(Task, metaclass=Tool):
                     f'/sysroot-{arch}/usr/share/pkgconfig',
                 ))
         if variant in ('coverage', 'asan'):
-            rust_install = install_rust('nightly-2024-03-18', rust_target)
-        elif rust_version:
+            environ['RUSTC_BOOTSTRAP'] = '1'
+        if rust_version:
             rust_install = install_rust(rust_version, target=rust_target)
         else:
             rust_install = install_rust(target=rust_target)
