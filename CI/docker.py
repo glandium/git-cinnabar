@@ -32,7 +32,7 @@ def sources_list(snapshot, sections):
 LLVM_REPO = (
     'echo'
     ' deb [signed-by=/usr/share/keyrings/llvm.gpg]'
-    ' https://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-17 main'
+    ' https://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-18 main'
     ' > /etc/apt/sources.list.d/llvm.list'
 )
 
@@ -84,8 +84,8 @@ DOCKER_IMAGES = {
             LLVM_REPO,
             'apt-get update -o Acquire::Check-Valid-Until=false',
             'apt-get install -y --no-install-recommends {}'.format(' '.join([
-                'clang-17',
-                'lld-17',
+                'clang-18',
+                'lld-18',
                 'git',
                 'make',
                 'patch',
@@ -157,12 +157,12 @@ DOCKER_IMAGES = {
             LLVM_REPO,
             'apt-get update -o Acquire::Check-Valid-Until=false',
             'apt-get install -y --no-install-recommends {}'.format(' '.join([
-                'llvm-17',
+                'llvm-18',
                 'make',
             ])),
             'apt-get clean',
             'pip3 install cram==0.7',
-            'ln -s llvm-symbolizer-17 /usr/bin/llvm-symbolizer'
+            'ln -s llvm-symbolizer-18 /usr/bin/llvm-symbolizer'
         ],
     },
 }
