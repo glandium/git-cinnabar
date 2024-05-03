@@ -4093,13 +4093,6 @@ fn remote_helper_push(
         stdout.flush().unwrap();
         return Ok(0);
     }
-    if let Some(metadata) = resolve_ref(METADATA_REF) {
-        if Some(metadata) == resolve_ref(BROKEN_REF) {
-            return Err(
-                "Cannot fetch with broken metadata. Please fix your clone first.".to_string(),
-            );
-        }
-    }
 
     let bookmark_prefix = info.refs_style.contains(RefsStyle::BOOKMARKS).then(|| {
         if info
