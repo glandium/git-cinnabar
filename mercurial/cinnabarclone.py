@@ -55,7 +55,7 @@ testedwith = (
     "3.0 3.1 3.2 3.3 3.4 3.5 3.6 3.7 3.8 3.9 "
     "4.0 4.1 4.2 4.3 4.4 4.5 4.6 4.7 4.8 4.9 "
     "5.0 5.1 5.2 5.3 5.4 5.5 5.6 5.7 5.8 5.9 "
-    "6.0 6.1 6.2"
+    "6.0 6.1 6.2 6.3 6.4 6.5 6.6 6.7"
 )
 
 
@@ -110,10 +110,10 @@ def extsetup(ui):
     from mercurial import extensions
 
     try:
-        extensions.wrapfunction(wireproto, b'_capabilities', _capabilities)
+        extensions.wrapfunction(wireproto, '_capabilities', _capabilities)
     except AttributeError:
         extensions.wrapcommand(
-            wireproto.commands, b'capabilities', capabilities)
+            wireproto.commands, 'capabilities', capabilities)
 
     def wireprotocommand(name, args=b'', permission=b'push'):
         if hasattr(wireproto, 'wireprotocommand'):
