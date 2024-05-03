@@ -116,7 +116,7 @@ version = "0.4"
 optional = true
 
 [target.'cfg(windows)'.dependencies.windows-sys]
-version = "0.48"
+version = "0.52"
 features = ["Win32_Foundation"]
 
 [target.'cfg(not(windows))'.dependencies.xz2]
@@ -138,7 +138,7 @@ cc = "1.0.46"
 itertools = "0.12"
 make-cmd = "0.1"
 target = "2.0"
-syn = { version = "1", features = ["full"] }  # git-version fails to parse inner macros without this.
+syn = { version = "2", features = ["full"] }  # git-version fails to parse inner macros without this.
 
 [build-dependencies.rustflags]
 version = "0.1"
