@@ -19,3 +19,9 @@ allow = [
 exceptions = [
     { allow = ["Unicode-DFS-2016"], crate = "unicode-ident" },
 ]
+
+[bans]
+multiple-versions = "deny"
+skip = [
+  { crate = "syn", reason = "ongoing transition from syn 1 to syn 2" }
+]
