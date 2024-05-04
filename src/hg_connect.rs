@@ -829,6 +829,7 @@ pub fn get_bundle(
     // That means if the heads we don't know in those we were asked for
     // are a superset of the topological heads we don't know, then we
     // should use those instead.
+    let mut original_heads = None;
     if !branch_names.is_empty() {
         if let Some(topological_heads) = topological_heads {
             let unknown_wanted_heads = heads
@@ -846,16 +847,41 @@ pub fn get_bundle(
                 .collect::<HashSet<_>>()
                 .is_superset(&unknown_topological_heads.iter().collect())
             {
-                heads = Cow::Owned(unknown_topological_heads);
+                original_heads = Some(std::mem::replace(
+                    &mut heads,
+                    Cow::Owned(unknown_topological_heads),
+                ));
             }
         }
     }
-    get_store_bundle(store, conn, &heads, &common).map_err(|e| {
-        let stderr = stderr();
-        let mut writer = PrefixWriter::new("remote: ", stderr.lock());
-        writer.write_all(&e).unwrap();
-        "".to_string()
-    })
+    get_store_bundle(store, conn, &heads, &common)
+        .and_then(|()| {
+            // Try one more time if there are still some heads left because
+            // we removed too many above, which can happen when for some
+            // reason the server advertizes topological heads in the branchmap
+            // without advertizing them in the list of heads.
+            let unknown_wanted_heads = original_heads
+                .map(|original_heads| {
+                    original_heads
+                        .iter()
+                        .filter(|h| h.to_git(store).is_none())
+                        .copied()
+                        .collect_vec()
+                })
+                .unwrap_or_default();
+            if !unknown_wanted_heads.is_empty() {
+                common = find_common(store, conn, known_branch_heads(store));
+                get_store_bundle(store, conn, &unknown_wanted_heads, &common)
+            } else {
+                Ok(())
+            }
+        })
+        .map_err(|e| {
+            let stderr = stderr();
+            let mut writer = PrefixWriter::new("remote: ", stderr.lock());
+            writer.write_all(&e).unwrap();
+            "".to_string()
+        })
 }
 
 fn get_initial_bundle(
