@@ -42,8 +42,6 @@
 #[macro_use]
 extern crate derivative;
 #[macro_use]
-extern crate all_asserts;
-#[macro_use]
 extern crate log;
 
 mod cinnabar;

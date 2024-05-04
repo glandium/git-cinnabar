@@ -27,7 +27,6 @@ include = [
 ]
 
 [dependencies]
-all_asserts = "2"
 array-init = "2.0.1"
 backtrace = "0.3"
 bit-vec = "0.6"

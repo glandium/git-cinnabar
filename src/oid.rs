@@ -7,6 +7,8 @@ use std::str::{self, FromStr};
 
 use digest::{Digest, OutputSizeUser};
 
+use crate::util::assert_le;
+
 pub trait ObjectId: Sized + Copy {
     type Digest: Digest;
 

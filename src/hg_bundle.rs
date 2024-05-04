@@ -40,7 +40,7 @@ use crate::store::{
     ChangesetHeads, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, Store,
 };
 use crate::tree_util::{Empty, WithPath};
-use crate::util::{FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
+use crate::util::{assert_ge, assert_lt, FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::textdiff;
 
 #[no_mangle]

@@ -668,3 +668,61 @@ impl<T> RcExt for RcSlice<T> {
         Self::Builder::with_capacity(capacity)
     }
 }
+
+#[allow(unused_macros)]
+macro_rules! assert_gt {
+    ($left:expr, $right:expr) => {{
+        let left = $left;
+        let right = $right;
+        assert!(
+            left > right,
+            "assertion `left > right` failed:\n  left: {:?}\n right: {:?}",
+            left,
+            right
+        )
+    }};
+}
+#[allow(unused_imports)]
+pub(crate) use assert_gt;
+
+macro_rules! assert_ge {
+    ($left:expr, $right:expr) => {{
+        let left = $left;
+        let right = $right;
+        assert!(
+            left >= right,
+            "assertion `left >= right` failed:\n  left: {:?}\n right: {:?}",
+            left,
+            right
+        )
+    }};
+}
+pub(crate) use assert_ge;
+
+macro_rules! assert_lt {
+    ($left:expr, $right:expr) => {{
+        let left = $left;
+        let right = $right;
+        assert!(
+            left < right,
+            "assertion `left < right` failed:\n  left: {:?}\n right: {:?}",
+            left,
+            right
+        )
+    }};
+}
+pub(crate) use assert_lt;
+
+macro_rules! assert_le {
+    ($left:expr, $right:expr) => {{
+        let left = $left;
+        let right = $right;
+        assert!(
+            left <= right,
+            "assertion `left <= right` failed:\n  left: {:?}\n right: {:?}",
+            left,
+            right
+        )
+    }};
+}
+pub(crate) use assert_le;

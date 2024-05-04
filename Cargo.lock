@@ -27,12 +27,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "all_asserts"
-version = "2.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca77caf0ca1057c274cda103cda1363d892b7cad5f2e646afde4df0697bea100"
-
-[[package]]
 name = "anstream"
 version = "0.6.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -443,7 +437,6 @@ checksum = "4271d37baee1b8c7e4b708028c57d816cf9d2434acb33a549475f78c181f6253"
 name = "git-cinnabar"
 version = "0.7.0-b"
 dependencies = [
- "all_asserts",
  "array-init",
  "backtrace",
  "bit-vec",
