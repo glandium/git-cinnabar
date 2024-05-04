@@ -788,6 +788,7 @@ pub fn get_bundle(
     store: &mut Store,
     conn: &mut dyn HgRepo,
     heads: &[HgChangesetId],
+    topological_heads: Option<&[HgChangesetId]>,
     branch_names: &HashSet<&BStr>,
     remote: Option<&str>,
 ) -> Result<(), String> {
@@ -819,6 +820,36 @@ pub fn get_bundle(
         common = find_common(store, conn, known_branch_heads(store));
     }
 
+    // TODO: Mercurial can be an order of magnitude slower when
+    // creating a bundle when not giving topological heads, which
+    // some of the branch heads might not be.
+    // http://bz.selenic.com/show_bug.cgi?id=4595
+    // The heads we've been asked for either come from the repo
+    // branchmap, and are a superset of its topological heads.
+    // That means if the heads we don't know in those we were asked for
+    // are a superset of the topological heads we don't know, then we
+    // should use those instead.
+    if !branch_names.is_empty() {
+        if let Some(topological_heads) = topological_heads {
+            let unknown_wanted_heads = heads
+                .iter()
+                .filter(|h| h.to_git(store).is_none())
+                .copied()
+                .collect::<Vec<_>>();
+            let unknown_topological_heads = topological_heads
+                .iter()
+                .filter(|h| h.to_git(store).is_none())
+                .copied()
+                .collect::<Vec<_>>();
+            if unknown_wanted_heads
+                .iter()
+                .collect::<HashSet<_>>()
+                .is_superset(&unknown_topological_heads.iter().collect())
+            {
+                heads = Cow::Owned(unknown_topological_heads);
+            }
+        }
+    }
     get_store_bundle(store, conn, &heads, &common).map_err(|e| {
         let stderr = stderr();
         let mut writer = PrefixWriter::new("remote: ", stderr.lock());

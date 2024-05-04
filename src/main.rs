@@ -543,7 +543,7 @@ fn do_fetch(store: &mut Store, remote: &OsStr, revs: &[OsString]) -> Result<(), 
         init_graft(store);
     }
 
-    get_bundle(store, &mut *conn, &full_revs, &HashSet::new(), remote)?;
+    get_bundle(store, &mut *conn, &full_revs, None, &HashSet::new(), remote)?;
 
     do_done_and_check(store, &[])
         .then_some(())
@@ -1050,6 +1050,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                     &mut store,
                     &mut *conn,
                     &knowns.iter().map(|(_, csid)| *csid).collect_vec(),
+                    None,
                     &HashSet::new(),
                     Some(remote.name().unwrap().to_str().unwrap()),
                 )?;
@@ -4001,37 +4002,19 @@ fn import_bundle(
     info: &RemoteInfo,
     unknown_wanted_heads: &[HgChangesetId],
 ) -> Result<(), String> {
-    // TODO: Mercurial can be an order of magnitude slower when
-    // creating a bundle when not giving topological heads, which
-    // some of the branch heads might not be.
-    // http://bz.selenic.com/show_bug.cgi?id=4595
-    // The heads we've been asked for either come from the repo
-    // branchmap, and are a superset of its topological heads.
-    // That means if the heads we don't know in those we were asked for
-    // are a superset of the topological heads we don't know, then we
-    // should use those instead.
-    let mut unknown_wanted_heads = Cow::Borrowed(unknown_wanted_heads);
-    if !info.branch_names.is_empty() {
-        let unknown_topological_heads = info
-            .topological_heads
-            .iter()
-            .copied()
-            .filter(|h| h.to_git(store).is_none())
-            .collect::<Vec<_>>();
-        if unknown_wanted_heads
-            .iter()
-            .collect::<HashSet<_>>()
-            .is_superset(&unknown_topological_heads.iter().collect())
-        {
-            unknown_wanted_heads = Cow::Owned(unknown_topological_heads);
-        }
-    }
     let branch_names = info
         .branch_names
         .iter()
         .map(|b| &**b)
         .collect::<HashSet<_>>();
-    get_bundle(store, conn, &unknown_wanted_heads, &branch_names, remote)
+    get_bundle(
+        store,
+        conn,
+        unknown_wanted_heads,
+        Some(&info.topological_heads),
+        &branch_names,
+        remote,
+    )
 }
 
 fn check_graft_refs() {
