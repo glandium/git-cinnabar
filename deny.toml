@@ -1,0 +1,21 @@
+[graph]
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-pc-windows-gnu",
+]
+all-features = true
+
+[licenses]
+allow = [
+  "BSD-2-Clause",
+  "CC0-1.0",
+  "GPL-2.0",
+  "MIT",
+  "MPL-2.0",
+]
+exceptions = [
+    { allow = ["Unicode-DFS-2016"], crate = "unicode-ident" },
+]
