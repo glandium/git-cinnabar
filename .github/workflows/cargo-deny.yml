@@ -4,11 +4,13 @@ on:
     paths:
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - 'deny.toml'
       - '.github/workflows/cargo-deny.yml'
   pull_request:
     paths:
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - 'deny.toml'
       - '.github/workflows/cargo-deny.yml'
 jobs:
   cargo-deny:
