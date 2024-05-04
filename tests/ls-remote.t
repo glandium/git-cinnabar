@@ -456,6 +456,6 @@
 
   $ git -c cinnabar.refs=heads,tips -C repo-git ls-remote hg::$REPO
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
-  66e3a05b3f4cc64ecdd41a4a2c4ac3913ca905bd	refs/heads/branches/default/3af330d6b3b174311a550ed9246a104ceeda8c28
-  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
-  98c3f7495c17d6fcae8cfaa894c8af0da9668863	refs/heads/branches/foo/tip
+  66e3a05b3f4cc64ecdd41a4a2c4ac3913ca905bd	refs/heads/default/3af330d6b3b174311a550ed9246a104ceeda8c28
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/tip
+  98c3f7495c17d6fcae8cfaa894c8af0da9668863	refs/heads/foo/tip

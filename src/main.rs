@@ -3748,8 +3748,13 @@ fn repo_list(
     let mut default_tip = None;
     if refs_style.intersects(RefsStyle::HEADS | RefsStyle::TIPS) {
         if refs_style.contains(RefsStyle::HEADS | RefsStyle::TIPS) {
-            head_template = Some(&["refs/heads/branches/", "", "/", ""][..]);
-            tip_template = Some(&["refs/heads/branches/", "", "/tip"][..]);
+            if refs_style.contains(RefsStyle::BOOKMARKS) {
+                head_template = Some(&["refs/heads/branches/", "", "/", ""][..]);
+                tip_template = Some(&["refs/heads/branches/", "", "/tip"][..]);
+            } else {
+                head_template = Some(&["refs/heads/", "", "/", ""][..]);
+                tip_template = Some(&["refs/heads/", "", "/tip"][..]);
+            }
         } else if refs_style.contains(RefsStyle::HEADS | RefsStyle::BOOKMARKS) {
             head_template = Some(&["refs/heads/branches/", "", "/", ""]);
         } else if refs_style.contains(RefsStyle::HEADS) {
