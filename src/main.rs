@@ -113,7 +113,7 @@ use libgit::{
 use logging::{LoggingReader, LoggingWriter};
 use oid::{Abbrev, ObjectId};
 use once_cell::sync::Lazy;
-use percent_encoding::{percent_decode, percent_encode, AsciiSet, CONTROLS};
+use percent_encoding::percent_decode;
 use progress::Progress;
 use sha1::{Digest, Sha1};
 use store::{
@@ -3690,13 +3690,6 @@ fn repo_list(
 
     let mut refs = BTreeMap::new();
 
-    // Valid characters in mercurial branch names are not necessarily valid
-    // in git ref names. This function replaces unsupported characters with a
-    // url-like escape such that the name can be reversed straightforwardly.
-    // TODO: Actually sanitize all the conflicting cases, see
-    // git-check-ref-format(1).
-    const BRANCH_QUOTE_SET: &AsciiSet = &CONTROLS.add(b'%').add(b' ');
-
     let apply_template = |template: &[&str], values: &[&BStr]| {
         let mut buf = Vec::new();
         let mut values = values.iter();
@@ -3704,11 +3697,7 @@ fn repo_list(
             if part.is_empty() {
                 buf.extend_from_slice(values.next().unwrap());
             } else {
-                buf.extend_from_slice(
-                    percent_encode(part.as_bytes(), BRANCH_QUOTE_SET)
-                        .to_string()
-                        .as_bytes(),
-                );
+                buf.extend_from_slice(part.as_bytes());
             }
         }
         buf.as_bstr().to_boxed()
