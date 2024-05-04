@@ -12,11 +12,11 @@ all-features = true
 allow = [
   "BSD-2-Clause",
   "CC0-1.0",
-  "GPL-2.0",
   "MIT",
   "MPL-2.0",
 ]
 exceptions = [
+    { allow = ["GPL-2.0"], crate = "git-cinnabar" },
     { allow = ["Unicode-DFS-2016"], crate = "unicode-ident" },
 ]
 
