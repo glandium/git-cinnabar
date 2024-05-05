@@ -3670,7 +3670,7 @@ struct RemoteInfo {
     head_ref: Option<Box<BStr>>,
     refs: BTreeMap<Box<BStr>, (HgChangesetId, Option<GitChangesetId>)>,
     topological_heads: Vec<HgChangesetId>,
-    branch_names: Vec<Box<BStr>>,
+    branch_names: HashSet<Box<BStr>>,
     bookmarks: HashMap<Box<BStr>, HgChangesetId>,
     refs_style: RefsStyle,
 }
@@ -4002,17 +4002,12 @@ fn import_bundle(
     info: &RemoteInfo,
     unknown_wanted_heads: &[HgChangesetId],
 ) -> Result<(), String> {
-    let branch_names = info
-        .branch_names
-        .iter()
-        .map(|b| &**b)
-        .collect::<HashSet<_>>();
     get_bundle(
         store,
         conn,
         unknown_wanted_heads,
         Some(&info.topological_heads),
-        &branch_names,
+        &info.branch_names,
         remote,
     )
 }
@@ -4081,13 +4076,12 @@ fn remote_helper_push(
 
     let mut pushed = ChangesetHeads::new();
     let result = (|| {
-        let branch_names = info.branch_names.into_iter().collect::<HashSet<_>>();
         let push_commits = push_refs.iter().filter_map(|(c, _, _)| *c).collect_vec();
         let local_bases = rev_list_with_boundaries(
             store
                 .changeset_heads()
                 .branch_heads()
-                .filter(|(_, b)| branch_names.contains(*b))
+                .filter(|(_, b)| info.branch_names.contains(*b))
                 .map(|(h, _)| format!("^{}", h.to_git(store).unwrap()))
                 .chain(push_commits.iter().map(ToString::to_string))
                 .chain(["--topo-order".to_string(), "--full-history".to_string()]),

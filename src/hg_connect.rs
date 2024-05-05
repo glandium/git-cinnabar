@@ -789,7 +789,7 @@ pub fn get_bundle(
     conn: &mut dyn HgRepo,
     heads: &[HgChangesetId],
     topological_heads: Option<&[HgChangesetId]>,
-    branch_names: &HashSet<&BStr>,
+    branch_names: &HashSet<Box<BStr>>,
     remote: Option<&str>,
 ) -> Result<(), String> {
     let known_branch_heads = |store: &Store| {
