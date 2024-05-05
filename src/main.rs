@@ -4077,12 +4077,12 @@ fn remote_helper_push(
                 .chain(push_commits.iter().map(ToString::to_string))
                 .chain(["--topo-order".to_string(), "--full-history".to_string()]),
         )
-        .filter_map(|b| match b {
-            MaybeBoundary::Boundary(c) => Some(Ok(c)),
+        .filter_map(|(c, b)| match b {
+            MaybeBoundary::Boundary => Some(Ok(c)),
             MaybeBoundary::Shallow => Some(Err(
                 "Pushing git shallow clones is not supported.".to_string()
             )),
-            MaybeBoundary::Commit(_) => None,
+            MaybeBoundary::Commit => None,
         })
         .chain(push_commits.into_iter().map(Ok))
         .map_ok(GitChangesetId::from_unchecked)

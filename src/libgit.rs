@@ -602,26 +602,28 @@ pub fn rev_list_with_boundaries(
     RevListWithBoundaries(rev_list(args))
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MaybeBoundary {
-    Commit(CommitId),
-    Boundary(CommitId),
+    Commit,
+    Boundary,
     Shallow,
 }
 
 impl Iterator for RevListWithBoundaries {
-    type Item = MaybeBoundary;
+    type Item = (CommitId, MaybeBoundary);
     fn next(&mut self) -> Option<Self::Item> {
         unsafe {
             get_revision(self.0.revs).as_ref().map(|c| {
                 let cid = CommitId::from_unchecked(GitObjectId::from(
                     commit_oid(c).as_ref().unwrap().clone(),
                 ));
-                match maybe_boundary(self.0.revs, c) {
-                    0 => MaybeBoundary::Commit(cid),
-                    1 => MaybeBoundary::Boundary(cid),
+                let maybe_boundary = match maybe_boundary(self.0.revs, c) {
+                    0 => MaybeBoundary::Commit,
+                    1 => MaybeBoundary::Boundary,
                     2 => MaybeBoundary::Shallow,
                     _ => unreachable!(),
-                }
+                };
+                (cid, maybe_boundary)
             })
         }
     }
