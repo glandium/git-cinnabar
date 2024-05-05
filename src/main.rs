@@ -4044,7 +4044,6 @@ fn remote_helper_push(
                 .strip_prefix(b"+")
                 .map_or((source, false), |s| (s, true));
             (
-                source.as_bstr(),
                 (!source.is_empty()).then(|| get_oid_committish(source).unwrap()),
                 dest.as_bstr(),
                 force,
@@ -4054,7 +4053,7 @@ fn remote_helper_push(
 
     let broken = resolve_ref(METADATA_REF).map(|m| resolve_ref(BROKEN_REF) == Some(m));
     if broken == Some(true) || conn.get_capability(b"unbundle").is_none() {
-        for (_, _, dest, _) in &push_refs {
+        for (_, dest, _) in &push_refs {
             let mut buf = b"error ".to_vec();
             buf.extend_from_slice(dest);
             buf.extend_from_slice(if broken == Some(true) {
@@ -4083,7 +4082,7 @@ fn remote_helper_push(
     let mut pushed = ChangesetHeads::new();
     let result = (|| {
         let branch_names = info.branch_names.into_iter().collect::<HashSet<_>>();
-        let push_commits = push_refs.iter().filter_map(|(_, c, _, _)| *c).collect_vec();
+        let push_commits = push_refs.iter().filter_map(|(c, _, _)| *c).collect_vec();
         let local_bases = rev_list_with_boundaries(
             store
                 .changeset_heads()
@@ -4106,8 +4105,8 @@ fn remote_helper_push(
         .unique()
         .collect::<Result<Vec<_>, _>>()?;
 
-        let pushing_anything = push_refs.iter().any(|(_, c, _, _)| c.is_some());
-        let force = push_refs.iter().all(|(_, _, _, force)| *force);
+        let pushing_anything = push_refs.iter().any(|(c, _, _)| c.is_some());
+        let force = push_refs.iter().all(|(_, _, force)| *force);
         let no_topological_heads = info.topological_heads.iter().all(ObjectId::is_null);
         if pushing_anything && local_bases.is_empty() && !no_topological_heads {
             let mut fail = true;
@@ -4143,7 +4142,7 @@ fn remote_helper_push(
                 .chain(
                     push_refs
                         .iter()
-                        .filter_map(|(_, c, _, _)| c.as_ref().map(ToString::to_string)),
+                        .filter_map(|(c, _, _)| c.as_ref().map(ToString::to_string)),
                 ),
         )
         .map(|c| {
@@ -4259,7 +4258,7 @@ fn remote_helper_push(
         .then(|| &push_refs[..])
         .into_iter()
         .flatten()
-        .map(|(_, source_cid, dest, _)| {
+        .map(|(source_cid, dest, _)| {
             let status = if dest.starts_with(b"refs/tags/") {
                 Err(if source_cid.is_some() {
                     "Pushing tags is unsupported"
@@ -4297,7 +4296,7 @@ fn remote_helper_push(
         .collect::<HashMap<_, _>>();
 
     if !status.is_empty() {
-        for (_, _, dest, _) in push_refs {
+        for (_, dest, _) in push_refs {
             let mut buf = Vec::new();
             match status[dest] {
                 Ok(true) => {
