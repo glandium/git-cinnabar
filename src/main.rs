@@ -967,12 +967,13 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
             .unique()
             .collect_vec();
 
-        import_bundle(
+        get_bundle(
             &mut store,
             &mut *conn,
-            remote.name().and_then(|n| n.to_str()),
-            &info,
             &unknown_wanted_heads,
+            Some(&info.topological_heads),
+            &info.branch_names,
+            remote.name().and_then(|n| n.to_str()),
         )?;
 
         for (refname, peer_ref, csid, cid) in wanted_refs.into_iter().unique() {
@@ -3937,7 +3938,14 @@ fn remote_helper_import(
         if graft_config_enabled(remote)?.unwrap_or(false) {
             init_graft(store);
         }
-        import_bundle(store, conn, remote, &info, &unknown_wanted_heads)?;
+        get_bundle(
+            store,
+            conn,
+            &unknown_wanted_heads,
+            Some(&info.topological_heads),
+            &info.branch_names,
+            remote,
+        )?;
     }
 
     do_done_and_check(store, &[])
@@ -3993,23 +4001,6 @@ fn remote_helper_import(
         }
     }
     Ok(())
-}
-
-fn import_bundle(
-    store: &mut Store,
-    conn: &mut dyn HgRepo,
-    remote: Option<&str>,
-    info: &RemoteInfo,
-    unknown_wanted_heads: &[HgChangesetId],
-) -> Result<(), String> {
-    get_bundle(
-        store,
-        conn,
-        unknown_wanted_heads,
-        Some(&info.topological_heads),
-        &info.branch_names,
-        remote,
-    )
 }
 
 fn check_graft_refs() {
