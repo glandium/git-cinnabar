@@ -256,9 +256,6 @@ static void end_packfile(void)
 	real_end_packfile();
 }
 
-extern void handle_changeset_conflict(const struct hg_object_id *hg_id,
-                                      struct object_id *git_id);
-
 void do_set_replace(const struct object_id *replaced,
                     const struct object_id *replace_with)
 {
