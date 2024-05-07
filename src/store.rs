@@ -588,10 +588,8 @@ impl RawHgChangeset {
             mem::swap(&mut changeset, &mut patched);
         }
 
-        // Adjust for `handle_changeset_conflict`.
-        // TODO: when creating the git2hg metadata moves to Rust, we can
-        // create a patch instead, which would be handled above instead of
-        // manually here.
+        // Adjust for old commits created by now removed
+        // `handle_changeset_conflict`.
         let node = metadata.changeset_id();
         if !node.is_null() {
             while changeset[changeset.len() - 1] == b'\0' {
@@ -1260,7 +1258,6 @@ impl Store {
                 if git_id.is_null() {
                     self.hg2git_mut().remove_note(hg_id);
                 } else if let Ok(ref mut commit) = CommitId::try_from(git_id) {
-                    handle_changeset_conflict(self, HgChangesetId::from_unchecked(hg_id), commit);
                     self.hg2git_mut().add_note(hg_id, (*commit).into());
                 } else {
                     die!("Invalid object");
@@ -1503,12 +1500,28 @@ fn store_changeset(
 
     let (commit_id, metadata_id, replace) = if commit_id.is_none() || transition {
         let replace = commit_id;
-        let result = raw_commit_for_changeset(&changeset, tree_id, &git_parents);
-        let mut result_oid = object_id::default();
-        unsafe {
-            store_git_commit(result.as_bytes().as_str_slice(), &mut result_oid);
-        }
-        let commit_id = CommitId::from_unchecked(GitObjectId::from(result_oid));
+        let mut raw_commit = Vec::from(raw_commit_for_changeset(&changeset, tree_id, &git_parents));
+        let commit_id = loop {
+            let mut result_oid = object_id::default();
+            unsafe {
+                store_git_commit(raw_commit.as_str_slice(), &mut result_oid);
+            }
+            let commit_id = CommitId::from_unchecked(GitObjectId::from(result_oid));
+            // There are cases where two changesets would map to the same git
+            // commit because their differences are not in information stored in
+            // the git commit (different manifest node, but identical tree ;
+            // different branches ; etc.)
+            // In that case, add invisible characters to the commit message until
+            // we find a commit that doesn't map to another changeset.
+            match GitChangesetId::from_unchecked(commit_id).to_hg(store) {
+                Some(existing_hg_id) if existing_hg_id != changeset_id => {
+                    raw_commit.push(b'\0');
+                }
+                _ => {
+                    break commit_id;
+                }
+            }
+        };
 
         let metadata = GeneratedGitChangesetMetadata::generate(
             store,
@@ -1557,35 +1570,6 @@ fn store_changeset(
         .as_bstr();
     heads.add(changeset_id, parents, branch);
     Ok(result)
-}
-
-fn handle_changeset_conflict(store: &Store, hg_id: HgChangesetId, git_id: &mut CommitId) {
-    // There are cases where two changesets would map to the same git
-    // commit because their differences are not in information stored in
-    // the git commit (different manifest node, but identical tree ;
-    // different branches ; etc.)
-    // In that case, add invisible characters to the commit message until
-    // we find a commit that doesn't map to another changeset.
-
-    let mut commit_data = None;
-    while let Some(existing_hg_id) = GitChangesetId::from_unchecked(*git_id).to_hg(store) {
-        // We might just already have the changeset in store.
-        if existing_hg_id == hg_id {
-            break;
-        }
-
-        let commit_data = commit_data.get_or_insert_with(|| {
-            let mut buf = Vec::new();
-            buf.extend_from_slice(RawCommit::read(*git_id).unwrap().as_bytes());
-            buf
-        });
-        commit_data.extend_from_slice(b"\0");
-        let mut new_git_id = object_id::default();
-        unsafe {
-            store_git_commit(commit_data.as_str_slice(), &mut new_git_id);
-        }
-        *git_id = CommitId::from_unchecked(new_git_id.into());
-    }
 }
 
 pub fn raw_commit_for_changeset(

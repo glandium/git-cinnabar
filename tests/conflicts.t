@@ -62,6 +62,26 @@ changesets properly.
   
   b\x00 (no-eol) (esc)
 
+Check that this round-trips properly.
+
+  $ hg init ${REPO}2
+  $ git -C repo-git push hg::${REPO}2 "refs/remotes/origin/branches/foo/tip:refs/heads/branches/foo/tip" "refs/remotes/origin/branches/default/tip:refs/heads/branches/default/tip"
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 3 changesets with 2 changes to 2 files (+1 heads)
+  To hg::.*/conflicts.t/repo2 (re)
+   * [new branch]      origin/branches/foo/tip -> branches/foo/tip
+   * [new branch]      origin/branches/default/tip -> branches/default/tip
+
+  $ hg -R ${REPO}2 log -G --template '{node} {branch} {desc}'
+  o  97b815fb8d45129120112766f8c69db8e93fbe8f foo b
+  |
+  | o  636e60525868096cbdc961870493510558f41d2f default b
+  |/
+  o  f92470d7f6966a39dfbced6a525fe81ebf5c37b9 default a
+  
+
 The obvious consequence is that without initial metadata, pushing this to a
 mercurial repo will create a different changeset for the one in branch foo.
 TODO: But we don't support creating new branches anyway, so we can't really
