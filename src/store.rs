@@ -372,7 +372,7 @@ impl GeneratedGitChangesetMetadata {
             files,
             patch: None,
         };
-        let new = RawHgChangeset::from_metadata(store, commit, &temp)?;
+        let new = RawHgChangeset::from_metadata_(store, commit, &temp, false)?;
         if **raw_changeset != *new {
             // TODO: produce a better patch (byte_diff). In the meanwhile, we
             // do an approximation by taking the by-line diff from textdiff
@@ -542,6 +542,15 @@ impl RawHgChangeset {
         commit: &Commit,
         metadata: &GitChangesetMetadata<B>,
     ) -> Option<Self> {
+        Self::from_metadata_(store, commit, metadata, true)
+    }
+
+    fn from_metadata_<B: AsRef<[u8]>>(
+        store: &Store,
+        commit: &Commit,
+        metadata: &GitChangesetMetadata<B>,
+        handle_changeset_conflict: bool,
+    ) -> Option<Self> {
         let HgAuthorship {
             author: mut hg_author,
             timestamp: hg_timestamp,
@@ -590,26 +599,28 @@ impl RawHgChangeset {
 
         // Adjust for old commits created by now removed
         // `handle_changeset_conflict`.
-        let node = metadata.changeset_id();
-        if !node.is_null() {
-            while changeset[changeset.len() - 1] == b'\0' {
-                let mut hash = HgChangesetId::create();
-                let mut parents = commit
-                    .parents()
-                    .iter()
-                    .map(|p| GitChangesetId::from_unchecked(*p).to_hg(store))
-                    .chain(repeat(Some(HgChangesetId::NULL)))
-                    .take(2)
-                    .collect::<Option<Vec<_>>>()?;
-                parents.sort();
-                for p in parents {
-                    hash.update(p.as_raw_bytes());
+        if handle_changeset_conflict {
+            let node = metadata.changeset_id();
+            if !node.is_null() {
+                while changeset[changeset.len() - 1] == b'\0' {
+                    let mut hash = HgChangesetId::create();
+                    let mut parents = commit
+                        .parents()
+                        .iter()
+                        .map(|p| GitChangesetId::from_unchecked(*p).to_hg(store))
+                        .chain(repeat(Some(HgChangesetId::NULL)))
+                        .take(2)
+                        .collect::<Option<Vec<_>>>()?;
+                    parents.sort();
+                    for p in parents {
+                        hash.update(p.as_raw_bytes());
+                    }
+                    hash.update(&changeset);
+                    if hash.finalize() == node {
+                        break;
+                    }
+                    changeset.pop();
                 }
-                hash.update(&changeset);
-                if hash.finalize() == node {
-                    break;
-                }
-                changeset.pop();
             }
         }
         Some(RawHgChangeset(changeset.into()))
