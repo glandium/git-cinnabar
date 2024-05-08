@@ -211,7 +211,7 @@ static void init_git_config(void)
 	strbuf_release(&path);
 }
 
-static void cleanup_git_config(void)
+static void cleanup_git_config(int nongit)
 {
 	const char *value;
 	if (!git_config_get_value("cinnabar.fsck", &value)) {
@@ -235,12 +235,15 @@ static void cleanup_git_config(void)
 		}
 		free(user_config);
 		free(xdg_config);
-		user_config = git_pathdup("config");
-		if (user_config) {
-			git_config_set_in_file_gently(
-				user_config, "cinnabar.fsck", NULL, NULL);
+		if (!nongit) {
+			user_config = git_pathdup("config");
+			if (user_config) {
+				git_config_set_in_file_gently(
+					user_config, "cinnabar.fsck", NULL,
+					NULL);
+			}
+			free(user_config);
 		}
-		free(user_config);
 	}
 }
 
@@ -376,7 +379,7 @@ int init_cinnabar(const char *argv0)
 	init_git_config();
 	setup_git_directory_gently(&nongit);
 	git_config(git_diff_basic_config, NULL);
-	cleanup_git_config();
+	cleanup_git_config(nongit);
 	save_commit_buffer = 0;
 	warn_on_object_refname_ambiguity = 0;
 
