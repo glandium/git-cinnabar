@@ -62,6 +62,14 @@ changesets properly.
   
   b\x00 (no-eol) (esc)
 
+  $ git clone -q --mirror repo-git repo-mirror
+  $ git -C repo-mirror cinnabar rollback
+  $ git -C repo-mirror rev-list --count --all
+  3
+  $ git -C repo-mirror gc --prune=now
+  $ git -C repo-mirror fsck
+  warning in commit 36376d9e996376d02d00f72a8c7903cef9d6ea45: nulInCommit: NUL byte in the commit object body
+
 Check that this round-trips properly.
 
   $ hg init ${REPO}2
