@@ -271,6 +271,20 @@ The default protocol is https, and the port can be omitted.
 
 - `hg::tags:` becomes `hg://:tags`
 
+Compatibility:
+--------------
+
+As of version 0.7, some corner cases in Mercurial repositories will generate
+different git commits than with prior versions of git-cinnabar. This means
+a fresh clone might have different git SHA-1s than existing clones, but this
+doesn't impact the use of existing clones with newer versions of git-cinnabar.
+
+Most repositories should remain non-affected by the change.
+
+You can set the `cinnabar.compat` git configuration to `0.6` to keep the
+previous behavior.
+
+
 Experimental features:
 ----------------------
 

@@ -60,7 +60,7 @@ changesets properly.
   author nobody <> 1 +0000
   committer nobody <> 1 +0000
   
-  b\x00 (no-eol) (esc)
+  b
 
   $ git clone -q --mirror repo-git repo-mirror
   $ git -C repo-mirror cinnabar rollback
@@ -68,7 +68,6 @@ changesets properly.
   3
   $ git -C repo-mirror gc --prune=now
   $ git -C repo-mirror fsck
-  warning in commit 36376d9e996376d02d00f72a8c7903cef9d6ea45: nulInCommit: NUL byte in the commit object body
 
 Check that this round-trips properly.
 
@@ -83,6 +82,52 @@ Check that this round-trips properly.
    * [new branch]      origin/branches/default/tip -> branches/default/tip
 
   $ hg -R ${REPO}2 log -G --template '{node} {branch} {desc}'
+  o  97b815fb8d45129120112766f8c69db8e93fbe8f foo b
+  |
+  | o  636e60525868096cbdc961870493510558f41d2f default b
+  |/
+  o  f92470d7f6966a39dfbced6a525fe81ebf5c37b9 default a
+  
+
+Trying again with git-cinnabar 0.6 compat.
+
+  $ git -c cinnabar.compat=0.6 -c fetch.prune=true clone -q hg::$REPO repo-git-0.6
+  $ git -C repo-git-0.6 cat-file -p $(git -C repo-git-0.6 cinnabar hg2git 636e60525868096cbdc961870493510558f41d2f)
+  tree 3683f870be446c7cc05ffaef9fa06415276e1828
+  parent 8b86a58578d5270969543e287634e3a2f122a338
+  author nobody <> 1 +0000
+  committer nobody <> 1 +0000
+  
+  b (no-eol)
+  $ git -C repo-git-0.6 cat-file -p $(git -C repo-git-0.6 cinnabar hg2git 97b815fb8d45129120112766f8c69db8e93fbe8f)
+  tree 3683f870be446c7cc05ffaef9fa06415276e1828
+  parent 8b86a58578d5270969543e287634e3a2f122a338
+  author nobody <> 1 +0000
+  committer nobody <> 1 +0000
+  
+  b\x00 (no-eol) (esc)
+
+  $ git clone -q --mirror repo-git-0.6 repo-mirror-0.6
+  $ git -C repo-mirror-0.6 cinnabar rollback
+  $ git -C repo-mirror-0.6 rev-list --count --all
+  3
+  $ git -C repo-mirror-0.6 gc --prune=now
+  $ git -C repo-mirror-0.6 fsck
+  warning in commit 36376d9e996376d02d00f72a8c7903cef9d6ea45: nulInCommit: NUL byte in the commit object body
+
+Check that this round-trips properly.
+
+  $ hg init ${REPO}2-0.6
+  $ git -C repo-git-0.6 push hg::${REPO}2-0.6 "refs/remotes/origin/branches/foo/tip:refs/heads/branches/foo/tip" "refs/remotes/origin/branches/default/tip:refs/heads/branches/default/tip"
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 3 changesets with 2 changes to 2 files (+1 heads)
+  To hg::.*/conflicts.t/repo2-0.6 (re)
+   * [new branch]      origin/branches/foo/tip -> branches/foo/tip
+   * [new branch]      origin/branches/default/tip -> branches/default/tip
+
+  $ hg -R ${REPO}2-0.6 log -G --template '{node} {branch} {desc}'
   o  97b815fb8d45129120112766f8c69db8e93fbe8f foo b
   |
   | o  636e60525868096cbdc961870493510558f41d2f default b

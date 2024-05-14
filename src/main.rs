@@ -4705,6 +4705,31 @@ pub fn check_enabled(checks: Checks) -> bool {
     CHECKS.contains(checks)
 }
 
+bitflags! {
+    #[derive(Debug)]
+    pub struct Compat: i32 {
+        const CHANGESET_CONFLICT_NUL = 0x1;
+
+        const CINNABAR_0_6 = Compat::CHANGESET_CONFLICT_NUL.bits();
+    }
+}
+
+static COMPAT: Lazy<Compat> =
+    Lazy::new(
+        || match get_config("compat").as_ref().map(|x| x.as_bytes()) {
+            Some(b"0.6") => Compat::CINNABAR_0_6,
+            Some(x) => {
+                warn!(target: "root", "Ignoring invalid value for compat: {}", x.as_bstr());
+                Compat::empty()
+            }
+            None => Compat::empty(),
+        },
+    );
+
+pub fn has_compat(c: Compat) -> bool {
+    COMPAT.contains(c)
+}
+
 pub struct Experiments {
     merge: bool,
     similarity: CString,

@@ -55,7 +55,7 @@ use crate::util::{
     Transpose,
 };
 use crate::xdiff::{apply, textdiff, PatchInfo};
-use crate::{check_enabled, Checks};
+use crate::{check_enabled, has_compat, Checks, Compat};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
 pub const REPLACE_REFS_PREFIX: &str = "refs/cinnabar/replace/";
@@ -1526,7 +1526,11 @@ fn store_changeset(
             // we find a commit that doesn't map to another changeset.
             match GitChangesetId::from_unchecked(commit_id).to_hg(store) {
                 Some(existing_hg_id) if existing_hg_id != changeset_id => {
-                    raw_commit.push(b'\0');
+                    if has_compat(Compat::CHANGESET_CONFLICT_NUL) {
+                        raw_commit.push(b'\0');
+                    } else {
+                        raw_commit.push(b'\n');
+                    }
                 }
                 _ => {
                     break commit_id;
