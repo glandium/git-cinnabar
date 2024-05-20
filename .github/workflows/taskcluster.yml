@@ -6,7 +6,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-11
+          - os: macos-12
             workerType: osx
             pyver: '3.9.14'
           - os: macos-14
