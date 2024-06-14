@@ -3297,7 +3297,7 @@ impl FromStr for AbbrevSize {
         let value = usize::from_str(s).map_err(|e| format!("{}", e))?;
         match value {
             3..=40 => Ok(AbbrevSize(value)),
-            41..=std::usize::MAX => Err(format!("value too large: {}", value)),
+            41..=usize::MAX => Err(format!("value too large: {}", value)),
             _ => Err(format!("value too small: {}", value)),
         }
     }
