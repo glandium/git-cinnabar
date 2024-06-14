@@ -102,6 +102,10 @@ impl<T: Copy> TargetMap<T> {
     fn values(&self) -> impl Iterator<Item = T> + '_ {
         self.0.values().copied()
     }
+
+    fn iter(&self) -> impl Iterator<Item = (&str, T)> {
+        self.0.iter().map(|(k, v)| (&**k, *v))
+    }
 }
 
 #[test]
@@ -233,11 +237,20 @@ impl CinnabarLogger {
 
 impl log::Log for CinnabarLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level()
-            <= self
-                .level_by_target
-                .get(metadata.target())
-                .unwrap_or(self.default_level)
+        let target = metadata.target();
+        let level = metadata.level();
+        if let Some(target) = target.strip_suffix('*') {
+            self.level_by_target
+                .iter()
+                .filter_map(|(k, v)| k.starts_with(target).then_some(v))
+                .any(|lvl| level <= lvl)
+        } else {
+            level
+                <= self
+                    .level_by_target
+                    .get(target)
+                    .unwrap_or(self.default_level)
+        }
     }
 
     fn log(&self, record: &log::Record) {

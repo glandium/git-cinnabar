@@ -247,20 +247,106 @@ pub trait HgRepo: HgConnection {
     fn known(&mut self, _nodes: &[HgChangesetId]) -> Box<[bool]>;
 }
 
+struct LogWireConnection<C: HgWireConnection> {
+    logging_enabled: bool,
+    conn: C,
+}
+
+impl<C: HgWireConnection> LogWireConnection<C> {
+    fn new(conn: C, logging_enabled: bool) -> Self {
+        LogWireConnection {
+            logging_enabled,
+            conn,
+        }
+    }
+
+    fn log_command(command: &str, args: &HgArgs) {
+        let target = format!("wire::{}", command);
+        if log_enabled!(target: &target, log::Level::Trace) {
+            let mut data = String::new();
+            for OneHgArg { name, value } in args
+                .args
+                .iter()
+                .chain(args.extra_args.into_iter().flatten())
+            {
+                if !data.is_empty() {
+                    data.push(' ');
+                }
+                data.push_str(name);
+                data.push_str(": ");
+                data.push_str(value);
+            }
+            trace!(target: &target, "{}", data);
+        } else if log_enabled!(target: &target, log::Level::Debug) {
+            debug!(target: &target, "");
+        }
+    }
+}
+
+impl<C: HgWireConnection> HgConnectionBase for LogWireConnection<C> {
+    fn get_url(&self) -> Option<&Url> {
+        self.conn.get_url()
+    }
+
+    fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
+        self.conn.get_capability(name)
+    }
+
+    fn require_capability(&self, name: &[u8]) -> &BStr {
+        self.conn.require_capability(name)
+    }
+
+    fn sample_size(&self) -> usize {
+        self.conn.sample_size()
+    }
+}
+
+impl<C: HgWireConnection> HgWireConnection for LogWireConnection<C> {
+    fn simple_command(&mut self, command: &str, args: HgArgs) -> ImmutBString {
+        if self.logging_enabled {
+            Self::log_command(command, &args);
+        }
+        self.conn.simple_command(command, args)
+    }
+
+    fn changegroup_command<'a>(
+        &'a mut self,
+        command: &str,
+        args: HgArgs,
+    ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
+        if self.logging_enabled {
+            Self::log_command(command, &args);
+        }
+        self.conn.changegroup_command(command, args)
+    }
+
+    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> UnbundleResponse {
+        if self.logging_enabled {
+            Self::log_command(command, &args);
+        }
+        self.conn.push_command(input, command, args)
+    }
+}
+
 pub struct HgWired<C: HgWireConnection> {
     branchmap: ImmutBString,
     heads: ImmutBString,
     bookmarks: ImmutBString,
-    conn: C,
+    conn: LogWireConnection<C>,
 }
 
 impl<C: HgWireConnection> HgWired<C> {
-    pub fn new(mut conn: C) -> Self {
+    pub fn new(conn: C) -> Self {
         let mut branchmap;
         let mut heads;
         let bookmarks;
 
         const REQUIRED_CAPS: [&str; 2] = ["getbundle", "branchmap"];
+
+        let logging_enabled = ["wire", "wire::*"]
+            .into_iter()
+            .any(|target| log_enabled!(target: target, log::Level::Debug));
+        let mut conn = LogWireConnection::new(conn, logging_enabled);
 
         for cap in &REQUIRED_CAPS {
             conn.require_capability(cap.as_bytes());
