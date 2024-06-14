@@ -622,7 +622,7 @@ impl HgHttpConnection {
         if !args.is_empty() && (httppostargs || httpheader > 0) {
             let mut encoder = form_urlencoded::Serializer::new(String::new());
             for (name, value) in args.iter() {
-                encoder.append_pair(name, value);
+                encoder.append_pair(name, &value.as_string());
             }
             let args = encoder.finish();
             if httppostargs {
@@ -644,7 +644,7 @@ impl HgHttpConnection {
             }
         } else {
             for (name, value) in args.iter() {
-                query_pairs.append_pair(name, value);
+                query_pairs.append_pair(name, &value.as_string());
             }
         }
         drop(query_pairs);

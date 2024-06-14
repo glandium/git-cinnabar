@@ -28,9 +28,41 @@ use crate::store::{has_metadata, merge_metadata, store_changegroup, Dag, Store, 
 use crate::util::{FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed};
 use crate::{check_enabled, get_config_remote, graft_config_enabled, Checks};
 
+pub enum HgArgValue<'a> {
+    String(&'a str),
+    ChangesetArray(&'a [HgChangesetId]),
+}
+
+impl<'a> HgArgValue<'a> {
+    pub fn as_string(&self) -> Cow<str> {
+        match self {
+            HgArgValue::String(s) => Cow::Borrowed(s),
+            HgArgValue::ChangesetArray(a) => a.iter().join(" ").into(),
+        }
+    }
+}
+
+impl<'a> From<&'a str> for HgArgValue<'a> {
+    fn from(value: &'a str) -> Self {
+        HgArgValue::String(value)
+    }
+}
+
+impl<'a> From<&'a String> for HgArgValue<'a> {
+    fn from(value: &'a String) -> Self {
+        HgArgValue::String(value)
+    }
+}
+
+impl<'a> From<&'a [HgChangesetId]> for HgArgValue<'a> {
+    fn from(value: &'a [HgChangesetId]) -> Self {
+        HgArgValue::ChangesetArray(value)
+    }
+}
+
 pub struct OneHgArg<'a> {
     pub name: &'a str,
-    pub value: &'a str,
+    pub value: HgArgValue<'a>,
 }
 
 pub struct HgArgs<'a> {
@@ -47,7 +79,7 @@ macro_rules! args {
     };
     ($($n:ident : $v:expr),*) => { $crate::hg_connect::args!($($n:$v,)*) };
     (@args $($n:ident : $v:expr),*) => {&[
-        $(OneHgArg { name: stringify!($n), value: $v }),*
+        $(OneHgArg { name: stringify!($n), value: $crate::hg_connect::HgArgValue::from($v) }),*
     ]};
     (@extra) => { None };
     (@extra $a:expr) => { Some($a) };
@@ -175,21 +207,19 @@ impl<T: HgWireConnection> HgConnection for T {
         bundle2caps: Option<&str>,
     ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
         let mut args = Vec::new();
-        let heads = heads.iter().join(" ");
-        let common = common.iter().join(" ");
         args.push(OneHgArg {
             name: "heads",
-            value: &heads,
+            value: heads.into(),
         });
         args.push(OneHgArg {
             name: "common",
-            value: &common,
+            value: common.into(),
         });
         if let Some(caps) = bundle2caps {
             if !caps.is_empty() {
                 args.push(OneHgArg {
                     name: "bundlecaps",
-                    value: caps,
+                    value: caps.into(),
                 });
             }
         }
@@ -197,21 +227,22 @@ impl<T: HgWireConnection> HgConnection for T {
     }
 
     fn unbundle(&mut self, heads: Option<&[HgChangesetId]>, input: File) -> UnbundleResponse {
-        let heads_str = if let Some(heads) = heads {
+        let heads = if let Some(heads) = heads {
             if self.get_capability(b"unbundlehash").is_none() {
-                heads.iter().join(" ")
+                Either::Left(heads)
             } else {
                 let mut hash = Sha1::new();
                 for h in heads.iter().sorted().dedup() {
                     hash.update(h.as_raw_bytes());
                 }
-                format!("{} {:x}", hex::encode("hashed"), hash.finalize())
+                Either::Right(format!("{} {:x}", hex::encode("hashed"), hash.finalize()))
             }
         } else {
-            hex::encode("force")
+            Either::Right(hex::encode("force"))
         };
+        let heads = heads.as_ref().either(|&l| l.into(), HgArgValue::from);
 
-        self.push_command(input, "unbundle", args!(heads: &heads_str))
+        self.push_command(input, "unbundle", args!(heads: heads))
     }
 
     fn pushkey(&mut self, namespace: &str, key: &str, old: &str, new: &str) -> ImmutBString {
@@ -262,7 +293,12 @@ impl<C: HgWireConnection> LogWireConnection<C> {
 
     fn log_command(command: &str, args: &HgArgs) {
         let target = format!("wire::{}", command);
-        if log_enabled!(target: &target, log::Level::Trace) {
+        if log_enabled!(target: &target, log::Level::Debug) {
+            let level = if log_enabled!(target: &target, log::Level::Trace) {
+                log::Level::Trace
+            } else {
+                log::Level::Debug
+            };
             let mut data = String::new();
             for OneHgArg { name, value } in args
                 .args
@@ -274,11 +310,31 @@ impl<C: HgWireConnection> LogWireConnection<C> {
                 }
                 data.push_str(name);
                 data.push_str(": ");
-                data.push_str(value);
+                match value {
+                    HgArgValue::String(s) => data.push_str(s),
+                    HgArgValue::ChangesetArray(a) => {
+                        data.push('[');
+                        if !a.is_empty() {
+                            if level == log::Level::Debug {
+                                data.push_str(&a.len().to_string());
+                                data.push_str(" changeset");
+                                if a.len() > 1 {
+                                    data.push('s');
+                                }
+                            } else {
+                                for (n, cs) in a.iter().enumerate() {
+                                    if n > 0 {
+                                        data.push(' ');
+                                    }
+                                    data.push_str(&cs.to_string());
+                                }
+                            }
+                        }
+                        data.push(']');
+                    }
+                }
             }
-            trace!(target: &target, "{}", data);
-        } else if log_enabled!(target: &target, log::Level::Debug) {
-            debug!(target: &target, "");
+            log!(target: &target, level, "{}", data);
         }
     }
 }
@@ -463,12 +519,11 @@ impl<C: HgWireConnection> HgRepo for HgWired<C> {
     }
 
     fn known(&mut self, nodes: &[HgChangesetId]) -> Box<[bool]> {
-        let nodes_str = nodes.iter().join(" ");
         self.conn
             .simple_command(
                 "known",
                 args!(
-                    nodes: &nodes_str,
+                    nodes: nodes,
                     *: &[]
                 ),
             )

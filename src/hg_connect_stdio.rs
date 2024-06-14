@@ -66,12 +66,12 @@ fn stdio_send_command(conn: &mut HgStdioConnection, command: &str, args: HgArgs)
     data.extend(command.as_bytes());
     data.push(b'\n');
     for OneHgArg { name, value } in args.args {
-        stdio_command_add_param(&mut data, name, value);
+        stdio_command_add_param(&mut data, name, &value.as_string());
     }
     if let Some(extra_args) = args.extra_args {
         writeln!(data, "* {}", extra_args.len()).unwrap();
         for OneHgArg { name, value } in extra_args {
-            stdio_command_add_param(&mut data, name, value);
+            stdio_command_add_param(&mut data, name, &value.as_string());
         }
     }
     conn.proc_in.write_all(&data).unwrap();
