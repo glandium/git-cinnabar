@@ -967,14 +967,16 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
             .unique()
             .collect_vec();
 
-        get_bundle(
-            &mut store,
-            &mut *conn,
-            &unknown_wanted_heads,
-            Some(&info.topological_heads),
-            &info.branch_names,
-            remote.name().and_then(|n| n.to_str()),
-        )?;
+        if !unknown_wanted_heads.is_empty() {
+            get_bundle(
+                &mut store,
+                &mut *conn,
+                &unknown_wanted_heads,
+                Some(&info.topological_heads),
+                &info.branch_names,
+                remote.name().and_then(|n| n.to_str()),
+            )?;
+        }
 
         for (refname, peer_ref, csid, cid) in wanted_refs.into_iter().unique() {
             let old_cid = resolve_ref(OsStr::from_bytes(&peer_ref));
