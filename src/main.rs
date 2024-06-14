@@ -539,7 +539,7 @@ fn do_fetch(store: &mut Store, remote: &OsStr, revs: &[OsString]) -> Result<(), 
     let unknown = revs
         .iter()
         .filter_map(|r| r.left())
-        .chunks(hg_connect::SAMPLE_SIZE)
+        .chunks(conn.sample_size())
         .into_iter()
         .find_map(|chunk| {
             let chunk = chunk.collect_vec();
@@ -1065,7 +1065,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
             let mut conn = get_connection(&url).unwrap();
 
             let knowns = unknowns
-                .chunks(hg_connect::SAMPLE_SIZE)
+                .chunks(conn.sample_size())
                 .map(|unknowns| {
                     conn.known(&unknowns.iter().map(|(_, csid)| *csid).collect_vec())
                         .into_vec()

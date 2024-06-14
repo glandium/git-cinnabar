@@ -764,6 +764,14 @@ impl HgConnectionBase for HgHttpConnection {
     fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
         self.capabilities.get_capability(name)
     }
+
+    fn sample_size(&self) -> usize {
+        if self.capabilities.get_capability(b"httppostargs").is_some() {
+            10000
+        } else {
+            100
+        }
+    }
 }
 
 impl Drop for HgHttpConnection {

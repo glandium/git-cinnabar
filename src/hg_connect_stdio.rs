@@ -147,6 +147,10 @@ impl HgConnectionBase for HgStdioConnection {
     fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
         self.capabilities.get_capability(name)
     }
+
+    fn sample_size(&self) -> usize {
+        10000
+    }
 }
 
 impl Drop for HgStdioConnection {

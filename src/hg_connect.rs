@@ -118,6 +118,10 @@ pub trait HgConnectionBase {
             );
         }
     }
+
+    fn sample_size(&self) -> usize {
+        100
+    }
 }
 
 pub trait HgWireConnection: HgConnectionBase {
@@ -316,6 +320,10 @@ impl<C: HgWireConnection> HgConnectionBase for HgWired<C> {
 
     fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
         self.conn.get_capability(name)
+    }
+
+    fn sample_size(&self) -> usize {
+        self.conn.sample_size()
     }
 }
 
@@ -633,8 +641,6 @@ fn take_sample<R: rand::Rng + ?Sized, T>(rng: &mut R, data: &mut Vec<T>, size: u
     }
 }
 
-pub const SAMPLE_SIZE: usize = 100;
-
 #[derive(Default, Debug)]
 struct FindCommonInfo {
     hg_node: Option<HgChangesetId>,
@@ -652,7 +658,8 @@ pub fn find_common(
     if undetermined.is_empty() {
         return vec![];
     }
-    let sample = take_sample(&mut rng, &mut undetermined, SAMPLE_SIZE);
+    let sample_size = conn.sample_size();
+    let sample = take_sample(&mut rng, &mut undetermined, sample_size);
 
     let (known, unknown): (Vec<_>, Vec<_>) =
         conn.known(&sample)
@@ -731,12 +738,12 @@ pub fn find_common(
     }
 
     while undetermined_count > 0 {
-        if undetermined.len() < SAMPLE_SIZE {
+        if undetermined.len() < sample_size {
             undetermined.extend(
                 // TODO: this would or maybe would not be faster if traversing the dag instead.
                 dag.iter_mut()
                     .filter(|(_, data)| data.known.is_none())
-                    .choose_multiple(&mut rng, SAMPLE_SIZE - undetermined.len())
+                    .choose_multiple(&mut rng, sample_size - undetermined.len())
                     .into_iter()
                     .map(|(&c, data)| {
                         let git_cs = GitChangesetId::from_unchecked(c);
@@ -750,7 +757,7 @@ pub fn find_common(
             );
         }
         let (sample_hg, sample_git): (Vec<_>, Vec<_>) =
-            take_sample(&mut rng, &mut undetermined, SAMPLE_SIZE)
+            take_sample(&mut rng, &mut undetermined, sample_size)
                 .into_iter()
                 .unzip();
         for (&known, &c) in conn.known(&sample_hg).iter().zip(sample_git.iter()) {
