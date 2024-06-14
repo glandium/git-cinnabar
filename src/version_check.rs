@@ -59,6 +59,7 @@ impl<'a> Default for VersionRequest<'a> {
     }
 }
 
+#[allow(unused)]
 pub enum VersionInfo {
     Tagged(Version, CommitId),
     Commit(CommitId),
