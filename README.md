@@ -63,7 +63,7 @@ Setup:
 - Run the following:
 
   ```
-  $ cargo install git-cinnabar
+  $ cargo install --locked git-cinnabar
   $ git cinnabar setup
   ```
 
