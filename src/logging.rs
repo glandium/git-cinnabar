@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::fmt::Display;
+use std::fmt::{self, Debug, Display};
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, Read, Write};
 use std::path::Path;
@@ -73,27 +73,77 @@ impl Write for &LoggerOutput {
 struct LevelPrinter(log::Level);
 
 impl Display for LevelPrinter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             log::Level::Warn => f.write_str("WARNING"),
-            level => level.fmt(f),
+            level => Display::fmt(&level, f),
         }
+    }
+}
+
+struct TargetMap<T: Copy>(HashMap<String, T>);
+
+impl<T: Copy> TargetMap<T> {
+    fn new() -> Self {
+        TargetMap(HashMap::new())
+    }
+
+    fn get(&self, key: &str) -> Option<T> {
+        self.0.get(key).copied().or_else(|| {
+            key.rsplit_once("::")
+                .and_then(|(parent, _)| self.get(parent))
+        })
+    }
+
+    fn insert(&mut self, key: &str, value: T) -> Option<T> {
+        self.0.insert(key.to_string(), value)
+    }
+
+    fn values(&self) -> impl Iterator<Item = T> + '_ {
+        self.0.values().copied()
+    }
+}
+
+#[test]
+fn test_target_map() {
+    let mut map = TargetMap::new();
+    map.insert("foo", 1);
+    map.insert("bar", 2);
+    map.insert("foo::qux", 3);
+    map.insert("foo::hoge", 0);
+
+    assert_eq!(map.get("foo"), Some(1));
+    assert_eq!(map.get("bar"), Some(2));
+    assert_eq!(map.get("foo::qux"), Some(3));
+    assert_eq!(map.get("foo::hoge"), Some(0));
+    assert_eq!(map.get("foo::qux::deep"), map.get("foo::qux"));
+    assert_eq!(map.get("foo::hoge::deep"), map.get("foo::hoge"));
+    assert_eq!(map.get("foo::baz"), map.get("foo"));
+    assert_eq!(map.get("foo::baz::deep"), map.get("foo"));
+    assert_eq!(map.get("baz"), None);
+    assert_eq!(map.get("baz::fuga"), None);
+    assert_eq!(map.get("baz::fuga::deep"), None);
+}
+
+impl<T: Copy + Debug> Debug for TargetMap<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Debug::fmt(&self.0, f)
     }
 }
 
 #[derive(Debug)]
 struct CinnabarLogger {
-    level_by_target: HashMap<String, LevelFilter>,
+    level_by_target: TargetMap<LevelFilter>,
     default_level: LevelFilter,
-    output_by_target: HashMap<String, usize>,
+    output_by_target: TargetMap<usize>,
     outputs: Vec<LoggerOutput>,
     start_time: Instant,
 }
 
 impl CinnabarLogger {
     fn new(start_time: Instant) -> Self {
-        let mut level_by_target = HashMap::new();
-        let mut output_by_target = HashMap::new();
+        let mut level_by_target = TargetMap::new();
+        let mut output_by_target = TargetMap::new();
         let mut outputs = vec![LoggerOutput::StdErr];
         let mut output_by_path = HashMap::new();
         let mut default_level = LevelFilter::Warn;
@@ -129,7 +179,7 @@ impl CinnabarLogger {
                     if target.is_empty() {
                         default_level = level;
                     } else {
-                        level_by_target.insert(target.to_string(), level);
+                        level_by_target.insert(target, level);
                     }
                 }
                 if let Some(path) = path {
@@ -156,7 +206,7 @@ impl CinnabarLogger {
                         None
                     };
                     if let Some(index) = index {
-                        output_by_target.insert(target.to_string(), index);
+                        output_by_target.insert(target, index);
                     }
                 }
             }
@@ -175,7 +225,6 @@ impl CinnabarLogger {
             self.level_by_target
                 .values()
                 .max()
-                .copied()
                 .unwrap_or(self.default_level),
             self.default_level,
         )
@@ -188,17 +237,12 @@ impl log::Log for CinnabarLogger {
             <= self
                 .level_by_target
                 .get(metadata.target())
-                .copied()
                 .unwrap_or(self.default_level)
     }
 
     fn log(&self, record: &log::Record) {
         if self.enabled(record.metadata()) {
-            let index = self
-                .output_by_target
-                .get(record.target())
-                .copied()
-                .unwrap_or(0);
+            let index = self.output_by_target.get(record.target()).unwrap_or(0);
             if let Some(mut output) = self.outputs.get(index) {
                 let mut line = vec![b'\r'];
                 if record.level() > log::Level::Warn {
