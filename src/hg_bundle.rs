@@ -66,7 +66,10 @@ pub unsafe extern "C" fn rev_diff_iter_next(
     let next = diff_iter.next();
     ptr::write(iterator, diff_iter.0.as_str_slice());
     if let Some(p) = next {
-        ptr::write(part, mem::transmute(p.0));
+        ptr::write(
+            part,
+            mem::transmute::<rev_diff_part<'_>, rev_diff_part<'_>>(p.0),
+        );
         1
     } else {
         0
