@@ -132,14 +132,12 @@ impl<F: FnMut(&u8) -> bool> SliceExt<F> for [u8] {
 
 impl SliceExt<&[u8]> for [u8] {
     fn splitn_exact<const N: usize>(&self, b: &[u8]) -> Option<[&Self; N]> {
-        // Safety: This works around ByteSlice::splitn_str being too restrictive.
-        // https://github.com/BurntSushi/bstr/issues/45
-        let iter = self.splitn_str(N, unsafe { mem::transmute::<_, &[u8]>(b) });
+        let iter = self.splitn_str(N, b);
         array_init::from_iter(iter)
     }
 
     fn rsplitn_exact<const N: usize>(&self, b: &[u8]) -> Option<[&Self; N]> {
-        let iter = self.rsplitn_str(N, unsafe { mem::transmute::<_, &[u8]>(b) });
+        let iter = self.rsplitn_str(N, b);
         array_init::from_iter_reversed(iter)
     }
 }
