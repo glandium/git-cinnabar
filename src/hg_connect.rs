@@ -616,14 +616,11 @@ pub fn get_store_bundle(
         })
 }
 
-fn take_sample<R: rand::Rng + ?Sized, T, const SIZE: usize>(
-    rng: &mut R,
-    data: &mut Vec<T>,
-) -> Vec<T> {
-    if data.len() <= SIZE {
+fn take_sample<R: rand::Rng + ?Sized, T>(rng: &mut R, data: &mut Vec<T>, size: usize) -> Vec<T> {
+    if data.len() <= size {
         std::mem::take(data)
     } else {
-        for (i, j) in rand::seq::index::sample(rng, data.len(), SIZE)
+        for (i, j) in rand::seq::index::sample(rng, data.len(), size)
             .into_iter()
             .sorted()
             .enumerate()
@@ -632,7 +629,7 @@ fn take_sample<R: rand::Rng + ?Sized, T, const SIZE: usize>(
                 data.swap(i, j);
             }
         }
-        data.drain(..SIZE).collect()
+        data.drain(..size).collect()
     }
 }
 
@@ -655,7 +652,7 @@ pub fn find_common(
     if undetermined.is_empty() {
         return vec![];
     }
-    let sample = take_sample::<_, _, SAMPLE_SIZE>(&mut rng, &mut undetermined);
+    let sample = take_sample(&mut rng, &mut undetermined, SAMPLE_SIZE);
 
     let (known, unknown): (Vec<_>, Vec<_>) =
         conn.known(&sample)
@@ -753,7 +750,7 @@ pub fn find_common(
             );
         }
         let (sample_hg, sample_git): (Vec<_>, Vec<_>) =
-            take_sample::<_, _, SAMPLE_SIZE>(&mut rng, &mut undetermined)
+            take_sample(&mut rng, &mut undetermined, SAMPLE_SIZE)
                 .into_iter()
                 .unzip();
         for (&known, &c) in conn.known(&sample_hg).iter().zip(sample_git.iter()) {
