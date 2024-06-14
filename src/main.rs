@@ -66,7 +66,7 @@ pub(crate) mod hg_connect_stdio;
 pub(crate) mod hg_data;
 
 use std::borrow::{Borrow, Cow};
-use std::cell::Cell;
+use std::cell::{Cell, OnceCell};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::{CStr, CString, OsStr, OsString};
@@ -502,37 +502,58 @@ fn do_fetch(store: &mut Store, remote: &OsStr, revs: &[OsString]) -> Result<(), 
         hg_url(url).ok_or_else(|| format!("Invalid mercurial url: {}", url.to_string_lossy()))?;
     let mut conn = hg_connect::get_connection(&hg_url)
         .ok_or_else(|| format!("Failed to connect to {}", hg_url))?;
-    if conn.get_capability(b"lookup").is_none() {
-        return Err(
-            "Remote repository does not support the \"lookup\" command. \
-                 Cannot fetch."
-                .to_owned(),
-        );
-    }
-    let mut full_revs = vec![];
+    let supports_lookup = OnceCell::new();
     let revs = revs
         .iter()
         .map(|rev| match rev.to_string_lossy() {
-            Cow::Borrowed(s) => Ok(s),
+            Cow::Borrowed(s) => match HgChangesetId::from_str(s) {
+                Ok(h) => Ok(Either::Left(h)),
+                Err(_)
+                    if *supports_lookup
+                        .get_or_init(|| conn.get_capability(b"lookup").is_some()) =>
+                {
+                    let result = conn.lookup(s);
+                    let [success, data] = result
+                        .trim_end_with(|b| b.is_ascii_whitespace())
+                        .splitn_exact(b' ')
+                        .expect("lookup command result is malformed");
+                    if success == b"0" {
+                        return Err(data.to_str_lossy().into_owned());
+                    }
+                    Ok(Either::Right(
+                        data.to_str()
+                            .ok()
+                            .and_then(|d| HgChangesetId::from_str(d).ok())
+                            .expect("lookup command result is malformed"),
+                    ))
+                }
+                Err(_) => Err(format!(
+                    "Remote repository does not support the \"lookup\" command. \
+                    Cannot fetch {}.",
+                    s
+                )),
+            },
             Cow::Owned(s) => Err(format!("Invalid character in revision: {}", s)),
         })
         .collect::<Result<Vec<_>, _>>()?;
-    for rev in revs {
-        let result = conn.lookup(rev);
-        let [success, data] = result
-            .trim_end_with(|b| b.is_ascii_whitespace())
-            .splitn_exact(b' ')
-            .expect("lookup command result is malformed");
-        if success == b"0" {
-            return Err(data.to_str_lossy().into_owned());
-        }
-        full_revs.push(
-            data.to_str()
-                .ok()
-                .and_then(|d| HgChangesetId::from_str(d).ok())
-                .expect("lookup command result is malformed"),
-        );
+    let unknown = revs
+        .iter()
+        .filter_map(|r| r.left())
+        .chunks(hg_connect::SAMPLE_SIZE)
+        .into_iter()
+        .find_map(|chunk| {
+            let chunk = chunk.collect_vec();
+            conn.known(&chunk)
+                .iter()
+                .zip(&chunk)
+                .filter(|(known, _)| !**known)
+                .map(|(_, h)| *h)
+                .next()
+        });
+    if let Some(unknown) = unknown {
+        return Err(format!("Unknown revision: {}", unknown));
     }
+    let full_revs = revs.iter().map(|r| r.either(|h| h, |h| h)).collect_vec();
 
     check_graft_refs();
 
@@ -543,11 +564,26 @@ fn do_fetch(store: &mut Store, remote: &OsStr, revs: &[OsString]) -> Result<(), 
         init_graft(store);
     }
 
-    get_bundle(store, &mut *conn, &full_revs, None, &HashSet::new(), remote)?;
+    let unknown_full_revs = full_revs
+        .iter()
+        .filter(|h| h.to_git(store).is_none())
+        .copied()
+        .collect_vec();
 
-    do_done_and_check(store, &[])
-        .then_some(())
-        .ok_or_else(|| "Fatal error".to_string())?;
+    if !unknown_full_revs.is_empty() {
+        get_bundle(
+            store,
+            &mut *conn,
+            &unknown_full_revs,
+            None,
+            &HashSet::new(),
+            remote,
+        )?;
+
+        do_done_and_check(store, &[])
+            .then_some(())
+            .ok_or_else(|| "Fatal error".to_string())?;
+    }
 
     let url = url.to_string_lossy();
     let mut fetch_head = Vec::new();
