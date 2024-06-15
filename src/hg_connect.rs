@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{stderr, BufReader, Read, Write};
 use std::str::FromStr;
+use std::time::Instant;
 
 use bstr::{BStr, ByteSlice};
 use either::Either;
@@ -292,7 +293,7 @@ impl<C: HgWireConnection> LogWireConnection<C> {
         }
     }
 
-    fn log_command(command: &str, args: &HgArgs) {
+    fn log(command: &str, f: impl FnOnce(log::Level) -> String) {
         let target = format!("wire::{}", command);
         if log_enabled!(target: &target, log::Level::Debug) {
             let level = if log_enabled!(target: &target, log::Level::Trace) {
@@ -300,6 +301,12 @@ impl<C: HgWireConnection> LogWireConnection<C> {
             } else {
                 log::Level::Debug
             };
+            log!(target: &target, level, "{}", f(level));
+        }
+    }
+
+    fn log_command(command: &str, args: &HgArgs) {
+        Self::log(command, |level| {
             let mut data = String::new();
             for OneHgArg { name, value } in args
                 .args
@@ -335,8 +342,8 @@ impl<C: HgWireConnection> LogWireConnection<C> {
                     }
                 }
             }
-            log!(target: &target, level, "{}", data);
-        }
+            data
+        });
     }
 }
 
@@ -360,10 +367,18 @@ impl<C: HgWireConnection> HgConnectionBase for LogWireConnection<C> {
 
 impl<C: HgWireConnection> HgWireConnection for LogWireConnection<C> {
     fn simple_command(&mut self, command: &str, args: HgArgs) -> ImmutBString {
+        let mut start = None;
         if self.logging_enabled {
+            start = check_enabled(Checks::TIME).then(Instant::now);
             Self::log_command(command, &args);
         }
-        self.conn.simple_command(command, args)
+        let result = self.conn.simple_command(command, args);
+        if let Some(start) = start {
+            Self::log(command, |_| {
+                format!("{:.1}s elapsed.", start.elapsed().as_secs_f32())
+            });
+        }
+        result
     }
 
     fn changegroup_command<'a>(
