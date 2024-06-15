@@ -11,6 +11,7 @@ use std::str::FromStr;
 use bstr::{BStr, ByteSlice};
 use either::Either;
 use itertools::Itertools;
+use once_cell::sync::OnceCell;
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use rand::prelude::IteratorRandom;
 use sha1::{Digest, Sha1};
@@ -384,74 +385,86 @@ impl<C: HgWireConnection> HgWireConnection for LogWireConnection<C> {
     }
 }
 
-pub struct HgWired<C: HgWireConnection> {
+struct CachedInfo {
     branchmap: ImmutBString,
     heads: ImmutBString,
     bookmarks: ImmutBString,
+}
+
+pub struct HgWired<C: HgWireConnection> {
+    cached_info: OnceCell<CachedInfo>,
     conn: LogWireConnection<C>,
 }
 
 impl<C: HgWireConnection> HgWired<C> {
     pub fn new(conn: C) -> Self {
-        let mut branchmap;
-        let mut heads;
-        let bookmarks;
-
         const REQUIRED_CAPS: [&str; 2] = ["getbundle", "branchmap"];
 
         let logging_enabled = ["wire", "wire::*"]
             .into_iter()
             .any(|target| log_enabled!(target: target, log::Level::Debug));
-        let mut conn = LogWireConnection::new(conn, logging_enabled);
+        let conn = LogWireConnection::new(conn, logging_enabled);
 
         for cap in &REQUIRED_CAPS {
             conn.require_capability(cap.as_bytes());
         }
 
-        if conn.get_capability(b"batch").is_none() {
-            // Get bookmarks first because if we get them last and they have been
-            // updated after we got the heads, they may contain changesets we won't
-            // be pulling.
-            bookmarks = conn.simple_command("listkeys", args!(namespace: "bookmarks"));
-            loop {
-                branchmap = conn.simple_command("branchmap", args!());
-                heads = conn.simple_command("heads", args!());
-                // Some heads in the branchmap can be non-heads topologically, and
-                // won't appear in the heads list, but if the opposite happens, then
-                // the repo was updated between both calls and we need to try again
-                // for coherency.
-                if heads
-                    .split(|&b| b == b' ')
-                    .collect::<HashSet<_>>()
-                    .is_subset(
-                        &ByteSlice::lines(&*branchmap)
-                            .flat_map(|l| l.split(|&b| b == b' ').skip(1))
-                            .collect::<HashSet<_>>(),
-                    )
-                {
-                    break;
-                }
-            }
-        } else {
-            let out = conn.simple_command(
-                "batch",
-                args!(
-                    cmds: "branchmap ;heads ;listkeys namespace=bookmarks",
-                    *: &[]
-                ),
-            );
-            let split: [_; 3] = out.splitn_exact(b';').unwrap();
-            branchmap = unescape_batched_output(split[0]);
-            heads = unescape_batched_output(split[1]);
-            bookmarks = unescape_batched_output(split[2]);
-        }
-
         HgWired {
-            branchmap,
-            heads,
-            bookmarks,
+            cached_info: OnceCell::new(),
             conn,
         }
+    }
+
+    fn cached_info(&mut self) -> &CachedInfo {
+        self.cached_info.get_or_init(|| {
+            let mut branchmap;
+            let mut heads;
+            let bookmarks;
+            let conn = &mut self.conn;
+
+            if conn.get_capability(b"batch").is_none() {
+                // Get bookmarks first because if we get them last and they have been
+                // updated after we got the heads, they may contain changesets we won't
+                // be pulling.
+                bookmarks = conn.simple_command("listkeys", args!(namespace: "bookmarks"));
+                loop {
+                    branchmap = conn.simple_command("branchmap", args!());
+                    heads = conn.simple_command("heads", args!());
+                    // Some heads in the branchmap can be non-heads topologically, and
+                    // won't appear in the heads list, but if the opposite happens, then
+                    // the repo was updated between both calls and we need to try again
+                    // for coherency.
+                    if heads
+                        .split(|&b| b == b' ')
+                        .collect::<HashSet<_>>()
+                        .is_subset(
+                            &ByteSlice::lines(&*branchmap)
+                                .flat_map(|l| l.split(|&b| b == b' ').skip(1))
+                                .collect::<HashSet<_>>(),
+                        )
+                    {
+                        break;
+                    }
+                }
+            } else {
+                let out = conn.simple_command(
+                    "batch",
+                    args!(
+                        cmds: "branchmap ;heads ;listkeys namespace=bookmarks",
+                        *: &[]
+                    ),
+                );
+                let split: [_; 3] = out.splitn_exact(b';').unwrap();
+                branchmap = unescape_batched_output(split[0]);
+                heads = unescape_batched_output(split[1]);
+                bookmarks = unescape_batched_output(split[2]);
+            }
+            CachedInfo {
+                branchmap,
+                heads,
+                bookmarks,
+            }
+        })
     }
 }
 
@@ -502,15 +515,15 @@ impl<C: HgWireConnection> HgConnection for HgWired<C> {
 
 impl<C: HgWireConnection> HgRepo for HgWired<C> {
     fn branchmap(&mut self) -> ImmutBString {
-        self.branchmap.clone()
+        self.cached_info().branchmap.clone()
     }
 
     fn heads(&mut self) -> ImmutBString {
-        self.heads.clone()
+        self.cached_info().heads.clone()
     }
 
     fn bookmarks(&mut self) -> ImmutBString {
-        self.bookmarks.clone()
+        self.cached_info().bookmarks.clone()
     }
 
     fn phases(&mut self) -> ImmutBString {
