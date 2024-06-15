@@ -72,7 +72,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs::File;
 use std::hash::Hash;
-use std::io::{stderr, stdin, stdout, BufRead, BufWriter, IsTerminal, Write};
+use std::io::{stderr, stdin, stdout, BufRead, BufReader, BufWriter, IsTerminal, Write};
 use std::iter::repeat;
 use std::os::raw::{c_char, c_int};
 #[cfg(windows)]
@@ -98,8 +98,11 @@ use git::{BlobId, CommitId, GitObjectId, TreeIsh};
 use git_version::git_version;
 use graft::{graft_finish, grafted, init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
-use hg_bundle::{create_bundle, create_chunk_data, BundleSpec, RevChunkIter};
-use hg_connect::{get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgRepo};
+use hg_bundle::{create_bundle, create_chunk_data, read_rev_chunk, BundleSpec, RevChunkIter};
+use hg_connect::{
+    get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgConnection,
+    HgConnectionBase, HgRepo,
+};
 use itertools::EitherOrBoth::{Both, Left, Right};
 use itertools::{EitherOrBoth, Itertools};
 use libgit::{
@@ -121,6 +124,7 @@ use store::{
     RawHgFile, RawHgManifest, SetWhat, Store, BROKEN_REF, CHECKED_REF, METADATA_REF, NOTES_REF,
     REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
+use tee::TeeReader;
 use tree_util::{diff_by_path, RecurseTree};
 use url::Url;
 use util::{CStrExt, IteratorExt, OsStrExt, SliceExt, Transpose};
@@ -495,13 +499,134 @@ extern "C" {
     fn git_path_fetch_head(repos: *mut repository) -> *const c_char;
 }
 
-fn do_fetch(store: &mut Store, remote: &OsStr, revs: &[OsString]) -> Result<(), String> {
-    set_progress(stdout().is_terminal());
+struct BundleSaverConnection(Box<dyn HgRepo>);
+
+impl HgConnectionBase for BundleSaverConnection {
+    fn get_url(&self) -> Option<&Url> {
+        self.0.get_url()
+    }
+
+    fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
+        self.0.get_capability(name)
+    }
+
+    fn require_capability(&self, name: &[u8]) -> &BStr {
+        self.0.require_capability(name)
+    }
+
+    fn sample_size(&self) -> usize {
+        self.0.sample_size()
+    }
+}
+impl HgConnection for BundleSaverConnection {
+    fn getbundle<'a>(
+        &'a mut self,
+        heads: &[HgChangesetId],
+        common: &[HgChangesetId],
+        bundle2caps: Option<&str>,
+    ) -> Result<Box<dyn std::io::Read + 'a>, util::ImmutBString> {
+        let reader = self.0.getbundle(heads, common, bundle2caps)?;
+        let mut stdout = std::io::stdout();
+        let mut bundle = BundleReader::new(TeeReader::new(reader, &mut stdout)).unwrap();
+        while let Some(part) = bundle.next_part().unwrap() {
+            if &*part.part_type == "changegroup" {
+                let version = part
+                    .get_param("version")
+                    .map_or(1, |v| u8::from_str(v).unwrap());
+                let mut part = BufReader::new(part);
+                RevChunkIter::new(version, &mut part)
+                    .progress(|n| format!("Reading {n} changesets"))
+                    .for_each(drop);
+                RevChunkIter::new(version, &mut part)
+                    .progress(|n| format!("Reading {n} manifests"))
+                    .for_each(drop);
+                let files = Cell::new(0);
+                let mut progress = repeat(())
+                    .progress(|n| format!("Reading {n} revisions of {} files", files.get()));
+                while {
+                    let buf = read_rev_chunk(&mut part);
+                    !buf.is_empty()
+                } {
+                    files.set(files.get() + 1);
+                    RevChunkIter::new(version, &mut part)
+                        .zip(&mut progress)
+                        .for_each(drop);
+                }
+            } else if &*part.part_type == "stream2" {
+                return Err(b"Stream bundles are not supported."
+                    .to_vec()
+                    .into_boxed_slice());
+            }
+        }
+        drop(bundle);
+        stdout.flush().map_err(|e| e.to_string().into_boxed_str())?;
+        Ok(Box::new(&b"HG20\0\0\0\0\0\0\0\0"[..]))
+    }
+
+    fn unbundle(&mut self, _heads: Option<&[HgChangesetId]>, _input: File) -> UnbundleResponse {
+        unimplemented!()
+    }
+
+    fn pushkey(
+        &mut self,
+        _namespace: &str,
+        _key: &str,
+        _old: &str,
+        _new: &str,
+    ) -> util::ImmutBString {
+        unimplemented!();
+    }
+
+    fn lookup(&mut self, key: &str) -> util::ImmutBString {
+        self.0.lookup(key)
+    }
+
+    fn clonebundles(&mut self) -> util::ImmutBString {
+        unimplemented!();
+    }
+
+    fn cinnabarclone(&mut self) -> util::ImmutBString {
+        unimplemented!();
+    }
+}
+
+impl HgRepo for BundleSaverConnection {
+    fn branchmap(&mut self) -> util::ImmutBString {
+        self.0.branchmap()
+    }
+
+    fn heads(&mut self) -> util::ImmutBString {
+        self.0.heads()
+    }
+
+    fn bookmarks(&mut self) -> util::ImmutBString {
+        self.0.bookmarks()
+    }
+
+    fn phases(&mut self) -> util::ImmutBString {
+        self.0.phases()
+    }
+
+    fn known(&mut self, nodes: &[HgChangesetId]) -> Box<[bool]> {
+        self.0.known(nodes)
+    }
+}
+
+fn do_fetch(
+    store: &mut Store,
+    remote: &OsStr,
+    revs: &[OsString],
+    bundle: bool,
+) -> Result<(), String> {
+    set_progress(bundle || stdout().is_terminal());
     let url = remote::get(remote).get_url();
     let hg_url =
         hg_url(url).ok_or_else(|| format!("Invalid mercurial url: {}", url.to_string_lossy()))?;
     let mut conn = hg_connect::get_connection(&hg_url)
         .ok_or_else(|| format!("Failed to connect to {}", hg_url))?;
+    if bundle {
+        conn = Box::new(BundleSaverConnection(conn));
+    }
     let supports_lookup = OnceCell::new();
     let revs = revs
         .iter()
@@ -580,32 +705,36 @@ fn do_fetch(store: &mut Store, remote: &OsStr, revs: &[OsString]) -> Result<(), 
             remote,
         )?;
 
-        do_done_and_check(store, &[])
-            .then_some(())
-            .ok_or_else(|| "Fatal error".to_string())?;
+        if !bundle {
+            do_done_and_check(store, &[])
+                .then_some(())
+                .ok_or_else(|| "Fatal error".to_string())?;
+        }
     }
 
-    let url = url.to_string_lossy();
-    let mut fetch_head = Vec::new();
-    let width = full_revs
-        .iter()
-        .map(|rev| {
-            let git_rev = rev.to_git(store).unwrap();
-            writeln!(fetch_head, "{}\t\t'hg/revs/{}' of {}", git_rev, rev, url).unwrap();
-            get_unique_abbrev(git_rev).len()
-        })
-        .max()
-        .unwrap()
-        * 2
-        + 3;
-    let path = unsafe { CStr::from_ptr(git_path_fetch_head(the_repository)).to_osstr() };
-    File::create(path)
-        .and_then(|mut f| f.write(&fetch_head))
-        .map_err(|e| e.to_string())?;
+    if !bundle {
+        let url = url.to_string_lossy();
+        let mut fetch_head = Vec::new();
+        let width = full_revs
+            .iter()
+            .map(|rev| {
+                let git_rev = rev.to_git(store).unwrap();
+                writeln!(fetch_head, "{}\t\t'hg/revs/{}' of {}", git_rev, rev, url).unwrap();
+                get_unique_abbrev(git_rev).len()
+            })
+            .max()
+            .unwrap()
+            * 2
+            + 3;
+        let path = unsafe { CStr::from_ptr(git_path_fetch_head(the_repository)).to_osstr() };
+        File::create(path)
+            .and_then(|mut f| f.write(&fetch_head))
+            .map_err(|e| e.to_string())?;
 
-    eprintln!("From {}", url);
-    for rev in full_revs {
-        eprintln!(" * {:width$} hg/revs/{} -> FETCH_HEAD", "branch", rev);
+        eprintln!("From {}", url);
+        for rev in full_revs {
+            eprintln!(" * {:width$} hg/revs/{} -> FETCH_HEAD", "branch", rev);
+        }
     }
     Ok(())
 }
@@ -3415,6 +3544,9 @@ enum CinnabarCommand {
         #[clap(value_parser)]
         revs: Vec<OsString>,
         #[clap(long)]
+        #[clap(help = "Don't import, but send the bundle to stdout")]
+        bundle: bool,
+        #[clap(long)]
         #[clap(exclusive = true)]
         #[clap(help = "Fetch tags")]
         tags: bool,
@@ -3580,8 +3712,9 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         Fetch {
             remote: Some(remote),
             revs,
+            bundle,
             tags: false,
-        } => do_fetch(&mut store, &remote, &revs),
+        } => do_fetch(&mut store, &remote, &revs, bundle),
         Fetch { tags: true, .. } => do_fetch_tags(),
         Fetch { remote: None, .. } => unreachable!(),
         Reclone { rebase } => do_reclone(&mut store, rebase),
