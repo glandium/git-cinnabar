@@ -28,7 +28,7 @@ use crate::libgit::{die, rev_list, RawCommit};
 use crate::oid::ObjectId;
 use crate::store::{has_metadata, merge_metadata, store_changegroup, Dag, Store, Traversal};
 use crate::util::{FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed};
-use crate::{check_enabled, get_config_remote, graft_config_enabled, Checks};
+use crate::{check_enabled, get_config_remote, graft_config_enabled, logging, Checks};
 
 pub enum HgArgValue<'a> {
     String(&'a str),
@@ -295,12 +295,8 @@ impl<C: HgWireConnection> LogWireConnection<C> {
 
     fn log(command: &str, f: impl FnOnce(log::Level) -> String) {
         let target = format!("wire::{}", command);
-        if log_enabled!(target: &target, log::Level::Debug) {
-            let level = if log_enabled!(target: &target, log::Level::Trace) {
-                log::Level::Trace
-            } else {
-                log::Level::Debug
-            };
+        let level = logging::max_log_level(&target, log::Level::Debug).to_level();
+        if let Some(level) = level {
             log!(target: &target, level, "{}", f(level));
         }
     }

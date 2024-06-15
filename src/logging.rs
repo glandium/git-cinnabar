@@ -278,6 +278,20 @@ impl log::Log for CinnabarLogger {
     }
 }
 
+pub fn max_log_level(target: &str, min_level: log::Level) -> log::LevelFilter {
+    let mut result = log::LevelFilter::Off;
+    let mut iter = log::LevelFilter::iter().skip(min_level as usize).peekable();
+    loop {
+        if let Some(level) = iter.peek() {
+            if log_enabled!(target: target, level.to_level().unwrap()) {
+                result = iter.next().unwrap();
+                continue;
+            }
+        }
+        return result;
+    }
+}
+
 pub struct LoggingReader<'a, R: Read> {
     target: &'a str,
     level: log::Level,

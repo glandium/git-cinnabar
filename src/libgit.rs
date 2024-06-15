@@ -7,6 +7,7 @@ use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 use std::ptr;
 use std::str::FromStr;
 use std::sync::RwLock;
+use std::time::{Duration, Instant};
 use std::{fmt, mem};
 
 use bstr::ByteSlice;
@@ -17,11 +18,11 @@ use getset::{CopyGetters, Getters};
 use hex_literal::hex;
 use itertools::{EitherOrBoth, Itertools};
 
-use crate::experiment_similarity;
 use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry, TreeId};
 use crate::oid::{Abbrev, ObjectId};
 use crate::tree_util::WithPath;
 use crate::util::{CStrExt, FromBytes, OptionExt, OsStrExt, SliceExt, Transpose};
+use crate::{check_enabled, experiment_similarity, logging, Checks};
 
 const GIT_MAX_RAWSZ: usize = 32;
 const GIT_HASH_SHA1: c_int = 1;
@@ -556,24 +557,76 @@ extern "C" {
 
 pub struct RevList {
     revs: *mut rev_info,
+    duration: Option<(Duration, Duration)>,
 }
 
 pub fn rev_list(args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> RevList {
+    let log_level = logging::max_log_level("rev-list", log::Level::Debug).to_level();
+    let start = (check_enabled(Checks::TIME) && log_level.is_some()).then(Instant::now);
     let args: Vec<_> = Some(OsStr::new("").to_cstring())
         .into_iter()
         .chain(args.into_iter().map(|a| a.as_ref().to_cstring()))
         .collect();
+    if let Some(log_level) = log_level {
+        let mut data = String::new();
+        let mut commits = 0;
+        let mut substracted_commits = 0;
+
+        let maybe_add_commits = |data: &mut String, commits: usize, substracted_commits: usize| {
+            if !data.is_empty() {
+                data.push(' ');
+            }
+            for (commits, name) in [
+                (commits, "commit"),
+                (substracted_commits, "substracted commit"),
+            ] {
+                if commits > 0 {
+                    data.push('[');
+                    data.push_str(&commits.to_string());
+                    data.push(' ');
+                    data.push_str(name);
+                    if commits > 1 {
+                        data.push('s');
+                    }
+                    data.push(']');
+                }
+            }
+        };
+        for arg in args.iter().skip(1) {
+            if arg.as_bytes().starts_with(b"-") || log_level == log::Level::Trace {
+                maybe_add_commits(&mut data, commits, substracted_commits);
+                if !data.is_empty() {
+                    data.push(' ');
+                }
+                data.push_str(&arg.to_string_lossy());
+                commits = 0;
+                substracted_commits = 0;
+            } else if arg.as_bytes().starts_with(b"^") {
+                substracted_commits += 1;
+            } else {
+                commits += 1;
+            }
+        }
+        maybe_add_commits(&mut data, commits, substracted_commits);
+        log!(target: "rev-list", log_level, "{}", data);
+    }
     let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
     argv.push(std::ptr::null());
     RevList {
         revs: unsafe { rev_list_new(args.len().try_into().unwrap(), &argv[0]) },
+        duration: start.map(|start| (start.elapsed(), Duration::ZERO)),
     }
 }
 
 impl Drop for RevList {
     fn drop(&mut self) {
+        let start = self.duration.is_some().then(Instant::now);
         unsafe {
             rev_list_finish(self.revs);
+        }
+        if let Some(((init_duration, duration), start)) = self.duration.as_mut().zip(start) {
+            *duration += start.elapsed();
+            debug!(target: "rev-list", "{:.1}s elapsed initially, then {:.1}s.", init_duration.as_secs_f32(), duration.as_secs_f32());
         }
     }
 }
@@ -581,11 +634,16 @@ impl Drop for RevList {
 impl Iterator for RevList {
     type Item = CommitId;
     fn next(&mut self) -> Option<Self::Item> {
-        unsafe {
+        let start = self.duration.is_some().then(Instant::now);
+        let result = unsafe {
             get_revision(self.revs).as_ref().map(|c| {
                 CommitId::from_unchecked(GitObjectId::from(commit_oid(c).as_ref().unwrap().clone()))
             })
+        };
+        if let Some(((_, duration), start)) = self.duration.as_mut().zip(start) {
+            *duration += start.elapsed();
         }
+        result
     }
 }
 
@@ -612,7 +670,8 @@ pub enum MaybeBoundary {
 impl Iterator for RevListWithBoundaries {
     type Item = (CommitId, MaybeBoundary);
     fn next(&mut self) -> Option<Self::Item> {
-        unsafe {
+        let start = self.0.duration.is_some().then(Instant::now);
+        let result = unsafe {
             get_revision(self.0.revs).as_ref().map(|c| {
                 let cid = CommitId::from_unchecked(GitObjectId::from(
                     commit_oid(c).as_ref().unwrap().clone(),
@@ -625,7 +684,11 @@ impl Iterator for RevListWithBoundaries {
                 };
                 (cid, maybe_boundary)
             })
+        };
+        if let Some(((_, duration), start)) = self.0.duration.as_mut().zip(start) {
+            *duration += start.elapsed();
         }
+        result
     }
 }
 
