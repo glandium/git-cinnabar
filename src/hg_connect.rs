@@ -826,6 +826,7 @@ pub fn find_common(
         return vec![];
     }
     let sample_size = conn.sample_size();
+    debug!(target: "find-common", "[heads] undetermined: {}, sample size: {}", undetermined.len(), sample_size);
     let sample = take_sample(&mut rng, &mut undetermined, sample_size);
 
     let (known, unknown): (Vec<_>, Vec<_>) =
@@ -839,6 +840,8 @@ pub fn find_common(
                     Either::Right(head)
                 }
             });
+
+    debug!(target: "find-common", "[heads] known: {}, unknown: {}, undetermined: {}", known.len(), unknown.len(), undetermined.len());
 
     if undetermined.is_empty() && unknown.is_empty() {
         return known;
@@ -874,6 +877,8 @@ pub fn find_common(
 
     let mut dag = Dag::new();
     let mut undetermined_count = 0;
+    let mut known_count = 0;
+    let mut unknown_count = 0;
     for cid in rev_list(args) {
         let commit = RawCommit::read(cid).unwrap();
         let commit = commit.parse().unwrap();
@@ -890,12 +895,14 @@ pub fn find_common(
             data.hg_node = Some(cs);
             data.known = Some(true);
             undetermined_count -= 1;
+            known_count += 1;
         }
     }
     for (_, c) in unknown {
         if let Some((_, data)) = dag.get_mut(c.into()) {
             data.known = Some(false);
             undetermined_count -= 1;
+            unknown_count += 1;
         }
     }
     for &(cs, c) in &undetermined {
@@ -905,6 +912,7 @@ pub fn find_common(
     }
 
     while undetermined_count > 0 {
+        debug!(target: "find-common", "known: {}, unknown: {}, undetermined: {}", known_count, unknown_count, undetermined_count);
         if undetermined.len() < sample_size {
             undetermined.extend(
                 // TODO: this would or maybe would not be faster if traversing the dag instead.
@@ -941,6 +949,11 @@ pub fn find_common(
                 if data.known.is_none() {
                     data.known = Some(known);
                     undetermined_count -= 1;
+                    if known {
+                        known_count += 1;
+                    } else {
+                        unknown_count += 1;
+                    }
                     true
                 } else {
                     assert_eq!(data.known, Some(known));
@@ -949,10 +962,14 @@ pub fn find_common(
             });
         }
     }
-    dag.iter()
+    debug!(target: "find-common", "known: {}, unknown: {}, undetermined: {}", known_count, unknown_count, undetermined_count);
+    let result = dag
+        .iter()
         .filter(|(_, data)| data.known == Some(true) && !data.has_known_children)
         .map(|(_, data)| data.hg_node.unwrap())
-        .collect_vec()
+        .collect_vec();
+    debug!(target: "find-common", "minimal known set: {}", result.len());
+    result
 }
 
 pub fn get_bundle(
