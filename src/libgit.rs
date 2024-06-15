@@ -21,7 +21,7 @@ use itertools::{EitherOrBoth, Itertools};
 use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry, TreeId};
 use crate::oid::{Abbrev, ObjectId};
 use crate::tree_util::WithPath;
-use crate::util::{CStrExt, FromBytes, OptionExt, OsStrExt, SliceExt, Transpose};
+use crate::util::{CStrExt, DurationExt, FromBytes, OptionExt, OsStrExt, SliceExt, Transpose};
 use crate::{check_enabled, experiment_similarity, logging, Checks};
 
 const GIT_MAX_RAWSZ: usize = 32;
@@ -626,7 +626,7 @@ impl Drop for RevList {
         }
         if let Some(((init_duration, duration), start)) = self.duration.as_mut().zip(start) {
             *duration += start.elapsed();
-            debug!(target: "rev-list", "{:.1}s elapsed initially, then {:.1}s.", init_duration.as_secs_f32(), duration.as_secs_f32());
+            debug!(target: "rev-list", "{} elapsed initially, then {}.", init_duration.fuzzy_display(), duration.fuzzy_display());
         }
     }
 }

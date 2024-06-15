@@ -16,6 +16,7 @@ use std::os::windows::ffi;
 use std::ptr::{self, NonNull};
 use std::rc::Rc;
 use std::str::{self, FromStr};
+use std::time::Duration;
 use std::{fmt, mem};
 
 use bstr::{BStr, ByteSlice};
@@ -724,3 +725,27 @@ macro_rules! assert_le {
     }};
 }
 pub(crate) use assert_le;
+
+pub struct DurationFuzzyDisplay(f32);
+
+pub trait DurationExt {
+    fn fuzzy_display(&self) -> DurationFuzzyDisplay;
+}
+
+impl DurationExt for Duration {
+    fn fuzzy_display(&self) -> DurationFuzzyDisplay {
+        DurationFuzzyDisplay(self.as_secs_f32())
+    }
+}
+
+impl fmt::Display for DurationFuzzyDisplay {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0 < 1.0 {
+            f.write_fmt(format_args!("{:.1}ms", self.0 * 1000.0))
+        } else if self.0 < 10.0 {
+            f.write_fmt(format_args!("{:.2}s", self.0))
+        } else {
+            f.write_fmt(format_args!("{:.1}s", self.0))
+        }
+    }
+}
