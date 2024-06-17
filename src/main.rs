@@ -135,7 +135,7 @@ use crate::hg_bundle::BundleReader;
 use crate::hg_connect::{decodecaps, find_common, UnbundleResponse};
 use crate::libcinnabar::AsStrSlice;
 use crate::progress::set_progress;
-use crate::store::{clear_manifest_heads, do_set_replace, set_changeset_heads, Dag, Traversal};
+use crate::store::{clear_manifest_heads, do_set_replace, set_changeset_heads, Dag};
 use crate::tree_util::{Empty, ParseTree, WithPath};
 use crate::util::{FromBytes, ToBoxed};
 
@@ -2360,14 +2360,7 @@ fn create_merge_changeset(
                             .remove(&path)
                             .and_then(|dag| {
                                 let is_ancestor = |a: HgFileId, b| {
-                                    let mut result = false;
-                                    dag.traverse(b, Traversal::Parents, |p, _| {
-                                        if p == a {
-                                            result = true;
-                                        }
-                                        !result
-                                    });
-                                    result
+                                    dag.traverse_parents(b, |_, _| true).any(|(&p, _)| p == a)
                                 };
                                 if is_ancestor(p1.fid, p2.fid) {
                                     Some(vec![p2.clone()])

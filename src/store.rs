@@ -855,11 +855,6 @@ pub struct Dag<N, T> {
     dag: Vec<DagNode<N, T>>,
 }
 
-pub enum Traversal {
-    Parents,
-    Children,
-}
-
 impl<N: Ord + Copy, T> Dag<N, T> {
     pub fn new() -> Self {
         Dag {
@@ -902,48 +897,156 @@ impl<N: Ord + Copy, T> Dag<N, T> {
         (&node.node, &node.data)
     }
 
-    pub fn traverse(&self, start: N, direction: Traversal, cb: impl FnMut(N, &T) -> bool) {
-        match (direction, self.ids.get(&start)) {
-            (Traversal::Parents, Some(&start)) => self.traverse_parents(start, cb),
-            (Traversal::Children, Some(&start)) => self.traverse_children(start, cb),
-            _ => {}
-        }
-    }
-
-    fn traverse_parents(&self, start: DagNodeId, mut cb: impl FnMut(N, &T) -> bool) {
-        let mut queue = VecDeque::from([start]);
+    pub fn traverse_parents(
+        &self,
+        start: N,
+        mut follow_parents: impl FnMut(N, &T) -> bool,
+    ) -> impl Iterator<Item = (&N, &T)> {
+        let mut queue = self
+            .ids
+            .get(&start)
+            .map(|&start| VecDeque::from([start]))
+            .unwrap_or_default();
         let mut seen = BitVec::from_elem(self.ids.len(), false);
-        while let Some(id) = queue.pop_front() {
-            seen.set(id.to_offset(), true);
-            let node = &self.dag[id.to_offset()];
-            if cb(node.node, &node.data) {
-                for id in [node.parent1, node.parent2].into_iter().flatten() {
-                    if !seen[id.to_offset()] {
-                        queue.push_back(id);
+        std::iter::from_fn(move || {
+            queue.pop_front().map(|id| {
+                seen.set(id.to_offset(), true);
+                let node = &self.dag[id.to_offset()];
+                if follow_parents(node.node, &node.data) {
+                    for id in [node.parent1, node.parent2].into_iter().flatten() {
+                        if !seen[id.to_offset()] {
+                            queue.push_back(id);
+                        }
                     }
                 }
-            }
-        }
+                (&node.node, &node.data)
+            })
+        })
     }
 
-    fn traverse_children(&self, start: DagNodeId, mut cb: impl FnMut(N, &T) -> bool) {
-        let mut seen = BitVec::from_elem(self.ids.len() - start.to_offset(), false);
-        for (idx, node) in self.dag[start.to_offset()..].iter().enumerate() {
-            if (idx == 0
-                || [node.parent1, node.parent2]
-                    .into_iter()
-                    .flatten()
-                    .any(|id| id >= start && seen[id.to_offset() - start.to_offset()]))
-                && cb(node.node, &node.data)
-            {
-                seen.set(idx, true);
-            }
-        }
+    pub fn traverse_children(
+        &self,
+        start: N,
+        mut follow_children: impl FnMut(N, &T) -> bool,
+    ) -> impl Iterator<Item = (&N, &T)> {
+        let first = self
+            .ids
+            .get(&start)
+            .map_or_else(|| self.ids.len(), |start| start.to_offset());
+        let mut seen = BitVec::from_elem(self.ids.len() - first, false);
+        self.dag[first..]
+            .iter()
+            .enumerate()
+            .filter_map(move |(idx, node)| {
+                if idx == 0
+                    || [node.parent1, node.parent2]
+                        .into_iter()
+                        .flatten()
+                        .any(|id| id.to_offset() >= first && seen[id.to_offset() - first])
+                {
+                    if follow_children(node.node, &node.data) {
+                        seen.set(idx, true);
+                    }
+                    Some((&node.node, &node.data))
+                } else {
+                    None
+                }
+            })
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&N, &T)> {
         self.dag.iter().map(|node| (&node.node, &node.data))
     }
+}
+
+#[test]
+fn test_dag() {
+    let mut dag = Dag::new();
+    dag.add("a", &[], ());
+    dag.add("b", &["a"], ());
+    dag.add("c", &["b"], ());
+    dag.add("d", &["c"], ());
+    dag.add("e", &[], ());
+    dag.add("f", &["e"], ());
+    dag.add("g", &["f"], ());
+    dag.add("h", &["d", "g"], ());
+    dag.add("i", &["c", "g"], ());
+    dag.add("j", &["c", "g"], ());
+
+    let result = dag
+        .traverse_children("a", |_, ()| false)
+        .map(|(n, _)| n)
+        .join("");
+    assert_eq!(result, "a");
+
+    let result = dag
+        .traverse_children("a", |_, ()| true)
+        .map(|(n, _)| n)
+        .join("");
+    assert_eq!(result, "abcdhij");
+
+    let result = dag
+        .traverse_children("c", |_, ()| true)
+        .map(|(n, _)| n)
+        .join("");
+    assert_eq!(result, "cdhij");
+
+    let result = dag
+        .traverse_children("d", |_, ()| true)
+        .map(|(n, _)| n)
+        .join("");
+    assert_eq!(result, "dh");
+
+    let result = dag
+        .traverse_children("e", |_, ()| true)
+        .map(|(n, _)| n)
+        .join("");
+    assert_eq!(result, "efghij");
+
+    let result = dag
+        .traverse_children("f", |_, ()| true)
+        .map(|(n, _)| n)
+        .join("");
+    assert_eq!(result, "fghij");
+
+    let result = dag
+        .traverse_children("a", |node, ()| node <= "g")
+        .map(|(n, _)| n)
+        .join("");
+    assert_eq!(result, "abcdhij");
+
+    let result = dag
+        .traverse_parents("j", |_, ()| false)
+        .map(|(n, _)| n)
+        .join("");
+    assert_eq!(result, "j");
+
+    let result = dag
+        .traverse_parents("j", |_, ()| true)
+        .map(|(n, _)| n)
+        .sorted()
+        .join("");
+    assert_eq!(result, "abcefgj");
+
+    let result = dag
+        .traverse_parents("a", |_, ()| true)
+        .map(|(n, _)| n)
+        .join("");
+    assert_eq!(result, "a");
+
+    let result = dag
+        .traverse_parents("j", |node, ()| node >= "d")
+        .map(|(n, _)| n)
+        .sorted()
+        .join("");
+    assert_eq!(result, "cefgj");
+
+    let result = dag
+        .traverse_parents("j", |node, ()| node >= "c")
+        .map(|(n, _)| n)
+        .sorted()
+        .join("");
+    assert_eq!(result, "bcefgj");
 }
 
 #[derive(Debug)]

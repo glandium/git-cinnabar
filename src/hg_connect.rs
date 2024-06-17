@@ -27,7 +27,7 @@ use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
 use crate::libgit::{die, rev_list, RawCommit};
 use crate::oid::ObjectId;
-use crate::store::{has_metadata, merge_metadata, store_changegroup, Dag, Store, Traversal};
+use crate::store::{has_metadata, merge_metadata, store_changegroup, Dag, Store};
 use crate::util::{
     DurationExt, FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed,
 };
@@ -937,13 +937,9 @@ pub fn find_common(
                 .into_iter()
                 .unzip();
         for (&known, &c) in conn.known(&sample_hg).iter().zip(sample_git.iter()) {
-            let direction = if known {
-                Traversal::Parents
-            } else {
-                Traversal::Children
-            };
+            let follow = |_, data: &FindCommonInfo| data.known.get().is_none();
             let mut first = Some(());
-            dag.traverse(c.into(), direction, |_, data| {
+            let update = |(_, data): (_, &FindCommonInfo)| {
                 if known && first.take().is_none() {
                     data.has_known_children.set(true);
                 }
@@ -955,12 +951,15 @@ pub fn find_common(
                     } else {
                         unknown_count += 1;
                     }
-                    true
                 } else {
                     assert_eq!(data.known.get(), Some(known));
-                    false
                 }
-            });
+            };
+            if known {
+                dag.traverse_parents(c.into(), follow).for_each(update);
+            } else {
+                dag.traverse_children(c.into(), follow).for_each(update);
+            }
         }
     }
     debug!(target: "find-common", "known: {}, unknown: {}, undetermined: {}", known_count, unknown_count, undetermined_count);
