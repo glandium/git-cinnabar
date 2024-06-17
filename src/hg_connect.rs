@@ -812,8 +812,8 @@ fn take_sample<R: rand::Rng + ?Sized, T>(rng: &mut R, data: &mut Vec<T>, size: u
 #[derive(Default, Debug)]
 struct FindCommonInfo {
     hg_node: Cell<Option<HgChangesetId>>,
-    known: Option<bool>,
-    has_known_children: bool,
+    known: Cell<Option<bool>>,
+    has_known_children: Cell<bool>,
 }
 
 pub fn find_common(
@@ -893,14 +893,14 @@ pub fn find_common(
     for (cs, c) in known {
         if let Some((_, data)) = dag.get_mut(c.into()) {
             data.hg_node = Cell::new(Some(cs));
-            data.known = Some(true);
+            data.known = Cell::new(Some(true));
             undetermined_count -= 1;
             known_count += 1;
         }
     }
     for (_, c) in unknown {
         if let Some((_, data)) = dag.get_mut(c.into()) {
-            data.known = Some(false);
+            data.known = Cell::new(Some(false));
             undetermined_count -= 1;
             unknown_count += 1;
         }
@@ -917,7 +917,7 @@ pub fn find_common(
             undetermined.extend(
                 // TODO: this would or maybe would not be faster if traversing the dag instead.
                 dag.iter()
-                    .filter(|(_, data)| data.known.is_none())
+                    .filter(|(_, data)| data.known.get().is_none())
                     .choose_multiple(&mut rng, sample_size - undetermined.len())
                     .into_iter()
                     .map(|(&c, data)| {
@@ -943,12 +943,12 @@ pub fn find_common(
                 Traversal::Children
             };
             let mut first = Some(());
-            dag.traverse_mut(c.into(), direction, |_, data| {
+            dag.traverse(c.into(), direction, |_, data| {
                 if known && first.take().is_none() {
-                    data.has_known_children = true;
+                    data.has_known_children.set(true);
                 }
-                if data.known.is_none() {
-                    data.known = Some(known);
+                if data.known.get().is_none() {
+                    data.known.set(Some(known));
                     undetermined_count -= 1;
                     if known {
                         known_count += 1;
@@ -957,7 +957,7 @@ pub fn find_common(
                     }
                     true
                 } else {
-                    assert_eq!(data.known, Some(known));
+                    assert_eq!(data.known.get(), Some(known));
                     false
                 }
             });
@@ -966,7 +966,7 @@ pub fn find_common(
     debug!(target: "find-common", "known: {}, unknown: {}, undetermined: {}", known_count, unknown_count, undetermined_count);
     let result = dag
         .iter()
-        .filter(|(_, data)| data.known == Some(true) && !data.has_known_children)
+        .filter(|(_, data)| data.known.get() == Some(true) && !data.has_known_children.get())
         .map(|(_, data)| data.hg_node.get().unwrap())
         .collect_vec();
     debug!(target: "find-common", "minimal known set: {}", result.len());

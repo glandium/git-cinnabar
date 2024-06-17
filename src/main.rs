@@ -2361,7 +2361,7 @@ fn create_merge_changeset(
                             .and_then(|mut dag| {
                                 let mut is_ancestor = |a: HgFileId, b| {
                                     let mut result = false;
-                                    dag.traverse_mut(b, Traversal::Parents, |p, _| {
+                                    dag.traverse(b, Traversal::Parents, |p, _| {
                                         if p == a {
                                             result = true;
                                         }

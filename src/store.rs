@@ -902,20 +902,15 @@ impl<N: Ord + Copy, T> Dag<N, T> {
         (&node.node, &node.data)
     }
 
-    pub fn traverse_mut(
-        &mut self,
-        start: N,
-        direction: Traversal,
-        cb: impl FnMut(N, &mut T) -> bool,
-    ) {
+    pub fn traverse(&mut self, start: N, direction: Traversal, cb: impl FnMut(N, &T) -> bool) {
         match (direction, self.ids.get(&start)) {
-            (Traversal::Parents, Some(&start)) => self.traverse_parents_mut(start, cb),
-            (Traversal::Children, Some(&start)) => self.traverse_children_mut(start, cb),
+            (Traversal::Parents, Some(&start)) => self.traverse_parents(start, cb),
+            (Traversal::Children, Some(&start)) => self.traverse_children(start, cb),
             _ => {}
         }
     }
 
-    fn traverse_parents_mut(&mut self, start: DagNodeId, mut cb: impl FnMut(N, &mut T) -> bool) {
+    fn traverse_parents(&mut self, start: DagNodeId, mut cb: impl FnMut(N, &T) -> bool) {
         let mut queue = VecDeque::from([start]);
         let mut seen = BitVec::from_elem(self.ids.len(), false);
         while let Some(id) = queue.pop_front() {
@@ -931,7 +926,7 @@ impl<N: Ord + Copy, T> Dag<N, T> {
         }
     }
 
-    fn traverse_children_mut(&mut self, start: DagNodeId, mut cb: impl FnMut(N, &mut T) -> bool) {
+    fn traverse_children(&mut self, start: DagNodeId, mut cb: impl FnMut(N, &T) -> bool) {
         let mut seen = BitVec::from_elem(self.ids.len() - start.to_offset(), false);
         for (idx, node) in self.dag[start.to_offset()..].iter_mut().enumerate() {
             if (idx == 0
