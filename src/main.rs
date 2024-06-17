@@ -2360,7 +2360,8 @@ fn create_merge_changeset(
                             .remove(&path)
                             .and_then(|dag| {
                                 let is_ancestor = |a: HgFileId, b| {
-                                    dag.traverse_parents(b, |_, _| true).any(|(&p, _)| p == a)
+                                    dag.traverse_parents(&[b], |_, _| true)
+                                        .any(|(&p, _)| p == a)
                                 };
                                 if is_ancestor(p1.fid, p2.fid) {
                                     Some(vec![p2.clone()])

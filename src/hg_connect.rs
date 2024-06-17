@@ -951,9 +951,9 @@ pub fn find_common(
                 }
             };
             if known {
-                dag.traverse_parents(c.into(), follow).for_each(update);
+                dag.traverse_parents(&[c.into()], follow).for_each(update);
             } else {
-                dag.traverse_children(c.into(), follow).for_each(update);
+                dag.traverse_children(&[c.into()], follow).for_each(update);
             }
         }
     }
