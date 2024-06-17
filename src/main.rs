@@ -2358,8 +2358,8 @@ fn create_merge_changeset(
                         WARN.call_once(|| warn!(target: "root", "This may take a while..."));
                         let parents = file_dags
                             .remove(&path)
-                            .and_then(|mut dag| {
-                                let mut is_ancestor = |a: HgFileId, b| {
+                            .and_then(|dag| {
+                                let is_ancestor = |a: HgFileId, b| {
                                     let mut result = false;
                                     dag.traverse(b, Traversal::Parents, |p, _| {
                                         if p == a {

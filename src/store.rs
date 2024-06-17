@@ -902,7 +902,7 @@ impl<N: Ord + Copy, T> Dag<N, T> {
         (&node.node, &node.data)
     }
 
-    pub fn traverse(&mut self, start: N, direction: Traversal, cb: impl FnMut(N, &T) -> bool) {
+    pub fn traverse(&self, start: N, direction: Traversal, cb: impl FnMut(N, &T) -> bool) {
         match (direction, self.ids.get(&start)) {
             (Traversal::Parents, Some(&start)) => self.traverse_parents(start, cb),
             (Traversal::Children, Some(&start)) => self.traverse_children(start, cb),
@@ -910,13 +910,13 @@ impl<N: Ord + Copy, T> Dag<N, T> {
         }
     }
 
-    fn traverse_parents(&mut self, start: DagNodeId, mut cb: impl FnMut(N, &T) -> bool) {
+    fn traverse_parents(&self, start: DagNodeId, mut cb: impl FnMut(N, &T) -> bool) {
         let mut queue = VecDeque::from([start]);
         let mut seen = BitVec::from_elem(self.ids.len(), false);
         while let Some(id) = queue.pop_front() {
             seen.set(id.to_offset(), true);
-            let node = &mut self.dag[id.to_offset()];
-            if cb(node.node, &mut node.data) {
+            let node = &self.dag[id.to_offset()];
+            if cb(node.node, &node.data) {
                 for id in [node.parent1, node.parent2].into_iter().flatten() {
                     if !seen[id.to_offset()] {
                         queue.push_back(id);
@@ -926,15 +926,15 @@ impl<N: Ord + Copy, T> Dag<N, T> {
         }
     }
 
-    fn traverse_children(&mut self, start: DagNodeId, mut cb: impl FnMut(N, &T) -> bool) {
+    fn traverse_children(&self, start: DagNodeId, mut cb: impl FnMut(N, &T) -> bool) {
         let mut seen = BitVec::from_elem(self.ids.len() - start.to_offset(), false);
-        for (idx, node) in self.dag[start.to_offset()..].iter_mut().enumerate() {
+        for (idx, node) in self.dag[start.to_offset()..].iter().enumerate() {
             if (idx == 0
                 || [node.parent1, node.parent2]
                     .into_iter()
                     .flatten()
                     .any(|id| id >= start && seen[id.to_offset() - start.to_offset()]))
-                && cb(node.node, &mut node.data)
+                && cb(node.node, &node.data)
             {
                 seen.set(idx, true);
             }
