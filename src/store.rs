@@ -51,8 +51,8 @@ use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
 use crate::tree_util::{diff_by_path, merge_join_by_path, Empty, ParseTree, RecurseTree, WithPath};
 use crate::util::{
-    FromBytes, ImmutBString, OsStrExt, RcExt, RcSlice, RcSliceBuilder, ReadExt, SliceExt, ToBoxed,
-    Transpose,
+    FromBytes, ImmutBString, IteratorExt, OsStrExt, RcExt, RcSlice, RcSliceBuilder, ReadExt,
+    SliceExt, ToBoxed, Transpose,
 };
 use crate::xdiff::{apply, textdiff, PatchInfo};
 use crate::{check_enabled, has_compat, Checks, Compat};
@@ -905,8 +905,10 @@ impl<N: Ord + Copy, T> Dag<N, T> {
         let starts = starts
             .iter()
             .filter_map(|n| self.ids.get(n).map(|x| x.to_offset()))
+            .sorted()
             .collect_vec();
-        let limit = starts.iter().max().map_or(0, |x| x + 1);
+        let limit = starts.last().map_or(0, |x| x + 1);
+        let mut smallest = starts.first().copied().unwrap_or(0);
         let mut parents = BitVec::from_elem(limit, false);
         for start in starts {
             parents.set(start, true);
@@ -915,17 +917,23 @@ impl<N: Ord + Copy, T> Dag<N, T> {
             .iter()
             .enumerate()
             .rev()
-            .filter_map(move |(idx, node)| {
-                // TODO: we should be able to shortcut when we know there aren't any more parents left.
+            .filter_map_while(move |(idx, node)| {
                 if parents[idx] {
                     if follow_parents(node.node, &node.data) {
                         for id in [node.parent1, node.parent2].into_iter().flatten() {
-                            parents.set(id.to_offset(), true);
+                            let idx = id.to_offset();
+                            parents.set(idx, true);
+                            if idx < smallest {
+                                smallest = idx;
+                            }
                         }
                     }
-                    Some((&node.node, &node.data))
+                    Ok((&node.node, &node.data))
+                } else if idx < smallest {
+                    // Short-circuit when there aren't any new parents to find.
+                    Err(true)
                 } else {
-                    None
+                    Err(false)
                 }
             })
     }

@@ -302,6 +302,16 @@ pub trait IteratorExt: Iterator {
     {
         MapMapIter { iter: self, f }
     }
+
+    fn filter_map_while<B, F: FnMut(Self::Item) -> Result<B, bool>>(
+        self,
+        f: F,
+    ) -> FilterMapWhile<Self, F>
+    where
+        Self: Sized,
+    {
+        FilterMapWhile { iter: self, f }
+    }
 }
 
 pub trait Map {
@@ -376,6 +386,45 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|item| item.map(&mut self.f))
+    }
+}
+
+pub struct FilterMapWhile<I, F> {
+    iter: I,
+    f: F,
+}
+
+impl<I: Iterator, B, F: FnMut(I::Item) -> Result<B, bool>> Iterator for FilterMapWhile<I, F> {
+    type Item = B;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match (self.f)(self.iter.next()?) {
+                Ok(item) => return Some(item),
+                Err(true) => return None,
+                Err(false) => continue,
+            }
+        }
+    }
+}
+
+#[test]
+fn test_filter_map_while() {
+    let a = [-1i32, 4, 5, 0, 1];
+    let mut iter = a
+        .into_iter()
+        .filter_map_while(|x| if x > 0 { Ok(x * 2) } else { Err(x == 0) });
+    let mut equivalent_iter = a
+        .into_iter()
+        .take_while(|&x| x != 0)
+        .filter_map(|x| (x > 0).then_some(x * 2));
+
+    loop {
+        let item = equivalent_iter.next();
+        assert_eq!(iter.next(), item);
+        if item.is_none() {
+            break;
+        }
     }
 }
 
