@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{stderr, BufReader, Read, Write};
@@ -810,7 +811,7 @@ fn take_sample<R: rand::Rng + ?Sized, T>(rng: &mut R, data: &mut Vec<T>, size: u
 
 #[derive(Default, Debug)]
 struct FindCommonInfo {
-    hg_node: Option<HgChangesetId>,
+    hg_node: Cell<Option<HgChangesetId>>,
     known: Option<bool>,
     has_known_children: bool,
 }
@@ -892,7 +893,7 @@ pub fn find_common(
     }
     for (cs, c) in known {
         if let Some((_, data)) = dag.get_mut(c.into()) {
-            data.hg_node = Some(cs);
+            data.hg_node = Cell::new(Some(cs));
             data.known = Some(true);
             undetermined_count -= 1;
             known_count += 1;
@@ -907,7 +908,7 @@ pub fn find_common(
     }
     for &(cs, c) in &undetermined {
         if let Some((_, data)) = dag.get_mut(c.into()) {
-            data.hg_node = Some(cs);
+            data.hg_node = Cell::new(Some(cs));
         }
     }
 
@@ -916,16 +917,17 @@ pub fn find_common(
         if undetermined.len() < sample_size {
             undetermined.extend(
                 // TODO: this would or maybe would not be faster if traversing the dag instead.
-                dag.iter_mut()
+                dag.iter()
                     .filter(|(_, data)| data.known.is_none())
                     .choose_multiple(&mut rng, sample_size - undetermined.len())
                     .into_iter()
                     .map(|(&c, data)| {
                         let git_cs = GitChangesetId::from_unchecked(c);
                         (
-                            *data
-                                .hg_node
-                                .get_or_insert_with(|| git_cs.to_hg(store).unwrap()),
+                            data.hg_node.get().unwrap_or_else(|| {
+                                data.hg_node.set(git_cs.to_hg(store));
+                                data.hg_node.get().unwrap()
+                            }),
                             git_cs,
                         )
                     }),
@@ -966,7 +968,7 @@ pub fn find_common(
     let result = dag
         .iter()
         .filter(|(_, data)| data.known == Some(true) && !data.has_known_children)
-        .map(|(_, data)| data.hg_node.unwrap())
+        .map(|(_, data)| data.hg_node.get().unwrap())
         .collect_vec();
     debug!(target: "find-common", "minimal known set: {}", result.len());
     result

@@ -960,10 +960,6 @@ impl<N: Ord + Copy, T> Dag<N, T> {
     pub fn iter(&self) -> impl Iterator<Item = (&N, &T)> {
         self.dag.iter().map(|node| (&node.node, &node.data))
     }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&N, &mut T)> {
-        self.dag.iter_mut().map(|node| (&node.node, &mut node.data))
-    }
 }
 
 #[derive(Debug)]
