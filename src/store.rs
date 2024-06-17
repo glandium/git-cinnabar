@@ -4,7 +4,7 @@
 
 use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, Ref, RefCell, RefMut};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::hash::Hash;
 use std::io::{copy, BufRead, BufReader, Read, Write};
@@ -902,26 +902,31 @@ impl<N: Ord + Copy, T> Dag<N, T> {
         start: N,
         mut follow_parents: impl FnMut(N, &T) -> bool,
     ) -> impl Iterator<Item = (&N, &T)> {
-        let mut queue = self
+        let limit = self
             .ids
             .get(&start)
-            .map(|&start| VecDeque::from([start]))
-            .unwrap_or_default();
-        let mut seen = BitVec::from_elem(self.ids.len(), false);
-        std::iter::from_fn(move || {
-            queue.pop_front().map(|id| {
-                seen.set(id.to_offset(), true);
-                let node = &self.dag[id.to_offset()];
-                if follow_parents(node.node, &node.data) {
-                    for id in [node.parent1, node.parent2].into_iter().flatten() {
-                        if !seen[id.to_offset()] {
-                            queue.push_back(id);
+            .map_or_else(|| 0, |start| start.to_offset() + 1);
+        let mut parents = BitVec::from_elem(limit, false);
+        if limit > 0 {
+            parents.set(limit - 1, true);
+        }
+        self.dag[..limit]
+            .iter()
+            .enumerate()
+            .rev()
+            .filter_map(move |(idx, node)| {
+                // TODO: we should be able to shortcut when we know there aren't any more parents left.
+                if parents[idx] {
+                    if follow_parents(node.node, &node.data) {
+                        for id in [node.parent1, node.parent2].into_iter().flatten() {
+                            parents.set(id.to_offset(), true);
                         }
                     }
+                    Some((&node.node, &node.data))
+                } else {
+                    None
                 }
-                (&node.node, &node.data)
             })
-        })
     }
 
     pub fn traverse_children(
@@ -1024,9 +1029,8 @@ fn test_dag() {
     let result = dag
         .traverse_parents("j", |_, ()| true)
         .map(|(n, _)| n)
-        .sorted()
         .join("");
-    assert_eq!(result, "abcefgj");
+    assert_eq!(result, "jgfecba");
 
     let result = dag
         .traverse_parents("a", |_, ()| true)
@@ -1037,16 +1041,14 @@ fn test_dag() {
     let result = dag
         .traverse_parents("j", |node, ()| node >= "d")
         .map(|(n, _)| n)
-        .sorted()
         .join("");
-    assert_eq!(result, "cefgj");
+    assert_eq!(result, "jgfec");
 
     let result = dag
         .traverse_parents("j", |node, ()| node >= "c")
         .map(|(n, _)| n)
-        .sorted()
         .join("");
-    assert_eq!(result, "bcefgj");
+    assert_eq!(result, "jgfecb");
 }
 
 #[derive(Debug)]
