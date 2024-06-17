@@ -994,6 +994,28 @@ impl<N: Ord + Copy, T> Dag<N, T> {
             })
     }
 
+    pub fn roots(
+        &self,
+        mut interesting: impl FnMut(N, &T) -> bool,
+    ) -> impl Iterator<Item = (&N, &T)> {
+        let mut seen = BitVec::from_elem(self.ids.len(), false);
+        self.dag.iter().enumerate().filter_map(move |(idx, node)| {
+            if interesting(node.node, &node.data) {
+                seen.set(idx, true);
+                if [node.parent1, node.parent2]
+                    .into_iter()
+                    .flatten()
+                    .filter(|id| seen[id.to_offset()])
+                    .count()
+                    == 0
+                {
+                    return Some((&node.node, &node.data));
+                }
+            }
+            None
+        })
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (&N, &T)> {
         self.dag.iter().map(|node| (&node.node, &node.data))
     }
@@ -1120,6 +1142,18 @@ fn test_dag() {
 
     let result = dag.heads(|node, _| node <= "g").map(|(n, _)| n).join("");
     assert_eq!(result, "gd");
+
+    let result = dag.roots(|_, _| true).map(|(n, _)| n).join("");
+    assert_eq!(result, "ae");
+
+    let result = dag.roots(|node, _| node >= "b").map(|(n, _)| n).join("");
+    assert_eq!(result, "be");
+
+    let result = dag.roots(|node, _| node >= "e").map(|(n, _)| n).join("");
+    assert_eq!(result, "e");
+
+    let result = dag.roots(|node, _| node >= "h").map(|(n, _)| n).join("");
+    assert_eq!(result, "hij");
 }
 
 #[derive(Debug)]

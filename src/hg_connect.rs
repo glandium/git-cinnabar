@@ -4,7 +4,7 @@
 
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::File;
 use std::io::{stderr, BufReader, Read, Write};
 use std::str::FromStr;
@@ -851,7 +851,7 @@ pub fn find_common(
         .into_iter()
         .filter_map(|cs| cs.to_git(store).map(|c| (cs, c)))
         .collect_vec();
-    let mut undetermined = undetermined
+    let undetermined = undetermined
         .into_iter()
         .filter_map(|cs| cs.to_git(store).map(|c| (cs, c)))
         .collect_vec();
@@ -909,27 +909,59 @@ pub fn find_common(
         }
     }
 
+    let is_undetermined = |_, data: &FindCommonInfo| data.known.get().is_none();
+    let hg_and_git_nodes = |(&c, data): (&CommitId, &FindCommonInfo)| {
+        let git_cs = GitChangesetId::from_unchecked(c);
+        (
+            data.hg_node.get().unwrap_or_else(|| {
+                data.hg_node.set(git_cs.to_hg(store));
+                data.hg_node.get().unwrap()
+            }),
+            git_cs,
+        )
+    };
+    let git_node_only = |&(_, c): &(_, GitChangesetId)| CommitId::from(c);
+
+    std::mem::drop(undetermined);
+
     while known_count + unknown_count < total_count {
         debug!(target: "find-common", "known: {}, unknown: {}, undetermined: {}", known_count, unknown_count, total_count - known_count - unknown_count);
+
+        let mut undetermined = dag
+            .roots(is_undetermined)
+            .take(sample_size)
+            .map(hg_and_git_nodes)
+            .collect_vec();
+        let roots_count = undetermined.len();
+        let mut heads_count = 0;
+        let mut other_count = 0;
         if undetermined.len() < sample_size {
+            let mut undetermined_set = undetermined
+                .iter()
+                .map(git_node_only)
+                .collect::<BTreeSet<_>>();
             undetermined.extend(
-                // TODO: this would or maybe would not be faster if traversing the dag instead.
-                dag.iter()
-                    .filter(|(_, data)| data.known.get().is_none())
-                    .choose_multiple(&mut rng, sample_size - undetermined.len())
-                    .into_iter()
-                    .map(|(&c, data)| {
-                        let git_cs = GitChangesetId::from_unchecked(c);
-                        (
-                            data.hg_node.get().unwrap_or_else(|| {
-                                data.hg_node.set(git_cs.to_hg(store));
-                                data.hg_node.get().unwrap()
-                            }),
-                            git_cs,
-                        )
-                    }),
+                dag.heads(is_undetermined)
+                    .filter(|(n, data)| is_undetermined(**n, data) && undetermined_set.insert(**n))
+                    .take(sample_size - undetermined.len())
+                    .map(hg_and_git_nodes),
             );
+            heads_count = undetermined.len() - roots_count;
+            if undetermined.len() < sample_size {
+                undetermined.extend(
+                    // TODO: this would or maybe would not be faster if traversing the dag instead.
+                    dag.iter()
+                        .filter(|(n, data)| {
+                            is_undetermined(**n, data) && !undetermined_set.contains(n)
+                        })
+                        .choose_multiple(&mut rng, sample_size - undetermined.len())
+                        .into_iter()
+                        .map(hg_and_git_nodes),
+                );
+                other_count = undetermined.len() - roots_count - heads_count;
+            }
         }
+        debug!(target: "find-common", "sample: roots: {}, heads: {}, other: {}", roots_count, heads_count, other_count);
         let (sample_hg, sample_git): (Vec<_>, Vec<_>) =
             take_sample(&mut rng, &mut undetermined, sample_size)
                 .into_iter()
@@ -947,8 +979,7 @@ pub fn find_common(
                 }
             });
 
-        let follow_undetermined = |_, data: &FindCommonInfo| data.known.get().is_none();
-        dag.traverse_parents(&known, follow_undetermined)
+        dag.traverse_parents(&known, is_undetermined)
             .for_each(|(_, data)| {
                 if data.known.get().is_none() {
                     data.known.set(Some(true));
@@ -957,7 +988,7 @@ pub fn find_common(
                     assert_eq!(data.known.get(), Some(true));
                 }
             });
-        dag.traverse_children(&unknown, follow_undetermined)
+        dag.traverse_children(&unknown, is_undetermined)
             .for_each(|(_, data)| {
                 if data.known.get().is_none() {
                     data.known.set(Some(false));
