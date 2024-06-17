@@ -876,7 +876,7 @@ pub fn find_common(
     );
 
     let mut dag = Dag::new();
-    let mut undetermined_count = 0;
+    let mut total_count = 0;
     let mut known_count = 0;
     let mut unknown_count = 0;
     for cid in rev_list(args) {
@@ -887,20 +887,19 @@ pub fn find_common(
             &commit.parents().iter().copied().collect_vec(),
             FindCommonInfo::default(),
         );
-        undetermined_count += 1;
+        total_count += 1;
     }
+    let total_count = total_count;
     for (cs, c) in known {
         if let Some((_, data)) = dag.get_mut(c.into()) {
             data.hg_node = Cell::new(Some(cs));
             data.known = Cell::new(Some(true));
-            undetermined_count -= 1;
             known_count += 1;
         }
     }
     for (_, c) in unknown {
         if let Some((_, data)) = dag.get_mut(c.into()) {
             data.known = Cell::new(Some(false));
-            undetermined_count -= 1;
             unknown_count += 1;
         }
     }
@@ -910,8 +909,8 @@ pub fn find_common(
         }
     }
 
-    while undetermined_count > 0 {
-        debug!(target: "find-common", "known: {}, unknown: {}, undetermined: {}", known_count, unknown_count, undetermined_count);
+    while known_count + unknown_count < total_count {
+        debug!(target: "find-common", "known: {}, unknown: {}, undetermined: {}", known_count, unknown_count, total_count - known_count - unknown_count);
         if undetermined.len() < sample_size {
             undetermined.extend(
                 // TODO: this would or maybe would not be faster if traversing the dag instead.
@@ -935,29 +934,40 @@ pub fn find_common(
             take_sample(&mut rng, &mut undetermined, sample_size)
                 .into_iter()
                 .unzip();
-        for (&known, &c) in conn.known(&sample_hg).iter().zip(sample_git.iter()) {
-            let follow = |_, data: &FindCommonInfo| data.known.get().is_none();
-            let update = |(_, data): (_, &FindCommonInfo)| {
-                if data.known.get().is_none() {
-                    data.known.set(Some(known));
-                    undetermined_count -= 1;
-                    if known {
-                        known_count += 1;
-                    } else {
-                        unknown_count += 1;
-                    }
+
+        let (known, unknown): (Vec<_>, Vec<_>) = conn
+            .known(&sample_hg)
+            .iter()
+            .zip(sample_git)
+            .partition_map(|(&known, head)| {
+                if known {
+                    Either::Left(CommitId::from(head))
                 } else {
-                    assert_eq!(data.known.get(), Some(known));
+                    Either::Right(CommitId::from(head))
                 }
-            };
-            if known {
-                dag.traverse_parents(&[c.into()], follow).for_each(update);
-            } else {
-                dag.traverse_children(&[c.into()], follow).for_each(update);
-            }
-        }
+            });
+
+        let follow_undetermined = |_, data: &FindCommonInfo| data.known.get().is_none();
+        dag.traverse_parents(&known, follow_undetermined)
+            .for_each(|(_, data)| {
+                if data.known.get().is_none() {
+                    data.known.set(Some(true));
+                    known_count += 1;
+                } else {
+                    assert_eq!(data.known.get(), Some(true));
+                }
+            });
+        dag.traverse_children(&unknown, follow_undetermined)
+            .for_each(|(_, data)| {
+                if data.known.get().is_none() {
+                    data.known.set(Some(false));
+                    unknown_count += 1;
+                } else {
+                    assert_eq!(data.known.get(), Some(false));
+                }
+            });
     }
-    debug!(target: "find-common", "known: {}, unknown: {}, undetermined: {}", known_count, unknown_count, undetermined_count);
+    debug!(target: "find-common", "known: {}, unknown: {}", known_count, unknown_count);
     let result = dag
         .heads(|_, data| data.known.get() == Some(true))
         .map(|(_, data)| data.hg_node.get().unwrap())
