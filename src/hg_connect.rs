@@ -813,7 +813,6 @@ fn take_sample<R: rand::Rng + ?Sized, T>(rng: &mut R, data: &mut Vec<T>, size: u
 struct FindCommonInfo {
     hg_node: Cell<Option<HgChangesetId>>,
     known: Cell<Option<bool>>,
-    has_known_children: Cell<bool>,
 }
 
 pub fn find_common(
@@ -938,11 +937,7 @@ pub fn find_common(
                 .unzip();
         for (&known, &c) in conn.known(&sample_hg).iter().zip(sample_git.iter()) {
             let follow = |_, data: &FindCommonInfo| data.known.get().is_none();
-            let mut first = Some(());
             let update = |(_, data): (_, &FindCommonInfo)| {
-                if known && first.take().is_none() {
-                    data.has_known_children.set(true);
-                }
                 if data.known.get().is_none() {
                     data.known.set(Some(known));
                     undetermined_count -= 1;
@@ -964,8 +959,7 @@ pub fn find_common(
     }
     debug!(target: "find-common", "known: {}, unknown: {}, undetermined: {}", known_count, unknown_count, undetermined_count);
     let result = dag
-        .iter()
-        .filter(|(_, data)| data.known.get() == Some(true) && !data.has_known_children.get())
+        .heads(|_, data| data.known.get() == Some(true))
         .map(|(_, data)| data.hg_node.get().unwrap())
         .collect_vec();
     debug!(target: "find-common", "minimal known set: {}", result.len());

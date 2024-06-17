@@ -959,6 +959,27 @@ impl<N: Ord + Copy, T> Dag<N, T> {
             })
     }
 
+    pub fn heads(
+        &self,
+        mut interesting: impl FnMut(N, &T) -> bool,
+    ) -> impl Iterator<Item = (&N, &T)> {
+        let mut parents = BitVec::from_elem(self.ids.len(), false);
+        self.dag
+            .iter()
+            .enumerate()
+            .rev()
+            .filter_map(move |(idx, node)| {
+                if interesting(node.node, &node.data) {
+                    for id in [node.parent1, node.parent2].into_iter().flatten() {
+                        parents.set(id.to_offset(), true);
+                    }
+                    (!parents[idx]).then_some((&node.node, &node.data))
+                } else {
+                    None
+                }
+            })
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (&N, &T)> {
         self.dag.iter().map(|node| (&node.node, &node.data))
     }
@@ -1049,6 +1070,18 @@ fn test_dag() {
         .map(|(n, _)| n)
         .join("");
     assert_eq!(result, "jgfecb");
+
+    let result = dag.heads(|_, _| true).map(|(n, _)| n).join("");
+    assert_eq!(result, "jih");
+
+    let result = dag.heads(|node, _| node <= "i").map(|(n, _)| n).join("");
+    assert_eq!(result, "ih");
+
+    let result = dag.heads(|node, _| node <= "h").map(|(n, _)| n).join("");
+    assert_eq!(result, "h");
+
+    let result = dag.heads(|node, _| node <= "g").map(|(n, _)| n).join("");
+    assert_eq!(result, "gd");
 }
 
 #[derive(Debug)]
