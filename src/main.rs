@@ -2296,11 +2296,11 @@ fn create_merge_changeset(
                 let dag = file_dags.entry(path).or_insert_with(Dag::new);
                 for &parent in &parents {
                     if dag.get(parent).is_none() {
-                        dag.add(parent, &[], (), |_, _| ());
+                        dag.add(parent, &[], ());
                     }
                 }
                 if dag.get(oid).is_none() {
-                    dag.add(oid, &parents, (), |_, _| ());
+                    dag.add(oid, &parents, ());
                 }
             }
         }

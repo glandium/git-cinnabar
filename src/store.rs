@@ -868,22 +868,11 @@ impl<N: Ord + Copy, T> Dag<N, T> {
         }
     }
 
-    pub fn add<F: FnMut(DagNodeId, &mut T)>(
-        &mut self,
-        node: N,
-        parents: &[N],
-        data: T,
-        mut cb: F,
-    ) -> DagNodeId {
+    pub fn add(&mut self, node: N, parents: &[N], data: T) -> DagNodeId {
         assert!(parents.len() <= 2);
         let parents = parents
             .iter()
-            .filter_map(|&p| {
-                self.get_mut(p).map(|(id, data)| {
-                    cb(id, data);
-                    id
-                })
-            })
+            .filter_map(|&p| self.get_mut(p).map(|(id, _)| id))
             .collect_vec();
         let id = DagNodeId::try_from_offset(self.dag.len()).unwrap();
         assert!(self.ids.insert(node, id).is_none());
@@ -994,13 +983,16 @@ impl ChangesetHeads {
             has_children: false,
             branch: BString::from(branch),
         };
-        let id = self.dag.add(cs, parents, data, |parent_id, parent_data| {
-            parent_data.has_children = true;
-            if parent_data.branch == branch {
-                self.heads.remove(&parent_id);
-            }
-        });
+        let id = self.dag.add(cs, parents, data);
         self.heads.insert(id);
+        for parent in parents {
+            if let Some((parent_id, parent_data)) = self.dag.get_mut(*parent) {
+                parent_data.has_children = true;
+                if parent_data.branch == branch {
+                    self.heads.remove(&parent_id);
+                }
+            }
+        }
     }
 
     pub fn branch_heads(&self) -> impl Iterator<Item = (&HgChangesetId, &BStr)> {

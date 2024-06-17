@@ -887,7 +887,6 @@ pub fn find_common(
             cid,
             &commit.parents().iter().copied().collect_vec(),
             FindCommonInfo::default(),
-            |_, _| {},
         );
         undetermined_count += 1;
     }
