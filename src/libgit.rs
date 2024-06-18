@@ -553,6 +553,8 @@ extern "C" {
     fn rev_list_finish(revs: *mut rev_info);
 
     fn maybe_boundary(revs: *const rev_info, c: *const commit) -> c_int;
+
+    fn get_saved_parents(revs: *mut rev_info, c: *const commit) -> *const commit_list;
 }
 
 pub struct RevList {
@@ -683,6 +685,54 @@ impl Iterator for RevListWithBoundaries {
                     _ => unreachable!(),
                 };
                 (cid, maybe_boundary)
+            })
+        };
+        if let Some(((_, duration), start)) = self.0.duration.as_mut().zip(start) {
+            *duration += start.elapsed();
+        }
+        result
+    }
+}
+
+pub struct RevListWithParents(RevList);
+
+pub fn rev_list_with_parents(
+    args: impl IntoIterator<Item = impl AsRef<OsStr>>,
+) -> RevListWithParents {
+    let args = args.into_iter().collect_vec();
+    let args = args
+        .iter()
+        .map(AsRef::as_ref)
+        .chain([OsStr::new("--parents")]);
+    RevListWithParents(rev_list(args))
+}
+
+impl Iterator for RevListWithParents {
+    type Item = (CommitId, Box<[CommitId]>);
+    fn next(&mut self) -> Option<Self::Item> {
+        let start = self.0.duration.is_some().then(Instant::now);
+        let result = unsafe {
+            get_revision(self.0.revs).as_ref().map(|c| {
+                let mut parents_commit_list = get_saved_parents(self.0.revs, c);
+                let mut parents = Vec::new();
+                loop {
+                    if parents_commit_list.is_null() {
+                        break;
+                    }
+                    parents.push(CommitId::from_unchecked(GitObjectId::from(
+                        commit_oid(commit_list_item(parents_commit_list))
+                            .as_ref()
+                            .unwrap()
+                            .clone(),
+                    )));
+                    parents_commit_list = commit_list_next(parents_commit_list);
+                }
+                (
+                    CommitId::from_unchecked(GitObjectId::from(
+                        commit_oid(c).as_ref().unwrap().clone(),
+                    )),
+                    parents.into(),
+                )
             })
         };
         if let Some(((_, duration), start)) = self.0.duration.as_mut().zip(start) {
@@ -1245,6 +1295,10 @@ extern "C" {
     fn commit_list_count(l: *const commit_list) -> c_uint;
 
     fn free_commit_list(list: *mut commit_list);
+
+    fn commit_list_next(list: *const commit_list) -> *const commit_list;
+
+    fn commit_list_item(list: *const commit_list) -> *const commit;
 
     pub fn lookup_commit(r: *mut repository, oid: *const object_id) -> *const commit;
 }

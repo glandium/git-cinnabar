@@ -25,7 +25,7 @@ use crate::hg::HgChangesetId;
 use crate::hg_bundle::{BundleReader, BundleSpec};
 use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
-use crate::libgit::{die, rev_list, RawCommit};
+use crate::libgit::{die, rev_list, rev_list_with_parents};
 use crate::oid::ObjectId;
 use crate::store::{has_metadata, merge_metadata, store_changegroup, Dag, Store};
 use crate::util::{
@@ -879,14 +879,8 @@ pub fn find_common(
     let mut total_count = 0;
     let mut known_count = 0;
     let mut unknown_count = 0;
-    for cid in rev_list(args) {
-        let commit = RawCommit::read(cid).unwrap();
-        let commit = commit.parse().unwrap();
-        dag.add(
-            cid,
-            &commit.parents().iter().copied().collect_vec(),
-            FindCommonInfo::default(),
-        );
+    for (cid, parents) in rev_list_with_parents(args) {
+        dag.add(cid, &parents, FindCommonInfo::default());
         total_count += 1;
     }
     let total_count = total_count;

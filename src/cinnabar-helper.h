@@ -49,6 +49,8 @@ struct object_id *commit_oid(struct commit *c);
 struct rev_info *rev_list_new(int argc, const char **argv);
 void rev_list_finish(struct rev_info *revs);
 int maybe_boundary(struct rev_info *revs, struct commit *commit);
+const struct commit *commit_list_item(const struct commit_list *list);
+const struct commit_list *commit_list_next(const struct commit_list *list);
 
 struct diff_tree_item;
 

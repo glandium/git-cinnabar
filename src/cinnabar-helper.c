@@ -84,6 +84,14 @@ int maybe_boundary(struct rev_info *revs, struct commit *commit) {
 	return 0;
 }
 
+const struct commit *commit_list_item(const struct commit_list *list) {
+	return list->item;
+}
+
+const struct commit_list *commit_list_next(const struct commit_list *list) {
+	return list->next;
+}
+
 struct diff_tree_file {
 	struct object_id *oid;
 	char *path;
