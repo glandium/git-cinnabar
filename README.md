@@ -39,7 +39,9 @@ Requirements:
 - Git (any version should work ; cinnabarclone bundles require 1.4.4).
 - In order to build from source:
   - Rust 1.74.0 or newer.
-  - GCC or clang.
+  - A C compiler (GCC or clang).
+  - make.
+  - CURL development headers and libraries (except on Windows). Please note that on MacOS they are included in the SDK.
 
 Setup:
 ------
