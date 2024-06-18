@@ -171,13 +171,18 @@ impl CinnabarLogger {
                     Ok(t) => t,
                     Err(_) => continue,
                 };
-                let level = level.and_then(|l| u8::from_bytes(l).ok()).map(|l| match l {
-                    0 => LevelFilter::Off,
-                    1 => LevelFilter::Error,
-                    2 => LevelFilter::Warn,
-                    3 => LevelFilter::Info,
-                    4 => LevelFilter::Debug,
-                    5.. => LevelFilter::Trace,
+                let level = level.and_then(|l| {
+                    u8::from_bytes(l)
+                        .map(|l| match l {
+                            0 => LevelFilter::Off,
+                            1 => LevelFilter::Error,
+                            2 => LevelFilter::Warn,
+                            3 => LevelFilter::Info,
+                            4 => LevelFilter::Debug,
+                            5.. => LevelFilter::Trace,
+                        })
+                        .or_else(|_| LevelFilter::from_bytes(l))
+                        .ok()
                 });
                 if let Some(level) = level {
                     if target.is_empty() {
