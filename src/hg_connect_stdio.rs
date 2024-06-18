@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::borrow::Cow;
 use std::ffi::CString;
 use std::fs::File;
 use std::io::{copy, BufRead, BufReader, Read, Seek, SeekFrom, Write};
@@ -23,6 +24,7 @@ use crate::hg_connect::{
 use crate::libc::FdFile;
 use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
 use crate::libgit::child_process;
+use crate::logging::{LoggingReader, LoggingWriter};
 use crate::util::{ImmutBString, OsStrExt, PrefixWriter, ReadExt};
 
 pub struct HgStdioConnection {
@@ -74,20 +76,29 @@ fn stdio_send_command(conn: &mut HgStdioConnection, command: &str, args: HgArgs)
             stdio_command_add_param(&mut data, name, &value.as_string());
         }
     }
-    conn.proc_in.write_all(&data).unwrap();
+    let target = if command.is_empty() {
+        Cow::Borrowed("raw-wire")
+    } else {
+        format!("raw-wire::{command}").into()
+    };
+    LoggingWriter::new_hex(target, log::Level::Trace, &mut conn.proc_in)
+        .write_all(&data)
+        .unwrap();
 }
 
-fn stdio_read_response(conn: &mut HgStdioConnection) -> ImmutBString {
+fn stdio_read_response(conn: &mut HgStdioConnection, command: &str) -> ImmutBString {
     let mut length_str = String::new();
-    conn.proc_out.read_line(&mut length_str).unwrap();
+    let target = format!("raw-wire::{command}");
+    let mut input = LoggingReader::new_hex(&target, log::Level::Trace, &mut conn.proc_out);
+    input.read_line(&mut length_str).unwrap();
     let length = usize::from_str(length_str.trim_end_matches('\n')).unwrap();
-    conn.proc_out.read_exactly(length).unwrap()
+    input.read_exactly(length).unwrap()
 }
 
 impl HgWireConnection for HgStdioConnection {
     fn simple_command(&mut self, command: &str, args: HgArgs) -> ImmutBString {
         stdio_send_command(self, command, args);
-        stdio_read_response(self)
+        stdio_read_response(self, command)
     }
 
     fn changegroup_command<'a>(
@@ -100,7 +111,16 @@ impl HgWireConnection for HgStdioConnection {
         /* We assume the caller is only going to read the right amount of data according
          * format: changegroup or bundle2.
          */
-        Ok(Box::new(&mut self.proc_out))
+        let target = format!("raw-wire::{command}");
+        if log_enabled!(target: &target, log::Level::Trace) {
+            Ok(Box::new(LoggingReader::new_hex(
+                format!("raw-wire::{command}"),
+                log::Level::Trace,
+                &mut self.proc_out,
+            )))
+        } else {
+            Ok(Box::new(&mut self.proc_out))
+        }
     }
 
     fn push_command(&mut self, mut input: File, command: &str, args: HgArgs) -> UnbundleResponse {
@@ -109,13 +129,15 @@ impl HgWireConnection for HgStdioConnection {
          * it's sent if not, it's an error (typically, the remote will
          * complain here if there was a lost push race). */
         //TODO: handle that error.
-        let header = stdio_read_response(self);
-        self.proc_in.write_all(&header).unwrap();
+        let header = stdio_read_response(self, command);
+        let target = format!("raw-wire::{command}");
+        let mut proc_in = LoggingWriter::new_hex(&target, log::Level::Trace, &mut self.proc_in);
+        proc_in.write_all(&header).unwrap();
         drop(header);
 
         let len = input.metadata().unwrap().len();
         //TODO: chunk in smaller pieces.
-        writeln!(self.proc_in, "{}", len).unwrap();
+        writeln!(proc_in, "{}", len).unwrap();
 
         let is_bundle2 = if len > 4 {
             let header = input.read_exactly(4).unwrap();
@@ -125,16 +147,25 @@ impl HgWireConnection for HgStdioConnection {
             false
         };
 
-        copy(&mut input.take(len), &mut self.proc_in).unwrap();
+        copy(&mut input.take(len), &mut proc_in).unwrap();
 
-        self.proc_in.write_all(b"0\n").unwrap();
+        proc_in.write_all(b"0\n").unwrap();
         if is_bundle2 {
-            UnbundleResponse::Bundlev2(Box::new(&mut self.proc_out))
+            let bundle = if log_enabled!(target: &target, log::Level::Trace) {
+                Box::new(LoggingReader::new_hex(
+                    target,
+                    log::Level::Trace,
+                    &mut self.proc_out,
+                )) as Box<dyn Read>
+            } else {
+                Box::new(&mut self.proc_out)
+            };
+            UnbundleResponse::Bundlev2(bundle)
         } else {
             /* There are two responses, one for output, one for actual response. */
             //TODO: actually handle output here
-            drop(stdio_read_response(self));
-            UnbundleResponse::Raw(stdio_read_response(self))
+            drop(stdio_read_response(self, command));
+            UnbundleResponse::Raw(stdio_read_response(self, command))
         }
     }
 }
@@ -257,11 +288,11 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
         ),
     );
 
-    let buf = stdio_read_response(&mut conn);
+    let buf = stdio_read_response(&mut conn, "capabilities");
     if *buf != b"\n"[..] {
         mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&buf));
         /* Now read the response for the "between" command. */
-        stdio_read_response(&mut conn);
+        stdio_read_response(&mut conn, "between");
     }
 
     Some(Box::new(HgWired::new(conn)))

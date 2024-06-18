@@ -2,9 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::fmt::{self, Debug, Display};
+use std::fmt::{self, Debug, Display, Write as _};
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, Read, Write};
 use std::path::Path;
@@ -297,17 +298,86 @@ pub fn max_log_level(target: &str, min_level: log::Level) -> log::LevelFilter {
     }
 }
 
+struct LoggingHelper<'a> {
+    target: Cow<'a, str>,
+    level: Option<log::Level>,
+    hex: Option<u64>,
+}
+
+impl<'a> LoggingHelper<'a> {
+    fn new(target: impl Into<Cow<'a, str>>, level: log::Level, hex: bool) -> Self {
+        let target = target.into();
+        let level = log_enabled!(target: &*target, level).then_some(level);
+        let hex = hex.then_some(0);
+        LoggingHelper { target, level, hex }
+    }
+
+    fn log(&mut self, write: bool, buf: &[u8]) {
+        if let Some(level) = self.level {
+            let direction = if write { "=>" } else { "<=" };
+            if let Some(offset) = &mut self.hex {
+                let mut line = String::with_capacity(81);
+                if *offset > 0 {
+                    log!(target: &*self.target, level, "   --------");
+                }
+                for ofs in ((*offset - *offset % 16)..*offset + buf.len() as u64).step_by(16) {
+                    line.clear();
+                    write!(line, "{} {:08x}  ", direction, ofs).unwrap();
+                    for n in 0..16 {
+                        if n == 8 {
+                            line.push(' ');
+                        }
+                        if n < (*offset).saturating_sub(ofs) {
+                            line.push_str(".. ");
+                        } else if let Some(c) = buf.get(usize::try_from(ofs + n - *offset).unwrap())
+                        {
+                            write!(line, "{:02x} ", c).unwrap();
+                        } else {
+                            line.push_str("   ");
+                        }
+                    }
+                    line.push_str(" |");
+                    for n in 0..16 {
+                        if n < (*offset).saturating_sub(ofs) {
+                            line.push(' ');
+                        } else if let Some(c) = buf.get(usize::try_from(ofs + n - *offset).unwrap())
+                        {
+                            if *c >= 0x20 && *c < 0x7f {
+                                line.push(*c as char);
+                            } else {
+                                line.push('.');
+                            }
+                        } else {
+                            line.push(' ');
+                        }
+                    }
+                    line.push('|');
+                    log!(target: &*self.target, level, "{}", line);
+                }
+                *offset += buf.len() as u64;
+            } else {
+                log!(target: &*self.target, level, "{} {:?}", direction, buf.as_bstr());
+            }
+        }
+    }
+}
+
 pub struct LoggingReader<'a, R: Read> {
-    target: &'a str,
-    level: log::Level,
+    log: LoggingHelper<'a>,
     reader: R,
 }
 
 impl<'a, R: Read> LoggingReader<'a, R> {
-    pub fn new(target: &'a str, level: log::Level, r: R) -> Self {
+    pub fn new(target: impl Into<Cow<'a, str>>, level: log::Level, r: R) -> Self {
         LoggingReader {
-            target,
-            level,
+            log: LoggingHelper::new(target, level, false),
+            reader: r,
+        }
+    }
+
+    pub fn new_hex(target: impl Into<Cow<'a, str>>, level: log::Level, r: R) -> Self {
+        LoggingReader {
+            log: LoggingHelper::new(target, level, true),
             reader: r,
         }
     }
@@ -316,7 +386,7 @@ impl<'a, R: Read> LoggingReader<'a, R> {
 impl<'a, R: Read> Read for LoggingReader<'a, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.reader.read(buf).map(|l| {
-            log!(target: self.target, self.level, "<= {:?}", buf[..l].as_bstr());
+            self.log.log(false, &buf[..l]);
             l
         })
     }
@@ -333,30 +403,35 @@ impl<'a, R: BufRead> BufRead for LoggingReader<'a, R> {
 
     fn read_until(&mut self, byte: u8, buf: &mut Vec<u8>) -> std::io::Result<usize> {
         self.reader.read_until(byte, buf).map(|l| {
-            log!(target: self.target, self.level, "<= {:?}", buf[buf.len() - l..].as_bstr());
+            self.log.log(false, &buf[buf.len() - l..]);
             l
         })
     }
 
     fn read_line(&mut self, buf: &mut String) -> std::io::Result<usize> {
         self.reader.read_line(buf).map(|l| {
-            log!(target: self.target, self.level, "<= {:?}", buf);
+            self.log.log(false, buf.as_bytes());
             l
         })
     }
 }
 
 pub struct LoggingWriter<'a, W: Write> {
-    target: &'a str,
-    level: log::Level,
+    log: LoggingHelper<'a>,
     writer: W,
 }
 
 impl<'a, W: Write> LoggingWriter<'a, W> {
-    pub fn new(target: &'a str, level: log::Level, w: W) -> Self {
+    pub fn new(target: impl Into<Cow<'a, str>>, level: log::Level, w: W) -> Self {
         LoggingWriter {
-            target,
-            level,
+            log: LoggingHelper::new(target, level, false),
+            writer: w,
+        }
+    }
+
+    pub fn new_hex(target: impl Into<Cow<'a, str>>, level: log::Level, w: W) -> Self {
+        LoggingWriter {
+            log: LoggingHelper::new(target, level, true),
             writer: w,
         }
     }
@@ -365,7 +440,7 @@ impl<'a, W: Write> LoggingWriter<'a, W> {
 impl<'a, W: Write> Write for LoggingWriter<'a, W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.writer.write(buf).map(|l| {
-            log!(target: self.target, self.level, "=> {:?}", buf[..l].as_bstr());
+            self.log.log(true, &buf[..l]);
             l
         })
     }
