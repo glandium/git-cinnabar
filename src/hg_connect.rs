@@ -792,23 +792,6 @@ pub fn get_store_bundle(
         })
 }
 
-fn take_sample<R: rand::Rng + ?Sized, T>(rng: &mut R, data: &mut Vec<T>, size: usize) -> Vec<T> {
-    if data.len() <= size {
-        std::mem::take(data)
-    } else {
-        for (i, j) in rand::seq::index::sample(rng, data.len(), size)
-            .into_iter()
-            .sorted()
-            .enumerate()
-        {
-            if i != j {
-                data.swap(i, j);
-            }
-        }
-        data.drain(..size).collect()
-    }
-}
-
 #[derive(Default, Debug)]
 struct FindCommonInfo {
     hg_node: Cell<Option<HgChangesetId>>,
@@ -821,29 +804,29 @@ pub fn find_common(
     hgheads: impl Into<Vec<HgChangesetId>>,
 ) -> Vec<HgChangesetId> {
     let mut rng = rand::thread_rng();
-    let mut undetermined = hgheads.into();
+    let undetermined = hgheads.into();
     if undetermined.is_empty() {
         return vec![];
     }
     let sample_size = conn.sample_size();
     debug!(target: "find-common", "[heads] undetermined: {}, sample size: {}", undetermined.len(), sample_size);
-    let sample = take_sample(&mut rng, &mut undetermined, sample_size);
 
-    let (known, unknown): (Vec<_>, Vec<_>) =
-        conn.known(&sample)
-            .iter()
-            .zip(sample)
-            .partition_map(|(&known, head)| {
-                if known {
-                    Either::Left(head)
-                } else {
-                    Either::Right(head)
-                }
-            });
+    let (known, unknown): (Vec<_>, Vec<_>) = conn
+        .known(&undetermined[..std::cmp::min(undetermined.len(), sample_size)])
+        .iter()
+        .zip(&undetermined)
+        .partition_map(|(&known, &head)| {
+            if known {
+                Either::Left(head)
+            } else {
+                Either::Right(head)
+            }
+        });
 
-    debug!(target: "find-common", "[heads] known: {}, unknown: {}, undetermined: {}", known.len(), unknown.len(), undetermined.len());
+    let still_undetermined = undetermined.len() - unknown.len() - known.len();
+    debug!(target: "find-common", "[heads] known: {}, unknown: {}, undetermined: {}", known.len(), unknown.len(), still_undetermined);
 
-    if undetermined.is_empty() && unknown.is_empty() {
+    if still_undetermined == 0 && unknown.is_empty() {
         return known;
     }
 
@@ -904,41 +887,24 @@ pub fn find_common(
     }
 
     let is_undetermined = |_, data: &FindCommonInfo| data.known.get().is_none();
-    let hg_and_git_nodes = |(&c, data): (&CommitId, &FindCommonInfo)| {
-        let git_cs = GitChangesetId::from_unchecked(c);
-        (
-            data.hg_node.get().unwrap_or_else(|| {
-                data.hg_node.set(git_cs.to_hg(store));
-                data.hg_node.get().unwrap()
-            }),
-            git_cs,
-        )
-    };
-    let git_node_only = |&(_, c): &(_, GitChangesetId)| CommitId::from(c);
-
     std::mem::drop(undetermined);
 
     while known_count + unknown_count < total_count {
         debug!(target: "find-common", "known: {}, unknown: {}, undetermined: {}", known_count, unknown_count, total_count - known_count - unknown_count);
 
-        let mut undetermined = dag
-            .roots(is_undetermined)
-            .take(sample_size)
-            .map(hg_and_git_nodes)
-            .collect_vec();
+        let mut undetermined = dag.roots(is_undetermined).take(sample_size).collect_vec();
         let roots_count = undetermined.len();
         let mut heads_count = 0;
         let mut other_count = 0;
         if undetermined.len() < sample_size {
             let mut undetermined_set = undetermined
                 .iter()
-                .map(git_node_only)
+                .map(|&(c, _)| c)
                 .collect::<BTreeSet<_>>();
             undetermined.extend(
                 dag.heads(is_undetermined)
-                    .filter(|(n, data)| is_undetermined(**n, data) && undetermined_set.insert(**n))
-                    .take(sample_size - undetermined.len())
-                    .map(hg_and_git_nodes),
+                    .filter(|(n, data)| is_undetermined(**n, data) && undetermined_set.insert(*n))
+                    .take(sample_size - undetermined.len()),
             );
             heads_count = undetermined.len() - roots_count;
             if undetermined.len() < sample_size {
@@ -949,17 +915,25 @@ pub fn find_common(
                             is_undetermined(**n, data) && !undetermined_set.contains(n)
                         })
                         .choose_multiple(&mut rng, sample_size - undetermined.len())
-                        .into_iter()
-                        .map(hg_and_git_nodes),
+                        .into_iter(),
                 );
                 other_count = undetermined.len() - roots_count - heads_count;
             }
         }
         debug!(target: "find-common", "sample: roots: {}, heads: {}, other: {}", roots_count, heads_count, other_count);
-        let (sample_hg, sample_git): (Vec<_>, Vec<_>) =
-            take_sample(&mut rng, &mut undetermined, sample_size)
-                .into_iter()
-                .unzip();
+        let (sample_hg, sample_git): (Vec<_>, Vec<_>) = undetermined
+            .into_iter()
+            .map(|(&c, data): (&CommitId, &FindCommonInfo)| {
+                let git_cs = GitChangesetId::from_unchecked(c);
+                (
+                    data.hg_node.get().unwrap_or_else(|| {
+                        data.hg_node.set(git_cs.to_hg(store));
+                        data.hg_node.get().unwrap()
+                    }),
+                    git_cs,
+                )
+            })
+            .unzip();
 
         let (known, unknown): (Vec<_>, Vec<_>) = conn
             .known(&sample_hg)
