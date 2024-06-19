@@ -966,8 +966,15 @@ extern "C" {
 
 impl remote {
     pub fn get(name: &OsStr) -> &'static mut remote {
-        // /!\ This potentially leaks memory.
-        unsafe { remote_get(name.to_cstring().into_raw()).as_mut().unwrap() }
+        let mut remote_name = strbuf::new();
+        remote_name.extend_from_slice(name.as_bytes());
+        let result = unsafe { remote_get(remote_name.as_ptr()).as_mut().unwrap() };
+        if (result.get_url() as *const OsStr as *const c_char) == remote_name.as_ptr() {
+            // In some cases remote_get takes ownership of the name given, if it's an url.
+            // But only the first time for a give url. When that happens, we want to leak it.
+            std::mem::forget(remote_name);
+        }
+        result
     }
 
     pub fn name(&self) -> Option<&OsStr> {
