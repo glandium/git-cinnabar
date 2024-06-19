@@ -6,7 +6,6 @@ use std::iter::Enumerate;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
-use crate::util::DurationExt;
 use crate::{check_enabled, Checks};
 
 static PROGRESS_ENABLED: AtomicBool = AtomicBool::new(true);
@@ -62,7 +61,7 @@ impl<I: Iterator, F: Fn(usize) -> String> ProgressIterEnabled<I, F> {
     fn display(&mut self, now: Instant) {
         let s = (self.formatter)(self.count);
         if let Some(start) = self.start {
-            eprint!("\r{} in {}", s, (now - start).fuzzy_display());
+            eprint!("\r{} in {:.1}s", s, (now - start).as_secs_f32());
         } else {
             eprint!("\r{}", s);
         }
