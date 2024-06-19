@@ -4278,7 +4278,7 @@ fn remote_helper_push(
             }
         }
 
-        let common = find_common(store, conn, local_bases);
+        let common = find_common(store, conn, local_bases, remote);
 
         let push_commits = rev_list(
             ["--topo-order", "--full-history", "--reverse"]

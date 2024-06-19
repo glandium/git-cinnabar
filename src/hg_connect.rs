@@ -5,6 +5,7 @@
 use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::ffi::{CStr, OsStr};
 use std::fs::File;
 use std::io::{stderr, BufReader, Read, Write};
 use std::str::FromStr;
@@ -25,13 +26,16 @@ use crate::hg::HgChangesetId;
 use crate::hg_bundle::{BundleReader, BundleSpec};
 use crate::hg_connect_http::get_http_connection;
 use crate::hg_connect_stdio::get_stdio_connection;
-use crate::libgit::{die, rev_list, rev_list_with_parents};
+use crate::libgit::{die, remote, resolve_ref, rev_list, rev_list_with_parents};
 use crate::oid::ObjectId;
 use crate::store::{has_metadata, merge_metadata, store_changegroup, Dag, Store};
 use crate::util::{
     DurationExt, FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed,
 };
-use crate::{check_enabled, get_config_remote, graft_config_enabled, logging, Checks};
+use crate::{
+    check_enabled, free_refs, get_config_remote, get_next_ref, get_ref_name, get_stale_refs,
+    graft_config_enabled, logging, r#ref, Checks,
+};
 
 pub enum HgArgValue<'a> {
     String(&'a str),
@@ -802,13 +806,51 @@ pub fn find_common(
     store: &Store,
     conn: &mut dyn HgRepo,
     hgheads: impl Into<Vec<HgChangesetId>>,
+    remote: Option<&str>,
 ) -> Vec<HgChangesetId> {
     let mut rng = rand::thread_rng();
-    let undetermined = hgheads.into();
-    if undetermined.is_empty() {
+    let hgheads = hgheads.into();
+    if hgheads.is_empty() {
         return vec![];
     }
     let sample_size = conn.sample_size();
+
+    let mut undetermined = Vec::new();
+    let mut undetermined_set = HashSet::new();
+
+    // If we have a remote, also use the heads we have stored under refs/remotes,
+    // because they are very more likely to be known on the remote than our
+    // global set of heads.
+    if let Some(remote) = remote {
+        let remote = remote::get(remote.as_ref());
+        unsafe {
+            // By giving an empty list of refs to get_stale_refs, we get the
+            // existing list of refs, which is what we're after.
+            let refs = get_stale_refs(remote, std::ptr::null_mut());
+            let mut r = refs as *const r#ref;
+            while !r.is_null() {
+                let refname = CStr::from_ptr(get_ref_name(r)).to_bytes();
+                if let Some(csid) = resolve_ref(OsStr::from_bytes(refname))
+                    .and_then(|cid| GitChangesetId::from_unchecked(cid).to_hg(store))
+                {
+                    if undetermined_set.insert(csid) {
+                        undetermined.push(csid);
+                    }
+                }
+                r = get_next_ref(r);
+            }
+            free_refs(refs);
+        }
+        debug!(target: "find-common", "[heads] using {} head{} from existing remote", undetermined.len(), if undetermined.len() == 1 { "" } else { "s" });
+    }
+
+    for csid in hgheads.into_iter() {
+        if undetermined_set.insert(csid) {
+            undetermined.push(csid);
+        }
+    }
+    std::mem::drop(undetermined_set);
+
     debug!(target: "find-common", "[heads] undetermined: {}, sample size: {}", undetermined.len(), sample_size);
 
     let (known, unknown): (Vec<_>, Vec<_>) = conn
@@ -994,7 +1036,7 @@ pub fn get_bundle(
     };
 
     let mut heads = Cow::Borrowed(heads);
-    let mut common = find_common(store, conn, known_branch_heads(store));
+    let mut common = find_common(store, conn, known_branch_heads(store), remote);
     if common.is_empty() && !has_metadata(store) && get_initial_bundle(store, conn, remote)? {
         // Eliminate the heads that we got from the clonebundle or
         // cinnabarclone
@@ -1008,7 +1050,7 @@ pub fn get_bundle(
         if heads.is_empty() {
             return Ok(());
         }
-        common = find_common(store, conn, known_branch_heads(store));
+        common = find_common(store, conn, known_branch_heads(store), None);
     }
 
     // TODO: Mercurial can be an order of magnitude slower when
@@ -1061,7 +1103,7 @@ pub fn get_bundle(
                 })
                 .unwrap_or_default();
             if !unknown_wanted_heads.is_empty() {
-                common = find_common(store, conn, known_branch_heads(store));
+                common = find_common(store, conn, known_branch_heads(store), None);
                 get_store_bundle(store, conn, &unknown_wanted_heads, &common)
             } else {
                 Ok(())
