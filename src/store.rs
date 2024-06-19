@@ -851,14 +851,14 @@ struct ChangesetInfo {
 #[derive(Debug)]
 pub struct Dag<N, T> {
     // 4 billion nodes ought to be enough for anybody.
-    ids: BTreeMap<N, DagNodeId>,
+    ids: HashMap<N, DagNodeId>,
     dag: Vec<DagNode<N, T>>,
 }
 
-impl<N: Ord + Copy, T> Dag<N, T> {
+impl<N: Hash + Eq + Copy, T> Dag<N, T> {
     pub fn new() -> Self {
         Dag {
-            ids: BTreeMap::new(),
+            ids: HashMap::new(),
             dag: Vec::new(),
         }
     }
