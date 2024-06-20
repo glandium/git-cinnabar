@@ -70,7 +70,7 @@ CINNABAR_OBJECTS += regex.o
 PATCHES = $(notdir $(wildcard $(SOURCE_DIR)/src/*.patch))
 
 define patch
-$1.patched.c: $$(SOURCE_DIR)/src/$1.c.patch $$(firstword $$(wildcard $$(SOURCE_DIR)/git-core/$1.c $$(SOURCE_DIR)/git-core/builtin/$1.c $$(SOURCE_DIR)/git-core/compat/win32/$1.c))
+$1.patched.c: $$(SOURCE_DIR)/src/$1.c.patch $$(firstword $$(wildcard $$(SOURCE_DIR)/git-core/$1.c $$(SOURCE_DIR)/git-core/builtin/$1.c $$(SOURCE_DIR)/git-core/compat/$1.c $$(SOURCE_DIR)/git-core/compat/win32/$1.c))
 	patch -p1 -F0 -o $$@ $$(lastword $$^) < $$<
 endef
 
@@ -99,7 +99,7 @@ missing_obj_dirs := $(filter-out $(wildcard $(obj_dirs)),$(obj_dirs))
 $(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(REFTABLE_OBJS) $(XDIFF_OBJS): $(missing_obj_dirs)
 endif
 
-PATCHED_GIT_OBJECTS := $(filter-out fast-import.patched.o,$(PATCHES:%.c.patch=%.patched.o))
+PATCHED_GIT_OBJECTS := $(filter-out mingw.patched.o fast-import.patched.o,$(PATCHES:%.c.patch=%.patched.o))
 ifeq (,$(filter compat/win32/fscache.o,$(LIB_OBJS)))
 PATCHED_GIT_OBJECTS := $(filter-out fscache.patched.o,$(PATCHED_GIT_OBJECTS))
 endif
@@ -137,6 +137,9 @@ linker-flags: GIT-LDFLAGS FORCE
 $(CINNABAR_OBJECTS): %.o: $(SOURCE_DIR)/src/%.c
 $(PATCHED_GIT_OBJECTS): %.o: %.c
 cinnabar-fast-import.o: fast-import.patched.c
+ifeq ($(uname_S),MINGW)
+mingw.o: mingw.patched.c
+endif
 $(ALL_CINNABAR_OBJECTS): GIT-CFLAGS $(missing_dep_dirs)
 
 $(ALL_CINNABAR_OBJECTS):
