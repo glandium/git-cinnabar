@@ -42,7 +42,16 @@ jobs:
         if: runner.os == 'Windows'
       - uses: actions-rs-plus/clippy-check@v2
         with:
+          args: -vv -- -D warnings
+      - uses: actions-rs-plus/clippy-check@v2
+        with:
           args: -vv --features self-update -- -D warnings
+      - uses: actions-rs-plus/clippy-check@v2
+        with:
+          args: -vv --no-default-features -- -D warnings
+      - uses: actions-rs-plus/clippy-check@v2
+        with:
+          args: -vv --no-default-features --features self-update -- -D warnings
 
   fmt:
     runs-on: ubuntu-latest
