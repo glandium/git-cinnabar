@@ -10,7 +10,7 @@ use std::sync::Arc;
 #[cfg(feature = "version-check")]
 use std::thread;
 #[cfg(feature = "version-check")]
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bstr::ByteSlice;
 use clap::crate_version;
@@ -74,7 +74,7 @@ pub struct VersionChecker {
 
 #[cfg(feature = "version-check")]
 impl VersionChecker {
-    pub fn new() -> Option<Self> {
+    fn new_inner(force_now: bool) -> Option<Self> {
         if !check_enabled(Checks::VERSION) {
             debug!(target: "version-check", "Version check is disabled");
             return None;
@@ -98,7 +98,7 @@ impl VersionChecker {
             })
             .filter(|x| x >= &now)
             .is_some();
-        if last_check_too_recent {
+        if last_check_too_recent && !force_now {
             return None;
         }
 
@@ -114,6 +114,29 @@ impl VersionChecker {
             thread,
             when: Some(now),
         })
+    }
+
+    pub fn new() -> Option<Self> {
+        Self::new_inner(false)
+    }
+
+    pub fn force_now() -> Option<Self> {
+        Self::new_inner(true)
+    }
+
+    pub fn wait(&mut self, timeout: Duration) {
+        if let Some(child) = self.child.take() {
+            let now = Instant::now();
+            // Poor man's polling.
+            while now.elapsed() < timeout {
+                if let Ok(Some(_)) = child.try_wait() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            debug!(target: "version-check", "wait timeout {}", timeout.fuzzy_display());
+            self.child = Some(child);
+        }
     }
 
     fn take_result(&mut self) -> Option<VersionInfo> {

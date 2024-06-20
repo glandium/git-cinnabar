@@ -81,6 +81,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::{self, from_utf8, FromStr};
 use std::sync::Mutex;
+#[cfg(feature = "version-check")]
+use std::time::Duration;
 use std::time::Instant;
 use std::{cmp, fmt};
 
@@ -3653,6 +3655,14 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         Ok(c) => c,
         Err(e) => {
             e.print().unwrap();
+            #[cfg(feature = "version-check")]
+            if e.kind() == clap::error::ErrorKind::DisplayVersion
+                && format!("{}", e.render()) != concat!("git-cinnabar ", crate_version!(), "\n")
+            {
+                if let Some(mut checker) = VersionChecker::force_now() {
+                    checker.wait(Duration::from_secs(1));
+                }
+            }
             return if e.use_stderr() { Ok(1) } else { Ok(0) };
         }
     };
