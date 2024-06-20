@@ -20,13 +20,11 @@ use shared_child::SharedChild;
 
 use crate::git::CommitId;
 #[cfg(feature = "version-check")]
-use crate::libgit::config_get_value;
-#[cfg(feature = "version-check")]
 use crate::util::DurationExt;
 use crate::util::{FromBytes, OsStrExt, ReadExt, SliceExt};
 use crate::FULL_VERSION;
 #[cfg(feature = "version-check")]
-use crate::{check_enabled, Checks};
+use crate::{check_enabled, get_config, Checks};
 
 const ALL_TAG_REFS: &str = "refs/tags/*";
 const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -83,7 +81,7 @@ impl VersionChecker {
         }
         let now = SystemTime::now();
         // Don't run the check if the last one was less than 24 hours ago.
-        let last_check_too_recent = config_get_value(VERSION_CHECK_CONFIG)
+        let last_check_too_recent = get_config("version-check")
             .and_then(|x| x.into_string().ok())
             .and_then(|x| u64::from_str(&x).ok())
             .and_then(|x| UNIX_EPOCH.checked_add(Duration::from_secs(x)))
