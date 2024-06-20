@@ -67,7 +67,7 @@ pub enum VersionInfo {
 #[cfg(feature = "version-check")]
 pub struct VersionChecker {
     child: Option<Arc<SharedChild>>,
-    thread: Option<thread::JoinHandle<Option<VersionInfo>>>,
+    thread: Option<thread::JoinHandle<Result<Option<VersionInfo>, ()>>>,
     when: Option<SystemTime>,
 }
 
@@ -106,7 +106,15 @@ impl VersionChecker {
 
     fn take_result(&mut self) -> Option<VersionInfo> {
         self.child.take().map(|c| c.kill().ok());
-        self.thread.take().and_then(|t| t.join().ok()).flatten()
+        self.thread
+            .take()
+            .and_then(|t| t.join().ok())
+            .and_then(|result| {
+                result.unwrap_or_else(|()| {
+                    self.when.take();
+                    None
+                })
+            })
     }
 }
 
@@ -169,7 +177,9 @@ impl Drop for VersionChecker {
 
 #[cfg(feature = "self-update")]
 pub fn check_new_version(req: VersionRequest) -> Option<VersionInfo> {
-    create_child(req).as_ref().and_then(get_version)
+    create_child(req)
+        .as_ref()
+        .and_then(|child| get_version(child).ok().flatten())
 }
 
 fn create_child(req: VersionRequest) -> Option<SharedChild> {
@@ -185,14 +195,18 @@ fn create_child(req: VersionRequest) -> Option<SharedChild> {
     SharedChild::spawn(&mut cmd).ok()
 }
 
-fn get_version(child: &SharedChild) -> Option<VersionInfo> {
+fn get_version(child: &SharedChild) -> Result<Option<VersionInfo>, ()> {
     let build_commit = FULL_VERSION
         .strip_suffix("-modified")
         .unwrap_or(FULL_VERSION)
         .strip_prefix(concat!(crate_version!(), "-"))
         .unwrap_or("");
-    let output = child.take_stdout().unwrap().read_all().ok()?;
-    child.wait().ok()?;
+    let output = child.take_stdout().unwrap().read_all().map_err(|_| ());
+    child.wait().map_err(|_| ())?;
+    let output = output?;
+    if output.is_empty() {
+        return Err(());
+    }
     let current_version = Version::parse(CARGO_PKG_VERSION).unwrap();
     let mut newest_version = None;
     for [sha1, r] in output
@@ -217,10 +231,14 @@ fn get_version(child: &SharedChild) -> Option<VersionInfo> {
                 newest_version = Some((version, cid));
             }
         } else if sha1 != build_commit.as_bytes() {
-            return Some(VersionInfo::Commit(cid));
+            return Ok(Some(VersionInfo::Commit(cid)));
         }
     }
-    newest_version.map(|(v, cid)| VersionInfo::Tagged(v, cid))
+    if let Some((v, cid)) = newest_version {
+        Ok(Some(VersionInfo::Tagged(v, cid)))
+    } else {
+        Ok(None)
+    }
 }
 
 fn parse_version(v: &str) -> Option<Version> {
