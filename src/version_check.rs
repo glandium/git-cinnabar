@@ -26,7 +26,6 @@ use crate::FULL_VERSION;
 use crate::{check_enabled, Checks};
 
 const ALL_TAG_REFS: &str = "refs/tags/*";
-#[cfg(feature = "version-check")]
 const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg(version_check_branch)]
 const VERSION_CHECK_REF: &str = env!("VERSION_CHECK_BRANCH");
