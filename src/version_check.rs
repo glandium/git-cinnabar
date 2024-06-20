@@ -23,7 +23,7 @@ use crate::libgit::config_get_value;
 use crate::util::{FromBytes, ReadExt, SliceExt};
 use crate::FULL_VERSION;
 #[cfg(feature = "version-check")]
-use crate::{check_enabled, get_config, Checks};
+use crate::{check_enabled, Checks};
 
 const ALL_TAG_REFS: &str = "refs/tags/*";
 #[cfg(feature = "version-check")]
@@ -75,11 +75,7 @@ pub struct VersionChecker {
 #[cfg(feature = "version-check")]
 impl VersionChecker {
     pub fn new() -> Option<Self> {
-        // Don't run the check if we are the `git fetch` call from `git cinnabar fetch`
-        // because `git cinnabar fetch` is already doing the check.
-        if !check_enabled(Checks::VERSION)
-            || get_config("fetch").map(|f| !f.is_empty()) == Some(true)
-        {
+        if !check_enabled(Checks::VERSION) {
             return None;
         }
         let now = SystemTime::now();
