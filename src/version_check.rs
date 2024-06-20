@@ -14,13 +14,16 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bstr::ByteSlice;
 use clap::crate_version;
+use itertools::Itertools;
 use semver::Version;
 use shared_child::SharedChild;
 
 use crate::git::CommitId;
 #[cfg(feature = "version-check")]
 use crate::libgit::config_get_value;
-use crate::util::{FromBytes, ReadExt, SliceExt};
+#[cfg(feature = "version-check")]
+use crate::util::DurationExt;
+use crate::util::{FromBytes, OsStrExt, ReadExt, SliceExt};
 use crate::FULL_VERSION;
 #[cfg(feature = "version-check")]
 use crate::{check_enabled, Checks};
@@ -75,18 +78,29 @@ pub struct VersionChecker {
 impl VersionChecker {
     pub fn new() -> Option<Self> {
         if !check_enabled(Checks::VERSION) {
+            debug!(target: "version-check", "Version check is disabled");
             return None;
         }
         let now = SystemTime::now();
         // Don't run the check if the last one was less than 24 hours ago.
-        if config_get_value(VERSION_CHECK_CONFIG)
+        let last_check_too_recent = config_get_value(VERSION_CHECK_CONFIG)
             .and_then(|x| x.into_string().ok())
             .and_then(|x| u64::from_str(&x).ok())
-            .and_then(|x| x.checked_add(86400))
             .and_then(|x| UNIX_EPOCH.checked_add(Duration::from_secs(x)))
+            .and_then(|x| {
+                debug!(
+                    target: "version-check",
+                    "Last version check was {}.",
+                    now.duration_since(x).map_or_else(
+                        |_| "... some time in the future".to_string(),
+                        |x| format!("{} ago", x.fuzzy_display_more()),
+                    ),
+                );
+                x.checked_add(Duration::from_secs(86400))
+            })
             .filter(|x| x >= &now)
-            .is_some()
-        {
+            .is_some();
+        if last_check_too_recent {
             return None;
         }
 
@@ -111,7 +125,9 @@ impl VersionChecker {
             .and_then(|t| t.join().ok())
             .and_then(|result| {
                 result.unwrap_or_else(|()| {
-                    self.when.take();
+                    if let Some(elapsed) = self.when.take().and_then(|when| when.elapsed().ok()) {
+                        debug!(target: "version-check", "No result in {}", elapsed.fuzzy_display());
+                    }
                     None
                 })
             })
@@ -192,6 +208,8 @@ fn create_child(req: VersionRequest) -> Option<SharedChild> {
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::null());
 
+    debug!(target: "version-check", "Running git {}", cmd.get_args().map(|arg| arg.as_bytes().as_bstr()).join(" "));
+
     SharedChild::spawn(&mut cmd).ok()
 }
 
@@ -213,6 +231,7 @@ fn get_version(child: &SharedChild) -> Result<Option<VersionInfo>, ()> {
         .lines()
         .filter_map(|line| line.splitn_exact(u8::is_ascii_whitespace))
     {
+        debug!(target: "version-check", "Found {}@{}", r.as_bstr(), sha1.as_bstr());
         let cid = if let Ok(cid) = CommitId::from_bytes(sha1) {
             cid
         } else {
@@ -231,12 +250,15 @@ fn get_version(child: &SharedChild) -> Result<Option<VersionInfo>, ()> {
                 newest_version = Some((version, cid));
             }
         } else if sha1 != build_commit.as_bytes() {
+            debug!(target: "version-check", "Current version ({}) is different", build_commit);
             return Ok(Some(VersionInfo::Commit(cid)));
         }
     }
     if let Some((v, cid)) = newest_version {
+        debug!(target: "version-check", "Newest version found: {}", v);
         Ok(Some(VersionInfo::Tagged(v, cid)))
     } else {
+        debug!(target: "version-check", "No version is newer than current ({})", current_version);
         Ok(None)
     }
 }

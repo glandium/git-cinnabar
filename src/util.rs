@@ -775,26 +775,68 @@ macro_rules! assert_le {
 }
 pub(crate) use assert_le;
 
-pub struct DurationFuzzyDisplay(f32);
+pub struct DurationFuzzyDisplay {
+    duration: f32,
+    more: bool,
+}
 
 pub trait DurationExt {
     fn fuzzy_display(&self) -> DurationFuzzyDisplay;
+
+    #[cfg_attr(not(feature = "version-check"), allow(unused))]
+    fn fuzzy_display_more(&self) -> DurationFuzzyDisplay;
 }
 
 impl DurationExt for Duration {
     fn fuzzy_display(&self) -> DurationFuzzyDisplay {
-        DurationFuzzyDisplay(self.as_secs_f32())
+        DurationFuzzyDisplay {
+            duration: self.as_secs_f32(),
+            more: false,
+        }
+    }
+
+    fn fuzzy_display_more(&self) -> DurationFuzzyDisplay {
+        DurationFuzzyDisplay {
+            duration: self.as_secs_f32(),
+            more: true,
+        }
     }
 }
 
 impl fmt::Display for DurationFuzzyDisplay {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.0 < 1.0 {
-            f.write_fmt(format_args!("{:.1}ms", self.0 * 1000.0))
-        } else if self.0 < 10.0 {
-            f.write_fmt(format_args!("{:.2}s", self.0))
+        if self.more {
+            let mut write_pluralized = |duration, unit| {
+                f.write_fmt(format_args!(
+                    "{:.0} {}{}",
+                    duration,
+                    unit,
+                    if duration < 2.0 { "" } else { "s" }
+                ))
+            };
+            if self.duration < 1.0 {
+                f.write_fmt(format_args!("{:.1} ms", self.duration * 1000.0))
+            } else if self.duration < 10.0 {
+                f.write_fmt(format_args!("{:.2} seconds", self.duration))
+            } else if self.duration < 60.0 {
+                write_pluralized(self.duration, "second")
+            } else if self.duration < 3600.0 {
+                write_pluralized(self.duration / 60.0, "minute")
+            } else if self.duration < 86400.0 {
+                write_pluralized(self.duration / 3600.0, "hour")
+            } else if self.duration < 604800.0 {
+                write_pluralized(self.duration / 86400.0, "day")
+            } else if self.duration < 31536000.0 {
+                write_pluralized(self.duration / 604800.0, "week")
+            } else {
+                write_pluralized(self.duration / 31536000.0, "year")
+            }
+        } else if self.duration < 1.0 {
+            f.write_fmt(format_args!("{:.1}ms", self.duration * 1000.0))
+        } else if self.duration < 10.0 {
+            f.write_fmt(format_args!("{:.2}s", self.duration))
         } else {
-            f.write_fmt(format_args!("{:.1}s", self.0))
+            f.write_fmt(format_args!("{:.1}s", self.duration))
         }
     }
 }
