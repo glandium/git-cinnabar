@@ -23,10 +23,12 @@ use url::Url;
 use crate::cinnabar::GitChangesetId;
 use crate::git::{CommitId, GitObjectId};
 use crate::hg::HgChangesetId;
-use crate::hg_bundle::{BundleReader, BundleSpec};
-use crate::hg_connect_http::get_http_connection;
+use crate::hg_bundle::{BundleConnection, BundleReader, BundleSpec};
+use crate::hg_connect_http::{get_http_connection, HttpRequest};
 use crate::hg_connect_stdio::get_stdio_connection;
-use crate::libgit::{die, remote, resolve_ref, rev_list, rev_list_with_parents};
+use crate::libgit::{
+    die, http_follow_config, remote, resolve_ref, rev_list, rev_list_with_parents,
+};
 use crate::oid::ObjectId;
 use crate::store::{has_metadata, merge_metadata, store_changegroup, Dag, Store};
 use crate::util::{
@@ -1169,7 +1171,7 @@ fn get_initial_bundle(
             .flatten()
         {
             eprintln!("Getting clone bundle from {}", url);
-            let mut bundle_conn = get_connection(&url).unwrap();
+            let mut bundle_conn = get_bundle_connection(&url).unwrap();
             match get_store_bundle(store, &mut *bundle_conn, &[], &[]) {
                 Ok(()) => {
                     return Ok(true);
@@ -1388,6 +1390,14 @@ pub fn get_cinnabarclone_url(
         }
     }
     None
+}
+
+pub fn get_bundle_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
+    let mut req = HttpRequest::new(url.clone());
+    if unsafe { http_follow_config } == http_follow_config::HTTP_FOLLOW_INITIAL {
+        req.follow_redirects(true);
+    }
+    Some(Box::new(BundleConnection::new(req.execute().ok()?)))
 }
 
 pub fn get_connection(url: &Url) -> Option<Box<dyn HgRepo>> {

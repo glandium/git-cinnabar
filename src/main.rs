@@ -102,8 +102,8 @@ use graft::{graft_finish, grafted, init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
 use hg_bundle::{create_bundle, create_chunk_data, read_rev_chunk, BundleSpec, RevChunkIter};
 use hg_connect::{
-    get_bundle, get_clonebundle_url, get_connection, get_store_bundle, HgConnection,
-    HgConnectionBase, HgRepo,
+    get_bundle, get_bundle_connection, get_clonebundle_url, get_connection, get_store_bundle,
+    HgConnection, HgConnectionBase, HgRepo,
 };
 use itertools::EitherOrBoth::{Both, Left, Right};
 use itertools::{EitherOrBoth, Itertools};
@@ -1902,15 +1902,17 @@ fn do_unbundle(store: &mut Store, clonebundle: bool, mut url: OsString) -> Resul
     if graft_config_enabled(None)?.unwrap_or(false) {
         init_graft(store);
     }
-    if clonebundle {
+    let mut conn = if clonebundle {
         let mut conn = get_connection(&url).unwrap();
         if conn.get_capability(b"clonebundles").is_none() {
             Err("Repository does not support clonebundles")?;
         }
         url = get_clonebundle_url(&mut *conn).ok_or("Repository didn't provide a clonebundle")?;
         eprintln!("Getting clone bundle from {}", url);
-    }
-    let mut conn = get_connection(&url).unwrap();
+        get_bundle_connection(&url).unwrap()
+    } else {
+        get_connection(&url).unwrap()
+    };
 
     get_store_bundle(store, &mut *conn, &[], &[])
         .map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
