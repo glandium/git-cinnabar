@@ -477,6 +477,10 @@ impl<'a, W: Write> LoggingWriter<'a, W> {
     pub fn set_direction(&mut self, direction: Direction) {
         self.log.direction = direction;
     }
+
+    pub fn log_target(&self) -> &str {
+        &self.log.target
+    }
 }
 
 impl<'a, W: Write> Write for LoggingWriter<'a, W> {

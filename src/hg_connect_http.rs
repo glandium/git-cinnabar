@@ -603,6 +603,31 @@ fn http_send_info(data: &mut HttpThreadData) {
                     None
                 }
             };
+            if data.logger.as_ref().map(LoggingWriter::log_target) == Some("raw-wire::capabilities")
+            {
+                match content_type.as_deref() {
+                    Some("application/mercurial-0.1" | "application/mercurial-0.2") => {}
+                    _ => {
+                        // If the response to the capabilities request is a bundle, log in
+                        // a different category.
+                        // Ideally we'd log the headers too with the switched logger, but
+                        // it's too late for that.
+                        trace!(
+                            target: "raw-wire::capabilities",
+                            "Not a capabilities response; switching to clonebundle.",
+                        );
+                        if log_enabled!(target: "raw-wire::clonebundle", log::Level::Trace) {
+                            let mut writer = LoggingWriter::new_hex(
+                                "raw-wire::clonebundle".to_string(),
+                                log::Level::Trace,
+                                std::io::sink(),
+                            );
+                            writer.set_direction(logging::Direction::Receive);
+                            data.logger = Some(writer);
+                        }
+                    }
+                }
+            }
             data.sender
                 .send(Either::Left(HttpResponseInfo {
                     http_status: http_status as usize,
