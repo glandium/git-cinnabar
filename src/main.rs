@@ -1770,6 +1770,7 @@ fn download_build(
         eprintln!("Installing update from {url}");
         let mut req = HttpRequest::new(Url::parse(url).map_err(|e| e.to_string())?);
         req.follow_redirects(true);
+        req.set_log_target("raw-wire::self-update".to_string());
         req.execute()
     };
 

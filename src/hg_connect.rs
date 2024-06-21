@@ -1397,6 +1397,7 @@ pub fn get_bundle_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
     if unsafe { http_follow_config } == http_follow_config::HTTP_FOLLOW_INITIAL {
         req.follow_redirects(true);
     }
+    req.set_log_target("raw-wire::clonebundle".to_string());
     Some(Box::new(BundleConnection::new(req.execute().ok()?)))
 }
 

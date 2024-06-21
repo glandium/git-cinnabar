@@ -5,7 +5,8 @@
 use std::alloc::Layout;
 use std::cell::Cell;
 use std::ffi::{CStr, CString, OsStr};
-use std::io::{self, LineWriter, Read, Write};
+use std::fs::File;
+use std::io::{self, Cursor, LineWriter, Read, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ops::{Deref, DerefMut};
@@ -838,5 +839,33 @@ impl fmt::Display for DurationFuzzyDisplay {
         } else {
             f.write_fmt(format_args!("{:.1}s", self.duration))
         }
+    }
+}
+
+/// A `Read` that knows its exact length and can seek to its beginning.
+pub trait ExactSizeReadRewind: Read {
+    fn len(&self) -> io::Result<u64>;
+
+    fn rewind(&mut self) -> io::Result<()>;
+}
+
+impl ExactSizeReadRewind for File {
+    fn len(&self) -> io::Result<u64> {
+        self.metadata().map(|m| m.len())
+    }
+
+    fn rewind(&mut self) -> io::Result<()> {
+        self.seek(SeekFrom::Start(0)).map(|_| ())
+    }
+}
+
+impl<T: AsRef<[u8]>> ExactSizeReadRewind for Cursor<T> {
+    fn len(&self) -> io::Result<u64> {
+        Ok(self.get_ref().as_ref().len().try_into().unwrap())
+    }
+
+    fn rewind(&mut self) -> io::Result<()> {
+        self.set_position(0);
+        Ok(())
     }
 }

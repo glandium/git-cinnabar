@@ -16,7 +16,7 @@ use bstr::ByteSlice;
 use log::LevelFilter;
 
 use crate::get_config;
-use crate::util::{FromBytes, OsStrExt};
+use crate::util::{ExactSizeReadRewind, FromBytes, OsStrExt};
 
 pub fn init(start_time: Instant) {
     let logger = CinnabarLogger::new(start_time);
@@ -298,23 +298,47 @@ pub fn max_log_level(target: &str, min_level: log::Level) -> log::LevelFilter {
     }
 }
 
+pub enum Direction {
+    Send,
+    Receive,
+}
+
+impl Display for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Direction::Send => "=>",
+            Direction::Receive => "<=",
+        })
+    }
+}
+
 struct LoggingHelper<'a> {
     target: Cow<'a, str>,
     level: Option<log::Level>,
     hex: Option<u64>,
+    direction: Direction,
 }
 
 impl<'a> LoggingHelper<'a> {
-    fn new(target: impl Into<Cow<'a, str>>, level: log::Level, hex: bool) -> Self {
+    fn new(
+        target: impl Into<Cow<'a, str>>,
+        level: log::Level,
+        direction: Direction,
+        hex: bool,
+    ) -> Self {
         let target = target.into();
         let level = log_enabled!(target: &*target, level).then_some(level);
         let hex = hex.then_some(0);
-        LoggingHelper { target, level, hex }
+        LoggingHelper {
+            target,
+            level,
+            hex,
+            direction,
+        }
     }
 
-    fn log(&mut self, write: bool, buf: &[u8]) {
+    fn log(&mut self, buf: &[u8]) {
         if let Some(level) = self.level {
-            let direction = if write { "=>" } else { "<=" };
             if let Some(offset) = &mut self.hex {
                 let mut line = String::with_capacity(81);
                 if *offset > 0 {
@@ -322,7 +346,7 @@ impl<'a> LoggingHelper<'a> {
                 }
                 for ofs in ((*offset - *offset % 16)..*offset + buf.len() as u64).step_by(16) {
                     line.clear();
-                    write!(line, "{} {:08x}  ", direction, ofs).unwrap();
+                    write!(line, "{} {:08x}  ", self.direction, ofs).unwrap();
                     for n in 0..16 {
                         if n == 8 {
                             line.push(' ');
@@ -356,7 +380,7 @@ impl<'a> LoggingHelper<'a> {
                 }
                 *offset += buf.len() as u64;
             } else {
-                log!(target: &*self.target, level, "{} {:?}", direction, buf.as_bstr());
+                log!(target: &*self.target, level, "{} {:?}", self.direction, buf.as_bstr());
             }
         }
     }
@@ -370,23 +394,27 @@ pub struct LoggingReader<'a, R: Read> {
 impl<'a, R: Read> LoggingReader<'a, R> {
     pub fn new(target: impl Into<Cow<'a, str>>, level: log::Level, r: R) -> Self {
         LoggingReader {
-            log: LoggingHelper::new(target, level, false),
+            log: LoggingHelper::new(target, level, Direction::Receive, false),
             reader: r,
         }
     }
 
     pub fn new_hex(target: impl Into<Cow<'a, str>>, level: log::Level, r: R) -> Self {
         LoggingReader {
-            log: LoggingHelper::new(target, level, true),
+            log: LoggingHelper::new(target, level, Direction::Receive, true),
             reader: r,
         }
+    }
+
+    pub fn set_direction(&mut self, direction: Direction) {
+        self.log.direction = direction;
     }
 }
 
 impl<'a, R: Read> Read for LoggingReader<'a, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.reader.read(buf).map(|l| {
-            self.log.log(false, &buf[..l]);
+            self.log.log(&buf[..l]);
             l
         })
     }
@@ -403,16 +431,26 @@ impl<'a, R: BufRead> BufRead for LoggingReader<'a, R> {
 
     fn read_until(&mut self, byte: u8, buf: &mut Vec<u8>) -> std::io::Result<usize> {
         self.reader.read_until(byte, buf).map(|l| {
-            self.log.log(false, &buf[buf.len() - l..]);
+            self.log.log(&buf[buf.len() - l..]);
             l
         })
     }
 
     fn read_line(&mut self, buf: &mut String) -> std::io::Result<usize> {
         self.reader.read_line(buf).map(|l| {
-            self.log.log(false, buf.as_bytes());
+            self.log.log(buf.as_bytes());
             l
         })
+    }
+}
+
+impl<'a, R: ExactSizeReadRewind> ExactSizeReadRewind for LoggingReader<'a, R> {
+    fn len(&self) -> std::io::Result<u64> {
+        self.reader.len()
+    }
+
+    fn rewind(&mut self) -> std::io::Result<()> {
+        self.reader.rewind()
     }
 }
 
@@ -424,23 +462,27 @@ pub struct LoggingWriter<'a, W: Write> {
 impl<'a, W: Write> LoggingWriter<'a, W> {
     pub fn new(target: impl Into<Cow<'a, str>>, level: log::Level, w: W) -> Self {
         LoggingWriter {
-            log: LoggingHelper::new(target, level, false),
+            log: LoggingHelper::new(target, level, Direction::Send, false),
             writer: w,
         }
     }
 
     pub fn new_hex(target: impl Into<Cow<'a, str>>, level: log::Level, w: W) -> Self {
         LoggingWriter {
-            log: LoggingHelper::new(target, level, true),
+            log: LoggingHelper::new(target, level, Direction::Send, true),
             writer: w,
         }
+    }
+
+    pub fn set_direction(&mut self, direction: Direction) {
+        self.log.direction = direction;
     }
 }
 
 impl<'a, W: Write> Write for LoggingWriter<'a, W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.writer.write(buf).map(|l| {
-            self.log.log(true, &buf[..l]);
+            self.log.log(&buf[..l]);
             l
         })
     }

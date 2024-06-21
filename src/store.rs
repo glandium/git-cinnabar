@@ -2343,6 +2343,7 @@ pub fn merge_metadata(
     let mut bundle = if remote_refs.is_empty() && ["http", "https"].contains(&git_url.scheme()) {
         let mut req = HttpRequest::new(git_url.clone());
         req.follow_redirects(true);
+        req.set_log_target("raw-wire::cinnabarclone".to_string());
         // We let curl handle Content-Encoding: gzip via Accept-Encoding.
         let mut bundle = match req.execute() {
             Ok(bundle) => bundle,
