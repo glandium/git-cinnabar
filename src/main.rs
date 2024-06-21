@@ -93,7 +93,7 @@ use byteorder::{BigEndian, WriteBytesExt};
 use cinnabar::{
     GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, GitManifestTree, GitManifestTreeId,
 };
-use clap::{crate_version, ArgGroup, Parser};
+use clap::{crate_version, Parser};
 use cstr::cstr;
 use either::Either;
 use git::{BlobId, CommitId, GitObjectId, TreeIsh};
@@ -3470,179 +3470,153 @@ impl FromStr for AbbrevSize {
 }
 
 #[derive(Parser)]
-#[clap(name = "git-cinnabar")]
-#[clap(version=crate_version!())]
-#[clap(long_version=FULL_VERSION)]
-#[clap(arg_required_else_help = true)]
-#[clap(dont_collapse_args_in_usage = true)]
-#[clap(subcommand_required = true)]
+#[command(
+    name = "git-cinnabar",
+    version=crate_version!(),
+    long_version=FULL_VERSION,
+    arg_required_else_help = true,
+    dont_collapse_args_in_usage = true,
+    subcommand_required = true,
+)]
 enum CinnabarCommand {
-    #[clap(name = "remote-hg")]
-    #[clap(hide = true)]
+    #[command(name = "remote-hg", hide = true)]
     RemoteHg { remote: OsString, url: OsString },
-    #[clap(name = "data")]
-    #[clap(group = ArgGroup::new("input").multiple(false).required(true))]
-    #[clap(about = "Dump the contents of a mercurial revision")]
+    /// Dump the contents of a mercurial revision
+    #[command(name = "data")]
+    #[group(id = "input", multiple = false, required = true)]
     Data {
-        #[clap(short = 'c')]
-        #[clap(group = "input")]
-        #[clap(help = "Open changelog")]
+        /// Open changelog
+        #[arg(short = 'c', group = "input")]
         changeset: Option<Abbrev<HgChangesetId>>,
-        #[clap(short = 'm')]
-        #[clap(group = "input")]
-        #[clap(help = "Open manifest")]
+        /// Open manifest
+        #[arg(short = 'm', group = "input")]
         manifest: Option<Abbrev<HgManifestId>>,
-        #[clap(group = "input")]
-        #[clap(help = "Open file")]
+        /// Open file
+        #[arg(group = "input")]
         file: Option<Abbrev<HgFileId>>,
     },
-    #[clap(name = "hg2git")]
-    #[clap(group = ArgGroup::new("input").multiple(true).required(true))]
-    #[clap(about = "Convert mercurial sha1 to corresponding git sha1")]
+    /// Convert mercurial sha1 to corresponding git sha1
+    #[command(name = "hg2git")]
+    #[group(id = "input", multiple = true, required = true)]
     Hg2Git {
-        #[clap(long)]
-        #[clap(require_equals = true)]
-        #[clap(num_args = ..=1)]
-        #[clap(help = "Show a partial prefix")]
+        /// Show a partial prefix
+        #[arg(long, require_equals = true, num_args = ..=1)]
         abbrev: Option<Vec<AbbrevSize>>,
-        #[clap(group = "input")]
-        #[clap(help = "Mercurial sha1")]
+        /// Mercurial sha1
+        #[arg(group = "input")]
         sha1: Vec<Abbrev<HgChangesetId>>,
-        #[clap(long)]
-        #[clap(group = "input")]
-        #[clap(help = "Read sha1s on stdin")]
+        /// Read sha1s on stdin
+        #[arg(long, group = "input")]
         batch: bool,
     },
-    #[clap(name = "git2hg")]
-    #[clap(group = ArgGroup::new("input").multiple(true).required(true))]
-    #[clap(about = "Convert git sha1 to corresponding mercurial sha1")]
+    /// Convert git sha1 to corresponding mercurial sha1
+    #[command(name = "git2hg")]
+    #[group(id = "input", multiple = true, required = true)]
     Git2Hg {
-        #[clap(long)]
-        #[clap(require_equals = true)]
-        #[clap(num_args = ..=1)]
-        #[clap(help = "Show a partial prefix")]
+        /// Show a partial prefix
+        #[arg(long, require_equals = true, num_args = ..=1)]
         abbrev: Option<Vec<AbbrevSize>>,
-        #[clap(group = "input")]
-        #[clap(help = "Git sha1/committish")]
-        #[clap(value_parser)]
+        /// Git sha1/committish
+        #[arg(group = "input", value_parser)]
         committish: Vec<OsString>,
-        #[clap(long)]
-        #[clap(group = "input")]
-        #[clap(help = "Read sha1/committish on stdin")]
+        /// Read sha1/committish on stdin
+        #[arg(long)]
+        #[arg(long, group = "input")]
         batch: bool,
     },
-    #[clap(name = "fetch")]
-    #[clap(about = "Fetch a changeset from a mercurial remote")]
+    /// Fetch a changeset from a mercurial remote
+    #[command(name = "fetch")]
     Fetch {
-        #[clap(required_unless_present = "tags")]
-        #[clap(help = "Mercurial remote name or url")]
-        #[clap(value_parser)]
+        /// Mercurial remote name or url
+        #[arg(required_unless_present = "tags", value_parser)]
         remote: Option<OsString>,
-        #[clap(required_unless_present = "tags")]
-        #[clap(help = "Mercurial changeset to fetch")]
-        #[clap(value_parser)]
+        /// Mercurial changeset to fetch
+        #[arg(required_unless_present = "tags", value_parser)]
         revs: Vec<OsString>,
-        #[clap(long)]
-        #[clap(help = "Don't import, but send the bundle to stdout")]
+        /// Don't import, but send the bundle to stdout
+        #[arg(long)]
         bundle: bool,
-        #[clap(long)]
-        #[clap(exclusive = true)]
-        #[clap(help = "Fetch tags")]
+        /// Fetch tags
+        #[arg(long, exclusive = true)]
         tags: bool,
     },
-    #[clap(name = "reclone")]
-    #[clap(about = "Reclone all mercurial remotes")]
+    /// Reclone all mercurial remotes
+    #[command(name = "reclone")]
     Reclone {
-        #[clap(long)]
-        #[clap(help = "Rebase local branches")]
+        /// Rebase local branches
+        #[arg(long)]
         rebase: bool,
     },
-    #[clap(name = "rollback")]
-    #[clap(about = "Rollback cinnabar metadata state")]
+    #[command(name = "rollback")]
+    /// Rollback cinnabar metadata state
     Rollback {
-        #[clap(long)]
-        #[clap(conflicts_with = "committish")]
-        #[clap(help = "Show a list of candidates for rollback")]
+        /// Show a list of candidates for rollback
+        #[arg(long, conflicts_with = "committish")]
         candidates: bool,
-        #[clap(long)]
-        #[clap(conflicts_with = "committish")]
-        #[clap(conflicts_with = "candidates")]
-        #[clap(help = "Rollback to the last successful fsck state")]
+        /// Rollback to the last successful fsck state
+        #[arg(long, conflicts_with = "committish", conflicts_with = "candidates")]
         fsck: bool,
-        #[clap(long)]
-        #[clap(conflicts_with = "candidates")]
-        #[clap(
-            help = "Force to use the given committish even if it is not in the current metadata's ancestry"
-        )]
+        /// Force to use the given committish even if it is not in the current metadata's ancestry
+        #[arg(long, conflicts_with = "candidates")]
         force: bool,
-        #[clap(help = "Git sha1/committish of the state to rollback to")]
-        #[clap(value_parser)]
+        /// Git sha1/committish of the state to rollback to
+        #[arg(value_parser)]
         committish: Option<OsString>,
     },
-    #[clap(name = "fsck")]
-    #[clap(about = "Check cinnabar metadata consistency")]
+    /// Check cinnabar metadata consistency
+    #[command(name = "fsck")]
     Fsck {
-        #[clap(long)]
-        #[clap(
-            help = "Force check, even when metadata was already checked. Also disables incremental fsck"
-        )]
+        /// Force check, even when metadata was already checked. Also disables incremental fsck
+        #[arg(long)]
         force: bool,
-        #[clap(long)]
-        #[clap(help = "Check more thoroughly")]
-        #[clap(conflicts_with = "commit")]
+        /// Check more thoroughly
+        #[arg(long, conflicts_with = "commit")]
         full: bool,
-        #[clap(help = "Specific commit or changeset to check")]
-        #[clap(value_parser)]
+        /// Specific commit or changeset to check
+        #[arg(value_parser)]
         commit: Vec<OsString>,
     },
-    #[clap(name = "bundle")]
-    #[clap(about = "Create a mercurial bundle")]
+    /// Create a mercurial bundle
+    #[command(name = "bundle")]
     Bundle {
-        #[clap(long)]
-        #[clap(default_value = "2")]
-        #[clap(value_parser = clap::value_parser!(u8).range(1..=2))]
-        #[clap(help = "Bundle version")]
+        /// Bundle version
+        #[arg(long, default_value = "2", value_parser = clap::value_parser!(u8).range(1..=2))]
         version: u8,
-        #[clap(long)]
-        #[clap(short)]
-        #[clap(help = "Type of bundle (bundlespec)")]
-        #[clap(conflicts_with = "version")]
+        /// Type of bundle (bundlespec)
+        #[arg(long, short, conflicts_with = "version")]
         r#type: Option<BundleSpec>,
-        #[clap(help = "Path of the bundle")]
-        #[clap(value_parser)]
+        /// Path of the bundle
+        #[arg(value_parser)]
         path: PathBuf,
-        #[clap(help = "Git revision range (see the Specifying Ranges section of gitrevisions(7))")]
-        #[clap(value_parser)]
+        /// Git revision range (see the Specifying Ranges section of gitrevisions(7))
+        #[arg(value_parser)]
         revs: Vec<OsString>,
     },
-    #[clap(name = "unbundle")]
-    #[clap(about = "Apply a mercurial bundle to the repository")]
+    /// Apply a mercurial bundle to the repository
+    #[command(name = "unbundle")]
     Unbundle {
-        #[clap(long)]
-        #[clap(help = "Get clone bundle from given repository")]
+        /// Get clone bundle from given repository
+        #[arg(long)]
         clonebundle: bool,
-        #[clap(help = "Url/Location of the bundle")]
+        /// Url/Location of the bundle
         url: OsString,
     },
-    #[clap(name = "upgrade")]
-    #[clap(about = "Upgrade cinnabar metadata")]
+    /// Upgrade cinnabar metadata
+    #[command(name = "upgrade")]
     Upgrade,
+    /// Update git-cinnabar
     #[cfg(feature = "self-update")]
-    #[clap(name = "self-update")]
-    #[clap(about = "Update git-cinnabar")]
+    #[command(name = "self-update")]
     SelfUpdate {
-        #[clap(long)]
-        #[clap(help = "Branch to get updates from")]
+        /// Branch to get updates from
+        #[arg(long)]
         branch: Option<String>,
-        #[clap(long)]
-        #[clap(help = "Exact commit to get a version from")]
-        #[clap(value_parser)]
-        #[clap(conflicts_with = "branch")]
+        /// Exact commit to get a version from
+        #[arg(long, value_parser, conflicts_with = "branch")]
         exact: Option<CommitId>,
     },
-    #[clap(name = "setup")]
-    #[clap(about = "Setup git-cinnabar")]
-    #[clap(hide = true)]
+    /// Setup git-cinnabar
+    #[command(name = "setup", hide = true)]
     Setup,
 }
 
