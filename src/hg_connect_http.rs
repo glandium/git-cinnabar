@@ -5,7 +5,7 @@
 use std::borrow::ToOwned;
 use std::ffi::{c_void, CStr, CString, OsStr};
 use std::fs::File;
-use std::io::{self, copy, stderr, Cursor, Read, Write};
+use std::io::{self, stderr, Cursor, Read, Write};
 use std::os::raw::{c_char, c_int, c_long};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -863,22 +863,18 @@ pub fn get_http_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
     }
     let mut http_resp = http_req.execute().unwrap();
     conn.handle_redirect(&http_resp);
-    let header = (&mut http_resp).take(4).read_all().unwrap();
-    match &*header {
-        b"HG10" | b"HG20" => Some(Box::new(BundleConnection::new(
-            HttpConnectionHoldingReader {
-                reader: Cursor::new(header).chain(http_resp),
-                conn,
-            },
-        ))),
-
-        _ => {
-            let mut caps = Vec::<u8>::new();
-            caps.extend_from_slice(&header);
-            copy(&mut http_resp, &mut caps).unwrap();
+    match http_resp.content_type() {
+        Some("application/mercurial-0.1" | "application/mercurial-0.2") => {
+            let caps = http_resp.read_all().unwrap();
             drop(http_resp);
             mem::swap(&mut conn.capabilities, &mut HgCapabilities::new_from(&caps));
             Some(Box::new(HgWired::new(conn)))
         }
+        _ => Some(Box::new(BundleConnection::new(
+            HttpConnectionHoldingReader {
+                reader: http_resp,
+                conn,
+            },
+        ))),
     }
 }
