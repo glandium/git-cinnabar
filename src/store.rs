@@ -192,6 +192,15 @@ macro_rules! hg2git {
                     .map(|o| $g::from_raw_bytes(o.as_raw_bytes()).unwrap())
             }
         }
+
+        impl crate::oid::Abbrev<$h> {
+            pub fn to_git(self, store: &Store) -> Option<$g> {
+                store
+                    .hg2git_mut()
+                    .get_note_abbrev(self.into())
+                    .map(|o| $g::from_raw_bytes(o.as_raw_bytes()).unwrap())
+            }
+        }
     };
 }
 

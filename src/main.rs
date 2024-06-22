@@ -91,7 +91,7 @@ use bstr::io::BufReadExt;
 use bstr::{BStr, ByteSlice};
 use byteorder::{BigEndian, WriteBytesExt};
 use cinnabar::{
-    GitChangesetId, GitFileId, GitFileMetadataId, GitManifestId, GitManifestTree, GitManifestTreeId,
+    GitChangesetId, GitFileMetadataId, GitManifestId, GitManifestTree, GitManifestTreeId,
 };
 use clap::{crate_version, Parser};
 use cstr::cstr;
@@ -252,13 +252,7 @@ pub fn prepare_arg(arg: OsString) -> Vec<u16> {
 }
 
 fn do_one_hg2git(store: &Store, sha1: Abbrev<HgChangesetId>) -> String {
-    format!(
-        "{}",
-        store
-            .hg2git_mut()
-            .get_note_abbrev(sha1)
-            .unwrap_or(GitObjectId::NULL)
-    )
+    format!("{}", sha1.to_git(store).unwrap_or(GitChangesetId::NULL))
 }
 
 fn do_one_git2hg(store: &Store, committish: OsString) -> String {
@@ -320,26 +314,20 @@ where
 }
 
 fn do_data_changeset(store: &Store, rev: Abbrev<HgChangesetId>) -> Result<(), String> {
-    let commit_id = store
-        .hg2git_mut()
-        .get_note_abbrev(rev)
-        .ok_or_else(|| format!("Unknown changeset id: {}", rev))?;
     let changeset = RawHgChangeset::read(
         store,
-        GitChangesetId::from_unchecked(CommitId::from_unchecked(commit_id)),
+        rev.to_git(store)
+            .ok_or_else(|| format!("Unknown changeset id: {}", rev))?,
     )
     .unwrap();
     stdout().write_all(&changeset).map_err(|e| e.to_string())
 }
 
 fn do_data_manifest(store: &Store, rev: Abbrev<HgManifestId>) -> Result<(), String> {
-    let commit_id = store
-        .hg2git_mut()
-        .get_note_abbrev(rev)
-        .ok_or_else(|| format!("Unknown manifest id: {}", rev))?;
-    let manifest = RawHgManifest::read(GitManifestId::from_unchecked(CommitId::from_unchecked(
-        commit_id,
-    )))
+    let manifest = RawHgManifest::read(
+        rev.to_git(store)
+            .ok_or_else(|| format!("Unknown manifest id: {}", rev))?,
+    )
     .unwrap();
     stdout().write_all(&manifest).map_err(|e| e.to_string())
 }
@@ -1866,11 +1854,9 @@ fn do_setup() -> Result<(), String> {
 
 fn do_data_file(store: &Store, rev: Abbrev<HgFileId>) -> Result<(), String> {
     let mut stdout = stdout();
-    let blob_id = store
-        .hg2git_mut()
-        .get_note_abbrev(rev)
+    let file_id = rev
+        .to_git(store)
         .ok_or_else(|| format!("Unknown file id: {}", rev))?;
-    let file_id = GitFileId::from_unchecked(BlobId::from_unchecked(blob_id));
     let metadata_id = store
         .files_meta_mut()
         .get_note_abbrev(rev)
