@@ -1608,8 +1608,8 @@ fn create_git_tree(
                     let empty_blob_id = BlobId::from_unchecked(empty_blob_id.into());
                     assert_eq!(empty_blob_id, RawBlob::EMPTY_OID);
                     RawBlob::EMPTY_OID
-                } else if let Some(bid) = store.hg2git_mut().get_note(entry.fid.into()) {
-                    BlobId::from_unchecked(bid)
+                } else if let Some(bid) = entry.fid.to_git(store) {
+                    BlobId::from(bid)
                 } else {
                     corrupted_metata();
                 };
