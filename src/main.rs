@@ -96,7 +96,7 @@ use cinnabar::{
 use clap::{crate_version, Parser};
 use cstr::cstr;
 use either::Either;
-use git::{BlobId, CommitId, GitObjectId, TreeIsh};
+use git::{BlobId, CommitId, GitObjectId, RawBlob, RawCommit, RawTree, TreeIsh};
 use git_version::git_version;
 use graft::{graft_finish, grafted, init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
@@ -111,7 +111,7 @@ use libgit::{
     commit, config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
     get_oid_committish, get_unique_abbrev, lookup_commit, lookup_replace_commit, object_id,
     reachable_subset, remote, repository, resolve_ref, rev_list, rev_list_with_boundaries,
-    the_repository, DiffTreeItem, MaybeBoundary, RawBlob, RawCommit, RawTree, RefTransaction,
+    the_repository, DiffTreeItem, MaybeBoundary, RefTransaction,
 };
 use logging::{LoggingReader, LoggingWriter};
 use oid::{Abbrev, ObjectId};

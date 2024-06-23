@@ -9,9 +9,9 @@ use std::num::NonZeroUsize;
 use either::Either;
 use lru::LruCache;
 
-use crate::git::{git_oid_type, CommitId, MalformedTree, TreeId, TreeIsh};
+use crate::git::{git_oid_type, CommitId, MalformedTree, RawCommit, RawTree, TreeId, TreeIsh};
 use crate::hg::{HgFileAttr, HgFileId, ManifestEntry};
-use crate::libgit::{die, FileMode, RawCommit, RawTree};
+use crate::libgit::{die, FileMode};
 use crate::oid::ObjectId;
 use crate::tree_util::{Empty, MayRecurse, ParseTree, RecurseAs, TreeIter, WithPath};
 

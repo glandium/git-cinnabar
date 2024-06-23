@@ -28,12 +28,12 @@ use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
 use crate::get_changes;
-use crate::git::CommitId;
+use crate::git::{CommitId, RawCommit};
 use crate::hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_connect::{encodecaps, HgConnection, HgConnectionBase, HgRepo};
 use crate::hg_data::find_file_parents;
 use crate::libcinnabar::{hg_object_id, strslice, AsStrSlice};
-use crate::libgit::{die, RawCommit};
+use crate::libgit::die;
 use crate::oid::ObjectId;
 use crate::progress::Progress;
 use crate::store::{

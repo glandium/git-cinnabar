@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
+use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
@@ -10,20 +11,16 @@ use std::ptr::{self, NonNull};
 use std::str::FromStr;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
-use std::{fmt, mem};
 
 use bstr::ByteSlice;
 use cstr::cstr;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
-use derive_more::Deref;
-use getset::{CopyGetters, Getters};
-use hex_literal::hex;
 use itertools::{EitherOrBoth, Itertools};
 
-use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry, TreeId};
+use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry};
 use crate::oid::{Abbrev, ObjectId};
 use crate::tree_util::WithPath;
-use crate::util::{CStrExt, DurationExt, FromBytes, OptionExt, OsStrExt, SliceExt, Transpose};
+use crate::util::{CStrExt, DurationExt, OptionExt, OsStrExt, Transpose};
 use crate::{check_enabled, experiment_similarity, logging, Checks};
 
 const GIT_MAX_RAWSZ: usize = 32;
@@ -309,151 +306,28 @@ impl<T: ?Sized> Drop for FfiBox<T> {
     }
 }
 
-pub struct RawObject {
-    buf: Option<FfiBox<[u8]>>,
-}
-
-impl RawObject {
-    const EMPTY: RawObject = RawObject { buf: None };
-
-    fn read(oid: GitObjectId) -> Option<(object_type, RawObject)> {
-        let mut info = object_info::default();
-        let mut t = object_type::OBJ_NONE;
-        let mut len: c_ulong = 0;
-        let mut buf = std::ptr::null_mut();
-        info.typep = &mut t;
+pub fn git_object_info(
+    oid: impl Into<GitObjectId>,
+    with_content: bool,
+) -> Option<(object_type, Option<FfiBox<[u8]>>)> {
+    let mut info = object_info::default();
+    let mut t = object_type::OBJ_NONE;
+    let mut len: c_ulong = 0;
+    let mut buf = std::ptr::null_mut();
+    info.typep = &mut t;
+    if with_content {
         info.sizep = &mut len;
         info.contentp = &mut buf;
-        (unsafe { oid_object_info_extended(the_repository, &oid.into(), &mut info, 0) } == 0).then(
-            || {
-                let raw = RawObject {
-                    buf: Some(unsafe {
-                        FfiBox::from_raw_parts(buf as *mut _, len.try_into().unwrap())
-                    }),
-                };
-                (t, raw)
-            },
-        )
     }
-
-    fn get_type<O: Into<GitObjectId>>(oid: O) -> Option<object_type> {
-        let mut info = object_info::default();
-        let mut t = object_type::OBJ_NONE;
-        info.typep = &mut t;
-        (unsafe { oid_object_info_extended(the_repository, &oid.into().into(), &mut info, 0) } == 0)
-            .then_some(t)
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        self.buf.as_deref().unwrap_or(&[])
-    }
-}
-
-impl Clone for RawObject {
-    fn clone(&self) -> Self {
-        if !self.as_bytes().is_empty() {
-            let mut cloned = strbuf::new();
-            cloned.extend_from_slice(self.as_bytes());
-            let buf = cloned.as_ptr() as *mut _;
-            let len = cloned.as_bytes().len();
-            mem::forget(cloned);
-            RawObject {
-                buf: Some(unsafe { FfiBox::from_raw_parts(buf, len) }),
-            }
-        } else {
-            RawObject::EMPTY
-        }
-    }
-}
-
-macro_rules! raw_object {
-    ($t:ident | $oid_type:ident => $name:ident) => {
-        #[derive(Deref, Clone)]
-        pub struct $name(RawObject);
-
-        impl $name {
-            pub fn read(oid: $oid_type) -> Option<Self> {
-                match RawObject::read(oid.into())? {
-                    (object_type::$t, o) => Some($name(o)),
-                    _ => None,
-                }
-            }
-        }
-
-        impl TryFrom<GitObjectId> for $oid_type {
-            type Error = ();
-            fn try_from(oid: GitObjectId) -> std::result::Result<Self, ()> {
-                match RawObject::get_type(oid).ok_or(())? {
-                    object_type::$t => Ok($oid_type::from_unchecked(oid)),
-                    _ => Err(()),
-                }
-            }
-        }
-    };
-}
-
-raw_object!(OBJ_COMMIT | CommitId => RawCommit);
-raw_object!(OBJ_TREE | TreeId => RawTree);
-raw_object!(OBJ_BLOB | BlobId => RawBlob);
-
-impl RawBlob {
-    pub const EMPTY_OID: BlobId =
-        BlobId::from_raw_bytes_array(hex!("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"));
-}
-
-impl RawTree {
-    pub const EMPTY_OID: TreeId =
-        TreeId::from_raw_bytes_array(hex!("4b825dc642cb6eb9a060e54bf8d69288fbee4904"));
-
-    pub const EMPTY: RawTree = RawTree(RawObject::EMPTY);
-}
-
-#[derive(CopyGetters, Getters)]
-pub struct Commit<'a> {
-    #[getset(get_copy = "pub")]
-    tree: TreeId,
-    parents: Vec<CommitId>,
-    #[getset(get_copy = "pub")]
-    author: &'a [u8],
-    #[getset(get_copy = "pub")]
-    committer: &'a [u8],
-    #[getset(get_copy = "pub")]
-    body: &'a [u8],
-}
-
-impl<'a> Commit<'a> {
-    pub fn parents(&self) -> &[CommitId] {
-        &self.parents[..]
-    }
-}
-
-impl RawCommit {
-    pub fn parse(&self) -> Option<Commit> {
-        let [header, body] = self.as_bytes().splitn_exact(&b"\n\n"[..])?;
-        let mut tree = None;
-        let mut parents = Vec::new();
-        let mut author = None;
-        let mut committer = None;
-        for line in header.lines() {
-            if line.is_empty() {
-                break;
-            }
-            match line.splitn_exact(b' ')? {
-                [b"tree", t] => tree = Some(TreeId::from_bytes(t).ok()?),
-                [b"parent", p] => parents.push(CommitId::from_bytes(p).ok()?),
-                [b"author", a] => author = Some(a),
-                [b"committer", a] => committer = Some(a),
-                _ => {}
-            }
-        }
-        Some(Commit {
-            tree: tree?,
-            parents,
-            author: author?,
-            committer: committer?,
-            body,
+    (unsafe { oid_object_info_extended(the_repository, &oid.into().into(), &mut info, 0) } == 0)
+        .then(|| {
+            (
+                t,
+                with_content.then(|| unsafe {
+                    FfiBox::from_raw_parts(buf as *mut _, len.try_into().unwrap())
+                }),
+            )
         })
-    }
 }
 
 extern "C" {

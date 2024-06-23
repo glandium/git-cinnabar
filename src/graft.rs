@@ -10,10 +10,10 @@ use std::sync::Mutex;
 use bstr::ByteSlice;
 
 use crate::cinnabar::GitChangesetId;
-use crate::git::{CommitId, TreeId};
+use crate::git::{CommitId, RawCommit, TreeId};
 use crate::hg::HgChangesetId;
 use crate::hg_data::{GitAuthorship, HgAuthorship};
-use crate::libgit::{lookup_replace_commit, rev_list, RawCommit};
+use crate::libgit::{lookup_replace_commit, rev_list};
 use crate::progress::Progress;
 use crate::store::{has_metadata, GeneratedGitChangesetMetadata, RawHgChangeset, Store};
 

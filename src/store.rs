@@ -34,7 +34,10 @@ use crate::cinnabar::{
     GitChangesetId, GitChangesetMetadataId, GitFileId, GitFileMetadataId, GitManifestId,
     GitManifestTree, GitManifestTreeId,
 };
-use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry, TreeId, TreeIsh};
+use crate::git::{
+    BlobId, Commit, CommitId, GitObjectId, GitOid, RawBlob, RawCommit, RawTree, RecursedTreeEntry,
+    TreeId, TreeIsh,
+};
 use crate::graft::{graft, grafted, replace_map_tablesize, GraftError};
 use crate::hg::{HgChangesetId, HgFileAttr, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_bundle::{
@@ -45,7 +48,7 @@ use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{git_notes_tree, hg_notes_tree, strslice, strslice_mut, AsStrSlice};
 use crate::libgit::{
     config_get_value, die, for_each_ref_in, get_oid_blob, object_entry, object_id, object_type,
-    resolve_ref, Commit, FileMode, RawBlob, RawCommit, RawTree, RefTransaction,
+    resolve_ref, FileMode, RefTransaction,
 };
 use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};

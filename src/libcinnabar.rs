@@ -8,11 +8,10 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::os::raw::{c_char, c_int, c_uint, c_void};
 
-use crate::git::{CommitId, GitObjectId, TreeId};
+use crate::git::{CommitId, GitObjectId, RawTree, TreeId};
 use crate::hg::HgObjectId;
 use crate::libgit::{
     child_process, combine_notes_ignore, free_notes, init_notes, notes_tree, object_id, FileMode,
-    RawTree,
 };
 use crate::oid::{Abbrev, ObjectId};
 use crate::store::{store_git_commit, Store};

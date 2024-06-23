@@ -6,9 +6,10 @@ use std::io::{self, Write};
 
 use digest::OutputSizeUser;
 use either::Either;
+use hex_literal::hex;
 
 use super::{git_oid_type, GitObjectId, GitOid};
-use crate::libgit::{FileMode, RawTree};
+use crate::libgit::FileMode;
 use crate::oid::ObjectId;
 use crate::tree_util::{Empty, MayRecurse, ParseTree, RecurseAs, TreeIter, WithPath};
 use crate::util::SliceExt;
@@ -119,4 +120,13 @@ impl RecurseAs<TreeIter<RawTree>> for TreeEntry {
     fn maybe_recurse(self) -> Either<TreeIter<RawTree>, RecursedTreeEntry> {
         self.map_left(|tree_id| RawTree::read(tree_id).unwrap().into_iter())
     }
+}
+
+super::raw_object!(OBJ_TREE | TreeId => RawTree);
+
+impl RawTree {
+    pub const EMPTY_OID: TreeId =
+        TreeId::from_raw_bytes_array(hex!("4b825dc642cb6eb9a060e54bf8d69288fbee4904"));
+
+    pub const EMPTY: RawTree = RawTree(super::RawObject::EMPTY);
 }

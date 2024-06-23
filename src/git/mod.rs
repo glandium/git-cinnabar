@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::mem;
+
 use derive_more::{From, TryInto};
 use sha1::Sha1;
 
@@ -12,7 +14,7 @@ pub use commit::*;
 mod tree;
 pub use tree::*;
 
-use crate::libgit::FileMode;
+use crate::libgit::{git_object_info, object_type, strbuf, FfiBox, FileMode};
 use crate::oid::{oid_type, ObjectId};
 
 oid_type!(GitObjectId for Sha1);
@@ -127,3 +129,75 @@ impl PartialEq<GitOid> for GitObjectId {
         GitObjectId::from(*other) == *self
     }
 }
+
+pub struct RawObject {
+    buf: Option<FfiBox<[u8]>>,
+}
+
+impl RawObject {
+    const EMPTY: RawObject = RawObject { buf: None };
+
+    fn read(oid: GitObjectId) -> Option<(object_type, RawObject)> {
+        git_object_info(oid, true).map(|(t, content)| {
+            (
+                t,
+                RawObject {
+                    buf: Some(content.unwrap()),
+                },
+            )
+        })
+    }
+
+    fn get_type<O: Into<GitObjectId>>(oid: O) -> Option<object_type> {
+        git_object_info(oid, false).map(|(t, _)| t)
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.buf.as_deref().unwrap_or(&[])
+    }
+}
+
+impl Clone for RawObject {
+    fn clone(&self) -> Self {
+        if !self.as_bytes().is_empty() {
+            let mut cloned = strbuf::new();
+            cloned.extend_from_slice(self.as_bytes());
+            let buf = cloned.as_ptr() as *mut _;
+            let len = cloned.as_bytes().len();
+            mem::forget(cloned);
+            RawObject {
+                buf: Some(unsafe { FfiBox::from_raw_parts(buf, len) }),
+            }
+        } else {
+            RawObject::EMPTY
+        }
+    }
+}
+
+macro_rules! raw_object {
+    ($t:ident | $oid_type:ident => $name:ident) => {
+        #[derive(derive_more::Deref, Clone)]
+        pub struct $name($crate::git::RawObject);
+
+        impl $name {
+            pub fn read(oid: $oid_type) -> Option<Self> {
+                match $crate::git::RawObject::read(oid.into())? {
+                    ($crate::libgit::object_type::$t, o) => Some($name(o)),
+                    _ => None,
+                }
+            }
+        }
+
+        impl TryFrom<GitObjectId> for $oid_type {
+            type Error = ();
+            fn try_from(oid: GitObjectId) -> std::result::Result<Self, ()> {
+                match $crate::git::RawObject::get_type(oid).ok_or(())? {
+                    $crate::libgit::object_type::$t => Ok($oid_type::from_unchecked(oid)),
+                    _ => Err(()),
+                }
+            }
+        }
+    };
+}
+
+use raw_object;
