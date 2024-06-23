@@ -128,5 +128,5 @@ impl RawTree {
     pub const EMPTY_OID: TreeId =
         TreeId::from_raw_bytes_array(hex!("4b825dc642cb6eb9a060e54bf8d69288fbee4904"));
 
-    pub const EMPTY: RawTree = RawTree(super::RawObject::EMPTY);
+    pub const EMPTY: RawTree = RawTree(None);
 }

@@ -5,6 +5,7 @@
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
 use std::fmt;
 use std::marker::PhantomData;
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
 use std::ptr::{self, NonNull};
@@ -295,6 +296,17 @@ impl<T: ?Sized> Deref for FfiBox<T> {
 impl<T: ?Sized> DerefMut for FfiBox<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl Clone for FfiBox<[u8]> {
+    fn clone(&self) -> Self {
+        let mut cloned = strbuf::new();
+        cloned.extend_from_slice(self.as_bytes());
+        let buf = cloned.as_ptr() as *mut _;
+        let len = cloned.as_bytes().len();
+        mem::forget(cloned);
+        unsafe { FfiBox::from_raw_parts(buf, len) }
     }
 }
 
