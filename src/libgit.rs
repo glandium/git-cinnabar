@@ -3,8 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::ffi::{c_void, CStr, CString, OsStr, OsString};
+use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort};
-use std::ptr;
+use std::ptr::{self, NonNull};
 use std::str::FromStr;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
@@ -228,7 +230,7 @@ pub struct object_info {
     disk_sizep: *mut u64,
     delta_base_oid: *mut object_id,
     type_name: *mut strbuf,
-    contentp: *mut *const c_void,
+    contentp: *mut *mut c_void,
     whence: c_int, // In reality, it's an inline enum.
     // In reality, following is a union with one struct.
     u_packed_pack: *mut c_void, // packed_git.
@@ -262,30 +264,72 @@ extern "C" {
     ) -> c_int;
 }
 
+pub struct FfiBox<T: ?Sized> {
+    ptr: NonNull<T>,
+    marker: PhantomData<T>,
+}
+
+impl<T: ?Sized> FfiBox<T> {
+    pub unsafe fn from_raw(raw: *mut T) -> FfiBox<T> {
+        FfiBox {
+            ptr: NonNull::new(raw).unwrap(),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T> FfiBox<[T]> {
+    pub unsafe fn from_raw_parts(raw: *mut T, len: usize) -> FfiBox<[T]> {
+        FfiBox {
+            ptr: NonNull::slice_from_raw_parts(NonNull::new(raw).unwrap(), len),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T: ?Sized> Deref for FfiBox<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl<T: ?Sized> DerefMut for FfiBox<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl<T: ?Sized> Drop for FfiBox<T> {
+    fn drop(&mut self) {
+        unsafe {
+            libc::free(self.ptr.cast().as_ptr());
+        }
+    }
+}
+
 pub struct RawObject {
-    buf: *const c_void,
-    len: usize,
+    buf: Option<FfiBox<[u8]>>,
 }
 
 impl RawObject {
-    const EMPTY: RawObject = RawObject {
-        buf: std::ptr::NonNull::dangling().as_ptr() as *const _,
-        len: 0,
-    };
+    const EMPTY: RawObject = RawObject { buf: None };
 
     fn read(oid: GitObjectId) -> Option<(object_type, RawObject)> {
         let mut info = object_info::default();
         let mut t = object_type::OBJ_NONE;
         let mut len: c_ulong = 0;
-        let mut buf = std::ptr::null();
+        let mut buf = std::ptr::null_mut();
         info.typep = &mut t;
         info.sizep = &mut len;
         info.contentp = &mut buf;
         (unsafe { oid_object_info_extended(the_repository, &oid.into(), &mut info, 0) } == 0).then(
             || {
                 let raw = RawObject {
-                    buf,
-                    len: len.try_into().unwrap(),
+                    buf: Some(unsafe {
+                        FfiBox::from_raw_parts(buf as *mut _, len.try_into().unwrap())
+                    }),
                 };
                 (t, raw)
             },
@@ -301,31 +345,23 @@ impl RawObject {
     }
 
     pub fn as_bytes(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.buf as *const u8, self.len) }
+        self.buf.as_deref().unwrap_or(&[])
     }
 }
 
 impl Clone for RawObject {
     fn clone(&self) -> Self {
-        if self.len > 0 {
+        if !self.as_bytes().is_empty() {
             let mut cloned = strbuf::new();
             cloned.extend_from_slice(self.as_bytes());
-            let buf = cloned.as_ptr() as *const _;
+            let buf = cloned.as_ptr() as *mut _;
             let len = cloned.as_bytes().len();
             mem::forget(cloned);
-            RawObject { buf, len }
+            RawObject {
+                buf: Some(unsafe { FfiBox::from_raw_parts(buf, len) }),
+            }
         } else {
             RawObject::EMPTY
-        }
-    }
-}
-
-impl Drop for RawObject {
-    fn drop(&mut self) {
-        unsafe {
-            if self.buf != std::ptr::NonNull::dangling().as_ptr() {
-                libc::free(self.buf as *mut _);
-            }
         }
     }
 }
