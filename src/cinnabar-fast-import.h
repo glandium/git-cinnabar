@@ -28,8 +28,6 @@ void store_git_object(enum object_type type, const struct strslice buf,
                       struct object_id *result, const struct strslice *reference,
                       const struct object_entry *reference_entry);
 
-const struct object_id *ensure_empty_blob(void);
-
 void do_cleanup(int rollback);
 
 void do_set_replace(const struct object_id *replaced,

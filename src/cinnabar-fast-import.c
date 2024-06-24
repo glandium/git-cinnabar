@@ -590,19 +590,3 @@ void store_git_object(enum object_type type, const struct strslice buf,
 	ENSURE_INIT();
 	store_object(type, &data, reference ? &ref_object : NULL, result, 0);
 }
-
-const struct object_id empty_blob = { {
-	0xe6, 0x9d, 0xe2, 0x9b, 0xb2, 0xd1, 0xd6, 0x43, 0x4b, 0x8b,
-	0x29, 0xae, 0x77, 0x5a, 0xd8, 0xc2, 0xe4, 0x8c, 0x53, 0x91,
-}, GIT_HASH_SHA1 };
-
-const struct object_id *ensure_empty_blob(void) {
-	struct object_entry *oe = find_object((struct object_id *)&empty_blob);
-	if (!oe) {
-		struct object_id hash;
-		struct strbuf buf = STRBUF_INIT;
-		store_object(OBJ_BLOB, &buf, NULL, &hash, 0);
-		assert(oidcmp(&hash, &empty_blob) == 0);
-	}
-	return &empty_blob;
-}
