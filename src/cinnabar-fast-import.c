@@ -572,11 +572,6 @@ void store_git_tree(struct strslice tree_buf, const struct object_id *reference,
 	}
 }
 
-void store_git_blob(struct strslice blob_buf, struct object_id *result)
-{
-	store_git_object(OBJ_BLOB, blob_buf, result, NULL, NULL);
-}
-
 void store_git_commit(struct strslice commit_buf, struct object_id *result)
 {
 	store_git_object(OBJ_COMMIT, commit_buf, result, NULL, NULL);

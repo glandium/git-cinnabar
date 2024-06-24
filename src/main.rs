@@ -1987,12 +1987,9 @@ fn create_copy(
     hash.update(blob.as_bytes());
     let fid = hash.finalize();
 
-    let mut oid = object_id::default();
-    unsafe {
-        store_git_blob(metadata.as_str_slice(), &mut oid);
-        store.set(SetWhat::FileMeta, fid.into(), oid.into());
-        store.set(SetWhat::File, fid.into(), blobid.into());
-    }
+    let oid = store_git_blob(&metadata);
+    store.set(SetWhat::FileMeta, fid.into(), oid.into());
+    store.set(SetWhat::File, fid.into(), blobid.into());
     fid
 }
 
@@ -3085,23 +3082,20 @@ fn do_fsck_full(
                 .unwrap();
         if fresh_metadata != metadata {
             fix(format!("Adjusted changeset metadata for {}", changeset_id));
-            unsafe {
-                store.set(SetWhat::Changeset, changeset_id.into(), GitObjectId::NULL);
-                store.set(SetWhat::Changeset, changeset_id.into(), cid.into());
-                let mut metadata_id = object_id::default();
-                let buf = fresh_metadata.serialize();
-                store_git_blob(buf.as_str_slice(), &mut metadata_id);
-                store.set(
-                    SetWhat::ChangesetMeta,
-                    changeset_id.into(),
-                    GitObjectId::NULL,
-                );
-                store.set(
-                    SetWhat::ChangesetMeta,
-                    changeset_id.into(),
-                    metadata_id.into(),
-                );
-            }
+            store.set(SetWhat::Changeset, changeset_id.into(), GitObjectId::NULL);
+            store.set(SetWhat::Changeset, changeset_id.into(), cid.into());
+            let buf = fresh_metadata.serialize();
+            let metadata_id = store_git_blob(&buf);
+            store.set(
+                SetWhat::ChangesetMeta,
+                changeset_id.into(),
+                GitObjectId::NULL,
+            );
+            store.set(
+                SetWhat::ChangesetMeta,
+                changeset_id.into(),
+                metadata_id.into(),
+            );
         }
 
         let manifest_id = changeset.manifest();

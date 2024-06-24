@@ -1362,7 +1362,7 @@ impl Store {
     }
 }
 
-static BUNDLE_BLOBS: Mutex<Vec<object_id>> = Mutex::new(Vec::new());
+static BUNDLE_BLOBS: Mutex<Vec<BlobId>> = Mutex::new(Vec::new());
 
 fn store_changesets_metadata(store: &Store) -> CommitId {
     let mut tree = Vec::new();
@@ -1374,7 +1374,6 @@ fn store_changesets_metadata(store: &Store) -> CommitId {
         .map(|(n, blob)| ((n + 1).to_string(), blob))
         .sorted_by(|(n, _), (n2, _)| Ord::cmp(n, n2))
     {
-        let blob = BlobId::from_unchecked(GitObjectId::from(blob));
         tree.extend_from_slice(b"100644 bundle");
         if n != "1" {
             tree.extend_from_slice(n.as_bytes());
@@ -1440,7 +1439,6 @@ pub fn set_changeset_heads(store: &Store, new_heads: ChangesetHeads) {
 
 extern "C" {
     pub fn ensure_store_init();
-    pub fn store_git_blob(blob_buf: strslice, result: *mut object_id);
     fn store_git_tree(tree_buf: strslice, reference: *const object_id, result: *mut object_id);
     pub fn store_git_commit(commit_buf: strslice, result: *mut object_id);
     fn store_git_object(
@@ -1452,6 +1450,20 @@ extern "C" {
     );
     pub fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
     fn get_object_entry(oid: *const object_id) -> *const object_entry;
+}
+
+pub fn store_git_blob(blob_buf: &[u8]) -> BlobId {
+    unsafe {
+        let mut result = object_id::default();
+        store_git_object(
+            object_type::OBJ_BLOB,
+            blob_buf.as_str_slice(),
+            &mut result,
+            ptr::null(),
+            ptr::null(),
+        );
+        BlobId::from_unchecked(result.into())
+    }
 }
 
 pub enum SetWhat {
@@ -1613,11 +1625,7 @@ fn create_git_tree(
             }
             Either::Right(entry) => {
                 let oid = if entry.fid == RawHgFile::EMPTY_OID {
-                    let mut empty_blob_id = object_id::default();
-                    unsafe {
-                        store_git_blob([].as_str_slice(), &mut empty_blob_id);
-                    }
-                    let empty_blob_id = BlobId::from_unchecked(empty_blob_id.into());
+                    let empty_blob_id = store_git_blob(&[]);
                     assert_eq!(empty_blob_id, RawBlob::EMPTY_OID);
                     RawBlob::EMPTY_OID
                 } else if let Some(bid) = entry.fid.to_git(store) {
@@ -1708,13 +1716,8 @@ fn store_changeset(
                     (Some(commit_id), None, true)
                 } else {
                     let buf = metadata.serialize();
-                    let mut cs_metadata_oid = object_id::default();
-                    unsafe {
-                        store_git_blob(buf.as_str_slice(), &mut cs_metadata_oid);
-                    }
-                    let metadata_id = GitChangesetMetadataId::from_unchecked(
-                        BlobId::from_unchecked(GitObjectId::from(cs_metadata_oid)),
-                    );
+                    let cs_metadata_oid = store_git_blob(&buf);
+                    let metadata_id = GitChangesetMetadataId::from_unchecked(cs_metadata_oid);
                     (Some(commit_id), Some(metadata_id), false)
                 }
             }
@@ -1759,13 +1762,8 @@ fn store_changeset(
         )
         .unwrap();
         let buf = metadata.serialize();
-        let mut cs_metadata_oid = object_id::default();
-        unsafe {
-            store_git_blob(buf.as_str_slice(), &mut cs_metadata_oid);
-        }
-        let metadata_id = GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(
-            GitObjectId::from(cs_metadata_oid),
-        ));
+        let cs_metadata_oid = store_git_blob(&buf);
+        let metadata_id = GitChangesetMetadataId::from_unchecked(cs_metadata_oid);
 
         (commit_id, metadata_id, replace)
     } else {
@@ -1892,20 +1890,17 @@ pub fn create_changeset(
     hash.update(&changeset.0);
     cs_metadata.changeset_id = hash.finalize();
     let buf = cs_metadata.serialize();
-    let mut blob_oid = object_id::default();
-    unsafe {
-        store_git_blob(buf.as_str_slice(), &mut blob_oid);
-        store.set(
-            SetWhat::Changeset,
-            cs_metadata.changeset_id.into(),
-            commit_id.into(),
-        );
-        store.set(
-            SetWhat::ChangesetMeta,
-            cs_metadata.changeset_id.into(),
-            blob_oid.clone().into(),
-        );
-    }
+    let blob_oid = store_git_blob(&buf);
+    store.set(
+        SetWhat::Changeset,
+        cs_metadata.changeset_id.into(),
+        commit_id.into(),
+    );
+    store.set(
+        SetWhat::ChangesetMeta,
+        cs_metadata.changeset_id.into(),
+        blob_oid.into(),
+    );
     let mut heads = store.changeset_heads_mut();
     let branch = branch.as_deref().unwrap_or(b"default").as_bstr();
     heads.add(cs_metadata.changeset_id, &parents, branch);
@@ -2152,18 +2147,14 @@ pub fn store_changegroup<R: Read>(store: &Store, input: R, version: u8) {
             if content.starts_with(b"\x01\n") {
                 let [file_metadata, file_content] =
                     content[2..].splitn_exact(&b"\x01\n"[..]).unwrap();
-                unsafe {
-                    let mut metadata_oid = object_id::default();
-                    store_git_blob(file_metadata.as_str_slice(), &mut metadata_oid);
-                    store
-                        .files_meta_mut()
-                        .add_note(node.into(), metadata_oid.into());
-                }
+                let metadata_oid = store_git_blob(file_metadata);
+                store
+                    .files_meta_mut()
+                    .add_note(node.into(), metadata_oid.into());
                 content = file_content;
             }
             unsafe {
-                let mut file_oid = object_id::default();
-                if let Some(reference_entry) = (!delta_node.is_null())
+                let file_oid = if let Some(reference_entry) = (!delta_node.is_null())
                     .then(|| {
                         delta_node.to_git(store).and_then(|delta_node| {
                             get_object_entry(&GitObjectId::from(delta_node).into()).as_ref()
@@ -2177,6 +2168,7 @@ pub fn store_changegroup<R: Read>(store: &Store, input: R, version: u8) {
                         .map(BlobId::from_unchecked)
                         .map_or(0, |b| RawBlob::read(b).unwrap().as_bytes().len() + 4);
 
+                    let mut file_oid = object_id::default();
                     store_git_object(
                         object_type::OBJ_BLOB,
                         content.as_str_slice(),
@@ -2184,8 +2176,9 @@ pub fn store_changegroup<R: Read>(store: &Store, input: R, version: u8) {
                         &reference_file[reference_offset..].as_str_slice(),
                         reference_entry,
                     );
+                    BlobId::from_unchecked(file_oid.into())
                 } else {
-                    store_git_blob(content.as_str_slice(), &mut file_oid);
+                    store_git_blob(content)
                 };
                 store.hg2git_mut().add_note(node.into(), file_oid.into());
             }
@@ -2249,10 +2242,7 @@ pub fn store_changegroup<R: Read>(store: &Store, input: R, version: u8) {
     drop(input);
     drop(bundle_writer);
     if !bundle.is_empty() {
-        let mut bundle_blob = object_id::default();
-        unsafe {
-            store_git_blob(bundle.as_str_slice(), &mut bundle_blob);
-        }
+        let bundle_blob = store_git_blob(&bundle);
         BUNDLE_BLOBS.lock().unwrap().push(bundle_blob);
     }
 }
