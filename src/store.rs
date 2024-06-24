@@ -1396,11 +1396,7 @@ fn store_changesets_metadata(store: &Store) -> CommitId {
     for (head, branch) in heads.branch_heads() {
         write!(commit, "\n{} {}", head, branch).ok();
     }
-    let mut result = object_id::default();
-    unsafe {
-        store_git_commit(commit.as_str_slice(), &mut result);
-    }
-    CommitId::from_unchecked(result.into())
+    store_git_commit(&commit)
 }
 
 fn store_manifests_metadata(store: &Store) -> CommitId {
@@ -1412,11 +1408,7 @@ fn store_manifests_metadata(store: &Store) -> CommitId {
     }
     writeln!(commit, "author  <cinnabar@git> 0 +0000").ok();
     writeln!(commit, "committer  <cinnabar@git> 0 +0000\n").ok();
-    let mut result = object_id::default();
-    unsafe {
-        store_git_commit(commit.as_str_slice(), &mut result);
-    }
-    CommitId::from_unchecked(result.into())
+    store_git_commit(&commit)
 }
 
 #[no_mangle]
@@ -1440,7 +1432,6 @@ pub fn set_changeset_heads(store: &Store, new_heads: ChangesetHeads) {
 extern "C" {
     pub fn ensure_store_init();
     fn store_git_tree(tree_buf: strslice, reference: *const object_id, result: *mut object_id);
-    pub fn store_git_commit(commit_buf: strslice, result: *mut object_id);
     fn store_git_object(
         typ: object_type,
         buf: strslice,
@@ -1463,6 +1454,20 @@ pub fn store_git_blob(blob_buf: &[u8]) -> BlobId {
             ptr::null(),
         );
         BlobId::from_unchecked(result.into())
+    }
+}
+
+pub fn store_git_commit(commit_buf: &[u8]) -> CommitId {
+    unsafe {
+        let mut result = object_id::default();
+        store_git_object(
+            object_type::OBJ_COMMIT,
+            commit_buf.as_str_slice(),
+            &mut result,
+            ptr::null(),
+            ptr::null(),
+        );
+        CommitId::from_unchecked(result.into())
     }
 }
 
@@ -1729,11 +1734,7 @@ fn store_changeset(
         let replace = commit_id;
         let mut raw_commit = Vec::from(raw_commit_for_changeset(&changeset, tree_id, &git_parents));
         let commit_id = loop {
-            let mut result_oid = object_id::default();
-            unsafe {
-                store_git_commit(raw_commit.as_str_slice(), &mut result_oid);
-            }
-            let commit_id = CommitId::from_unchecked(GitObjectId::from(result_oid));
+            let commit_id = store_git_commit(&raw_commit);
             // There are cases where two changesets would map to the same git
             // commit because their differences are not in information stored in
             // the git commit (different manifest node, but identical tree ;
@@ -2740,11 +2741,7 @@ pub fn do_store_metadata(store: &Store) -> CommitId {
           \n\
           files-meta unified-manifests-v2",
         );
-        let mut result = object_id::default();
-        unsafe {
-            store_git_commit(buf.as_str_slice(), &mut result);
-        }
-        CommitId::from_unchecked(result.into())
+        store_git_commit(&buf)
     })();
     if progress_enabled() {
         eprintln!();

@@ -1302,11 +1302,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                 buf.extend_from_slice(commit.committer());
                 buf.extend_from_slice(b"\n\n");
                 buf.extend_from_slice(commit.body());
-                let mut new_oid = object_id::default();
-                unsafe {
-                    store::store_git_commit(buf.as_str_slice(), &mut new_oid);
-                }
-                let new_cid = CommitId::from_unchecked(new_oid.into());
+                let new_cid = store::store_git_commit(&buf);
                 assert!(rewritten.insert(cid, Some(new_cid)).is_none());
             } else {
                 assert!(rewritten.insert(cid, None).is_none());
