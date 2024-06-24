@@ -553,23 +553,11 @@ void store_replace_map(struct object_id *result) {
 	strbuf_release(&buf);
 }
 
-void store_git_tree(struct strslice tree_buf, const struct object_id *reference,
-                    struct object_id *result)
+void unpack_object_entry(struct object_entry *oe, char **buf,
+                         unsigned long *len)
 {
-	struct object_entry *oe = NULL;
-	if (reference) {
-		oe = get_object_entry(reference);
-	}
-	if (oe) {
-		struct strslice ref_tree;
-		unsigned long len;
-		ref_tree.buf = gfi_unpack_entry(oe, &len);
-		ref_tree.len = len;
-		store_git_object(OBJ_TREE, tree_buf, result, &ref_tree, oe);
-		free((char*)ref_tree.buf);
-	} else {
-		store_git_object(OBJ_TREE, tree_buf, result, NULL, NULL);
-	}
+	// Note: ownership is given out.
+	*buf = gfi_unpack_entry(oe, len);
 }
 
 void store_git_object(enum object_type type, const struct strslice buf,

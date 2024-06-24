@@ -11,7 +11,7 @@ use std::io::{copy, BufRead, BufReader, Read, Write};
 use std::iter::{repeat, IntoIterator};
 use std::mem;
 use std::num::NonZeroU32;
-use std::os::raw::c_int;
+use std::os::raw::{c_char, c_int, c_ulong};
 use std::process::{Command, Stdio};
 use std::ptr;
 use std::sync::Mutex;
@@ -48,7 +48,7 @@ use crate::hg_data::{hash_data, GitAuthorship, HgAuthorship, HgCommitter};
 use crate::libcinnabar::{git_notes_tree, hg_notes_tree, strslice, strslice_mut, AsStrSlice};
 use crate::libgit::{
     config_get_value, die, for_each_ref_in, get_oid_blob, object_entry, object_id, object_type,
-    resolve_ref, FileMode, RefTransaction,
+    resolve_ref, FfiBox, FileMode, RefTransaction,
 };
 use crate::oid::ObjectId;
 use crate::progress::{progress_enabled, Progress};
@@ -1381,12 +1381,9 @@ fn store_changesets_metadata(store: &Store) -> CommitId {
         tree.extend_from_slice(b"\0");
         tree.extend_from_slice(blob.as_raw_bytes());
     }
-    let mut tid = object_id::default();
-    unsafe {
-        store_git_tree(tree.as_str_slice(), std::ptr::null(), &mut tid);
-    }
+    let tid = store_git_tree(&tree, None);
     let mut commit = Vec::new();
-    writeln!(commit, "tree {}", GitObjectId::from(tid)).ok();
+    writeln!(commit, "tree {}", tid).ok();
     let heads = store.changeset_heads();
     for (head, _) in heads.branch_heads() {
         writeln!(commit, "parent {}", head.to_git(store).unwrap()).ok();
@@ -1431,7 +1428,6 @@ pub fn set_changeset_heads(store: &Store, new_heads: ChangesetHeads) {
 
 extern "C" {
     pub fn ensure_store_init();
-    fn store_git_tree(tree_buf: strslice, reference: *const object_id, result: *mut object_id);
     fn store_git_object(
         typ: object_type,
         buf: strslice,
@@ -1441,6 +1437,7 @@ extern "C" {
     );
     pub fn do_set_replace(replaced: *const object_id, replace_with: *const object_id);
     fn get_object_entry(oid: *const object_id) -> *const object_entry;
+    fn unpack_object_entry(oe: *const object_entry, buf: *mut *mut c_char, len: *mut c_ulong);
 }
 
 pub fn store_git_blob(blob_buf: &[u8]) -> BlobId {
@@ -1454,6 +1451,32 @@ pub fn store_git_blob(blob_buf: &[u8]) -> BlobId {
             ptr::null(),
         );
         BlobId::from_unchecked(result.into())
+    }
+}
+
+pub fn store_git_tree(tree_buf: &[u8], reference: Option<TreeId>) -> TreeId {
+    unsafe {
+        let mut oe = ptr::null();
+        let mut ref_tree = None;
+        if let Some(reference) = reference {
+            oe = get_object_entry(&reference.into());
+            if !oe.is_null() {
+                let mut reftree_buf = ptr::null_mut();
+                let mut len = 0;
+                unpack_object_entry(oe, &mut reftree_buf, &mut len);
+                ref_tree = Some(FfiBox::from_raw_parts(reftree_buf as *mut u8, len as usize));
+            }
+        }
+        let mut result = object_id::default();
+        let ref_tree = ref_tree.as_ref().map(|x| x.as_str_slice());
+        store_git_object(
+            object_type::OBJ_TREE,
+            tree_buf.as_str_slice(),
+            &mut result,
+            ref_tree.as_ref().map_or(ptr::null(), |x| x as *const _),
+            oe,
+        );
+        TreeId::from_unchecked(result.into())
     }
 }
 
@@ -1653,16 +1676,7 @@ fn create_git_tree(
         tree_buf.extend_from_slice(b"\0");
         tree_buf.extend_from_slice(oid.as_raw_bytes());
     }
-    let mut result = object_id::default();
-    let ref_tree = ref_tree_id.map(GitObjectId::from).map(object_id::from);
-    unsafe {
-        store_git_tree(
-            tree_buf.as_str_slice(),
-            ref_tree.as_ref().map_or(ptr::null(), |x| x as *const _),
-            &mut result,
-        );
-    }
-    let result = TreeId::from_unchecked(result.into());
+    let result = store_git_tree(&tree_buf, ref_tree_id);
     if merge_tree_id.is_none() {
         store
             .tree_cache_
@@ -1686,11 +1700,7 @@ fn store_changeset(
         .ok_or(GraftError::NoGraft)?;
     let changeset = raw_changeset.parse().unwrap();
     let manifest_tree_id = GitManifestTreeId::from_unchecked(match changeset.manifest() {
-        m if m.is_null() => unsafe {
-            let mut tid = object_id::default();
-            store_git_tree([].as_str_slice(), std::ptr::null(), &mut tid);
-            TreeId::from_unchecked(GitObjectId::from(tid))
-        },
+        m if m.is_null() => store_git_tree(&[], None),
         m => {
             let git_manifest_id = m.to_git(store).unwrap();
             let manifest_commit = RawCommit::read(git_manifest_id.into()).unwrap();
