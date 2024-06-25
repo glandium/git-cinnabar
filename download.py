@@ -285,14 +285,28 @@ def main(args):
 
     tag = None
     local_sha1 = None
-    if build_commit:
+    if build_commit and not args.exact and not args.branch:
         try:
             local_sha1 = build_commit()
         except Exception:
             pass
 
     exact = args.exact or (not args.branch and local_sha1)
-    branch = args.branch or local_sha1 or 'release'
+    branch = args.branch or 'release'
+
+    if build_commit and exact and not args.variant:
+        tags = [
+            ref[len('refs/tags/'):]
+            for sha1, _, ref in (
+                l.split(None, 2)
+                for l in subprocess.check_output(
+                    ['git', 'for-each-ref', 'refs/tags/']).splitlines()
+            )
+            if sha1.decode('ascii') == exact
+        ]
+        tags = sorted(tags, key=lambda x: split_version(x), reverse=True)
+        if tags:
+            tag = tags[0].decode('ascii')
 
     if exact:
         sha1 = exact
