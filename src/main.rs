@@ -1891,6 +1891,9 @@ fn do_unbundle(store: &mut Store, clonebundle: bool, mut url: OsString) -> Resul
             Err("Repository does not support clonebundles")?;
         }
         url = get_clonebundle_url(&mut *conn).ok_or("Repository didn't provide a clonebundle")?;
+        // Release the connection now, so that its cleanup doesn't conflict
+        // with get_bundle_connection.  Yes, this API sucks.
+        std::mem::drop(conn);
         eprintln!("Getting clone bundle from {}", url);
         get_bundle_connection(&url).unwrap()
     } else {
