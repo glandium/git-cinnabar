@@ -1873,6 +1873,7 @@ pub fn create_changeset(
     commit_id: CommitId,
     manifest_id: HgManifestId,
     files: Option<Box<[u8]>>,
+    branch: Option<&BStr>,
 ) -> (HgChangesetId, GitChangesetMetadataId) {
     let mut cs_metadata = GitChangesetMetadata {
         changeset_id: HgChangesetId::NULL,
@@ -1884,13 +1885,15 @@ pub fn create_changeset(
     };
     let commit = RawCommit::read(commit_id).unwrap();
     let commit = commit.parse().unwrap();
-    let branch = commit.parents().first().and_then(|p| {
-        let cs_metadata =
-            RawGitChangesetMetadata::read(store, GitChangesetId::from_unchecked(*p)).unwrap();
-        let cs_metadata = cs_metadata.parse().unwrap();
-        cs_metadata
-            .extra()
-            .and_then(|e| e.get(b"branch").map(ToBoxed::to_boxed))
+    let branch = branch.map(ToBoxed::to_boxed).or_else(|| {
+        commit.parents().first().and_then(|p| {
+            let cs_metadata =
+                RawGitChangesetMetadata::read(store, GitChangesetId::from_unchecked(*p)).unwrap();
+            let cs_metadata = cs_metadata.parse().unwrap();
+            cs_metadata
+                .extra()
+                .and_then(|e| e.get(b"branch").map(|b| b.as_bstr().to_boxed()))
+        })
     });
     let mut extra = None;
     if let Some(branch) = &branch {
@@ -1940,7 +1943,7 @@ pub fn create_changeset(
         blob_oid.into(),
     );
     let mut heads = store.changeset_heads_mut();
-    let branch = branch.as_deref().unwrap_or(b"default").as_bstr();
+    let branch = branch.as_deref().unwrap_or(b"default".as_bstr());
     heads.add(cs_metadata.changeset_id, &parents, branch);
     let cs_metadata_id =
         GitChangesetMetadataId::from_unchecked(BlobId::from_unchecked(GitObjectId::from(blob_oid)));

@@ -2184,7 +2184,7 @@ fn do_bundle(
     let commits = rev_list(revs).map(|c| {
         let commit = RawCommit::read(c).unwrap();
         let commit = commit.parse().unwrap();
-        (c, commit.parents().to_boxed())
+        (c, commit.parents().to_boxed(), None)
     });
     let file = File::create(path).unwrap();
     let result = do_create_bundle(store, commits, bundlespec, version, &file, false).map(|_| 0);
@@ -2288,7 +2288,7 @@ fn create_manifest(store: &Store, content: &mut [u8], parents: &[HgManifestId]) 
     mid
 }
 
-fn create_root_changeset(store: &Store, cid: CommitId) -> HgChangesetId {
+fn create_root_changeset(store: &Store, cid: CommitId, branch: Option<&BStr>) -> HgChangesetId {
     // TODO: this is all very suboptimal in what it does, how it does it,
     // and what the code looks like.
     unsafe {
@@ -2311,7 +2311,7 @@ fn create_root_changeset(store: &Store, cid: CommitId) -> HgChangesetId {
     }
     paths.pop();
     let mid = create_manifest(store, &mut manifest, &[]);
-    let (csid, _) = create_changeset(store, cid, mid, Some(paths.to_boxed()));
+    let (csid, _) = create_changeset(store, cid, mid, Some(paths.to_boxed()), branch);
     csid
 }
 
@@ -2472,13 +2472,18 @@ fn create_simple_manifest(
     (mid, Some(paths.into_boxed_slice()))
 }
 
-fn create_simple_changeset(store: &Store, cid: CommitId, parent: CommitId) -> [HgChangesetId; 2] {
+fn create_simple_changeset(
+    store: &Store,
+    cid: CommitId,
+    parent: CommitId,
+    branch: Option<&BStr>,
+) -> [HgChangesetId; 2] {
     unsafe {
         ensure_store_init();
     }
     let parent_csid = GitChangesetId::from_unchecked(parent).to_hg(store).unwrap();
     let (mid, paths) = create_simple_manifest(store, cid, parent);
-    let (csid, _) = create_changeset(store, cid, mid, paths);
+    let (csid, _) = create_changeset(store, cid, mid, paths, branch);
     [csid, parent_csid]
 }
 
@@ -2487,6 +2492,7 @@ fn create_merge_changeset(
     cid: CommitId,
     parent1: CommitId,
     parent2: CommitId,
+    branch: Option<&BStr>,
 ) -> [HgChangesetId; 3] {
     static EXPERIMENTAL: std::sync::Once = std::sync::Once::new();
 
@@ -2511,7 +2517,7 @@ fn create_merge_changeset(
     let (parent2_csid, parent2_mid) = cs_mn(parent2);
     if parent1_mid == parent2_mid {
         let (mid, paths) = create_simple_manifest(store, cid, parent1);
-        let (csid, _) = create_changeset(store, cid, mid, paths);
+        let (csid, _) = create_changeset(store, cid, mid, paths, branch);
         [csid, parent1_csid, parent2_csid]
     } else {
         let parent1_mn_cid = parent1_mid.to_git(store).unwrap();
@@ -2650,20 +2656,21 @@ fn create_merge_changeset(
                 Some(paths.into_boxed_slice()),
             )
         };
-        let (csid, _) = create_changeset(store, cid, mid, paths);
+        let (csid, _) = create_changeset(store, cid, mid, paths, branch);
         [csid, parent1_csid, parent2_csid]
     }
 }
 
 pub fn do_create_bundle(
     store: &Store,
-    commits: impl Iterator<Item = (CommitId, Box<[CommitId]>)>,
+    commits: impl Iterator<Item = (CommitId, Box<[CommitId]>, Option<Box<BStr>>)>,
     bundlespec: BundleSpec,
     version: u8,
     output: &File,
     replycaps: bool,
 ) -> Result<ChangesetHeads, String> {
-    let changesets = commits.map(move |(cid, parents)| {
+    let changesets = commits.map(move |(cid, parents, branch)| {
+        let branch = branch.as_deref();
         if let Some(csid) = GitChangesetId::from_unchecked(cid).to_hg(store) {
             let mut parents = parents.iter().copied();
             let parent1 = parents.next().map_or(HgChangesetId::NULL, |p| {
@@ -2676,12 +2683,12 @@ pub fn do_create_bundle(
             [csid, parent1, parent2]
         } else if parents.is_empty() {
             [
-                create_root_changeset(store, cid),
+                create_root_changeset(store, cid, branch),
                 HgChangesetId::NULL,
                 HgChangesetId::NULL,
             ]
         } else if parents.len() == 1 {
-            let [csid, parent1] = create_simple_changeset(store, cid, parents[0]);
+            let [csid, parent1] = create_simple_changeset(store, cid, parents[0], branch);
             [csid, parent1, HgChangesetId::NULL]
         } else if parents.len() == 2 {
             create_merge_changeset(
@@ -2689,6 +2696,7 @@ pub fn do_create_bundle(
                 cid,
                 *parents.first().unwrap(),
                 *parents.get(1).unwrap(),
+                branch,
             )
         } else {
             die!("Pushing octopus merges to mercurial is not supported");
@@ -4592,10 +4600,11 @@ fn remote_helper_push(
                         .filter_map(|(c, _, _)| c.as_ref().map(ToString::to_string)),
                 ),
         )
+        .map(|(c, p)| (c, p, None))
         .collect_vec();
 
         if !push_commits.is_empty() {
-            let has_root = push_commits.iter().any(|(_, p)| p.is_empty());
+            let has_root = push_commits.iter().any(|(_, p, _)| p.is_empty());
             if has_root && !no_topological_heads {
                 if !force {
                     return Err("Cannot push a new root".to_string());
