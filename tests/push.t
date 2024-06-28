@@ -366,6 +366,8 @@ In that corner case, we don't store metadata.
   $ git -C uvw-git cinnabar rollback --candidates
   2836e453f32b1ecccd3acca412f75b07c88176bf (current)
 
+Test the git_commit experimental feature.
+
   $ rm -rf $REPO/.hg
   $ hg init $REPO
   $ git -C abc-git cinnabar rollback 0000000000000000000000000000000000000000
@@ -392,3 +394,12 @@ In that corner case, we don't store metadata.
   |
   o  f92470d7f6966a39dfbced6a525fe81ebf5c37b9 default a
   
+
+Round-trips back to the same commits, despite the Mercurial changesets being
+different than without the feature enabled.
+
+  $ git -c fetch.prune=true clone -q hg::$REPO $REPO-git
+  $ git -C $REPO-git log --graph --remotes --oneline --no-abbrev-commit
+  * 687e015f9f646bb19797d991f2f53087297fbe14 c
+  * d04f6df4abe2870ceb759263ee6aaa9241c4f93c b
+  * 8b86a58578d5270969543e287634e3a2f122a338 a
