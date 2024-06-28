@@ -292,8 +292,9 @@ Experimental features:
 
 Git-cinnabar has a set of experimental features that can be enabled
 independently. You can set the `cinnabar.experiments` git configuration to a
-comma-separated list of those features to enable the selected ones, or to
-`all` to enable them all. The available features are:
+comma-separated list of those features to enable the selected ones.
+
+The available features are:
 
 - **merge**
 

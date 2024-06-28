@@ -4877,7 +4877,10 @@ static EXPERIMENTS: Lazy<AllExperiments> = Lazy::new(|| {
     if let Some(config) = get_config("experiments") {
         for c in config.as_bytes().split(|&b| b == b',') {
             match c {
-                b"true" | b"all" | b"merge" => {
+                b"true" | b"all" => {
+                    warn!(target: "root", "`cinnabar.experiments` value `{}` is not supported anymore. Please enable experiments individually.", c.as_bstr());
+                }
+                b"merge" => {
                     flags |= Experiments::MERGE;
                 }
                 s if s.starts_with(b"similarity") => {
