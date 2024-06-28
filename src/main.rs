@@ -4861,23 +4861,24 @@ pub fn has_compat(c: Compat) -> bool {
     COMPAT.contains(c)
 }
 
-pub struct Experiments {
-    merge: bool,
+bitflags! {
+    pub struct Experiments: i32 {
+        const MERGE = 0x1;
+    }
+}
+pub struct AllExperiments {
+    flags: Experiments,
     similarity: CString,
 }
 
-impl Experiments {
-    const MERGE: u8 = 0x1;
-}
-
-static EXPERIMENTS: Lazy<Experiments> = Lazy::new(|| {
-    let mut merge = false;
+static EXPERIMENTS: Lazy<AllExperiments> = Lazy::new(|| {
+    let mut flags = Experiments::empty();
     let mut similarity = None;
     if let Some(config) = get_config("experiments") {
         for c in config.as_bytes().split(|&b| b == b',') {
             match c {
                 b"true" | b"all" | b"merge" => {
-                    merge = true;
+                    flags |= Experiments::MERGE;
                 }
                 s if s.starts_with(b"similarity") => {
                     if let Some(value) = s[b"similarity".len()..].strip_prefix(b"=") {
@@ -4897,17 +4898,14 @@ static EXPERIMENTS: Lazy<Experiments> = Lazy::new(|| {
             }
         }
     }
-    Experiments {
-        merge,
+    AllExperiments {
+        flags,
         similarity: similarity.unwrap_or_else(|| cstr!("-C100%").into()),
     }
 });
 
-pub fn experiment(experiments: u8) -> bool {
-    match experiments {
-        Experiments::MERGE => EXPERIMENTS.merge,
-        _ => false,
-    }
+pub fn experiment(experiments: Experiments) -> bool {
+    EXPERIMENTS.flags.contains(experiments)
 }
 
 pub fn experiment_similarity() -> &'static CStr {
