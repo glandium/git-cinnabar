@@ -4864,6 +4864,8 @@ pub fn has_compat(c: Compat) -> bool {
 bitflags! {
     pub struct Experiments: i32 {
         const MERGE = 0x1;
+        // Add git commit as extra metadata in mercurial changesets.
+        const GIT_COMMIT = 0x2;
     }
 }
 pub struct AllExperiments {
@@ -4882,6 +4884,9 @@ static EXPERIMENTS: Lazy<AllExperiments> = Lazy::new(|| {
                 }
                 b"merge" => {
                     flags |= Experiments::MERGE;
+                }
+                b"git_commit" => {
+                    flags |= Experiments::GIT_COMMIT;
                 }
                 s if s.starts_with(b"similarity") => {
                     if let Some(value) = s[b"similarity".len()..].strip_prefix(b"=") {

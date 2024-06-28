@@ -58,7 +58,7 @@ use crate::util::{
     SliceExt, ToBoxed, Transpose,
 };
 use crate::xdiff::{apply, textdiff, PatchInfo};
-use crate::{check_enabled, has_compat, Checks, Compat};
+use crate::{check_enabled, experiment, has_compat, Checks, Compat, Experiments};
 
 pub const REFS_PREFIX: &str = "refs/cinnabar/";
 pub const REPLACE_REFS_PREFIX: &str = "refs/cinnabar/replace/";
@@ -1873,9 +1873,17 @@ pub fn create_changeset(
             .extra()
             .and_then(|e| e.get(b"branch").map(ToBoxed::to_boxed))
     });
+    let mut extra = None;
     if let Some(branch) = &branch {
-        let mut extra = ChangesetExtra::new();
+        let extra = extra.get_or_insert_with(ChangesetExtra::new);
         extra.set(b"branch", branch);
+    }
+    let git_commit_extra = experiment(Experiments::GIT_COMMIT).then(|| commit_id.to_string());
+    if let Some(git_commit_extra) = &git_commit_extra {
+        let extra = extra.get_or_insert_with(ChangesetExtra::new);
+        extra.set(b"git_commit", git_commit_extra.as_bytes());
+    }
+    if let Some(extra) = extra {
         let mut buf = Vec::new();
         extra.dump_into(&mut buf);
         cs_metadata.extra = Some(buf.into_boxed_slice());

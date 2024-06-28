@@ -365,3 +365,30 @@ In that corner case, we don't store metadata.
 
   $ git -C uvw-git cinnabar rollback --candidates
   2836e453f32b1ecccd3acca412f75b07c88176bf (current)
+
+  $ rm -rf $REPO/.hg
+  $ hg init $REPO
+  $ git -C abc-git cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C abc-git push origin 8b86a58578d5270969543e287634e3a2f122a338:refs/heads/branches/default/tip
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 1 changesets with 1 changes to 1 files
+  To hg::.*/push.t/repo (re)
+   * [new branch]      8b86a58578d5270969543e287634e3a2f122a338 -> branches/default/tip
+
+  $ git -c cinnabar.experiments=git_commit -C abc-git push origin 687e015f9f646bb19797d991f2f53087297fbe14:branches/default/tip
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 2 changesets with 2 changes to 2 files
+  To hg::.*/push.t/repo (re)
+     8b86a58..687e015  687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip
+
+  $ hg -R $REPO log -G --template '{node} {branch} {desc} {extras.git_commit}'
+  o  c70941aaa15aa6e5feae28164438f13dc3cd7b8e default c 687e015f9f646bb19797d991f2f53087297fbe14
+  |
+  o  29872b591f8d41c613bbfad38722824ab0457f17 default b d04f6df4abe2870ceb759263ee6aaa9241c4f93c
+  |
+  o  f92470d7f6966a39dfbced6a525fe81ebf5c37b9 default a
+  
