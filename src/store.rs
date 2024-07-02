@@ -90,6 +90,7 @@ pub struct Store {
     changeset_heads_: OnceCell<RefCell<ChangesetHeads>>,
     manifest_heads_: OnceCell<RefCell<ManifestHeads>>,
     tree_cache_: RefCell<BTreeMap<GitManifestTreeId, TreeId>>,
+    reverse_replace: RefCell<BTreeMap<GitChangesetId, GitChangesetId>>,
 }
 
 impl Store {
@@ -108,6 +109,7 @@ impl Store {
             changeset_heads_: OnceCell::new(),
             manifest_heads_: OnceCell::new(),
             tree_cache_: RefCell::new(BTreeMap::new()),
+            reverse_replace: RefCell::new(BTreeMap::new()),
         }
     }
 }
@@ -1695,7 +1697,10 @@ fn store_changeset(
     let git_parents = parents
         .iter()
         .copied()
-        .map(|p| p.to_git(store))
+        .map(|p| {
+            p.to_git(store)
+                .map(|p| store.reverse_replace.borrow().get(&p).copied().unwrap_or(p))
+        })
         .collect::<Option<Vec<_>>>()
         .ok_or(GraftError::NoGraft)?;
     let changeset = raw_changeset.parse().unwrap();
@@ -1787,10 +1792,13 @@ fn store_changeset(
 
     let result = (commit_id, replace);
     if let Some(replace) = result.1 {
-        let replace = object_id::from(replace);
         unsafe {
-            do_set_replace(&replace, &commit_id.into());
+            do_set_replace(&object_id::from(replace), &commit_id.into());
         }
+        store.reverse_replace.borrow_mut().insert(
+            GitChangesetId::from_unchecked(commit_id),
+            GitChangesetId::from_unchecked(replace),
+        );
     }
     store.set(SetWhat::Changeset, changeset_id.into(), commit_id.into());
     store.set(
@@ -2673,6 +2681,10 @@ impl Store {
             init_replace_map();
             for (original, replace_with) in replaces.into_iter() {
                 do_set_replace(&original.into(), &replace_with.into());
+                result.reverse_replace.borrow_mut().insert(
+                    GitChangesetId::from_unchecked(replace_with),
+                    GitChangesetId::from_unchecked(original),
+                );
             }
         }
         if unsafe { replace_map_tablesize() } == 0 {
