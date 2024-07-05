@@ -439,42 +439,43 @@ where
     }
 }
 
+/// Wrapper type to force non-recursion in `merge_join_by_path` and `diff_by_path`.
+#[derive(Debug, PartialEq)]
+pub struct NoRecurse<T>(pub T);
+impl<T> MayRecurse for NoRecurse<T> {
+    fn may_recurse(&self) -> bool {
+        false
+    }
+}
+
 #[test]
 fn test_merge_join_by_path() {
     use itertools::Itertools;
 
-    #[derive(Debug, PartialEq)]
-    struct NonTree<T>(T);
-    impl<T> MayRecurse for NonTree<T> {
-        fn may_recurse(&self) -> bool {
-            false
-        }
-    }
-
     let merged = merge_join_by_path(
         [
-            WithPath::new(*b"foo", NonTree(1)),
-            WithPath::new(*b"hoge", NonTree(2)),
-            WithPath::new(*b"qux", NonTree(3)),
+            WithPath::new(*b"foo", NoRecurse(1)),
+            WithPath::new(*b"hoge", NoRecurse(2)),
+            WithPath::new(*b"qux", NoRecurse(3)),
         ],
         [
-            WithPath::new(*b"bar", NonTree("a")),
-            WithPath::new(*b"foo", NonTree("b")),
-            WithPath::new(*b"fuga", NonTree("c")),
-            WithPath::new(*b"hoge", NonTree("d")),
-            WithPath::new(*b"toto", NonTree("e")),
+            WithPath::new(*b"bar", NoRecurse("a")),
+            WithPath::new(*b"foo", NoRecurse("b")),
+            WithPath::new(*b"fuga", NoRecurse("c")),
+            WithPath::new(*b"hoge", NoRecurse("d")),
+            WithPath::new(*b"toto", NoRecurse("e")),
         ],
     )
     .collect_vec();
     assert_eq!(
         &merged,
         &[
-            WithPath::new(*b"bar", EitherOrBoth::Right(NonTree("a"))),
-            WithPath::new(*b"foo", EitherOrBoth::Both(NonTree(1), NonTree("b"))),
-            WithPath::new(*b"fuga", EitherOrBoth::Right(NonTree("c"))),
-            WithPath::new(*b"hoge", EitherOrBoth::Both(NonTree(2), NonTree("d"))),
-            WithPath::new(*b"qux", EitherOrBoth::Left(NonTree(3))),
-            WithPath::new(*b"toto", EitherOrBoth::Right(NonTree("e"))),
+            WithPath::new(*b"bar", EitherOrBoth::Right(NoRecurse("a"))),
+            WithPath::new(*b"foo", EitherOrBoth::Both(NoRecurse(1), NoRecurse("b"))),
+            WithPath::new(*b"fuga", EitherOrBoth::Right(NoRecurse("c"))),
+            WithPath::new(*b"hoge", EitherOrBoth::Both(NoRecurse(2), NoRecurse("d"))),
+            WithPath::new(*b"qux", EitherOrBoth::Left(NoRecurse(3))),
+            WithPath::new(*b"toto", EitherOrBoth::Right(NoRecurse("e"))),
         ]
     );
 }
