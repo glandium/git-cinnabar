@@ -603,6 +603,61 @@ impl HgRepo for BundleSaverConnection {
     }
 }
 
+extern "C" {
+    fn check_pager_config(cmd: *const c_char) -> c_int;
+    fn setup_pager();
+}
+
+// https://github.com/rust-lang/rust-clippy/issues/10599
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug)]
+enum TagFormatItem {
+    TagName,
+    ObjectName,
+    HgObjectName,
+}
+
+fn do_tag_list(store: &mut Store, format: Option<String>) -> Result<(), String> {
+    unsafe {
+        if check_pager_config(cstr!("tag").as_ptr()) != 0 {
+            setup_pager();
+        }
+    }
+    // Crude imitation of `git tag -l`'s `--format`, with a limited set of field names.
+    // (and `%(tagname)` corresponding to `%(refname:strip=2)`).
+    let format = format.as_deref().unwrap_or("%(tagname)");
+    let format = format
+        .split(' ')
+        .map(|item| match item {
+            "%(tagname)" => Some(TagFormatItem::TagName),
+            "%(objectname)" => Some(TagFormatItem::ObjectName),
+            "%(hg::objectname)" => Some(TagFormatItem::HgObjectName),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| format!("Invalid format: {}", format))?;
+    let mut stdout = stdout();
+    for (tag, c) in store.get_tags().iter().sorted() {
+        for (n, format_item) in format.iter().enumerate() {
+            if n > 0 {
+                stdout.write_all(b" ").unwrap();
+            }
+            match format_item {
+                TagFormatItem::TagName => stdout.write_all(tag).unwrap(),
+                TagFormatItem::ObjectName => write!(
+                    stdout,
+                    "{}",
+                    c.to_git(store).unwrap_or(GitChangesetId::NULL)
+                )
+                .unwrap(),
+                TagFormatItem::HgObjectName => write!(stdout, "{}", c).unwrap(),
+            }
+        }
+        stdout.write_all(b"\n").unwrap();
+    }
+    Ok(())
+}
+
 fn do_fetch(
     store: &mut Store,
     remote: &OsStr,
@@ -3733,6 +3788,9 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             batch,
             do_one_git2hg,
         ),
+        Tag(TagCommand {
+            list: true, format, ..
+        }) => do_tag_list(&mut store, format),
         Tag(TagCommand { .. }) => todo!(),
         Fetch {
             remote: Some(remote),
