@@ -9,7 +9,7 @@ use either::Either;
 use hex_literal::hex;
 
 use super::{git_oid_type, GitObjectId, GitOid};
-use crate::libgit::FileMode;
+use crate::libgit::{strbuf, FileMode};
 use crate::oid::ObjectId;
 use crate::tree_util::{Empty, MayRecurse, ParseTree, RecurseAs, TreeIter, WithPath};
 use crate::util::SliceExt;
@@ -111,6 +111,24 @@ impl IntoIterator for RawTree {
 
     fn into_iter(self) -> TreeIter<RawTree> {
         TreeIter::new(self)
+    }
+}
+
+impl FromIterator<WithPath<TreeEntry>> for RawTree {
+    fn from_iter<T: IntoIterator<Item = WithPath<TreeEntry>>>(iter: T) -> Self {
+        let mut tree_buf = strbuf::new();
+        for (path, entry) in iter.into_iter().map(WithPath::unzip) {
+            let (mode, oid) = match entry {
+                Either::Left(tid) => (FileMode::DIRECTORY, GitObjectId::from(tid)),
+                Either::Right(entry) => (entry.mode, entry.oid.into()),
+            };
+            // TODO: avoid temporary allocation here.
+            tree_buf.extend_from_slice(format!("{:o} ", u16::from(mode)).as_bytes());
+            tree_buf.extend_from_slice(&path);
+            tree_buf.extend_from_slice(b"\0");
+            tree_buf.extend_from_slice(oid.as_raw_bytes());
+        }
+        RawTree(Some(tree_buf.into()))
     }
 }
 

@@ -318,6 +318,15 @@ impl<T: ?Sized> Drop for FfiBox<T> {
     }
 }
 
+impl From<strbuf> for FfiBox<[u8]> {
+    fn from(value: strbuf) -> Self {
+        let ptr = value.buf as *mut u8;
+        let len = value.len;
+        mem::forget(value);
+        unsafe { FfiBox::from_raw_parts(ptr, len) }
+    }
+}
+
 pub fn git_object_info(
     oid: impl Into<GitObjectId>,
     with_content: bool,
