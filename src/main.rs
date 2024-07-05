@@ -93,7 +93,8 @@ use byteorder::{BigEndian, WriteBytesExt};
 use cinnabar::{
     GitChangesetId, GitFileMetadataId, GitManifestId, GitManifestTree, GitManifestTreeId,
 };
-use clap::{crate_version, Parser};
+use clap::error::ErrorKind;
+use clap::{crate_version, CommandFactory, FromArgMatches, Parser};
 use cstr::cstr;
 use either::Either;
 use git::{BlobId, CommitId, GitObjectId, RawBlob, RawCommit, RawTree, TreeIsh};
@@ -3503,6 +3504,8 @@ enum CinnabarCommand {
         #[arg(long, group = "input")]
         batch: bool,
     },
+    #[command(skip)]
+    Tag(TagCommand),
     /// Fetch a changeset from a mercurial remote
     #[command(name = "fetch")]
     Fetch {
@@ -3599,20 +3602,81 @@ enum CinnabarCommand {
     Setup,
 }
 
-use CinnabarCommand::*;
+/// Create, list, delete tags
+#[derive(Parser)]
+#[command(name = "tag")]
+struct TagCommand {
+    /// List tags
+    #[arg(short = 'l', long, conflicts_with_all = ["delete", "message", "tag", "committish"])]
+    list: bool,
+    #[arg(long, conflicts_with_all = ["delete", "message", "tag", "committish"])]
+    format: Option<String>,
+    /// Delete existing tag
+    #[arg(short = 'd', long, conflicts_with = "committish")]
+    delete: bool,
+    /// Use text as commit message
+    #[arg(short = 'm', long)]
+    message: Option<OsString>,
+    /// Tag name
+    #[arg(required = true)]
+    tag: Option<OsString>,
+    /// Object to tag (can be either a git commit or a mercurial changeset)
+    committish: Option<OsString>,
+}
+
+struct AllCommand(CinnabarCommand);
+
+impl CommandFactory for AllCommand {
+    fn command() -> clap::Command {
+        let mut command = CinnabarCommand::command();
+        if experiment(Experiments::TAG) {
+            command = command.subcommand(TagCommand::command());
+        }
+        command
+    }
+
+    fn command_for_update() -> clap::Command {
+        unimplemented!()
+    }
+}
+
+impl FromArgMatches for AllCommand {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        CinnabarCommand::from_arg_matches(matches)
+            .or_else(|e| {
+                if e.kind() == ErrorKind::InvalidSubcommand {
+                    if let Some((name, matches)) = matches.subcommand() {
+                        if name == "tag" && experiment(Experiments::TAG) {
+                            return TagCommand::from_arg_matches(matches).map(CinnabarCommand::Tag);
+                        }
+                    }
+                }
+                Err(e)
+            })
+            .map(Self)
+    }
+
+    fn update_from_arg_matches(&mut self, _matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        unimplemented!()
+    }
+}
+
+impl Parser for AllCommand {}
 
 fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
+    use CinnabarCommand::*;
+
     let command = if let Some(args) = args {
-        CinnabarCommand::try_parse_from(args)
+        AllCommand::try_parse_from(args)
     } else {
-        CinnabarCommand::try_parse()
+        AllCommand::try_parse()
     };
     let command = match command {
-        Ok(c) => c,
+        Ok(c) => c.0,
         Err(e) => {
             e.print().unwrap();
             #[cfg(feature = "version-check")]
-            if e.kind() == clap::error::ErrorKind::DisplayVersion
+            if e.kind() == ErrorKind::DisplayVersion
                 && format!("{}", e.render()) != concat!("git-cinnabar ", crate_version!(), "\n")
             {
                 if let Some(mut checker) = VersionChecker::force_now() {
@@ -3669,6 +3733,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             batch,
             do_one_git2hg,
         ),
+        Tag(TagCommand { .. }) => todo!(),
         Fetch {
             remote: Some(remote),
             revs,
@@ -4866,6 +4931,7 @@ bitflags! {
         const MERGE = 0x1;
         // Add git commit as extra metadata in mercurial changesets.
         const GIT_COMMIT = 0x2;
+        const TAG = 0x4;
     }
 }
 pub struct AllExperiments {
@@ -4887,6 +4953,9 @@ static EXPERIMENTS: Lazy<AllExperiments> = Lazy::new(|| {
                 }
                 b"git_commit" => {
                     flags |= Experiments::GIT_COMMIT;
+                }
+                b"tag" => {
+                    flags |= Experiments::TAG;
                 }
                 s if s.starts_with(b"similarity") => {
                     if let Some(value) = s[b"similarity".len()..].strip_prefix(b"=") {
