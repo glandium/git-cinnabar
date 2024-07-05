@@ -21,7 +21,7 @@ use itertools::{EitherOrBoth, Itertools};
 use crate::git::{BlobId, CommitId, GitObjectId, GitOid, RecursedTreeEntry};
 use crate::oid::{Abbrev, ObjectId};
 use crate::tree_util::WithPath;
-use crate::util::{CStrExt, DurationExt, OptionExt, OsStrExt, Transpose};
+use crate::util::{CStrExt, DurationExt, ImmutBString, OptionExt, OsStrExt, Transpose};
 use crate::{check_enabled, experiment_similarity, logging, Checks};
 
 const GIT_MAX_RAWSZ: usize = 32;
@@ -1341,4 +1341,27 @@ impl notes_tree {
     pub const fn dirty(&self) -> bool {
         self.dirty != 0
     }
+}
+
+mod ident {
+    use std::os::raw::{c_char, c_int};
+
+    extern "C" {
+        pub fn git_committer_info(flag: c_int) -> *const c_char;
+        pub fn git_author_info(flag: c_int) -> *const c_char;
+    }
+}
+
+pub fn git_committer_info() -> ImmutBString {
+    unsafe { CStr::from_ptr(ident::git_committer_info(0).as_ref().unwrap()) }
+        .to_bytes()
+        .to_vec()
+        .into()
+}
+
+pub fn git_author_info() -> ImmutBString {
+    unsafe { CStr::from_ptr(ident::git_author_info(0).as_ref().unwrap()) }
+        .to_bytes()
+        .to_vec()
+        .into()
 }

@@ -96,8 +96,9 @@ use cinnabar::{
 use clap::error::ErrorKind;
 use clap::{crate_version, CommandFactory, FromArgMatches, Parser};
 use cstr::cstr;
+use digest::OutputSizeUser;
 use either::Either;
-use git::{BlobId, CommitId, GitObjectId, RawBlob, RawCommit, RawTree, TreeIsh};
+use git::{BlobId, CommitId, GitObjectId, RawBlob, RawCommit, RawTree, RecursedTreeEntry, TreeIsh};
 use git_version::git_version;
 use graft::{graft_finish, grafted, init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
@@ -110,9 +111,10 @@ use itertools::EitherOrBoth::{Both, Left, Right};
 use itertools::{EitherOrBoth, Itertools};
 use libgit::{
     commit, config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
-    get_oid_committish, get_unique_abbrev, lookup_commit, lookup_replace_commit, object_id,
-    reachable_subset, remote, repository, resolve_ref, rev_list, rev_list_with_boundaries,
-    the_repository, DiffTreeItem, MaybeBoundary, RefTransaction,
+    get_oid_committish, get_unique_abbrev, git_author_info, git_committer_info, lookup_commit,
+    lookup_replace_commit, object_id, reachable_subset, remote, repository, resolve_ref, rev_list,
+    rev_list_with_boundaries, the_repository, DiffTreeItem, FileMode, MaybeBoundary,
+    RefTransaction,
 };
 use logging::{LoggingReader, LoggingWriter};
 use oid::{Abbrev, ObjectId};
@@ -122,13 +124,13 @@ use progress::Progress;
 use sha1::{Digest, Sha1};
 use store::{
     check_file, check_manifest, create_changeset, do_check_files, do_store_metadata,
-    ensure_store_init, has_metadata, raw_commit_for_changeset, store_git_blob, store_manifest,
-    ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata, RawHgChangeset,
-    RawHgFile, RawHgManifest, SetWhat, Store, BROKEN_REF, CHECKED_REF, METADATA_REF, NOTES_REF,
-    REFS_PREFIX, REPLACE_REFS_PREFIX,
+    ensure_store_init, has_metadata, raw_commit_for_changeset, store_git_blob, store_git_tree,
+    store_manifest, ChangesetHeads, GeneratedGitChangesetMetadata, RawGitChangesetMetadata,
+    RawHgChangeset, RawHgFile, RawHgManifest, SetWhat, Store, BROKEN_REF, CHECKED_REF,
+    METADATA_REF, NOTES_REF, REFS_PREFIX, REPLACE_REFS_PREFIX,
 };
 use tee::TeeReader;
-use tree_util::{diff_by_path, RecurseTree};
+use tree_util::{diff_by_path, merge_join_by_path, NoRecurse, RecurseTree};
 use url::Url;
 use util::{CStrExt, IteratorExt, OsStrExt, SliceExt, Transpose};
 #[cfg(windows)]
@@ -656,6 +658,181 @@ fn do_tag_list(store: &mut Store, format: Option<String>) -> Result<(), String> 
         stdout.write_all(b"\n").unwrap();
     }
     Ok(())
+}
+
+fn validate_label(label: &[u8], typ: &str) -> Result<(), String> {
+    const RESERVED_CHARS: [u8; 4] = [b':', b'\0', b'\n', b'\r'];
+    match label {
+        b"tip" | b"." | b"null" => Err(format!(
+            "Cannot use reserved name '{}' as a {} name",
+            label.as_bstr(),
+            typ
+        )),
+        _ if label.iter().any(|x| RESERVED_CHARS.contains(x)) => Err(format!(
+            "Cannot use character '{}' in a {} name",
+            label[label
+                .iter()
+                .position(|x| RESERVED_CHARS.contains(x))
+                .unwrap()] as char,
+            typ
+        )),
+        _ if label.iter().all(u8::is_ascii_digit) => {
+            Err(format!("Cannot use an integer as a {} name", typ))
+        }
+        _ if label.trim_with(|x| x.is_ascii_whitespace()) != label => {
+            Err(format!("Leading or trailing whitespace in {} name", typ))
+        }
+        _ => Ok(()),
+    }
+}
+
+fn do_tag(
+    store: &mut Store,
+    force: bool,
+    delete: bool,
+    message: Option<OsString>,
+    tag: Option<OsString>,
+    committish: Option<OsString>,
+) -> Result<(), String> {
+    // TODO: `hg tag`` doesn't allow to create a tag on a non-head without `-f`.
+    let tags = store.get_tags();
+    let tag = tag.expect("clap should have ensured it's Some at this point");
+    let tag = tag.as_bytes();
+    validate_label(tag, "tag")?;
+    let (current_csid, new_csid) = if delete {
+        (
+            Some(
+                tags.get(tag)
+                    .ok_or_else(|| format!("tag '{}' not found", tag.as_bstr()))?,
+            ),
+            HgChangesetId::NULL,
+        )
+    } else {
+        let current_csid = tags.get(tag);
+        if current_csid.is_some() && !force {
+            return Err(format!("tag '{}' already exists", tag.as_bstr()));
+        }
+        let committish = committish.as_deref().map_or(&b"HEAD"[..], OsStr::as_bytes);
+        let commit = get_oid_committish(committish)
+            .or_else(|| {
+                Abbrev::<HgChangesetId>::from_bytes(committish)
+                    .ok()
+                    .and_then(|cs| cs.to_git(store).map(Into::into))
+            })
+            .map(lookup_replace_commit)
+            .map(GitChangesetId::from_unchecked)
+            .ok_or_else(|| format!("bad revision '{}'", committish.as_bstr()))?;
+        let csid = commit
+            .to_hg(store)
+            .ok_or_else(|| format!("{} is not on a Mercurial repository (yet?)", commit))?;
+        (
+            current_csid.or_else(|| tags.ever_contained(tag).then_some(HgChangesetId::NULL)),
+            csid,
+        )
+    };
+    let head = resolve_ref("HEAD").expect("We shouldn't be reaching here without a HEAD");
+    let tree = RawTree::read_treeish(head).unwrap();
+    let new_tree = merge_join_by_path(
+        tree,
+        [WithPath::new(
+            *b".hgtags",
+            NoRecurse((current_csid, new_csid)),
+        )],
+    )
+    .map(|merged| {
+        merged.map(|merged| {
+            let (hgtags, current_csid, new_csid) = match merged {
+                EitherOrBoth::Left(l) => return l,
+                EitherOrBoth::Right(r) => (None, r.0 .0, r.0 .1),
+                EitherOrBoth::Both(l, r) => {
+                    // TODO: what to do if it's not a blob?
+                    let hgtags = l
+                        .right()
+                        .and_then(|e| BlobId::try_from(e.oid).ok())
+                        .and_then(RawBlob::read);
+                    (hgtags, r.0 .0, r.0 .1)
+                }
+            };
+            let hgtags = hgtags.as_ref().map_or(&b""[..], RawBlob::as_bytes);
+            let oid_len =
+                <<HgChangesetId as ObjectId>::Digest as OutputSizeUser>::output_size() * 2;
+            let mut needed_size = oid_len + /* one space */ 1 + tag.len() + /* newline */ 1;
+            if current_csid.is_some() {
+                needed_size *= 2;
+            }
+            let missing_newline = hgtags.last().is_some_and(|c| *c != b'\n');
+            if missing_newline {
+                needed_size += 1;
+            }
+            let mut new_hgtags = Vec::with_capacity(hgtags.len() + needed_size);
+            new_hgtags.extend_from_slice(hgtags);
+            if missing_newline {
+                new_hgtags.push(b'\n');
+            }
+            if let Some(current_csid) = current_csid {
+                write!(&mut new_hgtags, "{}", current_csid).unwrap();
+                new_hgtags.push(b' ');
+                new_hgtags.extend_from_slice(tag);
+                new_hgtags.push(b'\n');
+            }
+            write!(&mut new_hgtags, "{}", new_csid).unwrap();
+            new_hgtags.push(b' ');
+            new_hgtags.extend_from_slice(tag);
+            new_hgtags.push(b'\n');
+
+            let oid = store_git_blob(&new_hgtags);
+            Either::Right(RecursedTreeEntry {
+                oid: oid.into(),
+                mode: FileMode::REGULAR | FileMode::RW,
+            })
+        })
+    })
+    .collect::<RawTree>();
+    // Giving a reference is not useful, as the original tree is not
+    // going to be in the same pack.
+    let tree_id = store_git_tree(new_tree.as_bytes(), None);
+
+    let mut buf = Vec::new();
+    buf.extend_from_slice(b"tree ");
+    buf.extend_from_slice(tree_id.to_string().as_bytes());
+    buf.extend_from_slice(b"\nparent ");
+    buf.extend_from_slice(head.to_string().as_bytes());
+    buf.extend_from_slice(b"\nauthor ");
+    buf.extend_from_slice(&git_author_info());
+    buf.extend_from_slice(b"\ncommitter ");
+    buf.extend_from_slice(&git_committer_info());
+    buf.extend_from_slice(b"\n\n");
+    buf.extend_from_slice(&message.as_deref().map_or_else(
+        || {
+            let mut buf = Vec::new();
+            buf.extend_from_slice(if delete {
+                b"Removed tag "
+            } else {
+                b"Added tag "
+            });
+            buf.extend_from_slice(tag);
+            if !delete {
+                buf.extend_from_slice(b" for changeset ");
+                buf.extend_from_slice(new_csid.abbrev(12).to_string().as_bytes());
+            }
+            buf.into()
+        },
+        |m| Cow::Borrowed(m.as_bytes()),
+    ));
+    let new_cid = store::store_git_commit(&buf);
+
+    unsafe {
+        do_cleanup(0);
+    }
+
+    Command::new("git")
+        .arg("merge")
+        .arg(new_cid.to_string())
+        .status()
+        .expect("Failed to execute `git merge`")
+        .success()
+        .then_some(())
+        .ok_or_else(|| "git merge failed".to_string())
 }
 
 fn do_fetch(
@@ -3662,10 +3839,13 @@ enum CinnabarCommand {
 #[command(name = "tag")]
 struct TagCommand {
     /// List tags
-    #[arg(short = 'l', long, conflicts_with_all = ["delete", "message", "tag", "committish"])]
+    #[arg(short = 'l', long, conflicts_with_all = ["delete", "message", "force", "tag", "committish"])]
     list: bool,
-    #[arg(long, conflicts_with_all = ["delete", "message", "tag", "committish"])]
+    #[arg(long, conflicts_with_all = ["delete", "message", "force", "tag", "committish"])]
     format: Option<String>,
+    /// Force tag operation
+    #[arg(short = 'f', long)]
+    force: bool,
     /// Delete existing tag
     #[arg(short = 'd', long, conflicts_with = "committish")]
     delete: bool,
@@ -3791,7 +3971,15 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         Tag(TagCommand {
             list: true, format, ..
         }) => do_tag_list(&mut store, format),
-        Tag(TagCommand { .. }) => todo!(),
+        Tag(TagCommand {
+            list: false,
+            force,
+            delete,
+            message,
+            tag,
+            committish,
+            ..
+        }) => do_tag(&mut store, force, delete, message, tag, committish),
         Fetch {
             remote: Some(remote),
             revs,

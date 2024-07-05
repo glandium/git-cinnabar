@@ -1337,6 +1337,17 @@ impl TagSet {
             .iter()
             .filter_map(|(tag, (node, _))| (!node.is_null()).then_some((&**tag, node)))
     }
+
+    pub fn ever_contained(&self, tag: &[u8]) -> bool {
+        self.tags.contains_key(tag)
+    }
+
+    pub fn get(&self, tag: &[u8]) -> Option<HgChangesetId> {
+        self.tags
+            .get(tag)
+            .filter(|(node, _)| !node.is_null())
+            .map(|(node, _)| *node)
+    }
 }
 
 impl PartialEq for TagSet {
