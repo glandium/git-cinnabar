@@ -113,8 +113,8 @@ use libgit::{
     commit, config_get_value, die, diff_tree_with_copies, for_each_ref_in, for_each_remote,
     get_oid_committish, get_unique_abbrev, git_author_info, git_committer_info, lookup_commit,
     lookup_replace_commit, object_id, reachable_subset, remote, repository, resolve_ref, rev_list,
-    rev_list_with_boundaries, the_repository, DiffTreeItem, FileMode, MaybeBoundary,
-    RefTransaction,
+    rev_list_with_boundaries, rev_list_with_parents, the_repository, DiffTreeItem, FileMode,
+    MaybeBoundary, RefTransaction,
 };
 use logging::{LoggingReader, LoggingWriter};
 use oid::{Abbrev, ObjectId};
@@ -4577,7 +4577,7 @@ fn remote_helper_push(
 
         let common = find_common(store, conn, local_bases, remote);
 
-        let push_commits = rev_list(
+        let push_commits = rev_list_with_parents(
             ["--topo-order", "--full-history", "--reverse"]
                 .iter()
                 .map(ToString::to_string)
@@ -4592,11 +4592,6 @@ fn remote_helper_push(
                         .filter_map(|(c, _, _)| c.as_ref().map(ToString::to_string)),
                 ),
         )
-        .map(|c| {
-            let commit = RawCommit::read(c).unwrap();
-            let commit = commit.parse().unwrap();
-            (c, commit.parents().to_boxed())
-        })
         .collect_vec();
 
         if !push_commits.is_empty() {
