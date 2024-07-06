@@ -690,6 +690,7 @@ fn do_tag(
     store: &mut Store,
     force: bool,
     delete: bool,
+    onto: Option<OsString>,
     message: Option<OsString>,
     tag: Option<OsString>,
     committish: Option<OsString>,
@@ -730,7 +731,12 @@ fn do_tag(
             csid,
         )
     };
-    let head = resolve_ref("HEAD").expect("We shouldn't be reaching here without a HEAD");
+    let head = if let Some(onto) = &onto {
+        resolve_ref(onto)
+            .ok_or_else(|| format!("Couldn't resolve {}", onto.as_bytes().as_bstr()))?
+    } else {
+        resolve_ref("HEAD").expect("We shouldn't be reaching here without a HEAD")
+    };
     let tree = RawTree::read_treeish(head).unwrap();
     let new_tree = merge_join_by_path(
         tree,
@@ -825,14 +831,24 @@ fn do_tag(
         do_cleanup(0);
     }
 
-    Command::new("git")
-        .arg("merge")
-        .arg(new_cid.to_string())
-        .status()
-        .expect("Failed to execute `git merge`")
-        .success()
-        .then_some(())
-        .ok_or_else(|| "git merge failed".to_string())
+    if let Some(onto) = onto {
+        // TODO: check that the branch is not checked out anywhere.
+        let mut transaction = RefTransaction::new().unwrap();
+        transaction
+            .update(onto, new_cid, Some(head), "git cinnabar tag")
+            .unwrap();
+        transaction.commit().unwrap();
+        Ok(())
+    } else {
+        Command::new("git")
+            .arg("merge")
+            .arg(new_cid.to_string())
+            .status()
+            .expect("Failed to execute `git merge`")
+            .success()
+            .then_some(())
+            .ok_or_else(|| "git merge failed".to_string())
+    }
 }
 
 fn do_fetch(
@@ -3839,9 +3855,9 @@ enum CinnabarCommand {
 #[command(name = "tag")]
 struct TagCommand {
     /// List tags
-    #[arg(short = 'l', long, conflicts_with_all = ["delete", "message", "force", "tag", "committish"])]
+    #[arg(short = 'l', long, conflicts_with_all = ["delete", "onto", "message", "force", "tag", "committish"])]
     list: bool,
-    #[arg(long, conflicts_with_all = ["delete", "message", "force", "tag", "committish"])]
+    #[arg(long, conflicts_with_all = ["delete", "onto", "message", "force", "tag", "committish"])]
     format: Option<String>,
     /// Force tag operation
     #[arg(short = 'f', long)]
@@ -3849,6 +3865,9 @@ struct TagCommand {
     /// Delete existing tag
     #[arg(short = 'd', long, conflicts_with = "committish")]
     delete: bool,
+    /// Record changes on the given branch (without checking it out)
+    #[arg(long)]
+    onto: Option<OsString>,
     /// Use text as commit message
     #[arg(short = 'm', long)]
     message: Option<OsString>,
@@ -3975,11 +3994,12 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             list: false,
             force,
             delete,
+            onto,
             message,
             tag,
             committish,
             ..
-        }) => do_tag(&mut store, force, delete, message, tag, committish),
+        }) => do_tag(&mut store, force, delete, onto, message, tag, committish),
         Fetch {
             remote: Some(remote),
             revs,

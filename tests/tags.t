@@ -395,34 +395,24 @@ far as the Mercurial server goes.
   To hg::(.*)/tags.t/repo (re)
    * [new branch]      HEAD -> branches/default/tip
 
-  $ git -C repo-git3 checkout -q 7688446e0a5d5b6108443632be74c9bca72d31b1
+  $ git -C repo-git3 branch tags 7688446e0a5d5b6108443632be74c9bca72d31b1
   $ set_date
-  $ git -C repo-git3 cinnabar tag -m "retag c" TAG_C 7688446e0a5d5b6108443632be74c9bca72d31b1
+  $ git -C repo-git3 cinnabar tag -m "retag c" TAG_C 7688446e0a5d5b6108443632be74c9bca72d31b1 --onto tags
   \r (no-eol) (esc)
   ERROR tag 'TAG_C' already exists
   [1]
-  $ git -C repo-git3 cinnabar tag -m "retag c" -f TAG_C 7688446e0a5d5b6108443632be74c9bca72d31b1
-  Updating 7688446..e4345f9
-  Fast-forward
-   .hgtags | 2 ++
-   1 file changed, 2 insertions(+)
-   create mode 100644 .hgtags
+  $ git -C repo-git3 cinnabar tag -m "retag c" -f TAG_C 7688446e0a5d5b6108443632be74c9bca72d31b1 --onto refs/heads/tags
   $ set_date
-  $ git -C repo-git3 cinnabar tag -m "tag d" TAG_D 5c5b259d3c128f3d7b50ce3bd5c9eaafd8d1761
-  Updating e4345f9..f4bd7e5
-  Fast-forward
-   .hgtags | 1 +
-   1 file changed, 1 insertion(+)
+  $ git -C repo-git3 cinnabar tag -m "tag d" TAG_D 5c5b259d3c128f3d7b50ce3bd5c9eaafd8d1761 --onto refs/heads/tags
 
-  $ git -C repo-git3 push hg::$REPO HEAD:branches/default/tip
+  $ git -C repo-git3 push hg::$REPO tags:branches/default/tip
   remote: adding changesets
   remote: adding manifests
   remote: adding file changes
   remote: added 0 changesets with 0 changes to 1 files
   To hg::(.*)/tags.t/repo (re)
-   * [new branch]      HEAD -> branches/default/tip
+   * [new branch]      tags -> branches/default/tip
 
-  $ git -C repo-git3 checkout -q 43a3b94217340a43177c97a9608a5398d901c989
   $ set_date
   $ git -C repo-git3 cinnabar tag -m "remove tag d" -d TAG_D
   Updating 43a3b94..e58ff3d
