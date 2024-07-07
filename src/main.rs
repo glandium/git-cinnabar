@@ -66,7 +66,7 @@ pub(crate) mod hg_connect_stdio;
 pub(crate) mod hg_data;
 
 use std::borrow::{Borrow, Cow};
-use std::cell::{Cell, OnceCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::{CStr, CString, OsStr, OsString};
@@ -4585,7 +4585,7 @@ fn remote_helper_push(
 
         let common = find_common(store, conn, local_bases, remote);
 
-        let push_commits = rev_list_with_parents(
+        let mut push_commits = rev_list_with_parents(
             ["--topo-order", "--full-history", "--reverse"]
                 .iter()
                 .map(ToString::to_string)
@@ -4602,6 +4602,89 @@ fn remote_helper_push(
         )
         .map(|(c, p)| (c, p, None))
         .collect_vec();
+
+        if experiment(Experiments::BRANCH)
+            && info
+                .refs_style
+                .intersects(RefsStyle::HEADS | RefsStyle::TIPS)
+        {
+            #[derive(Clone, Debug)]
+            enum BranchInfo {
+                Known(Option<Box<BStr>>),
+                Inferred(Option<Box<BStr>>),
+                Set(Option<Box<BStr>>),
+            }
+
+            impl BranchInfo {
+                fn unwrap(self) -> Option<Box<BStr>> {
+                    match self {
+                        BranchInfo::Known(b) | BranchInfo::Inferred(b) | BranchInfo::Set(b) => b,
+                    }
+                }
+            }
+
+            let get_branch = |c| {
+                let cs_metadata =
+                    RawGitChangesetMetadata::read(store, GitChangesetId::from_unchecked(c))?;
+                let cs_metadata = cs_metadata.parse().unwrap();
+                Some(BranchInfo::Known(cs_metadata.extra().and_then(|e| {
+                    e.get(b"branch").map(|b| b.as_bstr().to_boxed())
+                })))
+            };
+
+            let mut dag: Dag<CommitId, RefCell<Option<BranchInfo>>> = Dag::new();
+            for (c, p, _) in &push_commits {
+                dag.add(
+                    *c,
+                    p,
+                    RefCell::new(get_branch(*c).or_else(|| {
+                        p.first().and_then(|p| {
+                            dag.get(*p)
+                                .and_then(|(_, b)| b.clone().into_inner())
+                                .or_else(|| {
+                                    get_branch(*p).map(|b| BranchInfo::Inferred(b.unwrap()))
+                                })
+                        })
+                    })),
+                );
+            }
+
+            let prefix = if info.refs_style.contains(RefsStyle::BOOKMARKS) {
+                &b"refs/heads/branches/"[..]
+            } else {
+                &b"refs/heads/"[..]
+            };
+            for (c, branch) in push_refs.iter().filter_map(|(c, remote_ref, _)| {
+                c.and_then(|c| {
+                    remote_ref.strip_prefix(prefix).and_then(|s| {
+                        if info.refs_style.contains(RefsStyle::HEADS) {
+                            s.splitn_exact::<2>(b'/').map(|[b, _]| (c, b))
+                        } else {
+                            Some((c, s))
+                        }
+                    })
+                })
+            }) {
+                for (_, info) in dag.traverse_parents(&[c], |_, info| {
+                    matches!(*info.borrow(), Some(BranchInfo::Inferred(_)) | None)
+                }) {
+                    if matches!(*info.borrow(), Some(BranchInfo::Inferred(_)) | None) {
+                        info.replace(Some(BranchInfo::Set(
+                            (branch != b"default").then(|| branch.as_bstr().to_boxed()),
+                        )));
+                    }
+                }
+            }
+            for (c, _, b) in &mut push_commits {
+                if let Some((_, info)) = dag.get(*c) {
+                    *b = info
+                        .borrow()
+                        .clone()
+                        .expect("Branch name should have been set")
+                        .unwrap();
+                }
+            }
+        }
 
         if !push_commits.is_empty() {
             let has_root = push_commits.iter().any(|(_, p, _)| p.is_empty());
@@ -5202,6 +5285,7 @@ bitflags! {
         // Add git commit as extra metadata in mercurial changesets.
         const GIT_COMMIT = 0x2;
         const TAG = 0x4;
+        const BRANCH = 0x8;
     }
 }
 pub struct AllExperiments {
@@ -5226,6 +5310,9 @@ static EXPERIMENTS: Lazy<AllExperiments> = Lazy::new(|| {
                 }
                 b"tag" => {
                     flags |= Experiments::TAG;
+                }
+                b"branch" => {
+                    flags |= Experiments::BRANCH;
                 }
                 s if s.starts_with(b"similarity") => {
                     if let Some(value) = s[b"similarity".len()..].strip_prefix(b"=") {

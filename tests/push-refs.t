@@ -334,9 +334,13 @@ Force push `f`.
   To hg::.*/push-refs.t/repo-from-git (re)
    * [new branch]      23bcc26b9fea7e37426260465bed35eac54af5e1 -> branches/foo/tip
 
-TODO: this should either fail because creating the branch is not supported,
-or work and create the branch
-#  $ git -C repo-git2 push origin -f 23bcc26b9fea7e37426260465bed35eac54af5e1:refs/heads/branches/foo/tip
+  $ git -c cinnabar.experiments=branch -C repo-git2 push origin -f 23bcc26b9fea7e37426260465bed35eac54af5e1:refs/heads/branches/foo/tip
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 2 changesets with 2 changes to 2 files (+1 heads)
+  To hg::.*/push-refs.t/repo-from-git2 (re)
+   * [new branch]      23bcc26b9fea7e37426260465bed35eac54af5e1 -> branches/foo/tip
 
   $ git -c cinnabar.refs=heads -C repo-git ls-remote hg::$REPO-from-hg
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
@@ -347,6 +351,14 @@ or work and create the branch
 
   $ git -c cinnabar.refs=heads -C repo-git ls-remote
   From hg::.*/push-refs.t/repo-from-git (re)
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  0000000000000000000000000000000000000000	refs/heads/default/a08654acdc93834f96695eff2760efaa4e3562bc
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
+  $ git -c cinnabar.refs=heads -C repo-git2 ls-remote
+  From hg::.*/push-refs.t/repo-from-git2 (re)
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
@@ -407,9 +419,15 @@ Push everything at once.
    * [new branch]      5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611 -> branches/default/head2
    * [new branch]      23bcc26b9fea7e37426260465bed35eac54af5e1 -> branches/foo/tip
 
-TODO: this should either fail for the foo branch because creating the branch
-is not supported, or work and create the branch
-#  $ git -C repo-git2 push origin 23bcc26b9fea7e37426260465bed35eac54af5e1:refs/heads/branches/foo/tip
+  $ git -c cinnabar.experiments=branch -C repo-git2 push origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/branches/default/head1 5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611:refs/heads/branches/default/head2 23bcc26b9fea7e37426260465bed35eac54af5e1:refs/heads/branches/foo/tip
+  remote: adding changesets
+  remote: adding manifests
+  remote: adding file changes
+  remote: added 6 changesets with 6 changes to 6 files (+2 heads)
+  To hg::.*/push-refs.t/repo-from-git2 (re)
+   * [new branch]      d04f6df4abe2870ceb759263ee6aaa9241c4f93c -> branches/default/head1
+   * [new branch]      5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611 -> branches/default/head2
+   * [new branch]      23bcc26b9fea7e37426260465bed35eac54af5e1 -> branches/foo/tip
 
   $ git -C repo-git ls-remote hg::$REPO-from-hg
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
@@ -432,6 +450,20 @@ is not supported, or work and create the branch
 
   $ git -c cinnabar.refs=heads -C repo-git ls-remote
   From hg::.*/push-refs.t/repo-from-git (re)
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/foo/312a5a9c675e3ce302a33bd4605205a6be36d561
+
+  $ git -C repo-git2 ls-remote
+  From hg::.*/push-refs.t/repo-from-git2 (re)
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/branches/default/636e60525868096cbdc961870493510558f41d2f
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/branches/foo/tip
+
+  $ git -c cinnabar.refs=heads -C repo-git2 ls-remote
+  From hg::.*/push-refs.t/repo-from-git2 (re)
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
   d04f6df4abe2870ceb759263ee6aaa9241c4f93c	refs/heads/default/636e60525868096cbdc961870493510558f41d2f
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/7937e1a594596ae25c637d317503d775767671b5
