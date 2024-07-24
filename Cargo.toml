@@ -136,7 +136,7 @@ default-features = false
 cc = "1.0.46"
 itertools = "0.12"
 make-cmd = "0.1"
-target = "2.0"
+target = "2.1"
 syn = { version = "2", features = ["full"] }  # git-version fails to parse inner macros without this.
 
 [build-dependencies.rustflags]
