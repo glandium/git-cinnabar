@@ -29,7 +29,7 @@ include = [
 [dependencies]
 array-init = "2.0.1"
 backtrace = "0.3"
-bit-vec = "0.6"
+bit-vec = "0.8"
 bitflags = "2"
 bzip2 = "0.4"
 byteorder = "1"
