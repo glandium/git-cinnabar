@@ -1576,7 +1576,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
                 }
             });
         for (category, update_refs) in
-            &update_refs.into_iter().group_by(|(refname_or_head, _, _)| {
+            &update_refs.into_iter().chunk_by(|(refname_or_head, _, _)| {
                 if let Either::Left(refname) = refname_or_head {
                     if refname.as_bytes().starts_with(b"refs/tags/") {
                         "Rebased tags"

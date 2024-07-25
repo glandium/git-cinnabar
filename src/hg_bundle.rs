@@ -960,7 +960,7 @@ impl<R: Read> HgRepo for BundleConnection<R> {
                 .branch_heads()
                 .enumerate()
                 .sorted_by_key(|(n, (_, branch))| (*branch, *n))
-                .group_by(|(_, (_, branch))| *branch)
+                .chunk_by(|(_, (_, branch))| *branch)
             {
                 branchmap.extend_from_slice(branch);
                 writeln!(
