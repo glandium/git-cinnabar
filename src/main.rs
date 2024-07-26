@@ -2259,7 +2259,7 @@ fn create_manifest(store: &Store, content: &mut [u8], parents: &[HgManifestId]) 
             hash.update(parent.as_raw_bytes());
         }
     }
-    hash.update(&content);
+    hash.update(&*content);
     let mid = hash.finalize();
     let data = create_chunk_data(&parent_manifest, content);
     let mut manifest_chunk = Vec::new();

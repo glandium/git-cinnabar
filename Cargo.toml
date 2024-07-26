@@ -168,3 +168,7 @@ self-update = ["semver", "shared_child", "dep:tar", "dep:xz2", "dep:zip", "windo
 compile_commands = []
 # Enable libgit development options.
 gitdev = []
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = ['cfg(version_check_branch)']
