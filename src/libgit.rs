@@ -420,50 +420,6 @@ pub fn lookup_replace_commit(c: CommitId) -> CommitId {
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct string_list {
-    items: *const string_list_item,
-    nr: c_uint,
-    /* there are more but we don't use them */
-}
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
-struct string_list_item {
-    string: *const c_char,
-    util: *const c_void,
-}
-
-#[allow(non_camel_case_types)]
-pub struct string_list_iter<'a> {
-    list: &'a string_list,
-    next: Option<c_uint>,
-}
-
-impl string_list {
-    pub fn is_empty(&self) -> bool {
-        self.nr == 0
-    }
-
-    pub fn iter(&self) -> string_list_iter {
-        string_list_iter {
-            list: self,
-            next: Some(0),
-        }
-    }
-}
-
-impl<'a> Iterator for string_list_iter<'a> {
-    type Item = &'a [u8];
-    fn next(&mut self) -> Option<Self::Item> {
-        let i = self.next.take()?;
-        let result = unsafe { self.list.items.offset(i as isize).as_ref()? };
-        self.next = i.checked_add(1).filter(|&x| x < self.list.nr);
-        Some(unsafe { CStr::from_ptr(result.string) }.to_bytes())
-    }
-}
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
 pub struct rev_info([u8; 0]);
 
 #[allow(non_camel_case_types)]
