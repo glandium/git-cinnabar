@@ -17,6 +17,8 @@ import msys
 
 
 MERCURIAL_VERSION = '6.8'
+# Not using 2.46.0 because of
+# https://lore.kernel.org/git/20240727191917.p64ul4jybpm2a7hm@glandium.org/
 GIT_VERSION = '2.45.2'
 
 ALL_MERCURIAL_VERSIONS = (

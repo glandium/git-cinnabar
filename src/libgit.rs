@@ -124,7 +124,7 @@ macro_rules! die {
 pub(crate) use die;
 
 extern "C" {
-    pub fn credential_fill(auth: *mut credential);
+    pub fn credential_fill(auth: *mut credential, all_capabilities: c_int);
 
     pub static mut http_auth: credential;
 
@@ -986,14 +986,19 @@ pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, CommitId) -> Result<
 }
 
 extern "C" {
-    fn read_ref(refname: *const c_char, oid: *mut object_id) -> c_int;
+    fn refs_read_ref(refs: *const ref_store, refname: *const c_char, oid: *mut object_id) -> c_int;
 }
 
 pub fn resolve_ref<S: AsRef<OsStr>>(refname: S) -> Option<CommitId> {
     let _locked = REFS_LOCK.read().unwrap();
     let mut oid = object_id::default();
     unsafe {
-        if read_ref(refname.as_ref().to_cstring().as_ptr(), &mut oid) == 0 {
+        if refs_read_ref(
+            get_main_ref_store(the_repository),
+            refname.as_ref().to_cstring().as_ptr(),
+            &mut oid,
+        ) == 0
+        {
             // We ignore tags. See comment in for_each_ref_in.
             CommitId::try_from(GitObjectId::from(oid)).ok()
         } else {
@@ -1023,6 +1028,8 @@ extern "C" {
         refname: *const c_char,
         new_oid: *const object_id,
         old_oid: *const object_id,
+        new_target: *const c_char,
+        old_target: *const c_char,
         flags: c_uint,
         msg: *const c_char,
         err: *mut strbuf,
@@ -1032,6 +1039,7 @@ extern "C" {
         tr: *mut ref_transaction,
         refname: *const c_char,
         old_oid: *const object_id,
+        old_target: *const c_char,
         flags: c_uint,
         msg: *const c_char,
         err: *mut strbuf,
@@ -1098,6 +1106,8 @@ impl RefTransaction {
                 refname.as_ref().to_cstring().as_ptr(),
                 &new_oid.into(),
                 old_oid.map(object_id::from).as_ref().as_ptr(),
+                ptr::null(),
+                ptr::null(),
                 0,
                 msg.as_ptr(),
                 &mut self.err,
@@ -1124,6 +1134,7 @@ impl RefTransaction {
                 self.tr,
                 refname.as_ref().to_cstring().as_ptr(),
                 old_oid.map(object_id::from).as_ref().as_ptr(),
+                ptr::null(),
                 0,
                 msg.as_ptr(),
                 &mut self.err,

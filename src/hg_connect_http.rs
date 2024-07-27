@@ -499,7 +499,7 @@ impl HttpRequest {
                     if let Some(log_target) = &this.log_target {
                         trace!(target: &log_target, "Request required reauthentication");
                     }
-                    unsafe { credential_fill(ptr::addr_of_mut!(http_auth)) };
+                    unsafe { credential_fill(ptr::addr_of_mut!(http_auth), 1) };
                     this.execute_once()
                 } else {
                     Err((result, this))

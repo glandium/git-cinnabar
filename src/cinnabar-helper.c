@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#define USE_THE_REPOSITORY_VARIABLE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -273,8 +274,8 @@ const char *remote_get_name(const struct remote *remote)
 void remote_get_url(const struct remote *remote, const char * const **url,
                     int* url_nr)
 {
-	*url = remote->url;
-	*url_nr = remote->url_nr;
+	*url = remote->url.v;
+	*url_nr = remote->url.nr;
 }
 
 int remote_skip_default_update(const struct remote *remote)
@@ -380,7 +381,7 @@ int init_cinnabar(const char *argv0)
 
 	git_setup_gettext();
 
-	initialize_the_repository();
+	initialize_repository(the_repository);
 
 	attr_start();
 
@@ -402,8 +403,9 @@ int init_cinnabar(const char *argv0)
 			// that weird git 2.44 case.
 			struct strbuf err = STRBUF_INIT;
 			check_repository_format(NULL);
-			if (refs_init_db(get_main_ref_store(the_repository),
-			                 0, &err))
+			if (ref_store_create_on_disk(
+					get_main_ref_store(the_repository),
+					0, &err))
 				die("failed to set up refs db: %s", err.buf);
 			nongit = 0;
 		}

@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#define USE_THE_REPOSITORY_VARIABLE
 #include "git-compat-util.h"
 #include "hash.h"
 #include "cinnabar-notes.h"
@@ -131,7 +132,7 @@ int cinnabar_remove_note(struct cinnabar_notes_tree *t,
 	int result2 = remove_note(&t->additions, object_sha1);
 	if (!result) {
 		struct object_id oid;
-		oidread(&oid, object_sha1);
+		oidread(&oid, object_sha1, the_repository->hash_algo);
 		add_note(&t->additions, &oid, null_oid(), NULL);
 	}
 	return result && result2;

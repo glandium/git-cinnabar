@@ -2,12 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#define USE_THE_REPOSITORY_VARIABLE
 #include "git-compat-util.h"
 struct object_id;
 static void start_packfile(void);
 static void cinnabar_unregister_shallow(const struct object_id *oid);
 #include "alloc.h"
 #include "dir.h"
+#undef fspathncmp
 #define fspathncmp strncmp
 #include "fast-import.patched.c"
 #include "cinnabar-fast-import.h"
@@ -117,7 +119,7 @@ off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
 	if (p == pack_data) {
 		struct object_id oid;
 		struct object_entry *oe;
-		oidread(&oid, sha1);
+		oidread(&oid, sha1, the_repository->hash_algo);
 		oe = get_object_entry(&oid);
 		if (oe)
 			return oe->idx.offset;
@@ -388,10 +390,12 @@ void store_manifest(struct Store *store, struct rev_chunk *chunk,
 				last_manifest->branch_tree.tree);
 			last_manifest->branch_tree.tree = NULL;
 		}
-		oidclr(&last_manifest->branch_tree.versions[0].oid);
-		oidclr(&last_manifest->branch_tree.versions[1].oid);
+		oidclr(&last_manifest->branch_tree.versions[0].oid,
+		       the_repository->hash_algo);
+		oidclr(&last_manifest->branch_tree.versions[1].oid,
+		       the_repository->hash_algo);
 		hg_oidclr(&last_manifest_oid);
-		oidclr(&last_manifest->oid);
+		oidclr(&last_manifest->oid, the_repository->hash_algo);
 		assert(last_manifest_content.len == 0);
 	} else if (!hg_oideq(chunk->delta_node, &last_manifest_oid)) {
 		const struct object_id *note;
