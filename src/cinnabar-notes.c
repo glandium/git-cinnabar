@@ -131,8 +131,7 @@ int cinnabar_remove_note(struct cinnabar_notes_tree *t,
 	int result2 = remove_note(&t->additions, object_sha1);
 	if (!result) {
 		struct object_id oid;
-		hashcpy(oid.hash, object_sha1);
-		oid.algo = GIT_HASH_SHA1;
+		oidread(&oid, object_sha1);
 		add_note(&t->additions, &oid, null_oid(), NULL);
 	}
 	return result && result2;

@@ -117,8 +117,7 @@ off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
 	if (p == pack_data) {
 		struct object_id oid;
 		struct object_entry *oe;
-		hashcpy(oid.hash, sha1);
-		oid.algo = GIT_HASH_SHA1;
+		oidread(&oid, sha1);
 		oe = get_object_entry(&oid);
 		if (oe)
 			return oe->idx.offset;
