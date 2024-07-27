@@ -927,15 +927,15 @@ pub fn for_each_remote<E, F: FnMut(&remote) -> Result<(), E>>(f: F) -> Result<()
     }
 }
 
-mod refs {
-    use super::*;
-    extern "C" {
-        pub fn for_each_ref_in(
-            prefix: *const c_char,
-            cb: unsafe extern "C" fn(*const c_char, *const object_id, c_int, *mut c_void) -> c_int,
-            cb_data: *mut c_void,
-        ) -> c_int;
-    }
+extern "C" {
+    pub fn get_main_ref_store(r: *mut repository) -> *mut ref_store;
+
+    pub fn refs_for_each_ref_in(
+        refs: *const ref_store,
+        prefix: *const c_char,
+        cb: unsafe extern "C" fn(*const c_char, *const object_id, c_int, *mut c_void) -> c_int,
+        cb_data: *mut c_void,
+    ) -> c_int;
 }
 
 static REFS_LOCK: RwLock<()> = RwLock::new(());
@@ -972,7 +972,8 @@ pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, CommitId) -> Result<
     }
 
     unsafe {
-        if 0 == refs::for_each_ref_in(
+        if 0 == refs_for_each_ref_in(
+            get_main_ref_store(the_repository),
             prefix.as_ptr(),
             each_ref_cb::<E, F>,
             &mut cb_data as *mut (F, Option<E>) as *mut c_void,
@@ -1010,8 +1011,6 @@ pub struct ref_transaction(c_void);
 pub struct ref_store(c_void);
 
 extern "C" {
-    fn ref_transaction_begin(err: *mut strbuf) -> *mut ref_transaction;
-
     fn ref_store_transaction_begin(
         refs: *const ref_store,
         err: *mut strbuf,
@@ -1050,11 +1049,7 @@ pub struct RefTransaction {
 
 impl RefTransaction {
     pub fn new() -> Option<Self> {
-        let mut err = strbuf::new();
-        Some(RefTransaction {
-            tr: unsafe { ref_transaction_begin(&mut err).as_mut()? },
-            err,
-        })
+        Self::new_with_ref_store(unsafe { get_main_ref_store(the_repository).as_ref().unwrap() })
     }
 
     pub fn new_with_ref_store(refs: &ref_store) -> Option<Self> {
