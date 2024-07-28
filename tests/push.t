@@ -47,9 +47,9 @@ Create git clones of the above repositories.
 
   $ git -c fetch.prune=true clone -n -q hg::$ABC abc-git
   $ git -c fetch.prune=true clone -n -q hg::$DEF def-git
-  $ git -c fetch.prune=true clone -n -q hg::$XYZ xyz-git
+  $ git -c init.defaultBranch=main -c fetch.prune=true clone -n -q hg::$XYZ xyz-git
   warning: You appear to have cloned an empty repository.
-  $ git -c fetch.prune=true clone -n -q hg::$UVW uvw-git
+  $ git -c init.defaultBranch=main -c fetch.prune=true clone -n -q hg::$UVW uvw-git
   warning: You appear to have cloned an empty repository.
 
 Ensure the repositories look like what we assume further below.

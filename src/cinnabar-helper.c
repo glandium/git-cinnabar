@@ -406,29 +406,6 @@ int init_cinnabar(const char *argv0)
 			                 0, &err))
 				die("failed to set up refs db: %s", err.buf);
 			nongit = 0;
-		} else {
-			// To make things even gnarlier, git 2.45 hits a case
-			// where it will print an irrelevant hint because of the
-			// HEAD it created itself. Removing that HEAD works
-			// around the problem, so try to detect it.
-			// See http://public-inbox.org/git/20240503020432.2fxwuhjsvumy7i7z@glandium.org/
-			struct strbuf head = STRBUF_INIT;
-			struct strbuf buf = STRBUF_INIT;
-			git_path_buf(&head, "HEAD");
-			if (strbuf_read_file(&buf, head.buf, 0) > 0) {
-				const char invalid_head_s[] =
-					"ref: refs/heads/.invalid\n";
-				struct strbuf invalid_head = {
-					.buf = (char*)invalid_head_s,
-					.len = sizeof(invalid_head_s) - 1,
-					.alloc = 0
-				};
-				if (strbuf_cmp(&invalid_head, &buf) == 0) {
-					unlink(head.buf);
-				}
-			}
-			strbuf_release(&head);
-			strbuf_release(&buf);
 		}
 	}
 	return !nongit;
