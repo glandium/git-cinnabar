@@ -22,7 +22,7 @@ class OsxCommon(object):
     def prepare_params(self, params):
         assert 'workerType' not in params
         params['provisionerId'] = 'proj-git-cinnabar'
-        params['workerType'] = 'osx{}'.format(self.worker_suffix)
+        params['workerType'] = self.WORKER_TYPE
         command = []
         command.append('export PWD=$(pwd)')
         command.append('export ARTIFACTS=$PWD')
@@ -42,7 +42,7 @@ class OsxCommon(object):
 class Osx(OsxCommon, metaclass=TaskEnvironment):
     ITERATION = '4'
     PREFIX = 'osx'
-    worker_suffix = ''
+    WORKER_TYPE = 'osx'
     os_version = '10.15'
 
 
@@ -50,16 +50,18 @@ class OsxArm64(OsxCommon, metaclass=TaskEnvironment):
     cpu = 'arm64'
     ITERATION = '2'
     PREFIX = 'arm64-osx'
-    worker_suffix = ''
-    os_version = '10.15'
+    WORKER_TYPE = 'macos'
+    os_version = '11.0'
 
     def prepare_params(self, params):
         env = params.setdefault('env', {})
         dev = env.setdefault(
             'DEVELOPER_DIR',
-            '/Applications/Xcode_13.2.1.app/Contents/Developer')
+            '/Applications/Xcode_15.0.1.app/Contents/Developer')
         env.setdefault(
             'SDKROOT',
-            '{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk'
+            '{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk'
             .format(dev))
+        env.setdefault('PIP_DISABLE_PIP_VERSION_CHECK', '1')
+        params['command'].insert(0, 'export PATH=$PATH:/opt/homebrew/bin')
         return super(OsxArm64, self).prepare_params(params)

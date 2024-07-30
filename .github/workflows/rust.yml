@@ -6,16 +6,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        toolchain: [1.70.0]
+        toolchain: [1.80.0]
         include:
           - os: windows-latest
-            toolchain: 1.70.0-x86_64-pc-windows-gnu
+            toolchain: 1.80.0-x86_64-pc-windows-gnu
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -40,18 +40,26 @@ jobs:
         run: |
           (Resolve-Path c:/msys64/mingw64/bin).Path >> $Env:GITHUB_PATH
         if: runner.os == 'Windows'
-      # From https://github.com/actions-rs/clippy-check/pull/165
-      - uses: kristof-mattei/clippy-check@9615027d0d038d93ede0037e3629366a5ba2ecf8
+      - uses: actions-rs-plus/clippy-check@v2
+        with:
+          args: -vv -- -D warnings
+      - uses: actions-rs-plus/clippy-check@v2
         with:
           args: -vv --features self-update -- -D warnings
+      - uses: actions-rs-plus/clippy-check@v2
+        with:
+          args: -vv --no-default-features -- -D warnings
+      - uses: actions-rs-plus/clippy-check@v2
+        with:
+          args: -vv --no-default-features --features self-update -- -D warnings
 
   fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.70.0
+          toolchain: 1.80.0
           components: rustfmt
       - run: cargo fmt -- --check
 
@@ -60,18 +68,18 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        toolchain: [1.70.0, 1.60.0]
+        toolchain: [1.80.0, 1.74.0]
         include:
           - os: windows-latest
-            toolchain: 1.70.0-x86_64-pc-windows-gnu
+            toolchain: 1.80.0-x86_64-pc-windows-gnu
           - os: windows-latest
-            toolchain: 1.60.0-x86_64-pc-windows-gnu
+            toolchain: 1.74.0-x86_64-pc-windows-gnu
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry

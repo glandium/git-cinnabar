@@ -6,17 +6,31 @@ use std::borrow::Cow;
 use std::str::{self, FromStr};
 
 use digest::{Digest, OutputSizeUser};
-use sha1::Sha1;
 
-pub trait ObjectId: Sized {
+use crate::util::assert_le;
+
+pub trait ObjectId: Sized + Copy {
     type Digest: Digest;
+
+    const NULL: Self;
+
     fn as_raw_bytes(&self) -> &[u8];
     fn as_raw_bytes_mut(&mut self) -> &mut [u8];
-    fn null() -> Self;
+    fn is_null(&self) -> bool {
+        self.as_raw_bytes().iter().all(|&b| b == 0)
+    }
     fn create() -> OidCreator<Self> {
         OidCreator(Self::Digest::new())
     }
     fn from_digest(h: Self::Digest) -> Self;
+    fn from_raw_bytes(b: &[u8]) -> Option<Self> {
+        (b.len() == <Self::Digest as digest::OutputSizeUser>::output_size()).then(|| {
+            let mut result = Self::NULL;
+            let slice = result.as_raw_bytes_mut();
+            slice.clone_from_slice(&b[..slice.len()]);
+            result
+        })
+    }
     fn abbrev(self, len: usize) -> Abbrev<Self> {
         assert_le!(
             len,
@@ -26,65 +40,63 @@ pub trait ObjectId: Sized {
     }
 }
 
-#[macro_export]
-macro_rules! oid_type {
-    ($name:ident($base_type:ident)) => {
-        #[repr(transparent)]
-        #[derive(Clone, Deref, Display, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub struct $name($base_type);
-
-        impl $crate::oid::ObjectId for $name {
-            type Digest = <$base_type as $crate::oid::ObjectId>::Digest;
-
-            fn as_raw_bytes(&self) -> &[u8] {
-                self.0.as_raw_bytes()
-            }
-
-            fn as_raw_bytes_mut(&mut self) -> &mut [u8] {
-                self.0.as_raw_bytes_mut()
-            }
-
-            fn null() -> Self {
-                Self($base_type::null())
-            }
-
-            fn from_digest(h: Self::Digest) -> Self {
-                Self(<$base_type as $crate::oid::ObjectId>::from_digest(h))
-            }
-        }
-        impl $name {
-            pub fn from_unchecked(o: $base_type) -> Self {
-                Self(o)
-            }
-        }
-
-        impl ::std::borrow::Borrow<$base_type> for $name {
-            fn borrow(&self) -> &$base_type {
-                &self.0
-            }
-        }
-
-        impl<'a> ::std::borrow::Borrow<$base_type> for &'a $name where Self: 'a {
-            fn borrow(&self) -> &$base_type {
-                &self.0
-            }
-        }
-
+macro_rules! oid_impl {
+    ($name:ident($base_type:ty)) => {
         impl From<$name> for $base_type {
             fn from(o: $name) -> $base_type {
-                o.0
+                use $crate::oid::ObjectId;
+                let mut result = <$base_type>::NULL;
+                let slice = result.as_raw_bytes_mut();
+                slice.clone_from_slice(&o.0[..slice.len()]);
+                result
             }
         }
 
-        oid_type!(@other $name);
+        impl PartialEq<$base_type> for $name {
+            fn eq(&self, other: &$base_type) -> bool {
+                use $crate::oid::ObjectId;
+                self.as_raw_bytes() == other.as_raw_bytes()
+            }
+        }
+
+        impl PartialEq<$name> for $base_type {
+            fn eq(&self, other: &$name) -> bool {
+                use $crate::oid::ObjectId;
+                self.as_raw_bytes() == other.as_raw_bytes()
+            }
+        }
+    };
+}
+pub(crate) use oid_impl;
+
+macro_rules! oid_type {
+    ($name:ident($base_type:ident)) => {
+        $crate::oid::oid_type!($name for <$base_type as $crate::oid::ObjectId>::Digest);
+
+        impl $name {
+            pub fn from_unchecked(o: $base_type) -> Self {
+                use $crate::oid::ObjectId;
+                Self(o.as_raw_bytes().try_into().unwrap())
+            }
+        }
+
+        $crate::oid::oid_impl!($name($base_type));
     };
     ($name:ident for $typ:ty) => {
         #[repr(C)]
-        #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct $name([u8; <<$typ as digest::OutputSizeUser>::OutputSize as typenum::marker_traits::Unsigned>::USIZE]);
+
+        impl $name {
+            pub const fn from_raw_bytes_array(b: [u8; <<$typ as digest::OutputSizeUser>::OutputSize as typenum::marker_traits::Unsigned>::USIZE]) -> Self {
+                Self(b)
+            }
+        }
 
         impl $crate::oid::ObjectId for $name {
             type Digest = $typ;
+
+            const NULL: Self = Self([0; <<$typ as digest::OutputSizeUser>::OutputSize as typenum::marker_traits::Unsigned>::USIZE]);
 
             fn as_raw_bytes(&self) -> &[u8] {
                 &self.0
@@ -94,41 +106,36 @@ macro_rules! oid_type {
                 &mut self.0
             }
 
-            fn null() -> Self {
-                Self([0; <<$typ as digest::OutputSizeUser>::OutputSize as typenum::marker_traits::Unsigned>::USIZE])
-            }
-
             fn from_digest(h: Self::Digest) -> Self {
+                use digest::Digest;
                 Self(h.finalize().into())
             }
         }
 
-        oid_type!(@traits $name);
-        oid_type!(@other $name);
-    };
-    (@traits $name:ident) => {
         impl ::std::fmt::Display for $name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                use $crate::oid::ObjectId;
                 for x in self.as_raw_bytes() {
                     write!(f, "{:02x}", x)?;
                 }
                 Ok(())
             }
         }
-    };
-    (@other $name:ident) => {
-        derive_debug_display!($name);
-        derive_debug_display!($crate::oid::Abbrev<$name>);
+
+        $crate::util::derive_debug_display!($name);
+        $crate::util::derive_debug_display!($crate::oid::Abbrev<$name>);
         impl ::std::str::FromStr for $name {
             type Err = hex::FromHexError;
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                let mut result = Self::null();
+                use $crate::oid::ObjectId;
+                let mut result = Self::NULL;
                 hex::decode_to_slice(s, &mut result.as_raw_bytes_mut())?;
                 Ok(result)
              }
         }
     };
 }
+pub(crate) use oid_type;
 
 pub struct OidCreator<O: ObjectId>(O::Digest);
 
@@ -142,15 +149,15 @@ impl<O: ObjectId> OidCreator<O> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Abbrev<O: ObjectId> {
     oid: O,
     len: usize,
 }
 
 impl<O: ObjectId> Abbrev<O> {
-    pub unsafe fn as_object_id(&self) -> &O {
-        &self.oid
+    pub unsafe fn as_object_id(&self) -> O {
+        self.oid
     }
 
     pub fn len(&self) -> usize {
@@ -195,7 +202,7 @@ impl<O: ObjectId> FromStr for Abbrev<O> {
             return Err(hex::FromHexError::InvalidStringLength);
         }
         let mut result = Abbrev {
-            oid: O::null(),
+            oid: O::NULL,
             len: s.len(),
         };
         let s = if s.len() % 2 == 0 {
@@ -210,30 +217,3 @@ impl<O: ObjectId> FromStr for Abbrev<O> {
         Ok(result)
     }
 }
-
-#[test]
-fn test_abbrev_hg_object_id() {
-    let hex = "123456789abcdef00123456789abcdefedcba987";
-    for len in 1..40 {
-        let abbrev = HgObjectId::from_str("123456789abcdef00123456789abcdefedcba987")
-            .unwrap()
-            .abbrev(len);
-        let result = format!("{}", abbrev);
-        assert_eq!(&result, &hex[..len]);
-
-        let abbrev2 = Abbrev::<HgObjectId>::from_str(&result).unwrap();
-        assert_eq!(abbrev, abbrev2);
-    }
-
-    assert_ne!(
-        Abbrev::<HgObjectId>::from_str("123").unwrap(),
-        Abbrev::<HgObjectId>::from_str("124").unwrap()
-    );
-    assert_eq!(
-        Abbrev::<HgObjectId>::from_str("123a").unwrap(),
-        Abbrev::<HgObjectId>::from_str("123A").unwrap()
-    );
-}
-
-oid_type!(GitObjectId for Sha1);
-oid_type!(HgObjectId for Sha1);

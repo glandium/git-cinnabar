@@ -4,14 +4,12 @@
 
 import hashlib
 import json
-import os
 
 from tasks import (
     Task,
     TaskEnvironment,
     bash_command,
     join_command,
-    no_quote,
 )
 from variables import TC_REPO_NAME
 
@@ -31,58 +29,22 @@ def sources_list(snapshot, sections):
         )
 
 
+LLVM_REPO = (
+    'echo'
+    ' deb [signed-by=/usr/share/keyrings/llvm.gpg]'
+    ' https://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-18 main'
+    ' > /etc/apt/sources.list.d/llvm.list'
+)
+
 DOCKER_IMAGES = {
     'base': {
-        'from': 'debian:stretch-20220622',
-        'commands': [
-            '({}) > /etc/apt/sources.list'.format('; '.join(
-                'echo ' + l for l in sources_list(None, (
-                    ('debian', 'stretch'),
-                    ('debian', 'stretch-proposed-updates'),
-                    ('debian-security', 'stretch/updates'),
-                )))),
-            'apt-get update -o Acquire::Check-Valid-Until=false',
-            'apt-get install -y --no-install-recommends {}'.format(' '.join([
-                'apt-transport-https',
-                'bzip2',
-                'ca-certificates',
-                'curl',
-                'gnupg2',
-                'libcurl3-gnutls',
-                'python-setuptools',
-                'python-pip',
-                'python3-setuptools',
-                'python3-pip',
-                'unzip',
-                'xz-utils',
-                'zip',
-                'zstd',
-            ])),
-            'apt-get clean',
-            'curl -sO https://apt.llvm.org/llvm-snapshot.gpg.key',
-            'gpg --no-default-keyring --keyring /usr/share/keyrings/llvm.gpg'
-            ' --import llvm-snapshot.gpg.key',
-            'rm llvm-snapshot.gpg.key',
-            'echo'
-            ' deb [signed-by=/usr/share/keyrings/llvm.gpg]'
-            ' https://apt.llvm.org/stretch/ llvm-toolchain-stretch-15 main'
-            ' > /etc/apt/sources.list.d/llvm.list',
-            'apt-get update -o Acquire::Check-Valid-Until=false',
-            'python2.7 -m pip install pip==20.3.4 wheel==0.37.1'
-            ' --upgrade --ignore-installed',
-            'python3 -m pip install pip==20.3.4 wheel==0.37.1'
-            ' --upgrade --ignore-installed',
-        ],
-    },
-
-    'base-buster': {
-        'from': 'debian:buster-20220801',
+        'from': 'debian:bullseye-20220801',
         'commands': [
             '({}) > /etc/apt/sources.list'.format('; '.join(
                 'echo ' + l for l in sources_list('20220801T205040Z', (
-                    ('debian', 'buster'),
-                    ('debian', 'buster-updates'),
-                    ('debian-security', 'buster/updates'),
+                    ('debian', 'bullseye'),
+                    ('debian', 'bullseye-updates'),
+                    ('debian-security', 'bullseye-security'),
                 )))),
             'apt-get update -o Acquire::Check-Valid-Until=false',
             'apt-get install -y --no-install-recommends {}'.format(' '.join([
@@ -93,7 +55,6 @@ DOCKER_IMAGES = {
                 'gnupg2',
                 'libcurl3-gnutls',
                 'python-setuptools',
-                'python-pip',
                 'python3-setuptools',
                 'python3-pip',
                 'unzip',
@@ -106,11 +67,10 @@ DOCKER_IMAGES = {
             'gpg --no-default-keyring --keyring /usr/share/keyrings/llvm.gpg'
             ' --import llvm-snapshot.gpg.key',
             'rm llvm-snapshot.gpg.key',
-            'echo'
-            ' deb [signed-by=/usr/share/keyrings/llvm.gpg]'
-            ' https://apt.llvm.org/buster/ llvm-toolchain-buster-15 main'
-            ' > /etc/apt/sources.list.d/llvm.list',
-            'apt-get update -o Acquire::Check-Valid-Until=false',
+            'curl -sO http://snapshot.debian.org/archive/debian'
+            '/20220326T025251Z/pool/main/p/python2-pip'
+            '/python-pip_20.3.4%2Bdfsg-4_all.deb',
+            'dpkg-deb -x python-pip*.deb /',
             'python2.7 -m pip install pip==20.3.4 wheel==0.37.1'
             ' --upgrade --ignore-installed',
             'python3 -m pip install pip==20.3.4 wheel==0.37.1'
@@ -121,44 +81,44 @@ DOCKER_IMAGES = {
     'build': {
         'from': 'base',
         'commands': [
-            'dpkg --add-architecture arm64',
+            LLVM_REPO,
             'apt-get update -o Acquire::Check-Valid-Until=false',
             'apt-get install -y --no-install-recommends {}'.format(' '.join([
-                'clang-15',
-                'gcc',
+                'clang-18',
+                'lld-18',
                 'git',
                 'make',
                 'patch',
                 'pkg-config',
-                'python-dev',
-                'python3-dev',
-                'libc6-dev',
-                'libcurl4-gnutls-dev',
-                'zlib1g-dev',
+                'mmdebstrap',
+                'debian-archive-keyring',
+                'symlinks',
+                'fakechroot',
+                'gcc-mingw-w64-x86-64-win32',
             ])),
-            'echo path-exclude=/usr/bin/curl-config'
-            ' > /etc/dpkg/dpkg.cfg.d/excludes',
-            'apt-get install -y --no-install-recommends {}'.format(' '.join([
-                'libc6-dev:arm64',
-                'libcurl4-gnutls-dev:arm64',
-                'zlib1g-dev:arm64',
-                'libgcc-6-dev:arm64',
-                'binutils-aarch64-linux-gnu',
-                'dpkg-dev',
-            ])),
+            'for arch in amd64 arm64; do'
+            ' mmdebstrap -d'
+            '  --architecture=$arch'
+            '  --mode=chrootless'
+            '  --variant=extract'
+            '  --include=libc6-dev,libcurl4-gnutls-dev,zlib1g-dev,libgcc-6-dev'
+            '  stretch sysroot-$arch'
+            '  http://archive.debian.org/debian/ ;'
+            ' LD_PRELOAD=libfakechroot.so FAKECHROOT_BASE=$PWD/sysroot-$arch'
+            '  symlinks -crv /;'
+            'done',
             'apt-get clean',
-            'ln -s /usr/bin/aarch64-linux-gnu-ld'
-            ' /usr/bin/aarch64-unknown-linux-gnu-ld',
         ],
     },
 
-    'build-buster': {
-        'from': 'base-buster',
+    'build-tools': {
+        'from': 'base',
         'commands': [
             'apt-get install -y --no-install-recommends {}'.format(' '.join([
                 'gcc',
                 'git',
                 'libc6-dev',
+                'libcurl4-gnutls-dev',
                 'make',
                 'patch',
                 'python-dev',
@@ -192,15 +152,17 @@ DOCKER_IMAGES = {
     },
 
     'test': {
-        'from': 'base-buster',
+        'from': 'base',
         'commands': [
+            LLVM_REPO,
+            'apt-get update -o Acquire::Check-Valid-Until=false',
             'apt-get install -y --no-install-recommends {}'.format(' '.join([
-                'llvm-15',
+                'llvm-18',
                 'make',
             ])),
             'apt-get clean',
             'pip3 install cram==0.7',
-            'ln -s llvm-symbolizer-15 /usr/bin/llvm-symbolizer'
+            'ln -s llvm-symbolizer-18 /usr/bin/llvm-symbolizer'
         ],
     },
 }
@@ -260,12 +222,8 @@ class DockerImage(Task, metaclass=TaskEnvironment):
             if ':' in kind
         ]
         if isinstance(image, DockerImage):
-            params.setdefault('mounts', []).append({'file': image})
-            artifact = os.path.basename(image.artifact)
-            commands.append(
-                f'IMAGE_NAME=$(zstd -cd {artifact} | podman load'
-                ' | sed -n "s/.*: //p")')
-            image = no_quote('$IMAGE_NAME')
+            params.setdefault('mounts', []).append({'file:dockerimage': image})
+            image = 'docker-archive:dockerimage'
         run_cmd = [
             'podman',
             'run',

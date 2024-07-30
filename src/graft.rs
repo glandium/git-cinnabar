@@ -8,17 +8,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use bstr::ByteSlice;
-use once_cell::sync::Lazy;
 
+use crate::cinnabar::GitChangesetId;
+use crate::git::{CommitId, RawCommit, TreeId};
+use crate::hg::HgChangesetId;
 use crate::hg_data::{GitAuthorship, HgAuthorship};
-use crate::libgit::{lookup_replace_commit, rev_list, CommitId, RawCommit, TreeId};
+use crate::libgit::{lookup_replace_commit, rev_list};
 use crate::progress::Progress;
-use crate::store::{
-    has_metadata, GeneratedGitChangesetMetadata, GitChangesetId, HgChangesetId, RawHgChangeset,
-};
+use crate::store::{has_metadata, GeneratedGitChangesetMetadata, RawHgChangeset, Store};
 
 extern "C" {
     fn replace_map_size() -> c_uint;
+    pub fn replace_map_tablesize() -> c_uint;
 }
 
 pub fn grafted() -> bool {
@@ -27,14 +28,17 @@ pub fn grafted() -> bool {
 
 static DID_SOMETHING: AtomicBool = AtomicBool::new(false);
 
-static GRAFT_TREES: Lazy<Mutex<BTreeMap<TreeId, Vec<CommitId>>>> =
-    Lazy::new(|| Mutex::new(BTreeMap::new()));
+static GRAFT_TREES: Mutex<BTreeMap<TreeId, Vec<CommitId>>> = Mutex::new(BTreeMap::new());
 
 pub fn graft_finish() -> Option<bool> {
-    Lazy::get(&GRAFT_TREES).map(|_| grafted() || DID_SOMETHING.load(Ordering::Relaxed))
+    if GRAFT_TREES.lock().unwrap().is_empty() {
+        None
+    } else {
+        Some(grafted() || DID_SOMETHING.load(Ordering::Relaxed))
+    }
 }
 
-pub fn init_graft() {
+pub fn init_graft(store: &Store) {
     let mut args = vec![
         "--full-history",
         "--exclude=refs/cinnabar/*",
@@ -42,15 +46,15 @@ pub fn init_graft() {
         "--exclude=refs/original/*",
         "--all",
     ];
-    if has_metadata() {
+    if has_metadata(store) {
         args.push("--not");
         args.push("refs/cinnabar/metadata^");
     }
     let mut graft_trees = GRAFT_TREES.lock().unwrap();
     for cid in rev_list(&args).progress(|n| format!("Reading {} graft candidates", n)) {
-        let c = RawCommit::read(&cid).unwrap();
+        let c = RawCommit::read(cid).unwrap();
         let c = c.parse().unwrap();
-        let cids_for_tree = graft_trees.entry(c.tree().clone()).or_default();
+        let cids_for_tree = graft_trees.entry(c.tree()).or_default();
         cids_for_tree.push(cid);
     }
 }
@@ -62,23 +66,24 @@ pub enum GraftError {
 }
 
 pub fn graft(
-    changeset_id: &HgChangesetId,
+    store: &Store,
+    changeset_id: HgChangesetId,
     raw_changeset: &RawHgChangeset,
-    tree: &TreeId,
+    tree: TreeId,
     parents: &[GitChangesetId],
 ) -> Result<Option<CommitId>, GraftError> {
-    if Lazy::get(&GRAFT_TREES).is_none() {
+    let mut graft_trees = GRAFT_TREES.lock().unwrap();
+    if graft_trees.is_empty() {
         return Ok(None);
     }
 
     let changeset = raw_changeset.parse().unwrap();
-    let mut graft_trees = GRAFT_TREES.lock().unwrap();
-    let graft_trees_entry = graft_trees.get_mut(tree).ok_or(GraftError::NoGraft)?;
+    let graft_trees_entry = graft_trees.get_mut(&tree).ok_or(GraftError::NoGraft)?;
     let candidates = graft_trees_entry
         .iter()
-        .map(|c| {
+        .map(|&c| {
             let raw = RawCommit::read(c).unwrap();
-            (c.clone(), raw)
+            (c, raw)
         })
         .collect::<Vec<_>>();
     let candidates = candidates
@@ -90,9 +95,11 @@ pub fn graft(
             }
             if c.parents()
                 .iter()
-                .zip(parents)
+                .copied()
+                .zip(parents.iter().copied())
                 .all(|(commit_parent, changeset_parent)| {
-                    lookup_replace_commit(commit_parent) == lookup_replace_commit(changeset_parent)
+                    lookup_replace_commit(commit_parent)
+                        == lookup_replace_commit(changeset_parent.into())
                 })
             {
                 return true;
@@ -131,7 +138,7 @@ pub fn graft(
     // on a repo that was already handled by cinnabar.
     if candidates.len() > 1 {
         candidates.retain(|(_, c)| {
-            GeneratedGitChangesetMetadata::generate(c, changeset_id, raw_changeset)
+            GeneratedGitChangesetMetadata::generate(store, c, changeset_id, raw_changeset)
                 .unwrap()
                 .patch()
                 .is_some()
@@ -143,13 +150,13 @@ pub fn graft(
             let (commit, _) = candidates[0];
             graft_trees_entry.retain(|c| c != *commit);
             DID_SOMETHING.store(true, Ordering::Relaxed);
-            Ok(Some((*commit).clone()))
+            Ok(Some(*(*commit)))
         }
         0 => Err(GraftError::NoGraft),
         _ => Err(GraftError::Ambiguous(
             candidates
                 .into_iter()
-                .map(|(cid, _)| (*cid).clone())
+                .map(|(cid, _)| *(*cid))
                 .collect::<Vec<_>>()
                 .into(),
         )),

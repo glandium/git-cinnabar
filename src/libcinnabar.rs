@@ -2,30 +2,84 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::ops::Deref;
-use std::os::raw::{c_char, c_int, c_void};
+use std::ffi::CString;
+use std::io::Write;
+use std::marker::PhantomData;
+use std::mem::MaybeUninit;
+use std::os::raw::{c_char, c_int, c_uint, c_void};
 
-use libc::FILE;
+use crate::git::{CommitId, GitObjectId, RawTree, TreeId};
+use crate::hg::HgObjectId;
+use crate::libgit::{
+    child_process, combine_notes_ignore, free_notes, init_notes, notes_tree, object_id, FileMode,
+};
+use crate::oid::{Abbrev, ObjectId};
+use crate::store::{store_git_commit, Store};
 
-use crate::libgit::{child_process, object_id, strbuf};
-use crate::oid::{Abbrev, GitObjectId, HgObjectId, ObjectId};
-use crate::util::FromBytes;
+#[allow(non_camel_case_types)]
+#[derive(Clone, Debug)]
+#[repr(C)]
+pub struct strslice<'a> {
+    len: usize,
+    buf: *const c_char,
+    marker: PhantomData<&'a [u8]>,
+}
+
+impl strslice<'_> {
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.buf as *const u8, self.len) }
+    }
+}
+
+pub trait AsStrSlice {
+    fn as_str_slice(&self) -> strslice;
+}
+
+impl<T: AsRef<[u8]> + ?Sized> AsStrSlice for T {
+    fn as_str_slice(&self) -> strslice {
+        let buf = self.as_ref();
+        strslice {
+            len: buf.len(),
+            buf: buf.as_ptr() as *const c_char,
+            marker: PhantomData,
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct strslice_mut<'a> {
+    len: usize,
+    buf: *mut c_char,
+    marker: PhantomData<&'a mut [u8]>,
+}
+
+impl<'a> From<&'a mut [u8]> for strslice_mut<'a> {
+    fn from(buf: &'a mut [u8]) -> Self {
+        strslice_mut {
+            len: buf.len(),
+            buf: buf.as_mut_ptr() as *mut c_char,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<'a> From<&'a mut [MaybeUninit<u8>]> for strslice_mut<'a> {
+    fn from(buf: &'a mut [MaybeUninit<u8>]) -> Self {
+        strslice_mut {
+            len: buf.len(),
+            buf: buf.as_mut_ptr() as *mut c_char,
+            marker: PhantomData,
+        }
+    }
+}
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
 #[derive(Clone, Default)]
 pub struct hg_object_id([u8; 20]);
 
-impl From<HgObjectId> for hg_object_id {
-    fn from(oid: HgObjectId) -> Self {
-        let mut result = Self([0; 20]);
-        let oid = oid.as_raw_bytes();
-        result.0[..oid.len()].clone_from_slice(oid);
-        result
-    }
-}
-
-impl<H: ObjectId + Deref<Target = HgObjectId>> From<H> for hg_object_id {
+impl<H: ObjectId + Into<HgObjectId>> From<H> for hg_object_id {
     fn from(oid: H) -> Self {
         let mut result = Self([0; 20]);
         let oid = oid.as_raw_bytes();
@@ -36,7 +90,7 @@ impl<H: ObjectId + Deref<Target = HgObjectId>> From<H> for hg_object_id {
 
 impl From<hg_object_id> for HgObjectId {
     fn from(oid: hg_object_id) -> Self {
-        let mut result = Self::null();
+        let mut result = Self::NULL;
         let slice = result.as_raw_bytes_mut();
         slice.clone_from_slice(&oid.0[..slice.len()]);
         result
@@ -46,31 +100,61 @@ impl From<hg_object_id> for HgObjectId {
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct cinnabar_notes_tree {
-    root: *mut c_void,
-    // ...
+    current: notes_tree,
+    additions: notes_tree,
+    init_flags: c_int,
+}
+
+impl Drop for cinnabar_notes_tree {
+    fn drop(&mut self) {
+        unsafe {
+            if self.current.initialized() {
+                free_notes(&mut self.current);
+                free_notes(&mut self.additions);
+            }
+        }
+    }
+}
+
+impl cinnabar_notes_tree {
+    pub fn new_with(c: CommitId) -> Self {
+        let mut result = cinnabar_notes_tree {
+            current: notes_tree::new(),
+            additions: notes_tree::new(),
+            init_flags: 0,
+        };
+        let oid = CString::new(c.to_string()).unwrap();
+        let flags = if c.is_null() { NOTES_INIT_EMPTY } else { 0 };
+        unsafe {
+            init_notes(
+                &mut result.current,
+                oid.as_ptr(),
+                combine_notes_ignore,
+                flags,
+            );
+            init_notes(
+                &mut result.additions,
+                oid.as_ptr(),
+                combine_notes_ignore,
+                NOTES_INIT_EMPTY,
+            );
+            result.init_flags = flags;
+        }
+        result
+    }
 }
 
 extern "C" {
-    pub static mut git2hg: git_notes_tree;
-    pub static mut hg2git: hg_notes_tree;
-    pub static mut files_meta: hg_notes_tree;
-
-    fn ensure_notes(t: *mut cinnabar_notes_tree);
-
     fn cinnabar_get_note(
         notes: *mut cinnabar_notes_tree,
         oid: *const object_id,
     ) -> *const object_id;
 
-    fn get_note_hg(notes: *mut cinnabar_notes_tree, oid: *const hg_object_id) -> *const object_id;
-
-    fn resolve_hg(
-        t: *mut cinnabar_notes_tree,
-        oid: *const hg_object_id,
+    fn get_abbrev_note(
+        notes: *mut cinnabar_notes_tree,
+        oid: *const object_id,
         len: usize,
     ) -> *const object_id;
-
-    pub fn generate_manifest(oid: *const object_id) -> *const strbuf;
 
     fn cinnabar_for_each_note(
         notes: *mut cinnabar_notes_tree,
@@ -83,45 +167,94 @@ extern "C" {
         ) -> c_int,
         cb_data: *mut c_void,
     ) -> c_int;
+
+    fn cinnabar_add_note(
+        notes: *mut cinnabar_notes_tree,
+        object_oid: *const object_id,
+        note_oid: *const object_id,
+    ) -> c_int;
+
+    fn cinnabar_remove_note(notes: *mut cinnabar_notes_tree, object_sha1: *const u8);
+
+    fn cinnabar_write_notes_tree(
+        notes: *mut cinnabar_notes_tree,
+        result: *mut object_id,
+        mode: c_uint,
+    ) -> c_int;
 }
 
-fn for_each_note_in<O: ObjectId + FromBytes, N: ObjectId + FromBytes, F: FnMut(&O, &N)>(
-    notes: &mut cinnabar_notes_tree,
-    mut f: F,
-) {
-    unsafe extern "C" fn each_note_cb<
-        O: ObjectId + FromBytes,
-        N: ObjectId + FromBytes,
-        F: FnMut(&O, &N),
-    >(
+const NOTES_INIT_EMPTY: c_int = 1;
+
+fn for_each_note_in<F: FnMut(GitObjectId, GitObjectId)>(notes: &mut cinnabar_notes_tree, mut f: F) {
+    unsafe extern "C" fn each_note_cb<F: FnMut(GitObjectId, GitObjectId)>(
         oid: *const object_id,
         note_oid: *const object_id,
         _note_path: *const c_char,
         cb_data: *mut c_void,
     ) -> c_int {
         let cb = (cb_data as *mut F).as_mut().unwrap();
-        let o = O::from_bytes(
-            format!("{}", GitObjectId::from(oid.as_ref().unwrap().clone())).as_bytes(),
-        )
-        .map_err(|_| ())
-        .unwrap();
-        let n = N::from_bytes(
-            format!("{}", GitObjectId::from(note_oid.as_ref().unwrap().clone())).as_bytes(),
-        )
-        .map_err(|_| ())
-        .unwrap();
-        cb(&o, &n);
+        let o = oid.as_ref().unwrap().clone().into();
+        let n = note_oid.as_ref().unwrap().clone().into();
+        cb(o, n);
         0
     }
 
     unsafe {
-        cinnabar_for_each_note(
-            notes,
-            0,
-            each_note_cb::<O, N, F>,
-            &mut f as *mut F as *mut c_void,
-        );
+        cinnabar_for_each_note(notes, 0, each_note_cb::<F>, &mut f as *mut F as *mut c_void);
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn resolve_hg2git(
+    store: &Store,
+    oid: *const hg_object_id,
+) -> *const object_id {
+    let git_oid =
+        GitObjectId::from_raw_bytes(HgObjectId::from(oid.as_ref().unwrap().clone()).as_raw_bytes())
+            .unwrap();
+    cinnabar_get_note(&mut store.hg2git_mut().0, &git_oid.into())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn add_hg2git(
+    store: &Store,
+    oid: *const hg_object_id,
+    note_oid: *const object_id,
+) {
+    store.hg2git_mut().add_note(
+        HgObjectId::from(oid.as_ref().unwrap().clone()),
+        note_oid.as_ref().unwrap().clone().into(),
+    );
+}
+
+pub fn store_metadata_notes(
+    notes: &mut cinnabar_notes_tree,
+    reference: CommitId,
+    mode: FileMode,
+) -> CommitId {
+    let mut result = CommitId::NULL;
+    let mut tree = object_id::default();
+    if notes.current.dirty() || notes.additions.dirty() {
+        unsafe {
+            cinnabar_write_notes_tree(notes, &mut tree, u16::from(mode).into());
+        }
+    }
+    let mut tree = TreeId::from_unchecked(GitObjectId::from(tree));
+    if tree.is_null() {
+        result = reference;
+        if result.is_null() {
+            tree = RawTree::EMPTY_OID;
+        }
+    }
+    if !tree.is_null() {
+        let mut buf = Vec::new();
+        writeln!(buf, "tree {}", tree).ok();
+        buf.extend_from_slice(
+            b"author  <cinnabar@git> 0 +0000\ncommitter  <cinnabar@git> 0 +0000\n\n",
+        );
+        result = store_git_commit(&buf);
+    }
+    result
 }
 
 #[allow(non_camel_case_types)]
@@ -129,9 +262,12 @@ fn for_each_note_in<O: ObjectId + FromBytes, N: ObjectId + FromBytes, F: FnMut(&
 pub struct git_notes_tree(cinnabar_notes_tree);
 
 impl git_notes_tree {
-    pub fn get_note(&mut self, oid: &GitObjectId) -> Option<GitObjectId> {
+    pub fn new_with(c: CommitId) -> Self {
+        git_notes_tree(cinnabar_notes_tree::new_with(c))
+    }
+
+    pub fn get_note(&mut self, oid: GitObjectId) -> Option<GitObjectId> {
         unsafe {
-            ensure_notes(&mut self.0);
             cinnabar_get_note(&mut self.0, &oid.into())
                 .as_ref()
                 .cloned()
@@ -139,8 +275,24 @@ impl git_notes_tree {
         }
     }
 
-    pub fn for_each<F: FnMut(&GitObjectId, &GitObjectId)>(&mut self, f: F) {
+    pub fn for_each<F: FnMut(GitObjectId, GitObjectId)>(&mut self, f: F) {
         for_each_note_in(&mut self.0, f);
+    }
+
+    pub fn add_note(&mut self, oid: GitObjectId, note_oid: GitObjectId) {
+        unsafe {
+            cinnabar_add_note(&mut self.0, &oid.into(), &note_oid.into());
+        }
+    }
+
+    pub fn remove_note(&mut self, oid: GitObjectId) {
+        unsafe {
+            cinnabar_remove_note(&mut self.0, oid.as_raw_bytes().as_ptr());
+        }
+    }
+
+    pub fn store(&mut self, reference: CommitId, mode: FileMode) -> CommitId {
+        store_metadata_notes(&mut self.0, reference, mode)
     }
 }
 
@@ -149,40 +301,73 @@ impl git_notes_tree {
 pub struct hg_notes_tree(cinnabar_notes_tree);
 
 impl hg_notes_tree {
-    pub fn get_note(&mut self, oid: &HgObjectId) -> Option<GitObjectId> {
+    #[allow(dead_code)]
+    pub fn new_with(c: CommitId) -> Self {
+        hg_notes_tree(cinnabar_notes_tree::new_with(c))
+    }
+
+    pub fn get_note(&mut self, oid: HgObjectId) -> Option<GitObjectId> {
         unsafe {
-            ensure_notes(&mut self.0);
-            get_note_hg(&mut self.0, &oid.clone().into())
+            let git_oid = GitObjectId::from_raw_bytes(oid.as_raw_bytes()).unwrap();
+            cinnabar_get_note(&mut self.0, &git_oid.into())
                 .as_ref()
                 .cloned()
                 .map(Into::into)
         }
     }
 
-    pub fn get_note_abbrev<H: ObjectId + Clone + Deref<Target = HgObjectId>>(
+    pub fn get_note_abbrev<H: ObjectId + Into<hg_object_id>>(
         &mut self,
-        oid: &Abbrev<H>,
+        oid: Abbrev<H>,
     ) -> Option<GitObjectId> {
         unsafe {
-            ensure_notes(&mut self.0);
-            resolve_hg(&mut self.0, &oid.as_object_id().clone().into(), oid.len())
-                .as_ref()
-                .cloned()
-                .map(Into::into)
+            {
+                let len = oid.len();
+                let git_oid = GitObjectId::from_raw_bytes(oid.as_object_id().as_raw_bytes())
+                    .unwrap()
+                    .into();
+                // get_abbrev_note relied on cinnabar_get_note having run first.
+                let note = cinnabar_get_note(&mut self.0, &git_oid);
+                if len == 40 {
+                    note
+                } else {
+                    get_abbrev_note(&mut self.0, &git_oid, len)
+                }
+            }
+            .as_ref()
+            .cloned()
+            .map(Into::into)
         }
     }
 
-    pub fn for_each<F: FnMut(&HgObjectId, &GitObjectId)>(&mut self, f: F) {
-        for_each_note_in(&mut self.0, f);
+    pub fn for_each<F: FnMut(HgObjectId, GitObjectId)>(&mut self, mut f: F) {
+        for_each_note_in(&mut self.0, |h, g| {
+            let h = HgObjectId::from_raw_bytes(h.as_raw_bytes()).unwrap();
+            f(h, g);
+        });
     }
-}
 
-#[allow(non_camel_case_types)]
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct hg_connection_stdio {
-    pub out: *mut FILE,
-    pub is_remote: c_int,
+    pub fn add_note(&mut self, oid: HgObjectId, note_oid: GitObjectId) {
+        unsafe {
+            cinnabar_add_note(
+                &mut self.0,
+                &GitObjectId::from_raw_bytes(oid.as_raw_bytes())
+                    .unwrap()
+                    .into(),
+                &note_oid.into(),
+            );
+        }
+    }
+
+    pub fn remove_note(&mut self, oid: HgObjectId) {
+        unsafe {
+            cinnabar_remove_note(&mut self.0, oid.as_raw_bytes().as_ptr());
+        }
+    }
+
+    pub fn store(&mut self, reference: CommitId, mode: FileMode) -> CommitId {
+        store_metadata_notes(&mut self.0, reference, mode)
+    }
 }
 
 extern "C" {

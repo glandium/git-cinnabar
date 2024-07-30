@@ -5,46 +5,43 @@
 #ifndef CINNABAR_FAST_IMPORT_H
 #define CINNABAR_FAST_IMPORT_H
 
+#include "strslice.h"
+
 struct reader;
 struct object_id;
 struct hg_object_id;
 struct cinnabar_notes_tree;
 struct rev_chunk;
+struct object_entry;
+struct Store;
 
 int maybe_handle_command(struct reader *helper_input, int helper_output,
                          const char *command, struct string_list *args);
 
-void *get_object_entry(const unsigned char *sha1);
+struct object_entry *get_object_entry(const struct object_id *oid);
 
-void store_git_tree(struct strbuf *tree_buf,
+void unpack_object_entry(struct object_entry *oe, char **buf,
+                         unsigned long *len);
+
+void store_git_tree(struct strslice tree_buf,
                     const struct object_id *reference,
                     struct object_id *result);
 
-void store_git_commit(struct strbuf *commit_buf, struct object_id *result);
-
-void store_git_blob(struct strbuf *blob_buf, struct object_id *result);
-
-void add_head(struct oid_array *heads, const struct object_id *oid);
-
-const struct object_id *ensure_empty_blob(void);
+void store_git_object(enum object_type type, const struct strslice buf,
+                      struct object_id *result, const struct strslice *reference,
+                      const struct object_entry *reference_entry);
 
 void do_cleanup(int rollback);
 
 void do_set_replace(const struct object_id *replaced,
                     const struct object_id *replace_with);
 
-void do_set(const char *what, const struct hg_object_id *hg_id,
-            const struct object_id *git_id);
-
-void store_file(struct rev_chunk *chunk);
-void store_manifest(struct rev_chunk *chunk);
-void store_metadata_notes(
-	struct cinnabar_notes_tree *notes, const struct object_id *reference,
-	struct object_id *result);
+void store_manifest(struct Store *store, struct rev_chunk *chunk,
+                    const struct strslice last_manifest_content,
+                    struct strslice_mut data);
 
 void ensure_store_init(void);
-const struct object_id *ensure_empty_tree(void);
 
-void do_store_metadata(struct object_id *result);
+void store_replace_map(struct object_id *result);
 
 #endif

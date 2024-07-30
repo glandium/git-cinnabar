@@ -8,37 +8,19 @@
 #include "hg-data.h"
 #include "cinnabar-notes.h"
 
+struct Store;
+
 #define METADATA_REF "refs/cinnabar/metadata"
 
 extern struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
                         hg2git_oid, files_meta_oid;
-
-#define FILES_META 0x1
-#define UNIFIED_MANIFESTS_v2 0x2
-
-extern int metadata_flags;
 
 #define CHECK_HELPER 0x1
 #define CHECK_MANIFESTS 0x2
 
 extern int cinnabar_check(int);
 
-extern struct oid_array manifest_heads;
-
-void ensure_heads(struct oid_array *heads);
-
 extern struct notes_tree git2hg, hg2git, files_meta;
-
-extern void ensure_notes(struct notes_tree *notes);
-
-struct strbuf *generate_manifest(const struct object_id *oid);
-
-int check_manifest(const struct object_id *oid,
-                   struct hg_object_id *hg_oid);
-int check_file(const struct hg_object_id *oid,
-               const struct hg_object_id *parent1,
-               const struct hg_object_id *parent2);
-
 
 struct remote;
 
@@ -47,29 +29,19 @@ void remote_get_url(const struct remote *remote, const char * const **url,
                     int* url_nr);
 int remote_skip_default_update(const struct remote *remote);
 
-void init_cinnabar(const char *argv0);
-int init_cinnabar_2(void);
-void done_cinnabar(void);
+int init_cinnabar(const char *argv0);
 
 void create_git_tree(const struct object_id *tree_id,
                      const struct object_id *ref_tree,
                      struct object_id *result);
 
-void reset_manifest_heads(void);
-void do_reload(void);
 unsigned int replace_map_size(void);
+unsigned int replace_map_tablesize(void);
 
 const struct object_id *repo_lookup_replace_object(
 	struct repository *r, const struct object_id *oid);
-const struct object_id *resolve_hg(
-	struct notes_tree* tree, const struct hg_object_id *oid, size_t len);
-const struct object_id *resolve_hg2git(const struct hg_object_id *oid,
-                                       size_t len);
-
-typedef void (*iter_tree_cb)(const struct object_id *oid, struct strbuf *base,
-	                     const char *pathname, unsigned mode, void *context);
-
-int iter_tree(const struct object_id *oid, iter_tree_cb callback, void *context, int recursive);
+const struct object_id *resolve_hg2git(struct Store *store,
+                                       const struct hg_object_id *oid);
 
 struct commit;
 
@@ -77,9 +49,45 @@ struct object_id *commit_oid(struct commit *c);
 struct rev_info *rev_list_new(int argc, const char **argv);
 void rev_list_finish(struct rev_info *revs);
 int maybe_boundary(struct rev_info *revs, struct commit *commit);
+const struct commit *commit_list_item(const struct commit_list *list);
+const struct commit_list *commit_list_next(const struct commit_list *list);
 
 struct diff_tree_item;
 
 void diff_tree_(int argc, const char **argv, void (*cb)(void *, struct diff_tree_item *), void *context);
+
+struct ref;
+
+void add_ref(struct ref ***tail, char *name, const struct object_id *oid);
+
+void add_symref(struct ref ***tail, const char *name, const char *sym);
+
+struct ref *get_ref_map(const struct remote *remote,
+                        const struct ref *remote_refs);
+
+struct ref *get_stale_refs(const struct remote *remote,
+                           const struct ref *ref_map);
+
+const struct ref *get_next_ref(const struct ref *ref);
+
+const char *get_ref_name(const struct ref *ref);
+
+const struct ref *get_ref_peer_ref(const struct ref *ref);
+
+struct worktree;
+
+const char *get_worktree_path(const struct worktree *wr);
+
+int get_worktree_is_current(const struct worktree *wr);
+
+int get_worktree_is_detached(const struct worktree *wr);
+
+const struct object_id *get_worktree_head_oid(const struct worktree *wr);
+
+void init_replace_map(void);
+void reset_replace_map(void);
+
+void init_git_tree_cache(void);
+void free_git_tree_cache(void);
 
 #endif

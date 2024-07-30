@@ -16,8 +16,10 @@ from docker import DockerImage
 import msys
 
 
-MERCURIAL_VERSION = '6.4.2'
-GIT_VERSION = '2.41.0'
+MERCURIAL_VERSION = '6.8'
+# Not using 2.46.0 because of
+# https://lore.kernel.org/git/20240727191917.p64ul4jybpm2a7hm@glandium.org/
+GIT_VERSION = '2.45.2'
 
 ALL_MERCURIAL_VERSIONS = (
     '1.9.3', '2.0.2', '2.1.2', '2.2.3', '2.3.2', '2.4.2', '2.5.4',
@@ -26,7 +28,8 @@ ALL_MERCURIAL_VERSIONS = (
     '4.0.2', '4.1.3', '4.2.2', '4.3.3', '4.4.2', '4.5.3', '4.6.2',
     '4.7.2', '4.8.2', '4.9.1', '5.0.2', '5.1.2', '5.2.2', '5.3.2',
     '5.4.2', '5.5.2', '5.6.1', '5.7.1', '5.8.1', '5.9.3', '6.0.3',
-    '6.1.4', '6.2.3', '6.3.3', '6.4.2',
+    '6.1.4', '6.2.3', '6.3.3', '6.4.2', '6.5.3', '6.6.3', '6.7.4',
+    '6.8',
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -49,11 +52,11 @@ class Git(Task, metaclass=Tool):
     def __init__(self, os_and_version):
         (os, version) = os_and_version.split('.', 1)
         self.os = os
-        if os.startswith('osx'):
-            build_image = TaskEnvironment.by_name('osx.build')
+        if os.endswith('osx'):
+            build_image = TaskEnvironment.by_name('{}.build'.format(os))
         else:
-            build_image = DockerImage.by_name('build')
-        if os == 'linux' or os.startswith('osx'):
+            build_image = DockerImage.by_name('build-tools')
+        if os == 'linux' or os.endswith('osx'):
             h = hashlib.sha1(build_image.hexdigest.encode())
             h.update(b'v4' if version == GIT_VERSION else b'v3')
             if os == 'linux':
@@ -124,7 +127,7 @@ class Git(Task, metaclass=Tool):
         return {'directory:git': self}
 
     def install(self):
-        if self.os.startswith(('linux', 'osx')):
+        if self.os.endswith(('linux', 'osx')):
             return [
                 'export PATH=$PWD/git/bin:$PATH',
                 'export GIT_EXEC_PATH=$PWD/git/libexec/git-core',
@@ -146,7 +149,7 @@ class Hg(Task, metaclass=Tool):
         else:
             python = 'python2.7'
         if os == 'linux':
-            env = TaskEnvironment.by_name('{}.build-buster'.format(os))
+            env = TaskEnvironment.by_name('{}.build-tools'.format(os))
         else:
             env = TaskEnvironment.by_name('{}.build'.format(os))
         kwargs = {}
@@ -164,24 +167,26 @@ class Hg(Task, metaclass=Tool):
         if os == 'linux':
             platform_tag = 'linux_x86_64'
             if python == 'python3':
-                python_tag = 'cp37'
-                abi_tag = 'cp37m'
+                python_tag = 'cp39'
+                abi_tag = 'cp39'
             else:
                 python_tag = 'cp27'
                 abi_tag = 'cp27mu'
         else:
             desc = '{} {} {}'.format(desc, env.os, env.cpu)
-            if os.startswith('osx'):
-                platform_tag = 'macosx_{}_x86_64'.format(
-                    env.os_version.replace('.', '_'))
+            if os.endswith('osx'):
+                py_host_plat = 'macosx-{}-{}'.format(env.os_version, env.cpu)
+                platform_tag = py_host_plat.replace('.', '_').replace('-', '_')
                 if python == 'python3':
-                    python_tag = 'cp39'
-                    abi_tag = 'cp39'
+                    python_tag = 'cp311' if os == 'arm64-osx' else 'cp39'
+                    abi_tag = python_tag
                 else:
                     python_tag = 'cp27'
                     abi_tag = 'cp27m'
-                kwargs.setdefault('env', {}).setdefault(
-                    'MACOSX_DEPLOYMENT_TARGET', env.os_version)
+                env_ = kwargs.setdefault('env', {})
+                env_.setdefault('MACOSX_DEPLOYMENT_TARGET', env.os_version)
+                env_.setdefault('ARCHFLAGS', '-arch {}'.format(env.cpu))
+                env_.setdefault('_PYTHON_HOST_PLATFORM', py_host_plat)
             else:
                 if python == 'python3':
                     platform_tag = 'mingw_x86_64'
@@ -247,7 +252,12 @@ class Hg(Task, metaclass=Tool):
 
         h = hashlib.sha1(env.hexdigest.encode())
         h.update(artifact.encode())
-        h.update(b'v4' if os.startswith('mingw') else b'v1')
+        if os.endswith('osx'):
+            h.update(b'v2')
+        elif os.startswith('mingw'):
+            h.update(b'v4')
+        else:
+            h.update(b'v1')
 
         Task.__init__(
             self,
@@ -284,32 +294,18 @@ class Hg(Task, metaclass=Tool):
         ]
 
 
-def install_rust(version='1.70.0', target='x86_64-unknown-linux-gnu'):
+def install_rust(version='1.80.0', target='x86_64-unknown-linux-gnu'):
     rustup_opts = '-y --default-toolchain none'
     cargo_dir = '$HOME/.cargo/bin/'
     rustup = cargo_dir + 'rustup'
-    if 'windows' in target:
-        cpu, _, __ = target.partition('-')
-        rust_install = [
-            'curl -o rustup-init.exe https://win.rustup.rs/{cpu}',
-            './rustup-init.exe {rustup_opts}',
-            '{rustup} set default-host {target}',
-        ]
-    else:
-        rust_install = [
-            'curl -o rustup.sh https://sh.rustup.rs',
-            'sh rustup.sh {rustup_opts}',
-        ]
-    rust_install += [
+    rust_install = [
+        'curl -o rustup.sh https://sh.rustup.rs',
+        'sh rustup.sh {rustup_opts}',
         '{rustup} install {version} --profile minimal',
         '{rustup} default {version}',
         'PATH={cargo_dir}:$PATH',
         '{rustup} target add {target}',
     ]
-    if 'windows' in target:
-        rust_install += [
-            '{rustup} component remove rust-mingw',
-        ]
     loc = locals()
     return [r.format(**loc) for r in rust_install]
 
@@ -319,10 +315,12 @@ class Build(Task, metaclass=Tool):
 
     def __init__(self, os_and_variant):
         os, variant = (os_and_variant.split('.', 1) + [''])[:2]
-        if os.startswith('osx'):
-            os = 'osx'
         env = TaskEnvironment.by_name(
             '{}.build'.format(os.replace('arm64-linux', 'linux')))
+        if os.startswith('mingw'):
+            build_env = TaskEnvironment.by_name('linux.build')
+        else:
+            build_env = env
 
         artifact = 'git-cinnabar'
         if os.startswith('mingw'):
@@ -343,7 +341,7 @@ class Build(Task, metaclass=Tool):
         cargo_features = ['self-update', 'gitdev']
         rust_version = None
         if variant == 'asan':
-            if os.startswith('osx'):
+            if os.endswith('osx'):
                 opt = '-O2'
             else:
                 opt = '-Og'
@@ -357,6 +355,7 @@ class Build(Task, metaclass=Tool):
             environ['RUSTFLAGS'] = ' '.join([
                 '-Zsanitizer=address',
                 '-Copt-level=1',
+                '-Cdebuginfo=full',
                 '-Cforce-frame-pointers=yes',
             ])
         elif variant == 'coverage':
@@ -386,8 +385,9 @@ class Build(Task, metaclass=Tool):
         elif variant:
             raise Exception('Unknown variant: {}'.format(variant))
 
+        if 'osx' not in os:
+            environ['CC'] = 'clang-18'
         if os in ('linux', 'arm64-linux'):
-            environ['CC'] = 'clang-15'
             cargo_features.append('curl-compat')
 
         if os.startswith('mingw'):
@@ -401,15 +401,42 @@ class Build(Task, metaclass=Tool):
             rust_target = 'x86_64-unknown-linux-gnu'
         elif os == 'arm64-linux':
             rust_target = 'aarch64-unknown-linux-gnu'
-            environ['PKG_CONFIG_aarch64_unknown_linux_gnu'] = \
-                '/usr/bin/aarch64-linux-gnu-pkg-config'
-            environ['CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER'] = \
-                environ['CC']
-            environ['CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS'] = \
-                '-C link-arg=--target=aarch64-unknown-linux-gnu'
+        if 'osx' not in os:
+            for target in dict.fromkeys(
+                    ["x86_64-unknown-linux-gnu", rust_target]).keys():
+                arch = {
+                    'x86_64': 'amd64',
+                    'aarch64': 'arm64',
+                }[target.partition('-')[0]]
+                multiarch = target.replace('unknown-', '')
+                TARGET = target.replace('-', '_').upper()
+                environ[f'CARGO_TARGET_{TARGET}_LINKER'] = environ['CC']
+                if 'linux' in os:
+                    extra_link_arg = f'--sysroot=/sysroot-{arch}'
+                if os.startswith('mingw'):
+                    extra_link_arg = \
+                        f'-L/usr/lib/gcc/{cpu}-w64-mingw32/10-win32'
+                environ[f'CARGO_TARGET_{TARGET}_RUSTFLAGS'] = \
+                    f'-C link-arg=--target={target} ' + \
+                    f'-C link-arg={extra_link_arg} ' + \
+                    '-C link-arg=-fuse-ld=lld-18'
+                rustflags = environ.pop('RUSTFLAGS', None)
+                if rustflags:
+                    environ[f'CARGO_TARGET_{TARGET}_RUSTFLAGS'] += \
+                        f' {rustflags}'
+                if 'linux' in os:
+                    environ[f'CFLAGS_{target}'] = f'--sysroot=/sysroot-{arch}'
+            if 'linux' in os:
+                environ['PKG_CONFIG_PATH'] = ''
+                environ['PKG_CONFIG_SYSROOT_DIR'] = f'/sysroot-{arch}'
+                environ['PKG_CONFIG_LIBDIR'] = ':'.join((
+                    f'/sysroot-{arch}/usr/lib/pkgconfig',
+                    f'/sysroot-{arch}/usr/lib/{multiarch}/pkgconfig',
+                    f'/sysroot-{arch}/usr/share/pkgconfig',
+                ))
         if variant in ('coverage', 'asan'):
-            rust_install = install_rust('nightly-2023-03-05', rust_target)
-        elif rust_version:
+            environ['RUSTC_BOOTSTRAP'] = '1'
+        if rust_version:
             rust_install = install_rust(rust_version, target=rust_target)
         else:
             rust_install = install_rust(target=rust_target)
@@ -427,11 +454,14 @@ class Build(Task, metaclass=Tool):
         if os.startswith('osx'):
             environ.setdefault(
                 'MACOSX_DEPLOYMENT_TARGET', '10.7')
+        if os.startswith('arm64-osx'):
+            environ.setdefault(
+                'MACOSX_DEPLOYMENT_TARGET', '11.0')
 
         cpu = 'arm64' if os == 'arm64-linux' else env.cpu
         Task.__init__(
             self,
-            task_env=env,
+            task_env=build_env,
             description='build {} {}{}'.format(
                 env.os, cpu, prefix(' ', desc_variant)),
             index='build.{}.{}.{}{}'.format(

@@ -456,6 +456,27 @@
 
   $ git -c cinnabar.refs=heads,tips -C repo-git ls-remote hg::$REPO
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  66e3a05b3f4cc64ecdd41a4a2c4ac3913ca905bd	refs/heads/default/3af330d6b3b174311a550ed9246a104ceeda8c28
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/default/tip
+  98c3f7495c17d6fcae8cfaa894c8af0da9668863	refs/heads/foo/tip
+
+  $ cd repo
+  $ hg branch "esc%ped name" > /dev/null
+  $ for f in i j; do create $f; done
+  $ hg bookmark "esc%ped again" > /dev/null
+  $ cd ..
+
+TODO: branches and bookmarks with unsupported names need to be handled
+properly.
+
+  $ git -C repo-git ls-remote hg::$REPO
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	HEAD
+  5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/bookmarks/@
+  445bd26f53d0d2b946eda781eae0e11cf665493d	refs/heads/bookmarks/bar
+  0000000000000000000000000000000000000000	refs/heads/bookmarks/esc%ped
+  23bcc26b9fea7e37426260465bed35eac54af5e1	refs/heads/bookmarks/fooz
+  7688446e0a5d5b6108443632be74c9bca72d31b1	refs/heads/bookmarks/qux
   66e3a05b3f4cc64ecdd41a4a2c4ac3913ca905bd	refs/heads/branches/default/3af330d6b3b174311a550ed9246a104ceeda8c28
   5c5b259d3c128f3d7b50ce3bd5c9eaafd8d17611	refs/heads/branches/default/tip
+  0000000000000000000000000000000000000000	refs/heads/branches/esc%25ped%20name/tip
   98c3f7495c17d6fcae8cfaa894c8af0da9668863	refs/heads/branches/foo/tip

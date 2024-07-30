@@ -73,7 +73,7 @@ def expires_soon(expires):
     try:
         expires = datetime.strptime(
             expires.rstrip('Z'), '%Y-%m-%dT%H:%M:%S.%f')
-        return expires < now + 3600
+        return expires < now + 86400
     except (KeyError, ValueError):
         return True
 
@@ -321,10 +321,14 @@ class Task(object):
                         }
                     artifact = content.get('artifact') or content['url']
                     if kind == "file" or kind.startswith("file:"):
-                        mounts.append({
+                        mount = {
                             'content': content,
                             'file': kind[5:] or os.path.basename(artifact),
-                        })
+                        }
+                        if kind[5:] == 'dockerimage':
+                            mount['format'] = os.path.splitext(
+                                content['artifact'])[-1].replace('.', '')
+                        mounts.append(mount)
                     elif kind == "directory" or kind.startswith("directory:"):
                         mounts.append({
                             'content': content,
@@ -395,12 +399,8 @@ class Task(object):
 SHELL_QUOTE_RE = re.compile(r'[\\\t\r\n \'\"#<>&|`~(){}$;\*\?]')
 
 
-class no_quote(str):
-    pass
-
-
 def _quote(s, for_windows=False):
-    if s and (isinstance(s, no_quote) or not SHELL_QUOTE_RE.search(s)):
+    if s and not SHELL_QUOTE_RE.search(s):
         return s
     if for_windows:
         for c in '^&\\<>|':

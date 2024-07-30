@@ -8,12 +8,13 @@ use std::fmt::Display;
 use std::fs::File;
 use std::io::{self, copy, Chain, Cursor, ErrorKind, Read, Write};
 use std::iter::repeat;
-use std::mem::{self, MaybeUninit};
+use std::mem;
 use std::os::raw::c_int;
-use std::ptr::NonNull;
+use std::ptr::{self, NonNull};
+use std::rc::Rc;
 use std::str::FromStr;
 
-use bstr::ByteSlice;
+use bstr::{BStr, ByteSlice};
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 use bzip2::read::BzDecoder;
 use bzip2::write::BzEncoder;
@@ -26,47 +27,63 @@ use tee::TeeReader;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
+use crate::get_changes;
+use crate::git::{CommitId, RawCommit};
+use crate::hg::{HgChangesetId, HgFileId, HgManifestId, HgObjectId};
 use crate::hg_connect::{encodecaps, HgConnection, HgConnectionBase, HgRepo};
-use crate::hg_data::find_parents;
-use crate::libcinnabar::files_meta;
-use crate::libgit::{BlobId, CommitId, RawCommit};
-use crate::oid::GitObjectId;
+use crate::hg_data::find_file_parents;
+use crate::libcinnabar::{hg_object_id, strslice, AsStrSlice};
+use crate::libgit::die;
+use crate::oid::ObjectId;
 use crate::progress::Progress;
 use crate::store::{
-    ChangesetHeads, GitFileMetadataId, GitManifestId, HgChangesetId, HgFileId, HgManifestId,
-    RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest,
+    ChangesetHeads, RawGitChangesetMetadata, RawHgChangeset, RawHgFile, RawHgManifest, Store,
 };
-use crate::util::{FromBytes, ToBoxed};
+use crate::tree_util::{Empty, WithPath};
+use crate::util::{assert_ge, assert_lt, FromBytes, ImmutBString, ReadExt, SliceExt, ToBoxed};
 use crate::xdiff::textdiff;
-use crate::{get_changes, manifest_path, HELPER_LOCK};
-use crate::{
-    libcinnabar::hg_object_id,
-    libgit::strbuf,
-    oid::{HgObjectId, ObjectId},
-    util::{ImmutBString, ReadExt, SliceExt},
-};
 
-extern "C" {
-    fn rev_chunk_from_memory(
-        result: *mut rev_chunk,
-        buf: *mut strbuf,
-        delta_node: *const hg_object_id,
+#[no_mangle]
+pub unsafe extern "C" fn rev_diff_start_iter(iterator: *mut strslice, chunk: *const rev_chunk) {
+    ptr::write(
+        iterator,
+        chunk
+            .as_ref()
+            .unwrap()
+            .revchunk
+            .iter_diff()
+            .0
+            .as_str_slice(),
     );
+}
 
-    fn rev_diff_start_iter(iterator: *mut rev_diff_part, chunk: *const rev_chunk);
-
-    fn rev_diff_iter_next(iterator: *mut rev_diff_part) -> c_int;
+#[no_mangle]
+pub unsafe extern "C" fn rev_diff_iter_next(
+    iterator: *mut strslice,
+    part: *mut rev_diff_part,
+) -> c_int {
+    let mut diff_iter = RevDiffIter(iterator.as_mut().unwrap().as_bytes());
+    let next = diff_iter.next();
+    ptr::write(iterator, diff_iter.0.as_str_slice());
+    if let Some(p) = next {
+        ptr::write(
+            part,
+            mem::transmute::<rev_diff_part<'_>, rev_diff_part<'_>>(p.0),
+        );
+        1
+    } else {
+        0
+    }
 }
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct rev_chunk {
-    raw: strbuf,
     node: NonNull<hg_object_id>,
     parent1: NonNull<hg_object_id>,
     parent2: NonNull<hg_object_id>,
     delta_node: NonNull<hg_object_id>,
-    diff_data: NonNull<u8>,
+    revchunk: RevChunk,
 }
 
 #[allow(non_camel_case_types)]
@@ -74,45 +91,72 @@ pub struct rev_chunk {
 pub struct rev_diff_part<'a> {
     start: usize,
     end: usize,
-    data: strbuf,
-    chunk: &'a rev_chunk,
+    data: strslice<'a>,
 }
 
-impl rev_chunk {
-    pub fn node(&self) -> &hg_object_id {
-        unsafe { self.node.as_ref() }
+pub struct RevChunk {
+    raw: ImmutBString,
+    delta_node: Option<Rc<HgObjectId>>,
+}
+
+impl RevChunk {
+    pub fn node(&self) -> HgObjectId {
+        HgObjectId::from_raw_bytes(&self.raw[0..20]).unwrap()
     }
 
-    pub fn parent1(&self) -> &hg_object_id {
-        unsafe { self.parent1.as_ref() }
+    pub fn parent1(&self) -> HgObjectId {
+        HgObjectId::from_raw_bytes(&self.raw[20..40]).unwrap()
     }
 
-    pub fn parent2(&self) -> &hg_object_id {
-        unsafe { self.parent2.as_ref() }
+    pub fn parent2(&self) -> HgObjectId {
+        HgObjectId::from_raw_bytes(&self.raw[40..60]).unwrap()
     }
 
-    pub fn delta_node(&self) -> &hg_object_id {
-        unsafe { self.delta_node.as_ref() }
+    pub fn delta_node(&self) -> HgObjectId {
+        self.delta_node.as_ref().map_or_else(
+            || HgObjectId::from_raw_bytes(&self.raw[60..80]).unwrap(),
+            |oid| **oid,
+        )
     }
 
     pub fn iter_diff(&self) -> RevDiffIter {
+        RevDiffIter(&self.raw[if self.delta_node.is_some() { 80 } else { 100 }..])
+    }
+}
+
+impl From<RevChunk> for rev_chunk {
+    fn from(mut chunk: RevChunk) -> Self {
+        let buf = &mut chunk.raw[..];
         unsafe {
-            let mut part = MaybeUninit::zeroed();
-            rev_diff_start_iter(part.as_mut_ptr(), self);
-            RevDiffIter(part.assume_init())
+            rev_chunk {
+                node: NonNull::new_unchecked(buf.as_mut_ptr()).cast(),
+                parent1: NonNull::new_unchecked(buf.as_mut_ptr().add(20)).cast(),
+                parent2: NonNull::new_unchecked(buf.as_mut_ptr().add(40)).cast(),
+                delta_node: chunk
+                    .delta_node
+                    .as_ref()
+                    .map_or_else(
+                        || NonNull::new_unchecked(buf.as_mut_ptr().add(60)),
+                        |oid| NonNull::new_unchecked(oid.as_raw_bytes() as *const _ as *mut _),
+                    )
+                    .cast(),
+                revchunk: chunk,
+            }
         }
     }
 }
 
-pub fn read_rev_chunk<R: Read>(mut r: R, out: &mut strbuf) {
+pub fn read_rev_chunk<R: Read>(mut r: R) -> ImmutBString {
     let mut buf = [0; 4];
     r.read_exact(&mut buf).unwrap();
     let len = BigEndian::read_u32(&buf) as u64;
     if len == 0 {
-        return;
+        return Box::new([]);
     }
+    let mut result = Vec::with_capacity(len.try_into().unwrap());
     // TODO: should error out on short read
-    copy(&mut r.take(len.checked_sub(4).unwrap()), out).unwrap();
+    copy(&mut r.take(len.checked_sub(4).unwrap()), &mut result).unwrap();
+    result.into_boxed_slice()
 }
 
 pub fn read_bundle2_chunk<R: Read>(mut r: R) -> io::Result<ImmutBString> {
@@ -139,8 +183,8 @@ fn skip_bundle2_chunk<R: Read>(mut r: R) -> io::Result<u64> {
 
 pub struct RevChunkIter<R: Read> {
     version: u8,
-    delta_node: Option<hg_object_id>,
-    next_delta_node: Option<hg_object_id>,
+    delta_node: Option<Rc<HgObjectId>>,
+    next_delta_node: Option<Rc<HgObjectId>>,
     reader: R,
 }
 
@@ -156,58 +200,95 @@ impl<R: Read> RevChunkIter<R> {
 }
 
 impl<R: Read> Iterator for RevChunkIter<R> {
-    type Item = rev_chunk;
+    type Item = RevChunk;
 
-    fn next(&mut self) -> Option<rev_chunk> {
-        let first = self.delta_node.take().is_none();
-        self.delta_node = self
-            .next_delta_node
-            .take()
-            .or_else(|| Some(HgObjectId::null().into()));
-        let mut buf = strbuf::new();
-        read_rev_chunk(&mut self.reader, &mut buf);
+    fn next(&mut self) -> Option<RevChunk> {
+        let buf = read_rev_chunk(&mut self.reader);
         if buf.as_bytes().is_empty() {
             return None;
         }
-        let mut chunk = MaybeUninit::zeroed();
-        unsafe {
-            rev_chunk_from_memory(
-                chunk.as_mut_ptr(),
-                &mut buf,
-                (self.version == 1)
-                    .then(|| ())
-                    .and(self.delta_node.as_ref())
-                    .map_or(std::ptr::null(), |d| d as *const _),
-            );
+        let data_offset = 80 + 20 * (if self.version == 1 { 0 } else { 1 });
+        if buf.as_bytes().len() < data_offset {
+            die!("Invalid revchunk");
         }
-        let chunk = unsafe { chunk.assume_init() };
-        if self.version == 1 {
-            if first {
-                self.delta_node = Some(chunk.parent1().clone());
-            }
-            self.next_delta_node = Some(chunk.node().clone());
-        }
+
+        let mut chunk = RevChunk {
+            raw: buf,
+            delta_node: None,
+        };
+
+        chunk.delta_node = (self.version == 1).then(|| {
+            mem::swap(&mut self.delta_node, &mut self.next_delta_node);
+            let delta_node = self
+                .delta_node
+                .clone()
+                .take()
+                .unwrap_or_else(|| chunk.parent1().into());
+
+            let next_delta_node = if let Some(next_delta_node) = Rc::get_mut(
+                self.next_delta_node
+                    .get_or_insert_with(|| Rc::new(HgObjectId::NULL)),
+            ) {
+                next_delta_node
+            } else {
+                self.next_delta_node = Some(Rc::new(HgObjectId::NULL));
+                Rc::get_mut(self.next_delta_node.as_mut().unwrap()).unwrap()
+            };
+            *next_delta_node = chunk.node();
+            delta_node
+        });
+
         Some(chunk)
     }
 }
 
-pub struct RevDiffIter<'a>(rev_diff_part<'a>);
+#[repr(transparent)]
+pub struct RevDiffIter<'a>(&'a [u8]);
 
-pub struct RevDiffPart {
-    pub start: usize,
-    pub end: usize,
-    pub data: ImmutBString,
-}
+#[repr(transparent)]
+pub struct RevDiffPart<'a>(rev_diff_part<'a>);
 
 impl<'a> Iterator for RevDiffIter<'a> {
-    type Item = RevDiffPart;
+    type Item = RevDiffPart<'a>;
 
-    fn next(&mut self) -> Option<RevDiffPart> {
-        unsafe { rev_diff_iter_next(&mut self.0) != 0 }.then(|| RevDiffPart {
-            start: self.0.start,
-            end: self.0.end,
-            data: self.0.data.as_bytes().to_vec().into_boxed_slice(),
-        })
+    fn next(&mut self) -> Option<RevDiffPart<'a>> {
+        let slice = self.0.as_bytes();
+        if slice.is_empty() {
+            return None;
+        }
+        if slice.len() < 12 {
+            die!("Invalid revchunk");
+        }
+        let start = usize::try_from(BigEndian::read_u32(&slice[0..4])).unwrap();
+        let end = usize::try_from(BigEndian::read_u32(&slice[4..8])).unwrap();
+        let len = usize::try_from(BigEndian::read_u32(&slice[8..12])).unwrap();
+        let slice = &slice[12..];
+        if slice.len() < len {
+            die!("Invalid revchunk");
+        }
+        let (data, slice) = slice.split_at(len);
+        unsafe {
+            ptr::write(&mut self.0 as *mut _, slice);
+        }
+        Some(RevDiffPart(rev_diff_part {
+            start,
+            end,
+            data: data.as_str_slice(),
+        }))
+    }
+}
+
+impl<'a> RevDiffPart<'a> {
+    pub fn start(&self) -> usize {
+        self.0.start
+    }
+
+    pub fn end(&self) -> usize {
+        self.0.end
+    }
+
+    pub fn data(&self) -> &BStr {
+        self.0.data.as_bytes().as_bstr()
     }
 }
 
@@ -795,25 +876,22 @@ impl<R: Read> BundleConnection<R> {
             let version = part
                 .get_param("version")
                 .map_or(1, |v| u8::from_str(v).unwrap());
-            let empty_cs = RawHgChangeset(Box::new([]));
+            let empty_cs = RawHgChangeset::empty();
             // TODO: share more code with the equivalent loop in store.rs.
             for chunk in
                 RevChunkIter::new(version, part).progress(|n| format!("Analyzing {n} changesets"))
             {
-                let node = HgChangesetId::from_unchecked(HgObjectId::from(chunk.node().clone()));
-                let parent1 =
-                    HgChangesetId::from_unchecked(HgObjectId::from(chunk.parent1().clone()));
-                let parent2 =
-                    HgChangesetId::from_unchecked(HgObjectId::from(chunk.parent2().clone()));
-                let delta_node =
-                    HgChangesetId::from_unchecked(HgObjectId::from(chunk.delta_node().clone()));
+                let node = HgChangesetId::from_unchecked(chunk.node());
+                let parent1 = HgChangesetId::from_unchecked(chunk.parent1());
+                let parent2 = HgChangesetId::from_unchecked(chunk.parent2());
+                let delta_node = HgChangesetId::from_unchecked(chunk.delta_node());
                 let parents = [parent1, parent2];
                 let parents = parents
-                    .iter()
-                    .filter(|&p| *p != HgChangesetId::null())
+                    .into_iter()
+                    .filter(|p| !p.is_null())
                     .collect::<Vec<_>>();
 
-                let reference_cs = if delta_node == HgChangesetId::null() {
+                let reference_cs = if delta_node.is_null() {
                     &empty_cs
                 } else {
                     raw_changesets.get(&delta_node).unwrap()
@@ -821,18 +899,18 @@ impl<R: Read> BundleConnection<R> {
                 let mut last_end = 0;
                 let mut raw_changeset = Vec::new();
                 for diff in chunk.iter_diff() {
-                    if diff.start > reference_cs.len() || diff.start < last_end {
+                    if diff.start() > reference_cs.len() || diff.start() < last_end {
                         die!("Malformed changeset chunk for {node}");
                     }
-                    raw_changeset.extend_from_slice(&reference_cs[last_end..diff.start]);
-                    raw_changeset.extend_from_slice(&diff.data);
-                    last_end = diff.end;
+                    raw_changeset.extend_from_slice(&reference_cs[last_end..diff.start()]);
+                    raw_changeset.extend_from_slice(diff.data());
+                    last_end = diff.end();
                 }
                 if reference_cs.len() < last_end {
                     die!("Malformed changeset chunk for {node}");
                 }
                 raw_changeset.extend_from_slice(&reference_cs[last_end..]);
-                let raw_changeset = RawHgChangeset(raw_changeset.into());
+                let raw_changeset = RawHgChangeset::from(raw_changeset);
                 let changeset = raw_changeset.parse().unwrap();
                 let branch = changeset
                     .extra()
@@ -840,7 +918,7 @@ impl<R: Read> BundleConnection<R> {
                     .unwrap_or(b"default")
                     .as_bstr();
 
-                changesets.add(&node, &parents, branch);
+                changesets.add(node, &parents, branch);
                 raw_changesets.insert(node, raw_changeset);
             }
             break;
@@ -882,7 +960,7 @@ impl<R: Read> HgRepo for BundleConnection<R> {
                 .branch_heads()
                 .enumerate()
                 .sorted_by_key(|(n, (_, branch))| (*branch, *n))
-                .group_by(|(_, (_, branch))| *branch)
+                .chunk_by(|(_, (_, branch))| *branch)
             {
                 branchmap.extend_from_slice(branch);
                 writeln!(
@@ -934,16 +1012,16 @@ pub fn create_chunk_data(a: &[u8], b: &[u8]) -> Box<[u8]> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn write_chunk(
+fn write_chunk<T: core::ops::Deref<Target = [u8]>>(
     mut writer: impl Write,
     version: u8,
-    node: &HgObjectId,
-    parent1: &HgObjectId,
-    parent2: &HgObjectId,
-    changeset: &HgChangesetId,
-    previous: &mut Option<(HgObjectId, Box<[u8]>)>,
+    node: HgObjectId,
+    parent1: HgObjectId,
+    parent2: HgObjectId,
+    changeset: HgChangesetId,
+    previous: &mut Option<(HgObjectId, T)>,
     always_previous: bool,
-    mut f: impl FnMut(&HgObjectId) -> Box<[u8]>,
+    mut f: impl FnMut(HgObjectId) -> T,
 ) -> io::Result<()> {
     let raw_object = f(node);
     let (previous_node, raw_previous) = match previous.take() {
@@ -951,17 +1029,16 @@ fn write_chunk(
         None => (None, None),
     };
     let (delta_node, chunk) = if version == 1 {
-        let previous =
-            raw_previous.or_else(|| (parent1 != &HgObjectId::null()).then(|| f(parent1)));
+        let previous = raw_previous.or_else(|| (!parent1.is_null()).then(|| f(parent1)));
         let previous = previous.as_deref().unwrap_or(b"");
         (None, create_chunk_data(previous, &raw_object))
     } else {
         let mut chunk_data = [parent1, parent2]
             .into_iter()
-            .filter(|&p| p != &HgObjectId::null())
+            .filter(|p| !p.is_null())
             .dedup()
             .map(|p| {
-                if let (true, Some(p)) = (always_previous, previous_node.as_ref()) {
+                if let (true, Some(p)) = (always_previous, previous_node) {
                     let previous = raw_previous.as_ref().unwrap();
                     (Some(p), create_chunk_data(previous, &raw_object))
                 } else {
@@ -971,13 +1048,13 @@ fn write_chunk(
             .collect_vec();
         if chunk_data.is_empty() {
             chunk_data.push((
-                previous_node.as_ref(),
+                previous_node,
                 create_chunk_data(raw_previous.as_deref().unwrap_or(b""), &raw_object),
             ));
         }
         chunk_data.into_iter().min_by_key(|(_, d)| d.len()).unwrap()
     };
-    *previous = Some((node.clone(), raw_object));
+    *previous = Some((node, raw_object));
     writer.write_u32::<BigEndian>(
         (4 + chunk.len() + 80 + if version == 2 { 20 } else { 0 })
             .try_into()
@@ -987,13 +1064,14 @@ fn write_chunk(
     writer.write_all(parent1.as_raw_bytes())?;
     writer.write_all(parent2.as_raw_bytes())?;
     if version == 2 {
-        writer.write_all(delta_node.unwrap_or(&HgObjectId::null()).as_raw_bytes())?;
+        writer.write_all(delta_node.unwrap_or(HgObjectId::NULL).as_raw_bytes())?;
     }
     writer.write_all(changeset.as_raw_bytes())?;
     writer.write_all(&chunk)
 }
 
 pub fn create_bundle(
+    store: &Store,
     changesets: impl Iterator<Item = [HgChangesetId; 3]>,
     bundlespec: BundleSpec,
     version: u8,
@@ -1021,59 +1099,59 @@ pub fn create_bundle(
 
     for [node, parent1, parent2] in changesets.progress(|n| format!("Bundling {n} changesets")) {
         // TODO: add branch.
-        changeset_heads.add(&node, &[&parent1, &parent2], b"".as_bstr());
+        changeset_heads.add(node, &[parent1, parent2], b"".as_bstr());
 
-        let _lock = HELPER_LOCK.lock().unwrap();
         write_chunk(
             &mut bundle_part_writer,
             version,
-            &node,
-            &parent1,
-            &parent2,
-            &node,
+            node.into(),
+            parent1.into(),
+            parent2.into(),
+            node,
             &mut previous,
             true,
             |node| {
-                let node = HgChangesetId::from_unchecked(node.clone());
-                let changeset = RawHgChangeset::read(&node.to_git().unwrap()).unwrap();
-                changeset.0
+                let node = HgChangesetId::from_unchecked(node);
+                RawHgChangeset::read(store, node.to_git(store).unwrap()).unwrap()
             },
         )
         .unwrap();
         // We could derive the manifest parents from the parent changesets, but there
         // are cases where they are actually the opposites of the parent manifests,
         // so we have to go off the manifest dag.
-        let get_manifest = |node: &CommitId| {
-            let manifest_commit =
-                RawCommit::read(&GitManifestId::from_unchecked(node.clone())).unwrap();
+        let get_manifest = |node: CommitId| {
+            let manifest_commit = RawCommit::read(node).unwrap();
             let manifest_commit = manifest_commit.parse().unwrap();
             HgManifestId::from_bytes(manifest_commit.body()).unwrap()
         };
-        let metadata = RawGitChangesetMetadata::read(&node.to_git().unwrap()).unwrap();
+        let metadata = RawGitChangesetMetadata::read(store, node.to_git(store).unwrap()).unwrap();
         let metadata = metadata.parse().unwrap();
-        let manifest = metadata.manifest_id().clone();
-        if manifest != HgManifestId::null() && !manifests.contains_key(&manifest) {
-            let manifest_commit = RawCommit::read(&manifest.to_git().unwrap()).unwrap();
+        let manifest = metadata.manifest_id();
+        if !manifest.is_null() && !manifests.contains_key(&manifest) {
+            let manifest_commit = RawCommit::read(manifest.to_git(store).unwrap().into()).unwrap();
             let manifest_commit = manifest_commit.parse().unwrap();
             let manifest_parents = manifest_commit.parents();
             let mn_parent1 = manifest_parents
-                .get(0)
-                .map_or_else(HgManifestId::null, get_manifest);
+                .first()
+                .copied()
+                .map_or(HgManifestId::NULL, get_manifest);
             let mn_parent2 = manifest_parents
                 .get(1)
-                .map_or_else(HgManifestId::null, get_manifest);
+                .copied()
+                .map_or(HgManifestId::NULL, get_manifest);
             if ![&mn_parent1, &mn_parent2].contains(&&manifest) {
                 manifests.insert(manifest, (mn_parent1, mn_parent2, node));
             }
         }
     }
     bundle_part_writer.write_u32::<BigEndian>(0).unwrap();
-    let files = bundle_manifest(&mut bundle_part_writer, version, manifests.drain(..));
-    bundle_files(&mut bundle_part_writer, version, files);
+    let files = bundle_manifest(store, &mut bundle_part_writer, version, manifests.drain(..));
+    bundle_files(store, &mut bundle_part_writer, version, files);
     changeset_heads
 }
 
 fn bundle_manifest<const CHUNK_SIZE: usize>(
+    store: &Store,
     bundle_part_writer: &mut BundlePartWriter<CHUNK_SIZE>,
     version: u8,
     manifests: impl IntoIterator<Item = (HgManifestId, (HgManifestId, HgManifestId, HgChangesetId))>,
@@ -1092,55 +1170,37 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
         write_chunk(
             &mut *bundle_part_writer,
             version,
-            &node,
-            &parent1,
-            &parent2,
-            &changeset,
+            node.into(),
+            parent1.into(),
+            parent2.into(),
+            changeset,
             &mut previous,
             false,
             |node| {
-                let node = HgManifestId::from_unchecked(node.clone());
-                let manifest = RawHgManifest::read(&node.to_git().unwrap()).unwrap();
-                manifest.0
+                let node = HgManifestId::from_unchecked(node);
+                RawHgManifest::read(node.to_git(store).unwrap()).unwrap()
             },
         )
         .unwrap();
-        let git_node = node.to_git().unwrap();
+        let git_node = node.to_git(store).unwrap();
         let git_parents = [parent1, parent2]
             .into_iter()
-            .filter_map(|p| (p != HgManifestId::null()).then(|| (*p.to_git().unwrap()).clone()))
+            .filter(|p| !p.is_null())
+            .map(|p| (p.to_git(store).unwrap().into()))
             .collect_vec();
-        for (path, hg_file, hg_fileparents) in get_changes(&git_node, &git_parents, false) {
-            if hg_file != GitObjectId::null() {
+        for (path, (hg_file, hg_fileparents)) in
+            get_changes(git_node.into(), &git_parents, false).map(WithPath::unzip)
+        {
+            if !hg_file.is_null() {
                 files
                     .entry(path)
                     .or_insert_with(IndexMap::new)
-                    .entry(HgFileId::from_bytes(format!("{}", hg_file).as_bytes()).unwrap())
+                    .entry(hg_file)
                     .or_insert_with(|| {
                         (
-                            HgFileId::from_bytes(
-                                format!(
-                                    "{}",
-                                    hg_fileparents
-                                        .get(0)
-                                        .cloned()
-                                        .unwrap_or_else(GitObjectId::null)
-                                )
-                                .as_bytes(),
-                            )
-                            .unwrap(),
-                            HgFileId::from_bytes(
-                                format!(
-                                    "{}",
-                                    hg_fileparents
-                                        .get(1)
-                                        .cloned()
-                                        .unwrap_or_else(GitObjectId::null)
-                                )
-                                .as_bytes(),
-                            )
-                            .unwrap(),
-                            changeset.clone(),
+                            hg_fileparents.first().copied().unwrap_or(HgFileId::NULL),
+                            hg_fileparents.get(1).copied().unwrap_or(HgFileId::NULL),
+                            changeset,
                         )
                     });
             }
@@ -1151,6 +1211,7 @@ fn bundle_manifest<const CHUNK_SIZE: usize>(
 }
 
 fn bundle_files<const CHUNK_SIZE: usize>(
+    store: &Store,
     bundle_part_writer: &mut BundlePartWriter<CHUNK_SIZE>,
     version: u8,
     files: impl IntoIterator<
@@ -1164,59 +1225,45 @@ fn bundle_files<const CHUNK_SIZE: usize>(
     let mut progress =
         repeat(()).progress(|n| format!("Bundling {n} revisions of {} files", count.get()));
     for (path, data) in files.into_iter().sorted_by(|a, b| a.0.cmp(&b.0)) {
-        let path = manifest_path(&path);
         bundle_part_writer
             .write_u32::<BigEndian>((4 + path.len()).try_into().unwrap())
             .unwrap();
         bundle_part_writer.write_all(&path).unwrap();
         count.set(count.get() + 1);
         let mut previous = None;
-        let empty_file = HgFileId::from_str("b80de5d138758541c5f05265ad144ab9fa86d1db").unwrap();
         for ((node, (mut parent1, mut parent2, changeset)), ()) in
             data.into_iter().zip(&mut progress)
         {
-            let generate = |node: &HgObjectId| {
-                let node = HgFileId::from_unchecked(node.clone());
-                if node == empty_file {
-                    vec![].into_boxed_slice()
-                } else {
-                    let metadata = unsafe { files_meta.get_note(&node) }
-                        .map(|oid| GitFileMetadataId::from_unchecked(BlobId::from_unchecked(oid)));
-
-                    let file = RawHgFile::read(&node.to_git().unwrap(), metadata.as_ref()).unwrap();
-                    file.0
-                }
-            };
-            let data = generate(&node);
-            let null_id = HgObjectId::null();
+            let data = RawHgFile::read_hg(store, node).unwrap();
             // Normalize parents so that the first parent isn't null (it's a corner case, see below).
-            if *parent1 == null_id {
+            if parent1.is_null() {
                 mem::swap(&mut parent1, &mut parent2);
             }
-            let [parent1, parent2] = find_parents(&node, Some(&parent1), Some(&parent2), &data);
-            let mut parent1 = parent1.unwrap_or(&null_id);
-            let mut parent2 = parent2.unwrap_or(&null_id);
+            let [parent1, parent2] = find_file_parents(node, Some(parent1), Some(parent2), &data)
+                .expect("Failed to create file. Please open an issue with details");
+            let mut parent1 = parent1.unwrap_or(HgFileId::NULL);
+            let mut parent2 = parent2.unwrap_or(HgFileId::NULL);
             // On merges, a file with copy metadata has either not parent, or only one.
             // In that latter case, the parent is always set as second parent.
             // On non-merges, a file with copy metadata doesn't have a parent.
             if data.starts_with(b"\x01\n") {
-                if parent1 != &null_id && parent2 != &null_id {
+                if !parent1.is_null() && !parent2.is_null() {
                     die!("Trying to create an invalid file. Please open an issue with details.");
                 }
-                if parent1 != &null_id {
+                if !parent1.is_null() {
                     mem::swap(&mut parent1, &mut parent2);
                 }
             }
             write_chunk(
                 &mut *bundle_part_writer,
                 version,
-                &node,
-                parent1,
-                parent2,
-                &changeset,
+                node.into(),
+                parent1.into(),
+                parent2.into(),
+                changeset,
                 &mut previous,
                 false,
-                generate,
+                |oid| RawHgFile::read_hg(store, HgFileId::from_unchecked(oid)).unwrap(),
             )
             .unwrap();
         }

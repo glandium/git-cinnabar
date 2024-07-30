@@ -8,6 +8,7 @@ endif
 
 NO_GETTEXT ?= 1
 NO_OPENSSL ?= 1
+NO_UNIX_SOCKETS ?= 1
 
 SOURCE_DIR = $(subst \,/,$(CARGO_MANIFEST_DIR))
 
@@ -61,7 +62,6 @@ all:: git-cinnabar$X
 CINNABAR_OBJECTS += cinnabar-fast-import.o
 CINNABAR_OBJECTS += cinnabar-helper.o
 CINNABAR_OBJECTS += cinnabar-notes.o
-CINNABAR_OBJECTS += hg-bundle.o
 CINNABAR_OBJECTS += hg-connect-stdio.o
 CINNABAR_OBJECTS += hg-data.o
 CINNABAR_OBJECTS += mingw.o
@@ -70,7 +70,7 @@ CINNABAR_OBJECTS += regex.o
 PATCHES = $(notdir $(wildcard $(SOURCE_DIR)/src/*.patch))
 
 define patch
-$1.patched.c: $$(SOURCE_DIR)/src/$1.c.patch $$(firstword $$(wildcard $$(SOURCE_DIR)/git-core/$1.c $$(SOURCE_DIR)/git-core/builtin/$1.c))
+$1.patched.c: $$(SOURCE_DIR)/src/$1.c.patch $$(firstword $$(wildcard $$(SOURCE_DIR)/git-core/$1.c $$(SOURCE_DIR)/git-core/builtin/$1.c $$(SOURCE_DIR)/git-core/compat/win32/$1.c))
 	patch -p1 -F0 -o $$@ $$(lastword $$^) < $$<
 endef
 
@@ -89,17 +89,20 @@ $(ALL_CINNABAR_OBJECTS): $(LIB_H)
 
 # When not using computed header dependencies, the directories for objects
 # aren't going to be created.
-obj_dirs := $(sort $(dir $(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(XDIFF_OBJS)))
+obj_dirs := $(sort $(dir $(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(REFTABLE_OBJS) $(XDIFF_OBJS)))
 
 $(obj_dirs):
 	@mkdir -p $@
 
 missing_obj_dirs := $(filter-out $(wildcard $(obj_dirs)),$(obj_dirs))
 
-$(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(XDIFF_OBJS): $(missing_obj_dirs)
+$(ALL_CINNABAR_OBJECTS) $(LIB_OBJS) $(REFTABLE_OBJS) $(XDIFF_OBJS): $(missing_obj_dirs)
 endif
 
 PATCHED_GIT_OBJECTS := $(filter-out fast-import.patched.o,$(PATCHES:%.c.patch=%.patched.o))
+ifeq (,$(filter compat/win32/fscache.o,$(LIB_OBJS)))
+PATCHED_GIT_OBJECTS := $(filter-out fscache.patched.o,$(PATCHED_GIT_OBJECTS))
+endif
 ALL_CINNABAR_OBJECTS = $(CINNABAR_OBJECTS) $(PATCHED_GIT_OBJECTS)
 
 ifeq (,$(filter http.c.patch,$(PATCHES)))
@@ -117,6 +120,7 @@ EXCLUDE_OBJS += checkout.o
 EXCLUDE_OBJS += compat/mingw.o
 EXCLUDE_OBJS += compat/precompose_utf8.o
 EXCLUDE_OBJS += compat/regex/regex.o
+EXCLUDE_OBJS += compat/win32/fscache.o
 EXCLUDE_OBJS += connect.o
 EXCLUDE_OBJS += default.o
 EXCLUDE_OBJS += diagnose.o
@@ -124,7 +128,7 @@ EXCLUDE_OBJS += help.o
 EXCLUDE_OBJS += iterator.o
 EXCLUDE_OBJS += reachable.o
 EXCLUDE_OBJS += serve.o
-libcinnabar.a: $(ALL_CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(XDIFF_OBJS)
+libcinnabar.a: $(ALL_CINNABAR_OBJECTS) $(filter-out $(EXCLUDE_OBJS),$(LIB_OBJS)) $(REFTABLE_OBJS) $(XDIFF_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
 
 linker-flags: GIT-LDFLAGS FORCE

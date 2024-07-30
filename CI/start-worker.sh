@@ -14,6 +14,20 @@ token=$(openssl aes-256-cbc -k "$secret" -in $where/$workerType.token.enc -d -md
 
 unset secret
 
+case "$(uname -s)_$(uname -m)" in
+Darwin_arm64)
+  workerId=gha
+  workerCPU=arm64
+  ;;
+Darwin_x86_64)
+  workerId=travis
+  workerCPU=amd64
+  ;;
+*)
+  echo Unknown CPU
+  exit 1
+esac
+
 cat > worker.config <<EOF
 {
   "accessToken": "$token",
@@ -33,18 +47,18 @@ cat > worker.config <<EOF
   "shutdownMachineOnIdle": false,
   "shutdownMachineOnInternalError": false,
   "workerGroup": "proj-git-cinnabar",
-  "workerId": "travis-$GITHUB_RUN_ID",
+  "workerId": "$workerId-$GITHUB_RUN_ID",
   "workerType": "$workerType"
 }
 EOF
 
 env
 
-curl -OL https://github.com/taskcluster/taskcluster/releases/download/v54.4.0/generic-worker-simple-darwin-amd64
-chmod +x generic-worker-simple-darwin-amd64
+curl -OL https://github.com/taskcluster/taskcluster/releases/download/v54.4.0/generic-worker-simple-darwin-$workerCPU
+chmod +x generic-worker-simple-darwin-$workerCPU
 mkdir tasks
-./generic-worker-simple-darwin-amd64 new-ed25519-keypair --file worker.key
-./generic-worker-simple-darwin-amd64 run --config worker.config
+./generic-worker-simple-darwin-$workerCPU new-ed25519-keypair --file worker.key
+./generic-worker-simple-darwin-$workerCPU run --config worker.config
 case $? in
 0|68)
   ;;

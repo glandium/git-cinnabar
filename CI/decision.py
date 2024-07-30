@@ -13,7 +13,6 @@ BASE_DIR = os.path.dirname(__file__)
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '..'))
 
-from distutils.version import StrictVersion
 from itertools import chain
 
 import osx  # noqa: F401
@@ -43,6 +42,19 @@ def git_rev_parse(committish):
         cwd=os.path.join(BASE_DIR, '..')).strip()
 
 
+def is_old_hg(version):
+    # `version` is a sha1 for trunk, which means it's >= 3.6
+    if len(version) == 40:
+        return False
+    try:
+        version = [int(x) for x in version.split('.')]
+    except ValueError:
+        # Assume that an invalid version per the conversion above is
+        # newer.
+        return False
+    return version < [3, 6]
+
+
 UPGRADE_FROM = ()  # ('0.5.0',)
 
 
@@ -52,6 +64,7 @@ class TestTask(Task):
     def __init__(self, **kwargs):
         git = kwargs.pop('git', GIT_VERSION)
         hg = kwargs.pop('hg', MERCURIAL_VERSION)
+        hg_clone = kwargs.pop('hg_clone', None)
         commit = kwargs.pop('commit', None)
         task_env = kwargs.pop('task_env', 'linux')
         variant = kwargs.pop('variant', None)
@@ -77,12 +90,8 @@ class TestTask(Task):
             kwargs.setdefault('mounts', []).append(hg_task.mount())
             command.extend(hg_task.install())
             command.append('hg --version')
-            try:
-                if StrictVersion(hg) < '3.6':
-                    kwargs.setdefault('env', {})['NO_CLONEBUNDLES'] = '1'
-            except ValueError:
-                # `hg` is a sha1 for trunk, which means it's >= 3.6
-                pass
+            if is_old_hg(hg):
+                kwargs.setdefault('env', {})['NO_CLONEBUNDLES'] = '1'
         if git:
             git_task = Git.by_name('{}.{}'.format(task_env, git))
             kwargs.setdefault('mounts', []).append(git_task.mount())
@@ -104,6 +113,13 @@ class TestTask(Task):
         command.extend((
             'repo/git-cinnabar --version',
         ))
+        if 'command' not in kwargs or hg_clone:
+            command += [
+                'hg init repo/hg.pure.hg',
+                'hg -R repo/hg.pure.hg unbundle bundle.hg',
+            ]
+            kwargs.setdefault('mounts', []).append(
+                {'file:bundle.hg': HgClone.by_name(MERCURIAL_VERSION)})
         if 'command' in kwargs:
             kwargs['command'] = command + kwargs['command']
         else:
@@ -116,13 +132,9 @@ class TestTask(Task):
             if env.os == 'macos':
                 output_sync = ''
             kwargs['command'] = command + [
-                'hg init repo/hg.pure.hg',
-                'hg -R repo/hg.pure.hg unbundle bundle.hg',
                 'make -C repo -f CI/tests.mk -j$({}){}'
                 .format(nproc(env), output_sync),
             ]
-            kwargs.setdefault('mounts', []).append(
-                {'file:bundle.hg': HgClone.by_name(MERCURIAL_VERSION)})
 
         if variant == 'coverage':
             kwargs['command'].extend([
@@ -183,6 +195,7 @@ class Clone(TestTask, metaclass=Tool):
         TestTask.__init__(
             self,
             hg=MERCURIAL_VERSION,
+            hg_clone=True,
             description='clone w/ {}'.format(version),
             index=index,
             expireIn=expireIn,
@@ -191,13 +204,11 @@ class Clone(TestTask, metaclass=Tool):
             clone=False,
             command=[
                 'PATH=$PWD/repo:$PATH'
-                ' git -c fetch.prune=true clone -n hg::$REPO hg.old.git',
+                ' git -c fetch.prune=true clone -n hg::$PWD/repo/hg.pure.hg'
+                ' hg.old.git',
                 'git -C hg.old.git bundle create $ARTIFACTS/bundle.git --all',
             ],
             artifact='bundle.git',
-            env={
-                'REPO': REPO,
-            },
             priority='high',
             **kwargs,
         )
@@ -234,9 +245,9 @@ class HgClone(Task, metaclass=Tool):
 
 @action('decision')
 def decision():
-    for env in ('linux', 'mingw64', 'osx'):
+    for env in ('linux', 'mingw64', 'osx', 'arm64-osx'):
         # Can't spawn osx workers from pull requests.
-        if env.startswith('osx') and not TC_IS_PUSH:
+        if env.endswith('osx') and not TC_IS_PUSH:
             continue
 
         TestTask(
@@ -279,9 +290,8 @@ def decision():
                 ],
             )
 
-    # Same for arm64 mac
-    if TC_IS_PUSH:
-        Build.by_name('arm64-osx')
+    # Because nothing is using the arm64 linux build, we need to manually
+    # touch it.
     Build.by_name('arm64-linux')
 
     for upgrade in UPGRADE_FROM:
@@ -311,9 +321,9 @@ def decision():
         variant='asan',
     )
 
-    for env in ('linux', 'mingw64', 'osx'):
+    for env in ('linux', 'mingw64', 'osx', 'arm64-osx'):
         # Can't spawn osx workers from pull requests.
-        if env.startswith('osx') and not TC_IS_PUSH:
+        if env.endswith('osx') and not TC_IS_PUSH:
             continue
 
         TestTask(
@@ -329,9 +339,10 @@ def decision():
         ('linux', 'coverage'),
         ('linux', 'asan'),
         ('osx', None),
+        ('arm64-osx', None),
     ):
         # Can't spawn osx workers from pull requests.
-        if env.startswith('osx') and not TC_IS_PUSH:
+        if env.endswith('osx') and not TC_IS_PUSH:
             continue
 
         pre_command = []
@@ -353,30 +364,11 @@ def decision():
 
 
 def do_hg_version(hg):
-    cram_hg = []
-    python2 = False
-    try:
-        # Don't run python2 tests for version >= 6.2, which doesn't support
-        # python2 anymore.
-        if StrictVersion(hg) < '6.2':
-            python2 = True
-    except ValueError:
-        # `hg` is a sha1 for trunk, which means it's >= 6.2
-        pass
-    if python2:
-        TestTask(hg=hg)
-        cram_hg.append(hg)
-    try:
-        # Don't run cram tests for version < 3.6, which would need
-        # different tests because of server-side changes in behavior
-        # wrt bookmarks.
-        if StrictVersion(hg) < '3.6':
-            return
-    except ValueError:
-        # `hg` is a sha1 for trunk, which means it's >= 3.6
-        TestTask(hg='{}.py3'.format(hg))
-        cram_hg.append('{}.py3'.format(hg))
-    for hg in cram_hg:
+    TestTask(hg=hg)
+    # Don't run cram tests for version < 3.6, which would need
+    # different tests because of server-side changes in behavior
+    # wrt bookmarks.
+    if not is_old_hg(hg):
         TestTask(
             short_desc='cram',
             clone=False,
@@ -454,7 +446,7 @@ def main():
                     'set +x',
                     ('export CODECOV_TOKEN=$(curl -sL '
                      f'{PROXY_URL}/api/secrets/v1/secret/project/git-cinnabar'
-                     '/codecov | python2.7'
+                     '/codecov | python3'
                      ' -c "import json, sys; print(json.load(sys.stdin)'
                      '[\\"secret\\"][\\"token\\"])")'),
                     'set -x',

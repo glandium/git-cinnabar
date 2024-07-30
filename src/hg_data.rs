@@ -9,10 +9,9 @@ use bstr::{BStr, ByteSlice};
 use once_cell::sync::Lazy;
 use regex::bytes::Regex;
 
-use crate::{
-    oid::{HgObjectId, ObjectId},
-    util::{FromBytes, SliceExt},
-};
+use crate::hg::{HgFileId, HgObjectId};
+use crate::oid::ObjectId;
+use crate::util::{FromBytes, SliceExt};
 
 // TODO: This doesn't actually need to be a regexp
 static WHO_RE: Lazy<Regex> = Lazy::new(|| Regex::new("^(?-u)(.*?) ?(?:<(.*?)>)").unwrap());
@@ -430,14 +429,13 @@ fn test_authorship_to_git() {
 }
 
 pub fn hash_data(
-    parent1: Option<&HgObjectId>,
-    parent2: Option<&HgObjectId>,
+    parent1: Option<HgObjectId>,
+    parent2: Option<HgObjectId>,
     data: &[u8],
 ) -> HgObjectId {
     let mut hash = HgObjectId::create();
-    let null_oid = HgObjectId::null();
-    let parent1 = parent1.unwrap_or(&null_oid);
-    let parent2 = parent2.unwrap_or(&null_oid);
+    let parent1 = parent1.unwrap_or(HgObjectId::NULL);
+    let parent2 = parent2.unwrap_or(HgObjectId::NULL);
     let mut parents = [parent1, parent2];
     parents.sort();
     hash.update(parents[0].as_raw_bytes());
@@ -446,12 +444,12 @@ pub fn hash_data(
     hash.finalize()
 }
 
-pub fn find_parents<'a>(
-    node: &HgObjectId,
-    parent1: Option<&'a HgObjectId>,
-    parent2: Option<&'a HgObjectId>,
+pub fn find_file_parents(
+    node: HgFileId,
+    parent1: Option<HgFileId>,
+    parent2: Option<HgFileId>,
     data: &[u8],
-) -> [Option<&'a HgObjectId>; 2] {
+) -> Option<[Option<HgFileId>; 2]> {
     for [parent1, parent2] in [
         [parent1, parent2],
         // In some cases, only one parent is stored in a merge, because
@@ -462,12 +460,15 @@ pub fn find_parents<'a>(
         [parent2, None],
         // Some mercurial versions store the first parent twice in merges.
         [parent1, parent1],
+        // And because we don't necessarily have the same parent order as
+        // what mercurial recorded, it might be the second parent twice.
+        [parent2, parent2],
         // As last resord, try without any parents.
         [None, None],
     ] {
-        if &hash_data(parent1, parent2, data) == node {
-            return [parent1, parent2];
+        if hash_data(parent1.map(Into::into), parent2.map(Into::into), data) == node {
+            return Some([parent1, parent2]);
         }
     }
-    panic!("Failed to create file. Please open an issue with details");
+    None
 }

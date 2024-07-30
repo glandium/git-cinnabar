@@ -2,11 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::{
-    iter::Enumerate,
-    sync::atomic::{AtomicBool, Ordering},
-    time::Instant,
-};
+use std::iter::Enumerate;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 use crate::{check_enabled, Checks};
 
@@ -47,7 +45,7 @@ impl<I: Iterator> Progress for I {
             let this = ProgressIterEnabled {
                 iter: self.enumerate(),
                 formatter,
-                start: check_enabled(Checks::TIME).then(|| now),
+                start: check_enabled(Checks::TIME).then_some(now),
                 last_update: now,
                 count: 0,
             };

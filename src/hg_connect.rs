@@ -3,34 +3,77 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::cell::Cell;
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::ffi::{CStr, OsStr};
 use std::fs::File;
 use std::io::{stderr, BufReader, Read, Write};
 use std::str::FromStr;
+use std::time::Instant;
 
 use bstr::{BStr, ByteSlice};
 use either::Either;
 use itertools::Itertools;
+use once_cell::sync::OnceCell;
 use percent_encoding::{percent_decode, percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use rand::prelude::IteratorRandom;
 use sha1::{Digest, Sha1};
 use url::Url;
 
-use crate::hg_bundle::{BundleReader, BundleSpec};
-use crate::hg_connect_http::get_http_connection;
+use crate::cinnabar::GitChangesetId;
+use crate::git::{CommitId, GitObjectId};
+use crate::hg::HgChangesetId;
+use crate::hg_bundle::{BundleConnection, BundleReader, BundleSpec};
+use crate::hg_connect_http::{get_http_connection, HttpRequest};
 use crate::hg_connect_stdio::get_stdio_connection;
-use crate::libgit::{rev_list, CommitId, RawCommit};
-use crate::oid::{GitObjectId, ObjectId};
-use crate::store::{
-    has_metadata, merge_metadata, store_changegroup, Dag, GitChangesetId, HgChangesetId, Traversal,
-    CHANGESET_HEADS,
+use crate::libgit::{
+    die, http_follow_config, remote, resolve_ref, rev_list, rev_list_with_parents,
 };
-use crate::util::{FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed};
-use crate::{check_enabled, get_config_remote, graft_config_enabled, Checks, HELPER_LOCK};
+use crate::oid::ObjectId;
+use crate::store::{has_metadata, merge_metadata, store_changegroup, Dag, Store};
+use crate::util::{
+    DurationExt, FromBytes, ImmutBString, OsStrExt, PrefixWriter, SliceExt, ToBoxed,
+};
+use crate::{
+    check_enabled, free_refs, get_config_remote, get_next_ref, get_ref_name, get_stale_refs,
+    graft_config_enabled, logging, r#ref, Checks,
+};
+
+pub enum HgArgValue<'a> {
+    String(&'a str),
+    ChangesetArray(&'a [HgChangesetId]),
+}
+
+impl<'a> HgArgValue<'a> {
+    pub fn as_string(&self) -> Cow<str> {
+        match self {
+            HgArgValue::String(s) => Cow::Borrowed(s),
+            HgArgValue::ChangesetArray(a) => a.iter().join(" ").into(),
+        }
+    }
+}
+
+impl<'a> From<&'a str> for HgArgValue<'a> {
+    fn from(value: &'a str) -> Self {
+        HgArgValue::String(value)
+    }
+}
+
+impl<'a> From<&'a String> for HgArgValue<'a> {
+    fn from(value: &'a String) -> Self {
+        HgArgValue::String(value)
+    }
+}
+
+impl<'a> From<&'a [HgChangesetId]> for HgArgValue<'a> {
+    fn from(value: &'a [HgChangesetId]) -> Self {
+        HgArgValue::ChangesetArray(value)
+    }
+}
 
 pub struct OneHgArg<'a> {
     pub name: &'a str,
-    pub value: &'a str,
+    pub value: HgArgValue<'a>,
 }
 
 pub struct HgArgs<'a> {
@@ -38,21 +81,21 @@ pub struct HgArgs<'a> {
     pub extra_args: Option<&'a [OneHgArg<'a>]>,
 }
 
-#[macro_export]
 macro_rules! args {
     ($($n:ident : $v:expr,)* $(*: $a:expr)?) => {
         HgArgs {
-            args: $crate::args!(@args $($n:$v),*),
-            extra_args: $crate::args!(@extra $($a)?),
+            args: $crate::hg_connect::args!(@args $($n:$v),*),
+            extra_args: $crate::hg_connect::args!(@extra $($a)?),
         }
     };
-    ($($n:ident : $v:expr),*) => { $crate::args!($($n:$v,)*) };
+    ($($n:ident : $v:expr),*) => { $crate::hg_connect::args!($($n:$v,)*) };
     (@args $($n:ident : $v:expr),*) => {&[
-        $(OneHgArg { name: stringify!($n), value: $v }),*
+        $(OneHgArg { name: stringify!($n), value: $crate::hg_connect::HgArgValue::from($v) }),*
     ]};
     (@extra) => { None };
     (@extra $a:expr) => { Some($a) };
 }
+pub(crate) use args;
 
 #[derive(Default)]
 pub struct HgCapabilities {
@@ -118,6 +161,10 @@ pub trait HgConnectionBase {
             );
         }
     }
+
+    fn sample_size(&self) -> usize {
+        100
+    }
 }
 
 pub trait HgWireConnection: HgConnectionBase {
@@ -171,21 +218,19 @@ impl<T: HgWireConnection> HgConnection for T {
         bundle2caps: Option<&str>,
     ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
         let mut args = Vec::new();
-        let heads = heads.iter().join(" ");
-        let common = common.iter().join(" ");
         args.push(OneHgArg {
             name: "heads",
-            value: &heads,
+            value: heads.into(),
         });
         args.push(OneHgArg {
             name: "common",
-            value: &common,
+            value: common.into(),
         });
         if let Some(caps) = bundle2caps {
             if !caps.is_empty() {
                 args.push(OneHgArg {
                     name: "bundlecaps",
-                    value: caps,
+                    value: caps.into(),
                 });
             }
         }
@@ -193,21 +238,22 @@ impl<T: HgWireConnection> HgConnection for T {
     }
 
     fn unbundle(&mut self, heads: Option<&[HgChangesetId]>, input: File) -> UnbundleResponse {
-        let heads_str = if let Some(heads) = heads {
+        let heads = if let Some(heads) = heads {
             if self.get_capability(b"unbundlehash").is_none() {
-                heads.iter().join(" ")
+                Either::Left(heads)
             } else {
                 let mut hash = Sha1::new();
                 for h in heads.iter().sorted().dedup() {
                     hash.update(h.as_raw_bytes());
                 }
-                format!("{} {:x}", hex::encode("hashed"), hash.finalize())
+                Either::Right(format!("{} {:x}", hex::encode("hashed"), hash.finalize()))
             }
         } else {
-            hex::encode("force")
+            Either::Right(hex::encode("force"))
         };
+        let heads = heads.as_ref().either(|&l| l.into(), HgArgValue::from);
 
-        self.push_command(input, "unbundle", args!(heads: &heads_str))
+        self.push_command(input, "unbundle", args!(heads: heads))
     }
 
     fn pushkey(&mut self, namespace: &str, key: &str, old: &str, new: &str) -> ImmutBString {
@@ -243,69 +289,202 @@ pub trait HgRepo: HgConnection {
     fn known(&mut self, _nodes: &[HgChangesetId]) -> Box<[bool]>;
 }
 
-pub struct HgWired<C: HgWireConnection> {
-    branchmap: ImmutBString,
-    heads: ImmutBString,
-    bookmarks: ImmutBString,
+struct LogWireConnection<C: HgWireConnection> {
+    logging_enabled: bool,
     conn: C,
 }
 
-impl<C: HgWireConnection> HgWired<C> {
-    pub fn new(mut conn: C) -> Self {
-        let mut branchmap;
-        let mut heads;
-        let bookmarks;
+impl<C: HgWireConnection> LogWireConnection<C> {
+    fn new(conn: C, logging_enabled: bool) -> Self {
+        LogWireConnection {
+            logging_enabled,
+            conn,
+        }
+    }
 
+    fn log(command: &str, f: impl FnOnce(log::Level) -> String) {
+        let target = format!("wire::{}", command);
+        let level = logging::max_log_level(&target, log::Level::Debug).to_level();
+        if let Some(level) = level {
+            log!(target: &target, level, "{}", f(level));
+        }
+    }
+
+    fn log_command(command: &str, args: &HgArgs) {
+        Self::log(command, |level| {
+            let mut data = String::new();
+            for OneHgArg { name, value } in args
+                .args
+                .iter()
+                .chain(args.extra_args.into_iter().flatten())
+            {
+                if !data.is_empty() {
+                    data.push(' ');
+                }
+                data.push_str(name);
+                data.push_str(": ");
+                match value {
+                    HgArgValue::String(s) => data.push_str(s),
+                    HgArgValue::ChangesetArray(a) => {
+                        data.push('[');
+                        if !a.is_empty() {
+                            if level == log::Level::Debug {
+                                data.push_str(&a.len().to_string());
+                                data.push_str(" changeset");
+                                if a.len() > 1 {
+                                    data.push('s');
+                                }
+                            } else {
+                                for (n, cs) in a.iter().enumerate() {
+                                    if n > 0 {
+                                        data.push(' ');
+                                    }
+                                    data.push_str(&cs.to_string());
+                                }
+                            }
+                        }
+                        data.push(']');
+                    }
+                }
+            }
+            data
+        });
+    }
+}
+
+impl<C: HgWireConnection> HgConnectionBase for LogWireConnection<C> {
+    fn get_url(&self) -> Option<&Url> {
+        self.conn.get_url()
+    }
+
+    fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
+        self.conn.get_capability(name)
+    }
+
+    fn require_capability(&self, name: &[u8]) -> &BStr {
+        self.conn.require_capability(name)
+    }
+
+    fn sample_size(&self) -> usize {
+        self.conn.sample_size()
+    }
+}
+
+impl<C: HgWireConnection> HgWireConnection for LogWireConnection<C> {
+    fn simple_command(&mut self, command: &str, args: HgArgs) -> ImmutBString {
+        let mut start = None;
+        if self.logging_enabled {
+            start = check_enabled(Checks::TIME).then(Instant::now);
+            Self::log_command(command, &args);
+        }
+        let result = self.conn.simple_command(command, args);
+        if let Some(start) = start {
+            Self::log(command, |_| {
+                format!("{} elapsed.", start.elapsed().fuzzy_display())
+            });
+        }
+        result
+    }
+
+    fn changegroup_command<'a>(
+        &'a mut self,
+        command: &str,
+        args: HgArgs,
+    ) -> Result<Box<dyn Read + 'a>, ImmutBString> {
+        if self.logging_enabled {
+            Self::log_command(command, &args);
+        }
+        self.conn.changegroup_command(command, args)
+    }
+
+    fn push_command(&mut self, input: File, command: &str, args: HgArgs) -> UnbundleResponse {
+        if self.logging_enabled {
+            Self::log_command(command, &args);
+        }
+        self.conn.push_command(input, command, args)
+    }
+}
+
+struct CachedInfo {
+    branchmap: ImmutBString,
+    heads: ImmutBString,
+    bookmarks: ImmutBString,
+}
+
+pub struct HgWired<C: HgWireConnection> {
+    cached_info: OnceCell<CachedInfo>,
+    conn: LogWireConnection<C>,
+}
+
+impl<C: HgWireConnection> HgWired<C> {
+    pub fn new(conn: C) -> Self {
         const REQUIRED_CAPS: [&str; 2] = ["getbundle", "branchmap"];
+
+        let logging_enabled = ["wire", "wire::*"]
+            .into_iter()
+            .any(|target| log_enabled!(target: target, log::Level::Debug));
+        let conn = LogWireConnection::new(conn, logging_enabled);
 
         for cap in &REQUIRED_CAPS {
             conn.require_capability(cap.as_bytes());
         }
 
-        if conn.get_capability(b"batch").is_none() {
-            // Get bookmarks first because if we get them last and they have been
-            // updated after we got the heads, they may contain changesets we won't
-            // be pulling.
-            bookmarks = conn.simple_command("listkeys", args!(namespace: "bookmarks"));
-            loop {
-                branchmap = conn.simple_command("branchmap", args!());
-                heads = conn.simple_command("heads", args!());
-                // Some heads in the branchmap can be non-heads topologically, and
-                // won't appear in the heads list, but if the opposite happens, then
-                // the repo was updated between both calls and we need to try again
-                // for coherency.
-                if heads
-                    .split(|&b| b == b' ')
-                    .collect::<HashSet<_>>()
-                    .is_subset(
-                        &ByteSlice::lines(&*branchmap)
-                            .flat_map(|l| l.split(|&b| b == b' ').skip(1))
-                            .collect::<HashSet<_>>(),
-                    )
-                {
-                    break;
-                }
-            }
-        } else {
-            let out = conn.simple_command(
-                "batch",
-                args!(
-                    cmds: "branchmap ;heads ;listkeys namespace=bookmarks",
-                    *: &[]
-                ),
-            );
-            let split: [_; 3] = out.splitn_exact(b';').unwrap();
-            branchmap = unescape_batched_output(split[0]);
-            heads = unescape_batched_output(split[1]);
-            bookmarks = unescape_batched_output(split[2]);
-        }
-
         HgWired {
-            branchmap,
-            heads,
-            bookmarks,
+            cached_info: OnceCell::new(),
             conn,
         }
+    }
+
+    fn cached_info(&mut self) -> &CachedInfo {
+        self.cached_info.get_or_init(|| {
+            let mut branchmap;
+            let mut heads;
+            let bookmarks;
+            let conn = &mut self.conn;
+
+            if conn.get_capability(b"batch").is_none() {
+                // Get bookmarks first because if we get them last and they have been
+                // updated after we got the heads, they may contain changesets we won't
+                // be pulling.
+                bookmarks = conn.simple_command("listkeys", args!(namespace: "bookmarks"));
+                loop {
+                    branchmap = conn.simple_command("branchmap", args!());
+                    heads = conn.simple_command("heads", args!());
+                    // Some heads in the branchmap can be non-heads topologically, and
+                    // won't appear in the heads list, but if the opposite happens, then
+                    // the repo was updated between both calls and we need to try again
+                    // for coherency.
+                    if heads
+                        .split(|&b| b == b' ')
+                        .collect::<HashSet<_>>()
+                        .is_subset(
+                            &ByteSlice::lines(&*branchmap)
+                                .flat_map(|l| l.split(|&b| b == b' ').skip(1))
+                                .collect::<HashSet<_>>(),
+                        )
+                    {
+                        break;
+                    }
+                }
+            } else {
+                let out = conn.simple_command(
+                    "batch",
+                    args!(
+                        cmds: "branchmap ;heads ;listkeys namespace=bookmarks",
+                        *: &[]
+                    ),
+                );
+                let split: [_; 3] = out.splitn_exact(b';').unwrap();
+                branchmap = unescape_batched_output(split[0]);
+                heads = unescape_batched_output(split[1]);
+                bookmarks = unescape_batched_output(split[2]);
+            }
+            CachedInfo {
+                branchmap,
+                heads,
+                bookmarks,
+            }
+        })
     }
 }
 
@@ -316,6 +495,10 @@ impl<C: HgWireConnection> HgConnectionBase for HgWired<C> {
 
     fn get_capability(&self, name: &[u8]) -> Option<&BStr> {
         self.conn.get_capability(name)
+    }
+
+    fn sample_size(&self) -> usize {
+        self.conn.sample_size()
     }
 }
 
@@ -352,15 +535,15 @@ impl<C: HgWireConnection> HgConnection for HgWired<C> {
 
 impl<C: HgWireConnection> HgRepo for HgWired<C> {
     fn branchmap(&mut self) -> ImmutBString {
-        self.branchmap.clone()
+        self.cached_info().branchmap.clone()
     }
 
     fn heads(&mut self) -> ImmutBString {
-        self.heads.clone()
+        self.cached_info().heads.clone()
     }
 
     fn bookmarks(&mut self) -> ImmutBString {
-        self.bookmarks.clone()
+        self.cached_info().bookmarks.clone()
     }
 
     fn phases(&mut self) -> ImmutBString {
@@ -369,12 +552,11 @@ impl<C: HgWireConnection> HgRepo for HgWired<C> {
     }
 
     fn known(&mut self, nodes: &[HgChangesetId]) -> Box<[bool]> {
-        let nodes_str = nodes.iter().join(" ");
         self.conn
             .simple_command(
                 "known",
                 args!(
-                    nodes: &nodes_str,
+                    nodes: nodes,
                     *: &[]
                 ),
             )
@@ -581,17 +763,22 @@ fn test_encode_decode_caps() {
 }
 
 pub fn get_store_bundle(
+    store: &Store,
     conn: &mut dyn HgRepo,
     heads: &[HgChangesetId],
     common: &[HgChangesetId],
 ) -> Result<(), ImmutBString> {
-    let bundle2caps = conn.get_capability(b"bundle2").map(|_| {
-        let bundle2caps = [("HG20", None), ("changegroup", Some(&["01", "02"]))];
-        format!(
-            "HG20,bundle2={}",
-            percent_encode(encodecaps(bundle2caps).as_bytes(), PYTHON_QUOTE_SET)
-        )
-    });
+    let bundle2caps = if check_enabled(Checks::NO_BUNDLE2) {
+        None
+    } else {
+        conn.get_capability(b"bundle2").map(|_| {
+            let bundle2caps = [("HG20", None), ("changegroup", Some(&["01", "02"]))];
+            format!(
+                "HG20,bundle2={}",
+                percent_encode(encodecaps(bundle2caps).as_bytes(), PYTHON_QUOTE_SET)
+            )
+        })
+    };
     conn.getbundle(heads, common, bundle2caps.as_deref())
         .and_then(|r| {
             let mut bundle = BundleReader::new(r).unwrap();
@@ -600,8 +787,7 @@ pub fn get_store_bundle(
                     let version = part
                         .get_param("version")
                         .map_or(1, |v| u8::from_str(v).unwrap());
-                    let _locked = HELPER_LOCK.lock().unwrap();
-                    store_changegroup(BufReader::new(part), version);
+                    store_changegroup(store, BufReader::new(part), version);
                 } else if &*part.part_type == "stream2" {
                     return Err(b"Stream bundles are not supported."
                         .to_vec()
@@ -612,52 +798,68 @@ pub fn get_store_bundle(
         })
 }
 
-fn take_sample<R: rand::Rng + ?Sized, T, const SIZE: usize>(
-    rng: &mut R,
-    data: &mut Vec<T>,
-) -> Vec<T> {
-    if data.len() <= SIZE {
-        std::mem::take(data)
-    } else {
-        for (i, j) in rand::seq::index::sample(rng, data.len(), SIZE)
-            .into_iter()
-            .sorted()
-            .enumerate()
-        {
-            if i != j {
-                data.swap(i, j);
-            }
-        }
-        data.drain(..SIZE).collect()
-    }
-}
-
-const SAMPLE_SIZE: usize = 100;
-
 #[derive(Default, Debug)]
 struct FindCommonInfo {
-    hg_node: Option<HgChangesetId>,
-    known: Option<bool>,
-    has_known_children: bool,
+    hg_node: Cell<Option<HgChangesetId>>,
+    known: Cell<Option<bool>>,
 }
 
 pub fn find_common(
+    store: &Store,
     conn: &mut dyn HgRepo,
     hgheads: impl Into<Vec<HgChangesetId>>,
+    remote: Option<&str>,
 ) -> Vec<HgChangesetId> {
-    let _lock = HELPER_LOCK.lock();
     let mut rng = rand::thread_rng();
-    let mut undetermined = hgheads.into();
-    if undetermined.is_empty() {
+    let hgheads = hgheads.into();
+    if hgheads.is_empty() {
         return vec![];
     }
-    let sample = take_sample::<_, _, SAMPLE_SIZE>(&mut rng, &mut undetermined);
+    let sample_size = conn.sample_size();
+
+    let mut undetermined = Vec::new();
+    let mut undetermined_set = HashSet::new();
+
+    // If we have a remote, also use the heads we have stored under refs/remotes,
+    // because they are very more likely to be known on the remote than our
+    // global set of heads.
+    if let Some(remote) = remote {
+        let remote = remote::get(remote.as_ref());
+        unsafe {
+            // By giving an empty list of refs to get_stale_refs, we get the
+            // existing list of refs, which is what we're after.
+            let refs = get_stale_refs(remote, std::ptr::null_mut());
+            let mut r = refs as *const r#ref;
+            while !r.is_null() {
+                let refname = CStr::from_ptr(get_ref_name(r)).to_bytes();
+                if let Some(csid) = resolve_ref(OsStr::from_bytes(refname))
+                    .and_then(|cid| GitChangesetId::from_unchecked(cid).to_hg(store))
+                {
+                    if undetermined_set.insert(csid) {
+                        undetermined.push(csid);
+                    }
+                }
+                r = get_next_ref(r);
+            }
+            free_refs(refs);
+        }
+        debug!(target: "find-common", "[heads] using {} head{} from existing remote", undetermined.len(), if undetermined.len() == 1 { "" } else { "s" });
+    }
+
+    for csid in hgheads.into_iter() {
+        if undetermined_set.insert(csid) {
+            undetermined.push(csid);
+        }
+    }
+    std::mem::drop(undetermined_set);
+
+    debug!(target: "find-common", "[heads] undetermined: {}, sample size: {}", undetermined.len(), sample_size);
 
     let (known, unknown): (Vec<_>, Vec<_>) = conn
-        .known(&sample)
+        .known(&undetermined[..std::cmp::min(undetermined.len(), sample_size)])
         .iter()
-        .zip(sample.into_iter())
-        .partition_map(|(&known, head)| {
+        .zip(&undetermined)
+        .partition_map(|(&known, &head)| {
             if known {
                 Either::Left(head)
             } else {
@@ -665,21 +867,24 @@ pub fn find_common(
             }
         });
 
-    if undetermined.is_empty() && unknown.is_empty() {
+    let still_undetermined = undetermined.len() - unknown.len() - known.len();
+    debug!(target: "find-common", "[heads] known: {}, unknown: {}, undetermined: {}", known.len(), unknown.len(), still_undetermined);
+
+    if still_undetermined == 0 && unknown.is_empty() {
         return known;
     }
 
     let known = known
         .into_iter()
-        .filter_map(|cs| cs.to_git().map(|c| (cs, c)))
+        .filter_map(|cs| cs.to_git(store).map(|c| (cs, c)))
         .collect_vec();
-    let mut undetermined = undetermined
+    let undetermined = undetermined
         .into_iter()
-        .filter_map(|cs| cs.to_git().map(|c| (cs, c)))
+        .filter_map(|cs| cs.to_git(store).map(|c| (cs, c)))
         .collect_vec();
     let unknown = unknown
         .into_iter()
-        .filter_map(|cs| cs.to_git().map(|c| (cs, c)))
+        .filter_map(|cs| cs.to_git(store).map(|c| (cs, c)))
         .collect_vec();
 
     let args = [
@@ -698,136 +903,227 @@ pub fn find_common(
     );
 
     let mut dag = Dag::new();
-    let mut undetermined_count = 0;
-    for cid in rev_list(args) {
-        let commit = RawCommit::read(&cid).unwrap();
-        let commit = commit.parse().unwrap();
-        dag.add(
-            &cid,
-            &commit.parents().iter().collect_vec(),
-            FindCommonInfo::default(),
-            |_, _| {},
-        );
-        undetermined_count += 1;
+    let mut total_count = 0;
+    let mut known_count = 0;
+    let mut unknown_count = 0;
+    for (cid, parents) in rev_list_with_parents(args) {
+        dag.add(cid, &parents, FindCommonInfo::default());
+        total_count += 1;
     }
+    let total_count = total_count;
     for (cs, c) in known {
-        if let Some((_, mut data)) = dag.get_mut(&*c) {
-            data.hg_node = Some(cs.clone());
-            data.known = Some(true);
-            undetermined_count -= 1;
+        if let Some((_, data)) = dag.get_mut(c.into()) {
+            data.hg_node = Cell::new(Some(cs));
+            data.known = Cell::new(Some(true));
+            known_count += 1;
         }
     }
     for (_, c) in unknown {
-        if let Some((_, mut data)) = dag.get_mut(&*c) {
-            data.known = Some(false);
-            undetermined_count -= 1;
+        if let Some((_, data)) = dag.get_mut(c.into()) {
+            data.known = Cell::new(Some(false));
+            unknown_count += 1;
         }
     }
-    for (cs, c) in &undetermined {
-        if let Some((_, mut data)) = dag.get_mut(c) {
-            data.hg_node = Some(cs.clone());
+    for &(cs, c) in &undetermined {
+        if let Some((_, data)) = dag.get_mut(c.into()) {
+            data.hg_node = Cell::new(Some(cs));
         }
     }
 
-    while undetermined_count > 0 {
-        if undetermined.len() < SAMPLE_SIZE {
+    let is_undetermined = |_, data: &FindCommonInfo| data.known.get().is_none();
+    std::mem::drop(undetermined);
+
+    while known_count + unknown_count < total_count {
+        debug!(target: "find-common", "known: {}, unknown: {}, undetermined: {}", known_count, unknown_count, total_count - known_count - unknown_count);
+
+        let mut undetermined = dag.roots(is_undetermined).take(sample_size).collect_vec();
+        let roots_count = undetermined.len();
+        let mut heads_count = 0;
+        let mut other_count = 0;
+        if undetermined.len() < sample_size {
+            let mut undetermined_set = undetermined
+                .iter()
+                .map(|&(c, _)| c)
+                .collect::<BTreeSet<_>>();
             undetermined.extend(
-                // TODO: this would or maybe would not be faster if traversing the dag instead.
-                dag.iter_mut()
-                    .filter(|(_, data)| data.known.is_none())
-                    .choose_multiple(&mut rng, SAMPLE_SIZE - undetermined.len())
-                    .into_iter()
-                    .map(|(c, data)| {
-                        let git_cs = GitChangesetId::from_unchecked(c.clone());
-                        (
-                            data.hg_node
-                                .get_or_insert_with(|| git_cs.to_hg().unwrap())
-                                .clone(),
-                            git_cs,
-                        )
-                    }),
+                dag.heads(is_undetermined)
+                    .filter(|(n, data)| is_undetermined(**n, data) && undetermined_set.insert(*n))
+                    .take(sample_size - undetermined.len()),
             );
+            heads_count = undetermined.len() - roots_count;
+            if undetermined.len() < sample_size {
+                undetermined.extend(
+                    // TODO: this would or maybe would not be faster if traversing the dag instead.
+                    dag.iter()
+                        .filter(|(n, data)| {
+                            is_undetermined(**n, data) && !undetermined_set.contains(n)
+                        })
+                        .choose_multiple(&mut rng, sample_size - undetermined.len())
+                        .into_iter(),
+                );
+                other_count = undetermined.len() - roots_count - heads_count;
+            }
         }
-        let (sample_hg, sample_git): (Vec<_>, Vec<_>) =
-            take_sample::<_, _, SAMPLE_SIZE>(&mut rng, &mut undetermined)
-                .into_iter()
-                .unzip();
-        for (&known, c) in conn.known(&sample_hg).iter().zip(sample_git.iter()) {
-            let direction = if known {
-                Traversal::Parents
-            } else {
-                Traversal::Children
-            };
-            let mut first = Some(());
-            dag.traverse_mut(c, direction, |_, data| {
-                if known && first.take().is_none() {
-                    data.has_known_children = true;
-                }
-                if data.known.is_none() {
-                    data.known = Some(known);
-                    undetermined_count -= 1;
-                    true
+        debug!(target: "find-common", "sample: roots: {}, heads: {}, other: {}", roots_count, heads_count, other_count);
+        let (sample_hg, sample_git): (Vec<_>, Vec<_>) = undetermined
+            .into_iter()
+            .map(|(&c, data): (&CommitId, &FindCommonInfo)| {
+                let git_cs = GitChangesetId::from_unchecked(c);
+                (
+                    data.hg_node.get().unwrap_or_else(|| {
+                        data.hg_node.set(git_cs.to_hg(store));
+                        data.hg_node.get().unwrap()
+                    }),
+                    git_cs,
+                )
+            })
+            .unzip();
+
+        let (known, unknown): (Vec<_>, Vec<_>) = conn
+            .known(&sample_hg)
+            .iter()
+            .zip(sample_git)
+            .partition_map(|(&known, head)| {
+                if known {
+                    Either::Left(CommitId::from(head))
                 } else {
-                    assert_eq!(data.known, Some(known));
-                    false
+                    Either::Right(CommitId::from(head))
                 }
             });
-        }
+
+        dag.traverse_parents(&known, is_undetermined)
+            .for_each(|(_, data)| {
+                if data.known.get().is_none() {
+                    data.known.set(Some(true));
+                    known_count += 1;
+                } else {
+                    assert_eq!(data.known.get(), Some(true));
+                }
+            });
+        dag.traverse_children(&unknown, is_undetermined)
+            .for_each(|(_, data)| {
+                if data.known.get().is_none() {
+                    data.known.set(Some(false));
+                    unknown_count += 1;
+                } else {
+                    assert_eq!(data.known.get(), Some(false));
+                }
+            });
     }
-    dag.iter()
-        .filter_map(|(_, data)| {
-            (data.known == Some(true) && !data.has_known_children)
-                .then(|| data.hg_node.clone().unwrap())
-        })
-        .collect_vec()
+    debug!(target: "find-common", "known: {}, unknown: {}", known_count, unknown_count);
+    let result = dag
+        .heads(|_, data| data.known.get() == Some(true))
+        .map(|(_, data)| data.hg_node.get().unwrap())
+        .collect_vec();
+    debug!(target: "find-common", "minimal known set: {}", result.len());
+    result
 }
 
 pub fn get_bundle(
+    store: &mut Store,
     conn: &mut dyn HgRepo,
     heads: &[HgChangesetId],
-    branch_names: &HashSet<&BStr>,
+    topological_heads: Option<&[HgChangesetId]>,
+    branch_names: &HashSet<Box<BStr>>,
     remote: Option<&str>,
 ) -> Result<(), String> {
-    let known_branch_heads = || {
-        CHANGESET_HEADS
-            .lock()
-            .unwrap()
+    let known_branch_heads = |store: &Store| {
+        store
+            .changeset_heads()
             .branch_heads()
             .filter_map(|(h, b)| {
-                (branch_names.is_empty() || branch_names.contains(b)).then(|| h.clone())
+                (branch_names.is_empty() || branch_names.contains(b)).then_some(*h)
             })
             .collect_vec()
     };
 
     let mut heads = Cow::Borrowed(heads);
-    let mut common = find_common(conn, known_branch_heads());
-    if common.is_empty() && !has_metadata() && get_initial_bundle(conn, remote)? {
+    let mut common = find_common(store, conn, known_branch_heads(store), remote);
+    if common.is_empty() && !has_metadata(store) && get_initial_bundle(store, conn, remote)? {
         // Eliminate the heads that we got from the clonebundle or
         // cinnabarclone
-        let lock = HELPER_LOCK.lock();
         heads = Cow::Owned(
             heads
                 .iter()
-                .filter(|h| h.to_git().is_none())
-                .cloned()
+                .filter(|h| h.to_git(store).is_none())
+                .copied()
                 .collect_vec(),
         );
-        drop(lock);
         if heads.is_empty() {
             return Ok(());
         }
-        common = find_common(conn, known_branch_heads());
+        common = find_common(store, conn, known_branch_heads(store), None);
     }
 
-    get_store_bundle(conn, &heads, &common).map_err(|e| {
-        let stderr = stderr();
-        let mut writer = PrefixWriter::new("remote: ", stderr.lock());
-        writer.write_all(&e).unwrap();
-        "".to_string()
-    })
+    // TODO: Mercurial can be an order of magnitude slower when
+    // creating a bundle when not giving topological heads, which
+    // some of the branch heads might not be.
+    // http://bz.selenic.com/show_bug.cgi?id=4595
+    // The heads we've been asked for either come from the repo
+    // branchmap, and are a superset of its topological heads.
+    // That means if the heads we don't know in those we were asked for
+    // are a superset of the topological heads we don't know, then we
+    // should use those instead.
+    let mut original_heads = None;
+    if !branch_names.is_empty() {
+        if let Some(topological_heads) = topological_heads {
+            let unknown_wanted_heads = heads
+                .iter()
+                .filter(|h| h.to_git(store).is_none())
+                .copied()
+                .collect::<Vec<_>>();
+            let unknown_topological_heads = topological_heads
+                .iter()
+                .filter(|h| h.to_git(store).is_none())
+                .copied()
+                .collect::<Vec<_>>();
+            if unknown_wanted_heads
+                .iter()
+                .collect::<HashSet<_>>()
+                .is_superset(&unknown_topological_heads.iter().collect())
+            {
+                original_heads = Some(std::mem::replace(
+                    &mut heads,
+                    Cow::Owned(unknown_topological_heads),
+                ));
+            }
+        }
+    }
+    get_store_bundle(store, conn, &heads, &common)
+        .and_then(|()| {
+            // Try one more time if there are still some heads left because
+            // we removed too many above, which can happen when for some
+            // reason the server advertizes topological heads in the branchmap
+            // without advertizing them in the list of heads.
+            let unknown_wanted_heads = original_heads
+                .map(|original_heads| {
+                    original_heads
+                        .iter()
+                        .filter(|h| h.to_git(store).is_none())
+                        .copied()
+                        .collect_vec()
+                })
+                .unwrap_or_default();
+            if !unknown_wanted_heads.is_empty() {
+                common = find_common(store, conn, known_branch_heads(store), None);
+                get_store_bundle(store, conn, &unknown_wanted_heads, &common)
+            } else {
+                Ok(())
+            }
+        })
+        .map_err(|e| {
+            let stderr = stderr();
+            let mut writer = PrefixWriter::new("remote: ", stderr.lock());
+            writer.write_all(&e).unwrap();
+            "".to_string()
+        })
 }
 
-fn get_initial_bundle(conn: &mut dyn HgRepo, remote: Option<&str>) -> Result<bool, String> {
+fn get_initial_bundle(
+    store: &mut Store,
+    conn: &mut dyn HgRepo,
+    remote: Option<&str>,
+) -> Result<bool, String> {
     if let Some((manifest, limit_schemes)) = get_config_remote("clone", remote)
         .map(|m| (m.as_bytes().to_boxed(), false))
         .or_else(|| {
@@ -850,7 +1146,7 @@ fn get_initial_bundle(conn: &mut dyn HgRepo, remote: Option<&str>) -> Result<boo
                 Err(Some("Server advertizes cinnabarclone but provided a non http/https git repository. Skipping."))
             } else {
                 eprintln!("Fetching cinnabar metadata from {}", url);
-                merge_metadata(url, conn.get_url().cloned(), branch.as_deref()).then(|| ()).ok_or(None)
+                merge_metadata(store, url, conn.get_url().cloned(), branch.as_deref()).then_some(()).ok_or(None)
             }
         }) {
             Ok(()) => {
@@ -875,8 +1171,8 @@ fn get_initial_bundle(conn: &mut dyn HgRepo, remote: Option<&str>) -> Result<boo
             .flatten()
         {
             eprintln!("Getting clone bundle from {}", url);
-            let mut bundle_conn = get_connection(&url).unwrap();
-            match get_store_bundle(&mut *bundle_conn, &[], &[]) {
+            let mut bundle_conn = get_bundle_connection(&url).unwrap();
+            match get_store_bundle(store, &mut *bundle_conn, &[], &[]) {
                 Ok(()) => {
                     return Ok(true);
                 }
@@ -944,7 +1240,7 @@ fn can_use_clonebundle(line: &[u8]) -> Result<Option<Url>, String> {
     trace!(target: "clonebundle", "{:?}", params);
 
     Ok((!params.contains_key(b"stream".as_bstr()))
-        .then(|| Some(url))
+        .then_some(Some(url))
         .ok_or("stream bundles are not supported")?)
 }
 
@@ -1047,11 +1343,7 @@ pub fn get_cinnabarclone_url(
                     continue;
                 }
                 if !info.graft.is_empty() {
-                    if !info
-                        .graft
-                        .iter()
-                        .all(|g| CommitId::try_from(g.clone()).is_ok())
-                    {
+                    if !info.graft.iter().all(|g| CommitId::try_from(*g).is_ok()) {
                         debug!(target: "cinnabarclone", " Skipping (missing commit(s) for graft)");
                         continue;
                     }
@@ -1098,6 +1390,15 @@ pub fn get_cinnabarclone_url(
         }
     }
     None
+}
+
+pub fn get_bundle_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
+    let mut req = HttpRequest::new(url.clone());
+    if unsafe { http_follow_config } == http_follow_config::HTTP_FOLLOW_INITIAL {
+        req.follow_redirects(true);
+    }
+    req.set_log_target("raw-wire::clonebundle".to_string());
+    Some(Box::new(BundleConnection::new(req.execute().ok()?)))
 }
 
 pub fn get_connection(url: &Url) -> Option<Box<dyn HgRepo>> {

@@ -2,13 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "cache.h"
+#define USE_THE_REPOSITORY_VARIABLE
+#include "git-compat-util.h"
 #include "hash.h"
 #include "cinnabar-notes.h"
 
 #undef notes_tree
-#undef init_notes
-#undef free_notes
 #undef add_note
 #undef remove_note
 #undef get_note
@@ -101,7 +100,7 @@ const struct object_id *get_abbrev_note(struct cinnabar_notes_tree *t,
 	struct leaf_node *found;
 
 	assert(t);
-	assert(notes_initialized(t));
+	assert(t->current.initialized);
 	found = note_tree_abbrev_find(&t->current, t->current.root, 0,
 	                              object_oid->hash, len);
 	if (!found)
@@ -109,21 +108,6 @@ const struct object_id *get_abbrev_note(struct cinnabar_notes_tree *t,
 			&t->additions, t->additions.root, 0,
 			object_oid->hash, len);
 	return found ? &found->val_oid : NULL;
-}
-
-void cinnabar_init_notes(struct cinnabar_notes_tree *t, const char *notes_ref,
-                         combine_notes_fn combine_notes, int flags)
-{
-	t->init_flags = flags;
-	init_notes(&t->current, notes_ref, combine_notes, flags);
-	init_notes(&t->additions, notes_ref, combine_notes_ignore,
-	           NOTES_INIT_EMPTY);
-}
-
-void cinnabar_free_notes(struct cinnabar_notes_tree *t)
-{
-	free_notes(&t->current);
-	free_notes(&t->additions);
 }
 
 int cinnabar_add_note(
@@ -148,8 +132,7 @@ int cinnabar_remove_note(struct cinnabar_notes_tree *t,
 	int result2 = remove_note(&t->additions, object_sha1);
 	if (!result) {
 		struct object_id oid;
-		hashcpy(oid.hash, object_sha1);
-		oid.algo = GIT_HASH_SHA1;
+		oidread(&oid, object_sha1, the_repository->hash_algo);
 		add_note(&t->additions, &oid, null_oid(), NULL);
 	}
 	return result && result2;
