@@ -294,14 +294,30 @@ def main(args):
     exact = args.exact or (not args.branch and local_sha1)
     branch = args.branch or 'release'
 
-    if build_commit and exact and not args.variant:
+    if exact and not args.variant:
+        if build_commit:
+            tags = (
+                (sha1, ref)
+                for sha1, _, ref in (
+                    l.split(None, 2)
+                    for l in subprocess.check_output(
+                        ['git', 'for-each-ref', 'refs/tags/']).splitlines()
+                )
+            )
+        else:
+            try:
+                tags = (
+                    tuple(l.split(None, 1))
+                    for l in subprocess.check_output(
+                        ['git', 'ls-remote', REPOSITORY, 'refs/tags/*'])
+                        .splitlines()
+                )
+            except Exception:
+                tags = ()
+
         tags = [
             ref[len('refs/tags/'):]
-            for sha1, _, ref in (
-                l.split(None, 2)
-                for l in subprocess.check_output(
-                    ['git', 'for-each-ref', 'refs/tags/']).splitlines()
-            )
+            for sha1, ref in tags
             if sha1.decode('ascii') == exact
         ]
         tags = sorted(tags, key=lambda x: split_version(x), reverse=True)
