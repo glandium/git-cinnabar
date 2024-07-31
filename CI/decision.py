@@ -262,7 +262,6 @@ def decision():
 
         task_env = TaskEnvironment.by_name("{}.test".format(env))
         if TC_IS_PUSH and TC_BRANCH != "try":
-            hg = Hg.by_name("{}.{}".format(env, MERCURIAL_VERSION))
             git = Git.by_name("{}.{}".format(env, GIT_VERSION))
             Task(
                 task_env=task_env,
@@ -270,7 +269,6 @@ def decision():
                 command=list(
                     chain(
                         git.install(),
-                        hg.install(),
                         Task.checkout(),
                         [
                             "(cd repo ; ./download.py)",
@@ -292,7 +290,6 @@ def decision():
                     Build.by_name(env),
                 ],
                 mounts=[
-                    hg.mount(),
                     git.mount(),
                 ],
             )
