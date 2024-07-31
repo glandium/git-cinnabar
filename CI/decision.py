@@ -260,38 +260,27 @@ def decision():
         )
 
         task_env = TaskEnvironment.by_name("{}.test".format(env))
-        if TC_IS_PUSH and TC_BRANCH != "try":
-            git = Git.by_name("{}.{}".format(env, GIT_VERSION))
-            Task(
-                task_env=task_env,
-                description="download build {} {}".format(task_env.os, task_env.cpu),
-                command=list(
-                    chain(
-                        git.install(),
-                        Task.checkout(),
-                        [
-                            "(cd repo ; ./download.py)",
-                            "PATH=$PWD/repo:$PATH git cinnabar --version",
-                            "cp repo/download.py .",
-                            "./download.py",
-                            "PATH=$PWD:$PATH",
-                            "git cinnabar --version",
-                            "git cinnabar self-update",
-                            "git cinnabar --version",
-                            "git cinnabar self-update --branch {}".format(
-                                TC_BRANCH or "master"
-                            ),
-                            "git cinnabar --version",
-                        ],
-                    )
-                ),
-                dependencies=[
-                    Build.by_name(env),
-                ],
-                mounts=[
-                    git.mount(),
-                ],
-            )
+        git = Git.by_name("{}.{}".format(env, GIT_VERSION))
+        build = Build.by_name(env)
+        bin = os.path.basename(build.artifacts[0])
+        Task(
+            task_env=task_env,
+            description="download build {} {}".format(task_env.os, task_env.cpu),
+            command=list(
+                chain(
+                    git.install(),
+                    Task.checkout(),
+                    build.install(),
+                    [
+                        f"python3 repo/CI/test_download.py repo/{bin}",
+                    ],
+                )
+            ),
+            mounts=[
+                git.mount(),
+                build.mount(),
+            ],
+        )
 
     # Because nothing is using the arm64 linux build, we need to manually
     # touch it.
