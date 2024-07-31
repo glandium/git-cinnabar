@@ -18,3 +18,7 @@ jobs:
       - uses: chartboost/ruff-action@v1
         with:
           version: 0.5.5
+      - uses: chartboost/ruff-action@v1
+        with:
+          version: 0.5.5
+          args: 'format --diff'
