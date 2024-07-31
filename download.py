@@ -315,14 +315,27 @@ def main(args):
             except Exception:
                 tags = ()
 
-        tags = [
-            ref[len('refs/tags/'):]
-            for sha1, ref in tags
-            if sha1.decode('ascii') == exact
-        ]
-        tags = sorted(tags, key=lambda x: split_version(x), reverse=True)
-        if tags:
-            tag = tags[0].decode('ascii')
+        if '.' in exact:
+            ref = f'refs/tags/{exact}'.encode()
+            matches = [
+                sha1
+                for sha1, r in tags
+                if r == ref
+            ]
+            if not matches:
+                print(f"Couldn't find a tag for {exact}")
+                return 1
+            tag = exact
+            exact = matches[0]
+        else:
+            tags = [
+                ref[len('refs/tags/'):]
+                for sha1, ref in tags
+                if sha1.decode('ascii') == exact
+            ]
+            tags = sorted(tags, key=lambda x: split_version(x), reverse=True)
+            if tags:
+                tag = tags[0].decode('ascii')
 
     if exact:
         sha1 = exact
