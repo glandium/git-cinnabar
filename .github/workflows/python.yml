@@ -9,16 +9,12 @@ on:
       - '**.py'
       - '.github/workflows/python.yml'
 jobs:
-  flake8:
+  ruff:
     strategy:
       fail-fast: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: chartboost/ruff-action@v1
         with:
-          python-version: '3.9'
-      - name: flake8
-        run: |
-          pip install flake8==4.0.1
-          flake8 --ignore E402,F405,W504,E741
+          version: 0.5.5
