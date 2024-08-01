@@ -117,12 +117,20 @@ def get_release_url(system, machine, tag):
 
 def download(url, system, binary_path):
     print("Downloading from %s..." % url, file=sys.stderr)
+    if os.environ.get("GIT_SSL_NO_VERIFY"):
+        import ssl
+
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    else:
+        context = None
     try:
-        reader = urlopen(url)
+        reader = urlopen(url, context=context)
     except HTTPError:
         # Try again, just in case
         try:
-            reader = urlopen(url)
+            reader = urlopen(url, context=context)
         except HTTPError as e:
             print("Download failed with status code %d\n" % e.code, file=sys.stderr)
             print(
