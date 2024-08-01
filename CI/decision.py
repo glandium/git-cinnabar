@@ -8,7 +8,6 @@ import os
 import subprocess
 import sys
 
-
 BASE_DIR = os.path.dirname(__file__)
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, ".."))
@@ -17,16 +16,16 @@ from itertools import chain
 
 import osx  # noqa: F401
 from tasks import (
-    action,
-    parse_version,
     Task,
     TaskEnvironment,
     Tool,
+    action,
+    parse_version,
 )
 from tools import (
+    ALL_MERCURIAL_VERSIONS,
     GIT_VERSION,
     MERCURIAL_VERSION,
-    ALL_MERCURIAL_VERSIONS,
     SOME_MERCURIAL_VERSIONS,
     Build,
     Git,

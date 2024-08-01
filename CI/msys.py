@@ -4,6 +4,7 @@
 
 import hashlib
 
+from docker import DockerImage
 from tasks import (
     Task,
     TaskEnvironment,
@@ -11,8 +12,6 @@ from tasks import (
     bash_command,
     join_command,
 )
-from docker import DockerImage
-
 
 CPUS = ("x86_64",)
 MSYS_VERSION = {

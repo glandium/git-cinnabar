@@ -8,18 +8,16 @@ import json
 import numbers
 import os
 import re
-import requests
-
 from collections import OrderedDict
-from pkg_resources import parse_version  # noqa: F401
 from uuid import uuid4
 
+import requests
+from pkg_resources import parse_version  # noqa: F401
 from variables import *  # noqa: F403
 
-
 if os.environ.get("DETERMINISTIC"):
-    from uuid import UUID
     import random
+    from uuid import UUID
 
     rand = random.Random()
     rand.seed(0)

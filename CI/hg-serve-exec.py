@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 from __future__ import print_function
+
 import base64
 import os
 import shutil
@@ -12,8 +13,7 @@ try:
     from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
     from SimpleHTTPServer import SimpleHTTPRequestHandler
 except ImportError:
-    from http.server import BaseHTTPRequestHandler, HTTPServer
-    from http.server import SimpleHTTPRequestHandler
+    from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
 from threading import Thread
 
 try:

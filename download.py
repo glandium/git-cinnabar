@@ -14,20 +14,20 @@ exec $PYTHON -B $0 "$@"
 exit 1
 """
 
-import os
-import re
-import sys
 import argparse
+import errno
+import os
 import platform
+import re
+import subprocess
+import sys
 import tarfile
 import tempfile
 import time
-import subprocess
-import errno
 from gzip import GzipFile
-from shutil import copyfileobj, copyfile
-from urllib.request import urlopen
+from shutil import copyfile, copyfileobj
 from urllib.error import HTTPError
+from urllib.request import urlopen
 from zipfile import ZipFile
 
 try:

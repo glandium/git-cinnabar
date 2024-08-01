@@ -5,6 +5,8 @@
 import hashlib
 import os
 
+import msys
+from docker import DockerImage
 from tasks import (
     Task,
     TaskEnvironment,
@@ -12,9 +14,6 @@ from tasks import (
     parse_version,
 )
 from util import build_commit
-from docker import DockerImage
-import msys
-
 
 MERCURIAL_VERSION = "6.8"
 # Not using 2.46.0 because of
