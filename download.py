@@ -166,6 +166,7 @@ def download(url, system, binary_path):
         binary_content = GzipFile(mode="rb", fileobj=binary_content)
 
     (dirname, filename) = os.path.split(binary_path)
+    os.makedirs(dirname, exist_ok=True)
     fd, path = tempfile.mkstemp(prefix=filename, dir=dirname)
     fh = os.fdopen(fd, "wb")
 
