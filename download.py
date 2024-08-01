@@ -263,25 +263,31 @@ def split_version(s):
     return version
 
 
+def normalize_platform(system, machine):
+    s = system.lower()
+    if s.startswith("msys_nt") or s == "windows":
+        system = "Windows"
+    elif s in ("darwin", "macos"):
+        system = "macOS"
+    elif s == "linux":
+        system = "Linux"
+
+    m = machine.lower()
+    if m in ("x86_64", "amd64"):
+        machine = "x86_64"
+    elif m in ("aarch64", "arm64"):
+        machine = "arm64"
+
+    return system, machine
+
+
 def main(args):
     if args.list:
         for system, machine in AVAILABLE:
             print("%s/%s" % (system, machine))
         return 0
 
-    system = args.system
-    machine = args.machine
-
-    if system.startswith("MSYS_NT"):
-        system = "Windows"
-
-    if system == "Darwin":
-        system = "macOS"
-    elif system == "Windows":
-        if machine == "AMD64":
-            machine = "x86_64"
-    if machine == "aarch64":
-        machine = "arm64"
+    system, machine = normalize_platform(args.system, args.machine)
 
     if (system, machine) not in AVAILABLE:
         print("No download available for %s/%s" % (system, machine), file=sys.stderr)
