@@ -116,7 +116,7 @@ def get_release_url(system, machine, tag):
 
 
 def download(url, system, binary_path):
-    print("Downloading from %s..." % url)
+    print("Downloading from %s..." % url, file=sys.stderr)
     try:
         reader = urlopen(url)
     except HTTPError:
@@ -206,7 +206,7 @@ def download(url, system, binary_path):
                 fd, path = tempfile.mkstemp(prefix=filename, dir=dirname)
                 fh = os.fdopen(fd, "wb")
                 try:
-                    print("Extracting %s..." % binary_name)
+                    print("Extracting %s..." % binary_name, file=sys.stderr)
                     progress = ReaderProgress(binary_content, size)
                     copyfileobj(progress, fh)
                 finally:
@@ -330,7 +330,7 @@ def main(args):
             ref = f"refs/tags/{exact}".encode()
             matches = [sha1 for sha1, r in tags if r == ref]
             if not matches:
-                print(f"Couldn't find a tag for {exact}")
+                print(f"Couldn't find a tag for {exact}", file=sys.stderr)
                 return 1
             tag = exact
             exact = matches[0]
@@ -348,7 +348,9 @@ def main(args):
         sha1 = exact
     elif branch == "release":
         if args.variant:
-            print("Cannot use --variant without --branch {master,next}")
+            print(
+                "Cannot use --variant without --branch {master,next}", file=sys.stderr
+            )
             return 1
         result = sorted(
             (
@@ -364,7 +366,7 @@ def main(args):
             reverse=True,
         )
         if len(result) == 0:
-            print("Could not find release tags")
+            print("Could not find release tags", file=sys.stderr)
             return 1
         sha1, tag = result[0]
         sha1 = sha1.decode("ascii")
@@ -382,7 +384,7 @@ def main(args):
             if ref == ref_
         ]
         if len(result) == 0:
-            print(f"Could not find branch {branch}")
+            print(f"Could not find branch {branch}", file=sys.stderr)
             return 1
         sha1 = result[0].decode("ascii")
     else:
