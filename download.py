@@ -322,7 +322,8 @@ def main(args):
                 for sha1, _, ref in (
                     l.split(None, 2)
                     for l in subprocess.check_output(
-                        ["git", "for-each-ref", "refs/tags/"]
+                        ["git", "for-each-ref", "refs/tags/"],
+                        cwd=os.path.dirname(__file__),
                     ).splitlines()
                 )
             )
