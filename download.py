@@ -264,34 +264,45 @@ def split_version(s):
 
 
 def normalize_platform(system, machine):
-    s = system.lower()
-    if s.startswith("msys_nt") or s == "windows":
-        system = "Windows"
-    elif s in ("darwin", "macos"):
-        system = "macOS"
-    elif s == "linux":
-        system = "Linux"
+    if system:
+        s = system.lower()
+        if s.startswith("msys_nt") or s == "windows":
+            system = "Windows"
+        elif s in ("darwin", "macos"):
+            system = "macOS"
+        elif s == "linux":
+            system = "Linux"
 
-    m = machine.lower()
-    if m in ("x86_64", "amd64"):
-        machine = "x86_64"
-    elif m in ("aarch64", "arm64"):
-        machine = "arm64"
+    if machine:
+        m = machine.lower()
+        if m in ("x86_64", "amd64"):
+            machine = "x86_64"
+        elif m in ("aarch64", "arm64"):
+            machine = "arm64"
 
     return system, machine
 
 
 def main(args):
     if args.list:
-        for system, machine in AVAILABLE:
-            print("%s/%s" % (system, machine))
-        return 0
-
-    system, machine = normalize_platform(args.system, args.machine)
-
-    if (system, machine) not in AVAILABLE:
-        print("No download available for %s/%s" % (system, machine), file=sys.stderr)
-        return 1
+        system, machine = normalize_platform(args.system, args.machine)
+        platforms = [
+            (s, m)
+            for s, m in AVAILABLE
+            if (not system or s == system) and (not machine or m == machine)
+        ]
+        if not args.url:
+            for system, machine in platforms:
+                print("%s/%s" % (system, machine))
+            return 0
+    else:
+        system = args.system or platform.system()
+        machine = args.machine or platform.machine()
+        ptform = normalize_platform(system, machine)
+        if ptform not in AVAILABLE:
+            print("No download available for %s/%s" % ptform, file=sys.stderr)
+            return 1
+        platforms = (ptform,)
 
     tag = None
     local_sha1 = None
@@ -397,12 +408,15 @@ def main(args):
         )
         return 1
 
-    if tag:
-        url = get_release_url(system, machine, tag)
-    else:
-        url = get_url(system, machine, args.variant, sha1)
+    for system, machine in platforms:
+        if tag:
+            url = get_release_url(system, machine, tag)
+        else:
+            url = get_url(system, machine, args.variant, sha1)
+        if args.url:
+            print(url)
+
     if args.url:
-        print(url)
         return 0
 
     script_path = os.path.dirname(os.path.abspath(sys.argv[0]))
@@ -452,8 +466,8 @@ if __name__ == "__main__":
         default=os.environ.get("GIT_CINNABAR_DOWNLOAD_VARIANT"),
         help="download the given variant",
     )
-    parser.add_argument("--system", default=platform.system(), help=argparse.SUPPRESS)
-    parser.add_argument("--machine", default=platform.machine(), help=argparse.SUPPRESS)
+    parser.add_argument("--system", help=argparse.SUPPRESS)
+    parser.add_argument("--machine", help=argparse.SUPPRESS)
     parser.add_argument("-o", "--output", help=argparse.SUPPRESS)
     parser.add_argument("--list", action="store_true", help=argparse.SUPPRESS)
     sys.exit(main(parser.parse_args()))
