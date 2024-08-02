@@ -13,6 +13,7 @@ repository = "https://github.com/glandium/git-cinnabar"
 rust-version = "1.74.0"
 include = [
   "/src",
+  "/MPL-2.0",
   "/build.rs",
   "/.cargo",
   "/git-core/COPYING",
