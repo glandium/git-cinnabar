@@ -73,7 +73,10 @@ def package(fh, size, system, machine):
         zip = zipfile.ZipFile(
             pkg, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
         )
-        zip.mkdir("git-cinnabar")
+        # Manually do zip.mkdir("git-cinnabar") until we can depend on python 3.11
+        zinfo = zipfile.ZipInfo("git-cinnabar/")
+        zinfo.external_attr = (0o40777 << 16) | 0x10
+        zip.writestr(zinfo, "")
         fh = RewindOnce(fh)
         with zip.open("git-cinnabar/git-cinnabar.exe", mode="w") as zipped:
             shutil.copyfileobj(fh, zipped)
