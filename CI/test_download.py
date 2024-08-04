@@ -15,6 +15,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Thread
@@ -467,20 +468,19 @@ class HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def send_content(self, content):
         self.send_response(200)
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
         if isinstance(content, str):
             content = content.encode()
         if isinstance(content, bytes):
-            size = len(content)
+            content = BytesIO(content)
         elif isinstance(content, Path):
-            size = content.stat().st_size
+            content = content.open("rb")
         else:
             raise RuntimeError("mapped content is neither bytes, str nor Path")
-        self.send_header("Content-Length", str(size))
-        self.end_headers()
-        if isinstance(content, bytes):
-            self.wfile.write(content)
-        elif isinstance(content, Path):
-            shutil.copyfileobj(content.open("rb"), self.wfile)
+        out = Chunker(self.wfile)
+        shutil.copyfileobj(content, out)
+        out.write(b"")
 
     def pass_through(self, host, port):
         conn = http.client.HTTPSConnection(host, port)
@@ -491,6 +491,16 @@ class HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_header(k, v)
         self.end_headers()
         shutil.copyfileobj(response, self.wfile)
+
+
+class Chunker:
+    def __init__(self, out):
+        self.out = out
+
+    def write(self, data):
+        self.out.write(f"{len(data):x}\r\n".encode())
+        self.out.write(data)
+        self.out.write(b"\r\n")
 
 
 if __name__ == "__main__":
