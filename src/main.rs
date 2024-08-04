@@ -3941,7 +3941,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             if e.kind() == ErrorKind::DisplayVersion
                 && format!("{}", e.render()) != concat!("git-cinnabar ", crate_version!(), "\n")
             {
-                if let Some(mut checker) = VersionChecker::force_now() {
+                if let Some(mut checker) = VersionChecker::for_dashdash_version() {
                     checker.wait(Duration::from_secs(1));
                 }
             }

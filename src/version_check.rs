@@ -70,11 +70,12 @@ pub struct VersionChecker {
     child: Option<Arc<SharedChild>>,
     thread: Option<thread::JoinHandle<Result<Option<VersionInfo>, ()>>>,
     when: Option<SystemTime>,
+    show_current: bool,
 }
 
 #[cfg(feature = "version-check")]
 impl VersionChecker {
-    fn new_inner(force_now: bool) -> Option<Self> {
+    fn new_inner(force_now: bool, show_current: bool) -> Option<Self> {
         if !check_enabled(Checks::VERSION) {
             debug!(target: "version-check", "Version check is disabled");
             return None;
@@ -113,15 +114,16 @@ impl VersionChecker {
             child,
             thread,
             when: Some(now),
+            show_current,
         })
     }
 
     pub fn new() -> Option<Self> {
-        Self::new_inner(false)
+        Self::new_inner(false, true)
     }
 
-    pub fn force_now() -> Option<Self> {
-        Self::new_inner(true)
+    pub fn for_dashdash_version() -> Option<Self> {
+        Self::new_inner(true, false)
     }
 
     pub fn wait(&mut self, timeout: Duration) {
@@ -160,11 +162,19 @@ impl Drop for VersionChecker {
     fn drop(&mut self) {
         match self.take_result() {
             Some(VersionInfo::Tagged(version, _)) if VERSION_CHECK_REF == ALL_TAG_REFS => {
-                warn!(
-                    target: "root",
-                    "New git-cinnabar version available: {} (current version: {})",
-                    version, CARGO_PKG_VERSION
-                );
+                if self.show_current {
+                    warn!(
+                        target: "root",
+                        "New git-cinnabar version available: {} (current version: {})",
+                        version, CARGO_PKG_VERSION
+                    );
+                } else {
+                    warn!(
+                        target: "root",
+                        "New git-cinnabar version available: {}",
+                        version,
+                    );
+                }
                 if cfg!(feature = "self-update") {
                     warn!(
                         target: "root",
