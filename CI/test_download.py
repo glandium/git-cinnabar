@@ -22,6 +22,14 @@ from threading import Thread
 
 REPOSITORY = "https://github.com/glandium/git-cinnabar"
 
+VERSIONS = {
+    # Tag: Version in Cargo.toml
+    "0.6.0rc2": "0.6.0-rc2",
+    "0.6.0": "0.6.0",
+    "0.6.3": "0.6.3",
+    "0.7.0beta1": "0.7.0-beta.1",
+}
+
 
 def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
     # Avoid extra ls-remote traffic by forcing git to use a local mirror
@@ -69,6 +77,9 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
             return result
         return sorted(result)
 
+    def get_version(x, **kwargs):
+        return check_output(x, **kwargs).removeprefix("git-cinnabar ")
+
     subprocess.run(
         [
             sys.executable,
@@ -82,9 +93,9 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
     standalone_download_py = shutil.copy2(download_py, cwd)
 
     worktree_head = check_output(["git", "-C", worktree, "rev-parse", "HEAD"])
-    head_version = check_output([git_cinnabar, "-V"])
-    full_version = check_output([git_cinnabar, "--version"]).removesuffix("-modified")
-    _, _, head = full_version.rpartition("-")
+    head_version = get_version([git_cinnabar, "-V"])
+    head_full_version = get_version([git_cinnabar, "--version"])
+    _, _, head = head_full_version.removesuffix("-modified").rpartition("-")
     head_branch = "release"
     if head_version.endswith(".0-a"):
         head_branch = "next"
@@ -96,8 +107,8 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
         ["git", "-C", repo, "update-ref", f"refs/heads/{head_branch}", head]
     )
     tags = {
-        v: check_output(["git", "-C", repo, "rev-parse", v])
-        for v in ("0.6.3", "0.7.0beta1")
+        t: check_output(["git", "-C", repo, "rev-parse", t])
+        for t, v in VERSIONS.items()
     }
     for last_tag in tags:
         pass
@@ -172,11 +183,12 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
         env["HTTPS_PROXY"] = proxy.url
         env["GIT_SSL_NO_VERIFY"] = "1"
 
-        versions = {}
-        for v in itertools.chain(tags, [head]):
+        full_versions = {head: head_full_version}
+        full_versions.update((t, f"{VERSIONS[t]}-{sha1}") for t, sha1 in tags.items())
+        for t, v in itertools.chain([(head, head_version)], VERSIONS.items()):
             git_cinnabar_v = cwd / v / git_cinnabar.name
             subprocess.run(
-                [sys.executable, download_py, "-o", git_cinnabar_v, "--exact", v],
+                [sys.executable, download_py, "-o", git_cinnabar_v, "--exact", t],
                 cwd=cwd,
                 env=env,
             )
@@ -185,14 +197,15 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
                 sorted((git_cinnabar.name, f"git-remote-hg{git_cinnabar.suffix}")),
             )
             status += assert_eq(
-                Result(check_output, [git_cinnabar_v, "-V"]),
-                head_version
-                if v == head
-                else f"git-cinnabar {v.replace('beta', '-beta.')}",
+                Result(get_version, [git_cinnabar_v, "-V"]),
+                v,
             )
-            versions[v] = check_output([git_cinnabar_v, "--version"])
+            version = Result(get_version, [git_cinnabar_v, "--version"])
+            status += assert_eq(
+                version,
+                full_versions[t],
+            )
 
-        for v in versions:
             if last_tag in urls:
                 update_dir = cwd / "update" / v
                 shutil.copytree(cwd / v, update_dir, symlinks=True, dirs_exist_ok=True)
@@ -208,8 +221,8 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
                     else f"Installing update from {urls[last_tag]}",
                 )
                 status += assert_eq(
-                    Result(check_output, [git_cinnabar_v, "--version"]),
-                    versions[head] if v == head else versions[last_tag],
+                    Result(get_version, [git_cinnabar_v, "--version"]),
+                    full_versions[head] if t == head else full_versions[last_tag],
                 )
                 shutil.rmtree(update_dir)
 
@@ -226,8 +239,8 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
                     else f"Installing update from {urls[head_branch]}",
                 )
                 status += assert_eq(
-                    Result(check_output, [git_cinnabar_v, "--version"]),
-                    versions[head],
+                    Result(get_version, [git_cinnabar_v, "--version"]),
+                    full_versions[head],
                 )
                 shutil.rmtree(update_dir)
 
