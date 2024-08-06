@@ -347,13 +347,25 @@ def main(args):
                 tags = ()
 
         if "." in exact:
+            # Allow to match e.g. tag 0.7.0beta1 when given the string 0.7.0-beta.1
+            def tag_match(version, tag):
+                version = iter(version)
+                for c in tag:
+                    while True:
+                        d = next(version, None)
+                        if c == d or not d or d not in b"-.":
+                            break
+                    if c != d:
+                        return False
+                return next(version, None) is None
+
             ref = f"refs/tags/{exact}".encode()
-            matches = [sha1 for sha1, r in tags if r == ref]
+            matches = [(sha1, r) for sha1, r in tags if tag_match(ref, r)]
             if not matches:
                 print(f"Couldn't find a tag for {exact}", file=sys.stderr)
                 return 1
-            tag = exact
-            exact = matches[0]
+            exact = matches[0][0].decode("ascii")
+            tag = matches[0][1].decode("ascii").removeprefix("refs/tags/")
         else:
             tags = [
                 ref[len("refs/tags/") :]

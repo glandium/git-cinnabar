@@ -116,14 +116,20 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
     BRANCHES = ("release", "master", "next")
     results = {
         script: {
-            what: Result(check_output, [sys.executable, script, "--url"] + args)
+            what: Result(
+                check_output,
+                [sys.executable, script, "--url"] + args,
+                stderr=subprocess.PIPE,
+            )
             for what, args in itertools.chain(
                 (
                     (None, []),
                     (head, ["--exact", head]),
                     (worktree_head, ["--exact", worktree_head]),
                 ),
-                ((v, ["--exact", sha1]) for v, sha1 in tags.items()),
+                ((sha1, ["--exact", sha1]) for v, sha1 in tags.items()),
+                ((t, ["--exact", t]) for t in tags),
+                ((v, ["--exact", v]) for v in VERSIONS.values() if v not in tags),
                 ((branch, ["--branch", branch]) for branch in BRANCHES),
             )
         }
@@ -136,6 +142,14 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
     }
 
     status = Status()
+    for t, v in VERSIONS.items():
+        if t != v:
+            status += assert_eq(
+                results[download_py][t],
+                results[download_py][v],
+                "download.py should support different types of version strings",
+            )
+
     for k in results[download_py].keys():
         if k:
             status += assert_eq(
