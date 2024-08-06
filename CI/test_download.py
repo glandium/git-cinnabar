@@ -15,6 +15,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import Future, ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -80,16 +81,23 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
     def get_version(x, **kwargs):
         return check_output(x, **kwargs).removeprefix("git-cinnabar ")
 
-    subprocess.run(
-        [
-            sys.executable,
-            package_py,
-            git_cinnabar,
-        ],
-        cwd=cwd,
-        check=True,
-    )
-    pkg = cwd / os.listdir(cwd)[0]
+    executor = ThreadPoolExecutor(max_workers=1)
+
+    def get_pkg():
+        pkg_dir = cwd / "pkg"
+        pkg_dir.mkdir()
+        subprocess.run(
+            [
+                sys.executable,
+                package_py,
+                git_cinnabar,
+            ],
+            cwd=pkg_dir,
+            check=True,
+        )
+        return pkg_dir / os.listdir(pkg_dir)[0]
+
+    pkg = executor.submit(get_pkg)
     standalone_download_py = shutil.copy2(download_py, cwd)
 
     worktree_head = check_output(["git", "-C", worktree, "rev-parse", "HEAD"])
@@ -497,6 +505,8 @@ class HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Transfer-Encoding", "chunked")
         self.end_headers()
+        if isinstance(content, Future):
+            content = content.result()
         if isinstance(content, str):
             content = content.encode()
         if isinstance(content, bytes):
