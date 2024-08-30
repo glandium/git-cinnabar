@@ -57,6 +57,7 @@ mod progress;
 pub mod store;
 pub mod tree_util;
 mod util;
+mod version;
 mod xdiff;
 
 pub(crate) mod hg_bundle;
@@ -94,12 +95,11 @@ use cinnabar::{
     GitChangesetId, GitFileMetadataId, GitManifestId, GitManifestTree, GitManifestTreeId,
 };
 use clap::error::ErrorKind;
-use clap::{crate_version, CommandFactory, FromArgMatches, Parser};
+use clap::{CommandFactory, FromArgMatches, Parser};
 use cstr::cstr;
 use digest::OutputSizeUser;
 use either::Either;
 use git::{BlobId, CommitId, GitObjectId, RawBlob, RawCommit, RawTree, RecursedTreeEntry, TreeIsh};
-use git_version::git_version;
 use graft::{graft_finish, grafted, init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
 use hg_bundle::{create_bundle, create_chunk_data, read_rev_chunk, BundleSpec, RevChunkIter};
@@ -143,6 +143,7 @@ use crate::progress::set_progress;
 use crate::store::{clear_manifest_heads, do_set_replace, set_changeset_heads, Dag};
 use crate::tree_util::{Empty, ParseTree, WithPath};
 use crate::util::{FromBytes, ToBoxed};
+use crate::version::{FULL_VERSION, SHORT_VERSION};
 
 #[cfg(any(feature = "version-check", feature = "self-update"))]
 mod version_check;
@@ -164,17 +165,6 @@ impl VersionChecker {
 use version_check::{VersionInfo, VersionRequest};
 
 pub const CARGO_PKG_REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
-pub const FULL_VERSION: &str = git_version!(
-    args = [
-        "--always",
-        "--match=nothing/",
-        "--abbrev=40",
-        "--dirty=-modified"
-    ],
-    prefix = concat!(crate_version!(), "-"),
-    cargo_prefix = "",
-    fallback = crate_version!(),
-);
 
 #[allow(improper_ctypes)]
 extern "C" {
@@ -3708,7 +3698,7 @@ impl FromStr for AbbrevSize {
 #[derive(Parser)]
 #[command(
     name = "git-cinnabar",
-    version=crate_version!(),
+    version=SHORT_VERSION,
     long_version=FULL_VERSION,
     arg_required_else_help = true,
     dont_collapse_args_in_usage = true,
@@ -3939,7 +3929,12 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             e.print().unwrap();
             #[cfg(feature = "version-check")]
             if e.kind() == ErrorKind::DisplayVersion
-                && format!("{}", e.render()) != concat!("git-cinnabar ", crate_version!(), "\n")
+                && e.render()
+                    .to_string()
+                    .strip_suffix('\n')
+                    .and_then(|s| s.strip_prefix("git-cinnabar "))
+                    .unwrap_or("")
+                    != SHORT_VERSION
             {
                 if let Some(mut checker) = VersionChecker::for_dashdash_version() {
                     checker.wait(Duration::from_secs(1));

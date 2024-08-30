@@ -13,7 +13,6 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bstr::ByteSlice;
-use clap::crate_version;
 use itertools::Itertools;
 use semver::Version;
 use shared_child::SharedChild;
@@ -22,12 +21,11 @@ use crate::git::CommitId;
 #[cfg(feature = "version-check")]
 use crate::util::DurationExt;
 use crate::util::{FromBytes, OsStrExt, ReadExt, SliceExt};
-use crate::FULL_VERSION;
 #[cfg(feature = "version-check")]
 use crate::{check_enabled, get_config, Checks};
+use crate::{FULL_VERSION, SHORT_VERSION};
 
 const ALL_TAG_REFS: &str = "refs/tags/*";
-const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg(version_check_branch)]
 const VERSION_CHECK_REF: &str = env!("VERSION_CHECK_BRANCH");
 #[cfg(not(version_check_branch))]
@@ -166,7 +164,7 @@ impl Drop for VersionChecker {
                     warn!(
                         target: "root",
                         "New git-cinnabar version available: {} (current version: {})",
-                        version, CARGO_PKG_VERSION
+                        version, SHORT_VERSION
                     );
                 } else {
                     warn!(
@@ -248,7 +246,9 @@ fn get_version(child: &SharedChild) -> Result<Option<VersionInfo>, ()> {
     let build_commit = FULL_VERSION
         .strip_suffix("-modified")
         .unwrap_or(FULL_VERSION)
-        .strip_prefix(concat!(crate_version!(), "-"))
+        .strip_prefix(SHORT_VERSION)
+        .unwrap_or("")
+        .strip_prefix('-')
         .unwrap_or("");
     let output = child.take_stdout().unwrap().read_all().map_err(|_| ());
     child.wait().map_err(|_| ())?;
@@ -256,7 +256,7 @@ fn get_version(child: &SharedChild) -> Result<Option<VersionInfo>, ()> {
     if output.is_empty() {
         return Err(());
     }
-    let current_version = Version::parse(CARGO_PKG_VERSION).unwrap();
+    let current_version = Version::parse(SHORT_VERSION).unwrap();
     let mut newest_version = None;
     for [sha1, r] in output
         .lines()
