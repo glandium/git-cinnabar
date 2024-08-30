@@ -21,9 +21,9 @@ use crate::git::CommitId;
 #[cfg(feature = "version-check")]
 use crate::util::DurationExt;
 use crate::util::{FromBytes, OsStrExt, ReadExt, SliceExt};
+use crate::version::{BUILD_COMMIT, SHORT_VERSION};
 #[cfg(feature = "version-check")]
 use crate::{check_enabled, get_config, Checks};
-use crate::{FULL_VERSION, SHORT_VERSION};
 
 const ALL_TAG_REFS: &str = "refs/tags/*";
 #[cfg(version_check_branch)]
@@ -243,13 +243,6 @@ fn create_child(req: VersionRequest) -> Option<SharedChild> {
 }
 
 fn get_version(child: &SharedChild) -> Result<Option<VersionInfo>, ()> {
-    let build_commit = FULL_VERSION
-        .strip_suffix("-modified")
-        .unwrap_or(FULL_VERSION)
-        .strip_prefix(SHORT_VERSION)
-        .unwrap_or("")
-        .strip_prefix('-')
-        .unwrap_or("");
     let output = child.take_stdout().unwrap().read_all().map_err(|_| ());
     child.wait().map_err(|_| ())?;
     let output = output?;
@@ -280,8 +273,8 @@ fn get_version(child: &SharedChild) -> Result<Option<VersionInfo>, ()> {
             {
                 newest_version = Some((version, cid));
             }
-        } else if sha1 != build_commit.as_bytes() {
-            debug!(target: "version-check", "Current version ({}) is different", build_commit);
+        } else if sha1 != BUILD_COMMIT.as_bytes() {
+            debug!(target: "version-check", "Current version ({}) is different", BUILD_COMMIT);
             return Ok(Some(VersionInfo::Commit(cid)));
         }
     }
