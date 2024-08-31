@@ -3698,8 +3698,8 @@ impl FromStr for AbbrevSize {
 #[derive(Parser)]
 #[command(
     name = "git-cinnabar",
-    version=SHORT_VERSION,
-    long_version=FULL_VERSION,
+    version=*SHORT_VERSION,
+    long_version=*FULL_VERSION,
     arg_required_else_help = true,
     dont_collapse_args_in_usage = true,
     subcommand_required = true,
@@ -3934,7 +3934,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
                     .strip_suffix('\n')
                     .and_then(|s| s.strip_prefix("git-cinnabar "))
                     .unwrap_or("")
-                    != SHORT_VERSION
+                    != *SHORT_VERSION
             {
                 if let Some(mut checker) = VersionChecker::for_dashdash_version() {
                     checker.wait(Duration::from_secs(1));

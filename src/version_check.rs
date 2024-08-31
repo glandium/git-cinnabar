@@ -46,7 +46,7 @@ impl<'a> From<&'a str> for VersionRequest<'a> {
 
 impl<'a> Default for VersionRequest<'a> {
     fn default() -> Self {
-        if BUILD_BRANCH == Release {
+        if *BUILD_BRANCH == Release {
             VersionRequest::Tagged
         } else {
             VersionRequest::Branch(BUILD_BRANCH.as_str())
@@ -156,12 +156,12 @@ impl VersionChecker {
 impl Drop for VersionChecker {
     fn drop(&mut self) {
         match self.take_result() {
-            Some(VersionInfo::Tagged(version, _)) if BUILD_BRANCH == Release => {
+            Some(VersionInfo::Tagged(version, _)) if *BUILD_BRANCH == Release => {
                 if self.show_current {
                     warn!(
                         target: "root",
                         "New git-cinnabar version available: {} (current version: {})",
-                        version, SHORT_VERSION
+                        version, *SHORT_VERSION
                     );
                 } else {
                     warn!(
@@ -177,7 +177,7 @@ impl Drop for VersionChecker {
                     );
                 }
             }
-            Some(VersionInfo::Commit(_)) if BUILD_BRANCH != Release => {
+            Some(VersionInfo::Commit(_)) if *BUILD_BRANCH != Release => {
                 warn!(
                     target: "root",
                     "The {} branch of git-cinnabar was updated. {}",
@@ -246,7 +246,7 @@ fn get_version(child: &SharedChild) -> Result<Option<VersionInfo>, ()> {
     if output.is_empty() {
         return Err(());
     }
-    let current_version = Version::parse(SHORT_VERSION).unwrap();
+    let current_version = Version::parse(&SHORT_VERSION).unwrap();
     let mut newest_version = None;
     for [sha1, r] in output
         .lines()
@@ -271,7 +271,7 @@ fn get_version(child: &SharedChild) -> Result<Option<VersionInfo>, ()> {
                 newest_version = Some((version, cid));
             }
         } else if sha1 != BUILD_COMMIT.as_bytes() {
-            debug!(target: "version-check", "Current version ({}) is different", BUILD_COMMIT);
+            debug!(target: "version-check", "Current version ({}) is different", *BUILD_COMMIT);
             return Ok(Some(VersionInfo::Commit(cid)));
         }
     }

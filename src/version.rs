@@ -2,35 +2,52 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use clap::crate_version;
-use concat_const::concat;
-use git_version::git_version;
+use once_cell::sync::Lazy;
 
-pub const SHORT_VERSION: &str = crate_version!();
-const GIT_VERSION: &str = git_version!(
-    args = ["--always", "--match=nothing/", "--abbrev=40", "--dirty=m"],
-    fallback = "",
-);
-const MODIFIED: bool = matches!(GIT_VERSION.as_bytes().last(), Some(b'm'));
-pub const BUILD_COMMIT: &str = unsafe {
-    // Subslicing is not supported in const yet.
-    std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-        GIT_VERSION.as_ptr(),
-        GIT_VERSION.len() - if MODIFIED { 1 } else { 0 },
-    ))
-};
+mod static_ {
+    use clap::crate_version;
+    use concat_const::concat;
+    use git_version::git_version;
 
-#[allow(clippy::const_is_empty)]
-pub const FULL_VERSION: &str = if BUILD_COMMIT.is_empty() {
-    SHORT_VERSION
-} else {
-    concat!(
-        SHORT_VERSION,
-        "-",
-        BUILD_COMMIT,
-        if MODIFIED { "-modified" } else { "" }
-    )
-};
+    #[cfg(any(feature = "version-check", feature = "self-update"))]
+    use super::BuildBranch;
+
+    pub const SHORT_VERSION: &str = crate_version!();
+    const GIT_VERSION: &str = git_version!(
+        args = ["--always", "--match=nothing/", "--abbrev=40", "--dirty=m"],
+        fallback = "",
+    );
+    const MODIFIED: bool = matches!(GIT_VERSION.as_bytes().last(), Some(b'm'));
+    pub const BUILD_COMMIT: &str = unsafe {
+        // Subslicing is not supported in const yet.
+        std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+            GIT_VERSION.as_ptr(),
+            GIT_VERSION.len() - if MODIFIED { 1 } else { 0 },
+        ))
+    };
+
+    #[cfg(any(feature = "version-check", feature = "self-update"))]
+    pub const BUILD_BRANCH: BuildBranch = BuildBranch::from_version(SHORT_VERSION);
+
+    #[allow(clippy::const_is_empty)]
+    pub const FULL_VERSION: &str = if BUILD_COMMIT.is_empty() {
+        SHORT_VERSION
+    } else {
+        concat!(
+            SHORT_VERSION,
+            "-",
+            BUILD_COMMIT,
+            if MODIFIED { "-modified" } else { "" }
+        )
+    };
+}
+
+pub static SHORT_VERSION: Lazy<&'static str> = Lazy::new(|| static_::SHORT_VERSION);
+#[cfg(any(feature = "version-check", feature = "self-update"))]
+pub static BUILD_COMMIT: Lazy<&'static str> = Lazy::new(|| static_::BUILD_COMMIT);
+#[cfg(any(feature = "version-check", feature = "self-update"))]
+pub static BUILD_BRANCH: Lazy<BuildBranch> = Lazy::new(|| static_::BUILD_BRANCH);
+pub static FULL_VERSION: Lazy<&'static str> = Lazy::new(|| static_::FULL_VERSION);
 
 #[cfg(any(feature = "version-check", feature = "self-update"))]
 #[derive(PartialEq, Eq, Debug)]
@@ -92,6 +109,3 @@ fn test_build_branch() {
     assert_eq!(from_version("0.2.1-a"), BuildBranch::Master);
     assert_eq!(from_version("0.2.1"), BuildBranch::Release);
 }
-
-#[cfg(any(feature = "version-check", feature = "self-update"))]
-pub const BUILD_BRANCH: BuildBranch = BuildBranch::from_version(SHORT_VERSION);
