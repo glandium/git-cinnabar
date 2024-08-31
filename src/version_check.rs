@@ -21,15 +21,12 @@ use crate::git::CommitId;
 #[cfg(feature = "version-check")]
 use crate::util::DurationExt;
 use crate::util::{FromBytes, OsStrExt, ReadExt, SliceExt};
-use crate::version::{BUILD_COMMIT, SHORT_VERSION};
+use crate::version::BuildBranch::*;
+use crate::version::{BUILD_BRANCH, BUILD_COMMIT, SHORT_VERSION};
 #[cfg(feature = "version-check")]
 use crate::{check_enabled, get_config, Checks};
 
 const ALL_TAG_REFS: &str = "refs/tags/*";
-#[cfg(version_check_branch)]
-const VERSION_CHECK_REF: &str = env!("VERSION_CHECK_BRANCH");
-#[cfg(not(version_check_branch))]
-const VERSION_CHECK_REF: &str = ALL_TAG_REFS;
 #[cfg(feature = "version-check")]
 const VERSION_CHECK_CONFIG: &str = "cinnabar.version-check";
 
@@ -49,10 +46,10 @@ impl<'a> From<&'a str> for VersionRequest<'a> {
 
 impl<'a> Default for VersionRequest<'a> {
     fn default() -> Self {
-        if VERSION_CHECK_REF == ALL_TAG_REFS {
+        if BUILD_BRANCH == Release {
             VersionRequest::Tagged
         } else {
-            VersionRequest::Branch(VERSION_CHECK_REF)
+            VersionRequest::Branch(BUILD_BRANCH.as_str())
         }
     }
 }
@@ -159,7 +156,7 @@ impl VersionChecker {
 impl Drop for VersionChecker {
     fn drop(&mut self) {
         match self.take_result() {
-            Some(VersionInfo::Tagged(version, _)) if VERSION_CHECK_REF == ALL_TAG_REFS => {
+            Some(VersionInfo::Tagged(version, _)) if BUILD_BRANCH == Release => {
                 if self.show_current {
                     warn!(
                         target: "root",
@@ -180,11 +177,11 @@ impl Drop for VersionChecker {
                     );
                 }
             }
-            Some(VersionInfo::Commit(_)) if VERSION_CHECK_REF != ALL_TAG_REFS => {
+            Some(VersionInfo::Commit(_)) if BUILD_BRANCH != Release => {
                 warn!(
                     target: "root",
                     "The {} branch of git-cinnabar was updated. {}",
-                    VERSION_CHECK_REF,
+                    BUILD_BRANCH.as_str(),
                     if cfg!(feature = "self-update") {
                         "You may run `git cinnabar self-update` to update."
                     } else {
