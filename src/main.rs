@@ -3698,8 +3698,8 @@ impl FromStr for AbbrevSize {
 #[derive(Parser)]
 #[command(
     name = "git-cinnabar",
-    version=*SHORT_VERSION,
-    long_version=*FULL_VERSION,
+    version=SHORT_VERSION.as_ref(),
+    long_version=FULL_VERSION.as_ref(),
     arg_required_else_help = true,
     dont_collapse_args_in_usage = true,
     subcommand_required = true,
@@ -5165,6 +5165,30 @@ pub fn get_config(name: &str) -> Option<OsString> {
     get_config_remote(name, None)
 }
 
+pub trait ConfigType: ToOwned {
+    fn from_os_string(value: OsString) -> Option<Self::Owned>;
+}
+
+impl ConfigType for str {
+    fn from_os_string(value: OsString) -> Option<Self::Owned> {
+        value.into_string().ok()
+    }
+}
+
+impl ConfigType for bool {
+    fn from_os_string(value: OsString) -> Option<Self::Owned> {
+        match value.as_bytes() {
+            b"1" | b"true" => Some(true),
+            b"" | b"0" | b"false" => Some(false),
+            _ => None,
+        }
+    }
+}
+
+pub fn get_typed_config<T: ConfigType + ?Sized>(name: &str) -> Option<T::Owned> {
+    get_config(name).and_then(T::from_os_string)
+}
+
 pub fn get_config_remote(name: &str, remote: Option<&str>) -> Option<OsString> {
     const PREFIX: &str = "GIT_CINNABAR_";
     let mut env_key = String::with_capacity(name.len() + PREFIX.len());
@@ -5281,6 +5305,7 @@ bitflags! {
         const GIT_COMMIT = 0x2;
         const TAG = 0x4;
         const BRANCH = 0x8;
+        const TEST = 0x100;
     }
 }
 pub struct AllExperiments {
@@ -5308,6 +5333,9 @@ static EXPERIMENTS: Lazy<AllExperiments> = Lazy::new(|| {
                 }
                 b"branch" => {
                     flags |= Experiments::BRANCH;
+                }
+                b"test" => {
+                    flags |= Experiments::TEST;
                 }
                 s if s.starts_with(b"similarity") => {
                     if let Some(value) = s[b"similarity".len()..].strip_prefix(b"=") {

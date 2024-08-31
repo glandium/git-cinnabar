@@ -50,6 +50,7 @@ libc = "0.2"
 once_cell = "1.13"
 percent-encoding = "2"
 rand = "0.8"
+semver = "1.0"
 sha-1 = "0.10"
 tee = "0.1"
 tempfile = "3"
@@ -104,10 +105,6 @@ version = "1"
 default-features = false
 features = ["std"]
 
-[dependencies.semver]
-version = "1.0"
-optional = true
-
 [dependencies.shared_child]
 version = "1.0"
 optional = true
@@ -146,7 +143,6 @@ version = "0.1"
 optional = true
 
 [dev-dependencies]
-semver = "1.0"
 tempfile = "3"
 
 [profile.release]
@@ -161,9 +157,9 @@ default = ["version-check"]
 # libcurl.so compatibility (Linux only).
 curl-compat = ["rustflags"]
 # Check and report when a new version is available.
-version-check = ["semver", "shared_child"]
+version-check = ["shared_child"]
 # Download and apply new versions.
-self-update = ["semver", "shared_child", "dep:tar", "dep:xz2", "dep:zip", "windows-sys/Win32_System_Threading"]
+self-update = ["shared_child", "dep:tar", "dep:xz2", "dep:zip", "windows-sys/Win32_System_Threading"]
 
 # Development features
 

@@ -2,11 +2,43 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::borrow::{Borrow, Cow};
+use std::str::FromStr;
+
 use once_cell::sync::Lazy;
+use semver::Version;
+
+use crate::git::CommitId;
+use crate::{experiment, get_typed_config, ConfigType, Experiments};
+
+macro_rules! join {
+    ($s:expr) => {
+        Cow::Borrowed($s)
+    };
+    ($($s:expr),+) => {
+        Cow::Owned(itertools::join(&[$($s),+], ""))
+    }
+}
+
+macro_rules! full_version {
+    ($short_version:expr, $build_commit:expr, $modified:expr, $macro:ident) => {
+        if $build_commit.is_empty() {
+            $macro!($short_version)
+        } else {
+            $macro!(
+                $short_version,
+                "-",
+                $build_commit,
+                if $modified { "-modified" } else { "" }
+            )
+        }
+    };
+}
 
 mod static_ {
     use clap::crate_version;
-    use concat_const::concat;
+    // Work around https://github.com/rust-lang/rust-analyzer/issues/8828 with `as cat`.
+    use concat_const::concat as cat;
     use git_version::git_version;
 
     #[cfg(any(feature = "version-check", feature = "self-update"))]
@@ -17,7 +49,7 @@ mod static_ {
         args = ["--always", "--match=nothing/", "--abbrev=40", "--dirty=m"],
         fallback = "",
     );
-    const MODIFIED: bool = matches!(GIT_VERSION.as_bytes().last(), Some(b'm'));
+    pub const MODIFIED: bool = matches!(GIT_VERSION.as_bytes().last(), Some(b'm'));
     pub const BUILD_COMMIT: &str = unsafe {
         // Subslicing is not supported in const yet.
         std::str::from_utf8_unchecked(std::slice::from_raw_parts(
@@ -29,25 +61,67 @@ mod static_ {
     #[cfg(any(feature = "version-check", feature = "self-update"))]
     pub const BUILD_BRANCH: BuildBranch = BuildBranch::from_version(SHORT_VERSION);
 
-    #[allow(clippy::const_is_empty)]
-    pub const FULL_VERSION: &str = if BUILD_COMMIT.is_empty() {
-        SHORT_VERSION
+    //    #[allow(clippy::const_is_empty)]
+    pub const FULL_VERSION: &str = full_version!(SHORT_VERSION, BUILD_COMMIT, MODIFIED, cat);
+}
+
+fn value<'a, T: 'a + ConfigType + ?Sized, F: FnOnce(&T) -> bool>(
+    config: &str,
+    static_value: &'a T,
+    filter: F,
+) -> Cow<'a, T> {
+    if let Some(value) = experiment(Experiments::TEST)
+        .then(|| get_typed_config::<T>(config))
+        .flatten()
+        .filter(|x| filter(x.borrow()))
+    {
+        Cow::Owned(value)
     } else {
-        concat!(
-            SHORT_VERSION,
-            "-",
-            BUILD_COMMIT,
-            if MODIFIED { "-modified" } else { "" }
-        )
+        Cow::Borrowed(static_value)
+    }
+}
+
+macro_rules! value {
+    ($config:expr, $static_value:expr) => {
+        value!($config, $static_value, |_| true)
+    };
+    ($config:expr, $static_value:expr, $filter:expr) => {
+        Lazy::new(|| value($config, $static_value, $filter))
     };
 }
 
-pub static SHORT_VERSION: Lazy<&'static str> = Lazy::new(|| static_::SHORT_VERSION);
+type Value<T> = Lazy<Cow<'static, T>>;
+
+fn is_overridden<T: ConfigType + ?Sized>(value: &Value<T>) -> bool {
+    matches!(**value, Cow::Owned(_))
+}
+
+pub static SHORT_VERSION: Value<str> =
+    value!("version", static_::SHORT_VERSION, |v| Version::parse(v)
+        .is_ok());
+pub static BUILD_COMMIT: Value<str> = value!("commit", static_::BUILD_COMMIT, |c| c.is_empty()
+    || CommitId::from_str(c).is_ok());
+static MODIFIED: Value<bool> = value!("modified", &static_::MODIFIED);
 #[cfg(any(feature = "version-check", feature = "self-update"))]
-pub static BUILD_COMMIT: Lazy<&'static str> = Lazy::new(|| static_::BUILD_COMMIT);
-#[cfg(any(feature = "version-check", feature = "self-update"))]
-pub static BUILD_BRANCH: Lazy<BuildBranch> = Lazy::new(|| static_::BUILD_BRANCH);
-pub static FULL_VERSION: Lazy<&'static str> = Lazy::new(|| static_::FULL_VERSION);
+pub static BUILD_BRANCH: Lazy<BuildBranch> = Lazy::new(|| {
+    if is_overridden(&SHORT_VERSION) {
+        BuildBranch::from_version(&SHORT_VERSION)
+    } else {
+        static_::BUILD_BRANCH
+    }
+});
+pub static FULL_VERSION: Value<str> = Lazy::new(|| {
+    if is_overridden(&SHORT_VERSION) || is_overridden(&BUILD_COMMIT) || is_overridden(&MODIFIED) {
+        full_version!(
+            SHORT_VERSION.as_ref(),
+            BUILD_COMMIT.as_ref(),
+            *MODIFIED.as_ref(),
+            join
+        )
+    } else {
+        Cow::Borrowed(static_::FULL_VERSION)
+    }
+});
 
 #[cfg(any(feature = "version-check", feature = "self-update"))]
 #[derive(PartialEq, Eq, Debug)]
@@ -91,8 +165,6 @@ impl BuildBranch {
 #[cfg(any(feature = "version-check", feature = "self-update"))]
 #[test]
 fn test_build_branch() {
-    use semver::Version;
-
     // The following tests outline the expected lifecycle.
     let from_version = |v| {
         assert!(Version::parse(v).is_ok());
