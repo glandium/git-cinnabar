@@ -79,7 +79,10 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
         return sorted(result)
 
     def get_version(x, **kwargs):
-        return check_output(x, **kwargs).removeprefix("git-cinnabar ")
+        result = check_output(x, **kwargs)
+        if isinstance(result, Exception):
+            return result
+        return result.removeprefix("git-cinnabar ")
 
     executor = ThreadPoolExecutor(max_workers=1)
 
@@ -214,22 +217,27 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
                 cwd=cwd,
                 env=env,
             )
-            status += assert_eq(
+            loop_status = Status()
+            loop_status += assert_eq(
                 Result(listdir, cwd / v),
                 sorted((git_cinnabar.name, f"git-remote-hg{git_cinnabar.suffix}")),
             )
-            status += assert_eq(
+            loop_status += assert_eq(
                 Result(get_version, [git_cinnabar_v, "-V"]),
                 v,
             )
             version = Result(get_version, [git_cinnabar_v, "--version"])
-            status += assert_eq(
+            loop_status += assert_eq(
                 version,
                 full_versions[t],
             )
+            status += loop_status
+            if not loop_status:
+                continue
+
+            update_dir = cwd / "update" / v
 
             if last_tag in urls:
-                update_dir = cwd / "update" / v
                 shutil.copytree(cwd / v, update_dir, symlinks=True, dirs_exist_ok=True)
                 git_cinnabar_v = update_dir / git_cinnabar.name
                 status += assert_eq(
@@ -307,6 +315,9 @@ class Status:
     def __iadd__(self, other):
         self.success = bool(other) and self.success
         return self
+
+    def __bool__(self):
+        return self.success
 
     def as_return_code(self):
         return 0 if self.success else 1
