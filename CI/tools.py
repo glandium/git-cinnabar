@@ -348,7 +348,7 @@ class Hg(Task, metaclass=Tool):
         return ["{} -m pip install {}".format(python, filename)]
 
 
-def install_rust(version="1.80.0", target="x86_64-unknown-linux-gnu"):
+def install_rust(version="1.81.0", target="x86_64-unknown-linux-gnu"):
     rustup_opts = "-y --default-toolchain none"
     cargo_dir = "$HOME/.cargo/bin/"
     rustup = cargo_dir + "rustup"
