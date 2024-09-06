@@ -291,6 +291,60 @@ def normalize_platform(system, machine):
     return system, machine
 
 
+def find_tag(exact, locally):
+    if locally:
+        tags = (
+            (sha1, ref)
+            for sha1, _, ref in (
+                l.split(None, 2)
+                for l in subprocess.check_output(
+                    ["git", "for-each-ref", "refs/tags/"],
+                    cwd=os.path.dirname(__file__),
+                ).splitlines()
+            )
+        )
+    else:
+        try:
+            tags = (
+                tuple(l.split(None, 1))
+                for l in subprocess.check_output(
+                    ["git", "ls-remote", REPOSITORY, "refs/tags/*"]
+                ).splitlines()
+            )
+        except Exception:
+            tags = ()
+
+    if "." in exact:
+        # Allow to match e.g. tag 0.7.0beta1 when given the string 0.7.0-beta.1
+        def tag_match(version, tag):
+            version = iter(version)
+            for c in tag:
+                while True:
+                    d = next(version, None)
+                    if c == d or not d or d not in b"-.":
+                        break
+                if c != d:
+                    return False
+            return next(version, None) is None
+
+        ref = f"refs/tags/{exact}".encode()
+        matches = [(sha1, r) for sha1, r in tags if tag_match(ref, r)]
+        if matches:
+            return (
+                matches[0][1].decode("ascii").removeprefix("refs/tags/"),
+                matches[0][0].decode("ascii"),
+            )
+    else:
+        tags = [
+            ref[len("refs/tags/") :]
+            for sha1, ref in tags
+            if sha1.decode("ascii") == exact
+        ]
+        tags = sorted(tags, key=lambda x: split_version(x), reverse=True)
+        if tags:
+            return (tags[0].decode("ascii"), exact)
+
+
 def main(args):
     if args.list:
         system, machine = normalize_platform(args.system, args.machine)
@@ -324,57 +378,16 @@ def main(args):
     branch = args.branch or "release"
 
     if exact and not args.variant:
+        tag = None
         if build_commit:
-            tags = (
-                (sha1, ref)
-                for sha1, _, ref in (
-                    l.split(None, 2)
-                    for l in subprocess.check_output(
-                        ["git", "for-each-ref", "refs/tags/"],
-                        cwd=os.path.dirname(__file__),
-                    ).splitlines()
-                )
-            )
-        else:
-            try:
-                tags = (
-                    tuple(l.split(None, 1))
-                    for l in subprocess.check_output(
-                        ["git", "ls-remote", REPOSITORY, "refs/tags/*"]
-                    ).splitlines()
-                )
-            except Exception:
-                tags = ()
-
-        if "." in exact:
-            # Allow to match e.g. tag 0.7.0beta1 when given the string 0.7.0-beta.1
-            def tag_match(version, tag):
-                version = iter(version)
-                for c in tag:
-                    while True:
-                        d = next(version, None)
-                        if c == d or not d or d not in b"-.":
-                            break
-                    if c != d:
-                        return False
-                return next(version, None) is None
-
-            ref = f"refs/tags/{exact}".encode()
-            matches = [(sha1, r) for sha1, r in tags if tag_match(ref, r)]
-            if not matches:
-                print(f"Couldn't find a tag for {exact}", file=sys.stderr)
-                return 1
-            exact = matches[0][0].decode("ascii")
-            tag = matches[0][1].decode("ascii").removeprefix("refs/tags/")
-        else:
-            tags = [
-                ref[len("refs/tags/") :]
-                for sha1, ref in tags
-                if sha1.decode("ascii") == exact
-            ]
-            tags = sorted(tags, key=lambda x: split_version(x), reverse=True)
-            if tags:
-                tag = tags[0].decode("ascii")
+            tag = find_tag(exact, True)
+        if tag is None:
+            tag = find_tag(exact, False)
+        if tag:
+            tag, exact = tag
+        elif "." in exact:
+            print(f"Couldn't find a tag for {exact}", file=sys.stderr)
+            return 1
 
     if exact:
         sha1 = exact
