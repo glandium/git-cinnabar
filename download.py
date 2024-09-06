@@ -361,6 +361,8 @@ def main(args):
         system = args.system or platform.system()
         machine = args.machine or platform.machine()
         ptform = normalize_platform(system, machine)
+        if ptform == ("Windows", "arm64"):
+            ptform = ("Windows", "x86_64")
         if ptform not in AVAILABLE:
             print("No download available for %s/%s" % ptform, file=sys.stderr)
             return 1
