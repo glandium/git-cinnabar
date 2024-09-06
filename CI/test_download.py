@@ -32,7 +32,7 @@ VERSIONS = {
 }
 
 
-def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
+def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
     # Avoid extra ls-remote traffic by forcing git to use a local mirror
     # created from the original clone.
     repo = cwd / "git-cinnabar"
@@ -192,90 +192,83 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py):
             "Url from --branch release should be on github",
         )
 
-    proxy = ProxyServer()
-    try:
+    if head_branch in urls:
+        proxy.map(urls[head_branch], pkg if head_branch == "release" else git_cinnabar)
+    if head in urls:
+        url = urls[head]
+        if url.startswith(REPOSITORY):
+            proxy.map(url, pkg)
+        else:
+            proxy.map(url, git_cinnabar)
+
+    env["HTTPS_PROXY"] = proxy.url
+    env["GIT_SSL_NO_VERIFY"] = "1"
+
+    full_versions = {head: head_full_version}
+    full_versions.update((t, f"{VERSIONS[t]}-{sha1}") for t, sha1 in tags.items())
+    for t, v in itertools.chain([(head, head_version)], VERSIONS.items()):
+        git_cinnabar_v = cwd / v / git_cinnabar.name
+        subprocess.run(
+            [sys.executable, download_py, "-o", git_cinnabar_v, "--exact", t],
+            cwd=cwd,
+            env=env,
+        )
+        loop_status = Status()
+        loop_status += assert_eq(
+            Result(listdir, cwd / v),
+            sorted((git_cinnabar.name, f"git-remote-hg{git_cinnabar.suffix}")),
+        )
+        loop_status += assert_eq(
+            Result(get_version, [git_cinnabar_v, "-V"]),
+            v,
+        )
+        version = Result(get_version, [git_cinnabar_v, "--version"])
+        loop_status += assert_eq(
+            version,
+            full_versions[t],
+        )
+        status += loop_status
+        if not loop_status:
+            continue
+
+        update_dir = cwd / "update" / v
+
+        if last_tag in urls:
+            shutil.copytree(cwd / v, update_dir, symlinks=True, dirs_exist_ok=True)
+            git_cinnabar_v = update_dir / git_cinnabar.name
+            status += assert_eq(
+                Result(
+                    check_output,
+                    [git_cinnabar_v, "self-update"],
+                    stderr=subprocess.STDOUT,
+                ),
+                "WARNING Did not find an update to install."
+                if v in (head, head_version)
+                else f"Installing update from {urls[last_tag]}",
+            )
+            status += assert_eq(
+                Result(get_version, [git_cinnabar_v, "--version"]),
+                full_versions[head] if t == head else full_versions[last_tag],
+            )
+            shutil.rmtree(update_dir)
+
         if head_branch in urls:
-            proxy.map(
-                urls[head_branch], pkg if head_branch == "release" else git_cinnabar
+            shutil.copytree(cwd / v, update_dir, symlinks=True, dirs_exist_ok=True)
+            status += assert_eq(
+                Result(
+                    check_output,
+                    [git_cinnabar_v, "self-update", "--branch", head_branch],
+                    stderr=subprocess.STDOUT,
+                ),
+                "WARNING Did not find an update to install."
+                if v in (head, head_version)
+                else f"Installing update from {urls[head_branch]}",
             )
-        if head in urls:
-            url = urls[head]
-            if url.startswith(REPOSITORY):
-                proxy.map(url, pkg)
-            else:
-                proxy.map(url, git_cinnabar)
-
-        env["HTTPS_PROXY"] = proxy.url
-        env["GIT_SSL_NO_VERIFY"] = "1"
-
-        full_versions = {head: head_full_version}
-        full_versions.update((t, f"{VERSIONS[t]}-{sha1}") for t, sha1 in tags.items())
-        for t, v in itertools.chain([(head, head_version)], VERSIONS.items()):
-            git_cinnabar_v = cwd / v / git_cinnabar.name
-            subprocess.run(
-                [sys.executable, download_py, "-o", git_cinnabar_v, "--exact", t],
-                cwd=cwd,
-                env=env,
+            status += assert_eq(
+                Result(get_version, [git_cinnabar_v, "--version"]),
+                full_versions[head],
             )
-            loop_status = Status()
-            loop_status += assert_eq(
-                Result(listdir, cwd / v),
-                sorted((git_cinnabar.name, f"git-remote-hg{git_cinnabar.suffix}")),
-            )
-            loop_status += assert_eq(
-                Result(get_version, [git_cinnabar_v, "-V"]),
-                v,
-            )
-            version = Result(get_version, [git_cinnabar_v, "--version"])
-            loop_status += assert_eq(
-                version,
-                full_versions[t],
-            )
-            status += loop_status
-            if not loop_status:
-                continue
-
-            update_dir = cwd / "update" / v
-
-            if last_tag in urls:
-                shutil.copytree(cwd / v, update_dir, symlinks=True, dirs_exist_ok=True)
-                git_cinnabar_v = update_dir / git_cinnabar.name
-                status += assert_eq(
-                    Result(
-                        check_output,
-                        [git_cinnabar_v, "self-update"],
-                        stderr=subprocess.STDOUT,
-                    ),
-                    "WARNING Did not find an update to install."
-                    if v in (head, head_version)
-                    else f"Installing update from {urls[last_tag]}",
-                )
-                status += assert_eq(
-                    Result(get_version, [git_cinnabar_v, "--version"]),
-                    full_versions[head] if t == head else full_versions[last_tag],
-                )
-                shutil.rmtree(update_dir)
-
-            if head_branch in urls:
-                shutil.copytree(cwd / v, update_dir, symlinks=True, dirs_exist_ok=True)
-                status += assert_eq(
-                    Result(
-                        check_output,
-                        [git_cinnabar_v, "self-update", "--branch", head_branch],
-                        stderr=subprocess.STDOUT,
-                    ),
-                    "WARNING Did not find an update to install."
-                    if v in (head, head_version)
-                    else f"Installing update from {urls[head_branch]}",
-                )
-                status += assert_eq(
-                    Result(get_version, [git_cinnabar_v, "--version"]),
-                    full_versions[head],
-                )
-                shutil.rmtree(update_dir)
-
-    finally:
-        proxy.shutdown()
+            shutil.rmtree(update_dir)
 
     return status.as_return_code()
 
@@ -305,7 +298,13 @@ def main():
             print(f"{f} doesn't exist.")
             return 1
     with TemporaryDirectory() as d:
-        return do_test(Path(d), worktree, git_cinnabar, download_py, package_py)
+        proxy = ProxyServer()
+        try:
+            return do_test(
+                Path(d), worktree, git_cinnabar, download_py, package_py, proxy
+            )
+        finally:
+            proxy.shutdown()
 
 
 class Status:
