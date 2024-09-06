@@ -229,7 +229,7 @@ fn create_child(req: VersionRequest) -> Option<SharedChild> {
     cmd.args(["ls-remote", crate::CARGO_PKG_REPOSITORY]);
     match req {
         VersionRequest::Tagged => cmd.arg(ALL_TAG_REFS),
-        VersionRequest::Branch(branch) => cmd.arg(&format!("refs/heads/{branch}")),
+        VersionRequest::Branch(branch) => cmd.arg(format!("refs/heads/{branch}")),
     };
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::null());

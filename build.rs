@@ -75,7 +75,7 @@ fn prepare_make(make: &mut Command) -> &mut Command {
         if chunk.len() == 2 {
             let name = chunk[0].trim_start().trim_end_matches('=');
             let value = chunk[1];
-            result = result.arg(&format!("{}={}", name, value));
+            result = result.arg(format!("{}={}", name, value));
         }
     }
     result.env_remove("PROFILE")
