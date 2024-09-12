@@ -4478,6 +4478,39 @@ fn check_graft_refs() {
     }
 }
 
+#[derive(PartialEq, Eq)]
+enum RecordMetadata {
+    Never,
+    Phase,
+    Always,
+    // Like Always, but also applies to dry-run
+    Force,
+}
+
+impl TryFrom<&OsStr> for RecordMetadata {
+    type Error = String;
+
+    fn try_from(value: &OsStr) -> Result<RecordMetadata, String> {
+        value
+            .to_str()
+            .and_then(|s| {
+                Some(match s {
+                    "never" => RecordMetadata::Never,
+                    "phase" => RecordMetadata::Phase,
+                    "always" => RecordMetadata::Always,
+                    "force" => RecordMetadata::Force,
+                    _ => return None,
+                })
+            })
+            .ok_or_else(|| {
+                format!(
+                    "`{}` is not one of `never`, `phase`, `always` or `force`",
+                    value.as_bytes().as_bstr()
+                )
+            })
+    }
+}
+
 fn remote_helper_push(
     store: &mut Store,
     conn: &mut dyn HgRepo,
@@ -4529,6 +4562,11 @@ fn remote_helper_push(
             b"refs/heads/".as_bstr()
         }
     });
+
+    let data = get_config_remote("data", remote)
+        .filter(|d| !d.is_empty())
+        .as_deref()
+        .map_or(Ok(RecordMetadata::Phase), RecordMetadata::try_from)?;
 
     let mut pushed = ChangesetHeads::new();
     let result = (|| {
@@ -4692,7 +4730,7 @@ fn remote_helper_push(
         }
 
         let mut result = None;
-        if !push_commits.is_empty() && !dry_run {
+        if !push_commits.is_empty() && (!dry_run || data == RecordMetadata::Force) {
             conn.require_capability(b"unbundle");
 
             let b2caps = conn
@@ -4718,6 +4756,7 @@ fn remote_helper_push(
                     .unwrap_or(1);
                 (BundleSpec::V2None, version)
             };
+            // TODO: Ideally, for dry-run, we wouldn't even create a temporary file.
             let tempfile = tempfile::Builder::new()
                 .prefix("hg-bundle-")
                 .suffix(".hg")
@@ -4734,40 +4773,43 @@ fn remote_helper_push(
                 version == 2,
             )?;
             drop(file);
-            let file = File::open(path).unwrap();
-            let empty_heads = [HgChangesetId::NULL];
-            let heads = if force {
-                None
-            } else if no_topological_heads {
-                Some(&empty_heads[..])
-            } else {
-                Some(&info.topological_heads[..])
-            };
-            let response = conn.unbundle(heads, file);
-            match response {
-                UnbundleResponse::Bundlev2(data) => {
-                    let mut bundle = BundleReader::new(data).unwrap();
-                    while let Some(part) = bundle.next_part().unwrap() {
-                        match part.part_type.as_bytes() {
-                            b"reply:changegroup" => {
-                                // TODO: should check in-reply-to param.
-                                let response = part.get_param("return").unwrap();
-                                result = u32::from_str(response).ok();
-                            }
-                            b"error:abort" => {
-                                let mut message = part.get_param("message").unwrap().to_string();
-                                if let Some(hint) = part.get_param("hint") {
-                                    message.push_str("\n\n");
-                                    message.push_str(hint);
+            if !dry_run {
+                let file = File::open(path).unwrap();
+                let empty_heads = [HgChangesetId::NULL];
+                let heads = if force {
+                    None
+                } else if no_topological_heads {
+                    Some(&empty_heads[..])
+                } else {
+                    Some(&info.topological_heads[..])
+                };
+                let response = conn.unbundle(heads, file);
+                match response {
+                    UnbundleResponse::Bundlev2(data) => {
+                        let mut bundle = BundleReader::new(data).unwrap();
+                        while let Some(part) = bundle.next_part().unwrap() {
+                            match part.part_type.as_bytes() {
+                                b"reply:changegroup" => {
+                                    // TODO: should check in-reply-to param.
+                                    let response = part.get_param("return").unwrap();
+                                    result = u32::from_str(response).ok();
                                 }
-                                error!(target: "root", "{}", message);
+                                b"error:abort" => {
+                                    let mut message =
+                                        part.get_param("message").unwrap().to_string();
+                                    if let Some(hint) = part.get_param("hint") {
+                                        message.push_str("\n\n");
+                                        message.push_str(hint);
+                                    }
+                                    error!(target: "root", "{}", message);
+                                }
+                                _ => {}
                             }
-                            _ => {}
                         }
                     }
-                }
-                UnbundleResponse::Raw(response) => {
-                    result = u32::from_bytes(&response).ok();
+                    UnbundleResponse::Raw(response) => {
+                        result = u32::from_bytes(&response).ok();
+                    }
                 }
             }
         }
@@ -4851,76 +4893,60 @@ fn remote_helper_push(
         stdout.flush().unwrap();
     }
 
-    let data = get_config_remote("data", remote);
-    let data = data
-        .as_deref()
-        .and_then(|d| (!d.is_empty()).then_some(d))
-        .unwrap_or_else(|| OsStr::new("phase"));
-    let valid = [
-        OsStr::new("never"),
-        OsStr::new("phase"),
-        OsStr::new("always"),
-    ];
-    if !valid.contains(&data) {
-        die!(
-            "`{}` is not one of `never`, `phase` or `always`",
-            data.as_bytes().as_bstr()
-        );
-    }
-    let rollback = if status.is_empty() || pushed.is_empty() || dry_run {
-        true
-    } else {
-        match data.to_str().unwrap() {
-            "always" => false,
-            "never" => true,
-            "phase" => {
-                let phases = conn.phases();
-                let phases = ByteSlice::lines(&*phases)
-                    .filter_map(|l| {
-                        l.splitn_exact(b'\t')
-                            .map(|[k, v]| (k.as_bstr(), v.as_bstr()))
-                    })
-                    .collect::<HashMap<_, _>>();
-                let drafts = (!phases.contains_key(b"publishing".as_bstr()))
-                    .then(|| {
-                        phases
-                            .into_iter()
-                            .filter_map(|(phase, is_draft)| {
-                                u32::from_bytes(is_draft).ok().and_then(|is_draft| {
-                                    (is_draft > 0).then(|| HgChangesetId::from_bytes(phase))
+    let rollback =
+        if status.is_empty() || pushed.is_empty() || (dry_run && data != RecordMetadata::Force) {
+            true
+        } else {
+            match data {
+                RecordMetadata::Force | RecordMetadata::Always => false,
+                RecordMetadata::Never => true,
+                RecordMetadata::Phase => {
+                    let phases = conn.phases();
+                    let phases = ByteSlice::lines(&*phases)
+                        .filter_map(|l| {
+                            l.splitn_exact(b'\t')
+                                .map(|[k, v]| (k.as_bstr(), v.as_bstr()))
+                        })
+                        .collect::<HashMap<_, _>>();
+                    let drafts = (!phases.contains_key(b"publishing".as_bstr()))
+                        .then(|| {
+                            phases
+                                .into_iter()
+                                .filter_map(|(phase, is_draft)| {
+                                    u32::from_bytes(is_draft).ok().and_then(|is_draft| {
+                                        (is_draft > 0).then(|| HgChangesetId::from_bytes(phase))
+                                    })
                                 })
-                            })
-                            .collect::<Result<Vec<_>, _>>()
-                    })
-                    .transpose()
-                    .unwrap()
-                    .unwrap_or_default();
-                if drafts.is_empty() {
-                    false
-                } else {
-                    // Theoretically, we could have commits with no
-                    // metadata that the remote declares are public, while
-                    // the rest of our push is in a draft state. That is
-                    // however so unlikely that it's not worth the effort
-                    // to support partial metadata storage.
-                    !reachable_subset(
-                        pushed
-                            .heads()
-                            .copied()
-                            .filter_map(|h| h.to_git(store))
-                            .map(Into::into),
-                        drafts
-                            .iter()
-                            .copied()
-                            .filter_map(|h| h.to_git(store))
-                            .map(Into::into),
-                    )
-                    .is_empty()
+                                .collect::<Result<Vec<_>, _>>()
+                        })
+                        .transpose()
+                        .unwrap()
+                        .unwrap_or_default();
+                    if drafts.is_empty() {
+                        false
+                    } else {
+                        // Theoretically, we could have commits with no
+                        // metadata that the remote declares are public, while
+                        // the rest of our push is in a draft state. That is
+                        // however so unlikely that it's not worth the effort
+                        // to support partial metadata storage.
+                        !reachable_subset(
+                            pushed
+                                .heads()
+                                .copied()
+                                .filter_map(|h| h.to_git(store))
+                                .map(Into::into),
+                            drafts
+                                .iter()
+                                .copied()
+                                .filter_map(|h| h.to_git(store))
+                                .map(Into::into),
+                        )
+                        .is_empty()
+                    }
                 }
             }
-            _ => unreachable!(),
-        }
-    };
+        };
     if rollback {
         unsafe {
             do_cleanup(1);

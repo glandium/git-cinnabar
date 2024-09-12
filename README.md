@@ -196,9 +196,11 @@ preference with one of the following values:
 - `always`
 - `never`
 - `phase`
+- `force`
 
 `phase` is the default described above. `always` and `never` are
-self-explanatory.
+self-explanatory. `force` has the same meaning as `always`, but also
+forces `git push --dry-run` to store metadata.
 
 Cinnabar clone:
 ---------------

@@ -364,6 +364,32 @@ Server is now non-publishing, so metadata is unchanged.
   WARNING Pushing a new root
   To hg::.*/push.t/xyz (re)
    + 687e015...7ca6a3c 7ca6a3c32ec0dbcbcd155b2be6e2f4505012c273 -> branches/default/tip (forced update)
+
+Whatever happens, --dry-run doesn't store metadata
+
+  $ git -C xyz-git cinnabar rollback --candidates
+  a2341d430e5acddf9481eabcad901fda12d023d3 (current)
+  8b8194eefb69ec89edc35dafb965311fe48c49d0
+  2836e453f32b1ecccd3acca412f75b07c88176bf
+
+There is an extra mode for cinnabar.data that forces --dry-run to store metadata
+
+  $ git -c cinnabar.data=force -C xyz-git push -f --dry-run origin 7ca6a3c32ec0dbcbcd155b2be6e2f4505012c273:refs/heads/branches/default/tip
+  \r (no-eol) (esc)
+  WARNING Pushing a new root
+  To hg::.*/push.t/xyz (re)
+   + 687e015...7ca6a3c 7ca6a3c32ec0dbcbcd155b2be6e2f4505012c273 -> branches/default/tip (forced update)
+  $ git -C xyz-git cinnabar rollback --candidates
+  4305cef3fa610b3370f64ce10d2b50693a904278 (current)
+  a2341d430e5acddf9481eabcad901fda12d023d3
+  8b8194eefb69ec89edc35dafb965311fe48c49d0
+  2836e453f32b1ecccd3acca412f75b07c88176bf
+  $ git -C xyz-git cinnabar rollback
+  $ git -C xyz-git cinnabar rollback --candidates
+  a2341d430e5acddf9481eabcad901fda12d023d3 (current)
+  8b8194eefb69ec89edc35dafb965311fe48c49d0
+  2836e453f32b1ecccd3acca412f75b07c88176bf
+
   $ git -c cinnabar.data=always -C xyz-git push -f origin 7ca6a3c32ec0dbcbcd155b2be6e2f4505012c273:refs/heads/branches/default/tip
   \r (no-eol) (esc)
   WARNING Pushing a new root
