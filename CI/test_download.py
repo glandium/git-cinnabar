@@ -196,20 +196,19 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             "Url from --branch release should be on github",
         )
 
-    if head_branch in urls:
-        proxy.map(urls[head_branch], pkg if head_branch == "release" else git_cinnabar)
-    if head in urls:
-        url = urls[head]
-        if url.startswith(REPOSITORY):
-            proxy.map(url, pkg)
-        else:
-            proxy.map(url, git_cinnabar)
+    full_versions = {t: f"{VERSIONS[t]}-{sha1}" for t, sha1 in tags.items()}
+    for h in (head, "master", "next"):
+        if h in urls:
+            url = urls[h]
+            if url.startswith(REPOSITORY):
+                proxy.map(url, pkg)
+            else:
+                proxy.map(url, git_cinnabar)
+            full_versions[h] = head_full_version
 
     env["HTTPS_PROXY"] = proxy.url
     env["GIT_SSL_NO_VERIFY"] = "1"
 
-    full_versions = {head: head_full_version}
-    full_versions.update((t, f"{VERSIONS[t]}-{sha1}") for t, sha1 in tags.items())
     for t, v in itertools.chain([(head, head_version)], VERSIONS.items()):
         git_cinnabar_v = cwd / v / git_cinnabar.name
         subprocess.run(
@@ -235,52 +234,45 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
         if not loop_status:
             continue
 
-        update_dir = cwd / "update" / v
+        for branch in (None,) + BRANCHES:
+            update_dir = cwd / "update" / v
+            if branch:
+                update_dir = update_dir / branch
 
-        if last_tag in urls:
             shutil.copytree(cwd / v, update_dir, symlinks=True, dirs_exist_ok=True)
             git_cinnabar_v = update_dir / git_cinnabar.name
+            extra_args = []
+            if branch:
+                extra_args += ["--branch", branch]
+            # 0.7.0beta1 has a bug that makes it believe there's always an update even if it's the last version.
+            if (
+                branch in (None, "release")
+                and t == last_tag
+                and t != "0.7.0beta1"
+                or branch in (None, head_branch)
+                and t == head
+            ):
+                update = None
+            else:
+                update = last_tag if branch in (None, "release") else branch
             with proxy.capture_log() as log:
                 status += assert_eq(
                     Result(
                         check_output,
-                        [git_cinnabar_v, "self-update"],
+                        [git_cinnabar_v, "self-update"] + extra_args,
                         stderr=subprocess.STDOUT,
                     ),
-                    "WARNING Did not find an update to install."
-                    if v in (head, head_version)
-                    else f"Installing update from {urls[last_tag]}",
+                    f"Installing update from {urls[update]}"
+                    if update
+                    else "WARNING Did not find an update to install.",
                 )
-            if t == head:
-                status += assert_eq(log, [])
+            if update:
+                status += assert_eq(Result(first, log), urls[update])
             else:
-                status += assert_eq(Result(first, log), urls[last_tag])
+                status += assert_eq(log, [])
             status += assert_eq(
                 Result(get_version, [git_cinnabar_v, "--version"]),
-                full_versions[head] if t == head else full_versions[last_tag],
-            )
-            shutil.rmtree(update_dir)
-
-        if head_branch in urls:
-            shutil.copytree(cwd / v, update_dir, symlinks=True, dirs_exist_ok=True)
-            with proxy.capture_log() as log:
-                status += assert_eq(
-                    Result(
-                        check_output,
-                        [git_cinnabar_v, "self-update", "--branch", head_branch],
-                        stderr=subprocess.STDOUT,
-                    ),
-                    "WARNING Did not find an update to install."
-                    if v in (head, head_version)
-                    else f"Installing update from {urls[head_branch]}",
-                )
-            if t == head:
-                status += assert_eq(log, [])
-            else:
-                status += assert_eq(Result(first, log), urls[head_branch])
-            status += assert_eq(
-                Result(get_version, [git_cinnabar_v, "--version"]),
-                full_versions[head],
+                full_versions[update or head],
             )
             shutil.rmtree(update_dir)
 
