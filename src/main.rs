@@ -4816,7 +4816,7 @@ fn remote_helper_push(
                     .map(|n| n > 0)
                     .unwrap_or_default())
             } else if source_cid.is_some() {
-                Ok(!pushed.is_empty())
+                Ok(!pushed.is_empty() || dry_run)
             } else {
                 Err("Deleting remote branches is unsupported")
             };
