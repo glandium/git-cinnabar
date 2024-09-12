@@ -64,8 +64,13 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             )
 
     def check_output(x, **kwargs):
+        extra_env = kwargs.pop("extra_env", {})
+        e = env
+        if extra_env:
+            e = e.copy()
+            e.update(extra_env)
         result = checked_call(
-            subprocess.check_output, x, env=env, cwd=cwd, text=True, **kwargs
+            subprocess.check_output, x, env=e, cwd=cwd, text=True, **kwargs
         )
         if isinstance(result, subprocess.CalledProcessError):
             result.__class__ = CalledProcessError
@@ -225,11 +230,32 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             Result(get_version, [git_cinnabar_v, "-V"]),
             v,
         )
-        version = Result(get_version, [git_cinnabar_v, "--version"])
+        version = Result(
+            get_version,
+            [git_cinnabar_v, "--version"],
+            extra_env={"GIT_CINNABAR_CHECK": ""},
+            stderr=subprocess.STDOUT,
+        )
+        new_version_warning = ""
+        # Starting with version 0.7.0beta1, a warning is shown when there is a
+        # new version available. Unfortunately, 0.7.0beta1 has a bug that makes
+        # it believe there's always an update even if it's the last version.
+        if (
+            "." in t
+            and tuple(int(x) for x in t.split(".")[:2]) >= (0, 7)
+            and (t != last_tag or t == "0.7.0beta1")
+        ):
+            new_version = t.replace("b", "-b").replace("rc", "-rc")
+            new_version_warning = (
+                f"\n\nWARNING New git-cinnabar version available: {new_version} (current version: {v})"
+                "\n\nWARNING You may run `git cinnabar self-update` to update."
+            )
+
         loop_status += assert_eq(
             version,
-            full_versions[t],
+            full_versions[t] + new_version_warning,
         )
+
         status += loop_status
         if not loop_status:
             continue
@@ -244,7 +270,6 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             extra_args = []
             if branch:
                 extra_args += ["--branch", branch]
-            # 0.7.0beta1 has a bug that makes it believe there's always an update even if it's the last version.
             if (
                 branch in (None, "release")
                 and t == last_tag
