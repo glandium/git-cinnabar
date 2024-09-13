@@ -54,6 +54,8 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
         GIT_CONFIG_KEY_0=f"url.{repo}.insteadOf",
         GIT_CONFIG_VALUE_0=REPOSITORY,
         GIT_CINNABAR_CHECK="no-version-check",
+        HTTPS_PROXY=proxy.url,
+        GIT_SSL_NO_VERIFY="1",
     )
 
     class CalledProcessError(subprocess.CalledProcessError):
@@ -203,9 +205,6 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             else:
                 proxy.map(url, git_cinnabar)
             full_versions[h] = head_full_version
-
-    env["HTTPS_PROXY"] = proxy.url
-    env["GIT_SSL_NO_VERIFY"] = "1"
 
     for t, v in itertools.chain([(head, head_version)], VERSIONS.items()):
         git_cinnabar_v = cwd / v / git_cinnabar.name
