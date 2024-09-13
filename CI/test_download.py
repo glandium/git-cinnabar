@@ -25,13 +25,23 @@ from threading import Thread
 
 REPOSITORY = "https://github.com/glandium/git-cinnabar"
 
+# The versions below are expected to be semantically ordered.
 VERSIONS = {
     # Tag: Version in Cargo.toml
     "0.6.0rc2": "0.6.0-rc2",
     "0.6.0": "0.6.0",
     "0.6.3": "0.6.3",
     "0.7.0beta1": "0.7.0-beta.1",
+    # Newer versions below. We're bound to what older versions were doing to find the
+    # right download on self-update. I don't know what went through my head when I
+    # made that code strip dashes from tag names...
+    "0.7.0beta2": "0.7.0-beta.2",
+    "0.7.0rc1": "0.7.0-rc.1",
+    "0.7.0": "0.7.0",
+    "0.7.1": "0.7.1",
+    "0.8.0beta1": "0.8.0-beta.1",
 }
+VERSIONS_ORDER = {v: n for n, v in enumerate(VERSIONS)}
 
 
 def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
@@ -93,21 +103,70 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
     # We may be testing a version that is not the current tip of the
     # head_branch. Update our mirror so that it is.
     env.check_call(["git", "-C", repo, "update-ref", f"refs/heads/{head_branch}", head])
-    tags = {
-        t: env.check_output(["git", "-C", repo, "rev-parse", t])
-        for t, v in VERSIONS.items()
-    }
-    for last_tag in tags:
-        pass
+
+    status = Status()
+    last_known_tag = None
+    previous_tag = None
+    future_tags = {}
+    tags = {}
+    envs = {head: env}
+    for t, v in VERSIONS.items():
+        try:
+            rev = env.check_output(
+                ["git", "-C", repo, "rev-parse", t], stderr=subprocess.DEVNULL
+            )
+            last_known_tag = t
+            envs[t] = env
+        except Exception:
+            assert previous_tag is not None
+            previous_rev = tags[previous_tag]
+            rev = env.derive_with(
+                GIT_AUTHOR_NAME="foobar",
+                GIT_AUTHOR_EMAIL="foo@bar",
+                GIT_COMMITTER_NAME="foobar",
+                GIT_COMMITTER_EMAIL="foo@bar",
+            ).check_output(
+                [
+                    "git",
+                    "-C",
+                    repo,
+                    "commit-tree",
+                    f"{previous_rev}^{{tree}}",
+                    "-p",
+                    previous_rev,
+                    "-m",
+                    t,
+                ]
+            )
+            repo_t = repo.parent / (repo.name + f"-{t}")
+            envs[previous_tag].check_call(
+                ["git", "clone", "--mirror", "--reference", repo, REPOSITORY, repo_t]
+            )
+            envs[t] = env.derive_with(GIT_CONFIG_KEY_0=f"url.{repo_t}.insteadOf")
+            status += assert_eq(
+                env.check_output(["git", "-C", repo_t, "tag", t, rev]), ""
+            )
+            future_tags[t] = None
+        if v != t:
+            assert v not in envs
+            envs[v] = envs[t]
+        tags[t] = rev
+        previous_tag = t
+
+    def get_url_with(script, args):
+        use_env = env
+        if args[:1] == ["--exact"]:
+            use_env = envs.get(args[1], env)
+        return Result(
+            use_env.check_output,
+            [sys.executable, script, "--url"] + args,
+            stderr=subprocess.PIPE,
+        )
 
     BRANCHES = ("release", "master", "next")
     results = {
         script: {
-            what: Result(
-                env.check_output,
-                [sys.executable, script, "--url"] + args,
-                stderr=subprocess.PIPE,
-            )
+            what: get_url_with(script, args)
             for what, args in itertools.chain(
                 (
                     (None, []),
@@ -128,7 +187,6 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
         if not isinstance(result.value, Exception)
     }
 
-    status = Status()
     for t, v in VERSIONS.items():
         if t != v:
             status += assert_eq(
@@ -167,6 +225,11 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             REPOSITORY,
             "Url from --branch release should be on github",
         )
+        status += assert_eq(
+            urls["release"],
+            urls[last_known_tag],
+            f"Url from --branch release should be the same as --exact {last_known_tag}",
+        )
 
     full_versions = {t: f"{VERSIONS[t]}-{sha1}" for t, sha1 in tags.items()}
     for h in (head, "master", "next"):
@@ -177,90 +240,111 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             else:
                 proxy.map(url, git_cinnabar)
             full_versions[h] = head_full_version
+    for tag in future_tags:
+        proxy.map(urls[tag], pkg)
 
     for t, v in itertools.chain([(head, head_version)], VERSIONS.items()):
         git_cinnabar_v = cwd / v / git_cinnabar.name
-        env.run(
+        envs[t].run(
             [sys.executable, download_py, "-o", git_cinnabar_v, "--exact", t],
         )
-        loop_status = Status()
-        loop_status += assert_eq(
+        status += assert_eq(
             Result(listdir, cwd / v),
             sorted((git_cinnabar.name, f"git-remote-hg{git_cinnabar.suffix}")),
         )
-        loop_status += assert_eq(
+        status += assert_eq(
             Result(env.get_version, [git_cinnabar_v, "-V"]),
-            v,
-        )
-        version = Result(
-            env.derive_with(GIT_CINNABAR_CHECK="").get_version,
-            [git_cinnabar_v, "--version"],
-            stderr=subprocess.STDOUT,
-        )
-        new_version_warning = ""
-        # Starting with version 0.7.0beta1, a warning is shown when there is a
-        # new version available. Unfortunately, 0.7.0beta1 has a bug that makes
-        # it believe there's always an update even if it's the last version.
-        if (
-            "." in t
-            and tuple(int(x) for x in t.split(".")[:2]) >= (0, 7)
-            and (t != last_tag or t == "0.7.0beta1")
-        ):
-            new_version = t.replace("b", "-b").replace("rc", "-rc")
-            new_version_warning = (
-                f"\n\nWARNING New git-cinnabar version available: {new_version} (current version: {v})"
-                "\n\nWARNING You may run `git cinnabar self-update` to update."
-            )
-
-        loop_status += assert_eq(
-            version,
-            full_versions[t] + new_version_warning,
+            head_version if t in future_tags else v,
         )
 
-        status += loop_status
-        if not loop_status:
-            continue
-
-        for branch in (None,) + BRANCHES:
-            update_dir = cwd / "update" / v
-            if branch:
-                update_dir = update_dir / branch
-
-            shutil.copytree(cwd / v, update_dir, symlinks=True, dirs_exist_ok=True)
-            git_cinnabar_v = update_dir / git_cinnabar.name
-            extra_args = []
-            if branch:
-                extra_args += ["--branch", branch]
-            if (
-                branch in (None, "release")
-                and t == last_tag
-                and t != "0.7.0beta1"
-                or branch in (None, head_branch)
-                and t == head
-            ):
-                update = None
-            else:
-                update = last_tag if branch in (None, "release") else branch
-            with proxy.capture_log() as log:
-                status += assert_eq(
-                    Result(
-                        env.check_output,
-                        [git_cinnabar_v, "self-update"] + extra_args,
-                        stderr=subprocess.STDOUT,
-                    ),
-                    f"Installing update from {urls[update]}"
-                    if update
-                    else "WARNING Did not find an update to install.",
+    for upgrade_to in itertools.chain([last_known_tag], future_tags):
+        for t, v in itertools.chain([(head, head_version)], VERSIONS.items()):
+            upgrade_env = envs[upgrade_to]
+            if t in future_tags:
+                upgrade_env = upgrade_env.derive_with(
+                    GIT_CINNABAR_EXPERIMENTS="test",
+                    GIT_CINNABAR_VERSION=v,
+                    GIT_CINNABAR_MODIFIED="",
+                    GIT_CINNABAR_COMMIT=tags[t],
                 )
-            if update:
-                status += assert_eq(Result(first, log), urls[update])
-            else:
-                status += assert_eq(log, [])
-            status += assert_eq(
-                Result(env.get_version, [git_cinnabar_v, "--version"]),
-                full_versions[update or head],
+            git_cinnabar_v = cwd / v / git_cinnabar.name
+            version = Result(
+                upgrade_env.derive_with(GIT_CINNABAR_CHECK="").get_version,
+                [git_cinnabar_v, "--version"],
+                stderr=subprocess.STDOUT,
             )
-            shutil.rmtree(update_dir)
+            new_version_warning = ""
+            # Starting with version 0.7.0beta1, a warning is shown when there is a
+            # new version available. Unfortunately, 0.7.0beta1 has a bug that makes
+            # it believe there's always an update even if it's the last version.
+            if (
+                "." in t
+                and tuple(int(x) for x in t.split(".")[:2]) >= (0, 7)
+                and (
+                    VERSIONS_ORDER[upgrade_to] > VERSIONS_ORDER[t] or t == "0.7.0beta1"
+                )
+            ):
+                new_version = VERSIONS[upgrade_to]
+                current_version = ""
+                if t == "0.7.0beta1":
+                    new_version = upgrade_to.replace("b", "-b").replace("rc", "-rc")
+                    current_version = f" (current version: {v})"
+                new_version_warning = (
+                    f"\n\nWARNING New git-cinnabar version available: {new_version}{current_version}"
+                    "\n\nWARNING You may run `git cinnabar self-update` to update."
+                )
+
+            version_status = assert_eq(
+                version,
+                full_versions[t] + new_version_warning,
+            )
+
+            status += version_status
+            version_status = True
+            if not version_status or VERSIONS_ORDER[upgrade_to] <= VERSIONS_ORDER.get(
+                t, -1
+            ):
+                continue
+
+            for branch in (None,) + (BRANCHES if upgrade_to == last_known_tag else ()):
+                update_dir = cwd / "update" / v
+                if branch:
+                    update_dir = update_dir / branch
+
+                shutil.copytree(cwd / v, update_dir, symlinks=True, dirs_exist_ok=True)
+                git_cinnabar_v = update_dir / git_cinnabar.name
+                extra_args = []
+                if branch:
+                    extra_args += ["--branch", branch]
+                if (
+                    branch in (None, "release")
+                    and VERSIONS_ORDER[upgrade_to] < VERSIONS_ORDER.get(t, -1)
+                    or branch in (None, head_branch)
+                    and t == head
+                ):
+                    update = None
+                else:
+                    update = upgrade_to if branch in (None, "release") else branch
+                with proxy.capture_log() as log:
+                    status += assert_eq(
+                        Result(
+                            upgrade_env.check_output,
+                            [git_cinnabar_v, "self-update"] + extra_args,
+                            stderr=subprocess.STDOUT,
+                        ),
+                        f"Installing update from {urls[update]}"
+                        if update
+                        else "WARNING Did not find an update to install.",
+                    )
+                if update:
+                    status += assert_eq(Result(first, log), urls[update])
+                else:
+                    status += assert_eq(log, [])
+                status += assert_eq(
+                    Result(env.get_version, [git_cinnabar_v, "--version"]),
+                    full_versions[head if upgrade_to in future_tags else (update or t)],
+                )
+                shutil.rmtree(update_dir)
 
     return status.as_return_code()
 
