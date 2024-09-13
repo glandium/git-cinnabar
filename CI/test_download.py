@@ -12,6 +12,7 @@ import socket
 import ssl
 import subprocess
 import sys
+import types
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -48,8 +49,7 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             repo,
         ]
     )
-    env = os.environ.copy()
-    env.update(
+    env = CommandEnvironment(cwd).derive_with(
         GIT_CONFIG_COUNT="1",
         GIT_CONFIG_KEY_0=f"url.{repo}.insteadOf",
         GIT_CONFIG_VALUE_0=REPOSITORY,
@@ -58,32 +58,8 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
         GIT_SSL_NO_VERIFY="1",
     )
 
-    class CalledProcessError(subprocess.CalledProcessError):
-        def __repr__(self):
-            return (
-                super().__repr__().removesuffix(")")
-                + f", stdout={self.stdout!r}, stderr={self.stderr!r})"
-            )
-
-    def check_output(x, **kwargs):
-        extra_env = kwargs.pop("extra_env", {})
-        e = env
-        if extra_env:
-            e = e.copy()
-            e.update(extra_env)
-        try:
-            result = subprocess.check_output(x, env=e, cwd=cwd, text=True, **kwargs)
-        except Exception as e:
-            if isinstance(e, subprocess.CalledProcessError):
-                e.__class__ = CalledProcessError
-            raise e
-        return result.strip()
-
     def listdir(p):
         return sorted(os.listdir(p))
-
-    def get_version(x, **kwargs):
-        return check_output(x, **kwargs).removeprefix("git-cinnabar ")
 
     def first(list):
         return next(iter(list))
@@ -93,23 +69,21 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
     def get_pkg():
         pkg_dir = cwd / "pkg"
         pkg_dir.mkdir()
-        subprocess.run(
+        env.derive_with(cwd=pkg_dir).check_call(
             [
                 sys.executable,
                 package_py,
                 git_cinnabar,
             ],
-            cwd=pkg_dir,
-            check=True,
         )
         return pkg_dir / os.listdir(pkg_dir)[0]
 
     pkg = executor.submit(get_pkg)
     standalone_download_py = shutil.copy2(download_py, cwd)
 
-    worktree_head = check_output(["git", "-C", worktree, "rev-parse", "HEAD"])
-    head_version = get_version([git_cinnabar, "-V"])
-    head_full_version = get_version([git_cinnabar, "--version"])
+    worktree_head = env.check_output(["git", "-C", worktree, "rev-parse", "HEAD"])
+    head_version = env.get_version([git_cinnabar, "-V"])
+    head_full_version = env.get_version([git_cinnabar, "--version"])
     _, _, head = head_full_version.removesuffix("-modified").rpartition("-")
     head_branch = "release"
     if head_version.endswith(".0-a"):
@@ -118,11 +92,9 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
         head_branch = "master"
     # We may be testing a version that is not the current tip of the
     # head_branch. Update our mirror so that it is.
-    subprocess.check_call(
-        ["git", "-C", repo, "update-ref", f"refs/heads/{head_branch}", head]
-    )
+    env.check_call(["git", "-C", repo, "update-ref", f"refs/heads/{head_branch}", head])
     tags = {
-        t: check_output(["git", "-C", repo, "rev-parse", t])
+        t: env.check_output(["git", "-C", repo, "rev-parse", t])
         for t, v in VERSIONS.items()
     }
     for last_tag in tags:
@@ -132,7 +104,7 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
     results = {
         script: {
             what: Result(
-                check_output,
+                env.check_output,
                 [sys.executable, script, "--url"] + args,
                 stderr=subprocess.PIPE,
             )
@@ -208,10 +180,8 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
 
     for t, v in itertools.chain([(head, head_version)], VERSIONS.items()):
         git_cinnabar_v = cwd / v / git_cinnabar.name
-        subprocess.run(
+        env.run(
             [sys.executable, download_py, "-o", git_cinnabar_v, "--exact", t],
-            cwd=cwd,
-            env=env,
         )
         loop_status = Status()
         loop_status += assert_eq(
@@ -219,13 +189,12 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             sorted((git_cinnabar.name, f"git-remote-hg{git_cinnabar.suffix}")),
         )
         loop_status += assert_eq(
-            Result(get_version, [git_cinnabar_v, "-V"]),
+            Result(env.get_version, [git_cinnabar_v, "-V"]),
             v,
         )
         version = Result(
-            get_version,
+            env.derive_with(GIT_CINNABAR_CHECK="").get_version,
             [git_cinnabar_v, "--version"],
-            extra_env={"GIT_CINNABAR_CHECK": ""},
             stderr=subprocess.STDOUT,
         )
         new_version_warning = ""
@@ -275,7 +244,7 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             with proxy.capture_log() as log:
                 status += assert_eq(
                     Result(
-                        check_output,
+                        env.check_output,
                         [git_cinnabar_v, "self-update"] + extra_args,
                         stderr=subprocess.STDOUT,
                     ),
@@ -288,7 +257,7 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             else:
                 status += assert_eq(log, [])
             status += assert_eq(
-                Result(get_version, [git_cinnabar_v, "--version"]),
+                Result(env.get_version, [git_cinnabar_v, "--version"]),
                 full_versions[update or head],
             )
             shutil.rmtree(update_dir)
@@ -330,6 +299,54 @@ def main():
             proxy.shutdown()
 
 
+class CommandEnvironment:
+    def __init__(self, cwd, environ=os.environ):
+        self.cwd = cwd
+        self.env = environ.copy()
+
+    class CalledProcessError(subprocess.CalledProcessError):
+        def __repr__(self):
+            return (
+                super().__repr__().removesuffix(")")
+                + f", stdout={self.stdout!r}, stderr={self.stderr!r})"
+            )
+
+    def check_call(self, x, **kwargs):
+        return self.subprocess_func(subprocess.check_call, x, **kwargs)
+
+    def check_output(self, x, **kwargs):
+        return self.subprocess_func(subprocess.check_output, x, **kwargs)
+
+    def run(self, x, **kwargs):
+        return self.subprocess_func(subprocess.run, x, **kwargs)
+
+    def subprocess_func(self, func, x, **kwargs):
+        try:
+            result = func(x, env=self.env, cwd=self.cwd, text=True, **kwargs)
+        except Exception as e:
+            if isinstance(e, subprocess.CalledProcessError):
+                e.__class__ = self.CalledProcessError
+            raise e
+        if isinstance(result, str):
+            return result.strip()
+        return result
+
+    def get_version(self, x, **kwargs):
+        return self.check_output(x, **kwargs).removeprefix("git-cinnabar ")
+
+    def derive_with(self, cwd=None, **kwargs):
+        env = self.env.copy()
+        for k, v in kwargs.items():
+            if v is None:
+                env.pop(k, None)
+            else:
+                env[k] = v
+        return CommandEnvironment(self.cwd if cwd is None else cwd, env)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(cwd={str(self.cwd)!r})"
+
+
 class Status:
     def __init__(self):
         self.success = True
@@ -351,10 +368,12 @@ class Func:
 
     def __repr__(self):
         func = self.func
-        code = getattr(func, "__code__", None)
-        if code:
-            return f"{func.__name__}@{code.co_filename}:{code.co_firstlineno}"
-        return func.__name__
+        name = func.__name__
+        if code := getattr(func, "__code__", None):
+            name = f"{name}@{code.co_filename}:{code.co_firstlineno}"
+        if isinstance(func, types.MethodType):
+            name = f"{func.__self__}.{name}"
+        return name
 
     def __eq__(self, other):
         return other == self.func
