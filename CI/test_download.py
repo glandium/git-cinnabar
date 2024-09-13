@@ -69,29 +69,22 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
         if extra_env:
             e = e.copy()
             e.update(extra_env)
-        result = checked_call(
-            subprocess.check_output, x, env=e, cwd=cwd, text=True, **kwargs
-        )
-        if isinstance(result, subprocess.CalledProcessError):
-            result.__class__ = CalledProcessError
-        if isinstance(result, Exception):
-            return result
+        try:
+            result = subprocess.check_output(x, env=e, cwd=cwd, text=True, **kwargs)
+        except Exception as e:
+            if isinstance(e, subprocess.CalledProcessError):
+                e.__class__ = CalledProcessError
+            raise e
         return result.strip()
 
     def listdir(p):
-        result = checked_call(os.listdir, p)
-        if isinstance(result, Exception):
-            return result
-        return sorted(result)
+        return sorted(os.listdir(p))
 
     def get_version(x, **kwargs):
-        result = check_output(x, **kwargs)
-        if isinstance(result, Exception):
-            return result
-        return result.removeprefix("git-cinnabar ")
+        return check_output(x, **kwargs).removeprefix("git-cinnabar ")
 
     def first(list):
-        return checked_call(next, iter(list))
+        return next(iter(list))
 
     executor = ThreadPoolExecutor(max_workers=1)
 
@@ -383,7 +376,10 @@ class Result:
     def __init__(self, func, *args, **kwargs):
         self.func = Func(func)
         self.args = Args(*args, **kwargs)
-        self.value = func(*args, **kwargs)
+        try:
+            self.value = func(*args, **kwargs)
+        except Exception as e:
+            self.value = e
 
     def __repr__(self):
         return repr(self.value)
@@ -457,13 +453,6 @@ def assert_startswith(a, b, msg=None):
             return False
 
     return assert_op("{left}.startswith({right})", startswith, a, b, msg)
-
-
-def checked_call(f, *args, **kwargs):
-    try:
-        return f(*args, **kwargs)
-    except Exception as e:
-        return e
 
 
 class ProxyServer(http.server.ThreadingHTTPServer):
