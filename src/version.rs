@@ -5,11 +5,104 @@
 use std::borrow::{Borrow, Cow};
 use std::str::FromStr;
 
+use derive_more::Display;
 use once_cell::sync::Lazy;
-use semver::Version;
 
 use crate::git::CommitId;
 use crate::{experiment, get_typed_config, ConfigType, Experiments};
+
+#[derive(Display, Debug, PartialEq, PartialOrd)]
+pub struct Version(semver::Version);
+
+impl Version {
+    pub fn parse(v: &str) -> Result<Self, semver::Error> {
+        let mut version = semver::Version::parse(v).or_else(|e| {
+            // If the version didn't parse, try again by separating
+            // x.y.z from everything that follows with a dash.
+            v.find(|c: char| !c.is_ascii_digit() && c != '.')
+                .map(|pos| {
+                    let (digits, rest) = v.split_at(pos);
+                    format!("{}-{}", digits, rest)
+                })
+                .as_deref()
+                .and_then(|v| semver::Version::parse(v).ok())
+                .ok_or(e)
+        })?;
+        if !version.pre.is_empty() {
+            if let Some(i) = version.pre.find(|c: char| c.is_ascii_digit()) {
+                if version.pre.chars().nth(i - 1) != Some('.') {
+                    let (a, b) = version.pre.split_at(i);
+                    version.pre = semver::Prerelease::new(&format!("{a}.{b}"))?;
+                }
+            }
+        }
+        Ok(Version(version))
+    }
+
+    #[cfg(any(feature = "self-update", test))]
+    pub fn as_tag(&self) -> String {
+        let mut tag = semver::Version::new(self.0.major, self.0.minor, self.0.patch).to_string();
+        if !self.0.pre.is_empty() {
+            let mut pre = self.0.pre.chars();
+            tag.extend(pre.by_ref().take_while(|&c| c != '.'));
+            tag.extend(pre);
+        }
+        tag
+    }
+}
+
+#[test]
+fn test_version() {
+    use crate::util::{assert_gt, assert_lt};
+    // Because earlier versions of git-cinnabar removed the dash from x.y.z-beta*
+    // versions, we have to continue not putting a dash in tags.
+    // But because (arbitrarily) I don't like the beta.1 form without the
+    // dash, we also remove the dot there.
+    assert_eq!(
+        Version::parse("0.7.0-beta.1").unwrap().as_tag(),
+        "0.7.0beta1".to_owned()
+    );
+    // There most probably won't be versions like this, but just in case,
+    // ensure we deal with them properly.
+    assert_eq!(
+        Version::parse("0.7.0-beta.1.1").unwrap().as_tag(),
+        "0.7.0beta1.1".to_owned()
+    );
+
+    // semver doesn't handle beta.x and betax the same way, and the ordering
+    // of the latter is unfortunate. So internally, we normalize the latter
+    // to the former.
+    assert_lt!(
+        semver::Version::parse("0.7.0-beta11").unwrap(),
+        semver::Version::parse("0.7.0-beta2").unwrap()
+    );
+    assert_ne!(
+        semver::Version::parse("0.7.0-beta2").unwrap(),
+        semver::Version::parse("0.7.0-beta.2").unwrap()
+    );
+    assert!(semver::Version::parse("0.7.0beta2").is_err());
+    assert_gt!(
+        Version::parse("0.7.0-beta11").unwrap(),
+        Version::parse("0.7.0-beta2").unwrap()
+    );
+    assert_eq!(
+        Version::parse("0.7.0-beta2").unwrap(),
+        Version::parse("0.7.0-beta.2").unwrap()
+    );
+    assert_eq!(
+        Version::parse("0.7.0beta2").unwrap(),
+        Version::parse("0.7.0-beta.2").unwrap()
+    );
+
+    assert_eq!(
+        Version::parse("0.7.0-beta.2").unwrap().as_tag(),
+        "0.7.0beta2".to_owned()
+    );
+    assert_eq!(
+        Version::parse("0.7.0beta2").unwrap().to_string(),
+        "0.7.0-beta.2".to_owned()
+    );
+}
 
 macro_rules! join {
     ($s:expr) => {

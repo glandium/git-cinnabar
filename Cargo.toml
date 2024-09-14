@@ -78,7 +78,7 @@ default-features = false
 [dependencies.derive_more]
 version = "0.99"
 default-features = false
-features = ["deref", "from", "try_into"]
+features = ["deref", "display", "from", "try_into"]
 
 [dependencies.flate2]
 version = "1"

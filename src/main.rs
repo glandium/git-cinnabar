@@ -2007,8 +2007,8 @@ fn download_build(
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         }
-        VersionInfo::Tagged(tag, _) => {
-            let tag = tag.to_string().replace('-', "");
+        VersionInfo::Tagged(version, _) => {
+            let tag = version.as_tag();
             let url = format!("{CARGO_PKG_REPOSITORY}/releases/download/{tag}/git-cinnabar.{SYSTEM_MACHINE}.{ARCHIVE_EXT}");
             let mut extracted = false;
             #[cfg(windows)]

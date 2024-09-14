@@ -14,7 +14,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bstr::ByteSlice;
 use itertools::Itertools;
-use semver::Version;
 use shared_child::SharedChild;
 
 use crate::git::CommitId;
@@ -22,7 +21,7 @@ use crate::git::CommitId;
 use crate::util::DurationExt;
 use crate::util::{FromBytes, OsStrExt, ReadExt, SliceExt};
 use crate::version::BuildBranch::*;
-use crate::version::{BUILD_BRANCH, BUILD_COMMIT, SHORT_VERSION};
+use crate::version::{Version, BUILD_BRANCH, BUILD_COMMIT, SHORT_VERSION};
 #[cfg(feature = "version-check")]
 use crate::{check_enabled, get_config, Checks};
 
@@ -261,7 +260,7 @@ fn get_version(child: &SharedChild) -> Result<Option<VersionInfo>, ()> {
         if let Some(version) = r
             .strip_prefix(b"refs/tags/")
             .and_then(|tag| std::str::from_utf8(tag).ok())
-            .and_then(parse_version)
+            .and_then(|tag| Version::parse(tag).ok())
         {
             if version > current_version
                 && newest_version
@@ -282,19 +281,4 @@ fn get_version(child: &SharedChild) -> Result<Option<VersionInfo>, ()> {
         debug!(target: "version-check", "No version is newer than current ({})", current_version);
         Ok(None)
     }
-}
-
-fn parse_version(v: &str) -> Option<Version> {
-    Version::parse(v).ok().or_else(|| {
-        // If the version didn't parse, try again by separating
-        // x.y.z from everything that follows, and try parsing
-        // again with a dash in between.
-        v.find(|c: char| !c.is_ascii_digit() && c != '.')
-            .map(|pos| {
-                let (digits, rest) = v.split_at(pos);
-                format!("{}-{}", digits, rest)
-            })
-            .as_deref()
-            .and_then(|v| Version::parse(v).ok())
-    })
 }
