@@ -693,8 +693,10 @@ class Chunker:
 
     def write(self, data):
         self.out.write(f"{len(data):x}\r\n".encode())
-        self.out.write(data)
+        if data:
+            self.out.write(data)
         self.out.write(b"\r\n")
+        self.out.flush()
 
 
 if __name__ == "__main__":
