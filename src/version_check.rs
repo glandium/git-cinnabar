@@ -257,17 +257,18 @@ fn get_version(child: &SharedChild) -> Result<Option<VersionInfo>, ()> {
         } else {
             continue;
         };
-        if let Some(version) = r
-            .strip_prefix(b"refs/tags/")
-            .and_then(|tag| std::str::from_utf8(tag).ok())
-            .and_then(|tag| Version::parse(tag).ok())
+        if let Some(tag) = std::str::from_utf8(r)
+            .ok()
+            .and_then(|tag| tag.strip_prefix("refs/tags/"))
         {
-            if version > current_version
-                && newest_version
-                    .as_ref()
-                    .map_or(true, |(n_v, _)| &version > n_v)
-            {
-                newest_version = Some((version, cid));
+            if let Ok(version) = Version::parse(tag) {
+                if version > current_version
+                    && newest_version
+                        .as_ref()
+                        .map_or(true, |(n_v, _)| &version > n_v)
+                {
+                    newest_version = Some((version, cid));
+                }
             }
         } else if sha1 != BUILD_COMMIT.as_bytes() {
             debug!(target: "version-check", "Current version ({}) is different", *BUILD_COMMIT);
