@@ -14,6 +14,7 @@ from tasks import (
     parse_version,
 )
 from util import build_commit
+from variables import TC_BRANCH, TC_IS_PUSH
 
 MERCURIAL_VERSION = "6.8"
 # Not using 2.46.0 because of
@@ -527,7 +528,9 @@ class Build(Task, metaclass=Tool):
             task_env=build_env,
             description="build {} {}{}".format(env.os, cpu, prefix(" ", desc_variant)),
             index="build.{}.{}.{}{}".format(hash, env.os, cpu, prefix(".", variant)),
-            expireIn="26 weeks",
+            expireIn="100 years"
+            if TC_IS_PUSH and TC_BRANCH == "release" and not variant
+            else "26 weeks",
             command=Task.checkout(commit=head)
             + rust_install
             + [
