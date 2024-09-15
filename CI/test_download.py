@@ -235,6 +235,12 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             urls[last_known_tag],
             f"Url from --branch release should be the same as --exact {last_known_tag}",
         )
+    for t, sha1 in tags.items():
+        status += assert_eq(
+            urls[t],
+            urls[sha1],
+            f"Url from --exact {t} should be the same as --exact {sha1}",
+        )
 
     full_versions = {t: f"{VERSIONS[t]}-{sha1}" for t, sha1 in tags.items()}
     mappings = {
