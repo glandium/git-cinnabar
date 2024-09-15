@@ -50,7 +50,7 @@ Setup:
 
 - Assuming a prebuilt binary is available for your system, get the
   [download.py script](https://raw.githubusercontent.com/glandium/git-cinnabar/master/download.py)
-  and run it (requires python 3.6 or newer) with:
+  and run it (requires python 3.9 or newer) with:
 
   ```
   $ ./download.py
