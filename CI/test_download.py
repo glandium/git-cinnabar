@@ -71,9 +71,6 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
     def listdir(p):
         return sorted(os.listdir(p))
 
-    def first(list):
-        return next(iter(list))
-
     executor = ThreadPoolExecutor(max_workers=1)
 
     def get_pkg():
@@ -153,10 +150,18 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
         tags[t] = rev
         previous_tag = t
 
+    tag_by_sha1 = {sha1: t for t, sha1 in tags.items()}
+
     def get_url_with(script, args):
-        use_env = env
+        use_env = None
         if args[:1] == ["--exact"]:
-            use_env = envs.get(args[1], env)
+            use_env = envs.get(args[1])
+            if not use_env:
+                tag = tag_by_sha1.get(args[1])
+                if tag:
+                    use_env = envs.get(tag)
+        if not use_env:
+            use_env = env
         return Result(
             use_env.check_output,
             [sys.executable, script, "--url"] + args,
@@ -173,9 +178,9 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
                     (head, ["--exact", head]),
                     (worktree_head, ["--exact", worktree_head]),
                 ),
-                ((sha1, ["--exact", sha1]) for v, sha1 in tags.items()),
                 ((t, ["--exact", t]) for t in tags),
                 ((v, ["--exact", v]) for v in VERSIONS.values() if v not in tags),
+                ((sha1, ["--exact", sha1]) for v, sha1 in tags.items()),
                 ((branch, ["--branch", branch]) for branch in BRANCHES),
             )
         }
@@ -232,16 +237,20 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
         )
 
     full_versions = {t: f"{VERSIONS[t]}-{sha1}" for t, sha1 in tags.items()}
-    for h in (head, "master", "next"):
-        if h in urls:
-            url = urls[h]
-            if url.startswith(REPOSITORY):
-                proxy.map(url, pkg)
-            else:
-                proxy.map(url, git_cinnabar)
+    mappings = {
+        urls[h]: pkg if urls[h].startswith(REPOSITORY) else git_cinnabar
+        for h in (head, None, "master", "next")
+    }
+    for h, url in urls.items():
+        if h in (head, "master", "next"):
             full_versions[h] = head_full_version
-    for tag in future_tags:
-        proxy.map(urls[tag], pkg)
+        if url not in mappings:
+            if h in future_tags:
+                mappings[url] = pkg
+            else:
+                mappings[url] = urllib.request.urlopen(url).read()
+    for url, content in mappings.items():
+        proxy.map(url, content)
 
     for t, v in itertools.chain([(head, head_version)], VERSIONS.items()):
         git_cinnabar_v = cwd / v / git_cinnabar.name
@@ -337,7 +346,7 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
                         else "WARNING Did not find an update to install.",
                     )
                 if update:
-                    status += assert_eq(Result(first, log), urls[update])
+                    status += assert_eq(log, [urls[update]])
                 else:
                     status += assert_eq(log, [])
                 status += assert_eq(
