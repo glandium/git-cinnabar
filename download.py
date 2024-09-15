@@ -263,9 +263,8 @@ def maybe_int(s):
 
 def split_version(s):
     s = s.decode("ascii")
-    version = s.replace("-", "").split(".")
-    version[-1:] = [x for x in re.split(r"([0-9]+)", version[-1]) if x]
-    version = [maybe_int(x) for x in version]
+    version = [x.replace("-", "").replace(".", "") for x in re.split(r"([0-9]+)", s)]
+    version = [maybe_int(x) for x in version if x]
     if isinstance(version[-1], int):
         version += ["z"]
     return version
@@ -315,20 +314,12 @@ def find_tag(exact, locally):
             tags = ()
 
     if "." in exact:
-        # Allow to match e.g. tag 0.7.0beta1 when given the string 0.7.0-beta.1
-        def tag_match(version, tag):
-            version = iter(version)
-            for c in tag:
-                while True:
-                    d = next(version, None)
-                    if c == d or not d or d not in b"-.":
-                        break
-                if c != d:
-                    return False
-            return next(version, None) is None
-
-        ref = f"refs/tags/{exact}".encode()
-        matches = [(sha1, r) for sha1, r in tags if tag_match(ref, r)]
+        version = split_version(exact.encode())
+        matches = [
+            (sha1, r)
+            for sha1, r in tags
+            if split_version(r[len("refs/tags/") :]) == version
+        ]
         if matches:
             return (
                 matches[0][1].decode("ascii").removeprefix("refs/tags/"),
