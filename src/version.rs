@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::borrow::{Borrow, Cow};
+use std::borrow::Cow;
 use std::str::FromStr;
 
 use derive_more::Display;
@@ -158,7 +158,7 @@ mod static_ {
     pub const FULL_VERSION: &str = full_version!(SHORT_VERSION, BUILD_COMMIT, MODIFIED, cat);
 }
 
-fn value<'a, T: 'a + ConfigType + ?Sized, F: FnOnce(&T) -> bool>(
+fn value<'a, T: 'a + ConfigType + ?Sized, F: FnOnce(T::Owned) -> Option<T::Owned>>(
     config: &str,
     static_value: &'a T,
     filter: F,
@@ -166,7 +166,7 @@ fn value<'a, T: 'a + ConfigType + ?Sized, F: FnOnce(&T) -> bool>(
     if let Some(value) = experiment(Experiments::TEST)
         .then(|| get_typed_config::<T>(config))
         .flatten()
-        .filter(|x| filter(x.borrow()))
+        .and_then(filter)
     {
         Cow::Owned(value)
     } else {
@@ -176,7 +176,7 @@ fn value<'a, T: 'a + ConfigType + ?Sized, F: FnOnce(&T) -> bool>(
 
 macro_rules! value {
     ($config:expr, $static_value:expr) => {
-        value!($config, $static_value, |_| true)
+        value!($config, $static_value, |x| Some(x))
     };
     ($config:expr, $static_value:expr, $filter:expr) => {
         Lazy::new(|| value($config, $static_value, $filter))
@@ -190,10 +190,12 @@ fn is_overridden<T: ConfigType + ?Sized>(value: &Value<T>) -> bool {
 }
 
 pub static SHORT_VERSION: Value<str> =
-    value!("version", static_::SHORT_VERSION, |v| Version::parse(v)
-        .is_ok());
-pub static BUILD_COMMIT: Value<str> = value!("commit", static_::BUILD_COMMIT, |c| c.is_empty()
-    || CommitId::from_str(c).is_ok());
+    value!("version", static_::SHORT_VERSION, |v| Version::parse(&v)
+        .ok()
+        .map(|v| v.to_string()));
+pub static BUILD_COMMIT: Value<str> = value!("commit", static_::BUILD_COMMIT, |c| (c.is_empty()
+    || CommitId::from_str(&c).is_ok())
+.then_some(c));
 static MODIFIED: Value<bool> = value!("modified", &static_::MODIFIED);
 #[cfg(any(feature = "version-check", feature = "self-update"))]
 pub static BUILD_BRANCH: Lazy<BuildBranch> = Lazy::new(|| {
