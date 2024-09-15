@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::str::FromStr;
 
 use derive_more::Display;
@@ -11,11 +12,28 @@ use once_cell::sync::Lazy;
 use crate::git::CommitId;
 use crate::{experiment, get_typed_config, ConfigType, Experiments};
 
-#[derive(Display, Debug, PartialEq, PartialOrd)]
-pub struct Version(semver::Version);
+#[derive(Display, Debug)]
+#[display(fmt = "{version}")]
+pub struct Version {
+    version: semver::Version,
+    tag_has_v_prefix: bool,
+}
+
+impl PartialEq for Version {
+    fn eq(&self, other: &Version) -> bool {
+        self.version == other.version
+    }
+}
+
+impl PartialOrd for Version {
+    fn partial_cmp(&self, other: &Version) -> Option<Ordering> {
+        self.version.partial_cmp(&other.version)
+    }
+}
 
 impl Version {
     pub fn parse(v: &str) -> Result<Self, semver::Error> {
+        let (v, tag_has_v_prefix) = v.strip_prefix("v").map_or((v, false), |v| (v, true));
         let mut version = semver::Version::parse(v).or_else(|e| {
             // If the version didn't parse, try again by separating
             // x.y.z from everything that follows with a dash.
@@ -36,18 +54,27 @@ impl Version {
                 }
             }
         }
-        Ok(Version(version))
+        Ok(Version {
+            version,
+            tag_has_v_prefix,
+        })
     }
 
     #[cfg(any(feature = "self-update", test))]
     pub fn as_tag(&self) -> String {
-        let mut tag = semver::Version::new(self.0.major, self.0.minor, self.0.patch).to_string();
-        if !self.0.pre.is_empty() {
-            let mut pre = self.0.pre.chars();
-            tag.extend(pre.by_ref().take_while(|&c| c != '.'));
-            tag.extend(pre);
+        if self.tag_has_v_prefix {
+            format!("v{}", self.version)
+        } else {
+            let v = &self.version;
+            let mut tag = semver::Version::new(v.major, v.minor, v.patch).to_string();
+            if !v.pre.is_empty() {
+                let mut pre = v.pre.chars();
+                tag.extend(pre.by_ref().take_while(|&c| c != '.'));
+                tag.extend(pre);
+            }
+
+            tag
         }
-        tag
     }
 }
 
@@ -100,6 +127,19 @@ fn test_version() {
     );
     assert_eq!(
         Version::parse("0.7.0beta2").unwrap().to_string(),
+        "0.7.0-beta.2".to_owned()
+    );
+
+    assert_eq!(
+        Version::parse("v0.7.0-beta.2").unwrap(),
+        Version::parse("0.7.0beta2").unwrap(),
+    );
+    assert_eq!(
+        Version::parse("v0.7.0-beta.2").unwrap().as_tag(),
+        "v0.7.0-beta.2".to_owned()
+    );
+    assert_eq!(
+        Version::parse("v0.7.0-beta.2").unwrap().to_string(),
         "0.7.0-beta.2".to_owned()
     );
 }

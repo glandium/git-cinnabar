@@ -262,7 +262,7 @@ def maybe_int(s):
 
 
 def split_version(s):
-    s = s.decode("ascii")
+    s = s.decode("ascii").removeprefix("v")
     version = [x.replace("-", "").replace(".", "") for x in re.split(r"([0-9]+)", s)]
     version = [maybe_int(x) for x in version if x]
     if isinstance(version[-1], int):

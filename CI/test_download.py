@@ -39,9 +39,26 @@ VERSIONS = {
     "0.7.0rc1": "0.7.0-rc.1",
     "0.7.0": "0.7.0",
     "0.7.1": "0.7.1",
-    "0.8.0beta1": "0.8.0-beta.1",
+    # Here's a trick to make things happy-ish in the future: older versions don't
+    # handle tags prefixed with "v", but will still do a self-update to the first
+    # one it finds.
+    # Tag: Shortened version
+    "v0.8.0-beta.1": "0.8.0beta1",
+    "v0.8.0-rc.1": "0.8.0rc1",
+    "v0.8.0": "0.8.0",
+    "v0.8.1": "0.8.1",
+    "v0.9.0-beta.1": "0.9.0beta1",
+    "v0.9.0": "0.9.0",
+    "v0.10.0-beta.1": "0.10.0beta1",
+    "v0.10.0": "0.10.0",
 }
 VERSIONS_ORDER = {v: n for n, v in enumerate(VERSIONS)}
+
+
+def version_for_tag(tag):
+    if tag.startswith("v"):
+        return tag[1:]
+    return VERSIONS[tag]
 
 
 def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
@@ -241,8 +258,12 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             urls[sha1],
             f"Url from --exact {t} should be the same as --exact {sha1}",
         )
+        # Now that we've established that, we change the sha1 urls for vX.Y.Z tags
+        # to point to TC. That's what versions prior to 0.7.0-beta.2 would use.
+        if t.startswith("v"):
+            urls[sha1] = get_url_with(download_py, ["--url", "--exact", sha1]).value
 
-    full_versions = {t: f"{VERSIONS[t]}-{sha1}" for t, sha1 in tags.items()}
+    full_versions = {t: f"{version_for_tag(t)}-{sha1}" for t, sha1 in tags.items()}
     mappings = {
         urls[h]: pkg if urls[h].startswith(REPOSITORY) else git_cinnabar
         for h in (head, None, "master", "next")
@@ -253,6 +274,8 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
         if url not in mappings:
             if h in future_tags:
                 mappings[url] = pkg
+            elif tag_by_sha1.get(h) in future_tags:
+                mappings[url] = git_cinnabar
             else:
                 mappings[url] = urllib.request.urlopen(url).read()
     for url, content in mappings.items():
@@ -292,14 +315,17 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             # Starting with version 0.7.0beta1, a warning is shown when there is a
             # new version available. Unfortunately, 0.7.0beta1 has a bug that makes
             # it believe there's always an update even if it's the last version.
+            # It also, like older versions doesn't support tags prefixed with "v",
+            # and in that case, doesn't show the warning.
             if (
                 "." in t
-                and tuple(int(x) for x in t.split(".")[:2]) >= (0, 7)
+                and tuple(int(x) for x in t.replace("v", "").split(".")[:2]) >= (0, 7)
                 and (
                     VERSIONS_ORDER[upgrade_to] > VERSIONS_ORDER[t] or t == "0.7.0beta1"
                 )
+                and (not upgrade_to.startswith("v") or t != "0.7.0beta1")
             ):
-                new_version = VERSIONS[upgrade_to]
+                new_version = version_for_tag(upgrade_to)
                 current_version = ""
                 if t == "0.7.0beta1":
                     new_version = upgrade_to.replace("b", "-b").replace("rc", "-rc")
@@ -338,8 +364,33 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
                     and t == head
                 ):
                     update = None
+                elif branch in (None, "release"):
+                    if (
+                        upgrade_to.startswith("v")
+                        and VERSIONS_ORDER[t] <= VERSIONS_ORDER["0.7.0beta1"]
+                    ):
+                        # The mishandling of version parsing error in these versions
+                        # makes it so that the first tag starting with "v" in alphanumeric
+                        # order wins.
+                        # Which, interestingly, means older versions will self-update to
+                        # 0.8.0-beta.1, but no subsequent versions until 0.8.0.
+                        # And jump to 0.10.0-beta.1 then 0.10.0. Of course, that only
+                        # happens for versions that haven't been updated all that time.
+                        mishandled_versions = [
+                            v
+                            for v in VERSIONS
+                            if v.startswith("v")
+                            and VERSIONS_ORDER[v] <= VERSIONS_ORDER[upgrade_to]
+                        ]
+                        update = tags[
+                            min(mishandled_versions)
+                            if mishandled_versions
+                            else upgrade_to
+                        ]
+                    else:
+                        update = upgrade_to
                 else:
-                    update = upgrade_to if branch in (None, "release") else branch
+                    update = branch
                 with proxy.capture_log() as log:
                     status += assert_eq(
                         Result(
