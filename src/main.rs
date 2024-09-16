@@ -1860,16 +1860,18 @@ cfg_if::cfg_if! {
     }
 }
 
+#[cfg(all(feature = "self-update", windows))]
+const BINARY: &str = "git-cinnabar.exe";
+#[cfg(all(feature = "self-update", not(windows)))]
+const BINARY: &str = "git-cinnabar";
+
 #[cfg(feature = "self-update")]
-fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(), String> {
+fn do_self_update(
+    branch: Option<String>,
+    exact: Option<CommitId>,
+    url: bool,
+) -> Result<(), String> {
     assert!(!(branch.is_some() && exact.is_some()));
-    cfg_if::cfg_if! {
-        if #[cfg(windows)] {
-            const BINARY: &str = "git-cinnabar.exe";
-        } else {
-            const BINARY: &str = "git-cinnabar";
-        }
-    };
     #[cfg(windows)]
     const FINISH_SELF_UPDATE: &str = "GIT_CINNABAR_FINISH_SELF_UPDATE";
     #[cfg(windows)]
@@ -1892,17 +1894,24 @@ fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(),
 
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe_dir = exe.parent().unwrap();
-    if let Some(version) = exact.map(VersionInfo::Commit).or_else(|| {
+    let version = exact.map(VersionInfo::Commit).or_else(|| {
         version_check::check_new_version(
             branch
                 .as_ref()
                 .map_or_else(VersionRequest::default, |b| VersionRequest::from(&**b)),
         )
-    }) {
+    });
+    if url {
+        if let Some(version) = version {
+            println!("{}", GitCinnabarBuild::url(version));
+        }
+        return Ok(());
+    }
+    if let Some(version) = version {
         let mut tmpbuilder = tempfile::Builder::new();
         tmpbuilder.prefix(BINARY);
         let mut tmpfile = tmpbuilder.tempfile_in(exe_dir).map_err(|e| e.to_string())?;
-        download_build(version, &mut tmpfile, BINARY)?;
+        download_build(version, &mut tmpfile)?;
         tmpfile.flush().map_err(|e| e.to_string())?;
         let old_exe = tmpbuilder.tempfile_in(exe_dir).map_err(|e| e.to_string())?;
         let old_exe_path = old_exe.path().to_path_buf();
@@ -1959,35 +1968,65 @@ fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(),
 }
 
 #[cfg(feature = "self-update")]
-fn download_build(
-    version: VersionInfo,
-    tmpfile: &mut impl Write,
-    binary: &str,
-) -> Result<(), String> {
-    use crate::hg_connect_http::HttpRequest;
+enum GitCinnabarBuild {
+    Executable(String),
+    Archive(String),
+}
 
-    cfg_if::cfg_if! {
-        if #[cfg(all(target_arch = "x86_64", target_os = "linux"))] {
-            const SYSTEM_MACHINE: &str = "linux.x86_64";
-        } else if #[cfg(all(target_arch = "aarch64", target_os = "linux"))] {
-            const SYSTEM_MACHINE: &str = "linux.arm64";
-        } else if #[cfg(all(target_arch = "x86_64", target_os = "macos"))] {
-            const SYSTEM_MACHINE: &str = "macos.x86_64";
-        } else if #[cfg(all(target_arch = "aarch64", target_os = "macos"))] {
-            const SYSTEM_MACHINE: &str = "macos.arm64";
-        } else if #[cfg(all(target_arch = "x86_64", target_os = "windows"))] {
-            const SYSTEM_MACHINE: &str = "windows.x86_64";
-        } else {
-            compile_error!("self-update is not supported on this platform");
+#[cfg(feature = "self-update")]
+impl GitCinnabarBuild {
+    fn new(version: VersionInfo) -> Self {
+        use concat_const::concat as cat;
+        cfg_if::cfg_if! {
+            if #[cfg(all(target_arch = "x86_64", target_os = "linux"))] {
+                const SYSTEM_MACHINE: &str = "linux.x86_64";
+            } else if #[cfg(all(target_arch = "aarch64", target_os = "linux"))] {
+                const SYSTEM_MACHINE: &str = "linux.arm64";
+            } else if #[cfg(all(target_arch = "x86_64", target_os = "macos"))] {
+                const SYSTEM_MACHINE: &str = "macos.x86_64";
+            } else if #[cfg(all(target_arch = "aarch64", target_os = "macos"))] {
+                const SYSTEM_MACHINE: &str = "macos.arm64";
+            } else if #[cfg(all(target_arch = "x86_64", target_os = "windows"))] {
+                const SYSTEM_MACHINE: &str = "windows.x86_64";
+            } else {
+                compile_error!("self-update is not supported on this platform");
+            }
+        }
+        cfg_if::cfg_if! {
+            if #[cfg(windows)] {
+                const ARCHIVE_EXT: &str = "zip";
+            } else {
+                const ARCHIVE_EXT: &str = "tar.xz";
+            }
+        }
+
+        match version {
+            VersionInfo::Commit(cid) => {
+                const URL_BASE: &str =
+                "https://community-tc.services.mozilla.com/api/index/v1/task/project.git-cinnabar.build.";
+                const URL_TAIL: &str = cat!(".", SYSTEM_MACHINE, "/artifacts/public/", BINARY);
+                GitCinnabarBuild::Executable(format!("{URL_BASE}{cid}{URL_TAIL}"))
+            }
+            VersionInfo::Tagged(version, _) => {
+                let tag = version.as_tag();
+                const URL_BASE: &str = cat!(CARGO_PKG_REPOSITORY, "/releases/download/");
+                const URL_TAIL: &str = cat!("/git-cinnabar.", SYSTEM_MACHINE, ".", ARCHIVE_EXT);
+                GitCinnabarBuild::Archive(format!("{URL_BASE}{tag}{URL_TAIL}"))
+            }
         }
     }
-    cfg_if::cfg_if! {
-        if #[cfg(windows)] {
-            const ARCHIVE_EXT: &str = "zip";
-        } else {
-            const ARCHIVE_EXT: &str = "tar.xz";
+
+    fn url(version: VersionInfo) -> String {
+        match Self::new(version) {
+            GitCinnabarBuild::Archive(url) => url,
+            GitCinnabarBuild::Executable(url) => url,
         }
     }
+}
+
+#[cfg(feature = "self-update")]
+fn download_build(version: VersionInfo, tmpfile: &mut impl Write) -> Result<(), String> {
+    use crate::hg_connect_http::HttpRequest;
 
     let request = |url: &str| {
         eprintln!("Installing update from {url}");
@@ -1997,19 +2036,14 @@ fn download_build(
         req.execute()
     };
 
-    match version {
-        VersionInfo::Commit(cid) => {
-            const URL_BASE: &str =
-            "https://community-tc.services.mozilla.com/api/index/v1/task/project.git-cinnabar.build";
-            let url = format!("{URL_BASE}.{cid}.{SYSTEM_MACHINE}/artifacts/public/{binary}");
+    match GitCinnabarBuild::new(version) {
+        GitCinnabarBuild::Executable(url) => {
             let mut response = request(&url)?;
             std::io::copy(&mut response, tmpfile)
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         }
-        VersionInfo::Tagged(version, _) => {
-            let tag = version.as_tag();
-            let url = format!("{CARGO_PKG_REPOSITORY}/releases/download/{tag}/git-cinnabar.{SYSTEM_MACHINE}.{ARCHIVE_EXT}");
+        GitCinnabarBuild::Archive(url) => {
             let mut extracted = false;
             #[cfg(windows)]
             {
@@ -2020,7 +2054,7 @@ fn download_build(
                     if file.is_file()
                         && file
                             .enclosed_name()
-                            .map_or(false, |p| p.file_name().unwrap() == binary)
+                            .map_or(false, |p| p.file_name().unwrap() == BINARY)
                     {
                         std::io::copy(file, tmpfile).map_err(|e| e.to_string())?;
                         extracted = true;
@@ -2040,7 +2074,7 @@ fn download_build(
                             .map_err(|e| e.to_string())?
                             .file_name()
                             .unwrap()
-                            == binary
+                            == BINARY
                     {
                         std::io::copy(&mut file, tmpfile).map_err(|e| e.to_string())?;
                         extracted = true;
@@ -2051,9 +2085,12 @@ fn download_build(
             if extracted {
                 Ok(())
             } else {
-                Err(format!(
-                    "Could not find the {binary} executable in the downloaded archive."
-                ))
+                use concat_const::concat as cat;
+                Err(cat!(
+                    "Could not find the ",
+                    BINARY,
+                    " executable in the downloaded archive."
+                ).to_string())
             }
         }
     }
@@ -3842,6 +3879,9 @@ enum CinnabarCommand {
         /// Exact commit to get a version from
         #[arg(long, value_parser, conflicts_with = "branch")]
         exact: Option<CommitId>,
+        /// Show where the self-update would be downloaded from
+        #[arg(long, hide = true)]
+        url: bool,
     },
     /// Setup git-cinnabar
     #[command(name = "setup", hide = true)]
@@ -3944,8 +3984,8 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         }
     };
     #[cfg(feature = "self-update")]
-    if let SelfUpdate { branch, exact } = command {
-        return do_self_update(branch, exact).map(|()| 0);
+    if let SelfUpdate { branch, exact, url } = command {
+        return do_self_update(branch, exact, url).map(|()| 0);
     }
     if let Setup = command {
         return do_setup().map(|()| 0);
