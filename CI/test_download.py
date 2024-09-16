@@ -103,7 +103,7 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
         return pkg_dir / os.listdir(pkg_dir)[0]
 
     pkg = executor.submit(get_pkg)
-    standalone_download_py = shutil.copy2(download_py, cwd)
+    standalone_download_py = Path(shutil.copy2(download_py, cwd))
 
     worktree_head = env.check_output(["git", "-C", worktree, "rev-parse", "HEAD"])
     head_version = env.get_version([git_cinnabar, "-V"])
@@ -179,9 +179,13 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
                     use_env = envs.get(tag)
         if not use_env:
             use_env = env
+        if script.suffix == ".py":
+            cmd = [sys.executable, script]
+        else:
+            cmd = [script, "self-update"]
         return Result(
             use_env.check_output,
-            [sys.executable, script, "--url"] + args,
+            cmd + ["--url"] + args,
             stderr=subprocess.PIPE,
         )
 
@@ -201,7 +205,7 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
                 ((branch, ["--branch", branch]) for branch in BRANCHES),
             )
         }
-        for script in (standalone_download_py, download_py)
+        for script in (standalone_download_py, download_py, git_cinnabar)
     }
     urls = {
         what: result.value
@@ -223,6 +227,12 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
                 results[standalone_download_py][k],
                 results[download_py][k],
                 "Same url should be used whether run standalone or not",
+            )
+        if k and k != head_branch:
+            status += assert_eq(
+                results[download_py][k],
+                results[git_cinnabar][k],
+                "git cinnabar self-update should work the same as download.py",
             )
     status += assert_eq(
         results[standalone_download_py][None],

@@ -162,7 +162,9 @@ impl VersionChecker {
 }
 
 #[cfg(feature = "self-update")]
-use version_check::{VersionInfo, VersionRequest};
+use version::Version;
+#[cfg(feature = "self-update")]
+use version_check::{find_version, VersionInfo, VersionRequest};
 
 pub const CARGO_PKG_REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 
@@ -1868,7 +1870,7 @@ const BINARY: &str = "git-cinnabar";
 #[cfg(feature = "self-update")]
 fn do_self_update(
     branch: Option<String>,
-    exact: Option<CommitId>,
+    exact: Option<VersionInfo>,
     url: bool,
 ) -> Result<(), String> {
     assert!(!(branch.is_some() && exact.is_some()));
@@ -1894,13 +1896,21 @@ fn do_self_update(
 
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe_dir = exe.parent().unwrap();
-    let version = exact.map(VersionInfo::Commit).or_else(|| {
+    let version = if let Some(exact) = exact {
+        let v0_6 = Version::parse("0.6.0-rc.1").unwrap();
+        find_version(exact.clone())
+            .or_else(|| matches!(exact, VersionInfo::Commit(_)).then_some(exact))
+            .filter(|info| match info {
+                VersionInfo::Tagged(v, _) => v >= &v0_6,
+                _ => true,
+            })
+    } else {
         version_check::check_new_version(
             branch
                 .as_ref()
                 .map_or_else(VersionRequest::default, |b| VersionRequest::from(&**b)),
         )
-    });
+    };
     if url {
         if let Some(version) = version {
             println!("{}", GitCinnabarBuild::url(version));
@@ -2090,7 +2100,8 @@ fn download_build(version: VersionInfo, tmpfile: &mut impl Write) -> Result<(), 
                     "Could not find the ",
                     BINARY,
                     " executable in the downloaded archive."
-                ).to_string())
+                )
+                .to_string())
             }
         }
     }
@@ -3877,8 +3888,8 @@ enum CinnabarCommand {
         #[arg(long)]
         branch: Option<String>,
         /// Exact commit to get a version from
-        #[arg(long, value_parser, conflicts_with = "branch")]
-        exact: Option<CommitId>,
+        #[arg(long, value_parser = self_update_exact, conflicts_with = "branch")]
+        exact: Option<VersionInfo>,
         /// Show where the self-update would be downloaded from
         #[arg(long, hide = true)]
         url: bool,
@@ -3886,6 +3897,14 @@ enum CinnabarCommand {
     /// Setup git-cinnabar
     #[command(name = "setup", hide = true)]
     Setup,
+}
+
+#[cfg(feature = "self-update")]
+fn self_update_exact(arg: &str) -> Result<VersionInfo, String> {
+    CommitId::from_str(arg)
+        .map(VersionInfo::Commit)
+        .or_else(|_| Version::parse(arg).map(|v| VersionInfo::Tagged(v, CommitId::NULL)))
+        .map_err(|e| e.to_string())
 }
 
 /// Create, list, delete tags

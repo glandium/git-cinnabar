@@ -12,7 +12,7 @@ use once_cell::sync::Lazy;
 use crate::git::CommitId;
 use crate::{experiment, get_typed_config, ConfigType, Experiments};
 
-#[derive(Display, Debug)]
+#[derive(Clone, Display, Debug)]
 #[display(fmt = "{version}")]
 pub struct Version {
     version: semver::Version,
