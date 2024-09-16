@@ -246,8 +246,8 @@ class Hg(Task, metaclass=Tool):
             else:
                 if python == "python3":
                     platform_tag = "mingw_x86_64"
-                    python_tag = "cp310"
-                    abi_tag = "cp310"
+                    python_tag = "cp311"
+                    abi_tag = "cp311"
                 else:
                     platform_tag = "mingw"
                     python_tag = "cp27"

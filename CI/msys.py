@@ -15,7 +15,7 @@ from tasks import (
 
 CPUS = ("x86_64",)
 MSYS_VERSION = {
-    "x86_64": "20230318",
+    "x86_64": "20240727",
 }
 
 
