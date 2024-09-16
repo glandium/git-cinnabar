@@ -76,6 +76,9 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
             repo,
         ]
     )
+    subprocess.check_call(
+        ["git", "-C", repo, "fetch", worktree, "refs/tags/*:refs/tags/*"]
+    )
     env = CommandEnvironment(cwd).derive_with(
         GIT_CONFIG_COUNT="1",
         GIT_CONFIG_KEY_0=f"url.{repo}.insteadOf",
@@ -306,7 +309,9 @@ def do_test(cwd, worktree, git_cinnabar, download_py, package_py, proxy):
         )
 
     for upgrade_to in itertools.chain([last_known_tag], future_tags):
-        for t, v in itertools.chain([(head, head_version)], VERSIONS.items()):
+        for t, v in itertools.chain(
+            [(head, head_version)] if head_branch != "release" else [], VERSIONS.items()
+        ):
             upgrade_env = envs[upgrade_to]
             if t in future_tags:
                 upgrade_env = upgrade_env.derive_with(
