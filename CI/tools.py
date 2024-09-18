@@ -17,9 +17,7 @@ from util import build_commit
 from variables import TC_BRANCH, TC_IS_PUSH
 
 MERCURIAL_VERSION = "6.8"
-# Not using 2.46.0 because of
-# https://lore.kernel.org/git/20240727191917.p64ul4jybpm2a7hm@glandium.org/
-GIT_VERSION = "2.45.2"
+GIT_VERSION = "2.46.1"
 
 ALL_MERCURIAL_VERSIONS = (
     "1.9.3",
