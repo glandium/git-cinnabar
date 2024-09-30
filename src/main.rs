@@ -57,6 +57,7 @@ mod progress;
 pub mod store;
 pub mod tree_util;
 mod util;
+mod version;
 mod xdiff;
 
 pub(crate) mod hg_bundle;
@@ -94,12 +95,11 @@ use cinnabar::{
     GitChangesetId, GitFileMetadataId, GitManifestId, GitManifestTree, GitManifestTreeId,
 };
 use clap::error::ErrorKind;
-use clap::{crate_version, CommandFactory, FromArgMatches, Parser};
+use clap::{CommandFactory, FromArgMatches, Parser};
 use cstr::cstr;
 use digest::OutputSizeUser;
 use either::Either;
 use git::{BlobId, CommitId, GitObjectId, RawBlob, RawCommit, RawTree, RecursedTreeEntry, TreeIsh};
-use git_version::git_version;
 use graft::{graft_finish, grafted, init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
 use hg_bundle::{create_bundle, create_chunk_data, read_rev_chunk, BundleSpec, RevChunkIter};
@@ -143,6 +143,7 @@ use crate::progress::set_progress;
 use crate::store::{clear_manifest_heads, do_set_replace, set_changeset_heads, Dag};
 use crate::tree_util::{Empty, ParseTree, WithPath};
 use crate::util::{FromBytes, ToBoxed};
+use crate::version::{FULL_VERSION, SHORT_VERSION};
 
 #[cfg(any(feature = "version-check", feature = "self-update"))]
 mod version_check;
@@ -161,20 +162,11 @@ impl VersionChecker {
 }
 
 #[cfg(feature = "self-update")]
-use version_check::{VersionInfo, VersionRequest};
+use version::Version;
+#[cfg(feature = "self-update")]
+use version_check::{find_version, VersionInfo, VersionRequest};
 
 pub const CARGO_PKG_REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
-pub const FULL_VERSION: &str = git_version!(
-    args = [
-        "--always",
-        "--match=nothing/",
-        "--abbrev=40",
-        "--dirty=-modified"
-    ],
-    prefix = concat!(crate_version!(), "-"),
-    cargo_prefix = "",
-    fallback = crate_version!(),
-);
 
 #[allow(improper_ctypes)]
 extern "C" {
@@ -1870,16 +1862,18 @@ cfg_if::cfg_if! {
     }
 }
 
+#[cfg(all(feature = "self-update", windows))]
+const BINARY: &str = "git-cinnabar.exe";
+#[cfg(all(feature = "self-update", not(windows)))]
+const BINARY: &str = "git-cinnabar";
+
 #[cfg(feature = "self-update")]
-fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(), String> {
+fn do_self_update(
+    branch: Option<String>,
+    exact: Option<VersionInfo>,
+    url: bool,
+) -> Result<(), String> {
     assert!(!(branch.is_some() && exact.is_some()));
-    cfg_if::cfg_if! {
-        if #[cfg(windows)] {
-            const BINARY: &str = "git-cinnabar.exe";
-        } else {
-            const BINARY: &str = "git-cinnabar";
-        }
-    };
     #[cfg(windows)]
     const FINISH_SELF_UPDATE: &str = "GIT_CINNABAR_FINISH_SELF_UPDATE";
     #[cfg(windows)]
@@ -1902,17 +1896,32 @@ fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(),
 
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe_dir = exe.parent().unwrap();
-    if let Some(version) = exact.map(VersionInfo::Commit).or_else(|| {
+    let version = if let Some(exact) = exact {
+        let v0_6 = Version::parse("0.6.0-rc.1").unwrap();
+        find_version(exact.clone())
+            .or_else(|| matches!(exact, VersionInfo::Commit(_)).then_some(exact))
+            .filter(|info| match info {
+                VersionInfo::Tagged(v, _) => v >= &v0_6,
+                _ => true,
+            })
+    } else {
         version_check::check_new_version(
             branch
                 .as_ref()
                 .map_or_else(VersionRequest::default, |b| VersionRequest::from(&**b)),
         )
-    }) {
+    };
+    if url {
+        if let Some(version) = version {
+            println!("{}", GitCinnabarBuild::url(version));
+        }
+        return Ok(());
+    }
+    if let Some(version) = version {
         let mut tmpbuilder = tempfile::Builder::new();
         tmpbuilder.prefix(BINARY);
         let mut tmpfile = tmpbuilder.tempfile_in(exe_dir).map_err(|e| e.to_string())?;
-        download_build(version, &mut tmpfile, BINARY)?;
+        download_build(version, &mut tmpfile)?;
         tmpfile.flush().map_err(|e| e.to_string())?;
         let old_exe = tmpbuilder.tempfile_in(exe_dir).map_err(|e| e.to_string())?;
         let old_exe_path = old_exe.path().to_path_buf();
@@ -1969,35 +1978,65 @@ fn do_self_update(branch: Option<String>, exact: Option<CommitId>) -> Result<(),
 }
 
 #[cfg(feature = "self-update")]
-fn download_build(
-    version: VersionInfo,
-    tmpfile: &mut impl Write,
-    binary: &str,
-) -> Result<(), String> {
-    use crate::hg_connect_http::HttpRequest;
+enum GitCinnabarBuild {
+    Executable(String),
+    Archive(String),
+}
 
-    cfg_if::cfg_if! {
-        if #[cfg(all(target_arch = "x86_64", target_os = "linux"))] {
-            const SYSTEM_MACHINE: &str = "linux.x86_64";
-        } else if #[cfg(all(target_arch = "aarch64", target_os = "linux"))] {
-            const SYSTEM_MACHINE: &str = "linux.arm64";
-        } else if #[cfg(all(target_arch = "x86_64", target_os = "macos"))] {
-            const SYSTEM_MACHINE: &str = "macos.x86_64";
-        } else if #[cfg(all(target_arch = "aarch64", target_os = "macos"))] {
-            const SYSTEM_MACHINE: &str = "macos.arm64";
-        } else if #[cfg(all(target_arch = "x86_64", target_os = "windows"))] {
-            const SYSTEM_MACHINE: &str = "windows.x86_64";
-        } else {
-            compile_error!("self-update is not supported on this platform");
+#[cfg(feature = "self-update")]
+impl GitCinnabarBuild {
+    fn new(version: VersionInfo) -> Self {
+        use concat_const::concat as cat;
+        cfg_if::cfg_if! {
+            if #[cfg(all(target_arch = "x86_64", target_os = "linux"))] {
+                const SYSTEM_MACHINE: &str = "linux.x86_64";
+            } else if #[cfg(all(target_arch = "aarch64", target_os = "linux"))] {
+                const SYSTEM_MACHINE: &str = "linux.arm64";
+            } else if #[cfg(all(target_arch = "x86_64", target_os = "macos"))] {
+                const SYSTEM_MACHINE: &str = "macos.x86_64";
+            } else if #[cfg(all(target_arch = "aarch64", target_os = "macos"))] {
+                const SYSTEM_MACHINE: &str = "macos.arm64";
+            } else if #[cfg(all(target_arch = "x86_64", target_os = "windows"))] {
+                const SYSTEM_MACHINE: &str = "windows.x86_64";
+            } else {
+                compile_error!("self-update is not supported on this platform");
+            }
+        }
+        cfg_if::cfg_if! {
+            if #[cfg(windows)] {
+                const ARCHIVE_EXT: &str = "zip";
+            } else {
+                const ARCHIVE_EXT: &str = "tar.xz";
+            }
+        }
+
+        match version {
+            VersionInfo::Commit(cid) => {
+                const URL_BASE: &str =
+                "https://community-tc.services.mozilla.com/api/index/v1/task/project.git-cinnabar.build.";
+                const URL_TAIL: &str = cat!(".", SYSTEM_MACHINE, "/artifacts/public/", BINARY);
+                GitCinnabarBuild::Executable(format!("{URL_BASE}{cid}{URL_TAIL}"))
+            }
+            VersionInfo::Tagged(version, _) => {
+                let tag = version.as_tag();
+                const URL_BASE: &str = cat!(CARGO_PKG_REPOSITORY, "/releases/download/");
+                const URL_TAIL: &str = cat!("/git-cinnabar.", SYSTEM_MACHINE, ".", ARCHIVE_EXT);
+                GitCinnabarBuild::Archive(format!("{URL_BASE}{tag}{URL_TAIL}"))
+            }
         }
     }
-    cfg_if::cfg_if! {
-        if #[cfg(windows)] {
-            const ARCHIVE_EXT: &str = "zip";
-        } else {
-            const ARCHIVE_EXT: &str = "tar.xz";
+
+    fn url(version: VersionInfo) -> String {
+        match Self::new(version) {
+            GitCinnabarBuild::Archive(url) => url,
+            GitCinnabarBuild::Executable(url) => url,
         }
     }
+}
+
+#[cfg(feature = "self-update")]
+fn download_build(version: VersionInfo, tmpfile: &mut impl Write) -> Result<(), String> {
+    use crate::hg_connect_http::HttpRequest;
 
     let request = |url: &str| {
         eprintln!("Installing update from {url}");
@@ -2007,19 +2046,14 @@ fn download_build(
         req.execute()
     };
 
-    match version {
-        VersionInfo::Commit(cid) => {
-            const URL_BASE: &str =
-            "https://community-tc.services.mozilla.com/api/index/v1/task/project.git-cinnabar.build";
-            let url = format!("{URL_BASE}.{cid}.{SYSTEM_MACHINE}/artifacts/public/{binary}");
+    match GitCinnabarBuild::new(version) {
+        GitCinnabarBuild::Executable(url) => {
             let mut response = request(&url)?;
             std::io::copy(&mut response, tmpfile)
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         }
-        VersionInfo::Tagged(tag, _) => {
-            let tag = tag.to_string().replace('-', "");
-            let url = format!("{CARGO_PKG_REPOSITORY}/releases/download/{tag}/git-cinnabar.{SYSTEM_MACHINE}.{ARCHIVE_EXT}");
+        GitCinnabarBuild::Archive(url) => {
             let mut extracted = false;
             #[cfg(windows)]
             {
@@ -2030,7 +2064,7 @@ fn download_build(
                     if file.is_file()
                         && file
                             .enclosed_name()
-                            .map_or(false, |p| p.file_name().unwrap() == binary)
+                            .map_or(false, |p| p.file_name().unwrap() == BINARY)
                     {
                         std::io::copy(file, tmpfile).map_err(|e| e.to_string())?;
                         extracted = true;
@@ -2050,7 +2084,7 @@ fn download_build(
                             .map_err(|e| e.to_string())?
                             .file_name()
                             .unwrap()
-                            == binary
+                            == BINARY
                     {
                         std::io::copy(&mut file, tmpfile).map_err(|e| e.to_string())?;
                         extracted = true;
@@ -2061,9 +2095,13 @@ fn download_build(
             if extracted {
                 Ok(())
             } else {
-                Err(format!(
-                    "Could not find the {binary} executable in the downloaded archive."
-                ))
+                use concat_const::concat as cat;
+                Err(cat!(
+                    "Could not find the ",
+                    BINARY,
+                    " executable in the downloaded archive."
+                )
+                .to_string())
             }
         }
     }
@@ -3708,8 +3746,8 @@ impl FromStr for AbbrevSize {
 #[derive(Parser)]
 #[command(
     name = "git-cinnabar",
-    version=crate_version!(),
-    long_version=FULL_VERSION,
+    version=SHORT_VERSION.as_ref(),
+    long_version=FULL_VERSION.as_ref(),
     arg_required_else_help = true,
     dont_collapse_args_in_usage = true,
     subcommand_required = true,
@@ -3850,12 +3888,23 @@ enum CinnabarCommand {
         #[arg(long)]
         branch: Option<String>,
         /// Exact commit to get a version from
-        #[arg(long, value_parser, conflicts_with = "branch")]
-        exact: Option<CommitId>,
+        #[arg(long, value_parser = self_update_exact, conflicts_with = "branch")]
+        exact: Option<VersionInfo>,
+        /// Show where the self-update would be downloaded from
+        #[arg(long, hide = true)]
+        url: bool,
     },
     /// Setup git-cinnabar
     #[command(name = "setup", hide = true)]
     Setup,
+}
+
+#[cfg(feature = "self-update")]
+fn self_update_exact(arg: &str) -> Result<VersionInfo, String> {
+    CommitId::from_str(arg)
+        .map(VersionInfo::Commit)
+        .or_else(|_| Version::parse(arg).map(|v| VersionInfo::Tagged(v, CommitId::NULL)))
+        .map_err(|e| e.to_string())
 }
 
 /// Create, list, delete tags
@@ -3939,9 +3988,14 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
             e.print().unwrap();
             #[cfg(feature = "version-check")]
             if e.kind() == ErrorKind::DisplayVersion
-                && format!("{}", e.render()) != concat!("git-cinnabar ", crate_version!(), "\n")
+                && e.render()
+                    .to_string()
+                    .strip_suffix('\n')
+                    .and_then(|s| s.strip_prefix("git-cinnabar "))
+                    .unwrap_or("")
+                    != *SHORT_VERSION
             {
-                if let Some(mut checker) = VersionChecker::force_now() {
+                if let Some(mut checker) = VersionChecker::for_dashdash_version() {
                     checker.wait(Duration::from_secs(1));
                 }
             }
@@ -3949,8 +4003,8 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         }
     };
     #[cfg(feature = "self-update")]
-    if let SelfUpdate { branch, exact } = command {
-        return do_self_update(branch, exact).map(|()| 0);
+    if let SelfUpdate { branch, exact, url } = command {
+        return do_self_update(branch, exact, url).map(|()| 0);
     }
     if let Setup = command {
         return do_setup().map(|()| 0);
@@ -4483,6 +4537,39 @@ fn check_graft_refs() {
     }
 }
 
+#[derive(PartialEq, Eq)]
+enum RecordMetadata {
+    Never,
+    Phase,
+    Always,
+    // Like Always, but also applies to dry-run
+    Force,
+}
+
+impl TryFrom<&OsStr> for RecordMetadata {
+    type Error = String;
+
+    fn try_from(value: &OsStr) -> Result<RecordMetadata, String> {
+        value
+            .to_str()
+            .and_then(|s| {
+                Some(match s {
+                    "never" => RecordMetadata::Never,
+                    "phase" => RecordMetadata::Phase,
+                    "always" => RecordMetadata::Always,
+                    "force" => RecordMetadata::Force,
+                    _ => return None,
+                })
+            })
+            .ok_or_else(|| {
+                format!(
+                    "`{}` is not one of `never`, `phase`, `always` or `force`",
+                    value.as_bytes().as_bstr()
+                )
+            })
+    }
+}
+
 fn remote_helper_push(
     store: &mut Store,
     conn: &mut dyn HgRepo,
@@ -4534,6 +4621,11 @@ fn remote_helper_push(
             b"refs/heads/".as_bstr()
         }
     });
+
+    let data = get_config_remote("data", remote)
+        .filter(|d| !d.is_empty())
+        .as_deref()
+        .map_or(Ok(RecordMetadata::Phase), RecordMetadata::try_from)?;
 
     let mut pushed = ChangesetHeads::new();
     let result = (|| {
@@ -4697,7 +4789,7 @@ fn remote_helper_push(
         }
 
         let mut result = None;
-        if !push_commits.is_empty() && !dry_run {
+        if !push_commits.is_empty() && (!dry_run || data == RecordMetadata::Force) {
             conn.require_capability(b"unbundle");
 
             let b2caps = conn
@@ -4723,6 +4815,7 @@ fn remote_helper_push(
                     .unwrap_or(1);
                 (BundleSpec::V2None, version)
             };
+            // TODO: Ideally, for dry-run, we wouldn't even create a temporary file.
             let tempfile = tempfile::Builder::new()
                 .prefix("hg-bundle-")
                 .suffix(".hg")
@@ -4739,40 +4832,43 @@ fn remote_helper_push(
                 version == 2,
             )?;
             drop(file);
-            let file = File::open(path).unwrap();
-            let empty_heads = [HgChangesetId::NULL];
-            let heads = if force {
-                None
-            } else if no_topological_heads {
-                Some(&empty_heads[..])
-            } else {
-                Some(&info.topological_heads[..])
-            };
-            let response = conn.unbundle(heads, file);
-            match response {
-                UnbundleResponse::Bundlev2(data) => {
-                    let mut bundle = BundleReader::new(data).unwrap();
-                    while let Some(part) = bundle.next_part().unwrap() {
-                        match part.part_type.as_bytes() {
-                            b"reply:changegroup" => {
-                                // TODO: should check in-reply-to param.
-                                let response = part.get_param("return").unwrap();
-                                result = u32::from_str(response).ok();
-                            }
-                            b"error:abort" => {
-                                let mut message = part.get_param("message").unwrap().to_string();
-                                if let Some(hint) = part.get_param("hint") {
-                                    message.push_str("\n\n");
-                                    message.push_str(hint);
+            if !dry_run {
+                let file = File::open(path).unwrap();
+                let empty_heads = [HgChangesetId::NULL];
+                let heads = if force {
+                    None
+                } else if no_topological_heads {
+                    Some(&empty_heads[..])
+                } else {
+                    Some(&info.topological_heads[..])
+                };
+                let response = conn.unbundle(heads, file);
+                match response {
+                    UnbundleResponse::Bundlev2(data) => {
+                        let mut bundle = BundleReader::new(data).unwrap();
+                        while let Some(part) = bundle.next_part().unwrap() {
+                            match part.part_type.as_bytes() {
+                                b"reply:changegroup" => {
+                                    // TODO: should check in-reply-to param.
+                                    let response = part.get_param("return").unwrap();
+                                    result = u32::from_str(response).ok();
                                 }
-                                error!(target: "root", "{}", message);
+                                b"error:abort" => {
+                                    let mut message =
+                                        part.get_param("message").unwrap().to_string();
+                                    if let Some(hint) = part.get_param("hint") {
+                                        message.push_str("\n\n");
+                                        message.push_str(hint);
+                                    }
+                                    error!(target: "root", "{}", message);
+                                }
+                                _ => {}
                             }
-                            _ => {}
                         }
                     }
-                }
-                UnbundleResponse::Raw(response) => {
-                    result = u32::from_bytes(&response).ok();
+                    UnbundleResponse::Raw(response) => {
+                        result = u32::from_bytes(&response).ok();
+                    }
                 }
             }
         }
@@ -4821,7 +4917,7 @@ fn remote_helper_push(
                     .map(|n| n > 0)
                     .unwrap_or_default())
             } else if source_cid.is_some() {
-                Ok(!pushed.is_empty())
+                Ok(!pushed.is_empty() || dry_run)
             } else {
                 Err("Deleting remote branches is unsupported")
             };
@@ -4856,76 +4952,60 @@ fn remote_helper_push(
         stdout.flush().unwrap();
     }
 
-    let data = get_config_remote("data", remote);
-    let data = data
-        .as_deref()
-        .and_then(|d| (!d.is_empty()).then_some(d))
-        .unwrap_or_else(|| OsStr::new("phase"));
-    let valid = [
-        OsStr::new("never"),
-        OsStr::new("phase"),
-        OsStr::new("always"),
-    ];
-    if !valid.contains(&data) {
-        die!(
-            "`{}` is not one of `never`, `phase` or `always`",
-            data.as_bytes().as_bstr()
-        );
-    }
-    let rollback = if status.is_empty() || pushed.is_empty() || dry_run {
-        true
-    } else {
-        match data.to_str().unwrap() {
-            "always" => false,
-            "never" => true,
-            "phase" => {
-                let phases = conn.phases();
-                let phases = ByteSlice::lines(&*phases)
-                    .filter_map(|l| {
-                        l.splitn_exact(b'\t')
-                            .map(|[k, v]| (k.as_bstr(), v.as_bstr()))
-                    })
-                    .collect::<HashMap<_, _>>();
-                let drafts = (!phases.contains_key(b"publishing".as_bstr()))
-                    .then(|| {
-                        phases
-                            .into_iter()
-                            .filter_map(|(phase, is_draft)| {
-                                u32::from_bytes(is_draft).ok().and_then(|is_draft| {
-                                    (is_draft > 0).then(|| HgChangesetId::from_bytes(phase))
+    let rollback =
+        if status.is_empty() || pushed.is_empty() || (dry_run && data != RecordMetadata::Force) {
+            true
+        } else {
+            match data {
+                RecordMetadata::Force | RecordMetadata::Always => false,
+                RecordMetadata::Never => true,
+                RecordMetadata::Phase => {
+                    let phases = conn.phases();
+                    let phases = ByteSlice::lines(&*phases)
+                        .filter_map(|l| {
+                            l.splitn_exact(b'\t')
+                                .map(|[k, v]| (k.as_bstr(), v.as_bstr()))
+                        })
+                        .collect::<HashMap<_, _>>();
+                    let drafts = (!phases.contains_key(b"publishing".as_bstr()))
+                        .then(|| {
+                            phases
+                                .into_iter()
+                                .filter_map(|(phase, is_draft)| {
+                                    u32::from_bytes(is_draft).ok().and_then(|is_draft| {
+                                        (is_draft > 0).then(|| HgChangesetId::from_bytes(phase))
+                                    })
                                 })
-                            })
-                            .collect::<Result<Vec<_>, _>>()
-                    })
-                    .transpose()
-                    .unwrap()
-                    .unwrap_or_default();
-                if drafts.is_empty() {
-                    false
-                } else {
-                    // Theoretically, we could have commits with no
-                    // metadata that the remote declares are public, while
-                    // the rest of our push is in a draft state. That is
-                    // however so unlikely that it's not worth the effort
-                    // to support partial metadata storage.
-                    !reachable_subset(
-                        pushed
-                            .heads()
-                            .copied()
-                            .filter_map(|h| h.to_git(store))
-                            .map(Into::into),
-                        drafts
-                            .iter()
-                            .copied()
-                            .filter_map(|h| h.to_git(store))
-                            .map(Into::into),
-                    )
-                    .is_empty()
+                                .collect::<Result<Vec<_>, _>>()
+                        })
+                        .transpose()
+                        .unwrap()
+                        .unwrap_or_default();
+                    if drafts.is_empty() {
+                        false
+                    } else {
+                        // Theoretically, we could have commits with no
+                        // metadata that the remote declares are public, while
+                        // the rest of our push is in a draft state. That is
+                        // however so unlikely that it's not worth the effort
+                        // to support partial metadata storage.
+                        !reachable_subset(
+                            pushed
+                                .heads()
+                                .copied()
+                                .filter_map(|h| h.to_git(store))
+                                .map(Into::into),
+                            drafts
+                                .iter()
+                                .copied()
+                                .filter_map(|h| h.to_git(store))
+                                .map(Into::into),
+                        )
+                        .is_empty()
+                    }
                 }
             }
-            _ => unreachable!(),
-        }
-    };
+        };
     if rollback {
         unsafe {
             do_cleanup(1);
@@ -5170,6 +5250,30 @@ pub fn get_config(name: &str) -> Option<OsString> {
     get_config_remote(name, None)
 }
 
+pub trait ConfigType: ToOwned {
+    fn from_os_string(value: OsString) -> Option<Self::Owned>;
+}
+
+impl ConfigType for str {
+    fn from_os_string(value: OsString) -> Option<Self::Owned> {
+        value.into_string().ok()
+    }
+}
+
+impl ConfigType for bool {
+    fn from_os_string(value: OsString) -> Option<Self::Owned> {
+        match value.as_bytes() {
+            b"1" | b"true" => Some(true),
+            b"" | b"0" | b"false" => Some(false),
+            _ => None,
+        }
+    }
+}
+
+pub fn get_typed_config<T: ConfigType + ?Sized>(name: &str) -> Option<T::Owned> {
+    get_config(name).and_then(T::from_os_string)
+}
+
 pub fn get_config_remote(name: &str, remote: Option<&str>) -> Option<OsString> {
     const PREFIX: &str = "GIT_CINNABAR_";
     let mut env_key = String::with_capacity(name.len() + PREFIX.len());
@@ -5286,6 +5390,7 @@ bitflags! {
         const GIT_COMMIT = 0x2;
         const TAG = 0x4;
         const BRANCH = 0x8;
+        const TEST = 0x100;
     }
 }
 pub struct AllExperiments {
@@ -5313,6 +5418,9 @@ static EXPERIMENTS: Lazy<AllExperiments> = Lazy::new(|| {
                 }
                 b"branch" => {
                     flags |= Experiments::BRANCH;
+                }
+                b"test" => {
+                    flags |= Experiments::TEST;
                 }
                 s if s.starts_with(b"similarity") => {
                     if let Some(value) = s[b"similarity".len()..].strip_prefix(b"=") {

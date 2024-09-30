@@ -50,7 +50,7 @@ Setup:
 
 - Assuming a prebuilt binary is available for your system, get the
   [download.py script](https://raw.githubusercontent.com/glandium/git-cinnabar/master/download.py)
-  and run it (requires python 3.6 or newer) with:
+  and run it (requires python 3.9 or newer) with:
 
   ```
   $ ./download.py
@@ -196,9 +196,11 @@ preference with one of the following values:
 - `always`
 - `never`
 - `phase`
+- `force`
 
 `phase` is the default described above. `always` and `never` are
-self-explanatory.
+self-explanatory. `force` has the same meaning as `always`, but also
+forces `git push --dry-run` to store metadata.
 
 Cinnabar clone:
 ---------------

@@ -23,5 +23,10 @@ exceptions = [
 [bans]
 multiple-versions = "deny"
 skip = [
-  { crate = "syn", reason = "ongoing transition from syn 1 to syn 2" }
+  { crate = "syn", reason = "ongoing transition from syn 1 to syn 2" },
+  { crate = "windows-sys", reason = "ongoing transition from windows-sys 0.52 to windows-sys 0.59. The alternative at the moment would be to stay with winapi, which is actually a bigger dependency." },
+]
+deny = [
+  # Now that we're off winapi, let's stay that way.
+  "winapi",
 ]

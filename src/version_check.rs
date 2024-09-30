@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::ops::Deref;
 use std::process::{Command, Stdio};
-#[cfg(feature = "version-check")]
 use std::str::FromStr;
 #[cfg(feature = "version-check")]
 use std::sync::Arc;
@@ -13,25 +13,19 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bstr::ByteSlice;
-use clap::crate_version;
 use itertools::Itertools;
-use semver::Version;
 use shared_child::SharedChild;
 
 use crate::git::CommitId;
 #[cfg(feature = "version-check")]
 use crate::util::DurationExt;
 use crate::util::{FromBytes, OsStrExt, ReadExt, SliceExt};
-use crate::FULL_VERSION;
+use crate::version::BuildBranch::*;
+use crate::version::{Version, BUILD_BRANCH, BUILD_COMMIT, SHORT_VERSION};
 #[cfg(feature = "version-check")]
 use crate::{check_enabled, get_config, Checks};
 
 const ALL_TAG_REFS: &str = "refs/tags/*";
-const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
-#[cfg(version_check_branch)]
-const VERSION_CHECK_REF: &str = env!("VERSION_CHECK_BRANCH");
-#[cfg(not(version_check_branch))]
-const VERSION_CHECK_REF: &str = ALL_TAG_REFS;
 #[cfg(feature = "version-check")]
 const VERSION_CHECK_CONFIG: &str = "cinnabar.version-check";
 
@@ -51,15 +45,73 @@ impl<'a> From<&'a str> for VersionRequest<'a> {
 
 impl<'a> Default for VersionRequest<'a> {
     fn default() -> Self {
-        if VERSION_CHECK_REF == ALL_TAG_REFS {
+        if *BUILD_BRANCH == Release {
             VersionRequest::Tagged
         } else {
-            VersionRequest::Branch(VERSION_CHECK_REF)
+            VersionRequest::Branch(BUILD_BRANCH.as_str())
         }
     }
 }
 
+struct VersionRequestChild<'a> {
+    child: SharedChild,
+    request: VersionRequest<'a>,
+}
+
+impl<'a> VersionRequestChild<'a> {
+    fn new(request: VersionRequest<'a>) -> Option<VersionRequestChild<'a>> {
+        let mut cmd = Command::new("git");
+        cmd.args(["ls-remote", crate::CARGO_PKG_REPOSITORY]);
+        match request {
+            VersionRequest::Tagged => cmd.arg(ALL_TAG_REFS),
+            VersionRequest::Branch(branch) => cmd.arg(format!("refs/heads/{branch}")),
+        };
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::null());
+
+        debug!(target: "version-check", "Running git {}", cmd.get_args().map(|arg| arg.as_bytes().as_bstr()).join(" "));
+
+        SharedChild::spawn(&mut cmd)
+            .ok()
+            .map(|child| VersionRequestChild { child, request })
+    }
+
+    fn fold<B, F: FnMut(B, VersionInfo) -> B>(&self, init: B, f: F) -> Result<B, ()> {
+        let output = self.child.take_stdout().unwrap().read_all().map_err(|_| ());
+        self.child.wait().map_err(|_| ())?;
+        let output = output?;
+        if output.is_empty() {
+            return Err(());
+        }
+        Ok(output
+            .lines()
+            .filter_map(|line| {
+                let [sha1, r] = line.splitn_exact(u8::is_ascii_whitespace)?;
+                let cid = CommitId::from_bytes(sha1).ok()?;
+                debug!(target: "version-check", "Found {}@{}", r.as_bstr(), cid);
+                if matches!(self.request, VersionRequest::Tagged) {
+                    std::str::from_utf8(r)
+                        .ok()
+                        .and_then(|tag| tag.strip_prefix("refs/tags/"))
+                        .and_then(|tag| Version::parse(tag).ok())
+                        .map(|v| VersionInfo::Tagged(v, cid))
+                } else {
+                    Some(VersionInfo::Commit(cid))
+                }
+            })
+            .fold(init, f))
+    }
+}
+
+impl<'a> Deref for VersionRequestChild<'a> {
+    type Target = SharedChild;
+    fn deref(&self) -> &SharedChild {
+        &self.child
+    }
+}
+
 #[allow(unused)]
+#[derive(Clone)]
 pub enum VersionInfo {
     Tagged(Version, CommitId),
     Commit(CommitId),
@@ -67,14 +119,15 @@ pub enum VersionInfo {
 
 #[cfg(feature = "version-check")]
 pub struct VersionChecker {
-    child: Option<Arc<SharedChild>>,
+    child: Option<Arc<VersionRequestChild<'static>>>,
     thread: Option<thread::JoinHandle<Result<Option<VersionInfo>, ()>>>,
     when: Option<SystemTime>,
+    show_current: bool,
 }
 
 #[cfg(feature = "version-check")]
 impl VersionChecker {
-    fn new_inner(force_now: bool) -> Option<Self> {
+    fn new_inner(force_now: bool, show_current: bool) -> Option<Self> {
         if !check_enabled(Checks::VERSION) {
             debug!(target: "version-check", "Version check is disabled");
             return None;
@@ -102,7 +155,7 @@ impl VersionChecker {
             return None;
         }
 
-        let child = create_child(VersionRequest::default()).map(Arc::new);
+        let child = VersionRequestChild::new(VersionRequest::default()).map(Arc::new);
         let thread = child.clone().and_then(|child| {
             thread::Builder::new()
                 .name("version-check".into())
@@ -113,15 +166,16 @@ impl VersionChecker {
             child,
             thread,
             when: Some(now),
+            show_current,
         })
     }
 
     pub fn new() -> Option<Self> {
-        Self::new_inner(false)
+        Self::new_inner(false, true)
     }
 
-    pub fn force_now() -> Option<Self> {
-        Self::new_inner(true)
+    pub fn for_dashdash_version() -> Option<Self> {
+        Self::new_inner(true, false)
     }
 
     pub fn wait(&mut self, timeout: Duration) {
@@ -159,12 +213,20 @@ impl VersionChecker {
 impl Drop for VersionChecker {
     fn drop(&mut self) {
         match self.take_result() {
-            Some(VersionInfo::Tagged(version, _)) if VERSION_CHECK_REF == ALL_TAG_REFS => {
-                warn!(
-                    target: "root",
-                    "New git-cinnabar version available: {} (current version: {})",
-                    version, CARGO_PKG_VERSION
-                );
+            Some(VersionInfo::Tagged(version, _)) if *BUILD_BRANCH == Release => {
+                if self.show_current {
+                    warn!(
+                        target: "root",
+                        "New git-cinnabar version available: {} (current version: {})",
+                        version, *SHORT_VERSION
+                    );
+                } else {
+                    warn!(
+                        target: "root",
+                        "New git-cinnabar version available: {}",
+                        version,
+                    );
+                }
                 if cfg!(feature = "self-update") {
                     warn!(
                         target: "root",
@@ -172,11 +234,11 @@ impl Drop for VersionChecker {
                     );
                 }
             }
-            Some(VersionInfo::Commit(_)) if VERSION_CHECK_REF != ALL_TAG_REFS => {
+            Some(VersionInfo::Commit(_)) if *BUILD_BRANCH != Release => {
                 warn!(
                     target: "root",
                     "The {} branch of git-cinnabar was updated. {}",
-                    VERSION_CHECK_REF,
+                    BUILD_BRANCH.as_str(),
                     if cfg!(feature = "self-update") {
                         "You may run `git cinnabar self-update` to update."
                     } else {
@@ -214,87 +276,52 @@ impl Drop for VersionChecker {
 
 #[cfg(feature = "self-update")]
 pub fn check_new_version(req: VersionRequest) -> Option<VersionInfo> {
-    create_child(req)
+    VersionRequestChild::new(req)
         .as_ref()
         .and_then(|child| get_version(child).ok().flatten())
 }
 
-fn create_child(req: VersionRequest) -> Option<SharedChild> {
-    let mut cmd = Command::new("git");
-    cmd.args(["ls-remote", crate::CARGO_PKG_REPOSITORY]);
-    match req {
-        VersionRequest::Tagged => cmd.arg(ALL_TAG_REFS),
-        VersionRequest::Branch(branch) => cmd.arg(&format!("refs/heads/{branch}")),
-    };
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::null());
-
-    debug!(target: "version-check", "Running git {}", cmd.get_args().map(|arg| arg.as_bytes().as_bstr()).join(" "));
-
-    SharedChild::spawn(&mut cmd).ok()
+#[cfg(feature = "self-update")]
+pub fn find_version(what: VersionInfo) -> Option<VersionInfo> {
+    VersionRequestChild::new(VersionRequest::Tagged)
+        .as_ref()
+        .and_then(|child| {
+            child
+                .fold(None, |result, info| match &info {
+                    VersionInfo::Tagged(v, c) => match &what {
+                        VersionInfo::Tagged(version, _) if v == version => Some(info),
+                        VersionInfo::Commit(cid) if c == cid => Some(info),
+                        _ => result,
+                    },
+                    _ => unreachable!(),
+                })
+                .ok()
+        })
+        .flatten()
 }
 
-fn get_version(child: &SharedChild) -> Result<Option<VersionInfo>, ()> {
-    let build_commit = FULL_VERSION
-        .strip_suffix("-modified")
-        .unwrap_or(FULL_VERSION)
-        .strip_prefix(concat!(crate_version!(), "-"))
-        .unwrap_or("");
-    let output = child.take_stdout().unwrap().read_all().map_err(|_| ());
-    child.wait().map_err(|_| ())?;
-    let output = output?;
-    if output.is_empty() {
-        return Err(());
-    }
-    let current_version = Version::parse(CARGO_PKG_VERSION).unwrap();
-    let mut newest_version = None;
-    for [sha1, r] in output
-        .lines()
-        .filter_map(|line| line.splitn_exact(u8::is_ascii_whitespace))
-    {
-        debug!(target: "version-check", "Found {}@{}", r.as_bstr(), sha1.as_bstr());
-        let cid = if let Ok(cid) = CommitId::from_bytes(sha1) {
-            cid
-        } else {
-            continue;
-        };
-        if let Some(version) = r
-            .strip_prefix(b"refs/tags/")
-            .and_then(|tag| std::str::from_utf8(tag).ok())
-            .and_then(parse_version)
-        {
-            if version > current_version
-                && newest_version
-                    .as_ref()
-                    .map_or(true, |(n_v, _)| &version > n_v)
-            {
-                newest_version = Some((version, cid));
-            }
-        } else if sha1 != build_commit.as_bytes() {
-            debug!(target: "version-check", "Current version ({}) is different", build_commit);
-            return Ok(Some(VersionInfo::Commit(cid)));
+fn get_version(child: &VersionRequestChild) -> Result<Option<VersionInfo>, ()> {
+    let current_version = Version::parse(&SHORT_VERSION).unwrap();
+    let build_commit = CommitId::from_str(&BUILD_COMMIT).ok();
+    let result = child.fold(None, |result, info| match &info {
+        VersionInfo::Commit(cid) => build_commit.is_some_and(|c| &c != cid).then_some(info),
+        VersionInfo::Tagged(version, _) if version <= &current_version => result,
+        VersionInfo::Tagged(version, _) => match result {
+            Some(VersionInfo::Tagged(ref result_ver, _)) if result_ver < version => Some(info),
+            None => Some(info),
+            _ => result,
+        },
+    })?;
+    match &result {
+        Some(VersionInfo::Tagged(v, _)) => {
+            debug!(target: "version-check", "Newest version found: {}", v);
+        }
+        Some(VersionInfo::Commit(_)) => {
+            debug!(target: "version-check", "Current version ({}) is different", *BUILD_COMMIT);
+        }
+        None => {
+            debug!(target: "version-check", "No version is newer than current ({})", current_version);
         }
     }
-    if let Some((v, cid)) = newest_version {
-        debug!(target: "version-check", "Newest version found: {}", v);
-        Ok(Some(VersionInfo::Tagged(v, cid)))
-    } else {
-        debug!(target: "version-check", "No version is newer than current ({})", current_version);
-        Ok(None)
-    }
-}
-
-fn parse_version(v: &str) -> Option<Version> {
-    Version::parse(v).ok().or_else(|| {
-        // If the version didn't parse, try again by separating
-        // x.y.z from everything that follows, and try parsing
-        // again with a dash in between.
-        v.find(|c: char| !c.is_ascii_digit() && c != '.')
-            .map(|pos| {
-                let (digits, rest) = v.split_at(pos);
-                format!("{}-{}", digits, rest)
-            })
-            .as_deref()
-            .and_then(|v| Version::parse(v).ok())
-    })
+    Ok(result)
 }
