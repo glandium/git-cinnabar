@@ -35,13 +35,11 @@ bitflags = "2"
 bzip2 = "0.4"
 byteorder = "1"
 cfg-if = "1"
-concat_const = "0.1"
 cstr = "0.2.10"
 derivative = "2"
 digest = "0.10"
 either = "1"
 getset = "0.1"
-git-version = "0.3"
 hex = "0.4"
 hex-literal = "0.4"
 indexmap = "2"
@@ -66,6 +64,10 @@ features = ["std"]
 version = "4.2"
 features = ["cargo", "derive"]
 
+[dependencies.concat_const]
+version = "0.1"
+optional = true
+
 [target.'cfg(windows)'.dependencies.curl-sys]
 version = "0.4"
 default-features = false
@@ -84,6 +86,10 @@ features = ["deref", "display", "from", "try_into"]
 version = "1"
 default-features = false
 features = ["zlib"]
+
+[dependencies.git-version]
+version = "0.3"
+optional = true
 
 [target.'cfg(windows)'.dependencies.libz-sys]
 version = "1"
@@ -153,13 +159,14 @@ panic = "abort"
 panic = "abort"
 
 [features]
-default = ["version-check"]
+default = ["full-version", "version-check"]
+full-version = ["dep:concat_const", "dep:git-version"]
 # libcurl.so compatibility (Linux only).
 curl-compat = ["rustflags"]
 # Check and report when a new version is available.
 version-check = ["shared_child"]
 # Download and apply new versions.
-self-update = ["shared_child", "dep:tar", "dep:xz2", "dep:zip", "windows-sys/Win32_System_Threading"]
+self-update = ["shared_child", "dep:concat_const", "dep:tar", "dep:xz2", "dep:zip", "windows-sys/Win32_System_Threading"]
 
 # Development features
 
