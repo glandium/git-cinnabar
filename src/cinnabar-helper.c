@@ -112,7 +112,7 @@ struct diff_tree_ctx {
 };
 
 static void diff_tree_cb(struct diff_queue_struct *q,
-                         struct diff_options *opt, void *data)
+                         struct diff_options *opt UNUSED, void *data)
 {
 	struct diff_tree_ctx *ctx = data;
 	int i;
@@ -413,7 +413,7 @@ int init_cinnabar(const char *argv0)
 	return !nongit;
 }
 
-int common_exit(const char *file, int line, int code)
+int common_exit(const char *file UNUSED, int line UNUSED, int code)
 {
 	return code;
 }

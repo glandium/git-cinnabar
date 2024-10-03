@@ -151,7 +151,7 @@ const struct object_id *cinnabar_get_note(struct cinnabar_notes_tree *t,
 }
 
 static int merge_note(const struct object_id *object_oid,
-                      const struct object_id *note_oid, char *note_path,
+                      const struct object_id *note_oid, char *note_path UNUSED,
                       void *data)
 {
 	struct notes_tree *notes = (struct notes_tree *)data;
