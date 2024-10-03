@@ -1164,13 +1164,17 @@ impl Drop for RefTransaction {
 }
 
 extern "C" {
-    fn git_config_get_value(key: *const c_char, value: *mut *const c_char) -> c_int;
+    fn repo_config_get_value(
+        r: *mut repository,
+        key: *const c_char,
+        value: *mut *const c_char,
+    ) -> c_int;
 }
 
 pub fn config_get_value(key: &str) -> Option<OsString> {
     let mut value = std::ptr::null();
     let key = CString::new(key).unwrap();
-    (unsafe { git_config_get_value(key.as_ptr(), &mut value) } == 0)
+    (unsafe { repo_config_get_value(the_repository, key.as_ptr(), &mut value) } == 0)
         .then(|| unsafe { CStr::from_ptr(value) }.to_osstr().to_os_string())
 }
 
