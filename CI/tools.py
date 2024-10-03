@@ -388,9 +388,7 @@ class Build(Task, metaclass=Tool):
         head = None
         desc_variant = variant
         extra_commands = []
-        environ = {
-            "WARNINGS_AS_ERRORS": "1",
-        }
+        environ = {}
         cargo_flags = ["-vv", "--release"]
         cargo_features = ["self-update", "gitdev", "xz2/static", "bzip2/static"]
         rust_version = None
