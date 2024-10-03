@@ -1165,7 +1165,6 @@ impl Drop for RefTransaction {
 
 extern "C" {
     fn git_config_get_value(key: *const c_char, value: *mut *const c_char) -> c_int;
-    fn git_config_set(key: *const c_char, value: *const c_char);
 }
 
 pub fn config_get_value(key: &str) -> Option<OsString> {
@@ -1173,14 +1172,6 @@ pub fn config_get_value(key: &str) -> Option<OsString> {
     let key = CString::new(key).unwrap();
     (unsafe { git_config_get_value(key.as_ptr(), &mut value) } == 0)
         .then(|| unsafe { CStr::from_ptr(value) }.to_osstr().to_os_string())
-}
-
-pub fn config_set_value<S: ToString>(key: &str, value: S) {
-    let key = CString::new(key).unwrap();
-    let value = CString::new(value.to_string()).unwrap();
-    unsafe {
-        git_config_set(key.as_ptr(), value.as_ptr());
-    }
 }
 
 extern "C" {
