@@ -128,6 +128,7 @@ fn main() {
     cmd.arg("libcinnabar.a")
         .arg("V=1")
         .arg("HAVE_WPGMPTR=")
+        .arg("LAZYLOAD_LIBCURL=")
         .arg("USE_LIBPCRE1=")
         .arg("USE_LIBPCRE2=")
         .arg("NO_REGEX=1")
