@@ -933,7 +933,13 @@ extern "C" {
     pub fn refs_for_each_ref_in(
         refs: *const ref_store,
         prefix: *const c_char,
-        cb: unsafe extern "C" fn(*const c_char, *const object_id, c_int, *mut c_void) -> c_int,
+        cb: unsafe extern "C" fn(
+            *const c_char,
+            *const c_char,
+            *const object_id,
+            c_int,
+            *mut c_void,
+        ) -> c_int,
         cb_data: *mut c_void,
     ) -> c_int;
 }
@@ -950,6 +956,7 @@ pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, CommitId) -> Result<
 
     unsafe extern "C" fn each_ref_cb<E, F: FnMut(&OsStr, CommitId) -> Result<(), E>>(
         refname: *const c_char,
+        _referent: *const c_char,
         oid: *const object_id,
         _flags: c_int,
         cb_data: *mut c_void,

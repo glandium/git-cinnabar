@@ -26,3 +26,4 @@ void curl_multi_strerror() {}
 void curl_multi_timeout() {}
 void curl_slist_append() {}
 void curl_slist_free_all() {}
+void curl_version_info() {}
