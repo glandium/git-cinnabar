@@ -306,6 +306,15 @@ class Hg(Task, metaclass=Tool):
                 " mercurial-{}/mercurial/exewrapper.c".format(version)
             )
 
+        if len(version) == 40 or parse_version(version) >= parse_version("6.9"):
+            # Newer versions of Mercurial removed the name in the setup() call
+            # to move it into pyproject.toml, but we remove that file.
+            # Without the name, `pip wheel` creates a package for `UNKNOWN`.
+            pre_command.append(
+                "sed -i 's/version=setupversion/name=\"mercurial\", \\0/'"
+                " mercurial-{}/setup.py".format(version)
+            )
+
         h = hashlib.sha1(env.hexdigest.encode())
         h.update(artifact.encode())
         if os.endswith("osx"):
