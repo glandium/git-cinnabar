@@ -1864,6 +1864,7 @@ pub fn create_changeset(
     manifest_id: HgManifestId,
     files: Option<Box<[u8]>>,
     branch: Option<&BStr>,
+    topic: Option<&BStr>,
 ) -> (HgChangesetId, GitChangesetMetadataId) {
     let mut cs_metadata = GitChangesetMetadata {
         changeset_id: HgChangesetId::NULL,
@@ -1889,6 +1890,10 @@ pub fn create_changeset(
     if let Some(branch) = &branch {
         let extra = extra.get_or_insert_with(ChangesetExtra::new);
         extra.set(b"branch", branch);
+    }
+    if let Some(topic) = &topic {
+        let extra = extra.get_or_insert_with(ChangesetExtra::new);
+        extra.set(b"topic", topic);
     }
     let git_commit_extra = experiment(Experiments::GIT_COMMIT).then(|| commit_id.to_string());
     if let Some(git_commit_extra) = &git_commit_extra {
