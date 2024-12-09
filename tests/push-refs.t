@@ -375,7 +375,7 @@ Removing heads or branches is not supported.
 
 Pushing/deleting tags is not supported.
 
-  $ git -C repo-git -c user.email=foo@bar tag -m 'Tagged' the-tag
+  $ git -C repo-git -c user.name=foo -c user.email=foo@bar tag -m 'Tagged' the-tag
   $ git -C repo-git push origin --tags
   To hg::.*/push-refs.t/repo-from-git (re)
    ! [remote rejected] the-tag -> the-tag (Pushing tags is unsupported)
