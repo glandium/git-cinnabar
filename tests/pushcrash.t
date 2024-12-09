@@ -55,7 +55,6 @@ Commit something in the git clone:
   $ creategit z
   $ cd ..
 
-XXX git-cinnabar failure is a bit ungraceful!
 git push fails gracefully with nonzero exit status:
 
   $ git -C repo.git push origin
@@ -66,9 +65,8 @@ git push fails gracefully with nonzero exit status:
   remote: transaction abort!
   remote: rollback completed
   remote: abort: No such file or directory: '/nonexistent'
-  fatal: called `Result::unwrap()` on an `Err` value: Error { kind: UnexpectedEof, message: "failed to fill whole buffer" }
-  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
-  error: git-remote-hg died of signal 6
+  To hg::*/cramtests-*/pushcrash.t/repo.hg (glob)
+   ! [remote rejected] branches/default/tip -> branches/default/tip (nothing changed on remote)
   error: failed to push some refs to 'hg::*/cramtests-*/pushcrash.t/repo.hg' (glob)
   [1]
 
