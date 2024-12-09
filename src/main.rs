@@ -4861,6 +4861,7 @@ fn remote_helper_push(
                                             message.push_str(hint);
                                         }
                                         error!(target: "root", "{}", message);
+                                        pushed = ChangesetHeads::new();
                                     }
                                     _ => {}
                                 }

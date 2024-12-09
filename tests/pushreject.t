@@ -61,7 +61,6 @@ Create a new commit in the git clone:
   $ creategit z
   $ cd ..
 
-XXX git push does not actually fail!
 git push fails with nonzero exit status:
 
   $ git -C repo.git push origin
@@ -74,7 +73,9 @@ git push fails with nonzero exit status:
   \r (no-eol) (esc)
   ERROR Changes on branch 'default' resulted in multiple heads
   To hg::*/cramtests-*/pushreject.t/repo.hg (glob)
-   * [new branch]      branches/default/tip -> branches/default/tip
+   ! [remote rejected] branches/default/tip -> branches/default/tip (nothing changed on remote)
+  error: failed to push some refs to 'hg::*/cramtests-*/pushreject.t/repo.hg' (glob)
+  [1]
 
 The change does not appear in the hg repository:
 
@@ -91,17 +92,10 @@ The change does not appear in the hg repository:
      summary:     x
   
 
-XXX git-cinnabar does reflect the update!
 The git-cinnabar remote does not reflect the failed push:
 
   $ git -C repo.git log --graph --decorate=short origin/branches/default/tip
-  * commit 0d4b28bacd083cba7b065183072be0940b0157fe (HEAD -> branches/default/tip, origin/branches/default/tip, origin/HEAD)
-  | Author: Nobody <nobody@nowhere>
-  | Date:   Thu Jan 1 00:00:02 1970 +0000
-  | 
-  |     z
-  | 
-  * commit d51ea055a776dc74cc3d013441af88d26b68ab88
+  * commit d51ea055a776dc74cc3d013441af88d26b68ab88 (origin/branches/default/tip, origin/HEAD)
     Author: nobody <>
     Date:   Thu Jan 1 00:00:00 1970 +0000
     
