@@ -353,7 +353,7 @@ class Hg(Task, metaclass=Tool):
             python = "python3"
         else:
             python = "python2.7"
-        return ["{} -m pip install {}".format(python, filename)]
+        return ["{} -m pip install --force-reinstall {}".format(python, filename)]
 
 
 def install_rust(version="1.82.0", target="x86_64-unknown-linux-gnu"):
