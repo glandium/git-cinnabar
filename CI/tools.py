@@ -17,7 +17,7 @@ from util import build_commit
 from variables import TC_BRANCH, TC_IS_PUSH
 
 MERCURIAL_VERSION = "6.8"
-GIT_VERSION = "2.47.0"
+GIT_VERSION = "2.47.1"
 
 ALL_MERCURIAL_VERSIONS = (
     "1.9.3",
