@@ -13,7 +13,7 @@ use crate::git::CommitId;
 use crate::{experiment, get_typed_config, ConfigType, Experiments};
 
 #[derive(Clone, Display, Debug)]
-#[display(fmt = "{version}")]
+#[display("{version}")]
 pub struct Version {
     version: semver::Version,
     tag_has_v_prefix: bool,

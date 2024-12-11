@@ -6,6 +6,7 @@ use std::borrow::Cow;
 use std::io::Write;
 
 use bstr::{BStr, ByteSlice};
+use derive_more::Debug;
 use once_cell::sync::Lazy;
 use regex::bytes::Regex;
 
@@ -29,12 +30,11 @@ pub struct HgAuthorship<B: AsRef<[u8]>> {
 #[derive(Clone)]
 pub struct HgCommitter<B: AsRef<[u8]>>(pub B);
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Debug)]
 struct Authorship<'a> {
-    #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
+    #[debug("{}", name.as_bstr())]
     name: Cow<'a, [u8]>,
-    #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
+    #[debug("{}", email.as_bstr())]
     email: Cow<'a, [u8]>,
     timestamp: u64,
     utcoffset: i32,

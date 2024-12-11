@@ -5,8 +5,10 @@
 use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::os::raw::{c_char, c_int, c_long, c_ulong};
+use std::ptr::NonNull;
 
 use bstr::ByteSlice;
+use derive_more::Debug;
 
 use crate::util::ImmutBString;
 
@@ -30,27 +32,23 @@ impl<'a> From<&'a [u8]> for mmfile_t<'a> {
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-#[derive(Derivative)]
-#[derivative(Default)]
+#[derive(Default)]
 struct xpparam_t {
     flags: c_ulong,
-    #[derivative(Default(value = "std::ptr::null()"))]
-    anchors: *const *const c_char,
+    anchors: Option<NonNull<*const c_char>>,
     anchors_nr: usize,
 }
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-#[derive(Derivative)]
-#[derivative(Default)]
+#[derive(Default)]
 struct xdemitconf_t {
     ctxlen: c_long,
     interhunkctxlen: c_long,
     flags: c_ulong,
     find_func:
         Option<extern "C" fn(*const c_char, c_long, *const c_char, c_long, *mut c_void) -> c_long>,
-    #[derivative(Default(value = "std::ptr::null_mut()"))]
-    find_func_priv: *mut c_void,
+    find_func_priv: Option<NonNull<c_void>>,
     hunk_func: Option<extern "C" fn(c_long, c_long, c_long, c_long, *mut c_void) -> c_int>,
 }
 
@@ -68,12 +66,11 @@ extern "C" {
     ) -> c_int;
 }
 
-#[derive(Clone, Copy, Derivative)]
-#[derivative(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct PatchInfo<S: AsRef<[u8]>> {
     pub start: usize,
     pub end: usize,
-    #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
+    #[debug("{}", data.as_ref().as_bstr())]
     pub data: S,
 }
 

@@ -27,6 +27,7 @@ use curl_sys::{
     CURLOPT_POSTFIELDSIZE_LARGE, CURLOPT_READDATA, CURLOPT_READFUNCTION, CURLOPT_URL,
     CURLOPT_USERAGENT, CURLOPT_VERBOSE, CURLOPT_WRITEFUNCTION,
 };
+use derive_more::Debug;
 use either::Either;
 use flate2::read::ZlibDecoder;
 use itertools::Itertools;
@@ -258,15 +259,14 @@ struct HttpResponseInfo {
     content_type: Option<String>,
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Debug)]
 pub struct HttpResponse {
     info: HttpResponseInfo,
     thread: Option<JoinHandle<Result<(), (c_int, HttpRequest)>>>,
     cursor: Cursor<ImmutBString>,
     receiver: Option<Receiver<HttpRequestChannelData>>,
     #[allow(dead_code)]
-    #[derivative(Debug = "ignore")]
+    #[debug(skip)]
     token: Arc<GitHttpStateToken>,
 }
 

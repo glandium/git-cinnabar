@@ -11,16 +11,16 @@ use std::io::{self, Write};
 use std::iter::{zip, Peekable};
 
 use bstr::{BStr, BString, ByteSlice};
+use derive_more::Debug;
 use either::Either;
 use itertools::EitherOrBoth;
 
 use crate::util::{ImmutBString, Map, MapMap, Transpose};
 
 /// Wrapper type that pairs a value of any type with a path string.
-#[derive(Clone, Derivative, PartialEq, Eq, PartialOrd, Ord)]
-#[derivative(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct WithPath<T> {
-    #[derivative(Debug(format_with = "crate::util::bstr_fmt"))]
+    #[debug("{}", path.as_bstr())]
     path: ImmutBString,
     inner: T,
 }

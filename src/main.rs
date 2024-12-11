@@ -40,8 +40,6 @@
 #![allow(unknown_lints)]
 
 #[macro_use]
-extern crate derivative;
-#[macro_use]
 extern crate log;
 
 mod cinnabar;

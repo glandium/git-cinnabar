@@ -36,7 +36,6 @@ bzip2 = "0.4"
 byteorder = "1"
 cfg-if = "1"
 cstr = "0.2.10"
-derivative = "2"
 digest = "0.10"
 either = "1"
 getset = "0.1"
@@ -78,9 +77,9 @@ version = "0.4"
 default-features = false
 
 [dependencies.derive_more]
-version = "0.99"
+version = "1"
 default-features = false
-features = ["deref", "display", "from", "try_into"]
+features = ["deref", "display", "debug", "from", "try_into"]
 
 [dependencies.flate2]
 version = "1"
