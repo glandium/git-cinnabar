@@ -17,7 +17,7 @@ allow = [
 ]
 exceptions = [
     { allow = ["GPL-2.0"], crate = "git-cinnabar" },
-    { allow = ["Unicode-DFS-2016"], crate = "unicode-ident" },
+    { allow = ["Unicode-3.0"], crate = "unicode-ident" },
     { allow = ["Unicode-3.0"], crate = "icu_collections" },
     { allow = ["Unicode-3.0"], crate = "icu_locid" },
     { allow = ["Unicode-3.0"], crate = "icu_locid_transform" },
