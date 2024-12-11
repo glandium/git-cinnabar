@@ -65,7 +65,7 @@ pub struct Commit<'a> {
     body: &'a [u8],
 }
 
-impl<'a> Commit<'a> {
+impl Commit<'_> {
     pub fn parents(&self) -> &[CommitId] {
         &self.parents[..]
     }

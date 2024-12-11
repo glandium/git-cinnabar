@@ -2357,7 +2357,7 @@ struct ManifestLine<'a> {
     path_len: usize,
 }
 
-impl<'a> ManifestLine<'a> {
+impl ManifestLine<'_> {
     fn path(&self) -> &[u8] {
         &self.line[..self.path_len]
     }
@@ -2376,19 +2376,19 @@ impl<'a> From<&'a [u8]> for ManifestLine<'a> {
     }
 }
 
-impl<'a> PartialOrd for ManifestLine<'a> {
+impl PartialOrd for ManifestLine<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<'a> Ord for ManifestLine<'a> {
+impl Ord for ManifestLine<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.path().cmp(other.path())
     }
 }
 
-impl<'a> Borrow<[u8]> for ManifestLine<'a> {
+impl Borrow<[u8]> for ManifestLine<'_> {
     fn borrow(&self) -> &[u8] {
         self.path()
     }

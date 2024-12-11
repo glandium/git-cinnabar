@@ -43,7 +43,7 @@ impl<'a> From<&'a str> for VersionRequest<'a> {
     }
 }
 
-impl<'a> Default for VersionRequest<'a> {
+impl Default for VersionRequest<'_> {
     fn default() -> Self {
         if *BUILD_BRANCH == Release {
             VersionRequest::Tagged
@@ -103,7 +103,7 @@ impl<'a> VersionRequestChild<'a> {
     }
 }
 
-impl<'a> Deref for VersionRequestChild<'a> {
+impl Deref for VersionRequestChild<'_> {
     type Target = SharedChild;
     fn deref(&self) -> &SharedChild {
         &self.child
