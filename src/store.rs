@@ -686,7 +686,7 @@ pub struct HgChangeset<'a> {
     body: &'a [u8],
 }
 
-impl<'a> HgChangeset<'a> {
+impl HgChangeset<'_> {
     pub fn extra(&self) -> Option<ChangesetExtra> {
         self.extra.map(ChangesetExtra::from)
     }

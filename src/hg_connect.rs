@@ -44,7 +44,7 @@ pub enum HgArgValue<'a> {
     ChangesetArray(&'a [HgChangesetId]),
 }
 
-impl<'a> HgArgValue<'a> {
+impl HgArgValue<'_> {
     pub fn as_string(&self) -> Cow<str> {
         match self {
             HgArgValue::String(s) => Cow::Borrowed(s),
@@ -658,6 +658,7 @@ pub fn encodecaps(
         .into_boxed_str()
 }
 
+#[allow(clippy::type_complexity)]
 pub fn decodecaps(
     caps: &BStr,
 ) -> impl '_ + Iterator<Item = Option<(Box<str>, Option<Box<[Box<str>]>>)>> {
