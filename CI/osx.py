@@ -29,11 +29,11 @@ class OsxCommon(object):
         params["command"] = bash_command(*command)
         env = params.setdefault("env", {})
         dev = env.setdefault(
-            "DEVELOPER_DIR", "/Applications/Xcode_13.2.1.app/Contents/Developer"
+            "DEVELOPER_DIR", "/Applications/Xcode_15.0.1.app/Contents/Developer"
         )
         env.setdefault(
             "SDKROOT",
-            "{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk".format(dev),
+            "{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk".format(dev),
         )
         return params
 
