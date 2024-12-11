@@ -1944,7 +1944,7 @@ fn do_self_update(
         #[cfg(windows)]
         {
             use Win32::Foundation::HANDLE;
-            let mut handle: HANDLE = 0;
+            let mut handle: HANDLE = std::ptr::null_mut();
             let curproc = unsafe { Win32::System::Threading::GetCurrentProcess() };
             if unsafe {
                 Win32::Foundation::DuplicateHandle(

@@ -490,7 +490,7 @@ dependencies = [
  "tempfile",
  "typenum",
  "url",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
  "xz2",
  "zip",
  "zstd",
