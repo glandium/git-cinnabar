@@ -456,8 +456,6 @@ class Build(Task, metaclass=Tool):
 
         if "osx" not in os:
             environ["CC"] = "clang-18"
-        if os in ("linux", "arm64-linux"):
-            cargo_features.append("curl-compat")
 
         if os.startswith("mingw"):
             cpu = msys.msys_cpu(env.cpu)
