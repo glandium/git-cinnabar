@@ -21,6 +21,8 @@ include = [
   "/git-core/Makefile",
   "/git-core/detect-compiler",
   "/git-core/GIT-VERSION-GEN",
+  "/git-core/GIT-VERSION-FILE.in",
+  "/git-core/version-def.h.in",
   "/git-core/*.mak*",
   "/git-core/**/*.c",
   "/git-core/**/*.h",

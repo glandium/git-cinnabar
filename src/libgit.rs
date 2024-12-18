@@ -1023,6 +1023,7 @@ pub struct ref_store(c_void);
 extern "C" {
     fn ref_store_transaction_begin(
         refs: *const ref_store,
+        flags: c_uint,
         err: *mut strbuf,
     ) -> *mut ref_transaction;
 
@@ -1068,7 +1069,7 @@ impl RefTransaction {
     pub fn new_with_ref_store(refs: &ref_store) -> Option<Self> {
         let mut err = strbuf::new();
         Some(RefTransaction {
-            tr: unsafe { ref_store_transaction_begin(refs, &mut err).as_mut()? },
+            tr: unsafe { ref_store_transaction_begin(refs, 0, &mut err).as_mut()? },
             err,
         })
     }

@@ -17,7 +17,7 @@
 static int abbrev_sha1_cmp(const unsigned char *ref_sha1,
                            const unsigned char *abbrev_sha1, size_t len)
 {
-        int i;
+        size_t i;
 
         for (i = 0; i < len / 2; i++, ref_sha1++, abbrev_sha1++) {
                 if (*ref_sha1 != *abbrev_sha1)

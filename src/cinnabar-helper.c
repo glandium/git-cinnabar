@@ -415,6 +415,9 @@ int init_cinnabar(const char *argv0)
 			nongit = 0;
 		}
 	}
+	if (!nongit) {
+		prepare_repo_settings(the_repository);
+	}
 	return !nongit;
 }
 

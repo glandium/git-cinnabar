@@ -13,6 +13,7 @@ NO_UNIX_SOCKETS ?= 1
 SOURCE_DIR = $(subst \,/,$(CARGO_MANIFEST_DIR))
 
 vpath %.c $(SOURCE_DIR)/git-core
+vpath version-def.h.in $(SOURCE_DIR)/git-core
 
 $(SOURCE_DIR)/git-core/Makefile:
 	git -C $(SOURCE_DIR) submodule sync
@@ -35,7 +36,10 @@ FAKE_INCLUDE := 1
 FAKE_INCLUDE :=
 include $(SOURCE_DIR)/git-core/Makefile
 
-GIT-VERSION-FILE: GIT-VERSION-GEN
+GIT-VERSION-FILE: GIT-VERSION-GEN GIT-VERSION-FILE.in
+GIT-VERSION-FILE.in: $(SOURCE_DIR)/git-core/GIT-VERSION-FILE.in
+	cat $< > $@
+
 GIT-VERSION-GEN detect-compiler:
 	echo "#!/bin/sh" > $@
 	echo ". $(SOURCE_DIR)/git-core/$@" >> $@
