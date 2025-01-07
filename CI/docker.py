@@ -78,7 +78,7 @@ DOCKER_IMAGES = {
             "gpg --no-default-keyring --keyring /usr/share/keyrings/llvm.gpg"
             " --import llvm-snapshot.gpg.key",
             "rm llvm-snapshot.gpg.key",
-            "curl -sO http://snapshot.debian.org/archive/debian"
+            "curl -sLO http://snapshot.debian.org/archive/debian"
             "/20220326T025251Z/pool/main/p/python2-pip"
             "/python-pip_20.3.4%2Bdfsg-4_all.deb",
             "dpkg-deb -x python-pip*.deb /",
