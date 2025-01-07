@@ -144,8 +144,7 @@ class TestTask(Task):
                 [
                     "shopt -s nullglob",
                     "cd repo",
-                    "zip $ARTIFACTS/coverage.zip"
-                    ' $(find . -name "*.gcda" -o -name "*.profraw")',
+                    'zip $ARTIFACTS/coverage.zip $(find . -name "*.profraw")',
                     "cd ..",
                     "shopt -u nullglob",
                 ]
@@ -421,19 +420,11 @@ def main():
         ]
         task = Build.by_name("linux.coverage")
         coverage_mounts.append(task.mount())
-        coverage_mounts.append(
-            {
-                "file:gcno-build.zip": {
-                    "artifact": task.artifacts[1],
-                    "taskId": task.id,
-                }
-            }
-        )
 
         merge_coverage.extend(install_rust())
         merge_coverage.append("rustup component add llvm-tools-preview")
         merge_coverage.append(
-            "grcov -s repo -t lcov -o repo/coverage.lcov -b git-cinnabar gcno-build.zip "
+            "grcov -s repo -t lcov -o repo/coverage.lcov -b git-cinnabar "
             + " ".join(f"cov-{task.id}.zip" for task in TestTask.coverage)
         )
 

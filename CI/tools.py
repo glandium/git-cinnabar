@@ -396,7 +396,6 @@ class Build(Task, metaclass=Tool):
         hash = None
         head = None
         desc_variant = variant
-        extra_commands = []
         environ = {}
         cargo_flags = ["-vv", "--release"]
         cargo_features = ["self-update", "gitdev", "xz2/static", "bzip2/static"]
@@ -426,15 +425,11 @@ class Build(Task, metaclass=Tool):
         elif variant == "coverage":
             environ["TARGET_CFLAGS"] = " ".join(
                 [
-                    "-coverage",
+                    "-fprofile-instr-generate",
+                    "-fcoverage-mapping",
                     "-fPIC",
                 ]
             )
-            artifacts += ["coverage.zip"]
-            extra_commands = [
-                "(cd repo && zip $ARTIFACTS/coverage.zip"
-                ' $(find . -name "*.gcno" -not -name "build_script*"))',
-            ]
             environ["RUSTFLAGS"] = " ".join(
                 [
                     "-Cinstrument-coverage",
@@ -543,8 +538,7 @@ class Build(Task, metaclass=Tool):
                     "release" if "--release" in cargo_flags else "debug",
                     artifact,
                 ),
-            ]
-            + extra_commands,
+            ],
             artifacts=artifacts,
             env=environ,
         )
