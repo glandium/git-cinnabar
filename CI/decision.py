@@ -30,6 +30,7 @@ from tools import (
     Build,
     Git,
     Hg,
+    install_rust,
     nproc,
 )
 from variables import *  # noqa: F403
@@ -143,7 +144,8 @@ class TestTask(Task):
                 [
                     "shopt -s nullglob",
                     "cd repo",
-                    "zip $ARTIFACTS/coverage.zip" ' $(find . -name "*.gcda")',
+                    "zip $ARTIFACTS/coverage.zip"
+                    ' $(find . -name "*.gcda" -o -name "*.profraw")',
                     "cd ..",
                     "shopt -u nullglob",
                 ]
@@ -155,6 +157,7 @@ class TestTask(Task):
                 artifacts.push(artifact)
             artifacts.append("coverage.zip")
             self.coverage.append(self)
+            kwargs.setdefault("env", {})["LLVM_PROFILE_FILE"] = "/repo/%m.profraw"
         elif variant == "asan" and task_env == "linux":
             kwargs["caps"] = ["SYS_PTRACE"]
         if not desc:
@@ -417,6 +420,7 @@ def main():
             {f"file:cov-{task.id}.zip": task} for task in TestTask.coverage
         ]
         task = Build.by_name("linux.coverage")
+        coverage_mounts.append(task.mount())
         coverage_mounts.append(
             {
                 "file:gcno-build.zip": {
@@ -426,11 +430,11 @@ def main():
             }
         )
 
-        merge_coverage.extend(
-            [
-                "grcov -s repo -t lcov -o repo/coverage.lcov gcno-build.zip "
-                + " ".join(f"cov-{task.id}.zip" for task in TestTask.coverage),
-            ]
+        merge_coverage.extend(install_rust())
+        merge_coverage.append("rustup component add llvm-tools-preview")
+        merge_coverage.append(
+            "grcov -s repo -t lcov -o repo/coverage.lcov -b git-cinnabar gcno-build.zip "
+            + " ".join(f"cov-{task.id}.zip" for task in TestTask.coverage)
         )
 
     if merge_coverage:

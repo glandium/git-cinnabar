@@ -437,7 +437,7 @@ class Build(Task, metaclass=Tool):
             ]
             environ["RUSTFLAGS"] = " ".join(
                 [
-                    "-Zprofile",
+                    "-Cinstrument-coverage",
                     "-Ccodegen-units=1",
                     "-Cinline-threshold=0",
                 ]

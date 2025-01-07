@@ -337,7 +337,7 @@ class Task(object):
                     dependencies.append(t.id)
             else:
                 raise Exception("Don't know how to handle {}".format(k))
-        task["dependencies"] = sorted(dependencies)
+        task["dependencies"] = sorted(set(dependencies))
         index = kwargs.get("index")
         id = None
         if index and all(isinstance(d, Index.Existing) for d in dependencies[1:]):

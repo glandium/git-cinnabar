@@ -166,7 +166,7 @@ DOCKER_IMAGES = {
             "chmod +x /usr/local/bin/codecov",
             "curl -sL {} | tar -C /usr/local/bin -jxf -".format(
                 "https://github.com/mozilla/grcov/releases/download/v0.8.20"
-                "/grcov-x86_64-unknown-linux-gnu.tar.bz2"
+                "/grcov-x86_64-unknown-linux-musl.tar.bz2"
             ),
         ],
     },
