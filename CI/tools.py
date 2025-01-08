@@ -498,7 +498,7 @@ class Build(Task, metaclass=Tool):
                         f"/sysroot-{arch}/usr/share/pkgconfig",
                     )
                 )
-        if variant in ("coverage", "asan"):
+        if variant == "asan":
             environ["RUSTC_BOOTSTRAP"] = "1"
         if rust_version:
             rust_install = install_rust(rust_version, target=rust_target)
