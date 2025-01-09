@@ -450,7 +450,7 @@ class Build(Task, metaclass=Tool):
             raise Exception("Unknown variant: {}".format(variant))
 
         if "osx" not in os:
-            environ["CC"] = "clang-18"
+            environ["CC"] = "clang-19"
 
         if os.startswith("mingw"):
             cpu = msys.msys_cpu(env.cpu)
@@ -481,7 +481,7 @@ class Build(Task, metaclass=Tool):
                 environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] = (
                     f"-C link-arg=--target={target} "
                     + f"-C link-arg={extra_link_arg} "
-                    + "-C link-arg=-fuse-ld=lld-18"
+                    + "-C link-arg=-fuse-ld=lld-19"
                 )
                 rustflags = environ.pop("RUSTFLAGS", None)
                 if rustflags:
