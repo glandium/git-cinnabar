@@ -511,7 +511,7 @@ impl BundlePartInfo {
     pub fn read_from(mut reader: impl Read) -> io::Result<Self> {
         let part_type_len = reader.read_u8()?;
         let part_type = reader.read_exactly_to_string(part_type_len.into())?;
-        let mandatory = part_type.chars().next().map_or(false, char::is_uppercase);
+        let mandatory = part_type.chars().next().is_some_and(char::is_uppercase);
         let part_type = part_type.to_lowercase().into_boxed_str();
         let part_id = reader.read_u32::<BigEndian>()?;
         let mandatory_params_num = reader.read_u8()?;

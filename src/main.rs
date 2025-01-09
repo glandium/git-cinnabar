@@ -2062,7 +2062,7 @@ fn download_build(version: VersionInfo, tmpfile: &mut impl Write) -> Result<(), 
                     if file.is_file()
                         && file
                             .enclosed_name()
-                            .map_or(false, |p| p.file_name().unwrap() == BINARY)
+                            .is_some_and(|p| p.file_name().unwrap() == BINARY)
                     {
                         std::io::copy(file, tmpfile).map_err(|e| e.to_string())?;
                         extracted = true;
