@@ -4576,7 +4576,7 @@ fn remote_helper_push(
     info: RemoteInfo,
     mut stdout: impl Write,
     dry_run: bool,
-) -> Result<i32, String> {
+) -> Result<(), String> {
     let push_refs = push_refs
         .iter()
         .map(|p| {
@@ -4606,7 +4606,7 @@ fn remote_helper_push(
         }
         stdout.write_all(b"\n").unwrap();
         stdout.flush().unwrap();
-        return Ok(0);
+        return Ok(());
     }
 
     let bookmark_prefix = info.refs_style.contains(RefsStyle::BOOKMARKS).then(|| {
@@ -4640,7 +4640,7 @@ fn remote_helper_push(
         .filter_map(|(c, b)| match b {
             MaybeBoundary::Boundary => Some(Ok(c)),
             MaybeBoundary::Shallow => Some(Err(
-                "Pushing git shallow clones is not supported.".to_string()
+                "Pushing git shallow clones is not supported".to_string()
             )),
             MaybeBoundary::Commit => None,
         })
@@ -4667,9 +4667,7 @@ fn remote_helper_push(
                 fail = !conn.known(&cinnabar_roots).iter().any(|k| *k);
             }
             if fail {
-                return Err(
-                    "Cannot push to this remote without pulling/updating first.".to_string()
-                );
+                return Err("Cannot push to this remote without pulling/updating first".to_string());
             }
         }
 
@@ -4858,7 +4856,7 @@ fn remote_helper_push(
                                         message.push_str("\n\n");
                                         message.push_str(hint);
                                     }
-                                    error!(target: "root", "{}", message);
+                                    return Err(message);
                                 }
                                 _ => {}
                             }
@@ -4923,32 +4921,34 @@ fn remote_helper_push(
         })
         .collect::<HashMap<_, _>>();
 
-    if !status.is_empty() {
-        for (_, dest, _) in push_refs {
-            let mut buf = Vec::new();
-            match status[dest] {
-                Ok(true) => {
-                    buf.extend_from_slice(b"ok ");
-                    buf.extend_from_slice(dest);
-                }
-                Ok(false) => {
-                    buf.extend_from_slice(b"error ");
-                    buf.extend_from_slice(dest);
-                    buf.extend_from_slice(b" nothing changed on remote");
-                }
-                Err(e) => {
-                    buf.extend_from_slice(b"error ");
-                    buf.extend_from_slice(dest);
-                    buf.push(b' ');
-                    buf.extend_from_slice(e.as_bytes());
-                }
+    for (_, dest, _) in push_refs {
+        let mut buf = Vec::new();
+        match status
+            .get(dest)
+            .copied()
+            .unwrap_or_else(|| result.as_ref().map(|_| false).map_err(|e| &**e))
+        {
+            Ok(true) => {
+                buf.extend_from_slice(b"ok ");
+                buf.extend_from_slice(dest);
             }
-            buf.push(b'\n');
-            stdout.write_all(&buf).unwrap();
+            Ok(false) => {
+                buf.extend_from_slice(b"error ");
+                buf.extend_from_slice(dest);
+                buf.extend_from_slice(b" nothing changed on remote");
+            }
+            Err(e) => {
+                buf.extend_from_slice(b"error ");
+                buf.extend_from_slice(dest);
+                buf.push(b' ');
+                buf.extend_from_slice(e.as_bytes());
+            }
         }
-        stdout.write_all(b"\n").unwrap();
-        stdout.flush().unwrap();
+        buf.push(b'\n');
+        stdout.write_all(&buf).unwrap();
     }
+    stdout.write_all(b"\n").unwrap();
+    stdout.flush().unwrap();
 
     let rollback =
         if status.is_empty() || pushed.is_empty() || (dry_run && data != RecordMetadata::Force) {
@@ -5013,7 +5013,7 @@ fn remote_helper_push(
             .then_some(())
             .ok_or_else(|| "Fatal error".to_string())?;
     }
-    result
+    Ok(())
 }
 
 fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
@@ -5157,7 +5157,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
             }
             b"push" => {
                 assert_ne!(url.scheme(), "tags");
-                let code = remote_helper_push(
+                remote_helper_push(
                     store.as_mut().unwrap_or_else(|e| panic!("{}", e)),
                     conn.as_deref_mut().unwrap(),
                     remote.as_deref(),
@@ -5166,9 +5166,6 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                     &mut stdout,
                     dry_run,
                 )?;
-                if code > 0 {
-                    return Ok(code);
-                }
             }
             _ => panic!("unknown command: {}", cmd.as_bstr()),
         }

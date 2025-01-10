@@ -113,26 +113,26 @@ requires pulling first.
 
   $ git -C abc-git cinnabar rollback 0000000000000000000000000000000000000000
   $ git -C abc-git push --dry-run origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
-  \r (no-eol) (esc)
-  ERROR Cannot push to this remote without pulling/updating first.
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip (Cannot push to this remote without pulling/updating first)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
   $ git -C abc-git push origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
-  \r (no-eol) (esc)
-  ERROR Cannot push to this remote without pulling/updating first.
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip (Cannot push to this remote without pulling/updating first)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
 
 Same, even when forced.
 
   $ git -C abc-git push -f --dry-run origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
-  \r (no-eol) (esc)
-  ERROR Cannot push to this remote without pulling/updating first.
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip (Cannot push to this remote without pulling/updating first)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
   $ git -C abc-git push -f origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
-  \r (no-eol) (esc)
-  ERROR Cannot push to this remote without pulling/updating first.
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip (Cannot push to this remote without pulling/updating first)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
 
@@ -157,26 +157,26 @@ with different contents requires pulling first.
 
   $ git -C def-git cinnabar rollback 0000000000000000000000000000000000000000
   $ git -C def-git push --dry-run origin 62326f34fea5b80510f57599da9fd6e5997c0ca4:refs/heads/branches/default/tip
-  \r (no-eol) (esc)
-  ERROR Cannot push to this remote without pulling/updating first.
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 62326f34fea5b80510f57599da9fd6e5997c0ca4 -> branches/default/tip (Cannot push to this remote without pulling/updating first)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
   $ git -C def-git push origin 62326f34fea5b80510f57599da9fd6e5997c0ca4:refs/heads/branches/default/tip
-  \r (no-eol) (esc)
-  ERROR Cannot push to this remote without pulling/updating first.
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 62326f34fea5b80510f57599da9fd6e5997c0ca4 -> branches/default/tip (Cannot push to this remote without pulling/updating first)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
 
 Same, even when forced.
 
   $ git -C def-git push -f --dry-run origin 62326f34fea5b80510f57599da9fd6e5997c0ca4:refs/heads/branches/default/tip
-  \r (no-eol) (esc)
-  ERROR Cannot push to this remote without pulling/updating first.
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 62326f34fea5b80510f57599da9fd6e5997c0ca4 -> branches/default/tip (Cannot push to this remote without pulling/updating first)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
   $ git -C def-git push -f origin 62326f34fea5b80510f57599da9fd6e5997c0ca4:refs/heads/branches/default/tip
-  \r (no-eol) (esc)
-  ERROR Cannot push to this remote without pulling/updating first.
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 62326f34fea5b80510f57599da9fd6e5997c0ca4 -> branches/default/tip (Cannot push to this remote without pulling/updating first)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
 
@@ -232,23 +232,23 @@ Similarly, when pushing from a shallow git repository.
   $ hg init $REPO
   $ git -C abc-shallow remote set-url origin hg::$REPO
   $ git -C abc-shallow push --dry-run origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
-  \r (no-eol) (esc)
-  ERROR Pushing git shallow clones is not supported.
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip (Pushing git shallow clones is not supported)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
   $ git -C abc-shallow push origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
-  \r (no-eol) (esc)
-  ERROR Pushing git shallow clones is not supported.
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip (Pushing git shallow clones is not supported)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
   $ git -C abc-shallow push -f --dry-run origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
-  \r (no-eol) (esc)
-  ERROR Pushing git shallow clones is not supported.
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip (Pushing git shallow clones is not supported)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
   $ git -C abc-shallow push -f origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
-  \r (no-eol) (esc)
-  ERROR Pushing git shallow clones is not supported.
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip (Pushing git shallow clones is not supported)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
 
@@ -258,13 +258,13 @@ After pulling from a different repo, we still recognize we have a shallow clone.
   From hg::.*/push.t/def (re)
    * branch            hg/revs/90f6163d2820561ebe0f6c28e87d766ef619e43c -> FETCH_HEAD
   $ git -C abc-shallow push -f --dry-run origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
-  \r (no-eol) (esc)
-  ERROR Pushing git shallow clones is not supported.
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip (Pushing git shallow clones is not supported)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
   $ git -C abc-shallow push -f origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
-  \r (no-eol) (esc)
-  ERROR Pushing git shallow clones is not supported.
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip (Pushing git shallow clones is not supported)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
 
@@ -543,8 +543,6 @@ Grab the divergent commit in git:
 
 Verify that pushes to the divergent hg clone are rejected by a
 reject_new_heads hook:
-XXX This should fail with nonzero exit status and not update remote refs:
-https://github.com/glandium/git-cinnabar/issues/341
 
   $ cat > $REPO/.hg/hgrc <<EOF
   > [hooks]
@@ -557,14 +555,14 @@ https://github.com/glandium/git-cinnabar/issues/341
   remote: error: pretxnclose.reject_new_heads hook failed: Changes on branch 'default' resulted in multiple heads
   remote: transaction abort!
   remote: rollback completed
-  \r (no-eol) (esc)
-  ERROR Changes on branch 'default' resulted in multiple heads
   To hg::.*/push.t/repo (re)
-   + 687e015...846552c 846552c6f25c1b46e784f59d8249fb31afac2996 -> branches/default/tip (forced update)
+   ! [remote rejected] 846552c6f25c1b46e784f59d8249fb31afac2996 -> branches/default/tip (Changes on branch 'default' resulted in multiple heads)
+  error: failed to push some refs to 'hg::.*/push.t/repo' (re)
+  [1]
   $ rm $REPO/.hg/hgrc
   $ git -C abc-git log --graph --remotes --oneline --no-abbrev-commit
-  * 846552c6f25c1b46e784f59d8249fb31afac2996 x
-  * bc90f2819ad12e294b313097b8763d26ca0c08ae b
+  * 687e015f9f646bb19797d991f2f53087297fbe14 c
+  * d04f6df4abe2870ceb759263ee6aaa9241c4f93c b
   * 8b86a58578d5270969543e287634e3a2f122a338 a
   $ hg -R $REPO log -G --template '{node} {branch} {desc}'
   o  c70941aaa15aa6e5feae28164438f13dc3cd7b8e default c
@@ -573,14 +571,6 @@ https://github.com/glandium/git-cinnabar/issues/341
   |
   o  f92470d7f6966a39dfbced6a525fe81ebf5c37b9 default a
   
-
-XXX Undo the changes to abc-git's view of the remote while the rejected
-push is incorrectly interpreted to have been applied:
-
-  $ git -c fetch.prune=true -C abc-git remote update origin
-  Fetching origin
-  From hg::.*/push.t/repo (re)
-   + 846552c...687e015 branches/default/tip -> origin/branches/default/tip  (forced update)
 
 Verify that pushes to the divergent clone are rejected by a broken
 hook:
