@@ -4841,8 +4841,8 @@ fn remote_helper_push(
                 let response = conn.unbundle(heads, file);
                 match response {
                     UnbundleResponse::Bundlev2(data) => {
-                        let mut bundle = BundleReader::new(data).unwrap();
-                        while let Some(part) = bundle.next_part().unwrap() {
+                        let mut bundle = BundleReader::new(data).map_err(|e| e.to_string())?;
+                        while let Some(part) = bundle.next_part().map_err(|e| e.to_string())? {
                             match part.part_type.as_bytes() {
                                 b"reply:changegroup" => {
                                     // TODO: should check in-reply-to param.

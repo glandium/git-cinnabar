@@ -574,8 +574,6 @@ reject_new_heads hook:
 
 Verify that pushes to the divergent clone are rejected by a broken
 hook:
-XXX This should not crash git-cinnabar:
-https://github.com/glandium/git-cinnabar/issues/338
 
   $ cat > $REPO/.hg/hgrc <<EOF
   > [hooks]
@@ -589,9 +587,8 @@ https://github.com/glandium/git-cinnabar/issues/338
   remote: transaction abort!
   remote: rollback completed
   remote: abort: No such file or directory: '/nonexistent'
-  fatal: called `Result::unwrap()` on an `Err` value: Error { kind: UnexpectedEof, message: "failed to fill whole buffer" }
-  Run the command again with `git -c cinnabar.check=traceback <command>` to see the full traceback.
-  error: git-remote-hg died of signal 6
+  To hg::.*/push.t/repo (re)
+   ! [remote rejected] 846552c6f25c1b46e784f59d8249fb31afac2996 -> branches/default/tip (failed to fill whole buffer)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
   [1]
   $ rm $REPO/.hg/hgrc
