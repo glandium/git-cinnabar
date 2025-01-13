@@ -3,10 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::Cow;
-use std::ffi::CString;
+use std::ffi::{c_char, c_void, CStr, CString, OsString};
 use std::fs::File;
 use std::io::{copy, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::os::raw::c_int;
+use std::process::{self, ChildStdin, ChildStdout, Command, Stdio};
 use std::str::FromStr;
 use std::thread::{self, JoinHandle};
 use std::{mem, ptr};
@@ -22,16 +23,16 @@ use crate::hg_connect::{
     UnbundleResponse,
 };
 use crate::libc::FdFile;
-use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
-use crate::libgit::child_process;
+use crate::libcinnabar::hg_connect_prepare_command;
+use crate::libgit::local_repo_env;
 use crate::logging::{LoggingReader, LoggingWriter};
-use crate::util::{ImmutBString, OsStrExt, PrefixWriter, ReadExt};
+use crate::util::{CStrExt, ImmutBString, OsStrExt, PrefixWriter, ReadExt};
 
 pub struct HgStdioConnection {
     capabilities: HgCapabilities,
-    proc_in: FdFile,
-    proc_out: BufReader<FdFile>,
-    proc: *mut child_process,
+    proc_in: Option<ChildStdin>,
+    proc_out: Option<BufReader<ChildStdout>>,
+    proc: process::Child,
     thread: Option<JoinHandle<()>>,
     url: Url,
 }
@@ -81,7 +82,7 @@ fn stdio_send_command(conn: &mut HgStdioConnection, command: &str, args: HgArgs)
     } else {
         format!("raw-wire::{command}").into()
     };
-    LoggingWriter::new_hex(target, log::Level::Trace, &mut conn.proc_in)
+    LoggingWriter::new_hex(target, log::Level::Trace, conn.proc_in.as_mut().unwrap())
         .write_all(&data)
         .unwrap();
 }
@@ -89,7 +90,8 @@ fn stdio_send_command(conn: &mut HgStdioConnection, command: &str, args: HgArgs)
 fn stdio_read_response(conn: &mut HgStdioConnection, command: &str) -> ImmutBString {
     let mut length_str = String::new();
     let target = format!("raw-wire::{command}");
-    let mut input = LoggingReader::new_hex(&target, log::Level::Trace, &mut conn.proc_out);
+    let mut input =
+        LoggingReader::new_hex(&target, log::Level::Trace, conn.proc_out.as_mut().unwrap());
     input.read_line(&mut length_str).unwrap();
     let length = usize::from_str(length_str.trim_end_matches('\n')).unwrap();
     input.read_exactly(length).unwrap()
@@ -116,10 +118,10 @@ impl HgWireConnection for HgStdioConnection {
             Ok(Box::new(LoggingReader::new_hex(
                 format!("raw-wire::{command}"),
                 log::Level::Trace,
-                &mut self.proc_out,
+                self.proc_out.as_mut().unwrap(),
             )))
         } else {
-            Ok(Box::new(&mut self.proc_out))
+            Ok(Box::new(self.proc_out.as_mut().unwrap()))
         }
     }
 
@@ -131,7 +133,8 @@ impl HgWireConnection for HgStdioConnection {
         //TODO: handle that error.
         let header = stdio_read_response(self, command);
         let target = format!("raw-wire::{command}");
-        let mut proc_in = LoggingWriter::new_hex(&target, log::Level::Trace, &mut self.proc_in);
+        let mut proc_in =
+            LoggingWriter::new_hex(&target, log::Level::Trace, self.proc_in.as_mut().unwrap());
         proc_in.write_all(&header).unwrap();
         drop(header);
 
@@ -155,10 +158,10 @@ impl HgWireConnection for HgStdioConnection {
                 Box::new(LoggingReader::new_hex(
                     target,
                     log::Level::Trace,
-                    &mut self.proc_out,
+                    self.proc_out.as_mut().unwrap(),
                 )) as Box<dyn Read>
             } else {
-                Box::new(&mut self.proc_out)
+                Box::new(self.proc_out.as_mut().unwrap())
             };
             UnbundleResponse::Bundlev2(bundle)
         } else {
@@ -187,21 +190,11 @@ impl HgConnectionBase for HgStdioConnection {
 impl Drop for HgStdioConnection {
     fn drop(&mut self) {
         stdio_send_command(self, "", args!());
-        unsafe {
-            libc::close(self.proc_in.raw());
-            libc::close(self.proc_out.get_mut().raw());
-            self.thread.take().map(JoinHandle::join);
-            stdio_finish(self.proc);
-        }
+        drop(self.proc_in.take());
+        drop(self.proc_out.take());
+        self.thread.take().map(JoinHandle::join);
+        self.proc.wait().unwrap();
     }
-}
-
-extern "C" {
-    fn proc_in(proc: *mut child_process) -> c_int;
-
-    fn proc_out(proc: *mut child_process) -> c_int;
-
-    fn proc_err(proc: *mut child_process) -> c_int;
 }
 
 pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> {
@@ -231,28 +224,54 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
         path.as_os_str().as_bytes().to_owned()
     };
     let path = CString::new(path).unwrap();
-    let proc = unsafe {
-        hg_connect_stdio(
+    let mut args = Vec::<OsString>::new();
+    unsafe extern "C" fn add_arg(ctx: *mut c_void, arg: *const c_char) {
+        (ctx as *mut Vec<OsString>)
+            .as_mut()
+            .unwrap()
+            .push(CStr::from_ptr(arg).to_osstr().to_owned());
+    }
+    unsafe {
+        hg_connect_prepare_command(
+            &mut args as *mut _ as *mut _,
+            add_arg,
             userhost.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
             port.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
             path.as_ref().as_ptr(),
             flags,
-        )
-    };
-    if proc.is_null() {
-        return None;
+        );
     }
+    let mut command = Command::new(&args[0]);
+    unsafe {
+        let mut current = local_repo_env.as_ptr();
+
+        while !(*current).is_null() {
+            command.env_remove(CStr::from_ptr(*current).to_osstr());
+            current = current.add(1);
+        }
+    }
+    let mut proc = if let Ok(proc) = command
+        .args(&args[1..])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        proc
+    } else {
+        return None;
+    };
+
+    let mut proc_err = proc.stderr.take().unwrap();
 
     let mut conn = HgStdioConnection {
         capabilities: HgCapabilities::default(),
-        proc_in: unsafe { FdFile::from_raw_fd(proc_in(proc)) },
-        proc_out: BufReader::new(unsafe { FdFile::from_raw_fd(proc_out(proc)) }),
+        proc_in: proc.stdin.take(),
+        proc_out: proc.stdout.take().map(BufReader::new),
         proc,
         thread: None,
         url: url.clone(),
     };
-
-    let mut proc_err = unsafe { FdFile::from_raw_fd(proc_err(proc)) };
 
     conn.thread = Some(
         thread::Builder::new()

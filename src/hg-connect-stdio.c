@@ -31,51 +31,45 @@ static void maybe_sq_quote_buf(struct strbuf *buf, const char *src)
 		strbuf_addstr(buf, src);
 }
 
-int stdio_finish(struct child_process *proc)
-{
-	int ret = finish_command(proc);
-	free(proc);
-	return ret;
-}
+extern const char **prepare_shell_cmd(struct strvec *out, const char **argv);
 
-int proc_in(struct child_process *proc) {
-	return proc->in;
-}
-
-int proc_out(struct child_process *proc) {
-	return proc->out;
-}
-
-int proc_err(struct child_process *proc) {
-	return proc->err;
-}
-
-struct child_process *hg_connect_stdio(
+void hg_connect_prepare_command(
+	void *ctx, void (*add_arg)(void *ctx, const char *arg),
 	const char *userhost, const char *port, const char *path, int flags)
 {
+	struct strvec out = STRVEC_INIT;
 	struct strbuf buf = STRBUF_INIT;
-	struct child_process *proc = xmalloc(sizeof(*proc));
-
-	child_process_init(proc);
+	struct child_process proc = CHILD_PROCESS_INIT;
+	child_process_init(&proc);
 
 	if (looks_like_command_line_option(path))
 		die("strange pathname '%s' blocked", path);
 
-	strvec_pushv(&proc->env, (const char **)local_repo_env);
-	proc->use_shell = 1;
-	proc->in = proc->out = proc->err = -1;
+	//strvec_pushv(&proc.env, (const char **)local_repo_env);
+	proc.use_shell = 1;
+	proc.in = proc.out = proc.err = -1;
 
 	if (userhost) {
-		proc->trace2_child_class = "transport/ssh";
-		fill_ssh_args(proc, userhost, port, protocol_v0, flags);
+		proc.trace2_child_class = "transport/ssh";
+		fill_ssh_args(&proc, userhost, port, protocol_v0, flags);
 	}
 
 	strbuf_addstr(&buf, "hg -R ");
 	maybe_sq_quote_buf(&buf, path);
 	strbuf_addstr(&buf, " serve --stdio");
-	strvec_push(&proc->args, buf.buf);
+	strvec_push(&proc.args, buf.buf);
 	strbuf_release(&buf);
 
-	start_command(proc);
-	return proc;
+	if (proc.use_shell) {
+		prepare_shell_cmd(&out, proc.args.v);
+	} else {
+		strvec_pushv(&out, proc.args.v);
+	}
+
+	for (size_t i = 0; i < out.nr; i++) {
+		add_arg(ctx, out.v[i]);
+	}
+
+	child_process_clear(&proc);
+	strvec_clear(&out);
 }

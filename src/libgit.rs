@@ -150,10 +150,6 @@ pub struct remote([u8; 0]);
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct child_process([u8; 0]);
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
 pub struct object_entry([u8; 0]);
 
 #[allow(non_camel_case_types)]
@@ -353,6 +349,8 @@ pub fn git_object_info(
 
 extern "C" {
     pub static mut the_repository: *mut repository;
+
+    pub static local_repo_env: [*const c_char; 1];
 
     static default_abbrev: c_int;
 
