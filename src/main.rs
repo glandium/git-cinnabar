@@ -4492,6 +4492,7 @@ fn remote_helper_import(
     }
     transaction.commit().unwrap();
 
+    conn.sync();
     writeln!(stdout, "done").unwrap();
     stdout.flush().unwrap();
 
@@ -4920,6 +4921,8 @@ fn remote_helper_push(
             (*dest, status)
         })
         .collect::<HashMap<_, _>>();
+
+    conn.sync();
 
     for (_, dest, _) in push_refs {
         let mut buf = Vec::new();

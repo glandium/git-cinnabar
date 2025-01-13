@@ -165,6 +165,8 @@ pub trait HgConnectionBase {
     fn sample_size(&self) -> usize {
         100
     }
+
+    fn sync(&mut self) {}
 }
 
 pub trait HgWireConnection: HgConnectionBase {
@@ -368,6 +370,10 @@ impl<C: HgWireConnection> HgConnectionBase for LogWireConnection<C> {
     fn sample_size(&self) -> usize {
         self.conn.sample_size()
     }
+
+    fn sync(&mut self) {
+        self.conn.sync();
+    }
 }
 
 impl<C: HgWireConnection> HgWireConnection for LogWireConnection<C> {
@@ -499,6 +505,10 @@ impl<C: HgWireConnection> HgConnectionBase for HgWired<C> {
 
     fn sample_size(&self) -> usize {
         self.conn.sample_size()
+    }
+
+    fn sync(&mut self) {
+        self.conn.sync();
     }
 }
 

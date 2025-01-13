@@ -5,15 +5,26 @@
 use std::borrow::Cow;
 use std::ffi::{c_char, c_void, CStr, CString, OsString};
 use std::fs::File;
-use std::io::{copy, BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{copy, BufRead, BufReader, ErrorKind, Read, Seek, SeekFrom, Write};
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
 use std::os::raw::c_int;
+#[cfg(windows)]
+use std::os::windows::io::{FromRawHandle, IntoRawHandle};
 use std::process::{self, ChildStdin, ChildStdout, Command, Stdio};
 use std::str::FromStr;
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 use std::{mem, ptr};
 
 use bstr::{BStr, BString};
 use itertools::Itertools;
+#[cfg(unix)]
+use mio::unix::SourceFd;
+#[cfg(windows)]
+use mio::windows::NamedPipe;
+use mio::{Events, Poll, Token, Waker};
 use percent_encoding::percent_decode_str;
 use url::Url;
 
@@ -35,6 +46,23 @@ pub struct HgStdioConnection {
     proc: process::Child,
     thread: Option<JoinHandle<()>>,
     url: Url,
+    synchronizer: Arc<Synchronizer>,
+}
+
+struct Synchronizer {
+    read_finished: Mutex<bool>,
+    condvar: Condvar,
+    waker: Waker,
+}
+
+impl Synchronizer {
+    fn new(waker: Waker) -> Self {
+        Synchronizer {
+            read_finished: Mutex::new(false),
+            condvar: Condvar::new(),
+            waker,
+        }
+    }
 }
 
 unsafe impl Send for HgStdioConnection {}
@@ -185,6 +213,14 @@ impl HgConnectionBase for HgStdioConnection {
     fn sample_size(&self) -> usize {
         10000
     }
+
+    fn sync(&mut self) {
+        let guard = self.synchronizer.read_finished.lock().unwrap();
+        if !*guard {
+            self.synchronizer.waker.wake().unwrap();
+            let _unused = self.synchronizer.condvar.wait(guard).unwrap();
+        }
+    }
 }
 
 impl Drop for HgStdioConnection {
@@ -262,8 +298,28 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
         return None;
     };
 
+    #[cfg(unix)]
     let mut proc_err = proc.stderr.take().unwrap();
+    #[cfg(windows)]
+    let mut proc_err =
+        unsafe { NamedPipe::from_raw_handle(proc.stderr.take().unwrap().into_raw_handle()) };
+    const STDERR: Token = Token(0);
+    const WAKER: Token = Token(1);
+    let mut events = Events::with_capacity(1);
+    let mut poll = Poll::new().unwrap();
+    poll.registry()
+        .register(
+            #[cfg(unix)]
+            &mut SourceFd(&proc_err.as_raw_fd()),
+            #[cfg(windows)]
+            &mut proc_err,
+            STDERR,
+            mio::Interest::READABLE,
+        )
+        .unwrap();
+    let waker = Waker::new(poll.registry(), WAKER).unwrap();
 
+    let synchronizer = Arc::new(Synchronizer::new(waker));
     let mut conn = HgStdioConnection {
         capabilities: HgCapabilities::default(),
         proc_in: proc.stdin.take(),
@@ -271,6 +327,7 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
         proc,
         thread: None,
         url: url.clone(),
+        synchronizer: synchronizer.clone(),
     };
 
     conn.thread = Some(
@@ -283,7 +340,66 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
                  * Japanese locale) */
                 let stderr = unsafe { FdFile::stderr() };
                 let mut writer = PrefixWriter::new("remote: ", stderr);
-                copy(&mut proc_err, &mut writer).unwrap();
+                let mut buf = [0; 1024];
+                let mut block = true;
+                let mut read_finished = false;
+                let mut notify = 0;
+                loop {
+                    match poll.poll(&mut events, if block { None } else { Some(Duration::ZERO) }) {
+                        Ok(()) => {}
+                        Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+                        e => e.map(|_| ()).unwrap(),
+                    }
+                    if !block && events.is_empty() {
+                        let mut read_finished_ = synchronizer.read_finished.lock().unwrap();
+                        while notify > 0 {
+                            synchronizer.condvar.notify_one();
+                            notify -= 1;
+                        }
+                        if read_finished {
+                            *read_finished_ = read_finished;
+                            break;
+                        }
+                        block = true;
+                    }
+                    for event in &events {
+                        block = false;
+                        match event.token() {
+                            STDERR => {
+                                // Work around https://github.com/tokio-rs/mio/issues/1855
+                                if !event.is_readable() && !event.is_read_closed() {
+                                    continue;
+                                }
+                                let buf = match (!event.is_read_closed())
+                                    .then(|| proc_err.read(&mut buf))
+                                {
+                                    Some(Ok(len)) => &buf[..len],
+                                    Some(Err(e)) if e.kind() == ErrorKind::Interrupted => continue,
+                                    Some(e) => e.map(|_| &[]).unwrap(),
+                                    None => &[],
+                                };
+                                if buf.is_empty() {
+                                    read_finished = true;
+                                    poll.registry()
+                                        .deregister(
+                                            #[cfg(unix)]
+                                            &mut SourceFd(&proc_err.as_raw_fd()),
+                                            #[cfg(windows)]
+                                            &mut proc_err,
+                                        )
+                                        .unwrap();
+                                    continue;
+                                }
+                                writer.write_all(buf).unwrap();
+                            }
+                            WAKER => {
+                                notify += 1;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                assert_eq!(notify, 0);
             })
             .unwrap(),
     );

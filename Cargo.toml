@@ -105,6 +105,10 @@ features = ["std"]
 version = "0.12"
 default-features = false
 
+[dependencies.mio]
+version = "1"
+features = ["os-ext", "os-poll"]
+
 [dependencies.regex]
 version = "1"
 default-features = false
