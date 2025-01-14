@@ -345,23 +345,25 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
                 let mut read_finished = false;
                 let mut notify = 0;
                 loop {
+                    let mut read_finished_ =
+                        (!block).then(|| synchronizer.read_finished.lock().unwrap());
                     match poll.poll(&mut events, if block { None } else { Some(Duration::ZERO) }) {
                         Ok(()) => {}
                         Err(e) if e.kind() == ErrorKind::Interrupted => continue,
                         e => e.map(|_| ()).unwrap(),
                     }
                     if !block && events.is_empty() {
-                        let mut read_finished_ = synchronizer.read_finished.lock().unwrap();
                         while notify > 0 {
                             synchronizer.condvar.notify_one();
                             notify -= 1;
                         }
                         if read_finished {
-                            *read_finished_ = read_finished;
+                            **(read_finished_.as_mut().unwrap()) = read_finished;
                             break;
                         }
                         block = true;
                     }
+                    drop(read_finished_);
                     for event in &events {
                         block = false;
                         match event.token() {
