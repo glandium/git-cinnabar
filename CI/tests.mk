@@ -90,7 +90,8 @@ check-graft: hg.graft.cinnabar.git
 
 hg.hg hg.hg.nobundle2: hg.upgraded.git
 	$(call HG_INIT, $@)
-	$(GIT) -c cinnabar.data=never -C $< push hg::$(PATH_URL)/$@ 'refs/remotes/origin/*:refs/heads/*'
+	cp -r $< $@.tmp
+	$(GIT) -c cinnabar.data=never -C $@.tmp push hg::$(PATH_URL)/$@ 'refs/remotes/origin/*:refs/heads/*'
 	$(HG) -R $@ verify
 
 hg.empty.hg:
@@ -101,10 +102,12 @@ hg.empty.git: hg.empty.hg
 
 hg.empty.push.hg: hg.empty.git
 	$(call HG_INIT, $@)
-	$(GIT) -c cinnabar.data=never -C $< push --all hg::$(PATH_URL)/$@
+	cp -r $< $@.tmp
+	$(GIT) -c cinnabar.data=never -C $@.tmp push --all hg::$(PATH_URL)/$@
 
 hg.bundle: hg.git
-	$(GIT) -C $< cinnabar bundle $(CURDIR)/$@ -- --remotes
+	cp -r $< $@.tmp
+	$(GIT) -C $@.tmp cinnabar bundle $(CURDIR)/$@ -- --remotes
 
 hg.git hg.git.nobundle2: hg.git%: hg.hg% hg.upgraded.git
 hg.unbundle.git: hg.bundle hg.git
@@ -168,8 +171,9 @@ hg.pure.git: hg.git
 hg.push.hg hg.push.hg.nobundle2: GIT_CINNABAR_EXPERIMENTS:=$(GIT_CINNABAR_EXPERIMENTS:%=%,)merge
 hg.push.hg hg.push.hg.nobundle2: hg.pure.git
 	$(call HG_INIT, $@)
+	cp -r $< $@.tmp
 	# Push everything, including merges
-	$(GIT) -c cinnabar.data=never -C $< push hg::$(PATH_URL)/$@ --all
+	$(GIT) -c cinnabar.data=never -C $@.tmp push hg::$(PATH_URL)/$@ --all
 
 hg.http.hg hg.http.hg.gitcredentials: NUM=05
 hg.http.hg.nobundle2 hg.http.hg.nobundle2.gitcredentials: NUM=06
@@ -235,7 +239,8 @@ XARGS_GIT2HG = xargs $(GIT) -C $1 cinnabar git2hg
 hg.graft.base.git hg.graft2.base.git: hg.upgraded.git hg.pure.hg
 	$(GIT) init $@
 	$(GIT) -C $@ remote add origin hg::$(PATH_URL)/$(word 2,$^)
-	$(GIT) -C $< push $(CURDIR)/$@ refs/remotes/*:refs/remotes/*
+	cp -r $< $@.tmp
+	$(GIT) -C $@.tmp push $(CURDIR)/$@ refs/remotes/*:refs/remotes/*
 
 hg.graft.git: hg.graft.base.git hg.upgraded.git
 	cp -r $< $@
@@ -247,10 +252,11 @@ hg.graft.git: hg.graft.base.git hg.upgraded.git
 
 hg.graft2.git: hg.graft.git hg.pure.hg hg.graft2.base.git
 	cp -r $(word 3,$^) $@
-	$(GIT) -C $< push $(CURDIR)/$@ refs/remotes/origin/*:refs/remotes/new/*
+	cp -r $< $@.tmp
+	$(GIT) -C $@.tmp push $(CURDIR)/$@ refs/remotes/origin/*:refs/remotes/new/*
 	$(GIT) -C $@ remote set-url origin hg::$(PATH_URL)/$(word 2,$^)
 	$(GIT) -C $@ -c cinnabar.graft=true cinnabar reclone
-	$(call COMPARE_REFS, $<, $@)
+	$(call COMPARE_REFS, $@.tmp, $@)
 	$(GIT) -C $@ cinnabar fsck --full
 
 hg.graft.replace.git: hg.graft.base.git hg.upgraded.git
