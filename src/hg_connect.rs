@@ -1151,9 +1151,7 @@ fn get_initial_bundle(
         })
         .filter(|(m, _)| !m.is_empty())
     {
-        match get_cinnabarclone_url(&manifest, remote).ok_or(Some(
-            "Server advertizes cinnabarclone but didn't provide a git repository url to fetch from."
-        )).and_then(|(url, branch)| {
+        match get_cinnabarclone_url(&manifest, remote).map_err(Some).and_then(|(url, branch)| {
             if limit_schemes && !["http", "https", "git"].contains(&url.scheme()) {
                 Err(Some("Server advertizes cinnabarclone but provided a non http/https git repository. Skipping."))
             } else {
@@ -1333,10 +1331,11 @@ fn cinnabar_clone_info(line: &[u8]) -> Result<Option<CinnabarCloneInfo>, String>
     Ok(Some(CinnabarCloneInfo { url, branch, graft }))
 }
 
+#[allow(clippy::type_complexity)]
 pub fn get_cinnabarclone_url(
     manifest: &[u8],
     remote: Option<&str>,
-) -> Option<(Url, Option<Box<[u8]>>)> {
+) -> Result<(Url, Option<Box<[u8]>>), &'static str> {
     let (graft, graft_is_url) = match graft_config_enabled(remote).unwrap() {
         Some(Either::Left(b)) => (Some(b), false),
         Some(Either::Right(_)) => (Some(true), true),
@@ -1406,14 +1405,18 @@ pub fn get_cinnabarclone_url(
     for graft_filter in graft_filters {
         for candidate in &candidates {
             if candidate.graft.is_empty() != *graft_filter {
-                return Some((
+                return Ok((
                     candidate.url.clone(),
                     candidate.branch.map(ToBoxed::to_boxed),
                 ));
             }
         }
     }
-    None
+    if graft == Some(true) {
+        Err("Server advertizes cinnabarclone but didn't provide one that can be used to graft")
+    } else {
+        Err("Server advertizes cinnabarclone bug didn't provide an URL to fetch from")
+    }
 }
 
 pub fn get_bundle_connection(url: &Url) -> Option<Box<dyn HgRepo>> {
