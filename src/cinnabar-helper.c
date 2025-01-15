@@ -45,6 +45,11 @@ struct object_id *commit_oid(struct commit *c) {
 	return &c->object.oid;
 }
 
+void reset_ref_store(struct repository *r) {
+	ref_store_release(r->refs_private);
+	FREE_AND_NULL(r->refs_private);
+}
+
 struct rev_info *rev_list_new(int argc, const char **argv) {
 	struct rev_info *revs = xmalloc(sizeof(*revs));
 

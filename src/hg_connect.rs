@@ -22,6 +22,7 @@ use url::Url;
 
 use crate::cinnabar::GitChangesetId;
 use crate::git::{CommitId, GitObjectId};
+use crate::graft::init_graft;
 use crate::hg::HgChangesetId;
 use crate::hg_bundle::{BundleConnection, BundleReader, BundleSpec};
 use crate::hg_connect_http::{get_http_connection, HttpRequest};
@@ -1175,6 +1176,10 @@ fn get_initial_bundle(
         }
     }
 
+    if !has_metadata(store) && matches!(graft_config_enabled(remote), Ok(Some(Either::Right(_)))) {
+        init_graft(store, true);
+    }
+
     if conn.get_capability(b"clonebundles").is_some() {
         if let Some(url) = get_config_remote("clonebundle", remote)
             .map(|url| (!url.is_empty()).then(|| Url::parse(url.to_str().unwrap()).unwrap()))
@@ -1332,7 +1337,11 @@ pub fn get_cinnabarclone_url(
     manifest: &[u8],
     remote: Option<&str>,
 ) -> Option<(Url, Option<Box<[u8]>>)> {
-    let graft = graft_config_enabled(remote).unwrap();
+    let (graft, graft_is_url) = match graft_config_enabled(remote).unwrap() {
+        Some(Either::Left(b)) => (Some(b), false),
+        Some(Either::Right(_)) => (Some(true), true),
+        None => (None, false),
+    };
     let mut candidates = Vec::new();
 
     for line in ByteSlice::lines(manifest) {
@@ -1360,17 +1369,21 @@ pub fn get_cinnabarclone_url(
                     }
                     // We apparently have all the grafted revisions locally, ensure
                     // they're actually reachable.
-                    let args = [
-                        "--branches",
-                        "--tags",
-                        "--remotes",
-                        "--max-count=1",
-                        "--ancestry-path",
-                    ];
+                    let refs = if graft_is_url {
+                        &["--glob=refs/cinnabar/graft/*"][..]
+                    } else {
+                        &["--branches", "--tags", "--remotes"]
+                    };
+                    let args = ["--max-count=1", "--ancestry-path"];
                     let other_args = info.graft.iter().map(|c| format!("^{}^@", c)).collect_vec();
-                    if rev_list(args.into_iter().chain(other_args.iter().map(|x| &**x)))
-                        .next()
-                        .is_none()
+                    if rev_list(
+                        refs.iter()
+                            .map(|x| &**x)
+                            .chain(args.into_iter())
+                            .chain(other_args.iter().map(|x| &**x)),
+                    )
+                    .next()
+                    .is_none()
                     {
                         debug!(target: "cinnabarclone", " Skipping (graft commit(s) unreachable)");
                         continue;

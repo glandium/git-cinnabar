@@ -11,7 +11,7 @@ use std::os::raw::{c_char, c_int, c_uint, c_void};
 use crate::git::{CommitId, GitObjectId, RawTree, TreeId};
 use crate::hg::HgObjectId;
 use crate::libgit::{
-    combine_notes_ignore, free_notes, init_notes, notes_tree, object_id, FileMode,
+    combine_notes_ignore, free_notes, init_notes, notes_tree, object_id, repository, FileMode,
 };
 use crate::oid::{Abbrev, ObjectId};
 use crate::store::{store_git_commit, Store};
@@ -145,6 +145,8 @@ impl cinnabar_notes_tree {
 }
 
 extern "C" {
+    pub fn reset_ref_store(r: *mut repository);
+
     fn cinnabar_get_note(
         notes: *mut cinnabar_notes_tree,
         oid: *const object_id,

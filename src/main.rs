@@ -98,7 +98,7 @@ use cstr::cstr;
 use digest::OutputSizeUser;
 use either::Either;
 use git::{BlobId, CommitId, GitObjectId, RawBlob, RawCommit, RawTree, RecursedTreeEntry, TreeIsh};
-use graft::{graft_finish, grafted, init_graft};
+use graft::{graft_finish, grafted, maybe_init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
 use hg_bundle::{create_bundle, create_chunk_data, read_rev_chunk, BundleSpec, RevChunkIter};
 use hg_connect::{
@@ -840,7 +840,6 @@ fn do_tag(
             .ok_or_else(|| "git merge failed".to_string())
     }
 }
-
 fn do_fetch(
     store: &mut Store,
     remote: &OsStr,
@@ -914,9 +913,7 @@ fn do_fetch(
     let remote = Some(remote.to_str().unwrap())
         .and_then(|r| (!r.starts_with("hg://") && !r.starts_with("hg::")).then_some(r));
 
-    if graft_config_enabled(remote)?.unwrap_or(false) {
-        init_graft(store);
-    }
+    maybe_init_graft(store, remote)?;
 
     let unknown_full_revs = full_revs
         .iter()
@@ -1278,9 +1275,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
 
     check_graft_refs();
 
-    if graft_config_enabled(None)?.unwrap_or(false) {
-        init_graft(&store);
-    }
+    maybe_init_graft(&store, None)?;
 
     let old_to_hg = |cid| GitChangesetId::from_unchecked(cid).to_hg(old_store);
 
@@ -2146,11 +2141,15 @@ fn do_data_file(store: &Store, rev: Abbrev<HgFileId>) -> Result<(), String> {
     stdout.write_all(&file).map_err(|e| e.to_string())
 }
 
-pub fn graft_config_enabled(remote: Option<&str>) -> Result<Option<bool>, String> {
+pub fn graft_config_enabled(remote: Option<&str>) -> Result<Option<Either<bool, Url>>, String> {
     get_config_remote("graft", remote)
         .map(|v| {
-            v.into_string()
-                .and_then(|v| bool::from_str(&v).map_err(|_| v.into()))
+            v.into_string().and_then(|v| {
+                bool::from_str(&v)
+                    .map(Either::Left)
+                    .or_else(|_| Url::parse(&v).map(Either::Right))
+                    .map_err(|_| v.into())
+            })
         })
         .transpose()
         // TODO: This should report the environment variable is that's what was used.
@@ -2167,9 +2166,7 @@ fn do_unbundle(store: &mut Store, clonebundle: bool, mut url: OsString) -> Resul
     if !["http", "https", "file"].contains(&url.scheme()) {
         Err(format!("{} urls are not supported.", url.scheme()))?;
     }
-    if graft_config_enabled(None)?.unwrap_or(false) {
-        init_graft(store);
-    }
+    maybe_init_graft(store, None)?;
     let mut conn = if clonebundle {
         let mut conn = get_connection(&url).unwrap();
         if conn.get_capability(b"clonebundles").is_none() {
@@ -4457,9 +4454,7 @@ fn remote_helper_import(
         .collect_vec();
     if !unknown_wanted_heads.is_empty() {
         tags = Some(store.get_tags());
-        if graft_config_enabled(remote)?.unwrap_or(false) {
-            init_graft(store);
-        }
+        maybe_init_graft(store, remote)?;
         get_bundle(
             store,
             conn,
