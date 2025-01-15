@@ -94,7 +94,7 @@ Pushing from a repo with cinnabar metadata to an empty mercurial repo works
 
 Pushing from a repo without cinnabar metadata to an empty mercurial repo works
 
-  $ git -C abc-git cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C abc-git cinnabar clear
   $ rm -rf $REPO/.hg
   $ hg init $REPO
   $ git -C abc-git push --dry-run origin d04f6df4abe2870ceb759263ee6aaa9241c4f93c:refs/heads/branches/default/tip
@@ -111,7 +111,7 @@ Pushing from a repo without cinnabar metadata to an empty mercurial repo works
 Pushing from a repo without cinnabar metadata to a non-empty mercurial repo
 requires pulling first.
 
-  $ git -C abc-git cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C abc-git cinnabar clear
   $ git -C abc-git push --dry-run origin 687e015f9f646bb19797d991f2f53087297fbe14:refs/heads/branches/default/tip
   To hg::.*/push.t/repo (re)
    ! [remote rejected] 687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip (Cannot push to this remote without pulling/updating first)
@@ -155,7 +155,7 @@ However, after pulling, we have a shared root, and we can push
 Pushing from a repo without cinnabar metadata to a non-empty mercurial repo
 with different contents requires pulling first.
 
-  $ git -C def-git cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C def-git cinnabar clear
   $ git -C def-git push --dry-run origin 62326f34fea5b80510f57599da9fd6e5997c0ca4:refs/heads/branches/default/tip
   To hg::.*/push.t/repo (re)
    ! [remote rejected] 62326f34fea5b80510f57599da9fd6e5997c0ca4 -> branches/default/tip (Cannot push to this remote without pulling/updating first)
@@ -477,7 +477,7 @@ Test the git_commit experimental feature.
 
   $ rm -rf $REPO/.hg
   $ hg init $REPO
-  $ git -C abc-git cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C abc-git cinnabar clear
   $ git -C abc-git push --dry-run origin 8b86a58578d5270969543e287634e3a2f122a338:refs/heads/branches/default/tip
   To hg::.*/push.t/repo (re)
    * [new branch]      8b86a58578d5270969543e287634e3a2f122a338 -> branches/default/tip

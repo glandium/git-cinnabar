@@ -397,7 +397,7 @@ Reset target mercurial repositories.
 
 Reset cinnabar metadata in repo-git2.
 
-  $ git -C repo-git2 cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C repo-git2 cinnabar clear
 
 Push everything at once.
 
@@ -478,7 +478,7 @@ Reset target mercurial repositories again.
 
 Reset cinnabar metadata in repo-git2 again.
 
-  $ git -C repo-git2 cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C repo-git2 cinnabar clear
 
 Push a bookmark on `c`.
 
@@ -723,7 +723,7 @@ Reset target mercurial repositories again.
 
 Reset cinnabar metadata in repo-git2 again.
 
-  $ git -C repo-git2 cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C repo-git2 cinnabar clear
 
 Push everything at once, with bookmarks.
 

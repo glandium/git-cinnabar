@@ -3818,6 +3818,9 @@ enum CinnabarCommand {
         #[arg(long)]
         rebase: bool,
     },
+    /// Remove cinnabar metadata
+    #[command(name = "clear")]
+    Clear,
     #[command(name = "rollback")]
     /// Rollback cinnabar metadata state
     Rollback {
@@ -4066,6 +4069,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         Fetch { tags: true, .. } => do_fetch_tags(),
         Fetch { remote: None, .. } => unreachable!(),
         Reclone { rebase } => do_reclone(&mut store, rebase),
+        Clear => do_rollback(false, false, false, Some(CommitId::NULL.to_string().into())),
         Rollback {
             candidates,
             fsck,

@@ -159,7 +159,7 @@ state of ee1547d.
 
 Clear metadata
 
-  $ git -C repo-git cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C repo-git cinnabar clear
 
   $ git -C repo-git cinnabar rollback --candidates
 
@@ -194,7 +194,7 @@ Corner cases
   \r (no-eol) (esc)
   ERROR No successful fsck has been recorded. Cannot rollback.
   [1]
-  $ git -C repo-git cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C repo-git cinnabar clear
   $ git -C repo-git cinnabar rollback main
   \r (no-eol) (esc)
   ERROR Cannot rollback to 23bcc26b9fea7e37426260465bed35eac54af5e1, it is not in the ancestry of current metadata.

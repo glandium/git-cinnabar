@@ -221,7 +221,7 @@ hg.cinnabarclone.git hg.cinnabarclone-full.git hg.cinnabarclone-bundle.git hg.ci
 hg.cinnabarclone-graft-bundle.git: hg.pure.hg
 	$(HG) clone -U $< $@.hg
 	cp -r $(word 3,$^) $@
-	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
+	$(GIT) -C $@ cinnabar clear
 	$(GIT) -C $@ remote rename origin grafted
 	(echo http://localhost:88$(NUM)/$(word 2,$^); echo http://localhost:88$(NUM)/$(word 4,$^) graft=$$($(GIT) ls-remote $(CURDIR)/$(word 4,$^) refs/cinnabar/replace/* | awk -F/ '{print $$NF}')) | tee $@.hg/.hg/cinnabar.manifest
 	$(HG) -R $@.hg --config serve.other=http --config serve.otherport=88$(NUM) --config web.port=80$(NUM) --config experimental.httppostargs=true --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config extensions.cinnabarclone=$(HG_CINNABARCLONE_EXT) serve-and-exec -- $(GIT) -c cinnabar.graft=true -C $@ fetch --progress hg://localhost:80$(NUM).http/ refs/heads/*:refs/remotes/origin/*
@@ -239,7 +239,7 @@ hg.graft.base.git hg.graft2.base.git: hg.upgraded.git hg.pure.hg
 
 hg.graft.git: hg.graft.base.git hg.upgraded.git
 	cp -r $< $@
-	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
+	$(GIT) -C $@ cinnabar clear
 	$(GIT) -C $@ fast-export --no-data --all | python3 $(TOPDIR)/CI/filter.py --commits | git -c core.ignorecase=false -C $@ fast-import --force
 	$(GIT) -C $@ -c cinnabar.graft=true remote update
 	$(call COMPARE_REFS, $(word 2,$^), $@, XARGS_GIT2HG)
@@ -255,7 +255,7 @@ hg.graft2.git: hg.graft.git hg.pure.hg hg.graft2.base.git
 
 hg.graft.replace.git: hg.graft.base.git hg.upgraded.git
 	cp -r $< $@
-	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
+	$(GIT) -C $@ cinnabar clear
 	$(GIT) -C $@ fast-export --no-data --full-tree --all | python3 $(TOPDIR)/CI/filter.py --commits --roots | git -c core.ignorecase=false -C $@ fast-import --force
 	$(GIT) -C $@ -c cinnabar.graft=true remote update
 	$(call COMPARE_REFS, $(word 2,$^), $@, XARGS_GIT2HG)
@@ -271,6 +271,6 @@ hg.graft.cinnabar.git: hg.upgraded.git hg.pure.hg
 
 hg.cant.graft.git: hg.graft.replace.git
 	cp -r $< $@
-	$(GIT) -C $@ cinnabar rollback 0000000000000000000000000000000000000000
+	$(GIT) -C $@ cinnabar clear
 	$(GIT) -C $@ for-each-ref --format='%(refname)' | grep -v refs/remotes/origin/HEAD | sed 's/^/delete /' | $(GIT) -C $@ update-ref --stdin
 	$(GIT) -C $@ -c cinnabar.graft=true remote update
