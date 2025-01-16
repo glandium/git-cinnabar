@@ -294,7 +294,7 @@ unsafe extern "C" fn trace_log_callback(
         CURLINFO_HEADER_OUT => logging::Direction::Send,
         _ => return 0,
     };
-    let data = std::slice::from_raw_parts(data as *const u8, size);
+    let data = std::slice::from_raw_parts(data as *const _, size);
     for line in data.lines() {
         trace!(target: target, "{} {}", direction, line.as_bstr());
     }
@@ -647,7 +647,7 @@ unsafe extern "C" fn http_request_execute(
 ) -> usize {
     let data = (data as *mut HttpThreadData).as_mut().unwrap();
     http_send_info(data);
-    let buf = std::slice::from_raw_parts(ptr as *const u8, size.checked_mul(nmemb).unwrap());
+    let buf = std::slice::from_raw_parts(ptr as *const _, size.checked_mul(nmemb).unwrap());
     if let Some(logger) = &mut data.logger {
         logger.write_all(buf).unwrap();
     }
@@ -863,7 +863,7 @@ unsafe extern "C" fn read_from_read<R: Read>(
     data: *const c_void,
 ) -> usize {
     let read = (data as *mut R).as_mut().unwrap();
-    let buf = std::slice::from_raw_parts_mut(ptr as *mut u8, size.checked_mul(nmemb).unwrap());
+    let buf = std::slice::from_raw_parts_mut(ptr as *mut _, size.checked_mul(nmemb).unwrap());
     read.read(buf).unwrap()
 }
 

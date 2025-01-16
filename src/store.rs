@@ -1477,7 +1477,7 @@ pub fn store_git_tree(tree_buf: &[u8], reference: Option<TreeId>) -> TreeId {
                 let mut reftree_buf = ptr::null_mut();
                 let mut len = 0;
                 unpack_object_entry(oe, &mut reftree_buf, &mut len);
-                ref_tree = Some(FfiBox::from_raw_parts(reftree_buf as *mut u8, len as usize));
+                ref_tree = Some(FfiBox::from_raw_parts(reftree_buf as *mut _, len as usize));
             }
         }
         let mut result = object_id::default();

@@ -27,7 +27,7 @@ pub struct strslice<'a> {
 
 impl strslice<'_> {
     pub fn as_bytes(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.buf as *const u8, self.len) }
+        unsafe { std::slice::from_raw_parts(self.buf as *const _, self.len) }
     }
 }
 
