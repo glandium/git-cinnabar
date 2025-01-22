@@ -42,7 +42,7 @@ getset = "0.1"
 hex = "0.4"
 hex-literal = "0.4"
 indexmap = "2"
-itertools = "0.13"
+itertools = "0.14"
 libc = "0.2"
 once_cell = "1.13"
 percent-encoding = "2"
@@ -142,7 +142,7 @@ default-features = false
 
 [build-dependencies]
 cc = "1.0.46"
-itertools = "0.13"
+itertools = "0.14"
 make-cmd = "0.1"
 target = "2.0"
 syn = { version = "2", features = ["full"] }  # git-version fails to parse inner macros without this.
