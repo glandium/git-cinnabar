@@ -428,6 +428,8 @@ class action(object):
         self.title = title
         self.description = description
 
+    @property
+    def task(self):
         if self.template is None:
             import yaml
 
@@ -440,14 +442,14 @@ class action(object):
             self.__class__.template = task
 
         def adjust(s):
-            return s.replace("decision", "action") + " ({})".format(title)
+            return s.replace("decision", "action") + " ({})".format(self.title)
 
         metadata = self.template["metadata"]
-        self.task = dict(
+        return dict(
             self.template,
             payload=dict(
                 self.template["payload"],
-                env=dict(self.template["payload"]["env"], TC_ACTION=name),
+                env=dict(self.template["payload"]["env"], TC_ACTION=self.name),
             ),
             metadata=dict(
                 metadata,
