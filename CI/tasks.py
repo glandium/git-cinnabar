@@ -11,7 +11,6 @@ import re
 from collections import OrderedDict
 from uuid import uuid4
 
-import requests
 from pkg_resources import parse_version  # noqa: F401
 from variables import *  # noqa: F403
 
@@ -86,9 +85,14 @@ class Index(dict):
     class Existing(str):
         pass
 
-    def __init__(self, requests=requests):
+    def __init__(self):
         super(Index, self).__init__()
-        self.requests = None if os.environ.get("NO_INDEX") else requests
+        if os.environ.get("NO_INDEX"):
+            self.session = None
+        else:
+            import requests
+
+            self.session = requests.Session()
 
     def __missing__(self, key):
         result = None
@@ -105,9 +109,9 @@ class Index(dict):
         return result
 
     def _try_key(self, key, create=False):
-        if not self.requests:
+        if not self.session:
             return
-        data = http_get(self.requests, PROXY_INDEX_URL.format(key))
+        data = http_get(self.session, PROXY_INDEX_URL.format(key))
         if data and not expires_soon(data["expires"]):
             result = data.get("taskId")
             print('Found task "{}" for "{}"'.format(result, key))
@@ -120,9 +124,6 @@ class Index(dict):
         if not matches:
             raise Exception("No match for prefix {}".format(prefix))
         return self[matches[0]]
-
-
-session = requests.Session()
 
 
 class TaskNamespace(type):
@@ -162,7 +163,7 @@ class TaskEnvironment(TaskNamespace):
 
 
 class Task(object):
-    by_index = Index(session)
+    by_index = Index()
     by_id = OrderedDict()
 
     @staticmethod
@@ -343,7 +344,10 @@ class Task(object):
         if index and all(isinstance(d, Index.Existing) for d in dependencies[1:]):
             id = Task.by_index[index]
         if isinstance(id, Index.Existing):
-            data = http_get(session, ARTIFACT_URL.format(id, "").rstrip("/")) or {}
+            data = (
+                http_get(Task.by_index.session, ARTIFACT_URL.format(id, "").rstrip("/"))
+                or {}
+            )
             artifacts_expire = [
                 expires_soon(a.get("expires"))
                 for a in data.get("artifacts", [])
@@ -379,7 +383,7 @@ class Task(object):
         if "TC_PROXY" not in os.environ:
             return
         url = f"{PROXY_URL}/api/queue/v1/task/{self.id}"
-        res = session.put(url, json=self.task)
+        res = Task.by_index.session.put(url, json=self.task)
         try:
             res.raise_for_status()
         except Exception:
