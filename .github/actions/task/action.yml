@@ -1,0 +1,40 @@
+name: Task
+description: Run task
+inputs:
+  name:
+    description: task name
+    required: true
+  mounts:
+    description: mounts for the task
+    required: false
+  artifacts:
+    description: artifacts from the task
+    required: false
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-python@v5
+      if: ${{ runner.os == 'macOS' }}
+      with:
+        python-version: ${{ runner.arch == 'ARM64' && '3.11.7' || '3.9.14' }}
+    - name: Finish python setup
+      if: ${{ runner.os == 'macOS' }}
+      shell: bash
+      run: |
+        python3 -m pip install pip==20.3.4 wheel==0.37.0 --upgrade
+    - uses: actions/cache@v4
+      if: ${{ fromJSON(inputs.artifacts) }}
+      id: cache
+      with:
+        path: ${{ join(fromJSON(inputs.artifacts).paths, '\n') }}
+        key: ${{ fromJSON(inputs.artifacts).key }}
+        enableCrossOsArchive: true
+    - uses: ./.github/actions/mounts
+      if: ${{ steps.cache.outputs.cache-hit != 'true' && fromJSON(inputs.mounts) }}
+      with:
+        mounts: ${{ inputs.mounts }}
+    - name: ${{ inputs.name }}
+      shell: bash
+      if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+      run: |
+        python3 CI/run.py --cache cache --no-recurse --out . "${{ inputs.name }}"

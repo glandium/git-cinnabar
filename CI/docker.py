@@ -256,7 +256,10 @@ class DockerImage(Task, metaclass=TaskEnvironment):
         for v in volumes:
             run_cmd.append(f"--volume=./{v}:/{v}")
         for k, v in params.pop("env", {}).items():
-            run_cmd.append(f"--env={k}={v}")
+            if v == f"${k}":
+                run_cmd.append(f"--env={k}")
+            else:
+                run_cmd.append(f"--env={k}={v}")
         for cap in params.pop("caps", []):
             run_cmd.append(f"--cap-add={cap}")
         run_cmd.append(image)
