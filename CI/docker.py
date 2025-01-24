@@ -38,13 +38,13 @@ LLVM_REPO = (
 
 DOCKER_IMAGES = {
     "base": {
-        "from": "debian:bullseye-20220801",
+        "from": "debian:bullseye-20250113",
         "commands": [
             "({}) > /etc/apt/sources.list".format(
                 "; ".join(
                     "echo " + l
                     for l in sources_list(
-                        "20220801T205040Z",
+                        "20250113T204341Z",
                         (
                             ("debian", "bullseye"),
                             ("debian", "bullseye-updates"),
