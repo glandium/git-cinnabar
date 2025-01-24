@@ -20,8 +20,8 @@ ARTIFACT_URL = rootUrl + "/api/queue/v1/task/{}/artifacts/{}"
 DEFAULT_DATA = {
     "repo_name": "git-cinnabar",
     "login": "glandium",
-    "commit": "HEAD",
-    "branch": "",
+    "commit": os.environ.get("GITHUB_SHA", "HEAD"),
+    "branch": os.environ.get("GITHUB_REF_NAME", ""),
     "decision_id": "",
 }
 DEFAULT_DATA["repo_url"] = "https://github.com/{}/{}".format(
@@ -46,7 +46,21 @@ TC_BASE_LOGIN = get("base_login")
 TC_BASE_REPO_NAME = get("base_repo_name")
 
 TC_ACTION = os.environ.get("TC_ACTION")
-TC_IS_PUSH = os.environ.get("TC_IS_PUSH") == "1"
 
 DEFAULT_REPO = "https://hg.mozilla.org/users/mh_glandium.org/jqplot"
 REPO = os.environ.get("REPO", DEFAULT_REPO)
+
+IS_GH = "GITHUB_RUN_ID" in os.environ
+IS_TC = "TC_GROUP_ID" in os.environ
+if IS_TC:
+    NO_INDEX = os.environ.get("NO_INDEX")
+    TC_IS_PUSH = os.environ.get("TC_IS_PUSH") == "1"
+    DETERMINISTIC = os.environ.get("DETERMINISTIC")
+elif IS_GH:
+    NO_INDEX = True
+    TC_IS_PUSH = os.environ.get("GITHUB_EVENT_NAME") == "push"
+    DETERMINISTIC = True
+else:
+    NO_INDEX = True
+    TC_IS_PUSH = True
+    DETERMINISTIC = True

@@ -253,7 +253,7 @@ class HgClone(Task, metaclass=Tool):
 def decision():
     for env in ("linux", "mingw64", "osx", "arm64-osx"):
         # Can't spawn osx workers from pull requests.
-        if env.endswith("osx") and not TC_IS_PUSH:
+        if env.endswith("osx") and not TC_IS_PUSH and not IS_GH:
             continue
 
         TestTask(
@@ -314,7 +314,7 @@ def decision():
 
     for env in ("linux", "mingw64", "osx", "arm64-osx"):
         # Can't spawn osx workers from pull requests.
-        if env.endswith("osx") and not TC_IS_PUSH:
+        if env.endswith("osx") and not TC_IS_PUSH and not IS_GH:
             continue
 
         TestTask(
@@ -333,7 +333,7 @@ def decision():
         ("arm64-osx", None),
     ):
         # Can't spawn osx workers from pull requests.
-        if env.endswith("osx") and not TC_IS_PUSH:
+        if env.endswith("osx") and not TC_IS_PUSH and not IS_GH:
             continue
 
         pre_command = []
@@ -404,7 +404,7 @@ def hg_trunk():
     do_hg_version(trunk)
 
 
-def main():
+def tasks():
     try:
         func = action.by_name[TC_ACTION or "decision"].func
     except AttributeError:
@@ -429,6 +429,11 @@ def main():
         )
 
     if merge_coverage:
+        kwargs = {}
+        if IS_GH:
+            kwargs["env"] = {
+                "CODECOV_TOKEN": "$CODECOV_TOKEN",
+            }
         Task(
             task_env=TaskEnvironment.by_name("linux.codecov"),
             description="upload coverage",
@@ -447,7 +452,9 @@ def main():
                             '[\\"secret\\"][\\"token\\"])")'
                         ),
                         "set -x",
-                    ],
+                    ]
+                    if IS_TC
+                    else [],
                     merge_coverage,
                     [
                         "cd repo",
@@ -457,7 +464,71 @@ def main():
                     ],
                 )
             ),
+            **kwargs,
         )
+
+
+def print_output(name, value):
+    if not isinstance(value, str):
+        value = json.dumps(value, separators=(",", ":"))
+    print(f"{name}={value}")
+
+
+def main_gh():
+    tasks()
+
+    RUNNER = {
+        "linux": "ubuntu-latest",
+        "osx": "macos-13",
+        "macos": "macos-14",
+        "windows": "windows-latest",
+    }
+    matrix = {}
+    artifacts = {}
+    mounts = {}
+    for t in Task.by_id.values():
+        key = t.key
+        task = t.task
+        payload = task.get("payload", {})
+        name = task.get("metadata", {})["name"]
+        job_name = name.split()[0]
+        if job_name == "hg" and name.startswith("hg clone"):
+            job_name = "hg-clone"
+        if job_name in ("docker", "msys2") and "base" in name:
+            job_name = f"{job_name}-base"
+        matrix.setdefault(job_name, []).append(
+            {
+                "task": name,
+                "runner": RUNNER[task["workerType"]],
+            }
+        )
+        for mount in payload.get("mounts", []):
+            content = mount["content"]
+            mounts.setdefault(name, []).append(
+                {
+                    "artifact": content["artifact"],
+                    "key": Task.by_id[content["taskId"]].key,
+                }
+            )
+
+        if payload.get("artifacts"):
+            assert name not in artifacts
+            artifacts[name] = {
+                "paths": [
+                    os.path.basename(artifact["name"])
+                    for artifact in payload.get("artifacts", [])
+                ],
+                "key": key,
+            }
+    for m in matrix.values():
+        m.sort(key=lambda x: x["task"])
+    print_output("matrix", matrix)
+    print_output("artifacts", artifacts)
+    print_output("mounts", mounts)
+
+
+def main_tc():
+    tasks()
 
     for t in Task.by_id.values():
         t.submit()
@@ -489,4 +560,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if IS_GH:
+        main_gh()
+    else:
+        main_tc()

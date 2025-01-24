@@ -14,12 +14,13 @@ from uuid import uuid4
 from pkg_resources import parse_version  # noqa: F401
 from variables import *  # noqa: F403
 
-if os.environ.get("DETERMINISTIC"):
+if DETERMINISTIC:
+    import hashlib
     import random
     from uuid import UUID
 
     rand = random.Random()
-    rand.seed(0)
+    rand.seed(int(hashlib.sha256(TC_COMMIT.encode()).hexdigest(), 16))
 
     def uuid4():  # noqa: F811
         return UUID(int=rand.getrandbits(128), version=4)
@@ -53,7 +54,7 @@ class datetime(datetime.datetime):
 
 
 task_group_id = os.environ.get("TC_GROUP_ID") or os.environ.get("TASK_ID") or slugid()
-if os.environ.get("DETERMINISTIC"):
+if DETERMINISTIC:
     now = datetime.fromtimestamp(0)
 else:
     now = datetime.utcnow()
@@ -87,7 +88,7 @@ class Index(dict):
 
     def __init__(self):
         super(Index, self).__init__()
-        if os.environ.get("NO_INDEX"):
+        if NO_INDEX:
             self.session = None
         else:
             import requests
@@ -189,6 +190,7 @@ class Task(object):
         commit = commit or TC_COMMIT
         return [
             "git clone -n {} {}".format(repo, dest),
+            "git -C {} fetch origin {}".format(dest, commit),
             "git -c core.autocrlf=input -c advice.detachedHead=false"
             " -C {} checkout {}".format(dest, commit),
         ]
@@ -226,7 +228,7 @@ class Task(object):
             elif k == "description":
                 task["metadata"][k] = task["metadata"]["name"] = v
             elif k == "index":
-                if TC_IS_PUSH and TC_BRANCH != "try":
+                if IS_GH or (TC_IS_PUSH and TC_BRANCH != "try"):
                     task["routes"] = ["index.project.git-cinnabar.{}".format(v)]
             elif k == "expireIn":
                 value = v.split()
@@ -371,6 +373,13 @@ class Task(object):
             self.artifacts = []
         self.task = task
         Task.by_id.setdefault(self.id, self)
+
+    @property
+    def key(self):
+        if routes := self.task.get("routes"):
+            assert len(routes) == 1
+            return routes[0]
+        return self.id
 
     def __str__(self):
         return self.id
