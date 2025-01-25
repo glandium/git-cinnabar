@@ -127,7 +127,7 @@ class Git(Task, metaclass=Tool):
                 )
                 + [
                     "make -C git -j$({}) install prefix=/ NO_GETTEXT=1"
-                    " NO_OPENSSL=1 NO_TCLTK=1 NO_UNCOMPRESS2=1"
+                    " NO_OPENSSL=1 NO_TCLTK=1 NO_UNCOMPRESS2=1 INSTALL_STRIP=-s"
                     " DESTDIR=$PWD/git".format(nproc(build_image)),
                     "tar -c git | zstd -c > $ARTIFACTS/git-{}.tar.zst".format(version),
                 ],
