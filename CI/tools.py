@@ -16,7 +16,7 @@ from tasks import (
 from util import build_commit
 from variables import TC_BRANCH, TC_IS_PUSH
 
-MERCURIAL_VERSION = "6.8"
+MERCURIAL_VERSION = "6.9.1"
 GIT_VERSION = "2.47.1"
 
 ALL_MERCURIAL_VERSIONS = (
@@ -69,7 +69,8 @@ ALL_MERCURIAL_VERSIONS = (
     "6.5.3",
     "6.6.3",
     "6.7.4",
-    "6.8",
+    "6.8.2",
+    "6.9.1",
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -310,19 +311,21 @@ class Hg(Task, metaclass=Tool):
             # Newer versions of Mercurial removed the name in the setup() call
             # to move it into pyproject.toml, but we remove that file.
             # Without the name, `pip wheel` creates a package for `UNKNOWN`.
+            # Note: trying to use the literal string `"mercurial"` is a quoting
+            # nightmare, so rely on something in setup.py that has that value.
             pre_command.append(
-                "sed -i 's/version=setupversion/name=\"mercurial\", \\0/'"
+                'sed -i.bak "/version=setupversion/s/,/,name=packages[0],/"'
                 " mercurial-{}/setup.py".format(version)
             )
 
         h = hashlib.sha1(env.hexdigest.encode())
         h.update(artifact.encode())
         if os.endswith("osx"):
-            h.update(b"v2")
+            h.update(b"v3")
         elif os.startswith("mingw"):
-            h.update(b"v4")
+            h.update(b"v5")
         else:
-            h.update(b"v1")
+            h.update(b"v2")
 
         Task.__init__(
             self,
