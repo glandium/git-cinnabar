@@ -1,5 +1,9 @@
 name: Decision
 description: Decision
+inputs:
+  touch-caches-only:
+    description: Whether to only bump the cache MRU
+    default: false
 outputs:
   matrix:
     description: Decision matrix
@@ -31,6 +35,7 @@ runs:
       uses: actions/github-script@v7
       with:
         script: |
+          const touchOnly = ${{ inputs['touch-caches-only'] }};
           const cache = require('@actions/cache');
           const matrix = ${{ toJSON(fromJSON(steps.decision.outputs.matrix)) }};
           const artifacts = ${{ toJSON(fromJSON(steps.decision.outputs.artifacts)) }};
@@ -38,8 +43,10 @@ runs:
             Object.entries(matrix).map(async ([name, items]) => {
               const filtered_items = [];
               for (const item of items) {
-                if (!(item.task in artifacts) || !await cache.restoreCache(artifacts[item.task].paths, artifacts[item.task].key, [], { lookupOnly: true }, true)) {
-                  filtered_items.push(item);
+                if (!(item.task in artifacts) || !await cache.restoreCache(artifacts[item.task].paths, artifacts[item.task].key, [], { lookupOnly: !touchOnly }, true)) {
+                  if (!touchOnly) {
+                    filtered_items.push(item);
+                  }
                 }
               }
               return [name, filtered_items];
