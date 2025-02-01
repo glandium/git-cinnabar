@@ -227,8 +227,7 @@ jobs:
           artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
 
   upload:
-    # Disabled until we turn it off on taskcluster.
-    if: ${{ false && fromJSON(needs.decision.outputs.matrix)['upload'] && !failure() }}
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['upload'] && !failure() }}
     needs: [decision, docker, build, cram, graft, test]
     strategy:
       fail-fast: false

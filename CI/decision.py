@@ -530,7 +530,22 @@ def main_gh():
 def main_tc():
     tasks()
 
+    run_tasks = {}
+
+    def add_task(t):
+        if t in run_tasks:
+            return
+        for d in t.task.get("dependencies"):
+            dep = Task.by_id.get(d)
+            if dep and dep not in run_tasks:
+                add_task(dep)
+        run_tasks[t] = None
+
     for t in Task.by_id.values():
+        if TC_ACTION or t.task.get("metadata", {}).get("name", "").startswith("build"):
+            add_task(t)
+
+    for t in run_tasks:
         t.submit()
 
     if not TC_ACTION and "TC_GROUP_ID" in os.environ:
