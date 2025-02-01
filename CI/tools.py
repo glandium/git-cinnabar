@@ -493,7 +493,9 @@ class Build(Task, metaclass=Tool):
                 if rustflags:
                     environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] += f" {rustflags}"
                 if "linux" in os:
-                    environ[f"CFLAGS_{target}"] = f"--sysroot=/sysroot-{arch}"
+                    environ[f"CFLAGS_{target.replace('-', '_')}"] = (
+                        f"--sysroot=/sysroot-{arch}"
+                    )
             if "linux" in os:
                 environ["PKG_CONFIG_PATH"] = ""
                 environ["PKG_CONFIG_SYSROOT_DIR"] = f"/sysroot-{arch}"
@@ -538,7 +540,7 @@ class Build(Task, metaclass=Tool):
             command=Task.checkout(commit=head)
             + rust_install
             + [
-                "(cd repo ; cargo build {})".format(" ".join(cargo_flags)),
+                "(cd repo ; CI/cargo.sh build {})".format(" ".join(cargo_flags)),
                 "mv repo/target/{}/{}/{} $ARTIFACTS/".format(
                     rust_target,
                     "release" if "--release" in cargo_flags else "debug",
