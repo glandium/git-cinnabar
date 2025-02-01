@@ -414,7 +414,7 @@ def tasks():
 
     merge_coverage = []
 
-    if TestTask.coverage and TC_IS_PUSH and TC_BRANCH:
+    if TestTask.coverage and TC_IS_PUSH and TC_BRANCH and IS_GH:
         coverage_mounts = [
             {f"file:cov-{task.id}.zip": task} for task in TestTask.coverage
         ]
@@ -429,32 +429,13 @@ def tasks():
         )
 
     if merge_coverage:
-        kwargs = {}
-        if IS_GH:
-            kwargs["env"] = {
-                "CODECOV_TOKEN": "$CODECOV_TOKEN",
-            }
         Task(
             task_env=TaskEnvironment.by_name("linux.codecov"),
             description="upload coverage",
-            scopes=["secrets:get:project/git-cinnabar/codecov"],
             mounts=coverage_mounts,
             command=list(
                 chain(
                     Task.checkout(),
-                    [
-                        "set +x",
-                        (
-                            "export CODECOV_TOKEN=$(curl -sL "
-                            f"{PROXY_URL}/api/secrets/v1/secret/project/git-cinnabar"
-                            "/codecov | python3"
-                            ' -c "import json, sys; print(json.load(sys.stdin)'
-                            '[\\"secret\\"][\\"token\\"])")'
-                        ),
-                        "set -x",
-                    ]
-                    if IS_TC
-                    else [],
                     merge_coverage,
                     [
                         "cd repo",
@@ -464,7 +445,9 @@ def tasks():
                     ],
                 )
             ),
-            **kwargs,
+            env={
+                "CODECOV_TOKEN": "$CODECOV_TOKEN",
+            },
         )
 
 

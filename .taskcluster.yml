@@ -32,7 +32,6 @@ tasks:
             - $if: 'tasks_for == "github-push"'
               then:
               - 'queue:route:index.project.git-cinnabar.*'
-              - secrets:get:project/git-cinnabar/codecov
         routes:
           $if: 'e.decision_id'
           then:
