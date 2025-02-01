@@ -27,6 +27,7 @@ tasks:
       scopes:
         - assume:repo:github.com/${e.base_login}/${e.base_repo_name}:decision-task
         - 'queue:route:index.project.git-cinnabar.*'
+        - secrets:get:project/git-cinnabar/gha
       routes:
         $if: 'e.decision_id'
         then:
@@ -36,6 +37,7 @@ tasks:
         features:
           taskclusterProxy: true
         env:
+          NO_INDEX: "1"
           TC_PROXY: "1"
           TC_DATA: {$json: {$eval: e}}
           TC_GROUP_ID: ${taskGroupId}

@@ -20,6 +20,7 @@ from tasks import (
     TaskEnvironment,
     Tool,
     action,
+    bash_command,
     parse_version,
 )
 from tools import (
@@ -511,25 +512,53 @@ def main_gh():
 
 
 def main_tc():
+    from gha import runs_url, wait_completion, wait_run
+
+    run = wait_run(runs_url(), ".github/workflows/ci.yml")
+    run_id = run["id"]
+    url = run["jobs_url"]
+    wait_completion(url, "decision")
+    jobs = wait_completion(url, "build")
+    if not all(job.get("conclusion") == "success" for job in jobs):
+        print("Some build jobs failed.", file=sys.stderr)
+        return 1
+
+    tc_data = json.dumps(
+        {
+            "repo_name": TC_REPO_NAME,
+            "login": TC_LOGIN,
+            "commit": TC_COMMIT,
+            "branch": TC_BRANCH,
+        }
+    )
+
     tasks()
 
-    run_tasks = {}
+    builds = [
+        build
+        for build in Task.by_id.values()
+        if build.task.get("metadata", {}).get("name", "").startswith("build")
+    ]
 
-    def add_task(t):
-        if t in run_tasks:
-            return
-        for d in t.task.get("dependencies"):
-            dep = Task.by_id.get(d)
-            if dep and dep not in run_tasks:
-                add_task(dep)
-        run_tasks[t] = None
+    for build in builds:
+        route = build.task["routes"][0]
+        task = Task(
+            description=build.task.get("metadata", {}).get("description", ""),
+            scopes=["secrets:get:project/git-cinnabar/gha"],
+            command=bash_command(
+                *chain(
+                    Task.checkout(),
+                    [f"python3 repo/CI/get_artifact.py --run-id {run_id} {route}"],
+                )
+            ),
+            env={
+                "TC_DATA": tc_data,
+            },
+            artifacts=[f"artifacts/{os.path.basename(build.artifact)}"],
+            index=route.removeprefix("index.project.git-cinnabar."),
+        )
 
-    for t in Task.by_id.values():
-        if TC_ACTION or t.task.get("metadata", {}).get("name", "").startswith("build"):
-            add_task(t)
-
-    for t in run_tasks:
-        t.submit()
+        task.submit()
 
 
 if __name__ == "__main__":

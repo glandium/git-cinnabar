@@ -9,6 +9,7 @@ import numbers
 import os
 import re
 from collections import OrderedDict
+from functools import cached_property
 from uuid import uuid4
 
 from pkg_resources import parse_version  # noqa: F401
@@ -86,14 +87,11 @@ class Index(dict):
     class Existing(str):
         pass
 
-    def __init__(self):
-        super(Index, self).__init__()
-        if NO_INDEX:
-            self.session = None
-        else:
-            import requests
+    @cached_property
+    def session(self):
+        import requests
 
-            self.session = requests.Session()
+        return requests.Session()
 
     def __missing__(self, key):
         result = None
@@ -110,7 +108,7 @@ class Index(dict):
         return result
 
     def _try_key(self, key, create=False):
-        if not self.session:
+        if NO_INDEX:
             return
         data = http_get(self.session, PROXY_INDEX_URL.format(key))
         if data and not expires_soon(data["expires"]):
@@ -228,7 +226,7 @@ class Task(object):
             elif k == "description":
                 task["metadata"][k] = task["metadata"]["name"] = v
             elif k == "index":
-                if IS_GH or (TC_IS_PUSH and TC_BRANCH != "try"):
+                if IS_GH or TC_IS_PUSH:
                     task["routes"] = ["index.project.git-cinnabar.{}".format(v)]
             elif k == "expireIn":
                 value = v.split()
@@ -289,6 +287,7 @@ class Task(object):
                     if s.startswith("secrets:"):
                         features = task["payload"].setdefault("features", {})
                         features["taskclusterProxy"] = True
+                        task["payload"].setdefault("env", {})["TC_PROXY"] = "1"
             elif k == "mounts":
 
                 def file_format(url):
