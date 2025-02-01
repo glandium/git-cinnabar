@@ -477,14 +477,17 @@ class Build(Task, metaclass=Tool):
                 multiarch = target.replace("unknown-", "")
                 TARGET = target.replace("-", "_").upper()
                 environ[f"CARGO_TARGET_{TARGET}_LINKER"] = environ["CC"]
+                link_args = [
+                    f"--target={target}",
+                    "-fuse-ld=lld-19",
+                ]
                 if "linux" in os:
-                    extra_link_arg = f"--sysroot=/sysroot-{arch}"
+                    link_args.append(f"--sysroot=/sysroot-{arch}")
                 if os.startswith("mingw"):
-                    extra_link_arg = f"-L/usr/lib/gcc/{cpu}-w64-mingw32/10-win32"
-                environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] = (
-                    f"-C link-arg=--target={target} "
-                    + f"-C link-arg={extra_link_arg} "
-                    + "-C link-arg=-fuse-ld=lld-19"
+                    link_args.append(f"-L/usr/lib/gcc/{cpu}-w64-mingw32/10-win32")
+                    link_args.append("-Wl,-Xlink,-Brepro")
+                environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] = " ".join(
+                    f"-C link-arg={arg}" for arg in link_args
                 )
                 rustflags = environ.pop("RUSTFLAGS", None)
                 if rustflags:
