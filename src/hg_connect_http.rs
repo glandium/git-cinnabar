@@ -672,7 +672,16 @@ impl HgHttpConnection {
             .and_then(|s| usize::from_str(s).ok())
             .unwrap_or(0);
 
-        let httppostargs = self.get_capability(b"httppostargs").is_some();
+        let httppostargs = self.get_capability(b"httppostargs").is_some()
+            // Versions of mercurial >= 3.8 < 4.4 don't handle httppostargs
+            // on commands that are already POST. We check for the `phases`
+            // bundle2 capability, which was introduced in mercurial 4.4.
+            && ((command != "unbundle" && command != "pushkey")
+                || self
+                    .get_capability(b"bundle2")
+                    .unwrap_or(b"".as_bstr())
+                    .split(|x| *x == b'\n')
+                    .any(|x| x.starts_with(b"phases=")));
 
         let mut command_url = self.url.clone();
         let mut query_pairs = command_url.query_pairs_mut();
