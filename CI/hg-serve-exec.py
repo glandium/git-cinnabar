@@ -92,16 +92,16 @@ def perform_authentication(hgweb, req, op):
         env = req.env
     else:
         env = req.rawenv
-    if env.get("REQUEST_METHOD") == "POST":
-        auth = env.get("HTTP_AUTHORIZATION")
+    if env.get(b"REQUEST_METHOD") == b"POST":
+        auth = env.get(b"HTTP_AUTHORIZATION")
         if not auth:
             raise common.ErrorResponse(
                 common.HTTP_UNAUTHORIZED,
-                "who",
-                [("WWW-Authenticate", 'Basic Realm="mercurial"')],
+                b"who",
+                [(b"WWW-Authenticate", b'Basic Realm="mercurial"')],
             )
-        if base64.b64decode(auth.split()[1]).split(":", 1) != ["foo", "bar"]:
-            raise common.ErrorResponse(common.HTTP_FORBIDDEN, "no")
+        if base64.b64decode(auth.split()[1]).split(b":", 1) != [b"foo", b"bar"]:
+            raise common.ErrorResponse(common.HTTP_FORBIDDEN, b"no")
 
 
 def extsetup(ui):
