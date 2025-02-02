@@ -584,7 +584,7 @@ hook:
   remote: loading pretxnclose hook failed:
   remote: transaction abort!
   remote: rollback completed
-  remote: abort: No such file or directory: '/nonexistent'
+  remote: abort: No such file or directory: '?/nonexistent'? (re)
   To hg::.*/push.t/repo (re)
    ! [remote rejected] 846552c6f25c1b46e784f59d8249fb31afac2996 -> branches/default/tip (failed to fill whole buffer)
   error: failed to push some refs to 'hg::.*/push.t/repo' (re)
