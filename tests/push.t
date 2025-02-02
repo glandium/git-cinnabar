@@ -546,7 +546,7 @@ reject_new_heads hook:
 
   $ cat > $REPO/.hg/hgrc <<EOF
   > [hooks]
-  > pretxnclose.reject_new_heads = python:hgext.hooklib.reject_new_heads.hook
+  > pretxnclose.reject_new_heads = python:$TESTDIR/../CI/reject_new_heads.py:hook
   > EOF
   $ git -C abc-git push -f origin 846552c6f25c1b46e784f59d8249fb31afac2996:branches/default/tip
   remote: adding changesets
