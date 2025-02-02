@@ -500,7 +500,7 @@ Test the git_commit experimental feature.
   To hg::.*/push.t/repo (re)
      8b86a58..687e015  687e015f9f646bb19797d991f2f53087297fbe14 -> branches/default/tip
 
-  $ hg -R $REPO log -G --template '{node} {branch} {desc} {extras.git_commit}'
+  $ hg -R $REPO log -G --template '{node} {branch} {desc} {get(extras, "git_commit")}'
   o  c70941aaa15aa6e5feae28164438f13dc3cd7b8e default c 687e015f9f646bb19797d991f2f53087297fbe14
   |
   o  29872b591f8d41c613bbfad38722824ab0457f17 default b d04f6df4abe2870ceb759263ee6aaa9241c4f93c
