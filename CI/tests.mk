@@ -183,7 +183,8 @@ hg.http.hg.gitcredentials hg.http.hg.nobundle2.gitcredentials:
 
 hg.http.hg hg.http.hg.nobundle2: %: %.gitcredentials hg.git
 	$(call HG_INIT, $@)
-	$(HG) -R $@ --config experimental.httppostargs=true --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config web.port=80$(NUM) serve-and-exec -- $(GIT) -c credential.helper='store --file=$(CURDIR)/$@.gitcredentials' -c cinnabar.data=never -C $(word 2,$^) push hg://localhost:80$(NUM).http/ refs/remotes/origin/*:refs/heads/*
+	$(HG) -R $@ --config experimental.httppostargs=true --config extensions.x=$(TOPDIR)/CI/hg-serve-exec.py --config web.port=80$(NUM) serve-and-exec -- $(GIT) -c credential.helper='!touch $(CURDIR)/$<.used' -c credential.helper='store --file=$(CURDIR)/$@.gitcredentials' -c cinnabar.data=never -C $(word 2,$^) push hg://localhost:80$(NUM).http/ refs/remotes/origin/*:refs/heads/*
+	rm $(CURDIR)/$<.used
 
 hg.incr.base.git: hg.incr.hg
 	$(HG) clone -U $< $@.hg
