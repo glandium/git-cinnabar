@@ -547,11 +547,10 @@ reject_new_heads hook:
   $ cat > $REPO/.hg/hgrc <<EOF
   > [hooks]
   > pretxnclose.reject_new_heads = python:$TESTDIR/../CI/reject_new_heads.py:hook
+  > [ui]
+  > quiet = true
   > EOF
   $ git -C abc-git push -f origin 846552c6f25c1b46e784f59d8249fb31afac2996:branches/default/tip
-  remote: adding changesets
-  remote: adding manifests
-  remote: adding file changes
   remote: error: pretxnclose.reject_new_heads hook failed: Changes on branch 'default' resulted in multiple heads
   remote: transaction abort!
   remote: rollback completed
@@ -578,11 +577,10 @@ hook:
   $ cat > $REPO/.hg/hgrc <<EOF
   > [hooks]
   > pretxnclose = python:/nonexistent:fail
+  > [ui]
+  > quiet = true
   > EOF
   $ git -C abc-git push -f origin 846552c6f25c1b46e784f59d8249fb31afac2996:branches/default/tip
-  remote: adding changesets
-  remote: adding manifests
-  remote: adding file changes
   remote: loading pretxnclose hook failed:
   remote: transaction abort!
   remote: rollback completed
