@@ -1,75 +1,61 @@
 version: 1
 tasks:
-  - $if: 'tasks_for == "github-push"'
-    then:
-      $let:
-        e: # FIXME after https://github.com/taskcluster/json-e/issues/249
-          repo_name: ${event.repository.name}
-          repo_url: ${event.repository.url}
-          base_repo_url: ${event.repository.url}
-          login: ${event.pusher.name}
-          commit: ${event.after}
-          branch:
-            $if: 'event.ref[:11] == "refs/heads/"'
-            then: ${event.ref[11:]}
-          base_repo_name: ${event.repository.name}
-          base_login: ${event.repository.owner.name}
-          decision_id:
-            $if: 'event.ref[:10] == "refs/tags/"'
-            then: ${event.ref[10:]}
-            else: ${event.after}
-        taskGroupId: {$eval: as_slugid("decision")}
-      in:
-        taskId: ${taskGroupId}
-        taskGroupId: ${taskGroupId}
-        schedulerId: taskcluster-github
-        provisionerId: proj-git-cinnabar
-        workerType: linux
-        retries: 5
-        scopes:
-          $flatten:
-            - assume:repo:github.com/${e.base_login}/${e.base_repo_name}:decision-task
-            - $if: 'tasks_for == "github-push"'
-              then:
-              - 'queue:route:index.project.git-cinnabar.*'
-        routes:
-          $if: 'e.decision_id'
-          then:
-            - 'index.project.git-cinnabar.decision.${e.decision_id}'
-        payload:
-          maxRunTime: 3600
-          features:
-            taskclusterProxy: true
-          env:
-            TC_PROXY: "1"
-            TC_DATA: {$json: {$eval: e}}
-            TC_GROUP_ID: ${taskGroupId}
-            TC_IS_PUSH: {$if: 'tasks_for == "github-push"', then: "1"}
-          command:
-            - - sh
-              - '-c'
-              - >-
-                git clone -n ${e.base_repo_url} repo &&
-                git -C repo remote add head ${e.repo_url} &&
-                git -C repo remote update head &&
-                git -c advice.detachedHead=false -C repo checkout ${e.commit} &&
-                python3 -m venv venv &&
-                venv/bin/pip install pyyaml==6.0.1 requests==2.27.1 setuptools==70.3.0 &&
-                venv/bin/python3 repo/CI/decision.py
-          artifacts:
-            $if: 'e.decision_id'
-            then:
-              - name: public/actions.json
-                path: actions.json
-                type: file
-        created: {$fromNow: ''}
-        deadline: {$fromNow: '2 hours'}
-        expires:
-          $if: 'tasks_for == "action"'
-          then: {$fromNow: '6 hours'}
-          else: {$fromNow: '26 weeks'}
-        metadata:
-          name: decision task
-          description: ${e.repo_name} decision task
-          owner: ${e.login}@users.noreply.github.com
-          source: ${e.repo_url}
+  - $let:
+      e: # FIXME after https://github.com/taskcluster/json-e/issues/249
+        repo_name: ${event.repository.name}
+        repo_url: ${event.repository.url}
+        base_repo_url: ${event.repository.url}
+        login: ${event.pusher.name}
+        commit: ${event.after}
+        branch:
+          $if: 'event.ref[:11] == "refs/heads/"'
+          then: ${event.ref[11:]}
+        base_repo_name: ${event.repository.name}
+        base_login: ${event.repository.owner.name}
+        decision_id:
+          $if: 'event.ref[:10] == "refs/tags/"'
+          then: ${event.ref[10:]}
+          else: ${event.after}
+      taskGroupId: {$eval: as_slugid("decision")}
+    in:
+      taskId: ${taskGroupId}
+      taskGroupId: ${taskGroupId}
+      schedulerId: taskcluster-github
+      provisionerId: proj-git-cinnabar
+      workerType: linux
+      retries: 5
+      scopes:
+        - assume:repo:github.com/${e.base_login}/${e.base_repo_name}:decision-task
+        - 'queue:route:index.project.git-cinnabar.*'
+      routes:
+        $if: 'e.decision_id'
+        then:
+          - 'index.project.git-cinnabar.decision.${e.decision_id}'
+      payload:
+        maxRunTime: 3600
+        features:
+          taskclusterProxy: true
+        env:
+          TC_PROXY: "1"
+          TC_DATA: {$json: {$eval: e}}
+          TC_GROUP_ID: ${taskGroupId}
+          TC_IS_PUSH: "1"
+        command:
+          - - sh
+            - '-c'
+            - >-
+              git clone -n ${e.base_repo_url} repo &&
+              git -C repo remote add head ${e.repo_url} &&
+              git -C repo remote update head &&
+              git -c advice.detachedHead=false -C repo checkout ${e.commit} &&
+              python3 -m venv venv &&
+              venv/bin/pip install pyyaml==6.0.1 requests==2.27.1 setuptools==70.3.0 &&
+              venv/bin/python3 repo/CI/decision.py
+      created: {$fromNow: ''}
+      deadline: {$fromNow: '2 hours'}
+      expires: {$fromNow: '26 weeks'}
+      metadata:
+        name: decision task
+        description: ${e.repo_name} decision task
+        owner: ${e.login}@users.noreply.github.com
+        source: ${e.repo_url}

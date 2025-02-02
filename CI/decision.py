@@ -531,31 +531,6 @@ def main_tc():
     for t in run_tasks:
         t.submit()
 
-    if not TC_ACTION and "TC_GROUP_ID" in os.environ:
-        actions = {
-            "version": 1,
-            "actions": [],
-            "variables": {
-                "e": dict(TC_DATA, decision_id=""),
-                "tasks_for": "action",
-            },
-        }
-        for name, a in action.by_name.items():
-            if name != "decision":
-                actions["actions"].append(
-                    {
-                        "kind": "task",
-                        "name": a.name,
-                        "title": a.title,
-                        "description": a.description,
-                        "context": [],
-                        "task": a.task,
-                    }
-                )
-
-        with open("actions.json", "w") as out:
-            out.write(json.dumps(actions, indent=True))
-
 
 if __name__ == "__main__":
     if IS_GH:

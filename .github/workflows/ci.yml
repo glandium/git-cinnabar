@@ -4,6 +4,17 @@ on:
   pull_request: []
   schedule:
     - cron: '21 7 * * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        options:
+          - more-hg-versions
+          - hg-trunk
+
+env:
+  TC_ACTION: ${{ github.event.inputs.action || 'decision' }}
+
 jobs:
   decision:
     runs-on: ubuntu-latest
