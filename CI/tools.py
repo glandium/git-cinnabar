@@ -307,25 +307,14 @@ class Hg(Task, metaclass=Tool):
                 " mercurial-{}/mercurial/exewrapper.c".format(version)
             )
 
-        if len(version) == 40 or parse_version(version) >= parse_version("6.9"):
-            # Newer versions of Mercurial removed the name in the setup() call
-            # to move it into pyproject.toml, but we remove that file.
-            # Without the name, `pip wheel` creates a package for `UNKNOWN`.
-            # Note: trying to use the literal string `"mercurial"` is a quoting
-            # nightmare, so rely on something in setup.py that has that value.
-            pre_command.append(
-                'sed -i.bak "/version=setupversion/s/,/,name=packages[0],/"'
-                " mercurial-{}/setup.py".format(version)
-            )
-
         h = hashlib.sha1(env.hexdigest.encode())
         h.update(artifact.encode())
         if os.endswith("osx"):
-            h.update(b"v3")
+            h.update(b"v4")
         elif os.startswith("mingw"):
-            h.update(b"v5")
+            h.update(b"v6")
         else:
-            h.update(b"v2")
+            h.update(b"v3")
 
         Task.__init__(
             self,
@@ -334,15 +323,7 @@ class Hg(Task, metaclass=Tool):
             index="{}.hg.{}".format(h.hexdigest(), pretty_version),
             expireIn=expire,
             command=pre_command
-            + [
-                # pyproject.toml enables PEP 517, which can't be disabled.
-                # pip wheel doesn't accept --build-option when PEP 517 is
-                # enabled. --build-option is necessary on msys2 because
-                # of problems with the bdist-dir otherwise.
-                "rm -f mercurial-{}/pyproject.toml".format(version),
-                "{} -m pip wheel -v --build-option -b --build-option"
-                " $PWD/wheel -w $ARTIFACTS ./mercurial-{}".format(python, version),
-            ],
+            + [f"{python} -m pip wheel -v -w $ARTIFACTS ./mercurial-{version}"],
             artifact=artifact.format(artifact_version),
             **kwargs,
         )
