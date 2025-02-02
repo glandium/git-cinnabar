@@ -688,6 +688,10 @@ impl HgHttpConnection {
             let args = encoder.finish();
             if httppostargs {
                 headers.push(("X-HgArgs-Post".to_string(), args.len().to_string()));
+                headers.push((
+                    "Content-Type".to_string(),
+                    "application/mercurial-0.1".to_string(),
+                ));
                 body = Some(args);
             } else {
                 let mut args = &args[..];
