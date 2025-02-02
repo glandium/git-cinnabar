@@ -92,7 +92,10 @@ def perform_authentication(hgweb, req, op):
         env = req.env
     else:
         env = req.rawenv
-    if env.get(b"REQUEST_METHOD") == b"POST":
+    if (
+        env.get(b"REQUEST_METHOD") == b"POST"
+        and env.get(b"QUERY_STRING") == b"cmd=unbundle"
+    ):
         auth = env.get(b"HTTP_AUTHORIZATION")
         if not auth:
             raise common.ErrorResponse(
