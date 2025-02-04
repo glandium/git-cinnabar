@@ -51,7 +51,7 @@ DEFAULT_REPO = "https://hg.mozilla.org/users/mh_glandium.org/jqplot"
 REPO = os.environ.get("REPO", DEFAULT_REPO)
 
 IS_GH = "GITHUB_RUN_ID" in os.environ
-IS_TC = "TC_GROUP_ID" in os.environ
+IS_TC = "TASK_GROUP_ID" in os.environ
 if IS_TC:
     NO_INDEX = os.environ.get("NO_INDEX")
     TC_IS_PUSH = os.environ.get("TC_IS_PUSH") == "1"

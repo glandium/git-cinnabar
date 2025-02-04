@@ -42,7 +42,6 @@ tasks:
             NO_INDEX: "1"
             TC_PROXY: "1"
             TC_DATA: {$json: {$eval: e}}
-            TC_GROUP_ID: ${taskGroupId}
             TC_IS_PUSH: "1"
           command:
             - - sh
