@@ -24,6 +24,10 @@ runs:
       if: ${{ steps.cache.outputs.cache-hit != 'true' && fromJSON(inputs.mounts) }}
       with:
         mounts: ${{ inputs.mounts }}
+    - name: Set PATH
+      shell: bash
+      if: ${{ steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS' }}
+      run: echo "PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Frameworks/Python.framework/Versions/2.7/bin:$PATH" >> $GITHUB_ENV
     - uses: actions/setup-python@v5
       if: ${{ steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS' }}
       with:
