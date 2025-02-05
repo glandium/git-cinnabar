@@ -98,6 +98,7 @@ DOCKER_IMAGES = {
                     [
                         "clang-19",
                         "lld-19",
+                        "llvm-19",
                         "git",
                         "make",
                         "patch",

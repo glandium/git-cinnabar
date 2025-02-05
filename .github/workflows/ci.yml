@@ -125,9 +125,25 @@ jobs:
           mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
           artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
 
+  macossdk:
+    if: ${{ fromJSON(needs.decision.outputs.matrix)['macossdk'] && !cancelled() }}
+    needs: [decision]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.decision.outputs.matrix)['macossdk'] }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/task
+        with:
+          name: ${{ matrix.task }}
+          mounts: ${{ toJSON(fromJSON(needs.decision.outputs.mounts)[matrix.task]) }}
+          artifacts: ${{ toJSON(fromJSON(needs.decision.outputs.artifacts)[matrix.task]) }}
+
   build:
     if: ${{ fromJSON(needs.decision.outputs.matrix)['build'] && !cancelled() }}
-    needs: [decision, docker]
+    needs: [decision, docker, macossdk]
     strategy:
       fail-fast: false
       matrix:

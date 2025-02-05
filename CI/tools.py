@@ -358,10 +358,7 @@ class Build(Task, metaclass=Tool):
         env = TaskEnvironment.by_name(
             "{}.build".format(os.replace("arm64-linux", "linux"))
         )
-        if os.startswith("mingw"):
-            build_env = TaskEnvironment.by_name("linux.build")
-        else:
-            build_env = env
+        build_env = TaskEnvironment.by_name("linux.build")
 
         artifact = "git-cinnabar"
         if os.startswith("mingw"):
@@ -427,8 +424,7 @@ class Build(Task, metaclass=Tool):
         elif variant:
             raise Exception("Unknown variant: {}".format(variant))
 
-        if "osx" not in os:
-            environ["CC"] = "clang-19"
+        environ["CC"] = "clang-19"
 
         if os.startswith("mingw"):
             cpu = msys.msys_cpu(env.cpu)
@@ -441,46 +437,45 @@ class Build(Task, metaclass=Tool):
             rust_target = "x86_64-unknown-linux-gnu"
         elif os == "arm64-linux":
             rust_target = "aarch64-unknown-linux-gnu"
-        if "osx" not in os:
-            for target in dict.fromkeys(
-                ["x86_64-unknown-linux-gnu", rust_target]
-            ).keys():
-                arch = {
-                    "x86_64": "amd64",
-                    "aarch64": "arm64",
-                }[target.partition("-")[0]]
-                multiarch = target.replace("unknown-", "")
-                TARGET = target.replace("-", "_").upper()
-                environ[f"CARGO_TARGET_{TARGET}_LINKER"] = environ["CC"]
-                link_args = [
-                    f"--target={target}",
-                    "-fuse-ld=lld-19",
-                ]
-                if "linux" in os:
-                    link_args.append(f"--sysroot=/sysroot-{arch}")
-                if os.startswith("mingw"):
-                    link_args.append(f"-L/usr/lib/gcc/{cpu}-w64-mingw32/10-win32")
-                    link_args.append("-Wl,-Xlink,-Brepro")
-                environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] = " ".join(
-                    f"-C link-arg={arg}" for arg in link_args
-                )
-                rustflags = environ.pop("RUSTFLAGS", None)
-                if rustflags:
-                    environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] += f" {rustflags}"
-                if "linux" in os:
-                    environ[f"CFLAGS_{target.replace('-', '_')}"] = (
-                        f"--sysroot=/sysroot-{arch}"
-                    )
+
+        for target in dict.fromkeys(["x86_64-unknown-linux-gnu", rust_target]).keys():
+            arch = {
+                "x86_64": "amd64",
+                "aarch64": "arm64",
+            }[target.partition("-")[0]]
+            multiarch = target.replace("unknown-", "")
+            TARGET = target.replace("-", "_").upper()
+            environ[f"CARGO_TARGET_{TARGET}_LINKER"] = environ["CC"]
+            link_args = [
+                f"--target={target}",
+                "-fuse-ld=lld",
+            ]
             if "linux" in os:
-                environ["PKG_CONFIG_PATH"] = ""
-                environ["PKG_CONFIG_SYSROOT_DIR"] = f"/sysroot-{arch}"
-                environ["PKG_CONFIG_LIBDIR"] = ":".join(
-                    (
-                        f"/sysroot-{arch}/usr/lib/pkgconfig",
-                        f"/sysroot-{arch}/usr/lib/{multiarch}/pkgconfig",
-                        f"/sysroot-{arch}/usr/share/pkgconfig",
-                    )
+                link_args.append(f"--sysroot=/sysroot-{arch}")
+            if os.startswith("mingw"):
+                link_args.append(f"-L/usr/lib/gcc/{cpu}-w64-mingw32/10-win32")
+                link_args.append("-Wl,-Xlink,-Brepro")
+            environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] = " ".join(
+                f"-C link-arg={arg}" for arg in link_args
+            )
+            environ["AR"] = "llvm-ar-19"
+            rustflags = environ.pop("RUSTFLAGS", None)
+            if rustflags:
+                environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] += f" {rustflags}"
+            if "linux" in os:
+                environ[f"CFLAGS_{target.replace('-', '_')}"] = (
+                    f"--sysroot=/sysroot-{arch}"
                 )
+        if "linux" in os:
+            environ["PKG_CONFIG_PATH"] = ""
+            environ["PKG_CONFIG_SYSROOT_DIR"] = f"/sysroot-{arch}"
+            environ["PKG_CONFIG_LIBDIR"] = ":".join(
+                (
+                    f"/sysroot-{arch}/usr/lib/pkgconfig",
+                    f"/sysroot-{arch}/usr/lib/{multiarch}/pkgconfig",
+                    f"/sysroot-{arch}/usr/share/pkgconfig",
+                )
+            )
         if variant == "asan":
             environ["RUSTC_BOOTSTRAP"] = "1"
         if rust_version:
@@ -502,6 +497,12 @@ class Build(Task, metaclass=Tool):
             environ.setdefault("MACOSX_DEPLOYMENT_TARGET", "10.7")
         if os.startswith("arm64-osx"):
             environ.setdefault("MACOSX_DEPLOYMENT_TARGET", "11.0")
+        sdk_install = []
+        kwargs = {}
+        if "osx" in os:
+            sdk = Tool.by_name("macossdk.arm64-osx")
+            sdk_install = sdk.install()
+            kwargs.setdefault("mounts", []).append(sdk.mount())
 
         cpu = "arm64" if os == "arm64-linux" else env.cpu
         Task.__init__(
@@ -510,6 +511,7 @@ class Build(Task, metaclass=Tool):
             description="build {} {}{}".format(env.os, cpu, prefix(" ", desc_variant)),
             index="build.{}.{}.{}{}".format(hash, env.os, cpu, prefix(".", variant)),
             command=Task.checkout(commit=head)
+            + sdk_install
             + rust_install
             + [
                 "(cd repo ; CI/cargo.sh build {})".format(" ".join(cargo_flags)),
@@ -521,6 +523,7 @@ class Build(Task, metaclass=Tool):
             ],
             artifacts=artifacts,
             env=environ,
+            **kwargs,
         )
 
     def mount(self):

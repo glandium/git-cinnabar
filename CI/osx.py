@@ -5,7 +5,9 @@
 import hashlib
 
 from tasks import (
+    Task,
     TaskEnvironment,
+    Tool,
     bash_command,
 )
 
@@ -56,3 +58,30 @@ class OsxArm64(OsxCommon, metaclass=TaskEnvironment):
         env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
         params["command"].insert(0, "export PATH=$PATH:/opt/homebrew/bin")
         return super(OsxArm64, self).prepare_params(params)
+
+
+class MacosSDK(Task, metaclass=Tool):
+    PREFIX = "macossdk"
+    SDK_VERSION = "14.2"
+    XCODE_VERSION = "15.2"
+
+    def __init__(self, name):
+        dev = f"/Applications/Xcode_{self.XCODE_VERSION}.app/Contents/Developer"
+        sdkroot = f"{dev}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX{self.SDK_VERSION}.sdk"
+        Task.__init__(
+            self,
+            description=f"macossdk {self.SDK_VERSION}",
+            task_env=TaskEnvironment.by_name("arm64-osx.build"),
+            command=[
+                f"cp -RH {sdkroot} MacOSX{self.SDK_VERSION}.sdk",
+                f"gtar --zstd -cf MacOSX{self.SDK_VERSION}.sdk.tar.zst MacOSX{self.SDK_VERSION}.sdk",
+            ],
+            artifact=f"MacOSX{self.SDK_VERSION}.sdk.tar.zst",
+            index=f"macossdk.{self.SDK_VERSION}",
+        )
+
+    def mount(self):
+        return {f"directory:MacOSX{self.SDK_VERSION}.sdk": self}
+
+    def install(self):
+        return [f"export SDKROOT=$(realpath $PWD/MacOSX{self.SDK_VERSION}.sdk)"]
