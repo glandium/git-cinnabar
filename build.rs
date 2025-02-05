@@ -138,10 +138,10 @@ fn main() {
         .arg("GENERATED_H=")
         .args(extra_args);
 
-    let compiler = cc::Build::new()
-        .force_frame_pointer(true)
-        .warnings(false)
-        .get_compiler();
+    let mut build = cc::Build::new();
+    build.force_frame_pointer(true).warnings(false);
+    let compiler = build.get_compiler();
+    let ar = build.get_archiver();
 
     let cflags = [
         compiler.cflags_env().into_string().ok(),
@@ -178,6 +178,7 @@ fn main() {
     .join(" ");
     cmd.arg(format!("CFLAGS={}", cflags));
     cmd.arg(format!("CC={}", compiler.path().display()));
+    cmd.arg(format!("AR={}", ar.get_program().to_str().unwrap()));
 
     let compile_commands =
         cfg!(feature = "compile_commands") || std::env::var("VSCODE_PID").is_ok();
