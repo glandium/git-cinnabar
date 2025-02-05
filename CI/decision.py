@@ -556,6 +556,7 @@ def main_tc():
             },
             artifacts=[f"artifacts/{os.path.basename(build.artifact)}"],
             index=route.removeprefix("index.project.git-cinnabar."),
+            expireIn="26 weeks",
         )
 
         task.submit()
