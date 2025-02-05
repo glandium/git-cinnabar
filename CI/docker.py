@@ -210,7 +210,6 @@ class DockerImage(Task, metaclass=TaskEnvironment):
             task_env=self,
             description="docker image: {}".format(name),
             index=self.index,
-            expireIn="26 weeks",
             workerType="linux",
             image=base,
             dockerSave=True,
@@ -250,9 +249,6 @@ class DockerImage(Task, metaclass=TaskEnvironment):
             "--volume=./artifacts:/artifacts",
             "--env=ARTIFACTS=/artifacts",
         ]
-        if any(s.startswith("secrets:") for s in params.get("scopes", [])):
-            # There's probably a better way, but it's simpler.
-            run_cmd.append("--network=host")
         for v in volumes:
             run_cmd.append(f"--volume=./{v}:/{v}")
         for k, v in params.pop("env", {}).items():

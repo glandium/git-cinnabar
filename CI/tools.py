@@ -14,7 +14,6 @@ from tasks import (
     parse_version,
 )
 from util import build_commit
-from variables import TC_BRANCH, TC_IS_PUSH
 
 MERCURIAL_VERSION = "6.9.1"
 GIT_VERSION = "2.47.1"
@@ -112,7 +111,6 @@ class Git(Task, metaclass=Tool):
                 task_env=build_image,
                 description=description,
                 index="{}.git.v{}".format(h.hexdigest(), version),
-                expireIn="26 weeks",
                 command=Task.checkout(
                     "git://git.kernel.org/pub/scm/git/git.git",
                     "v{}".format(version),
@@ -153,7 +151,6 @@ class Git(Task, metaclass=Tool):
                 task_env=build_image,
                 description="git v{} {} {}".format(version, env.os, env.cpu),
                 index="{}.git.v{}".format(h.hexdigest(), raw_version),
-                expireIn="26 weeks",
                 command=[
                     "curl -L https://github.com/git-for-windows/git/releases/"
                     "download/v{}/MinGit-{}-{}-bit.zip"
@@ -213,11 +210,9 @@ class Hg(Task, metaclass=Tool):
             # Assume it's a sha1
             pretty_version = "r{}{}".format(version, suffix)
             artifact_version = "99.0"
-            expire = "2 weeks"
         else:
             pretty_version = "v{}{}".format(version, suffix)
             artifact_version = version
-            expire = "26 weeks"
         desc = "hg {}".format(pretty_version)
         if os == "linux":
             platform_tag = "linux_x86_64"
@@ -321,7 +316,6 @@ class Hg(Task, metaclass=Tool):
             task_env=env,
             description=desc,
             index="{}.hg.{}".format(h.hexdigest(), pretty_version),
-            expireIn=expire,
             command=pre_command
             + [f"{python} -m pip wheel -v -w $ARTIFACTS ./mercurial-{version}"],
             artifact=artifact.format(artifact_version),
@@ -515,9 +509,6 @@ class Build(Task, metaclass=Tool):
             task_env=build_env,
             description="build {} {}{}".format(env.os, cpu, prefix(" ", desc_variant)),
             index="build.{}.{}.{}{}".format(hash, env.os, cpu, prefix(".", variant)),
-            expireIn="100 years"
-            if TC_IS_PUSH and TC_BRANCH == "release" and not variant
-            else "26 weeks",
             command=Task.checkout(commit=head)
             + rust_install
             + [

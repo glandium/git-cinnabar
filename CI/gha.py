@@ -10,17 +10,18 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from variables import PROXY_URL, TC_BRANCH, TC_COMMIT, TC_LOGIN, TC_REPO_NAME
+from variables import TC_BRANCH, TC_COMMIT, TC_LOGIN, TC_REPO_NAME
 
 
 @functools.cache
 def get_token():
     if token := os.environ.get("GITHUB_TOKEN"):
         return token
-    with urllib.request.urlopen(
-        f"{PROXY_URL}/api/secrets/v1/secret/project/git-cinnabar/gha"
-    ) as fh:
-        return json.load(fh)["secret"]["token"]
+    if proxy_url := os.environ.get("TASKCLUSTER_PROXY_URL"):
+        with urllib.request.urlopen(
+            f"{proxy_url}/api/secrets/v1/secret/project/git-cinnabar/gha"
+        ) as fh:
+            return json.load(fh)["secret"]["token"]
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -60,7 +61,7 @@ def get_jobs(url, name):
 def wait_completion(url, name, wait=5):
     while True:
         jobs = get_jobs(url, name)
-        if all(job.get("status") == "completed" for job in jobs):
+        if jobs and all(job.get("status") == "completed" for job in jobs):
             break
         time.sleep(wait)
     return jobs

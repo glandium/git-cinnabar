@@ -20,7 +20,6 @@ class OsxCommon(object):
 
     def prepare_params(self, params):
         assert "workerType" not in params
-        params["provisionerId"] = "proj-git-cinnabar"
         params["workerType"] = self.WORKER_TYPE
         command = []
         command.append("export PWD=$(pwd)")

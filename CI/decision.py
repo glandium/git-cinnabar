@@ -20,7 +20,6 @@ from tasks import (
     TaskEnvironment,
     Tool,
     action,
-    bash_command,
     parse_version,
 )
 from tools import (
@@ -179,7 +178,6 @@ class Clone(TestTask, metaclass=Tool):
 
     def __init__(self, version):
         sha1 = git_rev_parse(version)
-        expireIn = "26 weeks"
         kwargs = {}
         if version == TC_COMMIT or len(version) == 40:
             if version == TC_COMMIT:
@@ -188,7 +186,6 @@ class Clone(TestTask, metaclass=Tool):
                 build = Build.by_name("linux.old:{}".format(version))
             kwargs.setdefault("mounts", []).append(build.mount())
             download = build.install()
-            expireIn = "26 weeks"
         elif parse_version(version) < parse_version("0.6.0"):
             download = ["repo/git-cinnabar download"]
             if parse_version(version) < parse_version("0.5.7"):
@@ -205,7 +202,6 @@ class Clone(TestTask, metaclass=Tool):
             hg_clone=True,
             description="clone w/ {}".format(version),
             index=index,
-            expireIn=expireIn,
             build=download,
             commit=sha1,
             clone=False,
@@ -216,7 +212,6 @@ class Clone(TestTask, metaclass=Tool):
                 "git -C hg.old.git bundle create $ARTIFACTS/bundle.git --all",
             ],
             artifact="bundle.git",
-            priority="high",
             **kwargs,
         )
 
@@ -235,7 +230,6 @@ class HgClone(Task, metaclass=Tool):
             task_env=TaskEnvironment.by_name("linux.test"),
             description=f"hg clone w/ {version}",
             index=index,
-            expireIn="26 weeks",
             command=hg_task.install()
             + [
                 "hg clone -U --stream $REPO repo",
@@ -246,17 +240,12 @@ class HgClone(Task, metaclass=Tool):
             env={
                 "REPO": REPO,
             },
-            priority="high",
         )
 
 
 @action("decision")
 def decision():
     for env in ("linux", "mingw64", "osx", "arm64-osx"):
-        # Can't spawn osx workers from pull requests.
-        if env.endswith("osx") and not TC_IS_PUSH and not IS_GH:
-            continue
-
         TestTask(
             task_env=env,
             variant="coverage" if env == "linux" else None,
@@ -314,10 +303,6 @@ def decision():
     )
 
     for env in ("linux", "mingw64", "osx", "arm64-osx"):
-        # Can't spawn osx workers from pull requests.
-        if env.endswith("osx") and not TC_IS_PUSH and not IS_GH:
-            continue
-
         TestTask(
             task_env=env,
             variant="coverage" if env == "linux" else None,
@@ -333,10 +318,6 @@ def decision():
         ("osx", None),
         ("arm64-osx", None),
     ):
-        # Can't spawn osx workers from pull requests.
-        if env.endswith("osx") and not TC_IS_PUSH and not IS_GH:
-            continue
-
         pre_command = []
         if env != "linux":
             pre_command.append("pip install cram==0.7")
@@ -415,7 +396,7 @@ def tasks():
 
     merge_coverage = []
 
-    if TestTask.coverage and TC_IS_PUSH and TC_BRANCH and IS_GH:
+    if TestTask.coverage and TC_IS_PUSH:
         coverage_mounts = [
             {f"file:cov-{task.id}.zip": task} for task in TestTask.coverage
         ]
@@ -458,7 +439,7 @@ def print_output(name, value):
     print(f"{name}={value}")
 
 
-def main_gh():
+def main():
     tasks()
 
     RUNNER = {
@@ -511,59 +492,5 @@ def main_gh():
     print_output("mounts", mounts)
 
 
-def main_tc():
-    from gha import runs_url, wait_completion, wait_run
-
-    run = wait_run(runs_url(), ".github/workflows/ci.yml")
-    run_id = run["id"]
-    url = run["jobs_url"]
-    wait_completion(url, "decision")
-    jobs = wait_completion(url, "build")
-    if not all(job.get("conclusion") == "success" for job in jobs):
-        print("Some build jobs failed.", file=sys.stderr)
-        return 1
-
-    tc_data = json.dumps(
-        {
-            "repo_name": TC_REPO_NAME,
-            "login": TC_LOGIN,
-            "commit": TC_COMMIT,
-            "branch": TC_BRANCH,
-        }
-    )
-
-    tasks()
-
-    builds = [
-        build
-        for build in Task.by_id.values()
-        if build.task.get("metadata", {}).get("name", "").startswith("build")
-    ]
-
-    for build in builds:
-        route = build.task["routes"][0]
-        task = Task(
-            description=build.task.get("metadata", {}).get("description", ""),
-            scopes=["secrets:get:project/git-cinnabar/gha"],
-            command=bash_command(
-                *chain(
-                    Task.checkout(),
-                    [f"python3 repo/CI/get_artifact.py --run-id {run_id} {route}"],
-                )
-            ),
-            env={
-                "TC_DATA": tc_data,
-            },
-            artifacts=[f"artifacts/{os.path.basename(build.artifact)}"],
-            index=route.removeprefix("index.project.git-cinnabar."),
-            expireIn="26 weeks",
-        )
-
-        task.submit()
-
-
 if __name__ == "__main__":
-    if IS_GH:
-        main_gh()
-    else:
-        main_tc()
+    main()
