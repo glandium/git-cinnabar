@@ -61,7 +61,11 @@ def get_jobs(url, name):
 def wait_completion(url, name, wait=5):
     while True:
         jobs = get_jobs(url, name)
-        if jobs and all(job.get("status") == "completed" for job in jobs):
+        if jobs and all(
+            job.get("status") == "completed"
+            or job.get("conclusion") not in (None, "success")
+            for job in jobs
+        ):
             break
         time.sleep(wait)
     return jobs
