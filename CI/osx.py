@@ -62,8 +62,8 @@ class OsxArm64(OsxCommon, metaclass=TaskEnvironment):
 
 class MacosSDK(Task, metaclass=Tool):
     PREFIX = "macossdk"
-    SDK_VERSION = "14.2"
-    XCODE_VERSION = "15.2"
+    SDK_VERSION = "14.5"
+    XCODE_VERSION = "15.4"
 
     def __init__(self, name):
         dev = f"/Applications/Xcode_{self.XCODE_VERSION}.app/Contents/Developer"
