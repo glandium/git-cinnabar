@@ -53,13 +53,6 @@ class OsxArm64(OsxCommon, metaclass=TaskEnvironment):
 
     def prepare_params(self, params):
         env = params.setdefault("env", {})
-        dev = env.setdefault(
-            "DEVELOPER_DIR", "/Applications/Xcode_15.2.app/Contents/Developer"
-        )
-        env.setdefault(
-            "SDKROOT",
-            "{}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.2.sdk".format(dev),
-        )
         env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
         params["command"].insert(0, "export PATH=$PATH:/opt/homebrew/bin")
         return super(OsxArm64, self).prepare_params(params)
