@@ -183,7 +183,6 @@ fn skip_bundle2_chunk<R: Read>(mut r: R) -> io::Result<u64> {
 
 pub struct RevChunkIter<R: Read> {
     version: u8,
-    delta_node: Option<Rc<HgObjectId>>,
     next_delta_node: Option<Rc<HgObjectId>>,
     reader: R,
 }
@@ -192,7 +191,6 @@ impl<R: Read> RevChunkIter<R> {
     pub fn new(version: u8, reader: R) -> Self {
         RevChunkIter {
             version,
-            delta_node: None,
             next_delta_node: None,
             reader,
         }
@@ -218,10 +216,8 @@ impl<R: Read> Iterator for RevChunkIter<R> {
         };
 
         chunk.delta_node = (self.version == 1).then(|| {
-            mem::swap(&mut self.delta_node, &mut self.next_delta_node);
             let delta_node = self
-                .delta_node
-                .clone()
+                .next_delta_node
                 .take()
                 .unwrap_or_else(|| chunk.parent1().into());
 
