@@ -98,7 +98,7 @@ use cstr::cstr;
 use digest::OutputSizeUser;
 use either::Either;
 use git::{BlobId, CommitId, GitObjectId, RawBlob, RawCommit, RawTree, RecursedTreeEntry, TreeIsh};
-use graft::{graft_finish, grafted, maybe_init_graft};
+use graft::{graft_finish, grafted, init_graft, maybe_init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
 use hg_bundle::{create_bundle, create_chunk_data, read_rev_chunk, BundleSpec, RevChunkIter};
 use hg_connect::{
@@ -2181,6 +2181,10 @@ fn do_unbundle(store: &mut Store, clonebundle: bool, mut url: OsString) -> Resul
     } else {
         get_connection(&url).unwrap()
     };
+
+    if !has_metadata(store) && matches!(graft_config_enabled(None), Ok(Some(Either::Right(_)))) {
+        init_graft(store, true);
+    }
 
     get_store_bundle(store, &mut *conn, &[], &[])
         .map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
