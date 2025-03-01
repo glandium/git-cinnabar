@@ -4,7 +4,7 @@
 
 [package]
 name = "git-cinnabar"
-version = "0.7.0-beta.2"
+version = "0.7.0"
 description = "git remote helper to interact with mercurial repositories"
 authors = ["Mike Hommey <mh@glandium.org>"]
 edition = "2021"
