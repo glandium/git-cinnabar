@@ -11,7 +11,7 @@ use std::os::raw::{c_char, c_int, c_uint, c_void};
 use crate::git::{CommitId, GitObjectId, RawTree, TreeId};
 use crate::hg::HgObjectId;
 use crate::libgit::{
-    child_process, combine_notes_ignore, free_notes, init_notes, notes_tree, object_id, FileMode,
+    combine_notes_ignore, free_notes, init_notes, notes_tree, object_id, repository, FileMode,
 };
 use crate::oid::{Abbrev, ObjectId};
 use crate::store::{store_git_commit, Store};
@@ -27,7 +27,7 @@ pub struct strslice<'a> {
 
 impl strslice<'_> {
     pub fn as_bytes(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.buf as *const u8, self.len) }
+        unsafe { std::slice::from_raw_parts(self.buf as *const _, self.len) }
     }
 }
 
@@ -145,6 +145,8 @@ impl cinnabar_notes_tree {
 }
 
 extern "C" {
+    pub fn reset_ref_store(r: *mut repository);
+
     fn cinnabar_get_note(
         notes: *mut cinnabar_notes_tree,
         oid: *const object_id,
@@ -371,12 +373,12 @@ impl hg_notes_tree {
 }
 
 extern "C" {
-    pub fn hg_connect_stdio(
+    pub fn hg_connect_prepare_command(
+        ctx: *mut c_void,
+        add_arg: unsafe extern "C" fn(ctx: *mut c_void, arg: *const c_char),
         userhost: *const c_char,
         port: *const c_char,
         path: *const c_char,
         flags: c_int,
-    ) -> *mut child_process;
-
-    pub fn stdio_finish(conn: *mut child_process) -> c_int;
+    );
 }

@@ -9,16 +9,8 @@ use std::os::raw::c_int;
 pub struct FdFile(c_int);
 
 impl FdFile {
-    pub unsafe fn from_raw_fd(fd: c_int) -> Self {
-        FdFile(fd)
-    }
-
     pub unsafe fn stderr() -> Self {
         FdFile(2)
-    }
-
-    pub unsafe fn raw(&mut self) -> c_int {
-        self.0
     }
 }
 

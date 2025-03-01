@@ -150,10 +150,6 @@ pub struct remote([u8; 0]);
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct child_process([u8; 0]);
-
-#[allow(non_camel_case_types)]
-#[repr(C)]
 pub struct object_entry([u8; 0]);
 
 #[allow(non_camel_case_types)]
@@ -320,7 +316,7 @@ impl<T: ?Sized> Drop for FfiBox<T> {
 
 impl From<strbuf> for FfiBox<[u8]> {
     fn from(value: strbuf) -> Self {
-        let ptr = value.buf as *mut u8;
+        let ptr = value.buf as *mut _;
         let len = value.len;
         mem::forget(value);
         unsafe { FfiBox::from_raw_parts(ptr, len) }
@@ -353,6 +349,8 @@ pub fn git_object_info(
 
 extern "C" {
     pub static mut the_repository: *mut repository;
+
+    pub static local_repo_env: [*const c_char; 1];
 
     static default_abbrev: c_int;
 
@@ -933,7 +931,13 @@ extern "C" {
     pub fn refs_for_each_ref_in(
         refs: *const ref_store,
         prefix: *const c_char,
-        cb: unsafe extern "C" fn(*const c_char, *const object_id, c_int, *mut c_void) -> c_int,
+        cb: unsafe extern "C" fn(
+            *const c_char,
+            *const c_char,
+            *const object_id,
+            c_int,
+            *mut c_void,
+        ) -> c_int,
         cb_data: *mut c_void,
     ) -> c_int;
 }
@@ -950,6 +954,7 @@ pub fn for_each_ref_in<E, S: AsRef<OsStr>, F: FnMut(&OsStr, CommitId) -> Result<
 
     unsafe extern "C" fn each_ref_cb<E, F: FnMut(&OsStr, CommitId) -> Result<(), E>>(
         refname: *const c_char,
+        _referent: *const c_char,
         oid: *const object_id,
         _flags: c_int,
         cb_data: *mut c_void,
@@ -1018,6 +1023,7 @@ pub struct ref_store(c_void);
 extern "C" {
     fn ref_store_transaction_begin(
         refs: *const ref_store,
+        flags: c_uint,
         err: *mut strbuf,
     ) -> *mut ref_transaction;
 
@@ -1063,7 +1069,7 @@ impl RefTransaction {
     pub fn new_with_ref_store(refs: &ref_store) -> Option<Self> {
         let mut err = strbuf::new();
         Some(RefTransaction {
-            tr: unsafe { ref_store_transaction_begin(refs, &mut err).as_mut()? },
+            tr: unsafe { ref_store_transaction_begin(refs, 0, &mut err).as_mut()? },
             err,
         })
     }
@@ -1164,23 +1170,18 @@ impl Drop for RefTransaction {
 }
 
 extern "C" {
-    fn git_config_get_value(key: *const c_char, value: *mut *const c_char) -> c_int;
-    fn git_config_set(key: *const c_char, value: *const c_char);
+    fn repo_config_get_value(
+        r: *mut repository,
+        key: *const c_char,
+        value: *mut *const c_char,
+    ) -> c_int;
 }
 
 pub fn config_get_value(key: &str) -> Option<OsString> {
     let mut value = std::ptr::null();
     let key = CString::new(key).unwrap();
-    (unsafe { git_config_get_value(key.as_ptr(), &mut value) } == 0)
+    (unsafe { repo_config_get_value(the_repository, key.as_ptr(), &mut value) } == 0)
         .then(|| unsafe { CStr::from_ptr(value) }.to_osstr().to_os_string())
-}
-
-pub fn config_set_value<S: ToString>(key: &str, value: S) {
-    let key = CString::new(key).unwrap();
-    let value = CString::new(value.to_string()).unwrap();
-    unsafe {
-        git_config_set(key.as_ptr(), value.as_ptr());
-    }
 }
 
 extern "C" {

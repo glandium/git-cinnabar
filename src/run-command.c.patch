@@ -1,22 +1,14 @@
 diff --git a/run-command.c b/run-command.c
-index 5ec3a46dcc..9d10ed27b8 100644
+index 7e4e2e7fb66..fc4932219fe 100644
 --- a/run-command.c
 +++ b/run-command.c
-@@ -722,7 +722,7 @@ int start_command(struct child_process *cmd)
- 	trace2_child_start(cmd);
- 	trace_run_command(cmd);
+@@ -285,7 +285,8 @@ char *git_shell_path(void)
+ #endif
+ }
  
--	fflush(NULL);
-+	//fflush(NULL);
- 
- 	if (cmd->close_object_store)
- 		close_object_store(the_repository->objects);
-@@ -1211,7 +1211,7 @@ int start_async(struct async *async)
- 
- #ifdef NO_PTHREADS
- 	/* Flush stdio before fork() to avoid cloning buffers */
--	fflush(NULL);
-+	//fflush(NULL);
- 
- 	async->pid = fork();
- 	if (async->pid < 0) {
+-static const char **prepare_shell_cmd(struct strvec *out, const char **argv)
++const char **prepare_shell_cmd(struct strvec *out, const char **argv);
++const char **prepare_shell_cmd(struct strvec *out, const char **argv)
+ {
+ 	if (!argv[0])
+ 		BUG("shell command is empty");

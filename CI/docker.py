@@ -32,19 +32,19 @@ def sources_list(snapshot, sections):
 LLVM_REPO = (
     "echo"
     " deb [signed-by=/usr/share/keyrings/llvm.gpg]"
-    " https://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-18 main"
+    " https://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-19 main"
     " > /etc/apt/sources.list.d/llvm.list"
 )
 
 DOCKER_IMAGES = {
     "base": {
-        "from": "debian:bullseye-20220801",
+        "from": "debian:bullseye-20250113",
         "commands": [
             "({}) > /etc/apt/sources.list".format(
                 "; ".join(
                     "echo " + l
                     for l in sources_list(
-                        "20220801T205040Z",
+                        "20250113T204341Z",
                         (
                             ("debian", "bullseye"),
                             ("debian", "bullseye-updates"),
@@ -78,7 +78,7 @@ DOCKER_IMAGES = {
             "gpg --no-default-keyring --keyring /usr/share/keyrings/llvm.gpg"
             " --import llvm-snapshot.gpg.key",
             "rm llvm-snapshot.gpg.key",
-            "curl -sO http://snapshot.debian.org/archive/debian"
+            "curl -sLO http://snapshot.debian.org/archive/debian"
             "/20220326T025251Z/pool/main/p/python2-pip"
             "/python-pip_20.3.4%2Bdfsg-4_all.deb",
             "dpkg-deb -x python-pip*.deb /",
@@ -96,8 +96,9 @@ DOCKER_IMAGES = {
             "apt-get install -y --no-install-recommends {}".format(
                 " ".join(
                     [
-                        "clang-18",
-                        "lld-18",
+                        "clang-19",
+                        "lld-19",
+                        "llvm-19",
                         "git",
                         "make",
                         "patch",
@@ -115,8 +116,8 @@ DOCKER_IMAGES = {
             "  --architecture=$arch"
             "  --mode=chrootless"
             "  --variant=extract"
-            "  --include=libc6-dev,libcurl4-gnutls-dev,zlib1g-dev,libgcc-6-dev"
-            "  stretch sysroot-$arch"
+            "  --include=libc6-dev,libcurl4-gnutls-dev,zlib1g-dev,libgcc-8-dev"
+            "  buster sysroot-$arch"
             "  http://archive.debian.org/debian/ ;"
             " LD_PRELOAD=libfakechroot.so FAKECHROOT_BASE=$PWD/sysroot-$arch"
             "  symlinks -crv /;"
@@ -165,8 +166,8 @@ DOCKER_IMAGES = {
             ),
             "chmod +x /usr/local/bin/codecov",
             "curl -sL {} | tar -C /usr/local/bin -jxf -".format(
-                "https://github.com/mozilla/grcov/releases/download/v0.8.7"
-                "/grcov-x86_64-unknown-linux-gnu.tar.bz2"
+                "https://github.com/mozilla/grcov/releases/download/v0.8.20"
+                "/grcov-x86_64-unknown-linux-musl.tar.bz2"
             ),
         ],
     },
@@ -178,14 +179,14 @@ DOCKER_IMAGES = {
             "apt-get install -y --no-install-recommends {}".format(
                 " ".join(
                     [
-                        "llvm-18",
+                        "llvm-19",
                         "make",
                     ]
                 )
             ),
             "apt-get clean",
             "pip3 install cram==0.7",
-            "ln -s llvm-symbolizer-18 /usr/bin/llvm-symbolizer",
+            "ln -s llvm-symbolizer-19 /usr/bin/llvm-symbolizer",
         ],
     },
 }
@@ -210,7 +211,6 @@ class DockerImage(Task, metaclass=TaskEnvironment):
             task_env=self,
             description="docker image: {}".format(name),
             index=self.index,
-            expireIn="26 weeks",
             workerType="linux",
             image=base,
             dockerSave=True,
@@ -250,13 +250,13 @@ class DockerImage(Task, metaclass=TaskEnvironment):
             "--volume=./artifacts:/artifacts",
             "--env=ARTIFACTS=/artifacts",
         ]
-        if any(s.startswith("secrets:") for s in params.get("scopes", [])):
-            # There's probably a better way, but it's simpler.
-            run_cmd.append("--network=host")
         for v in volumes:
             run_cmd.append(f"--volume=./{v}:/{v}")
         for k, v in params.pop("env", {}).items():
-            run_cmd.append(f"--env={k}={v}")
+            if v == f"${k}":
+                run_cmd.append(f"--env={k}")
+            else:
+                run_cmd.append(f"--env={k}={v}")
         for cap in params.pop("caps", []):
             run_cmd.append(f"--cap-add={cap}")
         run_cmd.append(image)

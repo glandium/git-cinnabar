@@ -13,7 +13,7 @@ use crate::git::CommitId;
 use crate::{experiment, get_typed_config, ConfigType, Experiments};
 
 #[derive(Clone, Display, Debug)]
-#[display(fmt = "{version}")]
+#[display("{version}")]
 pub struct Version {
     version: semver::Version,
     tag_has_v_prefix: bool,
@@ -171,18 +171,25 @@ macro_rules! full_version {
 mod static_ {
     use clap::crate_version;
     // Work around https://github.com/rust-lang/rust-analyzer/issues/8828 with `as cat`.
+    #[cfg(feature = "full-version")]
     use concat_const::concat as cat;
+    #[cfg(feature = "full-version")]
     use git_version::git_version;
 
     #[cfg(any(feature = "version-check", feature = "self-update"))]
     use super::BuildBranch;
 
     pub const SHORT_VERSION: &str = crate_version!();
+    #[cfg(feature = "full-version")]
     const GIT_VERSION: &str = git_version!(
         args = ["--always", "--match=nothing/", "--abbrev=40", "--dirty=m"],
         fallback = "",
     );
+    #[cfg(feature = "full-version")]
     pub const MODIFIED: bool = matches!(GIT_VERSION.as_bytes().last(), Some(b'm'));
+    #[cfg(not(feature = "full-version"))]
+    pub const MODIFIED: bool = false;
+    #[cfg(feature = "full-version")]
     pub const BUILD_COMMIT: &str = unsafe {
         // Subslicing is not supported in const yet.
         std::str::from_utf8_unchecked(std::slice::from_raw_parts(
@@ -190,12 +197,16 @@ mod static_ {
             GIT_VERSION.len() - if MODIFIED { 1 } else { 0 },
         ))
     };
+    #[cfg(not(feature = "full-version"))]
+    pub const BUILD_COMMIT: &str = "";
 
     #[cfg(any(feature = "version-check", feature = "self-update"))]
     pub const BUILD_BRANCH: BuildBranch = BuildBranch::from_version(SHORT_VERSION);
 
-    //    #[allow(clippy::const_is_empty)]
+    #[cfg(feature = "full-version")]
     pub const FULL_VERSION: &str = full_version!(SHORT_VERSION, BUILD_COMMIT, MODIFIED, cat);
+    #[cfg(not(feature = "full-version"))]
+    pub const FULL_VERSION: &str = SHORT_VERSION;
 }
 
 fn value<'a, T: 'a + ConfigType + ?Sized, F: FnOnce(T::Owned) -> Option<T::Owned>>(

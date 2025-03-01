@@ -102,7 +102,6 @@ class MsysBase(MsysCommon, Task, metaclass=Tool):
             task_env=DockerImage.by_name("base"),
             description="msys2 image: base {}".format(cpu),
             index=self.index,
-            expireIn="26 weeks",
             command=[_create_command],
             artifact="msys2.tar.zst",
         )
@@ -137,7 +136,6 @@ class MsysEnvironment(MsysCommon):
             task_env=env,
             description="msys2 image: {} {}".format(name, cpu),
             index=self.index,
-            expireIn="26 weeks",
             command=create_commands,
             artifact="msys2.tar.zst",
         )

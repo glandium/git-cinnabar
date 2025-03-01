@@ -14,10 +14,9 @@ from tasks import (
     parse_version,
 )
 from util import build_commit
-from variables import TC_BRANCH, TC_IS_PUSH
 
-MERCURIAL_VERSION = "6.8"
-GIT_VERSION = "2.46.2"
+MERCURIAL_VERSION = "6.9.1"
+GIT_VERSION = "2.48.1"
 
 ALL_MERCURIAL_VERSIONS = (
     "1.9.3",
@@ -69,7 +68,8 @@ ALL_MERCURIAL_VERSIONS = (
     "6.5.3",
     "6.6.3",
     "6.7.4",
-    "6.8",
+    "6.8.2",
+    "6.9.1",
 )
 
 SOME_MERCURIAL_VERSIONS = (
@@ -111,7 +111,6 @@ class Git(Task, metaclass=Tool):
                 task_env=build_image,
                 description=description,
                 index="{}.git.v{}".format(h.hexdigest(), version),
-                expireIn="26 weeks",
                 command=Task.checkout(
                     "git://git.kernel.org/pub/scm/git/git.git",
                     "v{}".format(version),
@@ -127,7 +126,7 @@ class Git(Task, metaclass=Tool):
                 )
                 + [
                     "make -C git -j$({}) install prefix=/ NO_GETTEXT=1"
-                    " NO_OPENSSL=1 NO_TCLTK=1 NO_UNCOMPRESS2=1"
+                    " NO_OPENSSL=1 NO_TCLTK=1 NO_UNCOMPRESS2=1 INSTALL_STRIP=-s"
                     " DESTDIR=$PWD/git".format(nproc(build_image)),
                     "tar -c git | zstd -c > $ARTIFACTS/git-{}.tar.zst".format(version),
                 ],
@@ -152,7 +151,6 @@ class Git(Task, metaclass=Tool):
                 task_env=build_image,
                 description="git v{} {} {}".format(version, env.os, env.cpu),
                 index="{}.git.v{}".format(h.hexdigest(), raw_version),
-                expireIn="26 weeks",
                 command=[
                     "curl -L https://github.com/git-for-windows/git/releases/"
                     "download/v{}/MinGit-{}-{}-bit.zip"
@@ -212,11 +210,9 @@ class Hg(Task, metaclass=Tool):
             # Assume it's a sha1
             pretty_version = "r{}{}".format(version, suffix)
             artifact_version = "99.0"
-            expire = "2 weeks"
         else:
             pretty_version = "v{}{}".format(version, suffix)
             artifact_version = version
-            expire = "26 weeks"
         desc = "hg {}".format(pretty_version)
         if os == "linux":
             platform_tag = "linux_x86_64"
@@ -309,28 +305,19 @@ class Hg(Task, metaclass=Tool):
         h = hashlib.sha1(env.hexdigest.encode())
         h.update(artifact.encode())
         if os.endswith("osx"):
-            h.update(b"v2")
-        elif os.startswith("mingw"):
             h.update(b"v4")
+        elif os.startswith("mingw"):
+            h.update(b"v6")
         else:
-            h.update(b"v1")
+            h.update(b"v3")
 
         Task.__init__(
             self,
             task_env=env,
             description=desc,
             index="{}.hg.{}".format(h.hexdigest(), pretty_version),
-            expireIn=expire,
             command=pre_command
-            + [
-                # pyproject.toml enables PEP 517, which can't be disabled.
-                # pip wheel doesn't accept --build-option when PEP 517 is
-                # enabled. --build-option is necessary on msys2 because
-                # of problems with the bdist-dir otherwise.
-                "rm -f mercurial-{}/pyproject.toml".format(version),
-                "{} -m pip wheel -v --build-option -b --build-option"
-                " $PWD/wheel -w $ARTIFACTS ./mercurial-{}".format(python, version),
-            ],
+            + [f"{python} -m pip wheel -v -w $ARTIFACTS ./mercurial-{version}"],
             artifact=artifact.format(artifact_version),
             **kwargs,
         )
@@ -344,10 +331,10 @@ class Hg(Task, metaclass=Tool):
             python = "python3"
         else:
             python = "python2.7"
-        return ["{} -m pip install {}".format(python, filename)]
+        return ["{} -m pip install --force-reinstall {}".format(python, filename)]
 
 
-def install_rust(version="1.81.0", target="x86_64-unknown-linux-gnu"):
+def install_rust(version="1.85.0", target="x86_64-unknown-linux-gnu"):
     rustup_opts = "-y --default-toolchain none"
     cargo_dir = "$HOME/.cargo/bin/"
     rustup = cargo_dir + "rustup"
@@ -371,10 +358,7 @@ class Build(Task, metaclass=Tool):
         env = TaskEnvironment.by_name(
             "{}.build".format(os.replace("arm64-linux", "linux"))
         )
-        if os.startswith("mingw"):
-            build_env = TaskEnvironment.by_name("linux.build")
-        else:
-            build_env = env
+        build_env = TaskEnvironment.by_name("linux.build")
 
         artifact = "git-cinnabar"
         if os.startswith("mingw"):
@@ -387,10 +371,7 @@ class Build(Task, metaclass=Tool):
         hash = None
         head = None
         desc_variant = variant
-        extra_commands = []
-        environ = {
-            "WARNINGS_AS_ERRORS": "1",
-        }
+        environ = {}
         cargo_flags = ["-vv", "--release"]
         cargo_features = ["self-update", "gitdev", "xz2/static", "bzip2/static"]
         rust_version = None
@@ -419,18 +400,14 @@ class Build(Task, metaclass=Tool):
         elif variant == "coverage":
             environ["TARGET_CFLAGS"] = " ".join(
                 [
-                    "-coverage",
+                    "-fprofile-instr-generate",
+                    "-fcoverage-mapping",
                     "-fPIC",
                 ]
             )
-            artifacts += ["coverage.zip"]
-            extra_commands = [
-                "(cd repo && zip $ARTIFACTS/coverage.zip"
-                ' $(find . -name "*.gcno" -not -name "build_script*"))',
-            ]
             environ["RUSTFLAGS"] = " ".join(
                 [
-                    "-Zprofile",
+                    "-Cinstrument-coverage",
                     "-Ccodegen-units=1",
                     "-Cinline-threshold=0",
                 ]
@@ -447,10 +424,7 @@ class Build(Task, metaclass=Tool):
         elif variant:
             raise Exception("Unknown variant: {}".format(variant))
 
-        if "osx" not in os:
-            environ["CC"] = "clang-18"
-        if os in ("linux", "arm64-linux"):
-            cargo_features.append("curl-compat")
+        environ["CC"] = "clang-19"
 
         if os.startswith("mingw"):
             cpu = msys.msys_cpu(env.cpu)
@@ -463,42 +437,46 @@ class Build(Task, metaclass=Tool):
             rust_target = "x86_64-unknown-linux-gnu"
         elif os == "arm64-linux":
             rust_target = "aarch64-unknown-linux-gnu"
-        if "osx" not in os:
-            for target in dict.fromkeys(
-                ["x86_64-unknown-linux-gnu", rust_target]
-            ).keys():
-                arch = {
-                    "x86_64": "amd64",
-                    "aarch64": "arm64",
-                }[target.partition("-")[0]]
-                multiarch = target.replace("unknown-", "")
-                TARGET = target.replace("-", "_").upper()
-                environ[f"CARGO_TARGET_{TARGET}_LINKER"] = environ["CC"]
-                if "linux" in os:
-                    extra_link_arg = f"--sysroot=/sysroot-{arch}"
-                if os.startswith("mingw"):
-                    extra_link_arg = f"-L/usr/lib/gcc/{cpu}-w64-mingw32/10-win32"
-                environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] = (
-                    f"-C link-arg=--target={target} "
-                    + f"-C link-arg={extra_link_arg} "
-                    + "-C link-arg=-fuse-ld=lld-18"
-                )
-                rustflags = environ.pop("RUSTFLAGS", None)
-                if rustflags:
-                    environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] += f" {rustflags}"
-                if "linux" in os:
-                    environ[f"CFLAGS_{target}"] = f"--sysroot=/sysroot-{arch}"
+
+        for target in dict.fromkeys(["x86_64-unknown-linux-gnu", rust_target]).keys():
+            arch = {
+                "x86_64": "amd64",
+                "aarch64": "arm64",
+            }[target.partition("-")[0]]
+            multiarch = target.replace("unknown-", "")
+            TARGET = target.replace("-", "_").upper()
+            environ[f"CARGO_TARGET_{TARGET}_LINKER"] = environ["CC"]
+            link_args = [
+                f"--target={target}",
+                "-fuse-ld=lld",
+            ]
             if "linux" in os:
-                environ["PKG_CONFIG_PATH"] = ""
-                environ["PKG_CONFIG_SYSROOT_DIR"] = f"/sysroot-{arch}"
-                environ["PKG_CONFIG_LIBDIR"] = ":".join(
-                    (
-                        f"/sysroot-{arch}/usr/lib/pkgconfig",
-                        f"/sysroot-{arch}/usr/lib/{multiarch}/pkgconfig",
-                        f"/sysroot-{arch}/usr/share/pkgconfig",
-                    )
+                link_args.append(f"--sysroot=/sysroot-{arch}")
+            if os.startswith("mingw"):
+                link_args.append(f"-L/usr/lib/gcc/{cpu}-w64-mingw32/10-win32")
+                link_args.append("-Wl,-Xlink,-Brepro")
+            environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] = " ".join(
+                f"-C link-arg={arg}" for arg in link_args
+            )
+            environ["AR"] = "llvm-ar-19"
+            rustflags = environ.pop("RUSTFLAGS", None)
+            if rustflags:
+                environ[f"CARGO_TARGET_{TARGET}_RUSTFLAGS"] += f" {rustflags}"
+            if "linux" in os:
+                environ[f"CFLAGS_{target.replace('-', '_')}"] = (
+                    f"--sysroot=/sysroot-{arch}"
                 )
-        if variant in ("coverage", "asan"):
+        if "linux" in os:
+            environ["PKG_CONFIG_PATH"] = ""
+            environ["PKG_CONFIG_SYSROOT_DIR"] = f"/sysroot-{arch}"
+            environ["PKG_CONFIG_LIBDIR"] = ":".join(
+                (
+                    f"/sysroot-{arch}/usr/lib/pkgconfig",
+                    f"/sysroot-{arch}/usr/lib/{multiarch}/pkgconfig",
+                    f"/sysroot-{arch}/usr/share/pkgconfig",
+                )
+            )
+        if variant == "asan":
             environ["RUSTC_BOOTSTRAP"] = "1"
         if rust_version:
             rust_install = install_rust(rust_version, target=rust_target)
@@ -519,6 +497,12 @@ class Build(Task, metaclass=Tool):
             environ.setdefault("MACOSX_DEPLOYMENT_TARGET", "10.7")
         if os.startswith("arm64-osx"):
             environ.setdefault("MACOSX_DEPLOYMENT_TARGET", "11.0")
+        sdk_install = []
+        kwargs = {}
+        if "osx" in os:
+            sdk = Tool.by_name("macossdk.arm64-osx")
+            sdk_install = sdk.install()
+            kwargs.setdefault("mounts", []).append(sdk.mount())
 
         cpu = "arm64" if os == "arm64-linux" else env.cpu
         Task.__init__(
@@ -526,22 +510,20 @@ class Build(Task, metaclass=Tool):
             task_env=build_env,
             description="build {} {}{}".format(env.os, cpu, prefix(" ", desc_variant)),
             index="build.{}.{}.{}{}".format(hash, env.os, cpu, prefix(".", variant)),
-            expireIn="100 years"
-            if TC_IS_PUSH and TC_BRANCH == "release" and not variant
-            else "26 weeks",
             command=Task.checkout(commit=head)
+            + sdk_install
             + rust_install
             + [
-                "(cd repo ; cargo build {})".format(" ".join(cargo_flags)),
+                "(cd repo ; CI/cargo.sh build {})".format(" ".join(cargo_flags)),
                 "mv repo/target/{}/{}/{} $ARTIFACTS/".format(
                     rust_target,
                     "release" if "--release" in cargo_flags else "debug",
                     artifact,
                 ),
-            ]
-            + extra_commands,
+            ],
             artifacts=artifacts,
             env=environ,
+            **kwargs,
         )
 
     def mount(self):

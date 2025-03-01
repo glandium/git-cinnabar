@@ -80,7 +80,7 @@ static inline void strbuf_addslice(struct strbuf *buf, struct strslice slice)
 static inline size_t strslice_index(struct strslice slice, int c)
 {
 	const char *needle = memchr(slice.buf, c, slice.len);
-	return needle ? needle - slice.buf : SIZE_MAX;
+	return needle ? (size_t)(needle - slice.buf) : SIZE_MAX;
 }
 
 static inline size_t strslice_rindex(struct strslice slice, int c)

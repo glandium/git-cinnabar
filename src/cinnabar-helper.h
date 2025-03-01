@@ -18,6 +18,10 @@ extern struct object_id metadata_oid, changesets_oid, manifests_oid, git2hg_oid,
 #define CHECK_HELPER 0x1
 #define CHECK_MANIFESTS 0x2
 
+struct repository;
+
+extern void reset_ref_store(struct repository *r);
+
 extern int cinnabar_check(int);
 
 extern struct notes_tree git2hg, hg2git, files_meta;

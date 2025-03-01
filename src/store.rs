@@ -686,7 +686,7 @@ pub struct HgChangeset<'a> {
     body: &'a [u8],
 }
 
-impl<'a> HgChangeset<'a> {
+impl HgChangeset<'_> {
     pub fn extra(&self) -> Option<ChangesetExtra> {
         self.extra.map(ChangesetExtra::from)
     }
@@ -1477,7 +1477,7 @@ pub fn store_git_tree(tree_buf: &[u8], reference: Option<TreeId>) -> TreeId {
                 let mut reftree_buf = ptr::null_mut();
                 let mut len = 0;
                 unpack_object_entry(oe, &mut reftree_buf, &mut len);
-                ref_tree = Some(FfiBox::from_raw_parts(reftree_buf as *mut u8, len as usize));
+                ref_tree = Some(FfiBox::from_raw_parts(reftree_buf as *mut _, len as usize));
             }
         }
         let mut result = object_id::default();
@@ -2061,6 +2061,7 @@ pub fn store_changegroup<R: Read>(store: &Store, input: R, version: u8) {
         .collect_vec();
     for manifest in RevChunkIter::new(version, &mut input)
         .progress(|n| format!("Reading and importing {n} manifests"))
+        .filter(|m| store.hg2git_mut().get_note(m.node()).is_none())
     {
         let mid = HgManifestId::from_unchecked(manifest.node());
         let delta_node = HgManifestId::from_unchecked(manifest.delta_node());
@@ -2118,7 +2119,10 @@ pub fn store_changegroup<R: Read>(store: &Store, input: R, version: u8) {
     } {
         files.set(files.get() + 1);
         let mut previous_file = None;
-        for (file, ()) in RevChunkIter::new(version, &mut input).zip(&mut progress) {
+        for (file, ()) in RevChunkIter::new(version, &mut input)
+            .zip(&mut progress)
+            .filter(|(f, ())| store.hg2git_mut().get_note(f.node()).is_none())
+        {
             let node = HgFileId::from_unchecked(file.node());
             let delta_node = HgFileId::from_unchecked(file.delta_node());
             let parents = [
@@ -2232,6 +2236,7 @@ pub fn store_changegroup<R: Read>(store: &Store, input: R, version: u8) {
     for changeset in changesets
         .drain(..)
         .progress(|n| format!("Importing {n} changesets"))
+        .filter(|cs| store.hg2git_mut().get_note(cs.node()).is_none())
     {
         let delta_node = HgChangesetId::from_unchecked(changeset.delta_node());
         let changeset_id = HgChangesetId::from_unchecked(changeset.node());

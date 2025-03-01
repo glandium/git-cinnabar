@@ -128,6 +128,7 @@ fn main() {
     cmd.arg("libcinnabar.a")
         .arg("V=1")
         .arg("HAVE_WPGMPTR=")
+        .arg("LAZYLOAD_LIBCURL=")
         .arg("USE_LIBPCRE1=")
         .arg("USE_LIBPCRE2=")
         .arg("NO_REGEX=1")
@@ -137,10 +138,10 @@ fn main() {
         .arg("GENERATED_H=")
         .args(extra_args);
 
-    let compiler = cc::Build::new()
-        .force_frame_pointer(true)
-        .warnings(false)
-        .get_compiler();
+    let mut build = cc::Build::new();
+    build.force_frame_pointer(true).warnings(false);
+    let compiler = build.get_compiler();
+    let ar = build.get_archiver();
 
     let cflags = [
         compiler.cflags_env().into_string().ok(),
@@ -177,6 +178,7 @@ fn main() {
     .join(" ");
     cmd.arg(format!("CFLAGS={}", cflags));
     cmd.arg(format!("CC={}", compiler.path().display()));
+    cmd.arg(format!("AR={}", ar.get_program().to_str().unwrap()));
 
     let compile_commands =
         cfg!(feature = "compile_commands") || std::env::var("VSCODE_PID").is_ok();
@@ -207,45 +209,6 @@ fn main() {
     );
     println!("cargo:rerun-if-env-changed=CC");
     println!("cargo:rerun-if-env-changed=CRATE_CC_NO_DEFAULTS");
-
-    #[cfg(feature = "curl-compat")]
-    {
-        use rustflags::Flag;
-        if target_os != "linux" {
-            panic!("The curl-compat feature is only supported on linux");
-        } else if std::env::var("DEP_CURL_STATIC").is_ok() {
-            panic!("The curl-compat feature is not compatible with building curl statically");
-        }
-        let mut cmd = compiler.to_command();
-        cmd.args(&[
-            "-shared",
-            "-Wl,-soname,libcurl.so.4",
-            "src/curl-compat.c",
-            "-o",
-        ]);
-        let curl_dir = PathBuf::from(env_os("OUT_DIR"));
-        cmd.arg(curl_dir.join("libcurl.so"));
-        if let Ok(include) = std::env::var("DEP_CURL_INCLUDE") {
-            cmd.arg(format!("-I{}", normalize_path(&include)));
-        }
-        cmd.args(rustflags::from_env().flat_map(|flag| match flag {
-            Flag::Codegen {
-                opt,
-                value: Some(value),
-            } if opt == "link-arg" => vec![value],
-            Flag::Codegen {
-                opt,
-                value: Some(value),
-            } if opt == "link-args" => value.split(' ').map(ToString::to_string).collect(),
-            _ => vec![],
-        }));
-        match cmd.status() {
-            Ok(s) if s.success() => {}
-            _ => panic!("Failed to build libcurl.so with command {:?}", cmd),
-        }
-        println!("cargo:rerun-if-changed=src/curl-compat.c");
-        println!("cargo:rustc-link-search=native={}", curl_dir.display());
-    }
 
     assert!(cmd
         .env("MAKEFLAGS", format!("-j {}", env("CARGO_MAKEFLAGS")))

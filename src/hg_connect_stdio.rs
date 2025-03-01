@@ -3,16 +3,28 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::borrow::Cow;
-use std::ffi::CString;
+use std::ffi::{c_char, c_void, CStr, CString, OsString};
 use std::fs::File;
-use std::io::{copy, BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{copy, BufRead, BufReader, ErrorKind, Read, Seek, SeekFrom, Write};
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
 use std::os::raw::c_int;
+#[cfg(windows)]
+use std::os::windows::io::{FromRawHandle, IntoRawHandle};
+use std::process::{self, ChildStdin, ChildStdout, Command, Stdio};
 use std::str::FromStr;
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 use std::{mem, ptr};
 
 use bstr::{BStr, BString};
 use itertools::Itertools;
+#[cfg(unix)]
+use mio::unix::SourceFd;
+#[cfg(windows)]
+use mio::windows::NamedPipe;
+use mio::{Events, Poll, Token, Waker};
 use percent_encoding::percent_decode_str;
 use url::Url;
 
@@ -22,18 +34,35 @@ use crate::hg_connect::{
     UnbundleResponse,
 };
 use crate::libc::FdFile;
-use crate::libcinnabar::{hg_connect_stdio, stdio_finish};
-use crate::libgit::child_process;
+use crate::libcinnabar::hg_connect_prepare_command;
+use crate::libgit::local_repo_env;
 use crate::logging::{LoggingReader, LoggingWriter};
-use crate::util::{ImmutBString, OsStrExt, PrefixWriter, ReadExt};
+use crate::util::{CStrExt, ImmutBString, OsStrExt, PrefixWriter, ReadExt};
 
 pub struct HgStdioConnection {
     capabilities: HgCapabilities,
-    proc_in: FdFile,
-    proc_out: BufReader<FdFile>,
-    proc: *mut child_process,
+    proc_in: Option<ChildStdin>,
+    proc_out: Option<BufReader<ChildStdout>>,
+    proc: process::Child,
     thread: Option<JoinHandle<()>>,
     url: Url,
+    synchronizer: Arc<Synchronizer>,
+}
+
+struct Synchronizer {
+    read_finished: Mutex<bool>,
+    condvar: Condvar,
+    waker: Waker,
+}
+
+impl Synchronizer {
+    fn new(waker: Waker) -> Self {
+        Synchronizer {
+            read_finished: Mutex::new(false),
+            condvar: Condvar::new(),
+            waker,
+        }
+    }
 }
 
 unsafe impl Send for HgStdioConnection {}
@@ -81,7 +110,7 @@ fn stdio_send_command(conn: &mut HgStdioConnection, command: &str, args: HgArgs)
     } else {
         format!("raw-wire::{command}").into()
     };
-    LoggingWriter::new_hex(target, log::Level::Trace, &mut conn.proc_in)
+    LoggingWriter::new_hex(target, log::Level::Trace, conn.proc_in.as_mut().unwrap())
         .write_all(&data)
         .unwrap();
 }
@@ -89,7 +118,8 @@ fn stdio_send_command(conn: &mut HgStdioConnection, command: &str, args: HgArgs)
 fn stdio_read_response(conn: &mut HgStdioConnection, command: &str) -> ImmutBString {
     let mut length_str = String::new();
     let target = format!("raw-wire::{command}");
-    let mut input = LoggingReader::new_hex(&target, log::Level::Trace, &mut conn.proc_out);
+    let mut input =
+        LoggingReader::new_hex(&target, log::Level::Trace, conn.proc_out.as_mut().unwrap());
     input.read_line(&mut length_str).unwrap();
     let length = usize::from_str(length_str.trim_end_matches('\n')).unwrap();
     input.read_exactly(length).unwrap()
@@ -116,10 +146,10 @@ impl HgWireConnection for HgStdioConnection {
             Ok(Box::new(LoggingReader::new_hex(
                 format!("raw-wire::{command}"),
                 log::Level::Trace,
-                &mut self.proc_out,
+                self.proc_out.as_mut().unwrap(),
             )))
         } else {
-            Ok(Box::new(&mut self.proc_out))
+            Ok(Box::new(self.proc_out.as_mut().unwrap()))
         }
     }
 
@@ -131,7 +161,8 @@ impl HgWireConnection for HgStdioConnection {
         //TODO: handle that error.
         let header = stdio_read_response(self, command);
         let target = format!("raw-wire::{command}");
-        let mut proc_in = LoggingWriter::new_hex(&target, log::Level::Trace, &mut self.proc_in);
+        let mut proc_in =
+            LoggingWriter::new_hex(&target, log::Level::Trace, self.proc_in.as_mut().unwrap());
         proc_in.write_all(&header).unwrap();
         drop(header);
 
@@ -155,10 +186,10 @@ impl HgWireConnection for HgStdioConnection {
                 Box::new(LoggingReader::new_hex(
                     target,
                     log::Level::Trace,
-                    &mut self.proc_out,
+                    self.proc_out.as_mut().unwrap(),
                 )) as Box<dyn Read>
             } else {
-                Box::new(&mut self.proc_out)
+                Box::new(self.proc_out.as_mut().unwrap())
             };
             UnbundleResponse::Bundlev2(bundle)
         } else {
@@ -182,26 +213,24 @@ impl HgConnectionBase for HgStdioConnection {
     fn sample_size(&self) -> usize {
         10000
     }
+
+    fn sync(&mut self) {
+        let guard = self.synchronizer.read_finished.lock().unwrap();
+        if !*guard {
+            self.synchronizer.waker.wake().unwrap();
+            let _unused = self.synchronizer.condvar.wait(guard).unwrap();
+        }
+    }
 }
 
 impl Drop for HgStdioConnection {
     fn drop(&mut self) {
         stdio_send_command(self, "", args!());
-        unsafe {
-            libc::close(self.proc_in.raw());
-            libc::close(self.proc_out.get_mut().raw());
-            self.thread.take().map(JoinHandle::join);
-            stdio_finish(self.proc);
-        }
+        drop(self.proc_in.take());
+        drop(self.proc_out.take());
+        self.thread.take().map(JoinHandle::join);
+        self.proc.wait().unwrap();
     }
-}
-
-extern "C" {
-    fn proc_in(proc: *mut child_process) -> c_int;
-
-    fn proc_out(proc: *mut child_process) -> c_int;
-
-    fn proc_err(proc: *mut child_process) -> c_int;
 }
 
 pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> {
@@ -231,28 +260,75 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
         path.as_os_str().as_bytes().to_owned()
     };
     let path = CString::new(path).unwrap();
-    let proc = unsafe {
-        hg_connect_stdio(
+    let mut args = Vec::<OsString>::new();
+    unsafe extern "C" fn add_arg(ctx: *mut c_void, arg: *const c_char) {
+        (ctx as *mut Vec<OsString>)
+            .as_mut()
+            .unwrap()
+            .push(CStr::from_ptr(arg).to_osstr().to_owned());
+    }
+    unsafe {
+        hg_connect_prepare_command(
+            &mut args as *mut _ as *mut _,
+            add_arg,
             userhost.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
             port.as_ref().map_or(ptr::null(), |s| s.as_ptr()),
             path.as_ref().as_ptr(),
             flags,
-        )
-    };
-    if proc.is_null() {
-        return None;
+        );
     }
+    let mut command = Command::new(&args[0]);
+    unsafe {
+        let mut current = local_repo_env.as_ptr();
 
+        while !(*current).is_null() {
+            command.env_remove(CStr::from_ptr(*current).to_osstr());
+            current = current.add(1);
+        }
+    }
+    let mut proc = if let Ok(proc) = command
+        .args(&args[1..])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        proc
+    } else {
+        return None;
+    };
+
+    #[cfg(unix)]
+    let mut proc_err = proc.stderr.take().unwrap();
+    #[cfg(windows)]
+    let mut proc_err =
+        unsafe { NamedPipe::from_raw_handle(proc.stderr.take().unwrap().into_raw_handle()) };
+    const STDERR: Token = Token(0);
+    const WAKER: Token = Token(1);
+    let mut events = Events::with_capacity(1);
+    let mut poll = Poll::new().unwrap();
+    poll.registry()
+        .register(
+            #[cfg(unix)]
+            &mut SourceFd(&proc_err.as_raw_fd()),
+            #[cfg(windows)]
+            &mut proc_err,
+            STDERR,
+            mio::Interest::READABLE,
+        )
+        .unwrap();
+    let waker = Waker::new(poll.registry(), WAKER).unwrap();
+
+    let synchronizer = Arc::new(Synchronizer::new(waker));
     let mut conn = HgStdioConnection {
         capabilities: HgCapabilities::default(),
-        proc_in: unsafe { FdFile::from_raw_fd(proc_in(proc)) },
-        proc_out: BufReader::new(unsafe { FdFile::from_raw_fd(proc_out(proc)) }),
+        proc_in: proc.stdin.take(),
+        proc_out: proc.stdout.take().map(BufReader::new),
         proc,
         thread: None,
         url: url.clone(),
+        synchronizer: synchronizer.clone(),
     };
-
-    let mut proc_err = unsafe { FdFile::from_raw_fd(proc_err(proc)) };
 
     conn.thread = Some(
         thread::Builder::new()
@@ -264,7 +340,68 @@ pub fn get_stdio_connection(url: &Url, flags: c_int) -> Option<Box<dyn HgRepo>> 
                  * Japanese locale) */
                 let stderr = unsafe { FdFile::stderr() };
                 let mut writer = PrefixWriter::new("remote: ", stderr);
-                copy(&mut proc_err, &mut writer).unwrap();
+                let mut buf = [0; 1024];
+                let mut block = true;
+                let mut read_finished = false;
+                let mut notify = 0;
+                loop {
+                    let mut read_finished_ =
+                        (!block).then(|| synchronizer.read_finished.lock().unwrap());
+                    match poll.poll(&mut events, if block { None } else { Some(Duration::ZERO) }) {
+                        Ok(()) => {}
+                        Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+                        e => e.map(|_| ()).unwrap(),
+                    }
+                    if !block && events.is_empty() {
+                        while notify > 0 {
+                            synchronizer.condvar.notify_one();
+                            notify -= 1;
+                        }
+                        if read_finished {
+                            **(read_finished_.as_mut().unwrap()) = read_finished;
+                            break;
+                        }
+                        block = true;
+                    }
+                    drop(read_finished_);
+                    for event in &events {
+                        block = false;
+                        match event.token() {
+                            STDERR => {
+                                // Work around https://github.com/tokio-rs/mio/issues/1855
+                                if !event.is_readable() && !event.is_read_closed() {
+                                    continue;
+                                }
+                                let buf = match (!event.is_read_closed())
+                                    .then(|| proc_err.read(&mut buf))
+                                {
+                                    Some(Ok(len)) => &buf[..len],
+                                    Some(Err(e)) if e.kind() == ErrorKind::Interrupted => continue,
+                                    Some(e) => e.map(|_| &[]).unwrap(),
+                                    None => &[],
+                                };
+                                if buf.is_empty() {
+                                    read_finished = true;
+                                    poll.registry()
+                                        .deregister(
+                                            #[cfg(unix)]
+                                            &mut SourceFd(&proc_err.as_raw_fd()),
+                                            #[cfg(windows)]
+                                            &mut proc_err,
+                                        )
+                                        .unwrap();
+                                    continue;
+                                }
+                                writer.write_all(buf).unwrap();
+                            }
+                            WAKER => {
+                                notify += 1;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                assert_eq!(notify, 0);
             })
             .unwrap(),
     );

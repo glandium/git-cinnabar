@@ -267,7 +267,7 @@ Now try the partial cases and see if that matches what mercurial says.
 Try again by pulling the last retag and tag removal first.
 
   $ git -C repo-git2 cinnabar rollback refs/cinnabar/metadata^6^6^6^6^6^6
-  $ hg -R repo2 debugstrip -q -r 7:
+  $ hg --config extensions.strip= -R repo2 strip -q -r 7:
 
   $ git -C repo-git2 cinnabar fetch origin b49e7d7fa6707b4dae20f223afb04b4a20e53ecd
   From hg::(.*)/tags.t/repo (re)

@@ -1,0 +1,55 @@
+name: Decision
+description: Decision
+inputs:
+  touch-caches-only:
+    description: Whether to only bump the cache MRU
+    default: false
+outputs:
+  matrix:
+    description: Decision matrix
+    value: ${{ steps.matrix.outputs.result }}
+  artifacts:
+    description: Artifacts data
+    value: ${{ steps.decision.outputs.artifacts }}
+  mounts:
+    description: Mounts data
+    value: ${{ steps.decision.outputs.mounts }}
+runs:
+  using: "composite"
+  steps:
+    - name: Decision
+      id: decision
+      shell: bash
+      run: |
+        python3 CI/decision.py >> $GITHUB_OUTPUT
+    - uses: actions/setup-node@v3
+      if: ${{ steps.decision.outputs.matrix }}
+      with:
+        node-version: '20.x'
+    - shell: bash
+      if: ${{ steps.decision.outputs.matrix }}
+      run: npm install @actions/cache
+    - name: Check dependencies
+      id: matrix
+      if: ${{ steps.decision.outputs.matrix }}
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const touchOnly = ${{ inputs['touch-caches-only'] }};
+          const cache = require('@actions/cache');
+          const matrix = ${{ toJSON(fromJSON(steps.decision.outputs.matrix)) }};
+          const artifacts = ${{ toJSON(fromJSON(steps.decision.outputs.artifacts)) }};
+          const filtered = await Promise.all(
+            Object.entries(matrix).map(async ([name, items]) => {
+              const filtered_items = [];
+              for (const item of items) {
+                if (!(item.task in artifacts) || !await cache.restoreCache(artifacts[item.task].paths, artifacts[item.task].key, [], { lookupOnly: !touchOnly }, true)) {
+                  if (!touchOnly) {
+                    filtered_items.push(item);
+                  }
+                }
+              }
+              return [name, filtered_items];
+            })
+          );
+          return Object.fromEntries(filtered.filter(([_, items]) => items.length > 0));

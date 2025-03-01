@@ -40,8 +40,6 @@
 #![allow(unknown_lints)]
 
 #[macro_use]
-extern crate derivative;
-#[macro_use]
 extern crate log;
 
 mod cinnabar;
@@ -100,7 +98,7 @@ use cstr::cstr;
 use digest::OutputSizeUser;
 use either::Either;
 use git::{BlobId, CommitId, GitObjectId, RawBlob, RawCommit, RawTree, RecursedTreeEntry, TreeIsh};
-use graft::{graft_finish, grafted, init_graft};
+use graft::{graft_finish, grafted, init_graft, maybe_init_graft};
 use hg::{HgChangesetId, HgFileId, HgManifestId, ManifestEntry};
 use hg_bundle::{create_bundle, create_chunk_data, read_rev_chunk, BundleSpec, RevChunkIter};
 use hg_connect::{
@@ -842,7 +840,6 @@ fn do_tag(
             .ok_or_else(|| "git merge failed".to_string())
     }
 }
-
 fn do_fetch(
     store: &mut Store,
     remote: &OsStr,
@@ -916,9 +913,7 @@ fn do_fetch(
     let remote = Some(remote.to_str().unwrap())
         .and_then(|r| (!r.starts_with("hg://") && !r.starts_with("hg::")).then_some(r));
 
-    if graft_config_enabled(remote)?.unwrap_or(false) {
-        init_graft(store);
-    }
+    maybe_init_graft(store, remote)?;
 
     let unknown_full_revs = full_revs
         .iter()
@@ -1280,9 +1275,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
 
     check_graft_refs();
 
-    if graft_config_enabled(None)?.unwrap_or(false) {
-        init_graft(&store);
-    }
+    maybe_init_graft(&store, None)?;
 
     let old_to_hg = |cid| GitChangesetId::from_unchecked(cid).to_hg(old_store);
 
@@ -1946,7 +1939,7 @@ fn do_self_update(
         #[cfg(windows)]
         {
             use Win32::Foundation::HANDLE;
-            let mut handle: HANDLE = 0;
+            let mut handle: HANDLE = std::ptr::null_mut();
             let curproc = unsafe { Win32::System::Threading::GetCurrentProcess() };
             if unsafe {
                 Win32::Foundation::DuplicateHandle(
@@ -2064,7 +2057,7 @@ fn download_build(version: VersionInfo, tmpfile: &mut impl Write) -> Result<(), 
                     if file.is_file()
                         && file
                             .enclosed_name()
-                            .map_or(false, |p| p.file_name().unwrap() == BINARY)
+                            .is_some_and(|p| p.file_name().unwrap() == BINARY)
                     {
                         std::io::copy(file, tmpfile).map_err(|e| e.to_string())?;
                         extracted = true;
@@ -2148,11 +2141,15 @@ fn do_data_file(store: &Store, rev: Abbrev<HgFileId>) -> Result<(), String> {
     stdout.write_all(&file).map_err(|e| e.to_string())
 }
 
-pub fn graft_config_enabled(remote: Option<&str>) -> Result<Option<bool>, String> {
+pub fn graft_config_enabled(remote: Option<&str>) -> Result<Option<Either<bool, Url>>, String> {
     get_config_remote("graft", remote)
         .map(|v| {
-            v.into_string()
-                .and_then(|v| bool::from_str(&v).map_err(|_| v.into()))
+            v.into_string().and_then(|v| {
+                bool::from_str(&v)
+                    .map(Either::Left)
+                    .or_else(|_| Url::parse(&v).map(Either::Right))
+                    .map_err(|_| v.into())
+            })
         })
         .transpose()
         // TODO: This should report the environment variable is that's what was used.
@@ -2169,9 +2166,7 @@ fn do_unbundle(store: &mut Store, clonebundle: bool, mut url: OsString) -> Resul
     if !["http", "https", "file"].contains(&url.scheme()) {
         Err(format!("{} urls are not supported.", url.scheme()))?;
     }
-    if graft_config_enabled(None)?.unwrap_or(false) {
-        init_graft(store);
-    }
+    maybe_init_graft(store, None)?;
     let mut conn = if clonebundle {
         let mut conn = get_connection(&url).unwrap();
         if conn.get_capability(b"clonebundles").is_none() {
@@ -2186,6 +2181,10 @@ fn do_unbundle(store: &mut Store, clonebundle: bool, mut url: OsString) -> Resul
     } else {
         get_connection(&url).unwrap()
     };
+
+    if !has_metadata(store) && matches!(graft_config_enabled(None), Ok(Some(Either::Right(_)))) {
+        init_graft(store, true);
+    }
 
     get_store_bundle(store, &mut *conn, &[], &[])
         .map_err(|e| String::from_utf8_lossy(&e).into_owned())?;
@@ -2359,7 +2358,7 @@ struct ManifestLine<'a> {
     path_len: usize,
 }
 
-impl<'a> ManifestLine<'a> {
+impl ManifestLine<'_> {
     fn path(&self) -> &[u8] {
         &self.line[..self.path_len]
     }
@@ -2378,19 +2377,19 @@ impl<'a> From<&'a [u8]> for ManifestLine<'a> {
     }
 }
 
-impl<'a> PartialOrd for ManifestLine<'a> {
+impl PartialOrd for ManifestLine<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<'a> Ord for ManifestLine<'a> {
+impl Ord for ManifestLine<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.path().cmp(other.path())
     }
 }
 
-impl<'a> Borrow<[u8]> for ManifestLine<'a> {
+impl Borrow<[u8]> for ManifestLine<'_> {
     fn borrow(&self) -> &[u8] {
         self.path()
     }
@@ -3823,6 +3822,9 @@ enum CinnabarCommand {
         #[arg(long)]
         rebase: bool,
     },
+    /// Remove cinnabar metadata
+    #[command(name = "clear")]
+    Clear,
     #[command(name = "rollback")]
     /// Rollback cinnabar metadata state
     Rollback {
@@ -4071,6 +4073,7 @@ fn git_cinnabar(args: Option<&[&OsStr]>) -> Result<c_int, String> {
         Fetch { tags: true, .. } => do_fetch_tags(),
         Fetch { remote: None, .. } => unreachable!(),
         Reclone { rebase } => do_reclone(&mut store, rebase),
+        Clear => do_rollback(false, false, false, Some(CommitId::NULL.to_string().into())),
         Rollback {
             candidates,
             fsck,
@@ -4459,9 +4462,7 @@ fn remote_helper_import(
         .collect_vec();
     if !unknown_wanted_heads.is_empty() {
         tags = Some(store.get_tags());
-        if graft_config_enabled(remote)?.unwrap_or(false) {
-            init_graft(store);
-        }
+        maybe_init_graft(store, remote)?;
         get_bundle(
             store,
             conn,
@@ -4494,6 +4495,7 @@ fn remote_helper_import(
     }
     transaction.commit().unwrap();
 
+    conn.sync();
     writeln!(stdout, "done").unwrap();
     stdout.flush().unwrap();
 
@@ -4578,7 +4580,7 @@ fn remote_helper_push(
     info: RemoteInfo,
     mut stdout: impl Write,
     dry_run: bool,
-) -> Result<i32, String> {
+) -> Result<(), String> {
     let push_refs = push_refs
         .iter()
         .map(|p| {
@@ -4608,7 +4610,7 @@ fn remote_helper_push(
         }
         stdout.write_all(b"\n").unwrap();
         stdout.flush().unwrap();
-        return Ok(0);
+        return Ok(());
     }
 
     let bookmark_prefix = info.refs_style.contains(RefsStyle::BOOKMARKS).then(|| {
@@ -4642,7 +4644,7 @@ fn remote_helper_push(
         .filter_map(|(c, b)| match b {
             MaybeBoundary::Boundary => Some(Ok(c)),
             MaybeBoundary::Shallow => Some(Err(
-                "Pushing git shallow clones is not supported.".to_string()
+                "Pushing git shallow clones is not supported".to_string()
             )),
             MaybeBoundary::Commit => None,
         })
@@ -4669,9 +4671,7 @@ fn remote_helper_push(
                 fail = !conn.known(&cinnabar_roots).iter().any(|k| *k);
             }
             if fail {
-                return Err(
-                    "Cannot push to this remote without pulling/updating first.".to_string()
-                );
+                return Err("Cannot push to this remote without pulling/updating first".to_string());
             }
         }
 
@@ -4845,8 +4845,8 @@ fn remote_helper_push(
                 let response = conn.unbundle(heads, file);
                 match response {
                     UnbundleResponse::Bundlev2(data) => {
-                        let mut bundle = BundleReader::new(data).unwrap();
-                        while let Some(part) = bundle.next_part().unwrap() {
+                        let mut bundle = BundleReader::new(data).map_err(|e| e.to_string())?;
+                        while let Some(part) = bundle.next_part().map_err(|e| e.to_string())? {
                             match part.part_type.as_bytes() {
                                 b"reply:changegroup" => {
                                     // TODO: should check in-reply-to param.
@@ -4860,7 +4860,7 @@ fn remote_helper_push(
                                         message.push_str("\n\n");
                                         message.push_str(hint);
                                     }
-                                    error!(target: "root", "{}", message);
+                                    return Err(message);
                                 }
                                 _ => {}
                             }
@@ -4925,32 +4925,36 @@ fn remote_helper_push(
         })
         .collect::<HashMap<_, _>>();
 
-    if !status.is_empty() {
-        for (_, dest, _) in push_refs {
-            let mut buf = Vec::new();
-            match status[dest] {
-                Ok(true) => {
-                    buf.extend_from_slice(b"ok ");
-                    buf.extend_from_slice(dest);
-                }
-                Ok(false) => {
-                    buf.extend_from_slice(b"error ");
-                    buf.extend_from_slice(dest);
-                    buf.extend_from_slice(b" nothing changed on remote");
-                }
-                Err(e) => {
-                    buf.extend_from_slice(b"error ");
-                    buf.extend_from_slice(dest);
-                    buf.push(b' ');
-                    buf.extend_from_slice(e.as_bytes());
-                }
+    conn.sync();
+
+    for (_, dest, _) in push_refs {
+        let mut buf = Vec::new();
+        match status
+            .get(dest)
+            .copied()
+            .unwrap_or_else(|| result.as_ref().map(|_| false).map_err(|e| &**e))
+        {
+            Ok(true) => {
+                buf.extend_from_slice(b"ok ");
+                buf.extend_from_slice(dest);
             }
-            buf.push(b'\n');
-            stdout.write_all(&buf).unwrap();
+            Ok(false) => {
+                buf.extend_from_slice(b"error ");
+                buf.extend_from_slice(dest);
+                buf.extend_from_slice(b" nothing changed on remote");
+            }
+            Err(e) => {
+                buf.extend_from_slice(b"error ");
+                buf.extend_from_slice(dest);
+                buf.push(b' ');
+                buf.extend_from_slice(e.as_bytes());
+            }
         }
-        stdout.write_all(b"\n").unwrap();
-        stdout.flush().unwrap();
+        buf.push(b'\n');
+        stdout.write_all(&buf).unwrap();
     }
+    stdout.write_all(b"\n").unwrap();
+    stdout.flush().unwrap();
 
     let rollback =
         if status.is_empty() || pushed.is_empty() || (dry_run && data != RecordMetadata::Force) {
@@ -5015,7 +5019,7 @@ fn remote_helper_push(
             .then_some(())
             .ok_or_else(|| "Fatal error".to_string())?;
     }
-    result
+    Ok(())
 }
 
 fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
@@ -5159,7 +5163,7 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
             }
             b"push" => {
                 assert_ne!(url.scheme(), "tags");
-                let code = remote_helper_push(
+                remote_helper_push(
                     store.as_mut().unwrap_or_else(|e| panic!("{}", e)),
                     conn.as_deref_mut().unwrap(),
                     remote.as_deref(),
@@ -5168,9 +5172,6 @@ fn git_remote_hg(remote: OsString, mut url: OsString) -> Result<c_int, String> {
                     &mut stdout,
                     dry_run,
                 )?;
-                if code > 0 {
-                    return Ok(code);
-                }
             }
             _ => panic!("unknown command: {}", cmd.as_bstr()),
         }

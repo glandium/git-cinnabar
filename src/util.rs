@@ -222,10 +222,6 @@ impl<T: FromStr> FromBytes for T {
     }
 }
 
-pub fn bstr_fmt<S: AsRef<[u8]>>(s: &S, f: &mut fmt::Formatter) -> fmt::Result {
-    fmt::Debug::fmt(s.as_ref().as_bstr(), f)
-}
-
 pub trait OptionExt<T> {
     fn as_ptr(&self) -> *const T;
 }

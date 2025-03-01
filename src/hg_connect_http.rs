@@ -27,6 +27,7 @@ use curl_sys::{
     CURLOPT_POSTFIELDSIZE_LARGE, CURLOPT_READDATA, CURLOPT_READFUNCTION, CURLOPT_URL,
     CURLOPT_USERAGENT, CURLOPT_VERBOSE, CURLOPT_WRITEFUNCTION,
 };
+use derive_more::Debug;
 use either::Either;
 use flate2::read::ZlibDecoder;
 use itertools::Itertools;
@@ -258,15 +259,14 @@ struct HttpResponseInfo {
     content_type: Option<String>,
 }
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Debug)]
 pub struct HttpResponse {
     info: HttpResponseInfo,
     thread: Option<JoinHandle<Result<(), (c_int, HttpRequest)>>>,
     cursor: Cursor<ImmutBString>,
     receiver: Option<Receiver<HttpRequestChannelData>>,
     #[allow(dead_code)]
-    #[derivative(Debug = "ignore")]
+    #[debug(skip)]
     token: Arc<GitHttpStateToken>,
 }
 
@@ -294,7 +294,7 @@ unsafe extern "C" fn trace_log_callback(
         CURLINFO_HEADER_OUT => logging::Direction::Send,
         _ => return 0,
     };
-    let data = std::slice::from_raw_parts(data as *const u8, size);
+    let data = std::slice::from_raw_parts(data as *const _, size);
     for line in data.lines() {
         trace!(target: target, "{} {}", direction, line.as_bstr());
     }
@@ -647,7 +647,7 @@ unsafe extern "C" fn http_request_execute(
 ) -> usize {
     let data = (data as *mut HttpThreadData).as_mut().unwrap();
     http_send_info(data);
-    let buf = std::slice::from_raw_parts(ptr as *const u8, size.checked_mul(nmemb).unwrap());
+    let buf = std::slice::from_raw_parts(ptr as *const _, size.checked_mul(nmemb).unwrap());
     if let Some(logger) = &mut data.logger {
         logger.write_all(buf).unwrap();
     }
@@ -672,7 +672,16 @@ impl HgHttpConnection {
             .and_then(|s| usize::from_str(s).ok())
             .unwrap_or(0);
 
-        let httppostargs = self.get_capability(b"httppostargs").is_some();
+        let httppostargs = self.get_capability(b"httppostargs").is_some()
+            // Versions of mercurial >= 3.8 < 4.4 don't handle httppostargs
+            // on commands that are already POST. We check for the `phases`
+            // bundle2 capability, which was introduced in mercurial 4.4.
+            && ((command != "unbundle" && command != "pushkey")
+                || self
+                    .get_capability(b"bundle2")
+                    .unwrap_or(b"".as_bstr())
+                    .split(|x| *x == b'\n')
+                    .any(|x| x.starts_with(b"phases=")));
 
         let mut command_url = self.url.clone();
         let mut query_pairs = command_url.query_pairs_mut();
@@ -688,6 +697,10 @@ impl HgHttpConnection {
             let args = encoder.finish();
             if httppostargs {
                 headers.push(("X-HgArgs-Post".to_string(), args.len().to_string()));
+                headers.push((
+                    "Content-Type".to_string(),
+                    "application/mercurial-0.1".to_string(),
+                ));
                 body = Some(args);
             } else {
                 let mut args = &args[..];
@@ -863,7 +876,7 @@ unsafe extern "C" fn read_from_read<R: Read>(
     data: *const c_void,
 ) -> usize {
     let read = (data as *mut R).as_mut().unwrap();
-    let buf = std::slice::from_raw_parts_mut(ptr as *mut u8, size.checked_mul(nmemb).unwrap());
+    let buf = std::slice::from_raw_parts_mut(ptr as *mut _, size.checked_mul(nmemb).unwrap());
     read.read(buf).unwrap()
 }
 

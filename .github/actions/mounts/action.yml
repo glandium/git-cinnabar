@@ -1,0 +1,35 @@
+name: Mount dependencies
+description: Mount dependencies
+inputs:
+  mounts:
+    description: mounts
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-node@v3
+      with:
+        node-version: '20.x'
+    - shell: bash
+      run: npm install @actions/cache
+    - name: Mount dependencies
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          const cache = require('@actions/cache');
+          const mounts = ${{ toJSON(fromJSON(inputs.mounts)) }};
+          const pwd = process.cwd();
+          // Make actions/cache's getWorkingDirectory() return process.cwd.
+          delete process.env.GITHUB_WORKSPACE;
+          for (const mount of mounts) {
+            const dir = path.join(pwd, 'cache', mount.key, path.dirname(mount.artifact));
+            fs.mkdirSync(dir, { recursive: true });
+            process.chdir(dir);
+            if (await cache.restoreCache([path.basename(mount.artifact)], mount.key, [], {}, true)) {
+              console.log(`Cache restored from key: ${mount.key}`);
+            } else {
+              core.setFailed(`Failed to restore cache from key: ${mount.key}`);
+            }
+          }

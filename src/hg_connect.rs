@@ -22,6 +22,7 @@ use url::Url;
 
 use crate::cinnabar::GitChangesetId;
 use crate::git::{CommitId, GitObjectId};
+use crate::graft::init_graft;
 use crate::hg::HgChangesetId;
 use crate::hg_bundle::{BundleConnection, BundleReader, BundleSpec};
 use crate::hg_connect_http::{get_http_connection, HttpRequest};
@@ -44,7 +45,7 @@ pub enum HgArgValue<'a> {
     ChangesetArray(&'a [HgChangesetId]),
 }
 
-impl<'a> HgArgValue<'a> {
+impl HgArgValue<'_> {
     pub fn as_string(&self) -> Cow<str> {
         match self {
             HgArgValue::String(s) => Cow::Borrowed(s),
@@ -165,6 +166,8 @@ pub trait HgConnectionBase {
     fn sample_size(&self) -> usize {
         100
     }
+
+    fn sync(&mut self) {}
 }
 
 pub trait HgWireConnection: HgConnectionBase {
@@ -368,6 +371,10 @@ impl<C: HgWireConnection> HgConnectionBase for LogWireConnection<C> {
     fn sample_size(&self) -> usize {
         self.conn.sample_size()
     }
+
+    fn sync(&mut self) {
+        self.conn.sync();
+    }
 }
 
 impl<C: HgWireConnection> HgWireConnection for LogWireConnection<C> {
@@ -499,6 +506,10 @@ impl<C: HgWireConnection> HgConnectionBase for HgWired<C> {
 
     fn sample_size(&self) -> usize {
         self.conn.sample_size()
+    }
+
+    fn sync(&mut self) {
+        self.conn.sync();
     }
 }
 
@@ -658,6 +669,7 @@ pub fn encodecaps(
         .into_boxed_str()
 }
 
+#[allow(clippy::type_complexity)]
 pub fn decodecaps(
     caps: &BStr,
 ) -> impl '_ + Iterator<Item = Option<(Box<str>, Option<Box<[Box<str>]>>)>> {
@@ -1139,9 +1151,7 @@ fn get_initial_bundle(
         })
         .filter(|(m, _)| !m.is_empty())
     {
-        match get_cinnabarclone_url(&manifest, remote).ok_or(Some(
-            "Server advertizes cinnabarclone but didn't provide a git repository url to fetch from."
-        )).and_then(|(url, branch)| {
+        match get_cinnabarclone_url(&manifest, remote).map_err(Some).and_then(|(url, branch)| {
             if limit_schemes && !["http", "https", "git"].contains(&url.scheme()) {
                 Err(Some("Server advertizes cinnabarclone but provided a non http/https git repository. Skipping."))
             } else {
@@ -1162,6 +1172,10 @@ fn get_initial_bundle(
                 warn!(target: "root", "Falling back to normal clone.");
             }
         }
+    }
+
+    if !has_metadata(store) && matches!(graft_config_enabled(remote), Ok(Some(Either::Right(_)))) {
+        init_graft(store, true);
     }
 
     if conn.get_capability(b"clonebundles").is_some() {
@@ -1317,11 +1331,16 @@ fn cinnabar_clone_info(line: &[u8]) -> Result<Option<CinnabarCloneInfo>, String>
     Ok(Some(CinnabarCloneInfo { url, branch, graft }))
 }
 
+#[allow(clippy::type_complexity)]
 pub fn get_cinnabarclone_url(
     manifest: &[u8],
     remote: Option<&str>,
-) -> Option<(Url, Option<Box<[u8]>>)> {
-    let graft = graft_config_enabled(remote).unwrap();
+) -> Result<(Url, Option<Box<[u8]>>), &'static str> {
+    let (graft, graft_is_url) = match graft_config_enabled(remote).unwrap() {
+        Some(Either::Left(b)) => (Some(b), false),
+        Some(Either::Right(_)) => (Some(true), true),
+        None => (None, false),
+    };
     let mut candidates = Vec::new();
 
     for line in ByteSlice::lines(manifest) {
@@ -1349,17 +1368,21 @@ pub fn get_cinnabarclone_url(
                     }
                     // We apparently have all the grafted revisions locally, ensure
                     // they're actually reachable.
-                    let args = [
-                        "--branches",
-                        "--tags",
-                        "--remotes",
-                        "--max-count=1",
-                        "--ancestry-path",
-                    ];
+                    let refs = if graft_is_url {
+                        &["--glob=refs/cinnabar/graft/*"][..]
+                    } else {
+                        &["--branches", "--tags", "--remotes"]
+                    };
+                    let args = ["--max-count=1", "--ancestry-path"];
                     let other_args = info.graft.iter().map(|c| format!("^{}^@", c)).collect_vec();
-                    if rev_list(args.into_iter().chain(other_args.iter().map(|x| &**x)))
-                        .next()
-                        .is_none()
+                    if rev_list(
+                        refs.iter()
+                            .map(|x| &**x)
+                            .chain(args.into_iter())
+                            .chain(other_args.iter().map(|x| &**x)),
+                    )
+                    .next()
+                    .is_none()
                     {
                         debug!(target: "cinnabarclone", " Skipping (graft commit(s) unreachable)");
                         continue;
@@ -1382,14 +1405,18 @@ pub fn get_cinnabarclone_url(
     for graft_filter in graft_filters {
         for candidate in &candidates {
             if candidate.graft.is_empty() != *graft_filter {
-                return Some((
+                return Ok((
                     candidate.url.clone(),
                     candidate.branch.map(ToBoxed::to_boxed),
                 ));
             }
         }
     }
-    None
+    if graft == Some(true) {
+        Err("Server advertizes cinnabarclone but didn't provide one that can be used to graft")
+    } else {
+        Err("Server advertizes cinnabarclone bug didn't provide an URL to fetch from")
+    }
 }
 
 pub fn get_bundle_connection(url: &Url) -> Option<Box<dyn HgRepo>> {

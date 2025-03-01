@@ -183,7 +183,6 @@ fn skip_bundle2_chunk<R: Read>(mut r: R) -> io::Result<u64> {
 
 pub struct RevChunkIter<R: Read> {
     version: u8,
-    delta_node: Option<Rc<HgObjectId>>,
     next_delta_node: Option<Rc<HgObjectId>>,
     reader: R,
 }
@@ -192,7 +191,6 @@ impl<R: Read> RevChunkIter<R> {
     pub fn new(version: u8, reader: R) -> Self {
         RevChunkIter {
             version,
-            delta_node: None,
             next_delta_node: None,
             reader,
         }
@@ -218,10 +216,8 @@ impl<R: Read> Iterator for RevChunkIter<R> {
         };
 
         chunk.delta_node = (self.version == 1).then(|| {
-            mem::swap(&mut self.delta_node, &mut self.next_delta_node);
             let delta_node = self
-                .delta_node
-                .clone()
+                .next_delta_node
                 .take()
                 .unwrap_or_else(|| chunk.parent1().into());
 
@@ -278,7 +274,7 @@ impl<'a> Iterator for RevDiffIter<'a> {
     }
 }
 
-impl<'a> RevDiffPart<'a> {
+impl RevDiffPart<'_> {
     pub fn start(&self) -> usize {
         self.0.start
     }
@@ -511,7 +507,7 @@ impl BundlePartInfo {
     pub fn read_from(mut reader: impl Read) -> io::Result<Self> {
         let part_type_len = reader.read_u8()?;
         let part_type = reader.read_exactly_to_string(part_type_len.into())?;
-        let mandatory = part_type.chars().next().map_or(false, char::is_uppercase);
+        let mandatory = part_type.chars().next().is_some_and(char::is_uppercase);
         let part_type = part_type.to_lowercase().into_boxed_str();
         let part_id = reader.read_u32::<BigEndian>()?;
         let mandatory_params_num = reader.read_u8()?;
@@ -605,7 +601,7 @@ pub struct BundlePartReader<'a> {
     remaining: Option<&'a mut u32>,
 }
 
-impl<'a> Read for BundlePartReader<'a> {
+impl Read for BundlePartReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self.version {
             BundleVersion::V1 => {
@@ -707,7 +703,7 @@ impl<'a> BundleWriter<'a> {
     }
 }
 
-impl<'a> Drop for BundleWriter<'a> {
+impl Drop for BundleWriter<'_> {
     fn drop(&mut self) {
         if self.version == BundleVersion::V2 {
             write_bundle2_chunk(&mut *self.writer, &[]).unwrap();
@@ -741,7 +737,7 @@ impl<'a, const CHUNK_SIZE: usize> BundlePartWriter<'a, CHUNK_SIZE> {
     }
 }
 
-impl<'a, const CHUNK_SIZE: usize> Drop for BundlePartWriter<'a, CHUNK_SIZE> {
+impl<const CHUNK_SIZE: usize> Drop for BundlePartWriter<'_, CHUNK_SIZE> {
     fn drop(&mut self) {
         self.flush_buf_as_chunk().unwrap();
         if self.bundle2_buf.is_some() {
@@ -751,7 +747,7 @@ impl<'a, const CHUNK_SIZE: usize> Drop for BundlePartWriter<'a, CHUNK_SIZE> {
     }
 }
 
-impl<'a, const CHUNK_SIZE: usize> Write for BundlePartWriter<'a, CHUNK_SIZE> {
+impl<const CHUNK_SIZE: usize> Write for BundlePartWriter<'_, CHUNK_SIZE> {
     fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
         if let Some(bundle2_buf) = self.bundle2_buf.as_mut() {
             let full_len = buf.len();
@@ -1150,6 +1146,7 @@ pub fn create_bundle(
     changeset_heads
 }
 
+#[allow(clippy::type_complexity)]
 fn bundle_manifest<const CHUNK_SIZE: usize>(
     store: &Store,
     bundle_part_writer: &mut BundlePartWriter<CHUNK_SIZE>,

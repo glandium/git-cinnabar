@@ -30,6 +30,7 @@ from tools import (
     Build,
     Git,
     Hg,
+    install_rust,
     nproc,
 )
 from variables import *  # noqa: F403
@@ -143,7 +144,7 @@ class TestTask(Task):
                 [
                     "shopt -s nullglob",
                     "cd repo",
-                    "zip $ARTIFACTS/coverage.zip" ' $(find . -name "*.gcda")',
+                    'zip $ARTIFACTS/coverage.zip $(find . -name "*.profraw")',
                     "cd ..",
                     "shopt -u nullglob",
                 ]
@@ -155,6 +156,7 @@ class TestTask(Task):
                 artifacts.push(artifact)
             artifacts.append("coverage.zip")
             self.coverage.append(self)
+            kwargs.setdefault("env", {})["LLVM_PROFILE_FILE"] = "/repo/%m.profraw"
         elif variant == "asan" and task_env == "linux":
             kwargs["caps"] = ["SYS_PTRACE"]
         if not desc:
@@ -176,7 +178,6 @@ class Clone(TestTask, metaclass=Tool):
 
     def __init__(self, version):
         sha1 = git_rev_parse(version)
-        expireIn = "26 weeks"
         kwargs = {}
         if version == TC_COMMIT or len(version) == 40:
             if version == TC_COMMIT:
@@ -185,7 +186,6 @@ class Clone(TestTask, metaclass=Tool):
                 build = Build.by_name("linux.old:{}".format(version))
             kwargs.setdefault("mounts", []).append(build.mount())
             download = build.install()
-            expireIn = "26 weeks"
         elif parse_version(version) < parse_version("0.6.0"):
             download = ["repo/git-cinnabar download"]
             if parse_version(version) < parse_version("0.5.7"):
@@ -202,7 +202,6 @@ class Clone(TestTask, metaclass=Tool):
             hg_clone=True,
             description="clone w/ {}".format(version),
             index=index,
-            expireIn=expireIn,
             build=download,
             commit=sha1,
             clone=False,
@@ -213,7 +212,6 @@ class Clone(TestTask, metaclass=Tool):
                 "git -C hg.old.git bundle create $ARTIFACTS/bundle.git --all",
             ],
             artifact="bundle.git",
-            priority="high",
             **kwargs,
         )
 
@@ -232,7 +230,6 @@ class HgClone(Task, metaclass=Tool):
             task_env=TaskEnvironment.by_name("linux.test"),
             description=f"hg clone w/ {version}",
             index=index,
-            expireIn="26 weeks",
             command=hg_task.install()
             + [
                 "hg clone -U --stream $REPO repo",
@@ -243,17 +240,12 @@ class HgClone(Task, metaclass=Tool):
             env={
                 "REPO": REPO,
             },
-            priority="high",
         )
 
 
 @action("decision")
 def decision():
     for env in ("linux", "mingw64", "osx", "arm64-osx"):
-        # Can't spawn osx workers from pull requests.
-        if env.endswith("osx") and not TC_IS_PUSH:
-            continue
-
         TestTask(
             task_env=env,
             variant="coverage" if env == "linux" else None,
@@ -311,10 +303,6 @@ def decision():
     )
 
     for env in ("linux", "mingw64", "osx", "arm64-osx"):
-        # Can't spawn osx workers from pull requests.
-        if env.endswith("osx") and not TC_IS_PUSH:
-            continue
-
         TestTask(
             task_env=env,
             variant="coverage" if env == "linux" else None,
@@ -330,10 +318,6 @@ def decision():
         ("osx", None),
         ("arm64-osx", None),
     ):
-        # Can't spawn osx workers from pull requests.
-        if env.endswith("osx") and not TC_IS_PUSH:
-            continue
-
         pre_command = []
         if env != "linux":
             pre_command.append("pip install cram==0.7")
@@ -402,7 +386,7 @@ def hg_trunk():
     do_hg_version(trunk)
 
 
-def main():
+def tasks():
     try:
         func = action.by_name[TC_ACTION or "decision"].func
     except AttributeError:
@@ -412,47 +396,28 @@ def main():
 
     merge_coverage = []
 
-    if TestTask.coverage and TC_IS_PUSH and TC_BRANCH:
+    if TestTask.coverage and TC_IS_PUSH:
         coverage_mounts = [
             {f"file:cov-{task.id}.zip": task} for task in TestTask.coverage
         ]
         task = Build.by_name("linux.coverage")
-        coverage_mounts.append(
-            {
-                "file:gcno-build.zip": {
-                    "artifact": task.artifacts[1],
-                    "taskId": task.id,
-                }
-            }
-        )
+        coverage_mounts.append(task.mount())
 
-        merge_coverage.extend(
-            [
-                "grcov -s repo -t lcov -o repo/coverage.lcov gcno-build.zip "
-                + " ".join(f"cov-{task.id}.zip" for task in TestTask.coverage),
-            ]
+        merge_coverage.extend(install_rust())
+        merge_coverage.append("rustup component add llvm-tools-preview")
+        merge_coverage.append(
+            "grcov -s repo -t lcov -o repo/coverage.lcov -b git-cinnabar "
+            + " ".join(f"cov-{task.id}.zip" for task in TestTask.coverage)
         )
 
     if merge_coverage:
         Task(
             task_env=TaskEnvironment.by_name("linux.codecov"),
             description="upload coverage",
-            scopes=["secrets:get:project/git-cinnabar/codecov"],
             mounts=coverage_mounts,
             command=list(
                 chain(
                     Task.checkout(),
-                    [
-                        "set +x",
-                        (
-                            "export CODECOV_TOKEN=$(curl -sL "
-                            f"{PROXY_URL}/api/secrets/v1/secret/project/git-cinnabar"
-                            "/codecov | python3"
-                            ' -c "import json, sys; print(json.load(sys.stdin)'
-                            '[\\"secret\\"][\\"token\\"])")'
-                        ),
-                        "set -x",
-                    ],
                     merge_coverage,
                     [
                         "cd repo",
@@ -462,35 +427,69 @@ def main():
                     ],
                 )
             ),
+            env={
+                "CODECOV_TOKEN": "$CODECOV_TOKEN",
+            },
         )
 
+
+def print_output(name, value):
+    if not isinstance(value, str):
+        value = json.dumps(value, separators=(",", ":"))
+    print(f"{name}={value}")
+
+
+def main():
+    tasks()
+
+    RUNNER = {
+        "linux": "ubuntu-latest",
+        "osx": "macos-13",
+        "macos": "macos-14",
+        "windows": "windows-latest",
+    }
+    matrix = {}
+    artifacts = {}
+    mounts = {}
     for t in Task.by_id.values():
-        t.submit()
+        key = t.key
+        task = t.task
+        payload = task.get("payload", {})
+        name = task.get("metadata", {})["name"]
+        job_name = name.split()[0]
+        if job_name == "hg" and name.startswith("hg clone"):
+            job_name = "hg-clone"
+        if job_name in ("docker", "msys2") and "base" in name:
+            job_name = f"{job_name}-base"
+        matrix.setdefault(job_name, []).append(
+            {
+                "task": name,
+                "runner": RUNNER[task["workerType"]],
+            }
+        )
+        for mount in payload.get("mounts", []):
+            content = mount["content"]
+            mounts.setdefault(name, []).append(
+                {
+                    "artifact": content["artifact"],
+                    "key": Task.by_id[content["taskId"]].key,
+                }
+            )
 
-    if not TC_ACTION and "TC_GROUP_ID" in os.environ:
-        actions = {
-            "version": 1,
-            "actions": [],
-            "variables": {
-                "e": dict(TC_DATA, decision_id=""),
-                "tasks_for": "action",
-            },
-        }
-        for name, a in action.by_name.items():
-            if name != "decision":
-                actions["actions"].append(
-                    {
-                        "kind": "task",
-                        "name": a.name,
-                        "title": a.title,
-                        "description": a.description,
-                        "context": [],
-                        "task": a.task,
-                    }
-                )
-
-        with open("actions.json", "w") as out:
-            out.write(json.dumps(actions, indent=True))
+        if payload.get("artifacts"):
+            assert name not in artifacts
+            artifacts[name] = {
+                "paths": [
+                    os.path.basename(artifact["name"])
+                    for artifact in payload.get("artifacts", [])
+                ],
+                "key": key,
+            }
+    for m in matrix.values():
+        m.sort(key=lambda x: x["task"])
+    print_output("matrix", matrix)
+    print_output("artifacts", artifacts)
+    print_output("mounts", mounts)
 
 
 if __name__ == "__main__":

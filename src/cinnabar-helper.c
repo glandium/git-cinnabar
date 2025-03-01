@@ -45,6 +45,11 @@ struct object_id *commit_oid(struct commit *c) {
 	return &c->object.oid;
 }
 
+void reset_ref_store(struct repository *r) {
+	ref_store_release(r->refs_private);
+	FREE_AND_NULL(r->refs_private);
+}
+
 struct rev_info *rev_list_new(int argc, const char **argv) {
 	struct rev_info *revs = xmalloc(sizeof(*revs));
 
@@ -112,7 +117,7 @@ struct diff_tree_ctx {
 };
 
 static void diff_tree_cb(struct diff_queue_struct *q,
-                         struct diff_options *opt, void *data)
+                         struct diff_options *opt UNUSED, void *data)
 {
 	struct diff_tree_ctx *ctx = data;
 	int i;
@@ -410,10 +415,13 @@ int init_cinnabar(const char *argv0)
 			nongit = 0;
 		}
 	}
+	if (!nongit) {
+		prepare_repo_settings(the_repository);
+	}
 	return !nongit;
 }
 
-int common_exit(const char *file, int line, int code)
+int common_exit(const char *file UNUSED, int line UNUSED, int code)
 {
 	return code;
 }

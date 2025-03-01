@@ -411,7 +411,7 @@ impl<'a, R: Read> LoggingReader<'a, R> {
     }
 }
 
-impl<'a, R: Read> Read for LoggingReader<'a, R> {
+impl<R: Read> Read for LoggingReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.reader.read(buf).map(|l| {
             self.log.log(&buf[..l]);
@@ -420,7 +420,7 @@ impl<'a, R: Read> Read for LoggingReader<'a, R> {
     }
 }
 
-impl<'a, R: BufRead> BufRead for LoggingReader<'a, R> {
+impl<R: BufRead> BufRead for LoggingReader<'_, R> {
     fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
         self.reader.fill_buf()
     }
@@ -444,7 +444,7 @@ impl<'a, R: BufRead> BufRead for LoggingReader<'a, R> {
     }
 }
 
-impl<'a, R: ExactSizeReadRewind> ExactSizeReadRewind for LoggingReader<'a, R> {
+impl<R: ExactSizeReadRewind> ExactSizeReadRewind for LoggingReader<'_, R> {
     fn len(&self) -> std::io::Result<u64> {
         self.reader.len()
     }
@@ -483,7 +483,7 @@ impl<'a, W: Write> LoggingWriter<'a, W> {
     }
 }
 
-impl<'a, W: Write> Write for LoggingWriter<'a, W> {
+impl<W: Write> Write for LoggingWriter<'_, W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.writer.write(buf).map(|l| {
             self.log.log(&buf[..l]);

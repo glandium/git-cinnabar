@@ -375,7 +375,7 @@ Removing heads or branches is not supported.
 
 Pushing/deleting tags is not supported.
 
-  $ git -C repo-git -c user.email=foo@bar tag -m 'Tagged' the-tag
+  $ git -C repo-git -c user.name=foo -c user.email=foo@bar tag -m 'Tagged' the-tag
   $ git -C repo-git push origin --tags
   To hg::.*/push-refs.t/repo-from-git (re)
    ! [remote rejected] the-tag -> the-tag (Pushing tags is unsupported)
@@ -397,7 +397,7 @@ Reset target mercurial repositories.
 
 Reset cinnabar metadata in repo-git2.
 
-  $ git -C repo-git2 cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C repo-git2 cinnabar clear
 
 Push everything at once.
 
@@ -478,7 +478,7 @@ Reset target mercurial repositories again.
 
 Reset cinnabar metadata in repo-git2 again.
 
-  $ git -C repo-git2 cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C repo-git2 cinnabar clear
 
 Push a bookmark on `c`.
 
@@ -723,7 +723,7 @@ Reset target mercurial repositories again.
 
 Reset cinnabar metadata in repo-git2 again.
 
-  $ git -C repo-git2 cinnabar rollback 0000000000000000000000000000000000000000
+  $ git -C repo-git2 cinnabar clear
 
 Push everything at once, with bookmarks.
 

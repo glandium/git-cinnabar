@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#define DISABLE_SIGN_COMPARE_WARNINGS
 #define USE_THE_REPOSITORY_VARIABLE
 #include "git-compat-util.h"
 struct object_id;
@@ -51,6 +52,8 @@ void real_hashwrite(struct hashfile *, const void *, unsigned int);
 void hashwrite(struct hashfile *f, const void *buf, unsigned int count)
 {
 	size_t window_size;
+	size_t packed_git_window_size =
+		the_repository->settings.packed_git_window_size;
 
 	if (f != pack_file) {
 		real_hashwrite(f, buf, count);
@@ -111,21 +114,19 @@ void hashwrite(struct hashfile *f, const void *buf, unsigned int count)
 	}
 }
 
-off_t real_find_pack_entry_one(const unsigned char *sha1,
+off_t real_find_pack_entry_one(const struct object_id *oid,
                                struct packed_git *p);
 
-off_t find_pack_entry_one(const unsigned char *sha1, struct packed_git *p)
+off_t find_pack_entry_one(const struct object_id *oid, struct packed_git *p)
 {
 	if (p == pack_data) {
-		struct object_id oid;
 		struct object_entry *oe;
-		oidread(&oid, sha1, the_repository->hash_algo);
-		oe = get_object_entry(&oid);
+		oe = get_object_entry(oid);
 		if (oe)
 			return oe->idx.offset;
 		return 0;
 	}
-	return real_find_pack_entry_one(sha1, p);
+	return real_find_pack_entry_one(oid, p);
 }
 
 struct object_entry *get_object_entry(const struct object_id *oid)
@@ -139,7 +140,7 @@ struct object_entry *get_object_entry(const struct object_id *oid)
 /* Mostly copied from fast-import.c's cmd_main() */
 static void init(void)
 {
-	int i;
+	unsigned int i;
 
 	reset_pack_idx_option(&pack_idx_opts);
 	git_pack_config();
@@ -194,7 +195,7 @@ static void cleanup(void)
 	initialized = 0;
 
 	if (cinnabar_check(CHECK_HELPER))
-		pack_report();
+		pack_report(the_repository);
 }
 
 void do_cleanup(int rollback)
@@ -276,8 +277,8 @@ void do_set_replace(const struct object_id *replaced,
 }
 
 int write_object_file_flags(const void *buf, size_t len, enum object_type type,
-                            struct object_id *oid, struct object_id *compat_oid_in,
-                            unsigned flags)
+                            struct object_id *oid, struct object_id *compat_oid_in UNUSED,
+                            unsigned flags UNUSED)
 {
 	struct strslice data;
 	data.buf = (void *)buf;
