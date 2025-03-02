@@ -149,6 +149,10 @@ make-cmd = "0.1"
 target = "2.0"
 syn = { version = "2", features = ["full"] }  # git-version fails to parse inner macros without this.
 
+[build-dependencies.rustflags]
+version = "0.1"
+optional = true
+
 [dev-dependencies]
 tempfile = "3"
 
@@ -162,6 +166,8 @@ panic = "abort"
 [features]
 default = ["full-version", "version-check"]
 full-version = ["dep:concat_const", "dep:git-version"]
+# libcurl.so compatibility (Linux only).
+curl-compat = ["rustflags"]
 # Check and report when a new version is available.
 version-check = ["shared_child"]
 # Download and apply new versions.
