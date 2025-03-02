@@ -36,8 +36,6 @@ VERSIONS = {
     # Newer versions below. We're bound to what older versions were doing to find the
     # right download on self-update. I don't know what went through my head when I
     # made that code strip dashes from tag names...
-    "0.7.0beta3": "0.7.0-beta.3",
-    "0.7.0rc1": "0.7.0-rc.1",
     "0.7.0": "0.7.0",
     "0.7.1": "0.7.1",
     # Here's a trick to make things happy-ish in the future: older versions don't
