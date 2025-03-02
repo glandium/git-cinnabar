@@ -476,6 +476,7 @@ class Build(Task, metaclass=Tool):
                     f"/sysroot-{arch}/usr/share/pkgconfig",
                 )
             )
+            cargo_features.append("curl-compat")
         if variant == "asan":
             environ["RUSTC_BOOTSTRAP"] = "1"
         if rust_version:
