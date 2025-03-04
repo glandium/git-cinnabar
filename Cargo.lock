@@ -266,16 +266,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cstr"
-version = "0.2.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68523903c8ae5aacfa32a0d9ae60cadeb764e1da14ee0d26b1f3089f13a54636"
-dependencies = [
- "proc-macro2",
- "quote",
-]
-
-[[package]]
 name = "curl-sys"
 version = "0.4.80+curl-8.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -458,7 +448,6 @@ dependencies = [
  "cfg-if",
  "clap",
  "concat_const",
- "cstr",
  "curl-sys",
  "derive_more",
  "digest",
