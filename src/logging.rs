@@ -413,9 +413,8 @@ impl<'a, R: Read> LoggingReader<'a, R> {
 
 impl<R: Read> Read for LoggingReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.reader.read(buf).map(|l| {
+        self.reader.read(buf).inspect(|&l| {
             self.log.log(&buf[..l]);
-            l
         })
     }
 }
@@ -430,16 +429,14 @@ impl<R: BufRead> BufRead for LoggingReader<'_, R> {
     }
 
     fn read_until(&mut self, byte: u8, buf: &mut Vec<u8>) -> std::io::Result<usize> {
-        self.reader.read_until(byte, buf).map(|l| {
+        self.reader.read_until(byte, buf).inspect(|&l| {
             self.log.log(&buf[buf.len() - l..]);
-            l
         })
     }
 
     fn read_line(&mut self, buf: &mut String) -> std::io::Result<usize> {
-        self.reader.read_line(buf).map(|l| {
+        self.reader.read_line(buf).inspect(|_| {
             self.log.log(buf.as_bytes());
-            l
         })
     }
 }
@@ -485,9 +482,8 @@ impl<'a, W: Write> LoggingWriter<'a, W> {
 
 impl<W: Write> Write for LoggingWriter<'_, W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.writer.write(buf).map(|l| {
+        self.writer.write(buf).inspect(|&l| {
             self.log.log(&buf[..l]);
-            l
         })
     }
 

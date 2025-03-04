@@ -94,7 +94,6 @@ use cinnabar::{
 };
 use clap::error::ErrorKind;
 use clap::{CommandFactory, FromArgMatches, Parser};
-use cstr::cstr;
 use digest::OutputSizeUser;
 use either::Either;
 use git::{BlobId, CommitId, GitObjectId, RawBlob, RawCommit, RawTree, RecursedTreeEntry, TreeIsh};
@@ -611,7 +610,7 @@ enum TagFormatItem {
 
 fn do_tag_list(store: &mut Store, format: Option<String>) -> Result<(), String> {
     unsafe {
-        if check_pager_config(cstr!("tag").as_ptr()) != 0 {
+        if check_pager_config(c"tag".as_ptr()) != 0 {
             setup_pager();
         }
     }
@@ -1320,7 +1319,7 @@ fn do_reclone(store: &mut Store, rebase: bool) -> Result<(), String> {
         unsafe {
             if let Some(head_ref) = &info.head_ref {
                 let symref = CString::new(head_ref.to_vec()).unwrap();
-                add_symref(&mut tail, cstr!("HEAD").as_ptr(), symref.as_ptr());
+                add_symref(&mut tail, c"HEAD".as_ptr(), symref.as_ptr());
             }
 
             let refs = get_ref_map(remote, ref_map);
@@ -5443,7 +5442,7 @@ static EXPERIMENTS: Lazy<AllExperiments> = Lazy::new(|| {
     }
     AllExperiments {
         flags,
-        similarity: similarity.unwrap_or_else(|| cstr!("-C100%").into()),
+        similarity: similarity.unwrap_or_else(|| c"-C100%".into()),
     }
 });
 
