@@ -14,7 +14,6 @@ use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
 use bstr::ByteSlice;
-use cstr::cstr;
 use curl_sys::{CURLcode, CURL, CURL_ERROR_SIZE};
 use itertools::{EitherOrBoth, Itertools};
 
@@ -817,13 +816,13 @@ pub fn diff_tree_with_copies(
     let a = CString::new(format!("{}", a)).unwrap();
     let b = CString::new(format!("{}", b)).unwrap();
     let args = [
-        cstr!(""),
+        c"",
         &a,
         &b,
-        cstr!("--ignore-submodules=dirty"),
-        cstr!("-C"),
+        c"--ignore-submodules=dirty",
+        c"-C",
         experiment_similarity(),
-        cstr!("--"),
+        c"--",
     ];
     let mut argv: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
     argv.push(std::ptr::null());

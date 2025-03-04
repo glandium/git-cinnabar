@@ -10,7 +10,7 @@ authors = ["Mike Hommey <mh@glandium.org>"]
 edition = "2021"
 license = "MPL-2.0 AND GPL-2.0"
 repository = "https://github.com/glandium/git-cinnabar"
-rust-version = "1.75.0"
+rust-version = "1.77.0"
 include = [
   "/src",
   "/MPL-2.0",
@@ -37,7 +37,6 @@ bitflags = "2"
 bzip2 = "0.5"
 byteorder = "1"
 cfg-if = "1"
-cstr = "0.2.10"
 digest = "0.10"
 either = "1"
 getset = "0.1"
