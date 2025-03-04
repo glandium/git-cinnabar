@@ -17,7 +17,6 @@ use std::{cmp, mem, ptr};
 use bstr::{BStr, ByteSlice};
 use byteorder::ReadBytesExt;
 use bzip2::read::BzDecoder;
-use cstr::cstr;
 use curl_sys::{
     curl_easy_getinfo, curl_easy_setopt, curl_infotype, curl_slist_append, curl_slist_free_all,
     CURL, CURLINFO_CONTENT_TYPE, CURLINFO_EFFECTIVE_URL, CURLINFO_HEADER_IN, CURLINFO_HEADER_OUT,
@@ -349,7 +348,7 @@ impl HttpRequest {
                 curl_easy_setopt(
                     slot.curl,
                     CURLOPT_USERAGENT,
-                    cstr!("mercurial/proto-1.0").as_ptr(),
+                    c"mercurial/proto-1.0".as_ptr(),
                 );
                 let mut data = HttpThreadData {
                     sender,
@@ -396,7 +395,7 @@ impl HttpRequest {
                         read_from_read::<Body> as *const c_void,
                     );
                     curl_easy_setopt(slot.curl, CURLOPT_FOLLOWLOCATION, 0);
-                    headers = curl_slist_append(headers, cstr!("Expect:").as_ptr());
+                    headers = curl_slist_append(headers, c"Expect:".as_ptr());
                 } else {
                     if self.follow_redirects {
                         curl_easy_setopt(slot.curl, CURLOPT_FOLLOWLOCATION, 1);
