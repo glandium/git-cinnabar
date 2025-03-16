@@ -478,9 +478,10 @@ unsafe fn alloc_recycle(layout: Layout) -> (*mut u8, usize) {
 unsafe fn dealloc_keep(ptr: *mut u8, layout: Layout) {
     RECYCLED_ALLOC.with(|recycled| {
         let to_dealloc = Cell::new(Some((NonNull::new(ptr).unwrap(), layout)));
-        if recycled.get().map_or(true, |(_, recycled_layout)| {
-            recycled_layout.size() < layout.size()
-        }) {
+        if recycled
+            .get()
+            .is_none_or(|(_, recycled_layout)| recycled_layout.size() < layout.size())
+        {
             to_dealloc.swap(recycled);
         }
         if let Some((ptr, layout)) = to_dealloc.take() {

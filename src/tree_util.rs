@@ -751,6 +751,13 @@ impl<T: RecurseAs<I>, I: Iterator<Item = WithPath<T>>> RecurseTree for I {
     }
 }
 
+#[cfg(test)]
+impl<T> Empty for std::vec::IntoIter<T> {
+    fn empty() -> Self {
+        vec![].into_iter()
+    }
+}
+
 #[test]
 fn test_recurse_tree_iter() {
     use std::cell::RefCell;
@@ -816,12 +823,6 @@ fn test_recurse_tree_iter() {
                 COUNTS.with(|counts| counts.borrow_mut()[l.0] += 1);
                 TREES[l.0].clone().into_iter()
             })
-        }
-    }
-
-    impl<T> Empty for std::vec::IntoIter<T> {
-        fn empty() -> Self {
-            vec![].into_iter()
         }
     }
 
