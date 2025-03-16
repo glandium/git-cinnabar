@@ -822,7 +822,7 @@ pub fn find_common(
     hgheads: impl Into<Vec<HgChangesetId>>,
     remote: Option<&str>,
 ) -> Vec<HgChangesetId> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let hgheads = hgheads.into();
     if hgheads.is_empty() {
         return vec![];
