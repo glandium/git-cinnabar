@@ -596,8 +596,8 @@ impl HgRepo for BundleSaverConnection {
 }
 
 extern "C" {
-    fn check_pager_config(cmd: *const c_char) -> c_int;
-    fn setup_pager();
+    fn check_pager_config(repo: *mut repository, cmd: *const c_char) -> c_int;
+    fn setup_pager(repo: *mut repository);
 }
 
 // https://github.com/rust-lang/rust-clippy/issues/10599
@@ -611,8 +611,8 @@ enum TagFormatItem {
 
 fn do_tag_list(store: &mut Store, format: Option<String>) -> Result<(), String> {
     unsafe {
-        if check_pager_config(cstr!("tag").as_ptr()) != 0 {
-            setup_pager();
+        if check_pager_config(the_repository, cstr!("tag").as_ptr()) != 0 {
+            setup_pager(the_repository);
         }
     }
     // Crude imitation of `git tag -l`'s `--format`, with a limited set of field names.
