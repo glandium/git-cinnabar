@@ -301,11 +301,8 @@ pub fn find_version(what: VersionInfo) -> Option<VersionInfo> {
 }
 
 fn get_version(child: &VersionRequestChild) -> Result<Option<VersionInfo>, ()> {
-    let current_version = Version::parse(&SHORT_VERSION).unwrap();
-    let build_commit = CommitId::from_str(&BUILD_COMMIT).ok();
     let result = child.fold(None, |result, info| match &info {
-        VersionInfo::Commit(cid) => build_commit.is_some_and(|c| &c != cid).then_some(info),
-        VersionInfo::Tagged(version, _) if version <= &current_version => result,
+        VersionInfo::Commit(_) => Some(info),
         VersionInfo::Tagged(version, _) => match result {
             Some(VersionInfo::Tagged(ref result_ver, _)) if result_ver < version => Some(info),
             None => Some(info),
@@ -316,12 +313,25 @@ fn get_version(child: &VersionRequestChild) -> Result<Option<VersionInfo>, ()> {
         Some(VersionInfo::Tagged(v, _)) => {
             debug!(target: "version-check", "Newest version found: {}", v);
         }
-        Some(VersionInfo::Commit(_)) => {
-            debug!(target: "version-check", "Current version ({}) is different", *BUILD_COMMIT);
+        Some(VersionInfo::Commit(cid)) => {
+            debug!(target: "version-check", "Newest commit found: {}", cid);
         }
         None => {
-            debug!(target: "version-check", "No version is newer than current ({})", current_version);
+            debug!(target: "version-check", "Nothing found");
         }
     }
-    Ok(result)
+    Ok(result.and_then(|result| {
+        let current_version = Version::parse(&SHORT_VERSION).unwrap();
+        let build_commit = CommitId::from_str(&BUILD_COMMIT).ok();
+        match result {
+            VersionInfo::Tagged(ref version, _)
+                if version > &current_version
+                    || (*BUILD_BRANCH != Release && version != &current_version) =>
+            {
+                Some(result)
+            }
+            VersionInfo::Commit(cid) if build_commit.is_some_and(|c| c != cid) => Some(result),
+            _ => None,
+        }
+    }))
 }
