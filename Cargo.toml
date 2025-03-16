@@ -104,7 +104,7 @@ version = "0.4"
 features = ["std"]
 
 [dependencies.lru]
-version = "0.12"
+version = "0.13"
 default-features = false
 
 [dependencies.mio]
