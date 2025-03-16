@@ -6,6 +6,7 @@ use std::borrow::Cow;
 use std::cell::{Cell, OnceCell, Ref, RefCell, RefMut};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
+use std::fs::File;
 use std::hash::Hash;
 use std::io::{copy, BufRead, BufReader, Read, Write};
 use std::iter::{repeat, IntoIterator};
@@ -2388,48 +2389,57 @@ pub fn merge_metadata(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let mut bundle = if remote_refs.is_empty() && ["http", "https"].contains(&git_url.scheme()) {
-        let mut req = HttpRequest::new(git_url.clone());
-        req.follow_redirects(true);
-        req.set_log_target("raw-wire::cinnabarclone".to_string());
-        // We let curl handle Content-Encoding: gzip via Accept-Encoding.
-        let mut bundle = match req.execute() {
-            Ok(bundle) => bundle,
-            Err(e) => {
-                error!(target: "root", "{}", e);
+    let mut bundle =
+        if remote_refs.is_empty() && ["http", "https", "file"].contains(&git_url.scheme()) {
+            let bundle = if git_url.scheme() == "file" {
+                let path = git_url.to_file_path().unwrap();
+                File::open(path)
+                    .map(|f| Box::new(f) as Box<dyn Read>)
+                    .map_err(|e| e.to_string())
+            } else {
+                let mut req = HttpRequest::new(git_url.clone());
+                req.follow_redirects(true);
+                req.set_log_target("raw-wire::cinnabarclone".to_string());
+                // We let curl handle Content-Encoding: gzip via Accept-Encoding.
+                req.execute().map(|h| Box::new(h) as _)
+            };
+            let mut bundle = match bundle {
+                Ok(bundle) => bundle,
+                Err(e) => {
+                    error!(target: "root", "{}", e);
+                    return false;
+                }
+            };
+            const BUNDLE_SIGNATURE: &str = "# v2 git bundle\n";
+            let signature = (&mut bundle)
+                .take(BUNDLE_SIGNATURE.len() as u64)
+                .read_all()
+                .unwrap();
+            if &*signature != BUNDLE_SIGNATURE.as_bytes() {
+                error!(target: "root", "Could not find cinnabar metadata");
                 return false;
             }
+            let mut bundle = BufReader::new(bundle);
+            let mut line = Vec::new();
+            loop {
+                line.truncate(0);
+                bundle.read_until(b'\n', &mut line).unwrap();
+                if line.ends_with(b"\n") {
+                    line.pop();
+                }
+                if line.is_empty() {
+                    break;
+                }
+                let [sha1, refname] = line.splitn_exact(b' ').unwrap();
+                remote_refs.insert(
+                    refname.as_bstr().to_boxed(),
+                    CommitId::from_bytes(sha1).unwrap(),
+                );
+            }
+            Some(bundle)
+        } else {
+            None
         };
-        const BUNDLE_SIGNATURE: &str = "# v2 git bundle\n";
-        let signature = (&mut bundle)
-            .take(BUNDLE_SIGNATURE.len() as u64)
-            .read_all()
-            .unwrap();
-        if &*signature != BUNDLE_SIGNATURE.as_bytes() {
-            error!(target: "root", "Could not find cinnabar metadata");
-            return false;
-        }
-        let mut bundle = BufReader::new(bundle);
-        let mut line = Vec::new();
-        loop {
-            line.truncate(0);
-            bundle.read_until(b'\n', &mut line).unwrap();
-            if line.ends_with(b"\n") {
-                line.pop();
-            }
-            if line.is_empty() {
-                break;
-            }
-            let [sha1, refname] = line.splitn_exact(b' ').unwrap();
-            remote_refs.insert(
-                refname.as_bstr().to_boxed(),
-                CommitId::from_bytes(sha1).unwrap(),
-            );
-        }
-        Some(bundle)
-    } else {
-        None
-    };
 
     let branches = branch.map_or_else(
         || hg_url.map(branches_for_url).unwrap_or_default(),

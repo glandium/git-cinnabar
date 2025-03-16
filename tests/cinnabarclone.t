@@ -357,6 +357,8 @@ Git config takes precedence over whatever the mercurial server might say
 
 Can disable via git config
 
+  $ > $CRAMTMP/accesslog
+
   $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.clone= clone -n hg::http://localhost:8000/ repo-git
   Cloning into 'repo-git'...
 
@@ -364,3 +366,27 @@ Can disable via git config
 
   $ check_clone repo-git
   $ rm -rf repo-git
+
+Git configuration allows using a local bundle file.
+
+  $ > $CRAMTMP/accesslog
+
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true -c cinnabar.clone=$PWD/cinnabarclone-full.git clone -n hg::http://localhost:8000/ repo-git
+  Cloning into 'repo-git'...
+  Fetching cinnabar metadata from file://.*/cinnabarclone-full.git (re)
+
+  $ grep -q cmd=getbundle $CRAMTMP/accesslog
+  [1]
+
+  $ check_clone repo-git
+  $ rm -rf repo-git
+
+Cannot use a file in the server cinnabarclone manifest.
+
+  $ echo file://$PWD/cinnabarclone-full.git > $REPO/.hg/cinnabar.manifest
+  $ hg -R $REPO serve-and-exec -- git -c fetch.prune=true clone -n hg::http://localhost:8000/ repo-git
+  Cloning into 'repo-git'...
+  \r (no-eol) (esc)
+  WARNING Server advertizes cinnabarclone but provided a non http/https git repository. Skipping.
+  \r (no-eol) (esc)
+  WARNING Falling back to normal clone.
